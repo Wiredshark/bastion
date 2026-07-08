@@ -1,7 +1,8 @@
-# Bastion overseer camera (B1)
+# Bastion overseer camera (B1 + B1.5)
 
 The top-down orthographic "overseer" view over the world — the god's-eye camera every later block
-renders through. Additive and flag-gated: without the flag, voxygen is bit-identical vanilla.
+renders through — with Black & White 2 camera feel and a per-mode input-context system (B1.5).
+Additive and flag-gated: without the flag, voxygen is bit-identical vanilla.
 
 ## Launching
 
@@ -21,20 +22,39 @@ top-down ortho over the generated world, 90° rotate, zoom-out, Z-slice cut + re
 toggle back to vanilla perspective (measured 60 fps / 4 ms frame time).
 
 Start singleplayer normally; once the character spawns, the camera switches to the overseer view
-centered on it. The flag also arms the in-session toggle:
+centered on it.
 
-| Key | Action |
+## Input contexts (§3b, B1.5)
+
+Three modes own three control schemes; the active context filters the key→`GameInput` fan-out at
+the window chokepoint (`bastion::input`), so schemes can share physical keys without collisions:
+
+- **Overseer** (god mode, default with the flag): the controls below. Avatar verbs
+  (`Primary`/`Secondary`/`Interact`/hotbar/`Roll`/…) are suppressed at the source — the old HUD
+  "Q steals slot 10" bug class is gone by construction. The overseer also owns the *cursor*: it
+  stays free/visible (the HUD's grab logic yields).
+- **Avatar** (stub until B12 wires real possession): exactly vanilla controls (third-person for a
+  character, freefly for a spectator); overseer keys are suppressed. `F9` swaps Overseer ⇄ Avatar —
+  one atomic context switch, the same call B12's embody/release will make.
+- **Menu** (vanilla passthrough): active whenever the flag is off or no session runs; every play-
+  state transition resets to it.
+
+WASD is deliberately live in both Overseer and Avatar (pans the god camera / moves the body).
+Rebinding UI is deferred to B9; the per-context scheme tables in `bastion::input` are the data
+model its per-mode tabs will edit.
+
+## Overseer controls (B&W2 feel, B1.5)
+
+| Input | Action |
 |---|---|
-| `F9` | Toggle overseer ↔ vanilla third-person (for comparison; only armed with the flag) |
-| `W A S D` | Pan the ground target across the map (speed scales with zoom) |
-| mouse scroll | Zoom (orthographic scale; clamped) |
-| `Q` / `E` | Rotate the view in smooth 90° steps |
-| `PgUp` / `PgDn` | Z-slice cursor: first press activates the slice near the focus height, holding moves it up/down |
-| `0` (CycleCamera) | Escape hatch: drops back to vanilla third-person |
-
-While the overseer camera is active: mouse-look is disabled (fixed oblique pitch), and
-`Primary`/`Secondary`/`Interact`/hotbar-slot-10 avatar actions are consumed as no-ops so Q/E and
-clicks don't puppet the character (B2 hangs inspect/designate off these instead).
+| **left-drag** | **Grab-drag pan**: the grabbed world point stays locked under the cursor; release throws with eased inertia |
+| **right-drag** | **Free orbit**: continuous yaw + pitch (clamped 20°–89°), damped |
+| mouse scroll | **Zoom to cursor**: eased ortho dolly toward the point under the cursor |
+| `W A S D` | Pan fallback (speed scales with zoom) |
+| `Q` / `E` | Optional 90° yaw steps (keeps current pitch) |
+| `End` | Snap to top-down (nearest 90° yaw, near-vertical pitch). Not `Home`: ReShade's overlay claims it |
+| `PgUp` / `PgDn` | Z-slice cursor: first press activates near the focus height, holding moves it |
+| `F9` | Context switch: Overseer ⇄ Avatar |
 
 ## Z-slice
 
@@ -51,13 +71,17 @@ B1 and revisitable later:
 
 | Constant | Where | Default | Meaning |
 |---|---|---|---|
-| `OVERSEER_PITCH` | `voxygen/src/scene/camera.rs` | 60° | Fixed oblique look-down angle (90° = straight down, reads poorly) |
+| `OVERSEER_PITCH` | `voxygen/src/scene/camera.rs` | 60° | Default pitch on entering overseer mode |
+| `OVERSEER_PITCH_MIN/MAX` | `camera.rs` | 20° / 89° | Free-pitch swoop range (true 90° degenerates plane picking) |
 | `OVERSEER_ZOOM_MIN/MAX` | `camera.rs` | 24 / 1024 | Zoom (`dist`) clamp; ortho half-height = `dist·tan(fov/2)` |
 | `OVERSEER_START_DIST` | `camera.rs` | 192 | Zoom on entering overseer mode |
-| `BASTION_PAN_FACTOR` | `voxygen/src/session/mod.rs` | 1.0 | Pan speed = `dist × factor` units/s |
+| `BASTION_PAN_FACTOR` | `voxygen/src/session/mod.rs` | 1.0 | WASD pan speed = `dist × factor` units/s |
 | `BASTION_SLICE_RATE` | `session/mod.rs` | 16.0 | Slice speed while held, blocks/s |
+| `BASTION_ORBIT_SENS` | `session/mod.rs` | 0.0035 | Orbit radians per pixel of right-drag |
+| `BASTION_PAN_DAMP` | `session/mod.rs` | 5.0 | Inertia decay rate (1/s) after grab release |
+| `BASTION_GRAB_MAX_STEP` | `session/mod.rs` | 512 | Per-frame grab translation clamp (grazing-angle safety) |
 
-## How it works (for B2+)
+## How it works (for B2 / B12)
 
 - `CameraMode::Overseer` (`camera.rs`) selects an **orthographic reversed-depth projection** in
   `compute_dependents_helper` and skips the terrain-collision ray entirely; everything downstream
@@ -67,10 +91,16 @@ B1 and revisitable later:
   force-disabled outside overseer mode at the single `Globals::new` call site.
 - Fragment shaders (`terrain-frag`, `sprite-frag`, `fluid-frag/*`) discard when
   `f_pos.z + focus_off.z > bastion_slice_z`.
-- **B2 hooks:** screen→world picking under this camera should use `Camera::dependents()`
-  (`view_mat_inv`/`proj_mat_inv` — both valid for ortho); the consumed-as-no-op
-  `Primary`/`Secondary`/`Interact` arms in `session/mod.rs` are the natural place to route
-  inspect/designate; the slice height is the natural "active work layer" for designation painting.
-- **Known limitation (B2/B3):** chunk loading follows the *player entity*, not the camera — pan far
-  enough and you see LoD terrain instead of voxels. The spectator pathway
-  (`client.spectate_position`) is the intended fix when colonies replace the hero.
+- **Picking:** `bastion::unproject_to_world_plane(camera, cursor_px, res, plane_z)` — cursor →
+  world on a horizontal plane, exact for the ortho projection (`view_mat_inv * proj_mat_inv`, no
+  perspective divide, `focus.trunc()` offset re-added). Grab-drag, zoom-to-cursor, and (B2)
+  designation painting all share it; the active slice height is the natural work layer.
+- **B2 hooks:** the Overseer context suppresses `Primary`/`Secondary`/`Interact` at the fan-out;
+  B2's inspect/designate tools claim those raw mouse events in the session (the grab-drag arm shows
+  the pattern) and their `GameInput`s get added to `OVERSEER_SCHEME.owned`.
+- **B12 hooks:** embody = the `bastion_exit_overseer`/`bastion_enter_overseer` pair, i.e. one
+  atomic context swap to `Avatar` (exactly vanilla bindings) and back — plus the server-side
+  controller handoff that block owns.
+- **Streaming:** in overseer mode the per-tick spectator sync sends the camera **focus** to
+  `client.spectate_position`, so terrain streams under the view — no pan-to-LoD wall. Character
+  (hero) sessions still stream around the character until B3 removes the hero.

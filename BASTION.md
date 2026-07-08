@@ -9,7 +9,7 @@ divinity — explicitly *not* a StarCraft-style RTS).
   request is "tell a specific unit to do a specific thing right now," it must become policy,
   designation, or god-power instead (doc §8.13 — guard this rule).
 
-## State: B0 + B1 complete
+## State: B0 + B1 + B1.5 complete
 
 | | |
 |---|---|
@@ -17,7 +17,7 @@ divinity — explicitly *not* a StarCraft-style RTS).
 | Branch | `bastion/main` |
 | Build | `cargo build --bin veloren-voxygen --bin veloren-server-cli` (toolchain notes in `BASELINE.md`) |
 | Run vanilla | `target\debug\veloren-voxygen.exe` (singleplayer) / `target\debug\veloren-server-cli.exe --non-interactive` |
-| Run overseer (B1) | `target\debug\veloren-voxygen.exe --bastion-overseer` — see `docs/BASTION_CAMERA.md` |
+| Run overseer (B1/B1.5) | `target\debug\veloren-voxygen.exe --bastion-overseer` — B&W2 grab-drag/orbit/zoom + input contexts; see `docs/BASTION_CAMERA.md` |
 | Headless harness | `cargo run -p bastion-harness -- --seed 1337 --ticks 1000 [--verify]` — see `docs/BASTION_HARNESS.md` |
 | Fast inner loop | `scripts\bastion-check.ps1` or `cargo bastion-check` |
 | Findings / real APIs | `docs/BASTION_B0_FINDINGS.md`, `docs/BASTION_B1_FINDINGS.md` |

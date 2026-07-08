@@ -301,7 +301,9 @@ impl ControlSettings {
             GameInput::BastionRotateRight => char("E"),
             GameInput::BastionSliceUp => Key::Named(NamedKey::PageUp),
             GameInput::BastionSliceDown => Key::Named(NamedKey::PageDown),
-            GameInput::BastionSnapTopDown => Key::Named(NamedKey::Home),
+            // End, not Home: ReShade (common third-party injector) claims Home
+            // for its overlay and blocks game input while it's open.
+            GameInput::BastionSnapTopDown => Key::Named(NamedKey::End),
         }))
     }
 

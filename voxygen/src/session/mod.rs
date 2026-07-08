@@ -346,9 +346,11 @@ impl SessionState {
             self.scene.camera().get_tgt_focus().z,
         );
         let camera = self.scene.camera_mut();
-        // Multiplicative dolly (same feel family as vanilla); clamped inside
-        // zoom_by by the overseer zoom limits.
-        camera.zoom_by(delta * (0.05 + old_dist * 0.08), None);
+        // Multiplicative dolly, clamped inside zoom_by by the overseer zoom
+        // limits. NOTE the wheel arrives pre-scaled ~±15 per notch (see the
+        // X11-parity factor in window.rs), so 0.02·dist ≈ ±30% per notch —
+        // roughly 8 eased notches from whole-region to near-ground.
+        camera.zoom_by(delta * old_dist * 0.02, None);
         let f = camera.get_tgt_dist() / old_dist;
         if let Some(p) = picked
             && (f - 1.0).abs() > f32::EPSILON

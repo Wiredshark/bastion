@@ -77,6 +77,18 @@ in overseer mode pass the **focus** (the ground point under the view) instead. C
 sessions still stream around the character only — full camera-streaming for the hero-less colony
 arrives with B3 (documented limitation, unchanged from B1).
 
+## 4b. Machine/verification discoveries
+
+- **ReShade is installed on this machine** (Vulkan implicit layer). Its overlay toggle defaults to
+  `Home` and, while the overlay is open, ReShade **blocks all input to the game** — it also ignores
+  *injected* keystrokes for its toggle, so scripted verification can't close it. Consequences:
+  `BastionSnapTopDown` default moved `Home` → `End`; scripted runs disable implicit layers via
+  `VK_LOADER_LAYERS_DISABLE=~implicit~`.
+- Scripted **orbit** verification must inject *relative* mouse motion (`mouse_event(MOUSEEVENTF_MOVE)`)
+  — `SetCursorPos` teleports produce `WindowEvent::CursorMoved` (grab-drag sees them via the tracked
+  absolute position) but no `DeviceEvent::MouseMotion`, which is what `Event::CursorMove`/orbit
+  consumes — same raw-motion channel as vanilla mouse-look.
+
 ## 5. HUD interception notes
 
 - The HUD consumes hotbar keys inside `Hud::handle_event` via `try_hotbar_slot_from_input` (two
