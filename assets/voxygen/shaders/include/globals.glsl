@@ -33,10 +33,16 @@ layout(std140, set = 0, binding = 0) uniform u_globals {
     float sprite_render_distance;
     float u_rotation;
     float screen_fade;
-    // bastion: overseer Z-slice height in world space (fragments above are
-    // discarded by terrain/sprite/fluid shaders); huge value = disabled.
-    // Occupies what used to be implicit std140 tail padding.
-    float bastion_slice_z;
+    // bastion (B1.6): pad where B1's bastion_slice_z lived; keeps the vec4
+    // aligned. The unified overseer occlusion block follows on fresh 16-byte
+    // rows — see bastion_occlusion.glsl for the field meanings. Mode 0 = off
+    // (vanilla look), so vanilla/char-select are untouched.
+    float bastion_pad;
+    uvec4 bastion_occ_mode;      // .x mode bitmask, .y target_count
+    vec4  bastion_occ_a;         // .x slice_z, .y fade_band, .z focus_z, .w prox_strength
+    vec4  bastion_occ_b;         // .x height_start, .y height_end, .z dist_start, .w dist_end
+    vec4  bastion_occ_c;         // .x cutaway_radius, .y roof_low, .z roof_high, .w relight_strength
+    vec4  bastion_occ_targets[4];// .xyz target in f_pos space, .w enabled
 };
 
 float distance_divider = 2.0;

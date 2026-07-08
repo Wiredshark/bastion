@@ -21,6 +21,7 @@
 
 #include <globals.glsl>
 #include <random.glsl>
+#include <bastion_occlusion.glsl>
 
 layout(location = 0) in vec3 f_pos;
 // in float f_ao;
@@ -72,8 +73,9 @@ float vmin(vec2 v) {
 }
 
 void main() {
-    // bastion: overseer Z-slice - hide everything above the active layer
-    if (f_pos.z + focus_off.z > bastion_slice_z) {
+    // bastion (B1.6): unified overseer occlusion — dithered screen-door discard
+    // driven by the shared alpha function (slice / proximity / cutaway / roof).
+    if (bastion_occlusion_discard(f_pos, gl_FragCoord.xy)) {
         discard;
     }
 
@@ -567,7 +569,11 @@ void main() {
 
     float f_select = (select_pos.w > 0 && select_pos.xyz == floor(f_pos - f_norm * 0.5)) ? 1.0 : 0.0;
     surf_color += f_select * (surf_color + 0.1) * vec3(0.5, 0.5, 0.5);
-    
+
+    // bastion (B1.6): interior re-lighting — soft top-down fill so revealed
+    // rooms read lit-from-above, not black.
+    surf_color += bastion_relight_add(f_pos, f_norm);
+
     #ifdef EXPERIMENTAL_SHOWCHUNKBORDERS
     float border_scale = 0.0001 * distance(cam_pos.xyz, f_pos);
     if (vmin(fract((f_pos.xy + focus_off.xy) / 32.0 + 1024) - border_scale * 0.5) < border_scale && f_norm.z > 0.5) {

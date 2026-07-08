@@ -53,6 +53,7 @@ layout(location = 1) out uvec4 tgt_mat;
 #include <cloud.glsl>
 #include <light.glsl>
 #include <lod.glsl>
+#include <bastion_occlusion.glsl>
 
 void wave_dx(vec4 posx, vec4 posy, vec2 dir, float speed, float frequency, float timeshift, out vec4 wave, out vec4 dx) {
     vec4 x = vec4(
@@ -150,8 +151,8 @@ float wave_height_vel(vec3 pos) {
 }
 
 void main() {
-    // bastion: overseer Z-slice - hide everything above the active layer
-    if (f_pos.z + focus_off.z > bastion_slice_z) {
+    // bastion (B1.6): unified overseer occlusion (see bastion_occlusion.glsl).
+    if (bastion_occlusion_discard(f_pos, gl_FragCoord.xy)) {
         discard;
     }
 

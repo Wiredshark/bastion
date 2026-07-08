@@ -72,6 +72,7 @@ pub const OVERSEER_SCHEME: ContextScheme = ContextScheme {
         GameInput::BastionSliceUp,
         GameInput::BastionSliceDown,
         GameInput::BastionSnapTopDown,
+        GameInput::BastionCycleViewMode,
     ],
     suppressed: &[
         GameInput::Primary,

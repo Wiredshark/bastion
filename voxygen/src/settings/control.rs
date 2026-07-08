@@ -304,6 +304,7 @@ impl ControlSettings {
             // End, not Home: ReShade (common third-party injector) claims Home
             // for its overlay and blocks game input while it's open.
             GameInput::BastionSnapTopDown => Key::Named(NamedKey::End),
+            GameInput::BastionCycleViewMode => char("V"),
         }))
     }
 

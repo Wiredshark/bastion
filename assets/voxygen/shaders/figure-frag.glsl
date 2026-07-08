@@ -24,6 +24,7 @@
 #include <light.glsl>
 #include <cloud.glsl>
 #include <lod.glsl>
+#include <bastion_occlusion.glsl>
 
 #ifdef EXPERIMENTAL_DISCARDTRANSPARENCY
 #include <random.glsl>
@@ -90,6 +91,12 @@ layout(location = 0) out vec4 tgt_color;
 layout(location = 1) out uvec4 tgt_mat;
 
 void main() {
+    // bastion (B1.6): unified overseer occlusion applies to figures too, so
+    // colonists/NPCs fade with the geometry they're behind.
+    if (bastion_occlusion_discard(f_pos, gl_FragCoord.xy)) {
+        discard;
+    }
+
     #ifdef EXPERIMENTAL_DISCARDTRANSPARENCY
     if ((flags & 1) == 1) {
         if (int(cam_mode) == 1) {

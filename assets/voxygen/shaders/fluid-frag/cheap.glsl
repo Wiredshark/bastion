@@ -51,6 +51,7 @@ layout(location = 1) out uvec4 tgt_mat;
 #include <sky.glsl>
 #include <light.glsl>
 #include <lod.glsl>
+#include <bastion_occlusion.glsl>
 
 vec4 water_col(vec4 posx, vec4 posy) {
     posx = (posx + focus_off.x) * 0.1;
@@ -76,8 +77,8 @@ float water_col_vel(vec2 pos){
 }
 
 void main() {
-    // bastion: overseer Z-slice - hide everything above the active layer
-    if (f_pos.z + focus_off.z > bastion_slice_z) {
+    // bastion (B1.6): unified overseer occlusion (see bastion_occlusion.glsl).
+    if (bastion_occlusion_discard(f_pos, gl_FragCoord.xy)) {
         discard;
     }
 

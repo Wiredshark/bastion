@@ -75,11 +75,18 @@ pub struct Globals {
     sprite_render_distance: f32,
     player_ori: f32,
     screen_fade: f32,
-    /// bastion: overseer Z-slice height in world space; fragments above it are
-    /// discarded by terrain/sprite/fluid shaders. `f32::MAX` disables the
-    /// slice (this reuses what used to be a pure padding slot, so the std140
-    /// layout is unchanged).
-    bastion_slice_z: f32,
+    /// bastion (B1.6): pad where the B1 `bastion_slice_z` used to live — keeps
+    /// the preceding `vec4` intact. The slice height now lives in the
+    /// occlusion block below.
+    bastion_pad: f32,
+    /// bastion (B1.6): unified overseer occlusion block. Each row is a
+    /// std140 `vec4`/`uvec4`; see `bastion::occlusion` (CPU) and
+    /// `shaders/include/bastion_occlusion.glsl` (GPU). Mode 0 = vanilla look.
+    bastion_occ_mode: [u32; 4],
+    bastion_occ_a: [f32; 4],
+    bastion_occ_b: [f32; 4],
+    bastion_occ_c: [f32; 4],
+    bastion_occ_targets: [[f32; 4]; crate::bastion::occlusion::MAX_TARGETS],
 }
 /// Make sure Globals is 16-byte-aligned.
 const _: () = assert!(core::mem::size_of::<Globals>().is_multiple_of(16));
@@ -130,8 +137,8 @@ impl Globals {
         sprite_render_distance: f32,
         player_ori: f32,
         screen_fade: f32,
-        // bastion: world-space slice height; `f32::MAX` = disabled
-        bastion_slice_z: f32,
+        // bastion (B1.6): packed overseer occlusion block; mode 0 = vanilla.
+        bastion_occ: crate::bastion::occlusion::OcclusionUniform,
     ) -> Self {
         Self {
             view_mat: view_mat.into_col_arrays(),
@@ -204,7 +211,12 @@ impl Globals {
             sprite_render_distance,
             player_ori,
             screen_fade: screen_fade.clamp(0.0, 1.0),
-            bastion_slice_z,
+            bastion_pad: 0.0,
+            bastion_occ_mode: bastion_occ.mode,
+            bastion_occ_a: bastion_occ.a,
+            bastion_occ_b: bastion_occ.b,
+            bastion_occ_c: bastion_occ.c,
+            bastion_occ_targets: bastion_occ.targets,
         }
     }
 }
@@ -238,7 +250,7 @@ impl Default for Globals {
             250.0,
             0.0,
             1.0,
-            f32::MAX,
+            crate::bastion::occlusion::OcclusionUniform::solid(),
         )
     }
 }

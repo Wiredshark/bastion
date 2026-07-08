@@ -4,6 +4,7 @@
 //! bit-identically when the `--bastion-overseer` launch flag is off.
 
 pub mod input;
+pub mod occlusion;
 
 use crate::scene::camera::Camera;
 use vek::*;

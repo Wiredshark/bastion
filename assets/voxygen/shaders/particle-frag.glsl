@@ -33,10 +33,15 @@ layout(location = 1) out uvec4 tgt_mat;
 #include <sky.glsl>
 #include <light.glsl>
 #include <lod.glsl>
+#include <bastion_occlusion.glsl>
 
 const float FADE_DIST = 32.0;
 
 void main() {
+    // bastion (B1.6): unified overseer occlusion applies to particles too.
+    if (bastion_occlusion_discard(f_pos, gl_FragCoord.xy)) {
+        discard;
+    }
 #ifdef EXPERIMENTAL_BAREMINIMUM
     tgt_color = vec4(simple_lighting(f_pos.xyz, f_col.rgb, 1.0), 1);
 #else

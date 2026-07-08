@@ -119,10 +119,11 @@ pub struct Scene {
     select_pos: Option<Vec3<i32>>,
     light_data: Vec<Light>,
 
-    /// bastion: overseer Z-slice height in world space. `None` = slice off.
-    /// Only ever applied to rendering while the camera is in
-    /// `CameraMode::Overseer` (see `Globals::new` call in `maintain`).
-    bastion_slice_z: Option<f32>,
+    /// bastion (B1.6): unified overseer occlusion & transparency state (view
+    /// mode, slice height, proximity strength, cutaway targets, …). Only ever
+    /// applied to rendering while the camera is in `CameraMode::Overseer` (see
+    /// the `Globals::new` call in `maintain`).
+    bastion_occlusion: crate::bastion::occlusion::Occlusion,
 
     particle_mgr: ParticleMgr,
     trail_mgr: TrailMgr,
@@ -368,7 +369,7 @@ impl Scene {
             ),
             select_pos: None,
             light_data: Vec::new(),
-            bastion_slice_z: None,
+            bastion_occlusion: crate::bastion::occlusion::Occlusion::default(),
             particle_mgr: ParticleMgr::new(renderer),
             trail_mgr: TrailMgr::default(),
             figure_mgr: FigureMgr::new(renderer),
@@ -419,10 +420,21 @@ impl Scene {
 
     pub fn select_pos(&self) -> Option<Vec3<i32>> { self.select_pos }
 
-    // bastion: overseer Z-slice accessors (session drives these; B1)
-    pub fn bastion_slice_z(&self) -> Option<f32> { self.bastion_slice_z }
+    // bastion: overseer occlusion accessors (session + egui panel drive these).
+    // The slice-height helpers keep the B1.5 PgUp/PgDn slice keys working.
+    pub fn bastion_slice_z(&self) -> Option<f32> { self.bastion_occlusion.slice_z }
 
-    pub fn set_bastion_slice_z(&mut self, slice: Option<f32>) { self.bastion_slice_z = slice; }
+    pub fn set_bastion_slice_z(&mut self, slice: Option<f32>) {
+        self.bastion_occlusion.slice_z = slice;
+    }
+
+    pub fn bastion_occlusion(&self) -> &crate::bastion::occlusion::Occlusion {
+        &self.bastion_occlusion
+    }
+
+    pub fn bastion_occlusion_mut(&mut self) -> &mut crate::bastion::occlusion::Occlusion {
+        &mut self.bastion_occlusion
+    }
 
     /// Handle an incoming user input event (e.g.: cursor moved, key pressed,
     /// window closed).
@@ -975,6 +987,22 @@ impl Scene {
         let focus_pos = self.camera.get_focus_pos();
         let focus_off = focus_pos.map(|e| e.trunc());
 
+        // bastion (B1.6): stub cutaway targets — the focus point + a couple of
+        // debug markers around it, so cutaway is demonstrable. B2 replaces these
+        // with hovered/selected entities, B3 with colonist positions.
+        if self.camera.get_mode() == CameraMode::Overseer {
+            self.bastion_occlusion.targets = vec![
+                focus_pos,
+                focus_pos + Vec3::new(20.0, 0.0, 0.0),
+                focus_pos + Vec3::new(-16.0, 12.0, 0.0),
+            ];
+        }
+        let bastion_occ = if self.camera.get_mode() == CameraMode::Overseer {
+            self.bastion_occlusion.to_uniform(focus_pos)
+        } else {
+            crate::bastion::occlusion::OcclusionUniform::solid()
+        };
+
         let step = 0.5 * dt;
         self.screen_fade = if step > (self.screen_fade - self.screen_fade_tgt).abs() {
             self.screen_fade_tgt
@@ -1037,10 +1065,10 @@ impl Scene {
             scene_data.sprite_render_distance - 20.0,
             player_mmap_ori,
             self.screen_fade,
-            // bastion: the slice only ever applies to the overseer camera path
-            self.bastion_slice_z
-                .filter(|_| self.camera.get_mode() == CameraMode::Overseer)
-                .unwrap_or(f32::MAX),
+            // bastion (B1.6): occlusion only applies to the overseer path;
+            // everything else packs the "solid" (vanilla-look) uniform (built
+            // above so this render call keeps a single clean borrow of self).
+            bastion_occ,
         )]);
         renderer.update_clouds_locals(CloudsLocals::new(proj_mat_inv, view_mat_inv));
         renderer.update_postprocess_locals(PostProcessLocals::new(proj_mat_inv, view_mat_inv));

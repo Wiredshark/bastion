@@ -197,6 +197,8 @@ pub enum GameInput {
     BastionSliceDown,
     #[strum(serialize = "gameinput-bastion-snaptopdown")]
     BastionSnapTopDown,
+    #[strum(serialize = "gameinput-bastion-cycleviewmode")]
+    BastionCycleViewMode,
 }
 
 impl GameInput {

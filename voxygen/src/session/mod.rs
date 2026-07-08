@@ -1017,10 +1017,27 @@ impl PlayState for SessionState {
                                 // First press activates the slice near the
                                 // focus; movement happens per-frame while held
                                 // (see the Overseer arm in the camera match).
+                                // Also flip to the Slice view mode so the manual
+                                // cut is actually composited by the occlusion
+                                // framework (B1.6).
                                 if self.scene.bastion_slice_z().is_none() {
                                     let z = self.scene.camera().get_focus_pos().z + 2.0;
                                     self.scene.set_bastion_slice_z(Some(z));
+                                    self.scene.bastion_occlusion_mut().view_mode =
+                                        bastion::occlusion::ViewMode::Slice;
                                 }
+                            },
+                            GameInput::BastionCycleViewMode
+                                if state && self.bastion_overseer_active() =>
+                            {
+                                // B1.6: cycle Solid → Reveal → Slice.
+                                let occ = self.scene.bastion_occlusion_mut();
+                                occ.view_mode = occ.view_mode.next();
+                                let label = occ.view_mode.label();
+                                self.hud.new_message(
+                                    ChatType::CommandInfo
+                                        .into_plain_msg(format!("Overseer view: {label}")),
+                                );
                             },
                             GameInput::Primary => {
                                 self.walking_speed = false;

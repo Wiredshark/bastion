@@ -47,12 +47,13 @@ layout(location = 1) out uvec4 tgt_mat;
 #include <sky.glsl>
 #include <light.glsl>
 #include <lod.glsl>
+#include <bastion_occlusion.glsl>
 
 const float FADE_DIST = 32.0;
 
 void main() {
-    // bastion: overseer Z-slice - hide everything above the active layer
-    if (f_pos.z + focus_off.z > bastion_slice_z) {
+    // bastion (B1.6): unified overseer occlusion (see bastion_occlusion.glsl).
+    if (bastion_occlusion_discard(f_pos, gl_FragCoord.xy)) {
         discard;
     }
 
@@ -161,6 +162,9 @@ void main() {
     surf_color = illuminate(max_light, view_dir, surf_color * emitted_light, surf_color * reflected_light);
 
     surf_color += f_select * (surf_color + 0.1) * vec3(0.15, 0.15, 0.15);
+
+    // bastion (B1.6): interior re-lighting fill.
+    surf_color += bastion_relight_add(f_pos, f_norm);
 
     tgt_color = vec4(surf_color, render_alpha);
 
