@@ -253,6 +253,10 @@ pub struct Window {
     // saved to file, so initialized here
     pub gamelayer_mod1: bool,
     pub gamelayer_mod2: bool,
+    /// bastion: the active input context (design doc §3b). Filters the
+    /// key→GameInput fan-out below; `Menu` (default) is strict passthrough,
+    /// so vanilla behavior is untouched unless a bastion mode activates it.
+    bastion_input: crate::bastion::input::InputContextState,
 }
 
 impl Window {
@@ -365,6 +369,7 @@ impl Window {
             toggle_fullscreen: false,
             gamelayer_mod1: true,
             gamelayer_mod2: false,
+            bastion_input: Default::default(),
         };
 
         this.set_fullscreen_mode(settings.graphics.fullscreen);
@@ -775,6 +780,11 @@ impl Window {
                     && let MappedInput::Game(game_inputs) = mapped_inputs
                 {
                     for game_input in game_inputs {
+                        // bastion: the active input context arbitrates the
+                        // fan-out (design doc §3b)
+                        if !self.bastion_input.is_live(*game_input) {
+                            continue;
+                        }
                         self.events.push(Event::InputUpdate(
                             *game_input,
                             state == winit::event::ElementState::Pressed,
@@ -827,6 +837,13 @@ impl Window {
                         },
                         MappedInput::Game(game_inputs) => {
                             for game_input in game_inputs {
+                                // bastion: the active input context arbitrates
+                                // the fan-out (design doc §3b) — a key bound to
+                                // inputs from several schemes only fires the
+                                // ones live in the current context.
+                                if !self.bastion_input.is_live(*game_input) {
+                                    continue;
+                                }
                                 match game_input {
                                     GameInput::Fullscreen => {
                                         if event.state == winit::event::ElementState::Pressed
@@ -877,7 +894,12 @@ impl Window {
                     self.cursor_position = position;
                 }
             },
-            WindowEvent::MouseWheel { delta, .. } if self.cursor_grabbed && self.focused => {
+            // bastion: the overseer context runs with a free cursor but still
+            // consumes the wheel as Zoom (vanilla requires the grab).
+            WindowEvent::MouseWheel { delta, .. }
+                if (self.cursor_grabbed || self.bastion_input.wheel_while_free())
+                    && self.focused =>
+            {
                 const DIFFERENCE_FROM_DEVICE_EVENT_ON_X11: f32 = -15.0;
                 self.events.push(Event::Zoom({
                     let y = match delta {
@@ -917,6 +939,20 @@ impl Window {
     }
 
     pub fn is_cursor_grabbed(&self) -> bool { self.cursor_grabbed }
+
+    // bastion: input-context plumbing (design doc §3b). The session derives
+    // the context and syncs it here; the fan-out above filters against it.
+    pub fn set_bastion_context(&mut self, context: crate::bastion::input::InputContext) {
+        self.bastion_input.set(context);
+    }
+
+    pub fn bastion_context(&self) -> crate::bastion::input::InputContext {
+        self.bastion_input.active()
+    }
+
+    /// bastion: absolute cursor position in physical pixels (tracked while
+    /// the cursor is free; the overseer picking math needs it).
+    pub fn cursor_position(&self) -> winit::dpi::PhysicalPosition<f64> { self.cursor_position }
 
     pub fn grab_cursor(&mut self, grab: bool) {
         use winit::window::CursorGrabMode;

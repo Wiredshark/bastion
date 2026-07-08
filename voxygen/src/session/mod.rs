@@ -39,6 +39,7 @@ use common_net::{msg::server::InviteAnswer, sync::WorldSyncExt};
 use crate::{
     Direction, GlobalState, PlayState, PlayStateResult,
     audio::sfx::SfxEvent,
+    bastion,
     cmd::run_command,
     error::Error,
     game_input::GameInput,
@@ -127,14 +128,40 @@ pub struct SessionState {
     /// bastion: `--bastion-overseer` was passed but the overseer camera entry
     /// is deferred until the player entity has a position to focus on.
     bastion_pending_overseer: bool,
+    /// bastion: active grab-drag (B&W2 pan) — the world point under the
+    /// cursor at grab time, which must stay locked under the cursor.
+    bastion_grab: Option<BastionGrab>,
+    /// bastion: smoothed pan velocity; carries eased inertia after release.
+    bastion_pan_vel: Vec2<f32>,
+    /// bastion: right-button orbit (free yaw + pitch) in progress.
+    bastion_orbiting: bool,
 }
 
-// bastion: overseer camera feel tunables (B1; see docs/BASTION_CAMERA.md)
+/// bastion: state of an overseer grab-drag.
+#[derive(Clone, Copy)]
+struct BastionGrab {
+    /// World point grabbed (on `plane_z`).
+    anchor: Vec3<f32>,
+    /// Height of the picking plane (active slice, else focus ground height),
+    /// frozen for the drag so the lock is stable.
+    plane_z: f32,
+}
+
+// bastion: overseer camera feel tunables (B1/B1.5; see docs/BASTION_CAMERA.md)
 /// Pan speed of the overseer ground target, in units/s per unit of zoom
-/// (`dist`) — zoomed out pans proportionally faster.
+/// (`dist`) — zoomed out pans proportionally faster. (WASD fallback pan.)
 const BASTION_PAN_FACTOR: f32 = 1.0;
 /// Z-slice movement speed while PgUp/PgDn is held, in blocks/s.
 const BASTION_SLICE_RATE: f32 = 16.0;
+/// Free-orbit sensitivity, radians per pixel of right-drag.
+const BASTION_ORBIT_SENS: f32 = 0.0035;
+/// Exponential decay rate (1/s) of the grab-release inertia.
+const BASTION_PAN_DAMP: f32 = 5.0;
+/// Inertia below this speed (units/s) is considered stopped.
+const BASTION_PAN_STOP: f32 = 1.0;
+/// Per-frame safety clamp on grab-drag translation, to keep grazing-angle
+/// picks from teleporting the camera.
+const BASTION_GRAB_MAX_STEP: f32 = 512.0;
 
 /// Represents an active game session (i.e., the one being played).
 impl SessionState {
@@ -211,34 +238,127 @@ impl SessionState {
             lines: Default::default(),
             gizmos: Vec::new(),
             bastion_pending_overseer: global_state.args.bastion_overseer,
+            bastion_grab: None,
+            bastion_pan_vel: Vec2::zero(),
+            bastion_orbiting: false,
         }
     }
 
-    // bastion: overseer camera mode switching (B1)
+    // bastion: overseer camera mode switching (B1) + input contexts (B1.5)
     fn bastion_overseer_active(&self) -> bool {
         self.scene.camera().get_mode() == CameraMode::Overseer
     }
 
-    fn bastion_enter_overseer(&mut self) {
+    /// bastion: the active input context (design doc §3b) is *derived* — a
+    /// pure function of the launch flag and camera mode — so it can never
+    /// desync from what the player sees. Syncing it into the window is the
+    /// atomic whole-scheme swap.
+    fn bastion_context(&self, global_state: &GlobalState) -> bastion::input::InputContext {
+        if !global_state.args.bastion_overseer {
+            bastion::input::InputContext::Menu
+        } else if self.bastion_overseer_active() {
+            bastion::input::InputContext::Overseer
+        } else {
+            // Any non-overseer camera while the flag is on is the (stubbed
+            // until B12) embodied mode: exactly vanilla controls.
+            bastion::input::InputContext::Avatar
+        }
+    }
+
+    fn bastion_sync_context(&self, global_state: &mut GlobalState) {
+        let context = self.bastion_context(global_state);
+        global_state.window.set_bastion_context(context);
+    }
+
+    fn bastion_enter_overseer(&mut self, global_state: &mut GlobalState) {
         let pos = self.client.borrow().position();
         let camera = self.scene.camera_mut();
         camera.set_mode(CameraMode::Overseer);
-        // Snap yaw to the nearest 90° step and fix the oblique pitch; roll 0.
+        // Snap yaw to the nearest 90° step and set the default oblique pitch.
         let yaw = (camera.get_orientation().x / core::f32::consts::FRAC_PI_2).round()
             * core::f32::consts::FRAC_PI_2;
         camera.set_orientation_instant(Vec3::new(yaw, camera::OVERSEER_PITCH, 0.0));
         if let Some(pos) = pos {
             camera.force_focus_pos(pos);
         }
+        // God mode runs with a free, visible cursor (grab-drag needs it).
+        global_state.window.grab_cursor(false);
+        self.bastion_sync_context(global_state);
     }
 
-    fn bastion_exit_overseer(&mut self) {
+    fn bastion_exit_overseer(&mut self, global_state: &mut GlobalState) {
         self.scene.set_bastion_slice_z(None);
+        self.bastion_grab = None;
+        self.bastion_orbiting = false;
+        self.bastion_pan_vel = Vec2::zero();
+        // "Avatar = exactly vanilla": what vanilla means depends on presence —
+        // third-person for a character body, freefly for a spectator.
+        let mode = if self.client.borrow().presence() == Some(PresenceKind::Spectator) {
+            CameraMode::Freefly
+        } else {
+            CameraMode::ThirdPerson
+        };
         let camera = self.scene.camera_mut();
-        camera.set_mode(CameraMode::ThirdPerson);
+        camera.set_mode(mode);
         // Restore the vanilla default boom length and a level pitch.
         camera.set_distance(10.0);
         camera.set_orientation_instant(Vec3::new(camera.get_orientation().x, 0.0, 0.0));
+        global_state.window.grab_cursor(true);
+        self.bastion_sync_context(global_state);
+    }
+
+    /// bastion: world point under the cursor on the horizontal plane
+    /// `z = plane_z` (grab-drag / zoom-to-cursor picking).
+    fn bastion_point_under_cursor(
+        &self,
+        global_state: &GlobalState,
+        plane_z: f32,
+    ) -> Option<Vec3<f32>> {
+        let cursor = global_state.window.cursor_position();
+        let res = global_state.window.renderer().resolution().map(|e| e as f32);
+        crate::bastion::unproject_to_world_plane(
+            self.scene.camera(),
+            Vec2::new(cursor.x as f32, cursor.y as f32),
+            res,
+            plane_z,
+        )
+    }
+
+    fn bastion_begin_grab(&mut self, global_state: &GlobalState) {
+        // Grab on the active slice plane if one is set (that's the layer the
+        // player is reading), else on the focus ground plane.
+        let plane_z = self
+            .scene
+            .bastion_slice_z()
+            .unwrap_or_else(|| self.scene.camera().get_focus_pos().z);
+        if let Some(anchor) = self.bastion_point_under_cursor(global_state, plane_z) {
+            self.bastion_grab = Some(BastionGrab { anchor, plane_z });
+            self.bastion_pan_vel = Vec2::zero();
+        }
+    }
+
+    /// bastion: scroll zoom, eased, dollying toward the point under the
+    /// cursor (B&W2 style) instead of the screen center.
+    fn bastion_zoom_to_cursor(&mut self, global_state: &GlobalState, delta: f32) {
+        let old_dist = self.scene.camera().get_tgt_dist();
+        let picked = self.bastion_point_under_cursor(
+            global_state,
+            self.scene.camera().get_tgt_focus().z,
+        );
+        let camera = self.scene.camera_mut();
+        // Multiplicative dolly (same feel family as vanilla); clamped inside
+        // zoom_by by the overseer zoom limits.
+        camera.zoom_by(delta * (0.05 + old_dist * 0.08), None);
+        let f = camera.get_tgt_dist() / old_dist;
+        if let Some(p) = picked
+            && (f - 1.0).abs() > f32::EPSILON
+        {
+            // Keep the picked point stationary on screen: shrink/grow the
+            // focus→point offset by the zoom factor. Both dist and focus
+            // interpolate, so the motion arrives eased.
+            let tgt = camera.get_tgt_focus();
+            camera.set_focus_pos(p + (tgt - p) * f);
+        }
     }
 
     fn stop_auto_walk(&mut self) {
@@ -770,8 +890,18 @@ impl PlayState for SessionState {
             );
 
             if presence == PresenceKind::Spectator {
+                // bastion (B1.5): in overseer mode, stream terrain under the
+                // *focus* — the ground point being looked at — rather than
+                // the camera boom position (which trails up to `dist` behind
+                // it). This is what keeps grab-drag panning on full-detail
+                // terrain instead of hitting a LoD wall.
+                let stream_pos = if self.bastion_overseer_active() {
+                    self.scene.camera().get_focus_pos()
+                } else {
+                    cam_pos
+                };
                 let mut client = self.client.borrow_mut();
-                if client.spectate_position(cam_pos) {
+                if client.spectate_position(stream_pos) {
                     let server_name = &client.server_info().name;
                     global_state.profile.set_spectate_position(
                         server_name,
@@ -828,43 +958,54 @@ impl PlayState for SessionState {
                             self.inputs_state.remove(&input);
                         }
                         match input {
-                            // bastion: while the overseer camera is active,
-                            // avatar action inputs that share keys with (or
-                            // would fight) overseer controls are consumed as
-                            // no-ops. B2 hangs inspect/designate off these.
-                            GameInput::Primary | GameInput::Secondary | GameInput::Interact
-                                if self.bastion_overseer_active() => {},
+                            // bastion note (B1.5): the old no-op guard for
+                            // Primary/Secondary/Interact is gone — the input-
+                            // context layer suppresses avatar verbs at the
+                            // window fan-out while the Overseer context is
+                            // active (see bastion::input).
                             GameInput::BastionToggleOverseer if state => {
+                                // The context switch (Overseer ⇄ Avatar stub).
                                 // Only functional behind the launch flag so
                                 // vanilla sessions are bit-identical.
                                 if global_state.args.bastion_overseer {
                                     if self.bastion_overseer_active() {
-                                        self.bastion_exit_overseer();
+                                        self.bastion_exit_overseer(global_state);
                                     } else {
-                                        self.bastion_enter_overseer();
+                                        self.bastion_enter_overseer(global_state);
                                     }
                                 }
                             },
                             GameInput::BastionRotateLeft | GameInput::BastionRotateRight
                                 if state && self.bastion_overseer_active() =>
                             {
-                                // 90°-step yaw around the ground target; the
-                                // camera's orientation lerp makes it a smooth
-                                // quarter-turn swing.
+                                // Optional 90°-step yaw (free orbit lives on
+                                // right-drag); keeps the current free pitch.
                                 let step = if input == GameInput::BastionRotateLeft {
                                     core::f32::consts::FRAC_PI_2
                                 } else {
                                     -core::f32::consts::FRAC_PI_2
                                 };
                                 let camera = self.scene.camera_mut();
+                                let ori = camera.get_tgt_orientation();
+                                let yaw = (ori.x / core::f32::consts::FRAC_PI_2).round()
+                                    * core::f32::consts::FRAC_PI_2
+                                    + step;
+                                camera.set_orientation(Vec3::new(yaw, ori.y, 0.0));
+                            },
+                            GameInput::BastionSnapTopDown
+                                if state && self.bastion_overseer_active() =>
+                            {
+                                // DF-style reading view: nearest 90° yaw,
+                                // near-vertical pitch (eased by the camera
+                                // orientation lerp).
+                                let camera = self.scene.camera_mut();
                                 let yaw = (camera.get_tgt_orientation().x
                                     / core::f32::consts::FRAC_PI_2)
                                     .round()
-                                    * core::f32::consts::FRAC_PI_2
-                                    + step;
+                                    * core::f32::consts::FRAC_PI_2;
                                 camera.set_orientation(Vec3::new(
                                     yaw,
-                                    camera::OVERSEER_PITCH,
+                                    camera::OVERSEER_PITCH_MAX,
                                     0.0,
                                 ));
                             },
@@ -1426,6 +1567,56 @@ impl PlayState for SessionState {
                             _ => {},
                         }
                     },
+                    // bastion (B1.5): overseer mouse controls — grab-drag pan,
+                    // free orbit + pitch, zoom-to-cursor. The overseer runs
+                    // with a free cursor, so these consume the *raw* mouse
+                    // events (mouse→GameInput mapping is grab-gated upstream).
+                    Event::MouseButton(button, mb_state) if self.bastion_overseer_active() => {
+                        let pressed = mb_state == winit::event::ElementState::Pressed;
+                        match button {
+                            winit::event::MouseButton::Left => {
+                                if pressed {
+                                    // Clicks on HUD widgets are for the HUD.
+                                    if !self.hud.bastion_cursor_over_widget() {
+                                        self.bastion_begin_grab(global_state);
+                                    }
+                                } else {
+                                    // Release: keep the tracked velocity as
+                                    // inertia (applied per-frame with decay).
+                                    self.bastion_grab = None;
+                                }
+                            },
+                            winit::event::MouseButton::Right => {
+                                self.bastion_orbiting = pressed;
+                            },
+                            _ => {},
+                        }
+                    },
+                    Event::CursorMove(delta)
+                        if self.bastion_orbiting && self.bastion_overseer_active() =>
+                    {
+                        // Free orbit: continuous yaw, pitch clamped to the
+                        // overseer swoop range; damping comes from the
+                        // camera's orientation interpolation.
+                        let invert_y = if global_state.window.mouse_y_inversion {
+                            -1.0
+                        } else {
+                            1.0
+                        };
+                        let camera = self.scene.camera_mut();
+                        let ori = camera.get_tgt_orientation();
+                        let yaw = ori.x - delta.x * BASTION_ORBIT_SENS;
+                        let pitch = (ori.y + delta.y * BASTION_ORBIT_SENS * invert_y).clamp(
+                            camera::OVERSEER_PITCH_MIN,
+                            camera::OVERSEER_PITCH_MAX,
+                        );
+                        camera.set_orientation(Vec3::new(yaw, pitch, 0.0));
+                    },
+                    Event::Zoom(delta) if self.bastion_overseer_active() => {
+                        // Must precede the vanilla zoom_lock arm: zooming
+                        // while WASD-panning is core to the overseer feel.
+                        self.bastion_zoom_to_cursor(global_state, delta);
+                    },
                     Event::AnalogGameInput(input) => match input {
                         AnalogGameInput::MovementX(v) => {
                             self.key_state.analog_matrix.x = v;
@@ -1669,11 +1860,50 @@ impl PlayState for SessionState {
             // entity exists to take the initial focus from.
             if self.bastion_pending_overseer && self.client.borrow().position().is_some() {
                 self.bastion_pending_overseer = false;
-                self.bastion_enter_overseer();
+                self.bastion_enter_overseer(global_state);
             }
-            // bastion: the HUD suppresses the hotbar action of keys shared
-            // with overseer controls (Q/Slot10) while overseer is active.
-            self.hud.bastion_overseer_active = self.bastion_overseer_active();
+            // bastion: keep the derived input context synced into the window
+            // fan-out filter (idempotent one-enum write; covers every camera-
+            // mode transition path).
+            self.bastion_sync_context(global_state);
+            // bastion (B1.5): grab-drag update — keep the grabbed world point
+            // locked under the cursor; when released, carry eased inertia.
+            if self.bastion_overseer_active() {
+                if let Some(grab) = self.bastion_grab {
+                    if let Some(under_cursor) =
+                        self.bastion_point_under_cursor(global_state, grab.plane_z)
+                    {
+                        let delta = (grab.anchor - under_cursor).with_z(0.0);
+                        let delta = if delta.magnitude_squared()
+                            > BASTION_GRAB_MAX_STEP * BASTION_GRAB_MAX_STEP
+                        {
+                            delta.normalized() * BASTION_GRAB_MAX_STEP
+                        } else {
+                            delta
+                        };
+                        let focus = self.scene.camera().get_focus_pos();
+                        self.scene.camera_mut().force_focus_pos(focus + delta);
+                        // Track a smoothed velocity so release feels thrown,
+                        // but holding still before release stops dead.
+                        if dt > f32::EPSILON {
+                            let instantaneous = delta.xy() / dt;
+                            let blend = (dt * 15.0).min(1.0);
+                            self.bastion_pan_vel =
+                                Lerp::lerp(self.bastion_pan_vel, instantaneous, blend);
+                        }
+                    }
+                } else if self.bastion_pan_vel.magnitude_squared()
+                    > BASTION_PAN_STOP * BASTION_PAN_STOP
+                {
+                    let focus = self.scene.camera().get_focus_pos();
+                    self.scene
+                        .camera_mut()
+                        .force_focus_pos(focus + Vec3::from(self.bastion_pan_vel) * dt);
+                    self.bastion_pan_vel *= (-BASTION_PAN_DAMP * dt).exp();
+                } else {
+                    self.bastion_pan_vel = Vec2::zero();
+                }
+            }
             // bastion: move the active Z-slice while PgUp/PgDn is held.
             if self.bastion_overseer_active()
                 && let Some(slice) = self.scene.bastion_slice_z()

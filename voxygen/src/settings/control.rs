@@ -301,6 +301,7 @@ impl ControlSettings {
             GameInput::BastionRotateRight => char("E"),
             GameInput::BastionSliceUp => Key::Named(NamedKey::PageUp),
             GameInput::BastionSliceDown => Key::Named(NamedKey::PageDown),
+            GameInput::BastionSnapTopDown => Key::Named(NamedKey::Home),
         }))
     }
 

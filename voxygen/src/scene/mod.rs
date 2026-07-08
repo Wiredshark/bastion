@@ -447,12 +447,10 @@ impl Scene {
             },
             // Zoom the camera when a zoom event occurs
             Event::Zoom(delta) => {
-                // bastion: overseer ortho zoom — scale-proportional step,
-                // clamped in `Camera::zoom_by`; never routes through
-                // `zoom_switch` (which flips first/third-person modes).
+                // bastion: overseer zoom is handled by the session
+                // (zoom-to-cursor, B1.5) and never reaches here; consume
+                // defensively so `zoom_switch` can't flip camera modes.
                 if self.camera.get_mode() == CameraMode::Overseer {
-                    self.camera
-                        .zoom_by(delta * (0.05 + self.camera.get_distance() * 0.08), None);
                     return true;
                 }
                 let cap = if client.is_moderator() {

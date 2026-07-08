@@ -1363,10 +1363,6 @@ pub struct Hud {
     clear_chat: bool,
     current_dialogue: Option<(EcsEntity, Instant, rtsim::Dialogue<true>)>,
     extra_markers: Vec<map::ExtraMarker>,
-    /// bastion: set by the session each frame while the overseer camera is
-    /// active; suppresses the hotbar action of keys shared with overseer
-    /// controls (Q / Slot10).
-    pub bastion_overseer_active: bool,
 }
 
 impl Hud {
@@ -1475,7 +1471,6 @@ impl Hud {
             clear_chat: false,
             current_dialogue: None,
             extra_markers: Vec::new(),
-            bastion_overseer_active: false,
         }
     }
 
@@ -4965,10 +4960,11 @@ impl Hud {
             // If not showing the ui don't allow keys that change the ui state but do listen for
             // hotbar keys
             WinEvent::InputUpdate(key, state) if !self.show.ui => {
-                // bastion: Q doubles as overseer rotate; don't fire slot 10
-                if let Some(slot) = try_hotbar_slot_from_input(key)
-                    .filter(|_| !(self.bastion_overseer_active && key == GameInput::Slot10))
-                {
+                // bastion note: no special-casing needed here — the input-
+                // context layer (bastion::input, at the window fan-out)
+                // already suppresses hotbar inputs whose keys the active
+                // context owns.
+                if let Some(slot) = try_hotbar_slot_from_input(key) {
                     handle_slot(
                         slot,
                         state,
@@ -5152,11 +5148,7 @@ impl Hud {
                     },
                     // Skillbar
                     input => {
-                        // bastion: Q doubles as overseer rotate; don't fire
-                        // slot 10 while the overseer camera is active
-                        if let Some(slot) = try_hotbar_slot_from_input(input).filter(|_| {
-                            !(self.bastion_overseer_active && input == GameInput::Slot10)
-                        }) {
+                        if let Some(slot) = try_hotbar_slot_from_input(input) {
                             handle_slot(
                                 slot,
                                 state,
@@ -5190,9 +5182,16 @@ impl Hud {
             _ => false,
         };
         // Handle cursor grab.
+        // bastion: the Overseer context owns the cursor — it stays free for
+        // grab-drag/picking, so the HUD's grab logic yields (same general
+        // rule as key arbitration; see bastion::input).
+        let bastion_cursor_free = matches!(
+            global_state.window.bastion_context(),
+            crate::bastion::input::InputContext::Overseer
+        );
         global_state
             .window
-            .grab_cursor(!self.force_ungrab && self.show.want_grab);
+            .grab_cursor(!bastion_cursor_free && !self.force_ungrab && self.show.want_grab);
 
         handled
     }
@@ -5524,6 +5523,19 @@ pub fn get_quality_col(quality: Quality) -> Color {
         Quality::Legendary => QUALITY_LEGENDARY,
         Quality::Artifact => QUALITY_ARTIFACT,
         Quality::Debug => QUALITY_DEBUG,
+    }
+}
+
+impl Hud {
+    /// bastion: is the (free) cursor currently over a real HUD widget?
+    /// Used by the overseer grab-drag so clicking a button doesn't also
+    /// grab the world. The conrod root window canvas doesn't count.
+    pub fn bastion_cursor_over_widget(&self) -> bool {
+        let ui = &self.ui.ui;
+        ui.global_input()
+            .current
+            .widget_under_mouse
+            .is_some_and(|id| id != ui.window)
     }
 }
 

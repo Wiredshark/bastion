@@ -30,8 +30,12 @@ pub enum CameraMode {
 }
 
 // bastion: overseer camera tunables (see docs/BASTION_CAMERA.md)
-/// Fixed oblique pitch. Pure 90° top-down reads poorly against voxel walls.
+/// Default oblique pitch on entering overseer mode.
 pub const OVERSEER_PITCH: f32 = 60.0 * PI / 180.0;
+/// Free-pitch range (B1.5): from a low B&W2-style swoop up to almost straight
+/// down (a true 90° degenerates the ground-plane picking math).
+pub const OVERSEER_PITCH_MIN: f32 = 20.0 * PI / 180.0;
+pub const OVERSEER_PITCH_MAX: f32 = 89.0 * PI / 180.0;
 /// `dist` (zoom) clamp; ortho half-height is `dist * tan(fov/2)`.
 pub const OVERSEER_ZOOM_MIN: f32 = 24.0;
 pub const OVERSEER_ZOOM_MAX: f32 = 1024.0;
@@ -754,6 +758,12 @@ impl Camera {
 
     /// Get the orientation that the camera is moving toward.
     pub fn get_tgt_orientation(&self) -> Vec3<f32> { self.tgt_ori }
+
+    // bastion: interpolation-target getters for the overseer zoom-to-cursor
+    // math (B1.5), which composes new targets from the current ones.
+    pub fn get_tgt_dist(&self) -> f32 { self.tgt_dist }
+
+    pub fn get_tgt_focus(&self) -> Vec3<f32> { self.tgt_focus.unwrap_or(self.focus) }
 
     /// Get the field of view of the camera in radians, taking into account
     /// fixation.

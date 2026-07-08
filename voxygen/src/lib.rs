@@ -12,6 +12,7 @@
 #[macro_use]
 pub mod ui;
 pub mod audio;
+pub mod bastion;
 pub mod cli;
 pub mod cmd;
 mod credits;
