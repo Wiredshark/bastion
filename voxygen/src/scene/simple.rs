@@ -289,6 +289,8 @@ impl Scene {
             250.0,
             0.0,
             1.0,
+            // bastion: no Z-slice outside the in-game overseer scene
+            f32::MAX,
         )]);
         renderer.update_clouds_locals(CloudsLocals::new(proj_mat_inv, view_mat_inv));
         renderer.update_postprocess_locals(PostProcessLocals::new(proj_mat_inv, view_mat_inv));

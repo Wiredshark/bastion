@@ -511,6 +511,12 @@ impl ControllerSettings {
             GameInput::MuteSfx => Some(Button::Simple(GilButton::Unknown)),
             GameInput::MuteAmbience => Some(Button::Simple(GilButton::Unknown)),
             GameInput::ToggleWalk => Some(Button::Simple(GilButton::Unknown)),
+            // bastion: overseer controls have no gamepad defaults (B1)
+            GameInput::BastionToggleOverseer
+            | GameInput::BastionRotateLeft
+            | GameInput::BastionRotateRight
+            | GameInput::BastionSliceUp
+            | GameInput::BastionSliceDown => Some(Button::Simple(GilButton::Unknown)),
         }
     }
 
@@ -918,6 +924,16 @@ impl ControllerSettings {
                 mod2: Button::Simple(GilButton::Unknown),
             }),
             GameInput::ToggleWalk => Some(LayerEntry {
+                button: Button::Simple(GilButton::Unknown),
+                mod1: Button::Simple(GilButton::Unknown),
+                mod2: Button::Simple(GilButton::Unknown),
+            }),
+            // bastion: overseer controls have no gamepad defaults (B1)
+            GameInput::BastionToggleOverseer
+            | GameInput::BastionRotateLeft
+            | GameInput::BastionRotateRight
+            | GameInput::BastionSliceUp
+            | GameInput::BastionSliceDown => Some(LayerEntry {
                 button: Button::Simple(GilButton::Unknown),
                 mod1: Button::Simple(GilButton::Unknown),
                 mod2: Button::Simple(GilButton::Unknown),

@@ -294,6 +294,13 @@ impl ControlSettings {
             GameInput::MuteSfx => return None,
             GameInput::MuteAmbience => return None,
             GameInput::ToggleWalk => char("B"),
+            // bastion: overseer camera controls (only consumed while the
+            // overseer camera is active; Q/E deliberately share Slot10/Interact)
+            GameInput::BastionToggleOverseer => Key::Named(NamedKey::F9),
+            GameInput::BastionRotateLeft => char("Q"),
+            GameInput::BastionRotateRight => char("E"),
+            GameInput::BastionSliceUp => Key::Named(NamedKey::PageUp),
+            GameInput::BastionSliceDown => Key::Named(NamedKey::PageDown),
         }))
     }
 

@@ -182,6 +182,19 @@ pub enum GameInput {
     MuteSfx,
     #[strum(serialize = "gameinput-muteambience")]
     MuteAmbience,
+    // bastion (Project Bastion): overseer camera controls (B1). Only acted on
+    // when the overseer camera is active (`--bastion-overseer`); inert in
+    // vanilla modes.
+    #[strum(serialize = "gameinput-bastion-toggleoverseer")]
+    BastionToggleOverseer,
+    #[strum(serialize = "gameinput-bastion-rotateleft")]
+    BastionRotateLeft,
+    #[strum(serialize = "gameinput-bastion-rotateright")]
+    BastionRotateRight,
+    #[strum(serialize = "gameinput-bastion-sliceup")]
+    BastionSliceUp,
+    #[strum(serialize = "gameinput-bastion-slicedown")]
+    BastionSliceDown,
 }
 
 impl GameInput {
@@ -225,6 +238,11 @@ impl GameInput {
             GameInput::SwimDown | GameInput::Sneak | GameInput::CancelClimb => &[GameInput::Roll],
 
             GameInput::SpectateViewpoint => &[GameInput::MapSetMarker],
+
+            // bastion: overseer controls deliberately share vanilla keys; they
+            // are only consumed while the overseer camera is active.
+            GameInput::BastionRotateLeft => &[GameInput::Slot10],
+            GameInput::BastionRotateRight => &[GameInput::Interact],
 
             _ => &[],
         }

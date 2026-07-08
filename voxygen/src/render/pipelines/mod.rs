@@ -75,7 +75,11 @@ pub struct Globals {
     sprite_render_distance: f32,
     player_ori: f32,
     screen_fade: f32,
-    globals_dummy: f32,
+    /// bastion: overseer Z-slice height in world space; fragments above it are
+    /// discarded by terrain/sprite/fluid shaders. `f32::MAX` disables the
+    /// slice (this reuses what used to be a pure padding slot, so the std140
+    /// layout is unchanged).
+    bastion_slice_z: f32,
 }
 /// Make sure Globals is 16-byte-aligned.
 const _: () = assert!(core::mem::size_of::<Globals>().is_multiple_of(16));
@@ -126,6 +130,8 @@ impl Globals {
         sprite_render_distance: f32,
         player_ori: f32,
         screen_fade: f32,
+        // bastion: world-space slice height; `f32::MAX` = disabled
+        bastion_slice_z: f32,
     ) -> Self {
         Self {
             view_mat: view_mat.into_col_arrays(),
@@ -198,7 +204,7 @@ impl Globals {
             sprite_render_distance,
             player_ori,
             screen_fade: screen_fade.clamp(0.0, 1.0),
-            globals_dummy: 0.0,
+            bastion_slice_z,
         }
     }
 }
@@ -232,6 +238,7 @@ impl Default for Globals {
             250.0,
             0.0,
             1.0,
+            f32::MAX,
         )
     }
 }

@@ -22,7 +22,22 @@ pub enum CameraMode {
     #[default]
     ThirdPerson = 1,
     Freefly = 2,
+    /// bastion (Project Bastion): top-down oblique *orthographic* overseer
+    /// camera. Detached from any entity (targets a ground point), fixed
+    /// pitch, 90°-step yaw, `dist` acts as the ortho zoom axis. Only
+    /// reachable via the `--bastion-overseer` launch flag.
+    Overseer = 3,
 }
+
+// bastion: overseer camera tunables (see docs/BASTION_CAMERA.md)
+/// Fixed oblique pitch. Pure 90° top-down reads poorly against voxel walls.
+pub const OVERSEER_PITCH: f32 = 60.0 * PI / 180.0;
+/// `dist` (zoom) clamp; ortho half-height is `dist * tan(fov/2)`.
+pub const OVERSEER_ZOOM_MIN: f32 = 24.0;
+pub const OVERSEER_ZOOM_MAX: f32 = 1024.0;
+/// Starting zoom when entering overseer mode.
+pub const OVERSEER_START_DIST: f32 = 192.0;
+const OVERSEER_INTERP_TIME: f32 = 0.1;
 
 #[derive(Clone, Copy)]
 pub struct Dependents {
@@ -320,6 +335,7 @@ impl Camera {
         let dist = match mode {
             CameraMode::ThirdPerson => 10.0,
             CameraMode::FirstPerson | CameraMode::Freefly => MIN_ZOOM,
+            CameraMode::Overseer => OVERSEER_START_DIST,
         };
 
         Self {
@@ -364,6 +380,15 @@ impl Camera {
         is_transparent: fn(&V::Vox) -> bool,
     ) {
         span!(_guard, "compute_dependents", "Camera::compute_dependents");
+        // bastion: the overseer god-camera never collides with terrain (it must
+        // be able to hover above solid ground and peer below the Z-slice), so
+        // skip the terrain-ray pull-in entirely.
+        if self.mode == CameraMode::Overseer {
+            let dependents = self.compute_dependents_helper(self.dist);
+            self.frustum = self.compute_frustum(&dependents);
+            self.dependents = dependents;
+            return;
+        }
         // TODO: More intelligent function to decide on which strategy to use
         if self.tgt_dist < CLIPPING_MODE_RANGE.end {
             self.compute_dependents_near(terrain, is_transparent)
@@ -482,11 +507,39 @@ impl Camera {
         let fov = self.get_effective_fov();
         // NOTE: We reverse the far and near planes to produce an inverted depth
         // buffer (1 to 0 z planes).
-        let proj_mat =
-            perspective_rh_zo_general(fov, self.aspect, 1.0 / FAR_PLANE, 1.0 / NEAR_PLANE);
-        // For treeculler, we also produce a version without inverted depth.
-        let proj_mat_treeculler =
-            perspective_rh_zo_general(fov, self.aspect, 1.0 / NEAR_PLANE, 1.0 / FAR_PLANE);
+        let (proj_mat, proj_mat_treeculler) = if self.mode == CameraMode::Overseer {
+            // bastion: orthographic overseer projection. Half-height tracks
+            // `dist * tan(fov/2)` so `dist` keeps behaving as the zoom axis and
+            // the on-screen footprint matches what a perspective camera at the
+            // same distance would frame at the focus plane.
+            let v = dist.max(MIN_ZOOM) * (fov / 2.0).tan();
+            let h = v * self.aspect;
+            // Same reversed-depth convention as the perspective path.
+            let proj_mat = Mat4::orthographic_rh_zo(FrustumPlanes {
+                left: -h,
+                right: h,
+                bottom: -v,
+                top: v,
+                near: FAR_PLANE,
+                far: NEAR_PLANE,
+            });
+            let proj_mat_treeculler = Mat4::orthographic_rh_zo(FrustumPlanes {
+                left: -h,
+                right: h,
+                bottom: -v,
+                top: v,
+                near: NEAR_PLANE,
+                far: FAR_PLANE,
+            });
+            (proj_mat, proj_mat_treeculler)
+        } else {
+            let proj_mat =
+                perspective_rh_zo_general(fov, self.aspect, 1.0 / FAR_PLANE, 1.0 / NEAR_PLANE);
+            // For treeculler, we also produce a version without inverted depth.
+            let proj_mat_treeculler =
+                perspective_rh_zo_general(fov, self.aspect, 1.0 / NEAR_PLANE, 1.0 / FAR_PLANE);
+            (proj_mat, proj_mat_treeculler)
+        };
 
         Dependents {
             view_mat,
@@ -538,6 +591,11 @@ impl Camera {
         if self.mode == CameraMode::ThirdPerson {
             // Clamp camera dist to the 2 <= x <= infinity range
             self.tgt_dist = (self.tgt_dist + delta).max(2.0);
+        }
+        // bastion: overseer ortho zoom with its own clamp
+        if self.mode == CameraMode::Overseer {
+            self.tgt_dist =
+                (self.tgt_dist + delta).clamp(OVERSEER_ZOOM_MIN, OVERSEER_ZOOM_MAX);
         }
 
         if let Some(cap) = cap {
@@ -651,6 +709,7 @@ impl Camera {
             CameraMode::FirstPerson => FIRST_PERSON_INTERP_TIME,
             CameraMode::ThirdPerson => THIRD_PERSON_INTERP_TIME,
             CameraMode::Freefly => FREEFLY_INTERP_TIME,
+            CameraMode::Overseer => OVERSEER_INTERP_TIME,
         }
     }
 
@@ -730,6 +789,11 @@ impl Camera {
                 CameraMode::Freefly => {
                     self.set_distance(MIN_ZOOM);
                 },
+                CameraMode::Overseer => {
+                    // bastion: jump out to a sensible overview zoom; pitch/yaw
+                    // are set by the session on entry.
+                    self.set_distance(OVERSEER_START_DIST);
+                },
             }
         }
     }
@@ -759,6 +823,10 @@ impl Camera {
                     }
                 },
                 CameraMode::Freefly => CameraMode::ThirdPerson,
+                // bastion: overseer is not part of the vanilla cycle; cycling
+                // out of it degrades gracefully to third-person (the overseer
+                // toggle key returns to overseer).
+                CameraMode::Overseer => CameraMode::ThirdPerson,
             });
         } else {
             self.set_mode(CameraMode::Freefly);

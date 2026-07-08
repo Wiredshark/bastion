@@ -119,6 +119,11 @@ pub struct Scene {
     select_pos: Option<Vec3<i32>>,
     light_data: Vec<Light>,
 
+    /// bastion: overseer Z-slice height in world space. `None` = slice off.
+    /// Only ever applied to rendering while the camera is in
+    /// `CameraMode::Overseer` (see `Globals::new` call in `maintain`).
+    bastion_slice_z: Option<f32>,
+
     particle_mgr: ParticleMgr,
     trail_mgr: TrailMgr,
     figure_mgr: FigureMgr,
@@ -363,6 +368,7 @@ impl Scene {
             ),
             select_pos: None,
             light_data: Vec::new(),
+            bastion_slice_z: None,
             particle_mgr: ParticleMgr::new(renderer),
             trail_mgr: TrailMgr::default(),
             figure_mgr: FigureMgr::new(renderer),
@@ -413,6 +419,11 @@ impl Scene {
 
     pub fn select_pos(&self) -> Option<Vec3<i32>> { self.select_pos }
 
+    // bastion: overseer Z-slice accessors (session drives these; B1)
+    pub fn bastion_slice_z(&self) -> Option<f32> { self.bastion_slice_z }
+
+    pub fn set_bastion_slice_z(&mut self, slice: Option<f32>) { self.bastion_slice_z = slice; }
+
     /// Handle an incoming user input event (e.g.: cursor moved, key pressed,
     /// window closed).
     ///
@@ -426,11 +437,24 @@ impl Scene {
             },
             // Panning the cursor makes the camera rotate
             Event::CursorPan(delta) => {
+                // bastion: overseer pitch is fixed and yaw moves in 90° steps
+                // (Q/E), so mouse-look is consumed without effect.
+                if self.camera.get_mode() == CameraMode::Overseer {
+                    return true;
+                }
                 self.camera.rotate_by(Vec3::from(delta) * CURSOR_PAN_SCALE);
                 true
             },
             // Zoom the camera when a zoom event occurs
             Event::Zoom(delta) => {
+                // bastion: overseer ortho zoom — scale-proportional step,
+                // clamped in `Camera::zoom_by`; never routes through
+                // `zoom_switch` (which flips first/third-person modes).
+                if self.camera.get_mode() == CameraMode::Overseer {
+                    self.camera
+                        .zoom_by(delta * (0.05 + self.camera.get_distance() * 0.08), None);
+                    return true;
+                }
                 let cap = if client.is_moderator() {
                     ZOOM_CAP_ADMIN
                 } else {
@@ -636,7 +660,12 @@ impl Scene {
             }
         };
 
-        if scene_data.mutable_viewpoint || matches!(self.camera.get_mode(), CameraMode::Freefly) {
+        if self.camera.get_mode() == CameraMode::Overseer {
+            // bastion: overseer orientation is session-driven (fixed oblique
+            // pitch, 90°-step yaw) — never slaved to an entity or analog look.
+        } else if scene_data.mutable_viewpoint
+            || matches!(self.camera.get_mode(), CameraMode::Freefly)
+        {
             // Add the analog input to camera if it's a mutable viewpoint
             self.camera.rotate_by(self.camera_input_state.with_z(0.0));
         } else {
@@ -691,7 +720,7 @@ impl Scene {
                 },
                 CameraMode::ThirdPerson if scene_data.is_aiming => viewpoint_height * 1.05,
                 CameraMode::ThirdPerson => viewpoint_eye_height,
-                CameraMode::Freefly => 0.0,
+                CameraMode::Freefly | CameraMode::Overseer => 0.0,
             };
 
             let right = match self.camera.get_mode() {
@@ -700,7 +729,7 @@ impl Scene {
                     settings.gameplay.aim_offset_x
                 },
                 CameraMode::ThirdPerson => 0.0,
-                CameraMode::Freefly => 0.0,
+                CameraMode::Freefly | CameraMode::Overseer => 0.0,
             };
 
             // Alter camera position to match player.
@@ -748,6 +777,9 @@ impl Scene {
                 viewpoint_pos
             },
             CameraMode::Freefly => entity_pos,
+            // bastion: like Freefly, the overseer camera is detached; the
+            // entity position still centers audio/LoD/light culling.
+            CameraMode::Overseer => entity_pos,
         };
 
         // Tick camera for interpolation.
@@ -1007,6 +1039,10 @@ impl Scene {
             scene_data.sprite_render_distance - 20.0,
             player_mmap_ori,
             self.screen_fade,
+            // bastion: the slice only ever applies to the overseer camera path
+            self.bastion_slice_z
+                .filter(|_| self.camera.get_mode() == CameraMode::Overseer)
+                .unwrap_or(f32::MAX),
         )]);
         renderer.update_clouds_locals(CloudsLocals::new(proj_mat_inv, view_mat_inv));
         renderer.update_postprocess_locals(PostProcessLocals::new(proj_mat_inv, view_mat_inv));

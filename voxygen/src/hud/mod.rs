@@ -1363,6 +1363,10 @@ pub struct Hud {
     clear_chat: bool,
     current_dialogue: Option<(EcsEntity, Instant, rtsim::Dialogue<true>)>,
     extra_markers: Vec<map::ExtraMarker>,
+    /// bastion: set by the session each frame while the overseer camera is
+    /// active; suppresses the hotbar action of keys shared with overseer
+    /// controls (Q / Slot10).
+    pub bastion_overseer_active: bool,
 }
 
 impl Hud {
@@ -1471,6 +1475,7 @@ impl Hud {
             clear_chat: false,
             current_dialogue: None,
             extra_markers: Vec::new(),
+            bastion_overseer_active: false,
         }
     }
 
@@ -4960,7 +4965,10 @@ impl Hud {
             // If not showing the ui don't allow keys that change the ui state but do listen for
             // hotbar keys
             WinEvent::InputUpdate(key, state) if !self.show.ui => {
-                if let Some(slot) = try_hotbar_slot_from_input(key) {
+                // bastion: Q doubles as overseer rotate; don't fire slot 10
+                if let Some(slot) = try_hotbar_slot_from_input(key)
+                    .filter(|_| !(self.bastion_overseer_active && key == GameInput::Slot10))
+                {
                     handle_slot(
                         slot,
                         state,
@@ -5144,7 +5152,11 @@ impl Hud {
                     },
                     // Skillbar
                     input => {
-                        if let Some(slot) = try_hotbar_slot_from_input(input) {
+                        // bastion: Q doubles as overseer rotate; don't fire
+                        // slot 10 while the overseer camera is active
+                        if let Some(slot) = try_hotbar_slot_from_input(input).filter(|_| {
+                            !(self.bastion_overseer_active && input == GameInput::Slot10)
+                        }) {
                             handle_slot(
                                 slot,
                                 state,

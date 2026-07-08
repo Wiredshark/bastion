@@ -226,7 +226,7 @@ impl CharacterCacheKey {
     ) -> Self {
         let is_first_person = match camera_mode {
             CameraMode::FirstPerson => true,
-            CameraMode::ThirdPerson | CameraMode::Freefly => false,
+            CameraMode::ThirdPerson | CameraMode::Freefly | CameraMode::Overseer => false,
         };
 
         let key_from_slot = |slot| {

@@ -99,3 +99,10 @@ gamepad-dpad_down = Down
 gamepad-dpad_left = Left
 gamepad-dpad_right = Right
 gamepad-unknown = Unknown
+
+# bastion (Project Bastion): overseer camera controls (B1)
+gameinput-bastion-toggleoverseer = Toggle Overseer Camera
+gameinput-bastion-rotateleft = Overseer Rotate Left
+gameinput-bastion-rotateright = Overseer Rotate Right
+gameinput-bastion-sliceup = Overseer Slice Up
+gameinput-bastion-slicedown = Overseer Slice Down

@@ -124,7 +124,17 @@ pub struct SessionState {
     lines: PlayerDebugLines,
     tracks: HashMap<Vec2<i32>, Vec<DebugShapeId>>,
     gizmos: Vec<(DebugShapeId, common::resources::Time, bool)>,
+    /// bastion: `--bastion-overseer` was passed but the overseer camera entry
+    /// is deferred until the player entity has a position to focus on.
+    bastion_pending_overseer: bool,
 }
+
+// bastion: overseer camera feel tunables (B1; see docs/BASTION_CAMERA.md)
+/// Pan speed of the overseer ground target, in units/s per unit of zoom
+/// (`dist`) — zoomed out pans proportionally faster.
+const BASTION_PAN_FACTOR: f32 = 1.0;
+/// Z-slice movement speed while PgUp/PgDn is held, in blocks/s.
+const BASTION_SLICE_RATE: f32 = 16.0;
 
 /// Represents an active game session (i.e., the one being played).
 impl SessionState {
@@ -200,7 +210,35 @@ impl SessionState {
             tracks: HashMap::new(),
             lines: Default::default(),
             gizmos: Vec::new(),
+            bastion_pending_overseer: global_state.args.bastion_overseer,
         }
+    }
+
+    // bastion: overseer camera mode switching (B1)
+    fn bastion_overseer_active(&self) -> bool {
+        self.scene.camera().get_mode() == CameraMode::Overseer
+    }
+
+    fn bastion_enter_overseer(&mut self) {
+        let pos = self.client.borrow().position();
+        let camera = self.scene.camera_mut();
+        camera.set_mode(CameraMode::Overseer);
+        // Snap yaw to the nearest 90° step and fix the oblique pitch; roll 0.
+        let yaw = (camera.get_orientation().x / core::f32::consts::FRAC_PI_2).round()
+            * core::f32::consts::FRAC_PI_2;
+        camera.set_orientation_instant(Vec3::new(yaw, camera::OVERSEER_PITCH, 0.0));
+        if let Some(pos) = pos {
+            camera.force_focus_pos(pos);
+        }
+    }
+
+    fn bastion_exit_overseer(&mut self) {
+        self.scene.set_bastion_slice_z(None);
+        let camera = self.scene.camera_mut();
+        camera.set_mode(CameraMode::ThirdPerson);
+        // Restore the vanilla default boom length and a level pitch.
+        camera.set_distance(10.0);
+        camera.set_orientation_instant(Vec3::new(camera.get_orientation().x, 0.0, 0.0));
     }
 
     fn stop_auto_walk(&mut self) {
@@ -790,6 +828,57 @@ impl PlayState for SessionState {
                             self.inputs_state.remove(&input);
                         }
                         match input {
+                            // bastion: while the overseer camera is active,
+                            // avatar action inputs that share keys with (or
+                            // would fight) overseer controls are consumed as
+                            // no-ops. B2 hangs inspect/designate off these.
+                            GameInput::Primary | GameInput::Secondary | GameInput::Interact
+                                if self.bastion_overseer_active() => {},
+                            GameInput::BastionToggleOverseer if state => {
+                                // Only functional behind the launch flag so
+                                // vanilla sessions are bit-identical.
+                                if global_state.args.bastion_overseer {
+                                    if self.bastion_overseer_active() {
+                                        self.bastion_exit_overseer();
+                                    } else {
+                                        self.bastion_enter_overseer();
+                                    }
+                                }
+                            },
+                            GameInput::BastionRotateLeft | GameInput::BastionRotateRight
+                                if state && self.bastion_overseer_active() =>
+                            {
+                                // 90°-step yaw around the ground target; the
+                                // camera's orientation lerp makes it a smooth
+                                // quarter-turn swing.
+                                let step = if input == GameInput::BastionRotateLeft {
+                                    core::f32::consts::FRAC_PI_2
+                                } else {
+                                    -core::f32::consts::FRAC_PI_2
+                                };
+                                let camera = self.scene.camera_mut();
+                                let yaw = (camera.get_tgt_orientation().x
+                                    / core::f32::consts::FRAC_PI_2)
+                                    .round()
+                                    * core::f32::consts::FRAC_PI_2
+                                    + step;
+                                camera.set_orientation(Vec3::new(
+                                    yaw,
+                                    camera::OVERSEER_PITCH,
+                                    0.0,
+                                ));
+                            },
+                            GameInput::BastionSliceUp | GameInput::BastionSliceDown
+                                if state && self.bastion_overseer_active() =>
+                            {
+                                // First press activates the slice near the
+                                // focus; movement happens per-frame while held
+                                // (see the Overseer arm in the camera match).
+                                if self.scene.bastion_slice_z().is_none() {
+                                    let z = self.scene.camera().get_focus_pos().z + 2.0;
+                                    self.scene.set_bastion_slice_z(Some(z));
+                                }
+                            },
                             GameInput::Primary => {
                                 self.walking_speed = false;
                                 let mut client = self.client.borrow_mut();
@@ -1576,6 +1665,28 @@ impl PlayState for SessionState {
                     self.key_state.swim_up as i32 as f32 - self.key_state.swim_down as i32 as f32;
             }
 
+            // bastion: deferred overseer entry (launch flag) once the player
+            // entity exists to take the initial focus from.
+            if self.bastion_pending_overseer && self.client.borrow().position().is_some() {
+                self.bastion_pending_overseer = false;
+                self.bastion_enter_overseer();
+            }
+            // bastion: the HUD suppresses the hotbar action of keys shared
+            // with overseer controls (Q/Slot10) while overseer is active.
+            self.hud.bastion_overseer_active = self.bastion_overseer_active();
+            // bastion: move the active Z-slice while PgUp/PgDn is held.
+            if self.bastion_overseer_active()
+                && let Some(slice) = self.scene.bastion_slice_z()
+            {
+                let slice_dir = self.inputs_state.contains(&GameInput::BastionSliceUp) as i32
+                    - self.inputs_state.contains(&GameInput::BastionSliceDown) as i32;
+                if slice_dir != 0 {
+                    self.scene.set_bastion_slice_z(Some(
+                        slice + slice_dir as f32 * BASTION_SLICE_RATE * dt,
+                    ));
+                }
+            }
+
             match self.scene.camera().get_mode() {
                 CameraMode::FirstPerson | CameraMode::ThirdPerson => {
                     if mutable_viewpoint {
@@ -1613,6 +1724,26 @@ impl PlayState for SessionState {
                         .set_focus_pos(pos + dir * dt * speed);
 
                     // Do not apply any movement to the player character
+                    self.inputs.move_dir = Vec2::zero();
+                },
+                CameraMode::Overseer => {
+                    // bastion: WASD pans the ground target across the map (XY
+                    // only); speed scales with zoom so travel feels constant
+                    // on screen.
+                    let camera = self.scene.camera();
+                    let dir = camera.right_xy() * axis_right + camera.forward_xy() * axis_up;
+                    let dir = if dir.magnitude_squared() > 1.0 {
+                        dir.normalized()
+                    } else {
+                        dir
+                    };
+                    let speed = camera.get_distance() * BASTION_PAN_FACTOR;
+                    let pos = camera.get_focus_pos();
+                    self.scene
+                        .camera_mut()
+                        .set_focus_pos(pos + Vec3::from(dir) * dt * speed);
+
+                    // Do not apply any movement to the player character.
                     self.inputs.move_dir = Vec2::zero();
                 },
             };

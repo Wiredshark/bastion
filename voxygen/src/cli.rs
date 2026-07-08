@@ -30,6 +30,13 @@ pub struct Args {
     #[clap(short, long, env = "VELOREN_CLIENT_TYPE", default_value_t = VoxygenClientType(ClientType::Game))]
     pub client_type: VoxygenClientType,
 
+    /// bastion (Project Bastion): start sessions in the top-down orthographic
+    /// overseer camera (with Z-slice controls) instead of third-person, and
+    /// enable the in-session overseer toggle key. Vanilla behavior is fully
+    /// unchanged without this flag.
+    #[clap(long, env = "BASTION_OVERSEER")]
+    pub bastion_overseer: bool,
+
     #[clap(subcommand)]
     pub command: Option<Commands>,
 }
