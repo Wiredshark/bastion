@@ -51,6 +51,11 @@ layout(location = 1) out uvec4 tgt_mat;
 const float FADE_DIST = 32.0;
 
 void main() {
+    // bastion: overseer Z-slice - hide everything above the active layer
+    if (f_pos.z + focus_off.z > bastion_slice_z) {
+        discard;
+    }
+
     #ifdef EXPERIMENTAL_DISCARDTRANSPARENCY
         float dither_factor = 1.0 - clamp((distance(focus_pos.xy, f_pos.xy) - (sprite_render_distance - FADE_DIST)) / FADE_DIST, 0, 1);
         if (dither(gl_FragCoord.xy, dither_factor, f_inst_idx)) {

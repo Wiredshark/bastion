@@ -150,6 +150,11 @@ float wave_height_vel(vec3 pos) {
 }
 
 void main() {
+    // bastion: overseer Z-slice - hide everything above the active layer
+    if (f_pos.z + focus_off.z > bastion_slice_z) {
+        discard;
+    }
+
 #ifdef EXPERIMENTAL_BAREMINIMUM
     tgt_color = vec4(simple_lighting(f_pos.xyz, MU_SCATTER, 1.0), 0.5);
 #else

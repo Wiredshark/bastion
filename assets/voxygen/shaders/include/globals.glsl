@@ -33,6 +33,10 @@ layout(std140, set = 0, binding = 0) uniform u_globals {
     float sprite_render_distance;
     float u_rotation;
     float screen_fade;
+    // bastion: overseer Z-slice height in world space (fragments above are
+    // discarded by terrain/sprite/fluid shaders); huge value = disabled.
+    // Occupies what used to be implicit std140 tail padding.
+    float bastion_slice_z;
 };
 
 float distance_divider = 2.0;

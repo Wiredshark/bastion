@@ -72,6 +72,11 @@ float vmin(vec2 v) {
 }
 
 void main() {
+    // bastion: overseer Z-slice — hide everything above the active layer
+    if (f_pos.z + focus_off.z > bastion_slice_z) {
+        discard;
+    }
+
     /*
     float nz = abs(hash(vec4(floor((f_pos + focus_off.xyz) * 5.0), 0)));
     if (nz > (tick.x - load_time) / 0.5 || distance(focus_pos.xy, f_pos.xy) / view_distance.x + nz * 0.1 > 1.0) {
