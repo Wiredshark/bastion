@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "bastion-harness",
     "client",
     "client/i18n",
     "common",

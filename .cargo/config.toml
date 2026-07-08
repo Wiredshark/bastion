@@ -17,6 +17,8 @@ rustflags = [
 CARGO_WORKSPACE_DIR = { value = "", relative = true }
 
 [alias]
+# bastion (Project Bastion; see BASTION.md)
+bastion-check = "check -p veloren-common -p veloren-server -p veloren-rtsim -p bastion-harness"
 # tools
 cmd-doc-gen = "run --features=bin_cmd_doc_gen --bin cmd_doc_gen"
 csv-export = "run --manifest-path common/Cargo.toml --features=bin_csv --bin csv_export"
