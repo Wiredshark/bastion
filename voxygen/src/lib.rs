@@ -91,6 +91,11 @@ impl GlobalState {
     pub fn on_play_state_changed(&mut self) {
         self.window.grab_cursor(false);
         self.window.needs_refresh_resize();
+        // bastion: input contexts are session-scoped; any play-state
+        // transition resets to the vanilla passthrough context. A running
+        // session re-derives and re-syncs its context every tick.
+        self.window
+            .set_bastion_context(bastion::input::InputContext::Menu);
     }
 
     pub fn maintain(&mut self) {
