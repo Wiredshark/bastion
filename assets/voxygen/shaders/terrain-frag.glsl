@@ -72,7 +72,7 @@ float vmin(vec2 v) {
 }
 
 void main() {
-    // bastion: overseer Z-slice — hide everything above the active layer
+    // bastion: overseer Z-slice - hide everything above the active layer
     if (f_pos.z + focus_off.z > bastion_slice_z) {
         discard;
     }

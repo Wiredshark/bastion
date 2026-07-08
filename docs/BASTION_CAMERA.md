@@ -10,6 +10,16 @@ target\debug\veloren-voxygen.exe --bastion-overseer
 # or: $env:BASTION_OVERSEER = "1"; target\debug\veloren-voxygen.exe
 ```
 
+> **Windows launch note (gnu toolchain):** the build needs the mingw runtime DLLs
+> (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`) resolvable at launch — either on
+> `PATH` or copied next to the exe — or Windows shows "Entry Point Not Found" when singleplayer
+> starts. See `docs/BASTION_B1_FINDINGS.md` §5b.
+
+After spawning into a world (Enter World, or Spectate World), the camera drops into the overseer
+view automatically. Verified in-game evidence lives in `docs/evidence-b1-*.jpg`:
+top-down ortho over the generated world, 90° rotate, zoom-out, Z-slice cut + restore, and the F9
+toggle back to vanilla perspective (measured 60 fps / 4 ms frame time).
+
 Start singleplayer normally; once the character spawns, the camera switches to the overseer view
 centered on it. The flag also arms the in-session toggle:
 

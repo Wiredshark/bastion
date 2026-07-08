@@ -96,6 +96,40 @@ drift; symbols are the anchor. Read together with `docs/BASTION_B0_FINDINGS.md`.
    steps — acceptable; tighten the overseer far plane if z-fighting appears.
 5. `img_export.rs` and `scene/simple.rs` construct cameras with fixed vanilla modes — untouched.
 
+## 5a. Implementation notes (found while building B1)
+
+- **The HUD consumes hotbar inputs before the session sees them** (`Hud::handle_event` →
+  `try_hotbar_slot_from_input`, two sites: hud/mod.rs ~4963 with UI hidden and ~5155 normally). So
+  sharing `Q` with Slot10 required a small HUD gate (`Hud::bastion_overseer_active`, set by the
+  session each frame) — session-side guards alone were not enough. `E`/Interact is session-only.
+- The `Event::InputUpdate` match in the session allows *guarded duplicate arms*, so overseer no-op
+  consumption of `Primary`/`Secondary`/`Interact` is one added guard arm, zero edits to vanilla arms.
+- Overseer entry from the launch flag must be **deferred** until `client.position()` is `Some`
+  (SessionState::new runs before the player entity is positioned); handled by a
+  `bastion_pending_overseer` flag checked per frame.
+- `set_mode(ThirdPerson)` on exit runs vanilla's `zoom_by(5.0)` on a ~192 boom → explicit
+  `set_distance(10.0)` restore is needed.
+- `cargo check -p veloren-voxygen` passed first try after the exhaustive-match arms; the compiler
+  found every required site (listed in §1) and no others existed.
+
+## 5b. Runtime environment discoveries (found while verifying in-game)
+
+These bit us during the live overseer verification and matter for the "run vanilla" gate too:
+
+1. **The gnu-toolchain build needs the mingw runtime DLLs at launch.** `veloren-voxygen.exe`
+   (built with `x86_64-pc-windows-gnu`, see `BASELINE.md`) dynamically links
+   `libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`. If they aren't found, or a
+   *wrong-version* copy is resolved from the global `PATH` first, you get a Windows
+   **"Entry Point Not Found"** dialog. The menu happened to load, but starting singleplayer (which
+   pulls in the bundled-sqlite C code via the persistence DB) tripped the missing export.
+   **Fix (setup, not source):** copy the three DLLs from `C:\Users\q\toolchains\mingw64\bin` next to
+   `target\debug\*.exe` (Windows resolves exe-adjacent DLLs before `PATH`), *or* put that mingw
+   `bin` on `PATH` before launching. Belongs in a future packaging step for any distributed build.
+2. **Display is 4K @ 200% scaling.** For scripted UI verification, the driver process must be
+   per-monitor-DPI-aware (`SetProcessDpiAwarenessContext(-4)`) so its pixel coords match winit's,
+   and `SetForegroundWindow` needs the `AttachThreadInput` trick to beat Windows' foreground lock.
+   (Tooling detail only — no bearing on the game code.)
+
 ## 6. Corrections vs. the block prompt
 
 - There is no `PlayState::render(&self, drawer, settings)`-shaped seam we need; everything routes
