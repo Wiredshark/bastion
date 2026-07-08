@@ -1,8 +1,9 @@
 # Project Bastion — Turning Veloren into an Autonomous God-Game Colony Sim
 
 **A build & test directive for Claude Code**
-Version 1.1 · Architect-authored design doc · Target: fork of `veloren/veloren` (Rust, GPL-3)
+Version 1.2 · Architect-authored design doc · Target: fork of `veloren/veloren` (Rust, GPL-3)
 Lineage: Dwarf Fortress / RimWorld (autonomy & policy) + Black & White / From Dust / Populous (indirect divinity). **Explicitly *not* StarCraft-style unit micro.**
+*v1.2 changelog: reworked §7 to invariant-first testing after B0 exploration confirmed rtsim per-tick RNG is OS-seeded (added Deterministic Mode as work item WI-DET); added §2a "what already exists (verified)" — Veloren ships most god-power/spawn/zone/possession primitives as server ops, shifting B3/B6/B8/B12/B13 toward wiring rather than building.*
 
 ---
 
@@ -81,7 +82,53 @@ Grounded facts about the codebase, so builders reference real crates and symbols
 **Reality anchors for the builder** (not obstacles — planning inputs):
 - **Compile times & assets.** This is a large Rust workspace with git-lfs assets. Cold builds are long; iteration discipline (per-crate builds, `cargo check`, headless tests) is mandatory. B0 exists to make this bearable.
 - **License.** GPL-3. Any distributed fork must ship source under GPL-3. Fine for a personal/creative project; just know it.
-- **UI toolkit.** voxygen's in-game UI has historically been `conrod`-based (`voxygen/src/ui/`). Verify the current toolkit in-tree before B9 and match it; do not introduce a second UI framework unless a block explicitly says to.
+- **UI toolkit is a hybrid (verified).** voxygen uses **three** UI stacks: `conrod` for the in-game HUD
+  (`voxygen/src/hud/`, e.g. `Text::new(..).set(id, ui_widgets)`, `conrod_id`); a Veloren-forked **`iced`**
+  (`voxygen/src/ui/ice/`, `IcedUi`/`IcedRenderer`) for menus; and **`egui`** behind the `egui-ui` feature
+  (`voxygen/egui/`, `veloren_voxygen_egui`) for debug windows. **Implication for B9:** prototype the
+  colony HUD fast in **egui** (trivial to add windows/panels), then port the keepers to **conrod** for the
+  polished in-game look. Don't add a *fourth* framework.
+
+## 2a. What already exists in vanilla (VERIFIED — this collapses much of the build into "wire, don't build")
+
+Exploration of `common/src/cmd.rs` (96 `ServerChatCommand` variants), `veloren_server/events/player.rs`,
+and `veloren_server/rtsim/tick.rs` confirms Veloren already ships server-side operations for most of what
+Bastion needs. **These are real, tested code paths behind admin commands — reuse the underlying
+event/operation, not the chat command string.** This is the single biggest de-risking finding in the doc.
+
+- **Terrain & object editing (→ B5 mining/building, B13 terrain powers):** `MakeBlock`, `MakeSprite`,
+  `MakeVolume`, `Object`, `RemoveLights`, plus client-side `remove_block`. Authoritative terrain-edit
+  paths already exist and correctly trigger meshing/persistence.
+- **Calamity / combat powers (→ B8, B13):** **`Explosion`** and **`Lightning`** are already implemented
+  server operations. Smite-the-raiders is a wire-up, not a new system.
+- **Weather (→ B13 weather powers):** a real **`WeatherGrid`** resource is fed into the rtsim tick, and
+  **`WeatherZone`** already sets weather over an area. Rain-on-drought hooks straight into `WeatherGrid`.
+- **Time control (→ B11, pacing):** `Time` (set time of day) and **`TimeScale`** (speed up / slow down
+  the whole sim) already exist — useful for both gameplay and the Tier-1b soak (fast-forward days).
+- **Zones / areas (→ B4 designations, B6 stockpiles):** **`AreaAdd` / `AreaList` / `AreaRemove`** define
+  typed named areas; `Build` / `PermitBuild` / `RevokeBuild` gate build permission by area; `Safezone`
+  exists. A real foundation for designation regions and stockpile zones.
+- **Colonist spawning & configuration (→ B3):** `Spawn`, `MakeNpc`, `IntoNpc`, `Body`, `Scale`, `Buff`,
+  `Health`, `GiveItem`, `Kit`, `SkillPoint`, `SkillPreset`, plus `CreateNpcEvent`/`NpcBuilder` in the
+  server tick. Spawning a configured starting band is assembling existing pieces.
+- **rtsim inspection & control (→ B0 harness, B9 HUD, B7 AI):** `RtsimInfo`, `RtsimNpc`, `RtsimChunk`,
+  `RtsimTp`, `RtsimPurge` expose rtsim NPCs directly — handy for harness dumps and HUD readouts.
+- **Possession already exists (→ B12, big win):** `PresenceKind::Possessor` and a server-side possession
+  handler in `events/player.rs` that swaps the player's presence onto another entity **and already
+  includes an item-duplication guard**. B12 is largely *reuse this proven pathway* rather than build one.
+- **Entity command routing:** `Sudo` makes an entity execute a command; `Goto`/`Tp` move entities —
+  useful primitives when wiring autonomous behaviour and debugging.
+
+**What is genuinely still a build (not pre-existing):** the *autonomous colony layer itself* — the
+`Colonist`/needs/skills model, the designation→job→**self-arbitration** loop, stockpile/hauling logistics,
+the policy layer, the overseer camera/input, the favor economy, and From-Dust-style **fluid/material
+flow** (Veloren has entity-in-fluid physics via `comp::fluid_dynamics`, and water exists as terrain, but
+**not** a From Dust terrain-fluid solver — that's the one B13 power that's a real build).
+
+**Net effect on scope:** B3, B6, B8, and especially **B13 shift from "build" toward "wire existing server
+ops to overseer influence input + the favor economy."** The hard, novel work concentrates in **B4**
+(autonomous job arbitration) and **B7** (autonomous AI/needs) — which is where it should be, since those
+are what make the world *play itself*.
 
 ---
 
@@ -263,6 +310,7 @@ Each block: **Objective · Touches · Approach · Done-when (tests).** Builders 
 **Objective:** External pressure that the colony **handles on its own**, plus a single, deliberately-limited emergency lever for the player. Per Pillar §1a this is **not** an RTS combat-control block: the default is that colonists assess and respond to danger themselves. Reuse Veloren's real combat; spawn threats via rtsim.
 **Touches:** rtsim threat spawning (bandits already modeled), enemy AI (existing agent code), a colonist **defense-AI policy** (fight/flee/muster thresholds), one bounded `Draft` toggle, combat integration for colonists.
 **Approach:**
+- **Reuse-verified:** hostile spawning, real combat, and calamity primitives (`Explosion`, `Lightning`) already exist; bandits are already rtsim-modeled. This block wires them to autonomous defense policy, not new combat code.
 - **Raids:** an rtsim rule periodically sends a bandit party toward the colony; on entering the loaded region they **promote** to ECS entities and use existing hostile agent AI.
 - **Autonomous defense (the default):** colonists have a defense policy — combat-capable ones muster to a **rally zone** and engage; vulnerable ones flee to safety/indoors; the militia disperses back to work when the threat clears. The player shapes this by **policy** (who is drafted-capable, rally-zone placement, courage/flee thresholds), *not* by ordering individuals.
 - **Bounded emergency draft (the exception):** a single colony-wide `Draft` toggle (RimWorld-style) that mans defenses now and, optionally, a *rally-point move* for the militia. It is intentionally coarse (whole-militia, one rally point) and can carry a cost/cooldown so it can't become StarCraft micro. There is **no** per-unit attack-move order.
@@ -313,6 +361,11 @@ Each block: **Objective · Touches · Approach · Done-when (tests).** Builders 
 **Depends on:** B1 (we kept the vanilla camera mode), B2 (input modes + selection), B3 (colonists exist). Best experienced after B4–B5 (there's real work to drop into) and B7 (AI to suspend/resume). Can technically land right after Slice A.
 **Touches:** voxygen camera-mode switch (reuse vanilla third/first-person from B1), input-mode switch (reuse vanilla `GameInput` bindings kept in `control.rs`), a new `Possessing`/`PlayerControlled` marker in `common/src/comp`, server-side control-handoff (who drives the entity's `comp::Controller`), suspend/resume of that colonist's job-AI (B4/B7), a HUD "Embody / Release" affordance (B9).
 **Approach:**
+- **Reuse-verified:** Veloren already has possession — `PresenceKind::Possessor` plus a server handler in
+  `veloren_server/events/player.rs` that swaps the player's presence onto another entity and **already
+  guards against item duplication**. Start from that pathway; B12 is mostly *adapting the existing
+  possess flow to colonists + clean job-AI handoff*, not building possession from zero. Confirm the current
+  command/trigger surface in-tree (the possess entry point may be a command or event).
 - Possession is a **mode switch, not new gameplay** — this is the whole reason the doc insists on flagging vanilla off rather than deleting it. On **Embody(colonist E):**
   1. Ensure E is `SimulationMode::Loaded` (an active-colony colonist already is).
   2. Attach `Possessing` and, **server-authoritatively**, route player input into E's `comp::Controller` *instead of* the job-AI. The server is the single point that flips the driver, so there is never a frame where both drive E.
@@ -333,12 +386,19 @@ Each block: **Objective · Touches · Approach · Done-when (tests).** Builders 
 **Depends on:** B1/B2 (overseer cam + the reserved `ApplyInfluence` message), B3–B7 (a colony to affect), rtsim rules (for world-scale effects). Terrain powers share the edit path from B5.
 **Touches:** a `bastion_influence` module (server), god-power definitions + costs in `common`, rtsim rules for world-scale/persistent effects, voxygen god-power toolbar (B9), the `ApplyInfluence` channel from B2, an **influence-economy** resource (mana/faith/favor).
 **Approach — the power palette (v1 set; build the framework + 3–4 powers first, then expand):**
-- **Terrain shaping (From Dust–style).** Raise/lower land, carve a channel, drop a rock plug, trigger material flow (lava/water/sand). Reuse the authoritative terrain-edit path from B5. *You already have a From Dust material-flow reference to prove this out standalone before integration — do that first, then port.*
-- **Resource seeding / withholding.** Bless a tile to grow food, surface an ore vein, spawn game animals; or blight a field. Emits items/sprites the colony then autonomously harvests.
-- **Weather & season nudges (via rtsim).** Call rain onto a drought, clear a storm, bring an early frost. rtsim already owns weather on the roadmap — hook it.
-- **Blessings / curses on a colonist or site.** Temporary buffs (vigor, courage, inspiration → faster work / better mood) or afflictions. Applied as status effects on ECS entities; persistent ones tracked in rtsim.
-- **Calamity / intervention.** Smite raiders with lightning, panic an enemy party (flip their AI to flee), raise a defensive wall. The *preferred* combat lever over the B8 draft — because it's influence on the world, not command of units.
-- **Influence economy.** Powers cost **favor/faith** (name TBD) that accrues from the colony thriving/worshipping and regenerates over time — so the player is a god with *limits*, choosing when to intervene, not an omnipotent micromanager. This constraint is what keeps the game autonomous rather than a puppet show.
+- **Reuse-verified (this block is mostly wiring):** most god-powers already exist as server operations
+  behind admin commands — call the underlying event/operation, not the chat string. `MakeBlock`,
+  `MakeSprite`, `MakeVolume`, `Object` (terrain/objects); **`Explosion`**, **`Lightning`** (calamity);
+  **`WeatherZone`** + the `WeatherGrid` resource (weather); `Time`/`TimeScale` (time); `Buff`
+  (blessings/curses); `Spawn`/`GiveItem` (resource seeding). B13's real new work is the **favor economy**,
+  the **overseer targeting UI**, and routing these through `ApplyInfluence` — plus the one genuinely novel
+  power below (fluid flow).
+- **Terrain shaping (From Dust–style).** Raise/lower land, carve a channel, drop a rock plug, trigger material flow (lava/water/sand). Raise/lower/carve reuse the authoritative terrain-edit path from B5 (`MakeBlock`/`MakeVolume`). **The From Dust *material-flow solver itself is the one real build here*** — Veloren has entity-in-fluid physics (`comp::fluid_dynamics`) and water-as-terrain, but not a terrain fluid-flow simulation. *You already have a From Dust material-flow reference; prove it out standalone first, then port.*
+- **Resource seeding / withholding.** Bless a tile to grow food, surface an ore vein, spawn game animals (reuse `Spawn`/`MakeSprite`/`GiveItem`); or blight a field. Emits items/sprites the colony then autonomously harvests.
+- **Weather & season nudges.** Call rain onto a drought, clear a storm, bring an early frost — write to the existing **`WeatherGrid`** resource (as `WeatherZone` does).
+- **Blessings / curses on a colonist or site.** Temporary buffs (vigor, courage, inspiration → faster work / better mood) or afflictions — reuse the existing **`Buff`** system. Persistent ones tracked in rtsim.
+- **Calamity / intervention.** Smite raiders with **`Lightning`**/**`Explosion`** (already implemented), panic an enemy party (flip their AI to flee), raise a defensive wall (`MakeVolume`). The *preferred* combat lever over the B8 draft — because it's influence on the world, not command of units.
+- **Influence economy.** Powers cost **favor/faith** (name TBD) that accrues from the colony thriving/worshipping and regenerates over time — so the player is a god with *limits*, choosing when to intervene, not an omnipotent micromanager. This constraint is what keeps the game autonomous rather than a puppet show. **This is genuinely new** and is the design core of the block.
 **Design guardrails:** every power acts on **environment or conditions**, never as a direct "unit, do X" order (that would violate Pillar §1a — the only direct control is Embody). Powers should produce *situations the autonomous colony responds to*, and their consequences should ripple through rtsim (a diverted river changes farms downstream; a blessed harvest shifts the economy).
 **Done-when:**
 - The framework applies a power at a targeted region/entity via `ApplyInfluence`, spends favor, and shows cooldown/cost in the HUD.
@@ -353,14 +413,40 @@ Each block: **Objective · Touches · Approach · Done-when (tests).** Builders 
 
 The engine's headless-simulatable design is the biggest testing asset. Exploit it.
 
-**Tier 1 — Headless deterministic sim tests (the workhorse).** Every simulation block (B3–B8, B10) ships tests that boot the B0 harness (world+rtsim+server, no voxygen), seed a fixed RNG + fixed world, run K ticks, and assert on dumped state. Determinism is a *requirement*: same seed → same result twice. This catches logic bugs in seconds without a GPU. Prioritize **conservation invariants** (items neither created nor destroyed except by explicit rules), **no double-claims**, **entity-count returns to baseline** after load/unload cycles.
+> **Determinism reality (verified in B0 exploration).** Veloren is deterministic at **worldgen**
+> (`rtsim::Data::generate` seeds a `SmallRng` from the world seed), but its **per-tick rtsim rules**
+> (`npc_ai`, `migrate`, `cleanup`, …) seed their RNGs from **OS entropy, not the world seed**. So the
+> same seed produces an identical *starting* world and then **diverges the moment it ticks**. `specs`
+> parallel iteration + floating point can add further nondeterminism. Therefore the test strategy is
+> **invariant-first, not bit-exact-replay-first**. Exact replay is an opt-in capability (Deterministic
+> Mode, WI-DET below), not the default gate — and that's fine, because a *living* world should have
+> run-to-run variety anyway.
 
-**Tier 1b — The zero-input autonomy soak (THE headline test).** This is the test that proves the design pillar. Boot the headless harness with a full colony + world, then **apply no player input at all** and run for many in-game days (target: 30+ days, then an overnight multi-season run). Assert the world is both **stable and eventful**:
+**Tier 1 — Headless invariant sim tests (the workhorse).** Every simulation block (B3–B8, B13, B10)
+ships tests that boot the B0 harness (world+rtsim+server, no voxygen), seed a fixed world, run K ticks,
+and assert on **invariants that must hold regardless of run-to-run variety** — this is the robust gate
+given the RNG reality above. Prioritize: **conservation** (items neither created nor destroyed except by
+explicit rules), **no double-claims** on jobs, **entity-count returns to baseline** after load/unload and
+promote/demote cycles, **bounded** tick time / memory / entity counts, and **no panics**. These catch
+logic bugs in seconds without a GPU and don't depend on determinism.
+
+**Tier 1b — The zero-input autonomy soak (THE headline test).** This is the test that proves the design
+pillar. Boot the headless harness with a full colony + world, then **apply no player input at all** and
+run for many in-game days (target: 30+ days, then an overnight multi-season run). Assert the world is
+both **stable and eventful** — all as invariants, none requiring determinism:
 - *No crash, no runaway* — entity counts, memory, and tick time stay bounded; no promote/demote leak; no item dupe.
 - *No death-spiral* — a reasonably-provisioned colony survives on its own (feeds, rests, defends, repairs) without the player.
 - *No stagnation* — meaningful events keep happening (births/deaths, raids fought, buildings finished, resources gathered/depleted, factions acting); the event log is non-empty and varied.
-- *Determinism* — same seed reproduces the same 30-day history twice.
+- *(Optional, only under Deterministic Mode)* — same seed reproduces the same 30-day history twice. Use this for regression diffing, not as the standing gate.
 If Tier 1b fails, the game is not a god game — it's a puppet that dies when you look away. Treat a Tier 1b regression as a release blocker. Every sim block (B3–B8, B13's autonomy paths) must keep it green.
+
+**WI-DET — Deterministic Mode (a scheduled work item, not a block).** A fork-local capability for when you
+*do* need exact replay (regression diffing, bug repro, CI snapshot tests). Scope: thread a single
+seeded, **tick-indexed** RNG (derived from the world seed) through the rtsim rules instead of OS entropy,
+and single-thread the tick loop in this mode. Gate it behind a `bastion-deterministic` feature/flag so
+**normal play keeps its run-to-run freshness**. Land WI-DET **before Slice C** (before heavy sim-behavior
+testing piles up), because retrofitting determinism after B4–B8 add more entropy sources is far more
+painful. It's optional to *ship*, but the invariant tests (Tier 1/1b) are mandatory and do not need it.
 
 **Tier 2 — Property / stress tests.** Randomized job floods, concurrent reservations, mass promote/demote across the loaded boundary. Assert invariants hold under load. Especially important for B4/B6/B8 where races live.
 
@@ -387,7 +473,13 @@ These are planning inputs for the builder, not reasons to stop.
 7. **Item conservation.** Hauling/reservation/production is the classic dupe-bug farm. Conservation invariants in Tier-1 tests are mandatory, not optional.
 8. **Scope creep via Veloren's existing RPG systems.** Quests, trade, mounts, magic will tempt you. Flag them off; integrate deliberately later, never incidentally.
 9. **GPL-3.** Any distribution obligations apply. Note it in the repo; not a code risk, a release-planning one.
-10. **Determinism vs. `specs` iteration order / floating point.** Seed all RNG explicitly and avoid order-dependent float accumulation in sim logic, or Tier-1 determinism tests will flap.
+10. **Determinism is NOT free (verified).** Confirmed in B0 exploration: worldgen is seeded from the
+    world seed, but rtsim's per-tick rules (`npc_ai`, `migrate`, `cleanup`) seed RNG from **OS entropy**,
+    so runs diverge after tick 0; `specs` parallel iteration + floats add more. **Do not build the test
+    strategy on bit-exact replay.** Use **invariant-first** tests (Tier 1/1b) as the standing gate, and
+    treat exact replay as an opt-in **Deterministic Mode (WI-DET, §7)** to be landed before Slice C for
+    regression diffing only. A `DETERMINISM: DIVERGED` result from the B0 harness is expected and correct,
+    not a bug.
 11. **Dual-driver hazard (possession, B12).** The one way Embody goes wrong: the job-AI and the player both drive the same `Controller` and fight for it. Mitigation is structural — control handoff is **server-authoritative and single-point**, the possessed colonist's job is released on Embody, and arbitration skips possessed colonists. Every possess/release must assert *exactly one driver* and a clean job-board handoff. Handle death-while-possessed by auto-releasing to the overseer view rather than leaving a dead entity "controlled."
 12. **Autonomy balance — stagnation vs. death-spiral (Pillar §1a).** An autonomous world can fail two ways: it flatlines (nothing happens, boring) or it collapses the instant it's left alone (unwinnable, feels broken). Tune colonist AI and rtsim so a provisioned colony is self-sustaining but still pressured. Tier-1b soak is the guardrail; check it after every AI/needs/threat change. Expose the key rates (need decay, raid cadence, resource regen) as tunable config so balance is data, not code.
 13. **Micro-creep — the RTS temptation.** The gravitational pull of "just add a move order / an attack-move / a build-here-now button" is strong and will quietly turn this back into StarCraft. Guard the pillar: the only direct control is the bounded B8 draft and B12 Embody. If a feature request is "let the player tell a specific unit to do a specific thing right now," it must instead become **policy, designation, or god-power**. Put this rule in the repo README so future-you doesn't erode it.
@@ -422,7 +514,12 @@ Recommend building **Slice A and B fully before C+**, because they de-risk both 
 - rtsim interface: `common/src/rtsim/` (`NpcId`, `SiteId`, `Actor`, `NpcAction`, `NpcActivity`, `RtSimController`, `SimulationMode`).
 - rtsim rules/AI: `rtsim/src/rule/` (`npc_ai.rs`, `simulate_npcs.rs`), `impl Rule`, `OnTick`.
 - Terrain/sprites: `common/src/terrain/` (`sprite.rs`), chonk types.
-- UI: `voxygen/src/ui/` (verify toolkit).
+- **Server operations to reuse (verified):** `common/src/cmd.rs` (`ServerChatCommand`, 96 variants incl. `MakeBlock`, `MakeSprite`, `MakeVolume`, `Object`, `Explosion`, `Lightning`, `WeatherZone`, `Time`, `TimeScale`, `AreaAdd/List/Remove`, `Spawn`, `MakeNpc`, `Buff`, `GiveItem`, `RtsimInfo/Npc`) — trace each to its server-side handler and call that, not the chat string.
+- **Possession (verified):** `veloren_server/events/player.rs` (possess handler, `PresenceKind::Possessor`, item-dupe guard).
+- **Weather:** `common` `weather::WeatherGrid` (resource fed into the rtsim tick in `veloren_server/rtsim/tick.rs`).
+- **Server tick / rtsim integration:** `veloren_server/rtsim/tick.rs` (rtsim ticks within server tick; `CreateNpcEvent`, `NpcBuilder`, `SimulationMode`, `WeatherGrid`, `time_of_day`).
+- **UI (verified hybrid):** in-game HUD `voxygen/src/hud/` (conrod); menus `voxygen/src/ui/ice/` (`IcedUi`); debug windows `voxygen/egui/` / `veloren_voxygen_egui` (behind `egui-ui`). Prototype HUD in egui, port to conrod.
+- Fluid: `common` `comp::fluid_dynamics` (entity-in-fluid physics only — NOT a terrain fluid-flow solver; From Dust flow is a real build).
 - Server binary/harness: `server-cli/`, `server/`.
 - Worldgen: `world/` (site/civ generation, map).
 
