@@ -1,9 +1,9 @@
 # Project Bastion — Turning Veloren into an Autonomous God-Game Colony Sim
 
 **A build & test directive for Claude Code**
-Version 1.2 · Architect-authored design doc · Target: fork of `veloren/veloren` (Rust, GPL-3)
+Version 1.3 · Architect-authored design doc · Target: fork of `veloren/veloren` (Rust, GPL-3)
 Lineage: Dwarf Fortress / RimWorld (autonomy & policy) + Black & White / From Dust / Populous (indirect divinity). **Explicitly *not* StarCraft-style unit micro.**
-*v1.2 changelog: reworked §7 to invariant-first testing after B0 exploration confirmed rtsim per-tick RNG is OS-seeded (added Deterministic Mode as work item WI-DET); added §2a "what already exists (verified)" — Veloren ships most god-power/spawn/zone/possession primitives as server ops, shifting B3/B6/B8/B12/B13 toward wiring rather than building.*
+*v1.3 changelog: added §3b input-context system (separate control schemes per mode — Overseer/Avatar/Menu; shared WASD, everything else mode-specific; rebind UI deferred but data model per-mode now); folded it + the Black & White 2 camera feel into B1.5; B12 embody now does a single atomic context swap to vanilla. v1.2: invariant-first testing (§7, WI-DET) + §2a verified "what already exists."*
 
 ---
 
@@ -136,7 +136,7 @@ are what make the world *play itself*.
 
 Pin the target so builders don't drift. Read this section against Pillar §1a: **the world is autonomous; the player influences, it does not command.** The game we are building has these properties:
 
-**Camera & view.** Fixed top-down / high-oblique orthographic **overseer** view over a bounded embark region. Pan, zoom, 90°-step rotate. A **Z-layer / depth slice** control (DF's most important interaction) so the player can peer down and view lower layers — Veloren is fully 3D voxel, so "cut away everything above layer Z" is a render filter, not new geometry.
+**Camera & view (Black & White 2 feel).** A top-down / high-oblique orthographic **overseer** camera over a bounded embark region. The feel target is **Black & White 2**, not a stiff RTS cam: **grab-drag panning** (mouse-grab the terrain and pull the world under a fixed cursor), plus WASD as a shared fallback; **free continuous orbit + pitch** (swoop from near-top-down down to a low oblique horizon) with a quick **snap-to-top-down** for reading the fortress; smooth **zoom that dollies from whole-region to near-ground**; and **inertia/easing** so it feels alive. A **Z-layer / depth slice** control (DF's most important interaction, already built in B1) cuts away everything above a layer so the player can dig down and read the colony in cross-section — Veloren is fully 3D voxel, so this is a render filter, not new geometry. Chunk streaming must follow the *camera* (via `client.spectate_position`), not a hero entity, so panning never hits LoD terrain.
 
 **Unit of play.** The player oversees a **colony** of ~5–8 autonomous colonists (Veloren humanoid `Body` reused) that grows over time. No single hero avatar; the camera is detached from any entity. Colonists are **agents with their own goals**, not selectable units awaiting orders — the player shapes *what the colony wants and can do*, then watches it act.
 
@@ -157,6 +157,24 @@ Pin the target so builders don't drift. Read this section against Pillar §1a: *
 5. Rarely, in a crisis or on a whim, the player **drafts** or **embodies** — then hands control back.
 
 **Explicit non-goals for v1** (cut scope ruthlessly): multiplayer; the solo-hero RPG campaign/quest progression; mounted/airship content; **and StarCraft-style select-and-command as a core loop** (only the bounded draft/Embody exist). Feature-flag them off; don't delete (keeps upstream merges sane). Direct first/third-person play *is* in scope, but only as Embody (B12).
+
+---
+
+## 3b. Input contexts — separate control schemes per mode (first-class system)
+
+There are **three distinct interaction modes**, and each owns its own control scheme rather than fighting over one keymap. (The B1 builder already hit this: it had to gate `Q` because the HUD claimed it for a hotbar slot — that's the smell of two schemes sharing one binding table. Fix it structurally now, before B2 piles more god-mode keys on.)
+
+The modes:
+1. **Overseer (god mode)** — the default. B&W2 grab-drag / orbit / zoom / depth-slice, plus designation and (later) divine-influence tools. This is the game you play.
+2. **Avatar (embodied)** — active only while possessing a colonist (B12). **Controls are *exactly* vanilla Veloren** (WASD, mouse-look, real combat, hotbar) so it feels native. Entering an avatar swaps the *whole* control context to vanilla; releasing swaps back to Overseer.
+3. **Menu / vanilla** — untouched, for regression safety and menus.
+
+**The system (build in B1.5, before B2's tools):** a `bastion` **InputContext** layer sits above `GameInput`. The active context owns a **binding table**; switching mode swaps the table wholesale (not key-by-key), and routes input to the right consumer (god camera/tools vs. the possessed entity's `comp::Controller`). Rules:
+- **Movement keys (WASD) are shared** across Overseer and Avatar by design — they pan the god camera in one, move the body in the other. **Everything else is mode-specific**, so no more HUD-vs-camera key collisions.
+- Context transitions are **clean and atomic**: on Embody, suspend god-mode bindings and hand input to the avatar (vanilla); on Release, the reverse. This dovetails with B12's server-authoritative control handoff — one mode change, not a scatter of per-key toggles.
+- The HUD must **not** consume keys that belong to the active context (the B1 `Q` gate becomes a general rule: the context layer arbitrates, HUD yields in Overseer mode).
+
+**Rebinding (recommendation, decided):** **do not build a rebind UI yet** — hardcode good defaults. But structure the binding tables **per-context from the start** so a settings screen with **separate keybind tabs per mode** (Overseer / Avatar) drops in cleanly at B9 with no data-model rework. This is the cheap-now, no-retrofit path.
 
 ---
 
@@ -229,6 +247,26 @@ Each block: **Objective · Touches · Approach · Done-when (tests).** Builders 
 - Launch flag puts you in ortho top-down over a generated world; pan/zoom/rotate feel responsive (>50 fps on a mid GPU).
 - Z-slice cursor hides everything above the chosen layer and reveals interior/underground voxels.
 - Vanilla 3rd-person mode still works when flag off (no regressions).
+- **STATUS: DONE.** `CameraMode::Overseer`, ortho reversed-depth projection, `Globals.bastion_slice_z` shader slice, `--bastion-overseer` flag, F9 toggle, WASD/Q-E/PgUp-PgDn. 60 fps @ 4K. See `BASTION_CAMERA.md`.
+
+### B1.5 — Overseer control layer: input contexts + Black & White 2 camera feel + streaming
+**Objective:** Build the **overseer control layer, done right** — (a) a `bastion` **input-context system** so god-mode and avatar-mode own separate control schemes (§3b), and (b) inside it, make the overseer camera *feel* like **Black & White 2** — grab the world and pull it, swoop freely from top-down to low oblique, zoom toward the cursor with inertia — and (c) stream chunks under the **camera** so panning never decays to LoD. No simulation, no interaction surface (that's B2). Supersedes B1's placeholder WASD/90°-snap controls.
+**Why before B2:** designation-painting and inspection want a solid, grabbable, correctly-picking world *and* a control-mode system to hang tools on. The B1 builder already hit a HUD-vs-camera key collision (`Q`); the context system fixes that class of bug structurally before more god-mode keys land.
+**Touches (verified from B1 findings):** a new `bastion` **InputContext** layer above `game_input.rs`/`control.rs` (per-mode binding tables); `voxygen/src/scene/camera.rs` (`CameraMode::Overseer`, free yaw+pitch, zoom easing); `scene/mod.rs` (overseer `maintain` arm); `session/mod.rs` (grab-drag + orbit input routed through the active context, replace 90° snaps); and `client.spectate_position(pos)` for streaming under the focus.
+**Approach:**
+- **Input-context system (§3b) — build this first, it's the foundation:** an `InputContext` enum (`Overseer`, `Avatar`, `Menu`) with a per-context binding table. The active context owns which bindings are live and where input routes (god camera/tools vs. a possessed entity's `comp::Controller`). **WASD is shared** across Overseer/Avatar by design; **everything else is context-specific.** Context switches are **atomic** (swap the whole table, not key-by-key). The HUD must yield keys the active context owns (generalize the B1 `Q` gate). Structure binding tables per-context now so a rebind UI with per-mode tabs drops in at B9 — but **do not build the rebind UI yet**; hardcode good defaults.
+- **Grab-drag panning (the B&W signature):** on drag, screen→world–pick the ground/slice point under the cursor (via `Camera::dependents()` `proj_mat_inv`/`view_mat_inv`, intersect the active slice/ground plane) and pan so that world point stays locked under the cursor. Add release **inertia** that eases out.
+- **Free orbit + pitch:** replace the 90° yaw snaps with continuous yaw, and add continuous **pitch** from near-top-down (~89°) down to a low oblique horizon (~20–25°). Orbit on right-drag (or modifier). Smooth/damped, with an optional **snap-to-top-down** for DF-style reading.
+- **Zoom-to-cursor with easing:** scroll dollies ortho scale from whole-region to near-ground, eased, zooming *toward the point under the cursor* (B&W style), not screen center.
+- **Stream under the camera:** call `client.spectate_position(focus)` each frame so terrain streams under the overseer focus, killing the pan-to-LoD problem the B1 findings flagged.
+- **Keep the Z-slice correct at any pitch/orbit;** keep everything `bastion`-gated so vanilla + the existing overseer flag stay intact.
+**Done-when:**
+- **Input contexts:** switching context swaps the whole binding table atomically; WASD works in both Overseer (pans) and Avatar (would move a body) while other keys are mode-specific; the HUD no longer steals context-owned keys (the `Q` collision is gone by construction, not by special-case). A stubbed `Avatar` context can be toggled for testing even before B12 wires real possession.
+- Grab-drag pulls the world under the cursor with the grabbed point staying locked to it; release carries eased inertia — reads like B&W2.
+- Continuous yaw + pitch from top-down to low swoop, smooth, no forced snapping (snap-to-top-down available on demand).
+- Zoom eases from whole-region to near-ground, toward the cursor.
+- Panning far keeps full-detail terrain (chunks stream under the focus via `spectate_position`) — no LoD wall.
+- Z-slice still cuts correctly at any camera angle; vanilla + prior overseer flag intact; >50 fps held.
 
 ### B2 — Inspect, designate & influence input (the overseer control surface)
 **Objective:** The *non-command* control surface. Click to **inspect** an entity/tile, drag-box to **inspect a group**, and a **designation/paint** cursor mode to express intentions on the world. This is plumbing, not yet behavior. Per Pillar §1a there is **no primary move/attack command** — selection exists for *inspection and designation targeting*, not to puppet units. (A bounded emergency nudge is added later in B8, deliberately separate.)
@@ -370,7 +408,7 @@ Each block: **Objective · Touches · Approach · Done-when (tests).** Builders 
   1. Ensure E is `SimulationMode::Loaded` (an active-colony colonist already is).
   2. Attach `Possessing` and, **server-authoritatively**, route player input into E's `comp::Controller` *instead of* the job-AI. The server is the single point that flips the driver, so there is never a frame where both drive E.
   3. **Suspend E's autonomous AI:** the job-arbitration system skips possessed colonists, and E's current claimed job is **released** (or explicitly paused) so no other colonist double-claims it and no orphan claim is left behind.
-  4. voxygen switches to the vanilla third-person (default) / first-person camera bound to E and enables vanilla movement/combat/interaction bindings. It now plays exactly like stock singleplayer Veloren for that one entity.
+  4. voxygen switches the **InputContext to `Avatar`** (built in B1.5) — a single atomic context swap to the vanilla third-person (default) / first-person camera and **exactly vanilla Veloren bindings** (movement/combat/interaction/hotbar). It now plays like stock singleplayer for that one entity. Release swaps the context back to `Overseer`. No per-key juggling — the context system handles the whole scheme change.
 - While embodied: **needs/mood keep decaying** (you can starve or exhaust yourself), **damage is real** (same entity), and the **rest of the colony keeps running under AI** while rtsim keeps ticking the wider world. Possession does not pause the game.
 - On **Release** (hotkey, e.g. `Backspace`/`Tab`, or the HUD button again): server hands E's `Controller` back to the job-AI, camera snaps back to the overseer view at E's position, overseer input restored; E resumes claiming jobs next arbitration cycle.
 - **Edge cases to handle explicitly:** death while possessed → auto-release to the overseer view + alert; possession supersedes draft (B8) for that colonist; switching straight from one possessed colonist to another = release-then-embody in a single action; releasing a colonist that has wandered mid-task.
