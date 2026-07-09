@@ -318,3 +318,34 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   visuals toggle, Part 4 pile tier scaling, + erase-type-filter/area-erase
   ONLY if cheap on existing seams. Fills + volumetric + volume-selection UX
   are B5.6b (z-extent model decided in the updated prompt). Client-side.
+- **PASS** (2026-07-09). Commits `87d09fc..899fbd9`, merge `c26f860`, tag
+  `bastion-block-B5.6a`. Terrain-conformed overlay DRAPING (fixes the
+  photographed floating-outline bug — `bastion::draped_rect_outline` +
+  `overlay_surface_z`, the reusable overlay-renderer seam B5.6b/§3w reuse);
+  H designation-visuals toggle On/Subtle/Off (visual-only); 5-tier pile
+  growth curve with plateau cap (count read-only). Two bugs found in Ben's
+  first live test and fixed on the branch: (1) H toggle no-op — removed the
+  over-aggressive auto-reveal; (2) erase left overlay/jobs behind — erase now
+  matches by XY at each rect's own z (`Region::clip_xy`, z-robust). Gate:
+  draping + toggle + erase ALL verified in-game by Ben ("yes they all
+  worked"); headless `--b4/--b5/--b55` 9/9 on a quiet machine + 6/6 bastion
+  unit tests (incl. two reproducing the erase bug); vanilla boots clean.
+  Approved split of B5.6 — fills/volumetric/volume-selection UX + erase-by-
+  type are B5.6b (its own session; RimWorld zone-UI reference captured in
+  the backlog). Standing lesson recorded: run gate scenarios on a QUIET
+  machine — B5 timing flakes under load (game/asset-session), root-caused
+  and isolated this session (B5.5-tag and this branch both 6/6 quiet).
+- Merged to `bastion/main` (no-ff), tagged `bastion-block-B5.6a`.
+
+### Session note (2026-07-09, post-B5.6a)
+
+- `bastion/main` green at `bastion-block-B5.6a` (`c26f860`). **Next per the
+  queue:** B5.6b (the zone-management UI — fills + volumetric + clickable
+  zones + erase-by-type; sizable, its own session), or B5.MINE-COVERAGE
+  investigation (colonists leave some designated cells — likely 5th
+  vertical-reachability bite, evidence for B5.8). B5.7/B5.8/B5.9 also queued.
+- Watch-items: mine-coverage gap; work-crew clumping (→ B6 dispersion);
+  overlay terrain-edit restaling (backlog); TRAVEL_SPEED eyeball still open.
+  Architect has uncommitted live edits to `readme/MEGA-PROMPT` +
+  `readme/B5.6-zone-visuals-prompt.md` in the working tree — left for the
+  next architect-inputs commit (not part of B5.6a).
