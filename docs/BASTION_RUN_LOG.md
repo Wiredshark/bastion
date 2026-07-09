@@ -381,3 +381,13 @@ lives on `bastion/block-<N>` for fine-grained rollback.
 - Watch-items: view-mode change doesn't trigger overlay rebuild (flagged,
   not a verified bug — consistency note); lit-fill look (backlog); B5.10
   walk-gait queued; erase-by-type = b-4.
+
+### B-MAP1 — Overseer minimap (rendered tile pyramid + overlays + click-nav)
+
+- Start SHA: `de86387` · branch `bastion/block-BMAP1` · started 2026-07-09.
+  Built in an isolated git worktree (`.claude/worktrees/bmap1`) because the
+  primary tree is checked out on `bastion/block-B5.6b-1` with a live session
+  (plus asset-lab + doc-audit sessions active). Off green `bastion/main`
+  (B5.6a + docs commits). Spec: `readme/B-MAP1-overseer-minimap-prompt.md`.
+  Client-side; independent of the B5.6b chain. (Rebased onto post-B5.6b-1
+  main `c8643b72b2` at the merge slot per the architect's ordering.)
