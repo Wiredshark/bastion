@@ -298,3 +298,33 @@ remove an earlier block's entries.
 - **IDEA (architect call):** add `*.rs text eol=lf` to `.gitattributes` to
   make this class impossible; left un-actioned (checkout-policy change is
   the architect's, not a block's).
+
+## 2026-07-09 — B-MAP1 (overseer minimap)
+
+- **ADD** (B-MAP1): GPU ortho-RTT tile source as a visual upgrade path — the
+  tile cache/pyramid/pin API in `voxygen/src/hud/bastion_minimap.rs` is
+  source-agnostic; swapping CPU voxel-scan tiles for true offscreen renders
+  needs a bespoke wgpu pass + readback into the UI atlas. See
+  `docs/BASTION_BMAP1_FINDINGS.md` §2.
+- **ADD** (B-MAP1): icon art for minimap layer chips (currently letter
+  buttons C/Z/P/F/!) and pin glyphs — asset-lab wishlist item.
+- **FIX** (B-MAP1): pile pins mark ALL ground `PickupItem` entities (the
+  `BastionPile` marker is server-only, not net-synced). Acceptable now;
+  sync the marker (one x-macro entry + NetSync impl) if god-only pile
+  filtering is wanted.
+- **ADD** (B-MAP1): minimap zoom + layer toggles are session-local (reset on
+  restart); move into interface settings if persistence is wanted.
+- **ADD** (B-MAP1): tile window is 16×16 chunks (512 blocks) — tiles fade to
+  worldgen past that. If colonies outgrow it, raise `WINDOW_CHUNKS` (memory
+  is ~6 KB/chunk + two 512² buffers) or add a coarser mid-tier tile level.
+- **FIX** (B-MAP1): hillshade at chunk borders can be 1px stale on the
+  neighbor's side until that neighbor re-blits (cosmetic; documented in
+  `shade_region`).
+- **ADD** (existing watch-item, restated): B5.6a's in-world draped overlays
+  still don't re-drape on terrain edits. The minimap now consumes
+  `TerrainChanges::modified_blocks` for exactly this; the same trigger can
+  set `bastion_designation_dirty` when edits land inside designation
+  footprints.
+- **IDEA** (B-MAP1): composite upload is a 1 MB image clone per dirty
+  maintain (matches vanilla behavior at 4× size); throttle or partial-upload
+  if it ever profiles hot.
