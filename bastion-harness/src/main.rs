@@ -67,6 +67,13 @@ struct Args {
     /// Prints one JSON result line; exit code reflects pass/fail.
     #[arg(long)]
     b4_scenario: bool,
+
+    /// bastion (B5): run the work-execution acceptance scenario (mine dig +
+    /// stone drops, chop + log drops, build with/without material, skill XP)
+    /// + a zero-input soak. Prints one JSON result line; exit code reflects
+    /// pass/fail.
+    #[arg(long)]
+    b5_scenario: bool,
 }
 
 /// Aggregate state dump. Deliberately coarse: aggregates are far more stable
@@ -112,6 +119,8 @@ fn main() -> ExitCode {
 
     if args.b4_scenario {
         b4_scenario(&args)
+    } else if args.b5_scenario {
+        b5_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -473,6 +482,260 @@ fn b4_scenario(args: &Args) -> ExitCode {
         && avg_tick_ms < 100.0;
     println!("{}", result);
     println!("B4 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (B5): the work-execution acceptance scenario (design doc §B5
+/// Done-when): mine a 3×3×3 → hole + stone drops; chop wood → logs; build
+/// with material present → wall placed + material consumed; build without →
+/// stalls and flags `needs_materials`; skill XP grows on completion.
+fn b5_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{BUILD_MATERIAL_ITEM, DesignationKind, Region, WorkType},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-b5-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-b5".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "b5: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    // 1. Anchor + force-load (same recipe as B4).
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    let loaded = server.bastion_force_load_area(site_wpos, 5);
+    info!(loaded, "b5: force-loaded area");
+
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain
+                .get(Vec3::new(x, y, *z))
+                .is_ok_and(|b| b.is_filled())
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let cz = ground_z(&server, cx, cy).expect("no ground at site center");
+
+    // 2. Spawn the band.
+    let names = server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0), 3);
+    tick(&mut server, 60);
+
+    // 3. MINE: manufacture a guaranteed-solid 3×3×3 block (test geometry
+    // shouldn't depend on natural terrain unevenness), tick to apply, then
+    // designate it. `state.set_block` is the same authoritative BlockChange
+    // path B5's execution uses — just called directly instead of via a job.
+    let mine_min = Vec3::new(cx + 20, cy, cz - 4);
+    let mine_max = mine_min + Vec3::new(2, 2, 2);
+    for z in mine_min.z..=mine_max.z {
+        for y in mine_min.y..=mine_max.y {
+            for x in mine_min.x..=mine_max.x {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)));
+            }
+        }
+    }
+    tick(&mut server, 2);
+    let mine_jobs = server
+        .bastion_place_designation(Region { min: mine_min, max: mine_max }, DesignationKind::Mine)
+        .len();
+
+    // 4. CHOP: manufacture a small wood "trunk" elsewhere (independent of
+    // whether a real tree happens to be nearby), tick, designate.
+    let chop_base = Vec3::new(cx - 20, cy, cz + 1);
+    let chop_top = chop_base + Vec3::new(0, 0, 3);
+    for i in 0..=3 {
+        server.state_mut().set_block(
+            chop_base + Vec3::new(0, 0, i),
+            Block::new(BlockKind::Wood, Rgb::new(90, 60, 30)),
+        );
+    }
+    tick(&mut server, 2);
+    let chop_jobs = server
+        .bastion_place_designation(Region { min: chop_base, max: chop_top }, DesignationKind::Chop)
+        .len();
+
+    // 5. BUILD (phase A): one colonist carries the *only* unit of material
+    // (stands in for B6 hauling) and should complete a build at an empty
+    // spot. Deliberately sequenced before phase B below: with only one unit
+    // of material in the whole colony, designating both build sites at once
+    // would let arbitration race to whichever is nearer the carrier — that's
+    // not what this scenario is testing. Placing (and clearing) phase A
+    // first makes which one "has materials" deterministic.
+    let build_carrier = names.get(1).cloned().unwrap_or_default();
+    let gave_item = server.bastion_give_colonist_item(&build_carrier, BUILD_MATERIAL_ITEM);
+    let build_ok_pos = Vec3::new(cx, cy + 20, cz + 1);
+    let build_ok_jobs = server
+        .bastion_place_designation(
+            Region { min: build_ok_pos, max: build_ok_pos },
+            DesignationKind::Build,
+        )
+        .len();
+
+    // 6. Run mine/chop/build-A until everything settles (or the cap elapses).
+    let mut mine_cleared = false;
+    let mut chop_cleared = false;
+    let mut build_placed = false;
+    for _ in 0..120 {
+        tick(&mut server, 30);
+        mine_cleared = (mine_min.x..=mine_max.x).all(|x| {
+            (mine_min.y..=mine_max.y).all(|y| {
+                (mine_min.z..=mine_max.z).all(|z| {
+                    server
+                        .bastion_block_kind(Vec3::new(x, y, z))
+                        .is_none_or(|k| !k.is_filled())
+                })
+            })
+        });
+        chop_cleared = (0..=3).all(|i| {
+            server
+                .bastion_block_kind(chop_base + Vec3::new(0, 0, i))
+                .is_none_or(|k| !k.is_filled())
+        });
+        build_placed = server
+            .bastion_block_kind(build_ok_pos)
+            .is_some_and(|k| k.is_filled());
+        if mine_cleared && chop_cleared && build_placed {
+            break;
+        }
+    }
+    let stone_count = server.bastion_count_items_near(
+        mine_min.map(|e| e as f32),
+        6.0,
+        "common.items.crafting_ing.stones",
+    );
+    let log_count =
+        server.bastion_count_items_near(chop_base.map(|e| e as f32), 6.0, "common.items.log.wood");
+
+    // 7. BUILD (phase B): the material is now consumed colony-wide (phase A
+    // built with the only unit), so this designation is unsatisfiable and
+    // must stall + flag `needs_materials`, not silently claim-and-block.
+    let build_stall_pos = Vec3::new(cx, cy - 20, cz + 1);
+    let build_stall_jobs = server
+        .bastion_place_designation(
+            Region { min: build_stall_pos, max: build_stall_pos },
+            DesignationKind::Build,
+        )
+        .len();
+    // A couple of arbitration cycles is enough for the needs_materials sweep
+    // to run and for arbitration to confirm no one claims it.
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL * 3);
+    let build_stall_kind = server.bastion_block_kind(build_stall_pos);
+    let build_stall_untouched = build_stall_kind.is_none_or(|k| !k.is_filled());
+    let any_needs_materials = server.bastion_any_job_needs_materials();
+    // Any of the 3 colonists may have been the one arbitration assigned to
+    // each work type — check across all of them, not a specific name.
+    let any_mining_xp = names
+        .iter()
+        .filter_map(|n| server.bastion_colonist_skill(n, WorkType::Mine))
+        .any(|s| s.level > 0 || s.xp > 0.0);
+    let any_woodcutting_xp = names
+        .iter()
+        .filter_map(|n| server.bastion_colonist_skill(n, WorkType::Chop))
+        .any(|s| s.level > 0 || s.xp > 0.0);
+
+    // 7. Zero-input soak.
+    let soak_ticks: u64 = 600;
+    let soak_started = Instant::now();
+    tick(&mut server, soak_ticks);
+    let soak_elapsed = soak_started.elapsed();
+    let avg_tick_ms = soak_elapsed.as_secs_f64() * 1000.0 / soak_ticks as f64;
+
+    let result = serde_json::json!({
+        "b5_mine_jobs": mine_jobs,
+        "b5_chop_jobs": chop_jobs,
+        "b5_build_ok_jobs": build_ok_jobs,
+        "b5_build_stall_jobs": build_stall_jobs,
+        "b5_gave_item": gave_item,
+        "b5_mine_cleared": mine_cleared,
+        "b5_chop_cleared": chop_cleared,
+        "b5_build_placed": build_placed,
+        "b5_stone_count": stone_count,
+        "b5_log_count": log_count,
+        "b5_build_stall_untouched": build_stall_untouched,
+        "b5_any_needs_materials": any_needs_materials,
+        "b5_any_mining_xp": any_mining_xp,
+        "b5_any_woodcutting_xp": any_woodcutting_xp,
+        "b5_soak_avg_tick_ms": avg_tick_ms,
+    });
+    let pass = mine_jobs == 27
+        && chop_jobs == 4
+        && build_ok_jobs == 1
+        && build_stall_jobs == 1
+        && gave_item
+        && mine_cleared
+        && chop_cleared
+        && build_placed
+        && stone_count >= 20 // allow a little slack for edge/collision cases
+        && log_count == 4
+        && build_stall_untouched
+        && any_needs_materials
+        && any_mining_xp
+        && any_woodcutting_xp
+        && avg_tick_ms < 100.0;
+    println!("{}", result);
+    println!("B5 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
