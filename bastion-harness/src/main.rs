@@ -1042,18 +1042,34 @@ fn b55_scenario(args: &Args) -> ExitCode {
     for n in &names {
         server.bastion_set_colonist_skill(n, WorkType::Mine, 10);
     }
+    // Terraform a fully-determined work site: natural terrain slopes across
+    // a 20×10 footprint, so a naive single-level slab buries blocks inside
+    // hillsides (their `+1` arrival cell is a 1-block gap a colonist can't
+    // fit in) and floats others over air pockets — the standing vertical-
+    // reachability trap (architecture guide §5), which stalled the first
+    // run at 8/200. Per column: under-fill 3 deep (mined-out cells expose a
+    // walkable floor one step down — no pits), the mineable slab at one
+    // level, and 3 blocks of headroom above; plus a solid perimeter ring at
+    // slab level (guaranteed footing) with its own headroom.
     let p2_gz = ground_z(&server, cx - 20, cy).unwrap_or(cz);
     let p2_min = Vec3::new(cx - 29, cy - 5, p2_gz);
     let p2_max = Vec3::new(cx - 10, cy + 4, p2_gz);
-    for y in p2_min.y..=p2_max.y {
-        for x in p2_min.x..=p2_max.x {
-            server.state_mut().set_block(
-                Vec3::new(x, y, p2_gz),
-                Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
-            );
-            server
-                .state_mut()
-                .set_block(Vec3::new(x, y, p2_gz + 1), Block::empty());
+    for y in (p2_min.y - 1)..=(p2_max.y + 1) {
+        for x in (p2_min.x - 1)..=(p2_max.x + 1) {
+            // Under-fill + surface (ring and slab alike are solid at p2_gz;
+            // only the inner 20×10 gets designated).
+            for z in (p2_gz - 3)..=p2_gz {
+                server.state_mut().set_block(
+                    Vec3::new(x, y, z),
+                    Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
+                );
+            }
+            // Headroom over both slab and ring.
+            for dz in 1..=3 {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, p2_gz + dz), Block::empty());
+            }
         }
     }
     tick(&mut server, 2);
