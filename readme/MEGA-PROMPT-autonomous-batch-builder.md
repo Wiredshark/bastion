@@ -92,11 +92,51 @@ B2a    [PROMPTED] Interaction surface: select/inspect, right-click radial menu, 
 B3     [PROMPTED] Colonists: entity model + starting band + loaded↔simulated boundary
 B4     [PROMPTED] Designation → job board → AUTONOMOUS arbitration + pathing  ← Slice B heart
 B5     [MERGED]   Work execution: dig/chop/build effects, item drops, skill XP (tag bastion-block-B5)
-B5.5   [PROMPTED] PATCH: zone/designation deletion + item-drop pile aggregation (merge-never-delete,
-                  conservation-exact) — see readme/B5.5-zone-delete-drop-aggregation-prompt.md. Found in
-                  the first live demo; do BEFORE B6 (B6 hauling consumes piles).
+B5.5   [MERGED]   PATCH: zone deletion (Erase tool + radial Delete zone, exact AABB subtraction) +
+                  item-drop pile aggregation (BastionPile, merge-never-delete, conservation-exact — the
+                  fix was should_merge:false; despawn timer removed as a latent item-loss bug). Tag
+                  bastion-block-B5.5. NOTE: pile visual tier-scaling shipped basic; B5.6 carries the
+                  full growth-tier polish.
+B5.6   [PROMPTED] PATCH (client-side): zone visuals — outlines/fills DRAPE terrain, volumetric zones render
+                  countable depth, ON/SUBTLE/OFF designation-visuals toggle (visual-only), + PILE VISUAL
+                  SCALING (pile mesh grows through tiers with count, caps at a great-mound plateau;
+                  visuals never touch the count) — see readme/B5.6-zone-visuals-prompt.md. Builds the
+                  reusable overlay-draping utility the §3w boundary overlay reuses.
+B5.7   [DESIGNED] MICRO-PATCH: floating-tree cleanup. When chopping severs the trunk, any DISCONNECTED
+                  canopy remainder (connectivity check from the cut upward) is removed and converted
+                  DIRECTLY into the resource pile — conservation-exact: severed blocks yield the same
+                  logs/resources as if chopped block-by-block (whole-tree yield invariant asserted in the
+                  chop scenario). No floating tree-tops, ever. INTERIM ONLY: the long-term plan stands
+                  (future-work §2 — staged fake tree-fall as watched-tier polish; NEVER tree physics);
+                  this patch just makes chopping clean NOW. Test: chop every tree family incl. giant
+                  trees; zero floating remnants; yield matches whole-tree expectation; vanilla flagless
+                  chop behavior unchanged.
+B5.8   [PROMPTED] PATCH: vertical mobility — colonists SCRAMBLE 1–3 block ledges (wire the EXISTING Veloren
+                  climb capability into colonist pathing), auto-CARVE stair sub-jobs through own-colony
+                  diggable terrain (the pit-trap, solved by the system; interim slice of §3v
+                  access-in-the-dig-plan), and buildable LADDERS (climbable vertical links, player-placed
+                  now, autonomous later) — see readme/B5.8-vertical-mobility-prompt.md. The 4×-bitten
+                  vertical-reachability trap, fixed BEFORE B6 hauling hits it as bite #5. Gate includes
+                  removing the old hand-patched access geometry from B4/B5/B5.5 scenarios.
 B6     [DESIGNED] Stockpiles, hauling, reservations (conservation invariants; haul range = colony boundary
-                  field if built, see future-work §3w)
+                  field if built, see future-work §3w). **REQUIREMENT — individual carry from piles:**
+                  hauling DRAWS UNITS from a pile (count-based pickup, per the B5.5 interface guard), never
+                  abstract-moves the whole pile; the colonist visibly carries what it hauls (held/on-back
+                  item render now; the dedicated carry ANIMATION is later §3u polish). **Carry amount
+                  scales with the colonist:** base armful modified by a strength/carry stat fed by the B5
+                  skill-XP system (hauling skill grows → bigger armfuls), with sane per-item-type caps
+                  (stone armful ≠ log armful). Stats-not-yet-designed fields default sensibly and are
+                  flagged PROVISIONAL in the findings for the eventual stat-system design pass.
+B-ASSET1 [PROMPTED] INDEPENDENT: asset integration harness + render test arena (flagged asset-lab loader,
+                  real-engine dynamic tests per ASSET_DYNAMIC_TEST_SPEC, --asset-arena client mode for
+                  Ben's eyes-on review) — see readme/B-ASSET1-integration-render-arena-prompt.md.
+                  Buildable any time after B0/B3, alongside B6; coordinates with the asset session ONLY
+                  via readme/ logs.
+B-TESTBED [PROMPTED] INDEPENDENT: reference colony test environment (seeded full-colony scenarios —
+                  construction/economy/wildlife/monster lifecycles — with structured event timeline +
+                  scripted visual capture so CLAUDE can observe and judge runs, + --watch for Ben) — see
+                  readme/B-TESTBED-reference-colony-prompt.md. Best after B6; becomes the standing
+                  integration regression suite (future blocks add scenarios in their Done-when).
 B7     [DESIGNED] Needs decay, mood, self-jobs, idle AI
 
 ── Phase 3: agency (the DF soul) ───────────────────────────────────

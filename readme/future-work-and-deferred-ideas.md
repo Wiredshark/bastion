@@ -711,6 +711,170 @@ want to inhabit it more intimately.
 
 ## 4. Open watch-items from build sessions (track, don't lose)
 
+### 3z. Textures & surfaces — the material framework (what "texture" means in a per-voxel-color engine)
+**The core fact:** Veloren has NO UV-mapped textures on models or terrain — it's **per-voxel color**
+throughout. Models carry palette colors (census: per-file RGBA); terrain blocks are colored by worldgen
+code with per-block noise jitter (mottled grass = thousands of color-jittered voxels, not an image). So
+"texture" in this engine = **four distinct layers**, each with its own generation framework:
+
+**(a) Voxel MATERIAL PATTERNS (the main event — Claude already does this ad hoc; FORMALIZE it).**
+The mossy stone, weathered wood, and ramp-dithering the pipeline already produces IS the texture system.
+Formalize into a **material library**: reusable, seeded, parameterized surface functions the generators
+call — `apply_material(region, 'mossy_stone', seed, weathering=0.4)`:
+- Core set: stone (clean/mossy/weathered/cut), wood (plank/log/aged/painted), thatch, plaster+timber,
+  brick, metal (polished/rusted), fabric, bone, ice/snow-dusted, lava-rock, per-race decorative motifs
+  (dwarven geometric banding, elven organic swirls — culture-distinct surfacing).
+- Each material = ramp selection (from the extracted real ramps) + a dither/pattern function (mottle,
+  banding, grain, edge-wear, top-surface accumulation for moss/snow) + parameters (age, wetness, wear).
+- **Payoffs:** consistency (all "mossy stone" agrees), variation-for-free (same building, different
+  seed/age = weathered variant — ties §3f tech tiers: buildings AGE), and the style harness gains a
+  material-conformance check. This slots into the pipeline maturity roadmap right after ramp extraction —
+  it's ramp extraction's natural second act. **Asset-session task: extract the pattern functions implicit
+  in existing REAL assets (how does Veloren actually dither wood vs stone?), then build the library.**
+
+**(b) Genuine 2D raster assets (the actual images in the game — verify inventory in-repo).**
+UI elements, icons, item images, map tiles, fonts live as PNGs (voxygen element assets). Claude can
+generate these — pixel-art at small raster sizes is well within capability:
+- Item icons (every wishlist item needs one — hundreds; some may render FROM the .vox model, verify the
+  pipeline: if icons are auto-rendered, this is free; if hand-drawn PNGs, it's a generation category),
+  UI panels/buttons in Veloren's UI style, map/overlay iconography (the §3s map-is-the-interface layer
+  will need a full icon language: borders, trade routes, boundary markers, alerts), buff/status icons for
+  new systems (faith, mood, weather).
+- Framework = the asset pipeline pattern applied to 2D: inventory existing PNGs → extract style
+  (dimensions, palette, outline conventions) → generate → a raster preview harness (contact-sheet render +
+  style checks: size/palette/readability-at-16px) → catalog with the same TEST/REAL + purpose tagging.
+
+**(c) Worldgen surface coloring (new biomes' look = code constants).**
+Terrain color "kinds" (grass/sand/stone ranges + jitter) live in worldgen code. New biomes (§ islands/
+experimental worldgen) need new color-kind definitions — authorable as small code/data additions. The
+material library's ramps should SHARE the worldgen palette space so generated structures sit naturally on
+generated terrain (one color world, two consumers).
+
+**(d) Shader-level surfaces (far tier — code, not content).**
+Water, clouds, sky are procedural WGSL shaders. Variants (lava glow, corrupted-land shimmer, divine-
+territory tint for dominion-spread §3t) are shader authoring — tag NEEDS:shader-work, budget like novel
+rigs: rare, deliberate. The dominion-tint is the one with real design pull (visible god-territory).
+
+**Build order:** (a) material library (asset-session, now — pure content-side, immediate quality win) →
+(b) 2D raster pipeline (asset-session, after in-repo icon-pipeline verification) → (c) with experimental
+worldgen → (d) far. Wishlist gains: material library entries, icon sets, map-icon language.
+
+### 3y. Nature & environment simulation — the living-world substrate (exhaustive map)
+**What already EXISTS (research-confirmed — this is an upgrade job, not greenfield):** a server-simulated
+**weather grid** — <cite index="56-1">weather cells (cloud, rain, wind) covering 16×16 chunks each, simulated and synced every 5 seconds, currently noise-driven</cite> — with rain rendering, lightning+thunder;
+**temperature-aware spawning** (desert wildlife spawns by heat); rtsim **chunk-resource tracking** — <cite index="62-1">resources are tracked so they aren't created from nothing when a chunk reloads (explicitly anti-grind), and the roadmap wants wildlife population tracking</cite>; **repopulation queues** — <cite index="57-1">when an NPC dies, rtsim queues repopulation with a minimum delay instead of instantly recreating it</cite>; buoyancy/mass/density on entities; a calendar; day/night. The rtsim design
+doctrine — processes tending toward stable equilibrium, variable tick rates, unloaded ≈ loaded behavior — is
+*exactly* the architecture nature simulation needs. Everything below extends these seams.
+
+**A. WILDLIFE LIFECYCLE (deer breed, age, die):**
+- **Population model per species per region** (rtsim world-tier): birth rate, death rate (age/predation/
+  starvation/weather), carrying capacity by biome + season. Individuals when loaded; population numbers when
+  not (Victoria-pops per §3t). The repopulation-queue is the seed of this — upgrade it from "respawn timer"
+  to "births from the regional population."
+- **Breeding:** pairs → offspring (juvenile variants = cheap variation-pack assets: fawn, calf, cub —
+  wishlist add); gestation/season gating (spring births); loaded-tier: visible courtship/nesting [AN-N mostly].
+- **Aging & death:** juvenile→adult→old stages (scale/palette variants); natural death leaves a carcass
+  [A: carcass props] → scavenger food (ties food web) → decay.
+- **Predator–prey:** predators hunt from the prey *population* (unloaded: numeric predation; loaded: real
+  hunts — B-AG5 drives). Wolf packs with territories. **THE UO LESSON (cautionary, famous):** Ultima
+  Online's closed ecology collapsed instantly under player pressure — fragile closed loops die. Design as
+  **pressure-robust**: populations driven by logistic growth toward biome carrying-capacity with predation/
+  hunting as pressure terms, never a literal only-what's-eaten-breeds chain. Over-hunt a region → it
+  genuinely empties (rtsim already refuses from-nothing respawn — extend to fauna) → recovers slowly by
+  migration/breeding. Scarcity is real but recovery is mathematical, not simulated-to-death.
+- **Migration & seasonal behavior:** herds shift biomes by season (world-tier movement of population blobs;
+  loaded-tier herds actually walk — travel machinery exists); hibernation (bears vanish in winter);
+  waterfowl leave. Legible via the chronicle ("the elk have returned to the valley").
+
+**B. FLORA LIFECYCLE (saplings, spread, succession):**
+- **Growth stages:** sapling → young → mature → ancient → dead/snag (stage variants per tree family —
+  variation-pack assets; sprite growth stages for plants/crops already exist as a pattern).
+- **Spread:** mature trees seed saplings in a radius (biome- and density-gated — forests expand into
+  clearings, slowly); chopped forests REGROW over years (the rtsim chunk-resource tracking is the exact
+  substrate — trees are already resources; add regrowth ticks). Deforestation is thus real and visible, and
+  recovery is watchable — colony over-logging has consequences (ties carrying-capacity + legibility).
+- **Succession (cheap version):** grass → shrubs → pioneer trees → mature forest on disturbed ground;
+  burned areas (hazard engine) regrow through the sequence. One stage-timer per chunk-cell, big alive-ness.
+- **Crops (colony-side):** growth stages + season/temperature gating (winter kills unharvested crops →
+  food planning matters, DF-style) [SYS: farming].
+
+**C. MONSTER ECOLOGY ("what are the monster plans"):** monsters aren't spawn-noise, they're agents with
+DRIVES (B-AG5 world-verb library, monster-flavored):
+- **Lairs & territories:** each monster/pack has a home (cave, ruin — ties §3v) and a patrol/hunt range;
+  territory overlaps with colony boundary (§3w) = incursions. Kill the monster, the lair EMPTIES (rtsim
+  no-from-nothing) — until something else claims it (repopulation queue: a new beast moves in after years).
+- **Drives:** hunt (from wildlife populations — monsters compete with your hunters for the same deer!),
+  hoard (drag loot to lair — dungeon treasure becomes *earned* ecology), raid (hunger/aggression pressure →
+  colony livestock is prey — husbandry creates monster incentive, a real food-web loop), breed (population
+  model same as wildlife, slower), migrate (displaced by settlement growth — expansion pushes monsters
+  deeper, who then push back; the frontier feels *contested*).
+- **Megabeasts (DF-style):** singular named world-actors in rtsim with long-cycle behavior (sleep decades →
+  wake → ravage → chronicle names an Age after it, per §3t DF ages). The Nemesis-style memory (§3t) applies:
+  a driven-off megabeast remembers.
+- **Dungeon repopulation:** cleared dungeons refill SLOWLY and legibly (a new faction moves in — chronicle
+  entry), never silent same-day respawn.
+
+**D. WEATHER (upgrade the existing grid from noise to system):**
+- **Now:** noise-driven cells. **Upgrade path:** (1) biome/season-coupled probabilities (deserts rarely
+  rain; monsoon seasons), (2) moving fronts (advect cells by wind — weather *arrives*, visible on the
+  horizon), (3) gameplay coupling — the grid is already synced everywhere, so systems can read it:
+- **Effects to wire (each cheap, sum = alive):** rain waters crops (skip irrigation) + fills DF-FLUID
+  sources when that lands + dampens fire (hazard engine input) + mood effects (B7: cozy-inside vs
+  miserable-wet — DF thought material); wind affects ranged combat + windmill/sail props + wind_sway
+  amplitude; lightning strikes as hazard events (fire starter, rare livestock kill — chronicle fodder);
+  fog as visibility (stealth/raid weather — attackers *choose* storms: weather becomes tactics); storms
+  ground airships/boats (trade delay — economy feels weather).
+- **Divine weather:** the god's storm/clear-skies verbs write INTO the weather grid (B13 favor-costed) —
+  the grid is the shared substrate for natural and divine weather; a rival god's storm is
+  indistinguishable from nature until the chronicle attributes it.
+
+**E. SEASONS, TEMPERATURE, SNOW & ICE (the Vintage-Story tier):**
+- **Season driver:** calendar exists; add a seasonal temperature curve per latitude/altitude composed with
+  the existing temperature field (spawning already reads temperature — seasons make it time-varying).
+- **Snow ACCUMULATION:** snowfall (cold + precipitation) deposits snow-layer blocks/overlays that DEEPEN
+  over a winter (visual: world whitens gradually, not a texture swap); accumulation slows movement (paths/
+  roads matter more — plowing/shoveling as a winter colonist job!); melt in spring feeds runoff (→ F).
+  Roofs shed vs accumulate (structure prop polish). [Snow-layer sprite/block assets — wishlist add.]
+- **Freezing:** standing water → ice blocks below freezing (walkable! — winter changes the MAP: rivers
+  become roads, moats stop working — a genuine strategic season, DF-style); thaw in spring. Ice as
+  material already exists (§ earlier decision: ice as terrain, not fluid-sim) — freezing is a block-swap
+  driven by temperature, NOT fluid simulation; viable pre-DF-FLUID.
+- **Cold as pressure:** temperature → clothing/shelter needs (B7 needs: warmth), frostbite risk outdoors,
+  livestock need barns in winter (husbandry loop), crops die at frost (food calendar). Winter = the
+  colony-sim's classic pressure season; summer = drought/fire risk (hazard engine).
+
+**F. WATER CYCLE, FLOODING & DRAINAGE (the DF-FLUID coupling — design NOW, build when fluid lands):**
+- **Without fluid (now):** rain is visual + crop input; static water bodies; freezing works (block-swap);
+  no flooding. Fine.
+- **When DF-FLUID lands, the cycle closes:** rain → surface runoff (downhill flow) → pooling in basins
+  **→ FLOODING where there's no drainage** — yes, low-lying colonies flood in storms. This is a FEATURE
+  (From Dust's whole soul) but needs the prevention layer:
+- **Drainage systems (player/colonist infrastructure — wishlist adds):** ditches, gutters (roof→cistern!),
+  culverts under roads, canals, levees/dikes, drains [A assets + SYS: flow]. Site-suitability learns
+  flood-risk (§3n embark: "this basin floods" — visible before you settle); colonists dig drainage as jobs;
+  autonomous settlements avoid/mitigate basins (B-AG6 reads flood-risk).
+- **Evaporation & equilibrium:** puddles/floodwater evaporate by temperature (the decay term that returns
+  the world to baseline — every accumulation needs its decay or the world ratchets); seasonal water table
+  (spring melt-flood pulse from E — an annual, predictable, plan-around-able flood season: the Nile loop,
+  fertile floodplains as reward for the risk).
+- **Flood as hazard-event:** flash floods in storms via the trigger→link→effect engine — warnings
+  (chronicle/alerts), damage, drowning risk, and the god verbs (part the waters / send the deluge —
+  divine flood is the oldest god-game move there is).
+
+**G. ARCHITECTURE & DISCIPLINE (how it all runs):**
+- **Everything above is world-tier rtsim** (population numbers, weather cells, growth timers, season
+  curves) **with loaded-tier concreteness** — exactly rtsim's stated design (equilibrium-seeking, variable
+  tick, unloaded≈loaded). No per-entity nature sim when unwatched, ever.
+- **Every accumulation has a decay; every population a carrying capacity; every cycle an equilibrium** —
+  the anti-ratchet rule (snow melts, floods evaporate, forests regrow, populations recover). Soaks assert
+  equilibria hold over 30-day runs (the Tier-1b soak gains nature assertions).
+- **Legibility:** seasons/weather/populations surface in overlays + the chronicle ("a hard winter", "the
+  wolves grow bold", "the flood of year 12"). Nature events are STORY events.
+- **Build order:** wildlife populations + flora regrowth (extend existing rtsim seams — earliest) →
+  seasons/temperature curve → snow accumulation + freezing (pre-fluid, block-swap tier) → weather-gameplay
+  coupling → monster ecology (needs B-AG5 drives) → the full water cycle (gated on DF-FLUID, designed here
+  so fluid lands into a ready frame).
+
 ### 3x. Selection-on-terrain, construction site-prep, and road building (the ground-truth cluster)
 Three related items, all about construction meeting real topography (surfaced by the first live demo):
 
@@ -890,6 +1054,18 @@ column to the work-verb library and the asset catalog's READY/NEEDS tagging.
 farm gestures (B-AG/food loop) → build-hammering (construction is watched constantly) → worship/prayer (the
 faith layer's visibility) → the rest. Sprites' wind_sway and operable-part motion (gates) remain separate,
 cheaper categories (§3l).
+
+**DEFERRED POLISH — individual carrying (haul visuals).** Note for later: **pile aggregation (§B5.5) is a
+GROUND/STORAGE optimization, NOT a carrying model.** Loose drops merge into piles for performance + tidiness;
+but a hauling colonist should carry an *individual piece* (or a realistic armful) VISIBLY — in hand / on the
+back / on a shoulder — ideally with a **carry animation** (a NEEDS:animation-code custom verb: walk-while-
+carrying, pick-up, set-down), NOT teleport a "×47" abstraction into a stockpile. Two separate concerns: on
+the ground = merged piles; in transit = individual/realistic carry. **Design guard for B6:** treat a pile as
+*a count you draw individual pieces from* (the B5.5 pile already exposes count-based pickup), so hauling grabs
+a piece/armful from the pile rather than abstract-moving the whole pile — this keeps individual visible
+carrying available as a later polish pass instead of foreclosing it with a whole-pile-teleport implementation.
+Pure polish (the loop works either way), but the B6 interface choice determines whether the nice version stays
+cheap later.
 
 ### 3s. World connective tissue — roads, bridges, sea lanes, territory, nations (the inter-settlement layer)
 What turns a *colony* sim into a *world* sim: the systems BETWEEN settlements. Tier-2/3 — rides on B-AG6
