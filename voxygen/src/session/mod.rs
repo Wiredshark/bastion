@@ -405,7 +405,11 @@ impl SessionState {
             // Aim at the torso, not the feet.
             let rel = pos.0 + Vec3::unit_z() * 0.8 - origin;
             let t = rel.dot(dir);
-            if !(0.0..=600.0).contains(&t) {
+            // NOTE: the ray origin (NDC z=1) sits OVERSEER_BEHIND (768)
+            // blocks behind the camera plane (B1.7 ortho near extension), so
+            // the reachable world starts around t ≈ 768 — the cap must
+            // account for that or every entity is silently rejected.
+            if !(0.0..=2000.0).contains(&t) {
                 continue;
             }
             let radius = bodies.get(entity).map_or(0.6, |b| b.max_radius())
