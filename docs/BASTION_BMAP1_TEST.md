@@ -50,4 +50,24 @@ Checklist (run with `--bastion-overseer`, F9 into overseer):
    vanilla minimap appears and behaves stock (voxel map, zoom buttons,
    markers); no bastion widget, no extra maintain cost.
 
+Items 9–10 added mid-gate at Ben's request (in-block scope addition, b-1
+fold-in precedent; first gate round verdict on 1–8: "this is great"):
+
+9. **Minimap resize**: the S/M/L/XL button (next to zoom +/−) cycles the
+   minimap size; persists across sessions (it drives the vanilla
+   `minimap_scale` interface setting, shared with the settings slider).
+10. **World map (M) overseer layers**: the big map shows the same rendered
+    tile layer (zoom in — max zoom raised 16→128 px/chunk in overseer mode
+    only), zone footprints, colonist/pile pins, and the camera frustum; the
+    minimap's C/Z/P/F/! chips govern both maps. **Right-click on the big
+    map = fly the god camera there** (the location marker stays on its own
+    binding, middle-click by default). Flagless vanilla map untouched (all
+    gated on the overseer HUD; `Map` gets `None` otherwise).
+
+Launch note for worktree-built exes (recorded during this gate): the debug
+exe resolves `userdata` NEXT TO THE EXECUTABLE when built from the worktree
+(first launch created `target/debug/userdata` and saw no worlds). Launch
+with `VELOREN_USERDATA=E:\veloren-master\userdata` to use the real
+worlds/settings.
+
 Result: to be appended after the live run.
