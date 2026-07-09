@@ -153,6 +153,7 @@ fn do_command(
         ServerChatCommand::Ban => handle_ban,
         ServerChatCommand::BanIp => handle_ban_ip,
         ServerChatCommand::BanLog => handle_ban_log,
+        ServerChatCommand::BastionArena => handle_bastion_arena,
         ServerChatCommand::BattleMode => handle_battlemode,
         ServerChatCommand::BattleModeForce => handle_battlemode_force,
         ServerChatCommand::Body => handle_body,
@@ -6271,6 +6272,33 @@ fn handle_lightning(
         .ecs()
         .read_resource::<EventBus<Outcome>>()
         .emit_now(Outcome::Lightning { pos });
+    Ok(())
+}
+
+/// bastion (B-ASSET1): --asset-arena controls. Delegates to
+/// `Server::bastion_arena_command`; a friendly no-op outside arena boots.
+fn handle_bastion_arena(
+    server: &mut Server,
+    client: EcsEntity,
+    _target: EcsEntity,
+    args: Vec<String>,
+    _action: &ServerChatCommand,
+) -> CmdResult<()> {
+    let action = args.first().map(String::as_str).unwrap_or("info").to_string();
+    #[cfg(feature = "worldgen")]
+    let feedback = server.bastion_arena_command(&action);
+    #[cfg(not(feature = "worldgen"))]
+    let feedback = {
+        let _ = &action;
+        String::from("The asset arena requires a worldgen build.")
+    };
+    server.notify_client(
+        client,
+        ServerGeneral::server_msg(
+            comp::ChatType::CommandInfo,
+            Content::Plain(feedback),
+        ),
+    );
     Ok(())
 }
 

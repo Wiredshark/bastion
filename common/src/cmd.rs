@@ -372,6 +372,8 @@ pub enum ServerChatCommand {
     Ban,
     BanIp,
     BanLog,
+    /// bastion (B-ASSET1): --asset-arena controls (next/prev/fixture/dismiss).
+    BastionArena,
     BattleMode,
     BattleModeForce,
     Body,
@@ -1121,6 +1123,16 @@ impl ServerChatCommand {
                 Content::localized("command-lightning-desc"),
                 Some(Admin),
             ),
+            // bastion (B-ASSET1): plain (non-localized) desc — adding i18n
+            // keys would touch the vanilla asset tree, which this block
+            // keeps byte-identical.
+            ServerChatCommand::BastionArena => cmd(
+                vec![Any("action (next|prev|fixture|dismiss|info)", Optional)],
+                Content::Plain(
+                    "bastion: asset-arena controls (--asset-arena boots only)".to_string(),
+                ),
+                Some(Admin),
+            ),
             ServerChatCommand::Scale => cmd(
                 vec![
                     Float("factor", 1.0, Required),
@@ -1263,6 +1275,7 @@ impl ServerChatCommand {
             ServerChatCommand::DeleteLocation => "delete_location",
             ServerChatCommand::WeatherZone => "weather_zone",
             ServerChatCommand::Lightning => "lightning",
+            ServerChatCommand::BastionArena => "bastion_arena",
             ServerChatCommand::Scale => "scale",
             ServerChatCommand::RepairEquipment => "repair_equipment",
             ServerChatCommand::Tether => "tether",
