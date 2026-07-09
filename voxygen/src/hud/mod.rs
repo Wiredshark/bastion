@@ -2,6 +2,7 @@
 mod animation;
 mod bag;
 pub mod bastion;
+pub mod bastion_minimap;
 mod buffs;
 mod buttons;
 mod change_notification;
@@ -54,6 +55,7 @@ use group::Group;
 use img_ids::Imgs;
 use item_imgs::ItemImgs;
 use loot_scroller::LootScroller;
+use bastion_minimap::{BastionMiniMap, BastionMinimapTiles};
 use map::Map;
 use minimap::{MiniMap, VoxelMinimap};
 use popup::Popup;
@@ -316,6 +318,7 @@ widget_ids! {
         world_map,
         popup,
         minimap,
+        bastion_minimap,
         prompt_dialog,
         bag,
         trade,
@@ -691,6 +694,9 @@ pub enum Event {
         target: common::bastion::ContextTarget,
         point: Vec3<f32>,
     },
+    // bastion (B-MAP1): minimap navigation — the map is the interface.
+    BastionMinimapJump(Vec2<f32>),
+    BastionMinimapPan(Vec2<f32>),
 
     CharacterSelection,
     UseSlot {
@@ -1379,6 +1385,9 @@ pub struct Hud {
     crosshair_opacity: f32,
     floaters: Floaters,
     voxel_minimap: VoxelMinimap,
+    /// bastion (B-MAP1): the overseer minimap's tile engine + view state
+    /// (only maintained while the overseer HUD is active).
+    bastion_minimap: BastionMinimapTiles,
     map_drag: Vec2<f64>,
     force_chat: bool,
     clear_chat: bool,
@@ -1452,6 +1461,7 @@ impl Hud {
 
         Self {
             voxel_minimap: VoxelMinimap::new(&mut ui),
+            bastion_minimap: BastionMinimapTiles::new(&mut ui),
             ui,
             imgs,
             world_map,
@@ -1535,7 +1545,18 @@ impl Hud {
     ) -> Vec<Event> {
         span!(_guard, "update_layout", "Hud::update_layout");
         let mut events = core::mem::take(&mut self.events);
-        if global_state.settings.interface.map_show_voxel_map {
+        // bastion (B-MAP1): while the overseer HUD is up, the overseer
+        // minimap replaces the vanilla one (its tile engine is maintained
+        // instead of the vanilla voxel minimap — no double work). Flagless
+        // boots never set `bastion.active`, so vanilla is untouched.
+        if self.bastion.active {
+            self.bastion_minimap.maintain(
+                client,
+                &mut self.ui,
+                camera.get_focus_pos(),
+                self.bastion.slice_z,
+            );
+        } else if global_state.settings.interface.map_show_voxel_map {
             self.voxel_minimap.maintain(client, &mut self.ui);
         }
         let scale = self.ui.scale();
@@ -3506,29 +3527,62 @@ impl Hud {
         self.new_loot_messages.clear();
 
         let persisted_state = self.persisted_state.borrow();
-        // MiniMap
-        for event in MiniMap::new(
-            client,
-            &self.imgs,
-            &self.rot_imgs,
-            &self.world_map,
-            &self.fonts,
-            self.pulse,
-            camera.get_orientation(),
-            global_state,
-            &persisted_state.location_markers,
-            &self.voxel_minimap,
-            &self.extra_markers,
-        )
-        .set(self.ids.minimap, ui_widgets)
-        {
-            match event {
-                minimap::Event::SettingsChange(interface_change) => {
-                    events.push(Event::SettingsChange(interface_change.into()));
-                },
-                minimap::Event::MoveMiniMap(pos) => {
-                    global_state.settings.hud_position.minimap = pos;
-                },
+        // MiniMap — the overseer's rendered-tile map while the bastion HUD is
+        // active (B-MAP1), the vanilla player minimap otherwise.
+        if self.bastion.active {
+            for event in BastionMiniMap::new(
+                client,
+                &self.imgs,
+                &self.world_map,
+                &self.fonts,
+                camera,
+                &self.bastion_minimap,
+                global_state,
+            )
+            .set(self.ids.bastion_minimap, ui_widgets)
+            {
+                match event {
+                    bastion_minimap::Event::SettingsChange(interface_change) => {
+                        events.push(Event::SettingsChange(interface_change.into()));
+                    },
+                    bastion_minimap::Event::Jump(wpos) => {
+                        events.push(Event::BastionMinimapJump(wpos));
+                    },
+                    bastion_minimap::Event::Pan(delta) => {
+                        events.push(Event::BastionMinimapPan(delta));
+                    },
+                    bastion_minimap::Event::Zoom(zoom) => {
+                        self.bastion_minimap.zoom = zoom;
+                    },
+                    bastion_minimap::Event::ToggleLayer(layer) => {
+                        self.bastion_minimap.layers.toggle(layer);
+                    },
+                }
+            }
+        } else {
+            for event in MiniMap::new(
+                client,
+                &self.imgs,
+                &self.rot_imgs,
+                &self.world_map,
+                &self.fonts,
+                self.pulse,
+                camera.get_orientation(),
+                global_state,
+                &persisted_state.location_markers,
+                &self.voxel_minimap,
+                &self.extra_markers,
+            )
+            .set(self.ids.minimap, ui_widgets)
+            {
+                match event {
+                    minimap::Event::SettingsChange(interface_change) => {
+                        events.push(Event::SettingsChange(interface_change.into()));
+                    },
+                    minimap::Event::MoveMiniMap(pos) => {
+                        global_state.settings.hud_position.minimap = pos;
+                    },
+                }
             }
         }
         drop(persisted_state);
@@ -4002,10 +4056,17 @@ impl Hud {
                 &persisted_state.location_markers,
                 self.map_drag,
                 &self.extra_markers,
+                // bastion (B-MAP1): overseer layers + right-click fly-to.
+                self.bastion
+                    .active
+                    .then_some((&self.bastion_minimap, camera)),
             )
             .set(self.ids.map, ui_widgets)
             {
                 match event {
+                    map::Event::BastionFlyTo(wpos) => {
+                        events.push(Event::BastionMinimapJump(wpos));
+                    },
                     map::Event::Close => {
                         self.show.map(false);
                         self.show.want_grab = true;
@@ -5754,15 +5815,18 @@ impl Hud {
     }
 
     /// bastion (B2a): the session mirrors its interaction state each frame.
+    /// (B-MAP1 adds `slice_z` so the minimap tiles can follow the Z-slice.)
     pub fn bastion_sync(
         &mut self,
         active: bool,
         tool: crate::bastion::tools::ToolMode,
         god_mode: crate::bastion::tools::GodMode,
+        slice_z: Option<f32>,
     ) {
         self.bastion.active = active;
         self.bastion.tool = tool;
         self.bastion.god_mode = god_mode;
+        self.bastion.slice_z = slice_z;
         if !active {
             self.bastion.radial = None;
         }

@@ -353,6 +353,7 @@ impact (client-only + a pile-scale tweak). **Standing note:** `--b5-scenario`
 is timing-flaky under machine load — run gate scenarios on a quiet machine
 (it was 6/6 at both the B5.5 tag and this branch when quiet).
 
+<<<<<<< HEAD
 ### 2.9 B5.6b — Zone-management UI (SPLIT into sub-blocks b-1..b-4)
 
 B5.6 was too large for one block; a builder scope-flag split it (architect-
@@ -383,6 +384,65 @@ only. Client-only.
   SUBTLE/OFF).
 - **Gate:** in-game — fills drape + colored + overlaps blend + labels +
   SUBTLE=border-only; headless B4/B5/B5.5 unaffected (voxygen-only diff).
+
+### 2.10 B-MAP1 — Overseer minimap (founds the map/overlay layer)
+
+**What:** the god's minimap — rendered top-down terrain tiles (WoW-addon
+technique), a zoomable pyramid blending into the worldgen map, overlay
+pin/layers, and click/drag/scroll navigation. Replaces the vanilla minimap
+ONLY while the overseer HUD is active; flagless boots keep vanilla
+bit-identical.
+
+**Where:** `voxygen/src/hud/bastion_minimap.rs` (all of it), drawn from
+`hud/mod.rs` instead of vanilla `MiniMap` when `bastion.active`. Session
+handles `BastionMinimapJump/Pan` (→ `camera.set_focus_pos`; XY only — the
+overseer focus glide re-rides `ground_z`). Zone colors come from
+`bastion::tools::zone_rgb` — b-1's one color legend; the map applies its own
+alpha (map footprints and in-world fills agree by construction).
+
+- **Tile engine** (`BastionMinimapTiles`): per-chunk 32×32 tiles (1
+  texel/block) scanned straight down from sky or the active Z-slice out of
+  the real loaded voxels (buildings/trees/digs are terrain voxels, so they
+  appear as themselves); per-texel heights drive an NW-light hillshade.
+  Tiles build off-thread on the `IMAGE_PROCESSING` SlowJobPool via
+  `KeyedJobs` keyed `(chunk, slice_rev)` — renders trickle, stale tiles keep
+  showing until replaced, the frame never blocks. **Invalidation:**
+  `TerrainChanges::modified_blocks` (any modified block re-renders that
+  chunk's tile — dig a pit, the map updates in ~a second) and slice changes
+  (slice below ground = the map shows that level; the mining framework's
+  slice-aware map comes free). Composite: a chunk-grid-anchored 512²
+  (16-chunk) window texture; panning moves only the widget's source
+  rectangle, re-anchoring recomposites from cache.
+- **Two-tier pyramid:** worldgen map (1 texel/chunk) always drawn beneath;
+  the tile layer alpha-fades out as the view widens past the 512-block
+  window (colony/district = tiles, region/world = worldgen). Zoom is
+  px-per-block, scroll-stepped, world-fit … 4 px/block; level label shows
+  Colony/District/Region/World.
+- **The §3s pin/layer API** (the part future blocks reuse): `MinimapLayer
+  { Colonists, Zones, Piles, Frustum, Alerts }` with per-layer toggle chips;
+  built-in providers query client state directly (zones from
+  `client.bastion_designations()` tinted via `tools::zone_rgb`; colonists
+  from synced `comp::Colonist`+`Pos` with `comp::BastionSelected` highlight;
+  piles from synced `comp::PickupItem`+`Scale`; frustum from
+  `unproject_to_world_plane` of the 4 screen corners). **External systems
+  (territory §3w, trade routes, dominion, threat alerts) add pins without
+  touching the widget:** push `MinimapPin { wpos, color, size, halo }` into
+  `hud.bastion_minimap.extra_pins` each frame (drawn on the Alerts layer),
+  or add a `MinimapLayer` variant + provider for a first-class toggleable
+  layer. Icon art for chips/pins is a wishlist item for the asset lab.
+- **Navigation:** click = jump the god camera there; drag = continuous pan
+  (world moves with the cursor); scroll = zoom. North-up always.
+
+**Not done (recorded):** GPU ortho-RTT tile source (the prompt's literal
+technique — the conrod UI only consumes CPU images, so RTT needs a bespoke
+offscreen pass + readback; the tile cache/API is source-agnostic and CPU
+voxel-scan tiles meet the gate — see `docs/BASTION_BMAP1_FINDINGS.md` §2 and
+the consistency log), fullscreen map view, alert providers (hook only),
+minimap-window dragging in overseer mode.
+
+**Tested by:** compile + vanilla-regression gates headlessly; visual gate
+(tiles recognizable, dig-updates, overlay accuracy, click-jump) in-game —
+`docs/BASTION_BMAP1_TEST.md`.
 
 ## 3. Build methodology (how blocks land)
 

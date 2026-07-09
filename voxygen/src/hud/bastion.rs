@@ -90,6 +90,9 @@ pub struct BastionHudState {
     /// world centroid with its kind colour. Set by the session's overlay
     /// sync (ON mode only; empty in SUBTLE/OFF). Drawn via `position_ingame`.
     pub zone_labels: Vec<(Vec3<f32>, String, [f32; 4])>,
+    /// bastion (B-MAP1): active Z-slice, mirrored so the minimap tiles can
+    /// render the slice level (below-ground slice → below-ground map).
+    pub slice_z: Option<f32>,
 }
 
 /// How many actions the pie shows before overflowing into "More…".

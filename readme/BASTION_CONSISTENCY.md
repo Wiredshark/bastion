@@ -196,3 +196,25 @@ instead, referencing the old one).
   mode only via slice_z). If mode-coupled overlay staleness reappears,
   add view-mode to the rebuild triggers (one field in the sync check).
   Watch item, flagged not fixed.
+
+## 2026-07-09 — B-MAP1 (overseer minimap)
+
+- **Prompt vs build (recorded drift, not auto-corrected):**
+  `readme/B-MAP1-overseer-minimap-prompt.md` prescribes GPU render-to-texture
+  per chunk via the B1 ortho camera. Verified against the repo: voxygen's
+  conrod UI consumes CPU images only (`ui/graphic/mod.rs` atlas), so literal
+  RTT needs a bespoke offscreen wgpu pass PLUS readback anyway; meanwhile the
+  vanilla `VoxelMinimap` already implements the per-chunk-tile +
+  trickled-jobs + terrain-edit-invalidation architecture the technique
+  actually wants. Built CPU voxel-scan tiles + hillshade on that seam (reuse
+  rule §2a); the block gate is outcome-based and met. Suggested resolution:
+  architect either blesses CPU tiles as standing approach or queues an RTT
+  upgrade block (backlog entry exists).
+- **Prompt vs repo:** the prompt says tile invalidation is "shared with
+  B5.6a's draping cache — same trigger". In the repo, B5.6a's draped
+  overlays have NO terrain-edit invalidation (known watch-item "overlay
+  terrain-edit restaling" in the run log); they rebuild on
+  designation-rev/slice/visuals change only. The shareable mechanism is the
+  client-side `TerrainChanges` stream, of which the minimap is now the FIRST
+  consumer. Flagged for the architect; backlog entry restates the overlay
+  gap.

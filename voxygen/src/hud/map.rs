@@ -1,11 +1,13 @@
 use super::{
     MapMarkers, QUALITY_COMMON, QUALITY_EPIC, QUALITY_HIGH, QUALITY_LOW, QUALITY_MODERATE, TEXT_BG,
     TEXT_BLUE_COLOR, TEXT_COLOR, TEXT_GRAY_COLOR, TEXT_VELORITE, UI_HIGHLIGHT_0, UI_MAIN,
+    bastion_minimap::{self, BastionMinimapTiles},
     img_ids::{Imgs, ImgsRot},
 };
 use crate::{
     GlobalState,
     game_input::GameInput,
+    scene::camera::Camera,
     session::settings_change::{Interface as InterfaceChange, Interface::*},
     ui::{ImageFrame, Tooltip, TooltipManager, Tooltipable, fonts::Fonts, img_ids},
     window::KeyMouse,
@@ -24,7 +26,7 @@ use conrod_core::{
     Color, Colorable, Labelable, Positionable, Sizeable, UiCell, Widget, WidgetCommon, color,
     input::MouseButton as ConrodMouseButton,
     position,
-    widget::{self, Button, Image, Rectangle, Text},
+    widget::{self, Button, Image, Line, Rectangle, Text},
     widget_ids,
 };
 use i18n::Localization;
@@ -104,7 +106,13 @@ widget_ids! {
         map_mode_overlay,
         minimap_mode_btn,
         minimap_mode_overlay,
-
+        // bastion (B-MAP1): overseer layers on the world map
+        bastion_tiles_img,
+        bastion_zone_rects[],
+        bastion_pile_dots[],
+        bastion_colonist_halos[],
+        bastion_colonist_dots[],
+        bastion_frustum_lines[],
     }
 }
 
@@ -131,6 +139,10 @@ pub struct Map<'a> {
     location_markers: &'a MapMarkers,
     map_drag: Vec2<f64>,
     extra_markers: &'a [ExtraMarker],
+    /// bastion (B-MAP1): Some while the overseer HUD is active — the map then
+    /// draws the minimap's tile layer + pins and gains right-click fly-to.
+    /// None = bit-identical vanilla map.
+    bastion: Option<(&'a BastionMinimapTiles, &'a Camera)>,
 }
 impl<'a> Map<'a> {
     pub fn new(
@@ -146,6 +158,7 @@ impl<'a> Map<'a> {
         location_markers: &'a MapMarkers,
         map_drag: Vec2<f64>,
         extra_markers: &'a [ExtraMarker],
+        bastion: Option<(&'a BastionMinimapTiles, &'a Camera)>,
     ) -> Self {
         Self {
             imgs,
@@ -161,6 +174,7 @@ impl<'a> Map<'a> {
             location_markers,
             map_drag,
             extra_markers,
+            bastion,
         }
     }
 }
@@ -176,6 +190,8 @@ pub enum Event {
     SetLocationMarker(Vec2<i32>),
     MapDrag(Vec2<f64>),
     RemoveMarker,
+    /// bastion (B-MAP1): right-click fly-to — jump the god camera here.
+    BastionFlyTo(Vec2<f32>),
 }
 
 fn get_site_economy(site: &SiteMarker) -> String {
@@ -383,6 +399,8 @@ impl Widget for Map<'_> {
         let max_drag = player_pos_chunks;
         let drag = self.map_drag.clamped(min_drag, max_drag);
 
+        let is_bastion = self.bastion.is_some();
+
         enum MarkerChange {
             Pos(Vec2<f32>),
             ClickPos,
@@ -418,7 +436,10 @@ impl Widget for Map<'_> {
                     .map(|scroll| scroll.y)
                     .sum();
                 if scrolled != 0.0 {
-                    let max_zoom = 16.0;
+                    // bastion (B-MAP1): the overseer map zooms far enough to
+                    // read the rendered tile layer (128 px/chunk = 4 px/block,
+                    // the minimap's near-zoom ceiling). Vanilla stays at 16.
+                    let max_zoom = if is_bastion { 128.0 } else { 16.0 };
                     let min_zoom = map_size.x / worldsize.reduce_partial_max() as f64 / 2.0;
                     let new_zoom_lvl: f64 = (f64::log2(zoom) - scrolled * 0.03)
                         .exp2()
@@ -459,6 +480,20 @@ impl Widget for Map<'_> {
             state.ids.map_layers[0],
         );
 
+        // bastion (B-MAP1): right-click = fly the god camera to that world
+        // point (the marker stays on its own binding — middle-click default).
+        if is_bastion {
+            for click in ui
+                .widget_input(state.ids.map_layers[0])
+                .clicks()
+                .right()
+            {
+                let tmp: Vec2<f64> = Vec2::<f64>::from(click.xy) / zoom - drag;
+                let wpos = tmp.as_::<f32>().cpos_to_wpos() + player_pos.xy();
+                events.push(Event::BastionFlyTo(wpos));
+            }
+        }
+
         let rect_src = position::Rect::from_xy_dim(
             [
                 (player_pos.x as f64 / TerrainChunkSize::RECT_SIZE.x as f64) - drag.x,
@@ -497,6 +532,197 @@ impl Widget for Map<'_> {
                     .source_rectangle(rect_src)
                     .graphics_for(state.ids.map_layers[0])
                     .set(state.ids.map_layers[index], ui);
+            }
+        }
+
+        // bastion (B-MAP1): overseer layers on the world map — the minimap's
+        // rendered tile layer + pin layers + camera frustum, drawn with this
+        // map's own transform (drag + zoom, px per CHUNK) and sharing the
+        // minimap's providers, legend, and layer toggles. `self.bastion` is
+        // None outside the overseer HUD, so the vanilla map is untouched.
+        if let Some((tiles, camera)) = self.bastion {
+            let chunk_side = TerrainChunkSize::RECT_SIZE.x as f64;
+            let px_per_block = zoom / chunk_side;
+            // View-center world pos: ClickPos at (0,0) inverts to this.
+            let center_w: Vec2<f64> =
+                player_pos.xy().map(|e| e as f64) - drag * chunk_side;
+            let wpos_to_px = |w: Vec2<f32>| -> Vec2<f64> {
+                (w.map(|e| e as f64) - center_w) * px_per_block
+            };
+            let half = map_size / 2.0;
+            let inside =
+                |p: Vec2<f64>, m: f64| p.x.abs() <= half.x - m && p.y.abs() <= half.y - m;
+
+            // Rendered tile layer (fades in as the view narrows toward the
+            // tile window, exactly like the minimap's far-tier crossfade).
+            let win = bastion_minimap::WINDOW_PX as f64;
+            let view_blocks = map_size.x / px_per_block;
+            let tile_alpha = (1.0 - (view_blocks - win) / win).clamp(0.0, 1.0) as f32;
+            if tiles.is_anchored() && tile_alpha > 0.0 {
+                let origin = tiles.anchor_wpos().map(|e| e as f64);
+                let tiles_src = position::Rect::from_xy_dim(
+                    [
+                        center_w.x - origin.x,
+                        win - (center_w.y - origin.y),
+                    ],
+                    [map_size.x / px_per_block, map_size.y / px_per_block],
+                );
+                Image::new(tiles.image_id())
+                    .mid_top_with_margin_on(state.ids.map_align, 10.0)
+                    .w_h(map_size.x, map_size.y)
+                    .parent(state.ids.bg)
+                    .source_rectangle(tiles_src)
+                    .color(Some(Color::Rgba(1.0, 1.0, 1.0, tile_alpha)))
+                    .graphics_for(state.ids.map_layers[0])
+                    .set(state.ids.bastion_tiles_img, ui);
+            }
+
+            // Zone footprints.
+            if tiles.layers.zones {
+                let designations = self.client.bastion_designations();
+                if state.ids.bastion_zone_rects.len() < designations.len() {
+                    state.update(|s| {
+                        s.ids
+                            .bastion_zone_rects
+                            .resize(designations.len(), &mut ui.widget_id_generator())
+                    });
+                }
+                for (i, (region, kind)) in designations.iter().enumerate() {
+                    let [r, g, b] = crate::bastion::tools::zone_rgb(*kind);
+                    let lo =
+                        wpos_to_px(Vec2::new(region.min.x as f32, region.min.y as f32));
+                    let hi = wpos_to_px(Vec2::new(
+                        region.max.x as f32 + 1.0,
+                        region.max.y as f32 + 1.0,
+                    ));
+                    let c_lo = Vec2::new(lo.x.max(-half.x), lo.y.max(-half.y));
+                    let c_hi = Vec2::new(hi.x.min(half.x), hi.y.min(half.y));
+                    if c_lo.x >= c_hi.x || c_lo.y >= c_hi.y {
+                        continue;
+                    }
+                    let dim = c_hi - c_lo;
+                    let center = (c_lo + c_hi) / 2.0;
+                    Rectangle::fill_with(
+                        [dim.x.max(1.5), dim.y.max(1.5)],
+                        Color::Rgba(r, g, b, 0.32),
+                    )
+                    .x_y_position_relative_to(
+                        state.ids.map_layers[0],
+                        position::Relative::Scalar(center.x),
+                        position::Relative::Scalar(center.y),
+                    )
+                    .parent(state.ids.map_layers[0])
+                    .graphics_for(state.ids.map_layers[0])
+                    .set(state.ids.bastion_zone_rects[i], ui);
+                }
+            }
+
+            // Pile pins.
+            if tiles.layers.piles {
+                let pile_pts: Vec<(Vec2<f64>, f64)> =
+                    bastion_minimap::collect_pile_pins(self.client)
+                        .into_iter()
+                        .filter_map(|(wpos, size_mul)| {
+                            let p = wpos_to_px(wpos);
+                            inside(p, 2.0).then(|| (p, 3.0 * size_mul as f64))
+                        })
+                        .collect();
+                if state.ids.bastion_pile_dots.len() < pile_pts.len() {
+                    state.update(|s| {
+                        s.ids
+                            .bastion_pile_dots
+                            .resize(pile_pts.len(), &mut ui.widget_id_generator())
+                    });
+                }
+                for (i, (p, sz)) in pile_pts.iter().enumerate() {
+                    Rectangle::fill_with([*sz, *sz], Color::Rgba(0.95, 0.8, 0.3, 0.9))
+                        .x_y_position_relative_to(
+                            state.ids.map_layers[0],
+                            position::Relative::Scalar(p.x),
+                            position::Relative::Scalar(p.y),
+                        )
+                        .parent(state.ids.map_layers[0])
+                        .graphics_for(state.ids.map_layers[0])
+                        .set(state.ids.bastion_pile_dots[i], ui);
+                }
+            }
+
+            // Colonist pins.
+            if tiles.layers.colonists {
+                let col_pts: Vec<(Vec2<f64>, bool)> =
+                    bastion_minimap::collect_colonist_pins(self.client)
+                        .into_iter()
+                        .filter_map(|(wpos, sel)| {
+                            let p = wpos_to_px(wpos);
+                            inside(p, 2.0).then(|| (p, sel))
+                        })
+                        .collect();
+                if state.ids.bastion_colonist_dots.len() < col_pts.len() {
+                    state.update(|s| {
+                        s.ids
+                            .bastion_colonist_dots
+                            .resize(col_pts.len(), &mut ui.widget_id_generator());
+                        s.ids
+                            .bastion_colonist_halos
+                            .resize(col_pts.len(), &mut ui.widget_id_generator());
+                    });
+                }
+                for (i, (p, is_sel)) in col_pts.iter().enumerate() {
+                    if *is_sel {
+                        Rectangle::fill_with([9.0, 9.0], Color::Rgba(1.0, 0.9, 0.2, 0.85))
+                            .x_y_position_relative_to(
+                                state.ids.map_layers[0],
+                                position::Relative::Scalar(p.x),
+                                position::Relative::Scalar(p.y),
+                            )
+                            .parent(state.ids.map_layers[0])
+                            .graphics_for(state.ids.map_layers[0])
+                            .set(state.ids.bastion_colonist_halos[i], ui);
+                    }
+                    Rectangle::fill_with([5.0, 5.0], Color::Rgba(0.95, 0.98, 1.0, 1.0))
+                        .x_y_position_relative_to(
+                            state.ids.map_layers[0],
+                            position::Relative::Scalar(p.x),
+                            position::Relative::Scalar(p.y),
+                        )
+                        .parent(state.ids.map_layers[0])
+                        .graphics_for(state.ids.map_layers[0])
+                        .set(state.ids.bastion_colonist_dots[i], ui);
+                }
+            }
+
+            // Camera frustum.
+            if tiles.layers.frustum {
+                let focus = camera.get_focus_pos();
+                let ground: Vec<Option<Vec2<f64>>> =
+                    bastion_minimap::frustum_ground_quad(camera, focus.z)
+                        .into_iter()
+                        .map(|c| c.map(wpos_to_px))
+                        .collect();
+                if state.ids.bastion_frustum_lines.len() < 4 {
+                    state.update(|s| {
+                        s.ids
+                            .bastion_frustum_lines
+                            .resize(4, &mut ui.widget_id_generator())
+                    });
+                }
+                if let Some(center) = ui.rect_of(state.ids.map_layers[0]).map(|r| r.xy()) {
+                    for i in 0..4 {
+                        if let (Some(a), Some(b)) = (ground[i], ground[(i + 1) % 4])
+                            && let Some((ca, cb)) = bastion_minimap::clip_seg(a, b, half)
+                        {
+                            Line::abs(
+                                [center[0] + ca.x, center[1] + ca.y],
+                                [center[0] + cb.x, center[1] + cb.y],
+                            )
+                            .color(Color::Rgba(1.0, 1.0, 1.0, 0.7))
+                            .thickness(1.5)
+                            .parent(state.ids.map_layers[0])
+                            .graphics_for(state.ids.map_layers[0])
+                            .set(state.ids.bastion_frustum_lines[i], ui);
+                        }
+                    }
+                }
             }
         }
 
