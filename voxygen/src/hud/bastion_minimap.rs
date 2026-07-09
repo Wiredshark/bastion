@@ -58,8 +58,9 @@ use vek::{Rgba, Vec2, Vec3};
 /// carries the picture. (Grow this if colonies outgrow it — memory is
 /// ~6 KB/chunk for tiles + two 512² window buffers.)
 const WINDOW_CHUNKS: i32 = 16;
-/// Window side length in texels (1 texel = 1 block).
-const WINDOW_PX: u32 = WINDOW_CHUNKS as u32 * 32;
+/// Window side length in texels (1 texel = 1 block). Pub: the big map (B-MAP1
+/// part 3) draws the same tile texture and needs the texel space.
+pub const WINDOW_PX: u32 = WINDOW_CHUNKS as u32 * 32;
 /// Tiles are kept cached this many chunks beyond the window (pan-back is
 /// instant); beyond that they are evicted.
 const EVICT_MARGIN: i32 = 4;
@@ -504,6 +505,7 @@ widget_ids! {
         layer_chips[],
         zoom_plus,
         zoom_minus,
+        size_btn,
         level_text,
         north_text,
         toggle_btn,
@@ -561,8 +563,53 @@ pub struct State {
     ids: Ids,
 }
 
+/// Shared pin providers — the minimap and the big world map (B-MAP1) draw the
+/// same data with their own coordinate transforms, so the queries live here.
+/// Returns (world XY, selected).
+pub fn collect_colonist_pins(client: &Client) -> Vec<(Vec2<f32>, bool)> {
+    let ecs = client.state().ecs();
+    let positions = ecs.read_storage::<comp::Pos>();
+    let colonists = ecs.read_storage::<comp::Colonist>();
+    let selected = ecs.read_storage::<comp::BastionSelected>();
+    let entities = ecs.entities();
+    (&entities, &colonists, &positions)
+        .join()
+        .map(|(e, _, pos)| (pos.0.xy(), selected.contains(e)))
+        .collect()
+}
+
+/// Returns (world XY, size multiplier from the pile's tier `Scale`).
+pub fn collect_pile_pins(client: &Client) -> Vec<(Vec2<f32>, f32)> {
+    let ecs = client.state().ecs();
+    let positions = ecs.read_storage::<comp::Pos>();
+    let items = ecs.read_storage::<comp::PickupItem>();
+    let scales = ecs.read_storage::<comp::Scale>();
+    (&items, &positions, scales.maybe())
+        .join()
+        .map(|(_, pos, s)| (pos.0.xy(), s.map_or(1.0, |s| s.0.clamp(1.0, 2.0))))
+        .collect()
+}
+
+/// The main camera's ground footprint: the 4 screen corners unprojected onto
+/// the plane `z = plane_z`, world XY. Corner order walks the screen border,
+/// so consecutive (wrapping) pairs are the frustum-rect edges. Resolution-
+/// agnostic: corners at (0,0)..(1,1) with res (1,1) hit NDC exactly.
+pub fn frustum_ground_quad(camera: &Camera, plane_z: f32) -> [Option<Vec2<f32>>; 4] {
+    let res = Vec2::new(1.0, 1.0);
+    [
+        Vec2::new(0.0, 0.0),
+        Vec2::new(1.0, 0.0),
+        Vec2::new(1.0, 1.0),
+        Vec2::new(0.0, 1.0),
+    ]
+    .map(|c| {
+        crate::bastion::unproject_to_world_plane(camera, c, res, plane_z).map(|w| w.xy())
+    })
+}
+
 /// Liang–Barsky segment clip against the centered rect [-hx,hx]×[-hy,hy].
-fn clip_seg(
+/// Pub: the big map clips frustum edges the same way.
+pub fn clip_seg(
     a: Vec2<f64>,
     b: Vec2<f64>,
     half: Vec2<f64>,
@@ -775,20 +822,13 @@ impl Widget for BastionMiniMap<'_> {
             }
         }
 
-        let ecs = self.client.state().ecs();
-        let positions = ecs.read_storage::<comp::Pos>();
-
         // ---- Piles layer -------------------------------------------------
         if self.tiles.layers.piles {
-            let items = ecs.read_storage::<comp::PickupItem>();
-            let scales = ecs.read_storage::<comp::Scale>();
-            let pile_pts: Vec<(Vec2<f64>, f64)> = (&items, &positions, scales.maybe())
-                .join()
-                .filter_map(|(_, pos, pile_scale)| {
-                    let p = wpos_to_px(pos.0.xy());
-                    inside(p, 2.0).then(|| {
-                        (p, 3.0 * pile_scale.map_or(1.0, |s| s.0.clamp(1.0, 2.0)) as f64)
-                    })
+            let pile_pts: Vec<(Vec2<f64>, f64)> = collect_pile_pins(self.client)
+                .into_iter()
+                .filter_map(|(wpos, size_mul)| {
+                    let p = wpos_to_px(wpos);
+                    inside(p, 2.0).then(|| (p, 3.0 * size_mul as f64))
                 })
                 .collect();
             if state.ids.pile_dots.len() < pile_pts.len() {
@@ -813,14 +853,11 @@ impl Widget for BastionMiniMap<'_> {
 
         // ---- Colonists layer ----------------------------------------------
         if self.tiles.layers.colonists {
-            let colonists = ecs.read_storage::<comp::Colonist>();
-            let selected = ecs.read_storage::<comp::BastionSelected>();
-            let entities = ecs.entities();
-            let col_pts: Vec<(Vec2<f64>, bool)> = (&entities, &colonists, &positions)
-                .join()
-                .filter_map(|(e, _, pos)| {
-                    let p = wpos_to_px(pos.0.xy());
-                    inside(p, 2.0).then(|| (p, selected.contains(e)))
+            let col_pts: Vec<(Vec2<f64>, bool)> = collect_colonist_pins(self.client)
+                .into_iter()
+                .filter_map(|(wpos, sel)| {
+                    let p = wpos_to_px(wpos);
+                    inside(p, 2.0).then(|| (p, sel))
                 })
                 .collect();
             if state.ids.colonist_dots.len() < col_pts.len() {
@@ -907,22 +944,9 @@ impl Widget for BastionMiniMap<'_> {
 
         // ---- Camera frustum (what the main view sees) ---------------------
         if self.tiles.layers.frustum {
-            // Corner rays are resolution-agnostic in NDC: (0,0)..(1,1) with
-            // res (1,1) maps exactly to the four screen corners.
-            let res = Vec2::new(1.0, 1.0);
-            let plane_z = focus.z;
-            let corners = [
-                Vec2::new(0.0, 0.0),
-                Vec2::new(1.0, 0.0),
-                Vec2::new(1.0, 1.0),
-                Vec2::new(0.0, 1.0),
-            ];
-            let ground: Vec<Option<Vec2<f64>>> = corners
-                .iter()
-                .map(|c| {
-                    crate::bastion::unproject_to_world_plane(self.camera, *c, res, plane_z)
-                        .map(|w| wpos_to_px(w.xy()))
-                })
+            let ground: Vec<Option<Vec2<f64>>> = frustum_ground_quad(self.camera, focus.z)
+                .into_iter()
+                .map(|c| c.map(wpos_to_px))
                 .collect();
             if state.ids.frustum_lines.len() < 4 {
                 state.update(|s| {
@@ -978,6 +1002,28 @@ impl Widget for BastionMiniMap<'_> {
             && zoom < ZOOM_MAX
         {
             events.push(Event::Zoom((zoom * ZOOM_FACTOR).clamp(zoom_min, ZOOM_MAX)));
+        }
+
+        // Window-size cycle (S/M/L/XL) — steps the persisted vanilla
+        // minimap-scale setting, so both minimaps share one size preference.
+        const SIZE_STEPS: [f64; 4] = [1.0, 1.5, 2.0, 2.5];
+        let size_idx = SIZE_STEPS
+            .iter()
+            .position(|s| (s - scale).abs() < 0.26)
+            .unwrap_or(1);
+        if Button::new()
+            .w_h(20.0 * scale, 18.0 * scale)
+            .label(["S", "M", "L", "XL"][size_idx])
+            .label_font_size(self.fonts.cyri.scale(10))
+            .label_font_id(self.fonts.cyri.conrod_id)
+            .label_color(TEXT_COLOR)
+            .color(Color::Rgba(0.0, 0.0, 0.0, 0.55))
+            .right_from(state.ids.zoom_plus, 2.0)
+            .set(state.ids.size_btn, ui)
+            .was_clicked()
+        {
+            let next = SIZE_STEPS[(size_idx + 1) % SIZE_STEPS.len()];
+            events.push(Event::SettingsChange(InterfaceChange::MinimapScale(next)));
         }
 
         let level = if view_blocks <= 384.0 {

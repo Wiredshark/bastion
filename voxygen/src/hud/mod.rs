@@ -4056,10 +4056,17 @@ impl Hud {
                 &persisted_state.location_markers,
                 self.map_drag,
                 &self.extra_markers,
+                // bastion (B-MAP1): overseer layers + right-click fly-to.
+                self.bastion
+                    .active
+                    .then_some((&self.bastion_minimap, camera)),
             )
             .set(self.ids.map, ui_widgets)
             {
                 match event {
+                    map::Event::BastionFlyTo(wpos) => {
+                        events.push(Event::BastionMinimapJump(wpos));
+                    },
                     map::Event::Close => {
                         self.show.map(false);
                         self.show.want_grab = true;
