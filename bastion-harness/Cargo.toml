@@ -12,6 +12,7 @@ workspace = true
 server = { package = "veloren-server", path = "../server" }
 common = { package = "veloren-common", path = "../common" }
 
+chrono = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }
 vek = { workspace = true }
