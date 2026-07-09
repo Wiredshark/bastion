@@ -469,13 +469,15 @@ impl<'a> System<'a> for Sys {
         WriteExpect<'a, comp::gizmos::RtsimGizmos>,
         ReadExpect<'a, comp::tool::AbilityMap>,
         ReadExpect<'a, comp::item::MaterialStatManifest>,
-        // bastion (B3): colonist decoration on promote
+        // bastion (B3): colonist decoration on promote; (B4) job ownership
+        // gate for the controller sync.
         (
             WriteStorage<'a, comp::Colonist>,
             WriteStorage<'a, comp::PlayerColony>,
             WriteStorage<'a, comp::bastion::Needs>,
             WriteStorage<'a, comp::bastion::Mood>,
             WriteStorage<'a, comp::Stats>,
+            ReadStorage<'a, comp::bastion::ActiveJob>,
         ),
     );
 
@@ -515,6 +517,7 @@ impl<'a> System<'a> for Sys {
                 mut bastion_needs,
                 mut bastion_moods,
                 mut stats_storage,
+                bastion_active_jobs,
             ),
         ): Self::SystemData,
     ) {
@@ -728,7 +731,12 @@ impl<'a> System<'a> for Sys {
                         if let Some(agent) = agent {
                             agent.rtsim_controller.personality = npc.personality;
                             agent.rtsim_controller.look_dir = npc.controller.look_dir;
-                            agent.rtsim_controller.activity = npc.controller.activity;
+                            // bastion (B4): while a colonist works a job, the
+                            // job system owns its activity — the rtsim brain
+                            // must not clobber the travel intent.
+                            if !bastion_active_jobs.contains(entity) {
+                                agent.rtsim_controller.activity = npc.controller.activity;
+                            }
                             agent
                                 .rtsim_controller
                                 .actions

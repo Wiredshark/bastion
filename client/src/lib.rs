@@ -1264,6 +1264,7 @@ impl Client {
                     | ClientGeneral::BastionApplyInfluence { .. }
                     | ClientGeneral::BastionContextAction { .. }
                     | ClientGeneral::BastionSpawnColony { .. }
+                    | ClientGeneral::BastionCancelDesignation { .. }
                     | ClientGeneral::SetBattleMode(_) => {
                         #[cfg(feature = "tracy")]
                         {
@@ -2050,6 +2051,11 @@ impl Client {
     /// bastion (B3): found the player colony near `pos`.
     pub fn bastion_spawn_colony(&mut self, pos: Vec3<f32>, count: u8) {
         self.send_msg(ClientGeneral::BastionSpawnColony { pos, count });
+    }
+
+    /// bastion (B4): cancel designations in a region (releases claims).
+    pub fn bastion_cancel_designation(&mut self, region: common::bastion::Region) {
+        self.send_msg(ClientGeneral::BastionCancelDesignation { region });
     }
 
     pub fn start_spectate_entity(&mut self, entity: EcsEntity) {

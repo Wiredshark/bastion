@@ -295,6 +295,8 @@ impl State {
         ecs.register::<comp::bastion::Needs>();
         ecs.register::<comp::bastion::Mood>();
         ecs.register::<comp::BastionGodAnchor>();
+        // bastion (B4): colonist job assignment (server-side).
+        ecs.register::<comp::bastion::ActiveJob>();
         // Register server -> all clients synced components.
         ecs.register::<comp::Body>();
         ecs.register::<comp::Hardcore>();

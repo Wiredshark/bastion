@@ -75,6 +75,12 @@ impl Sys {
         spectating_entity: &mut Option<Option<common::uid::Uid>>,
         bastion_anchor: &mut Option<bool>,
         bastion_spawn: &mut Option<(Vec3<f32>, u8)>,
+        // bastion (B4): deferred designation ops — Some(kind) = place,
+        // None = cancel (the job board can't be touched in the parallel join).
+        bastion_designations: &mut Vec<(
+            common::bastion::Region,
+            Option<common::bastion::DesignationKind>,
+        )>,
         controller: Option<&mut Controller>,
         settings: &Read<'_, Settings>,
         build_areas: &Read<'_, AreasContainer<BuildArea>>,
@@ -282,6 +288,8 @@ impl Sys {
                 let volume = region.volume();
                 if volume > 0 && volume <= common::bastion::MAX_DESIGNATION_VOLUME {
                     client.send(ServerGeneral::BastionDesignation { region, kind })?;
+                    // bastion (B4): job generation happens post-loop.
+                    bastion_designations.push((region, Some(kind)));
                 } else {
                     client.send(ServerGeneral::server_msg(
                         common::comp::ChatType::CommandError,
@@ -306,6 +314,14 @@ impl Sys {
                         )),
                     ))?;
                 }
+            },
+            ClientGeneral::BastionCancelDesignation { region } => {
+                // bastion (B4): jobs removed + claims released post-loop.
+                bastion_designations.push((region.normalized(), None));
+                client.send(ServerGeneral::server_msg(
+                    common::comp::ChatType::CommandInfo,
+                    common::comp::Content::Plain("Designations cancelled.".to_string()),
+                ))?;
             },
             ClientGeneral::BastionSpawnColony { pos, count } => {
                 // bastion (B3): validated here, spawned post-loop (rtsim
@@ -413,11 +429,13 @@ impl<'a> System<'a> for Sys {
         TerrainPersistenceData<'a>,
         ReadStorage<'a, Player>,
         ReadStorage<'a, Admin>,
-        // bastion (B3): god-anchor marker + buff timing + colony spawning
+        // bastion (B3): god-anchor marker + buff timing + colony spawning;
+        // (B4) the job board for designation ops.
         (
             WriteStorage<'a, common::comp::BastionGodAnchor>,
             Read<'a, common::resources::Time>,
             specs::WriteExpect<'a, crate::rtsim::RtSim>,
+            Write<'a, crate::bastion_jobs::JobBoard>,
         ),
     );
 
@@ -452,7 +470,7 @@ impl<'a> System<'a> for Sys {
             mut terrain_persistence,
             players,
             admins,
-            (mut god_anchors, time, mut rtsim),
+            (mut god_anchors, time, mut rtsim, mut job_board),
         ): Self::SystemData,
     ) {
         let time_for_vd_changes = Instant::now();
@@ -513,6 +531,7 @@ impl<'a> System<'a> for Sys {
                     let mut spectating_entity = None;
                     let mut bastion_anchor = None;
                     let mut bastion_spawn = None;
+                    let mut bastion_designations = Vec::new();
                     let _ = super::try_recv_all(client, 2, |client, msg| {
                         Self::handle_client_in_game_msg(
                             emitters,
@@ -531,6 +550,7 @@ impl<'a> System<'a> for Sys {
                             &mut spectating_entity,
                             &mut bastion_anchor,
                             &mut bastion_spawn,
+                            &mut bastion_designations,
                             controller.as_deref_mut(),
                             &settings,
                             &build_areas,
@@ -672,13 +692,15 @@ impl<'a> System<'a> for Sys {
                         physics_update,
                         bastion_anchor_update,
                         bastion_spawn,
+                        bastion_designations,
                     )
                 },
             )
             // NOTE: Would be nice to combine this with the map_init somehow, but I'm not sure if
             // that's possible.
-            .filter(|(x, y, z, w, v)| {
+            .filter(|(x, y, z, w, v, d)| {
                 x.is_some() || y.is_some() || z.is_some() || w.is_some() || v.is_some()
+                    || !d.is_empty()
             })
             // NOTE: I feel like we shouldn't actually need to allocate here, but hopefully this
             // doesn't turn out to be important as there shouldn't be that many connected clients.
@@ -700,6 +722,7 @@ impl<'a> System<'a> for Sys {
                 physics_update,
                 bastion_anchor_update,
                 bastion_spawn_update,
+                bastion_designation_updates,
             )| {
                 if let Some((entity, new_skill_set)) = skill_set_update {
                     // We know this exists, because we already iterated over it with the skillset
@@ -767,6 +790,17 @@ impl<'a> System<'a> for Sys {
                 if let &mut Some((pos, count)) = bastion_spawn_update {
                     // bastion (B3): spawn the starting band (validated above).
                     rtsim.bastion_spawn_colony(pos, count);
+                }
+                // bastion (B4): apply deferred designation ops to the board.
+                for (region, op) in bastion_designation_updates.drain(..) {
+                    match op {
+                        Some(kind) => {
+                            job_board.place_designation(&terrain, region, kind);
+                        },
+                        None => {
+                            job_board.cancel_region(region);
+                        },
+                    }
                 }
             },
         );

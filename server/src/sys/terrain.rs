@@ -87,6 +87,8 @@ pub struct Data<'a> {
     positions: WriteStorage<'a, Pos>,
     presences: ReadStorage<'a, Presence>,
     clients: ReadStorage<'a, Client>,
+    // bastion (B4): harness-pinned chunks (see bastion_jobs::BastionForceLoaded)
+    bastion_force_loaded: Read<'a, crate::bastion_jobs::BastionForceLoaded>,
     entities: Entities<'a>,
     reposition_entities: WriteStorage<'a, RepositionToFreeSpace>,
     forced_updates: WriteStorage<'a, ForceUpdate>,
@@ -350,6 +352,8 @@ impl<'a> System<'a> for Sys {
             // depending on the current number of chunks.  In the worst case, we might want to scan
             // just 1/256 of the chunks each tick, for example.
             .filter(|k| k.x % 4 + (k.y % 4) * 4 == tick)
+            // bastion (B4): scenario/harness-pinned chunks never unload.
+            .filter(|k| !data.bastion_force_loaded.0.contains(k))
             .filter(|&chunk_key| {
                 // We only have to check players inside the maximum view distance of the server of
                 // our own position.

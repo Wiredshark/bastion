@@ -294,6 +294,27 @@ impl RtSim {
         names
     }
 
+    /// bastion (B4): set a work priority on a colonist's rtsim record by
+    /// name. Returns whether any record matched.
+    pub fn bastion_set_work_priority(
+        &mut self,
+        name: &str,
+        work: common::bastion::WorkType,
+        priority: u8,
+    ) -> bool {
+        let data = self.state.get_data_mut();
+        let mut found = false;
+        for (_, npc) in data.npcs.npcs.iter_mut() {
+            if let Some(colonist) = &mut npc.bastion_colonist
+                && colonist.name == name
+            {
+                colonist.work_priorities.set(work, priority);
+                found = true;
+            }
+        }
+        found
+    }
+
     /// bastion (B3): the colony roster (headless harness dump + inspectors).
     pub fn bastion_colony_roster(&self) -> Vec<common::bastion::BastionColonist> {
         self.state

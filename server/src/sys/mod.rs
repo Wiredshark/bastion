@@ -33,6 +33,8 @@ pub fn add_server_systems(dispatch_builder: &mut DispatcherBuilder) {
     dispatch::<melee::Sys>(dispatch_builder, &[&projectile::Sys::sys_name()]);
     //Note: server should not depend on interpolation system
     dispatch::<agent::Sys>(dispatch_builder, &[]);
+    // bastion (B4): job arbitration + travel intents for colonists.
+    dispatch::<crate::bastion_jobs::Sys>(dispatch_builder, &[]);
     dispatch::<terrain::Sys>(dispatch_builder, &[&msg::terrain::Sys::sys_name()]);
     dispatch::<waypoint::Sys>(dispatch_builder, &[]);
     dispatch::<teleporter::Sys>(dispatch_builder, &[]);

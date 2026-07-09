@@ -140,6 +140,9 @@ pub enum ClientGeneral {
     /// `pos`. Server validates (god mode active, count 1..=16) and spawns
     /// rtsim colonists.
     BastionSpawnColony { pos: Vec3<f32>, count: u8 },
+    /// bastion (B4): cancel designations — removes all jobs inside the
+    /// region and releases their claims.
+    BastionCancelDesignation { region: common::bastion::Region },
 
     //Only in Game, via terrain stream
     TerrainChunkRequest {
@@ -206,7 +209,8 @@ impl ClientMsg {
                         | ClientGeneral::BastionPlaceDesignation { .. }
                         | ClientGeneral::BastionApplyInfluence { .. }
                         | ClientGeneral::BastionContextAction { .. }
-                        | ClientGeneral::BastionSpawnColony { .. } => {
+                        | ClientGeneral::BastionSpawnColony { .. }
+                        | ClientGeneral::BastionCancelDesignation { .. } => {
                             c_type == ClientType::Game && presence.is_some()
                         },
                         ClientGeneral::SpectatePosition(_) | ClientGeneral::SpectateEntity(_) => {
