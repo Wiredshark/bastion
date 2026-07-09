@@ -116,6 +116,49 @@ mechanism level (needs either a smarter arrival-target model or a
 base-interaction verb, out of scope for B5's execution-mechanism gate).
 Worked around in the harness by using a single-block chop test instead.
 
+## 4b. A third bug, found *after* the first merge — the mine pit had no exit
+
+This block was merged and tagged once already, then a post-merge
+re-verification pass (re-running the gate repeatedly rather than just the
+5 times originally sampled) turned up a third, independent flake:
+`build_placed: false` in roughly 2/5-3/8 runs. Traced the same way as #4
+(full per-job log grep, then a temporary debug log on the watchdog's
+release path): the colonist carrying the Build material was completely
+**stationary** — identical position, tick after tick, across every one of
+8+ repeated claim/10s-stuck/release cycles for the job. Its logged position
+sat dead-center of the mine quarry pit. Cause: the pit's rim ring gives
+every dig cell guaranteed *adjacent* footing for mining *from outside*,
+but once the entire 3×3×3
+footprint is hollowed out, nothing guarantees a walkable path back **out**
+for a colonist standing at the floor, 2 blocks below the rim — the rim is
+a sheer wall with no climb/ramp modeled, same underlying limitation as #4,
+just trapping a colonist *inside* a structure instead of needing to reach
+the *top* of one. Whichever colonist happened to finish its last mine job
+while standing at the floor, then got reassigned somewhere else entirely
+(Build, on the opposite side of the colony, since by then all mine/chop
+work was done), was flatly stuck for the rest of the run.
+
+**Fix**: harness now carves a 2-step staircase (floor → step → rim) on one
+column just outside the ring after the dig is filled in, so the pit floor
+always has a walkable exit. Purely a test-geometry fix — `bastion_jobs.rs`
+itself was untouched. Re-verified 8/8 clean on `--b5-scenario` and 5/5 on
+`--b4-scenario` after this fix. The tag `bastion-block-B5` was moved
+forward to include it (see `readme/BASTION_RESTORE_LEDGER.md`'s note on
+this — nothing else had been built on the original tag yet in this
+session, so moving it rather than leaving a known-flaky boundary in place
+was judged the more honest record for future rollback purposes).
+
+**The pattern worth internalizing**: three separate bugs this block, all
+the *same* root limitation (no climb/ramp modeling for vertical
+structures) manifesting in three different shapes — unreachable-above
+(tall stump), unreachable-inside (walled pit), and the tall-tree case
+already known from B4. Any *future* test geometry (or real in-game
+designation) that creates a vertical drop or rise of more than
+`ARRIVE_DIST` (2.5 blocks) without an explicit ramp will hit this again.
+Worth a real fix at the mechanism level eventually (see
+`readme/BASTION_BACKLOG.md`), rather than continuing to patch each new
+shape it's found in.
+
 ## 5. Notes for B6
 
 - The Build material stand-in (`common::bastion::BUILD_MATERIAL_ITEM`,
