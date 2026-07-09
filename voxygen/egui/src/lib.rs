@@ -5,7 +5,10 @@ compile_error!("Can't use both \"be-dyn-lib\" and \"use-dyn-lib\" features at on
 
 mod admin;
 mod character_states;
+mod bastion_occlusion;
 mod experimental_shaders;
+
+pub use bastion_occlusion::BastionOcclusionEguiState;
 mod widgets;
 
 use client::{Client, Join, LendJoin, World, WorldExt};
@@ -20,7 +23,8 @@ use egui::{CollapsingHeader, Color32, Context, Grid, Pos2, ScrollArea, Slider, U
 use egui_plot::{Line, Plot, PlotPoints};
 
 use crate::{
-    admin::draw_admin_commands_window, character_states::draw_char_state_group,
+    admin::draw_admin_commands_window, bastion_occlusion::draw_bastion_occlusion_window,
+    character_states::draw_char_state_group,
     experimental_shaders::draw_experimental_shaders_window, widgets::two_col_row,
 };
 use common::comp::{
@@ -109,6 +113,7 @@ pub struct EguiWindows {
     frame_time: bool,
     ecs_entities: bool,
     experimental_shaders: bool,
+    bastion_occlusion: bool,
 }
 
 impl Default for EguiInnerState {
@@ -146,6 +151,8 @@ pub enum EguiAction {
     DebugShape(EguiDebugShapeAction),
     SetExperimentalShader(String, bool),
     SetShowDebugVector(bool),
+    // bastion (B1.6): the overseer occlusion panel emits the edited snapshot.
+    SetBastionOcclusion(BastionOcclusionEguiState),
 }
 
 #[derive(Default)]
@@ -164,6 +171,7 @@ pub fn maintain(
     debug_info: Option<EguiDebugInfo>,
     added_cylinder_shape_id: Option<u64>,
     experimental_shaders: Vec<(String, bool)>,
+    bastion_occlusion: Option<BastionOcclusionEguiState>,
 ) -> EguiActions {
     #[cfg(not(feature = "use-dyn-lib"))]
     {
@@ -175,6 +183,7 @@ pub fn maintain(
             debug_info,
             added_cylinder_shape_id,
             experimental_shaders,
+            bastion_occlusion,
         )
     }
 
@@ -192,6 +201,7 @@ pub fn maintain(
                 Option<EguiDebugInfo>,
                 Option<u64>,
                 Vec<(String, bool)>,
+                Option<BastionOcclusionEguiState>,
             ) -> EguiActions,
         > = unsafe { lib.get(MAINTAIN_EGUI_FN) }.unwrap_or_else(|e| {
             panic!(
@@ -212,6 +222,7 @@ pub fn maintain(
             debug_info,
             added_cylinder_shape_id,
             experimental_shaders,
+            bastion_occlusion,
         )
     }
 }
@@ -225,6 +236,7 @@ pub fn maintain_egui_inner(
     debug_info: Option<EguiDebugInfo>,
     added_cylinder_shape_id: Option<u64>,
     experimental_shaders: Vec<(String, bool)>,
+    bastion_occlusion: Option<BastionOcclusionEguiState>,
 ) -> EguiActions {
     let raw_input = winit_state.take_egui_input(winit_window);
     let ctx = winit_state.egui_ctx();
@@ -272,6 +284,7 @@ pub fn maintain_egui_inner(
                     ui.checkbox(&mut windows.ecs_entities, "ECS Entities");
                     ui.checkbox(&mut windows.frame_time, "Frame Time");
                     ui.checkbox(&mut windows.experimental_shaders, "Experimental Shaders");
+                    ui.checkbox(&mut windows.bastion_occlusion, "Overseer Occlusion");
                     ui.checkbox(&mut debug_vectors_enabled_mut, "Show Debug Vectors");
                 });
             });
@@ -496,6 +509,13 @@ pub fn maintain_egui_inner(
         &mut windows.experimental_shaders,
         &mut egui_actions,
         &experimental_shaders,
+    );
+
+    draw_bastion_occlusion_window(
+        ctx,
+        &mut windows.bastion_occlusion,
+        &mut egui_actions,
+        bastion_occlusion,
     );
 
     if let Some(previous) = previous_selected_entity

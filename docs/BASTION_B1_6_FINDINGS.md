@@ -107,10 +107,26 @@ B3 feeds colonist positions. The Rust side already funnels targets through one
   and are surfaced in the **egui debug panel** (behind `egui-ui`), structured to move to the B9
   settings tab. The B1.5 `BastionSliceUp/Down` keys keep driving `slice_z`.
 
-## 10. Shadows — attempt, else the single documented deferral
+## 10. Shadows — DEFERRED (the single documented deferral)
 
-Threading `f_pos` through the directed-shadow vert→frag and dither-discarding is the one genuinely hard
-pass (shared vert across terrain; separate figure vert; a geom shader for point lights). Plan: attempt
-the directed (sun/moon) terrain shadow first; if it destabilizes or costs too much, **defer shadows
-only** and rely on re-lighting for interior readability — recorded here as the sole acceptable
-deferral, never a silent drop.
+**Decision: shadow-pass occlusion fade is deferred**, per the block's explicit "shadows are the one
+acceptable deferral" allowance. Re-lighting (§7) already delivers the product requirement — revealed
+interiors read lit-from-above, not black — so the shadow fade is polish (avoiding crisp
+hidden-roof shadow lines on the revealed floor), not the readability fix.
+
+Why deferred (concrete, not hand-waved): the directed **terrain** and **figure** shadow pipelines
+(`render/pipelines/shadow.rs::ShadowPipeline::new` / `ShadowFigurePipeline::new`, and
+`PointShadowPipeline`) are **depth-only** — every one sets `fragment: None`. `light-shadows-frag.glsl`
+is not actually bound. To fade shadows I would have to:
+1. add a whole fragment-shader stage to *each* of the 3 shadow pipelines (terrain-directed,
+   figure-directed, point) — otherwise a hidden roof still casts figure/point shadows, so it'd be
+   inconsistent;
+2. thread `f_pos` as a new varying through `light-shadows-directed-vert`,
+   `light-shadows-figure-vert`, and the point-shadow vert+geom;
+3. accept that a discarding fragment shader **disables early-Z** on the shadow pass — the single most
+   expensive pass — a perf regression on exactly the block flagged as most GPU-sensitive.
+
+That is the "perf/scope blows" case. **Refine path (B2/B3):** once a cheap per-column/room roof mask
+exists, add a minimal discard fragment stage to the shadow pipelines keyed on that mask (targeted, not
+per-fragment occlusion math), so hidden roofs stop shadowing revealed interiors without the early-Z
+cost on all geometry. Figures and particles *do* get the main-pass fade (they are not depth-only).

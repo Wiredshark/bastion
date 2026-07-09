@@ -7,7 +7,10 @@ use crate::{
 use client::Client;
 use egui::{Context, ViewportId};
 use egui_winit::State as WinitState;
-use voxygen_egui::{EguiAction, EguiDebugInfo, EguiDebugShapeAction, EguiInnerState};
+use crate::scene::camera::CameraMode;
+use voxygen_egui::{
+    BastionOcclusionEguiState, EguiAction, EguiDebugInfo, EguiDebugShapeAction, EguiInnerState,
+};
 
 pub struct EguiState {
     pub winit_state: WinitState,
@@ -57,6 +60,29 @@ impl EguiState {
             })
             .collect();
 
+        // bastion (B1.6): snapshot the overseer occlusion controls for the
+        // debug panel (only while the overseer camera is active).
+        let bastion_occlusion = (scene.camera().get_mode() == CameraMode::Overseer).then(|| {
+            let o = scene.bastion_occlusion();
+            use crate::bastion::occlusion::ViewMode;
+            BastionOcclusionEguiState {
+                view_mode: match o.view_mode {
+                    ViewMode::Solid => 0,
+                    ViewMode::Reveal => 1,
+                    ViewMode::Slice => 2,
+                },
+                strength: o.strength,
+                relight_strength: o.relight_strength,
+                cutaway_radius: o.cutaway_radius,
+                fade_band: o.fade_band,
+                slice_enabled: o.slice_enabled,
+                proximity_enabled: o.proximity_enabled,
+                cutaway_enabled: o.cutaway_enabled,
+                roof_enabled: o.roof_enabled,
+                has_slice: o.slice_z.is_some(),
+            }
+        });
+
         let egui_actions = voxygen_egui::maintain(
             &mut self.winit_state,
             &mut self.egui_inner_state,
@@ -65,6 +91,7 @@ impl EguiState {
             debug_info,
             self.new_debug_shape_id.take(),
             experimental_shaders,
+            bastion_occlusion,
         );
 
         let mut new_render_mode = None;
@@ -108,6 +135,23 @@ impl EguiState {
                 },
                 EguiAction::SetShowDebugVector(enabled) => {
                     scene.debug_vectors_enabled = enabled;
+                },
+                EguiAction::SetBastionOcclusion(s) => {
+                    use crate::bastion::occlusion::ViewMode;
+                    let o = scene.bastion_occlusion_mut();
+                    o.view_mode = match s.view_mode {
+                        0 => ViewMode::Solid,
+                        1 => ViewMode::Reveal,
+                        _ => ViewMode::Slice,
+                    };
+                    o.strength = s.strength;
+                    o.relight_strength = s.relight_strength;
+                    o.cutaway_radius = s.cutaway_radius;
+                    o.fade_band = s.fade_band;
+                    o.slice_enabled = s.slice_enabled;
+                    o.proximity_enabled = s.proximity_enabled;
+                    o.cutaway_enabled = s.cutaway_enabled;
+                    o.roof_enabled = s.roof_enabled;
                 },
             });
 
