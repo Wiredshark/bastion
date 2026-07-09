@@ -100,3 +100,43 @@ Ben approved erase filters "only if cheap on existing seams." Assessment:
   batch segments into a single polyline shape (a debug-pipeline addition).
 - **Scale-lerp**: pile tier changes snap (discrete `Scale`); a brief
   client-side lerp ("shouldn't pop") is polish, not wired. Backlogged.
+
+## 7. Post-live-test fixes (Ben verified draping in-game; found two bugs)
+
+Ben's in-game test **confirmed the draping fix** (outlines hug excavation
+rims + slopes — the photographed bug is gone). Two follow-up bugs, both now
+fixed on the branch:
+
+- **Visuals toggle (H) did nothing visible.** Root cause: the auto-reveal
+  in `bastion_sync_designations` forced overlays back to On whenever a
+  Designate/Erase tool was merely *selected* (not just during a drag). After
+  painting, the tool stays Mine, so Off was immediately overridden → looked
+  like a no-op. **Fix:** removed the auto-reveal entirely. The active
+  paint/erase drag still renders its own preview rectangle (separate
+  shapes, ungated), so "you can always see what you're painting" holds, and
+  Off now genuinely hides the committed overlays. (H is triple-bound —
+  vanilla `Greet` + `Fly` also map to H — but both are already suppressed
+  in the overseer scheme, so H fires only `BastionCycleVisuals` there;
+  verified, no input change needed.)
+
+- **Erase sometimes left the overlay (and the jobs) behind.** Root cause:
+  the erase drag's z-range came from the camera pick-plane
+  (`[plane_z-2, plane_z]`), which need not align with where the designation
+  was painted (the overseer focus rides the surface, but slope + zoom move
+  it). A z-misaligned AABB cancel/subtraction **silently missed** — and
+  since the overlay is XY-draped at the surface, a surviving z-remnant looks
+  identical to the full zone. **Fix:** erase now matches designations by XY
+  footprint and cancels the XY-intersection at each stored rect's *own* z
+  (`common::bastion::Region::clip_xy`, pure + unit-tested). Can't miss in z;
+  partial-erase leaves the un-brushed remainder; empty brush over bare
+  ground cancels nothing. Two new unit tests
+  (`erase_by_xy_removes_regardless_of_z_misalignment`,
+  `erase_partial_xy_leaves_remainder_at_correct_z`) reproduce the bug (naive
+  `subtract` misses) and pin the fix.
+
+**Note for B5.6b / B5.MINE-COVERAGE:** the underlying fragility — that
+designation z comes from the camera pick-plane, not the terrain surface — is
+the same root as the mine-coverage gap (cells whose blocks fall outside the
+thin z-band never get jobs). B5.6b's `z_extent{down,up}` model (surface-
+relative) fixes this properly; B5.6a's erase fix is the targeted patch for
+the erase symptom only.
