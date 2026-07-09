@@ -231,6 +231,15 @@ Note the arrows: player→sim carries **influence** (policy, designation, god-po
 
 **The boundary rule.** Anything inside the active embark region and currently relevant = ECS entity on the server (full fidelity, autonomous AI). Anything outside, or dormant = rtsim record (cheap, abstract sim). Colonists that wander off the map edge, caravans that leave, enemies that retreat → demote to `SimulationMode::Simulated`. This is how you get a DF-scale living world that *keeps living on its own* without simulating 10,000 entities at 60 Hz.
 
+**Standing directive — the overseer IS the player-entity path. DO NOT use spectator. (STATUS: anchor already built.)**
+Development targets **player mode**, not the free-floating spectator camera. **This is already implemented and working:** the god camera is anchored to an **invisible player entity** and **chunk loading follows it correctly** — the streaming/anchor problem is solved, and the old far-camera sync watch-item is closed by this approach. Spectator mode is a detached free camera; it is the source of the streaming/sync problems and **must not** be used as the overseer foundation. **Builders repeatedly and incorrectly reach for spectator — do not.** The overseer rides the invisible player entity; that is settled.
+
+Two **behavioral** gaps remain (the only overseer work left here):
+1. **The world must ignore the god's avatar in god mode.** Nothing targets, aggros, greets, trades-with, collides-with, path-avoids, or otherwise reacts to the invisible anchor entity. It exists purely to anchor streaming/camera; it is socially and mechanically **inert** to all NPCs/agents/hostiles.
+2. **The god cannot die in god mode.** While in RTS/overseer god mode the anchor entity is **invulnerable** — no damage, no downing, no death, no needs/hunger. Mortality applies **only** during Embody/possession (B12), when the god has descended into a real mortal.
+
+Spectator mode may remain *supported*, and a spectator-style first-person god mode is a fine **optional** extra — but the core overseer is the invisible player entity, full stop.
+
 ---
 
 ## 5. Gap analysis — reuse / bend / build / discard
@@ -453,6 +462,21 @@ underground mode reuses it). Independent of B1.7. Build after B1.6.
   Never stuck.
 - **Underground depth = free depth cursor** (PgUp/PgDn fly to any layer) **+ snap conveniences**: snap to the
   dug floor under the cursor, snap to the deepest dug layer. Free-fly is primary; snaps keep it anchored.
+- **Slice re-anchors to LOCAL ground on focus move (fixes a real usability bug):** the Z-slice must be
+  **relative to the working surface under the focus, not a global absolute height.** Today the slice holds one
+  absolute Z for the whole map, so moving from a mountain (high slice) to a valley (low ground) leaves the
+  slice far above the valley and forces the player to hold PgDn forever. Fix: whenever the focus moves
+  materially (pan, click-on-ground, map fly-to), **reset the slice to just above the working surface at the
+  new location** (surface height in surface mode; dug-floor / last-worked depth in underground mode — never
+  fling the player back to daylight). PgUp/PgDn then adjust *relative to there*. Reuses this block's terrain-
+  height sampler.
+- **"Slice here" verb (click a block → cut at its Z):** a tool/verb (also exposed in B2a's right-click radial
+  as a context action) where the player clicks any block — ground, tree, roof, a specific voxel — and the
+  slice plane **snaps to that block's Z**. Point at the layer you want instead of scrolling to it. Uses
+  `unproject_to_world_plane`/entity-block pick (mind the §6b pick-ray range budget).
+- **"Reset slice" affordance:** a hotkey and/or radial button that snaps the slice back to the working
+  surface under the focus (the escape hatch when the cursor's been scrolled somewhere odd); may fold into the
+  view-mode cycle so entering Slice mode re-anchors fresh.
 - **Surface→underground transition = ease/descend through terrain** — focus Z eases down with the slice
   engaging progressively (feels like descending into the fortress), reversed on ascent. No hard cut.
 **Touches (verify against B1.5/B1.6 findings):**
@@ -460,6 +484,11 @@ underground mode reuses it). Independent of B1.7. Build after B1.6.
   and the descend transition.
 - **Terrain height lookup** under the focus XY (cheap): the client terrain column height / `world.sim()`
   column, or a downward sample — for surface-clamp. Must be cheap (runs per frame while panning).
+- **Ground-follow overlays (fixes a known B2a artifact):** the same terrain-height sampler must **also** be
+  consumed by B2a's designation/selection overlay so marked regions **drape over the working surface** —
+  terrain height in surface mode, active slice-height in underground mode — instead of rendering as flat
+  quads that float over valleys and clip into hills (observed in B2a screenshots). Footprints conform to the
+  ground per-cell, like fabric over terrain.
 - `session/mod.rs` — mode toggle key, underground depth cursor (reuse B1 PgUp/PgDn), auto-switch logic, and
   routing the depth into B1.6's slice params; all via the B1.5 Overseer input context.
 - **Map UI** in `voxygen/src/hud/` (conrod map/minimap widget already on `M`) — intercept a click, resolve
@@ -474,6 +503,11 @@ underground mode reuses it). Independent of B1.7. Build after B1.6.
   underground is never visible.
 - **Underground mode:** the free depth cursor flies to any layer; snap-to-dug-floor / snap-to-deepest work;
   everything above the working layer is hidden, at/below is revealed and **re-lit** (via B1.6).
+- **Slice re-anchors on focus move:** panning mountain→valley (or map fly-to) leaves the slice just above the
+  *local* working surface — no "hold PgDn forever" to catch up; PgUp/PgDn then adjust relative to there.
+- **"Slice here"** snaps the cut plane to the Z of a clicked block (ground/tree/roof/voxel); **"Reset slice"**
+  snaps it back to the working surface under the focus (surface height up top; dug-floor/last-depth
+  underground — never flung to daylight).
 - **Switching:** the manual toggle works; smart-auto flips when the depth cursor/descent crosses the surface
   and back; never lands in a broken state.
 - **Transition** eases through the terrain (descend feel), not a hard cut.
@@ -517,7 +551,8 @@ focus-plane distance** — reusing the focus field B1.6/B1.8 already compute rat
 
 ### B3 — Colonist entity model & starting colony
 **Objective:** Define a colonist and spawn a player-faction starting band. No jobs yet — just entities that exist, are yours, and are selectable.
-**Touches:** `common/src/comp/` (new `Colonist`, `Needs`, `Skills`, `WorkPriorities`, `Faction`/ownership tag), server spawn logic, rtsim actor linkage.
+**Anchor directive (see §4 standing directive) — DO NOT use spectator; the invisible-player anchor is already built.** The overseer camera rides an **invisible player entity** with **correct chunk loading** — this is done and working; do not switch to spectator (builders keep incorrectly choosing it). Two behavioral gaps remain and belong here: **(1)** in god mode the world **ignores** the god's avatar — no NPC/hostile targets, aggros, greets, collides-with, or reacts to it (inert anchor); **(2)** in god mode the god **cannot die** — the anchor entity is invulnerable (no damage/downing/death/needs). Mortality applies **only** under Embody (B12).
+**Touches:** `common/src/comp/` (new `Colonist`, `Needs`, `Skills`, `WorkPriorities`, `Faction`/ownership tag), server spawn logic, rtsim actor linkage, and the god-mode **inert + invulnerable** flags on the existing anchor entity (agent-targeting + damage/needs systems must skip it).
 **Approach:**
 - `Colonist` component: name, backstory flags, `Skills { mining, construction, cooking, melee, ... : level+xp }`, `WorkPriorities` (per work-type 0–4, RimWorld-style), `Mood`.
 - `Needs { hunger, rest, recreation }` as 0.0–1.0 clocks (decay handled in B7).

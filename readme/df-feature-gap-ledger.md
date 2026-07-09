@@ -135,6 +135,19 @@ main doc · **[SUBSTRATE]** Veloren has most of it, needs wiring · **[GAP]** ne
 | Zones (meeting/pasture/hospital/garbage/water source) | GAP | **DF-ZONES** — typed zones beyond stockpiles. Veloren `AreaAdd` → SUBSTRATE. $ |
 | Burrows (restrict movement) | GAP | **DF-BURROW** — restrict colonists to areas (policy). $ |
 
+## K. Systems surfaced by the DF fortress-mode audit (previously missing — now inventoried)
+| DF system | Coverage | Notes / DF-ID |
+|---|---|---|
+| **Vertical digging verbs** (up/down stairs, ramps, channels, up/down passages) | GAP | **DF-DIG-VERBS** — DF's fortress is *built* from these; more than "mine a voxel." A colony sim needs stairs/ramps to move between Z-layers. Ties to B5 + B1.8 underground. $ |
+| **Standing orders / auto-behaviors** (gather refuse y/n, render fat, forbid-on-death, auto-loom…) | GAP | **DF-STANDING** — colony-wide default rules (distinct from per-order DF-ORDERS). Pure *policy* — perfect god-game fit. $ |
+| **Kitchen / cook & brew permissions** (which crops may be cooked/brewed; don't cook your seeds) | GAP | folds into **DF-COOK** — the permission layer is the gameplay depth, not just the recipe. |
+| **Refuse / rot / miasma / vermin** (corpses rot, refuse piles, miasma clouds → bad thoughts, vermin/pests) | GAP | **DF-ROT** — decay & hygiene as a pressure; miasma feeds B-AG3 thoughts. Ties DF-TEMP. $ |
+| **Bookkeeper / accounting accuracy** (stock counts are only as accurate as your record-keeping) | GAP | **DF-BOOKS** — a lovely DF touch: information itself is a managed resource. Optional flavor. ¢ |
+| **Notes / map annotations / patrol routes** | GAP | **DF-NOTES** — player-placed map notes + (for defense) patrol routes. Fits the overseer HUD. ¢ |
+| **Rooms & room-quality from furniture** (a walled space + bed = bedroom; furniture value → room value → mood) | GAP | **DF-ROOMS** — the bridge between construction and the mind (nice room → good thoughts). Ties DF-ECON + B-AG3. $ |
+| **Attract-the-monarch / colony prestige goal** (wealth + prestige draws migrants, nobles, and *bigger threats*) | GAP | **DF-PRESTIGE** — the soft objective: prosperity attracts both immigrants and danger. God-game reframe: your favor/miracles raise prestige → the world *notices* your chosen people. $ |
+| **Interface-completeness note** | — | The DF fortress menu (Squads/Notes/Burrows/Stockpiles/Zones/Locations/Nobles/Status[Animals/Kitchen/Stone/Stocks/Health/Justice]/Unit-list) maps almost 1:1 onto Bastion's B9 HUD + B-AG4 inspector + the DF-* systems above. No *whole category* is missing — the audit confirms coverage. What remains is depth-per-system, which is the Phase-5 grind. |
+
 ---
 
 ## Priority reading (my architect's recommendation on what actually matters)
