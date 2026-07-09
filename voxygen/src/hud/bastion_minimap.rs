@@ -49,7 +49,7 @@ use conrod_core::{
 };
 use hashbrown::{HashMap, HashSet};
 use image::{DynamicImage, RgbaImage};
-use specs::{Join, WorldExt};
+use specs::{Join, LendJoin, WorldExt};
 use std::sync::Arc;
 use vek::{Rgba, Vec2, Vec3};
 
