@@ -209,8 +209,10 @@ impl<'a> System<'a> for Sys {
             let target = job.pos.map(|e| e as f32) + Vec3::new(0.5, 0.5, 1.0);
             match active.state {
                 ActiveJobState::Traveling => {
-                    let dist_xy = pos.0.xy().distance(target.xy());
-                    if dist_xy < ARRIVE_DIST {
+                    // 3D distance: standing on the surface above a deep job
+                    // must NOT count as arrival (the watchdog handles it).
+                    let dist = pos.0.distance(target);
+                    if dist < ARRIVE_DIST {
                         active.state = ActiveJobState::Arrived;
                         if let Some(agent) = agent {
                             agent.rtsim_controller.activity = None;

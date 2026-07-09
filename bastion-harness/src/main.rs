@@ -60,6 +60,13 @@ struct Args {
     /// line on stdout (after the Summary line).
     #[arg(long, default_value_t = 0)]
     colony: u8,
+
+    /// bastion (B4): run the job-board acceptance scenario (force-load an
+    /// area, spawn 5 colonists, 20 mine designations + 1 unreachable,
+    /// arbitration/travel/priority/cancel assertions + a zero-input soak).
+    /// Prints one JSON result line; exit code reflects pass/fail.
+    #[arg(long)]
+    b4_scenario: bool,
 }
 
 /// Aggregate state dump. Deliberately coarse: aggregates are far more stable
@@ -103,7 +110,9 @@ fn main() -> ExitCode {
         .with_writer(std::io::stderr)
         .init();
 
-    if args.verify {
+    if args.b4_scenario {
+        b4_scenario(&args)
+    } else if args.verify {
         verify(&args)
     } else {
         let (summary, roster) = run_once(&args);
@@ -265,6 +274,197 @@ fn run_once(args: &Args) -> (Summary, Option<Vec<common::bastion::BastionColonis
     }
 
     (summary, roster)
+}
+
+/// bastion (B4): the job-board acceptance scenario (design doc §B4 Done-when).
+fn b4_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, Region, WorkType},
+        vol::ReadVol,
+    };
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-b4-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-b4".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "b4: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let mut tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    // 1. Pick a flat-ish anchor: the first site's position.
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+
+    // 2. Force-load the area (also pins it against the unload sweep).
+    let loaded = server.bastion_force_load_area(site_wpos, 5);
+    info!(loaded, "b4: force-loaded area");
+
+    // Ground scan helper: highest filled block z at a column.
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..500).rev().find(|z| {
+            terrain
+                .get(Vec3::new(x, y, *z))
+                .is_ok_and(|b| b.is_filled())
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let cz = ground_z(&server, cx, cy).expect("no ground at site center");
+
+    // 3. Spawn the band on the surface.
+    let names = server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0),
+        5,
+    );
+    tick(&mut server, 60);
+    let states = server.bastion_colonist_states();
+    let colonists_loaded = states.len();
+
+    // 4. Priority test target: first colonist never mines.
+    let disabled = names.first().cloned().unwrap_or_default();
+    server.bastion_set_work_priority(&disabled, WorkType::Mine, 0);
+
+    // 5. 20 reachable mine designations in a ring + 1 deep unreachable.
+    let mut placed = 0;
+    for i in 0..20 {
+        let ang = std::f64::consts::TAU * i as f64 / 20.0;
+        let r = 14.0 + (i % 4) as f64 * 3.0;
+        let x = cx + (r * ang.cos()) as i32;
+        let y = cy + (r * ang.sin()) as i32;
+        if let Some(z) = ground_z(&server, x, y) {
+            let b = Vec3::new(x, y, z);
+            placed += server
+                .bastion_place_designation(Region { min: b, max: b }, DesignationKind::Mine)
+                .len();
+        }
+    }
+    let deep = Vec3::new(cx, cy, cz - 25);
+    let deep_jobs = server
+        .bastion_place_designation(Region { min: deep, max: deep }, DesignationKind::Mine)
+        .len();
+    info!(placed, deep_jobs, "b4: designations placed");
+
+    // 6. Run: up to 60s sim; sample invariants; early-exit when 4 arrived.
+    let mut claims_always_distinct = true;
+    let mut disabled_never_claimed = true;
+    let mut arrived = 0;
+    for _ in 0..60 {
+        tick(&mut server, 30);
+        let audit = server.bastion_job_audit();
+        claims_always_distinct &= audit.claims_distinct;
+        let states = server.bastion_colonist_states();
+        if states
+            .iter()
+            .any(|(n, _, j)| *n == disabled && j.is_some())
+        {
+            disabled_never_claimed = false;
+        }
+        arrived = states
+            .iter()
+            .filter(|(n, _, j)| *n != disabled && matches!(j, Some((_, true))))
+            .count();
+        if arrived >= 4 {
+            break;
+        }
+    }
+    let audit_mid = server.bastion_job_audit();
+
+    // 7. Cancel everything left; claims must release within one arb cycle.
+    server.bastion_cancel_designation(Region {
+        min: Vec3::new(cx - 64, cy - 64, cz - 64),
+        max: Vec3::new(cx + 64, cy + 64, cz + 64),
+    });
+    tick(&mut server, 30);
+    let audit_after_cancel = server.bastion_job_audit();
+    let states_after_cancel = server.bastion_colonist_states();
+    let all_idle_after_cancel = states_after_cancel.iter().all(|(_, _, j)| j.is_none());
+
+    // 8. Zero-input soak: keep ticking, no panics, bounded tick time.
+    let soak_ticks: u64 = 600;
+    let soak_started = Instant::now();
+    tick(&mut server, soak_ticks);
+    let soak_elapsed = soak_started.elapsed();
+    let avg_tick_ms = soak_elapsed.as_secs_f64() * 1000.0 / soak_ticks as f64;
+
+    let result = serde_json::json!({
+        "b4_colonists_loaded": colonists_loaded,
+        "b4_jobs_placed": placed,
+        "b4_claims_always_distinct": claims_always_distinct,
+        "b4_arrived_enabled": arrived,
+        "b4_priority_honored": disabled_never_claimed,
+        "b4_unreachable_marked": audit_mid.unreachable >= 1,
+        "b4_cancel_cleared_jobs": audit_after_cancel.total == 0,
+        "b4_all_idle_after_cancel": all_idle_after_cancel,
+        "b4_soak_avg_tick_ms": avg_tick_ms,
+    });
+    let pass = colonists_loaded == 5
+        && placed >= 18
+        && claims_always_distinct
+        && arrived >= 4
+        && disabled_never_claimed
+        && audit_mid.unreachable >= 1
+        && audit_after_cancel.total == 0
+        && all_idle_after_cancel
+        && avg_tick_ms < 100.0;
+    println!("{}", result);
+    println!("B4 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
 
 /// Run the same configuration twice in isolated child processes and diff the
