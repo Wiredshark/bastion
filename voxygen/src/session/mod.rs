@@ -135,6 +135,21 @@ pub struct SessionState {
     bastion_pan_vel: Vec2<f32>,
     /// bastion: right-button orbit (free yaw + pitch) in progress.
     bastion_orbiting: bool,
+    /// bastion (B2a): tool palette + God/Free ruleset state.
+    bastion_tools: bastion::tools::Tools,
+    /// bastion (B2a): cursor position at LMB/RMB press — release within a few
+    /// pixels is a *click* (select / radial) instead of a drag (pan / orbit).
+    bastion_lmb_down: Option<Vec2<f32>>,
+    bastion_rmb_down: Option<Vec2<f32>>,
+    /// bastion (B2a): in-progress designate-paint drag.
+    bastion_paint: Option<BastionPaint>,
+    /// bastion (B2a): the currently selected entity (mirrors the
+    /// `BastionSelected` ECS marker).
+    bastion_selected: Option<specs::Entity>,
+    /// bastion (B2a): how many echoed designations already have overlay
+    /// shapes, + those shapes (debug-pipeline line rectangles).
+    bastion_designation_synced: usize,
+    bastion_designation_shapes: Vec<DebugShapeId>,
 }
 
 /// bastion: state of an overseer grab-drag.
@@ -145,6 +160,18 @@ struct BastionGrab {
     /// Height of the picking plane (active slice, else focus ground height),
     /// frozen for the drag so the lock is stable.
     plane_z: f32,
+}
+
+/// bastion (B2a): state of a designate-paint drag.
+struct BastionPaint {
+    /// World point of the initial press (on `plane_z`).
+    anchor: Vec3<f32>,
+    /// Current drag corner (same plane).
+    current: Vec3<f32>,
+    /// Frozen picking-plane height for the drag.
+    plane_z: f32,
+    /// Live preview outline (rebuilt as the corner moves).
+    shapes: Vec<DebugShapeId>,
 }
 
 // bastion: overseer camera feel tunables (B1/B1.5; see docs/BASTION_CAMERA.md)
@@ -244,6 +271,13 @@ impl SessionState {
             bastion_grab: None,
             bastion_pan_vel: Vec2::zero(),
             bastion_orbiting: false,
+            bastion_tools: Default::default(),
+            bastion_lmb_down: None,
+            bastion_rmb_down: None,
+            bastion_paint: None,
+            bastion_selected: None,
+            bastion_designation_synced: 0,
+            bastion_designation_shapes: Vec::new(),
         }
     }
 
@@ -337,6 +371,291 @@ impl SessionState {
         if let Some(anchor) = self.bastion_point_under_cursor(global_state, plane_z) {
             self.bastion_grab = Some(BastionGrab { anchor, plane_z });
             self.bastion_pan_vel = Vec2::zero();
+        }
+    }
+
+    /// bastion (B2a): the picking-plane height for interaction (active slice,
+    /// else focus ground height) — same rule as grab-drag.
+    fn bastion_plane_z(&self) -> f32 {
+        self.scene
+            .bastion_slice_z()
+            .unwrap_or_else(|| self.scene.camera().get_focus_pos().z)
+    }
+
+    /// bastion (B2a): nearest entity under the cursor (ray/cylinder test
+    /// against entity positions; radius from body size).
+    fn bastion_pick_entity(&self, global_state: &GlobalState) -> Option<specs::Entity> {
+        let cursor = global_state.window.cursor_position();
+        let res = global_state.window.renderer().resolution().map(|e| e as f32);
+        let (origin, dir) = bastion::cursor_ray(
+            self.scene.camera(),
+            Vec2::new(cursor.x as f32, cursor.y as f32),
+            res,
+        )?;
+        use specs::Join;
+        let dir = dir.normalized();
+        let client = self.client.borrow();
+        let ecs = client.state().ecs();
+        let positions = ecs.read_storage::<comp::Pos>();
+        let bodies = ecs.read_storage::<comp::Body>();
+        let scales = ecs.read_storage::<comp::Scale>();
+        let entities = ecs.entities();
+        let mut best: Option<(specs::Entity, f32)> = None;
+        for (entity, pos) in (&entities, &positions).join() {
+            // Aim at the torso, not the feet.
+            let rel = pos.0 + Vec3::unit_z() * 0.8 - origin;
+            let t = rel.dot(dir);
+            // NOTE: the ray origin (NDC z=1) sits OVERSEER_BEHIND (768)
+            // blocks behind the camera plane (B1.7 ortho near extension), so
+            // the reachable world starts around t ≈ 768 — the cap must
+            // account for that or every entity is silently rejected.
+            if !(0.0..=2000.0).contains(&t) {
+                continue;
+            }
+            let radius = bodies.get(entity).map_or(0.6, |b| b.max_radius())
+                * scales.get(entity).map_or(1.0, |s| s.0)
+                + 0.75;
+            if (rel - dir * t).magnitude_squared() < radius * radius
+                && best.is_none_or(|(_, bt)| t < bt)
+            {
+                best = Some((entity, t));
+            }
+        }
+        best.map(|(e, _)| e)
+    }
+
+    /// bastion (B2a): the terrain block under the cursor (plane pick refined
+    /// to the ground surface under that column).
+    fn bastion_cursor_block(&self, global_state: &GlobalState) -> Option<Vec3<i32>> {
+        let p = self.bastion_point_under_cursor(global_state, self.bastion_plane_z())?;
+        let client = self.client.borrow();
+        let terrain = client.state().terrain();
+        let gz = bastion::ground_z(&terrain, p.xy(), p.z).unwrap_or(p.z);
+        // ground_z is the air cell above the surface; the solid block is below.
+        Some(Vec3::new(
+            p.x.floor() as i32,
+            p.y.floor() as i32,
+            (gz - 1.0).floor() as i32,
+        ))
+    }
+
+    /// bastion (B2a): select an entity (or clear). Maintains the
+    /// `BastionSelected` ECS marker (which also feeds the B1.6 cutaway
+    /// targets) and the HUD info line.
+    fn bastion_select(&mut self, target: Option<specs::Entity>) {
+        let info = {
+            let client = self.client.borrow();
+            let ecs = client.state().ecs();
+            let mut sel = ecs.write_storage::<comp::BastionSelected>();
+            if let Some(prev) = self.bastion_selected.take() {
+                sel.remove(prev);
+            }
+            target.map(|e| {
+                let _ = sel.insert(e, comp::BastionSelected);
+                self.bastion_selected = Some(e);
+                let hp = ecs
+                    .read_storage::<comp::Health>()
+                    .get(e)
+                    .map(|h| format!(" — health {:.0}%", h.fraction() * 100.0))
+                    .unwrap_or_default();
+                let uid = ecs
+                    .read_storage::<common::uid::Uid>()
+                    .get(e)
+                    .map(|u| u.to_string())
+                    .unwrap_or_else(|| "?".into());
+                format!("Selected: entity {uid}{hp}")
+            })
+        };
+        if let Some(info) = &info {
+            // Chat line too — durable feedback (the info line is transient).
+            self.hud
+                .new_message(ChatType::CommandInfo.into_plain_msg(info.clone()));
+        }
+        self.hud.bastion_set_selected(info);
+    }
+
+    /// bastion (B2a): open the contextual radial menu for whatever is under
+    /// the cursor (entity beats block; block kind picks the lead verb).
+    fn bastion_open_radial(&mut self, global_state: &GlobalState) {
+        use common::bastion::{ContextTarget, ContextVerb, InfluenceKind};
+
+        use crate::hud::bastion::{BastionRadial, RadialAction};
+        if let Some(entity) = self.bastion_pick_entity(global_state) {
+            let (uid, pos) = {
+                let client = self.client.borrow();
+                let ecs = client.state().ecs();
+                (
+                    ecs.read_storage::<common::uid::Uid>().get(entity).copied(),
+                    ecs.read_storage::<comp::Pos>().get(entity).map(|p| p.0),
+                )
+            };
+            if let (Some(uid), Some(pos)) = (uid, pos) {
+                self.hud.bastion_open_radial(BastionRadial::new(
+                    format!("Entity {uid}"),
+                    ContextTarget::Entity(uid),
+                    pos,
+                    vec![
+                        RadialAction::Verb(ContextVerb::Inspect),
+                        RadialAction::Verb(ContextVerb::SetPolicy),
+                        RadialAction::Verb(ContextVerb::Embody),
+                        RadialAction::Verb(ContextVerb::ForceAction),
+                    ],
+                ));
+                return;
+            }
+        }
+        if let Some(block) = self.bastion_cursor_block(global_state) {
+            let kind = {
+                let client = self.client.borrow();
+                let terrain = client.state().terrain();
+                terrain.get(block).ok().copied().map(|b| b.kind())
+            };
+            use common::terrain::BlockKind;
+            // Lead verb from what's under the cursor; the rest behind it.
+            let (title, mut actions) = match kind {
+                Some(BlockKind::Wood) | Some(BlockKind::Leaves) => {
+                    ("Tree", vec![RadialAction::Verb(ContextVerb::Chop)])
+                },
+                Some(BlockKind::Rock) | Some(BlockKind::WeakRock) => {
+                    ("Rock", vec![RadialAction::Verb(ContextVerb::Mine)])
+                },
+                _ => ("Ground", vec![]),
+            };
+            for a in [
+                RadialAction::Verb(ContextVerb::Build),
+                RadialAction::Verb(ContextVerb::Stockpile),
+                RadialAction::Verb(ContextVerb::Mine),
+                RadialAction::Verb(ContextVerb::Chop),
+                RadialAction::Influence(InfluenceKind::Bless),
+                RadialAction::Influence(InfluenceKind::Rain),
+            ] {
+                if !actions.contains(&a) {
+                    actions.push(a);
+                }
+            }
+            let point = block.map(|e| e as f32) + Vec3::new(0.5, 0.5, 1.0);
+            self.hud.bastion_open_radial(BastionRadial::new(
+                title.to_string(),
+                ContextTarget::Block(block),
+                point,
+                actions,
+            ));
+        }
+    }
+
+    /// bastion (B2a): rebuild a rectangle outline (4 debug lines) for a
+    /// region at its top face. Returns the shape ids.
+    fn bastion_region_outline(
+        &mut self,
+        min: Vec3<f32>,
+        max: Vec3<f32>,
+        color: [f32; 4],
+    ) -> Vec<DebugShapeId> {
+        let z = max.z + 0.15;
+        let corners = [
+            Vec3::new(min.x, min.y, z),
+            Vec3::new(max.x, min.y, z),
+            Vec3::new(max.x, max.y, z),
+            Vec3::new(min.x, max.y, z),
+        ];
+        (0..4)
+            .map(|i| {
+                let id = self.scene.debug.add_shape(crate::scene::DebugShape::Line(
+                    [corners[i], corners[(i + 1) % 4]],
+                    0.15,
+                ));
+                self.scene
+                    .debug
+                    .set_context(id, [0.0; 4], color, [0.0, 0.0, 0.0, 1.0]);
+                id
+            })
+            .collect()
+    }
+
+    /// bastion (B2a): begin/refresh/finish the designate-paint drag.
+    fn bastion_paint_begin(&mut self, global_state: &GlobalState) {
+        let plane_z = self.bastion_plane_z();
+        if let Some(anchor) = self.bastion_point_under_cursor(global_state, plane_z) {
+            self.bastion_paint = Some(BastionPaint {
+                anchor,
+                current: anchor,
+                plane_z,
+                shapes: Vec::new(),
+            });
+        }
+    }
+
+    fn bastion_paint_update(&mut self, global_state: &GlobalState) {
+        let Some(plane_z) = self.bastion_paint.as_ref().map(|p| p.plane_z) else {
+            return;
+        };
+        let Some(current) = self.bastion_point_under_cursor(global_state, plane_z) else {
+            return;
+        };
+        let (old_shapes, anchor) = {
+            let paint = self.bastion_paint.as_mut().unwrap();
+            paint.current = current;
+            (std::mem::take(&mut paint.shapes), paint.anchor)
+        };
+        for id in old_shapes {
+            self.scene.debug.remove_shape(id);
+        }
+        let min = Vec3::partial_min(anchor, current);
+        let max = Vec3::partial_max(anchor, current);
+        let shapes = self.bastion_region_outline(min, max, [1.0, 1.0, 0.3, 0.9]);
+        if let Some(paint) = self.bastion_paint.as_mut() {
+            paint.shapes = shapes;
+        }
+    }
+
+    fn bastion_paint_finish(
+        &mut self,
+        kind: common::bastion::DesignationKind,
+    ) {
+        let Some(paint) = self.bastion_paint.take() else {
+            return;
+        };
+        for id in paint.shapes {
+            self.scene.debug.remove_shape(id);
+        }
+        // A designation reaches a couple of blocks under the paint plane so a
+        // surface drag marks the ground itself (B4 refines per-kind depth).
+        let min_f: Vec3<f32> = Vec3::partial_min(paint.anchor, paint.current);
+        let max_f: Vec3<f32> = Vec3::partial_max(paint.anchor, paint.current);
+        let region = common::bastion::Region {
+            min: min_f.map(|e| e.floor() as i32) - Vec3::<i32>::new(0, 0, 2),
+            max: max_f.map(|e| e.floor() as i32),
+        }
+        .normalized();
+        self.client.borrow_mut().bastion_place_designation(region, kind);
+    }
+
+    /// bastion (B2a): give every server-echoed designation an overlay
+    /// outline (colored by kind).
+    fn bastion_sync_designations(&mut self) {
+        let new: Vec<(common::bastion::Region, common::bastion::DesignationKind)> = {
+            let client = self.client.borrow();
+            let list = client.bastion_designations();
+            if list.len() <= self.bastion_designation_synced {
+                return;
+            }
+            list[self.bastion_designation_synced..].to_vec()
+        };
+        for (region, kind) in new {
+            use common::bastion::DesignationKind;
+            let color = match kind {
+                DesignationKind::Mine => [1.0, 0.6, 0.1, 0.9],
+                DesignationKind::Chop => [0.2, 0.9, 0.2, 0.9],
+                DesignationKind::Build => [0.3, 0.6, 1.0, 0.9],
+                DesignationKind::Stockpile => [0.8, 0.3, 0.9, 0.9],
+            };
+            let shapes = self.bastion_region_outline(
+                region.min.map(|e| e as f32),
+                region.max.map(|e| e as f32 + 1.0),
+                color,
+            );
+            self.bastion_designation_shapes.extend(shapes);
+            self.bastion_designation_synced += 1;
         }
     }
 
@@ -1061,6 +1380,29 @@ impl PlayState for SessionState {
                                         .into_plain_msg(format!("Overseer view: {label}")),
                                 );
                             },
+                            GameInput::BastionCycleTool
+                                if state && self.bastion_overseer_active() =>
+                            {
+                                // B2a: cycle the pinned tool.
+                                self.bastion_tools.tool = self.bastion_tools.tool.next();
+                                let label = self.bastion_tools.tool.label();
+                                self.hud.new_message(
+                                    ChatType::CommandInfo
+                                        .into_plain_msg(format!("Overseer tool: {label}")),
+                                );
+                            },
+                            GameInput::BastionToggleGodMode
+                                if state && self.bastion_overseer_active() =>
+                            {
+                                // B2a: God/Free ruleset toggle (stub — teeth
+                                // in B2b when the colony + favor exist).
+                                self.bastion_tools.god_mode =
+                                    self.bastion_tools.god_mode.toggled();
+                                let label = self.bastion_tools.god_mode.label();
+                                self.hud.new_message(ChatType::CommandInfo.into_plain_msg(
+                                    format!("Overseer ruleset: {label} (enforced from B2b)"),
+                                ));
+                            },
                             GameInput::Primary => {
                                 self.walking_speed = false;
                                 let mut client = self.client.borrow_mut();
@@ -1614,21 +1956,69 @@ impl PlayState for SessionState {
                     // events (mouse→GameInput mapping is grab-gated upstream).
                     Event::MouseButton(button, mb_state) if self.bastion_overseer_active() => {
                         let pressed = mb_state == winit::event::ElementState::Pressed;
+                        let cursor = {
+                            let c = global_state.window.cursor_position();
+                            Vec2::new(c.x as f32, c.y as f32)
+                        };
+                        // Release within this many pixels of the press is a
+                        // *click* (select / radial), not a drag (pan / orbit).
+                        const CLICK_SLOP_SQ: f32 = 36.0;
                         match button {
                             winit::event::MouseButton::Left => {
                                 if pressed {
                                     // Clicks on HUD widgets are for the HUD.
                                     if !self.hud.bastion_cursor_over_widget() {
-                                        self.bastion_begin_grab(global_state);
+                                        // A world-press dismisses an open
+                                        // radial menu.
+                                        self.hud.bastion_close_radial();
+                                        self.bastion_lmb_down = Some(cursor);
+                                        if matches!(
+                                            self.bastion_tools.tool,
+                                            bastion::tools::ToolMode::Designate(_)
+                                        ) {
+                                            // B2a: designate tool paints
+                                            // instead of panning.
+                                            self.bastion_paint_begin(global_state);
+                                        } else {
+                                            self.bastion_begin_grab(global_state);
+                                        }
                                     }
                                 } else {
+                                    if let bastion::tools::ToolMode::Designate(kind) =
+                                        self.bastion_tools.tool
+                                        && self.bastion_paint.is_some()
+                                    {
+                                        self.bastion_paint_finish(kind);
+                                    } else if let Some(down) = self.bastion_lmb_down
+                                        && down.distance_squared(cursor) < CLICK_SLOP_SQ
+                                        && !self.hud.bastion_cursor_over_widget()
+                                    {
+                                        // B2a: left-click = select/inspect
+                                        // (entity under cursor, or clear).
+                                        let picked = self.bastion_pick_entity(global_state);
+                                        self.bastion_select(picked);
+                                    }
+                                    self.bastion_lmb_down = None;
                                     // Release: keep the tracked velocity as
                                     // inertia (applied per-frame with decay).
                                     self.bastion_grab = None;
                                 }
                             },
                             winit::event::MouseButton::Right => {
-                                self.bastion_orbiting = pressed;
+                                if pressed {
+                                    self.bastion_rmb_down = Some(cursor);
+                                    self.bastion_orbiting = true;
+                                } else {
+                                    self.bastion_orbiting = false;
+                                    if let Some(down) = self.bastion_rmb_down.take()
+                                        && down.distance_squared(cursor) < CLICK_SLOP_SQ
+                                        && !self.hud.bastion_cursor_over_widget()
+                                    {
+                                        // B2a: right-click = contextual
+                                        // radial menu.
+                                        self.bastion_open_radial(global_state);
+                                    }
+                                }
                             },
                             _ => {},
                         }
@@ -1957,6 +2347,19 @@ impl PlayState for SessionState {
                     ));
                 }
             }
+            // bastion (B2a): interaction-surface upkeep — live paint preview,
+            // designation-echo overlay, HUD state mirror.
+            if self.bastion_overseer_active() {
+                if self.bastion_paint.is_some() {
+                    self.bastion_paint_update(global_state);
+                }
+                self.bastion_sync_designations();
+            }
+            self.hud.bastion_sync(
+                self.bastion_overseer_active(),
+                self.bastion_tools.tool,
+                self.bastion_tools.god_mode,
+            );
 
             match self.scene.camera().get_mode() {
                 CameraMode::FirstPerson | CameraMode::ThirdPerson => {
@@ -2212,6 +2615,32 @@ impl PlayState for SessionState {
                     HudEvent::SendMessage(msg) => {
                         // TODO: Handle result
                         self.client.borrow_mut().send_chat(msg);
+                    },
+                    // bastion (B2a): interaction-surface HUD events.
+                    HudEvent::BastionSelectTool(tool) => {
+                        self.bastion_tools.tool = tool;
+                    },
+                    HudEvent::BastionToggleGodMode => {
+                        self.bastion_tools.god_mode = self.bastion_tools.god_mode.toggled();
+                    },
+                    HudEvent::BastionRadialPick {
+                        action,
+                        target,
+                        point,
+                    } => {
+                        // The target-restriction hook (§3c) — permissive stub
+                        // until B2b gives God mode teeth.
+                        if bastion::tools::target_allowed(self.bastion_tools.god_mode, None) {
+                            let mut client = self.client.borrow_mut();
+                            match action {
+                                crate::hud::bastion::RadialAction::Verb(verb) => {
+                                    client.bastion_context_action(target, verb);
+                                },
+                                crate::hud::bastion::RadialAction::Influence(kind) => {
+                                    client.bastion_apply_influence(point, kind);
+                                },
+                            }
+                        }
                     },
                     HudEvent::SendCommand(name, args) => {
                         match run_command(self, global_state, &name, args) {

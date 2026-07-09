@@ -117,6 +117,25 @@ pub enum ClientGeneral {
     /// overseer streams terrain around the camera without teleporting the
     /// avatar (which is what `SpectatePosition` does).
     BastionCameraAnchor(Option<Vec3<f32>>),
+    /// bastion (B2a): paint a designation region. Server validates + echoes
+    /// (`ServerGeneral::BastionDesignation`); B4 turns designations into jobs.
+    BastionPlaceDesignation {
+        region: common::bastion::Region,
+        kind: common::bastion::DesignationKind,
+    },
+    /// bastion (B2a): apply a divine influence at a point. Stub until B13;
+    /// server validates + acks via chat.
+    BastionApplyInfluence {
+        target: Vec3<f32>,
+        kind: common::bastion::InfluenceKind,
+    },
+    /// bastion (B2a): a context-menu verb on a target. Stub until B3/B4;
+    /// server validates + acks via chat. Deliberately NOT a free per-unit
+    /// command verb — force-action is a metered god power (B2b).
+    BastionContextAction {
+        target: common::bastion::ContextTarget,
+        verb: common::bastion::ContextVerb,
+    },
 
     //Only in Game, via terrain stream
     TerrainChunkRequest {
@@ -179,7 +198,10 @@ impl ClientMsg {
                         | ClientGeneral::RequestLossyTerrainCompression { .. }
                         | ClientGeneral::UpdateMapMarker(_)
                         | ClientGeneral::SetBattleMode(_)
-                        | ClientGeneral::BastionCameraAnchor(_) => {
+                        | ClientGeneral::BastionCameraAnchor(_)
+                        | ClientGeneral::BastionPlaceDesignation { .. }
+                        | ClientGeneral::BastionApplyInfluence { .. }
+                        | ClientGeneral::BastionContextAction { .. } => {
                             c_type == ClientType::Game && presence.is_some()
                         },
                         ClientGeneral::SpectatePosition(_) | ClientGeneral::SpectateEntity(_) => {

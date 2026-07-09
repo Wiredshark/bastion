@@ -232,6 +232,13 @@ pub enum ServerGeneral {
     UpdateRecipes,
     SetPlayerRole(Option<AdminRole>),
     Gizmos(Vec<Gizmos>),
+    /// bastion (B2a): a validated designation echoed back to the placing
+    /// overseer, so the client can render the region overlay. B4 replaces the
+    /// echo with real job-board state.
+    BastionDesignation {
+        region: common::bastion::Region,
+        kind: common::bastion::DesignationKind,
+    },
 }
 
 impl ServerGeneral {
@@ -380,7 +387,8 @@ impl ServerMsg {
                         | ServerGeneral::LocalWindUpdate(_)
                         | ServerGeneral::SpectatePosition(_)
                         | ServerGeneral::UpdateRecipes
-                        | ServerGeneral::Gizmos(_) => {
+                        | ServerGeneral::Gizmos(_)
+                        | ServerGeneral::BastionDesignation { .. } => {
                             c_type == ClientType::Game && presence.is_some()
                         },
                         // Always possible

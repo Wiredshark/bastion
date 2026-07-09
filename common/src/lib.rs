@@ -22,6 +22,7 @@ pub mod shared_server_config;
 pub mod uid;
 
 pub mod astar;
+pub mod bastion;
 pub mod calendar;
 pub mod character;
 pub mod clock;

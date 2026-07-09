@@ -1,6 +1,7 @@
 #![expect(non_local_definitions)] // because of WidgetCommon derive
 mod animation;
 mod bag;
+pub mod bastion;
 mod buffs;
 mod buttons;
 mod change_notification;
@@ -244,6 +245,13 @@ pub fn default_water_color() -> Rgba<f32> { srgba_to_linear(Rgba::new(0.0, 0.18,
 
 widget_ids! {
     struct Ids {
+        // bastion (B2a): overseer interaction surface
+        bastion_palette_btns[],
+        bastion_godmode_btn,
+        bastion_selected_text,
+        bastion_radial_title,
+        bastion_radial_btns[],
+
         // Crosshair
         crosshair_inner,
         crosshair_outer,
@@ -673,6 +681,15 @@ pub struct HudInfo<'a> {
 pub enum Event {
     SendMessage(String),
     SendCommand(String, Vec<String>),
+
+    // bastion (B2a): overseer interaction surface
+    BastionSelectTool(crate::bastion::tools::ToolMode),
+    BastionToggleGodMode,
+    BastionRadialPick {
+        action: bastion::RadialAction,
+        target: common::bastion::ContextTarget,
+        point: Vec3<f32>,
+    },
 
     CharacterSelection,
     UseSlot {
@@ -1353,6 +1370,9 @@ pub struct Hud {
     hp_pulse: f32,
     slot_manager: slots::SlotManager,
     hotbar: hotbar::State,
+    /// bastion (B2a): overseer interaction-surface HUD state (palette,
+    /// radial menu, selection line). Session-mirrored each frame.
+    bastion: bastion::BastionHudState,
     events: Vec<Event>,
     menu_events: Vec<MenuInput>,
     crosshair_opacity: f32,
@@ -1457,6 +1477,7 @@ impl Hud {
             hp_pulse: 0.0,
             slot_manager,
             hotbar: hotbar_state,
+            bastion: Default::default(),
             events: Vec::new(),
             menu_events: Vec::new(),
             crosshair_opacity: 0.0,
@@ -4726,6 +4747,174 @@ impl Hud {
             }
         }
 
+        // bastion (B2a): the overseer interaction surface — tool palette,
+        // selection info line, and the contextual radial menu. Conrod (not
+        // egui) on purpose: egui is gated behind the debug toggle. B9's
+        // colony HUD re-skins this; the events/data model stay.
+        if self.bastion.active {
+            use crate::bastion::tools::ToolMode;
+            let btn_color = Color::Rgba(0.08, 0.10, 0.12, 0.85);
+            let btn_active = Color::Rgba(0.25, 0.45, 0.25, 0.95);
+            let label_color = Color::Rgba(0.9, 0.9, 0.85, 1.0);
+
+            // --- Tool palette (top center) + God/Free toggle ---
+            let tools = ToolMode::ALL;
+            if self.ids.bastion_palette_btns.len() < tools.len() {
+                self.ids
+                    .bastion_palette_btns
+                    .resize(tools.len(), &mut ui_widgets.widget_id_generator());
+            }
+            for (i, tool) in tools.iter().enumerate() {
+                let is_active = *tool == self.bastion.tool;
+                let mut btn = widget::Button::new()
+                    .w_h(86.0, 26.0)
+                    .color(if is_active { btn_active } else { btn_color })
+                    .label(tool.label())
+                    .label_font_size(12)
+                    .label_color(label_color)
+                    .label_font_id(self.fonts.cyri.conrod_id);
+                btn = if i == 0 {
+                    btn.top_left_with_margins_on(
+                        ui_widgets.window,
+                        6.0,
+                        ui_widgets.win_w / 2.0 - (tools.len() as f64 + 1.0) * 90.0 / 2.0,
+                    )
+                } else {
+                    btn.right_from(self.ids.bastion_palette_btns[i - 1], 4.0)
+                };
+                if btn
+                    .set(self.ids.bastion_palette_btns[i], ui_widgets)
+                    .was_clicked()
+                {
+                    events.push(Event::BastionSelectTool(*tool));
+                }
+            }
+            if widget::Button::new()
+                .w_h(86.0, 26.0)
+                .color(btn_color)
+                .label(self.bastion.god_mode.label())
+                .label_font_size(12)
+                .label_color(Color::Rgba(1.0, 0.85, 0.4, 1.0))
+                .label_font_id(self.fonts.cyri.conrod_id)
+                .right_from(self.ids.bastion_palette_btns[tools.len() - 1], 12.0)
+                .set(self.ids.bastion_godmode_btn, ui_widgets)
+                .was_clicked()
+            {
+                events.push(Event::BastionToggleGodMode);
+            }
+
+            // --- Selection info line (bottom left, above the chat box) ---
+            if let Some(info) = &self.bastion.selected_info {
+                widget::Text::new(info)
+                    .bottom_left_with_margins_on(ui_widgets.window, 340.0, 10.0)
+                    .font_size(14)
+                    .font_id(self.fonts.cyri.conrod_id)
+                    .color(label_color)
+                    .set(self.ids.bastion_selected_text, ui_widgets);
+            }
+
+            // --- Contextual radial menu ---
+            let mut radial_pick: Option<bastion::RadialAction> = None;
+            let mut radial_target = None;
+            if let Some(radial) = self.bastion.radial.as_mut() {
+                // Pin where the cursor was when the menu opened.
+                let pin = *radial
+                    .pinned
+                    .get_or_insert_with(|| ui_widgets.global_input().current.mouse.xy);
+                widget::Text::new(&radial.title)
+                    .x_y(pin[0], pin[1] + 66.0)
+                    .font_size(14)
+                    .font_id(self.fonts.cyri.conrod_id)
+                    .color(Color::Rgba(1.0, 1.0, 0.7, 1.0))
+                    .set(self.ids.bastion_radial_title, ui_widgets);
+
+                // Pie of the first few actions + "More…", or the full list.
+                let pie_max = bastion::RADIAL_PIE_MAX;
+                let overflow = radial.actions.len() > pie_max && !radial.expanded;
+                let shown: Vec<(usize, &'static str, bool)> = if radial.expanded {
+                    radial
+                        .actions
+                        .iter()
+                        .enumerate()
+                        .map(|(i, a)| (i, a.label(), a.stubbed()))
+                        .collect()
+                } else {
+                    radial
+                        .actions
+                        .iter()
+                        .enumerate()
+                        .take(if overflow { pie_max } else { radial.actions.len() })
+                        .map(|(i, a)| (i, a.label(), a.stubbed()))
+                        .collect()
+                };
+                let n_btns = shown.len() + overflow as usize;
+                if self.ids.bastion_radial_btns.len() < n_btns {
+                    self.ids
+                        .bastion_radial_btns
+                        .resize(n_btns, &mut ui_widgets.widget_id_generator());
+                }
+                let mut expand = false;
+                for (slot, (idx, label, stubbed)) in shown.iter().enumerate() {
+                    let (x, y) = if radial.expanded {
+                        // Dense vertical list.
+                        (pin[0], pin[1] + 40.0 - slot as f64 * 28.0)
+                    } else {
+                        // Pie around the pin point.
+                        let ang = std::f64::consts::TAU * slot as f64 / n_btns as f64
+                            - std::f64::consts::FRAC_PI_2;
+                        (pin[0] + 78.0 * ang.cos(), pin[1] - 52.0 * ang.sin())
+                    };
+                    let clicked = widget::Button::new()
+                        .w_h(84.0, 24.0)
+                        .x_y(x, y)
+                        .color(btn_color)
+                        .label(label)
+                        .label_font_size(12)
+                        .label_color(if *stubbed {
+                            Color::Rgba(0.55, 0.55, 0.55, 1.0)
+                        } else {
+                            label_color
+                        })
+                        .label_font_id(self.fonts.cyri.conrod_id)
+                        .set(self.ids.bastion_radial_btns[slot], ui_widgets)
+                        .was_clicked();
+                    if clicked {
+                        radial_pick = Some(radial.actions[*idx]);
+                        radial_target = Some((radial.target, radial.point));
+                    }
+                }
+                if overflow {
+                    let slot = shown.len();
+                    let ang = std::f64::consts::TAU * slot as f64 / n_btns as f64
+                        - std::f64::consts::FRAC_PI_2;
+                    if widget::Button::new()
+                        .w_h(84.0, 24.0)
+                        .x_y(pin[0] + 78.0 * ang.cos(), pin[1] - 52.0 * ang.sin())
+                        .color(btn_color)
+                        .label("More…")
+                        .label_font_size(12)
+                        .label_color(label_color)
+                        .label_font_id(self.fonts.cyri.conrod_id)
+                        .set(self.ids.bastion_radial_btns[slot], ui_widgets)
+                        .was_clicked()
+                    {
+                        expand = true;
+                    }
+                }
+                if expand {
+                    radial.expanded = true;
+                }
+            }
+            if let (Some(action), Some((target, point))) = (radial_pick, radial_target) {
+                self.bastion.radial = None;
+                events.push(Event::BastionRadialPick {
+                    action,
+                    target,
+                    point,
+                });
+            }
+        }
+
         // if a menu is open, notify window so it can restrict GameInputs
         global_state.window.menu_open = !self.show.focus.is_empty();
 
@@ -5537,6 +5726,34 @@ impl Hud {
             .widget_under_mouse
             .is_some_and(|id| id != ui.window)
     }
+
+    /// bastion (B2a): the session mirrors its interaction state each frame.
+    pub fn bastion_sync(
+        &mut self,
+        active: bool,
+        tool: crate::bastion::tools::ToolMode,
+        god_mode: crate::bastion::tools::GodMode,
+    ) {
+        self.bastion.active = active;
+        self.bastion.tool = tool;
+        self.bastion.god_mode = god_mode;
+        if !active {
+            self.bastion.radial = None;
+        }
+    }
+
+    /// bastion (B2a): set/clear the selection info line.
+    pub fn bastion_set_selected(&mut self, info: Option<String>) {
+        self.bastion.selected_info = info;
+    }
+
+    /// bastion (B2a): open the contextual radial menu (replaces any open one).
+    pub fn bastion_open_radial(&mut self, radial: bastion::BastionRadial) {
+        self.bastion.radial = Some(radial);
+    }
+
+    /// bastion (B2a): dismiss the radial menu.
+    pub fn bastion_close_radial(&mut self) { self.bastion.radial = None; }
 }
 
 fn try_hotbar_slot_from_input(input: GameInput) -> Option<hotbar::Slot> {

@@ -305,6 +305,10 @@ impl ControlSettings {
             // for its overlay and blocks game input while it's open.
             GameInput::BastionSnapTopDown => Key::Named(NamedKey::End),
             GameInput::BastionCycleViewMode => char("V"),
+            // B2a: T/G physically collide only with avatar verbs, which the
+            // overseer context suppresses — the context system at work.
+            GameInput::BastionCycleTool => char("T"),
+            GameInput::BastionToggleGodMode => char("G"),
         }))
     }
 

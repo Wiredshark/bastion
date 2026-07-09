@@ -518,7 +518,9 @@ impl ControllerSettings {
             | GameInput::BastionSliceUp
             | GameInput::BastionSliceDown
             | GameInput::BastionSnapTopDown
-            | GameInput::BastionCycleViewMode => Some(Button::Simple(GilButton::Unknown)),
+            | GameInput::BastionCycleViewMode
+            | GameInput::BastionCycleTool
+            | GameInput::BastionToggleGodMode => Some(Button::Simple(GilButton::Unknown)),
         }
     }
 
@@ -937,7 +939,9 @@ impl ControllerSettings {
             | GameInput::BastionSliceUp
             | GameInput::BastionSliceDown
             | GameInput::BastionSnapTopDown
-            | GameInput::BastionCycleViewMode => Some(LayerEntry {
+            | GameInput::BastionCycleViewMode
+            | GameInput::BastionCycleTool
+            | GameInput::BastionToggleGodMode => Some(LayerEntry {
                 button: Button::Simple(GilButton::Unknown),
                 mod1: Button::Simple(GilButton::Unknown),
                 mod2: Button::Simple(GilButton::Unknown),

@@ -358,6 +358,13 @@ pub struct Client {
     /// (the entity's immediate area is still retained). Mirrored to the server
     /// (`ClientGeneral::BastionCameraAnchor`) so request validation accepts it.
     bastion_terrain_anchor: Option<Vec3<f32>>,
+    /// bastion (B2a): designations echoed back by the server (validated).
+    /// Rendered as an overlay by voxygen; replaced by real job-board state in
+    /// B4.
+    bastion_designations: Vec<(
+        common::bastion::Region,
+        common::bastion::DesignationKind,
+    )>,
     target_time_of_day: Option<TimeOfDay>,
     dt_adjustment: f64,
 
@@ -1129,6 +1136,7 @@ impl Client {
 
             pending_chunks: HashMap::new(),
             bastion_terrain_anchor: None,
+            bastion_designations: Vec::new(),
             target_time_of_day: None,
             dt_adjustment: 1.0,
 
@@ -1252,6 +1260,9 @@ impl Client {
                     | ClientGeneral::SpectatePosition(_)
                     | ClientGeneral::SpectateEntity(_)
                     | ClientGeneral::BastionCameraAnchor(_)
+                    | ClientGeneral::BastionPlaceDesignation { .. }
+                    | ClientGeneral::BastionApplyInfluence { .. }
+                    | ClientGeneral::BastionContextAction { .. }
                     | ClientGeneral::SetBattleMode(_) => {
                         #[cfg(feature = "tracy")]
                         {
@@ -1996,6 +2007,43 @@ impl Client {
             self.bastion_terrain_anchor = anchor;
             self.send_msg(ClientGeneral::BastionCameraAnchor(anchor));
         }
+    }
+
+    /// bastion (B2a): designations the server has validated and echoed.
+    pub fn bastion_designations(
+        &self,
+    ) -> &[(
+        common::bastion::Region,
+        common::bastion::DesignationKind,
+    )] {
+        &self.bastion_designations
+    }
+
+    /// bastion (B2a): paint a designation region (server validates + echoes).
+    pub fn bastion_place_designation(
+        &mut self,
+        region: common::bastion::Region,
+        kind: common::bastion::DesignationKind,
+    ) {
+        self.send_msg(ClientGeneral::BastionPlaceDesignation { region, kind });
+    }
+
+    /// bastion (B2a): apply a divine influence (stub until B13).
+    pub fn bastion_apply_influence(
+        &mut self,
+        target: Vec3<f32>,
+        kind: common::bastion::InfluenceKind,
+    ) {
+        self.send_msg(ClientGeneral::BastionApplyInfluence { target, kind });
+    }
+
+    /// bastion (B2a): send a context-menu verb (stub until B3/B4).
+    pub fn bastion_context_action(
+        &mut self,
+        target: common::bastion::ContextTarget,
+        verb: common::bastion::ContextVerb,
+    ) {
+        self.send_msg(ClientGeneral::BastionContextAction { target, verb });
     }
 
     pub fn start_spectate_entity(&mut self, entity: EcsEntity) {
@@ -3151,6 +3199,12 @@ impl Client {
                 self.update_available_recipes();
             },
             ServerGeneral::Gizmos(gizmos) => frontend_events.push(Event::Gizmos(gizmos)),
+            ServerGeneral::BastionDesignation { region, kind } => {
+                // bastion (B2a): server-validated designation echo — kept for
+                // the overlay render. B4 replaces this list with job-board
+                // state.
+                self.bastion_designations.push((region, kind));
+            },
             _ => unreachable!("Not a in_game message"),
         }
         Ok(())

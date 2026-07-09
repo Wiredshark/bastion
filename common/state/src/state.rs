@@ -285,6 +285,9 @@ impl State {
         let mut ecs = specs::World::new();
         // Uids for sync
         ecs.register_sync_marker();
+        // bastion (B2a): overseer selection marker (client-side use; harmless
+        // to register everywhere, never synced).
+        ecs.register::<comp::BastionSelected>();
         // Register server -> all clients synced components.
         ecs.register::<comp::Body>();
         ecs.register::<comp::Hardcore>();

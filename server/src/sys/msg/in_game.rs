@@ -262,6 +262,55 @@ impl Sys {
                 // moves the entity (unlike SpectatePosition above).
                 presence.bastion_terrain_anchor = anchor;
             },
+            // bastion (B2a): overseer interaction-surface stubs. The server
+            // VALIDATES and ECHOES; behavior arrives with B4 (designations →
+            // jobs), B13 (influence), B3/B2b (context verbs on entities).
+            ClientGeneral::BastionPlaceDesignation { region, kind } => {
+                let region = region.normalized();
+                let volume = region.volume();
+                if volume > 0 && volume <= common::bastion::MAX_DESIGNATION_VOLUME {
+                    client.send(ServerGeneral::BastionDesignation { region, kind })?;
+                } else {
+                    client.send(ServerGeneral::server_msg(
+                        common::comp::ChatType::CommandError,
+                        common::comp::Content::Plain(format!(
+                            "Designation rejected: volume {} outside 1..={}",
+                            volume,
+                            common::bastion::MAX_DESIGNATION_VOLUME
+                        )),
+                    ))?;
+                }
+            },
+            ClientGeneral::BastionApplyInfluence { target, kind } => {
+                if target.map(|e| e.is_finite()).reduce_and() {
+                    client.send(ServerGeneral::server_msg(
+                        common::comp::ChatType::CommandInfo,
+                        common::comp::Content::Plain(format!(
+                            "[bastion stub] influence {} at ({:.0}, {:.0}, {:.0})",
+                            kind.label(),
+                            target.x,
+                            target.y,
+                            target.z
+                        )),
+                    ))?;
+                }
+            },
+            ClientGeneral::BastionContextAction { target, verb } => {
+                let target_desc = match target {
+                    common::bastion::ContextTarget::Entity(uid) => format!("entity {uid}"),
+                    common::bastion::ContextTarget::Block(pos) => {
+                        format!("block ({}, {}, {})", pos.x, pos.y, pos.z)
+                    },
+                };
+                client.send(ServerGeneral::server_msg(
+                    common::comp::ChatType::CommandInfo,
+                    common::comp::Content::Plain(format!(
+                        "[bastion stub] {} on {}",
+                        verb.label(),
+                        target_desc
+                    )),
+                ))?;
+            },
             ClientGeneral::SetBattleMode(battle_mode) => {
                 emitters.emit(event::SetBattleModeEvent {
                     entity,

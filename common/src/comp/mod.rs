@@ -4,6 +4,7 @@ pub mod agent;
 pub mod anchor;
 pub mod arcing;
 pub mod aura;
+pub mod bastion;
 pub mod beam;
 pub mod body;
 pub mod buff;
@@ -54,6 +55,7 @@ pub use self::{
     anchor::Anchor,
     arcing::{ArcProperties, Arcing},
     aura::{Aura, AuraChange, AuraKind, Auras, EnteredAuras},
+    bastion::BastionSelected,
     beam::Beam,
     body::{
         AllBodies, Body, BodyData, Gender, arthropod, biped_large, biped_small, bird_large,
