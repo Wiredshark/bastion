@@ -998,7 +998,10 @@ impl Scene {
             ];
         }
         let bastion_occ = if self.camera.get_mode() == CameraMode::Overseer {
-            self.bastion_occlusion.to_uniform(focus_pos)
+            // View radius ≈ the on-screen half-diagonal at this zoom, so the
+            // proximity distance vignette tracks the zoom (see to_uniform).
+            let view_radius = self.camera.get_distance() * 1.4;
+            self.bastion_occlusion.to_uniform(focus_pos, view_radius)
         } else {
             crate::bastion::occlusion::OcclusionUniform::solid()
         };

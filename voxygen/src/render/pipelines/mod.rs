@@ -86,6 +86,7 @@ pub struct Globals {
     bastion_occ_a: [f32; 4],
     bastion_occ_b: [f32; 4],
     bastion_occ_c: [f32; 4],
+    bastion_occ_d: [f32; 4],
     bastion_occ_targets: [[f32; 4]; crate::bastion::occlusion::MAX_TARGETS],
 }
 /// Make sure Globals is 16-byte-aligned.
@@ -216,6 +217,7 @@ impl Globals {
             bastion_occ_a: bastion_occ.a,
             bastion_occ_b: bastion_occ.b,
             bastion_occ_c: bastion_occ.c,
+            bastion_occ_d: bastion_occ.d,
             bastion_occ_targets: bastion_occ.targets,
         }
     }

@@ -23,7 +23,10 @@ floors) so revealed rooms read *lit-from-above*, not black — `relight_strength
 `V` (`GameInput::BastionCycleViewMode`, Overseer context) cycles:
 
 - **Solid** — mode 0, nothing hidden (vanilla look).
-- **Reveal** — roof reveal + cutaway + gentle proximity: the smart default.
+- **Reveal** — a gentle proximity readability layer by default (tall foreground softly fades so you
+  see the ground). Roof-reveal + cutaway are **opt-in toggles** in the egui panel this block (their
+  approximate/stubbed masks artifact as an always-on default — see `BASTION_B1_6_FINDINGS.md` §4d);
+  they rejoin the auto-default when B2/B3 feed real per-room coverage + hovered/colonist targets.
 - **Slice** — manual cross-section + proximity; `PgUp`/`PgDn` drive the slice height (and auto-select
   this mode).
 
@@ -69,5 +72,8 @@ in the block's report / `BASTION.md`.
 
 ## Tunables (defaults, `voxygen/src/bastion/occlusion.rs`)
 
-`fade_band 6`, `strength 0.85`, `height_start/end 8/40`, `dist_start/end 48/160`,
-`cutaway_radius 6`, `roof_low/high 3/14`, `relight_strength 0.5`. All live-editable in the egui panel.
+`fade_band 6`, `strength 0.5`, `height_start/end 20/120`, `dist_start/end 0.72/1.15` (as a
+*fraction of the on-screen view radius*, so the distance vignette tracks zoom instead of a fixed block
+distance), `cutaway_radius 6`, `roof_low/high 3/14`, `relight_strength 0.5`. Defaults are deliberately
+gentle because the overseer sees a wide area; B1.8's colony-scale focus policy can push them harder.
+All live-editable in the egui panel.

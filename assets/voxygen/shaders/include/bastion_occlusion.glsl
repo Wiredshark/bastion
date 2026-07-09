@@ -63,10 +63,12 @@ float bastion_occlusion_alpha(vec3 f_pos) {
     }
 
     // Roof/interior reveal: approximate mask — geometry in a slab above the
-    // focus plane and near it in XY (so distant hills stay solid). B2/B3 will
-    // refine the mask with real per-column/room coverage.
+    // focus plane and near the look point in XY (its own radius, so distant
+    // hills stay solid). B2/B3 will refine the mask with real per-column/room
+    // coverage.
     if ((mode & BASTION_OCC_ROOF) != 0u) {
-        float near = 1.0 - smoothstep(bastion_occ_b.z, bastion_occ_b.w, dist_xy);
+        float roof_r = max(bastion_occ_d.x, 1.0);
+        float near = 1.0 - smoothstep(roof_r * 0.7, roof_r, dist_xy);
         float slab = smoothstep(bastion_occ_c.y, bastion_occ_c.z, height_above);
         a = min(a, 1.0 - slab * near);
     }

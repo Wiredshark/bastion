@@ -42,6 +42,7 @@ layout(std140, set = 0, binding = 0) uniform u_globals {
     vec4  bastion_occ_a;         // .x slice_z, .y fade_band, .z focus_z, .w prox_strength
     vec4  bastion_occ_b;         // .x height_start, .y height_end, .z dist_start, .w dist_end
     vec4  bastion_occ_c;         // .x cutaway_radius, .y roof_low, .z roof_high, .w relight_strength
+    vec4  bastion_occ_d;         // .x roof_radius (near-look gate for roof reveal)
     vec4  bastion_occ_targets[4];// .xyz target in f_pos space, .w enabled
 };
 

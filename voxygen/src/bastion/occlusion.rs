@@ -109,15 +109,26 @@ impl Default for Occlusion {
             view_mode: ViewMode::default(),
             slice_enabled: true,
             proximity_enabled: true,
-            cutaway_enabled: true,
-            roof_enabled: true,
+            // Off by default — their B1.6 masks are approximate/stubbed and
+            // artifact as an always-on default; tick them in the egui panel to
+            // demo, they rejoin the auto-default with real data in B2/B3.
+            cutaway_enabled: false,
+            roof_enabled: false,
             slice_z: None,
             fade_band: 6.0,
-            strength: 0.85,
-            height_start: 8.0,
-            height_end: 40.0,
-            dist_start: 48.0,
-            dist_end: 160.0,
+            // Gentle by default — the overseer sees a wide area, so a strong
+            // fade nukes the screen. B1.8's colony-scale focus policy can raise
+            // this. The distance falloff is zoom-scaled at pack time.
+            strength: 0.5,
+            height_start: 15.0,
+            height_end: 90.0,
+            // Distance falloff as a *fraction of the on-screen view radius*
+            // (ortho half-extent). Default is effectively off (you'd have to be
+            // ~3× the view radius from focus — off-screen) so proximity is
+            // height-only by default; the egui slider can pull it in for a
+            // focus vignette. Height-only avoids the "screen edges vanish" look.
+            dist_start: 3.0,
+            dist_end: 5.0,
             cutaway_radius: 6.0,
             roof_low: 3.0,
             roof_high: 14.0,
@@ -133,32 +144,34 @@ impl Occlusion {
     pub fn active_mode(&self) -> u32 {
         let preset = match self.view_mode {
             ViewMode::Solid => mode::SOLID,
-            // "Reveal" is the auto occlusion: roof + cutaway + a gentle
-            // proximity readability layer.
-            ViewMode::Reveal => mode::ROOF | mode::CUTAWAY | mode::PROXIMITY,
+            // "Reveal" = a gentle height-proximity readability layer (tall
+            // foreground softly fades so you see the ground). ROOF and CUTAWAY
+            // are *not* in the default preset because their B1.6 masks are
+            // approximate/stubbed and produce artifacts as an always-on
+            // default — roof's height-slab-in-a-radius reveals a whole cave as
+            // a circular hole, and a camera→focus cutaway punches the
+            // foreground. Both are opt-in via the egui toggles (demonstrable on
+            // a building), and rejoin the auto-default once B2/B3 feed real
+            // per-room coverage + hovered/colonist targets.
+            ViewMode::Reveal => mode::PROXIMITY,
             // "Slice" is the manual cross-section (+ a touch of proximity).
             ViewMode::Slice => mode::SLICE | mode::PROXIMITY,
         };
+        // Solid is always truly solid, whatever the toggles say.
+        if self.view_mode == ViewMode::Solid {
+            return mode::SOLID;
+        }
+        // Per-behavior toggles compose *on top of* the preset — they can add a
+        // behavior (e.g. tick Roof in the egui panel to demo roof reveal on a
+        // building) or remove one. Defaults keep roof/cutaway off so the
+        // Reveal preset stays proximity-only.
         let mut m = preset;
-        // Per-mode toggles gate the bits (they can only *remove* from the
-        // preset, so a toggle never turns on a behavior the preset excludes —
-        // keeps the mental model simple).
-        if !self.slice_enabled {
-            m &= !mode::SLICE;
-        }
-        if !self.proximity_enabled {
-            m &= !mode::PROXIMITY;
-        }
-        if !self.cutaway_enabled {
-            m &= !mode::CUTAWAY;
-        }
-        if !self.roof_enabled {
-            m &= !mode::ROOF;
-        }
+        let set = |m: u32, bit: u32, on: bool| if on { m | bit } else { m & !bit };
+        m = set(m, mode::PROXIMITY, self.proximity_enabled);
+        m = set(m, mode::ROOF, self.roof_enabled);
+        m = set(m, mode::CUTAWAY, self.cutaway_enabled);
         // The slice bit only means anything once a slice height exists.
-        if self.slice_z.is_none() {
-            m &= !mode::SLICE;
-        }
+        m = set(m, mode::SLICE, self.slice_enabled && self.slice_z.is_some());
         m
     }
 
@@ -166,8 +179,10 @@ impl Occlusion {
     ///
     /// `focus_off` is `focus.trunc()` (matches `Globals.focus_off`); targets
     /// are emitted in `f_pos` space (`world - focus_off`) so the shader avoids
-    /// huge-float subtraction.
-    pub fn to_uniform(&self, focus_pos: Vec3<f32>) -> OcclusionUniform {
+    /// huge-float subtraction. `view_radius` is the on-screen ortho half-extent
+    /// (blocks) — the distance falloff is expressed as a fraction of it so the
+    /// proximity vignette tracks the zoom instead of a fixed block distance.
+    pub fn to_uniform(&self, focus_pos: Vec3<f32>, view_radius: f32) -> OcclusionUniform {
         let focus_off = focus_pos.map(|e| e.trunc());
         let mode = self.active_mode();
 
@@ -178,6 +193,10 @@ impl Occlusion {
             targets[count as usize] = [rel.x, rel.y, rel.z, 1.0];
             count += 1;
         }
+
+        let vr = view_radius.max(1.0);
+        let dist_start = self.dist_start * vr;
+        let dist_end = (self.dist_end * vr).max(dist_start + 0.001);
 
         OcclusionUniform {
             mode: [mode, count, 0, 0],
@@ -190,8 +209,8 @@ impl Occlusion {
             b: [
                 self.height_start,
                 self.height_end.max(self.height_start + 0.001),
-                self.dist_start,
-                self.dist_end.max(self.dist_start + 0.001),
+                dist_start,
+                dist_end,
             ],
             c: [
                 self.cutaway_radius.max(0.001),
@@ -199,6 +218,10 @@ impl Occlusion {
                 self.roof_high.max(self.roof_low + 0.001),
                 self.relight_strength.max(0.0),
             ],
+            // Roof reveal gets its own "near the look point" radius (a fraction
+            // of the view) so it stays localized instead of sharing the
+            // (disabled-by-default) proximity distance range.
+            d: [vr * 0.55, 0.0, 0.0, 0.0],
             targets,
         }
     }
@@ -212,6 +235,7 @@ pub struct OcclusionUniform {
     pub a: [f32; 4],
     pub b: [f32; 4],
     pub c: [f32; 4],
+    pub d: [f32; 4],
     pub targets: [[f32; 4]; MAX_TARGETS],
 }
 
@@ -224,6 +248,7 @@ impl OcclusionUniform {
             a: [f32::MAX, 1.0, 0.0, 0.0],
             b: [1.0, 2.0, 1.0, 2.0],
             c: [1.0, 1.0, 2.0, 0.0],
+            d: [1.0, 0.0, 0.0, 0.0],
             targets: [[0.0; 4]; MAX_TARGETS],
         }
     }

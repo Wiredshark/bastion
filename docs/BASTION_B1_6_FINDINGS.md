@@ -76,6 +76,43 @@ in **two** Rust places or startup panics with `Include <name> in <shader> is not
 This bit B1.6 (figure-frag `#include <bastion_occlusion.glsl>` crashed at startup). Future
 shader-touching blocks (B1.7/B1.8/B13) adding includes must do the same.
 
+## 4d. In-game findings & known limitations (verified 2026-07-08, spectate overseer)
+
+Framework confirmed working (compiles, runs, discards drive the fade, 55–60 fps in Solid/Reveal/
+Slice at normal zoom; view-mode cycle key + chat feedback confirmed). Limitations found, all rooted
+in the **approximate/stubbed masks** the block explicitly allows — real data in B2/B3 resolves them:
+
+1. **Roof mask reveals whole caves as a circular hole.** The approximate roof mask fades the
+   height-slab (`roof_low..roof_high` above focus) within `roof_radius` of the look point. Over a
+   Veloren *cave* site, that thin above-ground band *is* the cave roof, so removing it exposes the
+   entire cavern — reading as a big circle eating the ground. Correct-ish (it revealed what you
+   looked into) but jarring. → **Roof is now off in the default Reveal preset** (opt-in via the egui
+   toggle; correct on a building). Real per-room coverage (B2/B3) restricts it to genuinely enclosed
+   columns.
+2. **Height-proximity "cuts through" mountains.** `height_above_focus` can't distinguish a roof from
+   a mountainside, so tall terrain above the focus plane fades (dithered → reads as cutting). Made
+   gentler (strength 0.5, height 15/90) but inherent to the geometry-only approximation; the real
+   fix is per-room/roof data, not a height heuristic.
+3. **Camera→focus cutaway punches the foreground.** With stub targets at the focus, a top-down
+   cutaway cylinder removes a column of foreground. → **Cutaway off in the default preset** (opt-in
+   toggle); B2/B3 feed real off-focus targets so the cylinder is localized to an entity behind a
+   wall.
+
+**Default Reveal is therefore proximity-only** (soft foreground/tall-geometry fade) — clean on open
+terrain and near settlements; roof + cutaway are demonstrable via the egui toggles and become the
+auto-default when B2/B3 supply real inputs.
+
+### Surface-error crash under extreme zoom (NOT occlusion; streaming/load)
+
+Panning far as a spectator eventually crashes with `SurfaceError("Acquiring a texture failed…")` at
+`voxygen/src/run.rs:230` (swapchain `get_current_texture` failure = GPU device loss / Windows TDR).
+Observed with the scene at **view distance ~1567 blocks, ~10,000 loaded chunks, ~9,600 particles,
+13–25 fps**. This is a GPU-load/TDR issue, not the occlusion pass (a fragment `discard` cannot lose
+the surface). Root cause is the **unbounded spectator view distance** as the overseer focus streams
+via `spectate_position` (B1.5) — the scene grows without a cap until the GPU stalls. **Follow-up
+(streaming, not B1.6):** clamp the overseer/spectator effective view distance (or the streamed
+radius) so a wide pan can't balloon the loaded set. Filed as a B1.5/B2 risk.
+
 ## 5. Shared alpha function (`assets/voxygen/shaders/include/bastion_occlusion.glsl`)
 
 `float bastion_occlusion_alpha(vec3 f_pos)` → 0 (hidden) .. 1 (solid), `min`-composed across active
