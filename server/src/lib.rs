@@ -7,6 +7,9 @@
 #![feature(box_patterns, option_zip, const_type_name, slice_partition_dedup)]
 
 pub mod automod;
+// bastion (B-ASSET1): asset-lab runtime loader + placement (worldgen types).
+#[cfg(feature = "worldgen")]
+pub mod bastion_assets;
 pub mod bastion_jobs;
 pub mod bastion_piles;
 mod character_creator;
@@ -829,6 +832,33 @@ impl Server {
         generated
     }
 
+    /// bastion (B-ASSET1): load an asset-lab asset (runs the marker-fidelity
+    /// gate) and stamp it into live terrain at `origin` through the
+    /// authoritative `BlockChange` path. `open_variant` selects the
+    /// operable-open marker mapping (gate bars ↔ carved air). Placement
+    /// proceeds even when fidelity checks fail — callers (harness/arena)
+    /// decide fatality from `LoadedAsset::fidelity_ok`; a malformed vox is an
+    /// `Err` (log + skip, never panic).
+    #[cfg(feature = "worldgen")]
+    pub fn bastion_asset_place(
+        &mut self,
+        entry: &bastion_assets::AssetLabEntry,
+        origin: Vec3<i32>,
+        open_variant: bool,
+        seed: u32,
+    ) -> Result<(bastion_assets::LoadedAsset, bastion_assets::PlacementReport), String> {
+        let loaded = bastion_assets::load_asset(entry, open_variant)?;
+        let report = bastion_assets::place_structure(
+            &mut self.state,
+            &self.world,
+            self.index.as_index_ref(),
+            &loaded,
+            origin,
+            seed,
+        );
+        Ok((loaded, report))
+    }
+
     /// bastion (B4, harness hook): place a designation directly on the board.
     /// Returns created job ids.
     pub fn bastion_place_designation(
@@ -935,6 +965,75 @@ impl Server {
         } else {
             false
         }
+    }
+
+    /// bastion (B-ASSET1, harness/arena hook): order a named loaded colonist
+    /// to walk to `target` (test-goto — same agent Goto mechanism as job
+    /// travel, arrival/stuck readable via [`Self::bastion_goto_states`]).
+    /// Refuses colonists holding a job (the job system owns their activity).
+    pub fn bastion_goto(&mut self, name: &str, target: Vec3<f32>) -> bool {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let entities = ecs.entities();
+        let target_entity = (&entities, &colonists)
+            .join()
+            .find(|(_, c)| c.0.name == name)
+            .map(|(e, _)| e);
+        drop(colonists);
+        let Some(entity) = target_entity else {
+            return false;
+        };
+        if ecs
+            .read_storage::<comp::bastion::ActiveJob>()
+            .contains(entity)
+        {
+            return false;
+        }
+        ecs.write_storage::<comp::bastion::BastionTestGoto>()
+            .insert(entity, comp::bastion::BastionTestGoto::new(target))
+            .is_ok()
+    }
+
+    /// bastion (B-ASSET1): every active goto order:
+    /// `(name, pos, target, elapsed_s, arrived, stuck)`.
+    pub fn bastion_goto_states(&self) -> Vec<(String, Vec3<f32>, Vec3<f32>, f32, bool, bool)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let gotos = ecs.read_storage::<comp::bastion::BastionTestGoto>();
+        let positions = ecs.read_storage::<comp::Pos>();
+        (&colonists, &gotos, &positions)
+            .join()
+            .map(|(c, g, p)| (c.0.name.clone(), p.0, g.target, g.elapsed, g.arrived, g.stuck))
+            .collect()
+    }
+
+    /// bastion (B-ASSET1): clear a named colonist's goto order (`None` = all).
+    /// Returns how many were cleared.
+    pub fn bastion_goto_clear(&mut self, name: Option<&str>) -> usize {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let entities = ecs.entities();
+        let targets: Vec<_> = (&entities, &colonists)
+            .join()
+            .filter(|(_, c)| name.is_none_or(|n| c.0.name == n))
+            .map(|(e, _)| e)
+            .collect();
+        drop(colonists);
+        let mut gotos = ecs.write_storage::<comp::bastion::BastionTestGoto>();
+        let mut agents = ecs.write_storage::<comp::Agent>();
+        let mut cleared = 0;
+        for e in targets {
+            if gotos.remove(e).is_some() {
+                cleared += 1;
+                if let Some(agent) = agents.get_mut(e) {
+                    agent.rtsim_controller.activity = None;
+                }
+            }
+        }
+        cleared
     }
 
     /// bastion (B5, harness hook): count loose dropped items near `pos`
