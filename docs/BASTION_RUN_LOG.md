@@ -240,3 +240,41 @@ lives on `bastion/block-<N>` for fine-grained rollback.
 
 - Start SHA: `b7f01d1` · branch `bastion/block-B5.5` · started 2026-07-09.
   Spec: `readme/B5.5-zone-delete-drop-aggregation-prompt.md`.
+- **PASS** (2026-07-09). Commits `82f715a..5f6b4e6`, merge `0de0659`,
+  tag `bastion-block-B5.5`. Part 1: `ToolMode::Erase` (paint-to-remove,
+  red preview) + radial `Delete zone` (client-resolved, one cancel per
+  containing rect) + `BastionDesignationRemoved` echo + exact AABB
+  subtraction on the client overlay (`Region::subtract`, unit-tested) +
+  rev-based overlay rebuild. Part 2: root cause of the pebble carpet was
+  `should_merge: false` — vanilla's conservation-exact pile machinery
+  existed and never fired. Colonist drops now `persistent: true`: NO
+  despawn timer (the old 300 s DeleteAfter was a latent item-loss bug),
+  `BastionPile` marker, merge-class separation (persistent never merges
+  with timed vanilla loot in either direction), tier-scaled pile visuals
+  (synced Scale). Gate: `--b55-scenario` 3/3 (partial erase surgical —
+  18 jobs removed, 0 orphaned claims; whole-delete → board 0 + all idle;
+  200-block slab → EXACTLY 200 stones in 25 pile entities, conservation
+  held through the soak), `--b5-scenario` 3/3 (upgraded to amount-sum
+  conservation: 27 stones in 2-3 piles), `--b4-scenario` 3/3, common unit
+  tests 3/3, vanilla server-cli flagless boot clean, voxygen rebuilt
+  green. One test-geometry bug found+fixed at the gate (4th vertical-
+  reachability manifestation: single-level slab on sloped terrain —
+  backlogged; the mining framework owns the real fix). In-game visual QA
+  of the erase tool deferred to Ben's next demo (headless-covered; exe
+  rebuilt and ready). NOTE: this session ALSO did the mega-prompt's
+  first-action catch-up (readme/BASTION_ARCHITECTURE.md, retroactive
+  B0-B5 map, committed `b7f01d1`) and committed architect inputs
+  (`ef0a974`).
+
+### Session note (2026-07-09, post-B5.5)
+
+- `bastion/main` green at `bastion-block-B5.5` (`0de0659`). **Next: B6 —
+  stockpiles, hauling, reservations** (design doc §B6; B5.5's piles are
+  the haul input; haul-range/boundary notes in future-work §3w and the
+  backlog's B6 interface entries).
+- Watch items: Ben's TRAVEL_SPEED verdict still uncollected; erase-tool
+  in-game demo pending; the architect's live edits to
+  `readme/{B5.5-prompt,MEGA-PROMPT,future-work}` appeared mid-block and
+  remain uncommitted in the tree (left for the next architect-inputs
+  commit — NOT part of this block); asset-lab session files still
+  untracked and untouched.
