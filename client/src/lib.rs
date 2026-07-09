@@ -1975,12 +1975,21 @@ impl Client {
     /// bastion (B1.6): set/clear the god-camera terrain anchor. Unlike
     /// [`Self::spectate_position`] this never moves the entity — it only
     /// changes where terrain streams from, for an *embodied* overseer.
-    /// Throttled: re-sent to the server only when the anchor moves more than
-    /// half a chunk (or flips set/unset).
+    ///
+    /// Hysteresis: the loaded disc stays put while the camera pans inside it —
+    /// re-centering every pan step kept a freshly-missing chunk next to the
+    /// center at all times, which collapsed the fog/detail radius and rendered
+    /// the whole view as LoD (QA round 5). The anchor re-centers onto the
+    /// focus only once it strays past ~35% of the view radius (XY only — the
+    /// ground-glide focus z wobbles constantly).
     pub fn bastion_set_terrain_anchor(&mut self, anchor: Option<Vec3<f32>>) {
         let changed = match (self.bastion_terrain_anchor, anchor) {
             (None, None) => false,
-            (Some(a), Some(b)) => a.distance_squared(b) > 16.0_f32.powi(2),
+            (Some(a), Some(b)) => {
+                let vd_blocks = self.view_distance.unwrap_or(10) as f32
+                    * TerrainChunkSize::RECT_SIZE.x as f32;
+                a.xy().distance_squared(b.xy()) > (vd_blocks * 0.35).powi(2)
+            },
             _ => true,
         };
         if changed {
@@ -2636,9 +2645,21 @@ impl Client {
                             if !skip_mode && !self.pending_chunks.contains_key(key) {
                                 const TOTAL_PENDING_CHUNKS_LIMIT: usize = 12;
                                 const CURRENT_TICK_PENDING_CHUNKS_LIMIT: usize = 2;
-                                if self.pending_chunks.len() < TOTAL_PENDING_CHUNKS_LIMIT
-                                    && current_tick_send_chunk_requests
-                                        < CURRENT_TICK_PENDING_CHUNKS_LIMIT
+                                // bastion (B1.6): a god-camera re-center swaps
+                                // in a large crescent of missing chunks at
+                                // once; vanilla's walking-pace throttle takes
+                                // ages to fill it, so allow more in flight.
+                                let (total_limit, tick_limit) =
+                                    if self.bastion_terrain_anchor.is_some() {
+                                        (TOTAL_PENDING_CHUNKS_LIMIT * 4, 8)
+                                    } else {
+                                        (
+                                            TOTAL_PENDING_CHUNKS_LIMIT,
+                                            CURRENT_TICK_PENDING_CHUNKS_LIMIT,
+                                        )
+                                    };
+                                if self.pending_chunks.len() < total_limit
+                                    && current_tick_send_chunk_requests < tick_limit
                                 {
                                     self.send_msg_err(ClientGeneral::TerrainChunkRequest {
                                         key: *key,

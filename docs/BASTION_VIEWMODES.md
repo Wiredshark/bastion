@@ -100,6 +100,11 @@ primary way to play):
   and retains chunks around the overseer focus (the avatar's area is retained too), and the server
   validates requests, distributes newly generated chunks, and keeps chunks loaded around the anchor
   as if it were a second player position. Unlike `spectate_position` it never moves the avatar.
+  The anchor uses **hysteresis** — the loaded disc stays put while the camera pans inside it and
+  re-centers only when the focus strays past ~35% of the view radius. (Re-centering every pan step
+  kept a missing chunk next to the center at all times, which collapsed the fog/detail radius and
+  rendered the whole view as LoD — QA round 5.) Chunk-request throttles are also raised (48 in
+  flight / 8 per tick vs vanilla's walking-pace 12 / 2) so a re-centered crescent fills quickly.
 - **The avatar is hidden** while in overseer view (client-side figure cull); `F9` (Avatar mode)
   brings it back. NOTE: the character still *exists* in the world — it can be attacked while you're
   god-viewing. B2's overseer presence handles the body properly (safety/removal).
