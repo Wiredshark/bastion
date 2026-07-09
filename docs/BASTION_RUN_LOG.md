@@ -309,3 +309,12 @@ lives on `bastion/block-<N>` for fine-grained rollback.
 - **Next action:** confirm the B5.6a/B5.6b split (or a full rendering-block
   budget for B5.6 as-is), then re-run the mega-prompt. Watch-items carried
   from B5.5: Ben's TRAVEL_SPEED verdict; erase-tool in-game demo.
+
+### B5.6a — Outline draping + visuals toggle + pile tiers (approved split)
+
+- Start SHA: `eb8984e` · branch `bastion/block-B5.6a` · started 2026-07-09.
+  Approved scope (Ben): Part 1 OUTLINE draping (terrain-sample each edge;
+  verify across all Z-slice modes per the F9 lead), Part 3 ON/SUBTLE/OFF
+  visuals toggle, Part 4 pile tier scaling, + erase-type-filter/area-erase
+  ONLY if cheap on existing seams. Fills + volumetric + volume-selection UX
+  are B5.6b (z-extent model decided in the updated prompt). Client-side.
