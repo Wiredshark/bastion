@@ -58,3 +58,14 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   §6b); spectator-VD streaming cap still open (B1.5/B2 risk, findings
   B1.6 §4d); character-presence entity sync around far anchors lands with
   B3/B2's region-subscription work.
+
+## Session 2026-07-09 (batch runner, resumed)
+
+- Green at `bastion-block-B2a`. Architect inputs committed (`1e2ce94`):
+  design doc gains the §4 standing anchor directive (invisible-player
+  anchor, NOT spectator; B3 owns the inert + invulnerable gaps), gap
+  ledger update, mega-prompt recorded in-repo.
+
+### B3 — Colonist entity model & starting colony
+
+- Start SHA: `1e2ce94` · branch `bastion/block-B3` · started 2026-07-09.
