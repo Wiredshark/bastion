@@ -53,3 +53,29 @@ instead, referencing the old one).
   code comments and B5's harness test comments already flag this as a
   known, out-of-scope gap — this entry exists so it's also visible from
   the doc-consistency side, not just buried in test-geometry comments.
+
+## B5.5 — Zone deletion + pile aggregation (2026-07-09)
+
+- **Block prompt vs. Veloren reality (resolved in Bastion's favor, worth
+  recording)**: the B5.5 prompt describes building "a single pile entity
+  carrying a count" as if new machinery — Veloren's `PickupItem` already
+  IS that (a `Vec<Item>` with exact `amount()` accounting and
+  conservation-exact `try_merge`); it simply never fired for B5 drops
+  because `should_merge` was `false` (an anti-DoS flag documented as
+  "currently only used for inventory dropped items"). B5.5 is therefore a
+  flag + persistence-class wrapper, not a new pile system. No doc change
+  needed; noted so future readers don't go looking for a bespoke pile
+  entity type.
+- **Design doc §B5 "stone, wood, ore per block type — Veloren already maps
+  block/sprite → loot"**: still unimplemented (B5 ships flat
+  stones-for-any-block, logs-for-wood; see the B5 consistency entry).
+  B5.5's aggregation is loot-type-agnostic, so the eventual per-block loot
+  mapping slots in without touching pile code. Drift unchanged, flagged
+  again only because B5.5 touched the drop path.
+- **Prompt's "reuse an existing crate/heap-like object model if one
+  fits"**: surveyed `comp::body::item::Body` — nothing heap-like exists
+  (item bodies mirror item kinds). Tier-scaling the item mesh
+  (`comp::Scale`) is the shipped stand-in; real heap meshes belong to the
+  asset pipeline (flagged in the backlog, and exactly the kind of gap the
+  concurrent asset-lab session's tooling is meant to fill — coordination
+  point for the architect).

@@ -140,3 +140,39 @@ remove an earlier block's entries.
   `assignments` tuple; harness step-numbering and mine-ramp comments
   corrected (the ramp's first hop is 2 blocks, not 1 — works, verified,
   but the comment misdescribed it).
+
+## B5.5 — Zone deletion + pile aggregation (2026-07-09)
+
+- **FIX** (found in test, fixed in test geometry only): a fourth
+  manifestation of the vertical-reachability trap — a single-z-level slab
+  forced across sloped natural terrain buries blocks inside hillsides
+  (their `+1` arrival cell is a 1-block gap a colonist can't fit in) and
+  floats others over air pockets. Part 2's first run stalled at 8/200.
+  Any future scenario terraform must fully determine its geometry
+  (under-fill + working level + headroom + perimeter footing — see
+  `--b55-scenario`'s Part 2 for the pattern). The mechanism-level fix
+  (smarter arrival targets / dig-frontier access planning) is the same
+  standing backlog item as the pit/stump/tree cases; the mining framework
+  (`readme/BASTION-SYSTEM-FRAMEWORKS.md` §6, "access is part of the dig
+  plan") owns the real solution.
+- **ADD** (B6 interface decisions, per the block prompt's watch-items):
+  piles are ordinary `PickupItem` entities with `amount()` counts and a
+  `BastionPile` marker — B6 hauling should enumerate them via the same
+  storages, claim one pile = one haul trip, and take the whole pile into
+  `Inventory` on pickup (vanilla stacking handles counts). If B6 wants
+  partial pickup it needs a split API on `PickupItem` (does not exist;
+  design decision deferred to B6). Reservation of piles (two haulers, one
+  pile) is B6's job-board problem, same shape as block-job claims.
+- **ADD**: pile visuals are tier-scaled item meshes (`comp::Scale` 1.0 /
+  1.35 / 1.7). A real heap mesh + count label/tooltip is asset-pipeline +
+  B9 work. The scale system (`server/src/bastion_piles.rs`) is the hook
+  point — swap Scale for a body/model change when assets exist.
+- **IDEA** (optional): erase depth is symmetric with paint depth (`-2`
+  under the plane), so erasing at a different Z-slice than the original
+  paint can miss the paint's under-reach; the radial "Delete zone" covers
+  exact cleanup. If players report confusion, make erase depth generous
+  (e.g. -4) or erase full column extents of intersected rects.
+- **NOTE** (TRAVEL_SPEED watch-item from the block prompt): Ben's live
+  demo verdict on colonist walk speed was not collected this session —
+  the in-game demo of B5.5's erase tool should double as the speed
+  eyeball; still open.
