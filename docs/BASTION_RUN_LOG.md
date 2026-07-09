@@ -105,3 +105,35 @@ lives on `bastion/block-<N>` for fine-grained rollback.
 - Start SHA: `0c58160` · branch `bastion/block-B4` · started 2026-07-09
   (same session, user-directed continue). First block with the Tier-1b
   zero-input soak in its gate.
+- **PASS** (2026-07-09). Commits `6c0ff09..643fa83` (+gate docs): `JobBoard`
+  server resource + serde-ready `Job`/`WorkType` types; designations
+  (Mine/Chop per-block v1) → jobs; arbitration system (priority → distance,
+  atomic claims, 15-tick cadence) + travel via `NpcActivity::Goto` through
+  the vanilla agent (rtsim brain gated off while `ActiveJob` exists);
+  progress-based unreachable watchdog; `BastionCancelDesignation` end-to-end;
+  headless colony testing unlocked via `bastion_force_load_area` + pinned
+  chunks. Gate: `--b4-scenario` PASS — 5 colonists / 20 jobs, distinct
+  claims throughout, 4/4 enabled arrived (logged), priority-0 never claims,
+  claimed-then-watchdogged unreachable job released + re-arbitrated, cancel
+  clears within one cycle, 3.5ms avg tick soak; baseline + 2000-tick colony
+  soaks clean; vanilla boots. Deviation: in-game visual QA deferred — the
+  machine locked (user asleep) before the scripted run; Done-when is fully
+  headless-covered (see `BASTION_B4_TEST.md`). Next session opens with the
+  in-game paint demo before B5.
+- Merged to `bastion/main` (no-ff), tagged `bastion-block-B4`.
+
+### Session stop (2026-07-09, third stop)
+
+- Stopped cleanly after B4: context budget deep into a long session AND the
+  machine is locked (no in-game QA possible). `bastion/main` green at
+  `bastion-block-B4` — **Slice B's heart is in: designations become jobs,
+  colonists claim and walk to them autonomously.**
+- **Next session: re-run the mega-prompt; it resumes at B5** (work execution:
+  dig/chop/build effects, item drops, skill XP). Open with the deferred B4
+  in-game demo (paint Mine region → colonists converge), then B5's terrain
+  edits complete the visible loop: paint → walk → DIG.
+- Watch items: `Arrived` holds claims forever until B5 completes work (by
+  design); colonist walk speed during job travel looked fast in scenario
+  timing — eyeball in the in-game demo and tune `TRAVEL_SPEED` if comical;
+  god-anchor aggro live-fire still pending (B8); B2a designation echo has no
+  removal message yet (cancel UI is B9).
