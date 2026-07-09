@@ -33,3 +33,28 @@ lives on `bastion/block-<N>` for fine-grained rollback.
 ### B2a — Overseer interaction surface
 
 - Start SHA: `f456b08` · branch `bastion/block-B2a` · started 2026-07-08.
+- **PASS** (2026-07-09). Commits `db41b4c..e7e9801` (6): shared types +
+  `BastionSelected` marker + validate/echo message stubs; conrod tool palette
+  + radial menu (+More…) + selection info; designate-paint with live preview
+  + echoed-overlay render; T/G tool & ruleset keys; cutaway targets now come
+  from real selection. Gate: cargo green, harness 1000 ticks clean
+  (2355 npcs/204 sites/16 factions, 0 loaded-entity leak), vanilla boots,
+  all Done-when items verified in-game (see `BASTION_B2a_TEST.md`).
+  One real bug found+fixed at the gate: pick-ray range vs `OVERSEER_BEHIND`.
+  Deviations (documented): `Interact` stays suppressed (physical-key conflict
+  with rotate; B9 overrides) — covered by new T/G inputs; egui rejected for
+  gameplay UI (debug-gated) → conrod. NOTE: `readme/divine-politics-bible.md`
+  (architect input, appeared mid-run) rode along in commit `181bd5a`.
+- Merged to `bastion/main` (no-ff), tagged `bastion-block-B2a`.
+
+### Session stop (2026-07-09)
+
+- Stopped cleanly after B2a per the context-budget stop condition (long
+  session, several compaction cycles). `bastion/main` is green at
+  `bastion-block-B2a`. **Next session: resume the batch runner at B3**
+  (Colonists: entity model + starting band + loaded↔simulated boundary —
+  design doc §B3; no dedicated prompt file exists in-tree).
+- Watch items: entity-pick range if pickers are added (see B2a findings
+  §6b); spectator-VD streaming cap still open (B1.5/B2 risk, findings
+  B1.6 §4d); character-presence entity sync around far anchors lands with
+  B3/B2's region-subscription work.

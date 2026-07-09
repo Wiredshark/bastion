@@ -77,6 +77,14 @@ hitboxes via a setting, but shapes we add draw unconditionally).
 hook, stubbed permissive with the B2b enforcement point documented. Lives on
 the session; palette + radial + keys mutate it.
 
+## 6b. Gotcha discovered at the gate: the pick ray starts behind the camera
+
+`cursor_ray`'s origin (NDC z=1) sits `OVERSEER_BEHIND` (768 blocks) *behind*
+the camera plane — the B1.7 ortho near extension moved it. Anything doing
+ray-parameter range checks (entity picking here; B2b/B4 pickers later) must
+budget for ~768 + zoom + scene depth. Plane intersections don't care. The
+initial `t ≤ 600` cap silently rejected every entity (fixed `e7e9801`).
+
 ## 7. Interact-slot note for B9
 
 When B9 builds per-context binding overrides, move overseer rotation off Q/E
