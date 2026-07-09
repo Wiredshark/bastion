@@ -69,3 +69,14 @@ than editing the old one.
 | Revert command | `git reset --hard bastion-block-B5.5` (on `bastion/main`) |
 | Reverting undoes | Terrain-conformed overlay draping (outlines float flat again — the photographed bug returns); the H visuals-toggle (On/Subtle/Off); the erase XY-clip robustness fix (erase becomes z-fragile again — silently misses after camera moves); the 5-step pile tier curve (reverts to the B5.5 basic 3-tier scale). |
 | Data-format caveats | None. Client-side (voxygen) + one additive `common::bastion::Region::clip_xy` method + a `server/src/bastion_piles.rs` scale-curve tweak. No new comps, no net-protocol change, no rtsim `data.dat` change. Fully backward-compatible. |
+
+## B5.6b-1 (2026-07-09)
+
+| Field | Value |
+|---|---|
+| Block | B5.6b-1 — zone fills + kind colors + overlap blend + labels + SUBTLE (first B5.6b sub-block) |
+| Tag | `bastion-block-B5.6b-1` |
+| Previous green tag | `bastion-block-B5.6a` |
+| Revert command | `git reset --hard bastion-block-B5.6a` (on `bastion/main`) |
+| Reverting undoes | Terrain-conformed zone fills (`DebugShape::ConformedTris` + `bastion::draped_fill_tris`), the kind-color legend + overlap blending, world-anchored zone labels, SUBTLE=border-only; ALSO the three demo-bug fixes (canopy-safe overlay heights, input-transparent labels + XY zone matching, terrain-anchored grab plane) — reverting reintroduces tree-climbing overlays, dead Delete-zone near centroids, and off-center pan. |
+| Data-format caveats | None. Client-side (voxygen) + one additive `common::bastion::Region::contains_point_xy`. No net-protocol, comp, or rtsim changes. |

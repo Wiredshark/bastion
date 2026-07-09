@@ -349,3 +349,9 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   Architect has uncommitted live edits to `readme/MEGA-PROMPT` +
   `readme/B5.6-zone-visuals-prompt.md` in the working tree — left for the
   next architect-inputs commit (not part of B5.6a).
+
+### B5.6b-1 — Zone fills + colors + overlap blend + labels + SUBTLE
+
+- Start SHA: `de86387` · branch `bastion/block-B5.6b-1` · started 2026-07-09.
+  First formalized B5.6b sub-block (architect blessed the split). Client-only.
+  Plan: `docs/BASTION_B5.6b_FINDINGS.md` (b-1 section).

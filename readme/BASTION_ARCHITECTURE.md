@@ -353,6 +353,37 @@ impact (client-only + a pile-scale tweak). **Standing note:** `--b5-scenario`
 is timing-flaky under machine load — run gate scenarios on a quiet machine
 (it was 6/6 at both the B5.5 tag and this branch when quiet).
 
+### 2.9 B5.6b — Zone-management UI (SPLIT into sub-blocks b-1..b-4)
+
+B5.6 was too large for one block; a builder scope-flag split it (architect-
+blessed): **b-1** fills+colors+blend+labels+SUBTLE (built); **b-2** z_extent
+model + volumetric + volume-selection UX (also closes B5.MINE-COVERAGE);
+**b-3** zone click-select + radial (Delete/Modify-depth/Edit-mode drag
+handles); **b-4** erase-by-type wire filter. Plan:
+`docs/BASTION_B5.6b_FINDINGS.md`.
+
+**B5.6b-1 (built):** terrain-conformed translucent zone **fills** in the
+kind-color legend, overlap-blended, with centroid **labels**; SUBTLE=border
+only. Client-only.
+- `DebugShape::ConformedTris(Vec<[Vec3;3]>)` (`scene/debug.rs`) — pre-
+  conformed geometry rendered with the per-shape context color; the debug
+  pass already alpha-blends (`render/pipelines/debug.rs`
+  `BlendState::ALPHA_BLENDING`), so no new pipeline. NOTE: the debug frag
+  *lights* it — fills are a lit tint, not a flat UI fill (backlog).
+- `bastion::draped_fill_tris` (`voxygen/src/bastion/mod.rs`) — samples the
+  visible surface (`overlay_surface_z`, slice-aware) at each footprint corner
+  once, emits 2 draped tris/cell. The **reusable conformed-fill utility**
+  (b-2 volumes + §3w boundary reuse it; `overlay_surface_z` is the one height
+  authority).
+- Colors: `bastion::tools::{zone_rgb, zone_border_color, zone_fill_color}`.
+  Fills low-alpha → overlaps composite to a blended color.
+- Labels: `Hud::bastion_set_zone_labels` → conrod `Text` with
+  `.position_ingame(centroid)` (world-anchored, like overhead nametags),
+  fed by `session::bastion_sync_designations` (ON mode only; empty in
+  SUBTLE/OFF).
+- **Gate:** in-game — fills drape + colored + overlaps blend + labels +
+  SUBTLE=border-only; headless B4/B5/B5.5 unaffected (voxygen-only diff).
+
 ## 3. Build methodology (how blocks land)
 
 Per-block cycle: **checkpoint** (clean tree, branch `bastion/block-<N>`, log
@@ -431,12 +462,12 @@ Full protocol: `readme/MEGA-PROMPT-autonomous-batch-builder.md`.
 
 **Done (merged + tagged):** B0, B1, B1.5, B1.6(+B1.7), B2a, B3, B4, B5,
 B5.5, B5.6a.
-**Next (per the updated queue):** B5.6b (conformed fills + volumetric
-zone rendering + volume-selection UX — z-extent model decided), B5.7
-(floating-tree cleanup), B5.8 (vertical mobility — fixes the 4×-bitten
-reachability trap before B6), then B6 (stockpiles/hauling — B5.5 piles are
-the haul input). Independents (B-MAP1 minimap, B-ASSET1, B-TESTBED) are
-floatable.
+**Done also:** B5.6a (tagged), B5.6b-1 (zone fills+colors+blend+labels+SUBTLE
+— this block). **Next (per the updated queue):** B5.6b-2 (z_extent model +
+volumetric + volume-selection UX; also closes B5.MINE-COVERAGE), b-3 (zone
+interaction/edit-mode), b-4 (erase-by-type), plus B5.7/B5.8/B5.9,
+B-UNDERGROUND, B-CAM-FOLLOW, then B6 (stockpiles/hauling). Independents
+(B-MAP1, B-ASSET1, B-TESTBED) floatable.
 
 | Need | Read |
 |---|---|

@@ -165,3 +165,34 @@ instead, referencing the old one).
   (that would fake B5.6b's Done-when); flagged for the architect to formalize
   (as the B5.6→B5.6a/B5.6b split was). `bastion/block-B5.6b` branch holds the
   run-log start + findings/plan; `main` untouched at `bastion-block-B5.6a`.
+
+## B5.6b-1 — Zone fills (2026-07-09, built)
+
+- **Prompt's "new DebugShape variant carrying pre-conformed geometry" —
+  implemented as specified.** `docs/BASTION_B5.6b_FINDINGS.md` predicted the
+  debug pass alpha-blends (`BlendState::ALPHA_BLENDING`) and that a conformed
+  geometry needs terrain access the debug mesh builders lack; both held.
+  `DebugShape::ConformedTris` carries session-sampled draped triangles;
+  colour+alpha via `set_context`. No new pipeline needed — matches the
+  finding.
+- **Caveat recorded (not a doc contradiction, a v1 fidelity note):** fills
+  are LIT by the debug frag shader (they're not a flat UI tint). See backlog.
+  The spec says "terrain-conformed tinted fill" — the lit look satisfies
+  "conformed + tinted"; a perfectly flat tint would need an unlit overlay
+  path. Flagged so B5.6b-2/asset work knows the debug pass lights overlays.
+- **z_extent NOT touched in b-1** (correct per the split — b-1 is surface
+  fills only; z_extent + volumetric is b-2). The fills use the existing
+  designation footprint (`Region` XY); no data-model change. Consistent.
+
+## B5.6b-1 — post-verify note (2026-07-09)
+
+- **Queue root-cause list vs. shipped fix (bug 1):** the re-cut queue's
+  description of the overlay bug also names "slice-clamp direction" and
+  "rebuild not triggered on view-mode change" as roots. The shipped fix
+  addressed the canopy walk-down (Wood/Leaves via is_filled — the §5
+  gotcha); slice/rev/visuals rebuild triggers already existed from B5.6a.
+  Ben's eyeball re-verify PASSED, so no open bug — but note: a V-cycle
+  view-MODE change does not itself rebuild overlays (they depend on the
+  mode only via slice_z). If mode-coupled overlay staleness reappears,
+  add view-mode to the rebuild triggers (one field in the sync check).
+  Watch item, flagged not fixed.

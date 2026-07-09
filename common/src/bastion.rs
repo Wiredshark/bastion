@@ -37,6 +37,14 @@ impl Region {
             && (self.min.z..=self.max.z).contains(&p.z)
     }
 
+    /// XY-footprint containment, ignoring z (B5.6b-1). Zone interaction
+    /// matches by footprint: a rect's z-band comes from the paint-time pick
+    /// plane, so the clicked *surface* block's z routinely falls outside it
+    /// on slopes — the same z-fragility the erase fix (`clip_xy`) addressed.
+    pub fn contains_point_xy(&self, p: Vec3<i32>) -> bool {
+        (self.min.x..=self.max.x).contains(&p.x) && (self.min.y..=self.max.y).contains(&p.y)
+    }
+
     /// bastion (B5.6a): clip this region's XY footprint to `[min_xy, max_xy]`,
     /// KEEPING this region's own z-range. `None` if the XY footprints don't
     /// overlap. Used by the erase tool: the erase drag's z comes from the

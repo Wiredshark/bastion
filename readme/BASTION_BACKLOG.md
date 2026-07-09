@@ -253,3 +253,48 @@ remove an earlier block's entries.
   there, the B5.6b session should view it and judge output against it
   (mega-prompt input #8). Not actioned now: B5.6b is its own session and
   B5.6a must tag first.
+
+## B5.6b-1 — Zone fills + colors + blend + labels + SUBTLE (2026-07-09)
+
+- **FIX/watch (fills are LIT):** `DebugShape::ConformedTris` renders through
+  the debug frag shader, which applies sun/point lighting (`illuminate(...)`)
+  — so a fill is a *lit* translucent surface, not a flat UI tint. Reads fine
+  as a ground tint (integrates with terrain shading) but is not a constant
+  color across a large slope. If a flatter UI look is wanted, add an
+  unlit/emissive path to the debug frag (or a dedicated overlay pipeline) —
+  deferred; the lit look is acceptable v1 and matches how the outlines
+  already render.
+- **IDEA (overlap blend is order-dependent):** fills alpha-composite, so
+  overlapping zones blend, but the result depends on draw order (alpha
+  blending isn't order-independent). For 2–3 overlaps it reads as a blend
+  (good enough v1). True order-independent blending (or a max/additive
+  compositing mode) is a later polish if many-zone overlaps look wrong.
+- **ADD (label index stability):** zone labels use a per-kind running index
+  by list order ("Mine 1", "Mine 2"). Erase-splitting a rect renumbers
+  subsequent zones (the index isn't a stable ID). Fine for the auto
+  type+index the spec asked for; real stable names/IDs are the "naming
+  later" item (B5.6b-3 radial Rename / a zone-id model).
+- **ADD (fill cost at scale):** one `ConformedTris` shape per zone with
+  2·W·H triangles; rebuilt on rev/slice/visuals change (cached otherwise). A
+  huge quarry is thousands of tiny tris in one mesh — fine, but if it bites,
+  decimate the fill grid (sample every N cells) or cap fill area.
+- **SEAM (B5.6b-2 + §3w):** `bastion::draped_fill_tris` + `overlay_surface_z`
+  are the reusable conformed-fill utility. B5.6b-2 volumes extend it (walls +
+  depth rings from the same corner-height grid); §3w boundary reuses the
+  footprint fill. Keep `overlay_surface_z` the one height authority.
+
+## B5.6b-1 addendum — line-ending lesson (2026-07-09)
+
+- **FIX (fixed pre-tag, lesson recorded):** Python text-mode edit scripts
+  (`open(p).read()` / `open(p,'w').write()`) silently rewrote whole repo
+  files with CRLF on Windows — caught on `voxygen/src/session/mod.rs`
+  (3,649 lines churned) during the b-1 merge review; the same had already
+  slipped into tagged history at B5.5 (`server/src/lib.rs`,
+  `server/src/sys/mod.rs`). All three normalized back to LF in b-1's
+  hygiene commit (binary-safe, content-identical, gate green). **Rule for
+  all future sessions: never edit repo files via text-mode script writes —
+  use the Edit tool or binary-mode I/O.** The first b-1 merge+tag was
+  redone pre-build-on-tag rather than landing a 7k-line churn on main.
+- **IDEA (architect call):** add `*.rs text eol=lf` to `.gitattributes` to
+  make this class impossible; left un-actioned (checkout-policy change is
+  the architect's, not a block's).

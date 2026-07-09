@@ -86,6 +86,10 @@ pub struct BastionHudState {
     /// Info line for the current selection.
     pub selected_info: Option<String>,
     pub radial: Option<BastionRadial>,
+    /// bastion (B5.6b-1): world-anchored zone labels ("Mine 1"), each at a
+    /// world centroid with its kind colour. Set by the session's overlay
+    /// sync (ON mode only; empty in SUBTLE/OFF). Drawn via `position_ingame`.
+    pub zone_labels: Vec<(Vec3<f32>, String, [f32; 4])>,
 }
 
 /// How many actions the pie shows before overflowing into "More…".

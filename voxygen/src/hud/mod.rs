@@ -249,6 +249,7 @@ widget_ids! {
         bastion_palette_btns[],
         bastion_godmode_btn,
         bastion_selected_text,
+        bastion_zone_labels[],
         bastion_radial_title,
         bastion_radial_btns[],
 
@@ -4813,6 +4814,31 @@ impl Hud {
                     .set(self.ids.bastion_selected_text, ui_widgets);
             }
 
+            // --- B5.6b-1: world-anchored zone labels ("Mine 1") at centroids.
+            // position_ingame projects the world point to screen (as overhead
+            // nametags do); hidden in SUBTLE/OFF because the session feeds an
+            // empty list there.
+            if self.ids.bastion_zone_labels.len() < self.bastion.zone_labels.len() {
+                self.ids
+                    .bastion_zone_labels
+                    .resize(self.bastion.zone_labels.len(), &mut ui_widgets.widget_id_generator());
+            }
+            for (i, (wpos, text, col)) in self.bastion.zone_labels.iter().enumerate() {
+                widget::Text::new(text)
+                    .font_size(15)
+                    .font_id(self.fonts.cyri.conrod_id)
+                    .color(Color::Rgba(col[0], col[1], col[2], 1.0))
+                    .x_y(0.0, 0.0)
+                    .position_ingame(*wpos)
+                    // Input-transparent: labels sit exactly where you click a
+                    // zone (its centroid). Without this, the label hit-tests
+                    // as a widget and `bastion_cursor_over_widget` blocks
+                    // grab-drag AND the right-click radial there (the "Delete
+                    // zone broken" + "pan dead over zones" demo bugs).
+                    .graphics_for(ui_widgets.window)
+                    .set(self.ids.bastion_zone_labels[i], ui_widgets);
+            }
+
             // --- Contextual radial menu ---
             let mut radial_pick: Option<bastion::RadialAction> = None;
             let mut radial_target = None;
@@ -5745,6 +5771,12 @@ impl Hud {
     /// bastion (B2a): set/clear the selection info line.
     pub fn bastion_set_selected(&mut self, info: Option<String>) {
         self.bastion.selected_info = info;
+    }
+
+    /// bastion (B5.6b-1): set the world-anchored zone labels to draw this
+    /// frame (session feeds them from the overlay sync — ON mode only).
+    pub fn bastion_set_zone_labels(&mut self, labels: Vec<(Vec3<f32>, String, [f32; 4])>) {
+        self.bastion.zone_labels = labels;
     }
 
     /// bastion (B2a): open the contextual radial menu (replaces any open one).
