@@ -227,3 +227,16 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   batches this block), `--b4-scenario` unaffected, still 5/5 (10/10
   across all batches). `bastion/main` green at `bastion-block-B5`
   (now `297cc0f`).
+
+## Session 2026-07-09 (batch runner, resumed — post-B5)
+
+- Green at `bastion-block-B5` (+ two post-gate hardening merges on main:
+  `f5a82f3` review fixes, `b7f01d1` architecture guide). Architect inputs
+  committed (`ef0a974`): B5.5 patch-block prompt, system-frameworks
+  reference, mega-prompt updates. Catch-up first-action done:
+  `readme/BASTION_ARCHITECTURE.md` created (retroactive B0–B5 map).
+
+### B5.5 — Zone deletion + item-drop pile aggregation (patch block)
+
+- Start SHA: `b7f01d1` · branch `bastion/block-B5.5` · started 2026-07-09.
+  Spec: `readme/B5.5-zone-delete-drop-aggregation-prompt.md`.

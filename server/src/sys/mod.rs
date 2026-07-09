@@ -35,6 +35,7 @@ pub fn add_server_systems(dispatch_builder: &mut DispatcherBuilder) {
     dispatch::<agent::Sys>(dispatch_builder, &[]);
     // bastion (B4): job arbitration + travel intents for colonists.
     dispatch::<crate::bastion_jobs::Sys>(dispatch_builder, &[]);
+    dispatch::<crate::bastion_piles::Sys>(dispatch_builder, &[]);
     dispatch::<terrain::Sys>(dispatch_builder, &[&msg::terrain::Sys::sys_name()]);
     dispatch::<waypoint::Sys>(dispatch_builder, &[]);
     dispatch::<teleporter::Sys>(dispatch_builder, &[]);

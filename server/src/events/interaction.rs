@@ -434,6 +434,7 @@ impl ServerEvent for MineBlockEvent {
                                 ori: comp::Ori::from(Dir::random_2d(&mut rng)),
                                 item: comp::PickupItem::new(item, *program_time, false),
                                 loot_owner,
+                                persistent: false,
                             });
                         }
                     }

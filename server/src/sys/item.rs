@@ -20,6 +20,7 @@ impl<'a> System<'a> for Sys {
         WriteStorage<'a, comp::PickupItem>,
         ReadStorage<'a, comp::Pos>,
         ReadStorage<'a, comp::LootOwner>,
+        ReadStorage<'a, comp::bastion::BastionPile>,
         Read<'a, CachedSpatialGrid>,
         Read<'a, ProgramTime>,
         Read<'a, EventBus<DeleteEvent>>,
@@ -36,6 +37,7 @@ impl<'a> System<'a> for Sys {
             mut items,
             positions,
             loot_owners,
+            bastion_piles,
             spatial_grid,
             program_time,
             delete_bus,
@@ -70,7 +72,8 @@ impl<'a> System<'a> for Sys {
                 item,
                 pos,
                 loot_owner,
-                (&entities, &items, &positions, &loot_owners, &spatial_grid),
+                bastion_piles.contains(entity),
+                (&entities, &items, &positions, &loot_owners, &bastion_piles, &spatial_grid),
             ) {
                 // Prevent merging an item multiple times, we cannot
                 // do this in the above filter since we mutate `merged` below
@@ -121,13 +124,20 @@ pub fn get_nearby_mergeable_items<'a>(
     item: &'a comp::PickupItem,
     pos: &'a comp::Pos,
     loot_owner: Option<&'a comp::LootOwner>,
-    (entities, items, positions, loot_owners, spatial_grid): (
+    // bastion (B5.5): whether the item being merged is a persistent colonist
+    // pile. Merges must stay WITHIN a persistence class — a persistent pile
+    // merging into a timed vanilla drop would inherit its despawn timer
+    // (silent item loss), and the reverse would grant vanilla loot
+    // immortality.
+    is_persistent_pile: bool,
+    (entities, items, positions, loot_owners, bastion_piles, spatial_grid): (
         &'a Entities<'a>,
         // We do not actually need write access here, but currently all callers of this function
         // have a WriteStorage<Item> in scope which we cannot *downcast* into a ReadStorage
         &'a WriteStorage<'a, comp::PickupItem>,
         &'a ReadStorage<'a, comp::Pos>,
         &'a ReadStorage<'a, comp::LootOwner>,
+        &'a ReadStorage<'a, comp::bastion::BastionPile>,
         &'a CachedSpatialGrid,
     ),
 ) -> impl Iterator<Item = (Entity, f32)> + 'a {
@@ -152,6 +162,7 @@ pub fn get_nearby_mergeable_items<'a>(
         // Filter by "mergeability"
         .filter_map(move |(entity, other_item, distance, other_loot_owner)| {
             (other_loot_owner.map(|owner| owner.owner()) == loot_owner.map(|owner| owner.owner())
+                && bastion_piles.contains(entity) == is_persistent_pile
                 && item.can_merge(other_item)).then_some((entity, distance))
         })
 }

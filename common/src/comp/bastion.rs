@@ -105,3 +105,16 @@ pub struct BastionGodAnchor;
 impl Component for BastionGodAnchor {
     type Storage = NullStorage<Self>;
 }
+
+/// A persistent colonist-produced item pile (B5.5). Entities carrying this:
+/// never get a despawn timer (colonist output is a player resource — item
+/// loss is an invariant violation), aggregate freely with each other via the
+/// vanilla merge machinery, and NEVER merge across class with timed vanilla
+/// drops (a pile merging into a timed drop would inherit its despawn — a
+/// silent-loss path). Server-side only.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BastionPile;
+
+impl Component for BastionPile {
+    type Storage = NullStorage<Self>;
+}

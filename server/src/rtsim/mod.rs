@@ -315,6 +315,27 @@ impl RtSim {
         found
     }
 
+    /// bastion (B5.5, harness): set a colonist's skill level for a work type
+    /// on the rtsim record (the ECS mirror is handled by the Server hook).
+    pub fn bastion_set_colonist_skill(
+        &mut self,
+        name: &str,
+        work: common::bastion::WorkType,
+        level: u16,
+    ) -> bool {
+        let data = self.state.get_data_mut();
+        let mut found = false;
+        for (_, npc) in data.npcs.npcs.iter_mut() {
+            if let Some(colonist) = &mut npc.bastion_colonist
+                && colonist.name == name
+            {
+                colonist.skills.set_level_for(work, level);
+                found = true;
+            }
+        }
+        found
+    }
+
     /// bastion (B3): the colony roster (headless harness dump + inspectors).
     pub fn bastion_colony_roster(&self) -> Vec<common::bastion::BastionColonist> {
         self.state

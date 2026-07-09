@@ -8,23 +8,26 @@
 use common::bastion::DesignationKind;
 
 /// The pinned interaction tool (the palette). `Pan` is the cursor default:
-/// drag pans, click selects. `Designate` turns left-drag into region paint.
+/// drag pans, click selects. `Designate` turns left-drag into region paint;
+/// `Erase` (B5.5) is the same drag but cancels designations in the region.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum ToolMode {
     #[default]
     Pan,
     Inspect,
     Designate(DesignationKind),
+    Erase,
 }
 
 impl ToolMode {
-    pub const ALL: [ToolMode; 6] = [
+    pub const ALL: [ToolMode; 7] = [
         ToolMode::Pan,
         ToolMode::Inspect,
         ToolMode::Designate(DesignationKind::Mine),
         ToolMode::Designate(DesignationKind::Chop),
         ToolMode::Designate(DesignationKind::Build),
         ToolMode::Designate(DesignationKind::Stockpile),
+        ToolMode::Erase,
     ];
 
     pub fn next(self) -> Self {
@@ -37,6 +40,7 @@ impl ToolMode {
             ToolMode::Pan => "Pan",
             ToolMode::Inspect => "Inspect",
             ToolMode::Designate(k) => k.label(),
+            ToolMode::Erase => "Erase",
         }
     }
 }

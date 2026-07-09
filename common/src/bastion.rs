@@ -30,6 +30,80 @@ impl Region {
         let d = (self.max - self.min).map(|e| (e as i64 + 1).max(0));
         d.x * d.y * d.z
     }
+
+    pub fn contains_point(&self, p: Vec3<i32>) -> bool {
+        (self.min.x..=self.max.x).contains(&p.x)
+            && (self.min.y..=self.max.y).contains(&p.y)
+            && (self.min.z..=self.max.z).contains(&p.z)
+    }
+
+    pub fn intersects(&self, other: &Region) -> bool {
+        self.min.x <= other.max.x
+            && self.max.x >= other.min.x
+            && self.min.y <= other.max.y
+            && self.max.y >= other.min.y
+            && self.min.z <= other.max.z
+            && self.max.z >= other.min.z
+    }
+
+    /// The overlapping region, if any (both inputs assumed normalized).
+    pub fn intersection(&self, other: &Region) -> Option<Region> {
+        self.intersects(other).then(|| Region {
+            min: Vec3::partial_max(self.min, other.min),
+            max: Vec3::partial_min(self.max, other.max),
+        })
+    }
+
+    /// `self` minus `other`, as up to 6 disjoint boxes exactly covering the
+    /// remainder (B5.5 zone erase: the client overlay subtracts erased
+    /// regions from stored designation rects). Volume-conserving:
+    /// `vol(self) == vol(self ∩ other) + Σ vol(pieces)`.
+    pub fn subtract(&self, other: &Region) -> Vec<Region> {
+        let Some(o) = self.intersection(other) else {
+            return vec![*self];
+        };
+        let mut pieces = Vec::new();
+        // Below / above the overlap (full XY footprint of self).
+        if self.min.z < o.min.z {
+            pieces.push(Region {
+                min: self.min,
+                max: Vec3::new(self.max.x, self.max.y, o.min.z - 1),
+            });
+        }
+        if self.max.z > o.max.z {
+            pieces.push(Region {
+                min: Vec3::new(self.min.x, self.min.y, o.max.z + 1),
+                max: self.max,
+            });
+        }
+        // Within the overlap's z-slab: south/north strips (full X of self).
+        if self.min.y < o.min.y {
+            pieces.push(Region {
+                min: Vec3::new(self.min.x, self.min.y, o.min.z),
+                max: Vec3::new(self.max.x, o.min.y - 1, o.max.z),
+            });
+        }
+        if self.max.y > o.max.y {
+            pieces.push(Region {
+                min: Vec3::new(self.min.x, o.max.y + 1, o.min.z),
+                max: Vec3::new(self.max.x, self.max.y, o.max.z),
+            });
+        }
+        // Within the overlap's z- and y-slabs: west/east strips.
+        if self.min.x < o.min.x {
+            pieces.push(Region {
+                min: Vec3::new(self.min.x, o.min.y, o.min.z),
+                max: Vec3::new(o.min.x - 1, o.max.y, o.max.z),
+            });
+        }
+        if self.max.x > o.max.x {
+            pieces.push(Region {
+                min: Vec3::new(o.max.x + 1, o.min.y, o.min.z),
+                max: Vec3::new(self.max.x, o.max.y, o.max.z),
+            });
+        }
+        pieces
+    }
 }
 
 /// Max designation volume the server accepts (validation cap; keeps a stray
@@ -273,6 +347,19 @@ impl ColonistSkills {
             WorkType::Cook => self.cooking.level,
         }
     }
+
+    /// Directly set the level of the skill tracking a work type (harness /
+    /// scenario tooling; gameplay progression goes through `grant_xp`).
+    pub fn set_level_for(&mut self, work: WorkType, level: u16) {
+        let s = match work {
+            WorkType::Mine => &mut self.mining,
+            WorkType::Chop => &mut self.woodcutting,
+            WorkType::Build => &mut self.construction,
+            WorkType::Haul => &mut self.hauling,
+            WorkType::Cook => &mut self.cooking,
+        };
+        s.level = level;
+    }
 }
 
 /// RimWorld-style per-work-type priority: 0 = never, 1..=4 with 4 highest.
@@ -347,6 +434,59 @@ const COLONIST_BACKSTORIES: &[&str] = &[
     "farmhand", "quarry worker", "wandering tinker", "disgraced guard", "orchard keeper",
     "charcoal burner", "riverboat hand", "apprentice mason", "trapper", "camp cook",
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn r(min: (i32, i32, i32), max: (i32, i32, i32)) -> Region {
+        Region {
+            min: Vec3::new(min.0, min.1, min.2),
+            max: Vec3::new(max.0, max.1, max.2),
+        }
+    }
+
+    #[test]
+    fn subtract_disjoint_returns_self() {
+        let a = r((0, 0, 0), (3, 3, 3));
+        let b = r((10, 10, 10), (12, 12, 12));
+        assert_eq!(a.subtract(&b), vec![a]);
+    }
+
+    #[test]
+    fn subtract_full_cover_returns_empty() {
+        let a = r((1, 1, 1), (3, 3, 3));
+        let b = r((0, 0, 0), (5, 5, 5));
+        assert!(a.subtract(&b).is_empty());
+    }
+
+    #[test]
+    fn subtract_conserves_volume_and_is_disjoint() {
+        // A center hole and several offset overlaps, incl. edge/corner cuts.
+        let a = r((0, 0, 0), (9, 9, 9));
+        for b in [
+            r((3, 3, 3), (6, 6, 6)),   // interior hole → 6 pieces
+            r((0, 0, 0), (4, 9, 9)),   // face slab
+            r((5, 5, 5), (20, 20, 20)), // corner cut
+            r((0, 4, 0), (9, 5, 9)),   // through-slab
+            r((-5, -5, -5), (0, 0, 0)), // corner nick
+        ] {
+            let pieces = a.subtract(&b);
+            let inter_vol = a.intersection(&b).map_or(0, |i| i.volume());
+            let piece_vol: i64 = pieces.iter().map(|p| p.volume()).sum();
+            assert_eq!(a.volume(), inter_vol + piece_vol, "volume not conserved vs {b:?}");
+            // Pieces must be pairwise disjoint and inside `a`, outside `b`.
+            for (i, p) in pieces.iter().enumerate() {
+                assert!(p.volume() > 0);
+                assert!(a.intersection(p) == Some(*p), "piece escapes a");
+                assert!(!p.intersects(&b), "piece overlaps the subtrahend");
+                for q in &pieces[i + 1..] {
+                    assert!(!p.intersects(q), "pieces overlap each other");
+                }
+            }
+        }
+    }
+}
 
 impl BastionColonist {
     /// Randomized starting colonist: name, backstory, skills 0..=5.

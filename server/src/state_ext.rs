@@ -64,7 +64,9 @@ pub trait StateExt {
     fn create_object(&mut self, pos: comp::Pos, object: comp::object::Body)
     -> EcsEntityBuilder<'_>;
     /// Create an item drop or merge the item with an existing drop, if a
-    /// suitable candidate exists.
+    /// suitable candidate exists. `persistent` (bastion B5.5): the drop is a
+    /// colonist-produced player resource — no despawn timer, marked
+    /// `BastionPile`, and only merged within the persistent class.
     fn create_item_drop(
         &mut self,
         pos: comp::Pos,
@@ -72,6 +74,7 @@ pub trait StateExt {
         vel: comp::Vel,
         item: comp::PickupItem,
         loot_owner: Option<LootOwner>,
+        persistent: bool,
     ) -> Option<EcsEntity>;
     fn create_ship<F: FnOnce(comp::ship::Body) -> comp::Collider>(
         &mut self,
@@ -285,6 +288,7 @@ impl StateExt for State {
         vel: comp::Vel,
         world_item: comp::PickupItem,
         loot_owner: Option<LootOwner>,
+        persistent: bool,
     ) -> Option<EcsEntity> {
         // Attempt merging with any nearby entities if possible
         {
@@ -295,12 +299,14 @@ impl StateExt for State {
             let mut items = self.ecs().write_storage::<comp::PickupItem>();
             let entities = self.ecs().entities();
             let spatial_grid = self.ecs().read_resource();
+            let piles = self.ecs().read_storage::<comp::bastion::BastionPile>();
 
             let nearby_items = get_nearby_mergeable_items(
                 &world_item,
                 &pos,
                 loot_owner.as_ref(),
-                (&entities, &items, &positions, &loot_owners, &spatial_grid),
+                persistent,
+                (&entities, &items, &positions, &loot_owners, &piles, &spatial_grid),
             );
 
             // Merge the nearest item if possible, skip to creating a drop otherwise
@@ -342,11 +348,15 @@ impl StateExt for State {
                 .with(item_body.density())
                 .with(body.collider())
                 .with(body)
-                .with(Object::DeleteAfter {
+                // bastion (B5.5): colonist-produced drops are player
+                // resources — they persist (no despawn timer) and carry the
+                // pile marker (aggregation class + tier-scale visuals).
+                .maybe_with((!persistent).then(|| Object::DeleteAfter {
                     spawned_at,
                     // Delete the item drop after 5 minutes
                     timeout: Duration::from_secs(300),
-                })
+                }))
+                .maybe_with(persistent.then_some(comp::bastion::BastionPile))
                 .maybe_with(loot_owner)
                 .maybe_with(light_emitter)
                 .build(),

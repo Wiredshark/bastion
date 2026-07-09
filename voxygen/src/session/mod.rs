@@ -153,7 +153,8 @@ pub struct SessionState {
     bastion_colonist_markers: HashMap<specs::Entity, DebugShapeId>,
     /// bastion (B2a): how many echoed designations already have overlay
     /// shapes, + those shapes (debug-pipeline line rectangles).
-    bastion_designation_synced: usize,
+    /// Last-seen `Client::bastion_designations_rev` (B5.5: rebuild-on-rev).
+    bastion_designation_synced: u64,
     bastion_designation_shapes: Vec<DebugShapeId>,
 }
 
@@ -642,10 +643,18 @@ impl SessionState {
             }
         }
         if let Some(block) = self.bastion_cursor_block(global_state) {
-            let kind = {
+            let (kind, in_zone) = {
                 let client = self.client.borrow();
                 let terrain = client.state().terrain();
-                terrain.get(block).ok().copied().map(|b| b.kind())
+                (
+                    terrain.get(block).ok().copied().map(|b| b.kind()),
+                    // B5.5: inside a painted designation rect → offer
+                    // whole-zone deletion.
+                    client
+                        .bastion_designations()
+                        .iter()
+                        .any(|(r, _)| r.contains_point(block)),
+                )
             };
             use common::terrain::BlockKind;
             // Lead verb from what's under the cursor; the rest behind it.
@@ -658,6 +667,11 @@ impl SessionState {
                 },
                 _ => ("Ground", vec![]),
             };
+            if in_zone {
+                // Lead position: deleting the zone you clicked is the most
+                // likely intent when a zone is under the cursor.
+                actions.insert(0, RadialAction::DeleteZone);
+            }
             for a in [
                 RadialAction::Verb(ContextVerb::Build),
                 RadialAction::Verb(ContextVerb::Stockpile),
@@ -741,15 +755,23 @@ impl SessionState {
         }
         let min = Vec3::partial_min(anchor, current);
         let max = Vec3::partial_max(anchor, current);
-        let shapes = self.bastion_region_outline(min, max, [1.0, 1.0, 0.3, 0.9]);
+        // B5.5: the erase brush previews red; placement previews yellow.
+        let color = if self.bastion_tools.tool == crate::bastion::tools::ToolMode::Erase {
+            [1.0, 0.25, 0.2, 0.9]
+        } else {
+            [1.0, 1.0, 0.3, 0.9]
+        };
+        let shapes = self.bastion_region_outline(min, max, color);
         if let Some(paint) = self.bastion_paint.as_mut() {
             paint.shapes = shapes;
         }
     }
 
+    /// Finish the paint drag: `Some(kind)` places a designation, `None`
+    /// (B5.5, the erase tool) cancels designations in the region.
     fn bastion_paint_finish(
         &mut self,
-        kind: common::bastion::DesignationKind,
+        kind: Option<common::bastion::DesignationKind>,
     ) {
         let Some(paint) = self.bastion_paint.take() else {
             return;
@@ -759,6 +781,8 @@ impl SessionState {
         }
         // A designation reaches a couple of blocks under the paint plane so a
         // surface drag marks the ground itself (B4 refines per-kind depth).
+        // Erase uses the SAME depth so erasing at the paint slice hits what
+        // was painted there.
         let min_f: Vec3<f32> = Vec3::partial_min(paint.anchor, paint.current);
         let max_f: Vec3<f32> = Vec3::partial_max(paint.anchor, paint.current);
         let region = common::bastion::Region {
@@ -766,21 +790,35 @@ impl SessionState {
             max: max_f.map(|e| e.floor() as i32),
         }
         .normalized();
-        self.client.borrow_mut().bastion_place_designation(region, kind);
+        match kind {
+            Some(kind) => {
+                self.client.borrow_mut().bastion_place_designation(region, kind);
+            },
+            None => {
+                self.client.borrow_mut().bastion_cancel_designation(region);
+            },
+        }
     }
 
-    /// bastion (B2a): give every server-echoed designation an overlay
-    /// outline (colored by kind).
+    /// bastion (B2a/B5.5): keep the designation overlay in sync with the
+    /// client's rect list. Rebuild-on-revision (not incremental): erase can
+    /// remove or SPLIT stored rects, which an append-only index can't
+    /// express — and the list is dozens of rects at most, so a full rebuild
+    /// on change is trivially cheap.
     fn bastion_sync_designations(&mut self) {
-        let new: Vec<(common::bastion::Region, common::bastion::DesignationKind)> = {
+        let list: Vec<(common::bastion::Region, common::bastion::DesignationKind)> = {
             let client = self.client.borrow();
-            let list = client.bastion_designations();
-            if list.len() <= self.bastion_designation_synced {
+            let rev = client.bastion_designations_rev();
+            if rev == self.bastion_designation_synced {
                 return;
             }
-            list[self.bastion_designation_synced..].to_vec()
+            self.bastion_designation_synced = rev;
+            client.bastion_designations().to_vec()
         };
-        for (region, kind) in new {
+        for id in std::mem::take(&mut self.bastion_designation_shapes) {
+            self.scene.debug.remove_shape(id);
+        }
+        for (region, kind) in list {
             use common::bastion::DesignationKind;
             let color = match kind {
                 DesignationKind::Mine => [1.0, 0.6, 0.1, 0.9],
@@ -794,7 +832,6 @@ impl SessionState {
                 color,
             );
             self.bastion_designation_shapes.extend(shapes);
-            self.bastion_designation_synced += 1;
         }
     }
 
@@ -2113,8 +2150,10 @@ impl PlayState for SessionState {
                                         self.bastion_lmb_down = Some(cursor);
                                         match self.bastion_tools.tool {
                                             // B2a: designate tool paints
-                                            // instead of panning.
-                                            bastion::tools::ToolMode::Designate(_) => {
+                                            // instead of panning. B5.5: the
+                                            // erase tool uses the same drag.
+                                            bastion::tools::ToolMode::Designate(_)
+                                            | bastion::tools::ToolMode::Erase => {
                                                 self.bastion_paint_begin(global_state);
                                             },
                                             // B3: inspect tool box-selects.
@@ -2131,7 +2170,13 @@ impl PlayState for SessionState {
                                         self.bastion_tools.tool
                                         && self.bastion_paint.is_some()
                                     {
-                                        self.bastion_paint_finish(kind);
+                                        self.bastion_paint_finish(Some(kind));
+                                    } else if self.bastion_tools.tool
+                                        == bastion::tools::ToolMode::Erase
+                                        && self.bastion_paint.is_some()
+                                    {
+                                        // B5.5: erase = same drag, cancel op.
+                                        self.bastion_paint_finish(None);
                                     } else if self.bastion_boxsel.is_some() {
                                         // B3: box-select release (tiny drag
                                         // falls back to single pick).
@@ -2801,6 +2846,23 @@ impl PlayState for SessionState {
                                 },
                                 crate::hud::bastion::RadialAction::Influence(kind) => {
                                     client.bastion_apply_influence(point, kind);
+                                },
+                                // B5.5: delete every painted rect containing
+                                // the clicked block — resolved client-side
+                                // from the echoed designation list, one
+                                // cancel per rect.
+                                crate::hud::bastion::RadialAction::DeleteZone => {
+                                    if let common::bastion::ContextTarget::Block(block) = target {
+                                        let rects: Vec<common::bastion::Region> = client
+                                            .bastion_designations()
+                                            .iter()
+                                            .filter(|(r, _)| r.contains_point(block))
+                                            .map(|(r, _)| *r)
+                                            .collect();
+                                        for r in rects {
+                                            client.bastion_cancel_designation(r);
+                                        }
+                                    }
                                 },
                             }
                         }

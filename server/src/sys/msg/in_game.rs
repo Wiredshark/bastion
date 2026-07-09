@@ -317,7 +317,11 @@ impl Sys {
             },
             ClientGeneral::BastionCancelDesignation { region } => {
                 // bastion (B4): jobs removed + claims released post-loop.
-                bastion_designations.push((region.normalized(), None));
+                let region = region.normalized();
+                bastion_designations.push((region, None));
+                // bastion (B5.5): echo the removal so the client subtracts
+                // it from its overlay rects (mirrors the place echo above).
+                client.send(ServerGeneral::BastionDesignationRemoved { region })?;
                 client.send(ServerGeneral::server_msg(
                     common::comp::ChatType::CommandInfo,
                     common::comp::Content::Plain("Designations cancelled.".to_string()),

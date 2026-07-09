@@ -271,6 +271,54 @@ drop counts conservation-checked, XP asserted, zero-input soak. Debug/state
 hooks for all of this live as `Server::bastion_*` methods in
 `server/src/lib.rs` (~lines 860–1010).
 
+### 2.7 B5.5 — Zone deletion + item-drop pile aggregation (patch block)
+
+**What:** the two gaps the first live demo exposed — no way to delete a
+painted zone, and mined areas carpeting into one item entity per block.
+
+**Zone deletion:** the server side already existed
+(`JobBoard::cancel_region` + `ClientGeneral::BastionCancelDesignation`,
+B4). B5.5 adds the UI + overlay: `ToolMode::Erase`
+(`voxygen/src/bastion/tools.rs`, T-cycle; same drag as designate, red
+preview, sends the cancel message) and `RadialAction::DeleteZone`
+(`voxygen/src/hud/bastion.rs`; client-resolved — one cancel per painted
+rect containing the clicked block; never crosses the wire as a verb). The
+cancel handler echoes `ServerGeneral::BastionDesignationRemoved{region}`;
+the client (`client/src/lib.rs`) subtracts it from stored rects via exact
+3D AABB subtraction (`Region::subtract` in `common/src/bastion.rs`, ≤6
+pieces, unit-tested for volume conservation) and bumps
+`bastion_designations_rev`; voxygen rebuilds ALL overlay shapes on rev
+change (incremental index sync can't express removal/splits).
+
+**Pile aggregation (merge-never-delete):** the pebble-carpet root cause
+was `PickupItem::should_merge == false` on B5 drops — Veloren's
+conservation-exact pile machinery (`PickupItem` = `Vec<Item>` with
+`amount()`, `try_merge`, spawn-time + periodic merging in
+`server/src/sys/item.rs`) existed all along and never fired. Colonist
+drops now emit `persistent: true` (new `CreateItemDropEvent` field; all
+vanilla emitters pass `false`): **no `DeleteAfter` despawn timer**
+(colonist output is a player resource — the old 300 s timer was a latent
+loss bug), a `comp::bastion::BastionPile` marker (server-side), 
+`should_merge: true`, and a gentle toss so spawn merging lands.
+**Merge-class separation**: `get_nearby_mergeable_items` only pairs
+entities whose `BastionPile` presence matches — a persistent pile must
+never merge into a timed vanilla drop (it would inherit the despawn =
+silent loss) nor grant vanilla loot immortality. `bastion_piles::Sys`
+(`server/src/bastion_piles.rs`) tier-scales piles by amount via the
+synced `Scale` comp (1.0/1.35/1.7) so heaps read bigger as they grow.
+
+**B6 interface (deliberate):** piles are ordinary `PickupItem` entities +
+marker — enumerable/claimable exactly like drops; hauling one pile of 47
+is one trip. Partial-pickup/split APIs don't exist; B6 decides.
+
+**Harness gate:** `--b55-scenario` — partial erase (exactly the erased
+half's jobs removed, zero orphaned claims via the new
+`bastion_orphaned_claims` hook, remainder keeps working), whole-zone
+delete (board empty, all idle), then a 200-block slab mined with **exact**
+conservation (`bastion_sum_items_near` == 200) through merges AND through
+the soak, with the entity count bounded (25 piles observed). The B5
+scenario's drop assertions switched to amount sums.
+
 ## 3. Build methodology (how blocks land)
 
 Per-block cycle: **checkpoint** (clean tree, branch `bastion/block-<N>`, log
@@ -304,9 +352,13 @@ Full protocol: `readme/MEGA-PROMPT-autonomous-batch-builder.md`.
   of `block+(0,0,1)` and agents can't climb: (a) freestanding structures
   ≥2 tall have unreachable upper/lower blocks, (b) an enclosed dig pit
   traps its digger (B5's mine test carves an explicit exit ramp), (c) tall
-  trees can't be per-voxel chopped (needs a base-interaction verb).
-  Backlog has the mechanism-level fix ideas. Any new test geometry or
-  designation feature must respect this.
+  trees can't be per-voxel chopped (needs a base-interaction verb),
+  (d) a single-level slab forced across sloped terrain buries/floats
+  blocks (B5.5's Part 2 stalled at 8/200 until the terraform fully
+  determined the geometry: under-fill + working level + headroom + ring).
+  Backlog has the mechanism-level fix ideas; the mining framework
+  (`BASTION-SYSTEM-FRAMEWORKS.md` §6) owns the real solution. Any new
+  test geometry or designation feature must respect this.
 - **`ground_z`-style scans must filter to real terrain kinds** (Rock/Earth/
   Grass/Sand/…): `is_filled()` counts tree Wood/Leaves, returning canopy
   height and placing things in mid-air (bit B5's chop/build tests).
@@ -343,10 +395,10 @@ Full protocol: `readme/MEGA-PROMPT-autonomous-batch-builder.md`.
 
 ## 6. State & pointers (update every block)
 
-**Done (merged + tagged):** B0, B1, B1.5, B1.6(+B1.7), B2a, B3, B4, B5.
-**Next:** B5.5 (zone deletion + item-drop pile aggregation — patch block,
-spec `readme/B5.5-zone-delete-drop-aggregation-prompt.md`), then B6
-(stockpiles/hauling), B7, then Phase 3 agency (B-AG*).
+**Done (merged + tagged):** B0, B1, B1.5, B1.6(+B1.7), B2a, B3, B4, B5,
+B5.5.
+**Next:** B6 (stockpiles, hauling, reservations — design doc §B6; piles
+from B5.5 are the haul input), then B7, then Phase 3 agency (B-AG*).
 
 | Need | Read |
 |---|---|

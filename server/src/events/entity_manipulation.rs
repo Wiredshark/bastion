@@ -1373,6 +1373,7 @@ impl ServerEvent for DestroyEvent {
                                     debug!("No loot owner");
                                     None
                                 },
+                                persistent: false,
                             })
                         };
 

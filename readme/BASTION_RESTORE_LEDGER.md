@@ -47,3 +47,14 @@ than editing the old one.
   ever specifically needed, it's `ec29fda` on `bastion/block-B5` (the gate
   fixes commit, pre-ramp) — not tagged, but preserved in that branch's
   history.
+
+## B5.5 (2026-07-09)
+
+| Field | Value |
+|---|---|
+| Block | B5.5 — zone deletion + item-drop pile aggregation (patch block) |
+| Tag | `bastion-block-B5.5` |
+| Previous green tag | `bastion-block-B5` (at `297cc0f`, post tag-move) |
+| Revert command | `git reset --hard bastion-block-B5` (on `bastion/main`) |
+| Reverting undoes | Erase tool + radial Delete-zone + designation-removal echo/overlay subtraction; persistent pile aggregation (colonist drops would resume carpeting one entity per block AND regain the 300 s despawn timer — i.e. reverting reintroduces a known item-LOSS hazard); the `--b55-scenario` gate; the B5 scenario's amount-sum assertions (reverts to entity counts). |
+| Data-format caveats | `CreateItemDropEvent` gained `persistent: bool` (in-memory only, not serialized). `ServerGeneral::BastionDesignationRemoved` is a new net message — old client + new server (or vice versa) across this boundary would break protocol; irrelevant for the single-tree singleplayer setup. No rtsim `data.dat` changes. `comp::bastion::BastionPile` is a new server-side comp (not persisted, not synced). |
