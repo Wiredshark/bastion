@@ -160,3 +160,32 @@ recorded so nobody "fixes" the minimap into blandness later:
   `ground_z`.
 - Rebase check: if the sampler signatures changed, B-MAP1 compiles clean
   anyway (zero direct uses) — verify at rebase.
+
+## 7. Rebase plan for the merge slot (pre-solved 2026-07-09; order: b-1 -> B-MAP1)
+
+Promotion: Ben moved B-MAP1 ahead of B5.6b-2; B-ASSET1 stood down. On the
+architect's "tree is yours" ping, bastion/main = post-B5.6b-1 + a docs
+commit. Read-only preview of b-1's branch (through 98ffc2b) determined every
+conflict in advance:
+
+- **Color authority collision (the real one):** b-1 added `tools::zone_rgb`
+  (+ `zone_border_color`/`zone_fill_color`) and REMOVED the inline session
+  color match — the same lines my `bastion::designation_color` refactor
+  touched. Resolution: THEIRS WINS (landed first). Drop my designation_color
+  commit content entirely; rework the minimap zone footprints to
+  `tools::zone_rgb(kind)` + map-tuned alpha 0.32. One legend, zero drift —
+  and their Stockpile tweak ([0.85,0.35,0.95]) flows to the map for free.
+- **session/mod.rs `bastion_sync_designations`:** take theirs wholesale
+  (fills + labels rewrite); my only surviving session edits are the
+  bastion_sync(+slice_z) call and the two minimap event handlers.
+- **hud/bastion.rs:** both add a field after `radial` (their zone_labels, my
+  slice_z) — keep both.
+- **hud/mod.rs:** disjoint areas (their label drawing; my minimap branch) —
+  textual adjacency only.
+- **BASTION_ARCHITECTURE.md:** they took §2.9 — renumber mine to §2.10.
+- **Append-only docs (BACKLOG/CONSISTENCY/RUN_LOG):** union both blocks,
+  theirs first (chronological).
+- **Line endings:** stray CRLFs already normalized (b-1's lesson).
+
+After rebase: cargo check, exe build, live gate (§2 of the TEST doc), merge
+--no-ff, tag bastion-block-BMAP1, ledger + run-log PASS.
