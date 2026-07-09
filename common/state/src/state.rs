@@ -299,6 +299,8 @@ impl State {
         ecs.register::<comp::bastion::ActiveJob>();
         // bastion (B5.5): persistent item-pile marker (server-side).
         ecs.register::<comp::bastion::BastionPile>();
+        // bastion (B-ASSET1): test-fixture goto order (server-side).
+        ecs.register::<comp::bastion::BastionTestGoto>();
         // Register server -> all clients synced components.
         ecs.register::<comp::Body>();
         ecs.register::<comp::Hardcore>();

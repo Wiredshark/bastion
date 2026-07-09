@@ -106,6 +106,44 @@ impl Component for BastionGodAnchor {
     type Storage = NullStorage<Self>;
 }
 
+/// bastion (B-ASSET1): a direct movement order for test fixtures — the
+/// colonist walks to `target` through the vanilla agent (the same
+/// `NpcActivity::Goto` mechanism job travel uses) with the same 3D-arrival +
+/// progress-watchdog semantics. Server-side only; inert unless inserted
+/// (harness `--asset-test` and `--asset-arena` fixtures). Mutually exclusive
+/// with [`ActiveJob`] by convention (the hook that inserts it refuses
+/// job-holding colonists).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BastionTestGoto {
+    pub target: vek::Vec3<f32>,
+    /// Travel watchdog (same scheme as [`ActiveJob`]): best distance achieved
+    /// so far + time since it last improved.
+    pub best_dist: f32,
+    pub stuck_time: f32,
+    /// Sim seconds spent on this order (arrival-budget accounting).
+    pub elapsed: f32,
+    pub arrived: bool,
+    /// The watchdog gave up: no progress within the stuck timeout.
+    pub stuck: bool,
+}
+
+impl BastionTestGoto {
+    pub fn new(target: vek::Vec3<f32>) -> Self {
+        Self {
+            target,
+            best_dist: f32::INFINITY,
+            stuck_time: 0.0,
+            elapsed: 0.0,
+            arrived: false,
+            stuck: false,
+        }
+    }
+}
+
+impl Component for BastionTestGoto {
+    type Storage = specs::DenseVecStorage<Self>;
+}
+
 /// A persistent colonist-produced item pile (B5.5). Entities carrying this:
 /// never get a despawn timer (colonist output is a player resource — item
 /// loss is an invariant violation), aggregate freely with each other via the

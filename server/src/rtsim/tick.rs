@@ -478,6 +478,8 @@ impl<'a> System<'a> for Sys {
             WriteStorage<'a, comp::bastion::Mood>,
             WriteStorage<'a, comp::Stats>,
             ReadStorage<'a, comp::bastion::ActiveJob>,
+            // bastion (B-ASSET1): test-goto fixtures own their activity too.
+            ReadStorage<'a, comp::bastion::BastionTestGoto>,
         ),
     );
 
@@ -518,6 +520,7 @@ impl<'a> System<'a> for Sys {
                 mut bastion_moods,
                 mut stats_storage,
                 bastion_active_jobs,
+                bastion_test_gotos,
             ),
         ): Self::SystemData,
     ) {
@@ -733,8 +736,11 @@ impl<'a> System<'a> for Sys {
                             agent.rtsim_controller.look_dir = npc.controller.look_dir;
                             // bastion (B4): while a colonist works a job, the
                             // job system owns its activity — the rtsim brain
-                            // must not clobber the travel intent.
-                            if !bastion_active_jobs.contains(entity) {
+                            // must not clobber the travel intent. (B-ASSET1):
+                            // same for test-goto fixture orders.
+                            if !bastion_active_jobs.contains(entity)
+                                && !bastion_test_gotos.contains(entity)
+                            {
                                 agent.rtsim_controller.activity = npc.controller.activity;
                             }
                             agent
