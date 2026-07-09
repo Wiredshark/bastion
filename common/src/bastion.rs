@@ -196,8 +196,14 @@ pub struct Job {
 }
 
 /// The material B5's minimal Build path requires (single hardcoded material;
-/// B6 gives Build real per-blueprint recipes).
+/// B6 gives Build real per-blueprint recipes). Deliberately the same item
+/// Mine drops, so mine → build closes into a loop even before B6 hauling.
 pub const BUILD_MATERIAL_ITEM: &str = "common.items.crafting_ing.stones";
+/// What a completed Mine job drops (B5 v1: flat stones for any mined block;
+/// a per-block-type loot mapping is future work).
+pub const MINE_DROP_ITEM: &str = "common.items.crafting_ing.stones";
+/// What a completed Chop job drops.
+pub const CHOP_DROP_ITEM: &str = "common.items.log.wood";
 
 /// Aggregate job-board audit for tests/inspectors (B4 harness gate).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -253,6 +259,18 @@ impl ColonistSkills {
             WorkType::Build => self.construction.add_xp(xp),
             WorkType::Haul => self.hauling.add_xp(xp),
             WorkType::Cook => self.cooking.add_xp(xp),
+        }
+    }
+
+    /// The level of the skill tracking a work type — what arbitration gates
+    /// `skill_floor` on and B5's work rate scales by.
+    pub fn level_for(&self, work: WorkType) -> u16 {
+        match work {
+            WorkType::Mine => self.mining.level,
+            WorkType::Chop => self.woodcutting.level,
+            WorkType::Build => self.construction.level,
+            WorkType::Haul => self.hauling.level,
+            WorkType::Cook => self.cooking.level,
         }
     }
 }

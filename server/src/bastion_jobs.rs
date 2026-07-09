@@ -21,7 +21,8 @@
 use crate::Tick;
 use common::{
     bastion::{
-        BUILD_MATERIAL_ITEM, DesignationKind, Job, JobAudit, JobId, Region, WorkType,
+        BUILD_MATERIAL_ITEM, CHOP_DROP_ITEM, DesignationKind, Job, JobAudit, JobId,
+        MINE_DROP_ITEM, Region,
     },
     comp,
     comp::{
@@ -60,7 +61,8 @@ fn work_rate(skill_level: u16) -> f32 {
 /// Arbitration cadence in server ticks (~0.5s at 30 tps): "a few Hz, not
 /// every tick".
 pub const ARBITRATION_INTERVAL: u64 = 15;
-/// A colonist counts as arrived within this XY distance of the job block.
+/// A colonist counts as arrived within this 3D distance of the job's
+/// stand-at target (`block + (0.5, 0.5, 1.0)`).
 const ARRIVE_DIST: f32 = 2.5;
 /// Travel watchdog: release + mark unreachable after this long without
 /// progress (seconds). `pub` so scenario harnesses can size their sampling
@@ -98,10 +100,20 @@ impl JobBoard {
     ) -> Vec<JobId> {
         let mut created = Vec::new();
         let work = kind.work_type();
+        // One job per block, regardless of kind: repainting a region — or
+        // overlapping designations (Mine and Chop both match a Wood block,
+        // since wood `is_filled()`) — must not create duplicate jobs. Each
+        // duplicate would complete independently and drop loot from the same
+        // single block: a free-item exploit reachable from the in-game paint
+        // path, not just a bookkeeping wart.
+        let occupied: HashSet<Vec3<i32>> = self.jobs.values().map(|j| j.pos).collect();
         for z in region.min.z..=region.max.z {
             for y in region.min.y..=region.max.y {
                 for x in region.min.x..=region.max.x {
                     let pos = Vec3::new(x, y, z);
+                    if occupied.contains(&pos) {
+                        continue;
+                    }
                     let Ok(block) = terrain.get(pos) else {
                         continue;
                     };
@@ -205,6 +217,7 @@ impl<'a> System<'a> for Sys {
         WriteStorage<'a, comp::Agent>,
         WriteStorage<'a, comp::Inventory>,
         WriteExpect<'a, BlockChange>,
+        ReadExpect<'a, TerrainGrid>,
         ReadExpect<'a, common::event::EventBus<CreateItemDropEvent>>,
     );
 
@@ -228,6 +241,7 @@ impl<'a> System<'a> for Sys {
             mut agents,
             mut inventories,
             mut block_change,
+            terrain,
             item_drop_events,
         ): Self::SystemData,
     ) {
@@ -298,15 +312,49 @@ impl<'a> System<'a> for Sys {
                 },
                 ActiveJobState::Arrived => {
                     // B5: accumulate work, rate scaled by the relevant skill.
-                    let skill_level = match job.work {
-                        WorkType::Mine => colonist.0.skills.mining.level,
-                        WorkType::Chop => colonist.0.skills.woodcutting.level,
-                        WorkType::Build => colonist.0.skills.construction.level,
-                        WorkType::Haul => colonist.0.skills.hauling.level,
-                        WorkType::Cook => colonist.0.skills.cooking.level,
-                    };
+                    let skill_level = colonist.0.skills.level_for(job.work);
                     job.progress += dt.0 * work_rate(skill_level);
                     if job.progress < 1.0 {
+                        continue;
+                    }
+
+                    // The world may have changed since this job was placed
+                    // (vanilla mining, an explosion, another designation's
+                    // completed edit): a Mine/Chop job whose block is already
+                    // gone must not complete — that would conjure a drop out
+                    // of empty air — and a Build job must not overwrite a
+                    // block something else placed. Re-check the predicate
+                    // placement used; a job it no longer holds for is moot.
+                    // Checked before Build's material consumption so a moot
+                    // Build job doesn't eat the material.
+                    let still_valid = terrain.get(job.pos).ok().is_some_and(|b| match job.kind {
+                        DesignationKind::Mine => b.is_filled(),
+                        DesignationKind::Chop => matches!(b.kind(), BlockKind::Wood),
+                        DesignationKind::Build => !b.is_filled(),
+                        DesignationKind::Stockpile => false,
+                    });
+                    if !still_valid {
+                        info!(
+                            job = active.job,
+                            kind = ?job.kind,
+                            pos = ?job.pos,
+                            "bastion: job moot — target block changed under it; dropped"
+                        );
+                        board.jobs.remove(&active.job);
+                        to_release.push(entity);
+                        continue;
+                    }
+
+                    // Defer if another system already edited this block THIS
+                    // tick: completing over it would make the block's final
+                    // state depend on system run order. Progress stays >=
+                    // 1.0; retried next tick against the updated terrain,
+                    // where the moot-check above re-decides. Checked before
+                    // Build's material consumption — deferring *after*
+                    // consuming would strand the material (next tick's
+                    // consumption attempt finds an empty inventory and
+                    // stalls the job, the item already destroyed).
+                    if !block_change.can_set_block(job.pos) {
                         continue;
                     }
 
@@ -336,7 +384,12 @@ impl<'a> System<'a> for Sys {
 
                     // Complete: authoritative terrain edit (same path
                     // vanilla mining uses — never a raw chonk write) + item
-                    // drop + skill XP.
+                    // drop + skill XP. Plain `set` is safe here: the
+                    // `can_set_block` deferral above already ruled out a
+                    // same-tick collision, and nothing runs between it and
+                    // this line but our own loop (job positions are unique —
+                    // `place_designation` dedupes — so a later iteration
+                    // can't race this block either).
                     let new_block = match job.kind {
                         DesignationKind::Mine | DesignationKind::Chop => Block::empty(),
                         DesignationKind::Build => Block::new(BlockKind::Rock, Rgb::new(150, 150, 150)),
@@ -345,8 +398,8 @@ impl<'a> System<'a> for Sys {
                     block_change.set(job.pos, new_block);
 
                     if let Some(item_id) = match job.kind {
-                        DesignationKind::Mine => Some("common.items.crafting_ing.stones"),
-                        DesignationKind::Chop => Some("common.items.log.wood"),
+                        DesignationKind::Mine => Some(MINE_DROP_ITEM),
+                        DesignationKind::Chop => Some(CHOP_DROP_ITEM),
                         DesignationKind::Build | DesignationKind::Stockpile => None,
                     } {
                         item_drop_emitter.emit(CreateItemDropEvent {
@@ -452,7 +505,7 @@ impl<'a> System<'a> for Sys {
         // the pass — two idle colonists can't pick the same job); the
         // `ActiveJob` comps are inserted afterwards (can't insert while the
         // anti-join borrows the storage).
-        let mut assignments: Vec<(specs::Entity, JobId, Vec3<f32>)> = Vec::new();
+        let mut assignments: Vec<(specs::Entity, JobId)> = Vec::new();
         for (entity, colonist, pos, uid, ()) in (
             &entities,
             &colonists,
@@ -476,6 +529,9 @@ impl<'a> System<'a> for Sys {
                 if job.kind == DesignationKind::Build && !carries_material {
                     continue;
                 }
+                if colonist.0.skills.level_for(job.work) < job.skill_floor {
+                    continue;
+                }
                 let priority = colonist.0.work_priorities.get(job.work);
                 if priority == 0 {
                     continue;
@@ -494,10 +550,10 @@ impl<'a> System<'a> for Sys {
                     job.claimed_by = Some(*uid);
                 }
                 info!(job = job_id, colonist = %uid, "bastion: job claimed");
-                assignments.push((entity, job_id, pos.0));
+                assignments.push((entity, job_id));
             }
         }
-        for (entity, job_id, _pos) in assignments {
+        for (entity, job_id) in assignments {
             let _ = active_jobs.insert(entity, ActiveJob {
                 job: job_id,
                 state: ActiveJobState::Traveling,
