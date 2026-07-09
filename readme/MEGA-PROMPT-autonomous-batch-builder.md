@@ -1,5 +1,26 @@
 # Claude Code MEGA-PROMPT — Project Bastion Autonomous Batch-Builder
 
+> **⚙️ YOU ARE BEING RUN IN AN AUTOMATED LOOP.** A script re-invokes this prompt in a fresh session after
+> each block, unattended, with no human watching in real time. This changes how you must behave:
+> - **NEVER wait for human input or ask a question mid-run.** There is no human to answer. If you reach a
+>   point that would need a human decision (ambiguity, undesigned item, design conflict), do NOT guess and do
+>   NOT stall — STOP cleanly and write the token **`LOOP-STOP`** into `docs/BASTION_RUN_LOG.md` with the
+>   reason. The loop script halts when it sees that token.
+> - **Be MORE conservative, not less.** No human will catch a bad call before the next block builds on it. If
+>   a block's self-tests are anything short of clearly green, ROLLBACK and STOP — do not merge a marginal
+>   block. A false "pass" compounds silently across the loop.
+> - **The loop detects progress by git tags.** You MUST tag every passed block `bastion-block-<N>` at its
+>   merge. If you stop without a new tag, the loop correctly concludes you stalled and halts. Leave the tree
+>   clean (finish-or-rollback) so the loop's clean-tree gate passes.
+> - **Write a crisp run-log entry every iteration** — block, PASS/FAIL, tag, one-line what-changed, and (on
+>   stop) the exact reason + next action. This is the only record a human reads later.
+> - **HARD STOP after B4 regardless of pass/fail.** B4 is the "is it fun" pivot; a human must review it
+>   before B5+ builds on it. After B4 passes and tags, write `LOOP-STOP` with "B4 complete — human review
+>   gate" so the loop halts and waits for Ben. (Do NOT stop before B4 for this reason; only at/after it.)
+> - Everything else below applies unchanged.
+
+---
+
 > **How to use (for Ben):** This is not a normal block prompt. It's an **autonomous batch-runner** that
 > works the Bastion block queue **one block at a time**, checkpointing and self-testing after each so a
 > failure never corrupts the tree. Open a Claude Code session at `E:\veloren-master`, attach the design
@@ -21,6 +42,16 @@ colony sim). You do not improvise scope: you execute the **block queue** defined
 in order, **one block at a time**, with a strict **checkpoint → build → self-test → commit-or-rollback**
 cycle around every single block. Your prime directive is: **never leave the tree in a broken or ambiguous
 state.** A clean stop with a clear report is a success; a corrupted tree is the only real failure.
+
+## FILE LOCATIONS (read carefully — where things live)
+- **Design/architecture docs** (this mega-prompt, the design report, Agency Bible, DF Gap Ledger, Divine
+  Politics Bible) and the **append-only bookkeeping docs** (`BASTION_BACKLOG.md`, `BASTION_RESTORE_LEDGER.md`,
+  `BASTION_CONSISTENCY.md`, `BASTION_RUN_LOG.md`, `BASTION_LOOP_LOG.md`) all live in **`E:\veloren-master\readme\`**.
+- **Per-block findings** written by earlier sessions may exist as `docs/BASTION_*_FINDINGS.md` (older
+  convention). **On startup, check BOTH `readme/` and `docs/` for prior `BASTION_*` files and read whatever
+  exists** — do not assume a single location. Going forward, write new bookkeeping to `readme/` (append-only)
+  and keep findings wherever the prior convention put them, but note the location in the run log so the next
+  session finds them. If in doubt, prefer `readme/` for new docs and never overwrite either location.
 
 ## INPUTS YOU MUST READ FIRST (do not skip)
 1. **The design doc** (`veloren-colony-rts-build-report.md`, v2.1+) — the block definitions (objective,
@@ -196,6 +227,47 @@ before it's buildable. (Building from a one-line spec violates the "no vague-spe
 - **Invariant-first testing (§7):** determinism is not the gate; invariants are.
 - **serde-ready** all new `bastion` types (B10 persistence).
 - **Don't break vanilla.** Ever.
+- **Bookkeeping is part of every block** (see PER-BLOCK BOOKKEEPING): append to `readme/BASTION_BACKLOG.md`,
+  `readme/BASTION_RESTORE_LEDGER.md`, and `readme/BASTION_CONSISTENCY.md`. **APPEND-ONLY in `readme/` — never
+  overwrite or delete existing files/content there.**
+
+## PER-BLOCK BOOKKEEPING & CONSISTENCY (do this every block, write to `readme/`, APPEND-ONLY)
+
+All of the following live in **`E:\veloren-master\readme\`**. **NEVER overwrite an existing file or delete
+prior content — APPEND only** (add dated entries; if a file doesn't exist yet, create it once, then append
+forever after). These docs are the project's growing memory across amnesiac sessions; losing them loses
+context.
+
+1. **`readme/BASTION_BACKLOG.md` — things to fix / add / feature ideas.** After each block, append any:
+   - **FIX** — bugs, hacks, TODOs, deferred cleanups, known-imperfect corners you touched or noticed.
+   - **ADD** — missing pieces a future block needs, gaps you worked around.
+   - **IDEA** — feature suggestions that occurred to you while in the code (tag clearly as optional).
+   Each entry: date, block, category (FIX/ADD/IDEA), one-line description, and where in the code/docs it lives.
+   Do not act on these unprompted — just record them. This is a capture list, not a work order.
+
+2. **`readme/BASTION_RESTORE_LEDGER.md` — the rollback/restore map.** After each PASSED block, append a
+   restore entry: block ID, its tag (`bastion-block-<N>`), the merge SHA, the previous green tag, the one
+   command to revert to before this block (`git reset --hard <prev-tag>`), and a one-line note on what
+   reverting would undo (and any data-format caveat, e.g. "rtsim data.dat gained fields; serde-default keeps
+   old saves loading"). This gives Ben a clean, human-readable undo map without reading git history.
+
+3. **`readme/BASTION_CONSISTENCY.md` — the consistency audit.** Each block, do a **cheap, mostly-local**
+   reconciliation and append findings:
+   - **Docs vs. repo:** does the design doc's claim about what you touched match the **actual code / findings
+     docs**? (e.g. doc says "egui HUD" but the code is conrod → record the contradiction.)
+   - **Docs vs. docs:** do the design report, Agency Bible, DF ledger, and Divine Politics Bible agree where
+     they overlap? Flag contradictions.
+   - **Against outside/upstream sources — ONLY when a claim is load-bearing AND you're genuinely uncertain.**
+     Do NOT run open-ended web research every block (it burns the budget and stalls the loop). A quick check
+     against upstream Veloren is warranted only when a specific reused API/behavior is in doubt and the answer
+     changes the build. Otherwise, repo-and-docs reconciliation is the job.
+   - Record each finding as: date, block, the contradiction/uncertainty, and a suggested resolution (or
+     "flagged for architect"). **Do not silently "fix" the design docs to match** — record the drift and let
+     Ben/the architect reconcile; a wrong auto-correction is worse than a flagged discrepancy.
+
+These three appends are part of a block's work — do them before the final run-log entry. They are cheap and
+compound: they are how the next amnesiac session (and Ben) inherit what you learned. (The run log itself,
+`docs/BASTION_RUN_LOG.md`, stays where it is; these three are additional and live in `readme/`.)
 
 ## WHAT TO REPORT AT THE END (always)
 Append a final summary to `BASTION_RUN_LOG.md` and print it:
@@ -214,6 +286,9 @@ Append a final summary to `BASTION_RUN_LOG.md` and print it:
 - ❌ Gating tests on bit-exact determinism (use invariants).
 - ❌ Faking a self-test pass. A real red test that stops the run is worth infinitely more than a green lie.
 - ❌ Breaking vanilla to make a block compile.
+- ❌ **Overwriting or deleting anything in `readme/`** — those docs are append-only project memory.
+- ❌ **Silently editing the design docs to resolve a consistency conflict** — record the drift in
+  `readme/BASTION_CONSISTENCY.md` and flag it; don't auto-"correct" the source of truth.
 
 ## IF UNSURE
 When in doubt between "push forward" and "stop and report," **stop and report.** The entire value of this
