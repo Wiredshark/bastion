@@ -3,7 +3,8 @@
 **Purpose:** one doc collecting the system frameworks designed across the recent architecture sessions, so
 builders and future sessions get the *frameworks* (the reusable shapes) without excavating the full
 future-work catch-all. Each section points to its detailed source (`readme/future-work-and-deferred-ideas.md`
-§ refs). Build status context: B5 merged (paint→claim→walk→mine→stone works); B6 = stockpiles/hauling next.
+§ refs). Build status: see `docs/BASTION_RUN_LOG.md` + `BASTION_ARCHITECTURE.md §6` for the live green tag and
+next block — this is a *frameworks* reference, not a status tracker (a hard-coded status line here goes stale).
 
 ---
 
@@ -22,6 +23,9 @@ or it drifts into 4X management (AVOID).
 - **One purpose enumeration** shared by zones and assets: residential→housing, industrial→production,
   commercial→commerce, religious→faith, civic→social, defensive→defense, storage→storage,
   agricultural→farming. The classification IS the matching key ("what can be built in this zone?").
+  **These 8 purpose kinds are the ONE CANONICAL zone↔asset enumeration — the authoritative source when it
+  becomes a Rust enum (B5.6b-2).** Other docs that restate it (future-work §3e-schema / §3m / §3q / §3z, the
+  asset schema) DEFER to this list; where they drift (7- vs 8- vs 9-kind copies exist), THIS wins.
 - **Activity zones** (storage, farm — where things happen) vs **building zones** (what structures belong).
 - **Soft preference, not iron law** — zones organize autonomous growth; they don't forbid.
 - **Zones are 3D:** schema gains `z_extent`. Thin (farm/storage: surface+1–3), tall (building zones:

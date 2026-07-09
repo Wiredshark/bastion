@@ -26,7 +26,8 @@ state.** A clean stop with a clear report is a success; a corrupted tree is the 
 ## FILE LOCATIONS (read carefully — where things live)
 - **Design/architecture docs** (this mega-prompt, the design report, Agency Bible, DF Gap Ledger, Divine
   Politics Bible) and the **append-only bookkeeping docs** (`BASTION_BACKLOG.md`, `BASTION_RESTORE_LEDGER.md`,
-  `BASTION_CONSISTENCY.md`, `BASTION_RUN_LOG.md`, `BASTION_LOOP_LOG.md`) all live in **`E:\veloren-master\readme\`**.
+  `BASTION_CONSISTENCY.md`, `BASTION_LOOP_LOG.md`) live in **`E:\veloren-master\readme\`** — EXCEPT the run
+  log **`BASTION_RUN_LOG.md`**, which lives in **`docs/`** (alongside the per-block `BASTION_*_FINDINGS.md`).
 - **Per-block findings** written by earlier sessions may exist as `docs/BASTION_*_FINDINGS.md` (older
   convention). **On startup, check BOTH `readme/` and `docs/` for prior `BASTION_*` files and read whatever
   exists** — do not assume a single location. Going forward, write new bookkeeping to `readme/` (append-only)
@@ -57,24 +58,16 @@ state.** A clean stop with a clear report is a success; a corrupted tree is the 
    output AGAINST them. Ben's own annotated screenshots outrank external references. Evidence screenshots
    (e.g. bug photos) also live here or in readme/ root — filenames starting `evidence-`.
 
-## 🥇 FIRST ACTION THIS SESSION — CATCH-UP DOCUMENTATION PASS (do this BEFORE building anything)
-`readme/BASTION_ARCHITECTURE.md` does not exist yet, but B0–B4 are already built. **Before you build the next
-block, create it and document everything built SO FAR**, by reading the repo, the findings docs, the run log,
-and the git history. This is a one-time retroactive pass so the "how it all works" map exists and is accurate;
-after this, every block (including this one) just edits and adds to it.
+## 🧭 FIRST ACTION THIS SESSION — ORIENT, DON'T RE-CREATE
+`readme/BASTION_ARCHITECTURE.md` **already exists** (the living B0–B5.6a "how it all works" system map,
+maintained per-block). **Do NOT re-create it.** First action each session: **orient** from
+`docs/BASTION_RUN_LOG.md` (what's merged / where `bastion/main` is), `BASTION_ARCHITECTURE.md §6` (State &
+pointers), and the git tags `bastion-block-*` — confirm the resume point, then continue the queue from the
+first unbuilt item.
 
-Produce `readme/BASTION_ARCHITECTURE.md` covering everything already built (see the full contents list in
-"MAINTAIN THE SYSTEM ARCHITECTURE GUIDE" below):
-- The pillars & invariants actually in force.
-- Each system B0–B4 built and how they connect — the headless harness (what it is + how it works), the
-  colonist model (rtsim NPC + bastion record + promote/demote boundary), the god-anchor (inert + invulnerable),
-  the designation→job-board→arbitration→pathing loop — with **where each lives in the code** (real crate/
-  module/symbol names, pulled from the actual repo, not guessed) and **how each is tested**.
-- The build methodology, reused Veloren machinery, and standing gotchas.
-- State (B0–B4 done, B5 next) + pointers to the design docs/findings/logs.
-Reconstruct it faithfully from what's actually in the repo — if something is unclear, read the code to confirm
-rather than guessing. **Then continue to the queue and build the next block**, updating this doc as part of
-that block's work. This catch-up pass is the priority first task; do not skip it.
+**Standing maintenance duty (not a one-time pass):** every block **reads and updates**
+`BASTION_ARCHITECTURE.md` as part of its work — append/edit the relevant system section as the block adds or
+changes a system (see "MAINTAIN THE SYSTEM ARCHITECTURE GUIDE" below). Keep it truthful over tidy.
 
 ## THE QUEUE (authoritative — the COMPLETE remaining work from the whole project, in build order)
 
@@ -83,6 +76,17 @@ first unbuilt item. Status legend: **[MERGED]** done · **[PROMPTED]** has a ded
 (prefer it as the block spec; the design doc entry is authoritative if they conflict) · **[DESIGNED]**
 design-doc entry with Done-when (build from the doc) · **[LEDGER]** inventoried in the DF Gap Ledger,
 needs an architect design pass first — do not build.
+
+**CURRENT POSITION** (live status is authoritative in `docs/BASTION_RUN_LOG.md` + `BASTION_ARCHITECTURE.md §6`;
+this queue is the PLAN, not the live tracker): `bastion/main` green at `bastion-block-B5.6a`. **B5.6b-1 is
+BUILT and its three God-mode-demo bugs are fixed + eyeball-verified — FIRST ACTION: merge no-ff + tag
+`bastion-block-B5.6b-1`.** NEXT: **B5.6b-2** (z_extent + volumetric + volume-UX; also closes B5.MINE-COVERAGE),
+then B5.8, then B5.6b-3, B5.6b-4. **ORDERING (architect-decided):** b-1 → **B5.6b-2** → **B5.8** (vertical
+mobility — b-2 lands deep-mine z_extent and its coverage assertion REPORTS the unreachable deep cells; B5.8
+then makes them navigable, closing the 4×-bitten trap BEFORE B6/hauling hits it as bite #5) → **B5.6b-3** →
+**B5.6b-4** → B5.10 (gait) → B6. b-3/b-4 are non-urgent client zone-UI polish and may flex around B5.8. The
+B5.9→B-UNDERGROUND camera cluster pulls forward ONLY IF b-2's deep-mine gate shows the current Z-slice is
+inadequate for working-inside-a-dig (b-2 must report that).
 
 ```
 ── Phase 0: foundation ─────────────────────────────────────────────
@@ -102,26 +106,12 @@ B5.5   [MERGED]   PATCH: zone deletion (Erase tool + radial Delete zone, exact A
                   fix was should_merge:false; despawn timer removed as a latent item-loss bug). Tag
                   bastion-block-B5.5. NOTE: pile visual tier-scaling shipped basic; B5.6 carries the
                   full growth-tier polish.
-B5.6a  [TESTED-HOLD] Draping VERIFIED IN-GAME by Ben (screenshot evidence: outlines hug excavation rims +
-                  slopes — the photographed bug is fixed). MERGE BLOCKED on two fixes found in the same
-                  test: (1) the H visuals-toggle does nothing visible — verify the keybind actually fires
-                  in overseer input context (possible vanilla-key conflict) and that the state gates ALL
-                  overlay draws; (2) erase/delete inconsistency — after erase, overlay sometimes persists
-                  (stale overlay rebuild after BastionDesignationRemoved? partial-erase AABB edge case?) —
-                  reproduce, fix, add an erase→overlay-gone assertion. Fix both on the branch, re-verify
-                  with Ben, THEN tag bastion-block-B5.6a.
-B5.6b  [DESIGNED] THE ZONE MANAGEMENT UI (fills + volume + interaction), UNBLOCKED — z-extent model decided
-                  in readme/B5.6-zone-visuals-prompt.md (z_extent{down,up} surface-relative; defaults
-                  preserve semantics; same field §3v/§3w expect). Scope per Ben's live-test feedback:
-                  terrain-conformed FULL GROUND FILLS in zone-type colors; overlap regions render BLENDED
-                  color; per-zone LABELS (type+index, centroid, distance-scaled); SUBTLE toggle state =
-                  border-only; volumetric rendering with countable depth rings + LAYER COUNTER during
-                  selection (scroll/drag + precision numeric field, synced); ZONES ARE CLICKABLE — select →
-                  right-click radial: Delete / MODIFY DEPTH (live re-extent) / EDIT MODE with window-style
-                  drag handles resizing the footprint (shrink releases claims via the proven AABB
-                  subtraction, grow generates jobs, same-cycle assertions); + ERASE-BY-TYPE (wire-protocol
-                  kind filter, promoted from B5.6a). Builds the reusable conformed-overlay utility (§3w's
-                  next customer). Sizable client block — its own session.
+B5.6a  [MERGED]   Zone visuals: terrain-conformed overlay DRAPING (fixes the photographed floating-outline
+                  bug — bastion::draped_rect_outline + overlay_surface_z), H visuals-toggle On/Subtle/Off,
+                  5-tier pile growth. Both live-test fixes (H toggle no-op; erase-left-overlay behind)
+                  landed on-branch. Tag bastion-block-B5.6a. (Fills/volumes/interaction are B5.6b, below.)
+──  (the old single-block "B5.6b [DESIGNED]" entry was removed here to DE-DUPE per DOC-AUDIT P1-2; the
+    canonical form is the B5.6b [SPLIT] block with sub-blocks b-1..b-4, further down.)  ──
 B5.MINE-COVERAGE [INVESTIGATE — likely trap bite #5] Ben observed colonists fail to clear ALL blocks in a
                   painted mine area. Reproduce: paint a mine designation spanning slope+flat, run to
                   quiescence, diff designated-vs-mined cells. Suspect the vertical-reachability gap
@@ -145,15 +135,85 @@ B5.8   [PROMPTED] PATCH: vertical mobility — colonists SCRAMBLE 1–3 block le
                   now, autonomous later) — see readme/B5.8-vertical-mobility-prompt.md. The 4×-bitten
                   vertical-reachability trap, fixed BEFORE B6 hauling hits it as bite #5. Gate includes
                   removing the old hand-patched access geometry from B4/B5/B5.5 scenarios.
-B5.9   [DESIGNED] MICRO-PATCH: god-view exit placement. F9 (overseer↔embodied toggle) currently snaps back
+                  SCHEDULE (architect-decided): build AFTER B5.6b-2 (which lands deep-mine z_extent and
+                  reports the unreachable deep cells B5.8 then closes), before B5.6b-3/-4 and before B6.
+B5.6b  [SPLIT] Formalized into sub-blocks (builder finding, architect-blessed) — build + tag each; main
+                  advances incrementally. Spec + seam map + z_extent decisions in
+                  docs/BASTION_B5.6b_FINDINGS.md; full UX in readme/B5.6-zone-visuals-prompt.md.
+  B5.6b-1 [MERGING] Fills + kind colors + overlap BLEND + labels + SUBTLE=border-only — BUILT. Three
+                  God-mode-demo bugs from Ben's live test FIXED + eyeball-verified: (1) overlay
+                  height/visibility — fills/outlines/labels climbed trees, floated at slice height, and only
+                  rendered in the draw-time view mode (root: overlay_surface_z counting Wood/Leaves via
+                  is_filled + slice-clamp direction + rebuild not triggered on view-mode change); (2)
+                  right-click radial Delete-zone; (3) off-center grab-drag pan. **FIRST ACTION this session:
+                  merge no-ff + tag bastion-block-B5.6b-1, then continue to b-2.**
+  B5.6b-2 [DESIGNED] z_extent{down,up} model (surface-relative, defaults preserve semantics) + volumetric
+                  rendering (depth rings, layer counter) + volume-selection UX. **ALSO CLOSES
+                  B5.MINE-COVERAGE** — builder's hypothesis: surface-relative z fixes the slope-coverage
+                  gap (the hardcoded min.z-2 mis-cut the dig plane); confirm explicitly and add the
+                  coverage assertion to the B5 scenario. **WATCH: this block's gate ("6-deep mine on a
+                  slope reads correctly mid-excavation") is the first real test of Z-slice adequacy for
+                  working-inside-a-dig — builder must REPORT whether the current slice suffices or whether
+                  B-UNDERGROUND needs to jump forward.** SCHEMA GUARD: the zone/z_extent taxonomy must use
+                  the ONE canonical zone↔asset `purpose` enumeration (BASTION-SYSTEM-FRAMEWORKS §2) — it is
+                  currently specified in ≥4 docs with drift (7/8/9-kind); do NOT re-derive it, lock frameworks
+                  §2 as the Rust enum. Tag bastion-block-B5.6b-2.
+  B5.6b-3 [DESIGNED] Zone interaction: click-select → radial (Delete / Modify-depth / Edit-mode with
+                  window-style drag handles; shrink releases claims via AABB subtraction, grow generates
+                  jobs; same-cycle assertions). Tag bastion-block-B5.6b-3.
+  B5.6b-4 [DESIGNED] Erase-by-type (wire-protocol kind filter on cancel + tool UI; area-erase respects it).
+                  Tag bastion-block-B5.6b-4.
+B-UNDERGROUND [DESIGNED] The mine/cavern VIEWING MODE — composing pieces you already have rather than a new
+                  system. TRIGGER: needed when mining goes vertical (the §3v mining framework; early-warning
+                  = B5.6b-2's deep-mine gate — if that struggles, pull this forward). PREREQUISITE: B5.9's
+                  Reveal-mode fix (can't design underground viewing around a broken cutaway). Composes:
+                  (1) a Z-slice that FOLLOWS A DIG (tracks the excavation floor / a target depth, not just a
+                  flat clip height — so colonists working in an irregular pit stay visible from god-cam);
+                  (2) working Reveal/cutaway (B5.9) for side-on views of shafts and galleries; (3) depth
+                  legibility (B5.6b-1/2's rings + labels, extended — which level am I looking at?);
+                  (4) the follow-cam's z-tracking (B-CAM-FOLLOW) for single-agent underground tracking.
+                  Build order: fix Reveal (B5.9) → assess what slice+reveal+follow already cover →
+                  build only the missing "follow-a-dig-underground" glue + depth HUD. Consumers: §3v mines,
+                  §3v breach events (seeing into a breached cavern), dungeon delving, B5.8 stair-carving.
+B-CAM-FOLLOW [DESIGNED] Follow-camera: right-click a unit/agent → radial "Follow" → the god camera locks
+                  onto and TRACKS that agent — matching its movement horizontally AND its z-level (stairs,
+                  pits, slopes — always in focus; the Z-slice auto-follows so the agent is never occluded).
+                  Zoom/orbit stay free while following (the lock is the focus point, not the framing).
+                  Break-follow on: pan input, Esc, or selecting another action. Plays with B1.6/1.7
+                  occlusion modes (following underground = slice tracks the agent's level). Not urgent —
+                  pair with any camera-adjacent block (B5.9 exit-placement is the natural partner) or
+                  whenever a session has headroom. Future consumers: watching a colonist's day (B7 idle
+                  life), tracking a raider (B8), following the god-avatar (B12), and B-TESTBED's scripted
+                  camera tracks can reuse the same follow primitive.
+B5.9   [DESIGNED] CAMERA-POLISH PATCH (three fixes, one block — none urgent, game functional):
+                  (1) God-view exit placement: F9 (overseer↔embodied) currently snaps back
                   to home base — instead, exiting god view should EMBODY THE CHARACTER AT THE CURRENT
                   CAMERA LOCATION (nearest safe standable surface under/near the camera target; fall back
                   to home only if none within range, e.g. camera over ocean/void). Add a separate,
                   explicit RETURN TO COLONY button/keybind (UI button + key) that recenters the god camera
                   on home base (and works in both modes). Rationale: the god descends where the god is
-                  looking — snapping home breaks the survey-then-descend flow (§3h embodiment). Test:
-                  toggle at a far location → character appears there; return-button recenters; over-void
-                  fallback works; vanilla untouched.
+                  looking — snapping home breaks the survey-then-descend flow (§3h embodiment).
+                  (2) REVEAL view mode is broken: currently behaves identically to Solid — the reveal/
+                  cutaway behavior isn't firing. Diagnose (mode state not reaching the renderer? reveal
+                  path regressed?) and restore its intended distinct behavior per the B1.6/1.7 findings
+                  docs (check them for what Reveal is SUPPOSED to do before fixing).
+                  (3) Z-SLICE WHITE-ARTIFACT: slice mode renders a white area in the screen center; an
+                  F9 round-trip (embody + back) CLEARS it — classic stale render state (uncleared target/
+                  buffer on mode entry?). The F9-fix behavior is the diagnostic gift: whatever the
+                  round-trip resets is what slice-entry fails to initialize. Fix at the source.
+                  Test: F9 at a far location embodies there; return-button recenters; over-void fallback;
+                  Reveal visibly differs from Solid; slice mode clean on entry with no artifact, no
+                  round-trip needed; vanilla untouched.
+B5.10  [DESIGNED] MICRO: colonist gait — WALK by default, SPRINT reserved (resolves the long-open
+                  TRAVEL_SPEED watch-item; Ben's eyeball call — colonists always running doesn't read as
+                  sensible in-game; a colony that walks reads calm/organized = legibility). The flat
+                  TRAVEL_SPEED feeding NpcActivity::Goto (server/src/bastion_jobs.rs) becomes STATE-SELECTED:
+                  walk pace (≈ natural human walk, clearly below run) for ALL routine travel (job travel /
+                  idle-wander / normal need-satisfaction); run pace ONLY under an urgency state —
+                  flee/draft/combat (B8), critical-need panic (B7), optional urgent god force-nudge (B2b).
+                  Cheap near-term half = the default-walk drop (do NOW, eyeball-tune to what reads calm);
+                  sprint triggers accrete with their owning blocks (build-once, state-driven, mirrors §3u
+                  action-animation selection). Tag bastion-block-B5.10.
 B6     [DESIGNED] Stockpiles, hauling, reservations (conservation invariants; haul range = colony boundary
                   field if built, see future-work §3w). **REQUIREMENT — individual carry from piles:**
                   hauling DRAWS UNITS from a pile (count-based pickup, per the B5.5 interface guard), never
