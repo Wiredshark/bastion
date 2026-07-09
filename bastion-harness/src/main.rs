@@ -54,6 +54,12 @@ struct Args {
     /// if it exists instead of generating from the seed.
     #[arg(long)]
     data_dir: Option<PathBuf>,
+
+    /// bastion (B3): spawn a starting colony of N colonists near the first
+    /// site after boot, tick as usual, then dump the roster as a second JSON
+    /// line on stdout (after the Summary line).
+    #[arg(long, default_value_t = 0)]
+    colony: u8,
 }
 
 /// Aggregate state dump. Deliberately coarse: aggregates are far more stable
@@ -80,6 +86,9 @@ struct Summary {
     sim_time: f64,
     /// `common::resources::TimeOfDay` (game-world seconds).
     time_of_day: f64,
+    /// bastion (B3): rtsim NPCs carrying a colonist record. 0 unless
+    /// `--colony` was passed (children in `--verify` never pass it).
+    colonist_count: usize,
 }
 
 fn main() -> ExitCode {
@@ -97,17 +106,24 @@ fn main() -> ExitCode {
     if args.verify {
         verify(&args)
     } else {
-        let summary = run_once(&args);
+        let (summary, roster) = run_once(&args);
         println!(
             "{}",
             serde_json::to_string(&summary).expect("Summary is always serializable")
         );
+        if let Some(roster) = roster {
+            // bastion (B3): the colony roster as a second stdout line.
+            println!(
+                "{}",
+                serde_json::to_string(&roster).expect("roster is always serializable")
+            );
+        }
         ExitCode::SUCCESS
     }
 }
 
 /// Boot world + rtsim + server headlessly, tick, and summarize.
-fn run_once(args: &Args) -> Summary {
+fn run_once(args: &Args) -> (Summary, Option<Vec<common::bastion::BastionColonist>>) {
     let started = Instant::now();
 
     let (data_dir, ephemeral) = match &args.data_dir {
@@ -168,6 +184,24 @@ fn run_once(args: &Args) -> Summary {
         "server (world + rtsim) booted headlessly"
     );
 
+    // bastion (B3): spawn the starting colony before ticking, near the first
+    // site (position is nominal headlessly — no chunks load without clients).
+    if args.colony > 0 {
+        let spawn_pos = {
+            let ecs = server.state().ecs();
+            let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+            let data = rtsim.state().data();
+            data.sites
+                .sites
+                .values()
+                .next()
+                .map(|s| vek::Vec3::new(s.wpos.x as f32, s.wpos.y as f32, 300.0))
+                .unwrap_or_else(|| vek::Vec3::new(16384.0, 16384.0, 300.0))
+        };
+        let names = server.bastion_spawn_colony(spawn_pos, args.colony);
+        info!(?names, "harness spawned starting colony");
+    }
+
     // Tick as fast as the CPU allows: fixed dt, no frame pacing, no sleeping.
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick_started = Instant::now();
@@ -204,8 +238,16 @@ fn run_once(args: &Args) -> Summary {
             loaded_entity_count: ecs.entities().join().count(),
             sim_time: ecs.read_resource::<Time>().0,
             time_of_day: data.time_of_day.0,
+            colonist_count: data
+                .npcs
+                .npcs
+                .values()
+                .filter(|n| n.bastion_colonist.is_some())
+                .count(),
         }
     };
+
+    let roster = (args.colony > 0).then(|| server.bastion_colony_roster());
 
     drop(server);
 
@@ -222,7 +264,7 @@ fn run_once(args: &Args) -> Summary {
         }
     }
 
-    summary
+    (summary, roster)
 }
 
 /// Run the same configuration twice in isolated child processes and diff the
