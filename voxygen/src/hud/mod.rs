@@ -4830,6 +4830,12 @@ impl Hud {
                     .color(Color::Rgba(col[0], col[1], col[2], 1.0))
                     .x_y(0.0, 0.0)
                     .position_ingame(*wpos)
+                    // Input-transparent: labels sit exactly where you click a
+                    // zone (its centroid). Without this, the label hit-tests
+                    // as a widget and `bastion_cursor_over_widget` blocks
+                    // grab-drag AND the right-click radial there (the "Delete
+                    // zone broken" + "pan dead over zones" demo bugs).
+                    .graphics_for(ui_widgets.window)
                     .set(self.ids.bastion_zone_labels[i], ui_widgets);
             }
 

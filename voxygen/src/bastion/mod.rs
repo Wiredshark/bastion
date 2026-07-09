@@ -47,13 +47,52 @@ pub fn ground_z(terrain: &TerrainGrid, wpos2: Vec2<f32>, z_hint: f32) -> Option<
 /// pass), so the draped overlay must clamp to it — otherwise the outline
 /// floats above the sliced surface. `z_hint` seeds the ground search (the
 /// caller's flat pick-plane height is a fine hint).
+///
+/// B5.6b-1 fix: `ground_z` (via `try_find_ground`) counts ANY solid block —
+/// including tree Wood/Leaves — so overlays under trees rode the canopy
+/// instead of hugging the ground (the standing "`ground_z`-style scans must
+/// filter to real terrain kinds" gotcha, previously bitten harness-side).
+/// After the coarse find, walk DOWN past non-terrain solids and canopy air
+/// gaps until real terrain (or a liquid surface — keep the water glide) is
+/// under the sample. The camera's own `ground_z` glide is deliberately left
+/// untouched (B1.5-verified behavior; out of scope here).
 pub fn overlay_surface_z(
     terrain: &TerrainGrid,
     xy: Vec2<f32>,
     z_hint: f32,
     slice_z: Option<f32>,
 ) -> f32 {
-    let g = ground_z(terrain, xy, z_hint).unwrap_or(z_hint);
+    use common::terrain::BlockKind;
+    let mut g = ground_z(terrain, xy, z_hint).unwrap_or(z_hint);
+    let xyi = xy.map(|e| e.floor() as i32);
+    // Real, standable terrain — the same kind list as the harness's fixed
+    // scan (BASTION_ARCHITECTURE §5).
+    let is_terrain = |k: BlockKind| {
+        matches!(
+            k,
+            BlockKind::Rock
+                | BlockKind::WeakRock
+                | BlockKind::GlowingRock
+                | BlockKind::GlowingWeakRock
+                | BlockKind::Grass
+                | BlockKind::Snow
+                | BlockKind::ArtSnow
+                | BlockKind::Earth
+                | BlockKind::Sand
+                | BlockKind::Ice
+        )
+    };
+    for _ in 0..96 {
+        match terrain.get(Vec3::new(xyi.x, xyi.y, g as i32 - 1)) {
+            // Real ground (or water surface) directly below — done.
+            Ok(b) if is_terrain(b.kind()) || b.is_liquid() => break,
+            // Canopy wood/leaves, sprites, or the air gap under a canopy —
+            // keep descending toward the true surface.
+            Ok(_) => g -= 1.0,
+            // Unloaded below — keep the coarse answer.
+            Err(_) => break,
+        }
+    }
     match slice_z {
         Some(s) => g.min(s),
         None => g,

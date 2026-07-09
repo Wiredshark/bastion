@@ -383,11 +383,26 @@ impl SessionState {
 
     fn bastion_begin_grab(&mut self, global_state: &GlobalState) {
         // Grab on the active slice plane if one is set (that's the layer the
-        // player is reading), else on the focus ground plane.
-        let plane_z = self
-            .scene
-            .bastion_slice_z()
-            .unwrap_or_else(|| self.scene.camera().get_focus_pos().z);
+        // player is reading). Otherwise (B5.6b-1 fix): anchor on the TERRAIN
+        // HEIGHT UNDER THE CURSOR, not the camera-focus plane — grabbing a
+        // hilltop while the focus rides a valley put the anchor plane far
+        // below the grabbed surface, so the point visibly slid out from
+        // under the cursor ("pan off-center"). Two refinement passes:
+        // unproject on the focus plane for an approximate XY, sample the
+        // (canopy-safe) surface there, re-unproject on that height — good to
+        // within a block even on steep slopes.
+        let plane_z = self.scene.bastion_slice_z().unwrap_or_else(|| {
+            let mut z = self.scene.camera().get_focus_pos().z;
+            let client = self.client.borrow();
+            let terrain = client.state().terrain();
+            for _ in 0..2 {
+                let Some(p) = self.bastion_point_under_cursor(global_state, z) else {
+                    break;
+                };
+                z = crate::bastion::overlay_surface_z(&terrain, p.xy(), z, None);
+            }
+            z
+        });
         if let Some(anchor) = self.bastion_point_under_cursor(global_state, plane_z) {
             self.bastion_grab = Some(BastionGrab { anchor, plane_z });
             self.bastion_pan_vel = Vec2::zero();
@@ -666,7 +681,7 @@ impl SessionState {
                     client
                         .bastion_designations()
                         .iter()
-                        .any(|(r, _)| r.contains_point(block)),
+                        .any(|(r, _)| r.contains_point_xy(block)),
                 )
             };
             use common::terrain::BlockKind;
@@ -2998,7 +3013,7 @@ impl PlayState for SessionState {
                                         let rects: Vec<common::bastion::Region> = client
                                             .bastion_designations()
                                             .iter()
-                                            .filter(|(r, _)| r.contains_point(block))
+                                            .filter(|(r, _)| r.contains_point_xy(block))
                                             .map(|(r, _)| *r)
                                             .collect();
                                         for r in rects {
