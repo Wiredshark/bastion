@@ -1,33 +1,61 @@
-//! bastion (B4): the job board — designations become jobs, colonists claim
-//! jobs by priority/skill/distance and walk to them. No work *effects* yet
-//! (B5); the loop ends at "arrived at job site, ready to work".
+//! bastion (B4/B5): the job board — designations become jobs, colonists claim
+//! jobs by priority/skill/distance, walk to them, and (B5) actually work them:
+//! terrain edit + item drop + skill XP.
 //!
-//! Design (see design doc §B4 + `docs/BASTION_B4_FINDINGS.md`):
+//! Design (see design doc §B4/§B5 + `docs/BASTION_B4_FINDINGS.md` /
+//! `BASTION_B5_FINDINGS.md`):
 //! - [`JobBoard`] is a server ECS resource; jobs are block-level tasks
 //!   generated from painted designations (`common::bastion::Region`).
-//! - [`Sys`] runs every tick for travel upkeep and every
+//! - [`Sys`] runs every tick for travel upkeep + work ticks, and every
 //!   [`ARBITRATION_INTERVAL`] ticks for claim arbitration.
 //! - Colonist movement reuses the loaded-agent rtsim intent path: the system
 //!   writes `NpcActivity::Goto` into `Agent::rtsim_controller`, which the
 //!   vanilla behavior tree executes with real traversal. While a colonist has
 //!   an [`comp::bastion::ActiveJob`], the rtsim brain's activity is *not*
 //!   synced over it (gate in `rtsim::tick`).
+//! - Work execution reuses the same authoritative terrain-edit path vanilla
+//!   mining uses (`BlockChange`, not raw chonk writes) and the same
+//!   `CreateItemDropEvent` item-drop path — see `MineBlockEvent`'s handler in
+//!   `server/src/events/interaction.rs` for the pattern this mirrors.
 
 use crate::Tick;
 use common::{
-    bastion::{DesignationKind, Job, JobAudit, JobId, Region},
+    bastion::{
+        BUILD_MATERIAL_ITEM, DesignationKind, Job, JobAudit, JobId, Region, WorkType,
+    },
     comp,
-    comp::bastion::{ActiveJob, ActiveJobState},
-    resources::DeltaTime,
-    terrain::TerrainGrid,
+    comp::{
+        Item,
+        bastion::{ActiveJob, ActiveJobState},
+        item::PickupItem,
+    },
+    event::CreateItemDropEvent,
+    resources::{DeltaTime, ProgramTime},
+    terrain::{Block, BlockKind, TerrainGrid},
     uid::{IdMaps, Uid},
     vol::ReadVol,
 };
 use common_ecs::{Job as EcsJob, Origin, Phase, System};
+use common_state::BlockChange;
 use hashbrown::{HashMap, HashSet};
-use specs::{Entities, Join, LendJoin, Read, ReadStorage, Write, WriteStorage};
+use rand::RngExt as _;
+use specs::{
+    Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, Write, WriteExpect, WriteStorage,
+};
 use tracing::info;
 use vek::*;
+
+/// B5: seconds of work at skill level 0 to complete a job; higher skill
+/// speeds this up (see `work_rate`).
+const WORK_DURATION_BASE: f32 = 3.0;
+/// Work-rate skill bonus: +20% speed per skill level.
+const WORK_SKILL_BONUS: f32 = 0.2;
+/// Flat completion XP grant (design doc: "grant skill XP on completion").
+const COMPLETION_XP: f32 = 8.0;
+
+fn work_rate(skill_level: u16) -> f32 {
+    (1.0 + skill_level as f32 * WORK_SKILL_BONUS) / WORK_DURATION_BASE
+}
 
 /// Arbitration cadence in server ticks (~0.5s at 30 tps): "a few Hz, not
 /// every tick".
@@ -57,7 +85,10 @@ pub struct JobBoard {
 impl JobBoard {
     /// Generate jobs for a validated designation region. Returns created ids.
     /// v1 generation: Mine = every filled block in the region; Chop = every
-    /// wood block; Build/Stockpile = none yet (B5 blueprints / B6 zones).
+    /// wood block; Build = every currently-empty position (the inverse of
+    /// Mine — you're placing new blocks, not removing existing ones), gated
+    /// on `BUILD_MATERIAL_ITEM` (B5's single-material stand-in; B6 gives Build
+    /// real per-blueprint recipes); Stockpile = none yet (B6 zones).
     pub fn place_designation(
         &mut self,
         terrain: &TerrainGrid,
@@ -75,13 +106,10 @@ impl JobBoard {
                     };
                     let wanted = match kind {
                         DesignationKind::Mine => block.is_filled(),
-                        DesignationKind::Chop => matches!(
-                            block.kind(),
-                            common::terrain::BlockKind::Wood
-                        ),
-                        // B5/B6: blueprints and stockpile zones generate
-                        // their own job types; nothing to do yet.
-                        DesignationKind::Build | DesignationKind::Stockpile => false,
+                        DesignationKind::Chop => matches!(block.kind(), BlockKind::Wood),
+                        DesignationKind::Build => !block.is_filled(),
+                        // B6: stockpile zones generate their own job type.
+                        DesignationKind::Stockpile => false,
                     };
                     if wanted {
                         let id = self.next_id;
@@ -93,6 +121,10 @@ impl JobBoard {
                             skill_floor: 0,
                             claimed_by: None,
                             unreachable: false,
+                            progress: 0.0,
+                            required_item: matches!(kind, DesignationKind::Build)
+                                .then_some(BUILD_MATERIAL_ITEM),
+                            needs_materials: false,
                         });
                         created.push(id);
                     }
@@ -154,7 +186,7 @@ impl JobBoard {
     }
 }
 
-/// The arbitration + travel system.
+/// The arbitration + travel + work-execution system.
 #[derive(Default)]
 pub struct Sys;
 impl<'a> System<'a> for Sys {
@@ -163,12 +195,16 @@ impl<'a> System<'a> for Sys {
         Read<'a, Tick>,
         Read<'a, DeltaTime>,
         Read<'a, IdMaps>,
+        ReadExpect<'a, ProgramTime>,
         Write<'a, JobBoard>,
-        ReadStorage<'a, comp::Colonist>,
+        WriteStorage<'a, comp::Colonist>,
         ReadStorage<'a, comp::Pos>,
         ReadStorage<'a, Uid>,
         WriteStorage<'a, ActiveJob>,
         WriteStorage<'a, comp::Agent>,
+        WriteStorage<'a, comp::Inventory>,
+        WriteExpect<'a, BlockChange>,
+        ReadExpect<'a, common::event::EventBus<CreateItemDropEvent>>,
     );
 
     const NAME: &'static str = "bastion_jobs";
@@ -182,28 +218,37 @@ impl<'a> System<'a> for Sys {
             tick,
             dt,
             id_maps,
+            program_time,
             mut board,
-            colonists,
+            mut colonists,
             positions,
             uids,
             mut active_jobs,
             mut agents,
+            mut inventories,
+            mut block_change,
+            item_drop_events,
         ): Self::SystemData,
     ) {
-        // ── Travel upkeep (every tick) ──────────────────────────────────
-        let mut to_release: Vec<(specs::Entity, Option<JobId>)> = Vec::new();
-        for (entity, _colonist, pos, active, agent) in (
+        let mut item_drop_emitter = item_drop_events.emitter();
+        let mut rng = rand::rng();
+
+        // ── Travel + work upkeep (every tick) ───────────────────────────
+        let mut to_release: Vec<specs::Entity> = Vec::new();
+        // `Colonist`'s storage is change-tracked (synced comp) — mutable
+        // multi-storage joins over it need `LendJoin`, not `Join`.
+        let mut upkeep_iter = (
             &entities,
-            &colonists,
+            &mut colonists,
             &positions,
             &mut active_jobs,
             (&mut agents).maybe(),
         )
-            .join()
-        {
+            .lend_join();
+        while let Some((entity, mut colonist, pos, active, agent)) = upkeep_iter.next() {
             let Some(job) = board.jobs.get_mut(&active.job) else {
                 // Cancelled out from under the colonist → re-idle.
-                to_release.push((entity, None));
+                to_release.push(entity);
                 continue;
             };
             let target = job.pos.map(|e| e as f32) + Vec3::new(0.5, 0.5, 1.0);
@@ -220,7 +265,7 @@ impl<'a> System<'a> for Sys {
                         info!(
                             job = active.job,
                             pos = ?job.pos,
-                            "bastion: colonist arrived at job site, ready to work (B5)"
+                            "bastion: colonist arrived at job site, working (B5)"
                         );
                     } else {
                         // Keep the intent asserted (rtsim brain is gated off
@@ -245,17 +290,95 @@ impl<'a> System<'a> for Sys {
                                     pos = ?job.pos,
                                     "bastion: job unreachable — claim released"
                                 );
-                                to_release.push((entity, None));
+                                to_release.push(entity);
                             }
                         }
                     }
                 },
                 ActiveJobState::Arrived => {
-                    // B5 hooks work execution here; for now hold position.
+                    // B5: accumulate work, rate scaled by the relevant skill.
+                    let skill_level = match job.work {
+                        WorkType::Mine => colonist.0.skills.mining.level,
+                        WorkType::Chop => colonist.0.skills.woodcutting.level,
+                        WorkType::Build => colonist.0.skills.construction.level,
+                        WorkType::Haul => colonist.0.skills.hauling.level,
+                        WorkType::Cook => colonist.0.skills.cooking.level,
+                    };
+                    job.progress += dt.0 * work_rate(skill_level);
+                    if job.progress < 1.0 {
+                        continue;
+                    }
+
+                    // Build: consume the required material from the
+                    // colonist's inventory now — if it's gone (taken by a
+                    // faster claimant elsewhere; single-material stand-in so
+                    // this is rare), stall rather than build for free.
+                    if job.kind == DesignationKind::Build {
+                        let taken = inventories.get_mut(entity).and_then(|mut inv| {
+                            let slot = inv.slots_with_id().find_map(|(slot, item)| {
+                                item.as_ref()
+                                    .is_some_and(|i| {
+                                        i.item_definition_id().itemdef_id()
+                                            == Some(BUILD_MATERIAL_ITEM)
+                                    })
+                                    .then_some(slot)
+                            });
+                            slot.and_then(|slot| inv.remove(slot))
+                        });
+                        if taken.is_none() {
+                            job.progress = 0.0;
+                            job.needs_materials = true;
+                            to_release.push(entity);
+                            continue;
+                        }
+                    }
+
+                    // Complete: authoritative terrain edit (same path
+                    // vanilla mining uses — never a raw chonk write) + item
+                    // drop + skill XP.
+                    let new_block = match job.kind {
+                        DesignationKind::Mine | DesignationKind::Chop => Block::empty(),
+                        DesignationKind::Build => Block::new(BlockKind::Rock, Rgb::new(150, 150, 150)),
+                        DesignationKind::Stockpile => continue,
+                    };
+                    block_change.set(job.pos, new_block);
+
+                    if let Some(item_id) = match job.kind {
+                        DesignationKind::Mine => Some("common.items.crafting_ing.stones"),
+                        DesignationKind::Chop => Some("common.items.log.wood"),
+                        DesignationKind::Build | DesignationKind::Stockpile => None,
+                    } {
+                        item_drop_emitter.emit(CreateItemDropEvent {
+                            pos: comp::Pos(job.pos.map(|e| e as f32) + Vec3::broadcast(0.5)),
+                            vel: comp::Vel(
+                                (Vec2::unit_x()
+                                    .rotated_z(rng.random::<f32>() * std::f32::consts::TAU)
+                                    * 2.0)
+                                    .with_z(rng.random_range(3.0..6.0)),
+                            ),
+                            ori: comp::Ori::default(),
+                            item: PickupItem::new(
+                                Item::new_from_asset_expect(item_id),
+                                *program_time,
+                                false,
+                            ),
+                            loot_owner: None,
+                        });
+                    }
+
+                    colonist.0.skills.grant_xp(job.work, COMPLETION_XP);
+                    info!(
+                        job = active.job,
+                        kind = ?job.kind,
+                        pos = ?job.pos,
+                        "bastion: job completed"
+                    );
+                    board.jobs.remove(&active.job);
+                    to_release.push(entity);
                 },
             }
         }
-        for (entity, _) in &to_release {
+        for entity in &to_release {
             if let Some(active) = active_jobs.get(*entity) {
                 // If the job still exists and is still claimed by us, free it.
                 if let Some(job) = board.jobs.get_mut(&active.job)
@@ -290,6 +413,25 @@ impl<'a> System<'a> for Sys {
         if tick.0 % ARBITRATION_INTERVAL != 0 {
             return;
         }
+
+        // B5: a Build job is only eligible for a colonist currently carrying
+        // its required material (the single-material stand-in for real
+        // hauling/recipes — B6). Also flag/clear `needs_materials` here so
+        // the state is visible even before any colonist attempts the job.
+        let any_colonist_has_material = |inventories: &WriteStorage<comp::Inventory>| {
+            (&colonists, inventories).join().any(|(_, inv)| {
+                inv.slots().flatten().any(|item| {
+                    item.item_definition_id().itemdef_id() == Some(BUILD_MATERIAL_ITEM)
+                })
+            })
+        };
+        let material_available = any_colonist_has_material(&inventories);
+        for job in board.jobs.values_mut() {
+            if job.kind == DesignationKind::Build && job.claimed_by.is_none() {
+                job.needs_materials = !material_available;
+            }
+        }
+
         // Claims are marked on the board *during* selection (atomic within
         // the pass — two idle colonists can't pick the same job); the
         // `ActiveJob` comps are inserted afterwards (can't insert while the
@@ -304,10 +446,18 @@ impl<'a> System<'a> for Sys {
         )
             .join()
         {
+            let carries_material = inventories.get(entity).is_some_and(|inv| {
+                inv.slots().flatten().any(|item| {
+                    item.item_definition_id().itemdef_id() == Some(BUILD_MATERIAL_ITEM)
+                })
+            });
             // Highest priority, then nearest.
             let mut best: Option<(JobId, u8, f32)> = None;
             for (id, job) in board.jobs.iter() {
                 if job.claimed_by.is_some() || job.unreachable {
+                    continue;
+                }
+                if job.kind == DesignationKind::Build && !carries_material {
                     continue;
                 }
                 let priority = colonist.0.work_priorities.get(job.work);
