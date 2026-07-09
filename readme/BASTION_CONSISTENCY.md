@@ -183,3 +183,16 @@ instead, referencing the old one).
 - **z_extent NOT touched in b-1** (correct per the split — b-1 is surface
   fills only; z_extent + volumetric is b-2). The fills use the existing
   designation footprint (`Region` XY); no data-model change. Consistent.
+
+## B5.6b-1 — post-verify note (2026-07-09)
+
+- **Queue root-cause list vs. shipped fix (bug 1):** the re-cut queue's
+  description of the overlay bug also names "slice-clamp direction" and
+  "rebuild not triggered on view-mode change" as roots. The shipped fix
+  addressed the canopy walk-down (Wood/Leaves via is_filled — the §5
+  gotcha); slice/rev/visuals rebuild triggers already existed from B5.6a.
+  Ben's eyeball re-verify PASSED, so no open bug — but note: a V-cycle
+  view-MODE change does not itself rebuild overlays (they depend on the
+  mode only via slice_z). If mode-coupled overlay staleness reappears,
+  add view-mode to the rebuild triggers (one field in the sync check).
+  Watch item, flagged not fixed.
