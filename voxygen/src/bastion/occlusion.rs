@@ -170,8 +170,15 @@ impl Occlusion {
         m = set(m, mode::PROXIMITY, self.proximity_enabled);
         m = set(m, mode::ROOF, self.roof_enabled);
         m = set(m, mode::CUTAWAY, self.cutaway_enabled);
-        // The slice bit only means anything once a slice height exists.
-        m = set(m, mode::SLICE, self.slice_enabled && self.slice_z.is_some());
+        // The slice is *preset-gated*: it only cuts in the Slice view mode
+        // (where its toggle can still disable it), never composes into Reveal.
+        // Without this, a leftover slice_z made Reveal == Slice — a hard
+        // ground cut in both, and the view-mode key appeared to do nothing.
+        m = set(
+            m,
+            mode::SLICE,
+            preset & mode::SLICE != 0 && self.slice_enabled && self.slice_z.is_some(),
+        );
         m
     }
 

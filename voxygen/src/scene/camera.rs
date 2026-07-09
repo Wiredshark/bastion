@@ -38,7 +38,11 @@ pub const OVERSEER_PITCH_MIN: f32 = 20.0 * PI / 180.0;
 pub const OVERSEER_PITCH_MAX: f32 = 89.0 * PI / 180.0;
 /// `dist` (zoom) clamp; ortho half-height is `dist * tan(fov/2)`.
 pub const OVERSEER_ZOOM_MIN: f32 = 24.0;
-pub const OVERSEER_ZOOM_MAX: f32 = 1024.0;
+/// Colony-scale ceiling (~500-block view span), NOT whole-region: dist 1024
+/// ballooned the spectator view distance past ~1500 blocks, which both felt
+/// "way too far" and drove the GPU into a TDR (SurfaceError) as streaming
+/// outran the device. Region overview belongs to the map, not the live camera.
+pub const OVERSEER_ZOOM_MAX: f32 = 384.0;
 /// Starting zoom when entering overseer mode.
 pub const OVERSEER_START_DIST: f32 = 192.0;
 const OVERSEER_INTERP_TIME: f32 = 0.1;

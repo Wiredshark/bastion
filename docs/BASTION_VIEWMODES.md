@@ -30,8 +30,11 @@ floors) so revealed rooms read *lit-from-above*, not black — `relight_strength
 - **Slice** — manual cross-section + proximity; `PgUp`/`PgDn` drive the slice height (and auto-select
   this mode).
 
-Per-mode toggles can *remove* a behavior from the active preset (they never add one the preset
-excludes) — kept simple on purpose.
+Toggle semantics: **roof** and **cutaway** compose on top of any non-Solid preset (add *or* remove —
+that's how you demo them); **proximity** likewise. The **slice** is *preset-gated*: it only cuts in
+the Slice view mode (its toggle can disable it there, but a leftover slice height never bleeds into
+Reveal — that bled once and made Reveal == Slice, a hard ground cut in both). Cycling into Slice
+with no cut set auto-places it just above the focus. **Solid** is always truly solid.
 
 ## Controls
 

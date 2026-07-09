@@ -348,9 +348,10 @@ impl SessionState {
         let camera = self.scene.camera_mut();
         // Multiplicative dolly, clamped inside zoom_by by the overseer zoom
         // limits. NOTE the wheel arrives pre-scaled ~±15 per notch (see the
-        // X11-parity factor in window.rs), so 0.02·dist ≈ ±30% per notch —
-        // roughly 8 eased notches from whole-region to near-ground.
-        camera.zoom_by(delta * old_dist * 0.02, None);
+        // X11-parity factor in window.rs), so 0.01·dist ≈ ±15% per notch —
+        // ~14 eased notches across the min→max range. (Was 0.02/±30%: QA said
+        // "way too fast".)
+        camera.zoom_by(delta * old_dist * 0.01, None);
         let f = camera.get_tgt_dist() / old_dist;
         if let Some(p) = picked
             && (f - 1.0).abs() > f32::EPSILON
@@ -1034,6 +1035,16 @@ impl PlayState for SessionState {
                                 let occ = self.scene.bastion_occlusion_mut();
                                 occ.view_mode = occ.view_mode.next();
                                 let label = occ.view_mode.label();
+                                // Entering Slice with no cut set yet: activate
+                                // it just above the focus (same as a first
+                                // PgUp/PgDn press) so the mode visibly does
+                                // something instead of looking like Reveal.
+                                if occ.view_mode == bastion::occlusion::ViewMode::Slice
+                                    && self.scene.bastion_slice_z().is_none()
+                                {
+                                    let z = self.scene.camera().get_focus_pos().z + 2.0;
+                                    self.scene.set_bastion_slice_z(Some(z));
+                                }
                                 self.hud.new_message(
                                     ChatType::CommandInfo
                                         .into_plain_msg(format!("Overseer view: {label}")),
