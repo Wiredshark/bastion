@@ -519,7 +519,9 @@ fn b4_scenario(args: &Args) -> ExitCode {
 /// stalls and flags `needs_materials`; skill XP grows on completion.
 fn b5_scenario(args: &Args) -> ExitCode {
     use common::{
-        bastion::{BUILD_MATERIAL_ITEM, DesignationKind, Region, WorkType},
+        bastion::{
+            BUILD_MATERIAL_ITEM, CHOP_DROP_ITEM, DesignationKind, MINE_DROP_ITEM, Region, WorkType,
+        },
         terrain::{Block, BlockKind},
         vol::ReadVol,
     };
@@ -674,9 +676,12 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // claim/10s-stuck/release cycling with the colonist's position never
     // changing at all). The ring gives every dig cell *adjacent* footing for
     // mining, but nothing guarantees a walkable path back OUT once the whole
-    // footprint is hollowed. Carve a 2-step staircase on one column, just
-    // outside the ring, so the pit floor always has an exit: floor(-2) →
-    // step(-1) → rim(0), each a normal 1-block step.
+    // footprint is hollowed. Carve a stepped exit on one column, just
+    // outside the ring: from pit-floor feet level (gz-2) it's a 2-block hop
+    // onto the step (top at gz), then 1 more to the rim — NOT two 1-block
+    // steps (a true 1-1 staircase would need a step *inside* the pit
+    // footprint, which the Mine designation itself would consume). A 2-hop
+    // is within loaded-agent jump traversal; verified empirically 8/8.
     let ramp_x = mine_min.x + 1;
     server.state_mut().set_block(
         Vec3::new(ramp_x, mine_min.y - 1, mine_gz - 1),
@@ -766,13 +771,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
             break;
         }
     }
-    let stone_count = server.bastion_count_items_near(
-        mine_min.map(|e| e as f32),
-        6.0,
-        "common.items.crafting_ing.stones",
-    );
+    let stone_count =
+        server.bastion_count_items_near(mine_min.map(|e| e as f32), 6.0, MINE_DROP_ITEM);
     let log_count =
-        server.bastion_count_items_near(chop_base.map(|e| e as f32), 6.0, "common.items.log.wood");
+        server.bastion_count_items_near(chop_base.map(|e| e as f32), 6.0, CHOP_DROP_ITEM);
 
     // 7. BUILD (phase B): the material is now consumed colony-wide (phase A
     // built with the only unit), so this designation is unsatisfiable and
@@ -802,7 +804,7 @@ fn b5_scenario(args: &Args) -> ExitCode {
         .filter_map(|n| server.bastion_colonist_skill(n, WorkType::Chop))
         .any(|s| s.level > 0 || s.xp > 0.0);
 
-    // 7. Zero-input soak.
+    // 8. Zero-input soak.
     let soak_ticks: u64 = 600;
     let soak_started = Instant::now();
     tick(&mut server, soak_ticks);

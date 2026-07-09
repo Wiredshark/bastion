@@ -109,3 +109,34 @@ remove an earlier block's entries.
   is the same one already tracked for tall chop stumps/trees above, and
   will resurface for any future test (or real in-game designation) that
   digs an enclosed pit without its own exit.
+
+### Post-gate code review (same session, fresh-eyes pass)
+
+- **FIX (fixed)**: `place_designation` had no dedupe against existing
+  jobs — repainting a region (or overlapping Mine+Chop paints; Wood is
+  `is_filled()` so Mine matches wood blocks too) created duplicate jobs
+  per block, each of which completed independently and dropped loot from
+  the same single block: a free-item exploit reachable from the in-game
+  paint path. Now one job per block position, regardless of kind.
+- **FIX (fixed)**: job completion never re-validated the target block —
+  if the world changed between claim and completion (vanilla mining, an
+  explosion), a Mine job "completed" against empty air and conjured free
+  stones, and a Build job silently overwrote whatever now occupied its
+  target. Completion now re-checks the placement predicate against
+  `TerrainGrid` (moot jobs are dropped without loot/XP, before Build's
+  material consumption so the material isn't eaten), and defers via
+  `can_set_block` if another system already edited the block this tick
+  (so the final block state never depends on system run order).
+- **FIX (fixed)**: `Job::skill_floor` existed and was documented but was
+  never checked anywhere — arbitration now skips jobs whose work-type
+  skill level is below the floor (still always 0 in v1 generation, but
+  the field is no longer dead config).
+- Cleanups in the same pass: mine/chop drop asset ids hoisted to
+  `common::bastion::{MINE_DROP_ITEM, CHOP_DROP_ITEM}` (were duplicated
+  as string literals between `bastion_jobs.rs` and the harness — drift
+  risk); duplicated skill-level match factored into
+  `ColonistSkills::level_for`; stale `ARRIVE_DIST` doc comment (said XY,
+  code is deliberately 3D); unused field dropped from arbitration's
+  `assignments` tuple; harness step-numbering and mine-ramp comments
+  corrected (the ramp's first hop is 2 blocks, not 1 — works, verified,
+  but the comment misdescribed it).
