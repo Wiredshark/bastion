@@ -109,6 +109,60 @@ pub fn draped_rect_outline(
     segs
 }
 
+/// bastion (B5.6b-1): a terrain-conformed FILL over the integer XY footprint
+/// `[min_xy, max_xy]` (inclusive) as world-space triangles — two per cell,
+/// each vertex draped onto the visible surface (`overlay_surface_z`, so it's
+/// slice-aware, same height authority as the outline). Each grid corner is
+/// sampled once (shared between adjacent cells). The caller feeds these to a
+/// `DebugShape::ConformedTris` and colours it via `set_context` (the fill
+/// colour's alpha is what makes it translucent). The reusable overlay-fill
+/// half of the utility the §3w boundary + B5.6b-2 volumes reuse.
+pub fn draped_fill_tris(
+    terrain: &TerrainGrid,
+    min_xy: Vec2<i32>,
+    max_xy: Vec2<i32>,
+    z_hint: f32,
+    slice_z: Option<f32>,
+    hover: f32,
+) -> Vec<[Vec3<f32>; 3]> {
+    let nx = max_xy.x - min_xy.x + 1;
+    let ny = max_xy.y - min_xy.y + 1;
+    if nx <= 0 || ny <= 0 {
+        return Vec::new();
+    }
+    // Corner-height grid: (nx+1) × (ny+1) samples, one per cell corner.
+    let cols = (nx + 1) as usize;
+    let rows = (ny + 1) as usize;
+    let mut h = vec![0.0f32; cols * rows];
+    for j in 0..rows {
+        for i in 0..cols {
+            let wx = (min_xy.x + i as i32) as f32;
+            let wy = (min_xy.y + j as i32) as f32;
+            h[j * cols + i] =
+                overlay_surface_z(terrain, Vec2::new(wx, wy), z_hint, slice_z) + hover;
+        }
+    }
+    let vert = |i: usize, j: usize| {
+        Vec3::new(
+            (min_xy.x + i as i32) as f32,
+            (min_xy.y + j as i32) as f32,
+            h[j * cols + i],
+        )
+    };
+    let mut tris = Vec::with_capacity((nx * ny * 2).max(0) as usize);
+    for j in 0..(rows - 1) {
+        for i in 0..(cols - 1) {
+            let c00 = vert(i, j);
+            let c10 = vert(i + 1, j);
+            let c11 = vert(i + 1, j + 1);
+            let c01 = vert(i, j + 1);
+            tris.push([c00, c10, c11]);
+            tris.push([c00, c11, c01]);
+        }
+    }
+    tris
+}
+
 /// bastion: unproject a screen-space cursor position onto the horizontal
 /// world plane `z = plane_z`, using the overseer camera's matrices.
 ///

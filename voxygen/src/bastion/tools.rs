@@ -89,6 +89,33 @@ impl VisualsMode {
     }
 }
 
+/// bastion (B5.6b-1): the zone-type colour legend — one RGB per designation
+/// kind (Mine/Chop/Build/Stockpile). Borders draw it near-opaque; fills draw
+/// it low-alpha so overlapping zones alpha-composite into a visibly blended
+/// colour. One legend so the outline, fill, and label all agree.
+pub fn zone_rgb(kind: DesignationKind) -> [f32; 3] {
+    match kind {
+        DesignationKind::Mine => [1.0, 0.6, 0.1],
+        DesignationKind::Chop => [0.2, 0.9, 0.2],
+        DesignationKind::Build => [0.3, 0.6, 1.0],
+        DesignationKind::Stockpile => [0.85, 0.35, 0.95],
+    }
+}
+
+/// Border colour (draped outline) for a zone kind, scaled by an alpha
+/// multiplier (SUBTLE dims via `VisualsMode::line_alpha`).
+pub fn zone_border_color(kind: DesignationKind, alpha_mul: f32) -> [f32; 4] {
+    let [r, g, b] = zone_rgb(kind);
+    [r, g, b, 0.9 * alpha_mul]
+}
+
+/// Fill colour (translucent conformed area) for a zone kind. Low alpha so
+/// overlaps blend and the terrain reads through.
+pub fn zone_fill_color(kind: DesignationKind) -> [f32; 4] {
+    let [r, g, b] = zone_rgb(kind);
+    [r, g, b, 0.22]
+}
+
 /// God mode (the real game: colony-only targets, metered force-actions) vs
 /// Free mode (sandbox: no restrictions). Stub in B2a; teeth in B2b.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]

@@ -30,6 +30,11 @@ pub enum DebugShape {
         plank_height: f32,
         plank_sep: f32,
     },
+    /// bastion (B5.6b-1): a pre-conformed translucent fill — world-space
+    /// triangles draped over the terrain surface by the caller (which has
+    /// terrain access; the debug mesh builders do not). Rendered with the
+    /// per-shape context colour, whose alpha the debug pass alpha-blends.
+    ConformedTris(Vec<[Vec3<f32>; 3]>),
 }
 
 /// If (q, r) is the given `line`, append the following mesh to `mesh`, where
@@ -291,6 +296,14 @@ impl DebugShape {
                         };
                         box_along_line(across, *plank_width, *plank_height, WOOD_COLOR, &mut mesh);
                     }
+                }
+            },
+            DebugShape::ConformedTris(tris) => {
+                // White vertex colour so the per-shape context colour (with
+                // its alpha) drives the final look via `f_color = w_color *
+                // v_color`.
+                for [a, b, c] in tris.iter() {
+                    mesh.push_tri(tri_colored(*a, *b, *c, [1.0; 4]));
                 }
             },
         }

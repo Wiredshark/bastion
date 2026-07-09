@@ -883,30 +883,80 @@ impl SessionState {
             self.scene.debug.remove_shape(id);
         }
         // OFF: overlays hidden entirely (designations stay fully active — this
-        // is visual-only). Nothing to (re)build.
+        // is visual-only). Nothing to (re)build; drop any labels too.
         if visuals.is_off() {
+            self.hud.bastion_set_zone_labels(Vec::new());
             return;
         }
-        let list = self.client.borrow().bastion_designations().to_vec();
+        use crate::bastion::tools::{VisualsMode, zone_border_color, zone_fill_color};
+        // B5.6b-1: ON = fill + border + label; SUBTLE = border only (dimmed).
+        let subtle = visuals == VisualsMode::Subtle;
         let alpha = visuals.line_alpha();
+        let list = self.client.borrow().bastion_designations().to_vec();
+        let mut kind_counts: HashMap<common::bastion::DesignationKind, u32> = HashMap::new();
+        let mut labels: Vec<(Vec3<f32>, String, [f32; 4])> = Vec::new();
         for (region, kind) in list {
-            use common::bastion::DesignationKind;
-            let [r, g, b, a] = match kind {
-                DesignationKind::Mine => [1.0, 0.6, 0.1, 0.9],
-                DesignationKind::Chop => [0.2, 0.9, 0.2, 0.9],
-                DesignationKind::Build => [0.3, 0.6, 1.0, 0.9],
-                DesignationKind::Stockpile => [0.8, 0.3, 0.9, 0.9],
-            };
-            let color = [r, g, b, a * alpha];
-            let shapes = self.bastion_region_outline(
+            // Border — always (both ON and SUBTLE), draped, kind-coloured.
+            let border = self.bastion_region_outline(
                 region.min.map(|e| e as f32),
                 region.max.map(|e| e as f32 + 1.0),
-                color,
-                // Committed overlay: built once per revision, so per-cell.
+                zone_border_color(kind, alpha),
                 1.0,
             );
-            self.bastion_designation_shapes.extend(shapes);
+            self.bastion_designation_shapes.extend(border);
+            // Per-kind running index for the label ("Mine 1", "Mine 2", …).
+            let idx = {
+                let c = kind_counts.entry(kind).or_insert(0);
+                *c += 1;
+                *c
+            };
+            if subtle {
+                continue; // SUBTLE = border only: no fill, no label.
+            }
+            // Fill — a terrain-conformed translucent area (ON only). Sample
+            // (immutable terrain borrow) then emit one ConformedTris shape.
+            let tris = {
+                let client = self.client.borrow();
+                let terrain = client.state().terrain();
+                crate::bastion::draped_fill_tris(
+                    &terrain,
+                    region.min.xy(),
+                    region.max.xy(),
+                    region.max.z as f32,
+                    slice_z,
+                    0.1, // just under the outline's 0.2 hover
+                )
+            };
+            if !tris.is_empty() {
+                let id = self
+                    .scene
+                    .debug
+                    .add_shape(crate::scene::DebugShape::ConformedTris(tris));
+                self.scene
+                    .debug
+                    .set_context(id, [0.0; 4], zone_fill_color(kind), [0.0, 0.0, 0.0, 1.0]);
+                self.bastion_designation_shapes.push(id);
+            }
+            // Label at the footprint centroid, on the surface (ON only).
+            let cx = (region.min.x + region.max.x) as f32 / 2.0;
+            let cy = (region.min.y + region.max.y) as f32 / 2.0;
+            let cz = {
+                let client = self.client.borrow();
+                let terrain = client.state().terrain();
+                crate::bastion::overlay_surface_z(
+                    &terrain,
+                    Vec2::new(cx, cy),
+                    region.max.z as f32,
+                    slice_z,
+                )
+            };
+            labels.push((
+                Vec3::new(cx, cy, cz + 1.2),
+                format!("{} {}", kind.label(), idx),
+                zone_border_color(kind, 1.0),
+            ));
         }
+        self.hud.bastion_set_zone_labels(labels);
     }
 
     /// bastion: scroll zoom, eased, dollying toward the point under the
