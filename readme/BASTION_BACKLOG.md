@@ -282,3 +282,19 @@ remove an earlier block's entries.
   are the reusable conformed-fill utility. B5.6b-2 volumes extend it (walls +
   depth rings from the same corner-height grid); §3w boundary reuses the
   footprint fill. Keep `overlay_surface_z` the one height authority.
+
+## B5.6b-1 addendum — line-ending lesson (2026-07-09)
+
+- **FIX (fixed pre-tag, lesson recorded):** Python text-mode edit scripts
+  (`open(p).read()` / `open(p,'w').write()`) silently rewrote whole repo
+  files with CRLF on Windows — caught on `voxygen/src/session/mod.rs`
+  (3,649 lines churned) during the b-1 merge review; the same had already
+  slipped into tagged history at B5.5 (`server/src/lib.rs`,
+  `server/src/sys/mod.rs`). All three normalized back to LF in b-1's
+  hygiene commit (binary-safe, content-identical, gate green). **Rule for
+  all future sessions: never edit repo files via text-mode script writes —
+  use the Edit tool or binary-mode I/O.** The first b-1 merge+tag was
+  redone pre-build-on-tag rather than landing a 7k-line churn on main.
+- **IDEA (architect call):** add `*.rs text eol=lf` to `.gitattributes` to
+  make this class impossible; left un-actioned (checkout-policy change is
+  the architect's, not a block's).
