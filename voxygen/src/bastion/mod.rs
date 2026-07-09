@@ -8,8 +8,21 @@ pub mod occlusion;
 pub mod tools;
 
 use crate::scene::camera::Camera;
-use common::{terrain::TerrainGrid, vol::ReadVol};
+use common::{bastion::DesignationKind, terrain::TerrainGrid, vol::ReadVol};
 use vek::*;
+
+/// bastion: the ONE designation-kind → overlay color mapping. The in-world
+/// draped overlays (session) and the minimap zone footprints (B-MAP1) must
+/// agree, so both call this. RGBA 0..1; alpha is the "full strength" value —
+/// callers scale it (visuals mode, map tinting).
+pub fn designation_color(kind: DesignationKind) -> [f32; 4] {
+    match kind {
+        DesignationKind::Mine => [1.0, 0.6, 0.1, 0.9],
+        DesignationKind::Chop => [0.2, 0.9, 0.2, 0.9],
+        DesignationKind::Build => [0.3, 0.6, 1.0, 0.9],
+        DesignationKind::Stockpile => [0.8, 0.3, 0.9, 0.9],
+    }
+}
 
 /// bastion: approximate ground altitude under a world XY column — the
 /// overseer camera's ground-glide reference (B&W2 style: the focus rides the
