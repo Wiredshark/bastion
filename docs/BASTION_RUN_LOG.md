@@ -99,3 +99,9 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   two architect files rode along in block commits (noted in test docs);
   rtsim data.dat now carries bastion fields (serde-default keeps old saves
   loading — verified by the restart re-promote).
+
+### B4 — Designation → job board → autonomous arbitration + pathing
+
+- Start SHA: `0c58160` · branch `bastion/block-B4` · started 2026-07-09
+  (same session, user-directed continue). First block with the Tier-1b
+  zero-input soak in its gate.
