@@ -63,8 +63,9 @@ pub const ARBITRATION_INTERVAL: u64 = 15;
 /// A colonist counts as arrived within this XY distance of the job block.
 const ARRIVE_DIST: f32 = 2.5;
 /// Travel watchdog: release + mark unreachable after this long without
-/// progress (seconds).
-const STUCK_TIMEOUT: f32 = 10.0;
+/// progress (seconds). `pub` so scenario harnesses can size their sampling
+/// windows against it (see `bastion-harness`'s B4 scenario).
+pub const STUCK_TIMEOUT: f32 = 10.0;
 /// Progress threshold per watchdog sample (blocks).
 const STUCK_EPSILON: f32 = 0.5;
 /// Walk speed factor for job travel.
@@ -406,6 +407,21 @@ impl<'a> System<'a> for Sys {
                         job.claimed_by = None;
                     }
                 }
+            }
+        }
+
+        // ── Unreachable retry: B5 makes terrain change as a *consequence* of
+        // job completion (unlike B4, which only ever targeted static
+        // terrain), so a block genuinely unreachable now — e.g. the one
+        // fully-enclosed interior cell of a solid N³ dig, boxed in on all
+        // sides by the same designation's own outer shell — can become
+        // reachable once its neighbors are cleared. `unreachable` must not be
+        // a permanent life sentence, or a solid volume can never fully clear.
+        // Retried periodically rather than every cycle: still costs an
+        // arbitration attempt + a fresh watchdog timeout if truly stuck.
+        if tick.0 % (ARBITRATION_INTERVAL * 4) == 0 {
+            for job in board.jobs.values_mut() {
+                job.unreachable = false;
             }
         }
 
