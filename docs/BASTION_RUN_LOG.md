@@ -355,3 +355,29 @@ lives on `bastion/block-<N>` for fine-grained rollback.
 - Start SHA: `de86387` · branch `bastion/block-B5.6b-1` · started 2026-07-09.
   First formalized B5.6b sub-block (architect blessed the split). Client-only.
   Plan: `docs/BASTION_B5.6b_FINDINGS.md` (b-1 section).
+- **PASS** (2026-07-09). Merge `e279bb25aa`, tag `bastion-block-B5.6b-1`.
+  Zone FILLS (terrain-conformed translucent, kind-color legend, overlap
+  alpha-blend) + world-anchored centroid LABELS + SUBTLE=border-only —
+  the headline RimWorld-colored-zones visual. Plus Ben's three God-mode-demo
+  fixes (canopy-safe overlay heights; input-transparent labels + XY zone
+  matching restoring radial Delete-zone; terrain-anchored grab plane fixing
+  off-center pan) — all eyeball re-verified. Gate: in-game PASS (Ben),
+  headless B4/B5/B5.5 3/3 quiet + post-hygiene smoke, 6/6 unit tests.
+  HYGIENE: caught + fixed pre-tag a CRLF pollution from python text-mode
+  edit scripts (session/mod.rs this block; lib.rs + sys/mod.rs since B5.5)
+  — first merge attempt redone; all three files normalized to LF; standing
+  rule logged (no text-mode script edits on repo files).
+
+### Session note (2026-07-09, post-B5.6b-1)
+
+- `bastion/main` green at `bastion-block-B5.6b-1` (`e279bb25aa`). **Per the
+  architect's multi-agent ordering, B-ASSET1 takes the tree next** (its
+  builder session is watching this tag), then B-MAP1; the architect also
+  plans a docs-only inputs commit on main. **B5.6b-2 (z_extent + volumetric
+  + volume-UX; closes B5.MINE-COVERAGE) resumes after** — the re-cut queue's
+  "continue to b-2" is deferred to the next builder session per that
+  ordering + this session's context budget. OPEN ARCHITECT CALL carried:
+  where B5.8 lands relative to the remaining b-sub-blocks.
+- Watch-items: view-mode change doesn't trigger overlay rebuild (flagged,
+  not a verified bug — consistency note); lit-fill look (backlog); B5.10
+  walk-gait queued; erase-by-type = b-4.
