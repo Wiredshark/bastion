@@ -1072,6 +1072,18 @@ impl AgentData<'_> {
         };
         let is_valid_target = |entity: EcsEntity| match read_data.bodies.get(entity) {
             Some(Body::Item(item)) => {
+                // Bastion colonists must not opportunistically auto-loot
+                // their own work drops via this vanilla wander-and-grab
+                // behavior — a mined/chopped item is meant to sit on the
+                // ground until a deliberate (future) hauling system
+                // collects it. Gated on the `Colonist` component itself
+                // rather than `ActiveJob`: the job (and its `ActiveJob`)
+                // is already released the same tick the item drops, so an
+                // `ActiveJob`-only gate would miss the very colonist who
+                // just finished the job.
+                if read_data.colonists.contains(*self.entity) {
+                    return None;
+                }
                 if !matches!(item, body::item::Body::Thrown(_)) {
                     let is_humanoid = matches!(self.body, Some(Body::Humanoid(_)));
                     let avoids_item_drops = matches!(

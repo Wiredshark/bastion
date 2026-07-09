@@ -1,9 +1,9 @@
 use crate::util::*;
 use common::{
     comp::{
-        ActiveAbilities, Alignment, Body, CharacterState, Combo, Energy, Health, Inventory,
-        LightEmitter, LootOwner, Ori, PhysicsState, Poise, Pos, Presence, Scale, SkillSet, Stance,
-        Stats, Vel,
+        ActiveAbilities, Alignment, Body, CharacterState, Colonist, Combo, Energy, Health,
+        Inventory, LightEmitter, LootOwner, Ori, PhysicsState, Poise, Pos, Presence, Scale,
+        SkillSet, Stance, Stats, Vel,
         ability::{Amount, BASE_ABILITY_LIMIT, CharacterAbility},
         body::parts::Heads,
         buff::{BuffKind, Buffs},
@@ -482,6 +482,10 @@ pub struct ReadData<'a> {
     pub stances: ReadStorage<'a, Stance>,
     pub presences: ReadStorage<'a, Presence>,
     pub ability_map: ReadExpect<'a, AbilityMap>,
+    /// Bastion (B5): which entities are colonists, so vanilla NPC behaviors
+    /// that don't yet know about the colony job system (e.g. opportunistic
+    /// item-drop looting) can be gated off for them where needed.
+    pub colonists: ReadStorage<'a, Colonist>,
 }
 
 pub enum Path {

@@ -183,7 +183,21 @@ pub struct Job {
     /// Set when a claimant repeatedly failed to reach the site; unreachable
     /// jobs are skipped by arbitration and logged.
     pub unreachable: bool,
+    /// B5: work-in-progress toward completion, 0.0..=1.0.
+    pub progress: f32,
+    /// B5 Build jobs only: the material item asset id required to complete
+    /// (a stand-in for a real blueprint's bill of materials — B6 owns real
+    /// recipes/hauling). `None` for Mine/Chop (no material needed).
+    pub required_item: Option<&'static str>,
+    /// B5: true when no currently-loaded colonist carries `required_item` —
+    /// i.e. the job is stalled pending B6 hauling. Informational only
+    /// (arbitration eligibility is the real gate); recomputed each cycle.
+    pub needs_materials: bool,
 }
+
+/// The material B5's minimal Build path requires (single hardcoded material;
+/// B6 gives Build real per-blueprint recipes).
+pub const BUILD_MATERIAL_ITEM: &str = "common.items.crafting_ing.stones";
 
 /// Aggregate job-board audit for tests/inspectors (B4 harness gate).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -205,6 +219,20 @@ pub struct SkillLevel {
     pub xp: f32,
 }
 
+impl SkillLevel {
+    /// Flat per-level XP curve — plenty for B5's "does XP feed back into
+    /// rate" loop; a real curve is a B-AG/balance concern, not this block's.
+    const XP_PER_LEVEL: f32 = 20.0;
+
+    pub fn add_xp(&mut self, xp: f32) {
+        self.xp += xp;
+        while self.xp >= Self::XP_PER_LEVEL {
+            self.xp -= Self::XP_PER_LEVEL;
+            self.level += 1;
+        }
+    }
+}
+
 /// The colonist work skills (B4 arbitration reads these; B5 trains them).
 #[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ColonistSkills {
@@ -214,6 +242,19 @@ pub struct ColonistSkills {
     pub hauling: SkillLevel,
     pub cooking: SkillLevel,
     pub melee: SkillLevel,
+}
+
+impl ColonistSkills {
+    /// Route completion XP to the skill matching the work type (B5).
+    pub fn grant_xp(&mut self, work: WorkType, xp: f32) {
+        match work {
+            WorkType::Mine => self.mining.add_xp(xp),
+            WorkType::Chop => self.woodcutting.add_xp(xp),
+            WorkType::Build => self.construction.add_xp(xp),
+            WorkType::Haul => self.hauling.add_xp(xp),
+            WorkType::Cook => self.cooking.add_xp(xp),
+        }
+    }
 }
 
 /// RimWorld-style per-work-type priority: 0 = never, 1..=4 with 4 highest.

@@ -911,6 +911,87 @@ impl Server {
         found
     }
 
+    /// bastion (B5, harness hook): give a named colonist one unit of an item
+    /// (stands in for B6 hauling — lets the Build path be tested without a
+    /// real logistics chain). Returns whether the colonist was found+loaded.
+    pub fn bastion_give_colonist_item(&mut self, name: &str, asset_id: &str) -> bool {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let entities = ecs.entities();
+        let target = (&entities, &colonists)
+            .join()
+            .find(|(_, c)| c.0.name == name)
+            .map(|(e, _)| e);
+        drop(colonists);
+        let Some(entity) = target else { return false };
+        let mut inventories = ecs.write_storage::<comp::Inventory>();
+        // Direct single-entity access — flagged-storage restrictions only
+        // bite multi-component `.join()`, not a plain `get_mut(entity)`.
+        if let Some(mut inv) = inventories.get_mut(entity) {
+            let _ = inv.push(common::comp::Item::new_from_asset_expect(asset_id));
+            true
+        } else {
+            false
+        }
+    }
+
+    /// bastion (B5, harness hook): count loose dropped items near `pos`
+    /// (within `radius` blocks) whose item asset id matches `asset_id`.
+    pub fn bastion_count_items_near(&self, pos: Vec3<f32>, radius: f32, asset_id: &str) -> usize {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let items = ecs.read_storage::<comp::PickupItem>();
+        let positions = ecs.read_storage::<comp::Pos>();
+        (&items, &positions)
+            .join()
+            .filter(|(item, item_pos)| {
+                item_pos.0.distance_squared(pos) <= radius * radius
+                    && item.item().item_definition_id().itemdef_id() == Some(asset_id)
+            })
+            .count()
+    }
+
+    /// bastion (B5, harness hook): a named colonist's skill level+xp for the
+    /// given work type.
+    pub fn bastion_colonist_skill(
+        &self,
+        name: &str,
+        work: common::bastion::WorkType,
+    ) -> Option<common::bastion::SkillLevel> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        (&colonists).join().find(|c| c.0.name == name).map(|c| {
+            let s = &c.0.skills;
+            match work {
+                common::bastion::WorkType::Mine => s.mining,
+                common::bastion::WorkType::Chop => s.woodcutting,
+                common::bastion::WorkType::Build => s.construction,
+                common::bastion::WorkType::Haul => s.hauling,
+                common::bastion::WorkType::Cook => s.cooking,
+            }
+        })
+    }
+
+    /// bastion (B5, harness hook): the block kind at a world position (for
+    /// asserting a mined hole / a placed wall).
+    pub fn bastion_block_kind(&self, pos: Vec3<i32>) -> Option<common::terrain::BlockKind> {
+        use common::vol::ReadVol;
+        self.state.terrain().get(pos).ok().map(|b| b.kind())
+    }
+
+    /// bastion (B5, harness hook): whether any Build job in the board has
+    /// `needs_materials` set (visibility into the stalled-blueprint state).
+    pub fn bastion_any_job_needs_materials(&self) -> bool {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .jobs
+            .values()
+            .any(|j| j.needs_materials)
+    }
+
     /// Get a reference to the Metrics Registry
     pub fn metrics_registry(&self) -> &Arc<Registry> { &self.metrics_registry }
 
