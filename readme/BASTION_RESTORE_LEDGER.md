@@ -58,3 +58,14 @@ than editing the old one.
 | Revert command | `git reset --hard bastion-block-B5` (on `bastion/main`) |
 | Reverting undoes | Erase tool + radial Delete-zone + designation-removal echo/overlay subtraction; persistent pile aggregation (colonist drops would resume carpeting one entity per block AND regain the 300 s despawn timer — i.e. reverting reintroduces a known item-LOSS hazard); the `--b55-scenario` gate; the B5 scenario's amount-sum assertions (reverts to entity counts). |
 | Data-format caveats | `CreateItemDropEvent` gained `persistent: bool` (in-memory only, not serialized). `ServerGeneral::BastionDesignationRemoved` is a new net message — old client + new server (or vice versa) across this boundary would break protocol; irrelevant for the single-tree singleplayer setup. No rtsim `data.dat` changes. `comp::bastion::BastionPile` is a new server-side comp (not persisted, not synced). |
+
+## B5.6a (2026-07-09)
+
+| Field | Value |
+|---|---|
+| Block | B5.6a — zone visuals: terrain-draped outlines + visuals toggle + pile tiers (approved split of B5.6) |
+| Tag | `bastion-block-B5.6a` |
+| Previous green tag | `bastion-block-B5.5` (at `0de0659`) |
+| Revert command | `git reset --hard bastion-block-B5.5` (on `bastion/main`) |
+| Reverting undoes | Terrain-conformed overlay draping (outlines float flat again — the photographed bug returns); the H visuals-toggle (On/Subtle/Off); the erase XY-clip robustness fix (erase becomes z-fragile again — silently misses after camera moves); the 5-step pile tier curve (reverts to the B5.5 basic 3-tier scale). |
+| Data-format caveats | None. Client-side (voxygen) + one additive `common::bastion::Region::clip_xy` method + a `server/src/bastion_piles.rs` scale-curve tweak. No new comps, no net-protocol change, no rtsim `data.dat` change. Fully backward-compatible. |
