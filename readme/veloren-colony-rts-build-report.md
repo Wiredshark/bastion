@@ -1,9 +1,9 @@
 # Project Bastion — Turning Veloren into an Autonomous God-Game Colony Sim
 
 **A build & test directive for Claude Code**
-Version 1.3 · Architect-authored design doc · Target: fork of `veloren/veloren` (Rust, GPL-3)
+Version 2.1 · Architect-authored design doc · Target: fork of `veloren/veloren` (Rust, GPL-3)
 Lineage: Dwarf Fortress / RimWorld (autonomy & policy) + Black & White / From Dust / Populous (indirect divinity). **Explicitly *not* StarCraft-style unit micro.**
-*v1.3 changelog: added §3b input-context system (separate control schemes per mode — Overseer/Avatar/Menu; shared WASD, everything else mode-specific; rebind UI deferred but data model per-mode now); folded it + the Black & White 2 camera feel into B1.5; B12 embody now does a single atomic context swap to vanilla. v1.2: invariant-first testing (§7, WI-DET) + §2a verified "what already exists."*
+*v2.1 changelog: agents now DO things. Added B-AG5 (world-verb **action library** — gather→build→produce — on the principle of **one library, two drivers**: a verb is defined once and invoked by either a player designation→colonist job OR an NPC's own drive, so colonist work and autonomous NPC life share one codebase) + B-AG6 (**generative systems**: autonomous village growth + deep DF **reproduction/genealogy** with kin graphs & inherited traits — the loop that makes the world grow, not just decline). Both LOD-aware (settlement growth as rtsim events when unwatched, real voxels when loaded; full genealogy only for tracked/loaded lineages). Agency Bible §5c authors world verbs & generative systems. v2.0: the DF Mind (B-AG3/B-AG4).*
 
 ---
 
@@ -178,6 +178,32 @@ The modes:
 
 ---
 
+## 3c. God mode vs. Free mode — two rulesets, one interaction surface (canon)
+
+The player picks which game they're playing, via one setting. The interaction surface (left-drag pan,
+left-click select, right-click radial menu, tool palette; §B2a) is **identical** in both — only the *rules*
+around direct control differ. This is how the "kitchen sink" of interaction coexists with the autonomy
+pillar (§1a): direct control is a **divine intervention you spend**, not a persistent RTS mode.
+
+- **God mode (default — the real game).** Two restrictions keep it a *god game*:
+  1. **Target restriction** — you may select/force-act only on entities **under your influence** (your
+     colony). The wider world you affect *indirectly* (designations, god-powers), never by direct command.
+  2. **Metering** — force-actions (force-move, force-do-job, and to a degree possess) cost something. A
+     **toggle** picks the limiter: a **favor meter** (draws from the B13 favor/faith economy) **or** a
+     **cooldown**. Both exist; the player chooses the discipline.
+  The distinction that matters: *free, unlimited unit-commanding is an RTS; a god who can occasionally force
+  a hand is a god game.* Same verbs — the meter/cooldown is what makes it the latter.
+
+- **Free mode (sandbox / creative).** Both restrictions lift: unlimited force-action and possession over
+  **any** entity, no cost. For testing, building showcases, or playing god without constraints.
+
+**Implementation note:** the God/Free toggle and the target-restriction check are **stubbed at the input
+layer in B2a** (no teeth until B3 spawns a colony and B13 adds favor), then enforced in **B2b**. The favor⇄
+cooldown limiter toggle likewise lands with B2b/B13. Building the hook early means no rework when the colony
+and economy exist.
+
+---
+
 ## 4. Transformation strategy — two tracks, one boundary
 
 ```
@@ -268,18 +294,226 @@ Each block: **Objective · Touches · Approach · Done-when (tests).** Builders 
 - Panning far keeps full-detail terrain (chunks stream under the focus via `spectate_position`) — no LoD wall.
 - Z-slice still cuts correctly at any camera angle; vanilla + prior overseer flag intact; >50 fps held.
 
-### B2 — Inspect, designate & influence input (the overseer control surface)
-**Objective:** The *non-command* control surface. Click to **inspect** an entity/tile, drag-box to **inspect a group**, and a **designation/paint** cursor mode to express intentions on the world. This is plumbing, not yet behavior. Per Pillar §1a there is **no primary move/attack command** — selection exists for *inspection and designation targeting*, not to puppet units. (A bounded emergency nudge is added later in B8, deliberately separate.)
-**Touches:** `voxygen/src/settings/control.rs` (`GameInput` additions), voxygen input handling, `client/src/lib.rs` (`handle_input` → new influence messages), a new `bastion` message type through `network`/`server`, a `Selectable`/`Selected` component in `common/src/comp`.
+### B2a — Overseer interaction surface (the "kitchen sink" input layer)
+**Objective:** The full overseer interaction surface, faithful to the pillar: **left-drag pans** (B1.5),
+**left-click selects/inspects**, and **right-click opens a contextual radial menu** — the primary "affect the
+world" verb surface — plus a **tool palette** to pin a persistent mode (pan / inspect / designate-paint).
+This is plumbing + menu framework; menu entries are **server-echo stubs** until B3/B4/B13 give them behavior.
+**God mode vs. Free mode (canon — see §3c):** the interaction surface is the same in both; the *rules* differ.
+In **God mode** (default) you may only select/act on entities **under your influence** (your colony), and
+force-actions are **metered** (favor⇄cooldown toggle). In **Free mode** (sandbox) those restrictions lift.
+B2a **stubs** the God/Free toggle and the target-restriction check at the input layer (no teeth until B3
+spawns a colony + B13 adds favor) — but wires the hook so B2b/B3 can enforce it without rework.
+**Touches (verified seams from B1.5 closeout):**
+- `voxygen/src/bastion/` — add tool-mode state + the radial-menu widget; add tool `GameInput`s to
+  **`OVERSEER_SCHEME.owned`**, reclaiming the currently-suppressed **Primary/Secondary/Interact** slots.
+- Picking: reuse **`unproject_to_world_plane`** (slice height = active work layer) and the **grab-drag
+  raw-mouse pattern** with the **`bastion_cursor_over_widget`** HUD gate — all handed over by B1.5.
+- `common/src/comp` — a `Selectable`/`Selected` marker (inspection/HUD + feeds B1.6 cutaway targets).
+- Client→server `bastion` messages (stubbed payloads): `PlaceDesignation { region, kind }`,
+  `ApplyInfluence { target, kind }`, `ContextAction { target, verb }`. Server validates + echoes; no real
+  behavior yet, and **no free per-unit command verb** (force-action lives in B2b, metered).
 **Approach:**
-- Add `GameInput` variants: `Inspect`, `InspectAdd`, `BoxInspectDrag`, `DesignateApply`, `DesignateCancel`, a designation-tool cycle, and a reserved `InfluenceApply` (for B13 god-powers). **Do not** add a general `CommandMove` as a core verb.
-- Screen→world ray/pick: reuse voxygen's existing block/entity targeting (the `build_target`/`nearest_block` machinery referenced in input handling) to resolve clicks to a voxel or entity.
-- Drag-box: track down/up screen coords, project frustum slice, mark ECS entities with `Selected` **for inspection/HUD only**.
-- New client→server messages: `PlaceDesignation { region, kind }` and `ApplyInfluence { region_or_target, kind }` (kind stubbed until B13). Server validates & stores; behavior arrives in later blocks. No per-unit order message in v1.
+- **Cursor defaults:** empty space left-drag = pan (unchanged); left-click on unit/tile = **select/inspect**
+  (mark `Selected`, populate HUD, feed B1.6 cutaway); right-click = **contextual radial menu**.
+- **Radial menu framework (radial + "More…"):** a fast pie of the top ~6 context actions with a **"More…"**
+  wedge that expands to a dense list for crowded contexts (full colonist policy, god-power palette). Context
+  resolves from what's under the cursor: rock → *mine*; tree → *chop*; ground → *build/stockpile/bless/rain*;
+  colonist → *set policy / Embody / Force Action* (last two are B2b/B12, shown but stubbed/greyed).
+- **Tool palette:** pin pan / inspect / designate-paint as a persistent mode; designate-paint drag-marks a
+  region → `PlaceDesignation` (server echoes for overlay render). Everything routes through the Overseer
+  input context.
 **Done-when:**
-- Left-click inspects a highlighted entity (HUD shows its detail); drag-box inspects several; Shift adds to the inspection set.
-- A designation tool paints a marked region; the server receives it with correct world coords and echoes it back for render (colored overlay).
-- The reserved `ApplyInfluence` message round-trips with correct coords (payload stubbed) so B13 can hang real god-powers off it.
+- Left-drag still pans (B1.5 intact); **left-click selects/inspects** a unit/tile (HUD shows detail, marker
+  set); designate-paint marks a region the server echoes back as an overlay.
+- **Right-click opens the radial menu** context-appropriate to what's under the cursor; "More…" expands to a
+  list; selecting an entry sends the stubbed `ContextAction`/`ApplyInfluence` with correct world coords.
+- The God/Free toggle + target-restriction hook exist at the input layer (stubbed — God mode will later gate
+  targets to the colony); tool palette switches modes; all within the Overseer context, `bastion`-gated,
+  vanilla intact.
+- Reclaimed Primary/Secondary/Interact fire the new tools (the B1.5 "suppressed slots" TODO is closed).
+
+### B2b — Force-action & possess as metered god powers (after B3)
+**Objective:** The sanctioned **direct-control escapes**, framed as *divine intervention you spend*, not RTS
+micro: **force-move / force-do-job** on a colonist, and the **Embody** entry point (B12). Per your decision,
+this is a **two-ruleset** feature toggled by God/Free mode.
+**Depends on:** B3 (colonists to act on) + a favor stub (B13). Slots in after B3; before then the menu entries
+from B2a are shown-but-stubbed.
+**Approach:**
+- **God mode (default):** force-actions may target **only entities under your influence**, and are **metered**
+  — a **toggle** picks the limiter: a **favor meter** (draws from the B13 economy) *or* a **cooldown**. Same
+  verbs, disciplined. This preserves the autonomous-god-game pillar (a god who *occasionally* forces a hand,
+  not a general issuing free orders).
+- **Free mode (sandbox):** target restriction and cost both lift — unlimited force-action + possess over
+  anything. For testing, showcases, or pure sandbox play.
+- Verbs: `ForceMove(target, pos)`, `ForceJob(target, job)`, `Embody(target)` (hands to B12's context swap +
+  server-authoritative controller handoff). All server-authoritative; force-action suspends the colonist's
+  autonomous AI for the duration then returns it (like a mini-embody), never leaving an orphaned job.
+**Done-when:**
+- In **God mode**: force-move/force-job work **only** on colony entities; the active limiter (favor or
+  cooldown, per toggle) is spent/enforced and shown in the HUD; the forced colonist resumes autonomy cleanly
+  after (no orphaned job, single driver).
+- **Embody** from the radial menu drops into the entity via B12's path and releases back to Overseer.
+- In **Free mode**: the same verbs work on any entity with no cost; toggling back to God mode re-imposes
+  target restriction + metering.
+- Invariant: force-action never double-drives an entity (one controller at a time) and never dupes/loses a job.
+
+### B1.6 — Overseer occlusion & transparency system (all four view modes, one framework)
+**Objective:** Generalize B1's hard Z-slice into **one occlusion framework** that drives four composable
+view behaviors, so the player rarely needs the manual cut. All four are the *same fragment operation*
+(`discard`→`fade` with a smarter threshold) — build the general machinery once, then each mode is a cheap
+parameterization. Entity/roof inputs that don't exist yet are **stubbed** (real data arrives with B2 hover/
+selection and B3 colonists). Can be built now; slot it right after B1.5 (it depends on the overseer camera +
+input contexts, not on simulation).
+**The four modes (compose via a bitmask):**
+1. **Solid** — nothing hidden (vanilla look).
+2. **Soft slice (manual)** — B1's hard cut upgraded to a smooth fade band. The deliberate "read the fortress in cross-section" tool.
+3. **Proximity / height transparency (ambient)** — foreground floor near the focus stays visible while geometry fades by **height above the focus plane** and/or **distance from focus**, driven by a strength slider. The always-on readability layer.
+4. **Automatic occlusion** — two behaviors that need no manual input: **roof/interior reveal** (RimWorld-style: fade the roof over enclosed spaces you peer into) + **camera-to-target cutaway** (Diablo-style: fade geometry between the camera and tracked entities). This is the "smart" default once B2/B3 feed real targets.
+**Touches (generalizes B1's slice hook):**
+- Shader globals: expand `Globals.bastion_slice_z` into a **`bastion_occlusion`** block (mode bitmask, `focus_z`, `fade_band`, height/distance falloff + strength, `slice_z`, `target_count`+`targets[]`+`cutaway_radius`, roof/reveal params) in `assets/voxygen/shaders/include/globals.glsl` + `voxygen/src/render/pipelines/mod.rs` (respect std140).
+- One shared **`bastion_occlusion_alpha(f_pos, world_pos)`** function in a shared shader include, returning visibility 0..1. Every fragment pass multiplies/discards by it — the single chokepoint.
+- Apply across **all passes**: `terrain-frag`, `sprite-frag`, `fluid-frag` (cheap+shiny), **`figure-frag`**, **`particle-frag`**, and the **shadow pass** (so hidden roofs don't cast onto revealed interiors). *Shadows are the hardest pass — attempt them; if perf/scope blows, shadows are the one acceptable deferral, documented.*
+- Per-frame params: `scene/mod.rs` computes `focus_z`, mode, falloffs, and the tracked-target array; `session/mod.rs` adds a **view-mode cycle** key + slider/toggles, routed through the **B1.5 Overseer input context**.
+- **Interior re-lighting (do it properly — decided):** revealed/exposed interior voxels must look *lit*, not black. Inject a soft top-down fill light over revealed regions (RimWorld reads as "lit from above") rather than a flat ambient boost. This is the highest-effort part of the block.
+- **Roof/enclosure mask:** a cheap "is this column covered above the focus plane?" signal. Prefer a precomputed/approximate coverage signal over expensive in-shader upward sampling. Approximate is fine this block; refine when B2/B3 land.
+- **Stubbed tracking (replace later):** cutaway `targets[]` = camera focus + debug markers now → hovered/selected entities (B2) + colonists (B3) later. Mark stubs explicitly.
+**Controls (via B1.5 Overseer context):** a **view-mode cycle** key (Solid → Reveal → Slice) *and* a **transparency slider + per-mode toggles** — exposed now via the egui debug panel (already available behind `egui-ui`), structured to move into the B9 settings tab. (Product owner wants both.)
+**Done-when:**
+- One `bastion_occlusion` uniform + one shared alpha function drive all modes; adding/removing a mode is a parameterization, not a new pass.
+- **Solid** = vanilla look. **Soft-slice** = B1's cut with a smooth fade band (no hard aliased edge). **Proximity/height transparency** = foreground floor near focus visible while tall/background geometry fades by a working slider.
+- **Roof/interior reveal** visibly works on a test building (approximate mask acceptable), and revealed interiors are **re-lit and readable**, not black.
+- **Camera-to-target cutaway**: geometry between camera and a stubbed target fades so the target shows through walls; composes across multiple targets.
+- Fade applies across terrain, sprites, fluid, **figures, and particles** (shadows too, or shadows documented as the single deferral).
+- View-mode cycle key + transparency/toggle debug panel work through the Overseer context; params structured for the B9 settings tab. Vanilla + overseer flag intact.
+- **Perf:** this is the most GPU-sensitive block so far — measure and report fps in each mode; keep the alpha function cheap (no expensive per-fragment upward sampling for the roof mask). Hold >50 fps.
+
+### B1.7 — Overseer LoD & frustum tuning (make the zoomed-out view whole and beautiful)
+**Objective:** Fix two distinct zoom-out artifacts so the overseer view reads as a continuous, beautiful
+world at any zoom: (1) the **hard bottom cut-off / black wedges**, and (2) the **too-aggressive LoD /
+detail falloff** from the overseer's altitude+zoom. Target look: **crisp streamed terrain near the focus,
+melting smoothly into Veloren's existing distant LoD/map-terrain backdrop, extended to the horizon with a
+soft distance fade** — no hard edge, no detail ring, no shimmer. **Build order:** independent of B1.6;
+recommended *next* since it fixes a visible artifact in the primary view.
+**Diagnosis (two different causes — don't conflate):**
+- The straight-line bottom cut + black triangles = **orthographic frustum/far-plane + rendered-region
+  edge**, NOT streaming/LoD. In perspective, distance melts into fog; in an ortho top-down cam, geometry
+  outside the box/planes simply stops flat and you see the void. Fix in the **camera/render extent**, not
+  the streamer.
+- The washed-out, shimmering (moiré/contour) distance IS **LoD**, but firing early because thresholds are
+  tuned for a **ground-level player**, not a hoisted, zoomed camera.
+**Touches (verify against B1/B1.5 findings):**
+- `voxygen/src/scene/camera.rs` — ortho **near/far planes scale with zoom**; far plane + ground extent must
+  cover the visible box so there's no void wedge.
+- Distant terrain: Veloren's **LoD/map-terrain system** (e.g. `voxygen/src/scene/lod.rs` + `world` map
+  data) — ensure it renders **under the overseer cam to the horizon** (it may be culled or unrequested in
+  this mode).
+- View distance: the client terrain view-distance request — **raise/scale with overseer zoom** (bounded for
+  perf), alongside the `spectate_position` focus from B1.5.
+- Distance fade: reuse Veloren's fog/horizon fade, but drive it by **world-distance-from-focus** (ortho has
+  no natural depth-fog), so crisp→LoD→horizon is a smooth melt, not a cut.
+- Shimmer: at the overseer's grazing ortho angle the low-detail LoD terrain aliases — apply a mip/detail
+  bias or flatten far normals to kill the moiré.
+**Approach (my recommended answers, baked in):**
+- **Far look = crisp near, graceful LoD backdrop far** — reuse the *existing* LoD/map terrain as the
+  distant field; don't build a new system. Near focus streams crisp chunks; the far field is cheap LoD.
+- **Edge = extend to horizon with distance fade** (no hard "tabletop" border). A deliberate bounded map
+  edge is a valid *later* option if defined embark borders are ever wanted — deferred.
+- Scale crisp view-distance + LoD transition distances with zoom so you never see a hard detail ring or the
+  region-edge seam; extend the ortho far plane + a ground skirt so no black wedge appears; apply the
+  world-distance fade so distant LoD melts into the horizon.
+- **Bound by fps:** at max zoom prefer more LoD backdrop over more crisp chunks (crisp near, cheap far).
+**Done-when:**
+- **No black wedge / hard bottom cut** at any zoom or pan; the world reads continuous to the horizon.
+- Zooming out shows crisp terrain near focus **melting smoothly into distant LoD terrain**, then a soft
+  horizon fade — no hard detail ring, no region-edge seam.
+- The **moiré/contour shimmer** on distant terrain is gone or strongly reduced.
+- **fps held at max zoom** (report numbers); memory bounded (crisp view distance capped sensibly).
+- Vanilla + overseer flag intact; Z-slice / B1.6 occlusion still correct at all zooms.
+
+### B1.8 — Camera navigation: map fly-to + surface / underground elevation modes
+**Objective:** Two things that make the overseer camera actually navigable in 3D: (1) **map fly-to** — press
+`M`, click a location, and the camera **smoothly flies** there (B&W style); and (2) **two elevation
+modes** that make a 3D fortress legible instead of a clipping mess:
+- **Surface mode (above ground):** the camera focus **rides the terrain heightmap** — panning across a
+  mountain lifts the camera *over* it (never clips through), and underground is never shown. The surface is
+  the floor. Default outdoor view; occlusion default = B1.6 **auto-reveal/cutaway** (roofs/trees/cliffs in
+  front fade).
+- **Underground mode:** the focus drops to a **free depth cursor** and the world reads like a Dwarf Fortress
+  cross-section — everything **above** the working layer hidden, everything at/below **revealed and re-lit**
+  (this *is* B1.6's slice + interior relight, now the primary view, not an occasional tool).
+This is not new tech — it's a **focus-height policy** on the B1.5 camera, feeding the B1.6 occlusion modes.
+**Depends on:** B1.5 (camera, input contexts, `spectate_position`) and **B1.6** (slice + reveal + relight —
+underground mode reuses it). Independent of B1.7. Build after B1.6.
+**Design decisions (baked in):**
+- **Map click → smooth eased fly-to** (not a snap): move focus over the target, surface-clamp Z on arrival,
+  stream via `spectate_position` en route so there's no LoD pop / black edge on landing.
+- **Mode switch = both:** a manual **toggle key** for intent, **plus smart auto** — pushing the depth cursor
+  below the surface (or descending past terrain) flips to underground; rising back above flips to surface.
+  Never stuck.
+- **Underground depth = free depth cursor** (PgUp/PgDn fly to any layer) **+ snap conveniences**: snap to the
+  dug floor under the cursor, snap to the deepest dug layer. Free-fly is primary; snaps keep it anchored.
+- **Surface→underground transition = ease/descend through terrain** — focus Z eases down with the slice
+  engaging progressively (feels like descending into the fortress), reversed on ascent. No hard cut.
+**Touches (verify against B1.5/B1.6 findings):**
+- `voxygen/src/scene/camera.rs` — focus-Z **policy** (surface-clamp vs. free-depth), easing for both fly-to
+  and the descend transition.
+- **Terrain height lookup** under the focus XY (cheap): the client terrain column height / `world.sim()`
+  column, or a downward sample — for surface-clamp. Must be cheap (runs per frame while panning).
+- `session/mod.rs` — mode toggle key, underground depth cursor (reuse B1 PgUp/PgDn), auto-switch logic, and
+  routing the depth into B1.6's slice params; all via the B1.5 Overseer input context.
+- **Map UI** in `voxygen/src/hud/` (conrod map/minimap widget already on `M`) — intercept a click, resolve
+  to world XY, trigger fly-to. Reuse the existing widget; don't rebuild the map.
+- `client.spectate_position(focus)` — stream under the focus during fly-to and mode transitions.
+- Integrate with **B1.6**: surface mode selects the auto-reveal occlusion preset; underground selects the
+  slice-above + reveal/relight-below preset.
+**Done-when:**
+- `M` opens the map; **clicking a location smoothly flies** the overseer there (eased), lands surface-clamped,
+  terrain streamed — no LoD pop, no black edge on arrival.
+- **Surface mode:** panning across a mountain **lifts the camera over it** — no clipping through terrain;
+  underground is never visible.
+- **Underground mode:** the free depth cursor flies to any layer; snap-to-dug-floor / snap-to-deepest work;
+  everything above the working layer is hidden, at/below is revealed and **re-lit** (via B1.6).
+- **Switching:** the manual toggle works; smart-auto flips when the depth cursor/descent crosses the surface
+  and back; never lands in a broken state.
+- **Transition** eases through the terrain (descend feel), not a hard cut.
+- Vanilla + overseer flag intact; fps held (report numbers); works with B1.6 occlusion and B1.7 LoD.
+
+### B1.9 — Tilt-shift post-process (the miniature-diorama capstone)
+**Objective:** A **tilt-shift** post-process that gives the overseer view the miniature-diorama look
+(Cities: Skylines / god-game signature) — the visual that sells "I'm a god looking down at a living little
+world." Pure **post-process**: self-contained, touches no simulation/streaming/occlusion, cheap relative to
+everything else. Last of the camera-polish run; build after B1.6/B1.8 so it can reuse their focus field.
+**The ortho caveat (shapes the implementation):** true tilt-shift blurs by depth, but the overseer camera is
+**orthographic** with a flat, non-perspective depth buffer, so naive depth-based blur looks wrong. Drive the
+blur by a **screen-space focus band centered on the focus point's screen projection** (this is what
+tilt-shift photographically is, and it's robust across orbit/pitch), **optionally modulated by
+focus-plane distance** — reusing the focus field B1.6/B1.8 already compute rather than inventing one.
+**Design decisions (baked in):**
+- **Strength = slider (subtle → strong).** Adjustable band width + blur strength, from light cinematic hint
+  to full toy-diorama.
+- **Auto-scale with zoom:** strong when zoomed out (god view), eases off as you zoom toward ground level —
+  prevents the up-close nausea a constant blur causes.
+- **Miniature color boost = separate toggle** in the same pass (slight saturation/contrast bump — the other
+  half of the toy-model illusion). Blur slider always; color-boost on/off.
+- **Overseer-only:** off in vanilla and in the Avatar (embodied) context.
+**Touches (verify against B1.6/B1.8 findings):**
+- Veloren's **post-process pass** (`assets/voxygen/shaders/postprocess-frag.*` + the post/clean pipeline in
+  `voxygen/src/render/pipelines/`) — add the tilt-shift blur (separable Gaussian, two-pass, or a cheap
+  approximation) + optional color grade. Reuse/extend the existing post stage; don't add a parallel one.
+- Uniforms: band center (= focus point's screen projection), band width, blur strength, zoom-scale factor,
+  color-boost toggle. Reuse the **focus field already in `Globals`** (from B1.6) for band centering and the
+  optional focus-distance modulation.
+- Controls: toggle + sliders via the B1.5 Overseer context / egui debug panel now, structured for the B9
+  settings tab.
+**Done-when:**
+- Tilt-shift toggle on → miniature-diorama look; the **strength slider** ramps subtle → strong (band width +
+  blur).
+- The **sharp focus band tracks the focus/center**; blur ramps above and below it.
+- **Auto-scales with zoom** (strong out, eases in near ground); toggles cleanly off.
+- The **color-boost toggle** works in the same pass (saturation/contrast).
+- Effect is **overseer-only** (off in vanilla + Avatar); composes with B1.6 occlusion, B1.7 LoD, B1.8 modes.
+- fps held (report numbers; the blur kernel is bounded/eased by zoom).
 
 ### B3 — Colonist entity model & starting colony
 **Objective:** Define a colonist and spawn a player-faction starting band. No jobs yet — just entities that exist, are yours, and are selectable.
@@ -357,6 +591,209 @@ Each block: **Objective · Touches · Approach · Done-when (tests).** Builders 
 - A scripted raid spawns off-map, pathes in, promotes to loaded entities, and attacks — and with **zero player input** the colony musters, fights or flees per policy, and (if it wins) returns to work. This autonomous path is the primary Done-when.
 - The `Draft` toggle mans defenses and can send the militia to one rally point; untoggling returns everyone to the job board. No per-unit command exists.
 - A defeated raid's survivors retreat off-map and demote back to simulated (no leak of loaded entities — assert entity count returns to baseline).
+
+### B-AG1 — Loaded fidelity: make promoted NPCs honor their rtsim lives (the "nobody stands around" fix)
+**Objective:** Kill the "NPCs just stand around" problem for the **entire population at once**, before any
+per-species authoring. The cause (see Agency Bible §1): when a rich rtsim NPC promotes to a loaded ECS
+entity, its high-level intent (`NpcAction`/`NpcActivity` via `RtSimController`) collapses into a generic idle
+`agent` behavior. Fix: make the **loaded `agent` faithfully continue the rtsim plan** — the trader keeps
+trading, the guard patrols, the hunter hunts, the raid party keeps marching — instead of resetting to idle.
+**This is the single highest-leverage agency block; do it first.**
+**Depends on:** nothing new (rtsim + agent already exist). Can run in parallel with the camera/sim tracks.
+**Touches:** the loaded `agent` AI (voxygen/server agent code), the rtsim→loaded handoff at promotion,
+`common/src/rtsim` (`NpcAction`/`NpcActivity`/`RtSimController`), `rtsim/src/rule/npc_ai.rs`.
+**Approach (rtsim-safe — Agency Bible §0 law):**
+- On promotion (`SimulationMode::Simulated → Loaded`), read the NPC's **current rtsim activity/goal** and
+  have the loaded agent *resume it* (travel to site/station, patrol beat, hunt, march) rather than defaulting
+  to idle-wander. One brain (rtsim intent), two fidelities (abstract vs. physical).
+- **Assume nothing** (the rtsim law): the NPC's target/home/faction may be gone or changed at any tick —
+  every continuation must **degrade gracefully** (re-plan, pick a new target, wander only as a last resort),
+  never freeze or panic. A behavior that assumes its target persists is the same "standing around" bug in a
+  new coat.
+- Keep it **cheap and general** — a type-agnostic "resume your rtsim intent" bridge, not per-species logic
+  yet (that's B-AG2). This one fix should visibly animate most of the world.
+**Done-when:**
+- In the loaded view, promoted townsfolk resume their **daily task/phase** (go to station/tavern/home) rather
+  than spawning idle; travellers keep travelling; wild predators/prey resume hunting/grazing; a raid party
+  keeps marching.
+- **Graceful failure:** deleting/moving an NPC's target mid-action does not freeze or crash it — it re-plans
+  or falls back (log-verified).
+- **Boundary invariant:** repeated promote/demote cycles leave no idle "stuck" NPCs and no entity leak
+  (harness-asserted). Measurable drop in idle-standing NPCs vs. baseline.
+- Vanilla behavior for NPCs with genuinely no rtsim intent is unchanged; fps unaffected (it's the same agents,
+  smarter).
+
+### B-AG2 — Agency depth: per-archetype behavior from the Agency Bible
+**Objective:** Now that loaded NPCs *act* (B-AG1), **deepen** their agency to DF level per the **Agency Bible**
+— purpose, home/territory, faction, and who/what/how they interact — starting with the **flagship archetypes**
+and expanding group by group. This is content + systems, authored **tendency-first**.
+**Depends on:** B-AG1 (agents must express intent before you enrich it). Uses the Agency Bible as its design
+source. Pairs with B7 (needs/AI patterns) and B8 (raids consume the raider archetype).
+**Touches:** `rtsim/src/rule/npc_ai.rs` (+ new rules) as the behavior authoring home; `NpcAction`/
+`NpcActivity`; `assets/common/entity/wild` + `common/src/comp/body.rs` (the type inventory / stats source of
+truth); the loaded agent bridge from B-AG1.
+**Approach:**
+- Implement the **four flagship archetypes** first (Agency Bible §3): Townsperson (faction/site/profession/
+  daily rhythm), Wolf (territorial pack predator), Deer (herd/graze/flee/migrate), Wyvern+Raider (roaming apex
+  / lair-based raid). Each authored as **tendencies with graceful failure** (Bible §0/§5), driven through
+  rtsim intent, expressed by the loaded agent.
+- Prove the schema end-to-end on the flagships (predator hunts prey; prey herds/flees; townsfolk run daily
+  routines + trade; raiders muster→march→raid→retreat), then **expand group by group** through the Agency
+  Bible §4 inventory (map each body type to a flagship template + deviations).
+- **Ecosystem tendency (Bible §5.4):** predator/prey/faction relations should tend toward equilibrium
+  (populations and factions wax/wane) — this is what makes it read DF-alive, not scripted. Feed rtsim's
+  wildlife-population and repopulation systems.
+**Done-when:**
+- The four flagship archetypes behave per the Bible in both simulated and loaded tiers (verify a hunt, a herd
+  flee, a townsperson's day, a raid cycle).
+- Expansion pass(es) apply the templates to the §4 groups; **no body type is fully inert** (even critters
+  forage/flock/scatter).
+- **Tendency-safe:** every behavior handles missing target/home/faction gracefully (no freeze/crash) — the
+  rtsim law holds under the Tier-1b soak.
+- **Ecosystem invariant (Tier-1b):** over a long zero-input soak, populations/factions shift plausibly
+  (predation, migration, faction activity) without runaway or extinction-to-zero, and the event log shows
+  varied NPC life — the world visibly *lives*.
+
+### B-AG3 — The Mind: DF-style personality → values → memory → thoughts → emotions → mood
+**Objective:** Give every creature a **Dwarf Fortress–style inner life** that *drives behavior* — the crown
+jewel of the DF transfer. Implement the **causal pipeline** (Agency Bible §5b): an event, filtered through an
+individual's **personality facets**, **values**, and **memory**, produces an **emotion**, which feeds a
+running **mood** that at extremes triggers breakdown/tantrum/elation. Two NPCs with different personalities
+experience the same event differently — that's the whole point.
+**Depends on:** B7 (needs/mood substrate), B3 (colonist/NPC entities), the Veloren sentiment system (relationship
+seed). Pairs with B-AG1/B-AG2 (agency consumes the mind). Feeds B-AG4 (the inspector displays it).
+**Touches:** new `bastion_mind` model in `common` (personality, values, memory, relationships, thoughts, mood);
+rtsim data (mind summary persists in the flat-table model); `rtsim/src/rule/npc_ai.rs` + agent AI (behavior
+*consumes* mood/values/grudges); the loaded↔simulated promotion path (mind LOD).
+**Approach (rtsim-safe + LOD-critical):**
+- **Data model (Agency Bible §5b.2):** personality facets (start ~a dozen, expandable toward DF's ~50; set at
+  creation, stable), weighted values, a **decaying** memory log with **persistent** items (grudges/bonds/
+  trauma), per-actor relationships (deepening Veloren sentiment), thoughts (source+intensity+decay), mood
+  aggregate → states. All `serde`-ready (B10).
+- **The pipeline:** an event + personality + values + memory → an emotion of some intensity → mood update.
+  Thoughts decay; grudges persist (the deliberate asymmetry). Author every step as a **tendency** that
+  degrades gracefully if inputs are missing (Bible §0 law).
+- **Mind LOD (Agency Bible §5b.3 — obey or it breaks the engine):** *every* creature has the full model, but
+  it runs at **level-of-detail mirroring the body loaded/simulated split**. Simulated tier = a **cheap summary**
+  (dominant mood, key relationships, grudges) on throttled rtsim ticks. Loaded/selected/possessed = **full
+  resolution** (all facets, live thought generation). Promote the mind to full-res on load/inspect, demote to
+  summary when unwatched, persisting durable parts. **Do NOT run full minds every tick for thousands of NPCs**
+  (main doc gotcha #1). Animals get the same model with a lighter personality/values profile — a lighter
+  parameterization, not a lesser system.
+- **It must drive behavior:** mood gates work (a breaking colonist refuses jobs — ties to B7); values/
+  personality bias job and social choices; grudges alter who aids whom in a fight; a god force-action (B2b)
+  leaves a resentful thought. Wire these consumers, or it's cosmetic.
+**Done-when:**
+- Two NPCs with different personalities produce **different thoughts** from the **same** event (headless-verify
+  the pipeline output differs by personality/values).
+- Thoughts **decay** over time; a grudge/bond **persists** across a long soak and across loaded↔simulated
+  cycles (no reset).
+- **Mind LOD holds:** full minds run only for loaded/selected/possessed NPCs; simulated NPCs carry the cheap
+  summary; **Tier-1b soak stays performant** with thousands of NPCs (no per-tick full-mind blowup — assert fps/
+  tick-time bounded).
+- The mind **drives behavior**: a mood breakdown changes what a colonist does; a grudge changes a combat/aid
+  decision (log-verified).
+- Promotion/inspect populates a full mind; demotion persists durable parts (no dupe/loss across the boundary).
+
+### B-AG4 — DF-style unit inspector (select any NPC, see everything)
+**Objective:** Selecting any NPC opens a **full Dwarf Fortress–style unit sheet** — Thoughts, Personality,
+Relationships, Needs, Health, Skills/Labors — surfacing the mind (B-AG3) and agency (B-AG1/2). This panel is
+also the project's **honesty check and build checklist**: each tab corresponds to a system that must exist to
+fill it. An empty tab means that system isn't real yet — you can't fake it.
+**Depends on:** B2a (selection), B3 (skills), B7 (needs), B-AG3 (mind), B8/combat (health). Tabs light up as
+their systems come online — build the shell early, populate progressively.
+**Touches:** `voxygen` HUD (per §2a: prototype in **egui** for speed, port keepers to **conrod**; menus use
+iced); the state channel from server; read models for mind/needs/skills/relationships/health.
+**Approach:**
+- A tabbed inspector opened on select (B2a) / on demand:
+  - **Thoughts** — recent emotional events with source + intensity + current mood/state (from B-AG3).
+  - **Personality** — the facet profile + values (what they care about).
+  - **Relationships** — friends/rivals/kin/lovers/grudges with sentiment (from B-AG3 + Veloren sentiment).
+  - **Needs** — hunger/rest/recreation + social/creative (from B7).
+  - **Health** — bodypart-level condition/wounds (deepen Veloren's real health/combat).
+  - **Skills / Labors** — skills + the RimWorld-style work-priority grid (from B3/B4).
+- On open, **promote the NPC's mind to full-res** (B-AG3) so the sheet is fully populated; demote on close.
+- Works for **any** NPC/creature (animals show the lighter mind profile), not just your colony — inspecting the
+  world is core to the DF experience and the god fantasy.
+- Structure read models so tabs render whatever data exists and clearly show "system not yet built" for
+  unfilled tabs during development.
+**Done-when:**
+- Selecting any NPC opens the unit sheet; each **built** system's tab is populated with live, correct data
+  (thoughts update, needs tick, relationships/grudges show, skills/priorities editable where applicable).
+- Inspecting **promotes the mind to full-res** so Thoughts/Personality are fully populated even for a
+  previously-simulated NPC; closing demotes cleanly.
+- Works on colonists **and** wild creatures/other-faction NPCs (animals show the lighter profile).
+- Unbuilt tabs render a clear "not yet implemented" state (the panel doubles as the visible build checklist);
+  vanilla + prior blocks intact; fps unaffected by opening the sheet.
+
+### B-AG5 — World-verb action library + NPC drives (agents that DO things on their own)
+**Objective:** Give agents a shared **action library** of world-affecting verbs — chop, mine, forage, hunt,
+fish, build, farm, craft — and let **NPCs invoke them from their own drives**, not only when the player
+designates work. This is what makes the world *productive* and DF-alive: a woodcutter fells trees because
+it's his profession; a village commissions a house because it's growing.
+**The core principle (Agency Bible §5c.1) — one action library, two drivers:** each verb is defined **once**
+with one authoritative world-effect, callable by **either** a player designation→colonist job (B4/B5/B6)
+**or** an NPC's own drive. Same verb, same effect, different reason. **Do not** build NPC actions as a
+separate system from colonist work — that's two divergent codebases; unify them.
+**Depends on:** B4/B5 (the colonist job/work-execution path these verbs share), B-AG1 (agents express intent),
+B-AG3 (minds/professions produce drives). Reuses §2a primitives heavily.
+**Touches:** a new shared `bastion_actions` module (`common`/`server`) that both the job system and NPC AI
+call; the terrain-edit + item/loot paths (gathering/construction); Veloren's recipe/crafting + town crafting
+stations (production); `rtsim/src/rule/npc_ai.rs` (NPC drives → self-designated tasks).
+**Approach (dependency-ordered per Agency Bible §5c.2):**
+1. **Gathering** first (foundation): chop/mine/forage/hunt/fish as library verbs, reusing terrain edit +
+   block/sprite→loot. Both colonists (B5) and NPCs call these.
+2. **Construction:** build houses/walls/roads via `MakeBlock`/`MakeVolume` + the blueprint→build flow.
+3. **Production/crafting:** workshops, farming (plant→tend→harvest), cooking, smithing via the item/recipe
+   system + crafting stations. Consumes gathered/grown inputs.
+4. **NPC drives (Agency Bible §5c.5):** an NPC's profession + mind + needs + site context produce a drive
+   that **self-designates** a task into the same job/task machinery colonists use. Tendency-first: no
+   resource → relocate/idle-differently, never freeze.
+**Done-when:**
+- Each verb family (gather→build→produce) works when invoked by a **player designation** AND by an **NPC
+  drive**, through the **same** `bastion_actions` path (verified both ways).
+- A woodcutter NPC autonomously fells trees near its village and the logs enter the economy; a builder NPC
+  raises a structure; a farmer tends a field — all with **zero player input**.
+- Conservation holds (no item dupe/loss); graceful failure holds (no resources → no freeze); Tier-1b soak
+  shows NPCs autonomously producing/building over time.
+- Colonist work (B4/B5/B6) still uses the same library — no divergence between colonist and NPC action code.
+
+### B-AG6 — Generative systems: autonomous settlement growth + reproduction & genealogy (the world grows)
+**Objective:** Close the loop that makes the world **self-sustaining and generative** — villages **grow and
+build on their own**, and populations **reproduce** with **deep DF-style kinship, families, and inherited
+traits**. Without this, every population only declines; with it, the world lives forward: dynasties form,
+factions grow, herds swell, the map's story accrues.
+**Depends on:** B-AG5 (the build/gather verbs growth uses), B-AG3 (the mind whose traits are inherited +
+relationships that form pairings), rtsim repopulation queue + wildlife-population + site-generation (extend,
+don't reinvent). The capstone of the agency track.
+**Touches:** rtsim site-growth + repopulation rules; a `bastion` kinship/genealogy model (`common`, serde,
+persisted in rtsim's flat tables); B-AG3 mind (trait inheritance); B-AG4 inspector (relationships/ancestry).
+**Approach (LOD-critical — Agency Bible §5c.3/§5c.4):**
+- **Autonomous settlement growth:** villages expand at the **simulated tier** as low-res rtsim **site-growth
+  events** (population↑/resources↑ → site gains a structure); when **loaded**, growth manifests as **actual
+  placed voxels** via B-AG5 build verbs. Reconcile at the boundary (rtsim "grew a house" ↔ real geometry).
+  **Never** place blocks for hundreds of offscreen villages every tick (gotcha #1).
+- **Reproduction:** humanoids form pairings via mind relationships (§5b lovers/spouses) and have **children**
+  who inherit a blend of parent **personality facets + values + traits** (B-AG3) and join the **kin graph**;
+  animals breed when population+food allow (feeds ecosystem equilibrium). Build on rtsim's repopulation queue
+  (delayed, not instant).
+- **Genealogy LOD:** **full kin graphs / family trees / trait inheritance** run **full-res for tracked/loaded
+  lineages**; **distant bloodlines persist as compact ancestry records** (parent links + key traits),
+  promotable on inspect. Delivers "grandson of the founder who slew the wyvern" without holding every tree in
+  memory always.
+- **Ties in:** kinship surfaces in the B-AG4 inspector; a parent's death creates grief thoughts + persistent
+  memory (B-AG3); births feed the population dynamics of B-AG2's ecosystem.
+**Done-when:**
+- **Settlement growth:** over a Tier-1b soak, NPC villages **grow** (population + structures) autonomously —
+  as rtsim events when unwatched, as real construction when loaded — without per-tick offscreen block placement
+  (assert bounded cost).
+- **Reproduction:** colonists/NPCs pair and have children who **inherit** blended personality/values/traits
+  (verify inheritance in the child's mind); animals breed; populations **sustain or grow** rather than only
+  declining (Tier-1b: no extinction-to-zero, no runaway).
+- **Genealogy:** the kin graph forms; a multi-generation lineage is inspectable (B-AG4), with distant
+  ancestry as compact records that promote on inspect; a founder's descendants are traceable.
+- LOD holds (full-res only for tracked/loaded lineages); grief/memory ties fire on kin death; all serde-ready;
+  Tier-1b performant with thousands of NPCs breeding/growing.
 
 ### B9 — Colony HUD & control panels
 **Objective:** The information + control layer that makes it playable: colonist list/inspector, RimWorld-style **work-priority grid**, designation toolbar, stockpile/resource readout, alerts, Z-slice indicator.
