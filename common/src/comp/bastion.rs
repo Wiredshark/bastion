@@ -69,6 +69,29 @@ impl Component for Mood {
     type Storage = specs::DenseVecStorage<Self>;
 }
 
+/// The colonist's current job assignment (B4). Server-side only; the job
+/// system owns the colonist's rtsim-controller activity while this exists.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ActiveJob {
+    pub job: crate::bastion::JobId,
+    pub state: ActiveJobState,
+    /// Travel watchdog: last sampled position + time spent not progressing.
+    pub last_pos: vek::Vec3<f32>,
+    pub stuck_time: f32,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ActiveJobState {
+    /// Walking to the job site.
+    Traveling,
+    /// At the site, ready to work (B5 hooks here).
+    Arrived,
+}
+
+impl Component for ActiveJob {
+    type Storage = specs::DenseVecStorage<Self>;
+}
+
 /// The god-mode anchor marker (§4 standing directive): while the overseer is
 /// active, the player's avatar entity carries this — the world must ignore it
 /// (no targeting/aggro/greeting/pushback) and it must be invulnerable (the

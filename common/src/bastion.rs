@@ -127,6 +127,75 @@ pub enum ContextTarget {
     Block(Vec3<i32>),
 }
 
+// ─── B4: jobs ───────────────────────────────────────────────────────────────
+
+/// Job identifier (board-scoped, monotonically allocated).
+pub type JobId = u64;
+
+/// The kind of work a job requires — maps onto [`WorkPriorities`] fields.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum WorkType {
+    Mine,
+    Chop,
+    Build,
+    Haul,
+    Cook,
+}
+
+impl WorkType {
+    pub fn label(&self) -> &'static str {
+        match self {
+            WorkType::Mine => "mine",
+            WorkType::Chop => "chop",
+            WorkType::Build => "build",
+            WorkType::Haul => "haul",
+            WorkType::Cook => "cook",
+        }
+    }
+}
+
+impl DesignationKind {
+    /// The work-type this designation's jobs require. (Build/Stockpile job
+    /// *generation* lands with B5 blueprints / B6 zones; the mapping exists
+    /// now so priorities are honored from day one.)
+    pub fn work_type(&self) -> WorkType {
+        match self {
+            DesignationKind::Mine => WorkType::Mine,
+            DesignationKind::Chop => WorkType::Chop,
+            DesignationKind::Build => WorkType::Build,
+            DesignationKind::Stockpile => WorkType::Haul,
+        }
+    }
+}
+
+/// One unit of colonist work — a block-level task generated from a
+/// designation (B4). Serde-ready (B10). `claimed_by` is a transient claim
+/// (entity `Uid`); claims are released on cancel/failure/demote.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Job {
+    pub kind: DesignationKind,
+    pub work: WorkType,
+    /// Target block.
+    pub pos: Vec3<i32>,
+    /// Minimum skill level required (0 = anyone). Unused by v1 generation.
+    pub skill_floor: u16,
+    pub claimed_by: Option<crate::uid::Uid>,
+    /// Set when a claimant repeatedly failed to reach the site; unreachable
+    /// jobs are skipped by arbitration and logged.
+    pub unreachable: bool,
+}
+
+/// Aggregate job-board audit for tests/inspectors (B4 harness gate).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct JobAudit {
+    pub total: usize,
+    pub claimed: usize,
+    pub unreachable: usize,
+    /// True iff no two claimed jobs share a claimant and no claimant appears
+    /// twice (each colonist works at most one job).
+    pub claims_distinct: bool,
+}
+
 // ─── B3: colonists ──────────────────────────────────────────────────────────
 
 /// A work skill's progression. Levels rise as B5 grants completion XP.
@@ -165,6 +234,30 @@ impl Default for WorkPriorities {
             build: 3,
             haul: 3,
             cook: 3,
+        }
+    }
+}
+
+impl WorkPriorities {
+    /// Priority for a work type: 0 = never do this work, 1..=4 rising.
+    pub fn get(&self, work: WorkType) -> u8 {
+        match work {
+            WorkType::Mine => self.mine,
+            WorkType::Chop => self.chop,
+            WorkType::Build => self.build,
+            WorkType::Haul => self.haul,
+            WorkType::Cook => self.cook,
+        }
+    }
+
+    pub fn set(&mut self, work: WorkType, priority: u8) {
+        let p = priority.min(4);
+        match work {
+            WorkType::Mine => self.mine = p,
+            WorkType::Chop => self.chop = p,
+            WorkType::Build => self.build = p,
+            WorkType::Haul => self.haul = p,
+            WorkType::Cook => self.cook = p,
         }
     }
 }

@@ -7,6 +7,7 @@
 #![feature(box_patterns, option_zip, const_type_name, slice_partition_dedup)]
 
 pub mod automod;
+pub mod bastion_jobs;
 mod character_creator;
 pub mod chat;
 pub mod chunk_generator;
@@ -770,6 +771,138 @@ impl Server {
             .ecs()
             .read_resource::<rtsim::RtSim>()
             .bastion_colony_roster()
+    }
+
+    /// bastion (B4, harness/scenario hook): synchronously generate + insert
+    /// chunks in a square around `center_wpos` and pin them against the
+    /// unload sweep. Mirrors the vanilla insertion recipe (terrain insert +
+    /// `TerrainChanges::new_chunks` + `rtsim.hook_load_chunk`); chunk
+    /// supplements (wildlife spawns) are deliberately skipped. Returns the
+    /// number of chunks generated.
+    pub fn bastion_force_load_area(&mut self, center_wpos: Vec2<f32>, chunk_radius: i32) -> usize {
+        use common::terrain::CoordinateConversions;
+        let center = center_wpos.as_::<i32>().wpos_to_cpos();
+        let mut generated = 0;
+        for dy in -chunk_radius..=chunk_radius {
+            for dx in -chunk_radius..=chunk_radius {
+                let key = center + Vec2::new(dx, dy);
+                self.state
+                    .ecs()
+                    .write_resource::<bastion_jobs::BastionForceLoaded>()
+                    .0
+                    .insert(key);
+                if self.state.terrain().get_key_arc(key).is_some() {
+                    continue;
+                }
+                let Ok((chunk, supplement)) = self.world.generate_chunk(
+                    self.index.as_index_ref(),
+                    key,
+                    None,
+                    || true,
+                    None,
+                ) else {
+                    continue;
+                };
+                let chunk = std::sync::Arc::new(chunk);
+                let ecs = self.state.ecs();
+                let mut terrain = ecs.write_resource::<common::terrain::TerrainGrid>();
+                let mut changes = ecs.write_resource::<common_state::TerrainChanges>();
+                if terrain.insert(key, chunk).is_none() {
+                    changes.new_chunks.insert(key);
+                    ecs.write_resource::<rtsim::RtSim>().hook_load_chunk(
+                        key,
+                        supplement.rtsim_max_resources,
+                        &self.world,
+                    );
+                }
+                generated += 1;
+            }
+        }
+        generated
+    }
+
+    /// bastion (B4, harness hook): place a designation directly on the board.
+    /// Returns created job ids.
+    pub fn bastion_place_designation(
+        &mut self,
+        region: common::bastion::Region,
+        kind: common::bastion::DesignationKind,
+    ) -> Vec<common::bastion::JobId> {
+        let ecs = self.state.ecs();
+        let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+        let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
+        board.place_designation(&terrain, region.normalized(), kind)
+    }
+
+    /// bastion (B4, harness hook): cancel designations in a region.
+    pub fn bastion_cancel_designation(&mut self, region: common::bastion::Region) {
+        self.state
+            .ecs()
+            .write_resource::<bastion_jobs::JobBoard>()
+            .cancel_region(region.normalized());
+    }
+
+    /// bastion (B4, harness hook): job-board audit snapshot.
+    pub fn bastion_job_audit(&self) -> common::bastion::JobAudit {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .audit()
+    }
+
+    /// bastion (B4, harness hook): per-colonist state (name, position,
+    /// claimed job + travel state) for loaded colonists.
+    pub fn bastion_colonist_states(&self) -> Vec<(String, Vec3<f32>, Option<(u64, bool)>)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let positions = ecs.read_storage::<comp::Pos>();
+        let jobs = ecs.read_storage::<comp::bastion::ActiveJob>();
+        (&colonists, &positions, jobs.maybe())
+            .join()
+            .map(|(c, p, j)| {
+                (
+                    c.0.name.clone(),
+                    p.0,
+                    j.map(|j| {
+                        (
+                            j.job,
+                            matches!(j.state, comp::bastion::ActiveJobState::Arrived),
+                        )
+                    }),
+                )
+            })
+            .collect()
+    }
+
+    /// bastion (B4, harness hook): set a work priority on a colonist by
+    /// name — both the rtsim record and, if loaded, the ECS mirror.
+    pub fn bastion_set_work_priority(
+        &mut self,
+        name: &str,
+        work: common::bastion::WorkType,
+        priority: u8,
+    ) -> bool {
+        use specs::Join;
+        let mut found = false;
+        {
+            let ecs = self.state.ecs();
+            let mut rtsim = ecs.write_resource::<rtsim::RtSim>();
+            found |= rtsim.bastion_set_work_priority(name, work, priority);
+        }
+        {
+            use specs::LendJoin;
+            let ecs = self.state.ecs();
+            let mut colonists = ecs.write_storage::<comp::Colonist>();
+            let mut iter = (&mut colonists).lend_join();
+            while let Some(mut colonist) = iter.next() {
+                if colonist.0.name == name {
+                    colonist.0.work_priorities.set(work, priority);
+                    found = true;
+                }
+            }
+        }
+        found
     }
 
     /// Get a reference to the Metrics Registry
