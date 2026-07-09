@@ -2718,6 +2718,7 @@ impl PlayState for SessionState {
                 self.bastion_overseer_active(),
                 self.bastion_tools.tool,
                 self.bastion_tools.god_mode,
+                self.scene.bastion_slice_z(),
             );
 
             match self.scene.camera().get_mode() {
@@ -2981,6 +2982,23 @@ impl PlayState for SessionState {
                     },
                     HudEvent::BastionToggleGodMode => {
                         self.bastion_tools.god_mode = self.bastion_tools.god_mode.toggled();
+                    },
+                    // bastion (B-MAP1): minimap navigation. Only XY moves —
+                    // the overseer focus glide re-rides the terrain surface
+                    // (ground_z) on its own, so z corrects next frame.
+                    HudEvent::BastionMinimapJump(wpos2) => {
+                        if self.bastion_overseer_active() {
+                            let camera = self.scene.camera_mut();
+                            let f = camera.get_tgt_focus();
+                            camera.set_focus_pos(Vec3::new(wpos2.x, wpos2.y, f.z));
+                        }
+                    },
+                    HudEvent::BastionMinimapPan(delta) => {
+                        if self.bastion_overseer_active() {
+                            let camera = self.scene.camera_mut();
+                            let f = camera.get_tgt_focus();
+                            camera.set_focus_pos(Vec3::new(f.x + delta.x, f.y + delta.y, f.z));
+                        }
                     },
                     HudEvent::BastionRadialPick {
                         action,
