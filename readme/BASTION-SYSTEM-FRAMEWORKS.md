@@ -128,3 +128,18 @@ settle; the growth-from-nothing arc is core colony-sim appeal.
 
 *Sources: `veloren-colony-rts-build-report.md` (design doc), `future-work-and-deferred-ideas.md` (§ refs
 above), `MASTER-COLLATION-index.md` (session state), the agency/DF/divine-politics bibles.*
+
+---
+
+## 2b. The Quality tier lock (canonical — added 2026-07-09, DF-QUALITY pass; architect-directed)
+**The ONE canonical quality-tier enum is the engine's `common::comp::item::Quality`**
+(`Low, Common, Moderate, High, Epic, Legendary, Artifact, Debug` — `Ord`, color-coded, already UI-wired and
+already computed per-instance for modular items). **Bastion DEFERS to it; it never forks a parallel quality
+enum** — exactly as every zoned system defers to the §2 `purpose` enum. Any system speaking of "quality"
+(craft quality, meal quality, room quality, artifact tier) uses THIS enum's variants; systems needing finer
+craftsmanship gradations map onto them, never fork. `Quality::Artifact` is the reserved apex (DF-ARTIFACT,
+reachable only via the strange mood — never normal crafting); `Quality::Debug` stays out of gameplay. The DF
+craftsmanship ladder (standard→well-crafted→fine→superior→exceptional→masterwork→artifact) maps onto these
+variants (see `DF-QUALITY-design.md` §2). Load-bearing companion schema to lock: a per-instance
+`craft_quality: Option<Quality>` override on the item instance (the skill-driven stamp; DF-QUALITY §7-Q1).
+Source: `readme/DF-QUALITY-design.md`.

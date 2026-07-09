@@ -282,10 +282,14 @@ B1.8   [PROMPTED] Map fly-to (M) + surface/underground elevation modes (needs B1
 B1.9   [PROMPTED] Tilt-shift post-process (needs B1.6 ✓)
 
 ── Phase 5: DF depth backlog (from the Gap Ledger — design pass required before building) ──
-Tier 1: DF-TRADE, DF-TAVERN, DF-RELIGION, DF-CHAIN, DF-WORKSHOP, DF-FARM, DF-COOK, DF-QUALITY,
-        DF-ARTIFACT (strange moods — fact-checked mechanics in ledger), DF-FOCUS (if not folded into
-        B-AG3), DF-HIST (Legends/Chronicle), DF-ZONES, DF-ORDERS, DF-STANDING, DF-LOG, DF-DIG-VERBS,
-        DF-ROOMS, DF-CAVERN, DF-GEOLOGY, DF-MAGMA, DF-WOUND
+Tier 1 — **[DESIGNED]** (design docs written by the design agents; build-ready when the frontier reaches them —
+        see readme/DF-*-design.md + the live tracker DESIGN_PASS_LOG.md / BASTION_DESIGN_STATUS.md):
+        **DF-PRODUCTION** (= DF-WORKSHOP + DF-CHAIN + DF-FARM + DF-COOK), **DF-DIG-VERBS**, **DF-QUALITY**,
+        **DF-HIST** (chronicle; DF-LOG folds in), **DF-RELIGION** (colony tier; faith-politics reassigned to
+        Divine Politics), **DF-ZONES**; IN-PROGRESS: DF-POLICY (ORDERS/STANDING), DF-TRADE.
+Tier 1 — still [LEDGER] (need a design pass): DF-TAVERN, DF-ARTIFACT (strange moods — fact-checked
+        mechanics in ledger), DF-FOCUS (if not folded into B-AG3), DF-ROOMS, DF-CAVERN, DF-GEOLOGY,
+        DF-MAGMA, DF-WOUND
 Tier 2: DF-MECH, DF-POWER, DF-TRAP, DF-OPERABLE, DF-FLUID, DF-PUMP, DF-MEDICAL, DF-MILITARY,
         DF-RANGED, DF-SYNDROME, DF-JUSTICE, DF-MISSION, DF-LIVESTOCK, DF-MIGRATION, DF-ROT,
         DF-PRESTIGE, DF-BURROW, DF-NOTES

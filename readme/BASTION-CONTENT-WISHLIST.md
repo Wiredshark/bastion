@@ -149,3 +149,62 @@ race), trade goods (bolts of cloth, gem boxes, spice sacks)
   (the §3i delegation loop, now with a full demand map).
 - **Immediately generatable with zero system gates:** items #1, wildlife/flora #7, dungeon sets #8,
   infrastructure #9, faith props #5, boundary markers — hundreds of assets of pure READY work.
+
+---
+
+## Appendix — DF-PRODUCTION flip map (from `DF-PRODUCTION-design.md`, 2026-07-09)
+
+The industry (§1) + agriculture (§3) assets above get precise READY/NEEDS triggers from the DF-PRODUCTION
+design pass. Generate a NEEDS batch when its sub-block lands (the §3i delegation loop):
+
+- **READY now** (systems already consume them): crafting-station sprites (anvil/loom/cauldron/…); crafted-good
+  models (recipes exist — 326 in `recipe_book_manifest.ron`); prepared-meal + drink icons. Generate
+  demand-ordered, not all at once.
+- **NEEDS:DF-WORKSHOP → READY on PROD-0:** workshop *building shells* (smithy/kitchen/loom-house the stations
+  sit inside), each with a function-harness-reachable WORK POINT.
+- **NEEDS:DF-FARM → READY on PROD-2:** crop growth-stage sprites (keyed to `Growth(0..max)`, wheat-style), seed
+  item icons, tilled-soil ground texture + fence/trellis dressing.
+- **[AN-C] craft-at-station / farm set** — named in the design §5: `anim::craft_hammer/stir/weave`,
+  `anim::farm_hoe/sow/harvest`. v1 uses NATIVE stand-ins (mining-swing / gather / crouch); PROD-5 pays the debt.
+
+## Appendix — DF-QUALITY/DF-ARTIFACT asset note (from `DF-QUALITY-design.md`, 2026-07-09)
+- **[A/READY]** Quality tiers need NO new assets — the `Quality` enum ships colors (Grey→Orange) + UI.
+- **[SYS: DF-ARTIFACT]** artifact-tier **ornateness/glow treatment** for masterwork + artifact items (a
+  shader/tint pass so a legendary work *reads* as special; the named artifact reuses the produced-good model
+  with an ornate variant) → READY on QUAL-2. Mostly shader, not new geometry.
+
+## Appendix — DF-HIST (Chronicle/Legends) asset note (from `DF-HIST-design.md`, 2026-07-09)
+DF-HIST is **UI-only** — no 3D, no in-world sprites, no animation. Its assets are 2D UI, nearly all
+authored-in-code. Only one real batch:
+- **[SYS: DF-HIST-UI · near-term → ASSET_REQUESTS]** ~10–15 **event-type glyphs** (death/theft/birth/founding/
+  war/harvest/masterwork/famine/siege/divine-act), monochrome, ~16px, matching HUD icon style — one per
+  `ChronicleEvent` kind; the live feed's at-a-glance legibility. Core ~6 requested now as spec-pressure.
+- **[A/READY]** Feed panel frame + importance-band styling (Routine/Notable/Legendary color+weight) = existing
+  chat/HUD style reskin, no art. Legends browser layout reuses inspector/map screen furniture.
+- **[A/READY→reuse]** Figure/site/faction rows use **existing NPC/site role icons** at v1 — no new art.
+- **[SYS: S6 · gated/far-future]** an "attribution / divine-hand" glyph (distinguishes attributed god-acts) +
+  bespoke figure portraits — wishlist only, gated on God-Powers/faith; not requested.
+
+## Appendix — DF-RELIGION flip map (from `DF-RELIGION-design.md`, 2026-07-09)
+
+The faith-asset batch (§5 "faith props" above) gets precise READY/NEEDS triggers from the DF-RELIGION pass.
+Colony-tier religion sits just past **B7** (worship is a B7 need); REL-0 (the buildable temple) precedes B7.
+
+- **NEEDS:DF-RELIGION → READY on REL-0:** **shrine** (small, one altar — the starter faith building),
+  **temple** (`faith`-purpose zone structure, altar + congregation hall), **altar/idol/effigy** prop (the
+  worship focal point — the tavern `Bar`/`Stage` analog). Each temple ships a colonist-reachable WORSHIP POINT
+  (function-harness gate). Per-race set where sensible; author with a **lore field** (temple lore biases the
+  faith it generates — future-work §lore). The worldgen `DesertCityTemple` proves the pattern but is not the
+  colony structure.
+- **NEEDS:DF-RELIGION → READY on REL-1:** **pew / prayer-mat / kneeler** (congregation-spot dressing — the
+  tavern chairs analog; makes worship read), **offering bowl / brazier / incense** (ambience + future offering
+  hook, low priority).
+- **NEEDS:DF-RELIGION → READY on REL-2:** **priest/prophet vestment** (figure dressing so the priest reads in a
+  congregation; ties the per-race cultural-look system).
+- **NEEDS:DF-RELIGION → READY on REL-3:** **faith/devotion overlay + HUD icons** (shares the mood/needs overlay
+  layer — one overlay engine).
+- **NEEDS:B13 → READY on REL-4:** sanctified-ground VFX (holy shimmer on a `faith` zone — the visible mark of a
+  god-act; God-Powers-owned).
+- **[AN-C] worship set** — named in the design §5: `anim::pray` (kneel+bow), `anim::kneel`, `anim::bless`
+  (priest raised-arms). **v1 is NATIVE** (Sit/Cheer/Talk facing the altar — the tavern arena-crowd reused
+  wholesale, the cheapest custom-animation topic in the ledger); enrichment pays the debt in the §3u batch.
