@@ -238,3 +238,18 @@ remove an earlier block's entries.
   is the shared height authority (all overlays must agree). The §3w
   colony-boundary overlay is its next customer — design the fill/volume API
   for both when B5.6b is built.
+
+## B5.6b visual reference (2026-07-09, captured during B5.6a hold)
+
+- **IDEA/reference (B5.6b):** Ben provided a RimWorld screenshot as the
+  zone-management target — "we want this but flat image and volumetric."
+  Read: RimWorld-style colored AREA OVERLAYS (each zone type a flat tinted
+  fill draped on the ground) + a management surface (the grid/schedule-style
+  panel), rendered in our engine BOTH as flat terrain-conformed fills AND as
+  volumetric zones with countable depth. This matches the updated B5.6b
+  queue scope (full ground fills in zone-type colors, overlap blending,
+  labels, volumetric + layer counter, clickable zones → radial). No
+  `readme/reference-images/` folder exists yet — when Ben drops the image
+  there, the B5.6b session should view it and judge output against it
+  (mega-prompt input #8). Not actioned now: B5.6b is its own session and
+  B5.6a must tag first.
