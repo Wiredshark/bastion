@@ -745,7 +745,8 @@ impl Widget for BastionMiniMap<'_> {
                 });
             }
             for (i, (region, kind)) in designations.iter().enumerate() {
-                let [r, g, b, _] = crate::bastion::designation_color(*kind);
+                // b-1's one zone-color legend; the map applies its own alpha.
+                let [r, g, b] = crate::bastion::tools::zone_rgb(*kind);
                 let lo = wpos_to_px(Vec2::new(region.min.x as f32, region.min.y as f32));
                 let hi = wpos_to_px(Vec2::new(
                     region.max.x as f32 + 1.0,
