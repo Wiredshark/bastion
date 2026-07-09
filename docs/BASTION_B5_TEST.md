@@ -58,21 +58,36 @@ B5 SCENARIO: PASS
    across its sampling window instead of point-in-time snapshots, and
    loosening its arrived-colonist threshold from exactly 4 to `>= 3` of 4
    (see finding §3 for why the stricter bound was never actually reliable
-   under B5's semantics). Re-verified 5/5 clean.
+   under B5's semantics).
 3. **2-tall chop stump's lower block permanently unreachable** — a
    distinct, fully-deterministic geometry bug (not a flake): the lower
    block's arrival target coincides with the block above it. Logged to
    the backlog; worked around by using a single-block chop test.
+4. **Found after an initial merge, on a wider re-verification pass**: the
+   mine quarry pit had no exit ramp, so a colonist that happened to finish
+   its last mine job while standing at the pit floor and then got
+   reassigned to Build (elsewhere entirely) was permanently stuck —
+   confirmed via a debug log showing its position never changing across 8+
+   repeated stuck/release cycles. Fixed by carving a 2-step staircase out
+   of the pit in the harness (see finding §4b) — `bastion_jobs.rs` itself
+   was untouched. The `bastion-block-B5` tag was moved forward to include
+   this fix (see `readme/BASTION_RESTORE_LEDGER.md`).
 
-## Standing invariant re-checks after the fixes
+## Standing invariant re-checks after all four fixes
 
-- `--b4-scenario`: **5/5 PASS** (was 0/3 before the B4-scenario fix landed;
-  `arrived_enabled` occasionally reads 3 instead of 4 across runs — real,
-  accepted non-determinism per the project's invariant-first testing
-  philosophy, not a flake in the mechanism itself).
-- `--b5-scenario`: **5/5 PASS** (was failing on `stone_count`/`chop_cleared`
-  before the fixes; chop specifically flaked 4/6 before the stump-height
-  fix, now 5/5).
+Sample sizes below are deliberately larger than the original gate's 5
+runs — bug #4 above was *only* caught because a wider re-verification
+pass was run after the first merge, and it's worth recording the higher
+confidence this represents:
+
+- `--b4-scenario`: **10/10 PASS** across two batches (was 0/3 before fix
+  #2 landed; `arrived_enabled` occasionally reads 3 instead of 4 across
+  runs — real, accepted non-determinism per the project's invariant-first
+  testing philosophy, not a flake in the mechanism itself).
+- `--b5-scenario`: **13/13 PASS** across three batches after fix #4 (was
+  failing/flaking on `stone_count`, `chop_cleared`, and — only discovered
+  on the wider pass — `build_placed`, roughly 2-in-5 to 3-in-8 for the
+  last one specifically, before its fix).
 - Vanilla flagless boot (`veloren-server-cli`, no args): alive and
   "ready to accept connections" within ~10s, clean startup, no panics.
 

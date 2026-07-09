@@ -666,6 +666,32 @@ fn b5_scenario(args: &Args) -> ExitCode {
             }
         }
     }
+    // Exit ramp: once the pit is fully mined out, a colonist standing at its
+    // floor (2 blocks below the rim) has *no* other job left nearby and gets
+    // sent somewhere else entirely (e.g. BUILD, on the opposite side of the
+    // colony) — but the rim ring above is a sheer 2-block wall with no
+    // climb/ramp modeled, so it never leaves the pit (confirmed: repeated
+    // claim/10s-stuck/release cycling with the colonist's position never
+    // changing at all). The ring gives every dig cell *adjacent* footing for
+    // mining, but nothing guarantees a walkable path back OUT once the whole
+    // footprint is hollowed. Carve a 2-step staircase on one column, just
+    // outside the ring, so the pit floor always has an exit: floor(-2) →
+    // step(-1) → rim(0), each a normal 1-block step.
+    let ramp_x = mine_min.x + 1;
+    server.state_mut().set_block(
+        Vec3::new(ramp_x, mine_min.y - 1, mine_gz - 1),
+        Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
+    );
+    server
+        .state_mut()
+        .set_block(Vec3::new(ramp_x, mine_min.y - 1, mine_gz), Block::empty());
+    server.state_mut().set_block(
+        Vec3::new(ramp_x, mine_min.y - 2, mine_gz),
+        Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
+    );
+    server
+        .state_mut()
+        .set_block(Vec3::new(ramp_x, mine_min.y - 2, mine_gz + 1), Block::empty());
     tick(&mut server, 2);
     let mine_jobs = server
         .bastion_place_designation(Region { min: mine_min, max: mine_max }, DesignationKind::Mine)

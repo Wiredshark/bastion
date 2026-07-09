@@ -90,3 +90,22 @@ remove an earlier block's entries.
   Verified 5/5 clean on both `--b4-scenario` and `--b5-scenario` after the
   fix (was previously failing 3/3 and flaking ~30-65% respectively before
   the two separate root causes above were both addressed).
+- **FIX** (found and fixed in this block, after the merge below — see the
+  amended findings): the mine quarry pit's rim ring gives every dig cell
+  guaranteed *adjacent* footing for mining, but nothing guaranteed a
+  walkable path back *out* once the whole 3×3×3 footprint was hollowed —
+  the rim is a sheer 2-block wall with no climb/ramp modeled. A colonist
+  that happened to finish its last mine job while standing at the pit
+  floor, then got assigned to a job elsewhere (e.g. Build, clear across
+  the colony), was flat-out trapped: confirmed via a debug log showing its
+  position genuinely never changing at all across repeated 10s-stuck
+  cycles for the entire settling budget. Fixed in the harness by carving a
+  2-step staircase (floor → step → rim) on one column, just outside the
+  ring, so the pit floor always has a walkable exit. Verified 8/8 clean on
+  `--b5-scenario` after the fix (was flaking on `build_placed` even after
+  the two fixes above, roughly 2/5-3/8 depending on the run). This is a
+  test-geometry fix only — `bastion_jobs.rs`'s execution/watchdog logic
+  was untouched by it; the underlying "no climb/ramp modeled" limitation
+  is the same one already tracked for tall chop stumps/trees above, and
+  will resurface for any future test (or real in-game designation) that
+  digs an enclosed pit without its own exit.

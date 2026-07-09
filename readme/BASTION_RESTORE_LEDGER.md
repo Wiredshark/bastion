@@ -34,3 +34,16 @@ than editing the old one.
   stand-in are B5-only; B6 is expected to replace (not extend) that
   mechanism, so rolling back to B4 cleanly removes it with no dangling
   references.
+- **`bastion-block-B5` was moved once**, same session it was first cut: a
+  wider post-merge re-verification pass (running the gate far more than
+  the original 5 times) turned up a third reachability bug (the mine
+  quarry pit had no exit ramp — see `BASTION_B5_FINDINGS.md` §4b) that the
+  original tag's state didn't include the fix for. Since nothing had yet
+  been built on top of the original tag, the tag was force-moved to the
+  commit with the fix rather than leaving a known-flaky boundary as the
+  permanent rollback target — judged more honest for future rollback
+  purposes than a tag whose name promises "fully-tested" but whose
+  content sometimes wasn't. If a rollback to "B5 before the ramp fix" is
+  ever specifically needed, it's `ec29fda` on `bastion/block-B5` (the gate
+  fixes commit, pre-ramp) — not tagged, but preserved in that branch's
+  history.
