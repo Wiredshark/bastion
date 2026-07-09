@@ -69,3 +69,33 @@ lives on `bastion/block-<N>` for fine-grained rollback.
 ### B3 — Colonist entity model & starting colony
 
 - Start SHA: `1e2ce94` · branch `bastion/block-B3` · started 2026-07-09.
+- **PASS** (2026-07-09). Commits `7f68814..1d7c07c` (+gate docs): colonist
+  data types (skills/priorities/needs/mood, serde-ready) + `Colonist` synced
+  comp + `PlayerColony`/`BastionGodAnchor` markers; colonists are rtsim NPCs
+  (`bastion_colonist` field, serde-default) — promote/demote through vanilla
+  machinery with decoration + name override at promote; §4 anchor directive:
+  god mode = `BastionGodAnchor` + permanent Invulnerability buff (agents drop
+  invulnerable targets); `BastionSpawnColony` message + "Found colony" radial
+  verb; cyan colonist markers + Inspect-tool box-select (multi-select);
+  harness `--colony N` + roster dump. Gate: harness baseline+6 exact & roster
+  dumped; in-game founding → 6 named promotes in 60ms; name-select,
+  box-select ("Selected: 2 units"), distinct markers all verified; demote ×6
+  + same-NPC re-promote log-verified (re-promote across a full restart —
+  colonist records round-trip rtsim persistence); vanilla flagless boot OK.
+  Residual: live hostile-aggro field test not run (user closed the session;
+  B8 exercises it); greet/pushback filters best-effort. See
+  `BASTION_B3_TEST.md`, `BASTION_B3_FINDINGS.md`.
+- Merged to `bastion/main` (no-ff), tagged `bastion-block-B3`.
+
+### Session stop (2026-07-09, second stop)
+
+- Stopped cleanly after B3 (context budget; also 01:45 local — the user
+  closed the game mid-gate). `bastion/main` green at `bastion-block-B3`.
+  **Next session: resume the mega-prompt; it resumes at B4** (Designation →
+  job board → autonomous arbitration + pathing — the Slice B heart; from B4
+  onward the Tier-1b zero-input soak becomes part of every gate).
+- Watch items: hostile-aggro live test for the god anchor (fold into B8 or
+  next session's smoke); colonists idle under vanilla civilised AI until B4;
+  two architect files rode along in block commits (noted in test docs);
+  rtsim data.dat now carries bastion fields (serde-default keeps old saves
+  loading — verified by the restart re-promote).

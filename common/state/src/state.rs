@@ -288,6 +288,13 @@ impl State {
         // bastion (B2a): overseer selection marker (client-side use; harmless
         // to register everywhere, never synced).
         ecs.register::<comp::BastionSelected>();
+        // bastion (B3): colonists + god-anchor. `Colonist` is synced (see
+        // common-net synced_components); the rest are server-side.
+        ecs.register::<comp::Colonist>();
+        ecs.register::<comp::PlayerColony>();
+        ecs.register::<comp::bastion::Needs>();
+        ecs.register::<comp::bastion::Mood>();
+        ecs.register::<comp::BastionGodAnchor>();
         // Register server -> all clients synced components.
         ecs.register::<comp::Body>();
         ecs.register::<comp::Hardcore>();

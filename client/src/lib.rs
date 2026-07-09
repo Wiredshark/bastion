@@ -1263,6 +1263,7 @@ impl Client {
                     | ClientGeneral::BastionPlaceDesignation { .. }
                     | ClientGeneral::BastionApplyInfluence { .. }
                     | ClientGeneral::BastionContextAction { .. }
+                    | ClientGeneral::BastionSpawnColony { .. }
                     | ClientGeneral::SetBattleMode(_) => {
                         #[cfg(feature = "tracy")]
                         {
@@ -2044,6 +2045,11 @@ impl Client {
         verb: common::bastion::ContextVerb,
     ) {
         self.send_msg(ClientGeneral::BastionContextAction { target, verb });
+    }
+
+    /// bastion (B3): found the player colony near `pos`.
+    pub fn bastion_spawn_colony(&mut self, pos: Vec3<f32>, count: u8) {
+        self.send_msg(ClientGeneral::BastionSpawnColony { pos, count });
     }
 
     pub fn start_spectate_entity(&mut self, entity: EcsEntity) {

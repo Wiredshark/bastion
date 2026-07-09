@@ -754,6 +754,24 @@ impl Server {
     /// Get a reference to the server's world.
     pub fn world(&self) -> &World { &self.world }
 
+    /// bastion (B3): spawn the player-colony starting band near `wpos` (used
+    /// by the headless harness; in-game the client message drives it).
+    /// Returns the roster names.
+    pub fn bastion_spawn_colony(&mut self, wpos: Vec3<f32>, count: u8) -> Vec<String> {
+        self.state
+            .ecs()
+            .write_resource::<rtsim::RtSim>()
+            .bastion_spawn_colony(wpos, count)
+    }
+
+    /// bastion (B3): the colony roster.
+    pub fn bastion_colony_roster(&self) -> Vec<common::bastion::BastionColonist> {
+        self.state
+            .ecs()
+            .read_resource::<rtsim::RtSim>()
+            .bastion_colony_roster()
+    }
+
     /// Get a reference to the Metrics Registry
     pub fn metrics_registry(&self) -> &Arc<Registry> { &self.metrics_registry }
 
