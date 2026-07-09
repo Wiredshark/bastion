@@ -55,6 +55,9 @@ macro_rules! synced_components {
             object: Object,
             frontend_marker: FrontendMarker,
             arcing: Arcing,
+            // bastion (B3): colony membership + roster data (markers,
+            // box-select, inspector).
+            colonist: Colonist,
             // TODO: change this to `SyncFrom::ClientEntity` and sync the bare minimum
             // from other entities (e.g. just keys needed to show appearance
             // based on their loadout). Also, it looks like this actually has
@@ -133,6 +136,11 @@ impl NetSync for Hardcore {
 }
 
 impl NetSync for Stats {
+    const SYNC_FROM: SyncFrom = SyncFrom::AnyEntity;
+}
+
+// bastion (B3)
+impl NetSync for Colonist {
     const SYNC_FROM: SyncFrom = SyncFrom::AnyEntity;
 }
 
