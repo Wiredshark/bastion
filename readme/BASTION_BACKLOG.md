@@ -176,3 +176,29 @@ remove an earlier block's entries.
   demo verdict on colonist walk speed was not collected this session —
   the in-game demo of B5.5's erase tool should double as the speed
   eyeball; still open.
+
+## B5.6 — Zone visuals (2026-07-09, pre-build scope assessment)
+
+- **FIX** (photographed, high-priority, tractable): painted-zone/selection
+  outlines render as flat rectangles floating over sloped terrain — the
+  live-demo bug in `readme/evidence-b56-floating-selection-bleabrolm.png`.
+  Root cause: `voxygen/src/session/mod.rs` `bastion_region_outline` draws 4
+  `DebugShape::Line`s at a single flat `max.z + 0.15`. Fix = terrain-conform
+  each edge (sample `client.state().terrain()` height, emit segments). Ben's
+  diagnostic (a slice toggle temporarily "fixed" it) is consistent with the
+  overlay caching a stale flat height. Verify across all slice modes + after
+  toggles. This is the core of the proposed B5.6a.
+- **ADD** (needs infra, deferred to proposed B5.6b): terrain-conformed
+  translucent *fill* overlays + *volumetric* zone rendering require a new
+  `DebugShape` variant carrying pre-conformed geometry (debug mesh builders
+  in `scene/debug.rs` lack terrain access) and alpha-blend confirmation on
+  the debug pass. Feasible (the pipeline already uses `Quad`), but real
+  rendering-infra work — see `readme/BASTION_CONSISTENCY.md` B5.6 entry.
+- **ADD** (design-adjacent, deferred): volume-selection UX (scroll/drag to
+  set zone depth + precision numeric field) has no data model to drive —
+  `common::bastion::Region` is min/max only; paint hardcodes `min.z-2`. A
+  designation z-extent model is net-new (overlaps §3v mine-zone-depth). Flag
+  for a design pass before building the selection UX.
+- **IDEA** (optional): the reusable overlay-draping utility the prompt asks
+  for (Part 1) is the same one §3w colony-boundary overlay will reuse —
+  design its API for both customers when B5.6a is built (note the seam).

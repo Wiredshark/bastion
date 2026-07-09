@@ -79,3 +79,44 @@ instead, referencing the old one).
   asset pipeline (flagged in the backlog, and exactly the kind of gap the
   concurrent asset-lab session's tooling is meant to fill — coordination
   point for the architect).
+
+## B5.6 — Zone visuals (2026-07-09, PRE-BUILD SCOPE FLAG — block NOT started)
+
+- **Prompt framing vs. actual scope (flagged for architect decision).**
+  `readme/B5.6-zone-visuals-prompt.md` calls itself a "Small,
+  almost-entirely-CLIENT-SIDE patch block." Reading the code, the block is
+  really THREE tractable items + TWO that need net-new infrastructure:
+  - **Tractable now** (existing seams): Part 1 *outline* draping — the
+    photographed floating-overlay bug (`bastion_region_outline` in
+    `voxygen/src/session/mod.rs:701` draws 4 flat `DebugShape::Line`s at
+    `max.z + 0.15`, a single flat height → floats on slopes). Fix = sample
+    `client.state().terrain()` height along each edge (ReadVol, already in
+    scope) and emit conformed segments. Part 3 toggle (new `GameInput` +
+    3-state enum). Part 4 pile tiers (extend `server/src/bastion_piles.rs`).
+  - **Needs new infrastructure** (NOT a small patch):
+    - Part 1 *fills* + Part 2 *volumetric* rendering: the debug pipeline has
+      `Quad` internally so a translucent conformed-surface/volume shape is
+      *feasible*, but it requires a NEW `DebugShape` variant that carries
+      pre-conformed terrain-sampled geometry (the debug mesh builders in
+      `scene/debug.rs` have no terrain access) + confirming the debug pass
+      blends alpha. That is real rendering-infra work, not parameterization.
+    - Part 2 *volume-SELECTION UX* ("drag footprint then scroll/vertical-drag
+      to set depth level-by-level; precision numeric panel"): there is **no
+      designation z-extent model** to drive. `common::bastion::Region` is
+      just `min`/`max` `Vec3<i32>`; painting hardcodes `min.z - 2 .. max.z`
+      (`session/mod.rs:789`). Depth-selection is net-new *interaction +
+      data-model* work (arguably design, adjacent to B6 mine-zone depth),
+      not a client visual tweak.
+  - **The whole block's correctness is VISUAL** — its Done-when is
+    screenshot-gated (drape-on-hill/pit, volume reads countable depth). That
+    can only be verified by rebuilding voxygen (~6 min each) and looking;
+    headless scenarios only prove "sim unaffected."
+- **Suggested resolution (flagged for architect):** split B5.6 into
+  **B5.6a** = outline draping (fixes the photographed bug) + visuals toggle
+  + pile tier scaling (all tractable, fast, high-value), and **B5.6b** =
+  conformed *fills* + *volumetric* zone rendering + the *volume-selection
+  UX/z-extent model* (a real rendering+interaction block; the z-extent part
+  may want a design pass first, and it overlaps the §3v mine-zone-depth and
+  §3w boundary-overlay work). B5.6a can be built immediately on
+  confirmation. Recorded, not auto-actioned — the runner did NOT unilaterally
+  rescope-and-merge, since that would fake B5.6's Done-when.

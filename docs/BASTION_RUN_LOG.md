@@ -278,3 +278,34 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   remain uncommitted in the tree (left for the next architect-inputs
   commit — NOT part of this block); asset-lab session files still
   untracked and untouched.
+
+## Session 2026-07-09 (batch runner, resumed — B5.6 assessment)
+
+- Green at `bastion-block-B5.5` (`fc04e86` on main; architect inputs for
+  B5.6/B5.8/B-TESTBED/B-ASSET1 committed `055a808`). Catch-up architecture
+  pass already done (prior session — `readme/BASTION_ARCHITECTURE.md`
+  exists), so first-action requirement satisfied.
+- **B5.6 — STOP-AND-FLAG (not built, main untouched).** On exploring the
+  code, the "small, almost-entirely-client-side patch" framing understates
+  the block: full Done-when needs terrain-conformed translucent *fills* +
+  *volumetric* zone rendering (new `DebugShape` infra — the debug mesh
+  builders have no terrain access) and a *volume-selection UX* driven by a
+  designation *z-extent model that does not exist* (`Region` is min/max
+  only; paint hardcodes `min.z-2`). The block is also entirely
+  visual-correctness → screenshot-gated (voxygen ~6-min rebuilds; the game
+  exe was running/locked from a live test). Per protocol (flag scope
+  discrepancies; never fake a Done-when; when unsure, stop and report), the
+  runner did NOT start mutating engine code toward an un-mergeable block.
+  Scope finding + concrete split recorded in
+  `readme/BASTION_CONSISTENCY.md` and `readme/BASTION_BACKLOG.md`.
+- **Recommendation:** architect split B5.6 → **B5.6a** (outline draping —
+  the photographed floating-overlay bug fix — + ON/SUBTLE/OFF visuals toggle
+  + pile tier scaling; all tractable, fast, high-value) and **B5.6b**
+  (conformed fills + volumetric rendering + volume-selection UX/z-extent
+  model; a real rendering+interaction block, z-extent part may want a design
+  pass). B5.6a is ready to build immediately on confirmation.
+- `bastion/main` remains green at `bastion-block-B5.5`. The
+  `bastion/block-B5.6` branch holds only a run-log start note (no code).
+- **Next action:** confirm the B5.6a/B5.6b split (or a full rendering-block
+  budget for B5.6 as-is), then re-run the mega-prompt. Watch-items carried
+  from B5.5: Ben's TRAVEL_SPEED verdict; erase-tool in-game demo.
