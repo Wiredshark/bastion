@@ -97,11 +97,15 @@ B5.5   [MERGED]   PATCH: zone deletion (Erase tool + radial Delete zone, exact A
                   fix was should_merge:false; despawn timer removed as a latent item-loss bug). Tag
                   bastion-block-B5.5. NOTE: pile visual tier-scaling shipped basic; B5.6 carries the
                   full growth-tier polish.
-B5.6   [PROMPTED] PATCH (client-side): zone visuals — outlines/fills DRAPE terrain, volumetric zones render
-                  countable depth, ON/SUBTLE/OFF designation-visuals toggle (visual-only), + PILE VISUAL
-                  SCALING (pile mesh grows through tiers with count, caps at a great-mound plateau;
-                  visuals never touch the count) — see readme/B5.6-zone-visuals-prompt.md. Builds the
-                  reusable overlay-draping utility the §3w boundary overlay reuses.
+B5.6a  [APPROVED] PATCH (build now): outline DRAPING (terrain-sample each edge — fixes the photographed
+                  floating bug incl. the F9/slice lead), ON/SUBTLE/OFF visuals toggle, pile tier scaling,
+                  + erase-filters if cheap. Split from B5.6 per builder scope finding (correct call —
+                  logged in BASTION_CONSISTENCY).
+B5.6b  [DESIGNED] Conformed fills + volumetric zone rendering + volume-selection UX, now UNBLOCKED: the
+                  z-extent data model is decided in readme/B5.6-zone-visuals-prompt.md (designations gain
+                  z_extent{down,up} relative to painted surface; defaults preserve current semantics;
+                  per-cell surface-relative resolution; the SAME field §3v mining + §3w boundary expect).
+                  Build as its own block, before or with the mine-zone work.
 B5.7   [DESIGNED] MICRO-PATCH: floating-tree cleanup. When chopping severs the trunk, any DISCONNECTED
                   canopy remainder (connectivity check from the cut upward) is removed and converted
                   DIRECTLY into the resource pile — conservation-exact: severed blocks yield the same
@@ -127,6 +131,12 @@ B6     [DESIGNED] Stockpiles, hauling, reservations (conservation invariants; ha
                   skill-XP system (hauling skill grows → bigger armfuls), with sane per-item-type caps
                   (stone armful ≠ log armful). Stats-not-yet-designed fields default sensibly and are
                   flagged PROVISIONAL in the findings for the eventual stat-system design pass.
+B-MAP1 [PROMPTED] INDEPENDENT (client-side, after B5.6): the OVERSEER MINIMAP — WoW-addon technique:
+                  render the real world top-down into cached per-chunk tiles (B1 ortho camera as the tile
+                  renderer; invalidate on terrain-edit events), zoomable pyramid blending to worldgen map
+                  at far zoom, overlay pins (colonists/zones/piles/camera-frustum/alerts), click-to-jump
+                  navigation — see readme/B-MAP1-overseer-minimap-prompt.md. Founds the §3s
+                  map-is-the-interface layer; pin/layer API is the seam territory/routes/dominion reuse.
 B-ASSET1 [PROMPTED] INDEPENDENT: asset integration harness + render test arena (flagged asset-lab loader,
                   real-engine dynamic tests per ASSET_DYNAMIC_TEST_SPEC, --asset-arena client mode for
                   Ben's eyes-on review) — see readme/B-ASSET1-integration-render-arena-prompt.md.
