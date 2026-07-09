@@ -362,3 +362,146 @@ pub fn place_structure(
     );
     report
 }
+
+/// Real-terrain-kind ground scan (the B5 canopy lesson — never `is_filled`,
+/// which counts tree Wood/Leaves and returns canopy heights).
+pub fn ground_z(state: &State, x: i32, y: i32) -> Option<i32> {
+    use common::terrain::BlockKind;
+    let terrain = state.terrain();
+    (0..2048).rev().find(|z| {
+        terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+            matches!(
+                b.kind(),
+                BlockKind::Rock
+                    | BlockKind::WeakRock
+                    | BlockKind::GlowingRock
+                    | BlockKind::GlowingWeakRock
+                    | BlockKind::Grass
+                    | BlockKind::Snow
+                    | BlockKind::ArtSnow
+                    | BlockKind::Earth
+                    | BlockKind::Sand
+                    | BlockKind::Ice
+            )
+        })
+    })
+}
+
+/// Guaranteed-flat rock slab + clear air above, centered on (cx, cy) at
+/// `pad_z`. Writes are buffered `BlockChange`s (applied at tick end).
+/// Returns the write count.
+pub fn flatten_pad(state: &mut State, cx: i32, cy: i32, pad_z: i32, half: i32, clear_h: i32) -> usize {
+    use common::terrain::BlockKind;
+    let mut writes = 0usize;
+    for x in (cx - half)..=(cx + half) {
+        for y in (cy - half)..=(cy + half) {
+            for dz in -1..=0 {
+                state.set_block(
+                    Vec3::new(x, y, pad_z + dz),
+                    Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
+                );
+                writes += 1;
+            }
+            for dz in 1..=clear_h {
+                state.set_block(Vec3::new(x, y, pad_z + dz), Block::empty());
+                writes += 1;
+            }
+        }
+    }
+    writes
+}
+
+/// Pick the flattest, driest candidate anchor on rings around `around`,
+/// scored by interpolated-altitude range over a coarse footprint grid using
+/// worldgen sim data (no chunks needed — probing real terrain would require
+/// force-loading every candidate). Returns the best candidate center.
+pub fn pick_flat_anchor(world: &World, around: Vec2<f32>) -> Vec2<f32> {
+    let sim = world.sim();
+    let mut best: Option<(f32, Vec2<f32>)> = None;
+    for r in [160.0f32, 224.0, 288.0, 352.0] {
+        for i in 0..8 {
+            let ang = std::f32::consts::TAU * i as f32 / 8.0;
+            let cand = around + Vec2::new(ang.cos(), ang.sin()) * r;
+            let mut min_alt = f32::INFINITY;
+            let mut max_alt = f32::NEG_INFINITY;
+            let mut wet = false;
+            for dx in -2..=2 {
+                for dy in -2..=2 {
+                    let p = (cand + Vec2::new(dx as f32, dy as f32) * 22.0).map(|e| e as i32);
+                    match (
+                        sim.get_interpolated(p, |c| c.alt),
+                        sim.get_interpolated(p, |c| c.water_alt),
+                    ) {
+                        (Some(alt), Some(water_alt)) => {
+                            min_alt = min_alt.min(alt);
+                            max_alt = max_alt.max(alt);
+                            if water_alt > alt {
+                                wet = true;
+                            }
+                        },
+                        _ => wet = true, // off-map: disqualify
+                    }
+                }
+            }
+            if wet {
+                continue;
+            }
+            let range = max_alt - min_alt;
+            if best.is_none_or(|(b, _)| range < b) {
+                best = Some((range, cand));
+            }
+        }
+    }
+    let (range, cand) = best.unwrap_or((f32::INFINITY, around));
+    info!(?cand, range, "bastion arena anchor picked (flattest dry candidate)");
+    cand
+}
+
+/// Survey REAL terrain over the pad footprint after force-load: returns
+/// (min, max) ground z across a sample grid, for adaptive pad sizing.
+pub fn survey_pad(state: &State, cx: i32, cy: i32, half: i32) -> Option<(i32, i32)> {
+    let mut min_gz = i32::MAX;
+    let mut max_gz = i32::MIN;
+    let step = (half / 4).max(1);
+    for dx in (-half..=half).step_by(step as usize) {
+        for dy in (-half..=half).step_by(step as usize) {
+            let gz = ground_z(state, cx + dx, cy + dy)?;
+            min_gz = min_gz.min(gz);
+            max_gz = max_gz.max(gz);
+        }
+    }
+    (min_gz <= max_gz).then_some((min_gz, max_gz))
+}
+
+/// Geometric interior target: walkable cell (solid below, non-solid feet +
+/// head) inside `bounds`, maximizing distance from the bounds edge (≥ 3 so
+/// ARRIVE_DIST 2.5 can't false-arrive through a wall). Scans z from `base_z`
+/// to `base_z + 8` (raised floors / sills).
+pub fn interior_target(state: &State, bounds: Aabb<i32>, base_z: i32) -> Option<Vec3<f32>> {
+    let terrain = state.terrain();
+    let b = bounds;
+    let mut best: Option<(i32, Vec3<i32>)> = None;
+    for x in b.min.x..b.max.x {
+        for y in b.min.y..b.max.y {
+            let edge_dist = (x - b.min.x)
+                .min(b.max.x - 1 - x)
+                .min(y - b.min.y)
+                .min(b.max.y - 1 - y);
+            if edge_dist < 3 {
+                continue;
+            }
+            for z in base_z..(base_z + 8) {
+                let below = terrain.get(Vec3::new(x, y, z)).ok().copied();
+                let feet = terrain.get(Vec3::new(x, y, z + 1)).ok().copied();
+                let head = terrain.get(Vec3::new(x, y, z + 2)).ok().copied();
+                let walkable = below.is_some_and(|b| b.is_filled())
+                    && feet.is_some_and(|b| !b.is_solid())
+                    && head.is_some_and(|b| !b.is_solid());
+                if walkable && best.is_none_or(|(d, _)| edge_dist > d) {
+                    best = Some((edge_dist, Vec3::new(x, y, z + 1)));
+                }
+            }
+        }
+    }
+    best.map(|(_, p)| p.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0))
+}

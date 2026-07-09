@@ -122,10 +122,23 @@ pub fn run(cfg: &AssetTestConfig) -> std::process::ExitCode {
             .entries
             .iter()
             .filter(|e| {
+                // `all` = base-state, world-layer REAL candidates. Excluded
+                // (still runnable by explicit id): creatures (later rung),
+                // test_* fixtures (deliberate-FAIL demos), pose-state files
+                // and grand compositions (closed gates/sprung traps rightly
+                // fail reach — pose MATRICES pair with the operable-state
+                // block; see the log header contract), and non-placeable
+                // sheets/concepts.
+                let id = e.id.as_str();
                 !matches!(
                     e.category,
                     AssetCategory::Creature | AssetCategory::TestFixture
-                )
+                ) && !id.starts_with("castle_")
+                    && !id.starts_with("monastery_")
+                    && !id.starts_with("godspire_")
+                    && !id.starts_with("temple_concept_")
+                    && !id.starts_with("vb2_")
+                    && !id.starts_with("material_")
             })
             .cloned()
             .collect()
@@ -200,16 +213,24 @@ pub fn run(cfg: &AssetTestConfig) -> std::process::ExitCode {
             .map(|s| s.wpos.map(|e| e as f32))
             .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
     };
-    let arena_wpos = site_wpos + Vec2::new(192.0, 0.0);
+    // Flattest dry candidate around the site (sim-probed, no chunk loads),
+    // then survey REAL terrain and clear adaptively above the true maximum —
+    // a fixed clear height leaves natural cliff walls standing inside the
+    // pad on sloped anchors (bit the first live run: stuck at dist 14.8).
+    let arena_wpos = server::bastion_assets::pick_flat_anchor(server.world(), site_wpos);
     let loaded_chunks = server.bastion_force_load_area(arena_wpos, 5);
     info!(loaded_chunks, "asset-test: arena area force-loaded");
 
     let ax = arena_wpos.x as i32;
     let ay = arena_wpos.y as i32;
-    let pad_z = ground_z(&server, ax, ay).expect("no ground at arena anchor");
+    let (min_gz, max_gz) = server::bastion_assets::survey_pad(server.state(), ax, ay, 44)
+        .expect("no ground across arena footprint");
+    let pad_z = min_gz;
+    let pad_clear = (max_gz - min_gz + 8).clamp(16, 64);
+    info!(pad_z, pad_clear, spread = max_gz - min_gz, "asset-test: pad sized from survey");
 
     // ── Fixtures: pad + 3 colonists, verified once on the bare plane ─────
-    let pad_writes = flatten_pad(&mut server, ax, ay, pad_z, 44, 28);
+    let pad_writes = flatten_pad(&mut server, ax, ay, pad_z, 44, pad_clear);
     info!(pad_writes, "asset-test: initial pad flatten");
     tick(&mut server, dt, 5);
 
@@ -252,6 +273,7 @@ pub fn run(cfg: &AssetTestConfig) -> std::process::ExitCode {
             ax,
             ay,
             pad_z,
+            pad_clear,
             staging,
             site_wpos,
         );
@@ -290,53 +312,15 @@ fn tick(server: &mut Server, dt: Duration, n: u64) {
     }
 }
 
-/// Real-terrain-kind ground scan (the B5 canopy lesson — never `is_filled`).
+/// Real-terrain-kind ground scan (shared impl — the B5 canopy lesson).
 fn ground_z(server: &Server, x: i32, y: i32) -> Option<i32> {
-    use common::{terrain::BlockKind, vol::ReadVol};
-    let terrain = server.state().terrain();
-    (0..2048).rev().find(|z| {
-        terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
-            matches!(
-                b.kind(),
-                BlockKind::Rock
-                    | BlockKind::WeakRock
-                    | BlockKind::GlowingRock
-                    | BlockKind::GlowingWeakRock
-                    | BlockKind::Grass
-                    | BlockKind::Snow
-                    | BlockKind::ArtSnow
-                    | BlockKind::Earth
-                    | BlockKind::Sand
-                    | BlockKind::Ice
-            )
-        })
-    })
+    server::bastion_assets::ground_z(server.state(), x, y)
 }
 
-/// Guaranteed-flat rock slab + clear air above, centered on (ax, ay).
-/// Returns buffered write count (applied next tick).
+/// Guaranteed-flat rock slab + clear air above (shared impl). Buffered
+/// writes, applied next tick.
 fn flatten_pad(server: &mut Server, ax: i32, ay: i32, pad_z: i32, half: i32, clear_h: i32) -> usize {
-    use common::terrain::{Block, BlockKind};
-    use vek::Rgb;
-    let mut writes = 0usize;
-    for x in (ax - half)..=(ax + half) {
-        for y in (ay - half)..=(ay + half) {
-            for dz in -1..=0 {
-                server.state_mut().set_block(
-                    Vec3::new(x, y, pad_z + dz),
-                    Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
-                );
-                writes += 1;
-            }
-            for dz in 1..=clear_h {
-                server
-                    .state_mut()
-                    .set_block(Vec3::new(x, y, pad_z + dz), Block::empty());
-                writes += 1;
-            }
-        }
-    }
-    writes
+    server::bastion_assets::flatten_pad(server.state_mut(), ax, ay, pad_z, half, clear_h)
 }
 
 /// Issue a goto and tick until a terminal state (arrival / watchdog-stuck /
@@ -419,37 +403,9 @@ fn goto_all_and_wait(
     }
 }
 
-/// Geometric interior target: walkable cell (solid below, non-solid feet+head)
-/// inside the placed bounds, maximizing distance from the bounds edge (≥ 3 so
-/// ARRIVE_DIST 2.5 can't false-arrive through a wall).
+/// Geometric interior target (shared impl — see server::bastion_assets).
 fn interior_target(server: &Server, report: &PlacementReport, pad_z: i32) -> Option<Vec3<f32>> {
-    use common::vol::ReadVol;
-    let terrain = server.state().terrain();
-    let b = report.bounds;
-    let mut best: Option<(i32, Vec3<i32>)> = None;
-    for x in b.min.x..b.max.x {
-        for y in b.min.y..b.max.y {
-            let edge_dist = (x - b.min.x)
-                .min(b.max.x - 1 - x)
-                .min(y - b.min.y)
-                .min(b.max.y - 1 - y);
-            if edge_dist < 3 {
-                continue;
-            }
-            for z in pad_z..(pad_z + 8) {
-                let below = terrain.get(Vec3::new(x, y, z)).ok().copied();
-                let feet = terrain.get(Vec3::new(x, y, z + 1)).ok().copied();
-                let head = terrain.get(Vec3::new(x, y, z + 2)).ok().copied();
-                let walkable = below.is_some_and(|b| b.is_filled())
-                    && feet.is_some_and(|b| !b.is_solid())
-                    && head.is_some_and(|b| !b.is_solid());
-                if walkable && best.is_none_or(|(d, _)| edge_dist > d) {
-                    best = Some((edge_dist, Vec3::new(x, y, z + 1)));
-                }
-            }
-        }
-    }
-    best.map(|(_, p)| p.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0))
+    server::bastion_assets::interior_target(server.state(), report.bounds, pad_z)
 }
 
 /// Rock fixture walls sealing three sides of the defense yard (the asset line
@@ -482,6 +438,7 @@ fn run_one_asset(
     ax: i32,
     ay: i32,
     pad_z: i32,
+    pad_clear: i32,
     staging: Vec3<f32>,
     site_wpos: Vec2<f32>,
 ) -> AssetResult {
@@ -506,14 +463,19 @@ fn run_one_asset(
         };
     }
 
-    let load_only = matches!(entry.category, AssetCategory::Prop | AssetCategory::Item);
+    // Props/items are figure-layer (11 vox/block); Other = sheets/concepts —
+    // both load+fidelity only.
+    let load_only = matches!(
+        entry.category,
+        AssetCategory::Prop | AssetCategory::Item | AssetCategory::Other
+    );
     let mode = if load_only { "load-only" } else { "isolated-dynamic" };
 
     // Fresh arena per asset; load-only assets never touch the world.
     let placed: Result<(LoadedAsset, PlacementReport), String> = if load_only {
         bastion_assets::load_asset(entry, false).map(|l| (l, PlacementReport::default()))
     } else {
-        flatten_pad(server, ax, ay, pad_z, 44, 28);
+        flatten_pad(server, ax, ay, pad_z, 44, pad_clear);
         tick(server, dt, 3);
         server.bastion_asset_place(entry, Vec3::new(ax, ay, pad_z), false, cfg.seed)
     };
@@ -641,7 +603,7 @@ fn run_one_asset(
                     // OPEN variant: re-place open, rebuild fixtures, must get in
                     // (this also validates the yard fixture isn't leaky — a leak
                     // would have shown as closed-arrival).
-                    flatten_pad(server, ax, ay, pad_z, 44, 28);
+                    flatten_pad(server, ax, ay, pad_z, 44, pad_clear);
                     tick(server, dt, 3);
                     match server.bastion_asset_place(
                         entry,
@@ -750,18 +712,20 @@ fn run_integrated_spot_check(
             tick(server, dt, 3);
             let approach = Vec3::new(sx as f32 + 0.5, (report.bounds.min.y - 10) as f32, 0.0);
             let approach_z = ground_z(server, approach.x as i32, approach.y as i32).unwrap_or(gz);
-            let approach = approach.with_z((approach_z + 1) as f32);
-            // Walk the fixture over from the pad (may be a long leg — budget ×3).
-            let travel = goto_and_wait(server, dt, &names[0], approach, ARRIVAL_BUDGET_S * 3.0);
-            if !travel.arrived() {
+            let approach = approach.with_z((approach_z + 2) as f32);
+            // Teleport-stage the fixture (cross-country travel over natural
+            // terrain is not the subject — bit the first run: STUCK at 337
+            // blocks out).
+            if !server.bastion_teleport_colonist(&names[0], approach) {
                 push(
                     assertions,
                     "integrated-reach",
                     false,
-                    format!("could not stage at integrated spot: {}", travel.describe()),
+                    "could not teleport-stage the fixture".into(),
                 );
                 return;
             }
+            tick(server, dt, 15); // settle after the teleport
             match interior_target(server, &report, gz) {
                 Some(interior) => {
                     let leg = goto_and_wait(server, dt, &names[0], interior, ARRIVAL_BUDGET_S);
@@ -784,7 +748,8 @@ fn run_integrated_spot_check(
                 ),
             }
             // Send the fixture home for later assets.
-            let _ = goto_and_wait(server, dt, &names[0], pad_staging, ARRIVAL_BUDGET_S * 3.0);
+            let _ = server.bastion_teleport_colonist(&names[0], pad_staging);
+            tick(server, dt, 15);
         },
         Err(e) => push(assertions, "integrated-reach", false, format!("place failed: {e}")),
     }

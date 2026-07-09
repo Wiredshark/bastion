@@ -7,6 +7,9 @@
 #![feature(box_patterns, option_zip, const_type_name, slice_partition_dedup)]
 
 pub mod automod;
+// bastion (B-ASSET1): the --asset-arena test chamber (env-gated).
+#[cfg(feature = "worldgen")]
+pub mod bastion_arena;
 // bastion (B-ASSET1): asset-lab runtime loader + placement (worldgen types).
 #[cfg(feature = "worldgen")]
 pub mod bastion_assets;
@@ -697,7 +700,7 @@ impl Server {
             weather::init(&mut state);
         }
 
-        let this = Self {
+        let mut this = Self {
             state,
             world,
             index,
@@ -711,6 +714,11 @@ impl Server {
 
             event_dispatcher: Self::create_event_dispatcher(pools),
         };
+
+        // bastion (B-ASSET1): the --asset-arena test chamber. Inert unless
+        // the BASTION_ASSET_ARENA env var is set (voxygen sets it).
+        #[cfg(feature = "worldgen")]
+        this.bastion_arena_init_from_env();
 
         debug!(?settings, "created veloren server with");
 
@@ -1009,6 +1017,32 @@ impl Server {
             .collect()
     }
 
+    /// bastion (B-ASSET1, harness hook): teleport a named loaded colonist.
+    /// Cross-country travel is not what asset tests measure; the integrated
+    /// spot-check stages its fixture directly. rtsim wpos follows on the
+    /// next tick sync.
+    pub fn bastion_teleport_colonist(&mut self, name: &str, pos: Vec3<f32>) -> bool {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let entities = ecs.entities();
+        let target = (&entities, &colonists)
+            .join()
+            .find(|(_, c)| c.0.name == name)
+            .map(|(e, _)| e);
+        drop(colonists);
+        let Some(entity) = target else {
+            return false;
+        };
+        let mut positions = ecs.write_storage::<comp::Pos>();
+        if let Some(p) = positions.get_mut(entity) {
+            p.0 = pos;
+            true
+        } else {
+            false
+        }
+    }
+
     /// bastion (B-ASSET1): clear a named colonist's goto order (`None` = all).
     /// Returns how many were cleared.
     pub fn bastion_goto_clear(&mut self, name: Option<&str>) -> usize {
@@ -1209,6 +1243,12 @@ impl Server {
     pub fn tick(&mut self, _input: Input, dt: Duration) -> Result<Vec<Event>, Error> {
         self.state.ecs().write_resource::<Tick>().0 += 1;
         self.state.ecs().write_resource::<TickStart>().0 = Instant::now();
+
+        // bastion (B-ASSET1): arena upkeep (deferred fixture goto). No-op
+        // when the arena resource is absent (i.e. always, outside
+        // --asset-arena boots).
+        #[cfg(feature = "worldgen")]
+        self.bastion_arena_tick();
 
         // Update calendar events as time changes
         // TODO: If a lot of calendar events get added, this might become expensive.
