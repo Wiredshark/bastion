@@ -825,7 +825,26 @@ impl SessionState {
                 self.client.borrow_mut().bastion_place_designation(region, kind);
             },
             None => {
-                self.client.borrow_mut().bastion_cancel_designation(region);
+                // B5.6a erase fix: the drag's z came from the camera
+                // pick-plane, which need not align with where a designation
+                // was painted — a z-misaligned cancel silently missed,
+                // leaving the overlay AND the jobs behind. Instead, match
+                // designations by XY footprint and cancel the XY-intersection
+                // at each rect's OWN z (can't miss in z; partial-erase leaves
+                // the un-brushed remainder). Empty brush over bare ground →
+                // nothing cancelled.
+                let targets: Vec<common::bastion::Region> = {
+                    let client = self.client.borrow();
+                    client
+                        .bastion_designations()
+                        .iter()
+                        .filter_map(|(r, _)| r.clip_xy(region.min.xy(), region.max.xy()))
+                        .collect()
+                };
+                let mut client = self.client.borrow_mut();
+                for t in targets {
+                    client.bastion_cancel_designation(t);
+                }
             },
         }
     }
@@ -842,19 +861,14 @@ impl SessionState {
         // designation list itself (rev) is unchanged.
         let rev = self.client.borrow().bastion_designations_rev();
         let slice_z = self.scene.bastion_slice_z();
-        // Auto-reveal: while a designate/erase tool is active, force overlays
-        // visible even if the chosen mode is OFF — you can always see what
-        // you're painting. Restored automatically when the tool changes
-        // (tool-select marks the overlay dirty).
-        let tool_active = matches!(
-            self.bastion_tools.tool,
-            crate::bastion::tools::ToolMode::Designate(_) | crate::bastion::tools::ToolMode::Erase
-        );
-        let visuals = if tool_active && self.bastion_visuals.is_off() {
-            crate::bastion::tools::VisualsMode::On
-        } else {
-            self.bastion_visuals
-        };
+        // B5.6a: OFF hides the COMMITTED overlays. The live paint/erase drag
+        // still shows its own preview rectangle (separate shapes, always
+        // drawn — see bastion_paint_update), so "you can always see what
+        // you're painting" holds without an auto-reveal that forced overlays
+        // back On whenever a designate tool was merely selected (the bug that
+        // made H look like a no-op: after painting, the tool stays Mine, so
+        // Off never took effect).
+        let visuals = self.bastion_visuals;
         let up_to_date = rev == self.bastion_designation_synced
             && slice_z == self.bastion_designation_slice
             && !self.bastion_designation_dirty;

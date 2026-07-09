@@ -37,6 +37,24 @@ impl Region {
             && (self.min.z..=self.max.z).contains(&p.z)
     }
 
+    /// bastion (B5.6a): clip this region's XY footprint to `[min_xy, max_xy]`,
+    /// KEEPING this region's own z-range. `None` if the XY footprints don't
+    /// overlap. Used by the erase tool: the erase drag's z comes from the
+    /// camera pick-plane, which need not align with where a designation was
+    /// painted — so erase matches designations by XY and cancels the
+    /// XY-intersection at the *designation's* z (can't silently miss in z,
+    /// can't over-erase beyond the brush footprint).
+    pub fn clip_xy(&self, min_xy: Vec2<i32>, max_xy: Vec2<i32>) -> Option<Region> {
+        let nx = self.min.x.max(min_xy.x);
+        let ny = self.min.y.max(min_xy.y);
+        let xx = self.max.x.min(max_xy.x);
+        let xy = self.max.y.min(max_xy.y);
+        (nx <= xx && ny <= xy).then(|| Region {
+            min: Vec3::new(nx, ny, self.min.z),
+            max: Vec3::new(xx, xy, self.max.z),
+        })
+    }
+
     pub fn intersects(&self, other: &Region) -> bool {
         self.min.x <= other.max.x
             && self.max.x >= other.min.x
@@ -451,6 +469,47 @@ mod tests {
         let a = r((0, 0, 0), (3, 3, 3));
         let b = r((10, 10, 10), (12, 12, 12));
         assert_eq!(a.subtract(&b), vec![a]);
+    }
+
+    #[test]
+    fn erase_by_xy_removes_regardless_of_z_misalignment() {
+        // The erase bug: a designation painted at ground z=[397,399]; the
+        // erase drag's z came from a DIFFERENT camera height, z=[403,405].
+        // A naive subtract(erase) misses in z → overlay + jobs persist.
+        let desig = r((10, 10, 397), (15, 15, 399));
+        let erase_drag = r((8, 8, 403), (20, 20, 405)); // XY-covers, z-misaligned
+        // Naive (the bug): no z overlap → nothing removed.
+        assert_eq!(desig.subtract(&erase_drag), vec![desig], "reproduces the bug");
+        // The fix: clip the erase to the designation's XY at the DESIGNATION's
+        // z, then subtract → fully removed.
+        let clipped = desig
+            .clip_xy(erase_drag.min.xy(), erase_drag.max.xy())
+            .expect("xy overlaps");
+        assert!(desig.subtract(&clipped).is_empty(), "full XY cover erases cleanly");
+    }
+
+    #[test]
+    fn erase_partial_xy_leaves_remainder_at_correct_z() {
+        // Erase only the +x half; z-misaligned drag. The remainder must stay,
+        // at the designation's own z.
+        let desig = r((10, 10, 397), (19, 15, 399));
+        let erase_drag = r((15, 8, 500), (30, 20, 502));
+        let clipped = desig
+            .clip_xy(erase_drag.min.xy(), erase_drag.max.xy())
+            .expect("xy overlaps");
+        // Clipped keeps the designation's z, not the drag's.
+        assert_eq!(clipped.min.z, 397);
+        assert_eq!(clipped.max.z, 399);
+        let remainder = desig.subtract(&clipped);
+        let remainder_vol: i64 = remainder.iter().map(|r| r.volume()).sum();
+        assert_eq!(remainder_vol, desig.volume() - clipped.volume());
+        assert!(remainder.iter().all(|p| p.max.x < 15)); // only the un-erased -x half
+    }
+
+    #[test]
+    fn clip_xy_no_overlap_is_none() {
+        let a = r((0, 0, 0), (3, 3, 3));
+        assert!(a.clip_xy(Vec2::new(10, 10), Vec2::new(12, 12)).is_none());
     }
 
     #[test]
