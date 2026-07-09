@@ -75,6 +75,21 @@ pub enum StructureError {
     OutOfBounds,
 }
 
+/// bastion (B-ASSET1): first byte of the asset-lab gameplay-marker band
+/// (ASSET_LESSONS L3: 1–16 world semantics, 32–199 literals, 200–255 markers).
+pub const BASTION_MARKER_BAND_START: u8 = 200;
+
+/// bastion (B-ASSET1): raw byte census of a loaded vox — what the
+/// marker-fidelity gate keys off. All positions are structure space.
+#[derive(Clone, Debug, Default)]
+pub struct BastionVoxCensus {
+    /// byte (engine-slot convention) → (one sample position, voxel count).
+    pub by_byte: HashMap<u8, (Vec3<i32>, usize)>,
+    /// Full cell lists for the gameplay-marker band (bytes ≥ 200) — these are
+    /// the function-point candidates for dynamic tests.
+    pub marker_cells: HashMap<u8, Vec<Vec3<i32>>>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Structure {
     center: Vec3<i32>,
@@ -132,6 +147,75 @@ const STRUCTURE_MANIFESTS_DIR: &str = "world.manifests";
 impl Structure {
     pub fn load_group(specifier: &str) -> AssetHandle<StructuresGroup> {
         StructuresGroup::load_expect(&format!("{STRUCTURE_MANIFESTS_DIR}.{specifier}"))
+    }
+
+    /// bastion (B-ASSET1): construct a `Structure` straight from `.vox` bytes
+    /// living OUTSIDE the game asset tree (the asset-lab runtime loader), with
+    /// an explicit custom-index table layered over the world-reserved defaults
+    /// exactly like the RON route. Also returns the raw byte census the
+    /// marker-fidelity gate needs. Positions are structure space (feed
+    /// `Structure::get` directly).
+    ///
+    /// Byte convention: authored/RON byte == `dot_vox` voxel index + 1 == the
+    /// slot `custom_indices` resolves — pinned by the
+    /// `bastion_dot_vox_index_convention` test below.
+    ///
+    /// Errors (malformed vox) return `Err(String)` — callers log + skip, never
+    /// panic (spec Part 1 failure mode).
+    pub fn bastion_from_vox_bytes(
+        bytes: &[u8],
+        center: Option<Vec3<i32>>,
+        custom: &HashMap<u8, StructureBlock>,
+    ) -> Result<(Self, BastionVoxCensus), String> {
+        let data = dot_vox::load_bytes(bytes).map_err(|e| e.to_string())?;
+        Self::bastion_from_dot_vox(&data, center, custom)
+    }
+
+    /// bastion (B-ASSET1): as [`Self::bastion_from_vox_bytes`], from already
+    /// parsed data. `center: None` → footprint center at z=0 (the asset-lab
+    /// ground-anchor convention: the model's z=0 plane sits at the terrain
+    /// surface).
+    pub fn bastion_from_dot_vox(
+        data: &DotVoxData,
+        center: Option<Vec3<i32>>,
+        custom: &HashMap<u8, StructureBlock>,
+    ) -> Result<(Self, BastionVoxCensus), String> {
+        let Some(first_model) = data.models.first() else {
+            return Err("vox file contains no models".to_string());
+        };
+        let center = center.unwrap_or_else(|| {
+            Vec3::new(first_model.size.x as i32 / 2, first_model.size.y as i32 / 2, 0)
+        });
+        let mut census = BastionVoxCensus::default();
+        if let Some(model) = data.models.first() {
+            for voxel in &model.voxels {
+                // Engine slot = voxel.i + 1 (see `load_base_structure`); the
+                // RON/meta "byte" is that slot. Saturate rather than wrap so a
+                // pathological 255 can't alias slot 0.
+                let byte = voxel.i.saturating_add(1);
+                let pos = Vec3::new(voxel.x, voxel.y, voxel.z).map(i32::from) - center;
+                let entry = census.by_byte.entry(byte).or_insert((pos, 0));
+                entry.1 += 1;
+                if byte >= BASTION_MARKER_BAND_START {
+                    census.marker_cells.entry(byte).or_default().push(pos);
+                }
+            }
+        }
+        let base = Arc::new(load_base_structure(data, |col| {
+            StructureBlock::Filled(BlockKind::Misc, col)
+        }));
+        let structure = Structure {
+            center,
+            base,
+            custom_indices: {
+                let mut indices = std::array::from_fn(|_| None);
+                for (&idx, sb) in default_custom_indices().iter().chain(custom.iter()) {
+                    indices[idx as usize] = Some(sb.clone());
+                }
+                indices
+            },
+        };
+        Ok((structure, census))
     }
 
     #[must_use]
@@ -359,6 +443,56 @@ Sprite in question: {sprite:?}
             // TODO: requires access to i18n for validation
             StructureBlock::Sign { .. } => {},
         }
+    }
+
+    /// bastion (B-ASSET1): pin the dot_vox `Voxel.i` ↔ RON-key convention the
+    /// asset-lab loader depends on. The gnarling totem's RON maps byte 217 →
+    /// `Filled(GlowingRock, cyan)`; the engine resolves a voxel through
+    /// `custom_indices[voxel.i + 1]`, so the voxels that come back GlowingRock
+    /// must carry raw `Voxel.i == 216` — i.e. the authored/RON "byte" equals
+    /// `voxel.i + 1`. If this ever fails, dot_vox changed conventions and the
+    /// bastion asset loader's byte mapping must be re-derived (see
+    /// docs/BASTION_BASSET1_FINDINGS.md §1b).
+    #[test]
+    fn bastion_dot_vox_index_convention() {
+        let group = Structure::load_group("site_structures.gnarling.totem");
+        let structure = &group.read()[0];
+        let raw = crate::assets::DotVox::load_expect("world.structure.spots.gnarling_totem");
+        let raw = raw.read();
+        let model = raw.0.models.first().expect("totem has a model");
+        let mut glow_raw_i = None;
+        for v in &model.voxels {
+            let pos = Vec3::new(v.x, v.y, v.z).map(i32::from) - structure.center;
+            if let Ok(StructureBlock::Filled(BlockKind::GlowingRock, _)) = structure.get(pos) {
+                glow_raw_i = Some(v.i);
+                break;
+            }
+        }
+        let raw_i = glow_raw_i.expect("totem resolves no GlowingRock voxels — RON or asset moved");
+        assert_eq!(
+            raw_i, 216,
+            "dot_vox Voxel.i convention changed (measured raw i={raw_i} for RON byte 217) — \
+             re-derive the bastion asset loader byte mapping"
+        );
+
+        // And the constructor route agrees with the census convention: byte
+        // 217's census entry must sample to a GlowingRock through a Structure
+        // built with the same custom_indices.
+        let mut custom = HashMap::default();
+        custom.insert(
+            217u8,
+            StructureBlock::Filled(BlockKind::GlowingRock, Rgb::new(0, 255, 246)),
+        );
+        let (s2, census) = Structure::bastion_from_dot_vox(&raw.0, Some(structure.center), &custom)
+            .expect("totem parses");
+        let (sample, count) = census.by_byte.get(&217).expect("census carries byte 217");
+        assert!(*count > 0);
+        assert!(matches!(
+            s2.get(*sample),
+            Ok(StructureBlock::Filled(BlockKind::GlowingRock, _))
+        ));
+        // 217 ≥ the marker band start, so its full cell list is captured too.
+        assert_eq!(census.marker_cells.get(&217).map(|c| c.len()), Some(*count));
     }
 
     #[test]
