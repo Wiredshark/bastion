@@ -203,3 +203,27 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   still sitting uncommitted in the working tree as of this session's end
   and belongs to whoever owns that other session, not to Bastion's batch
   protocol.
+
+### B5 amendment (2026-07-09, same session)
+
+- A wider post-merge re-verification pass (running `--b5-scenario` far
+  more than the original gate's 5 samples, prompted by wanting higher
+  confidence before calling the block truly done) turned up a **third**
+  reachability bug the original merge didn't include a fix for: the mine
+  quarry pit had no exit ramp, so a colonist that finished mining while
+  standing at the pit floor and then got reassigned to Build elsewhere was
+  permanently trapped (`build_placed: false`, ~2-in-5 to 3-in-8 runs).
+  Fixed in the harness only (a 2-step staircase carved out of the pit;
+  `bastion_jobs.rs` untouched). Commits `97d0751` (fix, on
+  `bastion/block-B5`) → merge `297cc0f` on `bastion/main`. **The
+  `bastion-block-B5` tag was force-moved** from the original merge
+  (`0cba9e6`) to this one — nothing had been built on the original tag yet
+  in this session, so moving it was judged more honest for future
+  rollback purposes than leaving a tag named "block-B5" pointing at a
+  state with a known, sometimes-triggering reachability trap. See
+  `readme/BASTION_RESTORE_LEDGER.md` for the full note, including how to
+  reach the pre-ramp-fix state if ever specifically needed.
+- Re-verified after the fix: `--b5-scenario` 8/8 clean (13/13 across all
+  batches this block), `--b4-scenario` unaffected, still 5/5 (10/10
+  across all batches). `bastion/main` green at `bastion-block-B5`
+  (now `297cc0f`).
