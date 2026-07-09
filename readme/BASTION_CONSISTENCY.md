@@ -144,3 +144,24 @@ instead, referencing the old one).
   reliably" claim is load-dependent — flagged so future sessions run gate
   scenarios on a quiet machine and consider hardening the scenario
   (backlog). No auto-fix applied.
+
+## B5.6b — Zone-management UI (2026-07-09, EXPLORE + scope recommendation)
+
+- **Scope: B5.6b bundles ~4 blocks; recommend the architect tag sequenced
+  sub-blocks so `main` advances incrementally.** The block as specified is
+  the full zone-management UI (conformed fills + color-blend + labels; the
+  z_extent data model; volumetric rendering + depth rings; volume-selection
+  UX; clickable zones → radial Delete/Modify-depth/Edit-mode drag-handles;
+  erase-by-type wire protocol). Each is a real subsystem. Feasibility is
+  CONFIRMED (debug pipeline alpha-blends → conformed fills need no new
+  pipeline; z_extent job-gen is a bounded per-cell-surface refactor of the
+  existing triple loop) and a full verified build plan + z_extent design is
+  in `docs/BASTION_B5.6b_FINDINGS.md`. Recommended split (each merges/tags):
+  **b-1** fills+colors+blend+labels+SUBTLE (client-only, low-risk, the
+  headline visual); **b-2** z_extent model + volumetric + volume-selection
+  UX (also fixes B5.MINE-COVERAGE — surface-relative z closes the
+  slope-coverage gap); **b-3** zone interaction/edit-mode; **b-4**
+  erase-by-type. Not auto-actioned — the runner did NOT self-rescope-and-tag
+  (that would fake B5.6b's Done-when); flagged for the architect to formalize
+  (as the B5.6→B5.6a/B5.6b split was). `bastion/block-B5.6b` branch holds the
+  run-log start + findings/plan; `main` untouched at `bastion-block-B5.6a`.
