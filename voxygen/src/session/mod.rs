@@ -462,6 +462,11 @@ impl SessionState {
                 format!("Selected: entity {uid}{hp}")
             })
         };
+        if let Some(info) = &info {
+            // Chat line too — durable feedback (the info line is transient).
+            self.hud
+                .new_message(ChatType::CommandInfo.into_plain_msg(info.clone()));
+        }
         self.hud.bastion_set_selected(info);
     }
 

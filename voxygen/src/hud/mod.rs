@@ -4803,10 +4803,10 @@ impl Hud {
                 events.push(Event::BastionToggleGodMode);
             }
 
-            // --- Selection info line (bottom left) ---
+            // --- Selection info line (bottom left, above the chat box) ---
             if let Some(info) = &self.bastion.selected_info {
                 widget::Text::new(info)
-                    .bottom_left_with_margins_on(ui_widgets.window, 120.0, 10.0)
+                    .bottom_left_with_margins_on(ui_widgets.window, 340.0, 10.0)
                     .font_size(14)
                     .font_id(self.fonts.cyri.conrod_id)
                     .color(label_color)
