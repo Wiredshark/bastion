@@ -7,7 +7,38 @@ pub mod input;
 pub mod occlusion;
 
 use crate::scene::camera::Camera;
+use common::{terrain::TerrainGrid, vol::ReadVol};
 use vek::*;
+
+/// bastion: approximate ground altitude under a world XY column — the
+/// overseer camera's ground-glide reference (B&W2 style: the focus rides the
+/// terrain surface and the camera never dips under it).
+///
+/// Block-accurate `try_find_ground` seeded from the chunk-meta altitude (so it
+/// converges even when the previous focus is hundreds of blocks off — e.g. the
+/// spectator spawn altitude), falling back to the coarse meta altitude, and
+/// riding *water surfaces* rather than the seabed. `None` = chunk not loaded.
+pub fn ground_z(terrain: &TerrainGrid, wpos2: Vec2<f32>, z_hint: f32) -> Option<f32> {
+    let xy = wpos2.map(|e| e.floor() as i32);
+    let coarse = terrain.get_interpolated(xy, |c| c.meta().alt());
+    let seed = Vec3::new(xy.x, xy.y, coarse.unwrap_or(z_hint) as i32);
+    let mut z = terrain
+        .try_find_ground(seed)
+        .map(|p| p.z as f32)
+        .or(coarse)?;
+    // Over water `try_find_ground` lands on the seabed; glide on the surface.
+    for _ in 0..256 {
+        if terrain
+            .get(Vec3::new(xy.x, xy.y, z as i32))
+            .is_ok_and(|b| b.is_liquid())
+        {
+            z += 1.0;
+        } else {
+            break;
+        }
+    }
+    Some(z)
+}
 
 /// bastion: unproject a screen-space cursor position onto the horizontal
 /// world plane `z = plane_z`, using the overseer camera's matrices.

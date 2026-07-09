@@ -53,13 +53,15 @@ float bastion_occlusion_alpha(vec3 f_pos) {
         a = min(a, 1.0 - smoothstep(slice_z - band, slice_z, world_z));
     }
 
-    // Proximity / height: foreground floor near focus stays solid; tall or
-    // background geometry fades, scaled by the strength slider.
+    // Proximity / height: tall geometry *near the view center* fades so you
+    // can read the ground around the focus; the height fade is windowed by
+    // distance-from-focus so the distant panorama (background mountains)
+    // stays solid instead of being cut open.
     if ((mode & BASTION_OCC_PROXIMITY) != 0u) {
         float strength = clamp(bastion_occ_a.w, 0.0, 1.0);
         float hf = smoothstep(bastion_occ_b.x, bastion_occ_b.y, height_above);
-        float df = smoothstep(bastion_occ_b.z, bastion_occ_b.w, dist_xy);
-        a = min(a, 1.0 - max(hf, df) * strength);
+        float central = 1.0 - smoothstep(bastion_occ_b.z, bastion_occ_b.w, dist_xy);
+        a = min(a, 1.0 - hf * central * strength);
     }
 
     // Roof/interior reveal: approximate mask — geometry in a slab above the
@@ -125,7 +127,13 @@ vec3 bastion_relight_add(vec3 f_pos, vec3 f_norm) {
     float plane_z = ((mode & BASTION_OCC_SLICE) != 0u) ? bastion_occ_a.x : focus_z;
     float band = max(bastion_occ_a.y, 0.001);
     float below = 1.0 - smoothstep(plane_z - band, plane_z, world_z);
-    float near = 1.0 - smoothstep(bastion_occ_b.z, bastion_occ_b.w, length(f_pos.xy - focus_pos.xy));
+    // Localized to the same near-look radius as the roof reveal (NOT the
+    // proximity window, whose thresholds serve a different purpose) so the
+    // fill covers the revealed area, not the whole screen. The CPU also
+    // scales `strength` by daylight — this is an additive term, so at night
+    // an unscaled fill blows the scene out to white.
+    float roof_r = max(bastion_occ_d.x, 1.0);
+    float near = 1.0 - smoothstep(roof_r * 0.7, roof_r, length(f_pos.xy - focus_pos.xy));
     // Brightest on upward faces (floors) → reads as lit from above.
     float up = clamp(f_norm.z * 0.5 + 0.5, 0.0, 1.0);
     return vec3(strength * below * near * up);

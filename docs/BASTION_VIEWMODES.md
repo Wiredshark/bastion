@@ -11,12 +11,21 @@ user/《B9》-facing reference.
 | Behavior | What it does | Params |
 |---|---|---|
 | **Slice** | B1's manual cut, upgraded to a smooth fade band (no aliased edge) | `slice_z` (PgUp/PgDn), `fade_band` |
-| **Proximity / height** | Foreground floor near the focus stays solid; tall/background geometry fades — the always-on readability layer | `strength` (slider), `height_start/end`, `dist_start/end` |
+| **Proximity / height** | Tall geometry *near the view center* fades so the ground around the focus stays readable; the height fade is windowed by distance-from-focus, so the distant panorama (background mountains) stays solid | `strength` (slider), `height_start/end`, `dist_start/end` (the window, as fractions of the view radius) |
 | **Cutaway** | Geometry between the camera and tracked targets fades so targets show through walls (Diablo-style) | `cutaway_radius`, `targets[]` |
 | **Roof / interior reveal** | Geometry in a slab above the focus, near it, fades so you can see into buildings (RimWorld-style) | `roof_low/high` |
 
 **Interior re-lighting** adds a soft top-down fill over exposed interior surfaces (brightest on
-floors) so revealed rooms read *lit-from-above*, not black — `relight_strength`.
+floors) so revealed rooms read *lit-from-above*, not black — `relight_strength`. It is localized to
+the roof-reveal radius and **scaled by daylight** on the CPU: it's an additive linear-light term, so
+unscaled it blew night scenes out to white (QA round 3).
+
+**Ground glide (B&W2):** in overseer mode the camera focus rides the terrain surface every frame
+(water surfaces, not seabeds), and the camera lifts so neither it nor its sight line to the focus
+dips under terrain. This is also what anchors the whole occlusion frame of reference: the slice
+auto-places at ground level, and the proximity height fade measures from the ground — in spectate
+the focus otherwise floats at the spawn altitude and every mode silently degrades (QA round 3:
+slice plane hundreds of blocks up, Reveal a no-op).
 
 ## View modes (the cycle key presets)
 
@@ -75,8 +84,16 @@ in the block's report / `BASTION.md`.
 
 ## Tunables (defaults, `voxygen/src/bastion/occlusion.rs`)
 
-`fade_band 6`, `strength 0.5`, `height_start/end 20/120`, `dist_start/end 0.72/1.15` (as a
-*fraction of the on-screen view radius*, so the distance vignette tracks zoom instead of a fixed block
-distance), `cutaway_radius 6`, `roof_low/high 3/14`, `relight_strength 0.5`. Defaults are deliberately
-gentle because the overseer sees a wide area; B1.8's colony-scale focus policy can push them harder.
-All live-editable in the egui panel.
+`fade_band 6`, `strength 0.6`, `height_start/end 12/60`, `dist_start/end 0.55/1.0` (the central
+window, as a *fraction of the on-screen view radius*, so it tracks zoom instead of a fixed block
+distance), `cutaway_radius 6`, `roof_low/high 3/14`, `relight_strength 0.5` (scaled by daylight at
+pack time). B1.8's colony-scale focus policy can push them harder. All live-editable in the egui
+panel.
+
+## Known limitation: chunk streaming needs Spectate (B2)
+
+Terrain streams around your *presence*: in Spectate, `spectate_position` follows the overseer focus
+(B1.5), so you can roam anywhere. With a **character**, the server streams around the character —
+`spectate_position` would teleport them — so panning past the character's view distance hits
+unloaded void. **B2** (overseer as a first-class presence) adds a server-side camera anchor that
+streams terrain around the overseer focus without moving the avatar.

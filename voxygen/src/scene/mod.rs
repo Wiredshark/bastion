@@ -999,9 +999,13 @@ impl Scene {
         }
         let bastion_occ = if self.camera.get_mode() == CameraMode::Overseer {
             // View radius ≈ the on-screen half-diagonal at this zoom, so the
-            // proximity distance vignette tracks the zoom (see to_uniform).
+            // proximity window tracks the zoom (see to_uniform). Daylight
+            // scales the additive interior relight so it can't blow the night
+            // scene out to white.
             let view_radius = self.camera.get_distance() * 1.4;
-            self.bastion_occlusion.to_uniform(focus_pos, view_radius)
+            let daylight = (-scene_data.get_sun_dir().z).clamp(0.0, 1.0);
+            self.bastion_occlusion
+                .to_uniform(focus_pos, view_radius, daylight)
         } else {
             crate::bastion::occlusion::OcclusionUniform::solid()
         };

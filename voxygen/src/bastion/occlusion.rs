@@ -116,19 +116,21 @@ impl Default for Occlusion {
             roof_enabled: false,
             slice_z: None,
             fade_band: 6.0,
-            // Gentle by default — the overseer sees a wide area, so a strong
-            // fade nukes the screen. B1.8's colony-scale focus policy can raise
-            // this. The distance falloff is zoom-scaled at pack time.
-            strength: 0.5,
-            height_start: 15.0,
-            height_end: 90.0,
-            // Distance falloff as a *fraction of the on-screen view radius*
-            // (ortho half-extent). Default is effectively off (you'd have to be
-            // ~3× the view radius from focus — off-screen) so proximity is
-            // height-only by default; the egui slider can pull it in for a
-            // focus vignette. Height-only avoids the "screen edges vanish" look.
-            dist_start: 3.0,
-            dist_end: 5.0,
+            // Reveal = tall geometry *near the view center* fades (see the
+            // proximity block in bastion_occlusion.glsl: height fade × central
+            // window). Strong enough to be clearly visible on canopy/cliffs
+            // over the focus, while the window keeps the distant panorama
+            // solid (QA round 1: "cuts through mountains"; QA round 3:
+            // "reveal does nothing").
+            strength: 0.6,
+            height_start: 12.0,
+            height_end: 60.0,
+            // The central window, as a *fraction of the on-screen view radius*
+            // (zoom-scaled at pack time): fully active around the focus,
+            // easing off toward the screen edge so background terrain stays
+            // untouched.
+            dist_start: 0.55,
+            dist_end: 1.0,
             cutaway_radius: 6.0,
             roof_low: 3.0,
             roof_high: 14.0,
@@ -187,9 +189,16 @@ impl Occlusion {
     /// `focus_off` is `focus.trunc()` (matches `Globals.focus_off`); targets
     /// are emitted in `f_pos` space (`world - focus_off`) so the shader avoids
     /// huge-float subtraction. `view_radius` is the on-screen ortho half-extent
-    /// (blocks) — the distance falloff is expressed as a fraction of it so the
-    /// proximity vignette tracks the zoom instead of a fixed block distance.
-    pub fn to_uniform(&self, focus_pos: Vec3<f32>, view_radius: f32) -> OcclusionUniform {
+    /// (blocks) — the proximity window is expressed as a fraction of it so it
+    /// tracks the zoom instead of a fixed block distance. `daylight` (0 night →
+    /// 1 midday) scales the interior relight: it's an additive linear-light
+    /// term, so unscaled it blows the night scene out to white.
+    pub fn to_uniform(
+        &self,
+        focus_pos: Vec3<f32>,
+        view_radius: f32,
+        daylight: f32,
+    ) -> OcclusionUniform {
         let focus_off = focus_pos.map(|e| e.trunc());
         let mode = self.active_mode();
 
@@ -223,7 +232,7 @@ impl Occlusion {
                 self.cutaway_radius.max(0.001),
                 self.roof_low,
                 self.roof_high.max(self.roof_low + 0.001),
-                self.relight_strength.max(0.0),
+                self.relight_strength.max(0.0) * daylight.clamp(0.0, 1.0),
             ],
             // Roof reveal gets its own "near the look point" radius (a fraction
             // of the view) so it stays localized instead of sharing the

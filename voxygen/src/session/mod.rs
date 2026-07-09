@@ -153,6 +153,9 @@ struct BastionGrab {
 const BASTION_PAN_FACTOR: f32 = 1.0;
 /// Z-slice movement speed while PgUp/PgDn is held, in blocks/s.
 const BASTION_SLICE_RATE: f32 = 16.0;
+/// Minimum clearance the overseer camera (and its sight line to the focus)
+/// keeps above the terrain surface, in blocks (B&W2: never under the world).
+const BASTION_CAM_MARGIN: f32 = 6.0;
 /// Free-orbit sensitivity, radians per pixel of right-drag.
 const BASTION_ORBIT_SENS: f32 = 0.0035;
 /// Exponential decay rate (1/s) of the grab-release inertia.
@@ -2002,6 +2005,39 @@ impl PlayState for SessionState {
                     self.scene
                         .camera_mut()
                         .set_focus_pos(pos + Vec3::from(dir) * dt * speed);
+
+                    // bastion: B&W2 ground glide. The focus rides the terrain
+                    // surface — so the slice, reveal and relight all reference
+                    // the actual ground instead of whatever altitude the
+                    // focus happened to start at (the spectator spawns high in
+                    // the air) — and the camera lifts so neither it nor its
+                    // sight line to the focus ever dips under terrain.
+                    {
+                        let camera = self.scene.camera();
+                        let tgt = camera.get_tgt_focus();
+                        let dist = camera.get_tgt_dist();
+                        let fwd = camera.forward();
+                        let mut focus = tgt;
+                        {
+                            let client = self.client.borrow();
+                            let terrain = client.state().terrain();
+                            if let Some(g) = bastion::ground_z(&terrain, tgt.xy(), tgt.z) {
+                                focus.z = g + 1.0;
+                            }
+                            let cam = focus - fwd * dist;
+                            let mut lift = 0.0_f32;
+                            for t in [0.5, 1.0] {
+                                let p = focus + (cam - focus) * t;
+                                if let Some(g) = bastion::ground_z(&terrain, p.xy(), p.z) {
+                                    lift = lift.max(g + BASTION_CAM_MARGIN - p.z);
+                                }
+                            }
+                            focus.z += lift.max(0.0);
+                        }
+                        if (focus.z - tgt.z).abs() > 0.01 {
+                            self.scene.camera_mut().set_focus_pos(focus);
+                        }
+                    }
 
                     // Do not apply any movement to the player character.
                     self.inputs.move_dir = Vec2::zero();

@@ -111,7 +111,38 @@ Observed with the scene at **view distance ~1567 blocks, ~10,000 loaded chunks, 
 the surface). Root cause is the **unbounded spectator view distance** as the overseer focus streams
 via `spectate_position` (B1.5) — the scene grows without a cap until the GPU stalls. **Follow-up
 (streaming, not B1.6):** clamp the overseer/spectator effective view distance (or the streamed
-radius) so a wide pan can't balloon the loaded set. Filed as a B1.5/B2 risk.
+radius) so a wide pan can't balloon the loaded set. Filed as a B1.5/B2 risk. *(QA round 2 pulled
+`OVERSEER_ZOOM_MAX` from 1024 to 384 — the crash reproduced at max zoom-out, which is exactly the
+~1400-block-span state; the clamp removes the trigger, the streaming cap remains the real fix.)*
+
+### QA round 3: the airborne-focus root cause (fixed — ground glide)
+
+Three seemingly separate reports — "PgUp/PgDn slice sits way off", "Reveal does nothing", "the
+camera cuts through terrain" — plus "spectate behaves worse than a character" all shared one root
+cause: **nothing ever grounded the overseer focus z**. A spectator spawns high in the air (observed
+focus z ≈ 1102 over terrain at ~950), so the slice auto-placed ~150 blocks up, the proximity height
+fade measured `height_above` from the sky (nothing qualified → Reveal ≡ Solid), the relight `below`
+term covered the whole scene, and the camera had no floor. With a character the focus tracks the
+(grounded) avatar, which is why modes "worked better" there. Fix: per-frame **ground glide** in the
+Overseer camera arm (`bastion::ground_z`: chunk-meta-alt-seeded `try_find_ground`, riding water
+surfaces) + a camera/sight-line lift (`BASTION_CAM_MARGIN`) so the camera can never go under
+terrain — the B&W2 behavior.
+
+Two independent shader bugs surfaced by the same round: the **relight radius** reused the proximity
+distance thresholds (which the round-1 retune had pushed off-screen), covering the entire screen —
+and as a flat additive term it rendered night scenes pure white. Relight now uses the localized
+roof radius and is **scaled by daylight** CPU-side. And the **proximity fade** is now height ×
+central-window (fade tall geometry near the view center only) instead of `max(height, distance)` —
+resolving the round-1 "cuts through mountains" and round-3 "Reveal does nothing" complaints with
+one formula.
+
+### Chunk streaming with a character presence (B2)
+
+Terrain streams around the *presence*: Spectate follows the overseer focus via `spectate_position`
+(which physically moves the spectator entity — for a character that would be a teleport, so it is
+spectator-only by design). With a character, panning past the avatar's view distance hits unloaded
+void ("no new world chunks generate"). **B2** (overseer as a first-class presence) adds a
+server-side camera anchor that streams terrain around the overseer focus without moving the avatar.
 
 ## 5. Shared alpha function (`assets/voxygen/shaders/include/bastion_occlusion.glsl`)
 
