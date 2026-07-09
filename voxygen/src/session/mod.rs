@@ -914,6 +914,14 @@ impl PlayState for SessionState {
                         Some(self.scene.camera().get_focus_pos()),
                     );
                 }
+            } else {
+                // bastion (B1.6): embodied overseer — stream terrain around
+                // the god camera via the terrain anchor (spectate_position
+                // would teleport the avatar). Cleared on leaving the view.
+                let anchor = self
+                    .bastion_overseer_active()
+                    .then(|| self.scene.camera().get_focus_pos());
+                self.client.borrow_mut().bastion_set_terrain_anchor(anchor);
             }
 
             // Set break_block_pos based on currently selected block

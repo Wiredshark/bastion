@@ -45,6 +45,12 @@ pub const OVERSEER_ZOOM_MIN: f32 = 24.0;
 pub const OVERSEER_ZOOM_MAX: f32 = 384.0;
 /// Starting zoom when entering overseer mode.
 pub const OVERSEER_START_DIST: f32 = 192.0;
+/// How far *behind* the camera plane the overseer's orthographic frustum
+/// extends. At shallow pitch the on-screen ground near the bottom edge sits
+/// behind the camera plane; without this it gets near-plane-clipped ("panning
+/// to the bottom of the screen cuts off the ground"). Safe for ortho only —
+/// there is no perspective divide to degenerate.
+const OVERSEER_BEHIND: f32 = 768.0;
 const OVERSEER_INTERP_TIME: f32 = 0.1;
 
 #[derive(Clone, Copy)]
@@ -522,21 +528,24 @@ impl Camera {
             // same distance would frame at the focus plane.
             let v = dist.max(MIN_ZOOM) * (fov / 2.0).tan();
             let h = v * self.aspect;
-            // Same reversed-depth convention as the perspective path.
+            // Same reversed-depth convention as the perspective path. The
+            // near plane sits OVERSEER_BEHIND *behind* the camera so ground
+            // near the bottom screen edge (behind the camera plane at shallow
+            // pitch) isn't clipped away.
             let proj_mat = Mat4::orthographic_rh_zo(FrustumPlanes {
                 left: -h,
                 right: h,
                 bottom: -v,
                 top: v,
                 near: FAR_PLANE,
-                far: NEAR_PLANE,
+                far: -OVERSEER_BEHIND,
             });
             let proj_mat_treeculler = Mat4::orthographic_rh_zo(FrustumPlanes {
                 left: -h,
                 right: h,
                 bottom: -v,
                 top: v,
-                near: NEAR_PLANE,
+                near: -OVERSEER_BEHIND,
                 far: FAR_PLANE,
             });
             (proj_mat, proj_mat_treeculler)

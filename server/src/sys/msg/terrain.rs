@@ -81,17 +81,26 @@ impl<'a> System<'a> for Sys {
                             };
                             match msg {
                                 ClientGeneral::TerrainChunkRequest { key } => {
-                                    let in_vd = if let Some(pos) = positions.get(entity) {
-                                        pos.0.xy().map(|e| e as f64).distance_squared(
-                                            key.map(|e| e as f64 + 0.5)
-                                                * TerrainChunkSize::RECT_SIZE.map(|e| e as f64),
-                                        ) < ((presence.terrain_view_distance.current() as f64 - 1.0
-                                            + 2.5 * 2.0_f64.sqrt())
-                                            * TerrainChunkSize::RECT_SIZE.x as f64)
-                                            .powi(2)
-                                    } else {
-                                        true
-                                    };
+                                    let key_wpos = key.map(|e| e as f64 + 0.5)
+                                        * TerrainChunkSize::RECT_SIZE.map(|e| e as f64);
+                                    let max_dist2 = ((presence.terrain_view_distance.current()
+                                        as f64
+                                        - 1.0
+                                        + 2.5 * 2.0_f64.sqrt())
+                                        * TerrainChunkSize::RECT_SIZE.x as f64)
+                                        .powi(2);
+                                    // bastion (B1.6): the god-camera terrain
+                                    // anchor counts as a second request center,
+                                    // so an embodied overseer streams terrain
+                                    // around the camera without teleporting
+                                    // the avatar.
+                                    let in_vd = positions.get(entity).is_none_or(|pos| {
+                                        pos.0.xy().map(|e| e as f64).distance_squared(key_wpos)
+                                            < max_dist2
+                                    }) || presence.bastion_terrain_anchor.is_some_and(|a| {
+                                        a.xy().map(|e| e as f64).distance_squared(key_wpos)
+                                            < max_dist2
+                                    });
                                     if in_vd {
                                         if terrain.get_key_arc(key).is_some() {
                                             network_metrics.chunks_served_from_memory.inc();

@@ -13,6 +13,12 @@ pub struct Presence {
     /// updated!
     pub kind: PresenceKind,
     pub lossy_terrain_compression: bool,
+    /// bastion (B1.6): optional god-camera terrain anchor — a second center
+    /// (besides the entity position) that terrain chunk requests are accepted
+    /// around, so an embodied overseer can stream terrain around the camera.
+    /// Set via `ClientGeneral::BastionCameraAnchor`; never moves the entity
+    /// (unlike `SpectatePosition`).
+    pub bastion_terrain_anchor: Option<Vec3<f32>>,
 }
 
 impl Presence {
@@ -23,6 +29,7 @@ impl Presence {
             entity_view_distance: ViewDistance::new(view_distances.entity, now),
             kind,
             lossy_terrain_compression: false,
+            bastion_terrain_anchor: None,
         }
     }
 }

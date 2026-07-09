@@ -750,15 +750,31 @@ where
     let (mut presences_positions_entities, mut presences_positions): (Vec<_>, Vec<_>) =
         (entities, presences, positions, clients.mask().maybe())
             .join()
-            .filter_map(|(entity, presence, position, client)| {
-                prepare_for_vd_check(
+            .flat_map(|(entity, presence, position, client)| {
+                let main = prepare_for_vd_check(
                     &world_aabr_in_chunks,
                     max_view_distance,
                     entity,
                     presence,
                     position,
                     client,
-                )
+                );
+                // bastion (B1.6): the god-camera terrain anchor acts as a
+                // second presence position, so newly generated chunks are
+                // sent to the overseer around the camera and the anchored
+                // area stays loaded server-side. (A chunk covered by both
+                // centers may emit a duplicate send — harmless.)
+                let anchor = presence.bastion_terrain_anchor.and_then(|a| {
+                    prepare_for_vd_check(
+                        &world_aabr_in_chunks,
+                        max_view_distance,
+                        entity,
+                        presence,
+                        &Pos(a),
+                        client,
+                    )
+                });
+                main.into_iter().chain(anchor)
             })
             .partition_map(|(player_data, entity, is_client)| {
                 // For chunks with clients, we need to record their entity, because they might

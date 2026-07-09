@@ -90,10 +90,19 @@ distance), `cutaway_radius 6`, `roof_low/high 3/14`, `relight_strength 0.5` (sca
 pack time). B1.8's colony-scale focus policy can push them harder. All live-editable in the egui
 panel.
 
-## Known limitation: chunk streaming needs Spectate (B2)
+## Embodied overseer (character presence) — the primary mode
 
-Terrain streams around your *presence*: in Spectate, `spectate_position` follows the overseer focus
-(B1.5), so you can roam anywhere. With a **character**, the server streams around the character —
-`spectate_position` would teleport them — so panning past the character's view distance hits
-unloaded void. **B2** (overseer as a first-class presence) adds a server-side camera anchor that
-streams terrain around the overseer focus without moving the avatar.
+With a **character**, the overseer view now works fully (QA round 4 made character presence the
+primary way to play):
+
+- **Terrain streams around the camera** via the *god-camera terrain anchor*
+  (`ClientGeneral::BastionCameraAnchor` → `Presence::bastion_terrain_anchor`): the client requests
+  and retains chunks around the overseer focus (the avatar's area is retained too), and the server
+  validates requests, distributes newly generated chunks, and keeps chunks loaded around the anchor
+  as if it were a second player position. Unlike `spectate_position` it never moves the avatar.
+- **The avatar is hidden** while in overseer view (client-side figure cull); `F9` (Avatar mode)
+  brings it back. NOTE: the character still *exists* in the world — it can be attacked while you're
+  god-viewing. B2's overseer presence handles the body properly (safety/removal).
+- **Entities don't yet sync around a far anchor** — NPCs run server-side in anchored chunks, but
+  the client only receives entity updates around the avatar (region subscription). B2 extends the
+  subscription to the anchor.

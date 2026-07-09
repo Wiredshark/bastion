@@ -572,7 +572,7 @@ void main() {
 
     // bastion (B1.6): interior re-lighting — soft top-down fill so revealed
     // rooms read lit-from-above, not black.
-    surf_color += bastion_relight_add(f_pos, f_norm);
+    surf_color += bastion_relight_add(f_pos, f_norm, surf_color);
 
     #ifdef EXPERIMENTAL_SHOWCHUNKBORDERS
     float border_scale = 0.0001 * distance(cam_pos.xyz, f_pos);

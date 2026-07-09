@@ -164,7 +164,7 @@ void main() {
     surf_color += f_select * (surf_color + 0.1) * vec3(0.15, 0.15, 0.15);
 
     // bastion (B1.6): interior re-lighting fill.
-    surf_color += bastion_relight_add(f_pos, f_norm);
+    surf_color += bastion_relight_add(f_pos, f_norm, surf_color);
 
     tgt_color = vec4(surf_color, render_alpha);
 

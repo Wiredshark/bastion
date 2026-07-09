@@ -504,6 +504,7 @@ pub fn handle_possess(
                     // from overwriting original character info with stuff from the new character.
                     kind: PresenceKind::Possessor,
                     lossy_terrain_compression: presence.lossy_terrain_compression,
+                    bastion_terrain_anchor: presence.bastion_terrain_anchor,
                 })
             } else {
                 None

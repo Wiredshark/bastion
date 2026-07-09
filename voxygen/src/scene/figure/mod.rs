@@ -1236,6 +1236,14 @@ impl FigureMgr {
                 .or_else(|| interpolated.map(|i| i.ori.look_dir()))
                 .unwrap_or_default();
         let is_viewpoint = data.scene_data.viewpoint_entity == entity;
+        // bastion: in the overseer (god) view the player's avatar is hidden —
+        // the camera is the presence; F9 (Avatar mode) brings the body back.
+        // NOTE: the character still exists in the world (it can be attacked);
+        // B2's overseer presence removes the body properly.
+        if is_viewpoint && data.camera_mode == CameraMode::Overseer {
+            self.states.remove(body, &entity);
+            return;
+        }
         let viewpoint_camera_mode = if is_viewpoint {
             data.camera_mode
         } else {

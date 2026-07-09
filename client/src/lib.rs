@@ -353,6 +353,11 @@ pub struct Client {
     loaded_distance: f32,
 
     pending_chunks: HashMap<Vec2<i32>, Instant>,
+    /// bastion (B1.6): overseer god-camera terrain anchor. When set, terrain
+    /// chunks are requested/retained around it instead of the entity position
+    /// (the entity's immediate area is still retained). Mirrored to the server
+    /// (`ClientGeneral::BastionCameraAnchor`) so request validation accepts it.
+    bastion_terrain_anchor: Option<Vec3<f32>>,
     target_time_of_day: Option<TimeOfDay>,
     dt_adjustment: f64,
 
@@ -1123,6 +1128,7 @@ impl Client {
             loaded_distance: 0.0,
 
             pending_chunks: HashMap::new(),
+            bastion_terrain_anchor: None,
             target_time_of_day: None,
             dt_adjustment: 1.0,
 
@@ -1245,6 +1251,7 @@ impl Client {
                     | ClientGeneral::UpdateMapMarker(_)
                     | ClientGeneral::SpectatePosition(_)
                     | ClientGeneral::SpectateEntity(_)
+                    | ClientGeneral::BastionCameraAnchor(_)
                     | ClientGeneral::SetBattleMode(_) => {
                         #[cfg(feature = "tracy")]
                         {
@@ -1965,6 +1972,23 @@ impl Client {
         write
     }
 
+    /// bastion (B1.6): set/clear the god-camera terrain anchor. Unlike
+    /// [`Self::spectate_position`] this never moves the entity — it only
+    /// changes where terrain streams from, for an *embodied* overseer.
+    /// Throttled: re-sent to the server only when the anchor moves more than
+    /// half a chunk (or flips set/unset).
+    pub fn bastion_set_terrain_anchor(&mut self, anchor: Option<Vec3<f32>>) {
+        let changed = match (self.bastion_terrain_anchor, anchor) {
+            (None, None) => false,
+            (Some(a), Some(b)) => a.distance_squared(b) > 16.0_f32.powi(2),
+            _ => true,
+        };
+        if changed {
+            self.bastion_terrain_anchor = anchor;
+            self.send_msg(ClientGeneral::BastionCameraAnchor(anchor));
+        }
+    }
+
     pub fn start_spectate_entity(&mut self, entity: EcsEntity) {
         if let Some(uid) = self.state.read_component_copied(entity) {
             self.send_msg(ClientGeneral::SpectateEntity(Some(uid)));
@@ -2522,14 +2546,23 @@ impl Client {
     /// Removes old terrain chunks outside the view distance.
     /// Sends requests for missing chunks within the view distance.
     fn tick_terrain(&mut self) -> Result<(), Error> {
-        let pos = self
+        let entity_pos = self
             .state
             .read_storage::<comp::Pos>()
             .get(self.entity())
             .cloned();
+        // bastion (B1.6): when the god-camera anchor is set, terrain streams
+        // around *it* instead of the avatar (the avatar's area is still
+        // retained below so its local physics keeps ground under it).
+        let pos = self.bastion_terrain_anchor.map(comp::Pos).or(entity_pos);
         if let (Some(pos), Some(view_distance)) = (pos, self.view_distance) {
             prof_span!("terrain");
             let chunk_pos = self.state.terrain().pos_key(pos.0.map(|e| e as i32));
+            // bastion: second retention center — the avatar — when anchored.
+            let avatar_chunk_pos = self
+                .bastion_terrain_anchor
+                .and(entity_pos)
+                .map(|p| self.state.terrain().pos_key(p.0.map(|e| e as i32)));
 
             // Remove chunks that are too far from the player.
             let mut chunks_to_remove = Vec::new();
@@ -2541,11 +2574,13 @@ impl Client {
                 // Take the minimum of the adjusted difference vs the view_distance + 1 to
                 //   prevent magnitude_squared from overflowing
 
-                if (chunk_pos - key)
-                    .map(|e: i32| (e.unsigned_abs()).saturating_sub(2).min(view_distance + 1))
-                    .magnitude_squared()
-                    > view_distance.pow(2)
-                {
+                let too_far = |center: Vec2<i32>| {
+                    (center - key)
+                        .map(|e: i32| (e.unsigned_abs()).saturating_sub(2).min(view_distance + 1))
+                        .magnitude_squared()
+                        > view_distance.pow(2)
+                };
+                if too_far(chunk_pos) && avatar_chunk_pos.is_none_or(too_far) {
                     chunks_to_remove.push(key);
                 }
             });

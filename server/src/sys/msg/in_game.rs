@@ -256,6 +256,12 @@ impl Sys {
                     *spectating_entity = Some(uid);
                 }
             },
+            ClientGeneral::BastionCameraAnchor(anchor) => {
+                // bastion (B1.6): god-camera terrain anchor — only widens
+                // terrain-request validation (see sys/msg/terrain.rs); never
+                // moves the entity (unlike SpectatePosition above).
+                presence.bastion_terrain_anchor = anchor;
+            },
             ClientGeneral::SetBattleMode(battle_mode) => {
                 emitters.emit(event::SetBattleModeEvent {
                     entity,

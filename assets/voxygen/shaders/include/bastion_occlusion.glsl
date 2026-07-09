@@ -113,7 +113,10 @@ bool bastion_occlusion_discard(vec3 f_pos, vec2 frag_coord) {
 // Interior re-lighting: a soft top-down fill over exposed interior surfaces so
 // revealed rooms read as lit-from-above rather than black. Returns an additive
 // linear-light term for surf_color. Only active where a slice/reveal is on.
-vec3 bastion_relight_add(vec3 f_pos, vec3 f_norm) {
+// Takes the pre-fill surf_color so the fill only lifts fragments that are
+// actually dark (interiors): flat-adding on already-sunlit ground washed the
+// whole reveal area into a pale circle (QA round 4).
+vec3 bastion_relight_add(vec3 f_pos, vec3 f_norm, vec3 surf_color) {
     uint mode = bastion_occ_mode.x;
     float strength = bastion_occ_c.w;
     if (strength <= 0.0) { return vec3(0.0); }
@@ -136,7 +139,10 @@ vec3 bastion_relight_add(vec3 f_pos, vec3 f_norm) {
     float near = 1.0 - smoothstep(roof_r * 0.7, roof_r, length(f_pos.xy - focus_pos.xy));
     // Brightest on upward faces (floors) → reads as lit from above.
     float up = clamp(f_norm.z * 0.5 + 0.5, 0.0, 1.0);
-    return vec3(strength * below * near * up);
+    // 1 for near-black fragments, fading to 0 as existing luminance reaches
+    // ~0.5 (linear light) — already-lit surfaces need no fill.
+    float need = clamp(1.0 - 2.0 * dot(surf_color, vec3(1.0 / 3.0)), 0.0, 1.0);
+    return vec3(strength * below * near * up * need);
 }
 
 #endif

@@ -112,6 +112,11 @@ pub enum ClientGeneral {
 
     SpectatePosition(Vec3<f32>),
     SpectateEntity(Option<common::uid::Uid>),
+    /// bastion (B1.6): set/clear the god-camera terrain anchor — a second
+    /// center terrain chunk requests are validated around, so an embodied
+    /// overseer streams terrain around the camera without teleporting the
+    /// avatar (which is what `SpectatePosition` does).
+    BastionCameraAnchor(Option<Vec3<f32>>),
 
     //Only in Game, via terrain stream
     TerrainChunkRequest {
@@ -173,7 +178,8 @@ impl ClientMsg {
                         | ClientGeneral::RequestPlayerPhysics { .. }
                         | ClientGeneral::RequestLossyTerrainCompression { .. }
                         | ClientGeneral::UpdateMapMarker(_)
-                        | ClientGeneral::SetBattleMode(_) => {
+                        | ClientGeneral::SetBattleMode(_)
+                        | ClientGeneral::BastionCameraAnchor(_) => {
                             c_type == ClientType::Game && presence.is_some()
                         },
                         ClientGeneral::SpectatePosition(_) | ClientGeneral::SpectateEntity(_) => {
