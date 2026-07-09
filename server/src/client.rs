@@ -204,7 +204,8 @@ impl Client {
                     | ServerGeneral::SpectatePosition(_)
                     | ServerGeneral::UpdateRecipes
                     | ServerGeneral::Gizmos(_)
-                    | ServerGeneral::BastionDesignation { .. } => {
+                    | ServerGeneral::BastionDesignation { .. }
+                    | ServerGeneral::BastionDesignationRemoved { .. } => {
                         PreparedMsg::new(2, &g, &self.in_game_stream_params)
                     },
                     // Terrain

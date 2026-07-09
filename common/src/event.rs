@@ -206,6 +206,11 @@ pub struct CreateItemDropEvent {
     pub ori: Ori,
     pub item: comp::PickupItem,
     pub loot_owner: Option<LootOwner>,
+    /// bastion (B5.5): colonist-produced drops are player resources — they
+    /// never get a despawn timer and aggregate into piles (marked with
+    /// `comp::bastion::BastionPile`; merges stay within the persistent
+    /// class). Vanilla emitters pass `false` — behavior unchanged.
+    pub persistent: bool,
 }
 
 pub struct CreateObjectEvent {

@@ -8,6 +8,7 @@
 
 pub mod automod;
 pub mod bastion_jobs;
+pub mod bastion_piles;
 mod character_creator;
 pub mod chat;
 pub mod chunk_generator;
@@ -952,6 +953,66 @@ impl Server {
             .count()
     }
 
+    /// bastion (B5.5, harness hook): SUM of item amounts (not entity count —
+    /// piles carry counts) across loose drops near `pos` matching
+    /// `asset_id`. Pass `f32::INFINITY` radius for a system-wide
+    /// conservation total.
+    pub fn bastion_sum_items_near(&self, pos: Vec3<f32>, radius: f32, asset_id: &str) -> u64 {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let items = ecs.read_storage::<comp::PickupItem>();
+        let positions = ecs.read_storage::<comp::Pos>();
+        (&items, &positions)
+            .join()
+            .filter(|(item, item_pos)| {
+                (radius.is_infinite() || item_pos.0.distance_squared(pos) <= radius * radius)
+                    && item.item().item_definition_id().itemdef_id() == Some(asset_id)
+            })
+            .map(|(item, _)| item.amount() as u64)
+            .sum()
+    }
+
+    /// bastion (B5.5, harness hook): total loose-drop ENTITY count (the pile
+    /// aggregation bound: mining N blocks must not carpet the world with N
+    /// entities).
+    pub fn bastion_pickup_entity_count(&self) -> usize {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let items = ecs.read_storage::<comp::PickupItem>();
+        (&items).join().count()
+    }
+
+    /// bastion (B5.5, harness hook): set a colonist's skill level for a work
+    /// type — rtsim record and, if loaded, the ECS mirror (same pattern as
+    /// `bastion_set_work_priority`). Lets scale scenarios run at high work
+    /// rates instead of 3 s/block.
+    pub fn bastion_set_colonist_skill(
+        &mut self,
+        name: &str,
+        work: common::bastion::WorkType,
+        level: u16,
+    ) -> bool {
+        let mut found = false;
+        {
+            let ecs = self.state.ecs();
+            let mut rtsim = ecs.write_resource::<rtsim::RtSim>();
+            found |= rtsim.bastion_set_colonist_skill(name, work, level);
+        }
+        {
+            use specs::LendJoin;
+            let ecs = self.state.ecs();
+            let mut colonists = ecs.write_storage::<comp::Colonist>();
+            let mut iter = (&mut colonists).lend_join();
+            while let Some(mut colonist) = iter.next() {
+                if colonist.0.name == name {
+                    colonist.0.skills.set_level_for(work, level);
+                    found = true;
+                }
+            }
+        }
+        found
+    }
+
     /// bastion (B5, harness hook): a named colonist's skill level+xp for the
     /// given work type.
     pub fn bastion_colonist_skill(
@@ -990,6 +1051,34 @@ impl Server {
             .jobs
             .values()
             .any(|j| j.needs_materials)
+    }
+
+    /// bastion (B5.5, harness hook): jobs whose target block lies inside
+    /// `region` (asserting partial-erase removed exactly the erased half).
+    pub fn bastion_jobs_in_region(&self, region: common::bastion::Region) -> usize {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .jobs
+            .values()
+            .filter(|j| region.contains_point(j.pos))
+            .count()
+    }
+
+    /// bastion (B5.5, harness hook): colonists holding an `ActiveJob` whose
+    /// job id is no longer on the board. Transiently non-zero for at most
+    /// one upkeep tick after a cancel; anything persisting is a leaked
+    /// claim (standing invariant).
+    pub fn bastion_orphaned_claims(&self) -> usize {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let board = ecs.read_resource::<bastion_jobs::JobBoard>();
+        let active = ecs.read_storage::<comp::bastion::ActiveJob>();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        (&active, &colonists)
+            .join()
+            .filter(|(a, _)| !board.jobs.contains_key(&a.job))
+            .count()
     }
 
     /// Get a reference to the Metrics Registry

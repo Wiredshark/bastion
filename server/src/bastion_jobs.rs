@@ -402,21 +402,29 @@ impl<'a> System<'a> for Sys {
                         DesignationKind::Chop => Some(CHOP_DROP_ITEM),
                         DesignationKind::Build | DesignationKind::Stockpile => None,
                     } {
+                        // B5.5: colonist output is a player resource —
+                        // persistent (no despawn timer) and mergeable
+                        // (`should_merge: true`), so burst mining aggregates
+                        // into piles instead of carpeting the ground with
+                        // one entity per block. Gentle toss (was ±2.0
+                        // horizontal): drops land close, so spawn-time
+                        // merging within MAX_ITEM_MERGE_DIST actually fires.
                         item_drop_emitter.emit(CreateItemDropEvent {
                             pos: comp::Pos(job.pos.map(|e| e as f32) + Vec3::broadcast(0.5)),
                             vel: comp::Vel(
                                 (Vec2::unit_x()
                                     .rotated_z(rng.random::<f32>() * std::f32::consts::TAU)
-                                    * 2.0)
-                                    .with_z(rng.random_range(3.0..6.0)),
+                                    * 0.5)
+                                    .with_z(rng.random_range(2.0..4.0)),
                             ),
                             ori: comp::Ori::default(),
                             item: PickupItem::new(
                                 Item::new_from_asset_expect(item_id),
                                 *program_time,
-                                false,
+                                true,
                             ),
                             loot_owner: None,
+                            persistent: true,
                         });
                     }
 

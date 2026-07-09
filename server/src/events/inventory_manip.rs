@@ -524,6 +524,7 @@ impl ServerEvent for InventoryManipEvent {
                                 false,
                                 ONWERSHIP_TIMEOUT_FAST,
                             )),
+                            persistent: false,
                         });
                     }
                 },
@@ -1164,6 +1165,7 @@ impl ServerEvent for InventoryManipEvent {
                     true,
                     ONWERSHIP_TIMEOUT_SLOW,
                 )),
+                persistent: false,
             })
         }
     }

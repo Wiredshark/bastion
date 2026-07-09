@@ -14,6 +14,11 @@ use vek::*;
 pub enum RadialAction {
     Verb(ContextVerb),
     Influence(InfluenceKind),
+    /// bastion (B5.5): delete the whole painted designation rect(s) under
+    /// the clicked block. Client-resolved (the client knows its echoed
+    /// rects) — never crosses the wire as a verb; the session sends one
+    /// `BastionCancelDesignation` per containing rect.
+    DeleteZone,
 }
 
 impl RadialAction {
@@ -21,6 +26,7 @@ impl RadialAction {
         match self {
             RadialAction::Verb(v) => v.label(),
             RadialAction::Influence(k) => k.label(),
+            RadialAction::DeleteZone => "Delete zone",
         }
     }
 
@@ -29,6 +35,7 @@ impl RadialAction {
         match self {
             RadialAction::Verb(v) => v.stubbed(),
             RadialAction::Influence(_) => false,
+            RadialAction::DeleteZone => false,
         }
     }
 }

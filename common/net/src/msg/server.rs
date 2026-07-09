@@ -239,6 +239,11 @@ pub enum ServerGeneral {
         region: common::bastion::Region,
         kind: common::bastion::DesignationKind,
     },
+    /// bastion (B5.5): a cancelled/erased designation region echoed back so
+    /// the client subtracts it from its stored overlay rects.
+    BastionDesignationRemoved {
+        region: common::bastion::Region,
+    },
 }
 
 impl ServerGeneral {
@@ -388,7 +393,8 @@ impl ServerMsg {
                         | ServerGeneral::SpectatePosition(_)
                         | ServerGeneral::UpdateRecipes
                         | ServerGeneral::Gizmos(_)
-                        | ServerGeneral::BastionDesignation { .. } => {
+                        | ServerGeneral::BastionDesignation { .. }
+                        | ServerGeneral::BastionDesignationRemoved { .. } => {
                             c_type == ClientType::Game && presence.is_some()
                         },
                         // Always possible

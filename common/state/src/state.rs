@@ -297,6 +297,8 @@ impl State {
         ecs.register::<comp::BastionGodAnchor>();
         // bastion (B4): colonist job assignment (server-side).
         ecs.register::<comp::bastion::ActiveJob>();
+        // bastion (B5.5): persistent item-pile marker (server-side).
+        ecs.register::<comp::bastion::BastionPile>();
         // Register server -> all clients synced components.
         ecs.register::<comp::Body>();
         ecs.register::<comp::Hardcore>();

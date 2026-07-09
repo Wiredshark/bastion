@@ -360,11 +360,14 @@ pub struct Client {
     bastion_terrain_anchor: Option<Vec3<f32>>,
     /// bastion (B2a): designations echoed back by the server (validated).
     /// Rendered as an overlay by voxygen; replaced by real job-board state in
-    /// B4.
+    /// B4. B5.5: removals subtract from stored rects (AABB subtraction), so
+    /// the list shrinks/splits too — `bastion_designations_rev` bumps on any
+    /// change and voxygen rebuilds its overlay shapes when it moves.
     bastion_designations: Vec<(
         common::bastion::Region,
         common::bastion::DesignationKind,
     )>,
+    bastion_designations_rev: u64,
     target_time_of_day: Option<TimeOfDay>,
     dt_adjustment: f64,
 
@@ -1137,6 +1140,7 @@ impl Client {
             pending_chunks: HashMap::new(),
             bastion_terrain_anchor: None,
             bastion_designations: Vec::new(),
+            bastion_designations_rev: 0,
             target_time_of_day: None,
             dt_adjustment: 1.0,
 
@@ -2020,6 +2024,11 @@ impl Client {
     )] {
         &self.bastion_designations
     }
+
+    /// bastion (B5.5): bumps whenever the designation list changes in ANY
+    /// way (add, erase-subtract, split). Voxygen rebuilds its overlay shapes
+    /// when this moves — index-based incremental sync can't express removal.
+    pub fn bastion_designations_rev(&self) -> u64 { self.bastion_designations_rev }
 
     /// bastion (B2a): paint a designation region (server validates + echoes).
     pub fn bastion_place_designation(
@@ -3216,6 +3225,22 @@ impl Client {
                 // the overlay render. B4 replaces this list with job-board
                 // state.
                 self.bastion_designations.push((region, kind));
+                self.bastion_designations_rev += 1;
+            },
+            ServerGeneral::BastionDesignationRemoved { region } => {
+                // bastion (B5.5): subtract the erased region from every
+                // stored rect (exact 3D AABB subtraction, ≤6 pieces each);
+                // untouched rects pass through, covered rects vanish.
+                let old = std::mem::take(&mut self.bastion_designations);
+                for (r, kind) in old {
+                    if r.intersects(&region) {
+                        self.bastion_designations
+                            .extend(r.subtract(&region).into_iter().map(|p| (p, kind)));
+                    } else {
+                        self.bastion_designations.push((r, kind));
+                    }
+                }
+                self.bastion_designations_rev += 1;
             },
             _ => unreachable!("Not a in_game message"),
         }
