@@ -309,6 +309,8 @@ impl ControlSettings {
             // overseer context suppresses — the context system at work.
             GameInput::BastionCycleTool => char("T"),
             GameInput::BastionToggleGodMode => char("G"),
+            // B5.6a: cycle designation-visuals ON/SUBTLE/OFF (visual-only).
+            GameInput::BastionCycleVisuals => char("H"),
         }))
     }
 

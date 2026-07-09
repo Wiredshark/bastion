@@ -156,6 +156,15 @@ pub struct SessionState {
     /// Last-seen `Client::bastion_designations_rev` (B5.5: rebuild-on-rev).
     bastion_designation_synced: u64,
     bastion_designation_shapes: Vec<DebugShapeId>,
+    /// bastion (B5.6a): the Z-slice height the draped overlay was built
+    /// against — a slice toggle re-clamps the draped surface, so the overlay
+    /// rebuilds when this changes even if the rev didn't.
+    bastion_designation_slice: Option<f32>,
+    /// bastion (B5.6a): the designation-visuals display mode.
+    bastion_visuals: crate::bastion::tools::VisualsMode,
+    /// bastion (B5.6a): force a designation-overlay rebuild next frame (set
+    /// when the visuals mode toggles, since that isn't captured by rev/slice).
+    bastion_designation_dirty: bool,
 }
 
 /// bastion: state of an overseer grab-drag.
@@ -286,6 +295,9 @@ impl SessionState {
             bastion_colonist_markers: HashMap::new(),
             bastion_designation_synced: 0,
             bastion_designation_shapes: Vec::new(),
+            bastion_designation_slice: None,
+            bastion_visuals: crate::bastion::tools::VisualsMode::default(),
+            bastion_designation_dirty: false,
         }
     }
 
@@ -524,7 +536,8 @@ impl SessionState {
         }
         let min = Vec3::partial_min(anchor, current);
         let max = Vec3::partial_max(anchor, current);
-        let shapes = self.bastion_region_outline(min, max, [0.3, 0.95, 1.0, 0.9]);
+        // Live drag preview: coarse stride keeps per-mouse-move rebuild cheap.
+        let shapes = self.bastion_region_outline(min, max, [0.3, 0.95, 1.0, 0.9], 2.0);
         if let Some(sel) = self.bastion_boxsel.as_mut() {
             sel.shapes = shapes;
         }
@@ -696,27 +709,44 @@ impl SessionState {
         }
     }
 
-    /// bastion (B2a): rebuild a rectangle outline (4 debug lines) for a
-    /// region at its top face. Returns the shape ids.
+    /// bastion (B2a → B5.6a): rectangle outline for a region, DRAPED onto the
+    /// terrain surface (was 4 flat lines at the region's pick-plane z, which
+    /// floats over sloped ground — the photographed bug). Samples the visible
+    /// surface per-cell (`bastion::draped_rect_outline`, slice-aware) and
+    /// emits conformed line segments. `step` = sample stride (coarser for
+    /// live drag previews, per-cell for committed overlays). Returns shape
+    /// ids.
     fn bastion_region_outline(
         &mut self,
         min: Vec3<f32>,
         max: Vec3<f32>,
         color: [f32; 4],
+        step: f32,
     ) -> Vec<DebugShapeId> {
-        let z = max.z + 0.15;
-        let corners = [
-            Vec3::new(min.x, min.y, z),
-            Vec3::new(max.x, min.y, z),
-            Vec3::new(max.x, max.y, z),
-            Vec3::new(min.x, max.y, z),
-        ];
-        (0..4)
-            .map(|i| {
-                let id = self.scene.debug.add_shape(crate::scene::DebugShape::Line(
-                    [corners[i], corners[(i + 1) % 4]],
-                    0.15,
-                ));
+        // Sample all conformed segments first (immutable client borrow), then
+        // emit shapes (mutable scene borrow) — the two borrows must not overlap.
+        let slice_z = self.scene.bastion_slice_z();
+        let segs = {
+            let client = self.client.borrow();
+            let terrain = client.state().terrain();
+            crate::bastion::draped_rect_outline(
+                &terrain,
+                min.xy(),
+                max.xy(),
+                // Hint the ground search with whichever region face is higher
+                // (paint plane / region top) — ground_z converges regardless.
+                min.z.max(max.z),
+                slice_z,
+                0.2,
+                step,
+            )
+        };
+        segs.into_iter()
+            .map(|seg| {
+                let id = self
+                    .scene
+                    .debug
+                    .add_shape(crate::scene::DebugShape::Line(seg, 0.15));
                 self.scene
                     .debug
                     .set_context(id, [0.0; 4], color, [0.0, 0.0, 0.0, 1.0]);
@@ -761,7 +791,7 @@ impl SessionState {
         } else {
             [1.0, 1.0, 0.3, 0.9]
         };
-        let shapes = self.bastion_region_outline(min, max, color);
+        let shapes = self.bastion_region_outline(min, max, color, 2.0);
         if let Some(paint) = self.bastion_paint.as_mut() {
             paint.shapes = shapes;
         }
@@ -795,7 +825,26 @@ impl SessionState {
                 self.client.borrow_mut().bastion_place_designation(region, kind);
             },
             None => {
-                self.client.borrow_mut().bastion_cancel_designation(region);
+                // B5.6a erase fix: the drag's z came from the camera
+                // pick-plane, which need not align with where a designation
+                // was painted — a z-misaligned cancel silently missed,
+                // leaving the overlay AND the jobs behind. Instead, match
+                // designations by XY footprint and cancel the XY-intersection
+                // at each rect's OWN z (can't miss in z; partial-erase leaves
+                // the un-brushed remainder). Empty brush over bare ground →
+                // nothing cancelled.
+                let targets: Vec<common::bastion::Region> = {
+                    let client = self.client.borrow();
+                    client
+                        .bastion_designations()
+                        .iter()
+                        .filter_map(|(r, _)| r.clip_xy(region.min.xy(), region.max.xy()))
+                        .collect()
+                };
+                let mut client = self.client.borrow_mut();
+                for t in targets {
+                    client.bastion_cancel_designation(t);
+                }
             },
         }
     }
@@ -806,30 +855,55 @@ impl SessionState {
     /// express — and the list is dozens of rects at most, so a full rebuild
     /// on change is trivially cheap.
     fn bastion_sync_designations(&mut self) {
-        let list: Vec<(common::bastion::Region, common::bastion::DesignationKind)> = {
-            let client = self.client.borrow();
-            let rev = client.bastion_designations_rev();
-            if rev == self.bastion_designation_synced {
-                return;
-            }
-            self.bastion_designation_synced = rev;
-            client.bastion_designations().to_vec()
-        };
+        // Rebuild triggers (B5.5 rev; B5.6a slice + visuals mode): the draped
+        // overlay depends on the slice plane and the visuals setting, so a
+        // slice toggle or a visuals-mode change must rebuild even when the
+        // designation list itself (rev) is unchanged.
+        let rev = self.client.borrow().bastion_designations_rev();
+        let slice_z = self.scene.bastion_slice_z();
+        // B5.6a: OFF hides the COMMITTED overlays. The live paint/erase drag
+        // still shows its own preview rectangle (separate shapes, always
+        // drawn — see bastion_paint_update), so "you can always see what
+        // you're painting" holds without an auto-reveal that forced overlays
+        // back On whenever a designate tool was merely selected (the bug that
+        // made H look like a no-op: after painting, the tool stays Mine, so
+        // Off never took effect).
+        let visuals = self.bastion_visuals;
+        let up_to_date = rev == self.bastion_designation_synced
+            && slice_z == self.bastion_designation_slice
+            && !self.bastion_designation_dirty;
+        if up_to_date {
+            return;
+        }
+        self.bastion_designation_synced = rev;
+        self.bastion_designation_slice = slice_z;
+        self.bastion_designation_dirty = false;
+
         for id in std::mem::take(&mut self.bastion_designation_shapes) {
             self.scene.debug.remove_shape(id);
         }
+        // OFF: overlays hidden entirely (designations stay fully active — this
+        // is visual-only). Nothing to (re)build.
+        if visuals.is_off() {
+            return;
+        }
+        let list = self.client.borrow().bastion_designations().to_vec();
+        let alpha = visuals.line_alpha();
         for (region, kind) in list {
             use common::bastion::DesignationKind;
-            let color = match kind {
+            let [r, g, b, a] = match kind {
                 DesignationKind::Mine => [1.0, 0.6, 0.1, 0.9],
                 DesignationKind::Chop => [0.2, 0.9, 0.2, 0.9],
                 DesignationKind::Build => [0.3, 0.6, 1.0, 0.9],
                 DesignationKind::Stockpile => [0.8, 0.3, 0.9, 0.9],
             };
+            let color = [r, g, b, a * alpha];
             let shapes = self.bastion_region_outline(
                 region.min.map(|e| e as f32),
                 region.max.map(|e| e as f32 + 1.0),
                 color,
+                // Committed overlay: built once per revision, so per-cell.
+                1.0,
             );
             self.bastion_designation_shapes.extend(shapes);
         }
@@ -1561,10 +1635,28 @@ impl PlayState for SessionState {
                             {
                                 // B2a: cycle the pinned tool.
                                 self.bastion_tools.tool = self.bastion_tools.tool.next();
+                                // B5.6a: tool change can flip overlay
+                                // auto-reveal (paint/erase reveals while
+                                // OFF) — rebuild.
+                                self.bastion_designation_dirty = true;
                                 let label = self.bastion_tools.tool.label();
                                 self.hud.new_message(
                                     ChatType::CommandInfo
                                         .into_plain_msg(format!("Overseer tool: {label}")),
+                                );
+                            },
+                            GameInput::BastionCycleVisuals
+                                if state && self.bastion_overseer_active() =>
+                            {
+                                // B5.6a: cycle designation-visuals ON/SUBTLE/
+                                // OFF. Visual-only — designations stay fully
+                                // active; the overlay rebuilds next frame.
+                                self.bastion_visuals = self.bastion_visuals.next();
+                                self.bastion_designation_dirty = true;
+                                let label = self.bastion_visuals.label();
+                                self.hud.new_message(
+                                    ChatType::CommandInfo
+                                        .into_plain_msg(format!("Designation {label}")),
                                 );
                             },
                             GameInput::BastionToggleGodMode
