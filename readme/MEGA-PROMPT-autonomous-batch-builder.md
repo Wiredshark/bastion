@@ -49,8 +49,13 @@ state.** A clean stop with a clear report is a success; a corrupted tree is the 
 7. **`readme/BASTION-SYSTEM-FRAMEWORKS.md`** — the consolidated frameworks reference (control spectrum,
    zone/asset taxonomy + 3D zones, mining framework, animations, testing, world tissue, boundary field).
    Read the relevant section before any block that touches these systems; deep detail lives in
-   `readme/future-work-and-deferred-ideas.md` (§3q–§3x cover zoning, mining, boundaries, roads, site-prep,
+   `readme/future-work-and-deferred-ideas.md` (§3q–§3z cover zoning, mining, boundaries, roads, site-prep,
    action animations — several are near-term: B5.5/B6/B7-era).
+8. **`readme/reference-images/` (if present)** — visual targets Ben has collected (game-UI references,
+   annotated screenshots of our own build, style examples). Before building anything visual (overlays,
+   fills, UI, minimap), check this folder and view any images whose names relate to the block; judge your
+   output AGAINST them. Ben's own annotated screenshots outrank external references. Evidence screenshots
+   (e.g. bug photos) also live here or in readme/ root — filenames starting `evidence-`.
 
 ## 🥇 FIRST ACTION THIS SESSION — CATCH-UP DOCUMENTATION PASS (do this BEFORE building anything)
 `readme/BASTION_ARCHITECTURE.md` does not exist yet, but B0–B4 are already built. **Before you build the next
@@ -97,15 +102,33 @@ B5.5   [MERGED]   PATCH: zone deletion (Erase tool + radial Delete zone, exact A
                   fix was should_merge:false; despawn timer removed as a latent item-loss bug). Tag
                   bastion-block-B5.5. NOTE: pile visual tier-scaling shipped basic; B5.6 carries the
                   full growth-tier polish.
-B5.6a  [APPROVED] PATCH (build now): outline DRAPING (terrain-sample each edge — fixes the photographed
-                  floating bug incl. the F9/slice lead), ON/SUBTLE/OFF visuals toggle, pile tier scaling,
-                  + erase-filters if cheap. Split from B5.6 per builder scope finding (correct call —
-                  logged in BASTION_CONSISTENCY).
-B5.6b  [DESIGNED] Conformed fills + volumetric zone rendering + volume-selection UX, now UNBLOCKED: the
-                  z-extent data model is decided in readme/B5.6-zone-visuals-prompt.md (designations gain
-                  z_extent{down,up} relative to painted surface; defaults preserve current semantics;
-                  per-cell surface-relative resolution; the SAME field §3v mining + §3w boundary expect).
-                  Build as its own block, before or with the mine-zone work.
+B5.6a  [TESTED-HOLD] Draping VERIFIED IN-GAME by Ben (screenshot evidence: outlines hug excavation rims +
+                  slopes — the photographed bug is fixed). MERGE BLOCKED on two fixes found in the same
+                  test: (1) the H visuals-toggle does nothing visible — verify the keybind actually fires
+                  in overseer input context (possible vanilla-key conflict) and that the state gates ALL
+                  overlay draws; (2) erase/delete inconsistency — after erase, overlay sometimes persists
+                  (stale overlay rebuild after BastionDesignationRemoved? partial-erase AABB edge case?) —
+                  reproduce, fix, add an erase→overlay-gone assertion. Fix both on the branch, re-verify
+                  with Ben, THEN tag bastion-block-B5.6a.
+B5.6b  [DESIGNED] THE ZONE MANAGEMENT UI (fills + volume + interaction), UNBLOCKED — z-extent model decided
+                  in readme/B5.6-zone-visuals-prompt.md (z_extent{down,up} surface-relative; defaults
+                  preserve semantics; same field §3v/§3w expect). Scope per Ben's live-test feedback:
+                  terrain-conformed FULL GROUND FILLS in zone-type colors; overlap regions render BLENDED
+                  color; per-zone LABELS (type+index, centroid, distance-scaled); SUBTLE toggle state =
+                  border-only; volumetric rendering with countable depth rings + LAYER COUNTER during
+                  selection (scroll/drag + precision numeric field, synced); ZONES ARE CLICKABLE — select →
+                  right-click radial: Delete / MODIFY DEPTH (live re-extent) / EDIT MODE with window-style
+                  drag handles resizing the footprint (shrink releases claims via the proven AABB
+                  subtraction, grow generates jobs, same-cycle assertions); + ERASE-BY-TYPE (wire-protocol
+                  kind filter, promoted from B5.6a). Builds the reusable conformed-overlay utility (§3w's
+                  next customer). Sizable client block — its own session.
+B5.MINE-COVERAGE [INVESTIGATE — likely trap bite #5] Ben observed colonists fail to clear ALL blocks in a
+                  painted mine area. Reproduce: paint a mine designation spanning slope+flat, run to
+                  quiescence, diff designated-vs-mined cells. Suspect the vertical-reachability gap
+                  (cells below step range with no access = permanently unclaimed) — if confirmed, this is
+                  formal evidence for B5.8 NEXT; if it's job-generation/arbitration instead, fix in place.
+                  Either way: add a coverage assertion (all reachable designated cells eventually mined,
+                  unreachable ones REPORTED not silent) to the B5 scenario.
 B5.7   [DESIGNED] MICRO-PATCH: floating-tree cleanup. When chopping severs the trunk, any DISCONNECTED
                   canopy remainder (connectivity check from the cut upward) is removed and converted
                   DIRECTLY into the resource pile — conservation-exact: severed blocks yield the same
@@ -122,6 +145,15 @@ B5.8   [PROMPTED] PATCH: vertical mobility — colonists SCRAMBLE 1–3 block le
                   now, autonomous later) — see readme/B5.8-vertical-mobility-prompt.md. The 4×-bitten
                   vertical-reachability trap, fixed BEFORE B6 hauling hits it as bite #5. Gate includes
                   removing the old hand-patched access geometry from B4/B5/B5.5 scenarios.
+B5.9   [DESIGNED] MICRO-PATCH: god-view exit placement. F9 (overseer↔embodied toggle) currently snaps back
+                  to home base — instead, exiting god view should EMBODY THE CHARACTER AT THE CURRENT
+                  CAMERA LOCATION (nearest safe standable surface under/near the camera target; fall back
+                  to home only if none within range, e.g. camera over ocean/void). Add a separate,
+                  explicit RETURN TO COLONY button/keybind (UI button + key) that recenters the god camera
+                  on home base (and works in both modes). Rationale: the god descends where the god is
+                  looking — snapping home breaks the survey-then-descend flow (§3h embodiment). Test:
+                  toggle at a far location → character appears there; return-button recenters; over-void
+                  fallback works; vanilla untouched.
 B6     [DESIGNED] Stockpiles, hauling, reservations (conservation invariants; haul range = colony boundary
                   field if built, see future-work §3w). **REQUIREMENT — individual carry from piles:**
                   hauling DRAWS UNITS from a pile (count-based pickup, per the B5.5 interface guard), never
@@ -131,6 +163,19 @@ B6     [DESIGNED] Stockpiles, hauling, reservations (conservation invariants; ha
                   skill-XP system (hauling skill grows → bigger armfuls), with sane per-item-type caps
                   (stone armful ≠ log armful). Stats-not-yet-designed fields default sensibly and are
                   flagged PROVISIONAL in the findings for the eventual stat-system design pass.
+                  **+ GATHER designation (Ben request from the B5.6a live test):** a generalized
+                  gather/collect selection — paint an area, colonists collect the loose drops/piles in it
+                  (with stockpiles: gather = high-priority haul-source marking; the same claim/reservation
+                  machinery, one more palette entry). Natural B6 fit since hauling IS the verb it drives.
+                  **+ WORK-CREW DISPERSION (Ben observation):** colonists CLUMP on adjacent cells when
+                  mining/chopping (nearest-job-first arbitration converges everyone on one corner). Add
+                  spatial spread to claim scoring: penalize claiming a cell within R of another colonist's
+                  ACTIVE claim while more-distant cells remain (soft penalty, not a ban — small
+                  designations still get swarmed sensibly). Applies to ALL claim types (mine/chop/haul —
+                  hauling has the same disease: everyone grabs the same pile). Assertion: N colonists on a
+                  large designation → no more than K within radius R of each other while unclaimed cells
+                  remain elsewhere. Payoff: less path congestion, faster completion, and a work crew
+                  spread across a quarry READS as organized labor (legibility).
 B-MAP1 [PROMPTED] INDEPENDENT (client-side, after B5.6): the OVERSEER MINIMAP — WoW-addon technique:
                   render the real world top-down into cached per-chunk tiles (B1 ortho camera as the tile
                   renderer; invalidate on terrain-edit events), zoomable pyramid blending to worldgen map
