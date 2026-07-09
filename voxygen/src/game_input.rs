@@ -203,6 +203,8 @@ pub enum GameInput {
     BastionCycleTool,
     #[strum(serialize = "gameinput-bastion-togglegodmode")]
     BastionToggleGodMode,
+    #[strum(serialize = "gameinput-bastion-cyclevisuals")]
+    BastionCycleVisuals,
 }
 
 impl GameInput {

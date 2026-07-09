@@ -45,6 +45,50 @@ impl ToolMode {
     }
 }
 
+/// bastion (B5.6a): designation-visuals display mode — purely VISUAL, zero
+/// sim impact (designations stay fully active in every mode). `On` = full
+/// overlays (outlines now; fills/volumes in B5.6b); `Subtle` = dimmed thin
+/// outlines only (situational awareness without clutter); `Off` = nothing
+/// rendered (pure colony-watching). Painting/erasing auto-reveals (see the
+/// session's tool handling) so you can always see what you paint.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum VisualsMode {
+    #[default]
+    On,
+    Subtle,
+    Off,
+}
+
+impl VisualsMode {
+    pub fn next(self) -> Self {
+        match self {
+            VisualsMode::On => VisualsMode::Subtle,
+            VisualsMode::Subtle => VisualsMode::Off,
+            VisualsMode::Off => VisualsMode::On,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            VisualsMode::On => "Visuals: On",
+            VisualsMode::Subtle => "Visuals: Subtle",
+            VisualsMode::Off => "Visuals: Off",
+        }
+    }
+
+    /// Nothing rendered.
+    pub fn is_off(&self) -> bool { matches!(self, VisualsMode::Off) }
+
+    /// Alpha multiplier for overlay lines (Subtle dims them).
+    pub fn line_alpha(&self) -> f32 {
+        match self {
+            VisualsMode::On => 1.0,
+            VisualsMode::Subtle => 0.45,
+            VisualsMode::Off => 0.0,
+        }
+    }
+}
+
 /// God mode (the real game: colony-only targets, metered force-actions) vs
 /// Free mode (sandbox: no restrictions). Stub in B2a; teeth in B2b.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]

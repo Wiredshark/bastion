@@ -18,11 +18,21 @@ use specs::{Entities, Join, ReadStorage, WriteStorage};
 /// scale needs per-tick tracking.
 const PILE_SCALE_INTERVAL: u64 = 30;
 
+/// B5.6a: pile visual tiers — the mesh grows with the count through five
+/// steps then PLATEAUS at a great-mound cap (the count keeps rising; the
+/// visual stops so a 400-stone pile doesn't tower absurdly). Purely visual:
+/// the scale never feeds back into the count (conservation stays exact — the
+/// tier is read from `PickupItem::amount()`, never the reverse).
+///
+///   scatter (1–5) → small heap (6–20) → heap (21–60) → large mound (61–150)
+///   → capped great-mound (150+, plateau)
 fn tier_scale(amount: u32) -> f32 {
     match amount {
-        0..=4 => 1.0,
-        5..=19 => 1.35,
-        _ => 1.7,
+        0..=5 => 0.8,
+        6..=20 => 1.1,
+        21..=60 => 1.45,
+        61..=150 => 1.8,
+        _ => 2.15,
     }
 }
 

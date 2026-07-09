@@ -82,6 +82,7 @@ pub const OVERSEER_SCHEME: ContextScheme = ContextScheme {
         GameInput::Secondary,
         GameInput::BastionCycleTool,
         GameInput::BastionToggleGodMode,
+        GameInput::BastionCycleVisuals,
     ],
     suppressed: &[
         GameInput::Block,
@@ -153,6 +154,7 @@ pub const AVATAR_SCHEME: ContextScheme = ContextScheme {
         // B2a: T/G belong to avatar verbs here; the overseer tool keys die.
         GameInput::BastionCycleTool,
         GameInput::BastionToggleGodMode,
+        GameInput::BastionCycleVisuals,
     ],
 };
 

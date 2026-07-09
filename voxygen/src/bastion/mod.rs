@@ -41,6 +41,74 @@ pub fn ground_z(terrain: &TerrainGrid, wpos2: Vec2<f32>, z_hint: f32) -> Option<
     Some(z)
 }
 
+/// bastion (B5.6a): the *visible* terrain surface height at `xy` for overlay
+/// draping. Normally `ground_z`; while a Z-slice is active the visible top is
+/// the slice cut (terrain above `slice_z` is discarded by the occlusion
+/// pass), so the draped overlay must clamp to it — otherwise the outline
+/// floats above the sliced surface. `z_hint` seeds the ground search (the
+/// caller's flat pick-plane height is a fine hint).
+pub fn overlay_surface_z(
+    terrain: &TerrainGrid,
+    xy: Vec2<f32>,
+    z_hint: f32,
+    slice_z: Option<f32>,
+) -> f32 {
+    let g = ground_z(terrain, xy, z_hint).unwrap_or(z_hint);
+    match slice_z {
+        Some(s) => g.min(s),
+        None => g,
+    }
+}
+
+/// bastion (B5.6a): the reusable overlay-draping primitive the B5.6 scope
+/// flag called for. Returns the perimeter of the axis-aligned `[min,max]` xy
+/// rectangle as short world-space line segments conformed to the terrain
+/// surface — each vertex sits `hover` blocks above the surface at that point
+/// (fixes the flat-rectangle-floating-over-a-hill bug). `step` is the sample
+/// stride in blocks (1.0 = per-cell; coarser is cheaper for live drag
+/// previews). The caller turns each segment into a debug-line shape.
+///
+/// SEAM (B5.6b + §3w): the same surface sampling drives conformed *fills*
+/// (emit draped quads over the interior grid) and the colony-boundary
+/// overlay. Keep `overlay_surface_z` the single height authority so all
+/// overlays agree.
+pub fn draped_rect_outline(
+    terrain: &TerrainGrid,
+    min_xy: Vec2<f32>,
+    max_xy: Vec2<f32>,
+    z_hint: f32,
+    slice_z: Option<f32>,
+    hover: f32,
+    step: f32,
+) -> Vec<[Vec3<f32>; 2]> {
+    let step = step.max(0.25);
+    let sample = |xy: Vec2<f32>| -> Vec3<f32> {
+        let z = overlay_surface_z(terrain, xy, z_hint, slice_z) + hover;
+        Vec3::new(xy.x, xy.y, z)
+    };
+    let corners = [
+        min_xy,
+        Vec2::new(max_xy.x, min_xy.y),
+        max_xy,
+        Vec2::new(min_xy.x, max_xy.y),
+    ];
+    let mut segs = Vec::new();
+    for i in 0..4 {
+        let a = corners[i];
+        let b = corners[(i + 1) % 4];
+        let len = a.distance(b).max(0.0001);
+        let n = ((len / step).ceil() as usize).max(1);
+        let mut prev = sample(a);
+        for k in 1..=n {
+            let t = k as f32 / n as f32;
+            let cur = sample(a + (b - a) * t);
+            segs.push([prev, cur]);
+            prev = cur;
+        }
+    }
+    segs
+}
+
 /// bastion: unproject a screen-space cursor position onto the horizontal
 /// world plane `z = plane_z`, using the overseer camera's matrices.
 ///
