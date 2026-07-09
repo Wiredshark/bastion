@@ -46,6 +46,30 @@ state.** A clean stop with a clear report is a success; a corrupted tree is the 
 5. **The Divine Politics Bible** — for any DP* block (world trade/diplomacy/war + theology + competing gods).
 6. **`BASTION.md` / `BASELINE.md` / all `docs/BASTION_*_FINDINGS.md`** — prior state, real symbols, and the
    determinism/soak status. **Respect §7 invariant-first testing** (bit-exact determinism is NOT the gate).
+7. **`readme/BASTION-SYSTEM-FRAMEWORKS.md`** — the consolidated frameworks reference (control spectrum,
+   zone/asset taxonomy + 3D zones, mining framework, animations, testing, world tissue, boundary field).
+   Read the relevant section before any block that touches these systems; deep detail lives in
+   `readme/future-work-and-deferred-ideas.md` (§3q–§3x cover zoning, mining, boundaries, roads, site-prep,
+   action animations — several are near-term: B5.5/B6/B7-era).
+
+## 🥇 FIRST ACTION THIS SESSION — CATCH-UP DOCUMENTATION PASS (do this BEFORE building anything)
+`readme/BASTION_ARCHITECTURE.md` does not exist yet, but B0–B4 are already built. **Before you build the next
+block, create it and document everything built SO FAR**, by reading the repo, the findings docs, the run log,
+and the git history. This is a one-time retroactive pass so the "how it all works" map exists and is accurate;
+after this, every block (including this one) just edits and adds to it.
+
+Produce `readme/BASTION_ARCHITECTURE.md` covering everything already built (see the full contents list in
+"MAINTAIN THE SYSTEM ARCHITECTURE GUIDE" below):
+- The pillars & invariants actually in force.
+- Each system B0–B4 built and how they connect — the headless harness (what it is + how it works), the
+  colonist model (rtsim NPC + bastion record + promote/demote boundary), the god-anchor (inert + invulnerable),
+  the designation→job-board→arbitration→pathing loop — with **where each lives in the code** (real crate/
+  module/symbol names, pulled from the actual repo, not guessed) and **how each is tested**.
+- The build methodology, reused Veloren machinery, and standing gotchas.
+- State (B0–B4 done, B5 next) + pointers to the design docs/findings/logs.
+Reconstruct it faithfully from what's actually in the repo — if something is unclear, read the code to confirm
+rather than guessing. **Then continue to the queue and build the next block**, updating this doc as part of
+that block's work. This catch-up pass is the priority first task; do not skip it.
 
 ## THE QUEUE (authoritative — the COMPLETE remaining work from the whole project, in build order)
 
@@ -67,8 +91,12 @@ B1.6   [MERGED]   4-mode occlusion framework (soft-slice/proximity/reveal/cutawa
 B2a    [PROMPTED] Interaction surface: select/inspect, right-click radial menu, tool palette
 B3     [PROMPTED] Colonists: entity model + starting band + loaded↔simulated boundary
 B4     [PROMPTED] Designation → job board → AUTONOMOUS arbitration + pathing  ← Slice B heart
-B5     [DESIGNED] Work execution: dig/chop/build effects, item drops, skill XP
-B6     [DESIGNED] Stockpiles, hauling, reservations (conservation invariants)
+B5     [MERGED]   Work execution: dig/chop/build effects, item drops, skill XP (tag bastion-block-B5)
+B5.5   [PROMPTED] PATCH: zone/designation deletion + item-drop pile aggregation (merge-never-delete,
+                  conservation-exact) — see readme/B5.5-zone-delete-drop-aggregation-prompt.md. Found in
+                  the first live demo; do BEFORE B6 (B6 hauling consumes piles).
+B6     [DESIGNED] Stockpiles, hauling, reservations (conservation invariants; haul range = colony boundary
+                  field if built, see future-work §3w)
 B7     [DESIGNED] Needs decay, mood, self-jobs, idle AI
 
 ── Phase 3: agency (the DF soul) ───────────────────────────────────
@@ -248,6 +276,28 @@ context.
 These three appends are part of a block's work — do them before the final run-log entry. They are cheap and
 compound: they are how the next amnesiac session (and Ben) inherit what you learned. (The run log itself,
 `docs/BASTION_RUN_LOG.md`, stays where it is; these three are additional and live in `readme/`.)
+
+## 📖 MAINTAIN THE SYSTEM ARCHITECTURE GUIDE (so future amnesiac sessions understand how it all works)
+A future Claude session (no memory of any prior one) must be able to understand how Bastion's systems function
+from the docs alone. Maintain a living **`readme/BASTION_ARCHITECTURE.md`** and update it whenever a block adds
+or changes a system. It is the "how does this all work" map. It must let a fresh session answer: *what are the
+core systems, how do they fit together, where does each live in the code, what are the invariants.* Include:
+- **The pillars & invariants** — influence-not-command (§1a), the loaded↔simulated boundary (rtsim promote/
+  demote), the invisible-player-anchor overseer (not spectator), determinism/no-dupe-loss, don't-break-vanilla.
+- **The core systems built so far & how they connect** — the colonist model (rtsim NPC + bastion record), the
+  designation→job-board→arbitration→work loop, the god-anchor (inert + invulnerable), the headless test
+  harness (what it is: custom test-driver on the intended standalone server), and each subsequent block's
+  system as it lands. For each: what it does, where it lives (crate/module), how it's tested.
+- **The build methodology** — how blocks work (checkpoint → explore → build → self-test → commit-or-rollback →
+  tag), the invariant-first testing philosophy, the soak gate, the git-tag-as-progress model.
+- **Key reused Veloren machinery** — rtsim, the terrain-edit path, NpcActivity/Controller, the buff system,
+  etc. — so a session knows what to reuse vs. build.
+- **Gotchas & standing hazards** — the §6b pick-ray offset, the docs/-vs-readme/ split, retro-tag fuzziness,
+  the harness-assumptions maintenance note, any block-specific traps recorded in findings.
+- **State & pointers** — which blocks are done, what's next, and pointers to the design docs + findings +
+  logs so a fresh session can go deep where needed.
+Write it so a fresh session reads this guide + the design docs + the run log and can immediately continue
+building correctly. Treat it as essential as the code — it is how the project survives across sessions.
 
 ## WHAT TO REPORT AT THE END (always)
 Append a final summary to `BASTION_RUN_LOG.md` and print it:

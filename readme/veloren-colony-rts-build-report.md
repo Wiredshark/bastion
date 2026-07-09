@@ -1,9 +1,9 @@
 # Project Bastion — Turning Veloren into an Autonomous God-Game Colony Sim
 
 **A build & test directive for Claude Code**
-Version 2.1 · Architect-authored design doc · Target: fork of `veloren/veloren` (Rust, GPL-3)
+Version 2.2 · Architect-authored design doc · Target: fork of `veloren/veloren` (Rust, GPL-3)
 Lineage: Dwarf Fortress / RimWorld (autonomy & policy) + Black & White / From Dust / Populous (indirect divinity). **Explicitly *not* StarCraft-style unit micro.**
-*v2.1 changelog: agents now DO things. Added B-AG5 (world-verb **action library** — gather→build→produce — on the principle of **one library, two drivers**: a verb is defined once and invoked by either a player designation→colonist job OR an NPC's own drive, so colonist work and autonomous NPC life share one codebase) + B-AG6 (**generative systems**: autonomous village growth + deep DF **reproduction/genealogy** with kin graphs & inherited traits — the loop that makes the world grow, not just decline). Both LOD-aware (settlement growth as rtsim events when unwatched, real voxels when loaded; full genealogy only for tracked/loaded lineages). Agency Bible §5c authors world verbs & generative systems. v2.0: the DF Mind (B-AG3/B-AG4).*
+*v2.2 changelog: added §3d the Control Spectrum — three game modes (Autonomous / DF-manage / RTS-command) as three levels of player-override on ONE autonomous sim, not three codebases, extended into the full EMBODIMENT SPECTRUM (five lenses god→mortal: + god-embodied RPG avatar with divine quest-giving [extends B12], + mortal-RPG capstone [no player-god, the final exam for the agency systems]; M&B-style layer as long-term elaboration — see future-work §3h). Reuses B3/B4 (job priorities → DF mode), B2b/B8 (force-action → RTS mode), B12 (possession → embodied RPG). Also: B-AG6 growth bounded by carrying-capacity + site-suitability placement; autonomous civilizational advancement as tech-world-history (future-work §3f); asset-generation pipeline unlocking content-bound DF depth (§3e/§3g). v2.1: world-verb action library + generative systems.*
 
 ---
 
@@ -201,6 +201,69 @@ pillar (§1a): direct control is a **divine intervention you spend**, not a pers
 layer in B2a** (no teeth until B3 spawns a colony and B13 adds favor), then enforced in **B2b**. The favor⇄
 cooldown limiter toggle likewise lands with B2b/B13. Building the hook early means no rework when the colony
 and economy exist.
+
+---
+
+## 3d. The Control Spectrum — three game modes (canon)
+
+Bastion exposes **three modes on a single "how much do you control" spectrum.** These are NOT three separate
+games or codebases — they are three levels of *player-override* on top of the same autonomous simulation. The
+colonists/colonies always *can* run themselves; the mode sets how far the player may reach in and take over.
+This serves three player types (watchers, managers, commanders) from one simulation, and it reuses machinery
+already designed elsewhere.
+
+- **Autonomous mode (the default — the real god game).** Colonists and colonies run themselves entirely; the
+  player influences via designation, policy, and metered god-powers. This *is* Pillar §1a. No direct unit
+  control except metered force-action/possession. *Machinery: the whole core design.*
+
+- **DF mode (manage — assign work & priorities).** The player directly assigns jobs and sets per-colonist work
+  priorities, designates hands-on, manages the colony like Dwarf Fortress — but colonists still *execute*
+  autonomously (path, resolve, react). A closer, more hands-on touch than Autonomous, using the **same B3
+  work-priorities + B4 job board**, just with more direct player assignment exposed. *Machinery: B3 + B4 with
+  fuller assignment UI.*
+
+- **RTS / direct-control mode (command — last to build).** Direct unit command for combat, defense, and
+  micromanagement. This is **B2b's force-action + God/Free machinery**, exposed as a full mode (optionally
+  unmetered in this mode). Correct even for a pure god game: autonomous defense (B8) is good, but a siege is
+  the one moment a player legitimately wants hands on the units. *Machinery: B2b + B8.*
+
+**The spectrum:** Autonomous = influence only · DF = influence + direct job assignment · RTS = influence +
+job assignment + direct unit command. Each mode *unlocks more override* on the same underlying autonomous sim.
+
+**The full EMBODIMENT SPECTRUM (the three modes above extend into two more — long-term, pie-in-the-sky).**
+The control spectrum is really one axis from "maximally god" to "maximally mortal" — the *same* living
+simulation experienced at five distances of embodiment. Not five games; one world, five lenses:
+- **Autonomous god** — everywhere and nowhere, pure influence (default).
+- **DF-manage god** — reach in, assign work/priorities.
+- **RTS-command god** — directly command units (combat/defense).
+- **God-embodied avatar (RPG, god-mode)** — you're still the god, but you *descend into a body* and play
+  the world directly. Reuses Veloren's native action-RPG loop (movement/combat/interaction — it's already an
+  RPG) but now with ALL the colony/agent/god systems live around you. **Extends B12 (Embody/possession)** +
+  the God/Free machinery. Adds a distinctive god verb: **divine quest-giving** — descend, walk among your
+  people, and charge a hero with a task that isn't a colonist's autonomous job (a quest a colonist *accepts*
+  and pursues via the world-verb library + their mind). See future-work §3h.
+- **Mortal RPG, no player-god (the capstone)** — there is NO god that is you. Rival/agent gods stay fully
+  live (Divine Politics running), colonies live/grow/war autonomously, the whole sim churns — and you are a
+  *normal mortal* in it. A Veloren adventurer in a world that is actually alive: towns that really grew,
+  people with real minds, gods above genuinely contesting faith, experienced from the ground. This is a
+  different *game* sharing the engine + world — arguably the most marketable thing the project can produce
+  ("an RPG in a truly living simulated world"), and the **final exam for all the agency work** (first-person
+  scrutiny is merciless — an NPC's mind/dialogue/daily-life must hold up at point-blank range). Correctly
+  LAST: only *good* once the world underneath is deep enough to survive being looked at from the inside. See
+  future-work §3h.
+
+Reframes the project's identity: not "a god game" but **a living world + a set of lenses to inhabit it
+through, from omniscient deity down to a single mortal walking its roads.** Long-term; the two RPG lenses are
+Tier-3 late (god-embodied extends B12; mortal-RPG is the capstone after minds + dialogue are deep). A
+Mount-&-Blade-style layer (lead a warband, rise through a faction, be embodied *and* command) is a natural
+long-term elaboration of the embodied modes.
+
+**The one hard requirement (shared across all three):** the autonomous systems (arbitration, needs, AI) must
+**gracefully yield** when the player takes direct control (DF assignment / RTS command / possession) and
+**resume cleanly** when released — the single-driver, no-orphaned-job discipline **B2b already requires**. Get
+that handoff right once and all three modes share it; get it wrong and DF/RTS mode fights the autonomous AI
+for the same colonist. The modes are cheap to *expose*; the clean-handoff plumbing underneath is the real work
+(already scoped in B2b). Build order: Autonomous (core) → DF (expose B3/B4 assignment) → RTS (last, on B2b/B8).
 
 ---
 
