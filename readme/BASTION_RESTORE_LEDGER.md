@@ -80,3 +80,15 @@ than editing the old one.
 | Revert command | `git reset --hard bastion-block-B5.6a` (on `bastion/main`) |
 | Reverting undoes | Terrain-conformed zone fills (`DebugShape::ConformedTris` + `bastion::draped_fill_tris`), the kind-color legend + overlap blending, world-anchored zone labels, SUBTLE=border-only; ALSO the three demo-bug fixes (canopy-safe overlay heights, input-transparent labels + XY zone matching, terrain-anchored grab plane) — reverting reintroduces tree-climbing overlays, dead Delete-zone near centroids, and off-center pan. |
 | Data-format caveats | None. Client-side (voxygen) + one additive `common::bastion::Region::contains_point_xy`. No net-protocol, comp, or rtsim changes. |
+
+## bastion-block-BMAP1 (2026-07-09)
+
+- Block: B-MAP1 (overseer minimap + world-map overseer layers)
+- Tag: `bastion-block-BMAP1` · merge `e0300e253b`
+- Previous green: `bastion-block-B5.6b-1` (main then advanced by docs
+  commits to `c8643b72b2`, the merge base)
+- Revert: `git reset --hard c8643b72b2` (or the b-1 tag to also drop the
+  docs commits)
+- Undoes: the bastion minimap + big-map overseer layers/fly-to + the
+  minimap size button (client-only; no data-format or protocol changes —
+  nothing serialized, safe to revert cold).

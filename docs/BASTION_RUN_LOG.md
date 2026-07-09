@@ -391,3 +391,22 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   (B5.6a + docs commits). Spec: `readme/B-MAP1-overseer-minimap-prompt.md`.
   Client-side; independent of the B5.6b chain. (Rebased onto post-B5.6b-1
   main `c8643b72b2` at the merge slot per the architect's ordering.)
+
+- **PASS** (2026-07-09). Merge `e0300e253b`, tag `bastion-block-BMAP1`
+  (rebased onto `c8643b72b2` at the merge slot; adopted b-1's
+  `tools::zone_rgb` as the one zone-color legend). The god's map, both
+  surfaces: per-chunk RENDERED TILES (CPU voxel scan + NW hillshade,
+  slice-aware, TerrainChanges-invalidated, KeyedJobs-trickled, anchored
+  512-block window) crossfading to worldgen at far zoom; pin/layer API
+  (colonists/zones/piles/frustum + open extra_pins hook, §3s foundation —
+  architecture §2.10); click-jump/drag-pan/scroll-zoom; S/M/L/XL resize;
+  world-map (M) overseer layers (max zoom 16→128 px/chunk, flag-gated) +
+  RIGHT-CLICK FLY-TO. Recorded drift: CPU tiles instead of the prompt's
+  literal GPU RTT (consistency log; conrod UI is CPU-image-only). Gate:
+  compile green ×3; Ben live PASS in two rounds ("this is great" on items
+  1-8; resize + world-map asks folded in as 9-10, then "good enough to
+  merge" — unspecified improvements to capture next pass); vanilla
+  flagless surfaces untouched (all additions gated on the overseer HUD).
+  Watch: worktree-built exes resolve userdata exe-adjacent — launch with
+  VELOREN_USERDATA (test doc). Next per the revised order: B5.6b-2 (main
+  builder takes the tree).
