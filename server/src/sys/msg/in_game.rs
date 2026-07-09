@@ -273,11 +273,11 @@ impl Sys {
                 } else {
                     client.send(ServerGeneral::server_msg(
                         common::comp::ChatType::CommandError,
-                        format!(
+                        common::comp::Content::Plain(format!(
                             "Designation rejected: volume {} outside 1..={}",
                             volume,
                             common::bastion::MAX_DESIGNATION_VOLUME
-                        ),
+                        )),
                     ))?;
                 }
             },
@@ -285,13 +285,13 @@ impl Sys {
                 if target.map(|e| e.is_finite()).reduce_and() {
                     client.send(ServerGeneral::server_msg(
                         common::comp::ChatType::CommandInfo,
-                        format!(
+                        common::comp::Content::Plain(format!(
                             "[bastion stub] influence {} at ({:.0}, {:.0}, {:.0})",
                             kind.label(),
                             target.x,
                             target.y,
                             target.z
-                        ),
+                        )),
                     ))?;
                 }
             },
@@ -304,7 +304,11 @@ impl Sys {
                 };
                 client.send(ServerGeneral::server_msg(
                     common::comp::ChatType::CommandInfo,
-                    format!("[bastion stub] {} on {}", verb.label(), target_desc),
+                    common::comp::Content::Plain(format!(
+                        "[bastion stub] {} on {}",
+                        verb.label(),
+                        target_desc
+                    )),
                 ))?;
             },
             ClientGeneral::SetBattleMode(battle_mode) => {

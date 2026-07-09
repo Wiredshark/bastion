@@ -108,3 +108,5 @@ gameinput-bastion-sliceup = Overseer Slice Up
 gameinput-bastion-slicedown = Overseer Slice Down
 gameinput-bastion-snaptopdown = Overseer Snap Top-Down
 gameinput-bastion-cycleviewmode = Overseer Cycle View Mode
+gameinput-bastion-cycletool = Overseer Cycle Tool
+gameinput-bastion-togglegodmode = Overseer Toggle God/Free Mode

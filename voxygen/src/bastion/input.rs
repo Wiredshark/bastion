@@ -73,10 +73,17 @@ pub const OVERSEER_SCHEME: ContextScheme = ContextScheme {
         GameInput::BastionSliceDown,
         GameInput::BastionSnapTopDown,
         GameInput::BastionCycleViewMode,
-    ],
-    suppressed: &[
+        // B2a: the interaction surface reclaims the mouse verbs (select /
+        // radial menu / designate-paint per the active tool) + owns the
+        // tool-palette keys. `Interact` stays suppressed: its physical key
+        // (E) belongs to BastionRotateRight until B9 adds per-context
+        // key overrides (see BASTION_B2a_FINDINGS.md §1).
         GameInput::Primary,
         GameInput::Secondary,
+        GameInput::BastionCycleTool,
+        GameInput::BastionToggleGodMode,
+    ],
+    suppressed: &[
         GameInput::Block,
         GameInput::Roll,
         GameInput::Jump,
@@ -143,6 +150,9 @@ pub const AVATAR_SCHEME: ContextScheme = ContextScheme {
         GameInput::BastionSliceUp,
         GameInput::BastionSliceDown,
         GameInput::BastionSnapTopDown,
+        // B2a: T/G belong to avatar verbs here; the overseer tool keys die.
+        GameInput::BastionCycleTool,
+        GameInput::BastionToggleGodMode,
     ],
 };
 

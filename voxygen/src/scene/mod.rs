@@ -987,15 +987,18 @@ impl Scene {
         let focus_pos = self.camera.get_focus_pos();
         let focus_off = focus_pos.map(|e| e.trunc());
 
-        // bastion (B1.6): stub cutaway targets — the focus point + a couple of
-        // debug markers around it, so cutaway is demonstrable. B2 replaces these
-        // with hovered/selected entities, B3 with colonist positions.
+        // bastion (B2a): cutaway targets are the *selected* entities (the
+        // B1.6 focus+debug-marker stubs are gone). B3 adds colonists. With no
+        // selection the list is empty — cutaway is an opt-in toggle anyway.
         if self.camera.get_mode() == CameraMode::Overseer {
-            self.bastion_occlusion.targets = vec![
-                focus_pos,
-                focus_pos + Vec3::new(20.0, 0.0, 0.0),
-                focus_pos + Vec3::new(-16.0, 12.0, 0.0),
-            ];
+            let ecs = scene_data.state.ecs();
+            let selected = ecs.read_storage::<comp::BastionSelected>();
+            let positions = ecs.read_storage::<comp::Pos>();
+            self.bastion_occlusion.targets = (&selected, &positions)
+                .join()
+                .take(crate::bastion::occlusion::MAX_TARGETS)
+                .map(|(_, p)| p.0)
+                .collect();
         }
         let bastion_occ = if self.camera.get_mode() == CameraMode::Overseer {
             // View radius ≈ the on-screen half-diagonal at this zoom, so the
