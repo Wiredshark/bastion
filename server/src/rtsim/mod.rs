@@ -250,6 +250,13 @@ impl RtSim {
             if matches!(npc.mode, SimulationMode::Simulated) {
                 error!("Unloaded already unloaded entity");
             }
+            // bastion (B3): the loaded↔simulated boundary, log-verified.
+            if let Some(colonist) = &npc.bastion_colonist {
+                tracing::info!(
+                    name = colonist.name.as_str(),
+                    "bastion: colonist demoted to SimulationMode::Simulated"
+                );
+            }
             npc.mode = SimulationMode::Simulated;
         }
     }

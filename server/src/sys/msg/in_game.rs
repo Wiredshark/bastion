@@ -51,6 +51,8 @@ event_emitters! {
         update_map_marker: event::UpdateMapMarkerEvent,
         client_disconnect: event::ClientDisconnectEvent,
         set_battle_mode: event::SetBattleModeEvent,
+        // bastion (B3): god-anchor invulnerability buff add/remove
+        buff: event::BuffEvent,
     }
 }
 
@@ -71,6 +73,7 @@ impl Sys {
         rare_writes: &parking_lot::Mutex<RareWrites<'_, '_>>,
         position: Option<&mut Pos>,
         spectating_entity: &mut Option<Option<common::uid::Uid>>,
+        bastion_anchor: &mut Option<bool>,
         controller: Option<&mut Controller>,
         settings: &Read<'_, Settings>,
         build_areas: &Read<'_, AreasContainer<BuildArea>>,
@@ -257,9 +260,17 @@ impl Sys {
                 }
             },
             ClientGeneral::BastionCameraAnchor(anchor) => {
-                // bastion (B1.6): god-camera terrain anchor — only widens
+                // bastion (B1.6): god-camera terrain anchor — widens
                 // terrain-request validation (see sys/msg/terrain.rs); never
                 // moves the entity (unlike SpectatePosition above).
+                // bastion (B3, §4 directive): entering/leaving god mode also
+                // toggles the inert + invulnerable anchor state (marker +
+                // permanent Invulnerability buff, applied post-loop in run()).
+                let was_god = presence.bastion_terrain_anchor.is_some();
+                let now_god = anchor.is_some();
+                if was_god != now_god {
+                    *bastion_anchor = Some(now_god);
+                }
                 presence.bastion_terrain_anchor = anchor;
             },
             // bastion (B2a): overseer interaction-surface stubs. The server
@@ -378,6 +389,9 @@ impl<'a> System<'a> for Sys {
         TerrainPersistenceData<'a>,
         ReadStorage<'a, Player>,
         ReadStorage<'a, Admin>,
+        // bastion (B3): god-anchor marker + buff timing
+        WriteStorage<'a, common::comp::BastionGodAnchor>,
+        Read<'a, common::resources::Time>,
     );
 
     const NAME: &'static str = "msg::in_game";
@@ -411,6 +425,8 @@ impl<'a> System<'a> for Sys {
             mut terrain_persistence,
             players,
             admins,
+            mut god_anchors,
+            time,
         ): Self::SystemData,
     ) {
         let time_for_vd_changes = Instant::now();
@@ -469,6 +485,7 @@ impl<'a> System<'a> for Sys {
                     let mut skill_set = skill_set.map(Cow::Borrowed);
                     let mut player_physics = None;
                     let mut spectating_entity = None;
+                    let mut bastion_anchor = None;
                     let _ = super::try_recv_all(client, 2, |client, msg| {
                         Self::handle_client_in_game_msg(
                             emitters,
@@ -485,6 +502,7 @@ impl<'a> System<'a> for Sys {
                             &rare_writes,
                             pos.as_deref_mut(),
                             &mut spectating_entity,
+                            &mut bastion_anchor,
                             controller.as_deref_mut(),
                             &settings,
                             &build_areas,
@@ -619,12 +637,18 @@ impl<'a> System<'a> for Sys {
                         .zip(new_player_physics_setting
                              .filter(|_| old_player_physics_setting != new_player_physics_setting));
                      let spectating_entity_update = spectating_entity.map(|e| (entity, e));
-                    (skill_set_update, spectating_entity_update, physics_update)
+                    let bastion_anchor_update = bastion_anchor.map(|on| (entity, on));
+                    (
+                        skill_set_update,
+                        spectating_entity_update,
+                        physics_update,
+                        bastion_anchor_update,
+                    )
                 },
             )
             // NOTE: Would be nice to combine this with the map_init somehow, but I'm not sure if
             // that's possible.
-            .filter(|(x, y, z)| x.is_some() || y.is_some() || z.is_some())
+            .filter(|(x, y, z, w)| x.is_some() || y.is_some() || z.is_some() || w.is_some())
             // NOTE: I feel like we shouldn't actually need to allocate here, but hopefully this
             // doesn't turn out to be important as there shouldn't be that many connected clients.
             // The reason we can't just use unzip is that the two sides might be different lengths.
@@ -637,8 +661,9 @@ impl<'a> System<'a> for Sys {
         // per uuid, so the physics update is sound and doesn't depend on evaluation
         // order, even though we're not updating directly by entity or uid (note that
         // for a given entity, we process messages serially).
+        let mut post_emitters = events.get_emitters();
         deferred_updates.iter_mut().for_each(
-            |(skill_set_update, spectating_entity_update, physics_update)| {
+            |(skill_set_update, spectating_entity_update, physics_update, bastion_anchor_update)| {
                 if let Some((entity, new_skill_set)) = skill_set_update {
                     // We know this exists, because we already iterated over it with the skillset
                     // lock taken, so we can ignore the error.
@@ -667,6 +692,40 @@ impl<'a> System<'a> for Sys {
                     player_physics_settings
                         .settings
                         .insert(uuid, player_physics_setting);
+                }
+                if let &mut Some((entity, god_on)) = bastion_anchor_update {
+                    // bastion (B3, §4 standing directive): while the god
+                    // camera is anchored the avatar is an inert, invulnerable
+                    // anchor — marker for the world-ignores filters, plus a
+                    // permanent vanilla Invulnerability buff (100% damage
+                    // reduction; agents also drop invulnerable targets).
+                    use common::comp::{
+                        Buff, BuffChange, BuffData, BuffKind, BuffSource, buff::DestInfo,
+                    };
+                    if god_on {
+                        let _ = god_anchors.insert(entity, common::comp::BastionGodAnchor);
+                        post_emitters.emit(event::BuffEvent {
+                            entity,
+                            buff_change: BuffChange::Add(Buff::new(
+                                BuffKind::Invulnerability,
+                                BuffData::new(1.0, None),
+                                vec![],
+                                BuffSource::Command,
+                                *time,
+                                DestInfo {
+                                    stats: None,
+                                    mass: None,
+                                },
+                                None,
+                            )),
+                        });
+                    } else {
+                        god_anchors.remove(entity);
+                        post_emitters.emit(event::BuffEvent {
+                            entity,
+                            buff_change: BuffChange::RemoveByKind(BuffKind::Invulnerability),
+                        });
+                    }
                 }
             },
         );

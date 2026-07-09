@@ -74,6 +74,17 @@ main doc · **[SUBSTRATE]** Veloren has most of it, needs wiring · **[GAP]** ne
 | Guilds / craft guilds | GAP | **DF-GUILD** — profession guilds w/ demands. $ (ties factions) |
 
 ## E. Engineering & machinery (DF's signature GAP)
+> **Architecture note (from cross-game research):** DF-MECH, DF-TRAP, and DF-OPERABLE are **one system**, not
+> three — every one reduces to **trigger → link → effect** (trigger: pressure plate / lever / tripwire /
+> proximity; link: the mechanism/wiring layer; effect: spikes / boulder / cage / drop-a-bridge / release
+> water-lava). Build the **shared trigger-link-effect engine once (DF-MECH)** and traps + operable terrain
+> fall out of it cheaply — same "one library, many uses" discipline as the world-verb action library.
+> **Veloren has no player-buildable trap system** (confirmed absent in research — it has combat/dungeon
+> *hazards as content*, not a place-and-wire system), so this whole cluster is **build, not wrap**.
+> **God-game reframe:** traps fit autonomous defense (B8) perfectly — you *designate* them in peacetime
+> (like any build), colonists construct+wire them, and they trigger **autonomously** on raiders. Pre-placed
+> policy, not real-time command — cleaner for your pillar than for a normal RTS.
+
 | DF system | Coverage | Notes / DF-ID |
 |---|---|---|
 | Mechanisms, levers, pressure plates, linkages | GAP | **DF-MECH** — player-wired logic. $$ (fits god-designation model) |

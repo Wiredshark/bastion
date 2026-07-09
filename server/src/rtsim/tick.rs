@@ -469,6 +469,14 @@ impl<'a> System<'a> for Sys {
         WriteExpect<'a, comp::gizmos::RtsimGizmos>,
         ReadExpect<'a, comp::tool::AbilityMap>,
         ReadExpect<'a, comp::item::MaterialStatManifest>,
+        // bastion (B3): colonist decoration on promote
+        (
+            WriteStorage<'a, comp::Colonist>,
+            WriteStorage<'a, comp::PlayerColony>,
+            WriteStorage<'a, comp::bastion::Needs>,
+            WriteStorage<'a, comp::bastion::Mood>,
+            WriteStorage<'a, comp::Stats>,
+        ),
     );
 
     const NAME: &'static str = "rtsim::tick";
@@ -501,6 +509,13 @@ impl<'a> System<'a> for Sys {
             rtsim_gizmos,
             ability_map,
             msm,
+            (
+                mut colonists,
+                mut player_colony,
+                mut bastion_needs,
+                mut bastion_moods,
+                mut stats_storage,
+            ),
         ): Self::SystemData,
     ) {
         let mut create_ship_emitter = create_ship_events.emitter();
@@ -684,6 +699,28 @@ impl<'a> System<'a> for Sys {
             if let Some(npc) = data.npcs.get_mut(*rtsim_entity) {
                 match npc.mode {
                     SimulationMode::Loaded => {
+                        // bastion (B3): decorate a freshly-promoted colonist —
+                        // mirror the rtsim record into ECS comps once, and
+                        // override the display name so the roster and the
+                        // in-world nametag agree.
+                        if let Some(colonist) = &npc.bastion_colonist
+                            && !colonists.contains(entity)
+                        {
+                            let _ = colonists
+                                .insert(entity, comp::Colonist(colonist.clone()));
+                            let _ = player_colony.insert(entity, comp::PlayerColony);
+                            let _ = bastion_needs
+                                .insert(entity, comp::bastion::Needs::default());
+                            let _ = bastion_moods
+                                .insert(entity, comp::bastion::Mood::default());
+                            if let Some(mut stats) = stats_storage.get_mut(entity) {
+                                stats.name = comp::Content::Plain(colonist.name.clone());
+                            }
+                            tracing::info!(
+                                name = colonist.name.as_str(),
+                                "bastion: colonist promoted to loaded entity"
+                            );
+                        }
                         // Update rtsim NPC state
                         npc.wpos = pos.0;
 

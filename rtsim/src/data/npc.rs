@@ -305,6 +305,12 @@ pub struct Npc {
     #[serde(default)]
     pub job: Option<Job>,
 
+    /// bastion (B3): Some = this NPC is a player-colony colonist. Persisted
+    /// (roster survives reload; `serde(default)` keeps old data loading).
+    /// Mirrored into `comp::Colonist` when the NPC promotes to loaded.
+    #[serde(default)]
+    pub bastion_colonist: Option<common::bastion::BastionColonist>,
+
     // Unpersisted state
     #[serde(skip)]
     pub chunk_pos: Option<Vec2<i32>>,
@@ -355,6 +361,7 @@ impl Clone for Npc {
             personality: self.personality,
             sentiments: self.sentiments.clone(),
             job: self.job.clone(),
+            bastion_colonist: self.bastion_colonist.clone(),
             // Not persisted
             chunk_pos: None,
             current_site: Default::default(),
@@ -393,10 +400,17 @@ impl Npc {
             inbox: Default::default(),
             mode: SimulationMode::Simulated,
             brain: None,
+            bastion_colonist: None,
         }
     }
 
     pub fn is_dead(&self) -> bool { self.health_fraction <= 0.0 }
+
+    /// bastion (B3): mark this NPC as a player-colony colonist.
+    pub fn with_bastion_colonist(mut self, colonist: common::bastion::BastionColonist) -> Self {
+        self.bastion_colonist = Some(colonist);
+        self
+    }
 
     // TODO: have a dedicated `NpcBuilder` type for this.
     pub fn with_personality(mut self, personality: Personality) -> Self {
