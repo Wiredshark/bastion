@@ -70,4 +70,21 @@ exe resolves `userdata` NEXT TO THE EXECUTABLE when built from the worktree
 with `VELOREN_USERDATA=E:\veloren-master\userdata` to use the real
 worlds/settings.
 
-Result: to be appended after the live run.
+## 3. Live gate result — PASS (2026-07-09, Ben)
+
+Two rounds on Ben's world (worktree-built exe, `VELOREN_USERDATA` override;
+boot log clean both rounds):
+
+- **Round 1 (items 1–8):** verdict "this is great" — rendered tiles, zoom
+  pyramid, dig-invalidation, overlay accuracy, frustum, click/drag
+  navigation, layer chips, slice following all eyeballed good. Two feature
+  asks came out of the round (resize + world-map replication with
+  right-click fly-to) and were folded in as items 9–10 (b-1 fold-in
+  precedent).
+- **Round 2 (items 9–10 + regression):** verdict **"good, some improvement
+  needed but good enough to merge"** — PASS. The improvements were not
+  enumerated at the gate; capture them in the next architect/session pass
+  (backlog carries the standing polish list: icon chips, RTT tiles, zoom
+  persistence, order-independent blends).
+
+Merged per verdict; tag `bastion-block-BMAP1`.
