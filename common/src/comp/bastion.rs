@@ -75,8 +75,10 @@ impl Component for Mood {
 pub struct ActiveJob {
     pub job: crate::bastion::JobId,
     pub state: ActiveJobState,
-    /// Travel watchdog: last sampled position + time spent not progressing.
-    pub last_pos: vek::Vec3<f32>,
+    /// Travel watchdog: best distance-to-target achieved so far + time since
+    /// it last improved. Displacement alone is useless — an agent pacing
+    /// around an unreachable target moves plenty without progressing.
+    pub best_dist: f32,
     pub stuck_time: f32,
 }
 

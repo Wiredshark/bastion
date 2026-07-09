@@ -230,8 +230,12 @@ impl<'a> System<'a> for Sys {
                             agent.rtsim_controller.activity =
                                 Some(common::rtsim::NpcActivity::Goto(target, TRAVEL_SPEED));
                         }
-                        // Watchdog: no progress for too long → unreachable.
-                        if pos.0.distance_squared(active.last_pos) < STUCK_EPSILON.powi(2) {
+                        // Watchdog: distance-to-target must keep improving;
+                        // pacing near an unreachable site doesn't count.
+                        if dist + STUCK_EPSILON < active.best_dist {
+                            active.best_dist = dist;
+                            active.stuck_time = 0.0;
+                        } else {
                             active.stuck_time += dt.0;
                             if active.stuck_time > STUCK_TIMEOUT {
                                 job.claimed_by = None;
@@ -243,9 +247,6 @@ impl<'a> System<'a> for Sys {
                                 );
                                 to_release.push((entity, None));
                             }
-                        } else {
-                            active.last_pos = pos.0;
-                            active.stuck_time = 0.0;
                         }
                     }
                 },
@@ -330,11 +331,11 @@ impl<'a> System<'a> for Sys {
                 assignments.push((entity, job_id, pos.0));
             }
         }
-        for (entity, job_id, pos) in assignments {
+        for (entity, job_id, _pos) in assignments {
             let _ = active_jobs.insert(entity, ActiveJob {
                 job: job_id,
                 state: ActiveJobState::Traveling,
-                last_pos: pos,
+                best_dist: f32::MAX,
                 stuck_time: 0.0,
             });
         }

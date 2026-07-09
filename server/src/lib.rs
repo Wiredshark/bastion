@@ -376,6 +376,11 @@ impl Server {
         });
 
         state.ecs_mut().insert(Vec::<ChunkRequest>::new());
+        // bastion (B4): job board + harness-pinned chunk set.
+        state.ecs_mut().insert(bastion_jobs::JobBoard::default());
+        state
+            .ecs_mut()
+            .insert(bastion_jobs::BastionForceLoaded::default());
         state
             .ecs_mut()
             .insert(EventBus::<chunk_serialize::ChunkSendEntry>::default());
@@ -798,7 +803,9 @@ impl Server {
                     self.index.as_index_ref(),
                     key,
                     None,
-                    || true,
+                    // NOTE: despite the name, this closure means "cancel?"
+                    // (see chunk_generator.rs's `cancel.load(..)`).
+                    || false,
                     None,
                 ) else {
                     continue;
@@ -883,7 +890,6 @@ impl Server {
         work: common::bastion::WorkType,
         priority: u8,
     ) -> bool {
-        use specs::Join;
         let mut found = false;
         {
             let ecs = self.state.ecs();

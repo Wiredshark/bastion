@@ -327,7 +327,7 @@ fn b4_scenario(args: &Args) -> ExitCode {
     info!(elapsed = ?started.elapsed(), "b4: server booted");
 
     let dt = Duration::from_secs_f64(1.0 / args.tps);
-    let mut tick = |server: &mut Server, n: u64| {
+    let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
             server.tick(Input::default(), dt).expect("server tick failed");
             server.cleanup();
@@ -354,7 +354,8 @@ fn b4_scenario(args: &Args) -> ExitCode {
     // Ground scan helper: highest filled block z at a column.
     let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
         let terrain = server.state().terrain();
-        (0..500).rev().find(|z| {
+        // NOTE: world altitudes commonly exceed 1000 blocks.
+        (0..2048).rev().find(|z| {
             terrain
                 .get(Vec3::new(x, y, *z))
                 .is_ok_and(|b| b.is_filled())
@@ -377,7 +378,22 @@ fn b4_scenario(args: &Args) -> ExitCode {
     let disabled = names.first().cloned().unwrap_or_default();
     server.bastion_set_work_priority(&disabled, WorkType::Mine, 0);
 
-    // 5. 20 reachable mine designations in a ring + 1 deep unreachable.
+    // 5. One deep unreachable job FIRST, directly under an *enabled*
+    // colonist's current position (they wander during the settle ticks) so
+    // it is guaranteed nearest → claimed → travel-watchdogged unreachable.
+    // Then 20 reachable mine designations in a ring.
+    let deep = {
+        let states = server.bastion_colonist_states();
+        let anchor = states
+            .iter()
+            .find(|(n, _, _)| *n != disabled)
+            .map(|(_, p, _)| *p)
+            .unwrap_or(Vec3::new(site_wpos.x, site_wpos.y, cz as f32));
+        Vec3::new(anchor.x as i32, anchor.y as i32, anchor.z as i32 - 8)
+    };
+    let deep_jobs = server
+        .bastion_place_designation(Region { min: deep, max: deep }, DesignationKind::Mine)
+        .len();
     let mut placed = 0;
     for i in 0..20 {
         let ang = std::f64::consts::TAU * i as f64 / 20.0;
@@ -391,10 +407,6 @@ fn b4_scenario(args: &Args) -> ExitCode {
                 .len();
         }
     }
-    let deep = Vec3::new(cx, cy, cz - 25);
-    let deep_jobs = server
-        .bastion_place_designation(Region { min: deep, max: deep }, DesignationKind::Mine)
-        .len();
     info!(placed, deep_jobs, "b4: designations placed");
 
     // 6. Run: up to 60s sim; sample invariants; early-exit when 4 arrived.
