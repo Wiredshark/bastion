@@ -381,3 +381,20 @@ lives on `bastion/block-<N>` for fine-grained rollback.
 - Watch-items: view-mode change doesn't trigger overlay rebuild (flagged,
   not a verified bug — consistency note); lit-fill look (backlog); B5.10
   walk-gait queued; erase-by-type = b-4.
+
+### B-ASSET1 — Asset integration harness + render test arena (independent block)
+
+- Start SHA: `d1315f5` · branch `bastion/block-BASSET1` · started 2026-07-09 18:20.
+  Spec: `readme/B-ASSET1-integration-render-arena-prompt.md`; dynamic-test
+  contract: `readme/ASSET_DYNAMIC_TEST_SPEC.md`. Parts: (1) bastion-flagged
+  asset-lab loader through the real Structure/custom_indices path with
+  marker-fidelity asserts, (2) `--asset-test <id|all>` flat-arena dynamic
+  scenarios in the B0 harness (+ integrated-dynamic spot-check on real
+  terrain, + one required useful FAIL), (3) `--asset-arena` client
+  inspection mode. Multi-agent note: tree taken per the architect-confirmed
+  stagger (B5.6b-1 → B-ASSET1 → B-MAP1); recon + findings done offline
+  while b-1 held the tree. The architect's docs-only inputs commit is still
+  pending as uncommitted `readme/` edits in the shared tree (MEGA-PROMPT,
+  SYSTEM-FRAMEWORKS, future-work + four new files) — untouched by this
+  block; staging stays path-explicit throughout. Findings/build-plan:
+  `docs/BASTION_BASSET1_FINDINGS.md` (committed at block start).
