@@ -5,6 +5,7 @@
 
 pub mod input;
 pub mod occlusion;
+pub mod tools;
 
 use crate::scene::camera::Camera;
 use common::{terrain::TerrainGrid, vol::ReadVol};
@@ -59,6 +60,23 @@ pub fn unproject_to_world_plane(
     screen_res: Vec2<f32>,
     plane_z: f32,
 ) -> Option<Vec3<f32>> {
+    let (near, dir) = cursor_ray(camera, cursor, screen_res)?;
+    if dir.z.abs() < 1e-5 {
+        return None;
+    }
+    let t = (plane_z - near.z) / dir.z;
+    (t.is_finite() && t > 0.0).then(|| near + dir * t)
+}
+
+/// bastion (B2a): the world-space ray under a screen cursor — origin on the
+/// near plane + unnormalized direction toward the far plane. Same
+/// inverse-matrix path as [`unproject_to_world_plane`] (ortho-exact; see its
+/// caveats). Entity picking walks this ray.
+pub fn cursor_ray(
+    camera: &Camera,
+    cursor: Vec2<f32>,
+    screen_res: Vec2<f32>,
+) -> Option<(Vec3<f32>, Vec3<f32>)> {
     if !(screen_res.x > 0.0 && screen_res.y > 0.0) {
         return None;
     }
@@ -72,10 +90,5 @@ pub fn unproject_to_world_plane(
     // Reversed depth (B1): clip z=1 is the near plane, z=0 the far plane.
     let near = inv.mul_point(Vec3::new(ndc.x, ndc.y, 1.0)) + focus_off;
     let far = inv.mul_point(Vec3::new(ndc.x, ndc.y, 0.0)) + focus_off;
-    let dir = far - near;
-    if dir.z.abs() < 1e-5 {
-        return None;
-    }
-    let t = (plane_z - near.z) / dir.z;
-    (t.is_finite() && t > 0.0).then(|| near + dir * t)
+    Some((near, far - near))
 }
