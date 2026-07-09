@@ -109,3 +109,6 @@ build-*.log
 # transient Bastion session artifacts
 .claude/
 *.exit
+
+readme/BASTION_LOOP_LOG.md
+readme/loop-sessions/
