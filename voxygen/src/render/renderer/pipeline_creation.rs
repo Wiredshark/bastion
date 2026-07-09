@@ -175,6 +175,8 @@ impl ShaderModules {
         let srgb = shaders.get("include.srgb").unwrap();
         let random = shaders.get("include.random").unwrap();
         let lod = shaders.get("include.lod").unwrap();
+        // bastion (B1.6): the unified occlusion include.
+        let bastion_occlusion = shaders.get("include.bastion_occlusion").unwrap();
         let shadows = shaders.get("include.shadows").unwrap();
         let rain_occlusion = shaders.get("include.rain_occlusion").unwrap();
         let point_glow = shaders.get("include.point_glow").unwrap();
@@ -300,6 +302,7 @@ impl ShaderModules {
                 "srgb.glsl" => srgb.0.to_owned(),
                 "random.glsl" => random.0.to_owned(),
                 "lod.glsl" => lod.0.to_owned(),
+                "bastion_occlusion.glsl" => bastion_occlusion.0.to_owned(),
                 "anti-aliasing.glsl" => anti_alias.0.to_owned(),
                 "cloud.glsl" => cloud.0.to_owned(),
                 "point_glow.glsl" => point_glow.0.to_owned(),

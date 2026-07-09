@@ -34,6 +34,8 @@ impl Asset for Shaders {
             "include.srgb",
             "include.random",
             "include.lod",
+            // bastion (B1.6): the unified occlusion shader include.
+            "include.bastion_occlusion",
             "include.shadows",
             "include.rain_occlusion",
             "include.point_glow",

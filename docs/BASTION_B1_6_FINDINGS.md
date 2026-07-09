@@ -63,6 +63,19 @@ relative to focus in XY = `f_pos.xy - focus_pos.xy` (`focus_pos` global is `frac
 `f_pos` space = `cam_pos.xyz + focus_pos.xyz` (`cam_pos` is the camera's offset from focus). Targets
 are passed pre-subtracted (`target_world - focus_off`) from Rust to live in `f_pos` space.
 
+## 4c. Gotcha: shader `#include`s must be registered in Rust (not just the file)
+
+A new `assets/voxygen/shaders/include/*.glsl` is **not** auto-discovered. Veloren's runtime shader
+compiler resolves `#include <name.glsl>` through a hardcoded closure, so every include is registered
+in **two** Rust places or startup panics with `Include <name> in <shader> is not defined` (crash in
+`pipeline_creation.rs` during `initial_create_pipelines`, before any world loads):
+1. `voxygen/src/render/renderer/shaders.rs` — add `"include.bastion_occlusion"` to the asset list.
+2. `voxygen/src/render/renderer/pipeline_creation.rs` — `let bastion_occlusion =
+   shaders.get("include.bastion_occlusion").unwrap();` and a `"bastion_occlusion.glsl" =>
+   bastion_occlusion.0.to_owned(),` arm in the `fetch_include` match.
+This bit B1.6 (figure-frag `#include <bastion_occlusion.glsl>` crashed at startup). Future
+shader-touching blocks (B1.7/B1.8/B13) adding includes must do the same.
+
 ## 5. Shared alpha function (`assets/voxygen/shaders/include/bastion_occlusion.glsl`)
 
 `float bastion_occlusion_alpha(vec3 f_pos)` → 0 (hidden) .. 1 (solid), `min`-composed across active
