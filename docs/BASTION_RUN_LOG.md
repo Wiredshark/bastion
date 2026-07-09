@@ -410,3 +410,12 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   Watch: worktree-built exes resolve userdata exe-adjacent — launch with
   VELOREN_USERDATA (test doc). Next per the revised order: B5.6b-2 (main
   builder takes the tree).
+
+### B5.6b-2 — z_extent model + volumetric rendering + volume-selection UX
+
+- Start SHA: `72907ee641` · branch `bastion/block-B5.6b-2` · started 2026-07-09
+  (architect go via cross-session message; Ben's systems-first directive).
+  Spec: `readme/B5.6-zone-visuals-prompt.md` §B5.6b + `docs/BASTION_B5.6b_
+  FINDINGS.md` (b-2). Also closes B5.MINE-COVERAGE (surface-relative z) +
+  adds the coverage assertion. Schema guard: frameworks §2 purpose enum is
+  canonical. Watch/report: Z-slice adequacy for working-inside-a-dig.
