@@ -137,3 +137,69 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   timing — eyeball in the in-game demo and tune `TRAVEL_SPEED` if comical;
   god-anchor aggro live-fire still pending (B8); B2a designation echo has no
   removal message yet (cancel UI is B9).
+
+## Session 2026-07-09 (batch runner, resumed again)
+
+- Green at `bastion-block-B4`. User confirmed B4's in-game paint-and-watch
+  demo was manually verified in a prior session and directed skipping
+  re-verification, proceeding straight to B5. Mega-prompt file locations
+  updated: bookkeeping now lives in `readme/` (append-only), older findings
+  stay in `docs/`; per-block bookkeeping now also requires
+  `readme/BASTION_BACKLOG.md`, `readme/BASTION_RESTORE_LEDGER.md`,
+  `readme/BASTION_CONSISTENCY.md` (all first-populated this block).
+
+### B5 — Work execution: dig/chop/build effects, item drops, skill XP
+
+- Start SHA: `4ca580a` · branch `bastion/block-B5` · started 2026-07-09
+  (same session, user-directed continue past B4).
+- **PASS** (2026-07-09). Commits `4ca580a..0cba9e6` (+gate docs): job
+  completion applies terrain edits via the authoritative `BlockChange`
+  path and item drops via `CreateItemDropEvent` (same paths vanilla mining
+  uses — never raw chonk writes or hand-built entities); Build gated on a
+  single-material stand-in (`BUILD_MATERIAL_ITEM`), stalls +
+  `needs_materials` without it rather than building for free; skill XP
+  granted on completion, feeding `work_rate`. Two gate-time bugs found and
+  fixed via careful empirical root-causing (debug hooks added, used, then
+  removed — see `BASTION_B5_FINDINGS.md` for the full trail): (1)
+  colonists were auto-looting their own mined/chopped drops via vanilla
+  Humanoid opportunistic-pickup AI before anything could observe them on
+  the ground — gated off for `comp::Colonist` via a new
+  `ReadData::colonists` field (`server/agent/src/{data,action_nodes}.rs`,
+  additive, zero effect on non-colonist NPCs); (2) B5's shared
+  `bastion_jobs.rs` upkeep-loop changes broke `--b4-scenario` (confirmed
+  via an isolated `git worktree` check against the `bastion-block-B4` tag)
+  because `Arrived` is now transient — fixed the B4 harness scenario to
+  track cumulative *ever*-arrived/*ever*-unreachable invariants across its
+  full sampling window instead of point-in-time snapshots. A third,
+  unrelated, fully-deterministic bug (any `>=2`-tall vertical
+  designation's lower block has an arrival target coinciding with the
+  block above it — genuinely unreachable, not a flake) was found and
+  logged to the backlog rather than fixed at the mechanism level; worked
+  around in the harness's chop test. Gate: `--b4-scenario` and
+  `--b5-scenario` both 5/5 clean; vanilla flagless boot OK. In-game visual
+  QA deferred (headless-only verification this session) — see
+  `BASTION_B5_TEST.md`.
+- Merged to `bastion/main` (no-ff), tagged `bastion-block-B5`.
+
+### Session stop (2026-07-09, fourth stop)
+
+- Stopped cleanly after B5 (long session with substantial debugging depth
+  on the two gate-time regressions above). `bastion/main` green at
+  `bastion-block-B5` — **the visible core loop is complete: paint a
+  designation → colonists walk to it → dig/chop/build → drops appear /
+  wall rises → skill XP grows.**
+- **Next session: resume the mega-prompt; it resumes at B6** (Stockpiles,
+  items, hauling — design doc §B6). Open with the deferred B5 in-game
+  paint demo (paint Mine/Chop/Build, watch the hole/log/wall render live)
+  before starting B6, unless the user again directs skipping it.
+- Watch items: `readme/BASTION_BACKLOG.md`'s B5 section has the full list
+  (Build material stand-in replacement plan, tall-structure/multi-block
+  reachability gap, colonist-loot-AI reuse-vs-bypass decision for hauling);
+  a concurrent session was writing to this same working tree during this
+  block (`asset-lab/`, several `ASSET_*`/`MASTER-*` readme files, and
+  further uncommitted edits layered on `readme/future-work-and-deferred-
+  ideas.md` and `readme/veloren-colony-rts-build-report.md`) — none of
+  that was touched, committed, or merged by this block's work, but it's
+  still sitting uncommitted in the working tree as of this session's end
+  and belongs to whoever owns that other session, not to Bastion's batch
+  protocol.
