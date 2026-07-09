@@ -131,3 +131,32 @@ paths untouched; flagless boot renders the vanilla minimap bit-identically.
   (rebuild before any main-tree live test).
 - Conrod widget-per-pin: fine at colony scale (dozens of colonists/piles);
   re-evaluate if §3s layers multiply pin counts.
+
+## 6. Coordination hold (2026-07-09, architect directive)
+
+Architect ordered the shared-tree sequence: B5.6b-1 merges/tags (delayed —
+three eyeball fixes folded in), then B-ASSET1 builds+merges, THEN B-MAP1.
+Machine stays quiet for Ben's live testing until then — my `cargo check` was
+stopped mid-run (code compiles are UNVERIFIED as of this entry). All B-MAP1
+work so far lives in the isolated worktree/branch; the shared checkout was
+never touched. When the tree is ours: re-base `bastion/block-BMAP1` onto
+post-BASSET1 `bastion/main` (commits are small + additive; expect trivial
+conflicts in `voxygen/src/bastion/mod.rs` (designation_color addition) and
+the append-only readme docs), THEN run the full gate.
+
+**Directive inherited:** b-1 changes the shared `overlay_surface_z`/
+`ground_z` sampler to FILTER to real terrain kinds (exclude tree
+Wood/Leaves — it was climbing trees). B-MAP1's relationship to that fix,
+recorded so nobody "fixes" the minimap into blandness later:
+
+- The minimap does NOT call `ground_z`/`overlay_surface_z` anywhere. The
+  tile scan is a top-down COLOR capture: canopy color and canopy height are
+  INTENTIONAL there (a rendered top-down view shows trees; heights feed
+  hillshade so trees read as relief lumps). That is display truth, not the
+  placement bug class the b-1 fix targets — nothing is placed or draped at
+  tile heights.
+- Click-to-jump inherits the post-fix sampler automatically: the jump only
+  sets focus XY and the session's existing focus glide re-rides the (fixed)
+  `ground_z`.
+- Rebase check: if the sampler signatures changed, B-MAP1 compiles clean
+  anyway (zero direct uses) — verify at rebase.
