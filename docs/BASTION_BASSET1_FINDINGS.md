@@ -144,16 +144,71 @@ Integrated-dynamic spot-check: cottage on real worldgen terrain (site-adjacent, 
 
 ## 7. Pre-verified facts + open questions
 
-1. dot_vox `Voxel.i` convention (§1b): crate 5.2.0; resolve empirically as first build task
-   (gnarling totem byte 217 → GlowingRock assert). RESULT: _pending_.
+1. dot_vox `Voxel.i` convention (§1b): **RESOLVED — MEASURED**. The `bastion_dot_vox_index_convention`
+   unit test (structure.rs) passes: the totem's GlowingRock voxels carry raw `Voxel.i == 216` for RON
+   byte 217, i.e. authored/RON/meta "byte" == `voxel.i + 1` == the engine slot. Asset-lab byte 200
+   hits engine slot 200 with NO translation. The test pins this permanently.
 2. SpriteCfg at runtime: RESOLVED — worldgen chunk meta only (§1d-a); v1 drops cfg with log.
 3. KeyholeBars pathing solidity: **VERIFIED end-to-end** — `path.rs:755 walkable()` requires
    `!is_solid()` at feet+head; `Block::is_solid` (block.rs:504) for sprite blocks =
    `solid_height().is_some()`; `SpriteKind::KeyholeBars.solid_height() = 1.0`
    (sprite/mod.rs:769-773). Closed gate blocks A*. The FAIL-pair room's closed door is solid panel
    voxels — blocks regardless.
-4. Runtime "open" pose = alternate custom_indices mapping byte 200 → `Filled(Air, …)` (the
-   dwarves/entrance.ron quarry-carve precedent) — same vox, two mappings, no asset-side edits.
-5. Pad flatten cost (set_block volume) — measure; chunk writes across ticks if needed. RESULT: _pending_.
-6. `--asset-test all` wall time — one server boot amortized across assets (load pad once,
-   place/test/clear per asset). RESULT: _pending_.
+4. Runtime "open" pose = alternate custom_indices mapping byte 200 → carved air (Hollow) — same vox,
+   two mappings, no asset-side edits.
+5. Pad flatten cost: **RESOLVED — MEASURED**: 237k buffered `set_block`s in ~0.03 s; applied within a
+   few ticks with no issue. Non-problem.
+6. `--asset-test all` wall time: boot ~13 s + per-asset legs a few sim-seconds each (8.7× real-time).
+
+## 8. As-built results + first-live-run lessons (2026-07-09)
+
+- **Cottage FULL PASS (7/7)**: marker fidelity (byte 11 → MaybeChest through the real pipeline),
+  1295 blocks placed, reach-interior 4.2s, egress 3.7s, multi-occupancy 3-in 12.6s / 3-out 5.2s,
+  integrated-dynamic on natural terrain (slope 3 across footprint) reach 2.8s + egress 2.4s.
+- **Lesson (bit run #1): fixed-height pad clearing leaves natural cliff walls** standing inside the
+  pad on sloped anchors (colonist STUCK at dist 14.8 mid-pad). Fix: `pick_flat_anchor` (worldgen-sim
+  interpolated altitude probe over candidate rings — no chunk loads) + `survey_pad` (real-terrain
+  min/max after force-load) + adaptive clear height. Both shared in `server::bastion_assets` (the
+  arena uses them too).
+- **Lesson: never walk fixtures cross-country** to integrated sites (STUCK 337 blocks out — natural
+  terrain traversal isn't the subject). `Server::bastion_teleport_colonist` stages directly.
+- **`all` cast scoping**: base-state world-layer assets only. Pose-state files (gate-closed castles,
+  sprung traps, raised bridges) rightly fail reach — pose MATRICES pair with the future
+  operable-state block; they stay runnable by explicit id. Figure-layer props/items (11 vox/block:
+  handcart, gloomcap, maul, armor) are load+fidelity-only — their world integration is
+  sprite/item-manifest work, excluded by the vanilla-asset-tree-untouched contract. The world-scale
+  path-around assertion runs on flora (rowan, 1 vox = 1 block).
+- **Arena controls**: `/bastion_arena next|prev|fixture|dismiss|info` chat command (Admin — 
+  singleplayer grants it) instead of new keybinds — command handlers get `&mut Server` directly,
+  killing a net-message + input-context + EventBus plumbing chain. Keybinds = backlog nicety.
+- **Arena transport**: `BASTION_ASSET_ARENA` / `BASTION_ASSET_LAB_DIR` env vars set by voxygen
+  before spawning the singleplayer server thread; arena world = throwaway temp dir, default map,
+  seed 1337, spawn point moved onto the pad.
+
+## 9. Full-suite results (--asset-test all + FAIL pair, 2026-07-09 — see readme/ASSET_INTEGRATION_LOG.md)
+
+**26/34 pass; every failure is the fidelity contract catching a real byte-semantics gap:**
+- **Wall+gate (defense_palisade_line_demo): FULL PASS** — byte 200 ×8 → KeyholeBars verified;
+  closed BLOCKS (watchdog STUCK at best dist 11.3), open ADMITS (2.4s) + egress (2.5s).
+  8 unlock SpriteCfgs dropped (documented limitation).
+- **Cottage: 7/7** (incl. integrated-dynamic, slope 3). **Flora ×4** (rowan/pine/sapling/snag):
+  leaf/fruit world-band bytes verified, path-around/back PASS. **Armor/items/props ×15:
+  load-only PASS.**
+- **Useful FAIL demonstrated**: `test_room_door_closed` → reach-interior FAIL "STUCK (watchdog)
+  after 13.5s, best dist 4.5" (exit 1); its control `test_room_door_open` → 5/5 PASS.
+- **CONTRACT CATCHES (for the asset session to reconcile — the block's purpose):**
+  1. **Undeclared marker bytes** (asset catalog grew mid-block): 201/202 (smithy v1+v2),
+     210 (workshop_carpenter), 211 (mason ×60), 212 (smelter), 213 (tannery), 217 (quarry hall ×13
+     + terracotta_set_demo ×22 — presumably GlowingRock per the gnarling precedent). Each fails
+     fidelity with "UNKNOWN-MARKER (declare in marker_registry)" — extend
+     `server/src/bastion_assets.rs::marker_registry` with agreed semantics, then they pass.
+  2. **Byte-8 carve drift (REAL semantic trap)**: quarry hall uses byte 8 ×2227 as interior
+     carve-air (the dwarves/entrance.ron convention — but that is a PER-STRUCTURE RON override!).
+     Default band maps 8 → `Fruit` (apple/beehive-chance, else keep-existing — NOT carved). On the
+     flat pad the tests passed by luck (air already everywhere); on natural terrain the interior
+     would not carve. Asset side should re-author carve cells to byte 16 (Hollow) or the registry
+     needs a per-asset override mechanism. NOT silently fixed — flagged here + consistency log.
+  3. Figure-layer glow bytes (14–16) resolve as world-band Palm/Hollow in load-only checks
+     (maul/gloomcap/waystone) — semantically fine (figure-layer assets never take the Structure
+     path; the sprite pipeline owns those bands) but the load-only report wording should not
+     imply world-band intent. Cosmetic; noted.
