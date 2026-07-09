@@ -1,25 +1,5 @@
 # Claude Code MEGA-PROMPT — Project Bastion Autonomous Batch-Builder
 
-> **⚙️ YOU ARE BEING RUN IN AN AUTOMATED LOOP.** A script re-invokes this prompt in a fresh session after
-> each block, unattended, with no human watching in real time. This changes how you must behave:
-> - **NEVER wait for human input or ask a question mid-run.** There is no human to answer. If you reach a
->   point that would need a human decision (ambiguity, undesigned item, design conflict), do NOT guess and do
->   NOT stall — STOP cleanly and write the token **`LOOP-STOP`** into `docs/BASTION_RUN_LOG.md` with the
->   reason. The loop script halts when it sees that token.
-> - **Be MORE conservative, not less.** No human will catch a bad call before the next block builds on it. If
->   a block's self-tests are anything short of clearly green, ROLLBACK and STOP — do not merge a marginal
->   block. A false "pass" compounds silently across the loop.
-> - **The loop detects progress by git tags.** You MUST tag every passed block `bastion-block-<N>` at its
->   merge. If you stop without a new tag, the loop correctly concludes you stalled and halts. Leave the tree
->   clean (finish-or-rollback) so the loop's clean-tree gate passes.
-> - **Write a crisp run-log entry every iteration** — block, PASS/FAIL, tag, one-line what-changed, and (on
->   stop) the exact reason + next action. This is the only record a human reads later.
-> - **HARD STOP after B4 regardless of pass/fail.** B4 is the "is it fun" pivot; a human must review it
->   before B5+ builds on it. After B4 passes and tags, write `LOOP-STOP` with "B4 complete — human review
->   gate" so the loop halts and waits for Ben. (Do NOT stop before B4 for this reason; only at/after it.)
-> - Everything else below applies unchanged.
-
----
 
 > **How to use (for Ben):** This is not a normal block prompt. It's an **autonomous batch-runner** that
 > works the Bastion block queue **one block at a time**, checkpointing and self-testing after each so a
