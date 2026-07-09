@@ -202,3 +202,39 @@ remove an earlier block's entries.
 - **IDEA** (optional): the reusable overlay-draping utility the prompt asks
   for (Part 1) is the same one §3w colony-boundary overlay will reuse —
   design its API for both customers when B5.6a is built (note the seam).
+
+## B5.6a — Zone visuals: draping + toggle + pile tiers (2026-07-09)
+
+- **FIX (fixed)**: the photographed floating-overlay bug — zone/selection
+  outlines drawn as a flat rectangle at the pick-plane z, floating over
+  slopes. Fixed by terrain-draping (`bastion::draped_rect_outline` +
+  `overlay_surface_z`). All three overlay callers drape; committed overlay
+  rebuilds on Z-slice change too. See `docs/BASTION_B5.6a_FINDINGS.md`.
+- **ADD (deferred, judgment call)**: erase-by-type filter — NOT cheap on
+  existing seams (needs a wire-protocol change: the cancel message + removal
+  echo gain `Option<DesignationKind>`; kind-filtered server `cancel_region`;
+  kind-filtered client subtraction; a tool-filter UI). Skipped per Ben's
+  "only if cheap." Natural fit for B9 colony-HUD/tool polish, or a small
+  dedicated patch. (Area-erase already exists: the B5.5 Erase drag.)
+- **ADD (deferred)**: committed overlay does not rebuild when terrain is dug
+  *under* a standing zone (drapes at build time; rebuilds on rev/slice
+  change only). Needs a client terrain-change signal to rebuild the affected
+  zone's overlay. Arguably fine (shows original footprint) but the prompt's
+  "rebuild on terrain edit under the zone" watch-item is unwired.
+- **IDEA (optional)**: pile tier changes snap the `Scale`; a brief
+  client-side scale-lerp would stop the pop ("shouldn't pop distractingly").
+  Polish, not wired.
+- **FIX (pre-existing, NOT B5.6a — flagged)**: the `--b5-scenario` is
+  timing-flaky under machine load — colonist arrival/completion can miss the
+  scenario's tick caps when the CPU is busy (game client running, concurrent
+  asset session). Measured this session: B5.5-tag 6/6 and B5.6a-branch 6/6
+  in a QUIET window, but ~65% when loaded. Isolated + confirmed NOT a
+  B5.6a regression (client-only + a pile-scale tweak that makes B5's piles
+  *smaller*). Worth hardening the scenario (looser tick caps / progress-based
+  waits) or the underlying pathing timing — future robustness item, not this
+  block's job. Runner note: run gate scenarios on a quiet machine.
+- **IDEA (B5.6b seam, logged per Ben)**: the conformed-geometry helper for
+  B5.6b fills/volumes IS the reusable overlay-renderer; `overlay_surface_z`
+  is the shared height authority (all overlays must agree). The §3w
+  colony-boundary overlay is its next customer — design the fill/volume API
+  for both when B5.6b is built.

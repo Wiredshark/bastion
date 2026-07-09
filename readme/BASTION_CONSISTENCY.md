@@ -120,3 +120,27 @@ instead, referencing the old one).
   §3w boundary-overlay work). B5.6a can be built immediately on
   confirmation. Recorded, not auto-actioned — the runner did NOT unilaterally
   rescope-and-merge, since that would fake B5.6's Done-when.
+
+## B5.6a — Zone visuals (2026-07-09, built)
+
+- **Prompt "small patch" framing — resolved by the approved split.** The
+  B5.6 pre-build flag (see the prior entry) is now actioned: B5.6a = the
+  tractable subset (outline draping, visuals toggle, pile tiers), built this
+  session; B5.6b = fills/volumes/volume-selection (z-extent model decided by
+  the architect in `readme/B5.6-zone-visuals-prompt.md`). No remaining
+  doc/code contradiction on scope.
+- **`Scale`-as-visual reused, consistent with B5.5.** B5.6a's pile tier
+  scaling uses the synced `comp::Scale` exactly as B5.5's basic version did
+  (`server/src/bastion_piles.rs`). Note (not a contradiction, a caveat for
+  the eventual asset pass): `Scale` also scales the entity's *physics
+  collider*, so "pile visual scaling" isn't purely visual — a real heap
+  mesh/body (asset pipeline) would separate visual size from collider.
+  Recorded so B5.6b / the asset session don't assume Scale is cosmetic-only.
+- **B5 scenario robustness (repo reality vs. run-log claims).** Prior
+  run-log entries report `--b5-scenario` "3/3" / "13/13". Measured this
+  session: that holds on a QUIET machine (B5.5-tag and B5.6a-branch both
+  6/6), but the scenario drops to ~65% under CPU load (timing-sensitive
+  colonist arrival). Not a contradiction in the code, but the "passes
+  reliably" claim is load-dependent — flagged so future sessions run gate
+  scenarios on a quiet machine and consider hardening the scenario
+  (backlog). No auto-fix applied.

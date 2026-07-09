@@ -319,6 +319,40 @@ conservation (`bastion_sum_items_near` == 200) through merges AND through
 the soak, with the entity count bounded (25 piles observed). The B5
 scenario's drop assertions switched to amount sums.
 
+### 2.8 B5.6a — Zone visuals: terrain draping + toggle + pile tiers (client-side patch)
+
+**What:** fixes the photographed floating-overlay bug and adds a
+designation-visuals toggle + richer pile visuals. (Split from B5.6; the
+fills/volumes/volume-selection remainder is B5.6b — see the design doc and
+`BASTION_CONSISTENCY.md`.)
+
+- **Overlay draping** (`voxygen/src/bastion/mod.rs`): `overlay_surface_z`
+  (the single overlay-height authority — `ground_z`, clamped to the active
+  Z-slice) + `draped_rect_outline` (samples the surface along a rect's
+  perimeter, returns conformed line segments). `bastion_region_outline`
+  (`session/mod.rs`) emits these instead of 4 flat lines at the pick-plane z
+  (which floated on slopes). All overlay callers drape: paint + box-select
+  previews (coarse `step 2.0` during drag) and the committed designation
+  overlay (`step 1.0`, rebuilt on rev **and Z-slice** change). **This is the
+  reusable overlay-renderer seam** B5.6b (fills/volumes) and §3w (colony
+  boundary) reuse — keep `overlay_surface_z` the one height authority.
+- **Visuals toggle** (`voxygen/src/bastion/tools.rs` `VisualsMode`, key
+  **H**): On / Subtle (dimmed outlines) / Off (hidden). Purely visual —
+  designations stay active; a paint/erase tool auto-reveals while active.
+- **Pile tiers** (`server/src/bastion_piles.rs`): 5-step growth curve with a
+  great-mound plateau cap; count never touched (conservation exact). Note:
+  uses the synced `comp::Scale`, which also scales the physics collider — a
+  real heap mesh (asset pipeline) would decouple visual size from collider.
+- **Not done** (judgment call, logged): erase-by-type filter — not cheap on
+  existing seams (needs a protocol change). Area-erase already exists (B5.5
+  erase-drag).
+
+**Gate:** visual-correctness is screenshot-verified in-game (draping on a
+hill + a pit across Z-slice modes); headless B4/B5/B5.5 confirm zero sim
+impact (client-only + a pile-scale tweak). **Standing note:** `--b5-scenario`
+is timing-flaky under machine load — run gate scenarios on a quiet machine
+(it was 6/6 at both the B5.5 tag and this branch when quiet).
+
 ## 3. Build methodology (how blocks land)
 
 Per-block cycle: **checkpoint** (clean tree, branch `bastion/block-<N>`, log
@@ -396,9 +430,13 @@ Full protocol: `readme/MEGA-PROMPT-autonomous-batch-builder.md`.
 ## 6. State & pointers (update every block)
 
 **Done (merged + tagged):** B0, B1, B1.5, B1.6(+B1.7), B2a, B3, B4, B5,
-B5.5.
-**Next:** B6 (stockpiles, hauling, reservations — design doc §B6; piles
-from B5.5 are the haul input), then B7, then Phase 3 agency (B-AG*).
+B5.5, B5.6a.
+**Next (per the updated queue):** B5.6b (conformed fills + volumetric
+zone rendering + volume-selection UX — z-extent model decided), B5.7
+(floating-tree cleanup), B5.8 (vertical mobility — fixes the 4×-bitten
+reachability trap before B6), then B6 (stockpiles/hauling — B5.5 piles are
+the haul input). Independents (B-MAP1 minimap, B-ASSET1, B-TESTBED) are
+floatable.
 
 | Need | Read |
 |---|---|
