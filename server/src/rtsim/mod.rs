@@ -243,6 +243,68 @@ impl RtSim {
             .emit(event::OnBlockChange { changes }, &mut (), world, index);
     }
 
+    /// bastion (B3): spawn the player-colony starting band near `wpos` as
+    /// ordinary rtsim NPCs carrying a colonist record — they promote/demote
+    /// through the standard loaded↔simulated machinery. Returns the roster
+    /// names.
+    pub fn bastion_spawn_colony(&mut self, wpos: Vec3<f32>, count: u8) -> Vec<String> {
+        use common::rtsim::{Profession, Role};
+        use rand::RngExt as _;
+        use rtsim::data::npc::Npc;
+
+        let mut rng = rand::rng();
+        let data = self.state.get_data_mut();
+        // Home = nearest site, so simulated-mode AI keeps them local.
+        let home = data
+            .sites
+            .iter()
+            .min_by_key(|(_, site)| {
+                site.wpos
+                    .map(|e| e as i64)
+                    .distance_squared(wpos.xy().map(|e| e as i64))
+            })
+            .map(|(id, _)| id);
+        let professions = [
+            Profession::Farmer,
+            Profession::Hunter,
+            Profession::Blacksmith,
+            Profession::Chef,
+        ];
+        let mut names = Vec::new();
+        for i in 0..count {
+            let colonist = common::bastion::BastionColonist::generate(&mut rng);
+            names.push(colonist.name.clone());
+            let offset = Vec3::new(
+                rng.random_range(-5.0..5.0),
+                rng.random_range(-5.0..5.0),
+                0.0,
+            );
+            let body = common::comp::Body::Humanoid(common::comp::humanoid::Body::random());
+            let mut npc = Npc::new(
+                rng.random(),
+                wpos + offset,
+                body,
+                Role::Civilised(Some(professions[i as usize % professions.len()])),
+            )
+            .with_bastion_colonist(colonist);
+            npc.home = home;
+            data.npcs.create_npc(npc);
+        }
+        info!(?names, count, "bastion: spawned starting colony");
+        names
+    }
+
+    /// bastion (B3): the colony roster (headless harness dump + inspectors).
+    pub fn bastion_colony_roster(&self) -> Vec<common::bastion::BastionColonist> {
+        self.state
+            .data()
+            .npcs
+            .npcs
+            .values()
+            .filter_map(|npc| npc.bastion_colonist.clone())
+            .collect()
+    }
+
     pub fn hook_rtsim_entity_unload(&mut self, entity: RtSimEntity) {
         let data = self.state.get_data_mut();
 

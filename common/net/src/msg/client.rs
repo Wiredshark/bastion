@@ -136,6 +136,10 @@ pub enum ClientGeneral {
         target: common::bastion::ContextTarget,
         verb: common::bastion::ContextVerb,
     },
+    /// bastion (B3): found the player colony — spawn the starting band near
+    /// `pos`. Server validates (god mode active, count 1..=16) and spawns
+    /// rtsim colonists.
+    BastionSpawnColony { pos: Vec3<f32>, count: u8 },
 
     //Only in Game, via terrain stream
     TerrainChunkRequest {
@@ -201,7 +205,8 @@ impl ClientMsg {
                         | ClientGeneral::BastionCameraAnchor(_)
                         | ClientGeneral::BastionPlaceDesignation { .. }
                         | ClientGeneral::BastionApplyInfluence { .. }
-                        | ClientGeneral::BastionContextAction { .. } => {
+                        | ClientGeneral::BastionContextAction { .. }
+                        | ClientGeneral::BastionSpawnColony { .. } => {
                             c_type == ClientType::Game && presence.is_some()
                         },
                         ClientGeneral::SpectatePosition(_) | ClientGeneral::SpectateEntity(_) => {

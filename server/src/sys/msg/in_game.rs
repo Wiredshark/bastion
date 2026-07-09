@@ -74,6 +74,7 @@ impl Sys {
         position: Option<&mut Pos>,
         spectating_entity: &mut Option<Option<common::uid::Uid>>,
         bastion_anchor: &mut Option<bool>,
+        bastion_spawn: &mut Option<(Vec3<f32>, u8)>,
         controller: Option<&mut Controller>,
         settings: &Read<'_, Settings>,
         build_areas: &Read<'_, AreasContainer<BuildArea>>,
@@ -306,6 +307,29 @@ impl Sys {
                     ))?;
                 }
             },
+            ClientGeneral::BastionSpawnColony { pos, count } => {
+                // bastion (B3): validated here, spawned post-loop (rtsim
+                // resource can't be touched inside the parallel join).
+                if presence.bastion_terrain_anchor.is_some()
+                    && pos.map(|e| e.is_finite()).reduce_and()
+                    && (1..=16).contains(&count)
+                {
+                    *bastion_spawn = Some((pos, count));
+                    client.send(ServerGeneral::server_msg(
+                        common::comp::ChatType::CommandInfo,
+                        common::comp::Content::Plain(format!(
+                            "Founding colony: {count} settlers arriving."
+                        )),
+                    ))?;
+                } else {
+                    client.send(ServerGeneral::server_msg(
+                        common::comp::ChatType::CommandError,
+                        common::comp::Content::Plain(
+                            "Colony spawn rejected (need god mode; count 1..=16)".to_string(),
+                        ),
+                    ))?;
+                }
+            },
             ClientGeneral::BastionContextAction { target, verb } => {
                 let target_desc = match target {
                     common::bastion::ContextTarget::Entity(uid) => format!("entity {uid}"),
@@ -389,9 +413,12 @@ impl<'a> System<'a> for Sys {
         TerrainPersistenceData<'a>,
         ReadStorage<'a, Player>,
         ReadStorage<'a, Admin>,
-        // bastion (B3): god-anchor marker + buff timing
-        WriteStorage<'a, common::comp::BastionGodAnchor>,
-        Read<'a, common::resources::Time>,
+        // bastion (B3): god-anchor marker + buff timing + colony spawning
+        (
+            WriteStorage<'a, common::comp::BastionGodAnchor>,
+            Read<'a, common::resources::Time>,
+            specs::WriteExpect<'a, crate::rtsim::RtSim>,
+        ),
     );
 
     const NAME: &'static str = "msg::in_game";
@@ -425,8 +452,7 @@ impl<'a> System<'a> for Sys {
             mut terrain_persistence,
             players,
             admins,
-            mut god_anchors,
-            time,
+            (mut god_anchors, time, mut rtsim),
         ): Self::SystemData,
     ) {
         let time_for_vd_changes = Instant::now();
@@ -486,6 +512,7 @@ impl<'a> System<'a> for Sys {
                     let mut player_physics = None;
                     let mut spectating_entity = None;
                     let mut bastion_anchor = None;
+                    let mut bastion_spawn = None;
                     let _ = super::try_recv_all(client, 2, |client, msg| {
                         Self::handle_client_in_game_msg(
                             emitters,
@@ -503,6 +530,7 @@ impl<'a> System<'a> for Sys {
                             pos.as_deref_mut(),
                             &mut spectating_entity,
                             &mut bastion_anchor,
+                            &mut bastion_spawn,
                             controller.as_deref_mut(),
                             &settings,
                             &build_areas,
@@ -643,12 +671,15 @@ impl<'a> System<'a> for Sys {
                         spectating_entity_update,
                         physics_update,
                         bastion_anchor_update,
+                        bastion_spawn,
                     )
                 },
             )
             // NOTE: Would be nice to combine this with the map_init somehow, but I'm not sure if
             // that's possible.
-            .filter(|(x, y, z, w)| x.is_some() || y.is_some() || z.is_some() || w.is_some())
+            .filter(|(x, y, z, w, v)| {
+                x.is_some() || y.is_some() || z.is_some() || w.is_some() || v.is_some()
+            })
             // NOTE: I feel like we shouldn't actually need to allocate here, but hopefully this
             // doesn't turn out to be important as there shouldn't be that many connected clients.
             // The reason we can't just use unzip is that the two sides might be different lengths.
@@ -663,7 +694,13 @@ impl<'a> System<'a> for Sys {
         // for a given entity, we process messages serially).
         let mut post_emitters = events.get_emitters();
         deferred_updates.iter_mut().for_each(
-            |(skill_set_update, spectating_entity_update, physics_update, bastion_anchor_update)| {
+            |(
+                skill_set_update,
+                spectating_entity_update,
+                physics_update,
+                bastion_anchor_update,
+                bastion_spawn_update,
+            )| {
                 if let Some((entity, new_skill_set)) = skill_set_update {
                     // We know this exists, because we already iterated over it with the skillset
                     // lock taken, so we can ignore the error.
@@ -726,6 +763,10 @@ impl<'a> System<'a> for Sys {
                             buff_change: BuffChange::RemoveByKind(BuffKind::Invulnerability),
                         });
                     }
+                }
+                if let &mut Some((pos, count)) = bastion_spawn_update {
+                    // bastion (B3): spawn the starting band (validated above).
+                    rtsim.bastion_spawn_colony(pos, count);
                 }
             },
         );
