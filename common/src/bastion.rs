@@ -94,6 +94,8 @@ pub enum ContextVerb {
     Embody,
     /// Force an action (B2b; shown greyed, stub — metered god power).
     ForceAction,
+    /// Found the player colony here (B3): spawns the starting band.
+    FoundColony,
 }
 
 impl ContextVerb {
@@ -107,6 +109,7 @@ impl ContextVerb {
             ContextVerb::SetPolicy => "Set policy",
             ContextVerb::Embody => "Embody",
             ContextVerb::ForceAction => "Force action",
+            ContextVerb::FoundColony => "Found colony",
         }
     }
 

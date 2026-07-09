@@ -143,9 +143,14 @@ pub struct SessionState {
     bastion_rmb_down: Option<Vec2<f32>>,
     /// bastion (B2a): in-progress designate-paint drag.
     bastion_paint: Option<BastionPaint>,
-    /// bastion (B2a): the currently selected entity (mirrors the
-    /// `BastionSelected` ECS marker).
-    bastion_selected: Option<specs::Entity>,
+    /// bastion (B3): in-progress Inspect-tool box-select drag (same shape as
+    /// a paint drag; different release semantics).
+    bastion_boxsel: Option<BastionPaint>,
+    /// bastion (B2a/B3): the current selection (mirrors the
+    /// `BastionSelected` ECS markers; multiple via box-select).
+    bastion_selected: Vec<specs::Entity>,
+    /// bastion (B3): overhead marker shapes for loaded colonists.
+    bastion_colonist_markers: HashMap<specs::Entity, DebugShapeId>,
     /// bastion (B2a): how many echoed designations already have overlay
     /// shapes, + those shapes (debug-pipeline line rectangles).
     bastion_designation_synced: usize,
@@ -275,7 +280,9 @@ impl SessionState {
             bastion_lmb_down: None,
             bastion_rmb_down: None,
             bastion_paint: None,
-            bastion_selected: None,
+            bastion_boxsel: None,
+            bastion_selected: Vec::new(),
+            bastion_colonist_markers: HashMap::new(),
             bastion_designation_synced: 0,
             bastion_designation_shapes: Vec::new(),
         }
@@ -439,39 +446,169 @@ impl SessionState {
         ))
     }
 
-    /// bastion (B2a): select an entity (or clear). Maintains the
-    /// `BastionSelected` ECS marker (which also feeds the B1.6 cutaway
-    /// targets) and the HUD info line.
-    fn bastion_select(&mut self, target: Option<specs::Entity>) {
+    /// bastion (B2a/B3): replace the selection set. Maintains the
+    /// `BastionSelected` ECS markers (which also feed the B1.6 cutaway
+    /// targets), the HUD info line, and a chat line for durable feedback.
+    fn bastion_select_set(&mut self, targets: Vec<specs::Entity>) {
         let info = {
             let client = self.client.borrow();
             let ecs = client.state().ecs();
             let mut sel = ecs.write_storage::<comp::BastionSelected>();
-            if let Some(prev) = self.bastion_selected.take() {
-                sel.remove(prev);
+            for prev in &self.bastion_selected {
+                sel.remove(*prev);
             }
-            target.map(|e| {
-                let _ = sel.insert(e, comp::BastionSelected);
-                self.bastion_selected = Some(e);
-                let hp = ecs
-                    .read_storage::<comp::Health>()
-                    .get(e)
-                    .map(|h| format!(" — health {:.0}%", h.fraction() * 100.0))
-                    .unwrap_or_default();
-                let uid = ecs
-                    .read_storage::<common::uid::Uid>()
-                    .get(e)
-                    .map(|u| u.to_string())
-                    .unwrap_or_else(|| "?".into());
-                format!("Selected: entity {uid}{hp}")
-            })
+            for e in &targets {
+                let _ = sel.insert(*e, comp::BastionSelected);
+            }
+            match targets.len() {
+                0 => None,
+                1 => {
+                    let e = targets[0];
+                    // Colonists show their roster name; anything else its uid.
+                    let who = ecs
+                        .read_storage::<comp::Colonist>()
+                        .get(e)
+                        .map(|c| c.0.name.clone())
+                        .or_else(|| {
+                            ecs.read_storage::<common::uid::Uid>()
+                                .get(e)
+                                .map(|u| format!("entity {u}"))
+                        })
+                        .unwrap_or_else(|| "?".into());
+                    let hp = ecs
+                        .read_storage::<comp::Health>()
+                        .get(e)
+                        .map(|h| format!(" — health {:.0}%", h.fraction() * 100.0))
+                        .unwrap_or_default();
+                    Some(format!("Selected: {who}{hp}"))
+                },
+                n => Some(format!("Selected: {n} units")),
+            }
         };
+        self.bastion_selected = targets;
         if let Some(info) = &info {
-            // Chat line too — durable feedback (the info line is transient).
             self.hud
                 .new_message(ChatType::CommandInfo.into_plain_msg(info.clone()));
         }
         self.hud.bastion_set_selected(info);
+    }
+
+    /// bastion (B3): begin/finish the Inspect-tool box-select drag.
+    fn bastion_boxsel_begin(&mut self, global_state: &GlobalState) {
+        let plane_z = self.bastion_plane_z();
+        if let Some(anchor) = self.bastion_point_under_cursor(global_state, plane_z) {
+            self.bastion_boxsel = Some(BastionPaint {
+                anchor,
+                current: anchor,
+                plane_z,
+                shapes: Vec::new(),
+            });
+        }
+    }
+
+    fn bastion_boxsel_update(&mut self, global_state: &GlobalState) {
+        let Some(plane_z) = self.bastion_boxsel.as_ref().map(|p| p.plane_z) else {
+            return;
+        };
+        let Some(current) = self.bastion_point_under_cursor(global_state, plane_z) else {
+            return;
+        };
+        let (old_shapes, anchor) = {
+            let sel = self.bastion_boxsel.as_mut().unwrap();
+            sel.current = current;
+            (std::mem::take(&mut sel.shapes), sel.anchor)
+        };
+        for id in old_shapes {
+            self.scene.debug.remove_shape(id);
+        }
+        let min = Vec3::partial_min(anchor, current);
+        let max = Vec3::partial_max(anchor, current);
+        let shapes = self.bastion_region_outline(min, max, [0.3, 0.95, 1.0, 0.9]);
+        if let Some(sel) = self.bastion_boxsel.as_mut() {
+            sel.shapes = shapes;
+        }
+    }
+
+    fn bastion_boxsel_finish(&mut self, global_state: &GlobalState) {
+        let Some(sel) = self.bastion_boxsel.take() else {
+            return;
+        };
+        for id in sel.shapes {
+            self.scene.debug.remove_shape(id);
+        }
+        let min: Vec2<f32> = Vec2::partial_min(sel.anchor.xy(), sel.current.xy());
+        let max: Vec2<f32> = Vec2::partial_max(sel.anchor.xy(), sel.current.xy());
+        // A tiny drag is a click: fall back to single-entity pick.
+        if (max - min).magnitude_squared() < 2.0f32.powi(2) {
+            let picked = self.bastion_pick_entity(global_state);
+            self.bastion_select_set(picked.into_iter().collect());
+            return;
+        }
+        let targets: Vec<specs::Entity> = {
+            use specs::Join;
+            let client = self.client.borrow();
+            let ecs = client.state().ecs();
+            let colonists = ecs.read_storage::<comp::Colonist>();
+            let positions = ecs.read_storage::<comp::Pos>();
+            let entities = ecs.entities();
+            (&entities, &colonists, &positions)
+                .join()
+                .filter(|(_, _, pos)| {
+                    let p = pos.0.xy();
+                    p.x >= min.x && p.x <= max.x && p.y >= min.y && p.y <= max.y
+                })
+                .map(|(e, _, _)| e)
+                .collect()
+        };
+        self.bastion_select_set(targets);
+    }
+
+    /// bastion (B3): keep an overhead marker above every loaded colonist so
+    /// the colony reads as *yours* top-down (B9 re-skins this).
+    fn bastion_sync_colonist_markers(&mut self) {
+        use specs::Join;
+        let live: Vec<(specs::Entity, Vec3<f32>)> = {
+            let client = self.client.borrow();
+            let ecs = client.state().ecs();
+            let colonists = ecs.read_storage::<comp::Colonist>();
+            let positions = ecs.read_storage::<comp::Pos>();
+            let entities = ecs.entities();
+            (&entities, &colonists, &positions)
+                .join()
+                .map(|(e, _, pos)| (e, pos.0))
+                .collect()
+        };
+        let live_set: std::collections::HashSet<specs::Entity> =
+            live.iter().map(|(e, _)| *e).collect();
+        let stale: Vec<(specs::Entity, DebugShapeId)> = self
+            .bastion_colonist_markers
+            .iter()
+            .filter(|(e, _)| !live_set.contains(e))
+            .map(|(e, id)| (*e, *id))
+            .collect();
+        for (e, id) in stale {
+            self.bastion_colonist_markers.remove(&e);
+            self.scene.debug.remove_shape(id);
+        }
+        for (e, pos) in live {
+            let id = match self.bastion_colonist_markers.get(&e) {
+                Some(id) => *id,
+                None => {
+                    let id = self.scene.debug.add_shape(crate::scene::DebugShape::Cylinder {
+                        radius: 0.35,
+                        height: 0.4,
+                    });
+                    self.bastion_colonist_markers.insert(e, id);
+                    id
+                },
+            };
+            self.scene.debug.set_context(
+                id,
+                [pos.x, pos.y, pos.z + 2.4, 0.0],
+                [0.25, 0.95, 1.0, 0.9],
+                [0.0, 0.0, 0.0, 1.0],
+            );
+        }
     }
 
     /// bastion (B2a): open the contextual radial menu for whatever is under
@@ -526,6 +663,8 @@ impl SessionState {
                 RadialAction::Verb(ContextVerb::Stockpile),
                 RadialAction::Verb(ContextVerb::Mine),
                 RadialAction::Verb(ContextVerb::Chop),
+                // B3: colony founding lives on the ground context.
+                RadialAction::Verb(ContextVerb::FoundColony),
                 RadialAction::Influence(InfluenceKind::Bless),
                 RadialAction::Influence(InfluenceKind::Rain),
             ] {
@@ -1972,15 +2111,19 @@ impl PlayState for SessionState {
                                         // radial menu.
                                         self.hud.bastion_close_radial();
                                         self.bastion_lmb_down = Some(cursor);
-                                        if matches!(
-                                            self.bastion_tools.tool,
-                                            bastion::tools::ToolMode::Designate(_)
-                                        ) {
+                                        match self.bastion_tools.tool {
                                             // B2a: designate tool paints
                                             // instead of panning.
-                                            self.bastion_paint_begin(global_state);
-                                        } else {
-                                            self.bastion_begin_grab(global_state);
+                                            bastion::tools::ToolMode::Designate(_) => {
+                                                self.bastion_paint_begin(global_state);
+                                            },
+                                            // B3: inspect tool box-selects.
+                                            bastion::tools::ToolMode::Inspect => {
+                                                self.bastion_boxsel_begin(global_state);
+                                            },
+                                            bastion::tools::ToolMode::Pan => {
+                                                self.bastion_begin_grab(global_state);
+                                            },
                                         }
                                     }
                                 } else {
@@ -1989,6 +2132,10 @@ impl PlayState for SessionState {
                                         && self.bastion_paint.is_some()
                                     {
                                         self.bastion_paint_finish(kind);
+                                    } else if self.bastion_boxsel.is_some() {
+                                        // B3: box-select release (tiny drag
+                                        // falls back to single pick).
+                                        self.bastion_boxsel_finish(global_state);
                                     } else if let Some(down) = self.bastion_lmb_down
                                         && down.distance_squared(cursor) < CLICK_SLOP_SQ
                                         && !self.hud.bastion_cursor_over_widget()
@@ -1996,7 +2143,7 @@ impl PlayState for SessionState {
                                         // B2a: left-click = select/inspect
                                         // (entity under cursor, or clear).
                                         let picked = self.bastion_pick_entity(global_state);
-                                        self.bastion_select(picked);
+                                        self.bastion_select_set(picked.into_iter().collect());
                                     }
                                     self.bastion_lmb_down = None;
                                     // Release: keep the tracked velocity as
@@ -2347,13 +2494,23 @@ impl PlayState for SessionState {
                     ));
                 }
             }
-            // bastion (B2a): interaction-surface upkeep — live paint preview,
-            // designation-echo overlay, HUD state mirror.
+            // bastion (B2a/B3): interaction-surface upkeep — live paint/box
+            // previews, designation-echo overlay, colonist markers, HUD state.
             if self.bastion_overseer_active() {
                 if self.bastion_paint.is_some() {
                     self.bastion_paint_update(global_state);
                 }
+                if self.bastion_boxsel.is_some() {
+                    self.bastion_boxsel_update(global_state);
+                }
                 self.bastion_sync_designations();
+                self.bastion_sync_colonist_markers();
+            } else if !self.bastion_colonist_markers.is_empty() {
+                let ids: Vec<DebugShapeId> =
+                    self.bastion_colonist_markers.drain().map(|(_, id)| id).collect();
+                for id in ids {
+                    self.scene.debug.remove_shape(id);
+                }
             }
             self.hud.bastion_sync(
                 self.bastion_overseer_active(),
@@ -2633,6 +2790,12 @@ impl PlayState for SessionState {
                         if bastion::tools::target_allowed(self.bastion_tools.god_mode, None) {
                             let mut client = self.client.borrow_mut();
                             match action {
+                                // B3: founding the colony is a real verb now.
+                                crate::hud::bastion::RadialAction::Verb(
+                                    common::bastion::ContextVerb::FoundColony,
+                                ) => {
+                                    client.bastion_spawn_colony(point, 6);
+                                },
                                 crate::hud::bastion::RadialAction::Verb(verb) => {
                                     client.bastion_context_action(target, verb);
                                 },
