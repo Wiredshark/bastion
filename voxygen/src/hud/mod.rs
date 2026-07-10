@@ -252,6 +252,10 @@ widget_ids! {
         bastion_godmode_btn,
         bastion_selected_text,
         bastion_zone_labels[],
+        bastion_paint_label,
+        bastion_depth_minus_btn,
+        bastion_depth_text,
+        bastion_depth_plus_btn,
         bastion_radial_title,
         bastion_radial_btns[],
 
@@ -689,6 +693,10 @@ pub enum Event {
     // bastion (B2a): overseer interaction surface
     BastionSelectTool(crate::bastion::tools::ToolMode),
     BastionToggleGodMode,
+    /// bastion (B5.6b-2): the tool panel's precision depth stepper —
+    /// positive steps dig the selection deeper, negative shallower/upward
+    /// (same axis the scroll-while-painting path steps).
+    BastionStepZExtent(i32),
     BastionRadialPick {
         action: bastion::RadialAction,
         target: common::bastion::ContextTarget,
@@ -4865,6 +4873,50 @@ impl Hud {
                 events.push(Event::BastionToggleGodMode);
             }
 
+            // --- B5.6b-2: precision depth stepper (designate tools only) ---
+            // The numeric half of the volume-selection UX: [−] "3 levels
+            // deep" [+], under the active designate button. Steps the SAME
+            // session field scroll-while-painting steps, so the two paths
+            // can't drift.
+            if let ToolMode::Designate(_) = self.bastion.tool {
+                let active_i = tools
+                    .iter()
+                    .position(|t| *t == self.bastion.tool)
+                    .unwrap_or(0);
+                if widget::Button::new()
+                    .w_h(26.0, 22.0)
+                    .color(btn_color)
+                    .label("−")
+                    .label_font_size(14)
+                    .label_color(label_color)
+                    .label_font_id(self.fonts.cyri.conrod_id)
+                    .down_from(self.ids.bastion_palette_btns[active_i], 4.0)
+                    .set(self.ids.bastion_depth_minus_btn, ui_widgets)
+                    .was_clicked()
+                {
+                    events.push(Event::BastionStepZExtent(-1));
+                }
+                widget::Text::new(&self.bastion.z_extent_label)
+                    .font_size(13)
+                    .font_id(self.fonts.cyri.conrod_id)
+                    .color(label_color)
+                    .right_from(self.ids.bastion_depth_minus_btn, 6.0)
+                    .set(self.ids.bastion_depth_text, ui_widgets);
+                if widget::Button::new()
+                    .w_h(26.0, 22.0)
+                    .color(btn_color)
+                    .label("+")
+                    .label_font_size(14)
+                    .label_color(label_color)
+                    .label_font_id(self.fonts.cyri.conrod_id)
+                    .right_from(self.ids.bastion_depth_text, 6.0)
+                    .set(self.ids.bastion_depth_plus_btn, ui_widgets)
+                    .was_clicked()
+                {
+                    events.push(Event::BastionStepZExtent(1));
+                }
+            }
+
             // --- Selection info line (bottom left, above the chat box) ---
             if let Some(info) = &self.bastion.selected_info {
                 widget::Text::new(info)
@@ -4898,6 +4950,20 @@ impl Hud {
                     // zone broken" + "pan dead over zones" demo bugs).
                     .graphics_for(ui_widgets.window)
                     .set(self.ids.bastion_zone_labels[i], ui_widgets);
+            }
+
+            // B5.6b-2: the live depth counter at the drag cursor ("3 levels
+            // deep"), while a designate drag is active. Same treatment as
+            // zone labels (world-anchored, input-transparent).
+            if let Some((wpos, text, col)) = self.bastion.paint_label.as_ref() {
+                widget::Text::new(text)
+                    .font_size(16)
+                    .font_id(self.fonts.cyri.conrod_id)
+                    .color(Color::Rgba(col[0], col[1], col[2], 1.0))
+                    .x_y(0.0, 0.0)
+                    .position_ingame(*wpos)
+                    .graphics_for(ui_widgets.window)
+                    .set(self.ids.bastion_paint_label, ui_widgets);
             }
 
             // --- Contextual radial menu ---
@@ -5815,18 +5881,21 @@ impl Hud {
     }
 
     /// bastion (B2a): the session mirrors its interaction state each frame.
-    /// (B-MAP1 adds `slice_z` so the minimap tiles can follow the Z-slice.)
+    /// (B-MAP1 adds `slice_z` so the minimap tiles can follow the Z-slice;
+    /// B5.6b-2 adds the depth-selection label for the tool panel stepper.)
     pub fn bastion_sync(
         &mut self,
         active: bool,
         tool: crate::bastion::tools::ToolMode,
         god_mode: crate::bastion::tools::GodMode,
         slice_z: Option<f32>,
+        z_extent_label: String,
     ) {
         self.bastion.active = active;
         self.bastion.tool = tool;
         self.bastion.god_mode = god_mode;
         self.bastion.slice_z = slice_z;
+        self.bastion.z_extent_label = z_extent_label;
         if !active {
             self.bastion.radial = None;
         }
@@ -5841,6 +5910,12 @@ impl Hud {
     /// frame (session feeds them from the overlay sync — ON mode only).
     pub fn bastion_set_zone_labels(&mut self, labels: Vec<(Vec3<f32>, String, [f32; 4])>) {
         self.bastion.zone_labels = labels;
+    }
+
+    /// bastion (B5.6b-2): set/clear the live depth-counter label shown at
+    /// the drag cursor while painting a designation.
+    pub fn bastion_set_paint_label(&mut self, label: Option<(Vec3<f32>, String, [f32; 4])>) {
+        self.bastion.paint_label = label;
     }
 
     /// bastion (B2a): open the contextual radial menu (replaces any open one).

@@ -587,7 +587,7 @@ impl Widget for Map<'_> {
                             .resize(designations.len(), &mut ui.widget_id_generator())
                     });
                 }
-                for (i, (region, kind)) in designations.iter().enumerate() {
+                for (i, (region, kind, _)) in designations.iter().enumerate() {
                     let [r, g, b] = crate::bastion::tools::zone_rgb(*kind);
                     let lo =
                         wpos_to_px(Vec2::new(region.min.x as f32, region.min.y as f32));
