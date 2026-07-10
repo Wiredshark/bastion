@@ -1169,6 +1169,19 @@ impl Server {
             .map(|c| c.0.skills.climbing)
     }
 
+    /// bastion (B6 SOFT-0, harness hook): register an access anchor, as a
+    /// player-designated or auto-built ladder would (scenarios that place
+    /// ladder SPRITES directly bypass the designation path that normally
+    /// registers the base — without an anchor, staged routing can't find
+    /// the ladder and the B5.8 run-10 beeline/A*-reset failure returns).
+    pub fn bastion_register_access_anchor(&mut self, pos: Vec3<i32>) {
+        self.state
+            .ecs()
+            .write_resource::<bastion_jobs::JobBoard>()
+            .access_anchors
+            .push(pos);
+    }
+
     /// bastion (TOOL-0, harness hook): equip an item asset into a loaded
     /// colonist's mainhand (deterministic tool-speed scenarios; whatever
     /// the swap displaces is discarded — scenarios don't care).

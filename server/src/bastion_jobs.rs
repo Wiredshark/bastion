@@ -759,17 +759,24 @@ impl<'a> System<'a> for Sys {
                 // stop band. Ladders are colony-built infrastructure;
                 // "working the ladder" from two blocks is fine worker
                 // fiction.
-                let beside_ladder = (-2..=2).any(|dx| {
-                    (-2..=2).any(|dy| {
-                        (0..=1).any(|dz| {
-                            terrain
-                                .get(feet + Vec3::new(dx, dy, dz))
-                                .ok()
-                                .and_then(|b| b.get_sprite())
+                let mut nearest_ladder: Option<Vec3<i32>> = None;
+                for dx in -2..=2i32 {
+                    for dy in -2..=2i32 {
+                        for dz in 0..=1i32 {
+                            let p = feet + Vec3::new(dx, dy, dz);
+                            if terrain.get(p).ok().and_then(|b| b.get_sprite())
                                 == Some(SpriteKind::Ladder)
-                        })
-                    })
-                });
+                                && nearest_ladder.is_none_or(|b| {
+                                    (dx.abs() + dy.abs())
+                                        < (b.x - feet.x).abs() + (b.y - feet.y).abs()
+                                })
+                            {
+                                nearest_ladder = Some(p);
+                            }
+                        }
+                    }
+                }
+                let beside_ladder = nearest_ladder.is_some();
                 // REACH CAP on the wall/climb arms: lift only while
                 // standable ground is within the colonist's scramble reach
                 // below — otherwise the assist would elevator workers up
@@ -801,6 +808,31 @@ impl<'a> System<'a> for Sys {
                         pos.0.z += CLIMB_ASSIST_VZ * dt.0;
                         vel.0.z = vel.0.z.max(0.0);
                         colonist.0.skills.climbing.add_xp(CLIMB_XP_RATE * dt.0);
+                    }
+                    // B6 SOFT-0 finding — LADDER MAGNETISM: the grab
+                    // window is ±2 XY (the Chaser stop band, runs 13/18),
+                    // so a climber can start rising 2 blocks BESIDE the
+                    // ladder column; in an open pit it drifts over the
+                    // rim, but under a CEILING (an interior chamber→shaft)
+                    // it wedges airborne with no ground control and the
+                    // watchdog kills the claim. While on the ladder arm,
+                    // pull XY toward the ladder column center so the
+                    // climber slides INTO the shaft as it rises. Small
+                    // per-tick step; the hard terrain pass still resolves
+                    // any wall contact (clip-polish per Ben's taste
+                    // ruling).
+                    if let Some(lp) = nearest_ladder {
+                        const LADDER_MAGNET_V: f32 = 1.5; // blocks/s
+                        let center =
+                            Vec2::new(lp.x as f32 + 0.5, lp.y as f32 + 0.5);
+                        let d = center - pos.0.xy();
+                        let dist = d.magnitude();
+                        if dist > 0.05 {
+                            let step = (LADDER_MAGNET_V * dt.0).min(dist);
+                            let nudge = d / dist * step;
+                            pos.0.x += nudge.x;
+                            pos.0.y += nudge.y;
+                        }
                     }
                 }
                 // LEDGE SNAP — one rule kills every crest race: a HANGING
@@ -934,19 +966,32 @@ impl<'a> System<'a> for Sys {
                                     let db = b.xy().map(|e| e as f32).distance(pos.0.xy());
                                     da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
                                 })
-                                .filter(|a| {
-                                    // Already at the anchor: climb (the
-                                    // assist lifts); steer at the real
-                                    // target so the bearing pulls up+over.
-                                    a.xy().map(|e| e as f32 + 0.5).distance(pos.0.xy())
-                                        > 1.6
-                                })
                                 .map(|a| {
-                                    Vec3::new(
+                                    let base = Vec3::new(
                                         a.x as f32 + 0.5,
                                         a.y as f32 + 0.5,
                                         a.z as f32 + 1.0,
-                                    )
+                                    );
+                                    if pos.0.xy().distance(base.xy()) > 1.6 {
+                                        // Walking to the anchor base.
+                                        base
+                                    } else {
+                                        // AT the anchor: steer straight UP
+                                        // its column (the assist lifts).
+                                        // B6 SOFT-0 finding: steering at
+                                        // the real target here pins the
+                                        // climber against the ceiling 1-2
+                                        // blocks OUTSIDE an interior shaft
+                                        // (chamber→1×1 ladder column) —
+                                        // b58's open-pit pillars never hit
+                                        // this because there was nothing
+                                        // overhead. Vertical bearing keeps
+                                        // the body inside the column; the
+                                        // staging condition itself expires
+                                        // near the top and hands steer
+                                        // back to the real target.
+                                        Vec3::new(base.x, base.y, target.z)
+                                    }
                                 })
                                 .unwrap_or(target)
                         } else {

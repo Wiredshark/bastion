@@ -89,6 +89,13 @@ struct Args {
     /// result line; exit code reflects pass/fail.
     #[arg(long)]
     b58_scenario: bool,
+
+    /// bastion (B6 SOFT-0): the chokepoint gate — a whole crew funnels
+    /// through ONE 1-wide ladder shaft; soft-collision must squeeze them
+    /// through with zero unreachable, hard terrain, and normal open-ground
+    /// spacing. Prints one JSON result line; exit code = pass/fail.
+    #[arg(long)]
+    chokepoint_scenario: bool,
 }
 
 /// Aggregate state dump. Deliberately coarse: aggregates are far more stable
@@ -140,6 +147,8 @@ fn main() -> ExitCode {
         b55_scenario(&args)
     } else if args.b58_scenario {
         b58_scenario(&args)
+    } else if args.chokepoint_scenario {
+        chokepoint_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -2369,6 +2378,283 @@ fn b58_scenario(args: &Args) -> ExitCode {
         && avg_tick_ms < 100.0;
     println!("{}", result);
     println!("B5.8 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (B6 SOFT-0): the chokepoint gate — a whole crew funnels through
+/// ONE 1-wide ladder shaft out of an underground chamber (the shape that
+/// deadlocked B5.8's known-open composites). With soft-collision the crew
+/// squeezes through and exits: every colonist gets out, NO job ever reports
+/// unreachable (the grace window breaks stalls first), nobody ends up
+/// inside terrain (hard voxel collision untouched), and clustered idle
+/// colonists on OPEN ground still separate to normal spacing (the
+/// relaxation did not go global).
+fn chokepoint_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, Region, WorkType},
+        terrain::{Block, BlockKind, SpriteKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-ck-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-ck".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "ck: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    let loaded = server.bastion_force_load_area(site_wpos, 5);
+    info!(loaded, "ck: force-loaded area");
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::GlowingRock
+                        | BlockKind::GlowingWeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::ArtSnow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                        | BlockKind::Ice
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let cz = ground_z(&server, cx, cy).expect("no ground at site center");
+
+    // FIVE colonists — the whole-crew egress.
+    let names =
+        server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0), 5);
+    tick(&mut server, 60);
+    for n in &names {
+        server.bastion_set_colonist_climbing(n, 1);
+        server.bastion_set_colonist_skill(n, WorkType::Mine, 10);
+    }
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+
+    // ── The chokepoint (fully terraformed, §5): a 5×3 chamber 6 deep,
+    // whose ONLY exit is a 1×1 ladder shaft to the surface pad. ──────────
+    let (kx, ky) = (cx + 12, cy);
+    let k_gz = ground_z(&server, kx, ky).unwrap_or(cz);
+    // Solid pad 17×17, cleared airspace above.
+    for x in (kx - 8)..=(kx + 8) {
+        for y in (ky - 8)..=(ky + 8) {
+            for z in (k_gz - 10)..=k_gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (k_gz + 1)..=(k_gz + 20) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    // Chamber: x ∈ [kx−2, kx+2], y ∈ [ky−1, ky+1], z ∈ [k_gz−6, k_gz−4]
+    // (floor solid at k_gz−7).
+    for x in (kx - 2)..=(kx + 2) {
+        for y in (ky - 1)..=(ky + 1) {
+            for z in (k_gz - 6)..=(k_gz - 4) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    // The 1×1 shaft at (kx+3, ky): air from chamber floor to the surface,
+    // laddered the whole way (the strict single-file chokepoint).
+    for z in (k_gz - 6)..=k_gz {
+        server
+            .state_mut()
+            .set_block(Vec3::new(kx + 3, ky, z), Block::air(SpriteKind::Ladder));
+    }
+    // Register the ladder base as an ACCESS ANCHOR (what the designation
+    // path would do) — staged routing needs it or the crew beelines at
+    // the chamber wall and the incremental A* never finds the shaft (the
+    // B5.8 run-10 failure, solved by anchors; this scenario tests the
+    // COLLISION pile-up at the anchor, not the routing).
+    server.bastion_register_access_anchor(Vec3::new(kx + 3, ky, k_gz - 6));
+    tick(&mut server, 2);
+
+    // Crew INTO the chamber (spread so the pile-up forms at the shaft).
+    for (i, n) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(
+                (kx - 2 + i as i32).clamp(kx - 2, kx + 2) as f32 + 0.5,
+                ky as f32 + 0.5,
+                (k_gz - 6) as f32,
+            ),
+        );
+    }
+    tick(&mut server, 5);
+
+    // Five spread surface jobs — one per colonist (dispersion separates
+    // claims); the only route up is the one ladder.
+    let job_spots: Vec<Vec3<i32>> = (0..5)
+        .map(|i| Vec3::new(kx - 6 + (i as i32) * 3, ky + 5, k_gz))
+        .collect();
+    let mut ck_jobs = 0;
+    for p in &job_spots {
+        ck_jobs += server
+            .bastion_place_designation(Region { min: *p, max: *p }, DesignationKind::Mine)
+            .len();
+    }
+
+    // ── The egress window: everyone out, zero unreachable, nobody in a
+    // wall. ──────────────────────────────────────────────────────────────
+    let mut ever_out: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut ck_unreachable_max = 0usize;
+    let mut ck_in_terrain = 0usize;
+    let mut ck_cleared = false;
+    for i in 0..400 {
+        tick(&mut server, 30);
+        ck_unreachable_max = ck_unreachable_max.max(server.bastion_job_audit().unreachable);
+        for (n, p, _) in server.bastion_colonist_states() {
+            if p.z >= k_gz as f32 + 0.5 {
+                ever_out.insert(n.clone());
+            }
+            // Hard-terrain invariant: the colonist's center block must
+            // never be solid (soft-collision must never push through a
+            // wall).
+            let bp = p.map(|e| e.floor() as i32) + Vec3::unit_z();
+            if server
+                .state()
+                .terrain()
+                .get(bp)
+                .is_ok_and(|b| b.is_filled())
+            {
+                ck_in_terrain += 1;
+            }
+        }
+        ck_cleared = job_spots.iter().all(|p| {
+            server
+                .bastion_block_kind(*p)
+                .is_none_or(|k| !k.is_filled())
+        });
+        if i % 10 == 0 {
+            for (n, p, j) in server.bastion_colonist_states() {
+                info!(sample = i, name = %n, pos = ?p, job = ?j, "ck TRACE");
+            }
+        }
+        if ck_cleared && ever_out.len() == names.len() {
+            break;
+        }
+    }
+    let ck_all_out = ever_out.len() == names.len();
+
+    // ── Open-ground CONTROL: cluster three colonists on the flat pad with
+    // no jobs; normal spacing must reassert (the relaxation is transient
+    // and local — it did NOT go global). ─────────────────────────────────
+    server.bastion_cancel_designation(Region {
+        min: Vec3::new(kx - 8, ky - 8, k_gz - 12),
+        max: Vec3::new(kx + 8, ky + 8, k_gz + 22),
+    });
+    for n in names.iter().take(3) {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(kx as f32 + 0.5, (ky - 4) as f32 + 0.5, (k_gz + 1) as f32),
+        );
+    }
+    tick(&mut server, 30 * 30); // ~30s to settle
+    let control: Vec<Vec3<f32>> = server
+        .bastion_colonist_states()
+        .iter()
+        .filter(|(n, _, _)| names.iter().take(3).any(|m| m == n))
+        .map(|(_, p, _)| *p)
+        .collect();
+    let mut ck_control_spacing = true;
+    for (i, a) in control.iter().enumerate() {
+        for b in control.iter().skip(i + 1) {
+            if a.xy().distance(b.xy()) < 0.5 {
+                ck_control_spacing = false;
+            }
+        }
+    }
+
+    let result = serde_json::json!({
+        "ck_jobs": ck_jobs,
+        "ck_all_out": ck_all_out,
+        "ck_out_count": ever_out.len(),
+        "ck_cleared": ck_cleared,
+        "ck_unreachable_max": ck_unreachable_max,
+        "ck_in_terrain": ck_in_terrain,
+        "ck_control_spacing": ck_control_spacing,
+    });
+    let pass = ck_jobs == 5
+        && ck_all_out
+        && ck_cleared
+        // The grace window breaks every stall BEFORE the watchdog gives
+        // up — the pre-SOFT deadlock signature was unreachable reports.
+        && ck_unreachable_max == 0
+        // Hard terrain, always.
+        && ck_in_terrain == 0
+        // Open-ground spacing normal (no global relaxation).
+        && ck_control_spacing;
+    println!("{}", result);
+    println!("CHOKEPOINT SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
