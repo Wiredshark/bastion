@@ -77,9 +77,13 @@ impl Sys {
         bastion_spawn: &mut Option<(Vec3<f32>, u8)>,
         // bastion (B4): deferred designation ops — Some(kind) = place,
         // None = cancel (the job board can't be touched in the parallel join).
+        // B5.6b-2: the third field is Some(extent) for surface-relative
+        // placements (region = footprint XY + paint-plane hint in max.z);
+        // None keeps the legacy literal-region path. Always None for cancel.
         bastion_designations: &mut Vec<(
             common::bastion::Region,
             Option<common::bastion::DesignationKind>,
+            Option<common::bastion::ZExtent>,
         )>,
         controller: Option<&mut Controller>,
         settings: &Read<'_, Settings>,
@@ -283,22 +287,74 @@ impl Sys {
             // bastion (B2a): overseer interaction-surface stubs. The server
             // VALIDATES and ECHOES; behavior arrives with B4 (designations →
             // jobs), B13 (influence), B3/B2b (context verbs on entities).
-            ClientGeneral::BastionPlaceDesignation { region, kind } => {
+            ClientGeneral::BastionPlaceDesignation {
+                region,
+                kind,
+                z_extent,
+            } => {
                 let region = region.normalized();
-                let volume = region.volume();
-                if volume > 0 && volume <= common::bastion::MAX_DESIGNATION_VOLUME {
-                    client.send(ServerGeneral::BastionDesignation { region, kind })?;
-                    // bastion (B4): job generation happens post-loop.
-                    bastion_designations.push((region, Some(kind)));
+                if let Some(extent) = z_extent {
+                    // bastion (B5.6b-2): surface-relative path. `region`'s XY
+                    // is the footprint, `max.z` the paint-plane hint; the
+                    // volume is footprint × extent, resolved per column. The
+                    // echo must carry the EXACT resolved bounds (they bound
+                    // every generated job) or 3D cancel/erase on the echoed
+                    // rect would miss jobs and orphan them — so resolve the
+                    // bounds HERE (terrain is readable in this loop) and let
+                    // the deferred board op recompute the same surfaces.
+                    let footprint = (region.max.x - region.min.x + 1) as i64
+                        * (region.max.y - region.min.y + 1) as i64;
+                    let volume = footprint * extent.levels() as i64;
+                    let resolved = (volume > 0
+                        && volume <= common::bastion::MAX_DESIGNATION_VOLUME)
+                        .then(|| {
+                            crate::bastion_jobs::resolve_surface_bounds(
+                                terrain,
+                                region.min.xy(),
+                                region.max.xy(),
+                                region.max.z,
+                                extent,
+                            )
+                        })
+                        .flatten();
+                    if let Some(bounds) = resolved {
+                        client.send(ServerGeneral::BastionDesignation {
+                            region: bounds,
+                            kind,
+                            z_extent: Some(extent),
+                        })?;
+                        bastion_designations.push((region, Some(kind), Some(extent)));
+                    } else {
+                        client.send(ServerGeneral::server_msg(
+                            common::comp::ChatType::CommandError,
+                            common::comp::Content::Plain(format!(
+                                "Designation rejected: volume {} outside 1..={} or no \
+                                 terrain surface under the footprint",
+                                volume,
+                                common::bastion::MAX_DESIGNATION_VOLUME
+                            )),
+                        ))?;
+                    }
                 } else {
-                    client.send(ServerGeneral::server_msg(
-                        common::comp::ChatType::CommandError,
-                        common::comp::Content::Plain(format!(
-                            "Designation rejected: volume {} outside 1..={}",
-                            volume,
-                            common::bastion::MAX_DESIGNATION_VOLUME
-                        )),
-                    ))?;
+                    let volume = region.volume();
+                    if volume > 0 && volume <= common::bastion::MAX_DESIGNATION_VOLUME {
+                        client.send(ServerGeneral::BastionDesignation {
+                            region,
+                            kind,
+                            z_extent: None,
+                        })?;
+                        // bastion (B4): job generation happens post-loop.
+                        bastion_designations.push((region, Some(kind), None));
+                    } else {
+                        client.send(ServerGeneral::server_msg(
+                            common::comp::ChatType::CommandError,
+                            common::comp::Content::Plain(format!(
+                                "Designation rejected: volume {} outside 1..={}",
+                                volume,
+                                common::bastion::MAX_DESIGNATION_VOLUME
+                            )),
+                        ))?;
+                    }
                 }
             },
             ClientGeneral::BastionApplyInfluence { target, kind } => {
@@ -318,7 +374,7 @@ impl Sys {
             ClientGeneral::BastionCancelDesignation { region } => {
                 // bastion (B4): jobs removed + claims released post-loop.
                 let region = region.normalized();
-                bastion_designations.push((region, None));
+                bastion_designations.push((region, None, None));
                 // bastion (B5.5): echo the removal so the client subtracts
                 // it from its overlay rects (mirrors the place echo above).
                 client.send(ServerGeneral::BastionDesignationRemoved { region })?;
@@ -796,12 +852,26 @@ impl<'a> System<'a> for Sys {
                     rtsim.bastion_spawn_colony(pos, count);
                 }
                 // bastion (B4): apply deferred designation ops to the board.
-                for (region, op) in bastion_designation_updates.drain(..) {
-                    match op {
-                        Some(kind) => {
+                // B5.6b-2: surface-relative placements recompute the same
+                // per-column surfaces the handler's echo bounds came from
+                // (terrain can't change between the two — block edits land
+                // post-tick), so the echoed rect bounds every job created.
+                for (region, op, extent) in bastion_designation_updates.drain(..) {
+                    match (op, extent) {
+                        (Some(kind), Some(extent)) => {
+                            job_board.place_designation_surface(
+                                &terrain,
+                                region.min.xy(),
+                                region.max.xy(),
+                                region.max.z,
+                                extent,
+                                kind,
+                            );
+                        },
+                        (Some(kind), None) => {
                             job_board.place_designation(&terrain, region, kind);
                         },
-                        None => {
+                        (None, _) => {
                             job_board.cancel_region(region);
                         },
                     }

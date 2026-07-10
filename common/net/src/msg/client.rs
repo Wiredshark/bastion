@@ -119,9 +119,17 @@ pub enum ClientGeneral {
     BastionCameraAnchor(Option<Vec3<f32>>),
     /// bastion (B2a): paint a designation region. Server validates + echoes
     /// (`ServerGeneral::BastionDesignation`); B4 turns designations into jobs.
+    ///
+    /// B5.6b-2: with `z_extent: Some(_)`, `region`'s XY is the painted
+    /// FOOTPRINT and `region.max.z` the paint-plane hint; the server
+    /// resolves the actual volume per column against the terrain surface
+    /// (surface-relative model) and echoes the EXACT resolved bounds. With
+    /// `None`, `region` is taken literally (the legacy path; the harness
+    /// scenarios use it for fully-determined geometry).
     BastionPlaceDesignation {
         region: common::bastion::Region,
         kind: common::bastion::DesignationKind,
+        z_extent: Option<common::bastion::ZExtent>,
     },
     /// bastion (B2a): apply a divine influence at a point. Stub until B13;
     /// server validates + acks via chat.
