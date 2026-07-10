@@ -642,3 +642,10 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   1000-tick soak PASS. Ben's eyeball BATCHED (morning): buttons visible/
   clickable in overseer HUD, 2×/4× visibly faster, Space pauses with the
   tag, resume returns to prior speed.
+
+- **TAGGED `bastion-block-TIMECTL` — main @ `77a21d4b23`** (overnight
+  tag 2). One line for the morning: the game has visible time controls —
+  ⏸/1×/2×/4× buttons bottom-right (lit = active, amber PAUSED tag),
+  Space pause-toggle, +/− speed step; watching-it-run at 4× now works.
+  Revert = `547ee38518`. NEXT: TOOL-0 (tool_factor — dig speed keys off
+  the equipped tool).
