@@ -549,3 +549,19 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   as-is). Gate: harness assertion (staircase terrain → flat bottom at
   the target z, all columns; relative mode unchanged) + Ben's eyeball
   batched.
+
+- PROGRESS (2026-07-10, built DURING Ben's live B5.8 test under the
+  exe-lock rules — server/common/harness only, voxygen check deferred):
+  `ZExtent.floor_z: Option<i32>` + `column_range()` as the ONE dig-range
+  authority (job gen, echo bounds, harness all call it; relative mode
+  byte-identical); flat-mode wire validation estimates depth from
+  plane→floor; client Slope/Flat toggle on the depth stepper with
+  paint-time floor derivation (clicked plane − stepper depth). VERIFIED:
+  unit 17/17 (new `column_range_relative_and_flat` suite); b5 phase 7.6
+  green — flat mode on the proven staircase = EXACTLY 108 jobs, tight
+  bounds, nothing below the shared floor (one scenario-terraform fix en
+  route: the underfill must span below the shared floor on tall columns).
+  A same-run `b5_chop_cleared` red is the DOCUMENTED Ben-playing load
+  flake (unrelated phase). REMAINING: quiet-machine b4/b5/b55/b58
+  re-runs + the voxygen check (exe-locked) after "test done" →
+  bookkeeping → merge+tag.
