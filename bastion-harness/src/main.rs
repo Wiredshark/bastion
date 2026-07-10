@@ -2601,8 +2601,21 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
 
     // Five spread surface jobs — one per colonist (dispersion separates
     // claims); the only route up is the one ladder.
-    let job_spots: Vec<Vec3<i32>> = (0..5)
-        .map(|i| Vec3::new(kx - 6 + (i as i32) * 3, ky + 5, k_gz))
+    // FIFTEEN jobs (3 per colonist): with only 5, fast climbers STEAL the
+    // slow ones' work and refreshes too — a jobless colonist has no Goto,
+    // and a chamber WITH a working ladder correctly reads not-trapped to
+    // the egress net (the shaft floor is reachable ground), so nothing
+    // moves it: the B7 idle-rally gap, logged. Plentiful work keeps every
+    // colonist motivated through the whole squeeze — which is what this
+    // scenario tests.
+    let job_spots: Vec<Vec3<i32>> = (0..15)
+        .map(|i| {
+            Vec3::new(
+                kx - 6 + (i as i32 % 5) * 3,
+                ky + 4 + (i as i32 / 5) * 2,
+                k_gz,
+            )
+        })
         .collect();
     // Straggler-refresh jobs are MOTIVATORS (they exist to give a jobless
     // below-colonist a reason to climb), not completion targets — a refresh
@@ -2627,7 +2640,12 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
     // Per-colonist peak height — the unambiguous "how far did each get"
     // diagnostic (log-grep on wrapped positions proved unreliable).
     let mut peak_z: std::collections::HashMap<u64, f32> = std::collections::HashMap::new();
-    for i in 0..400 {
+    // 600 samples: a JOBLESS straggler (its job stolen, refreshes stolen
+    // too) exits via the idle-rescue chain — confinement 20s + plan + carve
+    // work + climb ≈ 90s per roll, and a bad roll can need two chains. The
+    // crew squeeze itself finishes in ~60s; the window pays for the known
+    // idle-behavior gap (B7 rally) without weakening the 5/5 promise.
+    for i in 0..600 {
         tick(&mut server, 30);
         ck_unreachable_max = ck_unreachable_max.max(server.bastion_job_audit().unreachable);
         for (u, _n, p, _) in server.bastion_colonist_states_full() {
@@ -2769,7 +2787,7 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
         "ck_peaks": peaks,
         "ck_rim_feet": k_gz + 1,
     });
-    let pass = ck_jobs == 5
+    let pass = ck_jobs == 15
         && ck_all_out
         && ck_cleared
         // No PERSISTENT unreachability (the deadlock signature): transient

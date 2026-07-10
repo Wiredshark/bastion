@@ -872,13 +872,13 @@ impl<'a> System<'a> for Sys {
                         // gates bound it, and the step target's body space
                         // is verified clear so it can never snap into
                         // rock. Reads as mounting a rung.
-                        if phys.on_ground.is_some()
-                            && tick.0 % 30 == 0
-                            && terrain
-                                .get(feet + Vec3::unit_z() * 3)
-                                .map(|b| !b.is_solid())
-                                .unwrap_or(true)
-                        {
+                        // head_clear (feet+2) IS the step's safety proof: a
+                        // 1.75-tall body stepped to feet+1 spans feet+1 ..
+                        // feet+2.75 — blocks feet+1 (its current torso ✓)
+                        // and feet+2 (head_clear ✓). An extra feet+3 probe
+                        // blocked pocket exits one block too early (runs
+                        // 32-34 stragglers under half-carved stair cells).
+                        if phys.on_ground.is_some() && tick.0 % 30 == 0 {
                             pos.0.z += 1.0;
                         }
                         colonist.0.skills.climbing.add_xp(CLIMB_XP_RATE * dt.0);
@@ -936,7 +936,40 @@ impl<'a> System<'a> for Sys {
                                 "bastion: magnet eval"
                             );
                         }
-                        if let Some(cc) = climb_col {
+                        // WEDGE ESCAPE (runs C2/C3, Ben's auto-snap class):
+                        // the magnet can deliver a body ONTO the rung
+                        // pillar when the open column lies on the far side
+                        // — the climber then stands wedged between rung
+                        // solids (sprites are Air-KIND, so the hard-terrain
+                        // assert can't even see it) with the rung overhead
+                        // failing head-clear forever. Standing inside the
+                        // pillar footprint → snap to the open climb
+                        // column's floor and restart the climb properly.
+                        let on_pillar = terrain
+                            .get(feet)
+                            .ok()
+                            .and_then(|b| b.get_sprite())
+                            == Some(SpriteKind::Ladder);
+                        if on_pillar && let Some(cc) = climb_col {
+                            let solid_at = |p: Vec3<i32>| {
+                                terrain
+                                    .get(p)
+                                    .map(|b| b.is_solid())
+                                    .unwrap_or(false)
+                            };
+                            let mut sz = cc.z;
+                            while sz > cc.z - 8
+                                && !solid_at(Vec3::new(cc.x, cc.y, sz - 1))
+                            {
+                                sz -= 1;
+                            }
+                            pos.0 = Vec3::new(
+                                cc.x as f32 + 0.5,
+                                cc.y as f32 + 0.5,
+                                sz as f32,
+                            );
+                            vel.0 = Vec3::zero();
+                        } else if let Some(cc) = climb_col {
                             let center =
                                 Vec2::new(cc.x as f32 + 0.5, cc.y as f32 + 0.5);
                             let d = center - pos.0.xy();
@@ -960,19 +993,31 @@ impl<'a> System<'a> for Sys {
                     terrain.get(p).map(|b| b.is_solid()).unwrap_or(false)
                 };
                 if supported && !solid(feet - Vec3::unit_z()) {
-                    let snap = [
-                        Vec2::new(1, 0),
-                        Vec2::new(-1, 0),
-                        Vec2::new(0, 1),
-                        Vec2::new(0, -1),
-                    ]
-                    .into_iter()
-                    .map(|d| Vec3::new(feet.x + d.x, feet.y + d.y, feet.z))
-                    .find(|c| {
-                        !solid(*c)
-                            && !solid(*c + Vec3::unit_z())
-                            && solid(*c - Vec3::unit_z())
-                    });
+                    // Candidates at CURRENT height and ONE UP: the +1 is
+                    // the crest MANTLE (Ben's confirmed live bug + the
+                    // chokepoint run-35 straggler one block short at the
+                    // shaft lip) — the ledge you exit onto stands a block
+                    // ABOVE your hanging feet, so a same-height-only scan
+                    // never sees it.
+                    let snap = [0i32, 1]
+                        .into_iter()
+                        .flat_map(|dz| {
+                            [
+                                Vec2::new(1, 0),
+                                Vec2::new(-1, 0),
+                                Vec2::new(0, 1),
+                                Vec2::new(0, -1),
+                            ]
+                            .into_iter()
+                            .map(move |d| {
+                                Vec3::new(feet.x + d.x, feet.y + d.y, feet.z + dz)
+                            })
+                        })
+                        .find(|c| {
+                            !solid(*c)
+                                && !solid(*c + Vec3::unit_z())
+                                && solid(*c - Vec3::unit_z())
+                        });
                     if let Some(c) = snap {
                         pos.0 = Vec3::new(c.x as f32 + 0.5, c.y as f32 + 0.5, c.z as f32);
                         vel.0 = Vec3::zero();
@@ -1542,7 +1587,15 @@ impl<'a> System<'a> for Sys {
                 continue;
             };
             let churn = board.churn_watch.entry(uid).or_insert((posf, 0));
-            if posf.distance_squared(churn.0) > 9.0 {
+            // Leash 6 (matches the stillness watch, same rationale): a
+            // climber hover-wobbling at a shaft mouth (magnet + falls)
+            // paces 3-5 blocks — the old 3-block leash reset the count
+            // every cycle and the F2 chain never reached its threshold
+            // (runs A1-A3: an unreleasable mid-climb claim + a blind
+            // stillness path + a never-firing churn = 600s of hover). The
+            // egress_scan verdict is the false-positive guard, not the
+            // leash.
+            if posf.distance_squared(churn.0) > 36.0 {
                 *churn = (posf, 1);
                 continue;
             }
