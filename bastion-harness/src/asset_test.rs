@@ -73,6 +73,10 @@ struct AssetResult {
     fidelity_ok: bool,
     marker_checks: Vec<String>,
     blocks_placed: usize,
+    /// Class #16 INFO: literal cells place as BlockKind::Misc (native parity;
+    /// sidecar Filled(kind,…) bands are the upgrade path where material
+    /// behavior matters — mining/burn/sound).
+    misc_blocks: usize,
     sprite_cfgs_dropped: usize,
     entity_spawners_skipped: usize,
     assertions: Vec<Assertion>,
@@ -459,6 +463,7 @@ fn run_one_asset(
             fidelity_ok: true,
             marker_checks: vec![],
             blocks_placed: 0,
+            misc_blocks: 0,
             sprite_cfgs_dropped: 0,
             entity_spawners_skipped: 0,
             assertions: vec![],
@@ -508,6 +513,7 @@ fn run_one_asset(
                 fidelity_ok: false,
                 marker_checks: vec![],
                 blocks_placed: 0,
+                misc_blocks: 0,
                 sprite_cfgs_dropped: 0,
                 entity_spawners_skipped: 0,
                 assertions,
@@ -537,6 +543,47 @@ fn run_one_asset(
         loaded.fidelity_ok,
         format!("{} distinct bytes checked", loaded.checks.len()),
     );
+
+    // Mistake class #17 (emissive/glow): light-intent marker bytes must EMIT
+    // in-engine (`Block::get_glow`), not merely carry a sprite/color.
+    // 136 = lantern (native convention) · 204 = brazier · 217 = glow crystal
+    // · 223 = beacon. Checked against the PLACED terrain (post-tick).
+    if !load_only {
+        use common::vol::ReadVol;
+        const LIGHT_BYTES: [u8; 4] = [136, 204, 217, 223];
+        for byte in LIGHT_BYTES {
+            let Some(cells) = report.marker_cells.get(&byte) else {
+                continue;
+            };
+            if cells.is_empty() {
+                continue;
+            }
+            let terrain = server.state().terrain();
+            let lit = cells
+                .iter()
+                .filter(|c| {
+                    terrain
+                        .get(**c)
+                        .ok()
+                        .and_then(|b| b.get_glow())
+                        .is_some()
+                })
+                .count();
+            // Diagnostic: what actually sits at the first cell (kind + sprite).
+            let probe = cells
+                .first()
+                .and_then(|c| terrain.get(*c).ok().copied())
+                .map(|b| format!("first cell: kind={:?} sprite={:?}", b.kind(), b.get_sprite()))
+                .unwrap_or_default();
+            drop(terrain);
+            push(
+                &mut assertions,
+                &format!("glow-emission-b{byte}"),
+                lit > 0,
+                format!("{lit}/{} light cells emit ({probe})", cells.len()),
+            );
+        }
+    }
 
     if !load_only {
         match entry.category {
@@ -582,6 +629,7 @@ fn run_one_asset(
                         fidelity_ok: loaded.fidelity_ok,
                         marker_checks,
                         blocks_placed: report.blocks_placed,
+                        misc_blocks: report.misc_blocks,
                         sprite_cfgs_dropped: report.sprite_cfgs_dropped,
                         entity_spawners_skipped: report.entity_spawners_skipped,
                         assertions,
@@ -747,6 +795,7 @@ fn run_one_asset(
         fidelity_ok: loaded.fidelity_ok,
         marker_checks,
         blocks_placed: report.blocks_placed,
+        misc_blocks: report.misc_blocks,
         sprite_cfgs_dropped: report.sprite_cfgs_dropped,
         entity_spawners_skipped: report.entity_spawners_skipped,
         assertions,

@@ -509,6 +509,12 @@ pub fn load_asset(entry: &AssetLabEntry, open_variant: bool) -> Result<LoadedAss
 #[derive(Clone, Debug, Default)]
 pub struct PlacementReport {
     pub blocks_placed: usize,
+    /// Blocks placed as `BlockKind::Misc` (literal palette colors — mistake
+    /// class #16 material-semantics INFO: Misc neither mines-as-wood nor
+    /// burns; NATIVE structures behave identically for their literals, so
+    /// this is engine parity, not a defect — but sidecars CAN declare
+    /// `Filled(Wood, …)` bands where material behavior matters).
+    pub misc_blocks: usize,
     /// SpriteCfg-carrying blocks placed WITHOUT their cfg (worldgen stores cfg
     /// in chunk meta; no runtime write path exists — see findings §1d/§7.2).
     pub sprite_cfgs_dropped: usize,
@@ -578,6 +584,9 @@ pub fn place_structure(
                     }
                     if sprite_cfg.is_some() {
                         report.sprite_cfgs_dropped += 1;
+                    }
+                    if block.kind() == common::terrain::BlockKind::Misc {
+                        report.misc_blocks += 1;
                     }
                     state.set_block(wpos, block);
                     report.blocks_placed += 1;
