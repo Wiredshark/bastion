@@ -29,6 +29,7 @@ DEFAULT_STEPS = [
     {'name': 'rig_check', 'cmd': [PY, os.path.join(TOOLS, 'rig_check.py')]},
     {'name': 'anim_lint', 'cmd': [PY, os.path.join(TOOLS, 'anim_lint.py')]},
     {'name': 'adjacency_precheck', 'cmd': [PY, os.path.join(TOOLS, 'adjacency_precheck.py')]},
+    {'name': 'anatomy_check', 'cmd': [PY, os.path.join(TOOLS, 'anatomy_check.py')]},
     {'name': 'connectivity_vs_baseline',
      'cmd': [PY, os.path.join(TOOLS, 'connectivity_check.py')],
      'glob_args': ['asset-lab/vox/real/*.vox', 'asset-lab/vox/components/*.vox'],
