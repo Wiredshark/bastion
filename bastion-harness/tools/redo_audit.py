@@ -51,24 +51,19 @@ if __name__ == '__main__':
               f'counts as MISSING ENTRY until it does.')
     silent = []
     missing_entry = []
-    new_files = []
-    for p in sorted(before) + sorted(
-            set(glob.glob('asset-lab/vox/**/*.vox', recursive=True))
-            - {q.replace('/', os.sep) for q in before} - set(before)):
-        pp = p.replace(os.sep, '/')
+    for pp in sorted(before):
         if not os.path.isfile(pp):
             continue  # deleted/moved files are the manifest's business
         h = hashlib.sha256(open(pp, 'rb').read()).hexdigest()[:16]
-        exempt = any(s in pp for s in EXEMPT_SUBSTRINGS)
-        aid = asset_id(pp)
-        if pp not in before:
-            new_files.append(pp)
+        if any(s in pp for s in EXEMPT_SUBSTRINGS):
             continue
         if h == before[pp]:
-            if not exempt:
-                silent.append(pp)
-        elif aid not in campaign and not exempt:
+            silent.append(pp)
+        elif asset_id(pp) not in campaign:
             missing_entry.append(pp)
+    current = {p.replace(os.sep, '/') for p in
+               glob.glob('asset-lab/vox/**/*.vox', recursive=True)}
+    new_files = sorted(current - set(before))
     print(f'=== SILENT KEEPS (hash unchanged since the tester snapshot, '
           f'not exempt): {len(silent)}')
     for p in silent:
