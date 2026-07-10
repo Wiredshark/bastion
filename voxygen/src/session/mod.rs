@@ -1058,13 +1058,16 @@ impl SessionState {
                         ));
                     }
                 }
-                // Corner posts: floor to top face (subtle walls, v1).
+                // Corner posts: floor to top face (subtle walls, v1),
+                // clamped to the slice; slice below the floor = no posts.
                 let top = slice_z.map_or(max_f.z, |s| max_f.z.min(s + 1.0));
-                for c in corners {
-                    lines.push((
-                        [Vec3::new(c.x, c.y, min_f.z), Vec3::new(c.x, c.y, top)],
-                        0.35,
-                    ));
+                if top > min_f.z {
+                    for c in corners {
+                        lines.push((
+                            [Vec3::new(c.x, c.y, min_f.z), Vec3::new(c.x, c.y, top)],
+                            0.35,
+                        ));
+                    }
                 }
                 for (seg, a) in lines {
                     let id = self
