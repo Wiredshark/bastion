@@ -104,6 +104,14 @@ pub enum ActiveJobState {
     Traveling,
     /// At the site, ready to work (B5 hooks here).
     Arrived,
+    /// bastion (B6, reviewer R3 fix-2): queued at a single-file vertical
+    /// link — another colonist is closer to the staged access anchor, so
+    /// this one WAITS ITS TURN. The watchdog skips Waiting entirely (no
+    /// stall accrual, no unreachable, no strikes, no churn — queue-waiting
+    /// is not stuckness); promotion back to Traveling happens every
+    /// arbitration pass, which re-evaluates the queue order. Emergent
+    /// single-file: nearest climbs, the rest hold.
+    Waiting,
 }
 
 impl Component for ActiveJob {

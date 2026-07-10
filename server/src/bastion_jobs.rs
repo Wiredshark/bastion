@@ -1098,6 +1098,13 @@ impl<'a> System<'a> for Sys {
         // job this tick — the post-loop pass marks them done + disperses
         // below-grade miners.
         let mut done_regions: Vec<Region> = Vec::new();
+        // R3 fix-2 (WAITING): a position snapshot for the queue-order test
+        // (who is closer to a staged anchor) — the upkeep lend_join can't
+        // re-join positions mid-iteration.
+        let queue_snapshot: Vec<Vec3<f32>> = (&colonists, &positions)
+            .join()
+            .map(|(_, p)| p.0)
+            .collect();
         // `Colonist`'s storage is change-tracked (synced comp) — mutable
         // multi-storage joins over it need `LendJoin`, not `Join`.
         let mut upkeep_iter = (
@@ -1226,6 +1233,33 @@ impl<'a> System<'a> for Sys {
                         } else {
                             target
                         };
+                        // R3 fix-2 (WAITING — single-file queue discipline):
+                        // when staged at an anchor and ANOTHER colonist is
+                        // meaningfully closer to it, WAIT — don't shove
+                        // into the funnel, don't run the watchdog on the
+                        // queue time. The colonist actually climbing (in
+                        // or nearly in the column) never yields; promotion
+                        // re-evaluates every arbitration pass.
+                        if steer != target {
+                            let my_d = pos.0.xy().distance(steer.xy());
+                            // Queue-mates only: near MY level (a pad worker
+                            // strolling past the shaft TOP is not ahead of
+                            // me in the climb queue — W1 over-yielded to
+                            // exactly those phantoms and parked the whole
+                            // chamber).
+                            if my_d > 1.2
+                                && queue_snapshot.iter().any(|q| {
+                                    (q.z - pos.0.z).abs() <= 4.0
+                                        && q.xy().distance(steer.xy()) + 0.5 < my_d
+                                })
+                            {
+                                active.state = ActiveJobState::Waiting;
+                                if let Some(agent) = agent {
+                                    agent.rtsim_controller.activity = None;
+                                }
+                                continue;
+                            }
+                        }
                         // Keep the intent asserted (rtsim brain is gated off
                         // while ActiveJob exists, but agents clear activity
                         // on their own in places).
@@ -1309,37 +1343,19 @@ impl<'a> System<'a> for Sys {
                                 // agnostic), so a MIRAGE anchor still ends
                                 // in the humanitarian bubble — no infinite
                                 // loops.
+                                // R3 fix-2 retired the mid-climb keep: the
+                                // WAITING state now owns queue discipline
+                                // (waiters never reach this timeout), and
+                                // the hysteresis makes a REAL climb's net
+                                // progress reset the clock — so a staged
+                                // timeout here is a genuine stall: clean
+                                // release + churn accrual.
                                 if steer != target {
                                     let feet = pos.0.map(|e| e.floor() as i32);
                                     let reach = 2
                                         + colonist.0.skills.climbing.level.min(1)
                                             as i32;
-                                    // MID-CLIMB is not queue-waiting (runs
-                                    // 25-26 tail): a colonist beside the
-                                    // rungs is actively being lifted/
-                                    // magneted — releasing here dropped it
-                                    // mid-slide every cycle and parked it
-                                    // at the shaft mouth forever. Keep the
-                                    // claim, re-arm the window; the churn
-                                    // event still counts, so a truly
-                                    // wedged climber ends in the bubble
-                                    // (the bound — no infinite loops).
-                                    let beside_ladder = (-2..=2).any(|dx| {
-                                        (-2..=2).any(|dy| {
-                                            (0..=1).any(|dz| {
-                                                terrain
-                                                    .get(feet + Vec3::new(dx, dy, dz))
-                                                    .ok()
-                                                    .and_then(|b| b.get_sprite())
-                                                    == Some(SpriteKind::Ladder)
-                                            })
-                                        })
-                                    });
                                     churn_events.push((entity, pos.0, feet, reach));
-                                    if beside_ladder {
-                                        active.stuck_time = 0.0;
-                                        continue;
-                                    }
                                     job.claimed_by = None;
                                     to_release.push(entity);
                                     continue;
@@ -1397,6 +1413,20 @@ impl<'a> System<'a> for Sys {
                                 to_release.push(entity);
                             }
                         }
+                    }
+                },
+                ActiveJobState::Waiting => {
+                    // R3 fix-2: promotion = re-enter Traveling at the
+                    // arbitration cadence; Traveling's staging re-Waits if
+                    // it's still not this colonist's turn. The flip-flop
+                    // IS the queue-order re-check, and the watchdog fields
+                    // reset each promotion so queue time never reads as
+                    // stall.
+                    if tick.0 % ARBITRATION_INTERVAL as u64 == 0 {
+                        active.state = ActiveJobState::Traveling;
+                        active.best_dist = f32::MAX;
+                        active.reset_dist = f32::MAX;
+                        active.stuck_time = 0.0;
                     }
                 },
                 ActiveJobState::Arrived => {
