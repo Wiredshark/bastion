@@ -13,7 +13,7 @@ use common::{
     link::Is,
     mounting::{Rider, VolumeRider},
     outcome::Outcome,
-    resources::{DeltaTime, GameMode, TimeOfDay},
+    resources::{DeltaTime, GameMode, Time, TimeOfDay},
     spiral::Spiral2d,
     states,
     terrain::{CoordinateConversions, SpriteKind, TerrainGrid},
@@ -154,6 +154,9 @@ pub struct PhysicsRead<'a> {
     // bastion (B5.8): for the ladder collision waiver (colonists pass
     // through each other on/near ladder columns).
     colonists: ReadStorage<'a, Colonist>,
+    // bastion (B6 SOFT-0): sim time, to test `Colonist.soft_until` (the
+    // transient soft-collision expiry) in the pair loop.
+    time: Read<'a, Time>,
     masses: ReadStorage<'a, Mass>,
     colliders: ReadStorage<'a, Collider>,
     is_riders: ReadStorage<'a, Is<Rider>>,
@@ -500,6 +503,7 @@ impl PhysicsData<'_> {
                                 // Ladder sprite). Checked only for
                                 // already-near colonist pairs — negligible
                                 // cost.
+                                let mut soft_pair = false;
                                 if read.colonists.contains(entity)
                                     && read.colonists.contains(entity_other)
                                 {
@@ -524,6 +528,24 @@ impl PhysicsData<'_> {
                                     if near_ladder(pos.0) || near_ladder(pos_other.0) {
                                         return;
                                     }
+                                    // bastion (B6 SOFT-0): SOFT-COLLISION —
+                                    // if EITHER colonist is in the transient
+                                    // soft state (server triggers: watchdog
+                                    // grace window / local density), this
+                                    // pair's push is SOFTENED below (scaled,
+                                    // not waived — reads as "squeeze past").
+                                    // Terrain collision untouched; vanilla
+                                    // entities untouched (both parties must
+                                    // be colonists).
+                                    let now = read.time.0;
+                                    soft_pair = read
+                                        .colonists
+                                        .get(entity)
+                                        .is_some_and(|c| c.0.soft_until > now)
+                                        || read
+                                            .colonists
+                                            .get(entity_other)
+                                            .is_some_and(|c| c.0.soft_until > now);
                                 }
 
                                 let z_limits_other =
@@ -543,6 +565,14 @@ impl PhysicsData<'_> {
                                 let step_delta = 1.0 / increments as f32;
 
                                 let mut collision_registered = false;
+
+                                // bastion (B6 SOFT-0): snapshot the
+                                // accumulated push so this PAIR's
+                                // contribution can be scaled down when
+                                // soft (vel_delta spans all pairs; the
+                                // difference across this pair's resolve
+                                // calls is exactly this pair's push).
+                                let vel_delta_before_pair = vel_delta;
 
                                 for i in 0..increments {
                                     let factor = i as f32 * step_delta;
@@ -585,6 +615,19 @@ impl PhysicsData<'_> {
                                             || is_volume_rider.is_some()
                                             || other_is_rider_maybe.is_some(),
                                     );
+                                }
+
+                                // bastion (B6 SOFT-0): the softened push —
+                                // a soft pair keeps ~15% of its mutual
+                                // shove: enough spacing pressure to read as
+                                // a squeeze, small enough to actually slip
+                                // past in a 1-wide chokepoint. NOT a waive
+                                // (that's the ladder special case above).
+                                const SOFT_PUSH_FACTOR: f32 = 0.15;
+                                if soft_pair {
+                                    vel_delta = vel_delta_before_pair
+                                        + (vel_delta - vel_delta_before_pair)
+                                            * SOFT_PUSH_FACTOR;
                                 }
                             },
                         );

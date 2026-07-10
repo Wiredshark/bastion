@@ -766,6 +766,14 @@ pub struct BastionColonist {
     pub backstory: String,
     pub skills: ColonistSkills,
     pub work_priorities: WorkPriorities,
+    /// bastion (B6 SOFT-0): transient SOFT-COLLISION state — while sim
+    /// `Time` < this, the phys colonist↔colonist push is SOFTENED so this
+    /// colonist can squeeze past another in a chokepoint (terrain stays
+    /// hard; see SOFT-COLLISION-design §0). 0.0 = off. Set by the server
+    /// triggers (watchdog grace window / local density); expiry IS the
+    /// hysteresis. serde-default: absent in old rtsim saves → off.
+    #[serde(default)]
+    pub soft_until: f64,
 }
 
 const COLONIST_FIRST_NAMES: &[&str] = &[
@@ -1140,6 +1148,7 @@ impl BastionColonist {
                 },
             },
             work_priorities: WorkPriorities::default(),
+            soft_until: 0.0,
         }
     }
 }

@@ -80,6 +80,13 @@ pub struct ActiveJob {
     /// around an unreachable target moves plenty without progressing.
     pub best_dist: f32,
     pub stuck_time: f32,
+    /// bastion (B6 SOFT-0): this stall already got its soft-collision
+    /// GRACE WINDOW (SOFT-COLLISION-design §0 trigger a). The watchdog
+    /// grants soft-pass ONCE per assignment before degrading to the
+    /// carve/unreachable pipeline — most chokepoint deadlocks clear in
+    /// the grace; a still-stuck soft colonist is genuinely blocked.
+    #[serde(default)]
+    pub soft_granted: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

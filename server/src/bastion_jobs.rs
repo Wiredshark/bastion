@@ -52,6 +52,15 @@ use vek::*;
 /// 2s). The designer's TOOLS-UPGRADE system later makes dig speed
 /// tool-gated on top of this base.
 const WORK_DURATION_BASE: f32 = 6.0;
+/// bastion (B6 SOFT-0): how long a granted soft-collision pass lasts (the
+/// watchdog grace window and the density relief both use it). Long enough
+/// to physically squeeze past a blocker at walk speed; short enough that
+/// spacing normalizes right after (expiry IS the hysteresis).
+const SOFT_GRACE_SECS: f64 = 3.0;
+/// bastion (B6 SOFT-0, trigger b): this many OTHER colonists within the
+/// density radius = a chokepoint pile-up → soft relief before deadlock.
+const SOFT_DENSITY_N: usize = 2;
+const SOFT_DENSITY_R: f32 = 2.0;
 /// Work-rate skill bonus: +20% speed per skill level.
 const WORK_SKILL_BONUS: f32 = 0.2;
 /// Flat completion XP grant (design doc: "grant skill XP on completion").
@@ -652,6 +661,7 @@ impl<'a> System<'a> for Sys {
         Entities<'a>,
         Read<'a, Tick>,
         Read<'a, DeltaTime>,
+        Read<'a, common::resources::Time>,
         Read<'a, IdMaps>,
         ReadExpect<'a, ProgramTime>,
         Write<'a, JobBoard>,
@@ -681,6 +691,7 @@ impl<'a> System<'a> for Sys {
             entities,
             tick,
             dt,
+            time,
             id_maps,
             program_time,
             mut board,
@@ -972,6 +983,21 @@ impl<'a> System<'a> for Sys {
                         } else {
                             active.stuck_time += dt.0;
                             if active.stuck_time > STUCK_TIMEOUT {
+                                // B6 SOFT-0 (trigger a — the GRACE WINDOW):
+                                // before degrading to carve/unreachable,
+                                // one soft-collision pass per assignment —
+                                // most chokepoint stalls are two colonists
+                                // mutually blocking; softened they squeeze
+                                // past and progress resumes. Only a STILL-
+                                // stuck soft colonist falls through to the
+                                // release pipeline (genuinely blocked).
+                                if !active.soft_granted {
+                                    active.soft_granted = true;
+                                    active.stuck_time = 0.0;
+                                    colonist.0.soft_until =
+                                        time.0 + SOFT_GRACE_SECS;
+                                    continue;
+                                }
                                 job.claimed_by = None;
                                 // B5.8-E: strike — grows the remote-work
                                 // arrival tolerance (see the arrive calc).
@@ -1315,6 +1341,41 @@ impl<'a> System<'a> for Sys {
                         "bastion: auto-access refused (no in-claim route) — job unreachable"
                     );
                 },
+            }
+        }
+
+        // ── B6 SOFT-0 (trigger b): CLUSTERING RELIEF ────────────────────
+        // A chokepoint IS high local density: > N other colonists within a
+        // small radius → soft-collision before the pile-up deadlocks.
+        // O(n²) over loaded colonists (colonies are small); ~1s cadence.
+        if tick.0 % 30 == 11 {
+            let snapshot: Vec<Vec3<f32>> = (&colonists, &positions)
+                .join()
+                .map(|(_, p)| p.0)
+                .collect();
+            let mut dense_iter = (&mut colonists, &positions).lend_join();
+            while let Some((mut colonist, pos)) = dense_iter.next() {
+                let nearby = snapshot
+                    .iter()
+                    .filter(|p| {
+                        let d = **p - pos.0;
+                        // Excludes self (distance 0 counts once — subtract
+                        // below).
+                        d.xy().magnitude_squared()
+                            < SOFT_DENSITY_R * SOFT_DENSITY_R
+                            && d.z.abs() < 2.0
+                    })
+                    .count()
+                    .saturating_sub(1); // self
+                // Skip the write when already soft well past the next
+                // pass — `Colonist` is change-tracked/synced, and a
+                // no-op refresh every second would re-sync the comp.
+                // (The read goes through Deref, not DerefMut — unflagged.)
+                if nearby >= SOFT_DENSITY_N
+                    && colonist.0.soft_until < time.0 + 1.5
+                {
+                    colonist.0.soft_until = time.0 + SOFT_GRACE_SECS;
+                }
             }
         }
 
@@ -1715,6 +1776,7 @@ impl<'a> System<'a> for Sys {
                 state: ActiveJobState::Traveling,
                 best_dist: f32::MAX,
                 stuck_time: 0.0,
+                soft_granted: false,
             });
         }
     }
