@@ -1031,12 +1031,17 @@ impl<'a> System<'a> for Sys {
                         // Keep the intent asserted (rtsim brain is gated off
                         // while ActiveJob exists, but agents clear activity
                         // on their own in places).
-                        if steer != target && tick.0 % 100 == 0 {
+                        if tick.0 % 100 == 0 {
+                            // Unconditional eval log (B6 SOFT-0 debug): the
+                            // steer != target gate hid the empty-anchors
+                            // case for 6 straight scenario iterations.
                             info!(
                                 job = active.job,
+                                anchors = board.access_anchors.len(),
+                                staged = steer != target,
                                 ?steer,
                                 colonist = ?pos.0,
-                                "bastion: staged routing via access anchor"
+                                "bastion: staged routing eval"
                             );
                         }
                         if let Some(agent) = agent {
@@ -1057,17 +1062,11 @@ impl<'a> System<'a> for Sys {
                             active.best_dist = sdist;
                             active.stuck_time = 0.0;
                         } else {
-                            // B6 SOFT-0 QUEUE PATIENCE: while staged
-                            // routing is active (steer != target — walking
-                            // to or climbing an access anchor), the
-                            // colonist may be WAITING ITS TURN at a
-                            // single-file vertical link, which is not a
-                            // deadlock (run-7: the queue's tail bounced
-                            // unreachable while the head climbed). Stall
-                            // time accrues at 1/5 rate there — a genuine
-                            // blockage still times out, 5× later.
-                            active.stuck_time +=
-                                dt.0 * if steer != target { 0.2 } else { 1.0 };
+                            // (B6 SOFT-0 run-8/9 bisect: the ×0.2 staged
+                            // queue-patience factor is REMOVED while the
+                            // dead-Traveling-arm mystery is isolated —
+                            // plain accrual, the run-7 configuration.)
+                            active.stuck_time += dt.0;
                             if active.stuck_time > STUCK_TIMEOUT {
                                 // B6 SOFT-0 (trigger a — the GRACE WINDOW):
                                 // before degrading to carve/unreachable,
