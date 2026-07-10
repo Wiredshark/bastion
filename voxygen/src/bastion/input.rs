@@ -83,6 +83,11 @@ pub const OVERSEER_SCHEME: ContextScheme = ContextScheme {
         GameInput::BastionCycleTool,
         GameInput::BastionToggleGodMode,
         GameInput::BastionCycleVisuals,
+        // TIME-CONTROLS: sim-speed hotkeys. Space is free here BECAUSE Jump
+        // is suppressed below — the context system carrying its weight.
+        GameInput::BastionPauseToggle,
+        GameInput::BastionSpeedUp,
+        GameInput::BastionSpeedDown,
     ],
     suppressed: &[
         GameInput::Block,
@@ -155,6 +160,11 @@ pub const AVATAR_SCHEME: ContextScheme = ContextScheme {
         GameInput::BastionCycleTool,
         GameInput::BastionToggleGodMode,
         GameInput::BastionCycleVisuals,
+        // TIME-CONTROLS: Space must be pure Jump when embodied; +/− return
+        // to the map keys.
+        GameInput::BastionPauseToggle,
+        GameInput::BastionSpeedUp,
+        GameInput::BastionSpeedDown,
     ],
 };
 

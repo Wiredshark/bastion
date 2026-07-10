@@ -104,6 +104,13 @@ pub struct BastionHudState {
     /// bastion (B5.6b-2.1): flat-floor mode active (mirrored; drives the
     /// stepper's mode-toggle button state).
     pub flat_floor: bool,
+    /// bastion (TIME-CONTROLS): sim paused (mirrored each frame from the
+    /// singleplayer pause state — the TRUTH, not a local echo, so a pause
+    /// from any path lights the button).
+    pub sim_paused: bool,
+    /// bastion (TIME-CONTROLS): current `TimeScale` (mirrored from the
+    /// synced resource — `/time_scale` typed in chat moves the buttons too).
+    pub sim_scale: f32,
 }
 
 /// How many actions the pie shows before overflowing into "More…".
