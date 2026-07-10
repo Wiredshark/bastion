@@ -531,3 +531,21 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   script edit slipped mid-block (BOM+churn) — caught same-minute via the
   standing byte-check, reverted, redone with the Edit tool. NEXT per
   FLEET_STATUS: B5.6b-3 — self-advancing after the tag ping.
+
+### B5.6b-2.1 — ABSOLUTE-FLOOR flat mine mode (zone-UX wave, Ben's b-2 QA)
+
+- Start SHA: `6c17845e92` (= `bastion-block-B5.8`) · branch
+  `bastion/block-B5.6b-2.1` · started 2026-07-10 under SELF-ADVANCE
+  (FLEET_STATUS BUILD LANE: "quick zone-UX fixes fold in first"; a
+  routing question is pending with the architect on whether the GOD-HAND
+  showpiece preempts — this block is small, a redirect loses nothing).
+  Spec: the backlog entry from Ben's b-2 live test — a second Mine depth
+  mode: "flat floor at level Z" (every column digs from its own surface
+  down to ONE shared absolute z → flat, square pit bottoms for quarries/
+  foundations/plazas; identical to relative on flat ground). Plan: extend
+  the z_extent model with an absolute-floor variant, job-gen digs each
+  column to `floor_z`, UX = mode toggle on the b-2 depth stepper (+
+  scroll) with the committed volume rings already absolute-z (viz aligns
+  as-is). Gate: harness assertion (staircase terrain → flat bottom at
+  the target z, all columns; relative mode unchanged) + Ben's eyeball
+  batched.
