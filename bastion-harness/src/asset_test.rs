@@ -122,23 +122,26 @@ pub fn run(cfg: &AssetTestConfig) -> std::process::ExitCode {
             .entries
             .iter()
             .filter(|e| {
-                // `all` = base-state, world-layer REAL candidates. Excluded
-                // (still runnable by explicit id): creatures (later rung),
-                // test_* fixtures (deliberate-FAIL demos), pose-state files
-                // and grand compositions (closed gates/sprung traps rightly
-                // fail reach — pose MATRICES pair with the operable-state
-                // block; see the log header contract), and non-placeable
-                // sheets/concepts.
-                let id = e.id.as_str();
-                !matches!(
-                    e.category,
-                    AssetCategory::Creature | AssetCategory::TestFixture
-                ) && !id.starts_with("castle_")
-                    && !id.starts_with("monastery_")
-                    && !id.starts_with("godspire_")
-                    && !id.starts_with("temple_concept_")
-                    && !id.starts_with("vb2_")
-                    && !id.starts_with("material_")
+                if !e.category_raw.is_empty() {
+                    // Contract v2 (catalog.json): the pilot curates the REAL
+                    // list — run everything it declares.
+                    true
+                } else {
+                    // Legacy scan: base-state world-layer candidates only.
+                    // Excluded (still runnable by explicit id): creatures,
+                    // test_* fixtures (deliberate-FAIL demos), pose-state
+                    // files and grand compositions, non-placeable sheets.
+                    let id = e.id.as_str();
+                    !matches!(
+                        e.category,
+                        AssetCategory::Creature | AssetCategory::TestFixture
+                    ) && !id.starts_with("castle_")
+                        && !id.starts_with("monastery_")
+                        && !id.starts_with("godspire_")
+                        && !id.starts_with("temple_concept_")
+                        && !id.starts_with("vb2_")
+                        && !id.starts_with("material_")
+                }
             })
             .cloned()
             .collect()
@@ -464,12 +467,26 @@ fn run_one_asset(
     }
 
     // Props/items are figure-layer (11 vox/block); Other = sheets/concepts —
-    // both load+fidelity only.
+    // both load+fidelity only. When the catalog declares a cast for a
+    // figure-scale prop, the dynamic half is DEFERRED until the pilot ships a
+    // world-scale (1 vox = 1 block) version or the sprite-manifest rung lands
+    // — flagged in the mode string so the pilot sees the scale question.
     let load_only = matches!(
         entry.category,
         AssetCategory::Prop | AssetCategory::Item | AssetCategory::Other
     );
-    let mode = if load_only { "load-only" } else { "isolated-dynamic" };
+    let cast_target = entry.cast.as_ref().map(|c| c.target.clone()).unwrap_or_default();
+    let mode_string = if load_only && !cast_target.is_empty() {
+        format!(
+            "load-only (figure-scale dims {:?}; declared cast '{cast_target}' deferred — world-scale version or sprite-manifest rung needed)",
+            entry.dims.map(|d| (d.x, d.y, d.z))
+        )
+    } else if load_only {
+        "load-only".to_string()
+    } else {
+        "isolated-dynamic".to_string()
+    };
+    let mode = mode_string.as_str();
 
     // Fresh arena per asset; load-only assets never touch the world.
     let placed: Result<(LoadedAsset, PlacementReport), String> = if load_only {
@@ -524,6 +541,53 @@ fn run_one_asset(
     if !load_only {
         match entry.category {
             AssetCategory::Structure | AssetCategory::TestFixture | AssetCategory::Other => {
+                // Cast target "work-marker": the interior function point IS
+                // the authored work cell (workshops: the RON-declared
+                // crafting-station marker, e.g. mason byte 211) — reach THAT,
+                // not merely a geometric interior (spec: "reaches the
+                // designated work/sleep cell, not merely the threshold").
+                if cast_target == "work-marker" {
+                    let work_cell = entry
+                        .authored_markers
+                        .iter()
+                        .filter(|(b, cells)| **b >= 200 && !cells.is_empty())
+                        .min_by_key(|(b, _)| **b)
+                        .and_then(|(b, _)| report.marker_cells.get(b))
+                        .and_then(|cells| cells.first().copied());
+                    match work_cell {
+                        Some(cell) => {
+                            let target =
+                                cell.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+                            let leg =
+                                goto_and_wait(server, dt, &names[0], target, ARRIVAL_BUDGET_S);
+                            push(&mut assertions, "reach-work-marker", leg.arrived(), leg.describe());
+                            if leg.arrived() {
+                                let out =
+                                    goto_and_wait(server, dt, &names[0], staging, ARRIVAL_BUDGET_S);
+                                push(&mut assertions, "egress", out.arrived(), out.describe());
+                            }
+                        },
+                        None => push(
+                            &mut assertions,
+                            "reach-work-marker",
+                            false,
+                            "cast declares work-marker but no ≥200 marker cells placed".into(),
+                        ),
+                    }
+                    let pass = assertions.iter().all(|a| a.pass);
+                    return AssetResult {
+                        id: entry.id.clone(),
+                        category: format!("{:?}", entry.category),
+                        mode: mode.into(),
+                        fidelity_ok: loaded.fidelity_ok,
+                        marker_checks,
+                        blocks_placed: report.blocks_placed,
+                        sprite_cfgs_dropped: report.sprite_cfgs_dropped,
+                        entity_spawners_skipped: report.entity_spawners_skipped,
+                        assertions,
+                        pass,
+                    };
+                }
                 // Interior function point (geometric).
                 match interior_target(server, &report, pad_z) {
                     Some(interior) => {
@@ -758,7 +822,14 @@ fn run_integrated_spot_check(
 /// Append machine-readable results to `readme/ASSET_INTEGRATION_LOG.md`
 /// (created with the format-contract header on first run; append-only after).
 fn append_integration_log(results: &[AssetResult], cfg: &AssetTestConfig) {
-    let log_path = PathBuf::from("readme/ASSET_INTEGRATION_LOG.md");
+    // The log lives NEXT TO the asset-lab workspace (the pilot reads it
+    // there), independent of the harness CWD — vital when running from an
+    // isolated worktree against the primary tree's asset-lab.
+    let log_path = cfg
+        .asset_lab_dir
+        .parent()
+        .map(|p| p.join("readme").join("ASSET_INTEGRATION_LOG.md"))
+        .unwrap_or_else(|| PathBuf::from("readme/ASSET_INTEGRATION_LOG.md"));
     let mut body = String::new();
     if !log_path.exists() {
         body.push_str(

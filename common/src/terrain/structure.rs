@@ -7,7 +7,7 @@ use crate::{
 };
 use common_i18n::Content;
 use dot_vox::DotVoxData;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use serde::Deserialize;
 use std::{num::NonZeroU8, sync::Arc};
 use vek::*;
@@ -79,15 +79,24 @@ pub enum StructureError {
 /// (ASSET_LESSONS L3: 1–16 world semantics, 32–199 literals, 200–255 markers).
 pub const BASTION_MARKER_BAND_START: u8 = 200;
 
+/// bastion (B-ASSET1): cells captured per byte before truncation. Marker-ish
+/// bytes number a handful of cells; literal bytes number thousands — the cap
+/// keeps the census small while exact-cell fidelity still covers every real
+/// marker (a byte that overflows the cap is flagged truncated and checked by
+/// count only).
+pub const BASTION_CENSUS_CELL_CAP: usize = 128;
+
 /// bastion (B-ASSET1): raw byte census of a loaded vox — what the
 /// marker-fidelity gate keys off. All positions are structure space.
 #[derive(Clone, Debug, Default)]
 pub struct BastionVoxCensus {
     /// byte (engine-slot convention) → (one sample position, voxel count).
     pub by_byte: HashMap<u8, (Vec3<i32>, usize)>,
-    /// Full cell lists for the gameplay-marker band (bytes ≥ 200) — these are
-    /// the function-point candidates for dynamic tests.
+    /// Cell lists per byte (ALL bytes, capped at [`BASTION_CENSUS_CELL_CAP`])
+    /// — function-point candidates + the exact-cell fidelity input.
     pub marker_cells: HashMap<u8, Vec<Vec3<i32>>>,
+    /// Bytes whose cell list overflowed the cap (count checks only).
+    pub cells_truncated: HashSet<u8>,
 }
 
 #[derive(Clone, Debug)]
@@ -196,8 +205,11 @@ impl Structure {
                 let pos = Vec3::new(voxel.x, voxel.y, voxel.z).map(i32::from) - center;
                 let entry = census.by_byte.entry(byte).or_insert((pos, 0));
                 entry.1 += 1;
-                if byte >= BASTION_MARKER_BAND_START {
-                    census.marker_cells.entry(byte).or_default().push(pos);
+                let cells = census.marker_cells.entry(byte).or_default();
+                if cells.len() < BASTION_CENSUS_CELL_CAP {
+                    cells.push(pos);
+                } else {
+                    census.cells_truncated.insert(byte);
                 }
             }
         }

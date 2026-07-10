@@ -84,12 +84,77 @@ impl AssetCategory {
     }
 }
 
-/// One scannable asset-lab entry (a flattened `.vox` in `<root>/vox/`).
+/// The test cast declared per asset in catalog.json (drives scenario
+/// derivation — ASSET_DYNAMIC_TEST_SPEC's per-category minimal cast).
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct CastSpec {
+    #[serde(default)]
+    pub colonists: u8,
+    #[serde(default)]
+    pub hostiles: u8,
+    pub target: String,
+}
+
+/// One scannable asset-lab entry. From `vox/real/catalog.json` when present
+/// (the pilot's machine-readable contract: category + cast + authored marker
+/// cells + optional `<id>.ron` custom_indices sidecar); legacy `vox/*.vox`
+/// prefix-inference otherwise.
 #[derive(Clone, Debug)]
 pub struct AssetLabEntry {
     pub id: String,
     pub vox_path: PathBuf,
     pub category: AssetCategory,
+    /// Raw catalog category string ("housing"/"production"/…); empty on the
+    /// legacy path.
+    pub category_raw: String,
+    pub cast: Option<CastSpec>,
+    /// Model dims from the catalog (scale sanity: world-layer is 1 vox = 1
+    /// block; figure-layer props are 11 vox/block).
+    pub dims: Option<Vec3<i32>>,
+    /// Authored marker cells (MODEL space, from catalog.json) — the exact-cell
+    /// fidelity input.
+    pub authored_markers: HashMap<u8, Vec<Vec3<i32>>>,
+    /// Parsed `<id>.ron` custom_indices sidecar (overrides the built-in
+    /// registry where present).
+    pub ron_indices: HashMap<u8, StructureBlock>,
+    /// A sidecar existed but failed to parse — reported as a fidelity finding
+    /// (the pilot fixes the RON; loading falls back to the registry).
+    pub ron_error: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct CatalogFile {
+    assets: HashMap<String, CatalogAsset>,
+}
+
+#[derive(serde::Deserialize)]
+struct CatalogAsset {
+    vox: String,
+    category: String,
+    #[serde(default)]
+    dims: Option<[i32; 3]>,
+    #[serde(default)]
+    cast: Option<CastSpec>,
+    #[serde(default)]
+    markers: Option<HashMap<String, Vec<[i32; 3]>>>,
+}
+
+#[derive(serde::Deserialize)]
+struct RonSidecar {
+    custom_indices: HashMap<u8, StructureBlock>,
+}
+
+fn category_from_str(s: &str) -> AssetCategory {
+    match s {
+        "defense" => AssetCategory::Defense,
+        "flora" => AssetCategory::Flora,
+        "prop" => AssetCategory::Prop,
+        "item" => AssetCategory::Item,
+        "housing" | "production" | "social" | "storage" | "dungeon-room" => {
+            AssetCategory::Structure
+        },
+        _ => AssetCategory::Other,
+    }
 }
 
 /// The scanned asset-lab catalog. Missing directories yield an empty catalog
@@ -102,26 +167,103 @@ pub struct AssetLabCatalog {
 
 impl AssetLabCatalog {
     pub fn scan(root: &Path) -> Self {
-        let vox_dir = root.join("vox");
+        let catalog_path = root.join("vox").join("real").join("catalog.json");
         let mut entries = Vec::new();
-        match std::fs::read_dir(&vox_dir) {
-            Ok(dir) => {
-                for e in dir.flatten() {
-                    let path = e.path();
-                    if path.extension().is_some_and(|x| x == "vox")
-                        && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-                    {
+        if catalog_path.is_file() {
+            match std::fs::read_to_string(&catalog_path)
+                .map_err(|e| e.to_string())
+                .and_then(|s| serde_json::from_str::<CatalogFile>(&s).map_err(|e| e.to_string()))
+            {
+                Ok(cat) => {
+                    for (id, a) in cat.assets {
+                        // Catalog vox paths are repo-root-relative
+                        // ("asset-lab/vox/real/x.vox") — resolve against the
+                        // asset-lab root by stripping its leading component.
+                        let rel = a.vox.strip_prefix("asset-lab/").unwrap_or(&a.vox);
+                        let vox_path = root.join(rel);
+                        let ron_path = vox_path.with_extension("ron");
+                        let (ron_indices, ron_error) = if ron_path.is_file() {
+                            match std::fs::read_to_string(&ron_path)
+                                .map_err(|e| e.to_string())
+                                .and_then(|s| {
+                                    ron::from_str::<RonSidecar>(&s).map_err(|e| e.to_string())
+                                }) {
+                                Ok(sc) => (sc.custom_indices, None),
+                                Err(e) => {
+                                    warn!(id, e, "bastion asset sidecar RON parse failed");
+                                    (HashMap::default(), Some(e))
+                                },
+                            }
+                        } else {
+                            (HashMap::default(), None)
+                        };
+                        let authored_markers = a
+                            .markers
+                            .unwrap_or_default()
+                            .into_iter()
+                            .filter_map(|(k, cells)| {
+                                let byte: u8 = k.parse().ok()?;
+                                Some((
+                                    byte,
+                                    cells
+                                        .into_iter()
+                                        .map(|c| Vec3::new(c[0], c[1], c[2]))
+                                        .collect(),
+                                ))
+                            })
+                            .collect();
                         entries.push(AssetLabEntry {
-                            id: stem.to_string(),
-                            category: AssetCategory::infer(stem),
-                            vox_path: path,
+                            category: category_from_str(&a.category),
+                            category_raw: a.category,
+                            cast: a.cast,
+                            dims: a.dims.map(|d| Vec3::new(d[0], d[1], d[2])),
+                            authored_markers,
+                            ron_indices,
+                            ron_error,
+                            id,
+                            vox_path,
                         });
                     }
-                }
-                entries.sort_by(|a, b| a.id.cmp(&b.id));
-                info!(count = entries.len(), ?vox_dir, "bastion asset-lab catalog scanned");
-            },
-            Err(e) => warn!(?vox_dir, ?e, "bastion asset-lab root not readable — empty catalog"),
+                    entries.sort_by(|a, b| a.id.cmp(&b.id));
+                    info!(
+                        count = entries.len(),
+                        ?catalog_path,
+                        "bastion asset-lab catalog loaded (contract v2)"
+                    );
+                },
+                Err(e) => warn!(?catalog_path, e, "catalog.json unreadable — falling back"),
+            }
+        }
+        if entries.is_empty() {
+            // Legacy path: flattened .vox directly under vox/, prefix-inferred.
+            let vox_dir = root.join("vox");
+            match std::fs::read_dir(&vox_dir) {
+                Ok(dir) => {
+                    for e in dir.flatten() {
+                        let path = e.path();
+                        if path.extension().is_some_and(|x| x == "vox")
+                            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                        {
+                            entries.push(AssetLabEntry {
+                                id: stem.to_string(),
+                                category: AssetCategory::infer(stem),
+                                category_raw: String::new(),
+                                cast: None,
+                                dims: None,
+                                authored_markers: HashMap::default(),
+                                ron_indices: HashMap::default(),
+                                ron_error: None,
+                                vox_path: path,
+                            });
+                        }
+                    }
+                    entries.sort_by(|a, b| a.id.cmp(&b.id));
+                    info!(count = entries.len(), ?vox_dir, "bastion asset-lab catalog scanned (legacy)");
+                },
+                Err(e) => {
+                    warn!(?vox_dir, ?e, "bastion asset-lab root not readable — empty catalog")
+                },
+            }
         }
         Self { root: root.to_path_buf(), entries }
     }
@@ -192,26 +334,50 @@ fn sb_name(sb: &StructureBlock) -> String {
 pub fn load_asset(entry: &AssetLabEntry, open_variant: bool) -> Result<LoadedAsset, String> {
     let bytes = std::fs::read(&entry.vox_path)
         .map_err(|e| format!("read {}: {e}", entry.vox_path.display()))?;
-    let registry = marker_registry(open_variant);
+
+    // Effective custom-index table: built-in registry ← per-asset RON sidecar
+    // (sidecar wins), then the open-variant pose override on the gate byte.
+    let mut custom = marker_registry(open_variant);
+    for (b, sb) in entry.ron_indices.iter() {
+        custom.insert(*b, sb.clone());
+    }
+    if open_variant {
+        custom.insert(200, StructureBlock::Hollow);
+    }
 
     // Center: None → footprint center at z=0 (ground-contact plane — the
     // asset-lab placement-anchor convention), computed common-side.
-    let (structure, census) = Structure::bastion_from_vox_bytes(&bytes, None, &registry)?;
+    let (structure, census) = Structure::bastion_from_vox_bytes(&bytes, None, &custom)?;
 
     // Marker fidelity: every world-band byte and every marker-band byte
     // present in the file must resolve to the intended StructureBlock through
     // the REAL lookup (guards the index-shift/welded-gate class).
     let mut checks = Vec::new();
     let mut fidelity_ok = true;
+
+    // A sidecar that exists but does not parse is itself a fidelity finding
+    // (the pilot fixes the RON; loading proceeded on the registry).
+    if let Some(e) = &entry.ron_error {
+        checks.push(MarkerCheck {
+            byte: 0,
+            count: 0,
+            expected: "parseable .ron custom_indices sidecar".into(),
+            resolved: format!("PARSE ERROR: {e}"),
+            ok: false,
+        });
+        fidelity_ok = false;
+    }
+
     for (&byte, &(sample, count)) in census.by_byte.iter() {
         let expected = if byte >= BASTION_MARKER_BAND_START {
-            match registry.get(&byte) {
+            match custom.get(&byte) {
                 Some(sb) => sb_name(sb),
                 None => {
                     checks.push(MarkerCheck {
                         byte,
                         count,
-                        expected: "UNKNOWN-MARKER (declare in marker_registry)".into(),
+                        expected: "UNKNOWN-MARKER (declare in sidecar .ron or marker_registry)"
+                            .into(),
                         resolved: sb_name(structure.get(sample).unwrap_or(&StructureBlock::None)),
                         ok: false,
                     });
@@ -222,22 +388,28 @@ pub fn load_asset(entry: &AssetLabEntry, open_variant: bool) -> Result<LoadedAss
         } else if (1..=16).contains(&byte) {
             // World-reserved band: defaults from default_custom_indices();
             // bytes 3/13 are unmapped there and fall through to literals.
-            match byte {
-                3 | 13 => continue,
+            // A sidecar may override world-band bytes too (e.g. 8 → carve).
+            match (byte, entry.ron_indices.get(&byte)) {
+                (_, Some(sb)) => sb_name(sb),
+                (3 | 13, None) => continue,
                 _ => String::new(), // resolved-variant check below via registry-less compare
             }
+        } else if let Some(sb) = entry.ron_indices.get(&byte) {
+            // Sidecar-declared literal-band byte (e.g. quarry hall 136 →
+            // Sprite(Lantern)) — assert like a marker.
+            sb_name(sb)
         } else {
             continue; // literal band — no semantic intent to assert
         };
 
         let resolved = structure.get(sample).unwrap_or(&StructureBlock::None);
         let resolved_name = sb_name(resolved);
-        let ok = if byte >= BASTION_MARKER_BAND_START {
-            resolved_name == expected
-        } else {
+        let ok = if expected.is_empty() {
             // World band: the intent is "not a literal" — a Filled(Misc, …)
             // here means the default mapping did not apply (index shift).
             !matches!(resolved, StructureBlock::Filled(kind, _) if *kind == common::terrain::BlockKind::Misc)
+        } else {
+            resolved_name == expected
         };
         fidelity_ok &= ok;
         checks.push(MarkerCheck {
@@ -247,6 +419,53 @@ pub fn load_asset(entry: &AssetLabEntry, open_variant: bool) -> Result<LoadedAss
             resolved: resolved_name,
             ok,
         });
+    }
+
+    // Exact-cell fidelity: authored marker cells (catalog.json, MODEL space)
+    // must match the census cells (structure space = model − center) — the
+    // full welded-gate guard: not just "the byte resolves right" but "every
+    // authored cell is where the author put it".
+    if !entry.authored_markers.is_empty() {
+        let center = -structure.get_bounds().min; // model→structure offset
+        for (byte, authored) in entry.authored_markers.iter() {
+            if census.cells_truncated.contains(byte) {
+                // Too many cells to compare exactly — count check only.
+                let count = census.by_byte.get(byte).map_or(0, |&(_, c)| c);
+                let ok = count == authored.len();
+                fidelity_ok &= ok;
+                checks.push(MarkerCheck {
+                    byte: *byte,
+                    count,
+                    expected: format!("{} authored cells (count-only; truncated)", authored.len()),
+                    resolved: format!("{count} cells"),
+                    ok,
+                });
+                continue;
+            }
+            let mut want: Vec<Vec3<i32>> = authored.iter().map(|c| *c - center).collect();
+            let mut have: Vec<Vec3<i32>> =
+                census.marker_cells.get(byte).cloned().unwrap_or_default();
+            want.sort_by_key(|v| (v.z, v.y, v.x));
+            have.sort_by_key(|v| (v.z, v.y, v.x));
+            let ok = want == have;
+            fidelity_ok &= ok;
+            checks.push(MarkerCheck {
+                byte: *byte,
+                count: have.len(),
+                expected: format!("{} authored cells (exact)", want.len()),
+                resolved: if ok {
+                    "all cells match".into()
+                } else {
+                    format!(
+                        "{} cells present, {} missing, {} unexpected",
+                        have.len(),
+                        want.iter().filter(|c| !have.contains(c)).count(),
+                        have.iter().filter(|c| !want.contains(c)).count()
+                    )
+                },
+                ok,
+            });
+        }
     }
     checks.sort_by_key(|c| c.byte);
 
