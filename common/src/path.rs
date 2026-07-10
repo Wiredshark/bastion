@@ -1448,6 +1448,174 @@ where
     (Some(path.into_iter().collect()), connect)
 }
 
+// bastion (B5.8): graph-level tests for the vertical-mobility edges — a
+// mock volume pins `find_path` behavior in milliseconds instead of full sim
+// runs (the b58 scenario iterations that motivated these took ~8 min each).
+#[cfg(test)]
+mod bastion_vertical_tests {
+    use super::*;
+    use crate::terrain::{BlockKind, SpriteKind};
+    use hashbrown::HashMap as StdHashMap;
+    use vek::Rgb;
+
+    struct MockVol {
+        blocks: StdHashMap<Vec3<i32>, Block>,
+        air: Block,
+    }
+
+    impl BaseVol for MockVol {
+        type Error = ();
+        type Vox = Block;
+    }
+
+    impl ReadVol for MockVol {
+        fn get(&self, pos: Vec3<i32>) -> Result<&Block, ()> {
+            Ok(self.blocks.get(&pos).unwrap_or(&self.air))
+        }
+    }
+
+    /// Flat ground (solid z ≤ 0), a 4-high wall+plateau for x ≥ 10, and —
+    /// optionally — a ladder column against the wall face at (9, 0) with
+    /// rungs z 1..=5 (one above the ledge, per the dismount rule). Mirrors
+    /// the b58 part-(c) geometry.
+    fn wall_world(with_ladder: bool) -> MockVol {
+        let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+        let mut blocks = StdHashMap::new();
+        for x in -2..=20 {
+            for y in -6..=6 {
+                blocks.insert(Vec3::new(x, y, 0), rock);
+            }
+        }
+        for x in 10..=20 {
+            for y in -6..=6 {
+                for z in 1..=4 {
+                    blocks.insert(Vec3::new(x, y, z), rock);
+                }
+            }
+        }
+        if with_ladder {
+            for z in 1..=5 {
+                blocks.insert(Vec3::new(9, 0, z), Block::air(SpriteKind::Ladder));
+            }
+        }
+        MockVol {
+            blocks,
+            air: Block::empty(),
+        }
+    }
+
+    fn worker_cfg() -> TraversalConfig {
+        TraversalConfig {
+            node_tolerance: 1.5,
+            slow_factor: 0.0,
+            on_ground: true,
+            in_liquid: false,
+            min_tgt_dist: 1.0,
+            can_climb: true,
+            scramble_reach: 3,
+            can_fly: false,
+            vectored_propulsion: false,
+            is_target_loaded: true,
+        }
+    }
+
+    /// Poll to completion — `find_path` yields `Pending` every ~400
+    /// iterations (the Chaser normally resumes it across ticks).
+    fn route_to(
+        vol: &MockVol,
+        cfg: &TraversalConfig,
+        end: Vec3<f32>,
+    ) -> PathResult<Vec3<i32>> {
+        let mut astar = None;
+        for _ in 0..64 {
+            match find_path(
+                &mut astar,
+                vol,
+                Vec3::new(4.5, 0.5, 1.0),
+                end,
+                cfg,
+                PathLength::Medium,
+                None,
+            ) {
+                PathResult::Pending => continue,
+                r => return r,
+            }
+        }
+        panic!("pathfinding never completed (still Pending after 64 polls)");
+    }
+
+    fn route(vol: &MockVol, cfg: &TraversalConfig) -> PathResult<Vec3<i32>> {
+        route_to(vol, cfg, Vec3::new(12.5, 0.5, 5.0))
+    }
+
+    #[test]
+    fn ladder_column_routes_up_a_tall_wall() {
+        let vol = wall_world(true);
+        let r = route(&vol, &worker_cfg());
+        let PathResult::Path(path, _cost) = r else {
+            panic!("no route via the ladder (mount/climb/dismount edges broken)");
+        };
+        // The route must actually use the climb line beside the ladder —
+        // some node adjacent to the ladder column above ground level.
+        assert!(
+            path.iter().any(|n| n.z > 2
+                && (n.xy() - Vec2::new(9, 0)).map(|e: i32| e.abs()).sum() <= 1),
+            "path exists but skips the ladder line: {:?}",
+            path.iter().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn tall_wall_without_ladder_has_no_route() {
+        // 4 blocks exceeds scramble reach (3): with no ladder there must be
+        // NO full path — if this ever passes, an edge leaked past the reach
+        // model.
+        let vol = wall_world(false);
+        assert!(
+            !matches!(route(&vol, &worker_cfg()), PathResult::Path(..)),
+            "a 4-high wall was routed without a ladder (reach model leak)"
+        );
+    }
+
+    #[test]
+    fn scramble_reach_gates_three_up_edges() {
+        // A 3-high wall IS routable at reach 3 (the scramble edge) and NOT
+        // at reach 2 (novice).
+        let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+        let mut blocks = StdHashMap::new();
+        for x in -2..=20 {
+            for y in -6..=6 {
+                blocks.insert(Vec3::new(x, y, 0), rock);
+            }
+        }
+        for x in 10..=20 {
+            for y in -6..=6 {
+                for z in 1..=3 {
+                    blocks.insert(Vec3::new(x, y, z), rock);
+                }
+            }
+        }
+        let vol = MockVol {
+            blocks,
+            air: Block::empty(),
+        };
+        let skilled = route_to(&vol, &worker_cfg(), Vec3::new(12.5, 0.5, 4.0));
+        assert!(
+            matches!(skilled, PathResult::Path(..)),
+            "reach 3 must route a 3-up scramble"
+        );
+        let novice = TraversalConfig {
+            scramble_reach: 2,
+            ..worker_cfg()
+        };
+        let blocked = route_to(&vol, &novice, Vec3::new(12.5, 0.5, 4.0));
+        assert!(
+            !matches!(blocked, PathResult::Path(..)),
+            "reach 2 must NOT route a 3-up face"
+        );
+    }
+}
+
 /// Returns a random point within a radially symmetrical ellipsoid with given
 /// foci and a `search parameter` to determine the size of the ellipse beyond
 /// the foci. Technically the point is within a prolate spheroid translated and

@@ -349,6 +349,23 @@ remove an earlier block's entries.
 - **IDEA** (B5.6b-2): the depth stepper tops at down=32 / up=8 (UI clamp,
   `Z_EXTENT_MAX_DOWN/UP`); §3v's mine framework may want per-kind caps +
   a "to depth Z" absolute entry mode when deep mining lands.
+- **ADD (B5.8 KNOWN-OPEN → COMMITTED at B6, per Ben 2026-07-10):
+  COLONIST SOFT-COLLISION / chokepoint yielding** —
+  `readme/SOFT-COLLISION-design.md`. B5.8 shipped the narrow v1 (the
+  LADDER COLLISION WAIVER in phys) and descoped the composite outcomes as
+  known-open (b58 witnesses: (b1)-exit, (c)-top, (d)-rescue/all-out —
+  reported, not gating). SOFT-0 = transient soft-pass state + deadlock
+  grace-window in the existing watchdog + density trigger, entity↔entity
+  softened / terrain HARD, deterministic, `--chokepoint-scenario` gate;
+  SOFT-1 = tuning + hauling-crew relief + satisfies the asset dynamic-test
+  multi-occupancy assertion. Marked committed in FLEET_STATUS (B6) — not
+  optional. Do NOT hand-fix scenario geometry around it meanwhile.
+- **ADD (asset-lane FYI via architect, 2026-07-10): live-integration
+  engine-behavior checks.** `readme/ASSET_COMMON_MISTAKES.md` #16-21
+  (material semantics, emissive, NAVIGABILITY vs the climb-reach cap,
+  collision-vs-visual, tileability, mesh efficiency) must be verified
+  in-engine whenever an asset is integrated LIVE into manifests or a
+  B-TESTBED scenario — fold into the B-TESTBED accrete rule.
 - **ADD (QUEUED by architect from Ben's b-2 live test, 2026-07-09):
   ABSOLUTE-FLOOR depth mode.** Surface-relative digging follows the slope →
   stepped pit bottoms; Ben wants a second mode: "flat floor at level Z" —

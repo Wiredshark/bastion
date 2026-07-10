@@ -296,6 +296,51 @@ recent runs):
 Run logs (b58-run3..10.log) lived in the session temp dir — perishable;
 everything load-bearing is in this section.
 
+## 2e. Resume iterations (runs 11–21) + the CHOKEPOINT DESCOPE (gate call)
+
+Post-resume fixes, each trace-verified: graph proven correct by the new
+`bastion_vertical_tests` (3/3 — the ladder route EXISTS; the sim failures
+were execution: the vanilla incremental A* resets whenever the agent moves
+>2 blocks, so a beeline-then-bob never completes the search); ACCESS
+ANCHORS + staged two-leg routing (walk flat to the ladder base, climb
+assist does the vertical); position-driven lift (velocity nudges inherit
+physics timing flake); LEDGE SNAP (every crest was a drift-vs-gravity
+race); 5×5 ladder grab (the Chaser abandons approaches up to ~2.5 blocks
+out — the grab must cover the stop band); wall-adjacent pillar selection
+(a mid-pit pillar strands the climber over a gap); claim-economy fixes
+(access jobs built on-site only, access/Ladder priority tier, the
+absolute-z depth weight crushed cross-kind scores → relative + clamped);
+retry-sized budgets; d_all_out → cumulative ever-out (idle wander-back
+into an open quarry is freedom, not entombment).
+
+**DESCOPE (architect-sanctioned, 2026-07-10):** the remaining ~50%/run
+flip-flops — (b1) exit + (d) rescue — are the MULTI-COLONIST CHOKEPOINT
+pattern: several colonists funneling through one 1-wide vertical link,
+colonist↔colonist collision deadlock (matches the design lane's
+independent diagnosis). Every single-unit mechanism is stable across runs.
+Those outcomes are now KNOWN-OPEN informational fields in `--b58-scenario`
+(reported, not gating); the **COLONIST SOFT-COLLISION / chokepoint
+yielding** mechanism is being designed separately and lands as a follow-on
+or with B6 (hauling hits the same trap). Do NOT hand-fix geometry around
+it.
+
+**FINAL GATE SHAPE (runs 22-23):** Ben's narrower v1 — the **LADDER
+COLLISION WAIVER** — was built as a rider and SHIPS with the block:
+`phys::apply_pushback` skips colonist↔colonist pairs when either is
+within 2 blocks of a `SpriteKind::Ladder` (terrain collision stays hard;
+players/vanilla NPCs untouched; checked only for already-colliding
+colonist pairs — negligible cost). It measurably helped ((b1) exit went
+green two consecutive runs, first time ever) but did not make the 6-part
+COMPOSITE deterministic — the residue rotates ((c) top flaked in run 22
+after five straight passes). Per Ben's own fallback framing, the
+CLIMB-EXECUTION COMPOSITE outcomes (b_exited/b_drained, c_top_cleared/
+c_no_carve, d_rescue_cleared/d_all_out) are KNOWN-OPEN informational —
+each proven ≥3 runs, several ≥5 — while the deterministic core gates:
+scramble, geometry-choice auto-stairs, ladder BUILD chain, DF mining
+invariants, plan machinery, zero orphans, and the 3 path-graph unit
+tests. Full determinism of the composite belongs to the soft-collision
+follow-on.
+
 ## 3. Risks / watch items
 - **Path-cost integration is the flagged risky bit.** The 3-up edge add is
   small and pattern-following, but `find_path` is shared with ALL agents
