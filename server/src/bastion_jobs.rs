@@ -32,7 +32,7 @@ use common::{
     },
     event::CreateItemDropEvent,
     resources::{DeltaTime, ProgramTime},
-    terrain::{Block, BlockKind, TerrainGrid},
+    terrain::{Block, BlockKind, SpriteKind, TerrainGrid},
     uid::{IdMaps, Uid},
     vol::ReadVol,
 };
@@ -58,6 +58,87 @@ fn work_rate(skill_level: u16) -> f32 {
     (1.0 + skill_level as f32 * WORK_SKILL_BONUS) / WORK_DURATION_BASE
 }
 
+/// bastion (B5.8): is `p` inside the colony's ACCESS mask — XY within a
+/// claim box ±1, at or above the claim's floor (−1), UNBOUNDED upward? A
+/// colony may always rise from its own claim to the open surface ("air
+/// rights" — access is part of the dig plan, §3v), but never tunnels
+/// sideways or downward beyond what was painted. This is what makes a
+/// 1×1-painted shaft "tight" (stairs can't route) while a wide claim has
+/// room — the geometry choice Ben asked for falls out of the claim shape.
+fn in_access_mask(designated: &[Region], p: Vec3<i32>) -> bool {
+    designated.iter().any(|r| {
+        p.x >= r.min.x - 1
+            && p.x <= r.max.x + 1
+            && p.y >= r.min.y - 1
+            && p.y <= r.max.y + 1
+            && p.z >= r.min.z - 1
+    })
+}
+
+/// bastion (B5.8): the auto-access LADDER — rung cells for a climbable
+/// pillar topping out one block above the target level (the dismount needs
+/// it). Chosen when stairs can't route (tight shaft / hollowed-out pit).
+///
+/// COLUMN CHOICE (run-15 finding): the pillar must stand AGAINST the pit
+/// wall — a mid-pit pillar strands the climber over a horizontal gap at
+/// the crest (lift stops off the ladder line; gravity wins the crossing).
+/// Search open in-mask columns near the digger, preferring wall-adjacent
+/// ones (a solid neighbor at the target level = a face-adjacent rim cell
+/// to dismount onto), nearest first. The digger reaches the base by flat
+/// walking (staged routing anchors there).
+fn ladder_pillar(
+    terrain: &TerrainGrid,
+    designated: &[Region],
+    from: Vec3<i32>,
+    to_z: i32,
+) -> Option<Vec<Vec3<i32>>> {
+    let top = to_z + 1;
+    if top <= from.z {
+        return None;
+    }
+    let filled = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
+    let mut best: Option<(i32, Vec<Vec3<i32>>)> = None;
+    for dx in -5..=5i32 {
+        for dy in -5..=5i32 {
+            if dx == 0 && dy == 0 {
+                continue;
+            }
+            let col = from.xy() + Vec2::new(dx, dy);
+            // The column's own standing cell (floor may sit ±1 of the
+            // digger's — lure holes, part-dug floors).
+            let Some(stand_z) = (from.z - 1..=from.z + 2).find(|&z| {
+                !filled(Vec3::new(col.x, col.y, z))
+                    && filled(Vec3::new(col.x, col.y, z - 1))
+            }) else {
+                continue;
+            };
+            let cells: Vec<Vec3<i32>> = ((stand_z + 1)..=top)
+                .map(|z| Vec3::new(col.x, col.y, z))
+                .collect();
+            if cells.is_empty()
+                || !cells.iter().all(|p| {
+                    in_access_mask(designated, *p) && !filled(*p)
+                })
+            {
+                continue;
+            }
+            let wall_adjacent = [
+                Vec2::new(1, 0),
+                Vec2::new(-1, 0),
+                Vec2::new(0, 1),
+                Vec2::new(0, -1),
+            ]
+            .into_iter()
+            .any(|d| filled(Vec3::new(col.x + d.x, col.y + d.y, to_z)));
+            let score = dx.abs() + dy.abs() + if wall_adjacent { 0 } else { 100 };
+            if best.as_ref().is_none_or(|(s, _)| score < *s) {
+                best = Some((score, cells));
+            }
+        }
+    }
+    best.map(|(_, cells)| cells)
+}
+
 /// The per-block job predicate, shared by both placement paths. Mine =
 /// every filled block; Chop = wood only; Build = currently-empty positions
 /// (placing blocks, not removing); Stockpile = none yet (B6 zones).
@@ -65,7 +146,8 @@ fn job_wanted(kind: DesignationKind, block: &Block) -> bool {
     match kind {
         DesignationKind::Mine => block.is_filled(),
         DesignationKind::Chop => matches!(block.kind(), BlockKind::Wood),
-        DesignationKind::Build => !block.is_filled(),
+        // B5.8: a ladder rung, like Build, goes into currently-open space.
+        DesignationKind::Build | DesignationKind::Ladder => !block.is_filled(),
         DesignationKind::Stockpile => false,
     }
 }
@@ -168,6 +250,21 @@ pub fn resolve_surface_bounds(
 pub struct JobBoard {
     next_id: JobId,
     pub jobs: HashMap<JobId, Job>,
+    /// bastion (B5.8): the union of placed designation volumes — the
+    /// colony's terrain-claim mask. Auto carve-steps (self-rescue) is
+    /// confined to this mask (expanded by the stair's own rise), so the
+    /// system never carves wilderness to chase an out-of-scope target.
+    /// Maintained by place (append) / cancel (exact AABB subtraction —
+    /// the unit-tested `Region::subtract`).
+    pub designated: Vec<Region>,
+    /// bastion (B5.8): ACCESS ANCHORS — base cells of the colony's vertical
+    /// links (auto-built ladder pillars + player-built ladder lines). Travel
+    /// stages an over-reach ascent through the nearest anchor (walk there
+    /// flat, then let the climb assist do the vertical) because the vanilla
+    /// incremental A* resets whenever the agent moves >2 blocks — an agent
+    /// beelining-then-bobbing at a wall never finishes the search that
+    /// would have found the ladder (b58 run-10 root cause).
+    pub access_anchors: Vec<Vec3<i32>>,
 }
 
 impl JobBoard {
@@ -185,6 +282,9 @@ impl JobBoard {
     ) -> Vec<JobId> {
         let mut created = Vec::new();
         let work = kind.work_type();
+        // B5.8: the designation volume joins the colony's claim mask
+        // (whether or not blocks matched — the CLAIM is the painted box).
+        self.designated.push(region);
         // One job per block, regardless of kind: repainting a region — or
         // overlapping designations (Mine and Chop both match a Wood block,
         // since wood `is_filled()`) — must not create duplicate jobs. Each
@@ -213,9 +313,14 @@ impl JobBoard {
                             claimed_by: None,
                             unreachable: false,
                             progress: 0.0,
-                            required_item: matches!(kind, DesignationKind::Build)
-                                .then_some(BUILD_MATERIAL_ITEM),
+                            required_item: matches!(
+                                kind,
+                                DesignationKind::Build | DesignationKind::Ladder
+                            )
+                            .then_some(BUILD_MATERIAL_ITEM),
                             needs_materials: false,
+                            carve_attempted: false,
+                            is_access: false,
                         });
                         created.push(id);
                     }
@@ -250,6 +355,9 @@ impl JobBoard {
     ) -> Vec<JobId> {
         let mut created = Vec::new();
         let work = kind.work_type();
+        // B5.8: the resolved volume bounds join the claim mask (same tight
+        // AABB the echo carries — computed inline as columns resolve).
+        let mut mask_z = None::<(i32, i32)>;
         // Same one-job-per-block dedupe as the region path (free-item
         // exploit guard — see `place_designation`).
         let occupied: HashSet<Vec3<i32>> = self.jobs.values().map(|j| j.pos).collect();
@@ -258,6 +366,8 @@ impl JobBoard {
                 let Some(surface) = column_surface_z(terrain, x, y, hint_z) else {
                     continue;
                 };
+                let (lo, hi) = (surface - extent.down as i32, surface + extent.up as i32);
+                mask_z = Some(mask_z.map_or((lo, hi), |(a, b)| (a.min(lo), b.max(hi))));
                 for z in surface - extent.down as i32..=surface + extent.up as i32 {
                     let pos = Vec3::new(x, y, z);
                     if occupied.contains(&pos) {
@@ -277,14 +387,25 @@ impl JobBoard {
                             claimed_by: None,
                             unreachable: false,
                             progress: 0.0,
-                            required_item: matches!(kind, DesignationKind::Build)
-                                .then_some(BUILD_MATERIAL_ITEM),
+                            required_item: matches!(
+                                kind,
+                                DesignationKind::Build | DesignationKind::Ladder
+                            )
+                            .then_some(BUILD_MATERIAL_ITEM),
                             needs_materials: false,
+                            carve_attempted: false,
+                            is_access: false,
                         });
                         created.push(id);
                     }
                 }
             }
+        }
+        if let Some((z_min, z_max)) = mask_z {
+            self.designated.push(Region {
+                min: Vec3::new(min_xy.x, min_xy.y, z_min),
+                max: Vec3::new(max_xy.x, max_xy.y, z_max),
+            });
         }
         info!(
             ?kind,
@@ -298,6 +419,18 @@ impl JobBoard {
     /// released (their `ActiveJob` comps are cleared by the system within
     /// one cycle because the job id no longer exists).
     pub fn cancel_region(&mut self, region: Region) -> Vec<Uid> {
+        // B5.8: the claim mask shrinks with the cancellation (exact AABB
+        // subtraction, ≤6 pieces per intersected region).
+        self.designated = std::mem::take(&mut self.designated)
+            .into_iter()
+            .flat_map(|r| {
+                if r.intersects(&region) {
+                    r.subtract(&region)
+                } else {
+                    vec![r]
+                }
+            })
+            .collect();
         let mut released = Vec::new();
         self.jobs.retain(|_, job| {
             let inside = job.pos.x >= region.min.x
@@ -353,7 +486,9 @@ impl<'a> System<'a> for Sys {
         ReadExpect<'a, ProgramTime>,
         Write<'a, JobBoard>,
         WriteStorage<'a, comp::Colonist>,
-        ReadStorage<'a, comp::Pos>,
+        // WRITE only for the B5.8 position-driven climb assist; every other
+        // use reads.
+        WriteStorage<'a, comp::Pos>,
         ReadStorage<'a, Uid>,
         WriteStorage<'a, ActiveJob>,
         // bastion (B-ASSET1): test-fixture goto orders (harness/arena).
@@ -363,6 +498,9 @@ impl<'a> System<'a> for Sys {
         WriteExpect<'a, BlockChange>,
         ReadExpect<'a, TerrainGrid>,
         ReadExpect<'a, common::event::EventBus<CreateItemDropEvent>>,
+        ReadStorage<'a, comp::CharacterState>,
+        WriteStorage<'a, comp::Vel>,
+        ReadStorage<'a, comp::PhysicsState>,
     );
 
     const NAME: &'static str = "bastion_jobs";
@@ -379,7 +517,7 @@ impl<'a> System<'a> for Sys {
             program_time,
             mut board,
             mut colonists,
-            positions,
+            mut positions,
             uids,
             mut active_jobs,
             mut test_gotos,
@@ -388,10 +526,135 @@ impl<'a> System<'a> for Sys {
             mut block_change,
             terrain,
             item_drop_events,
+            char_states,
+            mut velocities,
+            physics_states,
         ): Self::SystemData,
     ) {
         let mut item_drop_emitter = item_drop_events.emitter();
         let mut rng = rand::rng();
+        // Pre-deref so field borrows split (jobs mutably + anchors shared
+        // inside the same loop).
+        let board = &mut *board;
+
+        // ── B5.8: climbing improves with use (Ben: climbing is a SKILL) ──
+        // XP accrues while a colonist is actually in the Climb state; the
+        // level feeds `scramble_reach` (agent system) — vertical traversal
+        // is a GROWING capability, not a binary.
+        //
+        // ALSO the CLIMB ASSIST (the spec's sanctioned "relax the rules for
+        // the Colonist body — they're workers, not players"): a working
+        // colonist whose job target is ABOVE gets a guaranteed ascent rate
+        // while (a) in the Climb state, (b) airborne against a wall
+        // (mid-scramble — only reachable via a path edge the reach model
+        // granted), or (c) BESIDE A LADDER block, grounded or not (a ladder
+        // is climbable by construction — this makes ladder mounts and
+        // pit-pillar exits deterministic; runs 3-8 showed the vanilla
+        // jump→Climb entry chain is ~50% timing-flaky). Plain wall-hugging
+        // on foot gets nothing, so free-climbing stays bounded by the path
+        // graph and the climbing skill. Players and vanilla NPCs untouched.
+        const CLIMB_XP_RATE: f32 = 1.5; // xp per second while lifted
+        const CLIMB_ASSIST_VZ: f32 = 2.5; // ascent rate, blocks/s
+        {
+            let mut climb_iter = (
+                &mut colonists,
+                &char_states,
+                &mut velocities,
+                &active_jobs,
+                &mut positions,
+                &physics_states,
+            )
+                .lend_join();
+            while let Some((mut colonist, cs, vel, active, pos, phys)) = climb_iter.next() {
+                let Some(job_z) = board.jobs.get(&active.job).map(|j| j.pos.z) else {
+                    continue;
+                };
+                let target_feet = job_z as f32 + 1.0;
+                if target_feet <= pos.0.z + 0.2 {
+                    continue;
+                }
+                let feet = pos.0.map(|e| e.floor() as i32);
+                // 5×5 XY neighborhood at feet/head height: the Chaser
+                // abandons its approach anywhere up to ~2.5 blocks out
+                // (runs 13/18 deadlocks — stationary just outside a
+                // tighter grab), so the grab radius must cover the whole
+                // stop band. Ladders are colony-built infrastructure;
+                // "working the ladder" from two blocks is fine worker
+                // fiction.
+                let beside_ladder = (-2..=2).any(|dx| {
+                    (-2..=2).any(|dy| {
+                        (0..=1).any(|dz| {
+                            terrain
+                                .get(feet + Vec3::new(dx, dy, dz))
+                                .ok()
+                                .and_then(|b| b.get_sprite())
+                                == Some(SpriteKind::Ladder)
+                        })
+                    })
+                });
+                // REACH CAP on the wall/climb arms: lift only while
+                // standable ground is within the colonist's scramble reach
+                // below — otherwise the assist would elevator workers up
+                // walls of ANY height (run-9 finding: a pit exit "passed"
+                // by free-climbing the 5-block wall, bypassing the skill
+                // model). Ladders are exempt: beating reach is their job.
+                let reach = 2 + colonist.0.skills.climbing.level.min(1) as i32;
+                let ground_within_reach = (1..=reach + 1).any(|i| {
+                    terrain
+                        .get(feet - Vec3::unit_z() * i)
+                        .map(|b| b.is_filled())
+                        .unwrap_or(false)
+                });
+                let climbing = matches!(cs, comp::CharacterState::Climb(_));
+                let on_wall = phys.on_wall.is_some();
+                // POSITION-DRIVEN lift (runs 3-14 lesson: every vanilla
+                // physics-TIMING dependency — jump→wall-contact→Climb-state
+                // entry — flakes run to run; velocity nudges inherit the
+                // flake. Workers on colony access move UP, period): wall
+                // contact suffices, airborne not required. Head space is
+                // checked so the lift can't push a body into a ceiling.
+                let supported = beside_ladder || ((climbing || on_wall) && ground_within_reach);
+                if supported {
+                    let head_clear = terrain
+                        .get(feet + Vec3::unit_z() * 2)
+                        .map(|b| !b.is_solid())
+                        .unwrap_or(true);
+                    if head_clear {
+                        pos.0.z += CLIMB_ASSIST_VZ * dt.0;
+                        vel.0.z = vel.0.z.max(0.0);
+                        colonist.0.skills.climbing.add_xp(CLIMB_XP_RATE * dt.0);
+                    }
+                }
+                // LEDGE SNAP — one rule kills every crest race: a HANGING
+                // climber (supported by the structure, own column below is
+                // air) steps onto any face-adjacent walkable ledge at its
+                // current height. Covers the gauntlet's intermediate tier
+                // crests AND the final rim/plateau dismount (runs 15-17:
+                // drift-vs-gravity at each crest was the residual flake).
+                let solid = |p: Vec3<i32>| {
+                    terrain.get(p).map(|b| b.is_solid()).unwrap_or(false)
+                };
+                if supported && !solid(feet - Vec3::unit_z()) {
+                    let snap = [
+                        Vec2::new(1, 0),
+                        Vec2::new(-1, 0),
+                        Vec2::new(0, 1),
+                        Vec2::new(0, -1),
+                    ]
+                    .into_iter()
+                    .map(|d| Vec3::new(feet.x + d.x, feet.y + d.y, feet.z))
+                    .find(|c| {
+                        !solid(*c)
+                            && !solid(*c + Vec3::unit_z())
+                            && solid(*c - Vec3::unit_z())
+                    });
+                    if let Some(c) = snap {
+                        pos.0 = Vec3::new(c.x as f32 + 0.5, c.y as f32 + 0.5, c.z as f32);
+                        vel.0 = Vec3::zero();
+                    }
+                }
+            }
+        }
 
         // ── bastion (B-ASSET1): test-goto upkeep (every tick) ────────────
         // Same Goto assertion + 3D arrival + progress-watchdog semantics as
@@ -434,6 +697,10 @@ impl<'a> System<'a> for Sys {
 
         // ── Travel + work upkeep (every tick) ───────────────────────────
         let mut to_release: Vec<specs::Entity> = Vec::new();
+        // B5.8: carve-steps self-rescue requests gathered during upkeep
+        // (from-feet, to-job, parent job id) — processed after the loop
+        // (the board can't be restructured mid-borrow).
+        let mut carve_requests: Vec<(Vec3<i32>, Vec3<i32>, JobId)> = Vec::new();
         // `Colonist`'s storage is change-tracked (synced comp) — mutable
         // multi-storage joins over it need `LendJoin`, not `Join`.
         let mut upkeep_iter = (
@@ -453,6 +720,26 @@ impl<'a> System<'a> for Sys {
             let target = job.pos.map(|e| e as f32) + Vec3::new(0.5, 0.5, 1.0);
             match active.state {
                 ActiveJobState::Traveling => {
+                    // B5.8: moot-check DURING travel too — a carve stair (or
+                    // any other edit) can consume the claimed block before
+                    // the claimant arrives; without this the zombie job
+                    // cycles claim→stuck→unreachable forever. Same predicate
+                    // the completion re-validation uses.
+                    let still_wanted = terrain
+                        .get(job.pos)
+                        .ok()
+                        .is_some_and(|b| job_wanted(job.kind, b));
+                    if !still_wanted {
+                        info!(
+                            job = active.job,
+                            kind = ?job.kind,
+                            pos = ?job.pos,
+                            "bastion: job moot mid-travel — target block changed; dropped"
+                        );
+                        board.jobs.remove(&active.job);
+                        to_release.push(entity);
+                        continue;
+                    }
                     // 3D distance: standing on the surface above a deep job
                     // must NOT count as arrival (the watchdog handles it).
                     let dist = pos.0.distance(target);
@@ -467,28 +754,115 @@ impl<'a> System<'a> for Sys {
                             "bastion: colonist arrived at job site, working (B5)"
                         );
                     } else {
+                        // B5.8: STAGED ROUTING through access anchors — an
+                        // ascent beyond this colonist's reach steers to the
+                        // nearest registered vertical link (ladder base)
+                        // first; the climb assist does the vertical leg.
+                        // Necessary because the vanilla incremental A*
+                        // resets whenever the agent moves >2 blocks — a
+                        // beeline-then-bob at a wall never completes the
+                        // search that would find the ladder (run-10 root
+                        // cause; the graph itself is proven by the
+                        // bastion_vertical_tests).
+                        let feet = pos.0.map(|e| e.floor() as i32);
+                        let reach =
+                            2 + colonist.0.skills.climbing.level.min(1) as i32;
+                        let steer = if job.pos.z - feet.z > reach {
+                            board
+                                .access_anchors
+                                .iter()
+                                .filter(|a| {
+                                    a.z >= feet.z - 2
+                                        && a.z <= job.pos.z + 2
+                                        && a.xy()
+                                            .map(|e| e as f32)
+                                            .distance(pos.0.xy())
+                                            < 24.0
+                                })
+                                .min_by(|a, b| {
+                                    let da = a.xy().map(|e| e as f32).distance(pos.0.xy());
+                                    let db = b.xy().map(|e| e as f32).distance(pos.0.xy());
+                                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                                })
+                                .filter(|a| {
+                                    // Already at the anchor: climb (the
+                                    // assist lifts); steer at the real
+                                    // target so the bearing pulls up+over.
+                                    a.xy().map(|e| e as f32 + 0.5).distance(pos.0.xy())
+                                        > 1.6
+                                })
+                                .map(|a| {
+                                    Vec3::new(
+                                        a.x as f32 + 0.5,
+                                        a.y as f32 + 0.5,
+                                        a.z as f32 + 1.0,
+                                    )
+                                })
+                                .unwrap_or(target)
+                        } else {
+                            target
+                        };
                         // Keep the intent asserted (rtsim brain is gated off
                         // while ActiveJob exists, but agents clear activity
                         // on their own in places).
+                        if steer != target && tick.0 % 100 == 0 {
+                            info!(
+                                job = active.job,
+                                ?steer,
+                                colonist = ?pos.0,
+                                "bastion: staged routing via access anchor"
+                            );
+                        }
                         if let Some(agent) = agent {
                             agent.rtsim_controller.activity =
-                                Some(common::rtsim::NpcActivity::Goto(target, TRAVEL_SPEED));
+                                Some(common::rtsim::NpcActivity::Goto(steer, TRAVEL_SPEED));
                         }
-                        // Watchdog: distance-to-target must keep improving;
-                        // pacing near an unreachable site doesn't count.
-                        if dist + STUCK_EPSILON < active.best_dist {
-                            active.best_dist = dist;
+                        // Watchdog: distance to the CURRENT steer target
+                        // must keep improving; pacing near an unreachable
+                        // site doesn't count. A large upward JUMP in the
+                        // measure means the steer target switched (anchor
+                        // reached → real target) — rebase, don't count it
+                        // as being stuck.
+                        let sdist = pos.0.distance(steer);
+                        if sdist + STUCK_EPSILON < active.best_dist {
+                            active.best_dist = sdist;
+                            active.stuck_time = 0.0;
+                        } else if sdist > active.best_dist + 4.0 {
+                            active.best_dist = sdist;
                             active.stuck_time = 0.0;
                         } else {
                             active.stuck_time += dt.0;
                             if active.stuck_time > STUCK_TIMEOUT {
                                 job.claimed_by = None;
-                                job.unreachable = true;
-                                info!(
-                                    job = active.job,
-                                    pos = ?job.pos,
-                                    "bastion: job unreachable — claim released"
-                                );
+                                // B5.8: a stuck ASCENT beyond THIS
+                                // colonist's climbing reach gets one
+                                // auto-access attempt before the job is
+                                // written off (the pit-trap, solved by the
+                                // system). Scramblable rises, descents and
+                                // flat approaches fail for other reasons —
+                                // no terrain edits for those (also protects
+                                // exact-conservation invariants from stray
+                                // spoil).
+                                let feet = pos.0.map(|e| e.floor() as i32);
+                                let reach =
+                                    2 + colonist.0.skills.climbing.level.min(1) as i32;
+                                // The attempt flag is burned at PLAN time
+                                // (post-loop), not here — a request skipped
+                                // because another plan is pending must keep
+                                // its turn for later.
+                                if !job.carve_attempted
+                                    && !job.is_access
+                                    && job.pos.z - feet.z > reach
+                                {
+                                    carve_requests.push((feet, job.pos, active.job));
+                                } else {
+                                    job.unreachable = true;
+                                    info!(
+                                        job = active.job,
+                                        pos = ?job.pos,
+                                        "bastion: job unreachable — claim released"
+                                    );
+                                }
                                 to_release.push(entity);
                             }
                         }
@@ -514,7 +888,7 @@ impl<'a> System<'a> for Sys {
                     let still_valid = terrain.get(job.pos).ok().is_some_and(|b| match job.kind {
                         DesignationKind::Mine => b.is_filled(),
                         DesignationKind::Chop => matches!(b.kind(), BlockKind::Wood),
-                        DesignationKind::Build => !b.is_filled(),
+                        DesignationKind::Build | DesignationKind::Ladder => !b.is_filled(),
                         DesignationKind::Stockpile => false,
                     });
                     if !still_valid {
@@ -546,17 +920,28 @@ impl<'a> System<'a> for Sys {
                     // colonist's inventory now — if it's gone (taken by a
                     // faster claimant elsewhere; single-material stand-in so
                     // this is rare), stall rather than build for free.
-                    if job.kind == DesignationKind::Build {
+                    if let Some(required) = job.required_item {
                         let taken = inventories.get_mut(entity).and_then(|mut inv| {
                             let slot = inv.slots_with_id().find_map(|(slot, item)| {
                                 item.as_ref()
                                     .is_some_and(|i| {
-                                        i.item_definition_id().itemdef_id()
-                                            == Some(BUILD_MATERIAL_ITEM)
+                                        i.item_definition_id().itemdef_id() == Some(required)
                                     })
                                     .then_some(slot)
                             });
-                            slot.and_then(|slot| inv.remove(slot))
+                            // Consume exactly ONE unit: decrement a stack in
+                            // place, remove only a lone item. The previous
+                            // `inv.remove(slot)` ate the WHOLE STACK — a
+                            // 6-stone stack vanished on the first ladder
+                            // rung and the builder stopped being a carrier
+                            // (b58 run-2 finding: rungs stuck at 1/5).
+                            slot.and_then(|slot| match inv.slot_mut(slot) {
+                                Some(Some(item)) if item.amount() > 1 => {
+                                    item.decrease_amount(1).ok().map(|_| ())
+                                },
+                                Some(Some(_)) => inv.remove(slot).map(|_| ()),
+                                _ => None,
+                            })
                         });
                         if taken.is_none() {
                             job.progress = 0.0;
@@ -577,14 +962,31 @@ impl<'a> System<'a> for Sys {
                     let new_block = match job.kind {
                         DesignationKind::Mine | DesignationKind::Chop => Block::empty(),
                         DesignationKind::Build => Block::new(BlockKind::Rock, Rgb::new(150, 150, 150)),
+                        // B5.8: the native climbable ladder sprite — the
+                        // vertical link pathfinding knows about.
+                        DesignationKind::Ladder => Block::air(SpriteKind::Ladder),
                         DesignationKind::Stockpile => continue,
                     };
                     block_change.set(job.pos, new_block);
+                    // B5.8: a player-built ladder line registers as an
+                    // access anchor too (one per column — XY dedupe), so
+                    // staged routing finds it.
+                    if job.kind == DesignationKind::Ladder
+                        && !board
+                            .access_anchors
+                            .iter()
+                            .any(|a| a.xy().distance_squared(job.pos.xy()) < 4)
+                    {
+                        info!(pos = ?job.pos, "bastion: access anchor registered (built)");
+                        board.access_anchors.push(job.pos);
+                    }
 
                     if let Some(item_id) = match job.kind {
                         DesignationKind::Mine => Some(MINE_DROP_ITEM),
                         DesignationKind::Chop => Some(CHOP_DROP_ITEM),
-                        DesignationKind::Build | DesignationKind::Stockpile => None,
+                        DesignationKind::Build
+                        | DesignationKind::Stockpile
+                        | DesignationKind::Ladder => None,
                     } {
                         // B5.5: colonist output is a player resource —
                         // persistent (no despawn timer) and mergeable
@@ -640,6 +1042,123 @@ impl<'a> System<'a> for Sys {
             }
         }
 
+        // ── B5.8: AUTONOMOUS ACCESS (self-rescue) ────────────────────────
+        // A stuck ascent inside colony claims gets access that FITS THE
+        // GEOMETRY (Ben's directive — autonomous access is the default):
+        // 1. STAIRS where the claim has room — the SHARED `carve_ramp`
+        //    decomposition (one lib, DF-DIG-VERBS' player verb is the other
+        //    caller), switchbacking inside the access mask, refusing
+        //    floorless routes.
+        // 2. LADDER where it's tight or hollow — a material-free rung
+        //    pillar (built from spoil) up an adjacent open column.
+        // 3. Neither fits → unreachable, as before. Never touches terrain
+        //    outside the claim mask (the never-chase-a-deer rule).
+        // Emitted steps/rungs are ordinary jobs: arbitration assigns them
+        // (nearest wins — usually the stuck colonist; the exposure gate
+        // sequences stair digs bottom-up naturally).
+        //
+        // ONE PLAN AT A TIME: while any access job is pending, no new plan
+        // is emitted (requests keep their turn — the attempt flag burns at
+        // plan time). Concurrent plans overlap and dig each other's step
+        // floors out (run-7's gallery of chaos); one stair serves everyone.
+        let access_pending = board.jobs.values().any(|j| j.is_access);
+        for (from, to, parent) in carve_requests.into_iter().take(
+            if access_pending { 0 } else { 1 },
+        ) {
+            if let Some(job) = board.jobs.get_mut(&parent) {
+                job.carve_attempted = true;
+            }
+            let plan: Option<(Vec<Vec3<i32>>, DesignationKind)> = {
+                let is_solid =
+                    |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
+                let allowed = |p: Vec3<i32>| in_access_mask(&board.designated, p);
+                // Stair bases: the digger's own cell plus its walkable
+                // neighbors — the first step of a pit-escape stair must cut
+                // into a WALL column (floor rule), which is only adjacent
+                // from the pit's edge cells, one step away from wherever
+                // the digger happened to stall.
+                let stairs = [
+                    Vec2::new(0, 0),
+                    Vec2::new(1, 0),
+                    Vec2::new(-1, 0),
+                    Vec2::new(0, 1),
+                    Vec2::new(0, -1),
+                ]
+                .into_iter()
+                .filter_map(|d| {
+                    let f = Vec3::new(from.x + d.x, from.y + d.y, from.z);
+                    // Alternate bases must be standable open cells.
+                    (d == Vec2::zero()
+                        || (!is_solid(f) && is_solid(f - Vec3::unit_z())))
+                    .then_some(f)
+                })
+                .find_map(|f| {
+                    common::bastion::carve_ramp(f, to, &is_solid, &allowed)
+                        .filter(|digs| !digs.is_empty())
+                });
+                match stairs {
+                    Some(digs) => Some((digs, DesignationKind::Mine)),
+                    None => ladder_pillar(&terrain, &board.designated, from, to.z)
+                        .map(|cells| (cells, DesignationKind::Ladder)),
+                }
+            };
+            if let Some((cells, kind)) = plan {
+                // Register the vertical link's base for staged routing
+                // (cells are emitted bottom-up; the first IS the base).
+                if kind == DesignationKind::Ladder
+                    && let Some(base) = cells.first().copied()
+                    && !board
+                        .access_anchors
+                        .iter()
+                        .any(|a| a.xy().distance_squared(base.xy()) < 4)
+                {
+                    info!(?base, "bastion: access anchor registered (plan)");
+                    board.access_anchors.push(base);
+                }
+                let occupied: HashSet<Vec3<i32>> =
+                    board.jobs.values().map(|j| j.pos).collect();
+                let mut steps = 0;
+                for pos in cells {
+                    if occupied.contains(&pos) {
+                        continue;
+                    }
+                    let id = board.next_id;
+                    board.next_id += 1;
+                    board.jobs.insert(id, Job {
+                        kind,
+                        work: kind.work_type(),
+                        pos,
+                        skill_floor: 0,
+                        claimed_by: None,
+                        unreachable: false,
+                        progress: 0.0,
+                        // Auto-access is material-free (infrastructure from
+                        // spoil); PLAYER-placed ladders still cost material.
+                        required_item: None,
+                        needs_materials: false,
+                        carve_attempted: true,
+                        // The plan marker: no cascades, and no NEW plan
+                        // while these are pending (run-7 finding:
+                        // overlapping plans dig each other's floors out).
+                        is_access: true,
+                    });
+                    steps += 1;
+                }
+                info!(
+                    parent,
+                    steps,
+                    ?kind,
+                    "bastion: auto-access emitted (B5.8 self-rescue)"
+                );
+            } else if let Some(job) = board.jobs.get_mut(&parent) {
+                job.unreachable = true;
+                info!(
+                    job = parent,
+                    "bastion: auto-access refused (no in-claim route) — job unreachable"
+                );
+            }
+        }
+
         // ── Claim sweep: release jobs whose claimant vanished (demoted /
         // despawned) so work never leaks (standing invariant). ─────────────
         if tick.0 % ARBITRATION_INTERVAL == 3 {
@@ -688,7 +1207,9 @@ impl<'a> System<'a> for Sys {
         };
         let material_available = any_colonist_has_material(&inventories);
         for job in board.jobs.values_mut() {
-            if job.kind == DesignationKind::Build && job.claimed_by.is_none() {
+            // Keyed off required_item (not kind): B5.8's auto-access ladder
+            // jobs are material-free and must not be flagged.
+            if job.required_item.is_some() && job.claimed_by.is_none() {
                 job.needs_materials = !material_available;
             }
         }
@@ -698,6 +1219,52 @@ impl<'a> System<'a> for Sys {
         // `ActiveJob` comps are inserted afterwards (can't insert while the
         // anti-join borrows the storage).
         let mut assignments: Vec<(specs::Entity, JobId)> = Vec::new();
+        // B5.8 (DF-style dig behavior, Ben's live-test requirement):
+        // 1. REACHABILITY GATE — a Mine job is claimable only when EXPOSED
+        //    (≥1 of its 6 neighbors non-filled): a digger can stand next to
+        //    it. Interior cells unlock as the shell clears; a fresh deep
+        //    dig therefore proceeds TOP-DOWN from the surface layer instead
+        //    of everyone rushing (and stalling on) the deepest corner. Side
+        //    effect: carve-stair steps self-sequence (only the next step is
+        //    exposed). Computed once per cycle, not per colonist.
+        let mut exposed: HashSet<JobId> = HashSet::new();
+        for (id, job) in board.jobs.iter_mut() {
+            if job.kind != DesignationKind::Mine || job.claimed_by.is_some() {
+                continue;
+            }
+            let is_exposed = [
+                Vec3::new(1, 0, 0),
+                Vec3::new(-1, 0, 0),
+                Vec3::new(0, 1, 0),
+                Vec3::new(0, -1, 0),
+                Vec3::new(0, 0, 1),
+                Vec3::new(0, 0, -1),
+            ]
+            .into_iter()
+            .any(|d| {
+                terrain
+                    .get(job.pos + d)
+                    .map(|b| !b.is_filled())
+                    .unwrap_or(true)
+            });
+            if is_exposed {
+                exposed.insert(*id);
+            } else {
+                // Fully enclosed: flag unreachable-for-now so the audit/UI
+                // reflect it (the periodic retry sweep re-tests as the dig
+                // opens the shell; B4's buried-job invariant rides this).
+                job.unreachable = true;
+            }
+        }
+        // 3. DISPERSION — claims (standing + taken this pass) repel new
+        //    claims within 2 XY blocks, spreading a work crew across the
+        //    frontier instead of stacking on one cell.
+        let mut claimed_pos: Vec<Vec3<i32>> = board
+            .jobs
+            .values()
+            .filter(|j| j.claimed_by.is_some())
+            .map(|j| j.pos)
+            .collect();
         for (entity, colonist, pos, uid, ()) in (
             &entities,
             &colonists,
@@ -712,13 +1279,17 @@ impl<'a> System<'a> for Sys {
                     item.item_definition_id().itemdef_id() == Some(BUILD_MATERIAL_ITEM)
                 })
             });
-            // Highest priority, then nearest.
+            // Highest priority, then lowest score (distance + B5.8's
+            // top-down and dispersion shaping).
             let mut best: Option<(JobId, u8, f32)> = None;
             for (id, job) in board.jobs.iter() {
                 if job.claimed_by.is_some() || job.unreachable {
                     continue;
                 }
-                if job.kind == DesignationKind::Build && !carries_material {
+                if job.kind == DesignationKind::Mine && !exposed.contains(id) {
+                    continue;
+                }
+                if job.required_item.is_some() && !carries_material {
                     continue;
                 }
                 if colonist.0.skills.level_for(job.work) < job.skill_floor {
@@ -729,17 +1300,59 @@ impl<'a> System<'a> for Sys {
                     continue;
                 }
                 let dist = pos.0.distance(job.pos.map(|e| e as f32));
+                // B5.8: ACCESS jobs (rescue rungs/steps) are built by whoever
+                // is ON SITE — a distant claimant holding a rescue-critical
+                // rung starves the trapped colonist (run-12 deadlock: parked
+                // bystanders claimed the pillar, the trapped digger hogged
+                // the out-job, nobody moved).
+                if job.is_access && dist > 16.0 {
+                    continue;
+                }
+                // …and vertical-access construction outranks ordinary work
+                // (a priority TIER, compared before score): the trapped
+                // colonist takes its own rescue rungs over re-claiming the
+                // unreachable job; a wall crew finishes the ladder before
+                // chasing the job on top.
+                let priority = if job.is_access || job.kind == DesignationKind::Ladder {
+                    priority.saturating_add(1)
+                } else {
+                    priority
+                };
+                // 2. TOP-DOWN — one level of height outweighs any plausible
+                //    in-dig travel distance AND the dispersion penalty, so
+                //    the shallowest frontier clears first (DF-style layer-
+                //    by-layer). RELATIVE to the colonist and CLAMPED: an
+                //    absolute-z term made any Mine job crush every Build/
+                //    Ladder job in cross-kind comparison (run-12: the rung
+                //    starvation root). MINE DIGS ONLY: construction goes
+                //    bottom-up by nearest-first — a top-weighted rung claim
+                //    is unreachable until the rungs below it exist.
+                let feet_z = pos.0.z.floor() as i32;
+                let depth_score = if job.kind == DesignationKind::Mine {
+                    -((job.pos.z - feet_z).clamp(-4, 4) as f32) * 8.0
+                } else {
+                    0.0
+                };
+                let clump_penalty = if claimed_pos.iter().any(|c| {
+                    (c.x - job.pos.x).abs() < 2 && (c.y - job.pos.y).abs() < 2
+                }) {
+                    12.0
+                } else {
+                    0.0
+                };
+                let score = dist + depth_score + clump_penalty;
                 let better = match &best {
                     None => true,
-                    Some((_, bp, bd)) => priority > *bp || (priority == *bp && dist < *bd),
+                    Some((_, bp, bs)) => priority > *bp || (priority == *bp && score < *bs),
                 };
                 if better {
-                    best = Some((*id, priority, dist));
+                    best = Some((*id, priority, score));
                 }
             }
             if let Some((job_id, _, _)) = best {
                 if let Some(job) = board.jobs.get_mut(&job_id) {
                     job.claimed_by = Some(*uid);
+                    claimed_pos.push(job.pos);
                 }
                 info!(job = job_id, colonist = %uid, "bastion: job claimed");
                 assignments.push((entity, job_id));

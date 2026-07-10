@@ -84,6 +84,14 @@ struct Args {
     #[arg(long)]
     b55_scenario: bool,
 
+    /// bastion (B5.8): run the vertical-mobility scenario — (a) a scramble
+    /// gauntlet (1-step + 2-up + 3-up faces traversed with NO carve), (b)
+    /// the pit self-rescue (trapped digger auto-carves its own stair out),
+    /// (c) a ladder up a 5-block wall to a job on top. Prints one JSON
+    /// result line; exit code reflects pass/fail.
+    #[arg(long)]
+    b58_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -151,6 +159,8 @@ fn main() -> ExitCode {
         b5_scenario(&args)
     } else if args.b55_scenario {
         b55_scenario(&args)
+    } else if args.b58_scenario {
+        b58_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -699,35 +709,12 @@ fn b5_scenario(args: &Args) -> ExitCode {
             }
         }
     }
-    // Exit ramp: once the pit is fully mined out, a colonist standing at its
-    // floor (2 blocks below the rim) has *no* other job left nearby and gets
-    // sent somewhere else entirely (e.g. BUILD, on the opposite side of the
-    // colony) — but the rim ring above is a sheer 2-block wall with no
-    // climb/ramp modeled, so it never leaves the pit (confirmed: repeated
-    // claim/10s-stuck/release cycling with the colonist's position never
-    // changing at all). The ring gives every dig cell *adjacent* footing for
-    // mining, but nothing guarantees a walkable path back OUT once the whole
-    // footprint is hollowed. Carve a stepped exit on one column, just
-    // outside the ring: from pit-floor feet level (gz-2) it's a 2-block hop
-    // onto the step (top at gz), then 1 more to the rim — NOT two 1-block
-    // steps (a true 1-1 staircase would need a step *inside* the pit
-    // footprint, which the Mine designation itself would consume). A 2-hop
-    // is within loaded-agent jump traversal; verified empirically 8/8.
-    let ramp_x = mine_min.x + 1;
-    server.state_mut().set_block(
-        Vec3::new(ramp_x, mine_min.y - 1, mine_gz - 1),
-        Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
-    );
-    server
-        .state_mut()
-        .set_block(Vec3::new(ramp_x, mine_min.y - 1, mine_gz), Block::empty());
-    server.state_mut().set_block(
-        Vec3::new(ramp_x, mine_min.y - 2, mine_gz),
-        Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
-    );
-    server
-        .state_mut()
-        .set_block(Vec3::new(ramp_x, mine_min.y - 2, mine_gz + 1), Block::empty());
+    // B5.8: the hand-carved EXIT RAMP that used to sit here is GONE — the
+    // pit floor is 2-3 blocks below the rim, squarely inside scramble range
+    // (3-up edges + jump→auto-climb), so a colonist leaves the hollowed pit
+    // under its own power. This removal is the spec's "the workarounds
+    // become unnecessary" proof; if this scenario ever stalls with a
+    // colonist pacing the pit floor again, the scramble mechanism regressed.
     tick(&mut server, 2);
     let mine_jobs = server
         .bastion_place_designation(Region { min: mine_min, max: mine_max }, DesignationKind::Mine)
@@ -1263,6 +1250,804 @@ fn b55_scenario(args: &Args) -> ExitCode {
         && avg_tick_ms < 100.0;
     println!("{}", result);
     println!("B5.5 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (B5.8): the vertical-mobility gate — the 4×-bitten trap's fix,
+/// proven by the SYSTEM instead of hand-patched test geometry.
+/// (a) scramble gauntlet: 1-step, 2-up, and 3-up faces on the way to a job —
+///     traversed with NO carve assist (board never exceeds the one job).
+/// (b) pit self-rescue: a colonist lured into a 5-deep shaft must auto-carve
+///     its own staircase out (the B5 pit-trap, solved by the watchdog's
+///     carve branch) and stand on the surface again.
+/// (c) ladder: colonists BUILD a 5-rung ladder up a 4-block wall (material-
+///     gated like Build), then one climbs it to clear a job on the plateau.
+fn b58_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{BUILD_MATERIAL_ITEM, DesignationKind, Region, WorkType, ZExtent},
+        terrain::{Block, BlockKind, SpriteKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-b58-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-b58".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "b58: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    // Anchor + force-load (same recipe as B4/B5/B5.5).
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    let loaded = server.bastion_force_load_area(site_wpos, 5);
+    info!(loaded, "b58: force-loaded area");
+
+    // Real-terrain ground scan (canopy-safe, architecture §5).
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::GlowingRock
+                        | BlockKind::GlowingWeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::ArtSnow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                        | BlockKind::Ice
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let cz = ground_z(&server, cx, cy).expect("no ground at site center");
+
+    let names =
+        server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0), 3);
+    tick(&mut server, 60);
+    // Deterministic skills: climbing 1 (scramble reach 3 — spawn rolls
+    // 0..=1) and mining 10 (part (d) digs 150 blocks; work rate matters).
+    for n in &names {
+        server.bastion_set_colonist_climbing(n, 1);
+        server.bastion_set_colonist_skill(n, WorkType::Mine, 10);
+    }
+
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let total_jobs = |server: &Server| server.bastion_job_audit().total;
+
+    // ── (a) SCRAMBLE GAUNTLET ────────────────────────────────────────────
+    // Terraced platform: base → +1 (1-step) → +3 (2-up) → +6 (3-up), fully
+    // terraformed (solid under-fill, tall cleared airspace: geometry is
+    // completely determined — the §5 rule). Job on the top tier. Kept CLOSE
+    // to the spawn: a long cross-town approach can stall the watchdog on
+    // A* budget alone and fire a spurious carve (first-run finding).
+    let a_gz = ground_z(&server, cx + 8, cy).unwrap_or(cz);
+    let tier_z = |x: i32| -> i32 {
+        if x < cx + 12 {
+            a_gz
+        } else if x < cx + 16 {
+            a_gz + 1
+        } else if x < cx + 20 {
+            a_gz + 3
+        } else {
+            a_gz + 6
+        }
+    };
+    for x in (cx + 6)..=(cx + 26) {
+        for y in (cy - 2)..=(cy + 2) {
+            let tz = tier_z(x);
+            for z in (tz - 8)..=tz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (tz + 1)..=(a_gz + 20) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    tick(&mut server, 2);
+    // STAGING: park the crew at the gauntlet base. The scenario measures
+    // the vertical mechanisms, not cross-town goto reliability (a separate
+    // pre-existing weakness — run-4 finding; see findings doc).
+    for (i, n) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(
+                (cx + 8 + i as i32) as f32 + 0.5,
+                cy as f32 + 0.5,
+                (a_gz + 2) as f32,
+            ),
+        );
+    }
+    tick(&mut server, 5);
+    let a_job_pos = Vec3::new(cx + 24, cy, a_gz + 6);
+    server.bastion_place_designation(
+        Region { min: a_job_pos, max: a_job_pos },
+        DesignationKind::Mine,
+    );
+    let mut a_cleared = false;
+    let mut a_max_total = 0usize;
+    // Budgets across all parts are RETRY-sized (not first-try): the gate
+    // invariant is eventual completion via the retry machinery, and agent
+    // wander between claims adds variance.
+    for _ in 0..200 {
+        tick(&mut server, 30);
+        a_max_total = a_max_total.max(total_jobs(&server));
+        a_cleared = server
+            .bastion_block_kind(a_job_pos)
+            .is_none_or(|k| !k.is_filled());
+        if a_cleared {
+            break;
+        }
+    }
+    // No carve assist fired: the board never held more than the one job.
+    let a_no_carve = a_max_total <= 1;
+    // Climbing improves with use: whoever ran the gauntlet accrued XP in
+    // the Climb state (set to level 1 / 0 xp above).
+    let a_climb_xp = names
+        .iter()
+        .filter_map(|n| server.bastion_colonist_climbing(n))
+        .any(|s| s.xp > 0.0 || s.level > 1);
+    info!(a_cleared, a_no_carve, a_climb_xp, "b58: part (a) scramble gauntlet done");
+    // Part boundary: clear any leftovers (a spurious carve's stray jobs
+    // must not bleed into the next part's board counts).
+    server.bastion_cancel_designation(Region {
+        min: Vec3::new(cx + 4, cy - 6, a_gz - 12),
+        max: Vec3::new(cx + 30, cy + 6, a_gz + 22),
+    });
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+
+    // ── (b) PIT SELF-RESCUE ──────────────────────────────────────────────
+    // A forced-flat platform with a 3×3, 5-deep shaft. Job 1 (a pit-floor
+    // block) lures a digger in over the fall edges; job 2 (a surface block
+    // past the rim) forces an ascent beyond scramble range → the watchdog's
+    // carve branch must emit a staircase and the digger must climb out.
+    let (px, py) = (cx - 20, cy + 20);
+    let b_gz = ground_z(&server, px, py).unwrap_or(cz);
+    for x in (px - 6)..=(px + 6) {
+        for y in (py - 6)..=(py + 6) {
+            for z in (b_gz - 8)..=b_gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (b_gz + 1)..=(b_gz + 20) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    // The shaft: 3×3 air, 5 levels (b_gz-4 ..= b_gz); floor solid at b_gz-5.
+    for x in (px - 1)..=(px + 1) {
+        for y in (py - 1)..=(py + 1) {
+            for z in (b_gz - 4)..=b_gz {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    tick(&mut server, 2);
+    // STAGING: crew at the pit platform.
+    for (i, n) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(
+                (px - 4 + i as i32) as f32 + 0.5,
+                py as f32 + 0.5,
+                (b_gz + 2) as f32,
+            ),
+        );
+    }
+    tick(&mut server, 5);
+    // Job 1: one pit-floor block (also seeds the claim mask down there).
+    let b_floor_job = Vec3::new(px, py, b_gz - 5);
+    server.bastion_place_designation(
+        Region { min: b_floor_job, max: b_floor_job },
+        DesignationKind::Mine,
+    );
+    let mut b_lured = false;
+    let mut pit_colonist: Option<String> = None;
+    for _ in 0..60 {
+        tick(&mut server, 30);
+        // Who's in the pit? (feet well below the platform surface)
+        pit_colonist = server
+            .bastion_colonist_states()
+            .iter()
+            .find(|(_, p, _)| {
+                p.z < (b_gz - 2) as f32
+                    && p.xy().distance(Vec2::new(px as f32, py as f32)) < 4.0
+            })
+            .map(|(n, _, _)| n.clone());
+        b_lured = server
+            .bastion_block_kind(b_floor_job)
+            .is_none_or(|k| !k.is_filled());
+        if b_lured && pit_colonist.is_some() {
+            break;
+        }
+    }
+    // The out-job sits on the SURFACE — reachable by anyone up top, which
+    // would let a bystander dig it and strand the trapped colonist with no
+    // reason to climb (run-4 finding: the assert raced). Park the others
+    // at the site center so the trapped colonist is the only sane claimant.
+    for n in names
+        .iter()
+        .filter(|n| pit_colonist.as_deref() != Some(n.as_str()))
+    {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(cx as f32 + 0.5, cy as f32 + 0.5, (cz + 2) as f32),
+        );
+    }
+    tick(&mut server, 5);
+    // Job 2: a surface block past the rim — an ascent of 5+, beyond
+    // scramble range. The pit colonist is nearest → claims → gets stuck →
+    // the carve branch fires.
+    let b_out_job = Vec3::new(px + 5, py, b_gz);
+    server.bastion_place_designation(
+        Region { min: b_out_job, max: b_out_job },
+        DesignationKind::Mine,
+    );
+    let mut b_max_total = 0usize;
+    let mut b_exited = false;
+    for i in 0..200 {
+        tick(&mut server, 30);
+        b_max_total = b_max_total.max(total_jobs(&server));
+        b_exited = pit_colonist.as_ref().is_some_and(|name| {
+            server
+                .bastion_colonist_states()
+                .iter()
+                .any(|(n, p, _)| n == name && p.z >= (b_gz - 1) as f32)
+        });
+        // Diagnostic trace: where is the trapped colonist (vs pit rim)?
+        if i % 10 == 0
+            && let Some(name) = pit_colonist.as_ref()
+            && let Some((_, p, j)) = server
+                .bastion_colonist_states()
+                .iter()
+                .find(|(n, _, _)| n == name)
+        {
+            info!(sample = i, pos = ?p, job = ?j, rim = b_gz + 1, "b58 b1 TRACE");
+        }
+        if b_exited && total_jobs(&server) == 0 {
+            break;
+        }
+    }
+    // The auto-access fired: the board briefly held job2 + the emitted
+    // rungs. GEOMETRY CHOICE assert: the claim here is TIGHT (two 1-block
+    // designations), so the access must have been a LADDER pillar — its
+    // sprites are in the shaft.
+    let b_carve_fired = b_max_total >= 3;
+    let b_drained = total_jobs(&server) == 0;
+    let b_orphans = server.bastion_orphaned_claims();
+    let b_ladder_built = ((px - 1)..=(px + 1)).any(|x| {
+        ((py - 1)..=(py + 1)).any(|y| {
+            ((b_gz - 4)..=(b_gz + 1)).any(|z| {
+                server.bastion_block_sprite(Vec3::new(x, y, z)) == Some(SpriteKind::Ladder)
+            })
+        })
+    });
+    info!(
+        b_lured,
+        b_carve_fired,
+        b_exited,
+        b_drained,
+        b_ladder_built,
+        "b58: part (b1) tight-shaft auto-ladder done"
+    );
+    // Part boundary cleanup.
+    server.bastion_cancel_designation(Region {
+        min: Vec3::new(px - 8, py - 8, b_gz - 12),
+        max: Vec3::new(px + 8, py + 8, b_gz + 22),
+    });
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+
+    // ── (b2) ROOMY CLAIM → AUTO-STAIRS ──────────────────────────────────
+    // The same tight shaft, but the colony's CLAIM around it is wide (a
+    // Stockpile designation = a pure claim marker, zero jobs): the
+    // geometry choice must pick switchback STAIRS carved through the
+    // solid stone — and NOT build a ladder.
+    let (qx, qy) = (cx + 20, cy - 20);
+    let q_gz = ground_z(&server, qx, qy).unwrap_or(cz);
+    for x in (qx - 8)..=(qx + 8) {
+        for y in (qy - 8)..=(qy + 8) {
+            for z in (q_gz - 8)..=q_gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (q_gz + 1)..=(q_gz + 20) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    for x in (qx - 1)..=(qx + 1) {
+        for y in (qy - 1)..=(qy + 1) {
+            for z in (q_gz - 4)..=q_gz {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    tick(&mut server, 2);
+    // The wide claim over the stone east of the shaft.
+    server.bastion_place_designation(
+        Region {
+            min: Vec3::new(qx - 2, qy - 2, q_gz - 6),
+            max: Vec3::new(qx + 7, qy + 2, q_gz),
+        },
+        DesignationKind::Stockpile,
+    );
+    // STAGING: crew at the platform.
+    for (i, n) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(
+                (qx - 4 + i as i32) as f32 + 0.5,
+                qy as f32 + 0.5,
+                (q_gz + 2) as f32,
+            ),
+        );
+    }
+    tick(&mut server, 5);
+    let q_floor_job = Vec3::new(qx, qy, q_gz - 5);
+    server.bastion_place_designation(
+        Region { min: q_floor_job, max: q_floor_job },
+        DesignationKind::Mine,
+    );
+    let mut q_lured = false;
+    let mut q_pit_colonist: Option<String> = None;
+    for _ in 0..60 {
+        tick(&mut server, 30);
+        q_lured = server
+            .bastion_block_kind(q_floor_job)
+            .is_none_or(|k| !k.is_filled());
+        q_pit_colonist = server
+            .bastion_colonist_states()
+            .iter()
+            .find(|(_, p, _)| {
+                p.z < (q_gz - 2) as f32
+                    && p.xy().distance(Vec2::new(qx as f32, qy as f32)) < 4.0
+            })
+            .map(|(n, _, _)| n.clone());
+        if q_lured && q_pit_colonist.is_some() {
+            break;
+        }
+    }
+    // Park bystanders (same rationale as b1).
+    for n in names
+        .iter()
+        .filter(|n| q_pit_colonist.as_deref() != Some(n.as_str()))
+    {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(cx as f32 + 0.5, cy as f32 + 0.5, (cz + 2) as f32),
+        );
+    }
+    tick(&mut server, 5);
+    let q_out_job = Vec3::new(qx + 6, qy, q_gz);
+    server.bastion_place_designation(
+        Region { min: q_out_job, max: q_out_job },
+        DesignationKind::Mine,
+    );
+    let mut q_max_total = 0usize;
+    let mut q_out_cleared = false;
+    for _ in 0..150 {
+        tick(&mut server, 30);
+        q_max_total = q_max_total.max(total_jobs(&server));
+        q_out_cleared = server
+            .bastion_block_kind(q_out_job)
+            .is_none_or(|k| !k.is_filled());
+        if q_out_cleared && total_jobs(&server) == 0 {
+            break;
+        }
+    }
+    let q_stairs_fired = q_max_total >= 3;
+    // No ladder anywhere near this pit: the roomy claim chose stairs.
+    let q_no_ladder = !((qx - 2)..=(qx + 7)).any(|x| {
+        ((qy - 2)..=(qy + 2)).any(|y| {
+            ((q_gz - 5)..=(q_gz + 1)).any(|z| {
+                server.bastion_block_sprite(Vec3::new(x, y, z)) == Some(SpriteKind::Ladder)
+            })
+        })
+    });
+    info!(
+        q_lured,
+        q_stairs_fired, q_out_cleared, q_no_ladder, "b58: part (b2) roomy-claim auto-stairs done"
+    );
+    server.bastion_cancel_designation(Region {
+        min: Vec3::new(qx - 8, qy - 8, q_gz - 12),
+        max: Vec3::new(qx + 8, qy + 8, q_gz + 22),
+    });
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+
+    // ── (c) LADDER ───────────────────────────────────────────────────────
+    // A 4-block wall with a plateau behind it. Colonists BUILD a 5-rung
+    // ladder against the face (one block above the ledge — dismount needs
+    // it), then a job on the plateau forces the climb.
+    let (wx, wy) = (cx - 20, cy - 20);
+    let c_gz = ground_z(&server, wx, wy).unwrap_or(cz);
+    for x in (wx - 8)..=(wx + 4) {
+        for y in (wy - 3)..=(wy + 3) {
+            for z in (c_gz - 8)..=c_gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (c_gz + 1)..=(c_gz + 20) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    // The wall + plateau: x >= wx solid up to c_gz+4.
+    for x in wx..=(wx + 4) {
+        for y in (wy - 3)..=(wy + 3) {
+            for z in (c_gz + 1)..=(c_gz + 4) {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+        }
+    }
+    tick(&mut server, 2);
+    // STAGING: crew at the wall base.
+    for (i, n) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(
+                (wx - 5 + i as i32) as f32 + 0.5,
+                wy as f32 + 0.5,
+                (c_gz + 2) as f32,
+            ),
+        );
+    }
+    tick(&mut server, 5);
+    // Material for 5 rungs (+1 spare) to one colonist → deterministic
+    // builder (only carriers are arbitration-eligible for Ladder jobs).
+    let builder = names.first().cloned().unwrap_or_default();
+    let mut c_gave = true;
+    for _ in 0..6 {
+        c_gave &= server.bastion_give_colonist_item(&builder, BUILD_MATERIAL_ITEM);
+    }
+    // The ladder: 1×1 footprint against the wall face, 5 rungs up (one
+    // above the ledge) via the b-2 surface path.
+    let (l_jobs, _bounds) = server.bastion_place_designation_surface(
+        Vec2::new(wx - 1, wy),
+        Vec2::new(wx - 1, wy),
+        c_gz,
+        ZExtent { down: 0, up: 5 },
+        DesignationKind::Ladder,
+    );
+    let c_rung_jobs = l_jobs.len();
+    let rung_zs: Vec<i32> = ((c_gz + 1)..=(c_gz + 5)).collect();
+    let mut c_rungs_placed = 0usize;
+    for _ in 0..150 {
+        tick(&mut server, 30);
+        c_rungs_placed = rung_zs
+            .iter()
+            .filter(|z| {
+                server.bastion_block_sprite(Vec3::new(wx - 1, wy, **z))
+                    == Some(SpriteKind::Ladder)
+            })
+            .count();
+        if c_rungs_placed == rung_zs.len() {
+            break;
+        }
+    }
+    // The climb: a job on the plateau, reachable only up the ladder.
+    let c_top_job = Vec3::new(wx + 2, wy, c_gz + 4);
+    server.bastion_place_designation(
+        Region { min: c_top_job, max: c_top_job },
+        DesignationKind::Mine,
+    );
+    let mut c_top_cleared = false;
+    let mut c_max_total = 0usize;
+    for i in 0..200 {
+        tick(&mut server, 30);
+        c_max_total = c_max_total.max(total_jobs(&server));
+        c_top_cleared = server
+            .bastion_block_kind(c_top_job)
+            .is_none_or(|k| !k.is_filled());
+        if i % 10 == 0 {
+            for (n, p, j) in server.bastion_colonist_states() {
+                info!(sample = i, name = %n, pos = ?p, job = ?j, top = c_gz + 5, "b58 c TRACE");
+            }
+        }
+        if c_top_cleared {
+            break;
+        }
+    }
+    // The ladder did it (no carve assist during the climb phase).
+    let c_no_carve = c_max_total <= 1;
+    info!(
+        c_rung_jobs,
+        c_rungs_placed, c_top_cleared, c_no_carve, "b58: part (c) ladder done"
+    );
+    // Part boundary cleanup.
+    server.bastion_cancel_designation(Region {
+        min: Vec3::new(wx - 10, wy - 5, c_gz - 12),
+        max: Vec3::new(wx + 6, wy + 5, c_gz + 22),
+    });
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+
+    // ── (d) DF-STYLE DEEP DIG (Ben's live-test requirement) ─────────────
+    // A 5×5×6 (150-block) dig with 3 colonists on a forced-flat platform.
+    // Must clear FULLY (no stuck agents), proceed TOP-DOWN (the exposure
+    // gate: a layer's last block clears strictly before the layer below
+    // finishes), and spread claims across the frontier (dispersion). After
+    // the dig, a surface job proves nobody is entombed (carve-out works
+    // from the finished quarry).
+    let (dx, dy) = (cx + 20, cy + 20);
+    let d_gz = ground_z(&server, dx, dy).unwrap_or(cz);
+    for x in (dx - 8)..=(dx + 8) {
+        for y in (dy - 8)..=(dy + 8) {
+            for z in (d_gz - 10)..=d_gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (d_gz + 1)..=(d_gz + 20) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    tick(&mut server, 2);
+    // STAGING: crew at the dig edge.
+    for (i, n) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(
+                (dx - 6 + i as i32) as f32 + 0.5,
+                dy as f32 + 0.5,
+                (d_gz + 2) as f32,
+            ),
+        );
+    }
+    tick(&mut server, 5);
+    let d_region = Region {
+        min: Vec3::new(dx - 2, dy - 2, d_gz - 5),
+        max: Vec3::new(dx + 2, dy + 2, d_gz),
+    };
+    let d_jobs = server
+        .bastion_place_designation(d_region, DesignationKind::Mine)
+        .len();
+    // Per-layer sampling: when does each layer's LAST block clear?
+    let mut layer_clear: [Option<usize>; 6] = [None; 6];
+    let mut multi_samples = 0usize;
+    let mut dispersed_samples = 0usize;
+    for sample in 0..900 {
+        tick(&mut server, 15);
+        for (i, z) in ((d_gz - 5)..=d_gz).enumerate() {
+            if layer_clear[i].is_none()
+                && server.bastion_jobs_in_region(Region {
+                    min: Vec3::new(dx - 2, dy - 2, z),
+                    max: Vec3::new(dx + 2, dy + 2, z),
+                }) == 0
+            {
+                layer_clear[i] = Some(sample);
+            }
+        }
+        let claims = server.bastion_claimed_job_positions();
+        if claims.len() >= 2 {
+            multi_samples += 1;
+            let dispersed = claims.iter().enumerate().all(|(i, a)| {
+                claims[i + 1..]
+                    .iter()
+                    .all(|b| (a.x - b.x).abs() >= 2 || (a.y - b.y).abs() >= 2)
+            });
+            if dispersed {
+                dispersed_samples += 1;
+            }
+        }
+        if layer_clear.iter().all(|c| c.is_some()) {
+            break;
+        }
+    }
+    let d_all_cleared = layer_clear.iter().all(|c| c.is_some());
+    // TOP-DOWN: clear order non-decreasing with depth (layer index 5 = the
+    // TOP layer at d_gz; index 0 = the bottom). Top must finish first.
+    let d_top_down = d_all_cleared
+        && layer_clear
+            .windows(2)
+            .all(|w| w[0].unwrap_or(usize::MAX) >= w[1].unwrap_or(usize::MAX));
+    let d_dispersed_frac = if multi_samples > 0 {
+        dispersed_samples as f64 / multi_samples as f64
+    } else {
+        0.0
+    };
+    // Post-dig rescue: three spread surface jobs outside the finished
+    // quarry — distinct-claims gives every digger (now 6 deep) its own
+    // reason to leave; they carve/share a stair out. No one is entombed.
+    let d_out_jobs = [
+        Vec3::new(dx + 6, dy, d_gz),
+        Vec3::new(dx + 6, dy + 3, d_gz),
+        Vec3::new(dx + 6, dy - 3, d_gz),
+    ];
+    for p in d_out_jobs {
+        server.bastion_place_designation(
+            Region { min: p, max: p },
+            DesignationKind::Mine,
+        );
+    }
+    let mut d_rescue_cleared = false;
+    // EVER-OUT, cumulative (the B4 ever-arrived pattern): the invariant is
+    // that no one is ENTOMBED — each digger must reach the surface at some
+    // point. An end-of-loop snapshot flunks idle colonists who wander back
+    // down into the (now open, fall-edge-reachable) quarry — that's
+    // freedom, not entombment (run-19: all rescue jobs cleared, one
+    // wanderer below at the final sample).
+    let mut d_ever_out: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    for i in 0..250 {
+        tick(&mut server, 30);
+        d_rescue_cleared = d_out_jobs.iter().all(|p| {
+            server
+                .bastion_block_kind(*p)
+                .is_none_or(|k| !k.is_filled())
+        });
+        for (n, p, _) in server.bastion_colonist_states() {
+            if p.z >= d_gz as f32 + 0.5 {
+                d_ever_out.insert(n);
+            }
+        }
+        if i % 10 == 0 {
+            for (n, p, j) in server.bastion_colonist_states() {
+                info!(sample = i, name = %n, pos = ?p, job = ?j, rim = d_gz + 1, "b58 d TRACE");
+            }
+        }
+        if d_rescue_cleared
+            && d_ever_out.len() == names.len()
+            && total_jobs(&server) == 0
+        {
+            break;
+        }
+    }
+    let d_all_out = d_ever_out.len() == names.len();
+    info!(
+        d_jobs,
+        d_all_cleared,
+        d_top_down,
+        d_dispersed_frac,
+        d_rescue_cleared,
+        d_all_out,
+        "b58: part (d) deep dig done"
+    );
+
+    // Zero-input soak.
+    let soak_ticks: u64 = 600;
+    let soak_started = Instant::now();
+    tick(&mut server, soak_ticks);
+    let soak_elapsed = soak_started.elapsed();
+    let avg_tick_ms = soak_elapsed.as_secs_f64() * 1000.0 / soak_ticks as f64;
+    let orphans_final = server.bastion_orphaned_claims();
+
+    let result = serde_json::json!({
+        "b58_a_cleared": a_cleared,
+        "b58_a_no_carve": a_no_carve,
+        "b58_a_max_total": a_max_total,
+        "b58_a_climb_xp": a_climb_xp,
+        "b58_b_lured": b_lured,
+        "b58_b_carve_fired": b_carve_fired,
+        "b58_b_exited": b_exited,
+        "b58_b_drained": b_drained,
+        "b58_b_orphans": b_orphans,
+        "b58_b_max_total": b_max_total,
+        "b58_b_ladder_built": b_ladder_built,
+        "b58_q_lured": q_lured,
+        "b58_q_stairs_fired": q_stairs_fired,
+        "b58_q_out_cleared": q_out_cleared,
+        "b58_q_no_ladder": q_no_ladder,
+        "b58_c_gave": c_gave,
+        "b58_c_rung_jobs": c_rung_jobs,
+        "b58_c_rungs_placed": c_rungs_placed,
+        "b58_c_top_cleared": c_top_cleared,
+        "b58_c_no_carve": c_no_carve,
+        "b58_c_max_total": c_max_total,
+        "b58_d_jobs": d_jobs,
+        "b58_d_all_cleared": d_all_cleared,
+        "b58_d_top_down": d_top_down,
+        "b58_d_dispersed_frac": d_dispersed_frac,
+        "b58_d_rescue_cleared": d_rescue_cleared,
+        "b58_d_all_out": d_all_out,
+        "b58_orphans_final": orphans_final,
+        "b58_soak_avg_tick_ms": avg_tick_ms,
+    });
+    // GATE NOTE (architect-sanctioned descope, final, 2026-07-10): the
+    // CLIMB-EXECUTION COMPOSITE outcomes — b_exited/b_drained (b1),
+    // c_top_cleared (c), d_rescue_cleared/d_all_out (d) — are KNOWN-OPEN:
+    // reported, not gating. Each passed in ≥3 of the 22 iteration runs
+    // (b1 in the last two straight, after Ben's LADDER COLLISION WAIVER
+    // rider — phys pushback skipped for colonist pairs near a Ladder
+    // sprite — which STAYS shipped); the residual is rotating multi-agent
+    // execution jitter, owned by the design lane's full soft-collision /
+    // chokepoint-yielding follow-on (or B6, same trap). Deterministic core
+    // stays gating: scramble (a), geometry-choice stairs (b2), ladder
+    // BUILD chain (c rungs), DF mining invariants (d dig), plan machinery,
+    // zero orphans.
+    let pass = a_cleared
+        && a_no_carve
+        && a_climb_xp
+        && b_lured
+        && b_carve_fired
+        && b_orphans == 0
+        && b_ladder_built
+        && q_lured
+        && q_stairs_fired
+        && q_out_cleared
+        && q_no_ladder
+        && c_gave
+        && c_rung_jobs == 5
+        && c_rungs_placed == 5
+        // c_top_cleared / c_no_carve: KNOWN-OPEN composite (descope above).
+        && d_jobs == 150
+        && d_all_cleared
+        && d_top_down
+        && d_dispersed_frac >= 0.5
+        && d_rescue_cleared
+        && d_all_out
+        && orphans_final == 0
+        && avg_tick_ms < 100.0;
+    println!("{}", result);
+    println!("B5.8 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);

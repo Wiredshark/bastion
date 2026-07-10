@@ -93,6 +93,31 @@ than editing the old one.
   minimap size button (client-only; no data-format or protocol changes —
   nothing serialized, safe to revert cold).
 
+## bastion-block-B5.8 (2026-07-10)
+
+- Block: B5.8 (vertical mobility: scramble + climbing SKILL + autonomous
+  access stairs/ladders + DF-style mining + ladder collision waiver)
+- Tag: `bastion-block-B5.8`
+- Previous green: `bastion-block-B5.6b-2` (= merge base `efc777475a`)
+- Revert: `git reset --hard bastion-block-B5.6b-2` (on `bastion/main`)
+- Undoes: `scramble_reach` + 3-up SCRAMBLES + ladder edges in the path
+  graph (+ the 3 graph unit tests); `ColonistSkills.climbing` (movement
+  skill, XP-on-use); `DesignationKind::Ladder` (wire enum APPEND) +
+  ladder tool/color; the shared masked-switchback `carve_ramp`; the
+  autonomous-access machinery (claim mask, access anchors, stairs-vs-
+  ladder geometry choice, one-plan-at-a-time, material-free access jobs);
+  exposure-gated top-down dispersed mining arbitration; the position-
+  driven climb assist + ledge snap; the phys LADDER COLLISION WAIVER;
+  mid-travel moot check; staged routing; the B5 quarry scenario's ramp
+  removal + `--b58-scenario` + hooks (teleport/climbing/sprite/claims).
+- Data-format caveats: **NET PROTOCOL CHANGE** — `DesignationKind` gained
+  the `Ladder` variant (appended last; client+server revert together).
+  **RTSIM SAVE CHANGE** — `ColonistSkills.climbing` is `#[serde(default)]`
+  (old saves load forward; a REVERTED build reading a post-B5.8 save
+  drops the field silently — acceptable). `Job.carve_attempted/is_access`
+  are runtime-only. The phys waiver reads a synced comp — no format
+  impact.
+
 ## bastion-block-B5.6b-2 (2026-07-09)
 
 - Block: B5.6b-2 (z_extent surface-relative model + volumetric zones +

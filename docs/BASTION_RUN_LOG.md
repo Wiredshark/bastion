@@ -492,3 +492,80 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   asset pilot's new `vox/real/` + `catalog.json` staged library
   (scanner v2 for the new sidecar contract), quiet-window gate +
   `--asset-arena` boot verify + merge/tag (architect sequences those).
+
+### B5.8 — Vertical mobility: scramble, stair-carving, ladders
+
+- Start SHA: `efc777475a` (= `bastion-block-B5.6b-2`) · branch
+  `bastion/block-B5.8` · started 2026-07-09 under the SELF-ADVANCE
+  protocol (FLEET_STATUS BUILD LANE; no architect ping needed). Spec:
+  `readme/B5.8-vertical-mobility-prompt.md`. The 4×-bitten vertical-
+  reachability trap's fix block (architecture §5). Mechanisms in
+  preference order: (1) scramble — wire colonists to the existing climb
+  machinery + teach path costs 1-step/2-3-block faces; (2) auto
+  carve-steps sub-jobs INSIDE colony designations only (**HARD PAIR:
+  one `carve_ramp` lib shared with DF-DIG-VERBS DIG-1** — flagged in
+  DESIGNER-SUGGESTIONS; don't build twice); (3) buildable ladder
+  (native `SpriteKind::Ladder` EXISTS per the asset log — reuse, no new
+  asset). Gate: new `--b58-scenario` (scramble / pit-self-rescue /
+  ladder climb) + B4/B5/B5.5 re-run with hand-patched access geometry
+  REMOVED where the mechanisms cover it + vanilla clean. Watch: path-
+  cost integration is the risky bit (vertical-link graph annotation is
+  the sanctioned fallback); TRAVEL_SPEED/climb-speed eyeball for Ben.
+
+- **FLEET-PAUSE CHECKPOINT (2026-07-10, Ben out of credit — architect
+  ordered mid-block save; NOT tagged, branch is WIP).** Scope grew
+  mid-block by architect relay of Ben's live b-2 test: DF-style mining
+  (exposure-gated claims, top-down, dispersion), climbing-as-a-SKILL
+  (`ColonistSkills.climbing`, reach mapping, XP-in-Climb-state), and
+  AUTONOMOUS ACCESS as default (stairs-vs-ladder by claim geometry;
+  masked switchback `carve_ramp` + material-free ladder pillars;
+  one-plan-at-a-time). ALSO queued by architect: ABSOLUTE-FLOOR depth
+  mode (backlog). All code COMMITTED and COMPILING on the branch; 12
+  carve_ramp/schema unit tests green. `--b58-scenario` iteration
+  scoreboard (10 runs): parts (a) scramble, (b2) roomy→auto-stairs, and
+  (d) deep-dig invariants (150/150, strict top-down, dispersion ~0.9)
+  are STABLE-PASSING; OPEN: the pit/ladder climb-OUT execution family —
+  (b1)/(c)/(d-rescue) — flip-flops; run-10 trace shows A* apparently not
+  routing via ladder edges (climber attacks the wall face at the reach
+  cap instead of walking to the ladder). **RESUME AT:** findings §2d
+  "THE open diagnosis" — write the `find_path` mock-volume unit test in
+  `common/src/path.rs` (in-file tests reach the private fn), fix the
+  ladder-edge generation, consider the top-out dismount edge; then full
+  quiet-machine gate (unit + b4/b5(ramp-removed)/b55/b58 + vanilla +
+  voxygen check — voxygen compile was HELD for Ben's live test all
+  session) → bookkeeping → merge+tag → FLEET_STATUS next (b-3). Note
+  for the b4/b5/b55 re-gate: exposure gating changes B4's buried-job
+  path (now proactively flagged unreachable — assert-compatible) and
+  the reach-aware carve trigger protects b55's exact-conservation.
+
+- **PASS (2026-07-10, headless gate; Ben's eyeball BATCHED — TEST LIST
+  with the tag ping).** The 4×-bitten vertical-reachability trap is FIXED
+  AT THE MECHANISM. Shipped (23 scenario iterations; findings §2b-2e is
+  the discovery log): skill-gated SCRAMBLE (`scramble_reach` from the new
+  `ColonistSkills.climbing` movement skill, XP-on-use; 3-up edges +
+  ladder mount/dismount edges pinned by `bastion_vertical_tests` 3/3);
+  AUTONOMOUS ACCESS by claim geometry (ONE masked-switchback `carve_ramp`
+  shared with DIG-1 + floor rule + multi-base; material-free wall-adjacent
+  LADDER PILLARS; access mask with air rights; one-plan-at-a-time; access
+  anchors + staged two-leg routing); DF-STYLE MINING (exposure-gated
+  claims w/ proactive buried-flagging, relative-clamped top-down weight,
+  crew dispersion, access-tier + on-site-range claim economy); player
+  LADDERS (`DesignationKind::Ladder`, Build-like materials, native
+  sprite); server-assisted climb EXECUTION (position-driven lift w/ reach
+  cap, ledge snap — the vanilla jump→Climb chain is timing-flaky, the
+  incremental A* resets on >2-block movement); Ben's LADDER COLLISION
+  WAIVER in phys (colonist pairs near Ladder sprites; terrain hard,
+  vanilla untouched); mid-travel moot check; teleport staging fixture.
+  KNOWN-OPEN (architect-sanctioned): the multi-colonist climb-execution
+  COMPOSITE outcomes — rotating jitter, each proven ≥3/23 runs; full
+  determinism = SOFT-COLLISION, COMMITTED at B6
+  (`readme/SOFT-COLLISION-design.md`). GATE: `--b58-scenario` PASS (run
+  23: gauntlet no-carve, tight→ladder, roomy→stairs-no-ladder, 5/5 rungs,
+  150/150 top-down dispersion-1.0 dig, 0 orphans); unit 117/117; B4 PASS;
+  **B5 PASS WITH THE HAND-CARVED EXIT RAMP REMOVED** (the spec's
+  workarounds-become-unnecessary proof); B5.5 PASS (conservation exact);
+  vanilla clean; voxygen check green. Docs:
+  `docs/BASTION_B58_TEST.md` + findings. Hygiene note: one text-mode
+  script edit slipped mid-block (BOM+churn) — caught same-minute via the
+  standing byte-check, reverted, redone with the Edit tool. NEXT per
+  FLEET_STATUS: B5.6b-3 — self-advancing after the tag ping.

@@ -1,7 +1,8 @@
 use common::{
     comp::{
-        Body, CapsulePrism, CharacterState, Collider, Density, Immovable, Mass, Ori, PhysicsState,
-        Pos, PosVelOriDefer, PreviousPhysCache, Projectile, Scale, Stats, Sticky, Vel,
+        Body, CapsulePrism, CharacterState, Collider, Colonist, Density, Immovable, Mass, Ori,
+        PhysicsState, Pos, PosVelOriDefer, PreviousPhysCache, Projectile, Scale, Stats, Sticky,
+        Vel,
         body::ship::{self, figuredata::VOXEL_COLLIDER_MANIFEST},
         fluid_dynamics::{Fluid, Wings},
         inventory::item::armor::Friction,
@@ -15,9 +16,10 @@ use common::{
     resources::{DeltaTime, GameMode, TimeOfDay},
     spiral::Spiral2d,
     states,
-    terrain::{CoordinateConversions, TerrainGrid},
+    terrain::{CoordinateConversions, SpriteKind, TerrainGrid},
     uid::Uid,
     util::{Dir, Projection, SpatialGrid},
+    vol::ReadVol,
     weather::WeatherGrid,
 };
 use common_base::{prof_span, span};
@@ -149,6 +151,9 @@ pub struct PhysicsRead<'a> {
     scales: ReadStorage<'a, Scale>,
     stickies: ReadStorage<'a, Sticky>,
     immovables: ReadStorage<'a, Immovable>,
+    // bastion (B5.8): for the ladder collision waiver (colonists pass
+    // through each other on/near ladder columns).
+    colonists: ReadStorage<'a, Colonist>,
     masses: ReadStorage<'a, Mass>,
     colliders: ReadStorage<'a, Collider>,
     is_riders: ReadStorage<'a, Is<Rider>>,
@@ -481,6 +486,44 @@ impl PhysicsData<'_> {
                                     || entity == entity_other
                                 {
                                     return;
+                                }
+
+                                // bastion (B5.8, the ladder collision
+                                // waiver): COLONISTS pass through EACH
+                                // OTHER on/near a ladder column — a 1-wide
+                                // vertical link is a strict single-file
+                                // chokepoint and two workers meeting there
+                                // mutually deadlock. Terrain collision
+                                // stays hard; players and vanilla NPCs are
+                                // untouched (both parties must be
+                                // colonists, one within 2 blocks of a
+                                // Ladder sprite). Checked only for
+                                // already-near colonist pairs — negligible
+                                // cost.
+                                if read.colonists.contains(entity)
+                                    && read.colonists.contains(entity_other)
+                                {
+                                    let near_ladder = |p: vek::Vec3<f32>| {
+                                        let feet = p.map(|e| e.floor() as i32);
+                                        (-2..=2).any(|dx| {
+                                            (-2..=2).any(|dy| {
+                                                (0..=1).any(|dz| {
+                                                    read.terrain
+                                                        .get(
+                                                            feet + vek::Vec3::new(
+                                                                dx, dy, dz,
+                                                            ),
+                                                        )
+                                                        .ok()
+                                                        .and_then(|b| b.get_sprite())
+                                                        == Some(SpriteKind::Ladder)
+                                                })
+                                            })
+                                        })
+                                    };
+                                    if near_ladder(pos.0) || near_ladder(pos_other.0) {
+                                        return;
+                                    }
                                 }
 
                                 let z_limits_other =

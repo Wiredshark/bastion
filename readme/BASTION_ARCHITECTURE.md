@@ -353,7 +353,6 @@ impact (client-only + a pile-scale tweak). **Standing note:** `--b5-scenario`
 is timing-flaky under machine load — run gate scenarios on a quiet machine
 (it was 6/6 at both the B5.5 tag and this branch when quiet).
 
-<<<<<<< HEAD
 ### 2.9 B5.6b — Zone-management UI (SPLIT into sub-blocks b-1..b-4)
 
 B5.6 was too large for one block; a builder scope-flag split it (architect-
@@ -429,6 +428,71 @@ columns off that plane silently got no/interior jobs).
   Ben's eyeball batched per the fleet protocol (TEST LIST with the tag
   ping). WATCH handed to architect: Z-slice adequacy for working-inside-
   a-dig (B-UNDERGROUND jumps forward if Ben can't).
+
+### 2.10b B5.8 — Vertical mobility (the 4×-bitten trap, FIXED at the mechanism)
+
+**What:** colonists traverse vertically — scramble short faces (skill-
+gated), the colony AUTO-BUILDS access (switchback stairs through solid
+claims / ladder pillars in tight or hollow spots), players place ladders,
+and mining digs DF-style (top-down, exposure-gated, dispersed). 23
+iteration runs; findings §2b-2e is the discovery log.
+
+- **Path graph (`common/src/path.rs`):** `TraversalConfig.scramble_reach`
+  (0 = vanilla NPC, 2 = novice colonist, 3 = climbing skill 1+) gates the
+  new 3-up `SCRAMBLES` edges (cost-premiumed so stairs stay preferred) and
+  LADDER edges (vertical beside a `SpriteKind::Ladder` column + mount/
+  dismount, one-above-the-ledge rule). Pinned by
+  `bastion_vertical_tests` (3): ladder routes exist; a 4-wall without one
+  does NOT route; reach gates 3-up. THE recurring vanilla gotcha found
+  here: the incremental A* RESETS when the agent moves >2 blocks — an
+  agent beelining while the search pends never completes it (why staged
+  routing exists).
+- **Climbing is a SKILL:** `ColonistSkills.climbing` (movement skill, NOT
+  a WorkType; `serde(default)`; spawn 0..=1) → reach mapping in the agent
+  system; XP accrues while actually lifted. Extends to flying later.
+- **Execution (server-assisted, `bastion_jobs`):** working colonists get a
+  POSITION-DRIVEN lift while beside a ladder (5×5 grab — the Chaser
+  abandons approaches up to ~2.5 blocks out) or on a wall within reach
+  (ground-proximity cap keeps the skill model honest), plus a LEDGE SNAP
+  (a hanging climber steps onto any adjacent walkable ledge — every crest
+  was a drift-vs-gravity race). STAGED ROUTING: over-reach ascents steer
+  through the nearest ACCESS ANCHOR (registered at plan emission + player
+  rung completion) then let the lift do the vertical.
+- **Autonomous access (`bastion_jobs` carve branch):** on a stuck ascent
+  beyond the colonist's own reach: STAIRS via the shared masked-switchback
+  `carve_ramp` (ONE lib — DF-DIG-VERBS DIG-1 is the other caller; floor
+  rule: no routing through open space; multi-base; never reuses a column)
+  where the claim has room, else a LADDER PILLAR (wall-adjacent column
+  choice — a mid-pit pillar strands the climber; material-free
+  "infrastructure from spoil") — else unreachable. ACCESS MASK = claim
+  boxes ±1 XY, unbounded UP ("air rights"), never sideways/down beyond
+  the paint. ONE PLAN AT A TIME (`Job.is_access`); plans never cascade.
+- **DF-style mining (arbitration):** Mine claims are EXPOSURE-GATED (≥1
+  non-filled neighbor; buried cells proactively flagged unreachable — the
+  B4 invariant rides this now); top-down via a RELATIVE-CLAMPED depth
+  preference (absolute-z crushed cross-kind scores); DISPERSION penalty
+  spreads crews; access jobs get a priority TIER and are built ON-SITE
+  only (range gate) — a distant claimant holding a rescue rung starved
+  the trapped digger.
+- **Ladders:** `DesignationKind::Ladder` (wire APPEND) — Build-like
+  (material-gated via `required_item`), places native `SpriteKind::Ladder`
+  bottom-up; in the tool cycle + `zone_rgb` legend. The kind default
+  `ZExtent{down:0, up:3}` builds a 4-rung column; b58 (c) proves the
+  give-material → build → climb chain.
+- **LADDER COLLISION WAIVER (`common/systems/phys`):** colonist↔colonist
+  pushback is skipped when either is within 2 blocks of a Ladder sprite —
+  1-wide vertical links are strict single-file chokepoints and two workers
+  deadlocked there. Terrain stays hard; players/vanilla NPCs untouched.
+  The GENERAL soft-collision (stairs/doors/corridors, grace-window +
+  density trigger) is COMMITTED at B6 (`readme/SOFT-COLLISION-design.md`);
+  until then the climb-execution COMPOSITE outcomes in `--b58-scenario`
+  are KNOWN-OPEN informational (each proven ≥3/23 runs).
+- **Gate:** `--b58-scenario` (a scramble gauntlet / b1 tight→ladder / b2
+  roomy→stairs via a Stockpile pure-claim / c player ladder / d 150-block
+  DF dig + rescue) + B4/B5(ramp REMOVED)/B5.5 + vanilla + unit tests.
+  Scenario staging uses the `bastion_teleport_colonist` fixture (vertical
+  gates measure the mechanism, not cross-town goto — a separate
+  pre-existing weakness, logged).
 
 ### 2.10 B-MAP1 — Overseer minimap (founds the map/overlay layer)
 
@@ -570,17 +634,17 @@ Full protocol: `readme/MEGA-PROMPT-autonomous-batch-builder.md`.
 
 ## 5. Gotchas & standing hazards (bite list — check before they bite again)
 
-- **Vertical reachability is the recurring trap.** Arrival is 3D within 2.5
-  of `block+(0,0,1)` and agents can't climb: (a) freestanding structures
-  ≥2 tall have unreachable upper/lower blocks, (b) an enclosed dig pit
-  traps its digger (B5's mine test carves an explicit exit ramp), (c) tall
-  trees can't be per-voxel chopped (needs a base-interaction verb),
-  (d) a single-level slab forced across sloped terrain buries/floats
-  blocks (B5.5's Part 2 stalled at 8/200 until the terraform fully
-  determined the geometry: under-fill + working level + headroom + ring).
-  Backlog has the mechanism-level fix ideas; the mining framework
-  (`BASTION-SYSTEM-FRAMEWORKS.md` §6) owns the real solution. Any new
-  test geometry or designation feature must respect this.
+- **Vertical reachability — the 4×-bitten trap — is FIXED at the mechanism
+  by B5.8** (§2.10b): skill-gated scramble edges + autonomous stairs/
+  ladder access + the exposure-gated top-down dig + server-assisted climb
+  execution. What REMAINS true: (c) tall trees still can't be per-voxel
+  chopped (needs a base-interaction verb — backlog), test terraforms must
+  STILL fully determine geometry (§5 rule unchanged), multi-colonist
+  chokepoint traversal is KNOWN-OPEN until SOFT-COLLISION lands (COMMITTED
+  at B6), and the vanilla incremental A* resets when an agent moves >2
+  blocks mid-search (why B5.8's staged routing exists — respect it in any
+  new long-goto feature). Historical bites (a)/(b)/(d) are covered by the
+  mechanism; B5's quarry exit ramp was REMOVED as the proof.
 - **`ground_z`-style scans must filter to real terrain kinds** (Rock/Earth/
   Grass/Sand/…): `is_filled()` counts tree Wood/Leaves, returning canopy
   height and placing things in mid-air (bit B5's chop/build tests).
@@ -618,16 +682,16 @@ Full protocol: `readme/MEGA-PROMPT-autonomous-batch-builder.md`.
 ## 6. State & pointers (update every block)
 
 **Done (merged + tagged):** B0, B1, B1.5, B1.6(+B1.7), B2a, B3, B4, B5,
-B5.5, B5.6a.
-**Done also:** B5.6a (tagged), B5.6b-1 (zone fills+colors+blend+labels+SUBTLE),
-B-MAP1 (minimap), **B5.6b-2 (z_extent + volumetric + volume-UX; closed
-B5.MINE-COVERAGE — this block).** **Next (per `readme/FLEET_STATUS.md`
+B5.5, B5.6a, B5.6b-1, B-MAP1, B5.6b-2, **B5.8 (vertical mobility — the
+4×-bitten §5 trap FIXED at the mechanism; climbing skill + autonomous
+access + DF mining + ladder waiver), and B-ASSET1 (asset integration
+harness + render arena — §2.11; full 73-entry catalog graduated, quality
++ rig gates standing — this merge).** **Next (per `readme/FLEET_STATUS.md`
 BUILD LANE, the routing authority under the self-advance protocol):**
-B5.8 (vertical mobility — the 4×-bitten §5 trap's fix block), then
-B5.6b-3 (zone interaction/edit-mode), b-4 (erase-by-type), B6
-(stockpiles/hauling), B7. Slots-into-gaps: B-TESTBED. **B-ASSET1: built +
-headless-verified in its isolated worktree (§2.11; 61/64 graduation
-sweep); awaiting its merge/tag + arena-eyeball window per FLEET_STATUS.**
+B5.6b-3 (zone interaction/edit-mode) / B5.6b-2.1 flat-floor per
+FLEET_STATUS, b-4 (erase-by-type), B6 (stockpiles/hauling — INCLUDES the
+committed SOFT-COLLISION SOFT-0/1), B7. Slots-into-gaps: B-TESTBED.
+Queued riders: ABSOLUTE-FLOOR depth mode.
 
 | Need | Read |
 |---|---|

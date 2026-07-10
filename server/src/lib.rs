@@ -906,6 +906,31 @@ impl Server {
         (created, bounds)
     }
 
+    /// bastion (B5.8, harness hook): positions of currently-claimed jobs —
+    /// lets scenarios assert work-crew dispersion across the dig frontier.
+    pub fn bastion_claimed_job_positions(&self) -> Vec<vek::Vec3<i32>> {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .jobs
+            .values()
+            .filter(|j| j.claimed_by.is_some())
+            .map(|j| j.pos)
+            .collect()
+    }
+
+    /// bastion (B5.8, harness hook): the sprite at a block, so scenarios can
+    /// assert ladder rungs landed.
+    pub fn bastion_block_sprite(&self, pos: vek::Vec3<i32>) -> Option<common::terrain::SpriteKind> {
+        use common::vol::ReadVol;
+        self.state
+            .ecs()
+            .read_resource::<common::terrain::TerrainGrid>()
+            .get(pos)
+            .ok()
+            .and_then(|b| b.get_sprite())
+    }
+
     /// bastion (B5.6b-2, harness hook): the per-column surface the placement
     /// path would resolve for (x, y) around `hint_z` — lets scenarios assert
     /// coverage column-by-column against the same authority.
@@ -1203,6 +1228,72 @@ impl Server {
                 common::bastion::WorkType::Cook => s.cooking,
             }
         })
+    }
+
+    /// bastion (B5.8, harness hook): teleport a loaded colonist — scenario
+    /// STAGING only (parks participants at a test site so vertical-mobility
+    /// gates measure the mechanism, not cross-town goto reliability, which
+    /// is a separate pre-existing weakness — see B58 findings).
+    pub fn bastion_teleport_colonist(&mut self, name: &str, pos: Vec3<f32>) -> bool {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let entities = ecs.entities();
+        let target = (&entities, &colonists)
+            .join()
+            .find(|(_, c)| c.0.name == name)
+            .map(|(e, _)| e);
+        drop(colonists);
+        if let Some(entity) = target {
+            let mut positions = ecs.write_storage::<comp::Pos>();
+            let mut velocities = ecs.write_storage::<comp::Vel>();
+            if let Some(p) = positions.get_mut(entity) {
+                p.0 = pos;
+                if let Some(v) = velocities.get_mut(entity) {
+                    v.0 = Vec3::zero();
+                }
+                // Force a chunk-position resync so physics doesn't lerp the
+                // entity across the map.
+                let _ = ecs
+                    .write_storage::<common::comp::ForceUpdate>()
+                    .get_mut(entity)
+                    .map(|f| f.update());
+                return true;
+            }
+        }
+        false
+    }
+
+    /// bastion (B5.8, harness hook): set a loaded colonist's CLIMBING
+    /// movement skill (deterministic scramble-reach in scenarios).
+    pub fn bastion_set_colonist_climbing(&mut self, name: &str, level: u16) -> bool {
+        use specs::LendJoin;
+        let ecs = self.state.ecs();
+        let mut colonists = ecs.write_storage::<comp::Colonist>();
+        let mut found = false;
+        let mut iter = (&mut colonists).lend_join();
+        while let Some(mut colonist) = iter.next() {
+            if colonist.0.name == name {
+                colonist.0.skills.climbing.level = level;
+                found = true;
+            }
+        }
+        found
+    }
+
+    /// bastion (B5.8, harness hook): a loaded colonist's climbing skill —
+    /// scenarios assert XP accrues with use.
+    pub fn bastion_colonist_climbing(
+        &self,
+        name: &str,
+    ) -> Option<common::bastion::SkillLevel> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        (&colonists)
+            .join()
+            .find(|c| c.0.name == name)
+            .map(|c| c.0.skills.climbing)
     }
 
     /// bastion (B5, harness hook): the block kind at a world position (for
