@@ -47,8 +47,11 @@ use tracing::info;
 use vek::*;
 
 /// B5: seconds of work at skill level 0 to complete a job; higher skill
-/// speeds this up (see `work_rate`).
-const WORK_DURATION_BASE: f32 = 3.0;
+/// speeds this up (see `work_rate`). Ben's B5.8 live verdict: 3.0 read as
+/// INSTANT — raised to a deliberate, satisfying pace (novice 6s, skill-10
+/// 2s). The designer's TOOLS-UPGRADE system later makes dig speed
+/// tool-gated on top of this base.
+const WORK_DURATION_BASE: f32 = 6.0;
 /// Work-rate skill bonus: +20% speed per skill level.
 const WORK_SKILL_BONUS: f32 = 0.2;
 /// Flat completion XP grant (design doc: "grant skill XP on completion").
@@ -137,6 +140,94 @@ fn ladder_pillar(
         }
     }
     best.map(|(_, cells)| cells)
+}
+
+/// bastion (B5.8/B5.8-E): plan AND emit one access route from `from` up to
+/// `to` — stairs (shared masked-switchback `carve_ramp`) where `mask` has
+/// room, else a ladder pillar — inserting the step/rung jobs on the board
+/// (material-free, `is_access`, anchor registered). ONE code path, two
+/// permission sources: the colony claim mask for normal self-rescue, the
+/// humanitarian bubble for emergency egress (which must work with ZERO
+/// active zones — Ben's delete-the-zone entombment). Returns the plan kind
+/// + job count, or `None` when no route fits the mask.
+fn plan_access(
+    board: &mut JobBoard,
+    terrain: &TerrainGrid,
+    mask: &[Region],
+    from: Vec3<i32>,
+    to: Vec3<i32>,
+) -> Option<(DesignationKind, usize)> {
+    let plan: Option<(Vec<Vec3<i32>>, DesignationKind)> = {
+        let is_solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
+        let allowed = |p: Vec3<i32>| in_access_mask(mask, p);
+        // Stair bases: the digger's own cell plus its walkable neighbors —
+        // the first step of a pit-escape stair must cut into a WALL column
+        // (floor rule), only adjacent from the pit's edge cells.
+        let stairs = [
+            Vec2::new(0, 0),
+            Vec2::new(1, 0),
+            Vec2::new(-1, 0),
+            Vec2::new(0, 1),
+            Vec2::new(0, -1),
+        ]
+        .into_iter()
+        .filter_map(|d| {
+            let f = Vec3::new(from.x + d.x, from.y + d.y, from.z);
+            (d == Vec2::zero() || (!is_solid(f) && is_solid(f - Vec3::unit_z()))).then_some(f)
+        })
+        .find_map(|f| {
+            common::bastion::carve_ramp(f, to, &is_solid, &allowed)
+                .filter(|digs| !digs.is_empty())
+        });
+        match stairs {
+            Some(digs) => Some((digs, DesignationKind::Mine)),
+            None => ladder_pillar(terrain, mask, from, to.z)
+                .map(|cells| (cells, DesignationKind::Ladder)),
+        }
+    };
+    let (cells, kind) = plan?;
+    // Register the vertical link's base for staged routing (cells are
+    // emitted bottom-up; the first IS the base).
+    if kind == DesignationKind::Ladder
+        && let Some(base) = cells.first().copied()
+        && !board
+            .access_anchors
+            .iter()
+            .any(|a| a.xy().distance_squared(base.xy()) < 4)
+    {
+        info!(?base, "bastion: access anchor registered (plan)");
+        board.access_anchors.push(base);
+    }
+    let occupied: HashSet<Vec3<i32>> = board.jobs.values().map(|j| j.pos).collect();
+    let mut steps = 0;
+    for pos in cells {
+        if occupied.contains(&pos) {
+            continue;
+        }
+        let id = board.next_id;
+        board.next_id += 1;
+        board.jobs.insert(id, Job {
+            kind,
+            work: kind.work_type(),
+            pos,
+            skill_floor: 0,
+            claimed_by: None,
+            unreachable: false,
+            progress: 0.0,
+            // Auto-access is material-free (infrastructure from spoil);
+            // PLAYER-placed ladders still cost material.
+            required_item: None,
+            needs_materials: false,
+            carve_attempted: true,
+            // The plan marker: no cascades, and no NEW plan while these
+            // are pending (overlapping plans dig each other's floors out).
+            is_access: true,
+            stuck_strikes: 0,
+            depth: 0,
+        });
+        steps += 1;
+    }
+    Some((kind, steps))
 }
 
 /// The per-block job predicate, shared by both placement paths. Mine =
@@ -267,6 +358,12 @@ pub struct JobBoard {
     /// beelining-then-bobbing at a wall never finishes the search that
     /// would have found the ladder (b58 run-10 root cause).
     pub access_anchors: Vec<Vec3<i32>>,
+    /// bastion (B5.8-E): per-colonist emergency-egress watch — (last anchor
+    /// position, seconds stationary, egress already attempted). Jobless
+    /// colonists have no travel watchdog and zone deletion empties the
+    /// claim mask, so a trapped digger needs a trigger + permission source
+    /// independent of BOTH (Ben's live-test entombment repro).
+    egress_watch: HashMap<Uid, (Vec3<f32>, f32, bool)>,
 }
 
 impl JobBoard {
@@ -323,6 +420,10 @@ impl JobBoard {
                             needs_materials: false,
                             carve_attempted: false,
                             is_access: false,
+                            stuck_strikes: 0,
+                            // Box-top-relative depth: the descent gate's
+                            // "how far below the way out".
+                            depth: (region.max.z - z).clamp(0, 255) as u8,
                         });
                         created.push(id);
                     }
@@ -384,6 +485,7 @@ impl JobBoard {
                     if job_wanted(kind, block) {
                         let id = self.next_id;
                         self.next_id += 1;
+                        let depth = (surface - z).clamp(0, 255) as u8;
                         self.jobs.insert(id, Job {
                             kind,
                             work,
@@ -400,6 +502,10 @@ impl JobBoard {
                             needs_materials: false,
                             carve_attempted: false,
                             is_access: false,
+                            stuck_strikes: 0,
+                            // Per-column surface-relative depth: the
+                            // descent gate's "how far below the way out".
+                            depth,
                         });
                         created.push(id);
                     }
@@ -705,8 +811,15 @@ impl<'a> System<'a> for Sys {
                     }
                     // 3D distance: standing on the surface above a deep job
                     // must NOT count as arrival (the watchdog handles it).
+                    // B5.8-E anti-loop: repeated stuck-outs grow this job's
+                    // arrival tolerance (bounded ~6.1 at 3+ strikes) — the
+                    // colonist eventually WORKS THE BLOCK REMOTELY
+                    // (mine-from-below) instead of looping forever on a
+                    // spot it can't physically stand at.
+                    let arrive =
+                        ARRIVE_DIST + (job.stuck_strikes.min(3) as f32) * 1.2;
                     let dist = pos.0.distance(target);
-                    if dist < ARRIVE_DIST {
+                    if dist < arrive {
                         active.state = ActiveJobState::Arrived;
                         if let Some(agent) = agent {
                             agent.rtsim_controller.activity = None;
@@ -797,6 +910,9 @@ impl<'a> System<'a> for Sys {
                             active.stuck_time += dt.0;
                             if active.stuck_time > STUCK_TIMEOUT {
                                 job.claimed_by = None;
+                                // B5.8-E: strike — grows the remote-work
+                                // arrival tolerance (see the arrive calc).
+                                job.stuck_strikes = job.stuck_strikes.saturating_add(1);
                                 // B5.8: a stuck ASCENT beyond THIS
                                 // colonist's climbing reach gets one
                                 // auto-access attempt before the job is
@@ -1031,94 +1147,151 @@ impl<'a> System<'a> for Sys {
             if let Some(job) = board.jobs.get_mut(&parent) {
                 job.carve_attempted = true;
             }
-            let plan: Option<(Vec<Vec3<i32>>, DesignationKind)> = {
-                let is_solid =
-                    |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
-                let allowed = |p: Vec3<i32>| in_access_mask(&board.designated, p);
-                // Stair bases: the digger's own cell plus its walkable
-                // neighbors — the first step of a pit-escape stair must cut
-                // into a WALL column (floor rule), which is only adjacent
-                // from the pit's edge cells, one step away from wherever
-                // the digger happened to stall.
-                let stairs = [
-                    Vec2::new(0, 0),
-                    Vec2::new(1, 0),
-                    Vec2::new(-1, 0),
-                    Vec2::new(0, 1),
-                    Vec2::new(0, -1),
-                ]
-                .into_iter()
-                .filter_map(|d| {
-                    let f = Vec3::new(from.x + d.x, from.y + d.y, from.z);
-                    // Alternate bases must be standable open cells.
-                    (d == Vec2::zero()
-                        || (!is_solid(f) && is_solid(f - Vec3::unit_z())))
-                    .then_some(f)
-                })
-                .find_map(|f| {
-                    common::bastion::carve_ramp(f, to, &is_solid, &allowed)
-                        .filter(|digs| !digs.is_empty())
-                });
-                match stairs {
-                    Some(digs) => Some((digs, DesignationKind::Mine)),
-                    None => ladder_pillar(&terrain, &board.designated, from, to.z)
-                        .map(|cells| (cells, DesignationKind::Ladder)),
-                }
-            };
-            if let Some((cells, kind)) = plan {
-                // Register the vertical link's base for staged routing
-                // (cells are emitted bottom-up; the first IS the base).
-                if kind == DesignationKind::Ladder
-                    && let Some(base) = cells.first().copied()
-                    && !board
-                        .access_anchors
-                        .iter()
-                        .any(|a| a.xy().distance_squared(base.xy()) < 4)
-                {
-                    info!(?base, "bastion: access anchor registered (plan)");
-                    board.access_anchors.push(base);
-                }
-                let occupied: HashSet<Vec3<i32>> =
-                    board.jobs.values().map(|j| j.pos).collect();
-                let mut steps = 0;
-                for pos in cells {
-                    if occupied.contains(&pos) {
-                        continue;
+            let mask = board.designated.clone();
+            match plan_access(board, &terrain, &mask, from, to) {
+                Some((kind, steps)) => {
+                    info!(
+                        parent,
+                        steps,
+                        ?kind,
+                        "bastion: auto-access emitted (B5.8 self-rescue)"
+                    );
+                },
+                None => {
+                    if let Some(job) = board.jobs.get_mut(&parent) {
+                        job.unreachable = true;
                     }
-                    let id = board.next_id;
-                    board.next_id += 1;
-                    board.jobs.insert(id, Job {
-                        kind,
-                        work: kind.work_type(),
-                        pos,
-                        skill_floor: 0,
-                        claimed_by: None,
-                        unreachable: false,
-                        progress: 0.0,
-                        // Auto-access is material-free (infrastructure from
-                        // spoil); PLAYER-placed ladders still cost material.
-                        required_item: None,
-                        needs_materials: false,
-                        carve_attempted: true,
-                        // The plan marker: no cascades, and no NEW plan
-                        // while these are pending (run-7 finding:
-                        // overlapping plans dig each other's floors out).
-                        is_access: true,
-                    });
-                    steps += 1;
+                    info!(
+                        job = parent,
+                        "bastion: auto-access refused (no in-claim route) — job unreachable"
+                    );
+                },
+            }
+        }
+
+        // ── B5.8-E: EMERGENCY EGRESS (the "nobody entombed" fail-safe) ──
+        // Ben's live-test repro: mine a shaft, DELETE the zone — the digger
+        // is stranded: no job (no watchdog trigger) and no claims (no carve
+        // permission). The override: a JOBLESS colonist that has been
+        // stationary ~20s with NO reachable step up anywhere in a radius-5
+        // ring (a surviving stair/ladder step within scramble reach counts
+        // as egress — no spurious carving) gets an access plan under a
+        // HUMANITARIAN BUBBLE mask around them, independent of zone state.
+        // The emitted steps/rungs are ordinary access jobs — the trapped
+        // colonist claims them and digs/builds its own way out.
+        const EGRESS_STILL_SECS: f32 = 20.0;
+        const EGRESS_RING_R: i32 = 5;
+        const EGRESS_BUBBLE_R: i32 = 8;
+        if tick.0 % 30 == 7 {
+            // Employed colonists are the watchdog's problem, not the
+            // trapped detector's — clear their watch so the still-timer
+            // only accrues across CONSECUTIVE jobless seconds (brief
+            // between-claim gaps were summing to spurious triggers).
+            for (_, uid, _) in (&colonists, &uids, &active_jobs).join() {
+                board.egress_watch.remove(uid);
+            }
+            let mut egress_requests: Vec<(Uid, Vec3<i32>, Vec3<i32>)> = Vec::new();
+            for (colonist, pos, uid, ()) in
+                (&colonists, &positions, &uids, !&active_jobs).join()
+            {
+                let watch = board
+                    .egress_watch
+                    .entry(*uid)
+                    .or_insert((pos.0, 0.0, false));
+                if pos.0.distance_squared(watch.0) > 9.0 {
+                    *watch = (pos.0, 0.0, false);
+                    continue;
                 }
-                info!(
-                    parent,
-                    steps,
-                    ?kind,
-                    "bastion: auto-access emitted (B5.8 self-rescue)"
-                );
-            } else if let Some(job) = board.jobs.get_mut(&parent) {
-                job.unreachable = true;
-                info!(
-                    job = parent,
-                    "bastion: auto-access refused (no in-claim route) — job unreachable"
-                );
+                watch.1 += 1.0; // this pass runs ~once per second
+                if watch.2 || watch.1 < EGRESS_STILL_SECS {
+                    continue;
+                }
+                let feet = pos.0.map(|e| e.floor() as i32);
+                let reach = 2 + colonist.0.skills.climbing.level.min(1) as i32;
+                // ANNULUS scan (r 3..=6): a shaft/small pit has ONLY walls
+                // out there; open ground has level cells. Level-or-lower
+                // surfaces COUNT as egress (walk off / hop down) — the
+                // first detector counted only upward steps, so any idle
+                // colonist beside a town wall read as "trapped" and fired
+                // spurious carves (part-e run-1). Wide pits (>7 across)
+                // evade this local test — the loop-breaker covers their
+                // job-holding cases; jobless wide-pit detection is a noted
+                // known-limit pending a real reachability probe.
+                let mut rim: Option<(i32, Vec3<i32>)> = None; // (xy dist, target)
+                let mut has_egress = false;
+                'ring: for dx in -(EGRESS_RING_R + 1)..=(EGRESS_RING_R + 1) {
+                    for dy in -(EGRESS_RING_R + 1)..=(EGRESS_RING_R + 1) {
+                        let d = dx.abs().max(dy.abs());
+                        if d < 3 {
+                            continue;
+                        }
+                        let Some(s) =
+                            column_surface_z(&terrain, feet.x + dx, feet.y + dy, feet.z)
+                        else {
+                            continue;
+                        };
+                        if s >= feet.z - 4 && s <= feet.z + reach {
+                            has_egress = true;
+                            break 'ring;
+                        }
+                        if s > feet.z + reach {
+                            let dd = dx.abs() + dy.abs();
+                            if rim.as_ref().is_none_or(|(bd, _)| dd < *bd) {
+                                rim = Some((dd, Vec3::new(feet.x + dx, feet.y + dy, s)));
+                            }
+                        }
+                    }
+                }
+                if has_egress {
+                    // Walkable/climbable ground within the annulus — not
+                    // walled in.
+                    *watch = (pos.0, 0.0, false);
+                    continue;
+                }
+                let Some((_, target)) = rim else {
+                    // Open/flat ground — just idling, not trapped.
+                    *watch = (pos.0, 0.0, false);
+                    continue;
+                };
+                watch.2 = true;
+                egress_requests.push((*uid, feet, target));
+            }
+            let egress_pending = board.jobs.values().any(|j| j.is_access);
+            for (uid, from, to) in egress_requests
+                .into_iter()
+                .take(if egress_pending { 0 } else { 1 })
+            {
+                let bubble = [Region {
+                    min: Vec3::new(
+                        from.x - EGRESS_BUBBLE_R,
+                        from.y - EGRESS_BUBBLE_R,
+                        from.z - 2,
+                    ),
+                    max: Vec3::new(
+                        from.x + EGRESS_BUBBLE_R,
+                        from.y + EGRESS_BUBBLE_R,
+                        from.z + 64,
+                    ),
+                }];
+                match plan_access(board, &terrain, &bubble, from, to) {
+                    Some((kind, steps)) => {
+                        info!(
+                            ?kind,
+                            steps,
+                            ?from,
+                            "bastion: EMERGENCY EGRESS emitted (B5.8-E)"
+                        );
+                    },
+                    None => {
+                        // Retry shortly rather than burning the attempt —
+                        // terrain may open up (or another colonist digs).
+                        if let Some(w) = board.egress_watch.get_mut(&uid) {
+                            w.1 = EGRESS_STILL_SECS - 10.0;
+                            w.2 = false;
+                        }
+                        info!(?from, "bastion: emergency egress found no route (retry)");
+                    },
+                }
             }
         }
 
@@ -1219,6 +1392,59 @@ impl<'a> System<'a> for Sys {
                 job.unreachable = true;
             }
         }
+        // B5.8-E ACCESS-BEFORE-DESCENT (Ben's proactive fix): a dig cell
+        // deeper than novice reach below its own surface is CLAIMABLE ONLY
+        // once return-access exists nearby (an anchor whose base joins the
+        // dig's level range) — access LEADS the descent, so an inescapable
+        // hole is never created. The gate tracks the SHALLOWEST held cell;
+        // a proactive plan fires for it below (and the ladder extends
+        // downward as the dig deepens, one plan per ~4 layers).
+        let mut descent_gated: HashSet<JobId> = HashSet::new();
+        let mut descent_plan: Option<(JobId, Vec3<i32>, u8)> = None;
+        for (id, job) in board.jobs.iter() {
+            if job.kind != DesignationKind::Mine
+                || job.is_access
+                || job.depth <= 2
+                || !exposed.contains(id)
+            {
+                continue;
+            }
+            let anchored = board.access_anchors.iter().any(|a| {
+                (a.x - job.pos.x).abs().max((a.y - job.pos.y).abs()) <= 8
+                    && a.z >= job.pos.z - 1
+                    && a.z <= job.pos.z + 4
+            });
+            if anchored {
+                continue;
+            }
+            descent_gated.insert(*id);
+            if descent_plan
+                .as_ref()
+                .is_none_or(|(_, p, _)| job.pos.z > p.z)
+            {
+                descent_plan = Some((*id, job.pos, job.depth));
+            }
+        }
+        // The proactive access plan for the shallowest gated layer (one
+        // plan at a time, as everywhere): from the open floor ABOVE the
+        // gated cell up to its column's own surface.
+        if let Some((jid, jpos, jdepth)) = descent_plan
+            && !board.jobs.values().any(|j| j.is_access)
+        {
+            let from = jpos + Vec3::unit_z();
+            let to = Vec3::new(jpos.x, jpos.y, jpos.z + jdepth as i32);
+            let mask = board.designated.clone();
+            if let Some((kind, steps)) = plan_access(board, &terrain, &mask, from, to) {
+                info!(
+                    job = jid,
+                    ?kind,
+                    steps,
+                    "bastion: proactive descent access emitted (B5.8-E)"
+                );
+            }
+            // On None: the gate holds and this retries next cycle (the
+            // frontier keeps digging its SAFE layers meanwhile).
+        }
         // 3. DISPERSION — claims (standing + taken this pass) repel new
         //    claims within 2 XY blocks, spreading a work crew across the
         //    frontier instead of stacking on one cell.
@@ -1250,6 +1476,10 @@ impl<'a> System<'a> for Sys {
                     continue;
                 }
                 if job.kind == DesignationKind::Mine && !exposed.contains(id) {
+                    continue;
+                }
+                // B5.8-E: held until return-access leads the descent.
+                if descent_gated.contains(id) {
                     continue;
                 }
                 if job.required_item.is_some() && !carries_material {

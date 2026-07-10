@@ -549,6 +549,22 @@ pub struct Job {
     /// (the b58 run-7 gallery-of-chaos finding); one stair serves everyone.
     #[serde(default)]
     pub is_access: bool,
+    /// bastion (B5.8-E, Ben's anti-loop invariant): how many times a
+    /// claimant stuck-timed-out on this job. Grows the job's arrival
+    /// tolerance (a bounded REMOTE-WORK reach extension, ~6 blocks at 3+
+    /// strikes), so a colonist that can't physically stand at an awkward
+    /// block eventually works it from below/afar instead of looping
+    /// claim→stuck→unreachable→retry forever.
+    #[serde(default)]
+    pub stuck_strikes: u8,
+    /// bastion (B5.8-E, Ben's ACCESS-BEFORE-DESCENT): this dig cell's depth
+    /// below its own column's surface AT PLACEMENT (0 = the surface layer).
+    /// The descent gate holds Mine claims deeper than novice reach until
+    /// return-access exists nearby — access LEADS the dig down instead of
+    /// trailing it, so an inescapable hole is never created in the first
+    /// place (the reactive egress becomes the rare backstop).
+    #[serde(default)]
+    pub depth: u8,
 }
 
 /// The material B5's minimal Build path requires (single hardcoded material;
