@@ -328,3 +328,24 @@ remove an earlier block's entries.
 - **IDEA** (B-MAP1): composite upload is a 1 MB image clone per dirty
   maintain (matches vanilla behavior at 4× size); throttle or partial-upload
   if it ever profiles hot.
+
+## 2026-07-09 — B5.6b-2 (z_extent + volumetric + volume-UX)
+
+- **ADD** (B5.6b-2): per-column-TRUE committed volume rings. Committed
+  zones render depth rings at the echoed AABB's absolute z-levels (robust
+  to mid-dig terrain change; box semantics match cancel/erase) — on a
+  slope that's the volume ENVELOPE (relief + depth), not each column's own
+  extent. Per-column-honest rings need a placement-time surface cache
+  echoed to (or stored by) the client. Candidate for B5.6b-3 or
+  B-UNDERGROUND. See findings "AS BUILT" §design-decision.
+- **ADD** (B5.6b-2): `Purpose` enum is now live in `common::bastion` but
+  UNCONSUMED (no zone stores one yet). B6 zones / the asset-matching layer
+  should take `DesignationKind::purpose()` as the matching key — do NOT
+  re-derive a second mapping.
+- **ADD** (restated from B5.6a/B-MAP1, still open): draped overlays +
+  volume rings don't rebuild on terrain edits under the zone.
+  `TerrainChanges::modified_blocks` (minimap consumes it) → set
+  `bastion_designation_dirty` on hits inside designation footprints.
+- **IDEA** (B5.6b-2): the depth stepper tops at down=32 / up=8 (UI clamp,
+  `Z_EXTENT_MAX_DOWN/UP`); §3v's mine framework may want per-kind caps +
+  a "to depth Z" absolute entry mode when deep mining lands.

@@ -385,6 +385,51 @@ only. Client-only.
 - **Gate:** in-game — fills drape + colored + overlaps blend + labels +
   SUBTLE=border-only; headless B4/B5/B5.5 unaffected (voxygen-only diff).
 
+**B5.6b-2 (built):** the **z_extent surface-relative model** + volumetric
+zone rendering + the volume-selection UX. Closed **B5.MINE-COVERAGE** (root
+cause: the client pre-expanded ONE flat region `plane-2..=plane`; on slopes,
+columns off that plane silently got no/interior jobs).
+- Schema (`common/src/bastion.rs`): `ZExtent { down, up: u16 }` — vertical
+  extent RELATIVE to each column's own surface; `default_for(kind)` =
+  `{2, 0}` (the legacy depth exactly, unit-tested). Plus the **canonical
+  8-kind `Purpose` enum** locked from FRAMEWORKS §2 (schema-guard test;
+  §2 is the edit-first authority; live but unconsumed until B6) and
+  `DesignationKind::purpose()`.
+- Server (`server/src/bastion_jobs.rs`): `is_surface_terrain` (THE
+  canopy-safe kind list, §5), `column_surface_z(terrain, x, y, hint)`
+  (topmost real terrain in a +48/−96 window; resolved ONCE at placement —
+  digging never re-resolves), `resolve_surface_bounds` (tight AABB),
+  `JobBoard::place_designation_surface` (per-column z-loop over the shared
+  `job_wanted` predicate + occupied-set dedupe). The Region-based
+  `place_designation` is UNTOUCHED (harness geometry entry).
+- Wire: `ClientGeneral::BastionPlaceDesignation` + the echo carry
+  `z_extent: Option<ZExtent>` (None = legacy literal region). **ECHO-BOUNDS
+  INVARIANT:** the in_game handler resolves exact bounds INLINE (terrain is
+  readable in the msg loop) and echoes those — the client-stored rect
+  always bounds every job, so 3D cancel/erase can't orphan. The deferred
+  board op recomputes identical surfaces (block edits land post-tick).
+- Client: paint sends footprint + plane hint + `Tools::z_extent` — ONE
+  session field edited by BOTH depth paths (scroll-while-painting steps it;
+  the palette's `[−] N levels [+]` stepper steps it via
+  `HudEvent::BastionStepZExtent`) → synced by construction; kind change
+  resets to the kind default. Drag preview: draped outline + per-column
+  surface-shifted rings (fresh sample = honest at paint time) + a
+  world-anchored counter (`BastionHudState::paint_label`). COMMITTED zones
+  >1 level: countable rings at the echoed AABB's ABSOLUTE z-levels + corner
+  posts, slice-clipped, floor emphasized; labels append "· N levels".
+  Absolute-z (not surface-shifted) deliberately: rebuild-resampled surfaces
+  sag into a dig mid-excavation; the AABB matches cancel semantics and
+  stays put (consistency log + backlog upgrade path).
+- Harness: `--b5-scenario` phase 7.5 — terraformed 8-column staircase;
+  72/72 per-column coverage vs `column_surface_z` AND terraformed truth;
+  tight-bounds + cancel-through-bounds asserts; the legacy flat path's
+  45/72 kept as a regression witness (`b5_slope_legacy_jobs == 45`).
+  Hooks: `Server::{bastion_place_designation_surface, bastion_column_surface_z}`.
+- **Gate:** unit 8/8, B4/B5(+7.5)/B5.5 PASS, vanilla flagless clean;
+  Ben's eyeball batched per the fleet protocol (TEST LIST with the tag
+  ping). WATCH handed to architect: Z-slice adequacy for working-inside-
+  a-dig (B-UNDERGROUND jumps forward if Ben can't).
+
 ### 2.10 B-MAP1 — Overseer minimap (founds the map/overlay layer)
 
 **What:** the god's minimap — rendered top-down terrain tiles (WoW-addon
@@ -522,12 +567,13 @@ Full protocol: `readme/MEGA-PROMPT-autonomous-batch-builder.md`.
 
 **Done (merged + tagged):** B0, B1, B1.5, B1.6(+B1.7), B2a, B3, B4, B5,
 B5.5, B5.6a.
-**Done also:** B5.6a (tagged), B5.6b-1 (zone fills+colors+blend+labels+SUBTLE
-— this block). **Next (per the updated queue):** B5.6b-2 (z_extent model +
-volumetric + volume-selection UX; also closes B5.MINE-COVERAGE), b-3 (zone
-interaction/edit-mode), b-4 (erase-by-type), plus B5.7/B5.8/B5.9,
-B-UNDERGROUND, B-CAM-FOLLOW, then B6 (stockpiles/hauling). Independents
-(B-MAP1, B-ASSET1, B-TESTBED) floatable.
+**Done also:** B5.6a (tagged), B5.6b-1 (zone fills+colors+blend+labels+SUBTLE),
+B-MAP1 (minimap), **B5.6b-2 (z_extent + volumetric + volume-UX; closed
+B5.MINE-COVERAGE — this block).** **Next (per `readme/FLEET_STATUS.md`
+BUILD LANE, the routing authority under the self-advance protocol):**
+B5.8 (vertical mobility — the 4×-bitten §5 trap's fix block), then
+B5.6b-3 (zone interaction/edit-mode), b-4 (erase-by-type), B6
+(stockpiles/hauling), B7. Slots-into-gaps: B-ASSET1 resume, B-TESTBED.
 
 | Need | Read |
 |---|---|

@@ -419,3 +419,38 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   FINDINGS.md` (b-2). Also closes B5.MINE-COVERAGE (surface-relative z) +
   adds the coverage assertion. Schema guard: frameworks §2 purpose enum is
   canonical. Watch/report: Z-slice adequacy for working-inside-a-dig.
+
+- **PASS** (2026-07-09, headless gate; Ben's eyeball BATCHED per the
+  architect's final self-advance protocol — TEST LIST goes with the tag
+  ping). Shipped: `ZExtent{down,up}` surface-relative model (defaults =
+  the legacy `plane-2..=plane` exactly, unit-tested) + the canonical
+  8-kind `Purpose` enum locked from FRAMEWORKS §2 (schema-guard test);
+  per-column server resolution (`column_surface_z` canopy-safe,
+  `place_designation_surface`, `resolve_surface_bounds`) with the
+  ECHO-BOUNDS INVARIANT (the in_game handler resolves exact bounds INLINE
+  and echoes them — cancel/erase through the stored rect cannot orphan;
+  deferred board op recomputes identical surfaces); wire `z_extent:
+  Option<ZExtent>` on place + echo (None = legacy — harness scenarios
+  untouched); client paint sends footprint+extent (flat `min.z-2`
+  pre-expansion DELETED); volume-selection UX = scroll-while-painting +
+  palette `[−] N levels [+]` stepper editing ONE session field (synced by
+  construction; kind-default reset) + live per-column ring preview +
+  world-anchored depth counter; committed volumetric zones = countable
+  ABSOLUTE-z rings + corner posts, slice-clipped, "· N levels" labels
+  (absolute-z rationale: findings AS-BUILT + consistency; per-column
+  upgrade in backlog). **B5.MINE-COVERAGE CLOSED** — root cause the
+  client's flat pre-expansion; proven by the new b5 phase 7.5 (terraformed
+  8-column staircase: surface path 72/72 per-column vs terraformed truth,
+  echoed bounds tight, cancel-through-bounds → 0 jobs, legacy flat path
+  exactly 45/72 with the 2 lowest columns at ZERO — kept as permanent
+  regression witness). Gate: unit tests 8/8; B4 PASS (4.2ms avg tick);
+  B5 PASS incl. 7.5 (3.9ms); B5.5 PASS (4.4ms); vanilla flagless 1000
+  ticks clean (9.4× real-time, 0 colonists); compile green ×4 (quiet
+  machine throughout). Docs: `docs/BASTION_B5.6b-2_TEST.md` + findings
+  AS-BUILT section. NET-PROTOCOL NOTE: two messages gained a field —
+  client+server revert together (restore ledger). **Z-SLICE ADEQUACY
+  (the architect's watch item):** code-side the slice interacts sanely
+  (rings clip, sampler clamps), but nothing lets the camera DESCEND into
+  a pit; Ben's verdict on the 6-deep slope mine (asked explicitly in the
+  TEST LIST) decides whether B-UNDERGROUND jumps forward. Next per
+  `readme/FLEET_STATUS.md`: **B5.8 (vertical mobility)** — self-advancing.
