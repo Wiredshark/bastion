@@ -83,28 +83,28 @@ if __name__ == '__main__':
     sys.path.insert(0, 'asset-lab/gen')
     try:
         import json as _json
-        import detail_metrics  # the pilot's module — shared definition
+        # The pilot's module is the WHOLE shared definition: metrics_of()
+        # (fill_density/bands/surface_ratio/protrusions/cells), FLOOR_KEYS,
+        # combine_natives() (per-metric MEDIAN over natives), and
+        # meets_floor() (owns TOL=0.90 and the comparison itself). We only
+        # orchestrate — zero math on this side.
+        import detail_metrics
         refmap = _json.load(open(idx_path, encoding='utf-8'))
         floor_state = 'ACTIVE'
-        import fnmatch
         for pattern, ref in refmap.items():
-            if not os.path.isfile(ref):
-                print(f'  FLOOR: comparator missing {ref} (pattern {pattern})')
+            refs = ref if isinstance(ref, list) else [ref]
+            missing = [r for r in refs if not os.path.isfile(r)]
+            if missing:
+                print(f'  FLOOR: comparator missing {missing} (pattern {pattern})')
                 continue
-            rm = detail_metrics.measure(ref)
-            # FLOOR_KEYS (optional module export) = which metrics gate;
-            # default: every numeric key. Lets the pilot ship informational
-            # metrics without them becoming accidental floors.
-            gate_keys = getattr(detail_metrics, 'FLOOR_KEYS', None) or [
-                k for k in rm if isinstance(rm[k], (int, float))]
+            floor = detail_metrics.combine_natives(
+                [detail_metrics.metrics_of(r) for r in refs])
             for asset in sorted(glob.glob(pattern)):
-                am = detail_metrics.measure(asset)
-                low = {k: (am.get(k, 0), rm[k]) for k in gate_keys
-                       if k in rm and am.get(k, 0) < rm[k]}
-                if low:
-                    under_floor.append((asset, low))
-                    print(f'  UNDER-FLOOR {asset} vs {ref}: ' + ', '.join(
-                        f'{k} {a:.3g} < {r:.3g}' for k, (a, r) in low.items()))
+                ok, report = detail_metrics.meets_floor(
+                    detail_metrics.metrics_of(asset), floor)
+                if not ok:
+                    under_floor.append((asset, report))
+                    print(f'  UNDER-FLOOR {asset} vs {refs}: {report}')
     except (ImportError, FileNotFoundError):
         pass  # module or index not shipped yet — floor check stays PENDING
     print(f'=== DETAIL FLOOR: {floor_state}'
