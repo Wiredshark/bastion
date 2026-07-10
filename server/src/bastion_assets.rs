@@ -302,6 +302,8 @@ pub fn marker_registry(open_variant: bool) -> HashMap<u8, StructureBlock> {
         (217, "Filled(GlowingRock, (r: 0, g: 201, b: 177))"), // glow crystal (gnarling convention)
         (218, "Filled(Rock, (r: 200, g: 190, b: 160))"), // worship point (REL-0 upgrades)
         (219, "Sprite(CraftingBench())"), // trade depot drop/work point
+        (223, "Filled(GlowingRock, (r: 255, g: 157, b: 46))"), // beacon light (lighthouse)
+        (224, "Sprite(CraftingBench())"), // mooring / dock work point
     ];
     let mut m = HashMap::default();
     for (b, s) in TABLE {
