@@ -506,23 +506,29 @@ fn b4_scenario(args: &Args) -> ExitCode {
     // without depending on B4-era job semantics or claim-ordering timing.
     let mut claims_always_distinct = true;
     let mut disabled_never_claimed = true;
-    let mut ever_arrived: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut ever_arrived: std::collections::HashSet<u64> = std::collections::HashSet::new();
     let mut ever_unreachable = false;
-    for _ in 0..60 {
-        tick(&mut server, 30);
+    // 120 samples at 15 ticks (same 60 sim-s, DOUBLE the sampling rate):
+    // "ever Arrived" is a point-in-time sample, and at the faster
+    // post-TOOL-0 job cycling a colonist can arrive AND complete a job
+    // between two 1-s samples and never be caught (the b4 arrival flake
+    // dipping to 1). Half-second sampling halves the miss probability;
+    // uid-keyed since random names collide (chokepoint run-23 lesson).
+    for _ in 0..120 {
+        tick(&mut server, 15);
         let audit = server.bastion_job_audit();
         claims_always_distinct &= audit.claims_distinct;
         ever_unreachable |= audit.unreachable >= 1;
-        let states = server.bastion_colonist_states();
+        let states = server.bastion_colonist_states_full();
         if states
             .iter()
-            .any(|(n, _, j)| *n == disabled && j.is_some())
+            .any(|(_, n, _, j)| *n == disabled && j.is_some())
         {
             disabled_never_claimed = false;
         }
-        for (n, _, j) in &states {
+        for (u, n, _, j) in &states {
             if n != &disabled && matches!(j, Some((_, true))) {
-                ever_arrived.insert(n.clone());
+                ever_arrived.insert(*u);
             }
         }
     }
