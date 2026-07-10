@@ -93,6 +93,24 @@ than editing the old one.
   minimap size button (client-only; no data-format or protocol changes —
   nothing serialized, safe to revert cold).
 
+## bastion-block-TIMECTL (2026-07-10, overnight run)
+
+- Block: TIME-CONTROLS (UI-3 §3 visible sim-speed cluster + hotkeys)
+- Tag: `bastion-block-TIMECTL`
+- Previous green: `bastion-block-B5.6b-2.1` (main tip `547ee38518` = its
+  docs rider; the merge base)
+- Revert: `git reset --hard 547ee38518` (or the b-2.1 tag to also drop
+  the docs rider)
+- Undoes: the HUD speed cluster/readout/PAUSED tag, the three
+  `GameInput::Bastion{PauseToggle,SpeedUp,SpeedDown}` bindings
+  (Space/+/−) + context-scheme entries, `Event::BastionSetSimSpeed`, the
+  session sim-speed setter/stepper. Voxygen-only.
+- Data-format caveats: NONE on the wire or saves. One SETTINGS surface:
+  the three new GameInputs get default key bindings — a `settings.ron`
+  saved after this block lists them; reverting past it leaves unknown-
+  input entries that vanilla settings loading tolerates/drops. Safe cold
+  revert.
+
 ## bastion-block-B5.6b-2.1 (2026-07-10, overnight run)
 
 - Block: B5.6b-2.1 (ABSOLUTE-FLOOR flat mine mode + B5.8-E anti-stuck
