@@ -142,6 +142,10 @@ pub const BUILD_STAMP: &str = concat!(
 );
 
 fn main() -> ExitCode {
+    // Stderr, not stdout: JSON-line consumers stay untouched. BEFORE
+    // Args::parse so even a --help/parse-error run identifies its exe.
+    eprintln!("bastion-harness {BUILD_STAMP}");
+
     let args = Args::parse();
 
     // Logs to stderr so stdout carries exactly one line of JSON.
@@ -152,9 +156,6 @@ fn main() -> ExitCode {
         )
         .with_writer(std::io::stderr)
         .init();
-
-    // Stderr, not stdout: JSON-line consumers stay untouched.
-    eprintln!("bastion-harness {BUILD_STAMP}");
 
     if let Some(target) = &args.asset_test {
         asset_test::run(&asset_test::AssetTestConfig {

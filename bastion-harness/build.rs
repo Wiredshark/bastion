@@ -27,15 +27,17 @@ fn main() {
         "cargo:rustc-env=BASTION_BUILD_TIME={}",
         chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ")
     );
-    // re-stamp when HEAD moves, not on every unrelated rebuild. Resolve the
-    // real HEAD path via git — in a worktree, `.git` is a pointer file.
-    if let Some(head) = Command::new("git")
-        .args(["rev-parse", "--path-format=absolute", "--git-path", "HEAD"])
+    // re-stamp when HEAD moves. NOT the HEAD file — that's a ref POINTER
+    // that only changes on checkout (commits move refs/heads/*, the stamp
+    // went 10 commits stale that way). The reflog appends on EVERY commit,
+    // so track logs/HEAD (worktree-safe via --git-path).
+    if let Some(log) = Command::new("git")
+        .args(["rev-parse", "--path-format=absolute", "--git-path", "logs/HEAD"])
         .output()
         .ok()
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
     {
-        println!("cargo:rerun-if-changed={head}");
+        println!("cargo:rerun-if-changed={log}");
     }
 }
