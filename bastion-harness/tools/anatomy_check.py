@@ -117,7 +117,11 @@ def check_ship(rig_dir):
             if len(cells) > 0.05 * len(hull):
                 fail(f'{rid}.{name}: s4 giant rudder — {len(cells)} cells vs hull {len(hull)} (>5%)')
             if c[2] > hull_c[2]:
-                warn(f'{rid}.{name}: s3 rudder rides high (z {c[2]:.1f} > hull z {hull_c[2]:.1f})')
+                intent = SHIP_INTENT.get(f'{rid}.{name}')
+                if intent:
+                    print(f'INFO {rid}.{name}: rides high — {intent}')
+                else:
+                    warn(f'{rid}.{name}: s3 rudder rides high (z {c[2]:.1f} > hull z {hull_c[2]:.1f})')
         if any(k in name for k in ('rudder', 'sweep', 'sail', 'mast')):
             if abs(c[0] - hull_c[0]) > 1.5:
                 fail(f'{rid}.{name}: s2 off-centerline by {abs(c[0]-hull_c[0]):.1f}')
@@ -130,6 +134,11 @@ def check_ship(rig_dir):
 ALLOWLIST = {
     'mine_breach_maw.vox': 'floating glow motes = breach magic ambience',
     'terracotta_set_demo.vox': 'demo set, pilot by-design allowlist',
+}
+# pilot-confirmed ship-rule intent (finding annotated as INFO, not WARN):
+SHIP_INTENT = {
+    'vehicle_river_barge.sweep': 's3 — a steering sweep sits ABOVE the transom '
+                                 '(pilot-confirmed 2026-07-10)',
 }
 
 def clusters26(cells):
