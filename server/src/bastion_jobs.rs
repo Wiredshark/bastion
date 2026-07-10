@@ -1671,7 +1671,14 @@ impl<'a> System<'a> for Sys {
                     .egress_watch
                     .entry(*uid)
                     .or_insert((pos.0, 0.0, false));
-                if pos.0.distance_squared(watch.0) > 9.0 {
+                // CONFINEMENT radius 6, not stillness radius 3 (chokepoint
+                // ck-2 straggler): a jobless colonist PACING inside a 5-wide
+                // chamber kept resetting the 3-block anchor and the trapped
+                // detector never accrued. The annulus scan is the actual
+                // false-positive guard (open-ground idlers read has_egress
+                // and reset regardless), so the position leash only needs
+                // to distinguish "roaming free" from "circling a cell".
+                if pos.0.distance_squared(watch.0) > 36.0 {
                     *watch = (pos.0, 0.0, false);
                     continue;
                 }
