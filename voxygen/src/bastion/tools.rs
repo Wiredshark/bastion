@@ -20,13 +20,16 @@ pub enum ToolMode {
 }
 
 impl ToolMode {
-    pub const ALL: [ToolMode; 7] = [
+    pub const ALL: [ToolMode; 8] = [
         ToolMode::Pan,
         ToolMode::Inspect,
         ToolMode::Designate(DesignationKind::Mine),
         ToolMode::Designate(DesignationKind::Chop),
         ToolMode::Designate(DesignationKind::Build),
         ToolMode::Designate(DesignationKind::Stockpile),
+        // B5.8: ladders — a 1-column upward designation (drag a spot, the
+        // up-extent sets the height; kind default = 4 rungs).
+        ToolMode::Designate(DesignationKind::Ladder),
         ToolMode::Erase,
     ];
 
@@ -99,6 +102,8 @@ pub fn zone_rgb(kind: DesignationKind) -> [f32; 3] {
         DesignationKind::Chop => [0.2, 0.9, 0.2],
         DesignationKind::Build => [0.3, 0.6, 1.0],
         DesignationKind::Stockpile => [0.85, 0.35, 0.95],
+        // B5.8: ladder — wood-rung tan, distinct from Chop's leaf green.
+        DesignationKind::Ladder => [0.85, 0.7, 0.35],
     }
 }
 

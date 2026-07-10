@@ -159,8 +159,15 @@ impl Default for ZExtent {
 impl ZExtent {
     /// The default extent per designation kind — matches the previous
     /// hardcoded paint depth (`plane-2 ..= plane`, i.e. down 2 / up 0) so
-    /// behavior is unchanged until the UI sets a custom depth.
-    pub fn default_for(_kind: DesignationKind) -> Self { Self::default() }
+    /// behavior is unchanged until the UI sets a custom depth. B5.8's
+    /// Ladder builds UPWARD from the surface instead (a 4-level rung
+    /// column; scroll/stepper adjusts as usual).
+    pub fn default_for(kind: DesignationKind) -> Self {
+        match kind {
+            DesignationKind::Ladder => Self { down: 0, up: 3 },
+            _ => Self::default(),
+        }
+    }
 
     /// Total levels spanned (down + surface-inclusive + up counting quirk is
     /// folded in: down already includes the surface block's own level).
@@ -216,6 +223,12 @@ pub enum DesignationKind {
     Chop,
     Build,
     Stockpile,
+    /// bastion (B5.8): a buildable vertical link — jobs place
+    /// `SpriteKind::Ladder` blocks (the native climbable sprite) bottom-up;
+    /// pathfinding treats the ladder column's side as vertical edges.
+    /// Appended LAST: `DesignationKind` is on the wire (client+server
+    /// recompile together; see the b-2 net-protocol ledger note).
+    Ladder,
 }
 
 impl DesignationKind {
@@ -225,6 +238,7 @@ impl DesignationKind {
             DesignationKind::Chop => "Chop",
             DesignationKind::Build => "Build",
             DesignationKind::Stockpile => "Stockpile",
+            DesignationKind::Ladder => "Ladder",
         }
     }
 
@@ -236,7 +250,8 @@ impl DesignationKind {
         match self {
             DesignationKind::Mine | DesignationKind::Chop => Some(Purpose::Production),
             DesignationKind::Stockpile => Some(Purpose::Storage),
-            DesignationKind::Build => None,
+            // Structures carry their asset's purpose, not the designation's.
+            DesignationKind::Build | DesignationKind::Ladder => None,
         }
     }
 }
@@ -249,67 +264,89 @@ pub const CARVE_STEP_CLEARANCE: i32 = 3;
 /// bastion (B5.8, SHARED LIBRARY — design law from DF-DIG-VERBS §2: this is
 /// THE ramp/stair decomposition; B5.8's auto-carve and DIG-1's player Ramp
 /// verb are two callers of this one routine. Do NOT build a second one.):
-/// decompose a walkable stepped ramp from `from` (lower, e.g. a trapped
-/// digger's feet) up to `to.z` (upper, e.g. the pit rim) into the ordered
-/// list of blocks to DIG.
+/// decompose a walkable stepped stair from `from` (lower, e.g. a trapped
+/// digger's feet) up to `to.z` (upper, e.g. the rim), heading toward `to`'s
+/// XY, into the ordered list of blocks to DIG.
 ///
-/// Geometry: one step per level, advancing one block per step in the
-/// dominant XY direction of `to - from` (a straight staircase cut INTO the
-/// terrain face — no switchbacks in v1). Per step column, the step's air
-/// space ([`CARVE_STEP_CLEARANCE`] blocks) is cleared.
+/// Geometry: one step per level, advancing one column per step. Steps
+/// follow the remaining delta toward `to` (voxel Bresenham); when the
+/// preferred column is NOT `allowed` (outside the colony claim mask, the
+/// DIG-1 designation box, …) the stair SWITCHES BACK — it tries the
+/// perpendicular headings, then the reverse, snaking up inside the allowed
+/// region like a real stairwell. A column is never reused (a switchback
+/// directly above an earlier step would have its floor dug out from under
+/// it). Per step column, [`CARVE_STEP_CLEARANCE`] blocks of air space are
+/// cleared; only currently-solid blocks (per `is_solid`) are emitted.
 ///
-/// ORDERING INVARIANT (the reachability law): positions are emitted
-/// bottom-up, column by column — every dig position is adjacent-reachable
-/// from the standing set established by the previous steps (the digger
-/// carves step k standing on/beside step k-1, climbing as they carve;
-/// nothing is ever removed from beneath the digger). Only currently-solid
-/// blocks (per `is_solid`) are emitted.
+/// ORDERING INVARIANT (the reachability law): emission is bottom-up,
+/// column by column — every dig position is adjacent-reachable from the
+/// standing set established by the previous steps (the digger carves step
+/// k standing on/beside step k-1; nothing is removed from beneath it).
 ///
-/// Returns an empty Vec when `to.z <= from.z` (no ascent needed) or when
-/// the XY direction degenerates (from == to in XY: caller picks the face).
+/// Returns `None` when the full rise cannot be routed (no allowed column
+/// at some level — the caller falls back to a ladder or gives up), and
+/// `Some(digs)` when it can (digs may be sparse where the route crosses
+/// already-open air).
 pub fn carve_ramp(
     from: Vec3<i32>,
     to: Vec3<i32>,
     is_solid: &dyn Fn(Vec3<i32>) -> bool,
-) -> Vec<Vec3<i32>> {
+    allowed: &dyn Fn(Vec3<i32>) -> bool,
+) -> Option<Vec<Vec3<i32>>> {
     let rise = to.z - from.z;
     if rise <= 0 {
-        return Vec::new();
+        return None;
     }
     let delta = to.xy() - from.xy();
-    // The stair's overall heading — dominant axis of the approach. If the
-    // XY span is shorter than the rise, later steps keep this heading and
-    // cut deeper into the face (no switchbacks in v1).
-    let dominant = if delta.x.abs() >= delta.y.abs() {
-        Vec2::new(delta.x.signum(), 0)
-    } else {
-        Vec2::new(0, delta.y.signum())
-    };
-    if dominant == Vec2::zero() {
-        // from == to in XY: no face direction to cut into (caller picks
-        // a rim point offset from the digger, so this is a caller error).
-        return Vec::new();
-    }
-    // Per-step: follow the remaining delta (voxel Bresenham, so diagonal
-    // approaches drift correctly), falling back to the dominant heading
-    // once the target column is reached.
     let mut remaining = delta;
     let mut col = from.xy();
+    let mut heading = Vec2::zero();
+    let mut used: Vec<Vec2<i32>> = vec![col];
     let mut digs = Vec::new();
     for k in 1..=rise {
-        let step = if remaining == Vec2::zero() {
-            dominant // past the target column: keep cutting into the face
-        } else {
-            let s = if remaining.x.abs() >= remaining.y.abs() {
-                Vec2::new(remaining.x.signum(), 0)
-            } else {
-                Vec2::new(0, remaining.y.signum())
-            };
-            remaining -= s;
-            s
-        };
-        col += step;
         let feet_z = from.z + k;
+        // Preferred step: toward the target; then current heading; then
+        // the perpendiculars; reversal last (a straight-back reversal can
+        // only work after a sideways jog — the used-column check enforces
+        // that automatically).
+        let toward = if remaining == Vec2::zero() {
+            heading
+        } else if remaining.x.abs() >= remaining.y.abs() {
+            Vec2::new(remaining.x.signum(), 0)
+        } else {
+            Vec2::new(0, remaining.y.signum())
+        };
+        let mut candidates = vec![toward];
+        if heading != Vec2::zero() {
+            candidates.push(heading);
+            let perp = Vec2::new(-heading.y, heading.x);
+            candidates.push(perp);
+            candidates.push(-perp);
+            candidates.push(-heading);
+        } else {
+            candidates.extend([
+                Vec2::new(1, 0),
+                Vec2::new(-1, 0),
+                Vec2::new(0, 1),
+                Vec2::new(0, -1),
+            ]);
+        }
+        let step = candidates.into_iter().find(|s| {
+            *s != Vec2::zero()
+                && !used.contains(&(col + *s))
+                && allowed(Vec3::new(col.x + s.x, col.y + s.y, feet_z))
+                // FLOOR RULE: the block under the step's feet must be solid
+                // (it lies below the cleared range, so it survives the dig).
+                // A stair cannot route through already-open space — that is
+                // the ladder's job (the caller's fallback).
+                && is_solid(Vec3::new(col.x + s.x, col.y + s.y, feet_z - 1))
+        })?;
+        if step == toward && remaining != Vec2::zero() {
+            remaining -= step;
+        }
+        heading = step;
+        col += step;
+        used.push(col);
         for dz in 0..CARVE_STEP_CLEARANCE {
             let p = Vec3::new(col.x, col.y, feet_z + dz);
             if is_solid(p) {
@@ -317,7 +354,7 @@ pub fn carve_ramp(
             }
         }
     }
-    digs
+    Some(digs)
 }
 
 /// A divine influence applied at/around a point. B13 implements these.
@@ -426,7 +463,8 @@ impl DesignationKind {
         match self {
             DesignationKind::Mine => WorkType::Mine,
             DesignationKind::Chop => WorkType::Chop,
-            DesignationKind::Build => WorkType::Build,
+            // B5.8: placing a ladder is construction work.
+            DesignationKind::Build | DesignationKind::Ladder => WorkType::Build,
             DesignationKind::Stockpile => WorkType::Haul,
         }
     }
@@ -516,6 +554,15 @@ pub struct ColonistSkills {
     pub hauling: SkillLevel,
     pub cooking: SkillLevel,
     pub melee: SkillLevel,
+    /// bastion (B5.8, Ben's directive: climbing is a SKILL): a MOVEMENT
+    /// skill, deliberately not a [`WorkType`] — it gates scramble reach
+    /// (novice: 2-block faces; level 1+: 3-block) and accrues XP while
+    /// actually climbing (the bastion job system's climb-state accrual).
+    /// The same movement-skill shape extends to flying entities later —
+    /// don't fold it into the work-skill enum. `serde(default)` so rtsim
+    /// colonist records saved before B5.8 still load.
+    #[serde(default)]
+    pub climbing: SkillLevel,
 }
 
 impl ColonistSkills {
@@ -737,6 +784,9 @@ mod tests {
             assert_eq!((e.down, e.up), (2, 0), "{kind:?} default drifted");
             assert_eq!(e.levels(), 3);
         }
+        // B5.8: Ladder is the one upward kind (a rung column, not a dig).
+        let l = ZExtent::default_for(DesignationKind::Ladder);
+        assert_eq!((l.down, l.up), (0, 3));
     }
 
     #[test]
@@ -781,13 +831,16 @@ mod tests {
             Some(Purpose::Storage)
         );
         assert_eq!(DesignationKind::Build.purpose(), None);
+        assert_eq!(DesignationKind::Ladder.purpose(), None);
     }
 
     #[test]
     fn carve_ramp_shape_and_reachability_order() {
         // Fully solid mass (a pit wall). Rise 5, straight +x approach.
         let solid = |_: Vec3<i32>| true;
-        let digs = carve_ramp(Vec3::new(0, 0, 0), Vec3::new(5, 0, 5), &solid);
+        let open = |_: Vec3<i32>| true;
+        let digs = carve_ramp(Vec3::new(0, 0, 0), Vec3::new(5, 0, 5), &solid, &open)
+            .expect("straight stair through solid must route");
         assert_eq!(digs.len(), (5 * CARVE_STEP_CLEARANCE) as usize);
         for k in 0..5i32 {
             let base = digs[(k * CARVE_STEP_CLEARANCE) as usize];
@@ -816,7 +869,9 @@ mod tests {
         // heading and cuts deeper into the face (no oscillation — the
         // remaining-delta bug this test pins).
         let solid = |_: Vec3<i32>| true;
-        let digs = carve_ramp(Vec3::new(0, 0, 0), Vec3::new(2, 0, 5), &solid);
+        let open = |_: Vec3<i32>| true;
+        let digs =
+            carve_ramp(Vec3::new(0, 0, 0), Vec3::new(2, 0, 5), &solid, &open).unwrap();
         let xs: Vec<i32> = digs
             .chunks(CARVE_STEP_CLEARANCE as usize)
             .map(|c| c[0].x)
@@ -825,23 +880,45 @@ mod tests {
     }
 
     #[test]
-    fn carve_ramp_degenerate_inputs_are_empty() {
+    fn carve_ramp_switchbacks_inside_a_narrow_mask() {
+        // Rise 6 inside a mask only 4 columns wide in x (0..=3, all y): the
+        // stair must SNAKE (switchback via a perpendicular jog) instead of
+        // leaving the mask, and never reuse a column (a reused column's
+        // floor was already dug out).
         let solid = |_: Vec3<i32>| true;
-        // No rise → nothing to carve.
-        assert!(carve_ramp(Vec3::new(0, 0, 5), Vec3::new(3, 0, 5), &solid).is_empty());
-        // No XY heading (from == to in XY) → caller error, empty.
-        assert!(carve_ramp(Vec3::new(0, 0, 0), Vec3::new(0, 0, 5), &solid).is_empty());
+        let mask = |p: Vec3<i32>| (0..=3).contains(&p.x);
+        let digs = carve_ramp(Vec3::new(0, 0, 0), Vec3::new(6, 0, 6), &solid, &mask)
+            .expect("switchback stair must route inside the mask");
+        let cols: Vec<(i32, i32)> = digs
+            .chunks(CARVE_STEP_CLEARANCE as usize)
+            .map(|c| (c[0].x, c[0].y))
+            .collect();
+        assert_eq!(cols.len(), 6);
+        // All columns inside the mask, all distinct.
+        assert!(cols.iter().all(|(x, _)| (0..=3).contains(x)));
+        for (i, a) in cols.iter().enumerate() {
+            assert!(!cols[i + 1..].contains(a), "column reused: {a:?}");
+        }
     }
 
     #[test]
-    fn carve_ramp_emits_only_solid_blocks() {
-        // Only z <= 2 is solid: upper step columns are already open air and
-        // must not be emitted (job gen would reject them anyway; the lib
-        // stays honest on its own).
+    fn carve_ramp_degenerate_inputs_refuse() {
+        let solid = |_: Vec3<i32>| true;
+        let open = |_: Vec3<i32>| true;
+        // No rise → nothing to carve.
+        assert!(carve_ramp(Vec3::new(0, 0, 5), Vec3::new(3, 0, 5), &solid, &open).is_none());
+        // Fully-disallowed mask → cannot route.
+        let never = |_: Vec3<i32>| false;
+        assert!(carve_ramp(Vec3::new(0, 0, 0), Vec3::new(5, 0, 5), &solid, &never).is_none());
+    }
+
+    #[test]
+    fn carve_ramp_refuses_floorless_routes() {
+        // Only z <= 2 is solid: steps above have no floor to stand on — a
+        // stair cannot route through open space (that's the ladder's job).
         let solid = |p: Vec3<i32>| p.z <= 2;
-        let digs = carve_ramp(Vec3::new(0, 0, 0), Vec3::new(5, 0, 5), &solid);
-        assert!(!digs.is_empty());
-        assert!(digs.iter().all(|p| p.z <= 2));
+        let open = |_: Vec3<i32>| true;
+        assert!(carve_ramp(Vec3::new(0, 0, 0), Vec3::new(5, 0, 5), &solid, &open).is_none());
     }
 }
 
@@ -873,6 +950,12 @@ impl BastionColonist {
                 hauling: skill(rng),
                 cooking: skill(rng),
                 melee: skill(rng),
+                // B5.8: most settlers start a poor climber (0..=1 — reach
+                // gating makes 3-block scrambles a TRAINED capability).
+                climbing: SkillLevel {
+                    level: rng.random_range(0..=1),
+                    xp: 0.0,
+                },
             },
             work_priorities: WorkPriorities::default(),
         }

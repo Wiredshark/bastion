@@ -1,7 +1,7 @@
 use crate::{
     astar::{Astar, PathResult},
     resources::Time,
-    terrain::Block,
+    terrain::{Block, SpriteKind},
     vol::{BaseVol, ReadVol},
 };
 use common_base::span;
@@ -97,13 +97,16 @@ pub struct TraversalConfig {
     pub min_tgt_dist: f32,
     /// Whether the agent can climb.
     pub can_climb: bool,
-    /// bastion (B5.8): whether the agent may path over short vertical faces
-    /// (3-block scramble edges) beyond the standard 2-up jumps. Deliberately
-    /// SEPARATE from `can_climb` (which humanoid NPCs get by body): scramble
-    /// edges are opt-in for colony workers only, so vanilla villager pathing
-    /// is untouched. Execution rides the existing jump → wall-contact →
-    /// auto-`Climb` chain (`states::utils::handle_climb`).
-    pub can_scramble: bool,
+    /// bastion (B5.8): the tallest vertical face (blocks) this agent may
+    /// path over beyond plain walking — 0 disables all bastion vertical
+    /// edges (vanilla NPCs), 2 = novice colonist (jump range anyway), 3 =
+    /// trained climber (unlocks the 3-up scramble edges). SKILL-DRIVEN:
+    /// the agent system maps the colonist's `climbing` movement skill to
+    /// this each tick, so reach GROWS with use (Ben's climbing-is-a-skill
+    /// directive). Also gates ladder edges (any reach > 0). Deliberately
+    /// separate from `can_climb` (humanoid body capability): execution
+    /// rides the existing jump → wall-contact → auto-`Climb` chain.
+    pub scramble_reach: u8,
     /// Whether the agent can fly.
     pub can_fly: bool,
     /// Whether the agent has vectored propulsion.
@@ -962,8 +965,7 @@ where
                     .into_iter().flatten()
             )
             .chain(
-                traversal_cfg
-                    .can_scramble
+                (traversal_cfg.scramble_reach >= 3)
                     .then_some(SCRAMBLES.iter())
                     .into_iter()
                     .flatten(),
@@ -1036,6 +1038,86 @@ where
                     _ => FALL_COST * (down - 2) as f32,
                 }))
             }))
+            // bastion (B5.8): LADDER edges — vertical moves in a cell
+            // beside a `SpriteKind::Ladder` column (the ladder block itself
+            // is solid; you climb its face). Bypasses the walkable filter
+            // (mid-climb cells have no floor); requires body space at the
+            // destination and a ladder beside BOTH ends so the column is
+            // continuous. Gated like scrambles (colony workers) so vanilla
+            // NPCs don't start using dungeon ladders. Cheap: below-normal
+            // vertical cost — a placed ladder should beat a scramble.
+            .chain(
+                (traversal_cfg.scramble_reach > 0)
+                    .then(|| {
+                        let beside_ladder = move |p: Vec3<i32>| {
+                            [
+                                Vec2::new(1, 0),
+                                Vec2::new(-1, 0),
+                                Vec2::new(0, 1),
+                                Vec2::new(0, -1),
+                            ]
+                            .into_iter()
+                            .any(|d| {
+                                vol.get(p + Vec3::new(d.x, d.y, 0)).is_ok_and(|b| {
+                                    b.get_sprite() == Some(SpriteKind::Ladder)
+                                })
+                            })
+                        };
+                        [Vec3::unit_z(), -Vec3::unit_z()]
+                            .into_iter()
+                            .filter_map(move |dir| {
+                                let next = pos + dir;
+                                let clear = |p: Vec3<i32>| {
+                                    vol.get(p).map(|b| !b.is_solid()).unwrap_or(false)
+                                };
+                                // OR, not AND: the mount edge starts on
+                                // ground BELOW the bottom rung (no ladder
+                                // beside the ground cell) and the top-out
+                                // edge rises one past the top rung — one
+                                // end beside the column suffices.
+                                (clear(next)
+                                    && clear(next + Vec3::unit_z())
+                                    && (beside_ladder(pos) || beside_ladder(next)))
+                                .then(|| {
+                                    let next_node = Node {
+                                        pos: next,
+                                        last_dir: Vec2::zero(),
+                                        last_dir_count: 0,
+                                    };
+                                    (next_node, 1.5)
+                                })
+                            })
+                            // DISMOUNT: step off the climb onto an adjacent
+                            // walkable ledge (mid-climb cells have no floor,
+                            // so the normal DIRS edges never fire there).
+                            // This is why a ladder must be built one block
+                            // ABOVE the ledge it serves.
+                            .chain(
+                                [
+                                    Vec3::new(1, 0, 0),
+                                    Vec3::new(-1, 0, 0),
+                                    Vec3::new(0, 1, 0),
+                                    Vec3::new(0, -1, 0),
+                                ]
+                                .into_iter()
+                                .filter_map(move |dir| {
+                                    let next = pos + dir;
+                                    (beside_ladder(pos) && is_walkable(&next)).then(
+                                        || {
+                                            let next_node = Node {
+                                                pos: next,
+                                                last_dir: dir.xy(),
+                                                last_dir_count: 0,
+                                            };
+                                            (next_node, 1.5)
+                                        },
+                                    )
+                                }),
+                            )
+                    })
+                    .into_iter()
+                    .flatten(),
+            )
         // .chain(
         //     DIAGONALS
         //         .iter()
