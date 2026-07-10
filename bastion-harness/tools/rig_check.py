@@ -14,7 +14,7 @@ Run from the repo root (reads asset-lab READ-ONLY, prints per rig):
     python bastion-harness/tools/rig_check.py [rig_dir ...]
 Defaults to every `asset-lab/vox/*_rig` directory.
 """
-import sys, os, glob, json
+import sys, os, glob, json, math
 sys.path.insert(0, 'asset-lab/gen')
 sys.stdout.reconfigure(encoding='utf-8')
 from voxlib import read_vox
@@ -46,17 +46,30 @@ def check_rig(rig_dir):
     # {name: [x,y,z]}}, animlist}; v1 = flat {boneN: {part, offset, ...}}.
     if 'skel' in rig:
         offsets = rig['skel'].get('offsets', {})
+        bones = {b['name']: b for b in rig['skel'].get('bones', [])}
+
+        def world_rest(name):
+            # rest positions COMPOSE down the parent chain (hierarchical rigs,
+            # e.g. god-hand: f1d rest is relative to f1p, f1p to palm). Flat
+            # rigs (vessels: every parent = root at origin) reduce to rest+offset
+            # as before. Fractional rests are LEGAL (godhand f4p x=27.5); the
+            # pilot's assembler FLOORS the composed position — mirror that.
+            p = [0.0, 0.0, 0.0]
+            b = bones.get(name)
+            while b:
+                p = [a + r for a, r in zip(p, b.get('rest', [0, 0, 0]))]
+                b = bones.get(b['parent']) if b.get('parent') else None
+            return p
+
         parts = [
             (
-                b['name'],
+                name,
                 [
-                    r + o
-                    for r, o in zip(
-                        b.get('rest', [0, 0, 0]), offsets.get(b['name'], [0, 0, 0])
-                    )
+                    math.floor(w + o)
+                    for w, o in zip(world_rest(name), offsets.get(name, [0, 0, 0]))
                 ],
             )
-            for b in rig['skel'].get('bones', [])
+            for name in bones
         ]
     else:
         parts = [
@@ -85,11 +98,15 @@ def check_rig(rig_dir):
         for (x, y, z), b in vox.items():
             union[(x + off[0], y + off[1], z + off[2])] = b
     # Assembled diff (holes / overlaps), if the assembled vox exists.
-    assembled_path = os.path.join(os.path.dirname(rig_dir.rstrip('/\\')), rig_id + '.vox')
-    if not os.path.isfile(assembled_path):
+    parent = os.path.dirname(rig_dir.rstrip('/\\'))
+    candidates = [
+        os.path.join(parent, rig_id + '.vox'),
         # vehicles live in vox/vehicles/, rigs in vox/<id>_rig — try there too.
-        alt = os.path.join(os.path.dirname(rig_dir.rstrip('/\\')), 'vehicles', rig_id + '.vox')
-        assembled_path = alt if os.path.isfile(alt) else None
+        os.path.join(parent, 'vehicles', rig_id + '.vox'),
+        # god-hand convention: rig dir vox/<id>/, assembly vox/<id>_assembled.vox
+        os.path.join(parent, rig_id + '_assembled.vox'),
+    ]
+    assembled_path = next((c for c in candidates if os.path.isfile(c)), None)
     if assembled_path:
         d = read_vox(assembled_path)
         _, _, _, avox = d['models'][0]
