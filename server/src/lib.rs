@@ -967,15 +967,31 @@ impl Server {
     /// bastion (B4, harness hook): per-colonist state (name, position,
     /// claimed job + travel state) for loaded colonists.
     pub fn bastion_colonist_states(&self) -> Vec<(String, Vec3<f32>, Option<(u64, bool)>)> {
+        self.bastion_colonist_states_full()
+            .into_iter()
+            .map(|(_, n, p, j)| (n, p, j))
+            .collect()
+    }
+
+    /// bastion (B6, harness hook): colonist states WITH the entity `Uid` —
+    /// names are randomly drawn and CAN collide (chokepoint run-23: two
+    /// "Yara of the Vale"s collapsed a 5-colonist roster to 4 in every
+    /// name-keyed assert). Identity-sensitive scenario tracking keys on
+    /// the uid.
+    pub fn bastion_colonist_states_full(
+        &self,
+    ) -> Vec<(u64, String, Vec3<f32>, Option<(u64, bool)>)> {
         use specs::Join;
         let ecs = self.state.ecs();
         let colonists = ecs.read_storage::<comp::Colonist>();
         let positions = ecs.read_storage::<comp::Pos>();
+        let uids = ecs.read_storage::<common::uid::Uid>();
         let jobs = ecs.read_storage::<comp::bastion::ActiveJob>();
-        (&colonists, &positions, jobs.maybe())
+        (&colonists, &positions, &uids, jobs.maybe())
             .join()
-            .map(|(c, p, j)| {
+            .map(|(c, p, u, j)| {
                 (
+                    u.0.get(),
                     c.0.name.clone(),
                     p.0,
                     j.map(|j| {

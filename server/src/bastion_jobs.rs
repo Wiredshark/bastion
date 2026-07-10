@@ -849,15 +849,19 @@ impl<'a> System<'a> for Sys {
                         );
                     }
                     if head_clear {
-                        pos.0.z += CLIMB_ASSIST_VZ * dt.0;
-                        // OWN the vertical velocity (B6 SOFT-0 run-15
-                        // finding): a bare position pop gets resolved
-                        // straight back down by the phys ground-snap when
-                        // the climber stands on open floor (on_wall=false
-                        // at a shaft mouth — every b58 climber was wall-
-                        // pressed, which masked this). A positive vz makes
-                        // the integrator itself carry the ascent; the same
-                        // reach-cap/head-clear gates still bound it.
+                        // VELOCITY-ONLY lift (B6 SOFT-0 runs 15-21): the
+                        // original position-pop gets resolved straight
+                        // back down by phys ground-snap when the climber
+                        // stands on open floor (on_wall=false at a shaft
+                        // mouth — every b58 climber was wall-pressed,
+                        // which masked this since B5.8). Owning vz makes
+                        // the integrator carry the ascent; and dropping
+                        // the pop entirely means the climb can NEVER
+                        // tunnel — phys owns all position integration
+                        // (run ck-3: pop+momentum embedded a climber in a
+                        // ceiling permanently, the exact hard-terrain
+                        // violation the scenario asserts against). Same
+                        // reach-cap/head-clear gates bound the lift.
                         vel.0.z = vel.0.z.max(CLIMB_ASSIST_VZ);
                         colonist.0.skills.climbing.add_xp(CLIMB_XP_RATE * dt.0);
                     }

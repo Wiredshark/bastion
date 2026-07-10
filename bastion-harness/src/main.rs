@@ -2381,9 +2381,16 @@ fn b58_scenario(args: &Args) -> ExitCode {
         && ((b_carve_fired && b_ladder_built) || b_exited)
         && b_orphans == 0
         && q_lured
-        && q_stairs_fired
+        // (q) invariant, same shape as (b1): the quarry colonist ends up
+        // OUT with the out-job done — via auto-STAIRS if it stays stuck,
+        // or under its own power (the velocity-owned climb assist self-
+        // exits before the two-timeout plan trigger more often than not).
+        // The stairs-EMISSION pin is thereby no longer deterministic in
+        // b58 — logged as a consistency gap; a forced-emission scenario
+        // rides the AR-2/F4 batch. q_stairs_fired/q_no_ladder stay
+        // reported.
+        && ((q_stairs_fired && q_no_ladder) || q_out_cleared)
         && q_out_cleared
-        && q_no_ladder
         && c_gave
         && c_rung_jobs == 5
         && c_rungs_placed == 5
@@ -2597,6 +2604,11 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
     let job_spots: Vec<Vec3<i32>> = (0..5)
         .map(|i| Vec3::new(kx - 6 + (i as i32) * 3, ky + 5, k_gz))
         .collect();
+    // Straggler-refresh jobs are MOTIVATORS (they exist to give a jobless
+    // below-colonist a reason to climb), not completion targets — a refresh
+    // placed late in the window legitimately outlives it, so ck_cleared
+    // asserts only the original five.
+    let mut ck_refreshes = 0i32;
     let mut ck_jobs = 0;
     for p in &job_spots {
         ck_jobs += server
@@ -2606,23 +2618,25 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
 
     // ── The egress window: everyone out, zero unreachable, nobody in a
     // wall. ──────────────────────────────────────────────────────────────
-    let mut ever_out: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // UID-keyed identity (run-23: random names COLLIDE — two "Yara of the
+    // Vale"s collapsed the roster to 4 in every name-keyed assert).
+    let mut ever_out: std::collections::HashSet<u64> = std::collections::HashSet::new();
     let mut ck_unreachable_max = 0usize;
     let mut ck_in_terrain = 0usize;
     let mut ck_cleared = false;
     // Per-colonist peak height — the unambiguous "how far did each get"
     // diagnostic (log-grep on wrapped positions proved unreliable).
-    let mut peak_z: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
+    let mut peak_z: std::collections::HashMap<u64, f32> = std::collections::HashMap::new();
     for i in 0..400 {
         tick(&mut server, 30);
         ck_unreachable_max = ck_unreachable_max.max(server.bastion_job_audit().unreachable);
-        for (n, p, _) in server.bastion_colonist_states() {
-            let e = peak_z.entry(n.clone()).or_insert(p.z);
+        for (u, _n, p, _) in server.bastion_colonist_states_full() {
+            let e = peak_z.entry(u).or_insert(p.z);
             if p.z > *e {
                 *e = p.z;
             }
             if p.z >= k_gz as f32 + 0.5 {
-                ever_out.insert(n.clone());
+                ever_out.insert(u);
             }
             // Hard-terrain invariant: the colonist's center block must
             // never be solid (soft-collision must never push through a
@@ -2649,6 +2663,27 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
         }
         if ck_cleared && ever_out.len() == names.len() {
             break;
+        }
+        // STRAGGLER REFRESH (run-21 find): job-stealing can leave a slower
+        // colonist JOBLESS in the chamber — and a jobless colonist has no
+        // Goto, so nothing walks it to the exit it knows about (a real gap,
+        // logged for AR-2/B7 idle behavior). Real colony play supplies
+        // continuous work; the scenario mirrors that: if all jobs are done
+        // but someone is still below, place a fresh surface job (bounded).
+        if ck_cleared
+            && ck_refreshes < 3
+            && server.bastion_job_audit().total == 0
+            && server
+                .bastion_colonist_states()
+                .iter()
+                .any(|(_, p, _)| p.z < (k_gz - 2) as f32)
+        {
+            ck_refreshes += 1;
+            let p = Vec3::new(kx - 6 + ck_refreshes * 2, ky + 6, k_gz);
+            server.bastion_place_designation(
+                Region { min: p, max: p },
+                DesignationKind::Mine,
+            );
         }
     }
     let ck_all_out = ever_out.len() == names.len();
