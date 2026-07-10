@@ -8,6 +8,9 @@ description = "Project Bastion headless simulation harness: boots world + rtsim 
 [lints]
 workspace = true
 
+[build-dependencies]
+chrono = { workspace = true }
+
 [dependencies]
 server = { package = "veloren-server", path = "../server" }
 common = { package = "veloren-common", path = "../common" }

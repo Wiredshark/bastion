@@ -917,10 +917,11 @@ fn append_integration_log(results: &[AssetResult], cfg: &AssetTestConfig) {
         );
     }
     body.push_str(&format!(
-        "## RUN {} · seed {} · target `{}`\n\n",
+        "## RUN {} · seed {} · target `{}` · exe {}\n\n",
         chrono::Utc::now().format("%Y-%m-%d %H:%M UTC"),
         cfg.seed,
-        cfg.target
+        cfg.target,
+        crate::BUILD_STAMP
     ));
     for r in results {
         body.push_str(&format!(

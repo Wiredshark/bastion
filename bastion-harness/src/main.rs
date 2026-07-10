@@ -134,6 +134,13 @@ struct Summary {
     colonist_count: usize,
 }
 
+/// Ties every test output to the exe that produced it (stale-exe guard).
+pub const BUILD_STAMP: &str = concat!(
+    env!("BASTION_BUILD_SHA"),
+    " built ",
+    env!("BASTION_BUILD_TIME")
+);
+
 fn main() -> ExitCode {
     let args = Args::parse();
 
@@ -145,6 +152,9 @@ fn main() -> ExitCode {
         )
         .with_writer(std::io::stderr)
         .init();
+
+    // Stderr, not stdout: JSON-line consumers stay untouched.
+    eprintln!("bastion-harness {BUILD_STAMP}");
 
     if let Some(target) = &args.asset_test {
         asset_test::run(&asset_test::AssetTestConfig {
