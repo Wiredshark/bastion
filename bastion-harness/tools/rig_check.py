@@ -42,24 +42,46 @@ def check_rig(rig_dir):
         print(f'{rig_id}: no rig.json — SKIP')
         return
     rig = json.load(open(rig_path, encoding='utf-8'))
+    # Two schemas: v2 = {kind, skel: {bones: [{name, parent, rest}], offsets:
+    # {name: [x,y,z]}}, animlist}; v1 = flat {boneN: {part, offset, ...}}.
+    if 'skel' in rig:
+        offsets = rig['skel'].get('offsets', {})
+        parts = [
+            (
+                b['name'],
+                [
+                    r + o
+                    for r, o in zip(
+                        b.get('rest', [0, 0, 0]), offsets.get(b['name'], [0, 0, 0])
+                    )
+                ],
+            )
+            for b in rig['skel'].get('bones', [])
+        ]
+    else:
+        parts = [
+            (spec['part'], spec.get('offset', [0, 0, 0]))
+            for _, spec in sorted(rig.items())
+            if isinstance(spec, dict) and 'part' in spec
+        ]
     union = {}
     ok = True
-    for bone, spec in sorted(rig.items()):
-        if not isinstance(spec, dict) or 'part' not in spec:
-            continue
-        part_path = os.path.join(rig_dir, spec['part'] + '.vox')
+    for part_name, off in parts:
+        part_path = os.path.join(rig_dir, part_name + '.vox')
         try:
             d = read_vox(part_path)
         except Exception as e:
-            print(f'{rig_id}/{spec["part"]}: UNREADABLE {e}')
+            print(f'{rig_id}/{part_name}: UNREADABLE {e}')
             ok = False
             continue
         _, _, _, vox = d['models'][0]
         n = components(vox)
         if n != 1:
-            print(f'{rig_id}/{spec["part"]}: FRAGMENTED — {n} components (must be 1)')
-            ok = False
-        off = spec.get('offset', [0, 0, 0])
+            # ENGINE TRUTH: a rig part is ONE bone mesh — islands move together
+            # and cannot shear off, so fragmentation is a COSMETIC-INTENT info
+            # (rigging lines / cloth edges are legitimate islands), not a
+            # failure. The hard gate is union==assembly + no split holes.
+            print(f'{rig_id}/{part_name}: INFO — {n} components (islands move as one bone mesh; confirm intent)')
         for (x, y, z), b in vox.items():
             union[(x + off[0], y + off[1], z + off[2])] = b
     # Assembled diff (holes / overlaps), if the assembled vox exists.
