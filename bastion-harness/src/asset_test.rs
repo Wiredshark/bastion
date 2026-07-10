@@ -651,11 +651,14 @@ fn run_one_asset(
                     (report.bounds.min.y - 9) as f32 + 0.5,
                     (pad_z + 1) as f32,
                 );
-                // Stage the colonist outside first.
-                let stage = goto_and_wait(server, dt, &names[0], outside, ARRIVAL_BUDGET_S);
-                if !stage.arrived() {
-                    push(&mut assertions, "defense-staging", false, stage.describe());
+                // Stage the colonist outside by TELEPORT — idle fixtures
+                // wander between orders (rtsim brain); one wandered INTO the
+                // yard footprint during the open-variant rebuild and got
+                // walled in (bit the first v2 sweep).
+                if !server.bastion_teleport_colonist(&names[0], outside) {
+                    push(&mut assertions, "defense-staging", false, "teleport-stage failed".into());
                 } else {
+                    tick(server, dt, 15);
                     // CLOSED: must NOT get in (watchdog stuck or timeout = pass).
                     let closed = goto_and_wait(server, dt, &names[0], yard, ARRIVAL_BUDGET_S);
                     push(
@@ -678,28 +681,38 @@ fn run_one_asset(
                         Ok((_, open_report)) => {
                             build_yard_walls(server, open_report.bounds, 18, pad_z);
                             tick(server, dt, 3);
-                            let restage =
-                                goto_and_wait(server, dt, &names[0], outside, ARRIVAL_BUDGET_S);
-                            let open = if restage.arrived() {
-                                goto_and_wait(server, dt, &names[0], yard, ARRIVAL_BUDGET_S)
-                            } else {
-                                GotoOutcome::Refused
-                            };
-                            push(
-                                &mut assertions,
-                                "gate-open-admits",
-                                open.arrived(),
-                                open.describe(),
-                            );
-                            if open.arrived() {
-                                let egress =
-                                    goto_and_wait(server, dt, &names[0], outside, ARRIVAL_BUDGET_S);
+                            if !server.bastion_teleport_colonist(&names[0], outside) {
                                 push(
                                     &mut assertions,
-                                    "gate-open-egress",
-                                    egress.arrived(),
-                                    egress.describe(),
+                                    "gate-open-admits",
+                                    false,
+                                    "teleport-restage failed".into(),
                                 );
+                            } else {
+                                tick(server, dt, 15);
+                                let open =
+                                    goto_and_wait(server, dt, &names[0], yard, ARRIVAL_BUDGET_S);
+                                push(
+                                    &mut assertions,
+                                    "gate-open-admits",
+                                    open.arrived(),
+                                    open.describe(),
+                                );
+                                if open.arrived() {
+                                    let egress = goto_and_wait(
+                                        server,
+                                        dt,
+                                        &names[0],
+                                        outside,
+                                        ARRIVAL_BUDGET_S,
+                                    );
+                                    push(
+                                        &mut assertions,
+                                        "gate-open-egress",
+                                        egress.arrived(),
+                                        egress.describe(),
+                                    );
+                                }
                             }
                         },
                         Err(e) => {
