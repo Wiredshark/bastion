@@ -31,22 +31,28 @@ DEFAULT_STEPS = [
     {'name': 'adjacency_precheck', 'cmd': [PY, os.path.join(TOOLS, 'adjacency_precheck.py')]},
     {'name': 'connectivity_vs_baseline',
      'cmd': [PY, os.path.join(TOOLS, 'connectivity_check.py')],
-     'glob_args': 'asset-lab/vox/real/*.vox',
+     'glob_args': ['asset-lab/vox/real/*.vox', 'asset-lab/vox/components/*.vox'],
      'baseline': os.path.join(TOOLS, 'baselines', 'connectivity_catalog.txt')},
 ]
+
+# Scanner chrome — volatile across catalog growth; never baseline-diff these.
+VOLATILE = ('scanning ', 'SCAN COMPLETE', 'checking ')
 
 def run_step(step):
     import glob as _glob
     cmd = list(step['cmd'])
-    if step.get('glob_args'):
-        cmd += sorted(_glob.glob(step['glob_args']))
+    globs = step.get('glob_args')
+    if globs:
+        for g in ([globs] if isinstance(globs, str) else globs):
+            cmd += sorted(_glob.glob(g))
     r = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
     out = (r.stdout or '') + (r.stderr or '')
     if 'baseline' in step:
-        want = open(step['baseline'], encoding='utf-8').read().splitlines()
-        got = out.splitlines()
-        new = [l for l in got if l and l not in want]
-        gone = [l for l in want if l and l not in got]
+        keep = lambda l: l and not any(l.startswith(v) for v in VOLATILE)
+        want = [l for l in open(step['baseline'], encoding='utf-8').read().splitlines() if keep(l)]
+        got = [l for l in out.splitlines() if keep(l)]
+        new = [l for l in got if l not in want]
+        gone = [l for l in want if l not in got]
         for l in gone:
             print(f'  [{step["name"]}] resolved vs baseline (regen deliberately): {l[:120]}')
         if new:
