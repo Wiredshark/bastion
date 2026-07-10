@@ -286,3 +286,22 @@ instead, referencing the old one).
   answered with a flat base bump. TOOL-0 (queued) replaces the flat bump
   with `tool_factor` — when it lands, the base constant's meaning shifts
   from "the rate" to "the no-tool floor"; re-tune then, don't stack.
+
+## TIMECTL drift notes (2026-07-10, overnight)
+
+- **Spec deltas (small, deliberate):** UI-3 §3 asks for a "dimmed world /
+  PAUSED tag" — shipped the tag + amber lit-button (no world dimming; a
+  post-process hook is disproportionate for v1). "Faster (3–4×)" shipped
+  as 4× exactly (`MAX_DELTA_TIME` clamps nothing until ~30×; physics
+  fidelity, not the clamp, is the real ceiling — top speed stays a
+  tuning call). Buttons render as text `II/1×/2×/4×` (glyph coverage in
+  the game font beats ⏸/⏩ emoji).
+- **ESC-menu unpause interplay (vanilla behavior, kept):** the vanilla
+  ESC/settings menu auto-pauses on open and auto-UNPAUSES on close — a
+  cluster-pause therefore doesn't survive an ESC round-trip. The HUD
+  mirrors the truth each frame so the buttons never lie; unifying the
+  two pause sources = backlog if Ben trips on it.
+- **Multiplayer scope:** pause is singleplayer-only (vanilla mechanism);
+  `/time_scale` needs Admin. In any future multiplayer overseer session
+  the pause button no-ops and speed needs the admin role — fine for the
+  colony-sim shape (solo god), noted for B10+.

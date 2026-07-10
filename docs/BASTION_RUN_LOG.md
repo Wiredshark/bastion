@@ -598,3 +598,47 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   live-test trio + E2 employed-loop fix + mining slowed 3→6s — full gate
   green, revert = `bastion-block-B5.8`. NEXT: TIME-CONTROLS (UI-3 §3
   visible ⏸/1×/2×/4× cluster).
+
+### TIMECTL — TIME-CONTROLS (UI-3 §3, "the #1 missing god-game verb")
+
+- Start SHA: `547ee38518` (= main after b-2.1) · branch
+  `bastion/block-TIMECTL` · overnight block 2, per the roadmap ("THE next
+  build after b-2.1", Ben hit the need live-testing B5.8). Spec: UI-3 §3
+  — a VISIBLE on-screen control, not just a hotkey: always-on speed
+  buttons (⏸/1×/2×/faster) with the active state highlighted, a
+  current-speed readout, an unmistakable paused state, hotkeys bound to
+  the SAME state. Backend discovery: this is nearly free — vanilla
+  `TimeScale` already scales the ENTIRE sim's DeltaTime
+  (`common/state/src/state.rs:880-890`, `MAX_DELTA_TIME=1.0` = no clamp
+  until ~30×), `/time_scale` ships as an Admin command (singleplayer
+  grants Admin), and the singleplayer pause (`paused` AtomicBool halting
+  the server loop) ships too. So: UI-only block, ZERO server/common/wire
+  changes.
+
+- BUILT (voxygen-only, 7 files, +262): HUD cluster `II/1×/2×/4×`
+  bottom-right, active button lit (paused = AMBER, deliberately not the
+  work-green — "stopped" must not read "selected"), readout label
+  (covers non-preset values: a chat `/time_scale 3` lights no button but
+  reads "×3"), top-center "▌▌ PAUSED" tag (spec: nobody may think the
+  game froze). `Event::BastionSetSimSpeed(Option<f32>)` → ONE session
+  setter both the buttons and hotkeys use (None = pause; Some = unpause
+  + `/time_scale` if changed; pause and scale independent → resume
+  returns to pre-pause speed). Hotkeys: `GameInput::BastionPauseToggle`
+  = SPACE (free in the overseer context BECAUSE Jump is suppressed
+  there — the B1.5 context system carrying its weight; Avatar context
+  suppresses it back, Space stays pure Jump when embodied),
+  `BastionSpeedUp/Down` = +/− (share map-zoom keys; ladder step, below
+  1× = pause). Conflict-model entries (`get_representative_bindings`)
+  keep the settings UI warning-free. HUD mirrors TRUTH each frame (the
+  pause flag + the SYNCED TimeScale resource), so ESC-menu auto-pause
+  and chat commands move the buttons too. KNOWN NIT (vanilla behavior,
+  logged): closing the ESC menu auto-UNPAUSES — a button-pause survives
+  gameplay but not an ESC-menu round-trip; the HUD stays honest either
+  way.
+
+- GATE (voxygen-only diff — harness crates untouched, binaries
+  bit-identical, so scenario outcomes are provably unchanged): voxygen
+  cargo check CLEAN; smoke re-run anyway: unit 17/17, B4 PASS, vanilla
+  1000-tick soak PASS. Ben's eyeball BATCHED (morning): buttons visible/
+  clickable in overseer HUD, 2×/4× visibly faster, Space pauses with the
+  tag, resume returns to prior speed.

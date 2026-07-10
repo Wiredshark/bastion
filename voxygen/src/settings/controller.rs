@@ -521,7 +521,10 @@ impl ControllerSettings {
             | GameInput::BastionCycleViewMode
             | GameInput::BastionCycleTool
             | GameInput::BastionToggleGodMode
-            | GameInput::BastionCycleVisuals => Some(Button::Simple(GilButton::Unknown)),
+            | GameInput::BastionCycleVisuals
+            | GameInput::BastionPauseToggle
+            | GameInput::BastionSpeedUp
+            | GameInput::BastionSpeedDown => Some(Button::Simple(GilButton::Unknown)),
         }
     }
 
@@ -943,7 +946,10 @@ impl ControllerSettings {
             | GameInput::BastionCycleViewMode
             | GameInput::BastionCycleTool
             | GameInput::BastionToggleGodMode
-            | GameInput::BastionCycleVisuals => Some(LayerEntry {
+            | GameInput::BastionCycleVisuals
+            | GameInput::BastionPauseToggle
+            | GameInput::BastionSpeedUp
+            | GameInput::BastionSpeedDown => Some(LayerEntry {
                 button: Button::Simple(GilButton::Unknown),
                 mod1: Button::Simple(GilButton::Unknown),
                 mod2: Button::Simple(GilButton::Unknown),

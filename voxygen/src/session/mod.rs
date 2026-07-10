@@ -890,6 +890,81 @@ impl SessionState {
         self.bastion_tools.tool = tool;
     }
 
+    /// bastion (TIME-CONTROLS): the ONE sim-speed setter — the HUD buttons
+    /// and the hotkeys both land here. `None` pauses (the singleplayer pause
+    /// halts the server loop — the world visibly freezes); `Some(scale)`
+    /// unpauses and sets the server `TimeScale` via the admin chat command
+    /// (singleplayer grants Admin; `TimeScale` multiplies the ENTIRE sim's
+    /// DeltaTime, so 2× runs everything — physics, agents, jobs — at 2×).
+    /// Pause and scale are independent: pausing does NOT touch the scale, so
+    /// resume returns to the pre-pause speed.
+    fn bastion_set_sim_speed(&mut self, global_state: &GlobalState, speed: Option<f32>) {
+        match speed {
+            None => {
+                #[cfg(feature = "singleplayer")]
+                global_state.pause();
+                #[cfg(not(feature = "singleplayer"))]
+                let _ = global_state;
+            },
+            Some(s) => {
+                #[cfg(feature = "singleplayer")]
+                global_state.unpause();
+                #[cfg(not(feature = "singleplayer"))]
+                let _ = global_state;
+                let current = self
+                    .client
+                    .borrow()
+                    .state()
+                    .ecs()
+                    .read_resource::<common::resources::TimeScale>()
+                    .0 as f32;
+                if (current - s).abs() > 0.001 {
+                    self.client
+                        .borrow_mut()
+                        .send_command("time_scale".into(), vec![format!("{s}")]);
+                }
+            },
+        }
+    }
+
+    /// bastion (TIME-CONTROLS): step the speed ladder (⏸ ← 1× ↔ 2× ↔ 4×).
+    /// Stepping DOWN from 1× pauses; stepping UP while paused resumes at 1×.
+    fn bastion_step_sim_speed(&mut self, global_state: &GlobalState, up: bool) {
+        const LADDER: [f32; 3] = [1.0, 2.0, 4.0];
+        let paused = global_state.paused();
+        let next = if paused {
+            if up { Some(LADDER[0]) } else { None }
+        } else {
+            let current = self
+                .client
+                .borrow()
+                .state()
+                .ecs()
+                .read_resource::<common::resources::TimeScale>()
+                .0 as f32;
+            // Nearest rung (a chat-set ×3 steps to ×4 or ×2 sensibly).
+            let i = LADDER
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| {
+                    (*a - current)
+                        .abs()
+                        .partial_cmp(&(*b - current).abs())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            if up {
+                Some(LADDER[(i + 1).min(LADDER.len() - 1)])
+            } else if i == 0 {
+                None // below 1× = pause
+            } else {
+                Some(LADDER[i - 1])
+            }
+        };
+        self.bastion_set_sim_speed(global_state, next);
+    }
+
     /// Finish the paint drag: `Some(kind)` places a designation, `None`
     /// (B5.5, the erase tool) cancels designations in the region.
     fn bastion_paint_finish(
@@ -1902,6 +1977,36 @@ impl PlayState for SessionState {
                                     format!("Overseer ruleset: {label} (enforced from B2b)"),
                                 ));
                             },
+                            GameInput::BastionPauseToggle
+                                if state && self.bastion_overseer_active() =>
+                            {
+                                // TIME-CONTROLS: Space = pause toggle. Same
+                                // state the HUD buttons drive; resume keeps
+                                // the pre-pause scale.
+                                let target = if global_state.paused() {
+                                    Some(
+                                        self.client
+                                            .borrow()
+                                            .state()
+                                            .ecs()
+                                            .read_resource::<common::resources::TimeScale>()
+                                            .0 as f32,
+                                    )
+                                } else {
+                                    None
+                                };
+                                self.bastion_set_sim_speed(global_state, target);
+                            },
+                            GameInput::BastionSpeedUp | GameInput::BastionSpeedDown
+                                if state && self.bastion_overseer_active() =>
+                            {
+                                // TIME-CONTROLS: +/− step the speed ladder
+                                // (below 1× = pause).
+                                self.bastion_step_sim_speed(
+                                    global_state,
+                                    input == GameInput::BastionSpeedUp,
+                                );
+                            },
                             GameInput::Primary => {
                                 self.walking_speed = false;
                                 let mut client = self.client.borrow_mut();
@@ -2898,6 +3003,17 @@ impl PlayState for SessionState {
                     self.scene.debug.remove_shape(id);
                 }
             }
+            // TIME-CONTROLS: the HUD cluster mirrors the TRUTH each frame —
+            // the singleplayer pause flag + the synced TimeScale resource —
+            // so a pause/scale change from ANY path (buttons, hotkeys, chat
+            // /time_scale, the ESC menu's auto-pause) moves the buttons.
+            let sim_scale = self
+                .client
+                .borrow()
+                .state()
+                .ecs()
+                .read_resource::<common::resources::TimeScale>()
+                .0 as f32;
             self.hud.bastion_sync(
                 self.bastion_overseer_active(),
                 self.bastion_tools.tool,
@@ -2905,6 +3021,8 @@ impl PlayState for SessionState {
                 self.scene.bastion_slice_z(),
                 self.bastion_tools.z_extent_label(),
                 self.bastion_tools.flat_floor,
+                global_state.paused(),
+                sim_scale,
             );
 
             match self.scene.camera().get_mode() {
@@ -3174,6 +3292,11 @@ impl PlayState for SessionState {
                     HudEvent::BastionToggleFlatFloor => {
                         // B5.6b-2.1: slope-following ↔ flat-floor digging.
                         self.bastion_tools.flat_floor = !self.bastion_tools.flat_floor;
+                    },
+                    HudEvent::BastionSetSimSpeed(speed) => {
+                        // TIME-CONTROLS: the HUD cluster's click — same
+                        // setter the hotkeys use.
+                        self.bastion_set_sim_speed(global_state, speed);
                     },
                     HudEvent::BastionToggleGodMode => {
                         self.bastion_tools.god_mode = self.bastion_tools.god_mode.toggled();

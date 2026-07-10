@@ -534,6 +534,31 @@ iteration runs; findings §2b-2e is the discovery log.
   gates measure the mechanism, not cross-town goto — a separate
   pre-existing weakness, logged).
 
+### 2.10c TIMECTL — Time controls (the first META-controls verb)
+
+**What:** the UI-3 §3 "#1 missing god-game verb" — visible sim-speed
+control. An always-on `II/1×/2×/4×` button cluster (bottom-right of the
+overseer HUD) with the active state lit (paused = amber), a speed
+readout, a top-center PAUSED tag, and hotkeys (Space pause-toggle, +/−
+ladder step) bound to the same setter the buttons use.
+
+**How (all reuse, voxygen-only):** vanilla `TimeScale` ALREADY scales the
+whole sim's `DeltaTime` (`common/state/src/state.rs` tick; physics,
+agents, bastion jobs — everything) and ships an Admin `/time_scale`
+command; singleplayer pause (the `paused` AtomicBool) halts the server
+loop outright. The session's one setter (`bastion_set_sim_speed`) maps
+None→pause / Some(s)→unpause + `/time_scale s`; pause and scale are
+independent (resume returns to the pre-pause speed). The HUD mirrors
+TRUTH each frame (pause flag + the synced `TimeScale` resource) — chat
+commands and the ESC-menu auto-pause move the buttons too. Hotkeys ride
+the B1.5 input-context system: Space is free in the Overseer context
+because Jump is suppressed there; the Avatar context suppresses the
+pause key back. Zero wire/save changes.
+
+**Watch:** the vanilla ESC menu auto-unpauses on close (a cluster-pause
+doesn't survive an ESC round-trip — HUD stays honest); physics fidelity
+at high scales is the real top-speed ceiling, 4× shipped.
+
 ### 2.10 B-MAP1 — Overseer minimap (founds the map/overlay layer)
 
 **What:** the god's minimap — rendered top-down terrain tiles (WoW-addon
@@ -671,15 +696,14 @@ Full protocol: `readme/MEGA-PROMPT-autonomous-batch-builder.md`.
 
 **Done (merged + tagged):** B0, B1, B1.5, B1.6(+B1.7), B2a, B3, B4, B5,
 B5.5, B5.6a, B5.6b-1, B-MAP1, B5.6b-2, B5.8 (vertical mobility — the
-4×-bitten §5 trap FIXED at the mechanism), **B5.6b-2.1 (flat-floor mine
-mode + B5.8-E/E2 anti-stuck cluster + pace tune — this block, overnight
-2026-07-10).** **Next (per the OVERNIGHT AUTONOMOUS RUN roadmap +
-`readme/FLEET_STATUS.md` BUILD LANE):** TIME-CONTROLS (UI-3 §3 visible
-⏸/1×/2×/4× cluster; backend = vanilla `TimeScale` + singleplayer pause),
-TOOL-0 (`tool_factor`), god-hand in-engine, B6 (stockpiles/hauling —
-INCLUDES the committed SOFT-COLLISION SOFT-0/1), B7 needs-decay +
-self-designation. Then B5.6b-3/b-4 zone-UX. Slots-into-gaps: B-ASSET1
-merge (morning, tester holds it), B-TESTBED.
+4×-bitten §5 trap FIXED at the mechanism), B5.6b-2.1 (flat-floor mine
+mode + B5.8-E/E2 anti-stuck cluster + pace tune), **TIMECTL (visible
+time controls §2.10c — this block, overnight 2026-07-10).** **Next (per
+the OVERNIGHT AUTONOMOUS RUN roadmap + `readme/FLEET_STATUS.md` BUILD
+LANE):** TOOL-0 (`tool_factor`), god-hand in-engine, B6 (stockpiles/
+hauling — INCLUDES the committed SOFT-COLLISION SOFT-0/1), B7
+needs-decay + self-designation. Then B5.6b-3/b-4 zone-UX.
+Slots-into-gaps: B-ASSET1 merge (morning, tester holds it), B-TESTBED.
 
 | Need | Read |
 |---|---|
