@@ -241,6 +241,85 @@ impl DesignationKind {
     }
 }
 
+/// bastion (B5.8): headroom cleared above each ramp step — the step's own
+/// air block plus enough clearance for the pathfinder's 1-up edge (which
+/// requires `pos+2z` non-solid at the source step).
+pub const CARVE_STEP_CLEARANCE: i32 = 3;
+
+/// bastion (B5.8, SHARED LIBRARY — design law from DF-DIG-VERBS §2: this is
+/// THE ramp/stair decomposition; B5.8's auto-carve and DIG-1's player Ramp
+/// verb are two callers of this one routine. Do NOT build a second one.):
+/// decompose a walkable stepped ramp from `from` (lower, e.g. a trapped
+/// digger's feet) up to `to.z` (upper, e.g. the pit rim) into the ordered
+/// list of blocks to DIG.
+///
+/// Geometry: one step per level, advancing one block per step in the
+/// dominant XY direction of `to - from` (a straight staircase cut INTO the
+/// terrain face — no switchbacks in v1). Per step column, the step's air
+/// space ([`CARVE_STEP_CLEARANCE`] blocks) is cleared.
+///
+/// ORDERING INVARIANT (the reachability law): positions are emitted
+/// bottom-up, column by column — every dig position is adjacent-reachable
+/// from the standing set established by the previous steps (the digger
+/// carves step k standing on/beside step k-1, climbing as they carve;
+/// nothing is ever removed from beneath the digger). Only currently-solid
+/// blocks (per `is_solid`) are emitted.
+///
+/// Returns an empty Vec when `to.z <= from.z` (no ascent needed) or when
+/// the XY direction degenerates (from == to in XY: caller picks the face).
+pub fn carve_ramp(
+    from: Vec3<i32>,
+    to: Vec3<i32>,
+    is_solid: &dyn Fn(Vec3<i32>) -> bool,
+) -> Vec<Vec3<i32>> {
+    let rise = to.z - from.z;
+    if rise <= 0 {
+        return Vec::new();
+    }
+    let delta = to.xy() - from.xy();
+    // The stair's overall heading — dominant axis of the approach. If the
+    // XY span is shorter than the rise, later steps keep this heading and
+    // cut deeper into the face (no switchbacks in v1).
+    let dominant = if delta.x.abs() >= delta.y.abs() {
+        Vec2::new(delta.x.signum(), 0)
+    } else {
+        Vec2::new(0, delta.y.signum())
+    };
+    if dominant == Vec2::zero() {
+        // from == to in XY: no face direction to cut into (caller picks
+        // a rim point offset from the digger, so this is a caller error).
+        return Vec::new();
+    }
+    // Per-step: follow the remaining delta (voxel Bresenham, so diagonal
+    // approaches drift correctly), falling back to the dominant heading
+    // once the target column is reached.
+    let mut remaining = delta;
+    let mut col = from.xy();
+    let mut digs = Vec::new();
+    for k in 1..=rise {
+        let step = if remaining == Vec2::zero() {
+            dominant // past the target column: keep cutting into the face
+        } else {
+            let s = if remaining.x.abs() >= remaining.y.abs() {
+                Vec2::new(remaining.x.signum(), 0)
+            } else {
+                Vec2::new(0, remaining.y.signum())
+            };
+            remaining -= s;
+            s
+        };
+        col += step;
+        let feet_z = from.z + k;
+        for dz in 0..CARVE_STEP_CLEARANCE {
+            let p = Vec3::new(col.x, col.y, feet_z + dz);
+            if is_solid(p) {
+                digs.push(p);
+            }
+        }
+    }
+    digs
+}
+
 /// A divine influence applied at/around a point. B13 implements these.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum InfluenceKind {
@@ -378,6 +457,10 @@ pub struct Job {
     /// i.e. the job is stalled pending B6 hauling. Informational only
     /// (arbitration eligibility is the real gate); recomputed each cycle.
     pub needs_materials: bool,
+    /// bastion (B5.8): a carve-steps self-rescue was already attempted for
+    /// this job — the watchdog degrades straight to `unreachable` next time
+    /// instead of carving again (one attempt per job; no carve loops).
+    pub carve_attempted: bool,
 }
 
 /// The material B5's minimal Build path requires (single hardcoded material;
@@ -698,6 +781,67 @@ mod tests {
             Some(Purpose::Storage)
         );
         assert_eq!(DesignationKind::Build.purpose(), None);
+    }
+
+    #[test]
+    fn carve_ramp_shape_and_reachability_order() {
+        // Fully solid mass (a pit wall). Rise 5, straight +x approach.
+        let solid = |_: Vec3<i32>| true;
+        let digs = carve_ramp(Vec3::new(0, 0, 0), Vec3::new(5, 0, 5), &solid);
+        assert_eq!(digs.len(), (5 * CARVE_STEP_CLEARANCE) as usize);
+        for k in 0..5i32 {
+            let base = digs[(k * CARVE_STEP_CLEARANCE) as usize];
+            // Step k+1: one block over, one block up (feet at from.z+k+1).
+            assert_eq!(base, Vec3::new(k + 1, 0, k + 1));
+            for dz in 1..CARVE_STEP_CLEARANCE {
+                assert_eq!(
+                    digs[(k * CARVE_STEP_CLEARANCE + dz) as usize],
+                    base + Vec3::unit_z() * dz
+                );
+            }
+        }
+        // The reachability law: emission is bottom-up — a later column's
+        // feet are strictly above every earlier column's feet (the climbing
+        // digger never digs beneath its own established steps).
+        let mut prev_feet = i32::MIN;
+        for step in digs.chunks(CARVE_STEP_CLEARANCE as usize) {
+            assert!(step[0].z > prev_feet, "emission not bottom-up");
+            prev_feet = step[0].z;
+        }
+    }
+
+    #[test]
+    fn carve_ramp_short_xy_keeps_heading_into_face() {
+        // Rise 5 but the rim is only 2 columns away: the stair keeps its
+        // heading and cuts deeper into the face (no oscillation — the
+        // remaining-delta bug this test pins).
+        let solid = |_: Vec3<i32>| true;
+        let digs = carve_ramp(Vec3::new(0, 0, 0), Vec3::new(2, 0, 5), &solid);
+        let xs: Vec<i32> = digs
+            .chunks(CARVE_STEP_CLEARANCE as usize)
+            .map(|c| c[0].x)
+            .collect();
+        assert_eq!(xs, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn carve_ramp_degenerate_inputs_are_empty() {
+        let solid = |_: Vec3<i32>| true;
+        // No rise → nothing to carve.
+        assert!(carve_ramp(Vec3::new(0, 0, 5), Vec3::new(3, 0, 5), &solid).is_empty());
+        // No XY heading (from == to in XY) → caller error, empty.
+        assert!(carve_ramp(Vec3::new(0, 0, 0), Vec3::new(0, 0, 5), &solid).is_empty());
+    }
+
+    #[test]
+    fn carve_ramp_emits_only_solid_blocks() {
+        // Only z <= 2 is solid: upper step columns are already open air and
+        // must not be emitted (job gen would reject them anyway; the lib
+        // stays honest on its own).
+        let solid = |p: Vec3<i32>| p.z <= 2;
+        let digs = carve_ramp(Vec3::new(0, 0, 0), Vec3::new(5, 0, 5), &solid);
+        assert!(!digs.is_empty());
+        assert!(digs.iter().all(|p| p.z <= 2));
     }
 }
 

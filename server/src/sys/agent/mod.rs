@@ -193,6 +193,10 @@ impl<'a> System<'a> for Sys {
                         in_liquid: physics_state.in_liquid().is_some(),
                         min_tgt_dist: scale * moving_body.map_or(1.0, |body| body.max_radius()),
                         can_climb: moving_body.is_some_and(Body::can_climb),
+                        // bastion (B5.8): 3-up scramble edges for colony
+                        // workers only — vanilla NPC pathing unchanged.
+                        can_scramble: moving_body.is_some_and(Body::can_climb)
+                            && read_data.colonists.contains(entity),
                         can_fly: moving_body.is_some_and(|b| b.fly_thrust().is_some()),
                         vectored_propulsion: moving_body.is_some_and(|b| b.vectored_propulsion()),
                         is_target_loaded: true,

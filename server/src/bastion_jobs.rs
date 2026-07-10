@@ -58,6 +58,19 @@ fn work_rate(skill_level: u16) -> f32 {
     (1.0 + skill_level as f32 * WORK_SKILL_BONUS) / WORK_DURATION_BASE
 }
 
+/// bastion (B5.8): is `p` inside any colony claim region expanded by
+/// `margin` on all axes? The carve scope guard.
+fn self_designated_contains(designated: &[Region], p: Vec3<i32>, margin: i32) -> bool {
+    designated.iter().any(|r| {
+        p.x >= r.min.x - margin
+            && p.x <= r.max.x + margin
+            && p.y >= r.min.y - margin
+            && p.y <= r.max.y + margin
+            && p.z >= r.min.z - margin
+            && p.z <= r.max.z + margin
+    })
+}
+
 /// The per-block job predicate, shared by both placement paths. Mine =
 /// every filled block; Chop = wood only; Build = currently-empty positions
 /// (placing blocks, not removing); Stockpile = none yet (B6 zones).
@@ -168,6 +181,13 @@ pub fn resolve_surface_bounds(
 pub struct JobBoard {
     next_id: JobId,
     pub jobs: HashMap<JobId, Job>,
+    /// bastion (B5.8): the union of placed designation volumes — the
+    /// colony's terrain-claim mask. Auto carve-steps (self-rescue) is
+    /// confined to this mask (expanded by the stair's own rise), so the
+    /// system never carves wilderness to chase an out-of-scope target.
+    /// Maintained by place (append) / cancel (exact AABB subtraction —
+    /// the unit-tested `Region::subtract`).
+    pub designated: Vec<Region>,
 }
 
 impl JobBoard {
@@ -185,6 +205,9 @@ impl JobBoard {
     ) -> Vec<JobId> {
         let mut created = Vec::new();
         let work = kind.work_type();
+        // B5.8: the designation volume joins the colony's claim mask
+        // (whether or not blocks matched — the CLAIM is the painted box).
+        self.designated.push(region);
         // One job per block, regardless of kind: repainting a region — or
         // overlapping designations (Mine and Chop both match a Wood block,
         // since wood `is_filled()`) — must not create duplicate jobs. Each
@@ -216,6 +239,7 @@ impl JobBoard {
                             required_item: matches!(kind, DesignationKind::Build)
                                 .then_some(BUILD_MATERIAL_ITEM),
                             needs_materials: false,
+                            carve_attempted: false,
                         });
                         created.push(id);
                     }
@@ -250,6 +274,9 @@ impl JobBoard {
     ) -> Vec<JobId> {
         let mut created = Vec::new();
         let work = kind.work_type();
+        // B5.8: the resolved volume bounds join the claim mask (same tight
+        // AABB the echo carries — computed inline as columns resolve).
+        let mut mask_z = None::<(i32, i32)>;
         // Same one-job-per-block dedupe as the region path (free-item
         // exploit guard — see `place_designation`).
         let occupied: HashSet<Vec3<i32>> = self.jobs.values().map(|j| j.pos).collect();
@@ -258,6 +285,8 @@ impl JobBoard {
                 let Some(surface) = column_surface_z(terrain, x, y, hint_z) else {
                     continue;
                 };
+                let (lo, hi) = (surface - extent.down as i32, surface + extent.up as i32);
+                mask_z = Some(mask_z.map_or((lo, hi), |(a, b)| (a.min(lo), b.max(hi))));
                 for z in surface - extent.down as i32..=surface + extent.up as i32 {
                     let pos = Vec3::new(x, y, z);
                     if occupied.contains(&pos) {
@@ -280,11 +309,18 @@ impl JobBoard {
                             required_item: matches!(kind, DesignationKind::Build)
                                 .then_some(BUILD_MATERIAL_ITEM),
                             needs_materials: false,
+                            carve_attempted: false,
                         });
                         created.push(id);
                     }
                 }
             }
+        }
+        if let Some((z_min, z_max)) = mask_z {
+            self.designated.push(Region {
+                min: Vec3::new(min_xy.x, min_xy.y, z_min),
+                max: Vec3::new(max_xy.x, max_xy.y, z_max),
+            });
         }
         info!(
             ?kind,
@@ -298,6 +334,18 @@ impl JobBoard {
     /// released (their `ActiveJob` comps are cleared by the system within
     /// one cycle because the job id no longer exists).
     pub fn cancel_region(&mut self, region: Region) -> Vec<Uid> {
+        // B5.8: the claim mask shrinks with the cancellation (exact AABB
+        // subtraction, ≤6 pieces per intersected region).
+        self.designated = std::mem::take(&mut self.designated)
+            .into_iter()
+            .flat_map(|r| {
+                if r.intersects(&region) {
+                    r.subtract(&region)
+                } else {
+                    vec![r]
+                }
+            })
+            .collect();
         let mut released = Vec::new();
         self.jobs.retain(|_, job| {
             let inside = job.pos.x >= region.min.x
@@ -392,6 +440,10 @@ impl<'a> System<'a> for Sys {
 
         // ── Travel + work upkeep (every tick) ───────────────────────────
         let mut to_release: Vec<specs::Entity> = Vec::new();
+        // B5.8: carve-steps self-rescue requests gathered during upkeep
+        // (from-feet, to-job, parent job id) — processed after the loop
+        // (the board can't be restructured mid-borrow).
+        let mut carve_requests: Vec<(Vec3<i32>, Vec3<i32>, JobId)> = Vec::new();
         // `Colonist`'s storage is change-tracked (synced comp) — mutable
         // multi-storage joins over it need `LendJoin`, not `Join`.
         let mut upkeep_iter = (
@@ -441,12 +493,23 @@ impl<'a> System<'a> for Sys {
                             active.stuck_time += dt.0;
                             if active.stuck_time > STUCK_TIMEOUT {
                                 job.claimed_by = None;
-                                job.unreachable = true;
-                                info!(
-                                    job = active.job,
-                                    pos = ?job.pos,
-                                    "bastion: job unreachable — claim released"
-                                );
+                                // B5.8: a stuck ASCENT gets one carve-steps
+                                // self-rescue attempt before the job is
+                                // written off (the pit-trap, solved by the
+                                // system). Descents and flat approaches fail
+                                // for other reasons — no carving for those.
+                                let feet = pos.0.map(|e| e.floor() as i32);
+                                if !job.carve_attempted && job.pos.z - feet.z > 1 {
+                                    job.carve_attempted = true;
+                                    carve_requests.push((feet, job.pos, active.job));
+                                } else {
+                                    job.unreachable = true;
+                                    info!(
+                                        job = active.job,
+                                        pos = ?job.pos,
+                                        "bastion: job unreachable — claim released"
+                                    );
+                                }
                                 to_release.push(entity);
                             }
                         }
@@ -595,6 +658,64 @@ impl<'a> System<'a> for Sys {
             active_jobs.remove(*entity);
             if let Some(agent) = agents.get_mut(*entity) {
                 agent.rtsim_controller.activity = None;
+            }
+        }
+
+        // ── B5.8: carve-steps self-rescue ────────────────────────────────
+        // A stuck ascent inside colony claims gets ONE auto-carved
+        // staircase via the SHARED `carve_ramp` decomposition (design law:
+        // the same routine DF-DIG-VERBS' player Ramp verb calls — one lib,
+        // two entry points). The steps are ordinary Mine jobs: claimed by
+        // arbitration (nearest wins — usually the stuck colonist), worked
+        // by the normal dig path, spoil follows normal drop→pile rules.
+        for (from, to, parent) in carve_requests {
+            let rise = to.z - from.z;
+            let digs = common::bastion::carve_ramp(from, to, &|p| {
+                terrain.get(p).map(|b| b.is_filled()).unwrap_or(false)
+            });
+            // Scope guard: every dig must fall inside the colony claim mask
+            // expanded by the stair's own rise (a pit-escape stair cuts into
+            // the wall just OUTSIDE the painted box). Anything out of scope
+            // refuses the whole carve — never carve wilderness to chase an
+            // out-of-reach target (the never-chase-a-deer rule).
+            let in_scope = !digs.is_empty()
+                && digs.iter().all(|p| {
+                    self_designated_contains(&board.designated, *p, rise)
+                });
+            if in_scope {
+                let occupied: HashSet<Vec3<i32>> =
+                    board.jobs.values().map(|j| j.pos).collect();
+                let mut steps = 0;
+                for pos in digs {
+                    if occupied.contains(&pos) {
+                        continue;
+                    }
+                    let id = board.next_id;
+                    board.next_id += 1;
+                    board.jobs.insert(id, Job {
+                        kind: DesignationKind::Mine,
+                        work: DesignationKind::Mine.work_type(),
+                        pos,
+                        skill_floor: 0,
+                        claimed_by: None,
+                        unreachable: false,
+                        progress: 0.0,
+                        required_item: None,
+                        needs_materials: false,
+                        carve_attempted: false,
+                    });
+                    steps += 1;
+                }
+                info!(
+                    parent,
+                    steps, "bastion: carve-steps self-rescue emitted (B5.8)"
+                );
+            } else if let Some(job) = board.jobs.get_mut(&parent) {
+                job.unreachable = true;
+                info!(
+                    job = parent,
+                    "bastion: carve refused (outside colony claims) — job unreachable"
+                );
             }
         }
 

@@ -97,6 +97,13 @@ pub struct TraversalConfig {
     pub min_tgt_dist: f32,
     /// Whether the agent can climb.
     pub can_climb: bool,
+    /// bastion (B5.8): whether the agent may path over short vertical faces
+    /// (3-block scramble edges) beyond the standard 2-up jumps. Deliberately
+    /// SEPARATE from `can_climb` (which humanoid NPCs get by body): scramble
+    /// edges are opt-in for colony workers only, so vanilla villager pathing
+    /// is untouched. Execution rides the existing jump → wall-contact →
+    /// auto-`Climb` chain (`states::utils::handle_climb`).
+    pub can_scramble: bool,
     /// Whether the agent can fly.
     pub can_fly: bool,
     /// Whether the agent has vectored propulsion.
@@ -864,6 +871,10 @@ where
             + b.last_dir_count as f32 * 0.01
             // Penalise jumping
             + (b.pos.z - a.pos.z + 1).max(0) as f32 * 2.0
+            // bastion (B5.8): scrambles (3-up) cost more than the staircase
+            // they replace (three 1-ups = 15) so carved/built stairs stay
+            // preferred; a scramble is the fallback, not the highway.
+            + if b.pos.z - a.pos.z >= 3 { 8.0 } else { 0.0 }
     };
     let neighbors = |node: &Node| {
         let node = *node;
@@ -893,6 +904,18 @@ where
             Vec3::new(1, 0, 2),  // Right Upwardx2
             Vec3::new(0, -1, 2), // Backward Upwardx2
             Vec3::new(-1, 0, 2), // Left Upwardx2
+        ];
+
+        // bastion (B5.8): 3-up scramble edges — a short vertical face taken
+        // by jump + auto-climb. Gated on `can_scramble` (colony workers
+        // only; see TraversalConfig) and priced above an equivalent
+        // staircase in `transition`, so carved/built stairs stay preferred
+        // wherever they exist.
+        const SCRAMBLES: [Vec3<i32>; 4] = [
+            Vec3::new(0, 1, 3),  // Forward Upwardx3
+            Vec3::new(1, 0, 3),  // Right Upwardx3
+            Vec3::new(0, -1, 3), // Backward Upwardx3
+            Vec3::new(-1, 0, 3), // Left Upwardx3
         ];
 
         /// The cost of falling a block.
@@ -938,6 +961,13 @@ where
                     || traversal_cfg.can_fly).then_some(JUMPS.iter())
                     .into_iter().flatten()
             )
+            .chain(
+                traversal_cfg
+                    .can_scramble
+                    .then_some(SCRAMBLES.iter())
+                    .into_iter()
+                    .flatten(),
+            )
             .map(move |dir| (pos, dir))
             .filter(move |(pos, dir)| {
                 (traversal_cfg.can_fly || is_walkable(pos) && is_walkable(&(*pos + **dir)))
@@ -949,6 +979,14 @@ where
                         && (dir.z < 2
                             || vol
                                 .get(pos + Vec3::unit_z() * 3)
+                                .map(|b| !b.is_solid())
+                                .unwrap_or(traversal_cfg.is_target_loaded))
+                        // bastion (B5.8): scramble corridor — one more block
+                        // of clearance above the start so the body can rise
+                        // 3 along the face before topping out.
+                        && (dir.z < 3
+                            || vol
+                                .get(pos + Vec3::unit_z() * 4)
                                 .map(|b| !b.is_solid())
                                 .unwrap_or(traversal_cfg.is_target_loaded))
                         && (dir.z >= 0
