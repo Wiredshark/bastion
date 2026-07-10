@@ -796,9 +796,17 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   tweak (stall accrual ×0.2 while staged) paradoxically stalled
   everything — zero releases, zero staged-routing logs, peaks at the
   floor; suspect a steer-oscillator or a patience/anchor interaction.
-  RESUME AT: reproduce run 7 (drop the patience edit locally), bisect
-  run 8's silence, then re-attack the queue — candidates: patience only
-  while SOFT-active, or releasing queue-stalled claims to IDLE without
-  the unreachable flag. The block does NOT tag until the chokepoint
-  scenario + the full suite go green (gate + rollback discipline
-  holds).
+  RESUME AT — CORRECTED SUSPECT: staged-routing log lines were ZERO in
+  runs 3-8 INCLUDING the partially-successful run 7 — so run 8's
+  silence is probably run-to-run VARIANCE (run 7's climber likely
+  escaped via magnetism drift alone), and the PRIMARY defect is that
+  the ANCHOR STEER NEVER ENGAGES despite the registered anchor
+  ((kx+3, ky, k_gz−6), all filter terms hand-checked sane). First step:
+  a temporary debug log in the steer block printing
+  `board.access_anchors.len()` + steer + target every %100 ticks
+  UNCONDITIONALLY (the current log is gated on steer != target, which
+  hides an empty-anchors case); verify the harness hook
+  `bastion_register_access_anchor` actually lands in the same JobBoard
+  resource the system reads. Then re-judge the patience edit against a
+  working anchor. The block does NOT tag until the chokepoint scenario
+  + the full suite go green (gate + rollback discipline holds).
