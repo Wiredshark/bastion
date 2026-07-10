@@ -361,6 +361,22 @@ fn egress_scan(
     feet: Vec3<i32>,
     reach: i32,
 ) -> (bool, Option<Vec3<i32>>) {
+    egress_scan_with(
+        |x, y| column_surface_z(terrain, x, y, feet.z),
+        feet,
+        reach,
+    )
+}
+
+/// The pure core of [`egress_scan`], generic over the surface probe so the
+/// ±1 rise boundary is UNIT-TESTABLE without a `TerrainGrid` (reviewer F1:
+/// the off-by-one this fixed hid for weeks precisely because nothing pinned
+/// the boundary).
+fn egress_scan_with(
+    surface_of: impl Fn(i32, i32) -> Option<i32>,
+    feet: Vec3<i32>,
+    reach: i32,
+) -> (bool, Option<Vec3<i32>>) {
     const EGRESS_RING_R: i32 = 5;
     let mut rim: Option<(i32, Vec3<i32>)> = None; // (xy dist, target)
     for dx in -(EGRESS_RING_R + 1)..=(EGRESS_RING_R + 1) {
@@ -369,8 +385,7 @@ fn egress_scan(
             if d < 3 {
                 continue;
             }
-            let Some(s) = column_surface_z(terrain, feet.x + dx, feet.y + dy, feet.z)
-            else {
+            let Some(s) = surface_of(feet.x + dx, feet.y + dy) else {
                 continue;
             };
             // Egress = a surface the colonist can STAND on: rise to stand
@@ -432,6 +447,12 @@ pub struct JobBoard {
     /// (the churn detector fires from the every-tick upkeep loop); drained
     /// into the next egress pass, which owns one-plan-at-a-time gating.
     egress_pending: Vec<(Uid, Vec3<i32>, Vec3<i32>)>,
+    /// bastion (B6, reviewer F3): consecutive seconds the access economy
+    /// has been IDLE (access jobs exist, none claimed). A stale abandoned
+    /// plan — e.g. a half-carved egress staircase nobody needs after the
+    /// crew found another way out — would otherwise freeze one-plan-at-a-
+    /// time colony-wide forever AND sit flagged unreachable on the board.
+    access_idle_secs: f32,
 }
 
 impl JobBoard {
@@ -762,9 +783,15 @@ impl<'a> System<'a> for Sys {
                 // stop band. Ladders are colony-built infrastructure;
                 // "working the ladder" from two blocks is fine worker
                 // fiction.
+                // ±3 grab (was ±2): the vanilla Chaser abandons approaches
+                // 1.5-2.5 blocks out, and the anchor walk-steer hands over
+                // at 1.6 — a climber parked at 2.1-2.6 from the rung column
+                // sat in a DEAD ZONE outside the old grab for minutes
+                // (run-11 timestamps). ±3 lets the magnetism reach into the
+                // whole stop band and drag them the rest of the way in.
                 let mut nearest_ladder: Option<Vec3<i32>> = None;
-                for dx in -2..=2i32 {
-                    for dy in -2..=2i32 {
+                for dx in -3..=3i32 {
+                    for dy in -3..=3i32 {
                         for dz in 0..=1i32 {
                             let p = feet + Vec3::new(dx, dy, dz);
                             if terrain.get(p).ok().and_then(|b| b.get_sprite())
@@ -807,9 +834,31 @@ impl<'a> System<'a> for Sys {
                         .get(feet + Vec3::unit_z() * 2)
                         .map(|b| !b.is_solid())
                         .unwrap_or(true);
+                    if tick.0 % 60 == 0 {
+                        // B6 SOFT-0 debug: the run-12/14 no-lift mystery —
+                        // magnet visibly centers climbers but z never
+                        // rises. One line/2s per supported climber.
+                        info!(
+                            ?feet,
+                            head_clear,
+                            beside_ladder,
+                            climbing,
+                            on_wall,
+                            ground_within_reach,
+                            "bastion: assist eval"
+                        );
+                    }
                     if head_clear {
                         pos.0.z += CLIMB_ASSIST_VZ * dt.0;
-                        vel.0.z = vel.0.z.max(0.0);
+                        // OWN the vertical velocity (B6 SOFT-0 run-15
+                        // finding): a bare position pop gets resolved
+                        // straight back down by the phys ground-snap when
+                        // the climber stands on open floor (on_wall=false
+                        // at a shaft mouth — every b58 climber was wall-
+                        // pressed, which masked this). A positive vz makes
+                        // the integrator itself carry the ascent; the same
+                        // reach-cap/head-clear gates still bound it.
+                        vel.0.z = vel.0.z.max(CLIMB_ASSIST_VZ);
                         colonist.0.skills.climbing.add_xp(CLIMB_XP_RATE * dt.0);
                     }
                     // B6 SOFT-0 finding — LADDER MAGNETISM: the grab
@@ -1046,7 +1095,14 @@ impl<'a> System<'a> for Sys {
                                         a.z as f32 + 1.0,
                                     );
                                     if pos.0.xy().distance(base.xy()) > 1.6 {
-                                        // Walking to the anchor base.
+                                        // Walking to the anchor base (a
+                                        // GROUND-level goal — run 12 proved
+                                        // an elevated steer from out here
+                                        // stalls the Chaser entirely). The
+                                        // Chaser stop band (1.5-2.5 out,
+                                        // b58 runs 13/18) is covered by the
+                                        // climb assist's ±3 ladder grab +
+                                        // magnetism, not by this steer.
                                         base
                                     } else {
                                         // AT the anchor: steer straight UP
@@ -1110,19 +1166,61 @@ impl<'a> System<'a> for Sys {
                             // plain accrual, the run-7 configuration.)
                             active.stuck_time += dt.0;
                             if active.stuck_time > STUCK_TIMEOUT {
+                                // B6 SOFT-0 QUEUE RELEASE: a stall while
+                                // STAGED at an anchor (steer != target) is
+                                // usually WAITING for a single-file
+                                // vertical link — not unreachability.
+                                // Release to IDLE with no unreachable flag,
+                                // no strikes, no carve: the job returns to
+                                // the pool clean and arbitration re-hands
+                                // it (often to whoever is now best-placed).
+                                // The churn detector still counts these
+                                // releases (flag-agnostic "cycling in
+                                // place" signature), so a colonist stuck
+                                // at a MIRAGE anchor still gets the
+                                // humanitarian bubble — no infinite loops.
+                                // (This replaces run-8's ×0.2 patience,
+                                // which starved all movement: waiting is
+                                // handled by RELEASING cleanly, not by
+                                // stalling the watchdog.)
                                 // B6 SOFT-0 (trigger a — the GRACE WINDOW):
-                                // before degrading to carve/unreachable,
-                                // one soft-collision pass per assignment —
+                                // before degrading further, one
+                                // soft-collision pass per assignment —
                                 // most chokepoint stalls are two colonists
                                 // mutually blocking; softened they squeeze
-                                // past and progress resumes. Only a STILL-
-                                // stuck soft colonist falls through to the
-                                // release pipeline (genuinely blocked).
+                                // past and progress resumes. This ALSO
+                                // gives every claim ≥2 timeouts of real
+                                // walking time before any release path
+                                // (runs 12/13: a first-timeout queue
+                                // release never let the Chaser start from
+                                // a crowded spawn — whole crew floor-
+                                // parked).
                                 if !active.soft_granted {
                                     active.soft_granted = true;
                                     active.stuck_time = 0.0;
                                     colonist.0.soft_until =
                                         time.0 + SOFT_GRACE_SECS;
+                                    continue;
+                                }
+                                // B6 SOFT-0 QUEUE RELEASE (second+ timeout,
+                                // STAGED at an anchor): waiting for a
+                                // single-file vertical link is not
+                                // unreachability — release to IDLE with no
+                                // unreachable flag, no strikes, no carve;
+                                // the job returns to the pool clean and
+                                // arbitration re-hands it. The churn
+                                // detector still counts these (flag-
+                                // agnostic), so a MIRAGE anchor still ends
+                                // in the humanitarian bubble — no infinite
+                                // loops.
+                                if steer != target {
+                                    let feet = pos.0.map(|e| e.floor() as i32);
+                                    let reach = 2
+                                        + colonist.0.skills.climbing.level.min(1)
+                                            as i32;
+                                    job.claimed_by = None;
+                                    churn_events.push((entity, pos.0, feet, reach));
+                                    to_release.push(entity);
                                     continue;
                                 }
                                 job.claimed_by = None;
@@ -1594,6 +1692,33 @@ impl<'a> System<'a> for Sys {
                 watch.2 = true;
                 egress_requests.push((*uid, feet, target));
             }
+            // ── B6 (reviewer F3): STALE ACCESS-PLAN PRUNING ──────────────
+            // An abandoned plan (access jobs exist, NOBODY claims them for
+            // ACCESS_STALE_SECS) is removed wholesale: it was freezing the
+            // one-plan-at-a-time gate colony-wide and leaving permanent
+            // unreachable flags on the board (chokepoint run-17: 12
+            // leftovers after the crew exited another way). Any claim
+            // resets the clock; already-built rungs/steps stay (they're
+            // real structure); the plan can re-emit fresh if still needed.
+            const ACCESS_STALE_SECS: f32 = 20.0;
+            let access_jobs_exist = board.jobs.values().any(|j| j.is_access);
+            let access_claimed =
+                board.jobs.values().any(|j| j.is_access && j.claimed_by.is_some());
+            if access_jobs_exist && !access_claimed {
+                board.access_idle_secs += 1.0; // this pass ≈ once per second
+                if board.access_idle_secs >= ACCESS_STALE_SECS {
+                    let before = board.jobs.len();
+                    board.jobs.retain(|_, j| !j.is_access);
+                    info!(
+                        pruned = before - board.jobs.len(),
+                        "bastion: stale access plan abandoned (F3 pruner)"
+                    );
+                    board.access_idle_secs = 0.0;
+                }
+            } else {
+                board.access_idle_secs = 0.0;
+            }
+
             let egress_pending = board.jobs.values().any(|j| j.is_access);
             for (uid, from, to) in egress_requests
                 .into_iter()
@@ -1906,5 +2031,44 @@ impl<'a> System<'a> for Sys {
                 soft_granted: false,
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Reviewer F1 — THE ±1 BOUNDARY PIN. "Standable" means the rise to
+    /// STAND on a surface, (s+1) − feet, is ≤ reach: s ≤ feet+reach−1.
+    /// The original `s ≤ feet+reach` admitted rise reach+1 and read the b5
+    /// quarry rim (rise 3, reach-2 novice) as escapable — the trapped
+    /// detector never fired and the entrapment hid as the "chop flake"
+    /// for weeks. If this test needs changing, the CLIMB MODEL changed —
+    /// update scramble semantics first, not this assert.
+    #[test]
+    fn egress_scan_rise_boundary() {
+        let feet = Vec3::new(0, 0, 100);
+        let reach = 2;
+        let flat_rim = |s: i32| move |_x: i32, _y: i32| Some(s);
+        // Rise exactly reach (s = feet+reach−1 = 101 → stand 102 − 100 = 2):
+        // climbable, EGRESS.
+        assert!(egress_scan_with(flat_rim(101), feet, reach).0);
+        // Rise reach+1 (s = feet+reach = 102): NOT climbable — the exact
+        // off-by-one. Must read WALLED with the rim offered as a plan
+        // target.
+        let (has, rim) = egress_scan_with(flat_rim(102), feet, reach);
+        assert!(!has);
+        assert_eq!(rim.map(|r| r.z), Some(102));
+        // Level ground and modest drops count as egress (walk off).
+        assert!(egress_scan_with(flat_rim(100), feet, reach).0);
+        assert!(egress_scan_with(flat_rim(96), feet, reach).0);
+        // Below the −4 window: a sheer drop is neither egress nor a rim —
+        // (false, None) = "open/flat" upstream (not trapped, no carve).
+        let (has, rim) = egress_scan_with(flat_rim(90), feet, reach);
+        assert!(!has);
+        assert!(rim.is_none());
+        // Higher reach widens the standable band by exactly one per level.
+        assert!(egress_scan_with(flat_rim(102), feet, 3).0);
+        assert!(!egress_scan_with(flat_rim(103), feet, 3).0);
     }
 }
