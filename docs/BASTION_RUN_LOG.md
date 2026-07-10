@@ -730,3 +730,12 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   B4/B5/B5.5/B5.8, vanilla soak, voxygen check clean) + a two-round
   confirmation streak on identical code (the flake history demanded a
   streak, not a single green).
+
+- **TAGGED `bastion-block-TOOL0` — main @ `8479027c96`** (overnight
+  tag 3). One line for the morning: mining speed now keys off the
+  EQUIPPED tool (bare hands slow, stone pick 1.5×, steel 2.0× — give a
+  colonist a pick and watch), and the anti-stuck net got its deepest
+  fix yet: the egress annulus off-by-one that let novice diggers be
+  entombed in their own default-depth pits while the fail-safe believed
+  they could climb out. Revert = `7effa936b6`. NEXT: god-hand
+  in-engine.
