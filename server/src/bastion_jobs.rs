@@ -661,6 +661,8 @@ impl<'a> System<'a> for Sys {
         WriteStorage<'a, comp::Pos>,
         ReadStorage<'a, Uid>,
         WriteStorage<'a, ActiveJob>,
+        // bastion (B-ASSET1): test-fixture goto orders (harness/arena).
+        WriteStorage<'a, comp::bastion::BastionTestGoto>,
         WriteStorage<'a, comp::Agent>,
         WriteStorage<'a, comp::Inventory>,
         WriteExpect<'a, BlockChange>,
@@ -688,6 +690,7 @@ impl<'a> System<'a> for Sys {
             mut positions,
             uids,
             mut active_jobs,
+            mut test_gotos,
             mut agents,
             mut inventories,
             mut block_change,
@@ -818,6 +821,45 @@ impl<'a> System<'a> for Sys {
                     if let Some(c) = snap {
                         pos.0 = Vec3::new(c.x as f32 + 0.5, c.y as f32 + 0.5, c.z as f32);
                         vel.0 = Vec3::zero();
+                    }
+                }
+            }
+        }
+
+        // ── bastion (B-ASSET1): test-goto upkeep (every tick) ────────────
+        // Same Goto assertion + 3D arrival + progress-watchdog semantics as
+        // job travel below. Terminal states (arrived/stuck) persist on the
+        // component for the harness/arena to read; the order stays attached
+        // until explicitly removed. Inert when no fixture carries the comp.
+        {
+            let mut goto_iter = (&mut test_gotos, &positions, (&mut agents).maybe()).lend_join();
+            while let Some((goto, pos, mut agent)) = goto_iter.next() {
+                if goto.arrived || goto.stuck {
+                    continue;
+                }
+                goto.elapsed += dt.0;
+                let dist = pos.0.distance(goto.target);
+                if dist < ARRIVE_DIST {
+                    goto.arrived = true;
+                    if let Some(agent) = agent.as_deref_mut() {
+                        agent.rtsim_controller.activity = None;
+                    }
+                    continue;
+                }
+                if let Some(agent) = agent.as_deref_mut() {
+                    agent.rtsim_controller.activity =
+                        Some(common::rtsim::NpcActivity::Goto(goto.target, TRAVEL_SPEED));
+                }
+                if dist + STUCK_EPSILON < goto.best_dist {
+                    goto.best_dist = dist;
+                    goto.stuck_time = 0.0;
+                } else {
+                    goto.stuck_time += dt.0;
+                    if goto.stuck_time > STUCK_TIMEOUT {
+                        goto.stuck = true;
+                        if let Some(agent) = agent.as_deref_mut() {
+                            agent.rtsim_controller.activity = None;
+                        }
                     }
                 }
             }

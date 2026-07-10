@@ -263,6 +263,32 @@ instead, referencing the old one).
   `BUILD_MATERIAL_ITEM` like Build. Deliberate asymmetry — note for B6's
   real recipe system.
 
+## B-ASSET1 (2026-07-09)
+
+- **Spec vs reality — asset-lab layout:** the block prompt said
+  `asset-lab/vox/real/`; at block start REAL candidates lived flat in
+  `vox/` (no real/). Mid-block the pilot converged on the prompt's layout
+  + added `catalog.json` + per-asset `.ron` sidecars (contract v2, driven
+  by this block's §9 findings). The loader supports both (catalog-first,
+  legacy fallback). No doc change needed — reality converged to spec.
+- **Marker authority split:** `readme/ASSET_MARKER_REGISTRY.md` is the
+  single custom-band (200–255) authority; the engine mirror lives in
+  `server/src/bastion_assets.rs::marker_registry` as parse-checked RON
+  strings. Drift between them = fidelity findings at load (by design).
+  The registry doc's byte-200 row writes the shorthand `DoorBars(())` —
+  the valid StructureBlock form is `Sprite(DoorBars())`; flagged to the
+  pilot (3 gate sidecars carry the same shorthand).
+- **ASSET_INTEGRATION_LOG.md left UNTRACKED deliberately:** it is a
+  living cross-agent coordination file (pilot appends reads, tester
+  appends results) in the primary tree, like `asset-lab/` itself —
+  committing it from a worktree would fork it from the live copy.
+  Flagged for the architect: decide whether Ben's VC sweep adopts it.
+- **ACCRETE RULE postdates this block:** FLEET_STATUS.md now requires
+  each systems block to extend a B-TESTBED scenario; B-ASSET1's
+  `--asset-test` IS the asset-tier standing suite (spec'd before the
+  rule). B-TESTBED should absorb `--asset-test all` as a lane when it
+  lands.
+
 ## B5.6b-2.1 drift notes (2026-07-10, overnight)
 
 - **Egress reset semantics refined vs the FLEET_STATUS spec:** the spec

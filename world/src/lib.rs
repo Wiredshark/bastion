@@ -32,6 +32,10 @@ pub use crate::{
     layer::PathLocals,
 };
 pub use block::BlockGen;
+// bastion (B-ASSET1): the runtime asset-lab placement seam converts
+// StructureBlocks outside worldgen (canvas/painter are generation-only);
+// export the real conversion fn rather than duplicating it server-side.
+pub use block::block_from_structure;
 use civ::WorldCivStage;
 pub use column::ColumnSample;
 pub use common::terrain::site::{DungeonKindMeta, SettlementKindMeta};
