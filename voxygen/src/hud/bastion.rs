@@ -101,6 +101,9 @@ pub struct BastionHudState {
     /// tool panel's precision stepper (mirrored from the session's `Tools`,
     /// so the stepper and scroll-while-painting stay synced by construction).
     pub z_extent_label: String,
+    /// bastion (B5.6b-2.1): flat-floor mode active (mirrored; drives the
+    /// stepper's mode-toggle button state).
+    pub flat_floor: bool,
 }
 
 /// How many actions the pie shows before overflowing into "More…".

@@ -842,7 +842,11 @@ fn b5_scenario(args: &Args) -> ExitCode {
         sl_min_xy,
         sl_max_xy,
         sl_hint,
-        ZExtent { down: 2, up: 0 },
+        ZExtent {
+            down: 2,
+            up: 0,
+            floor_z: None,
+        },
         DesignationKind::Mine,
     );
     let sl_jobs_total = sl_jobs.len();
@@ -896,6 +900,35 @@ fn b5_scenario(args: &Args) -> ExitCode {
         .len();
     server.bastion_cancel_designation(sl_wide);
     tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+    // 7.6 (B5.6b-2.1): FLAT-FLOOR mode on the same staircase — every
+    // column digs from its own surface down to ONE absolute z (the base
+    // tier), so the pit would bottom out flat and square. Column i has
+    // surface sl_gz+i → i+1 jobs; total = Σ(i+1) for i=0..7 = 36 per row
+    // × 3 rows = 108. Placement-level, no colonist time.
+    let (fl_jobs, fl_bounds) = server.bastion_place_designation_surface(
+        sl_min_xy,
+        sl_max_xy,
+        sl_hint,
+        ZExtent {
+            down: 0,
+            up: 0,
+            floor_z: Some(sl_gz),
+        },
+        DesignationKind::Mine,
+    );
+    let fl_total = fl_jobs.len();
+    let fl_bounds_ok = fl_bounds
+        == Some(Region {
+            min: Vec3::new(sl_min_xy.x, sl_min_xy.y, sl_gz),
+            max: Vec3::new(sl_max_xy.x, sl_max_xy.y, sl_gz + 7),
+        });
+    // Every column's job floor is EXACTLY the shared level (none deeper).
+    let fl_floor_flat = server.bastion_jobs_in_region(Region {
+        min: Vec3::new(sl_min_xy.x, sl_min_xy.y, sl_gz - 8),
+        max: Vec3::new(sl_max_xy.x, sl_max_xy.y, sl_gz - 1),
+    }) == 0;
+    server.bastion_cancel_designation(sl_wide);
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
 
     // 8. Zero-input soak.
     let soak_ticks: u64 = 600;
@@ -925,6 +958,9 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_slope_bounds_ok": sl_bounds_ok,
         "b5_slope_cancel_clean": sl_cancel_clean,
         "b5_slope_legacy_jobs": sl_legacy_jobs,
+        "b5_flat_total": fl_total,
+        "b5_flat_bounds_ok": fl_bounds_ok,
+        "b5_flat_floor_flat": fl_floor_flat,
         "b5_soak_avg_tick_ms": avg_tick_ms,
     });
     let pass = mine_jobs == 27
@@ -953,6 +989,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
         && sl_bounds_ok
         && sl_cancel_clean
         && sl_legacy_jobs == 45
+        // B5.6b-2.1 flat-floor: staircase → 108 jobs bottoming at ONE z.
+        && fl_total == 108
+        && fl_bounds_ok
+        && fl_floor_flat
         && avg_tick_ms < 100.0;
     println!("{}", result);
     println!("B5 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
@@ -1753,7 +1793,11 @@ fn b58_scenario(args: &Args) -> ExitCode {
         Vec2::new(wx - 1, wy),
         Vec2::new(wx - 1, wy),
         c_gz,
-        ZExtent { down: 0, up: 5 },
+        ZExtent {
+            down: 0,
+            up: 5,
+            floor_z: None,
+        },
         DesignationKind::Ladder,
     );
     let c_rung_jobs = l_jobs.len();

@@ -920,11 +920,16 @@ impl SessionState {
         .normalized();
         match kind {
             Some(kind) => {
-                self.client.borrow_mut().bastion_place_designation(
-                    region,
-                    kind,
-                    Some(self.bastion_tools.z_extent),
-                );
+                // B5.6b-2.1: flat-floor mode derives the shared absolute
+                // floor from the CLICKED plane minus the stepper depth —
+                // every column bottoms out at one level (flat, square).
+                let mut extent = self.bastion_tools.z_extent;
+                if self.bastion_tools.flat_floor {
+                    extent.floor_z = Some(region.max.z - extent.down as i32);
+                }
+                self.client
+                    .borrow_mut()
+                    .bastion_place_designation(region, kind, Some(extent));
             },
             None => {
                 // B5.6a erase fix: the drag's z came from the camera
@@ -2899,6 +2904,7 @@ impl PlayState for SessionState {
                 self.bastion_tools.god_mode,
                 self.scene.bastion_slice_z(),
                 self.bastion_tools.z_extent_label(),
+                self.bastion_tools.flat_floor,
             );
 
             match self.scene.camera().get_mode() {
@@ -3164,6 +3170,10 @@ impl PlayState for SessionState {
                         // B5.6b-2: the tool panel's precision stepper steps
                         // the same depth field as scroll-while-painting.
                         self.bastion_tools.step_z_extent(steps);
+                    },
+                    HudEvent::BastionToggleFlatFloor => {
+                        // B5.6b-2.1: slope-following ↔ flat-floor digging.
+                        self.bastion_tools.flat_floor = !self.bastion_tools.flat_floor;
                     },
                     HudEvent::BastionToggleGodMode => {
                         self.bastion_tools.god_mode = self.bastion_tools.god_mode.toggled();

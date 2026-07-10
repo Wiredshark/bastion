@@ -233,9 +233,11 @@ pub fn resolve_surface_bounds(
     let mut z_max = i32::MIN;
     for y in min_xy.y..=max_xy.y {
         for x in min_xy.x..=max_xy.x {
-            if let Some(s) = column_surface_z(terrain, x, y, hint_z) {
-                z_min = z_min.min(s - extent.down as i32);
-                z_max = z_max.max(s + extent.up as i32);
+            if let Some(s) = column_surface_z(terrain, x, y, hint_z)
+                && let Some((lo, hi)) = extent.column_range(s)
+            {
+                z_min = z_min.min(lo);
+                z_max = z_max.max(hi);
             }
         }
     }
@@ -366,9 +368,12 @@ impl JobBoard {
                 let Some(surface) = column_surface_z(terrain, x, y, hint_z) else {
                     continue;
                 };
-                let (lo, hi) = (surface - extent.down as i32, surface + extent.up as i32);
+                // B5.6b-2.1: ONE range authority (relative or flat-floor).
+                let Some((lo, hi)) = extent.column_range(surface) else {
+                    continue;
+                };
                 mask_z = Some(mask_z.map_or((lo, hi), |(a, b)| (a.min(lo), b.max(hi))));
-                for z in surface - extent.down as i32..=surface + extent.up as i32 {
+                for z in lo..=hi {
                     let pos = Vec3::new(x, y, z);
                     if occupied.contains(&pos) {
                         continue;
