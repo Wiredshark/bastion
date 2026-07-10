@@ -80,3 +80,4 @@ if __name__ == '__main__':
     for t in targets:
         total_bad += check(t)
     print(f'PRECHECK COMPLETE: {len(targets)} assets, {total_bad} violations')
+    sys.exit(1 if total_bad else 0)

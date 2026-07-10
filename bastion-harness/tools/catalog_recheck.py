@@ -88,3 +88,4 @@ if __name__ == '__main__':
             npass += 1
         nwarn += len(warns)
     print(f'CATALOG RECHECK: {npass} PASS, {nfail} FAIL, {nwarn} warnings')
+    sys.exit(1 if nfail else 0)

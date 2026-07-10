@@ -125,10 +125,14 @@ def check_rig(rig_dir):
         print(f'{rig_id}: no assembled vox found — split-hole check skipped')
     print(f'{rig_id}: {"RIG OK" if ok else "RIG FAIL (see above)"} '
           f'({len(union)} union cells)')
+    return ok
 
 if __name__ == '__main__':
     targets = sys.argv[1:] or sorted(glob.glob('asset-lab/vox/*_rig'))
     print(f'checking {len(targets)} rigs...')
+    any_fail = False
     for t in targets:
-        check_rig(t)
+        if check_rig(t) is False:
+            any_fail = True
     print('RIG SCAN COMPLETE')
+    sys.exit(1 if any_fail else 0)
