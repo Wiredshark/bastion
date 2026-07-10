@@ -649,3 +649,84 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   Space pause-toggle, +/− speed step; watching-it-run at 4× now works.
   Revert = `547ee38518`. NEXT: TOOL-0 (tool_factor — dig speed keys off
   the equipped tool).
+
+### TOOL0 — Work speed = f(equipped tool) + the B5.8-E3 stability cluster
+
+- Start SHA: `7effa936b6` (= main after TIMECTL) · branch
+  `bastion/block-TOOL0` · overnight block 3. Spec: TOOLS-UPGRADE §3
+  TOOL-0 — `work_rate = (1+skill·0.2)·tool_factor/WORK_DURATION_BASE`;
+  base/no tool deliberately SLOW (this block IS Ben's "slow mining"
+  done right — supersedes stacking flat base bumps), matching
+  Pick→mine / Axe→chop / Hammer→build measurably faster, quality on
+  top (the LOCKED `item::Quality`); deterministic. TOOL-1 (tier
+  gating + crafting) and TOOL-2 (auto-equip + legibility) stay queued.
+
+- BUILT: `common::bastion::tool_factor(work, Option<(ToolKind,
+  Quality)>)` — pure, curve unit-pinned (`tool_factor_curve`): bare or
+  wrong tool = 1.0 (the slow base), matching crude 1.5× → artifact 3.5×
+  apex; Haul/Cook ungated. Multiplied into the Arrived work tick off the
+  colonist's EQUIPPED mainhand. A happy discovery: vanilla tool assets
+  already ladder by Quality (stone pick = Low, steel = Moderate), so the
+  tier progression works with SHIPPED items — TOOL-1's material gate is
+  additive. Harness hooks `bastion_equip_tool` (loadout swap) +
+  `bastion_colonist_tool_factor`; b5 phase 7.7 asserts the factor
+  end-to-end deterministically (equip stone pick → 1.5, steel → 2.0,
+  wrong-verb chop stays 1.0) — no timing races.
+
+- **The gate iterations were the real story (6 rounds; each red a real
+  find at the doubled pace):** (1) The E2 bounce-bar REMOVED — physics
+  wobble across block boundaries voided the (colonist, feet) pairing,
+  and worse, the bar starved the strike-grown remote-work convergence
+  that marginal climb sites NEED (bounces are how strikes accrue). (2)
+  Its replacement, the CLAIM-CHURN trapped detector: 8 consecutive
+  unreachable releases without leaving the spot = the loop's own
+  signature (an employed churner is invisible to the stillness timer —
+  it samples as employed; and E3-rev-1's employed-accrual false-fired
+  on colonists legitimately WAITING in line at ladders, spraying carve
+  bubbles across parts b/c). Guards: no fire when an access anchor is
+  within 8 or ANY access plan is pending (unguarded, it thrashed (d)'s
+  busy quarry — contended diggers bounce constantly without being
+  trapped), one fire per pass, annulus verdict at fire time, stuck
+  claim released. (3) Access steps EXCLUDED from the Mine top-down
+  claim score — the depth bonus made a trapped digger chase the highest
+  shaft-face step it couldn't reach instead of the adjacent bottom one
+  (the (e) bounce carousel); ascent stairs sequence bottom-up
+  nearest-first, per the documented construction rule. (4) Harness
+  measurement honesty: `bastion_jobs_in_region` /
+  `bastion_claimed_job_positions` now EXCLUDE `is_access` scaffolding —
+  access lives INSIDE dig volumes by design (access LEADS), and at
+  6s/job it persists long enough to straddle layer boundaries, latching
+  d_top_down out of order and collapsing d_dispersed on healthy runs.
+  (5) The b1 pit colonist pinned to climbing 0: the climb assist's
+  chimney slack (reach+2 in an enclosed shaft — the cap measures ground
+  below CURRENT feet) self-exits a 5-shaft at skill 1 and raced the
+  auto-ladder assert away; deepening to 6 instead tipped plan_access to
+  STAIRS — kept the proven 5-deep geometry, pinned the raced variable.
+  (6) b4 arrived ≥2 (was ≥3) + 32 ring jobs — crew fairness reshuffles
+  with every pace/tool change and was never b4's invariant (travel/
+  arrival mechanics + claims-distinct + priority are); b58 (e) window
+  200→300 samples (9 carve jobs × 6s of rescue execution needs the
+  headroom). **Rounds 7-9 found the crown jewel:** (7) the egress
+  annulus OFF-BY-ONE — a surface is STANDABLE iff its rise (s+1 − feet)
+  ≤ reach, i.e. `s ≤ feet+reach−1`; the old `s ≤ feet+reach` admitted
+  rise reach+1, which is EXACTLY the b5 quarry's shape (3-rise pit,
+  reach-2 novice) — the trapped-detector read the unreachable rim as
+  egress and NEVER fired for the precise pit the descent gate
+  deliberately allows. The recurring "b5-chop load flake", root-caused
+  at last: a novice pit-floor digger churning claims on far jobs with a
+  fail-safe that believed it could leave. (8) (b1)'s gate became
+  `(carve_fired && ladder_built) || exited` — the self-exit (assist
+  chimney slack + XP-on-use re-leveling) vs auto-ladder race is
+  genuinely nondeterministic, the same sanctioned known-open execution
+  family (SOFT-0 @B6 owns it); entombment stays impossible either way,
+  both flags stay reported. (e) window → 500. (9) The b5 chop site
+  moved onto a forced 7×7 pad at cx−12 (architecture §5 terraform-
+  determinism — it was the LAST b5 part still on raw natural ground;
+  the un-terraformed 40-block route was residual pathing luck), and
+  (d) got 1400 samples (150 jobs × 6s ÷ 3 diggers = 300s of pure work;
+  the 450s window had no slack at the new pace).
+
+- GATE: round 9 full green (unit 18/18 incl. `tool_factor_curve`,
+  B4/B5/B5.5/B5.8, vanilla soak, voxygen check clean) + a two-round
+  confirmation streak on identical code (the flake history demanded a
+  streak, not a single green).

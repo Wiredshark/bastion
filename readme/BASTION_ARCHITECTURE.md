@@ -559,6 +559,38 @@ pause key back. Zero wire/save changes.
 doesn't survive an ESC round-trip — HUD stays honest); physics fidelity
 at high scales is the real top-speed ceiling, 4× shipped.
 
+### 2.10d TOOL0 — Work speed = f(equipped tool) + the E3 stability cluster
+
+**What:** TOOLS-UPGRADE §3 TOOL-0 — the work tick multiplies
+`common::bastion::tool_factor(work, equipped)`: bare/wrong tool = 1.0
+(the deliberately slow base — Ben's "slow mining" done as a tool gate,
+not a stacked constant), matching Pick/Axe/Hammer 1.5× (crude) → 3.5×
+(artifact apex) by the LOCKED `item::Quality`. Skill × tool multiply.
+Vanilla tool assets already ladder by Quality (stone=Low steel=Moderate)
+so tier progression works with shipped items; TOOL-1 adds material
+gating + crafting, TOOL-2 auto-equip. Curve unit-pinned
+(`tool_factor_curve`); b5 phase 7.7 asserts it end-to-end via
+`bastion_equip_tool`/`bastion_colonist_tool_factor` (no timing).
+
+**E3 stability cluster (the gate rounds' real finds):** the egress
+annulus OFF-BY-ONE (standable = rise ≤ reach, `s ≤ feet+reach−1`; the
+old bound read a 3-rise pit rim as escapable for a reach-2 novice — the
+recurring "b5-chop flake" was a REAL entrapment with a fail-safe that
+believed the colonist could leave); the CLAIM-CHURN trapped detector
+(8 consecutive unreachable releases without moving → annulus → bubble;
+guards: no fire near an access anchor or while any access plan pends,
+one per pass — an employed churner is invisible to the stillness timer
+by sampling); access steps EXCLUDED from the Mine top-down claim score
+(ascent stairs sequence bottom-up nearest-first); harness hooks exclude
+`is_access` scaffolding from designation measurements; E2's
+`last_bounce` bar removed (wobble-leaky, starved strike growth — never
+reached main).
+
+**Watch:** the assist's documented chimney slack (reach+2 in enclosed
+shafts, XP-on-use re-levels) makes self-exit race auto-ladder plans —
+execution-race determinism is SOFT-0 @B6's charter; the b1/b58 gates
+acknowledge it.
+
 ### 2.10 B-MAP1 — Overseer minimap (founds the map/overlay layer)
 
 **What:** the god's minimap — rendered top-down terrain tiles (WoW-addon
@@ -697,13 +729,14 @@ Full protocol: `readme/MEGA-PROMPT-autonomous-batch-builder.md`.
 **Done (merged + tagged):** B0, B1, B1.5, B1.6(+B1.7), B2a, B3, B4, B5,
 B5.5, B5.6a, B5.6b-1, B-MAP1, B5.6b-2, B5.8 (vertical mobility — the
 4×-bitten §5 trap FIXED at the mechanism), B5.6b-2.1 (flat-floor mine
-mode + B5.8-E/E2 anti-stuck cluster + pace tune), **TIMECTL (visible
-time controls §2.10c — this block, overnight 2026-07-10).** **Next (per
-the OVERNIGHT AUTONOMOUS RUN roadmap + `readme/FLEET_STATUS.md` BUILD
-LANE):** TOOL-0 (`tool_factor`), god-hand in-engine, B6 (stockpiles/
-hauling — INCLUDES the committed SOFT-COLLISION SOFT-0/1), B7
-needs-decay + self-designation. Then B5.6b-3/b-4 zone-UX.
-Slots-into-gaps: B-ASSET1 merge (morning, tester holds it), B-TESTBED.
+mode + B5.8-E/E2 anti-stuck cluster + pace tune), TIMECTL (visible time
+controls §2.10c), **TOOL0 (tool-gated work speed + E3 stability cluster
+§2.10d — this block, overnight 2026-07-10).** **Next (per the OVERNIGHT
+AUTONOMOUS RUN roadmap + `readme/FLEET_STATUS.md` BUILD LANE):**
+god-hand in-engine, B6 (stockpiles/hauling — INCLUDES the committed
+SOFT-COLLISION SOFT-0/1), B7 needs-decay + self-designation. Then
+B5.6b-3/b-4 zone-UX. Slots-into-gaps: B-ASSET1 merge (morning, tester
+holds it), B-TESTBED.
 
 | Need | Read |
 |---|---|

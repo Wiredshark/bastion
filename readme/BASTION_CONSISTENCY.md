@@ -287,6 +287,38 @@ instead, referencing the old one).
   with `tool_factor` — when it lands, the base constant's meaning shifts
   from "the rate" to "the no-tool floor"; re-tune then, don't stack.
 
+## TOOL0 + B5.8-E3 drift notes (2026-07-10, overnight)
+
+- **The climb assist has a documented SLACK of reach+2 in enclosed
+  shafts** (chimney: the reach cap measures ground below CURRENT feet,
+  so repeated grabs gain reach+1, and ledge-snap adds one) — a colonist
+  can EXECUTE an ascent the path GRAPH would refuse. Kept deliberately:
+  it self-rescues real entrapments and only fires against walls with
+  grab contact. The graph stays the PLANNING authority; the b1 scenario
+  gate acknowledges the race (`ladder-chain OR exited`). If a future
+  block needs execution to exactly match the graph, this is the spot.
+- **Assist XP-on-use re-levels mid-scenario:** any skill pin
+  (`bastion_set_colonist_climbing`) decays as the assist grants XP —
+  scenario design must not assume a pinned level persists through
+  climbing activity.
+- **Egress semantics tightened (the annulus rise fix):** "standable"
+  now means rise ≤ reach exactly. The trapped-detector consequently
+  fires for default-depth (down=2) digs left by climbing-0 colonists —
+  MORE egress bubbles in live play than before, by design (they were
+  entombed before; Ben's "nobody entombed" invariant now actually
+  holds for the novice case). The descent gate's >2 threshold stays
+  (its consistency note from b-2.1 still applies).
+- **E2's `Job.last_bounce` bar: added and REMOVED same-night** — it
+  leaked on physics wobble and starved the strike-growth convergence.
+  The churn detector (count consecutive unreachable releases in place)
+  replaced it; if archaeology finds the bar referenced anywhere, it
+  never reached main.
+- **Harness measurement semantics:** `bastion_jobs_in_region` and
+  `bastion_claimed_job_positions` EXCLUDE `is_access` jobs — designation
+  invariants measure designation work; access scaffolding lives inside
+  dig volumes by design. Any future caller wanting scaffolding included
+  needs a new hook.
+
 ## TIMECTL drift notes (2026-07-10, overnight)
 
 - **Spec deltas (small, deliberate):** UI-3 §3 asks for a "dimmed world /

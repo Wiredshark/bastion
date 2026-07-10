@@ -93,6 +93,31 @@ than editing the old one.
   minimap size button (client-only; no data-format or protocol changes —
   nothing serialized, safe to revert cold).
 
+## bastion-block-TOOL0 (2026-07-10, overnight run)
+
+- Block: TOOL-0 (tool_factor work speed) + B5.8-E3 stability cluster
+  (churn trapped-detector, egress annulus off-by-one fix, access
+  nearest-first, measurement honesty)
+- Tag: `bastion-block-TOOL0`
+- Previous green: `bastion-block-TIMECTL` (main tip `7effa936b6` = its
+  docs rider; the merge base)
+- Revert: `git reset --hard 7effa936b6` (or the TIMECTL tag to also
+  drop the docs rider)
+- Undoes: `common::bastion::tool_factor` + its work-tick multiply (dig
+  speed decouples from tools again — flat 6s base returns);
+  `JobBoard.{churn_watch, egress_pending}` + the churn trapped-detector;
+  the egress annulus rise fix (REVERTING RESURRECTS the b5-chop pit
+  entrapment bug — a reach-2 novice trapped in a 3-rise pit gets no
+  egress); access nearest-first claim scoring; the E2 `Job.last_bounce`
+  bar (added AND removed within this block-pair — net zero);
+  is_access-filtered harness hooks; hooks bastion_equip_tool /
+  bastion_colonist_tool_factor; b5 phase 7.7 + chop pad, b4/b58
+  scenario reshapes.
+- Data-format caveats: NONE — `Job` lost no shipped field (last_bounce
+  never reached main), the board is runtime-only, no wire or save
+  changes. Safe cold revert; note the annulus regression above before
+  choosing to.
+
 ## bastion-block-TIMECTL (2026-07-10, overnight run)
 
 - Block: TIME-CONTROLS (UI-3 §3 visible sim-speed cluster + hotkeys)
