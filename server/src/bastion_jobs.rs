@@ -1222,8 +1222,33 @@ impl<'a> System<'a> for Sys {
                                     let reach = 2
                                         + colonist.0.skills.climbing.level.min(1)
                                             as i32;
-                                    job.claimed_by = None;
+                                    // MID-CLIMB is not queue-waiting (runs
+                                    // 25-26 tail): a colonist beside the
+                                    // rungs is actively being lifted/
+                                    // magneted — releasing here dropped it
+                                    // mid-slide every cycle and parked it
+                                    // at the shaft mouth forever. Keep the
+                                    // claim, re-arm the window; the churn
+                                    // event still counts, so a truly
+                                    // wedged climber ends in the bubble
+                                    // (the bound — no infinite loops).
+                                    let beside_ladder = (-2..=2).any(|dx| {
+                                        (-2..=2).any(|dy| {
+                                            (0..=1).any(|dz| {
+                                                terrain
+                                                    .get(feet + Vec3::new(dx, dy, dz))
+                                                    .ok()
+                                                    .and_then(|b| b.get_sprite())
+                                                    == Some(SpriteKind::Ladder)
+                                            })
+                                        })
+                                    });
                                     churn_events.push((entity, pos.0, feet, reach));
+                                    if beside_ladder {
+                                        active.stuck_time = 0.0;
+                                        continue;
+                                    }
+                                    job.claimed_by = None;
                                     to_release.push(entity);
                                     continue;
                                 }
@@ -1498,21 +1523,17 @@ impl<'a> System<'a> for Sys {
                 continue;
             }
             churn.1 = 0; // one shot; re-arms if the cycling continues
-            // TRAP-SPECIFIC guards (round-3 finding: an unguarded fire
-            // thrashed part (d)'s busy quarry — contended diggers bounce
-            // claims constantly without being trapped):
-            // 1. An access ANCHOR nearby = a way out already exists (the
-            //    proactive descent plans anchor every sanctioned dig).
-            // 2. Any access plan PENDING = the rescue economy is already
-            //    working; a second bubble just disorders it (one-plan-at-
-            //    a-time exists for exactly this reason).
-            let anchored = board.access_anchors.iter().any(|a| {
-                (a.x - feet.x).abs().max((a.y - feet.y).abs()) <= 8
-                    && a.z >= feet.z - 4
-                    && a.z <= feet.z + 2
-            });
+            // GUARDS, reviewer-F2 shape (the original anchor-PROXIMITY
+            // guard was wrong: near-an-anchor ≠ usable-by-this-colonist —
+            // runs 25-26's shaft straggler churned forever beside a ladder
+            // it couldn't win, unrescued). The AUTHORITATIVE check is the
+            // egress_scan VERDICT below — the only guard kept above it is
+            // one-plan-at-a-time (a pending access plan means the rescue
+            // economy is already working; round-3 showed a second bubble
+            // disorders it; the F3 staleness pruner bounds how long that
+            // gate can hold).
             let access_busy = board.jobs.values().any(|j| j.is_access);
-            if anchored || access_busy {
+            if access_busy {
                 continue;
             }
             let (has_egress, rim) = egress_scan(&terrain, feet, reach);

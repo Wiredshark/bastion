@@ -2693,16 +2693,23 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
     // targets is unreachability that PERSISTS. The settle must outlast the
     // F3 stale-access pruner's 20s idle window so abandoned rescue
     // scaffolding gets swept before sampling. Max stays reported.
-    tick(&mut server, 30 * 25);
-    let ck_unreachable_final = server.bastion_job_audit().unreachable;
-    // Re-sample job completion after the settle too: the loop can break on
-    // the sample cap with a straggler job mid-retry; the settle window is
-    // exactly where the retry economy finishes it.
-    ck_cleared = job_spots.iter().all(|p| {
-        server
-            .bastion_block_kind(*p)
-            .is_none_or(|k| !k.is_filled())
-    });
+    // Settle LOOP (break-early): must outlast the F3 pruner's 20s idle
+    // window AND give the retry economy room to finish straggler jobs —
+    // run 27: all five colonists out with one original job mid-retry at
+    // the old fixed settle's end.
+    let mut ck_unreachable_final = server.bastion_job_audit().unreachable;
+    for _ in 0..45 {
+        tick(&mut server, 30);
+        ck_unreachable_final = server.bastion_job_audit().unreachable;
+        ck_cleared = job_spots.iter().all(|p| {
+            server
+                .bastion_block_kind(*p)
+                .is_none_or(|k| !k.is_filled())
+        });
+        if ck_cleared && ck_unreachable_final == 0 {
+            break;
+        }
+    }
 
     // ── Open-ground CONTROL: cluster three colonists on the flat pad with
     // no jobs; normal spacing must reassert (the relaxation is transient
