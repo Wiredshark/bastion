@@ -12,7 +12,8 @@ fn main() {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_else(|| "unknown".to_string());
     let dirty = Command::new("git")
-        .args(["status", "--porcelain"])
+        // untracked scratch (e.g. tools/__pycache__) is not dirty CODE
+        .args(["status", "--porcelain", "--untracked-files=no"])
         .output()
         .ok()
         .filter(|o| o.status.success())
