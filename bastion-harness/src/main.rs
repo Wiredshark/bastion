@@ -529,7 +529,8 @@ fn b4_scenario(args: &Args) -> ExitCode {
 fn b5_scenario(args: &Args) -> ExitCode {
     use common::{
         bastion::{
-            BUILD_MATERIAL_ITEM, CHOP_DROP_ITEM, DesignationKind, MINE_DROP_ITEM, Region, WorkType,
+            BUILD_MATERIAL_ITEM, CHOP_DROP_ITEM, DesignationKind, MINE_DROP_ITEM, Region,
+            WorkType, ZExtent,
         },
         terrain::{Block, BlockKind},
         vol::ReadVol,
@@ -818,6 +819,97 @@ fn b5_scenario(args: &Args) -> ExitCode {
         .filter_map(|n| server.bastion_colonist_skill(n, WorkType::Chop))
         .any(|s| s.level > 0 || s.xp > 0.0);
 
+    // 7.5 (B5.6b-2): SLOPE COVERAGE — the B5.MINE-COVERAGE closure. The old
+    // client paint pre-expanded ONE flat region (plane-2..=plane): painted
+    // across a slope, columns whose surface sat off that plane silently got
+    // no jobs (or only interior ones). The surface-relative path resolves
+    // every column against its OWN surface. Terraform a fully-determined
+    // staircase (per the architecture-guide rule: test terraforms must
+    // fully determine geometry): 8 columns rising +1 z each, 8×3 footprint,
+    // each column solid rock 6 deep from its own surface, air cleared high
+    // enough that the surface scan window (+48 of the hint) can only see
+    // our terraformed surface. Placement-level assertions only — no travel,
+    // no work — so this phase can't disturb the soak or the earlier counts.
+    let sl_gz = ground_z(&server, cx - 20, cy + 20).unwrap_or(cz);
+    let sl_min_xy = Vec2::new(cx - 24, cy + 18);
+    let sl_max_xy = Vec2::new(cx - 17, cy + 20);
+    let sl_hint = sl_gz + 4; // mid-staircase paint plane
+    for x in sl_min_xy.x..=sl_max_xy.x {
+        let s = sl_gz + (x - sl_min_xy.x); // this column's surface
+        for y in sl_min_xy.y..=sl_max_xy.y {
+            for z in (s - 5)..=s {
+                server.state_mut().set_block(
+                    Vec3::new(x, y, z),
+                    Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
+                );
+            }
+            for z in (s + 1)..=(sl_hint + 49) {
+                server.state_mut().set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    tick(&mut server, 2);
+    // Surface path, default extent (down 2 = the old paint depth): EVERY
+    // column must get exactly its top-3 blocks as jobs — 8×3×3 = 72.
+    let (sl_jobs, sl_bounds) = server.bastion_place_designation_surface(
+        sl_min_xy,
+        sl_max_xy,
+        sl_hint,
+        ZExtent { down: 2, up: 0 },
+        DesignationKind::Mine,
+    );
+    let sl_jobs_total = sl_jobs.len();
+    let mut sl_columns_ok = true;
+    for x in sl_min_xy.x..=sl_max_xy.x {
+        let expect_s = sl_gz + (x - sl_min_xy.x);
+        for y in sl_min_xy.y..=sl_max_xy.y {
+            let s = server
+                .bastion_column_surface_z(x, y, sl_hint)
+                .unwrap_or(i32::MIN);
+            let col_jobs = server.bastion_jobs_in_region(Region {
+                min: Vec3::new(x, y, expect_s - 2),
+                max: Vec3::new(x, y, expect_s),
+            });
+            if s != expect_s || col_jobs != 3 {
+                sl_columns_ok = false;
+                info!(x, y, s, expect_s, col_jobs, "b5: slope column coverage FAIL");
+            }
+        }
+    }
+    // Echo-bounds invariant end-to-end: the resolved bounds are the exact
+    // tight AABB of the volume, and cancelling exactly THAT region removes
+    // every job the placement created (nothing orphaned outside the echo).
+    let sl_bounds_ok = sl_bounds
+        == Some(Region {
+            min: Vec3::new(sl_min_xy.x, sl_min_xy.y, sl_gz - 2),
+            max: Vec3::new(sl_max_xy.x, sl_max_xy.y, sl_gz + 7),
+        });
+    let sl_wide = Region {
+        min: Vec3::new(sl_min_xy.x, sl_min_xy.y, sl_gz - 8),
+        max: Vec3::new(sl_max_xy.x, sl_max_xy.y, sl_gz + 20),
+    };
+    if let Some(bounds) = sl_bounds {
+        server.bastion_cancel_designation(bounds);
+    }
+    let sl_cancel_clean = server.bastion_jobs_in_region(sl_wide) == 0;
+    // CONTRAST TRIPWIRE (the closed bug, kept as a regression witness): the
+    // legacy flat region the old client would have sent (plane-2..=plane)
+    // on this staircase generates only 45 of the 72 jobs — the two lowest
+    // columns get ZERO (region floats above their surface) and the rising
+    // columns get interior blocks instead of their surface. If this ever
+    // equals the surface path's total, the tripwire itself is broken.
+    let sl_legacy_jobs = server
+        .bastion_place_designation(
+            Region {
+                min: Vec3::new(sl_min_xy.x, sl_min_xy.y, sl_hint - 2),
+                max: Vec3::new(sl_max_xy.x, sl_max_xy.y, sl_hint),
+            },
+            DesignationKind::Mine,
+        )
+        .len();
+    server.bastion_cancel_designation(sl_wide);
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+
     // 8. Zero-input soak.
     let soak_ticks: u64 = 600;
     let soak_started = Instant::now();
@@ -841,6 +933,11 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_any_needs_materials": any_needs_materials,
         "b5_any_mining_xp": any_mining_xp,
         "b5_any_woodcutting_xp": any_woodcutting_xp,
+        "b5_slope_jobs_total": sl_jobs_total,
+        "b5_slope_columns_ok": sl_columns_ok,
+        "b5_slope_bounds_ok": sl_bounds_ok,
+        "b5_slope_cancel_clean": sl_cancel_clean,
+        "b5_slope_legacy_jobs": sl_legacy_jobs,
         "b5_soak_avg_tick_ms": avg_tick_ms,
     });
     let pass = mine_jobs == 27
@@ -860,6 +957,15 @@ fn b5_scenario(args: &Args) -> ExitCode {
         && any_needs_materials
         && any_mining_xp
         && any_woodcutting_xp
+        // B5.6b-2 slope coverage (B5.MINE-COVERAGE closure): surface path
+        // covers every column exactly; echoed bounds are tight AND cancel
+        // through them is complete; the legacy flat path demonstrably
+        // under-covers the same staircase (regression witness: 45 < 72).
+        && sl_jobs_total == 72
+        && sl_columns_ok
+        && sl_bounds_ok
+        && sl_cancel_clean
+        && sl_legacy_jobs == 45
         && avg_tick_ms < 100.0;
     println!("{}", result);
     println!("B5 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
