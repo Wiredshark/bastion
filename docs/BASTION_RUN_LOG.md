@@ -591,3 +591,10 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   real egress DID fire in (e): steps=9 from the pit). Flat-floor
   composites green: 108 jobs, tight bounds, flat bottom. → bookkeeping,
   isolated-worktree merge + tag `bastion-block-B5.6b-2.1`.
+
+- **TAGGED `bastion-block-B5.6b-2.1` — main @ `947e282937`** (overnight
+  tag 1). One line for the morning: flat-floor mine mode (Slope/Flat
+  toggle on the depth stepper) + the whole anti-stuck cluster from Ben's
+  live-test trio + E2 employed-loop fix + mining slowed 3→6s — full gate
+  green, revert = `bastion-block-B5.8`. NEXT: TIME-CONTROLS (UI-3 §3
+  visible ⏸/1×/2×/4× cluster).
