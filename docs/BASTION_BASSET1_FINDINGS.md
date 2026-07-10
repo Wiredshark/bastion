@@ -212,3 +212,31 @@ Integrated-dynamic spot-check: cottage on real worldgen terrain (site-adjacent, 
      (maul/gloomcap/waystone) — semantically fine (figure-layer assets never take the Structure
      path; the sprite pipeline owns those bands) but the load-only report wording should not
      imply world-band intent. Cosmetic; noted.
+
+## 10. Contract v2 + the graduation sweep (post-resume, isolated worktree, 2026-07-09)
+
+**§9's catches drove the pilot to build the machine-readable contract this block asked for**
+(`readme/ASSET_MARKER_REGISTRY.md` opens by citing them): `asset-lab/vox/real/` + `catalog.json`
+(category, placement class, arena cast, authored marker CELL COORDINATES, per asset) + per-asset
+`.ron` custom_indices sidecars; bytes 200–219 formally allocated; byte-8 carve re-authored to 16;
+a content-side staging gate (`asset-lab/gen/markers.py`) now blocks undeclared bytes at source.
+
+**Engine side (this block, contract v2):** catalog-first scanner (legacy fallback kept); sidecar
+RON parsed through the game's own StructureBlock deserializer (parse failure = fidelity finding);
+`marker_registry` mirrors the authority doc as parse-checked RON strings (sidecars override);
+EXACT-CELL fidelity (authored coordinates vs census cells, voxel-for-voxel; >128-cell bytes fall
+back to count-only); cast-driven suite dispatch incl. the `work-marker` variant (reach the actual
+authored crafting cell); integration-log path anchored to the asset-lab parent (worktree-safe).
+
+**Graduation sweep: 61/64 PASS** (readme/ASSET_INTEGRATION_LOG.md holds per-asset JSON). All
+workshops reach their authored work cells with exact-cell matches; flora/structures/faith/depot
+green; registry bytes 201–219 resolve as declared; byte-8→16 fix verified. The 3 fails share ONE
+root cause: gate sidecars write `200: DoorBars(())` — not a StructureBlock variant; valid form
+`Sprite(DoorBars())` (registry doc row carries the same shorthand). Reported to the pilot
+(same-day-fix loop); gate DYNAMICS verified via the registry fallback meanwhile — after a
+teleport-staging fix (idle fixtures WANDER between poses; one got walled into the yard during the
+open-pose rebuild): all three gates closed-block/open-admit/open-egress PASS.
+
+**Deferred-with-reasons** (backlog): figure-scale props' declared casts (11 vox/block — world
+placement would be building-sized; needs world-scale versions or the sprite-manifest rung);
+`sprite_ladder_rope`'s climb cast (B5.8 verbs not yet in main); pose matrices (DF-MECH).

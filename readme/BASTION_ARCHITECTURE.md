@@ -489,6 +489,58 @@ minimap-window dragging in overseer mode.
 (tiles recognizable, dig-updates, overlay accuracy, click-jump) in-game —
 `docs/BASTION_BMAP1_TEST.md`.
 
+### 2.11 B-ASSET1 — Asset integration harness + render arena (the content release valve)
+
+**What:** the game-side bridge that graduates asset-lab content from
+static-verified to engine-verified: a runtime loader through the REAL
+`Structure`/`custom_indices` machinery with marker-fidelity asserts, the
+`--asset-test` flat-arena dynamic suite (real pathfinding/collision), and the
+`--asset-arena` client inspection mode. The pilot and this tester coordinate
+ONLY through files: `asset-lab/vox/real/catalog.json` + `<id>.ron` sidecars
+in, `readme/ASSET_INTEGRATION_LOG.md` results out (untracked, living).
+
+**Key pieces & where:**
+- `Structure::bastion_from_vox_bytes/_dot_vox` (`common/src/terrain/structure.rs`)
+  — vox-bytes → Structure outside the asset tree, plus `BastionVoxCensus`
+  (per-byte counts + cells, capped 128/byte). Byte convention PINNED by the
+  `bastion_dot_vox_index_convention` unit test: authored/RON byte ==
+  `dot_vox Voxel.i + 1` == engine slot (no translation).
+- `server/src/bastion_assets.rs` — catalog scan (contract v2 + legacy
+  fallback), `marker_registry` (mirrors `readme/ASSET_MARKER_REGISTRY.md`
+  bytes 200–219 as parse-checked RON strings; per-asset sidecars override),
+  `load_asset` (fidelity gate: byte resolution + EXACT authored-cell match;
+  sidecar parse failure = finding), `place_structure` (runtime placement via
+  `block_from_structure` + `State::set_block` — the ONLY runtime structure
+  stamping in the engine; B-AG6 reuses this, not spots), + shared helpers
+  `ground_z`/`flatten_pad`/`pick_flat_anchor`/`survey_pad`/`interior_target`.
+- `comp::bastion::BastionTestGoto` + upkeep in `bastion_jobs.rs` + the rtsim
+  clobber-gate extension (`rtsim/tick.rs`) — fixture goto with job-travel
+  semantics (per-tick Goto assert, 3D arrival, progress watchdog). Hooks:
+  `Server::bastion_goto/_states/_clear`, `bastion_teleport_colonist`,
+  `bastion_asset_place`.
+- `bastion-harness --asset-test <id|all>` (`bastion-harness/src/asset_test.rs`)
+  — cast-driven suites: interior (reach/egress/3-colonist multi-occupancy),
+  work-marker (reach the authored crafting cell), crossing (closed-blocks /
+  open-admits gate matrix; open pose = byte-200 → Hollow mapping), flora
+  path-around, figure-scale props load-only. Fixtures verified on the bare
+  pad first; integrated-dynamic spot check on real terrain (cottage);
+  `test_room_door_closed/_open` = the deliberate-FAIL pair.
+- `--asset-arena` (`voxygen/src/cli.rs` → `singleplayer::run_bastion_arena` →
+  env vars → `server/src/bastion_arena.rs`): throwaway world, pad at a
+  sim-probed flat anchor, spawn moved onto the pad, `/bastion_arena
+  next|prev|fixture|dismiss` chat controls.
+
+**Traps this block burned into code:** fixed-height pad clearing leaves
+cliff walls inside sloped pads (→ `pick_flat_anchor` + `survey_pad`
+adaptive clear); idle fixtures WANDER between orders (rtsim brain) — always
+teleport-stage between test poses; never walk fixtures cross-country;
+ad-hoc marker bytes break integration silently (→ the marker registry +
+staging gate, born from this block's 8 catches).
+
+**Tested by:** the suite is self-testing (61/64 graduation sweep; 3 gate
+fails = pilot sidecar typo pending same-day fix); standing gates per
+`docs/BASTION_BASSET1_TEST.md`.
+
 ## 3. Build methodology (how blocks land)
 
 Per-block cycle: **checkpoint** (clean tree, branch `bastion/block-<N>`, log
@@ -573,7 +625,9 @@ B5.MINE-COVERAGE — this block).** **Next (per `readme/FLEET_STATUS.md`
 BUILD LANE, the routing authority under the self-advance protocol):**
 B5.8 (vertical mobility — the 4×-bitten §5 trap's fix block), then
 B5.6b-3 (zone interaction/edit-mode), b-4 (erase-by-type), B6
-(stockpiles/hauling), B7. Slots-into-gaps: B-ASSET1 resume, B-TESTBED.
+(stockpiles/hauling), B7. Slots-into-gaps: B-TESTBED. **B-ASSET1: built +
+headless-verified in its isolated worktree (§2.11; 61/64 graduation
+sweep); awaiting its merge/tag + arena-eyeball window per FLEET_STATUS.**
 
 | Need | Read |
 |---|---|

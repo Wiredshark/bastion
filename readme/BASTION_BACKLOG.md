@@ -349,3 +349,33 @@ remove an earlier block's entries.
 - **IDEA** (B5.6b-2): the depth stepper tops at down=32 / up=8 (UI clamp,
   `Z_EXTENT_MAX_DOWN/UP`); §3v's mine framework may want per-kind caps +
   a "to depth Z" absolute entry mode when deep mining lands.
+
+## B-ASSET1 (2026-07-09)
+
+- **ADD** — runtime SpriteCfg write path: worldgen stores sprite configs
+  (loot tables, unlock kinds) in CHUNK META (`canvas.set_sprite_cfg`); the
+  runtime placement seam (`server/src/bastion_assets.rs::place_structure`)
+  drops them with a per-asset count. Pairs with the operable-state /
+  DF-MECH block (gate unlock interaction needs it).
+- **ADD** — structure ROTATION at runtime placement: identity units only
+  (v1); `blit_structure`'s 4-rotation `units` basis is the pattern.
+  Needed before autonomous building places catalog assets facing roads.
+- **ADD** — pose MATRICES for operable/composed assets (castle/monastery/
+  godspire closed/open/sprung state files): needs per-pose expected
+  reachability tables driven from the catalog; pairs with DF-MECH's state
+  machine. Pose files stay explicitly-named runs until then.
+- **ADD** — figure-scale props (11 vox/block: handcart, goods sprites,
+  gloomcap, ladder) declare arena casts but world placement is 1 vox = 1
+  block; their dynamics wait on world-scale versions OR the
+  sprite-manifest integration rung (vanilla-asset-tree edits — a later
+  block by design). `sprite_ladder_rope`'s "climb" cast additionally
+  waits on B5.8's climb verbs reaching main.
+- **FIX** — `--asset-test` load-only report wording implies world-band
+  intent for figure-layer glow bytes (14–16) — cosmetic, see findings §9.
+- **IDEA** — arena keybinds (cycle/fixture) to replace the
+  `/bastion_arena` chat command once the arena earns polish; deliberate
+  scope cut (chat command = zero input-context plumbing).
+- **IDEA** — `--asset-test` per-run perf budget + 50-instance placement
+  soak + save/load round-trip (ASSET_DYNAMIC_TEST_SPEC "all assets" tier;
+  not in this block's Done-when; B-TESTBED's soak machinery is the
+  natural home).
