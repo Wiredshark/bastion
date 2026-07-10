@@ -565,3 +565,29 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   flake (unrelated phase). REMAINING: quiet-machine b4/b5/b55/b58
   re-runs + the voxygen check (exe-locked) after "test done" →
   bookkeeping → merge+tag.
+
+- **PASS (2026-07-10 overnight run, quiet machine): full gate GREEN** —
+  unit 17/17, B4/B5/B5.5/B5.8 PASS, vanilla 1000-tick soak PASS, voxygen
+  check clean. The block carries two riders shipped on this branch:
+  the **B5.8-E anti-stuck cluster** (Ben's live-test trio: ACCESS-BEFORE-
+  DESCENT `Job.depth` + descent gate + proactive shallowest-layer plan;
+  EMERGENCY EGRESS jobless-trapped detector + humanitarian bubble,
+  zone-independent; REMOTE-WORK strike-grown arrival tolerance) and the
+  **pace tune** (`WORK_DURATION_BASE` 3→6s — Ben: "instant" → deliberate;
+  TOOL-0 later makes the slow base tool-gated). Gate run 1 at the doubled
+  pace flunked B5+B5.8 and exposed two REAL holes, both fixed as
+  **B5.8-E2**: (1) the `b5_chop` "load flake" root-caused for real — a
+  climbing-0 digger self-trapped in the 3-deep quarry claimed the far
+  chop job and looped claim→unreachable→re-claim (~1.2s cycle, forever);
+  each re-claim counted as "employed" and RESET the egress stillness
+  timer, starving the fail-safe (a NO-INFINITE-LOOPS violation). Fix:
+  `Job.last_bounce` bars the exact (colonist, feet-block) pairing that
+  bounced until the colonist MOVES — the identical search would re-fail
+  identically — freeing the job for reachable claimants (chop then
+  clears fast); + the egress employed-reset tightened to ARRIVED-only so
+  claim churn can't wipe the timer. (2) b58 part (e)'s `e_board_empty`
+  PRECONDITION was poisoned by part (d)'s sanctioned known-open rescue
+  leftovers at the slower pace → (d) epilogue wide-cancel (the log shows
+  real egress DID fire in (e): steps=9 from the pit). Flat-floor
+  composites green: 108 jobs, tight bounds, flat bottom. → bookkeeping,
+  isolated-worktree merge + tag `bastion-block-B5.6b-2.1`.

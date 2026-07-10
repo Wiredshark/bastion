@@ -430,6 +430,45 @@ columns off that plane silently got no/interior jobs).
   ping). WATCH handed to architect: Z-slice adequacy for working-inside-
   a-dig (B-UNDERGROUND jumps forward if Ben can't).
 
+**B5.6b-2.1 (built, overnight 2026-07-10):** the **ABSOLUTE-FLOOR flat
+mine mode** + the B5.8-E/E2 anti-stuck riders + the pace tune.
+- Schema: `ZExtent.floor_z: Option<i32>` (serde-default; None = relative)
+  + **`ZExtent::column_range(surface)` as the ONE dig-range authority** —
+  flat mode digs each column from its own surface to the SHARED absolute
+  floor (columns already below it get nothing); both placement paths, the
+  echo bounds, and the harness all call it (relative mode byte-identical
+  by unit test). Client: Slope/Flat toggle on the depth stepper
+  (`Tools.flat_floor`, `HudEvent::BastionToggleFlatFloor`); paint derives
+  the floor at commit: clicked plane − stepper depth.
+- **B5.8-E anti-stuck cluster** (Ben's live-test trio, `bastion_jobs.rs`):
+  ACCESS-BEFORE-DESCENT (`Job.depth` stamped at placement; Mine claims
+  deeper than novice reach are HELD until an access anchor joins the dig's
+  level range — access LEADS descent; a proactive plan fires for the
+  shallowest gated layer); EMERGENCY EGRESS (`egress_watch` jobless-
+  trapped detector: stationary ~20s + annulus test r∈[3,6] where level-or-
+  lower counts as egress → humanitarian bubble mask ±8 XY / −2..+64 z,
+  ZONE-INDEPENDENT — survives zone deletion); REMOTE-WORK anti-loop
+  (`Job.stuck_strikes` grows arrival tolerance to ~6.1 — work the block
+  from afar instead of looping).
+- **B5.8-E2 employed-loop fix** (gate-run find): `Job.last_bounce` bars
+  the exact (colonist, feet-block) pairing that bounced a claim as
+  unreachable until the colonist MOVES (identical search re-fails
+  identically; anyone else may claim) + the egress reset narrowed to
+  ARRIVED-only (claim churn kept a bounce-looper nominally "employed",
+  starving the stillness timer — the NO-INFINITE-LOOPS hole). The b5-chop
+  "load flake" was THIS, root-caused: a climbing-0 digger self-trapped in
+  the 3-deep default quarry (rim rise 3 > novice reach 2).
+- Pace: `WORK_DURATION_BASE` 3→6s (Ben: "instant" → deliberate; TOOL-0
+  replaces the flat bump with `tool_factor` — don't stack tunes).
+- Harness: b5 phase 7.6 (flat mode on the proven staircase = EXACTLY 108
+  jobs, tight bounds, flat bottom at the shared z) + b58 parts (e)
+  entombment repro (zone-delete with digger at pit bottom → egress fires,
+  colonist out, board empty precondition via the new (d) epilogue
+  cleanup) and (f) reach-loop repro (rim job cleared remotely), both
+  GATING.
+- **Gate:** unit 17/17, B4/B5/B5.5/B5.8 PASS, vanilla soak PASS, voxygen
+  check clean — full green on the quiet overnight machine.
+
 ### 2.10b B5.8 — Vertical mobility (the 4×-bitten trap, FIXED at the mechanism)
 
 **What:** colonists traverse vertically — scramble short faces (skill-
@@ -631,14 +670,16 @@ Full protocol: `readme/MEGA-PROMPT-autonomous-batch-builder.md`.
 ## 6. State & pointers (update every block)
 
 **Done (merged + tagged):** B0, B1, B1.5, B1.6(+B1.7), B2a, B3, B4, B5,
-B5.5, B5.6a, B5.6b-1, B-MAP1, B5.6b-2, **B5.8 (vertical mobility — the
-4×-bitten §5 trap FIXED at the mechanism; climbing skill + autonomous
-access + DF mining + ladder waiver — this block).** **Next (per
-`readme/FLEET_STATUS.md` BUILD LANE, the routing authority under the
-self-advance protocol):** B5.6b-3 (zone interaction/edit-mode), b-4
-(erase-by-type), B6 (stockpiles/hauling — INCLUDES the committed
-SOFT-COLLISION SOFT-0/1), B7. Slots-into-gaps: B-ASSET1 merge (architect
-calls the slot), B-TESTBED. Queued riders: ABSOLUTE-FLOOR depth mode.
+B5.5, B5.6a, B5.6b-1, B-MAP1, B5.6b-2, B5.8 (vertical mobility — the
+4×-bitten §5 trap FIXED at the mechanism), **B5.6b-2.1 (flat-floor mine
+mode + B5.8-E/E2 anti-stuck cluster + pace tune — this block, overnight
+2026-07-10).** **Next (per the OVERNIGHT AUTONOMOUS RUN roadmap +
+`readme/FLEET_STATUS.md` BUILD LANE):** TIME-CONTROLS (UI-3 §3 visible
+⏸/1×/2×/4× cluster; backend = vanilla `TimeScale` + singleplayer pause),
+TOOL-0 (`tool_factor`), god-hand in-engine, B6 (stockpiles/hauling —
+INCLUDES the committed SOFT-COLLISION SOFT-0/1), B7 needs-decay +
+self-designation. Then B5.6b-3/b-4 zone-UX. Slots-into-gaps: B-ASSET1
+merge (morning, tester holds it), B-TESTBED.
 
 | Need | Read |
 |---|---|
