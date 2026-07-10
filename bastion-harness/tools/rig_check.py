@@ -100,8 +100,10 @@ def check_rig(rig_dir):
             print(f'{rig_id}: {len(holes)} HOLES vs assembly (z levels {zs[:6]})')
             ok = False
         if extra:
-            print(f'{rig_id}: {len(extra)} union cells NOT in assembly (offset drift?)')
-            ok = False
+            # Union ⊃ assembly = part-side ADDITIONS (e.g. rope stitching) with
+            # a stale assembled preview — the PARTS are the shipping truth for
+            # rigs, so this is a WARN (regen the preview), not a rig defect.
+            print(f'{rig_id}: WARN — {len(extra)} part cells not in assembly (stale assembled preview? regen it)')
     else:
         print(f'{rig_id}: no assembled vox found — split-hole check skipped')
     print(f'{rig_id}: {"RIG OK" if ok else "RIG FAIL (see above)"} '

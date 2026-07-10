@@ -150,7 +150,7 @@ fn category_from_str(s: &str) -> AssetCategory {
         "flora" => AssetCategory::Flora,
         "prop" => AssetCategory::Prop,
         "item" => AssetCategory::Item,
-        "housing" | "production" | "social" | "storage" | "dungeon-room" => {
+        "structure" | "housing" | "production" | "social" | "storage" | "dungeon-room" => {
             AssetCategory::Structure
         },
         _ => AssetCategory::Other,
