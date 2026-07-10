@@ -251,6 +251,51 @@ Run 1 (pre part-(d), pre exposure-gate binary) was rich:
   spawn; the mechanism note stands: STUCK_TIMEOUT vs approach length is a
   tuning surface, and the scope guard held (no wilderness was carved).
 
+## 2d. Iteration state at the FLEET PAUSE checkpoint (runs 4–10, 2026-07-10)
+
+Ten scenario iterations; every mechanism has passed at least once; the
+remaining instability is localized. Scoreboard (STABLE = passed in all
+recent runs):
+
+- **(a) scramble gauntlet: STABLE ✓** since run 4 (climb assist) — 1-step,
+  2-up, 3-up traversed, no carve assist (`a_max_total == 1`), climbing XP
+  accrues. The reach-aware carve trigger (fire only when the ascent
+  exceeds 2 + min(climbing,1)) killed the spurious approach carves.
+- **(b2) roomy claim → auto-STAIRS: STABLE ✓** since run 5 — switchback
+  stair carved through solid inside the Stockpile-claim mask, dug
+  exposure-sequenced, colonist out, NO ladder placed. Geometry choice
+  works.
+- **(d) DF deep dig: STABLE ✓** since run 5 — 150/150 cleared, strict
+  top-down layer completion (after making the depth weight MINE-ONLY ×16 —
+  a top-weighted rung claim is unreachable until the rungs below exist,
+  which froze ladder builds), dispersion 0.87–0.96.
+- **(c) built-ladder climb / (b1) pillar exit / (d) rescue: OPEN.** Each
+  passed in SOME run ((c) run 6, (b1) run 7) but they flip-flop. Fixes
+  landed en route, each verified by traces: material stack-consumption
+  (one unit, not the stack), `is_access` marker + ONE-PLAN-AT-A-TIME
+  (run 7's trace showed three concurrent rescues digging each other's
+  stair floors out into a useless gallery), the climb assist generalized
+  to a deterministic "ladder elevator" (beside-ladder + job-target-above →
+  vel.z floor; Climb-state entry is ~50% timing-flaky), then REACH-CAPPED
+  on the wall/Climb arms (run 9 "passed" a pit exit by free-climbing a
+  5-block wall — the cap keeps Ben's skill model honest: lift only while
+  standable ground is within reach below; ladders exempt).
+- **THE open diagnosis (run-10 (c) trace):** the climber attacks the WALL
+  FACE at the reach cap and bobs, instead of walking to the ladder line —
+  i.e. A* is apparently NOT ROUTING via the ladder edges and the Chaser
+  falls back to straight-line bearing. NEXT ACTION (queued): unit-test
+  `find_path` directly on a mock volume (ground + 4-wall + ladder column;
+  in `common/src/path.rs` tests — `find_path` is module-private but
+  in-file tests reach it) to pin the graph in milliseconds instead of
+  8-minute sim runs; fix the edge generation; if execution still bobs at
+  tops, add the "top-out" dismount edge (beside-ladder → diagonal-up onto
+  a walkable cell, i.e. stepping onto the pillar top) and/or a snap
+  dismount. Scenario staging (teleport hook) already removed the
+  cross-town-travel confound — a separate pre-existing weakness, logged.
+
+Run logs (b58-run3..10.log) lived in the session temp dir — perishable;
+everything load-bearing is in this section.
+
 ## 3. Risks / watch items
 - **Path-cost integration is the flagged risky bit.** The 3-up edge add is
   small and pattern-following, but `find_path` is shared with ALL agents

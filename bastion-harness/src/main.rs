@@ -1386,6 +1386,20 @@ fn b58_scenario(args: &Args) -> ExitCode {
         }
     }
     tick(&mut server, 2);
+    // STAGING: park the crew at the gauntlet base. The scenario measures
+    // the vertical mechanisms, not cross-town goto reliability (a separate
+    // pre-existing weakness — run-4 finding; see findings doc).
+    for (i, n) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(
+                (cx + 8 + i as i32) as f32 + 0.5,
+                cy as f32 + 0.5,
+                (a_gz + 2) as f32,
+            ),
+        );
+    }
+    tick(&mut server, 5);
     let a_job_pos = Vec3::new(cx + 24, cy, a_gz + 6);
     server.bastion_place_designation(
         Region { min: a_job_pos, max: a_job_pos },
@@ -1450,6 +1464,18 @@ fn b58_scenario(args: &Args) -> ExitCode {
         }
     }
     tick(&mut server, 2);
+    // STAGING: crew at the pit platform.
+    for (i, n) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(
+                (px - 4 + i as i32) as f32 + 0.5,
+                py as f32 + 0.5,
+                (b_gz + 2) as f32,
+            ),
+        );
+    }
+    tick(&mut server, 5);
     // Job 1: one pit-floor block (also seeds the claim mask down there).
     let b_floor_job = Vec3::new(px, py, b_gz - 5);
     server.bastion_place_designation(
@@ -1476,6 +1502,20 @@ fn b58_scenario(args: &Args) -> ExitCode {
             break;
         }
     }
+    // The out-job sits on the SURFACE — reachable by anyone up top, which
+    // would let a bystander dig it and strand the trapped colonist with no
+    // reason to climb (run-4 finding: the assert raced). Park the others
+    // at the site center so the trapped colonist is the only sane claimant.
+    for n in names
+        .iter()
+        .filter(|n| pit_colonist.as_deref() != Some(n.as_str()))
+    {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(cx as f32 + 0.5, cy as f32 + 0.5, (cz + 2) as f32),
+        );
+    }
+    tick(&mut server, 5);
     // Job 2: a surface block past the rim — an ascent of 5+, beyond
     // scramble range. The pit colonist is nearest → claims → gets stuck →
     // the carve branch fires.
@@ -1486,7 +1526,7 @@ fn b58_scenario(args: &Args) -> ExitCode {
     );
     let mut b_max_total = 0usize;
     let mut b_exited = false;
-    for _ in 0..120 {
+    for i in 0..120 {
         tick(&mut server, 30);
         b_max_total = b_max_total.max(total_jobs(&server));
         b_exited = pit_colonist.as_ref().is_some_and(|name| {
@@ -1495,6 +1535,16 @@ fn b58_scenario(args: &Args) -> ExitCode {
                 .iter()
                 .any(|(n, p, _)| n == name && p.z >= (b_gz - 1) as f32)
         });
+        // Diagnostic trace: where is the trapped colonist (vs pit rim)?
+        if i % 10 == 0
+            && let Some(name) = pit_colonist.as_ref()
+            && let Some((_, p, j)) = server
+                .bastion_colonist_states()
+                .iter()
+                .find(|(n, _, _)| n == name)
+        {
+            info!(sample = i, pos = ?p, job = ?j, rim = b_gz + 1, "b58 b1 TRACE");
+        }
         if b_exited && total_jobs(&server) == 0 {
             break;
         }
@@ -1565,26 +1615,53 @@ fn b58_scenario(args: &Args) -> ExitCode {
         },
         DesignationKind::Stockpile,
     );
+    // STAGING: crew at the platform.
+    for (i, n) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(
+                (qx - 4 + i as i32) as f32 + 0.5,
+                qy as f32 + 0.5,
+                (q_gz + 2) as f32,
+            ),
+        );
+    }
+    tick(&mut server, 5);
     let q_floor_job = Vec3::new(qx, qy, q_gz - 5);
     server.bastion_place_designation(
         Region { min: q_floor_job, max: q_floor_job },
         DesignationKind::Mine,
     );
     let mut q_lured = false;
+    let mut q_pit_colonist: Option<String> = None;
     for _ in 0..60 {
         tick(&mut server, 30);
         q_lured = server
             .bastion_block_kind(q_floor_job)
             .is_none_or(|k| !k.is_filled());
-        if q_lured
-            && server.bastion_colonist_states().iter().any(|(_, p, _)| {
+        q_pit_colonist = server
+            .bastion_colonist_states()
+            .iter()
+            .find(|(_, p, _)| {
                 p.z < (q_gz - 2) as f32
                     && p.xy().distance(Vec2::new(qx as f32, qy as f32)) < 4.0
             })
-        {
+            .map(|(n, _, _)| n.clone());
+        if q_lured && q_pit_colonist.is_some() {
             break;
         }
     }
+    // Park bystanders (same rationale as b1).
+    for n in names
+        .iter()
+        .filter(|n| q_pit_colonist.as_deref() != Some(n.as_str()))
+    {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(cx as f32 + 0.5, cy as f32 + 0.5, (cz + 2) as f32),
+        );
+    }
+    tick(&mut server, 5);
     let q_out_job = Vec3::new(qx + 6, qy, q_gz);
     server.bastion_place_designation(
         Region { min: q_out_job, max: q_out_job },
@@ -1648,6 +1725,18 @@ fn b58_scenario(args: &Args) -> ExitCode {
         }
     }
     tick(&mut server, 2);
+    // STAGING: crew at the wall base.
+    for (i, n) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(
+                (wx - 5 + i as i32) as f32 + 0.5,
+                wy as f32 + 0.5,
+                (c_gz + 2) as f32,
+            ),
+        );
+    }
+    tick(&mut server, 5);
     // Material for 5 rungs (+1 spare) to one colonist → deterministic
     // builder (only carriers are arbitration-eligible for Ladder jobs).
     let builder = names.first().cloned().unwrap_or_default();
@@ -1688,12 +1777,17 @@ fn b58_scenario(args: &Args) -> ExitCode {
     );
     let mut c_top_cleared = false;
     let mut c_max_total = 0usize;
-    for _ in 0..90 {
+    for i in 0..90 {
         tick(&mut server, 30);
         c_max_total = c_max_total.max(total_jobs(&server));
         c_top_cleared = server
             .bastion_block_kind(c_top_job)
             .is_none_or(|k| !k.is_filled());
+        if i % 10 == 0 {
+            for (n, p, j) in server.bastion_colonist_states() {
+                info!(sample = i, name = %n, pos = ?p, job = ?j, top = c_gz + 5, "b58 c TRACE");
+            }
+        }
         if c_top_cleared {
             break;
         }
@@ -1733,6 +1827,18 @@ fn b58_scenario(args: &Args) -> ExitCode {
         }
     }
     tick(&mut server, 2);
+    // STAGING: crew at the dig edge.
+    for (i, n) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(
+                (dx - 6 + i as i32) as f32 + 0.5,
+                dy as f32 + 0.5,
+                (d_gz + 2) as f32,
+            ),
+        );
+    }
+    tick(&mut server, 5);
     let d_region = Region {
         min: Vec3::new(dx - 2, dy - 2, d_gz - 5),
         max: Vec3::new(dx + 2, dy + 2, d_gz),
@@ -1800,7 +1906,7 @@ fn b58_scenario(args: &Args) -> ExitCode {
     }
     let mut d_rescue_cleared = false;
     let mut d_all_out = false;
-    for _ in 0..150 {
+    for i in 0..150 {
         tick(&mut server, 30);
         d_rescue_cleared = d_out_jobs.iter().all(|p| {
             server
@@ -1811,6 +1917,11 @@ fn b58_scenario(args: &Args) -> ExitCode {
             .bastion_colonist_states()
             .iter()
             .all(|(_, p, _)| p.z >= (d_gz - 1) as f32);
+        if i % 10 == 0 {
+            for (n, p, j) in server.bastion_colonist_states() {
+                info!(sample = i, name = %n, pos = ?p, job = ?j, rim = d_gz + 1, "b58 d TRACE");
+            }
+        }
         if d_rescue_cleared && d_all_out && total_jobs(&server) == 0 {
             break;
         }

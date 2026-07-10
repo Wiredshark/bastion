@@ -287,6 +287,7 @@ impl JobBoard {
                             .then_some(BUILD_MATERIAL_ITEM),
                             needs_materials: false,
                             carve_attempted: false,
+                            is_access: false,
                         });
                         created.push(id);
                     }
@@ -360,6 +361,7 @@ impl JobBoard {
                             .then_some(BUILD_MATERIAL_ITEM),
                             needs_materials: false,
                             carve_attempted: false,
+                            is_access: false,
                         });
                         created.push(id);
                     }
@@ -461,6 +463,7 @@ impl<'a> System<'a> for Sys {
         ReadExpect<'a, common::event::EventBus<CreateItemDropEvent>>,
         ReadStorage<'a, comp::CharacterState>,
         WriteStorage<'a, comp::Vel>,
+        ReadStorage<'a, comp::PhysicsState>,
     );
 
     const NAME: &'static str = "bastion_jobs";
@@ -487,6 +490,7 @@ impl<'a> System<'a> for Sys {
             item_drop_events,
             char_states,
             mut velocities,
+            physics_states,
         ): Self::SystemData,
     ) {
         let mut item_drop_emitter = item_drop_events.emitter();
@@ -495,22 +499,76 @@ impl<'a> System<'a> for Sys {
         // ── B5.8: climbing improves with use (Ben: climbing is a SKILL) ──
         // XP accrues while a colonist is actually in the Climb state; the
         // level feeds `scramble_reach` (agent system) — vertical traversal
-        // is a GROWING capability, not a binary. ALSO the CLIMB ASSIST:
-        // working colonists get a guaranteed ascent rate while climbing
-        // (the spec's sanctioned "relax the rules for the Colonist body —
-        // they're workers, not players"): the vanilla climb chain enters
-        // the state fine but stalls cresting a lip (b58 run-3 finding: the
-        // 3-up graph edge was taken, the body never topped out). The vel
-        // floor carries them up and over. Colonists-with-jobs only —
-        // players and vanilla NPCs are untouched.
+        // is a GROWING capability, not a binary.
+        //
+        // ALSO the CLIMB ASSIST (the spec's sanctioned "relax the rules for
+        // the Colonist body — they're workers, not players"): a working
+        // colonist whose job target is ABOVE gets a guaranteed ascent rate
+        // while (a) in the Climb state, (b) airborne against a wall
+        // (mid-scramble — only reachable via a path edge the reach model
+        // granted), or (c) BESIDE A LADDER block, grounded or not (a ladder
+        // is climbable by construction — this makes ladder mounts and
+        // pit-pillar exits deterministic; runs 3-8 showed the vanilla
+        // jump→Climb entry chain is ~50% timing-flaky). Plain wall-hugging
+        // on foot gets nothing, so free-climbing stays bounded by the path
+        // graph and the climbing skill. Players and vanilla NPCs untouched.
         const CLIMB_XP_RATE: f32 = 1.5; // xp per second in-state
         const CLIMB_ASSIST_VZ: f32 = 2.5; // guaranteed ascent, blocks/s
         {
-            let mut climb_iter =
-                (&mut colonists, &char_states, &mut velocities, &active_jobs).lend_join();
-            while let Some((mut colonist, cs, vel, _)) = climb_iter.next() {
-                if matches!(cs, comp::CharacterState::Climb(_)) {
+            let mut climb_iter = (
+                &mut colonists,
+                &char_states,
+                &mut velocities,
+                &active_jobs,
+                &positions,
+                &physics_states,
+            )
+                .lend_join();
+            while let Some((mut colonist, cs, vel, active, pos, phys)) = climb_iter.next() {
+                let climbing = matches!(cs, comp::CharacterState::Climb(_));
+                if climbing {
                     colonist.0.skills.climbing.add_xp(CLIMB_XP_RATE * dt.0);
+                }
+                let target_above = board
+                    .jobs
+                    .get(&active.job)
+                    .is_some_and(|j| j.pos.z as f32 + 1.0 > pos.0.z + 1.0);
+                if !target_above {
+                    continue;
+                }
+                let feet = pos.0.map(|e| e.floor() as i32);
+                let beside_ladder = [
+                    Vec3::new(1, 0, 0),
+                    Vec3::new(-1, 0, 0),
+                    Vec3::new(0, 1, 0),
+                    Vec3::new(0, -1, 0),
+                ]
+                .into_iter()
+                .any(|d| {
+                    terrain
+                        .get(feet + d)
+                        .ok()
+                        .and_then(|b| b.get_sprite())
+                        == Some(SpriteKind::Ladder)
+                });
+                let airborne_on_wall =
+                    phys.on_ground.is_none() && phys.on_wall.is_some();
+                // REACH CAP on the wall/climb arms: lift only while
+                // standable ground is within the colonist's scramble reach
+                // below — otherwise the assist would elevator workers up
+                // walls of ANY height (run-9 finding: a pit exit "passed"
+                // by free-climbing the 5-block wall, bypassing the skill
+                // model). Ladders are exempt: beating reach is their job.
+                let reach = 2 + colonist.0.skills.climbing.level.min(1) as i32;
+                let ground_within_reach = (1..=reach + 1).any(|i| {
+                    terrain
+                        .get(feet - Vec3::unit_z() * i)
+                        .map(|b| b.is_filled())
+                        .unwrap_or(false)
+                });
+                if beside_ladder
+                    || ((climbing || airborne_on_wall) && ground_within_reach)
+                {
                     vel.0.z = vel.0.z.max(CLIMB_ASSIST_VZ);
                 }
             }
@@ -603,8 +661,14 @@ impl<'a> System<'a> for Sys {
                                 let feet = pos.0.map(|e| e.floor() as i32);
                                 let reach =
                                     2 + colonist.0.skills.climbing.level.min(1) as i32;
-                                if !job.carve_attempted && job.pos.z - feet.z > reach {
-                                    job.carve_attempted = true;
+                                // The attempt flag is burned at PLAN time
+                                // (post-loop), not here — a request skipped
+                                // because another plan is pending must keep
+                                // its turn for later.
+                                if !job.carve_attempted
+                                    && !job.is_access
+                                    && job.pos.z - feet.z > reach
+                                {
                                     carve_requests.push((feet, job.pos, active.job));
                                 } else {
                                     job.unreachable = true;
@@ -795,7 +859,18 @@ impl<'a> System<'a> for Sys {
         // Emitted steps/rungs are ordinary jobs: arbitration assigns them
         // (nearest wins — usually the stuck colonist; the exposure gate
         // sequences stair digs bottom-up naturally).
-        for (from, to, parent) in carve_requests {
+        //
+        // ONE PLAN AT A TIME: while any access job is pending, no new plan
+        // is emitted (requests keep their turn — the attempt flag burns at
+        // plan time). Concurrent plans overlap and dig each other's step
+        // floors out (run-7's gallery of chaos); one stair serves everyone.
+        let access_pending = board.jobs.values().any(|j| j.is_access);
+        for (from, to, parent) in carve_requests.into_iter().take(
+            if access_pending { 0 } else { 1 },
+        ) {
+            if let Some(job) = board.jobs.get_mut(&parent) {
+                job.carve_attempted = true;
+            }
             let plan: Option<(Vec<Vec3<i32>>, DesignationKind)> = {
                 let is_solid =
                     |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
@@ -852,10 +927,11 @@ impl<'a> System<'a> for Sys {
                         // spoil); PLAYER-placed ladders still cost material.
                         required_item: None,
                         needs_materials: false,
-                        // Access jobs never spawn FURTHER access (the
-                        // run-3 cascade: rung jobs at height triggered
-                        // their own carves, 34 jobs from one rescue).
                         carve_attempted: true,
+                        // The plan marker: no cascades, and no NEW plan
+                        // while these are pending (run-7 finding:
+                        // overlapping plans dig each other's floors out).
+                        is_access: true,
                     });
                     steps += 1;
                 }
@@ -1020,9 +1096,17 @@ impl<'a> System<'a> for Sys {
                 //    the shallowest frontier strictly clears first (DF-style
                 //    layer-by-layer; lateral exposure permits undermining in
                 //    principle, but the weight keeps claims layer-ordered).
-                //    The score is only compared within this selection, so
-                //    the absolute-z term is safe.
-                let depth_score = -(job.pos.z as f32) * 16.0;
+                //    MINE DIGS ONLY: construction (Build/Ladder rungs) goes
+                //    bottom-up by nearest-first — a top-weighted rung claim
+                //    is unreachable until the rungs below it exist (b58
+                //    run-5 finding: pillars never finished). The score is
+                //    only compared within this selection, so the absolute-z
+                //    term is safe.
+                let depth_score = if job.kind == DesignationKind::Mine {
+                    -(job.pos.z as f32) * 16.0
+                } else {
+                    0.0
+                };
                 let clump_penalty = if claimed_pos.iter().any(|c| {
                     (c.x - job.pos.x).abs() < 2 && (c.y - job.pos.y).abs() < 2
                 }) {

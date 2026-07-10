@@ -473,3 +473,29 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   REMOVED where the mechanisms cover it + vanilla clean. Watch: path-
   cost integration is the risky bit (vertical-link graph annotation is
   the sanctioned fallback); TRAVEL_SPEED/climb-speed eyeball for Ben.
+
+- **FLEET-PAUSE CHECKPOINT (2026-07-10, Ben out of credit — architect
+  ordered mid-block save; NOT tagged, branch is WIP).** Scope grew
+  mid-block by architect relay of Ben's live b-2 test: DF-style mining
+  (exposure-gated claims, top-down, dispersion), climbing-as-a-SKILL
+  (`ColonistSkills.climbing`, reach mapping, XP-in-Climb-state), and
+  AUTONOMOUS ACCESS as default (stairs-vs-ladder by claim geometry;
+  masked switchback `carve_ramp` + material-free ladder pillars;
+  one-plan-at-a-time). ALSO queued by architect: ABSOLUTE-FLOOR depth
+  mode (backlog). All code COMMITTED and COMPILING on the branch; 12
+  carve_ramp/schema unit tests green. `--b58-scenario` iteration
+  scoreboard (10 runs): parts (a) scramble, (b2) roomy→auto-stairs, and
+  (d) deep-dig invariants (150/150, strict top-down, dispersion ~0.9)
+  are STABLE-PASSING; OPEN: the pit/ladder climb-OUT execution family —
+  (b1)/(c)/(d-rescue) — flip-flops; run-10 trace shows A* apparently not
+  routing via ladder edges (climber attacks the wall face at the reach
+  cap instead of walking to the ladder). **RESUME AT:** findings §2d
+  "THE open diagnosis" — write the `find_path` mock-volume unit test in
+  `common/src/path.rs` (in-file tests reach the private fn), fix the
+  ladder-edge generation, consider the top-out dismount edge; then full
+  quiet-machine gate (unit + b4/b5(ramp-removed)/b55/b58 + vanilla +
+  voxygen check — voxygen compile was HELD for Ben's live test all
+  session) → bookkeeping → merge+tag → FLEET_STATUS next (b-3). Note
+  for the b4/b5/b55 re-gate: exposure gating changes B4's buried-job
+  path (now proactively flagged unreachable — assert-compatible) and
+  the reach-aware carve trigger protects b55's exact-conservation.

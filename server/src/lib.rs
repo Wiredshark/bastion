@@ -1097,6 +1097,40 @@ impl Server {
         })
     }
 
+    /// bastion (B5.8, harness hook): teleport a loaded colonist — scenario
+    /// STAGING only (parks participants at a test site so vertical-mobility
+    /// gates measure the mechanism, not cross-town goto reliability, which
+    /// is a separate pre-existing weakness — see B58 findings).
+    pub fn bastion_teleport_colonist(&mut self, name: &str, pos: Vec3<f32>) -> bool {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let entities = ecs.entities();
+        let target = (&entities, &colonists)
+            .join()
+            .find(|(_, c)| c.0.name == name)
+            .map(|(e, _)| e);
+        drop(colonists);
+        if let Some(entity) = target {
+            let mut positions = ecs.write_storage::<comp::Pos>();
+            let mut velocities = ecs.write_storage::<comp::Vel>();
+            if let Some(p) = positions.get_mut(entity) {
+                p.0 = pos;
+                if let Some(v) = velocities.get_mut(entity) {
+                    v.0 = Vec3::zero();
+                }
+                // Force a chunk-position resync so physics doesn't lerp the
+                // entity across the map.
+                let _ = ecs
+                    .write_storage::<common::comp::ForceUpdate>()
+                    .get_mut(entity)
+                    .map(|f| f.update());
+                return true;
+            }
+        }
+        false
+    }
+
     /// bastion (B5.8, harness hook): set a loaded colonist's CLIMBING
     /// movement skill (deterministic scramble-reach in scenarios).
     pub fn bastion_set_colonist_climbing(&mut self, name: &str, level: u16) -> bool {

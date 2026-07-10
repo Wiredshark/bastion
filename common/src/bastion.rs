@@ -499,6 +499,13 @@ pub struct Job {
     /// this job — the watchdog degrades straight to `unreachable` next time
     /// instead of carving again (one attempt per job; no carve loops).
     pub carve_attempted: bool,
+    /// bastion (B5.8): this job IS part of an auto-access plan (a stair
+    /// step or ladder rung the colony carves for itself). Access jobs never
+    /// spawn further access, and while ANY access job is pending no new
+    /// plan is emitted — overlapping plans dig through each other's floors
+    /// (the b58 run-7 gallery-of-chaos finding); one stair serves everyone.
+    #[serde(default)]
+    pub is_access: bool,
 }
 
 /// The material B5's minimal Build path requires (single hardcoded material;
