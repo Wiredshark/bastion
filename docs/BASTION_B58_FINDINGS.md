@@ -143,6 +143,114 @@ law; DIG-0's top-down-safe decomposition rule applies to the shared lib).
   item; add "mine framework supersedes carving with planned access (§3v)".
 - TRAVEL_SPEED/climb-speed eyeball → next batched TEST LIST for Ben.
 
+## 2b. SCOPE ADDITION mid-block (architect relay of Ben's live b-2 test —
+"the heart of the block"): DF-STYLE MINING BEHAVIOR
+
+Observed live: on a 6-deep mine, colonists all rushed the DEEPEST cells,
+couldn't reach them, and stalled. Required (and built as Step 2.5, in the
+arbitration pass of `bastion_jobs.rs`):
+
+1. **Reachability gate:** a Mine job is claimable only when EXPOSED — at
+   least one of its 6 neighbors is non-solid (the cheap sound proxy for
+   "a digger can stand next to it"; the watchdog + carve stay the safety
+   net for exposed-but-unreachable). Interior cells unlock as the shell
+   clears. NOTE the elegant side effect: carve-stair steps are emitted
+   bottom-up and only the NEXT step is exposed at any time — the gate
+   naturally sequences stair digging.
+2. **Top-down frontier:** among exposed Mine jobs, scoring prefers HIGHER
+   z (a level above outweighs several blocks of travel) — the dig clears
+   layer by layer, DF-style, standing on each cleared floor to take the
+   next.
+3. **Dispersion:** claims taken this pass (and standing claims) repel new
+   claims within 2 XY blocks — N colonists spread across the frontier
+   instead of stacking on one corner. (The B6 work-crew dispersion item,
+   pulled forward for mining.)
+
+Gate additions (`--b58-scenario` part (d)): a 5×5×6 deep dig with 3
+colonists — completes fully; layers finish strictly top-down; multi-claim
+samples are majority-dispersed; a post-dig job outside the pit still
+completes (the diggers carve their own way out — no one is entombed).
+New harness hook: `bastion_claimed_job_positions`.
+
+ALSO QUEUED (not this block): ABSOLUTE-FLOOR depth mode (flat-bottom
+quarries) — backlog entry; architect put it on FLEET_STATUS NEXT.
+
+## 2b-ii. SECOND scope wave (two more Ben directives, folded in)
+
+**CLIMBING IS A SKILL** — built as: `ColonistSkills.climbing` (a MOVEMENT
+skill, deliberately not a `WorkType`; `#[serde(default)]` so pre-B5.8
+rtsim saves load; spawn rolls 0..=1 — most settlers start poor climbers).
+`TraversalConfig.can_scramble` became **`scramble_reach: u8`** (0 = vanilla
+NPC, 2 = novice colonist, 3 = climbing level 1+ unlocks the 3-up edges;
+ladder edges need any reach > 0). XP accrues at 1.5/s while actually in
+the `Climb` character state (bastion Sys reads `CharacterState`) — reach
+literally grows with use. The same movement-skill shape extends to flying
+entities later (do NOT fold it into the work-skill enum). Harness hooks:
+`bastion_set_colonist_climbing` / `bastion_colonist_climbing`.
+
+**AUTONOMOUS ACCESS IS THE DEFAULT** — the self-rescue branch now chooses
+access that fits the geometry:
+- **Access mask** (`in_access_mask`): claim box ±1 in XY, ≥ floor−1 in z,
+  UNBOUNDED upward ("air rights" — a colony may always rise from its own
+  claim to the surface; never tunnels sideways/down beyond the paint).
+  This replaced the rise-expanded margin, which let spurious approach
+  carves through wilderness-adjacent stone.
+- **Stairs** where the claim has room: `carve_ramp` gained the mask
+  parameter + SWITCHBACKS (snakes inside the mask, never reuses a column
+  — a reused column's floor was already dug) + the FLOOR RULE (every
+  step's under-block must be solid — stairs cannot route through open
+  space). Multiple stair BASES are tried (the digger's cell + walkable
+  neighbors) because a pit-escape's first step must cut into a wall
+  column. Still ONE library — DIG-1's player verb passes its designation
+  box as the mask.
+- **Ladder** where it's tight or hollow: a material-free rung pillar
+  (`ladder_pillar`) up an open column adjacent to the digger, starting one
+  above the feet (lure-hole lips), topping out one above the target
+  (dismount). Material gates re-keyed off `Job::required_item` so
+  auto-access rungs flow free while PLAYER-placed ladders still cost
+  stone (consistency note: infrastructure-from-spoil vs player builds).
+- **Geometry choice falls out of the claim shape**: a 1-block-painted
+  shaft is "tight" (stairs can't route in mask ±1) → ladder; a wide claim
+  (incl. a Stockpile designation, which is a pure claim marker with zero
+  jobs) → switchback stairs. Gate: b58 (b1) tight→ladder-sprites-present,
+  (b2) roomy→stairs-and-no-ladder, (d) post-dig rescue with no manual
+  input and no one entombed.
+- ALSO fixed en route: Build/Ladder material consumption ate the WHOLE
+  STACK (`inv.remove`) — a 6-stone stack vanished on the first ladder
+  rung and the builder stopped being a carrier (run-2's 1/5 rungs).
+  Now decrements one unit (`Item::decrease_amount`).
+
+## 2c. First scenario run — findings (all fixed same-session)
+
+Run 1 (pre part-(d), pre exposure-gate binary) was rich:
+
+- **(a) SCRAMBLE WORKS.** The colonist traversed 1-step + 2-up + 3-up and
+  cleared the top job — the jump → wall-contact → auto-Climb chain needs
+  no agent-side changes, as predicted. (A spurious carve also fired during
+  the LONG approach — see the zombie-job fix below.)
+- **(b) PIT SELF-RESCUE WORKS END-TO-END.** Lured in over fall edges, got
+  stuck on the 5-up ascent, carve branch fired, dug its own staircase,
+  exited. The B5 pit-trap is mechanically solved.
+- **(c) LADDER MOUNT-GAP (fixed):** vertical ladder edges originally
+  required a ladder beside BOTH ends — but the ground cell below the
+  bottom rung has no ladder at its own z, so there was no MOUNT edge (and
+  no top-out past the top rung). Only rung 1 (arrival-reachable from the
+  ground) ever got built; the carve safety net then rescued the top job —
+  a nice accidental proof of the fallback. FIX: `beside_ladder(pos) ||
+  beside_ladder(next)`.
+- **ZOMBIE JOBS (fixed with a real mechanism):** a carve stair that cuts
+  through a claimed job's own block left the job un-completable — moot was
+  only checked at COMPLETION (arrival), so the job cycled
+  claim→stuck→unreachable→retry forever and the board never drained. FIX:
+  the same moot predicate now also runs DURING travel (one terrain read
+  per traveling colonist per tick); jobs whose block changed under them
+  drop immediately.
+- **Long approaches can stall the watchdog on A* budget alone** (Chaser
+  iteration caps across ~35 blocks of town) and fire a spurious carve
+  (refused by the scope guard → churn). Scenario geometry moved closer to
+  spawn; the mechanism note stands: STUCK_TIMEOUT vs approach length is a
+  tuning surface, and the scope guard held (no wilderness was carved).
+
 ## 3. Risks / watch items
 - **Path-cost integration is the flagged risky bit.** The 3-up edge add is
   small and pattern-following, but `find_path` is shared with ALL agents

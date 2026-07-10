@@ -349,3 +349,13 @@ remove an earlier block's entries.
 - **IDEA** (B5.6b-2): the depth stepper tops at down=32 / up=8 (UI clamp,
   `Z_EXTENT_MAX_DOWN/UP`); §3v's mine framework may want per-kind caps +
   a "to depth Z" absolute entry mode when deep mining lands.
+- **ADD (QUEUED by architect from Ben's b-2 live test, 2026-07-09):
+  ABSOLUTE-FLOOR depth mode.** Surface-relative digging follows the slope →
+  stepped pit bottoms; Ben wants a second mode: "flat floor at level Z" —
+  every column in the footprint digs from its own surface down to ONE
+  shared absolute z (quarry floors / foundations / plazas). Extend the
+  z_extent model with an absolute-floor variant (`floor_z`); job-gen digs
+  each column to `floor_z`; UX = mode toggle on the depth stepper + a
+  "set floor here" pick. The committed volume rings already render at
+  absolute z — the viz suits it as-is. Slot after B5.8 or fold into b-3
+  (builder's call); include in the next batched Ben test list.
