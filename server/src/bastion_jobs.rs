@@ -1608,6 +1608,16 @@ impl<'a> System<'a> for Sys {
                     );
                     let done_pos = job.pos;
                     board.jobs.remove(&active.job);
+                    // reviewer F5 / b58-(d) fix: completing a job is the
+                    // ground-truth "making progress" signal — reset the
+                    // universal stuck-watch. A colonist steadily clearing
+                    // blocks in a confined deep pit (small displacement, so
+                    // the leash alone would false-fire the teleport) stays
+                    // safe; only a colonist that completes NOTHING for the
+                    // full window is teleported.
+                    if let Some(u) = uids.get(entity) {
+                        board.stuck_watch.remove(u);
+                    }
                     // B-LIVE3 (Ben's MINE LIFECYCLE): the designation this
                     // job belonged to may just have finished — collect for
                     // the post-loop done/disperse pass (the board's job map
