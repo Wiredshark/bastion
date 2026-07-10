@@ -531,3 +531,63 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   script edit slipped mid-block (BOM+churn) — caught same-minute via the
   standing byte-check, reverted, redone with the Edit tool. NEXT per
   FLEET_STATUS: B5.6b-3 — self-advancing after the tag ping.
+
+### B5.6b-2.1 — ABSOLUTE-FLOOR flat mine mode (zone-UX wave, Ben's b-2 QA)
+
+- Start SHA: `6c17845e92` (= `bastion-block-B5.8`) · branch
+  `bastion/block-B5.6b-2.1` · started 2026-07-10 under SELF-ADVANCE
+  (FLEET_STATUS BUILD LANE: "quick zone-UX fixes fold in first"; a
+  routing question is pending with the architect on whether the GOD-HAND
+  showpiece preempts — this block is small, a redirect loses nothing).
+  Spec: the backlog entry from Ben's b-2 live test — a second Mine depth
+  mode: "flat floor at level Z" (every column digs from its own surface
+  down to ONE shared absolute z → flat, square pit bottoms for quarries/
+  foundations/plazas; identical to relative on flat ground). Plan: extend
+  the z_extent model with an absolute-floor variant, job-gen digs each
+  column to `floor_z`, UX = mode toggle on the b-2 depth stepper (+
+  scroll) with the committed volume rings already absolute-z (viz aligns
+  as-is). Gate: harness assertion (staircase terrain → flat bottom at
+  the target z, all columns; relative mode unchanged) + Ben's eyeball
+  batched.
+
+- PROGRESS (2026-07-10, built DURING Ben's live B5.8 test under the
+  exe-lock rules — server/common/harness only, voxygen check deferred):
+  `ZExtent.floor_z: Option<i32>` + `column_range()` as the ONE dig-range
+  authority (job gen, echo bounds, harness all call it; relative mode
+  byte-identical); flat-mode wire validation estimates depth from
+  plane→floor; client Slope/Flat toggle on the depth stepper with
+  paint-time floor derivation (clicked plane − stepper depth). VERIFIED:
+  unit 17/17 (new `column_range_relative_and_flat` suite); b5 phase 7.6
+  green — flat mode on the proven staircase = EXACTLY 108 jobs, tight
+  bounds, nothing below the shared floor (one scenario-terraform fix en
+  route: the underfill must span below the shared floor on tall columns).
+  A same-run `b5_chop_cleared` red is the DOCUMENTED Ben-playing load
+  flake (unrelated phase). REMAINING: quiet-machine b4/b5/b55/b58
+  re-runs + the voxygen check (exe-locked) after "test done" →
+  bookkeeping → merge+tag.
+
+- **PASS (2026-07-10 overnight run, quiet machine): full gate GREEN** —
+  unit 17/17, B4/B5/B5.5/B5.8 PASS, vanilla 1000-tick soak PASS, voxygen
+  check clean. The block carries two riders shipped on this branch:
+  the **B5.8-E anti-stuck cluster** (Ben's live-test trio: ACCESS-BEFORE-
+  DESCENT `Job.depth` + descent gate + proactive shallowest-layer plan;
+  EMERGENCY EGRESS jobless-trapped detector + humanitarian bubble,
+  zone-independent; REMOTE-WORK strike-grown arrival tolerance) and the
+  **pace tune** (`WORK_DURATION_BASE` 3→6s — Ben: "instant" → deliberate;
+  TOOL-0 later makes the slow base tool-gated). Gate run 1 at the doubled
+  pace flunked B5+B5.8 and exposed two REAL holes, both fixed as
+  **B5.8-E2**: (1) the `b5_chop` "load flake" root-caused for real — a
+  climbing-0 digger self-trapped in the 3-deep quarry claimed the far
+  chop job and looped claim→unreachable→re-claim (~1.2s cycle, forever);
+  each re-claim counted as "employed" and RESET the egress stillness
+  timer, starving the fail-safe (a NO-INFINITE-LOOPS violation). Fix:
+  `Job.last_bounce` bars the exact (colonist, feet-block) pairing that
+  bounced until the colonist MOVES — the identical search would re-fail
+  identically — freeing the job for reachable claimants (chop then
+  clears fast); + the egress employed-reset tightened to ARRIVED-only so
+  claim churn can't wipe the timer. (2) b58 part (e)'s `e_board_empty`
+  PRECONDITION was poisoned by part (d)'s sanctioned known-open rescue
+  leftovers at the slower pace → (d) epilogue wide-cancel (the log shows
+  real egress DID fire in (e): steps=9 from the pit). Flat-floor
+  composites green: 108 jobs, tight bounds, flat bottom. → bookkeeping,
+  isolated-worktree merge + tag `bastion-block-B5.6b-2.1`.

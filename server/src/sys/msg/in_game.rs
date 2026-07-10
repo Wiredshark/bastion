@@ -304,7 +304,18 @@ impl Sys {
                     // the deferred board op recompute the same surfaces.
                     let footprint = (region.max.x - region.min.x + 1) as i64
                         * (region.max.y - region.min.y + 1) as i64;
-                    let volume = footprint * extent.levels() as i64;
+                    // B5.6b-2.1: flat-floor volumes are terrain-dependent —
+                    // estimate depth from the paint plane to the floor
+                    // (plus scan headroom for relief) for the cap check.
+                    let nominal_levels = match extent.floor_z {
+                        Some(floor) => {
+                            ((region.max.z - floor).max(0) as i64 + 1)
+                                + extent.up as i64
+                                + 8
+                        },
+                        None => extent.levels() as i64,
+                    };
+                    let volume = footprint * nominal_levels;
                     let resolved = (volume > 0
                         && volume <= common::bastion::MAX_DESIGNATION_VOLUME)
                         .then(|| {

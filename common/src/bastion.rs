@@ -150,10 +150,27 @@ pub struct ZExtent {
     pub down: u16,
     /// Levels above the per-cell surface.
     pub up: u16,
+    /// bastion (B5.6b-2.1, Ben's flat-floor mode): when `Some`, `down` is
+    /// IGNORED and every column digs from its own surface to this shared
+    /// ABSOLUTE z — the pit bottoms out FLAT AND SQUARE (quarry floors /
+    /// foundations / plazas) instead of following the slope. Columns whose
+    /// surface already sits at/below the floor get nothing. Identical to
+    /// the relative mode on flat ground. `serde(default)` for pre-2.1
+    /// stored copies; the WIRE requires client+server in step regardless
+    /// (positional struct coding — same ship-together rule as every wire
+    /// change this arc).
+    #[serde(default)]
+    pub floor_z: Option<i32>,
 }
 
 impl Default for ZExtent {
-    fn default() -> Self { Self { down: 2, up: 0 } }
+    fn default() -> Self {
+        Self {
+            down: 2,
+            up: 0,
+            floor_z: None,
+        }
+    }
 }
 
 impl ZExtent {
@@ -164,14 +181,40 @@ impl ZExtent {
     /// column; scroll/stepper adjusts as usual).
     pub fn default_for(kind: DesignationKind) -> Self {
         match kind {
-            DesignationKind::Ladder => Self { down: 0, up: 3 },
+            DesignationKind::Ladder => Self {
+                down: 0,
+                up: 3,
+                floor_z: None,
+            },
             _ => Self::default(),
         }
     }
 
     /// Total levels spanned (down + surface-inclusive + up counting quirk is
     /// folded in: down already includes the surface block's own level).
+    /// Flat-floor volumes are terrain-dependent — this is the RELATIVE
+    /// span only (validation for flat mode bounds by footprint × a depth
+    /// cap server-side).
     pub fn levels(&self) -> u32 { self.down as u32 + 1 + self.up as u32 }
+
+    /// The dig range for one column: from the column's own `surface` down
+    /// (or to the shared absolute floor in flat mode) up to `surface + up`.
+    /// `None` when the column has nothing to dig (its surface is already
+    /// at/below a flat floor). ONE authority — job gen, echo bounds, and
+    /// the harness all call this.
+    pub fn column_range(&self, surface: i32) -> Option<(i32, i32)> {
+        let hi = surface + self.up as i32;
+        let lo = match self.floor_z {
+            Some(floor) => {
+                if surface < floor {
+                    return None;
+                }
+                floor
+            },
+            None => surface - self.down as i32,
+        };
+        Some((lo, hi))
+    }
 }
 
 /// bastion (B5.6b-2, SCHEMA GUARD): THE canonical zone↔asset `purpose`
@@ -506,6 +549,31 @@ pub struct Job {
     /// (the b58 run-7 gallery-of-chaos finding); one stair serves everyone.
     #[serde(default)]
     pub is_access: bool,
+    /// bastion (B5.8-E, Ben's anti-loop invariant): how many times a
+    /// claimant stuck-timed-out on this job. Grows the job's arrival
+    /// tolerance (a bounded REMOTE-WORK reach extension, ~6 blocks at 3+
+    /// strikes), so a colonist that can't physically stand at an awkward
+    /// block eventually works it from below/afar instead of looping
+    /// claim→stuck→unreachable→retry forever.
+    #[serde(default)]
+    pub stuck_strikes: u8,
+    /// bastion (B5.8-E, Ben's ACCESS-BEFORE-DESCENT): this dig cell's depth
+    /// below its own column's surface AT PLACEMENT (0 = the surface layer).
+    /// The descent gate holds Mine claims deeper than novice reach until
+    /// return-access exists nearby — access LEADS the dig down instead of
+    /// trailing it, so an inescapable hole is never created in the first
+    /// place (the reactive egress becomes the rare backstop).
+    #[serde(default)]
+    pub depth: u8,
+    /// bastion (B5.8-E2): the (colonist, feet-block) whose claim last
+    /// bounced off this job as unreachable. That exact pairing is barred
+    /// from re-claiming — re-running the identical failed path search from
+    /// the identical spot re-fails identically, and the churn keeps the
+    /// colonist nominally "employed", which starved the emergency-egress
+    /// stillness timer (the b5-chop reclaim loop). Any other colonist, or
+    /// the same colonist after moving a block, stays eligible.
+    #[serde(default)]
+    pub last_bounce: Option<(crate::uid::Uid, Vec3<i32>)>,
 }
 
 /// The material B5's minimal Build path requires (single hardcoded material;
@@ -794,6 +862,33 @@ mod tests {
         // B5.8: Ladder is the one upward kind (a rung column, not a dig).
         let l = ZExtent::default_for(DesignationKind::Ladder);
         assert_eq!((l.down, l.up), (0, 3));
+        // B5.6b-2.1: flat-floor is opt-in per paint — never a default.
+        assert!(l.floor_z.is_none());
+        assert!(ZExtent::default().floor_z.is_none());
+    }
+
+    #[test]
+    fn column_range_relative_and_flat() {
+        // Relative: surface-follow (the b-2 model, unchanged).
+        let rel = ZExtent {
+            down: 2,
+            up: 0,
+            floor_z: None,
+        };
+        assert_eq!(rel.column_range(100), Some((98, 100)));
+        assert_eq!(rel.column_range(105), Some((103, 105)));
+        // Flat: every column bottoms at the SAME absolute z.
+        let flat = ZExtent {
+            down: 2,
+            up: 0,
+            floor_z: Some(98),
+        };
+        assert_eq!(flat.column_range(100), Some((98, 100)));
+        assert_eq!(flat.column_range(105), Some((98, 105))); // deeper cut uphill
+        // A column already at/below the floor digs nothing.
+        assert_eq!(flat.column_range(97), None);
+        // Floor at exactly the surface: the surface block itself goes.
+        assert_eq!(flat.column_range(98), Some((98, 98)));
     }
 
     #[test]

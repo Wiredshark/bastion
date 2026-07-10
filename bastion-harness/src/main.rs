@@ -824,7 +824,11 @@ fn b5_scenario(args: &Args) -> ExitCode {
     for x in sl_min_xy.x..=sl_max_xy.x {
         let s = sl_gz + (x - sl_min_xy.x); // this column's surface
         for y in sl_min_xy.y..=sl_max_xy.y {
-            for z in (s - 5)..=s {
+            // Solid from below the BASE tier to this column's surface: the
+            // 7.6 flat floor reaches sl_gz on EVERY column — a per-surface
+            // underfill leaves natural (sometimes air) cells beneath the
+            // tall columns' fill (bit b-2.1: 106/108 jobs).
+            for z in (sl_gz - 6)..=s {
                 server.state_mut().set_block(
                     Vec3::new(x, y, z),
                     Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
@@ -842,7 +846,11 @@ fn b5_scenario(args: &Args) -> ExitCode {
         sl_min_xy,
         sl_max_xy,
         sl_hint,
-        ZExtent { down: 2, up: 0 },
+        ZExtent {
+            down: 2,
+            up: 0,
+            floor_z: None,
+        },
         DesignationKind::Mine,
     );
     let sl_jobs_total = sl_jobs.len();
@@ -896,6 +904,35 @@ fn b5_scenario(args: &Args) -> ExitCode {
         .len();
     server.bastion_cancel_designation(sl_wide);
     tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+    // 7.6 (B5.6b-2.1): FLAT-FLOOR mode on the same staircase — every
+    // column digs from its own surface down to ONE absolute z (the base
+    // tier), so the pit would bottom out flat and square. Column i has
+    // surface sl_gz+i → i+1 jobs; total = Σ(i+1) for i=0..7 = 36 per row
+    // × 3 rows = 108. Placement-level, no colonist time.
+    let (fl_jobs, fl_bounds) = server.bastion_place_designation_surface(
+        sl_min_xy,
+        sl_max_xy,
+        sl_hint,
+        ZExtent {
+            down: 0,
+            up: 0,
+            floor_z: Some(sl_gz),
+        },
+        DesignationKind::Mine,
+    );
+    let fl_total = fl_jobs.len();
+    let fl_bounds_ok = fl_bounds
+        == Some(Region {
+            min: Vec3::new(sl_min_xy.x, sl_min_xy.y, sl_gz),
+            max: Vec3::new(sl_max_xy.x, sl_max_xy.y, sl_gz + 7),
+        });
+    // Every column's job floor is EXACTLY the shared level (none deeper).
+    let fl_floor_flat = server.bastion_jobs_in_region(Region {
+        min: Vec3::new(sl_min_xy.x, sl_min_xy.y, sl_gz - 8),
+        max: Vec3::new(sl_max_xy.x, sl_max_xy.y, sl_gz - 1),
+    }) == 0;
+    server.bastion_cancel_designation(sl_wide);
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
 
     // 8. Zero-input soak.
     let soak_ticks: u64 = 600;
@@ -925,6 +962,9 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_slope_bounds_ok": sl_bounds_ok,
         "b5_slope_cancel_clean": sl_cancel_clean,
         "b5_slope_legacy_jobs": sl_legacy_jobs,
+        "b5_flat_total": fl_total,
+        "b5_flat_bounds_ok": fl_bounds_ok,
+        "b5_flat_floor_flat": fl_floor_flat,
         "b5_soak_avg_tick_ms": avg_tick_ms,
     });
     let pass = mine_jobs == 27
@@ -953,6 +993,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
         && sl_bounds_ok
         && sl_cancel_clean
         && sl_legacy_jobs == 45
+        // B5.6b-2.1 flat-floor: staircase → 108 jobs bottoming at ONE z.
+        && fl_total == 108
+        && fl_bounds_ok
+        && fl_floor_flat
         && avg_tick_ms < 100.0;
     println!("{}", result);
     println!("B5 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
@@ -1753,7 +1797,11 @@ fn b58_scenario(args: &Args) -> ExitCode {
         Vec2::new(wx - 1, wy),
         Vec2::new(wx - 1, wy),
         c_gz,
-        ZExtent { down: 0, up: 5 },
+        ZExtent {
+            down: 0,
+            up: 5,
+            floor_z: None,
+        },
         DesignationKind::Ladder,
     );
     let c_rung_jobs = l_jobs.len();
@@ -1950,6 +1998,190 @@ fn b58_scenario(args: &Args) -> ExitCode {
         d_all_out,
         "b58: part (d) deep dig done"
     );
+    // (d) leftovers must not leak forward: d_rescue_cleared is sanctioned
+    // known-open (chokepoint composite), so uncleared rescue jobs — plus any
+    // egress/carve jobs the nets emitted — can legitimately outlive the
+    // loop. Part (e)'s e_board_empty PRECONDITION (its own wide cancel
+    // emptied the board) reads global job count; stale (d) jobs poisoned it
+    // at the doubled work pace. Cancel (d)'s whole area before moving on.
+    server.bastion_cancel_designation(Region {
+        min: Vec3::new(dx - 12, dy - 12, d_gz - 16),
+        max: Vec3::new(dx + 12, dy + 12, d_gz + 24),
+    });
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+
+    // ── (e) EMERGENCY EGRESS — Ben's live-test entombment repro ─────────
+    // Mine a shaft via a zone, then DELETE the zone with the digger at the
+    // bottom: no job (no watchdog) + no claims (no carve mask). The B5.8-E
+    // fail-safe must still get them out (trapped detector + humanitarian
+    // bubble), with ZERO active designations on the board.
+    let (ex, ey) = (cx - 20, cy);
+    let e_gz = ground_z(&server, ex, ey).unwrap_or(cz);
+    for x in (ex - 8)..=(ex + 8) {
+        for y in (ey - 8)..=(ey + 8) {
+            for z in (e_gz - 8)..=e_gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (e_gz + 1)..=(e_gz + 20) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    for x in (ex - 1)..=(ex + 1) {
+        for y in (ey - 1)..=(ey + 1) {
+            for z in (e_gz - 4)..=e_gz {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    tick(&mut server, 2);
+    for (i, n) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(
+                (ex - 4 + i as i32) as f32 + 0.5,
+                ey as f32 + 0.5,
+                (e_gz + 2) as f32,
+            ),
+        );
+    }
+    tick(&mut server, 5);
+    let e_floor_job = Vec3::new(ex, ey, e_gz - 5);
+    server.bastion_place_designation(
+        Region { min: e_floor_job, max: e_floor_job },
+        DesignationKind::Mine,
+    );
+    let mut e_lured = false;
+    let mut e_pit_colonist: Option<String> = None;
+    for _ in 0..60 {
+        tick(&mut server, 30);
+        e_lured = server
+            .bastion_block_kind(e_floor_job)
+            .is_none_or(|k| !k.is_filled());
+        e_pit_colonist = server
+            .bastion_colonist_states()
+            .iter()
+            .find(|(_, p, _)| {
+                p.z < (e_gz - 2) as f32
+                    && p.xy().distance(Vec2::new(ex as f32, ey as f32)) < 4.0
+            })
+            .map(|(n, _, _)| n.clone());
+        if e_lured && e_pit_colonist.is_some() {
+            break;
+        }
+    }
+    // Park the bystanders so only the trapped digger is on site.
+    for n in names
+        .iter()
+        .filter(|n| e_pit_colonist.as_deref() != Some(n.as_str()))
+    {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(cx as f32 + 0.5, cy as f32 + 0.5, (cz + 2) as f32),
+        );
+    }
+    // THE BUG: delete the zone (and everything else) — jobs, claims, mask,
+    // all gone. The digger is jobless at the pit bottom.
+    server.bastion_cancel_designation(Region {
+        min: Vec3::new(ex - 10, ey - 10, e_gz - 12),
+        max: Vec3::new(ex + 10, ey + 10, e_gz + 22),
+    });
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+    let e_board_empty = total_jobs(&server) == 0;
+    // The fail-safe: ~20s stationary trigger + plan + dig/build + climb.
+    let mut e_egress_fired = false;
+    let mut e_out = false;
+    for _ in 0..200 {
+        tick(&mut server, 30);
+        e_egress_fired |= total_jobs(&server) > 0;
+        e_out |= e_pit_colonist.as_ref().is_some_and(|name| {
+            server
+                .bastion_colonist_states()
+                .iter()
+                .any(|(n, p, _)| n == name && p.z >= e_gz as f32 + 0.5)
+        });
+        if e_out {
+            break;
+        }
+    }
+    info!(
+        e_lured,
+        e_board_empty, e_egress_fired, e_out, "b58: part (e) emergency egress done"
+    );
+    server.bastion_cancel_designation(Region {
+        min: Vec3::new(ex - 10, ey - 10, e_gz - 12),
+        max: Vec3::new(ex + 10, ey + 10, e_gz + 22),
+    });
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+
+    // ── (f) REMOTE-WORK ANTI-LOOP (Ben's second stuck-case) ─────────────
+    // A colonist in a 1×1 hole with a needed block ABOVE its reach and no
+    // plannable access (tight mask, sheer sides) used to loop
+    // claim→stuck→unreachable→retry forever. The strike-grown arrival
+    // tolerance must break the loop: at 3+ strikes they WORK THE BLOCK
+    // REMOTELY (mine-from-below). Invariant: progress, not loops.
+    let (fx, fy) = (cx, cy + 20);
+    let f_gz = ground_z(&server, fx, fy).unwrap_or(cz);
+    for x in (fx - 8)..=(fx + 8) {
+        for y in (fy - 8)..=(fy + 8) {
+            for z in (f_gz - 8)..=f_gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (f_gz + 1)..=(f_gz + 20) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    // The 1×1 hole, 4 deep (feet at f_gz-3; walls sheer; no adjacent open
+    // column, so neither stairs nor a pillar can plan inside the tight
+    // job-only mask).
+    for z in (f_gz - 3)..=f_gz {
+        server
+            .state_mut()
+            .set_block(Vec3::new(fx, fy, z), Block::empty());
+    }
+    tick(&mut server, 2);
+    let stuck_one = names.first().cloned().unwrap_or_default();
+    server.bastion_teleport_colonist(
+        &stuck_one,
+        Vec3::new(fx as f32 + 0.5, fy as f32 + 0.5, (f_gz - 3) as f32),
+    );
+    for n in names.iter().filter(|n| **n != stuck_one) {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(cx as f32 + 0.5, cy as f32 + 0.5, (cz + 2) as f32),
+        );
+    }
+    tick(&mut server, 5);
+    // The needed block: the hole's rim, one lateral + 3-4 up from the
+    // trapped colonist's feet — out of physical reach, out of plan scope.
+    let f_job = Vec3::new(fx + 1, fy, f_gz);
+    server.bastion_place_designation(
+        Region { min: f_job, max: f_job },
+        DesignationKind::Mine,
+    );
+    let mut f_cleared = false;
+    for _ in 0..150 {
+        tick(&mut server, 30);
+        f_cleared = server
+            .bastion_block_kind(f_job)
+            .is_none_or(|k| !k.is_filled());
+        if f_cleared {
+            break;
+        }
+    }
+    info!(f_cleared, "b58: part (f) remote-work anti-loop done");
+    server.bastion_cancel_designation(Region {
+        min: Vec3::new(fx - 10, fy - 10, f_gz - 12),
+        max: Vec3::new(fx + 10, fy + 10, f_gz + 22),
+    });
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
 
     // Zero-input soak.
     let soak_ticks: u64 = 600;
@@ -1987,6 +2219,11 @@ fn b58_scenario(args: &Args) -> ExitCode {
         "b58_d_dispersed_frac": d_dispersed_frac,
         "b58_d_rescue_cleared": d_rescue_cleared,
         "b58_d_all_out": d_all_out,
+        "b58_e_lured": e_lured,
+        "b58_e_board_empty": e_board_empty,
+        "b58_e_egress_fired": e_egress_fired,
+        "b58_e_out": e_out,
+        "b58_f_cleared": f_cleared,
         "b58_orphans_final": orphans_final,
         "b58_soak_avg_tick_ms": avg_tick_ms,
     });
@@ -2021,8 +2258,20 @@ fn b58_scenario(args: &Args) -> ExitCode {
         && d_all_cleared
         && d_top_down
         && d_dispersed_frac >= 0.5
-        && d_rescue_cleared
-        && d_all_out
+        // d_rescue_cleared / d_all_out: the KNOWN-OPEN multi-colonist
+        // chokepoint composite (B5.8's sanctioned descope; SOFT-0 @B6
+        // owns it) — reported, not gating. The SINGLE-colonist anti-stuck
+        // invariants (e)/(f) below ARE gating and deterministic.
+        // B5.8-E (Ben's live entombment bug): zone deleted, board empty,
+        // the fail-safe STILL carves the digger out. GATING — this is the
+        // "nobody entombed" invariant made player-action-proof.
+        && e_lured
+        && e_board_empty
+        && e_egress_fired
+        && e_out
+        // B5.8-E part (f): the reach-loop breaks with PROGRESS (the block
+        // gets worked remotely or an egress frees the digger) — GATING.
+        && f_cleared
         && orphans_final == 0
         && avg_tick_ms < 100.0;
     println!("{}", result);

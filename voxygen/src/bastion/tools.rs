@@ -171,6 +171,13 @@ pub struct Tools {
     /// default when the designate kind changes (see the session's tool
     /// cycling).
     pub z_extent: ZExtent,
+    /// bastion (B5.6b-2.1, Ben's flat-floor mode): when set, the paint's
+    /// depth measures from the CLICKED plane and every column digs to that
+    /// one shared absolute level — flat, square pit bottoms (quarries /
+    /// foundations / plazas) instead of slope-following. The `floor_z` is
+    /// derived at paint time (plane − down); this flag is the mode toggle
+    /// on the depth stepper.
+    pub flat_floor: bool,
 }
 
 impl Tools {
@@ -191,10 +198,15 @@ impl Tools {
 
     /// The live counter string for the depth UX ("3 levels deep").
     pub fn z_extent_label(&self) -> String {
-        match (self.z_extent.down, self.z_extent.up) {
+        let base = match (self.z_extent.down, self.z_extent.up) {
             (d, 0) => format!("{} levels deep", d + 1),
             (0, u) => format!("{} levels up", u + 1),
             (d, u) => format!("{} levels ({} down, {} up)", d as u32 + 1 + u as u32, d, u),
+        };
+        if self.flat_floor {
+            format!("{base} · FLAT floor")
+        } else {
+            base
         }
     }
 }

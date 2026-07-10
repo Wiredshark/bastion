@@ -256,6 +256,7 @@ widget_ids! {
         bastion_depth_minus_btn,
         bastion_depth_text,
         bastion_depth_plus_btn,
+        bastion_depth_mode_btn,
         bastion_radial_title,
         bastion_radial_btns[],
 
@@ -697,6 +698,8 @@ pub enum Event {
     /// positive steps dig the selection deeper, negative shallower/upward
     /// (same axis the scroll-while-painting path steps).
     BastionStepZExtent(i32),
+    /// bastion (B5.6b-2.1): toggle slope-following ↔ flat-floor digging.
+    BastionToggleFlatFloor,
     BastionRadialPick {
         action: bastion::RadialAction,
         target: common::bastion::ContextTarget,
@@ -4915,6 +4918,25 @@ impl Hud {
                 {
                     events.push(Event::BastionStepZExtent(1));
                 }
+                // B5.6b-2.1: slope-following ↔ flat-floor mode toggle. The
+                // stepper label carries the state ("· FLAT floor").
+                if widget::Button::new()
+                    .w_h(52.0, 22.0)
+                    .color(if self.bastion.flat_floor {
+                        btn_active
+                    } else {
+                        btn_color
+                    })
+                    .label(if self.bastion.flat_floor { "Flat" } else { "Slope" })
+                    .label_font_size(12)
+                    .label_color(label_color)
+                    .label_font_id(self.fonts.cyri.conrod_id)
+                    .right_from(self.ids.bastion_depth_plus_btn, 8.0)
+                    .set(self.ids.bastion_depth_mode_btn, ui_widgets)
+                    .was_clicked()
+                {
+                    events.push(Event::BastionToggleFlatFloor);
+                }
             }
 
             // --- Selection info line (bottom left, above the chat box) ---
@@ -5890,12 +5912,14 @@ impl Hud {
         god_mode: crate::bastion::tools::GodMode,
         slice_z: Option<f32>,
         z_extent_label: String,
+        flat_floor: bool,
     ) {
         self.bastion.active = active;
         self.bastion.tool = tool;
         self.bastion.god_mode = god_mode;
         self.bastion.slice_z = slice_z;
         self.bastion.z_extent_label = z_extent_label;
+        self.bastion.flat_floor = flat_floor;
         if !active {
             self.bastion.radial = None;
         }

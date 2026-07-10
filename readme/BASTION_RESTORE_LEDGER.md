@@ -93,6 +93,32 @@ than editing the old one.
   minimap size button (client-only; no data-format or protocol changes —
   nothing serialized, safe to revert cold).
 
+## bastion-block-B5.6b-2.1 (2026-07-10, overnight run)
+
+- Block: B5.6b-2.1 (ABSOLUTE-FLOOR flat mine mode + B5.8-E anti-stuck
+  cluster + B5.8-E2 employed-loop fix + pace tune 3→6s)
+- Tag: `bastion-block-B5.6b-2.1`
+- Previous green: `bastion-block-B5.8` (merge `6c17845e92` — the direct
+  merge base; no intervening checkpoints)
+- Revert: `git reset --hard bastion-block-B5.8` (on `bastion/main`)
+- Undoes: `ZExtent.floor_z` flat-floor mode + `column_range()` as the one
+  dig-range authority; the client Slope/Flat stepper toggle + paint-time
+  floor derivation; `Job.{depth, stuck_strikes, last_bounce}`; the
+  ACCESS-BEFORE-DESCENT gate + proactive descent plan; EMERGENCY EGRESS
+  (`egress_watch` + humanitarian bubble + ARRIVED-only reset); the
+  unreachable-bounce claim bar; strike-grown arrival tolerance; b5 phase
+  7.6 flat asserts + b58 parts (e)/(f) + the (d) epilogue cleanup;
+  `WORK_DURATION_BASE` 6.0 (reverts to 3.0 — Ben wanted the slowdown;
+  re-apply on any rollback or mining goes "instant" again).
+- Data-format caveats: **WIRE-TOUCHING, serde-default** —
+  `ZExtent.floor_z: Option<i32>` is `#[serde(default)]` on the
+  already-shipped wire struct: a mismatched client/server pair
+  deserializes the field as `None` (silent relative-mode fallback), not a
+  hard error — still ship client+server together (a stale pair mis-reads
+  flat-mode paint intent). `Job`'s three new serde-default fields are
+  runtime-only (the board never crosses the wire). No comp/rtsim
+  `data.dat` changes. Safe cold revert as a pair.
+
 ## bastion-block-B5.8 (2026-07-10)
 
 - Block: B5.8 (vertical mobility: scramble + climbing SKILL + autonomous
