@@ -288,3 +288,78 @@ instead, referencing the old one).
   `--asset-test` IS the asset-tier standing suite (spec'd before the
   rule). B-TESTBED should absorb `--asset-test all` as a lane when it
   lands.
+
+## B5.6b-2.1 drift notes (2026-07-10, overnight)
+
+- **Egress reset semantics refined vs the FLEET_STATUS spec:** the spec
+  (and the first implementation) said "employed colonists reset the
+  trapped-detector watch". B5.8-E2 narrows that to **ARRIVED-only** (the
+  colonist is actually working): a claim that bounces unreachable every
+  ~1.2s kept its colonist nominally employed forever, so the employed-
+  reset starved the egress net — the exact NO-INFINITE-LOOPS violation
+  the net exists to prevent. Traveling colonists neither reset nor
+  accrue; real movement resets via the existing position test. Paired
+  with the `Job.last_bounce` claim bar (same colonist + same feet-block
+  may not re-claim a job it just bounced; anyone else may).
+- **Descent-gate depth threshold vs novice reach:** the gate holds Mine
+  claims at depth > 2 — but a full-depth DEFAULT dig (down=2, a 3-block
+  rim rise) already exceeds a climbing-0 colonist's scramble reach (2).
+  Deliberately NOT widened to depth ≥ 2 (that would demand access plans
+  for every default surface paint); the egress net is the designed catch
+  for the climbing-0 self-trap case, now that E2 lets it fire.
+  Climbing-1 colonists (reach 3) scramble out of default pits fine.
+- **`WORK_DURATION_BASE` 6.0 is a stopgap:** Ben's "too fast" verdict,
+  answered with a flat base bump. TOOL-0 (queued) replaces the flat bump
+  with `tool_factor` — when it lands, the base constant's meaning shifts
+  from "the rate" to "the no-tool floor"; re-tune then, don't stack.
+
+## TOOL0 + B5.8-E3 drift notes (2026-07-10, overnight)
+
+- **The climb assist has a documented SLACK of reach+2 in enclosed
+  shafts** (chimney: the reach cap measures ground below CURRENT feet,
+  so repeated grabs gain reach+1, and ledge-snap adds one) — a colonist
+  can EXECUTE an ascent the path GRAPH would refuse. Kept deliberately:
+  it self-rescues real entrapments and only fires against walls with
+  grab contact. The graph stays the PLANNING authority; the b1 scenario
+  gate acknowledges the race (`ladder-chain OR exited`). If a future
+  block needs execution to exactly match the graph, this is the spot.
+- **Assist XP-on-use re-levels mid-scenario:** any skill pin
+  (`bastion_set_colonist_climbing`) decays as the assist grants XP —
+  scenario design must not assume a pinned level persists through
+  climbing activity.
+- **Egress semantics tightened (the annulus rise fix):** "standable"
+  now means rise ≤ reach exactly. The trapped-detector consequently
+  fires for default-depth (down=2) digs left by climbing-0 colonists —
+  MORE egress bubbles in live play than before, by design (they were
+  entombed before; Ben's "nobody entombed" invariant now actually
+  holds for the novice case). The descent gate's >2 threshold stays
+  (its consistency note from b-2.1 still applies).
+- **E2's `Job.last_bounce` bar: added and REMOVED same-night** — it
+  leaked on physics wobble and starved the strike-growth convergence.
+  The churn detector (count consecutive unreachable releases in place)
+  replaced it; if archaeology finds the bar referenced anywhere, it
+  never reached main.
+- **Harness measurement semantics:** `bastion_jobs_in_region` and
+  `bastion_claimed_job_positions` EXCLUDE `is_access` jobs — designation
+  invariants measure designation work; access scaffolding lives inside
+  dig volumes by design. Any future caller wanting scaffolding included
+  needs a new hook.
+
+## TIMECTL drift notes (2026-07-10, overnight)
+
+- **Spec deltas (small, deliberate):** UI-3 §3 asks for a "dimmed world /
+  PAUSED tag" — shipped the tag + amber lit-button (no world dimming; a
+  post-process hook is disproportionate for v1). "Faster (3–4×)" shipped
+  as 4× exactly (`MAX_DELTA_TIME` clamps nothing until ~30×; physics
+  fidelity, not the clamp, is the real ceiling — top speed stays a
+  tuning call). Buttons render as text `II/1×/2×/4×` (glyph coverage in
+  the game font beats ⏸/⏩ emoji).
+- **ESC-menu unpause interplay (vanilla behavior, kept):** the vanilla
+  ESC/settings menu auto-pauses on open and auto-UNPAUSES on close — a
+  cluster-pause therefore doesn't survive an ESC round-trip. The HUD
+  mirrors the truth each frame so the buttons never lie; unifying the
+  two pause sources = backlog if Ben trips on it.
+- **Multiplayer scope:** pause is singleplayer-only (vanilla mechanism);
+  `/time_scale` needs Admin. In any future multiplayer overseer session
+  the pause button no-ops and speed needs the admin role — fine for the
+  colony-sim shape (solo god), noted for B10+.

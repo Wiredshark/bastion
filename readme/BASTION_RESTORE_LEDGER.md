@@ -93,6 +93,75 @@ than editing the old one.
   minimap size button (client-only; no data-format or protocol changes —
   nothing serialized, safe to revert cold).
 
+## bastion-block-TOOL0 (2026-07-10, overnight run)
+
+- Block: TOOL-0 (tool_factor work speed) + B5.8-E3 stability cluster
+  (churn trapped-detector, egress annulus off-by-one fix, access
+  nearest-first, measurement honesty)
+- Tag: `bastion-block-TOOL0`
+- Previous green: `bastion-block-TIMECTL` (main tip `7effa936b6` = its
+  docs rider; the merge base)
+- Revert: `git reset --hard 7effa936b6` (or the TIMECTL tag to also
+  drop the docs rider)
+- Undoes: `common::bastion::tool_factor` + its work-tick multiply (dig
+  speed decouples from tools again — flat 6s base returns);
+  `JobBoard.{churn_watch, egress_pending}` + the churn trapped-detector;
+  the egress annulus rise fix (REVERTING RESURRECTS the b5-chop pit
+  entrapment bug — a reach-2 novice trapped in a 3-rise pit gets no
+  egress); access nearest-first claim scoring; the E2 `Job.last_bounce`
+  bar (added AND removed within this block-pair — net zero);
+  is_access-filtered harness hooks; hooks bastion_equip_tool /
+  bastion_colonist_tool_factor; b5 phase 7.7 + chop pad, b4/b58
+  scenario reshapes.
+- Data-format caveats: NONE — `Job` lost no shipped field (last_bounce
+  never reached main), the board is runtime-only, no wire or save
+  changes. Safe cold revert; note the annulus regression above before
+  choosing to.
+
+## bastion-block-TIMECTL (2026-07-10, overnight run)
+
+- Block: TIME-CONTROLS (UI-3 §3 visible sim-speed cluster + hotkeys)
+- Tag: `bastion-block-TIMECTL`
+- Previous green: `bastion-block-B5.6b-2.1` (main tip `547ee38518` = its
+  docs rider; the merge base)
+- Revert: `git reset --hard 547ee38518` (or the b-2.1 tag to also drop
+  the docs rider)
+- Undoes: the HUD speed cluster/readout/PAUSED tag, the three
+  `GameInput::Bastion{PauseToggle,SpeedUp,SpeedDown}` bindings
+  (Space/+/−) + context-scheme entries, `Event::BastionSetSimSpeed`, the
+  session sim-speed setter/stepper. Voxygen-only.
+- Data-format caveats: NONE on the wire or saves. One SETTINGS surface:
+  the three new GameInputs get default key bindings — a `settings.ron`
+  saved after this block lists them; reverting past it leaves unknown-
+  input entries that vanilla settings loading tolerates/drops. Safe cold
+  revert.
+
+## bastion-block-B5.6b-2.1 (2026-07-10, overnight run)
+
+- Block: B5.6b-2.1 (ABSOLUTE-FLOOR flat mine mode + B5.8-E anti-stuck
+  cluster + B5.8-E2 employed-loop fix + pace tune 3→6s)
+- Tag: `bastion-block-B5.6b-2.1`
+- Previous green: `bastion-block-B5.8` (merge `6c17845e92` — the direct
+  merge base; no intervening checkpoints)
+- Revert: `git reset --hard bastion-block-B5.8` (on `bastion/main`)
+- Undoes: `ZExtent.floor_z` flat-floor mode + `column_range()` as the one
+  dig-range authority; the client Slope/Flat stepper toggle + paint-time
+  floor derivation; `Job.{depth, stuck_strikes, last_bounce}`; the
+  ACCESS-BEFORE-DESCENT gate + proactive descent plan; EMERGENCY EGRESS
+  (`egress_watch` + humanitarian bubble + ARRIVED-only reset); the
+  unreachable-bounce claim bar; strike-grown arrival tolerance; b5 phase
+  7.6 flat asserts + b58 parts (e)/(f) + the (d) epilogue cleanup;
+  `WORK_DURATION_BASE` 6.0 (reverts to 3.0 — Ben wanted the slowdown;
+  re-apply on any rollback or mining goes "instant" again).
+- Data-format caveats: **WIRE-TOUCHING, serde-default** —
+  `ZExtent.floor_z: Option<i32>` is `#[serde(default)]` on the
+  already-shipped wire struct: a mismatched client/server pair
+  deserializes the field as `None` (silent relative-mode fallback), not a
+  hard error — still ship client+server together (a stale pair mis-reads
+  flat-mode paint intent). `Job`'s three new serde-default fields are
+  runtime-only (the board never crosses the wire). No comp/rtsim
+  `data.dat` changes. Safe cold revert as a pair.
+
 ## bastion-block-B5.8 (2026-07-10)
 
 - Block: B5.8 (vertical mobility: scramble + climbing SKILL + autonomous

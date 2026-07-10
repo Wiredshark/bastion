@@ -150,10 +150,27 @@ pub struct ZExtent {
     pub down: u16,
     /// Levels above the per-cell surface.
     pub up: u16,
+    /// bastion (B5.6b-2.1, Ben's flat-floor mode): when `Some`, `down` is
+    /// IGNORED and every column digs from its own surface to this shared
+    /// ABSOLUTE z — the pit bottoms out FLAT AND SQUARE (quarry floors /
+    /// foundations / plazas) instead of following the slope. Columns whose
+    /// surface already sits at/below the floor get nothing. Identical to
+    /// the relative mode on flat ground. `serde(default)` for pre-2.1
+    /// stored copies; the WIRE requires client+server in step regardless
+    /// (positional struct coding — same ship-together rule as every wire
+    /// change this arc).
+    #[serde(default)]
+    pub floor_z: Option<i32>,
 }
 
 impl Default for ZExtent {
-    fn default() -> Self { Self { down: 2, up: 0 } }
+    fn default() -> Self {
+        Self {
+            down: 2,
+            up: 0,
+            floor_z: None,
+        }
+    }
 }
 
 impl ZExtent {
@@ -164,14 +181,40 @@ impl ZExtent {
     /// column; scroll/stepper adjusts as usual).
     pub fn default_for(kind: DesignationKind) -> Self {
         match kind {
-            DesignationKind::Ladder => Self { down: 0, up: 3 },
+            DesignationKind::Ladder => Self {
+                down: 0,
+                up: 3,
+                floor_z: None,
+            },
             _ => Self::default(),
         }
     }
 
     /// Total levels spanned (down + surface-inclusive + up counting quirk is
     /// folded in: down already includes the surface block's own level).
+    /// Flat-floor volumes are terrain-dependent — this is the RELATIVE
+    /// span only (validation for flat mode bounds by footprint × a depth
+    /// cap server-side).
     pub fn levels(&self) -> u32 { self.down as u32 + 1 + self.up as u32 }
+
+    /// The dig range for one column: from the column's own `surface` down
+    /// (or to the shared absolute floor in flat mode) up to `surface + up`.
+    /// `None` when the column has nothing to dig (its surface is already
+    /// at/below a flat floor). ONE authority — job gen, echo bounds, and
+    /// the harness all call this.
+    pub fn column_range(&self, surface: i32) -> Option<(i32, i32)> {
+        let hi = surface + self.up as i32;
+        let lo = match self.floor_z {
+            Some(floor) => {
+                if surface < floor {
+                    return None;
+                }
+                floor
+            },
+            None => surface - self.down as i32,
+        };
+        Some((lo, hi))
+    }
 }
 
 /// bastion (B5.6b-2, SCHEMA GUARD): THE canonical zone↔asset `purpose`
@@ -506,6 +549,64 @@ pub struct Job {
     /// (the b58 run-7 gallery-of-chaos finding); one stair serves everyone.
     #[serde(default)]
     pub is_access: bool,
+    /// bastion (B5.8-E, Ben's anti-loop invariant): how many times a
+    /// claimant stuck-timed-out on this job. Grows the job's arrival
+    /// tolerance (a bounded REMOTE-WORK reach extension, ~6 blocks at 3+
+    /// strikes), so a colonist that can't physically stand at an awkward
+    /// block eventually works it from below/afar instead of looping
+    /// claim→stuck→unreachable→retry forever.
+    #[serde(default)]
+    pub stuck_strikes: u8,
+    /// bastion (B5.8-E, Ben's ACCESS-BEFORE-DESCENT): this dig cell's depth
+    /// below its own column's surface AT PLACEMENT (0 = the surface layer).
+    /// The descent gate holds Mine claims deeper than novice reach until
+    /// return-access exists nearby — access LEADS the dig down instead of
+    /// trailing it, so an inescapable hole is never created in the first
+    /// place (the reactive egress becomes the rare backstop).
+    #[serde(default)]
+    pub depth: u8,
+}
+
+/// bastion (TOOL-0, TOOLS-UPGRADE §3): the work-tick's TOOL factor — a
+/// multiplier on the server's `work_rate`. The verb↔tool map rides the
+/// shipped `ToolKind`s (Mine→Pick, Chop→Axe, Build→Hammer; Haul/Cook have
+/// no tool gate yet). NO or WRONG tool = 1.0 — the deliberately slow base
+/// (the "slow mining" home: upgrades must mean something); a MATCHING tool
+/// speeds work up, scaled by the LOCKED `item::Quality` (DF-QUALITY —
+/// reuse, never fork). Deterministic and pure — the curve is unit-pinned
+/// below. TOOL-1 adds the material-tier ladder + min-tier gating on hard
+/// blocks; TOOL-2 adds auto-equip-best + craft-quality stamps.
+pub fn tool_factor(
+    work: WorkType,
+    tool: Option<(
+        crate::comp::item::tool::ToolKind,
+        crate::comp::item::Quality,
+    )>,
+) -> f32 {
+    use crate::comp::item::{Quality, tool::ToolKind};
+    let wanted = match work {
+        WorkType::Mine => Some(ToolKind::Pick),
+        WorkType::Chop => Some(ToolKind::Axe),
+        WorkType::Build => Some(ToolKind::Hammer),
+        WorkType::Haul | WorkType::Cook => None,
+    };
+    match (wanted, tool) {
+        (Some(w), Some((k, q))) if k == w => {
+            // Quality ladder: a crude matching tool is a real relief over
+            // bare hands (1.5×); the artifact apex is 3.5×. Bounded so
+            // skill (+20%/level) stays a co-equal axis — both multiply.
+            1.5 + match q {
+                Quality::Low => 0.0,
+                Quality::Common => 0.25,
+                Quality::Moderate => 0.5,
+                Quality::High => 1.0,
+                Quality::Epic => 1.5,
+                Quality::Legendary | Quality::Artifact | Quality::Debug => 2.0,
+            }
+        },
+        // Verb has no tool gate, or bare hands / wrong tool: the slow base.
+        _ => 1.0,
+    }
 }
 
 /// The material B5's minimal Build path requires (single hardcoded material;
@@ -794,6 +895,80 @@ mod tests {
         // B5.8: Ladder is the one upward kind (a rung column, not a dig).
         let l = ZExtent::default_for(DesignationKind::Ladder);
         assert_eq!((l.down, l.up), (0, 3));
+        // B5.6b-2.1: flat-floor is opt-in per paint — never a default.
+        assert!(l.floor_z.is_none());
+        assert!(ZExtent::default().floor_z.is_none());
+    }
+
+    #[test]
+    fn column_range_relative_and_flat() {
+        // Relative: surface-follow (the b-2 model, unchanged).
+        let rel = ZExtent {
+            down: 2,
+            up: 0,
+            floor_z: None,
+        };
+        assert_eq!(rel.column_range(100), Some((98, 100)));
+        assert_eq!(rel.column_range(105), Some((103, 105)));
+        // Flat: every column bottoms at the SAME absolute z.
+        let flat = ZExtent {
+            down: 2,
+            up: 0,
+            floor_z: Some(98),
+        };
+        assert_eq!(flat.column_range(100), Some((98, 100)));
+        assert_eq!(flat.column_range(105), Some((98, 105))); // deeper cut uphill
+        // A column already at/below the floor digs nothing.
+        assert_eq!(flat.column_range(97), None);
+        // Floor at exactly the surface: the surface block itself goes.
+        assert_eq!(flat.column_range(98), Some((98, 98)));
+    }
+
+    #[test]
+    fn tool_factor_curve() {
+        use crate::comp::item::{Quality, tool::ToolKind};
+        // TOOL-0 CURVE PIN: bare hands / wrong tool = the slow base (1.0);
+        // a MATCHING tool is a real relief (≥1.5×); quality is monotonic;
+        // ungated verbs ignore tools. If this needs editing, the tuning
+        // was deliberate (TOOLS-UPGRADE §2) — update the doc first.
+        assert_eq!(tool_factor(WorkType::Mine, None), 1.0);
+        assert_eq!(
+            tool_factor(WorkType::Mine, Some((ToolKind::Axe, Quality::High))),
+            1.0
+        );
+        assert_eq!(
+            tool_factor(WorkType::Mine, Some((ToolKind::Pick, Quality::Low))),
+            1.5
+        );
+        assert_eq!(
+            tool_factor(WorkType::Chop, Some((ToolKind::Axe, Quality::Low))),
+            1.5
+        );
+        assert_eq!(
+            tool_factor(WorkType::Build, Some((ToolKind::Hammer, Quality::Low))),
+            1.5
+        );
+        // Quality strictly climbs Low → Artifact for the matching tool.
+        let ladder = [
+            Quality::Low,
+            Quality::Common,
+            Quality::Moderate,
+            Quality::High,
+            Quality::Epic,
+            Quality::Artifact,
+        ];
+        let factors: Vec<f32> = ladder
+            .iter()
+            .map(|q| tool_factor(WorkType::Mine, Some((ToolKind::Pick, *q))))
+            .collect();
+        assert!(factors.windows(2).all(|w| w[0] < w[1] || w[0] == w[1]));
+        assert!(factors.windows(2).any(|w| w[0] < w[1]));
+        assert_eq!(*factors.last().unwrap(), 3.5); // the apex
+        // Haul/Cook: no tool gate yet — always the base.
+        assert_eq!(
+            tool_factor(WorkType::Haul, Some((ToolKind::Pick, Quality::Epic))),
+            1.0
+        );
     }
 
     #[test]

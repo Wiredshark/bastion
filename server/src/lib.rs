@@ -909,12 +909,18 @@ impl Server {
     /// bastion (B5.8, harness hook): positions of currently-claimed jobs —
     /// lets scenarios assert work-crew dispersion across the dig frontier.
     pub fn bastion_claimed_job_positions(&self) -> Vec<vek::Vec3<i32>> {
+        // is_access excluded (B5.8-E3): scenarios use this to measure
+        // DESIGNATION-work invariants (crew dispersion). The system's own
+        // access scaffolding (stair steps/rungs) is adjacent-by-
+        // construction — counting it read as "clumped claims" whenever a
+        // rescue plan ran (tool0-gate: d_dispersed collapsed to ~0.43 on
+        // healthy runs at the slower work pace).
         self.state
             .ecs()
             .read_resource::<bastion_jobs::JobBoard>()
             .jobs
             .values()
-            .filter(|j| j.claimed_by.is_some())
+            .filter(|j| j.claimed_by.is_some() && !j.is_access)
             .map(|j| j.pos)
             .collect()
     }
@@ -1275,6 +1281,65 @@ impl Server {
             .map(|c| c.0.skills.climbing)
     }
 
+    /// bastion (TOOL-0, harness hook): equip an item asset into a loaded
+    /// colonist's mainhand (deterministic tool-speed scenarios; whatever
+    /// the swap displaces is discarded — scenarios don't care).
+    pub fn bastion_equip_tool(&mut self, name: &str, asset_id: &str) -> bool {
+        use specs::Join;
+        let Ok(item) = comp::Item::new_from_asset(asset_id) else {
+            return false;
+        };
+        let time = *self
+            .state
+            .ecs()
+            .read_resource::<common::resources::Time>();
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let entities = ecs.entities();
+        let mut inventories = ecs.write_storage::<comp::Inventory>();
+        for (entity, colonist) in (&entities, &colonists).join() {
+            if colonist.0.name == name {
+                if let Some(mut inv) = inventories.get_mut(entity) {
+                    let _ = inv.replace_loadout_item(
+                        comp::slot::EquipSlot::ActiveMainhand,
+                        Some(item),
+                        time,
+                    );
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// bastion (TOOL-0, harness hook): the tool factor a loaded colonist's
+    /// CURRENT mainhand yields for a work type — scenarios assert the
+    /// curve end-to-end (equipped pick > bare hands) without timing races.
+    pub fn bastion_colonist_tool_factor(
+        &self,
+        name: &str,
+        work: common::bastion::WorkType,
+    ) -> Option<f32> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let entities = ecs.entities();
+        let inventories = ecs.read_storage::<comp::Inventory>();
+        (&entities, &colonists)
+            .join()
+            .find(|(_, c)| c.0.name == name)
+            .map(|(entity, _)| {
+                let tool = inventories.get(entity).and_then(|inv| {
+                    inv.equipped(comp::slot::EquipSlot::ActiveMainhand)
+                        .and_then(|item| match &*item.kind() {
+                            comp::item::ItemKind::Tool(t) => Some((t.kind, item.quality())),
+                            _ => None,
+                        })
+                });
+                common::bastion::tool_factor(work, tool)
+            })
+    }
+
     /// bastion (B5, harness hook): the block kind at a world position (for
     /// asserting a mined hole / a placed wall).
     pub fn bastion_block_kind(&self, pos: Vec3<i32>) -> Option<common::terrain::BlockKind> {
@@ -1296,12 +1361,18 @@ impl Server {
     /// bastion (B5.5, harness hook): jobs whose target block lies inside
     /// `region` (asserting partial-erase removed exactly the erased half).
     pub fn bastion_jobs_in_region(&self, region: common::bastion::Region) -> usize {
+        // is_access excluded (B5.8-E3): every caller measures DESIGNATION
+        // job state (layer-clear order, flat-floor bounds, cancel
+        // cleanliness). Access-plan steps live INSIDE dig volumes by
+        // design (access LEADS the descent), and at the slower work pace
+        // they persist long enough to straddle layer boundaries — counting
+        // them latched d_top_down out of order on healthy runs.
         self.state
             .ecs()
             .read_resource::<bastion_jobs::JobBoard>()
             .jobs
             .values()
-            .filter(|j| region.contains_point(j.pos))
+            .filter(|j| region.contains_point(j.pos) && !j.is_access)
             .count()
     }
 

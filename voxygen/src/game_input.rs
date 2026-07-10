@@ -205,6 +205,15 @@ pub enum GameInput {
     BastionToggleGodMode,
     #[strum(serialize = "gameinput-bastion-cyclevisuals")]
     BastionCycleVisuals,
+    // bastion (TIME-CONTROLS): sim-speed hotkeys, bound to the SAME state the
+    // HUD speed buttons show (the buttons are the visible truth). Space is
+    // dead in the overseer context (Jump suppressed), so it's free here.
+    #[strum(serialize = "gameinput-bastion-pausetoggle")]
+    BastionPauseToggle,
+    #[strum(serialize = "gameinput-bastion-speedup")]
+    BastionSpeedUp,
+    #[strum(serialize = "gameinput-bastion-speeddown")]
+    BastionSpeedDown,
 }
 
 impl GameInput {
@@ -253,6 +262,11 @@ impl GameInput {
             // are only consumed while the overseer camera is active.
             GameInput::BastionRotateLeft => &[GameInput::Slot10],
             GameInput::BastionRotateRight => &[GameInput::Interact],
+            // bastion (TIME-CONTROLS): Space/+/− share Jump-family and map
+            // zoom; the overseer context suppresses the avatar side.
+            GameInput::BastionPauseToggle => &[GameInput::Jump],
+            GameInput::BastionSpeedUp => &[GameInput::MapZoomIn],
+            GameInput::BastionSpeedDown => &[GameInput::MapZoomOut],
 
             _ => &[],
         }

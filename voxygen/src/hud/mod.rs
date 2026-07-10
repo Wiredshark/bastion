@@ -256,6 +256,10 @@ widget_ids! {
         bastion_depth_minus_btn,
         bastion_depth_text,
         bastion_depth_plus_btn,
+        bastion_depth_mode_btn,
+        bastion_time_btns[],
+        bastion_time_label,
+        bastion_time_paused_tag,
         bastion_radial_title,
         bastion_radial_btns[],
 
@@ -697,6 +701,12 @@ pub enum Event {
     /// positive steps dig the selection deeper, negative shallower/upward
     /// (same axis the scroll-while-painting path steps).
     BastionStepZExtent(i32),
+    /// bastion (B5.6b-2.1): toggle slope-following ↔ flat-floor digging.
+    BastionToggleFlatFloor,
+    /// bastion (TIME-CONTROLS): set the sim speed — `None` = pause,
+    /// `Some(scale)` = unpause + `/time_scale scale`. The buttons and the
+    /// hotkeys both land here; one state, one truth.
+    BastionSetSimSpeed(Option<f32>),
     BastionRadialPick {
         action: bastion::RadialAction,
         target: common::bastion::ContextTarget,
@@ -4915,6 +4925,109 @@ impl Hud {
                 {
                     events.push(Event::BastionStepZExtent(1));
                 }
+                // B5.6b-2.1: slope-following ↔ flat-floor mode toggle. The
+                // stepper label carries the state ("· FLAT floor").
+                if widget::Button::new()
+                    .w_h(52.0, 22.0)
+                    .color(if self.bastion.flat_floor {
+                        btn_active
+                    } else {
+                        btn_color
+                    })
+                    .label(if self.bastion.flat_floor { "Flat" } else { "Slope" })
+                    .label_font_size(12)
+                    .label_color(label_color)
+                    .label_font_id(self.fonts.cyri.conrod_id)
+                    .right_from(self.ids.bastion_depth_plus_btn, 8.0)
+                    .set(self.ids.bastion_depth_mode_btn, ui_widgets)
+                    .was_clicked()
+                {
+                    events.push(Event::BastionToggleFlatFloor);
+                }
+            }
+
+            // --- TIME-CONTROLS (UI-3 §3): the sim-speed cluster ---
+            // Always visible in the overseer HUD (bottom right, above the
+            // vanilla button row): ⏸/1×/2×/4× with the ACTIVE state lit —
+            // the buttons ARE the speed indicator. Space and +/− drive the
+            // same state (session handlers); the buttons are the visible
+            // truth. Paused additionally shows an unmissable top-center tag.
+            {
+                let speeds: [(Option<f32>, &str); 4] = [
+                    (None, "II"),
+                    (Some(1.0), "1x"),
+                    (Some(2.0), "2x"),
+                    (Some(4.0), "4x"),
+                ];
+                if self.ids.bastion_time_btns.len() < speeds.len() {
+                    self.ids
+                        .bastion_time_btns
+                        .resize(speeds.len(), &mut ui_widgets.widget_id_generator());
+                }
+                let paused = self.bastion.sim_paused;
+                let scale = self.bastion.sim_scale;
+                for (i, (speed, label)) in speeds.iter().enumerate() {
+                    let is_active = match speed {
+                        None => paused,
+                        Some(s) => !paused && (scale - s).abs() < 0.01,
+                    };
+                    let lit = if speed.is_none() && paused {
+                        // Paused reads amber, not the work-green: "stopped"
+                        // must not look like "selected and running".
+                        Color::Rgba(0.85, 0.55, 0.15, 0.95)
+                    } else {
+                        btn_active
+                    };
+                    let mut btn = widget::Button::new()
+                        .w_h(34.0, 24.0)
+                        .color(if is_active { lit } else { btn_color })
+                        .label(label)
+                        .label_font_size(13)
+                        .label_color(label_color)
+                        .label_font_id(self.fonts.cyri.conrod_id);
+                    btn = if i == 0 {
+                        btn.bottom_right_with_margins_on(
+                            ui_widgets.window,
+                            64.0,
+                            12.0 + (speeds.len() - 1) as f64 * 38.0,
+                        )
+                    } else {
+                        btn.right_from(self.ids.bastion_time_btns[i - 1], 4.0)
+                    };
+                    if btn
+                        .set(self.ids.bastion_time_btns[i], ui_widgets)
+                        .was_clicked()
+                    {
+                        events.push(Event::BastionSetSimSpeed(*speed));
+                    }
+                }
+                // The readout label: covers non-preset scales (a chat
+                // `/time_scale 3` lights no button but still reads true).
+                let readout = if paused {
+                    "PAUSED".to_string()
+                } else {
+                    format!("×{}", (scale * 100.0).round() / 100.0)
+                };
+                widget::Text::new(&readout)
+                    .font_size(13)
+                    .font_id(self.fonts.cyri.conrod_id)
+                    .color(if paused {
+                        Color::Rgba(1.0, 0.75, 0.3, 1.0)
+                    } else {
+                        label_color
+                    })
+                    .left_from(self.ids.bastion_time_btns[0], 10.0)
+                    .set(self.ids.bastion_time_label, ui_widgets);
+                // The unmissable paused state (spec: nobody may think the
+                // game froze): a large top-center tag while paused.
+                if paused {
+                    widget::Text::new("▌▌ PAUSED")
+                        .font_size(24)
+                        .font_id(self.fonts.cyri.conrod_id)
+                        .color(Color::Rgba(1.0, 0.75, 0.3, 1.0))
+                        .mid_top_with_margin_on(ui_widgets.window, 44.0)
+                        .set(self.ids.bastion_time_paused_tag, ui_widgets);
+                }
             }
 
             // --- Selection info line (bottom left, above the chat box) ---
@@ -5890,12 +6003,18 @@ impl Hud {
         god_mode: crate::bastion::tools::GodMode,
         slice_z: Option<f32>,
         z_extent_label: String,
+        flat_floor: bool,
+        sim_paused: bool,
+        sim_scale: f32,
     ) {
         self.bastion.active = active;
         self.bastion.tool = tool;
         self.bastion.god_mode = god_mode;
         self.bastion.slice_z = slice_z;
         self.bastion.z_extent_label = z_extent_label;
+        self.bastion.flat_floor = flat_floor;
+        self.bastion.sim_paused = sim_paused;
+        self.bastion.sim_scale = sim_scale;
         if !active {
             self.bastion.radial = None;
         }

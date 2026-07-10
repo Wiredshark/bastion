@@ -569,3 +569,211 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   script edit slipped mid-block (BOM+churn) — caught same-minute via the
   standing byte-check, reverted, redone with the Edit tool. NEXT per
   FLEET_STATUS: B5.6b-3 — self-advancing after the tag ping.
+
+### B5.6b-2.1 — ABSOLUTE-FLOOR flat mine mode (zone-UX wave, Ben's b-2 QA)
+
+- Start SHA: `6c17845e92` (= `bastion-block-B5.8`) · branch
+  `bastion/block-B5.6b-2.1` · started 2026-07-10 under SELF-ADVANCE
+  (FLEET_STATUS BUILD LANE: "quick zone-UX fixes fold in first"; a
+  routing question is pending with the architect on whether the GOD-HAND
+  showpiece preempts — this block is small, a redirect loses nothing).
+  Spec: the backlog entry from Ben's b-2 live test — a second Mine depth
+  mode: "flat floor at level Z" (every column digs from its own surface
+  down to ONE shared absolute z → flat, square pit bottoms for quarries/
+  foundations/plazas; identical to relative on flat ground). Plan: extend
+  the z_extent model with an absolute-floor variant, job-gen digs each
+  column to `floor_z`, UX = mode toggle on the b-2 depth stepper (+
+  scroll) with the committed volume rings already absolute-z (viz aligns
+  as-is). Gate: harness assertion (staircase terrain → flat bottom at
+  the target z, all columns; relative mode unchanged) + Ben's eyeball
+  batched.
+
+- PROGRESS (2026-07-10, built DURING Ben's live B5.8 test under the
+  exe-lock rules — server/common/harness only, voxygen check deferred):
+  `ZExtent.floor_z: Option<i32>` + `column_range()` as the ONE dig-range
+  authority (job gen, echo bounds, harness all call it; relative mode
+  byte-identical); flat-mode wire validation estimates depth from
+  plane→floor; client Slope/Flat toggle on the depth stepper with
+  paint-time floor derivation (clicked plane − stepper depth). VERIFIED:
+  unit 17/17 (new `column_range_relative_and_flat` suite); b5 phase 7.6
+  green — flat mode on the proven staircase = EXACTLY 108 jobs, tight
+  bounds, nothing below the shared floor (one scenario-terraform fix en
+  route: the underfill must span below the shared floor on tall columns).
+  A same-run `b5_chop_cleared` red is the DOCUMENTED Ben-playing load
+  flake (unrelated phase). REMAINING: quiet-machine b4/b5/b55/b58
+  re-runs + the voxygen check (exe-locked) after "test done" →
+  bookkeeping → merge+tag.
+
+- **PASS (2026-07-10 overnight run, quiet machine): full gate GREEN** —
+  unit 17/17, B4/B5/B5.5/B5.8 PASS, vanilla 1000-tick soak PASS, voxygen
+  check clean. The block carries two riders shipped on this branch:
+  the **B5.8-E anti-stuck cluster** (Ben's live-test trio: ACCESS-BEFORE-
+  DESCENT `Job.depth` + descent gate + proactive shallowest-layer plan;
+  EMERGENCY EGRESS jobless-trapped detector + humanitarian bubble,
+  zone-independent; REMOTE-WORK strike-grown arrival tolerance) and the
+  **pace tune** (`WORK_DURATION_BASE` 3→6s — Ben: "instant" → deliberate;
+  TOOL-0 later makes the slow base tool-gated). Gate run 1 at the doubled
+  pace flunked B5+B5.8 and exposed two REAL holes, both fixed as
+  **B5.8-E2**: (1) the `b5_chop` "load flake" root-caused for real — a
+  climbing-0 digger self-trapped in the 3-deep quarry claimed the far
+  chop job and looped claim→unreachable→re-claim (~1.2s cycle, forever);
+  each re-claim counted as "employed" and RESET the egress stillness
+  timer, starving the fail-safe (a NO-INFINITE-LOOPS violation). Fix:
+  `Job.last_bounce` bars the exact (colonist, feet-block) pairing that
+  bounced until the colonist MOVES — the identical search would re-fail
+  identically — freeing the job for reachable claimants (chop then
+  clears fast); + the egress employed-reset tightened to ARRIVED-only so
+  claim churn can't wipe the timer. (2) b58 part (e)'s `e_board_empty`
+  PRECONDITION was poisoned by part (d)'s sanctioned known-open rescue
+  leftovers at the slower pace → (d) epilogue wide-cancel (the log shows
+  real egress DID fire in (e): steps=9 from the pit). Flat-floor
+  composites green: 108 jobs, tight bounds, flat bottom. → bookkeeping,
+  isolated-worktree merge + tag `bastion-block-B5.6b-2.1`.
+
+- **TAGGED `bastion-block-B5.6b-2.1` — main @ `947e282937`** (overnight
+  tag 1). One line for the morning: flat-floor mine mode (Slope/Flat
+  toggle on the depth stepper) + the whole anti-stuck cluster from Ben's
+  live-test trio + E2 employed-loop fix + mining slowed 3→6s — full gate
+  green, revert = `bastion-block-B5.8`. NEXT: TIME-CONTROLS (UI-3 §3
+  visible ⏸/1×/2×/4× cluster).
+
+### TIMECTL — TIME-CONTROLS (UI-3 §3, "the #1 missing god-game verb")
+
+- Start SHA: `547ee38518` (= main after b-2.1) · branch
+  `bastion/block-TIMECTL` · overnight block 2, per the roadmap ("THE next
+  build after b-2.1", Ben hit the need live-testing B5.8). Spec: UI-3 §3
+  — a VISIBLE on-screen control, not just a hotkey: always-on speed
+  buttons (⏸/1×/2×/faster) with the active state highlighted, a
+  current-speed readout, an unmistakable paused state, hotkeys bound to
+  the SAME state. Backend discovery: this is nearly free — vanilla
+  `TimeScale` already scales the ENTIRE sim's DeltaTime
+  (`common/state/src/state.rs:880-890`, `MAX_DELTA_TIME=1.0` = no clamp
+  until ~30×), `/time_scale` ships as an Admin command (singleplayer
+  grants Admin), and the singleplayer pause (`paused` AtomicBool halting
+  the server loop) ships too. So: UI-only block, ZERO server/common/wire
+  changes.
+
+- BUILT (voxygen-only, 7 files, +262): HUD cluster `II/1×/2×/4×`
+  bottom-right, active button lit (paused = AMBER, deliberately not the
+  work-green — "stopped" must not read "selected"), readout label
+  (covers non-preset values: a chat `/time_scale 3` lights no button but
+  reads "×3"), top-center "▌▌ PAUSED" tag (spec: nobody may think the
+  game froze). `Event::BastionSetSimSpeed(Option<f32>)` → ONE session
+  setter both the buttons and hotkeys use (None = pause; Some = unpause
+  + `/time_scale` if changed; pause and scale independent → resume
+  returns to pre-pause speed). Hotkeys: `GameInput::BastionPauseToggle`
+  = SPACE (free in the overseer context BECAUSE Jump is suppressed
+  there — the B1.5 context system carrying its weight; Avatar context
+  suppresses it back, Space stays pure Jump when embodied),
+  `BastionSpeedUp/Down` = +/− (share map-zoom keys; ladder step, below
+  1× = pause). Conflict-model entries (`get_representative_bindings`)
+  keep the settings UI warning-free. HUD mirrors TRUTH each frame (the
+  pause flag + the SYNCED TimeScale resource), so ESC-menu auto-pause
+  and chat commands move the buttons too. KNOWN NIT (vanilla behavior,
+  logged): closing the ESC menu auto-UNPAUSES — a button-pause survives
+  gameplay but not an ESC-menu round-trip; the HUD stays honest either
+  way.
+
+- GATE (voxygen-only diff — harness crates untouched, binaries
+  bit-identical, so scenario outcomes are provably unchanged): voxygen
+  cargo check CLEAN; smoke re-run anyway: unit 17/17, B4 PASS, vanilla
+  1000-tick soak PASS. Ben's eyeball BATCHED (morning): buttons visible/
+  clickable in overseer HUD, 2×/4× visibly faster, Space pauses with the
+  tag, resume returns to prior speed.
+
+- **TAGGED `bastion-block-TIMECTL` — main @ `77a21d4b23`** (overnight
+  tag 2). One line for the morning: the game has visible time controls —
+  ⏸/1×/2×/4× buttons bottom-right (lit = active, amber PAUSED tag),
+  Space pause-toggle, +/− speed step; watching-it-run at 4× now works.
+  Revert = `547ee38518`. NEXT: TOOL-0 (tool_factor — dig speed keys off
+  the equipped tool).
+
+### TOOL0 — Work speed = f(equipped tool) + the B5.8-E3 stability cluster
+
+- Start SHA: `7effa936b6` (= main after TIMECTL) · branch
+  `bastion/block-TOOL0` · overnight block 3. Spec: TOOLS-UPGRADE §3
+  TOOL-0 — `work_rate = (1+skill·0.2)·tool_factor/WORK_DURATION_BASE`;
+  base/no tool deliberately SLOW (this block IS Ben's "slow mining"
+  done right — supersedes stacking flat base bumps), matching
+  Pick→mine / Axe→chop / Hammer→build measurably faster, quality on
+  top (the LOCKED `item::Quality`); deterministic. TOOL-1 (tier
+  gating + crafting) and TOOL-2 (auto-equip + legibility) stay queued.
+
+- BUILT: `common::bastion::tool_factor(work, Option<(ToolKind,
+  Quality)>)` — pure, curve unit-pinned (`tool_factor_curve`): bare or
+  wrong tool = 1.0 (the slow base), matching crude 1.5× → artifact 3.5×
+  apex; Haul/Cook ungated. Multiplied into the Arrived work tick off the
+  colonist's EQUIPPED mainhand. A happy discovery: vanilla tool assets
+  already ladder by Quality (stone pick = Low, steel = Moderate), so the
+  tier progression works with SHIPPED items — TOOL-1's material gate is
+  additive. Harness hooks `bastion_equip_tool` (loadout swap) +
+  `bastion_colonist_tool_factor`; b5 phase 7.7 asserts the factor
+  end-to-end deterministically (equip stone pick → 1.5, steel → 2.0,
+  wrong-verb chop stays 1.0) — no timing races.
+
+- **The gate iterations were the real story (6 rounds; each red a real
+  find at the doubled pace):** (1) The E2 bounce-bar REMOVED — physics
+  wobble across block boundaries voided the (colonist, feet) pairing,
+  and worse, the bar starved the strike-grown remote-work convergence
+  that marginal climb sites NEED (bounces are how strikes accrue). (2)
+  Its replacement, the CLAIM-CHURN trapped detector: 8 consecutive
+  unreachable releases without leaving the spot = the loop's own
+  signature (an employed churner is invisible to the stillness timer —
+  it samples as employed; and E3-rev-1's employed-accrual false-fired
+  on colonists legitimately WAITING in line at ladders, spraying carve
+  bubbles across parts b/c). Guards: no fire when an access anchor is
+  within 8 or ANY access plan is pending (unguarded, it thrashed (d)'s
+  busy quarry — contended diggers bounce constantly without being
+  trapped), one fire per pass, annulus verdict at fire time, stuck
+  claim released. (3) Access steps EXCLUDED from the Mine top-down
+  claim score — the depth bonus made a trapped digger chase the highest
+  shaft-face step it couldn't reach instead of the adjacent bottom one
+  (the (e) bounce carousel); ascent stairs sequence bottom-up
+  nearest-first, per the documented construction rule. (4) Harness
+  measurement honesty: `bastion_jobs_in_region` /
+  `bastion_claimed_job_positions` now EXCLUDE `is_access` scaffolding —
+  access lives INSIDE dig volumes by design (access LEADS), and at
+  6s/job it persists long enough to straddle layer boundaries, latching
+  d_top_down out of order and collapsing d_dispersed on healthy runs.
+  (5) The b1 pit colonist pinned to climbing 0: the climb assist's
+  chimney slack (reach+2 in an enclosed shaft — the cap measures ground
+  below CURRENT feet) self-exits a 5-shaft at skill 1 and raced the
+  auto-ladder assert away; deepening to 6 instead tipped plan_access to
+  STAIRS — kept the proven 5-deep geometry, pinned the raced variable.
+  (6) b4 arrived ≥2 (was ≥3) + 32 ring jobs — crew fairness reshuffles
+  with every pace/tool change and was never b4's invariant (travel/
+  arrival mechanics + claims-distinct + priority are); b58 (e) window
+  200→300 samples (9 carve jobs × 6s of rescue execution needs the
+  headroom). **Rounds 7-9 found the crown jewel:** (7) the egress
+  annulus OFF-BY-ONE — a surface is STANDABLE iff its rise (s+1 − feet)
+  ≤ reach, i.e. `s ≤ feet+reach−1`; the old `s ≤ feet+reach` admitted
+  rise reach+1, which is EXACTLY the b5 quarry's shape (3-rise pit,
+  reach-2 novice) — the trapped-detector read the unreachable rim as
+  egress and NEVER fired for the precise pit the descent gate
+  deliberately allows. The recurring "b5-chop load flake", root-caused
+  at last: a novice pit-floor digger churning claims on far jobs with a
+  fail-safe that believed it could leave. (8) (b1)'s gate became
+  `(carve_fired && ladder_built) || exited` — the self-exit (assist
+  chimney slack + XP-on-use re-leveling) vs auto-ladder race is
+  genuinely nondeterministic, the same sanctioned known-open execution
+  family (SOFT-0 @B6 owns it); entombment stays impossible either way,
+  both flags stay reported. (e) window → 500. (9) The b5 chop site
+  moved onto a forced 7×7 pad at cx−12 (architecture §5 terraform-
+  determinism — it was the LAST b5 part still on raw natural ground;
+  the un-terraformed 40-block route was residual pathing luck), and
+  (d) got 1400 samples (150 jobs × 6s ÷ 3 diggers = 300s of pure work;
+  the 450s window had no slack at the new pace).
+
+- GATE: round 9 full green (unit 18/18 incl. `tool_factor_curve`,
+  B4/B5/B5.5/B5.8, vanilla soak, voxygen check clean) + a two-round
+  confirmation streak on identical code (the flake history demanded a
+  streak, not a single green).
+
+- **TAGGED `bastion-block-TOOL0` — main @ `8479027c96`** (overnight
+  tag 3). One line for the morning: mining speed now keys off the
+  EQUIPPED tool (bare hands slow, stone pick 1.5×, steel 2.0× — give a
+  colonist a pick and watch), and the anti-stuck net got its deepest
+  fix yet: the egress annulus off-by-one that let novice diggers be
+  entombed in their own default-depth pits while the fail-safe believed
+  they could climb out. Revert = `7effa936b6`. NEXT: god-hand
+  in-engine.

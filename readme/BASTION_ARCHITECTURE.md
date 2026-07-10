@@ -429,6 +429,45 @@ columns off that plane silently got no/interior jobs).
   ping). WATCH handed to architect: Z-slice adequacy for working-inside-
   a-dig (B-UNDERGROUND jumps forward if Ben can't).
 
+**B5.6b-2.1 (built, overnight 2026-07-10):** the **ABSOLUTE-FLOOR flat
+mine mode** + the B5.8-E/E2 anti-stuck riders + the pace tune.
+- Schema: `ZExtent.floor_z: Option<i32>` (serde-default; None = relative)
+  + **`ZExtent::column_range(surface)` as the ONE dig-range authority** —
+  flat mode digs each column from its own surface to the SHARED absolute
+  floor (columns already below it get nothing); both placement paths, the
+  echo bounds, and the harness all call it (relative mode byte-identical
+  by unit test). Client: Slope/Flat toggle on the depth stepper
+  (`Tools.flat_floor`, `HudEvent::BastionToggleFlatFloor`); paint derives
+  the floor at commit: clicked plane − stepper depth.
+- **B5.8-E anti-stuck cluster** (Ben's live-test trio, `bastion_jobs.rs`):
+  ACCESS-BEFORE-DESCENT (`Job.depth` stamped at placement; Mine claims
+  deeper than novice reach are HELD until an access anchor joins the dig's
+  level range — access LEADS descent; a proactive plan fires for the
+  shallowest gated layer); EMERGENCY EGRESS (`egress_watch` jobless-
+  trapped detector: stationary ~20s + annulus test r∈[3,6] where level-or-
+  lower counts as egress → humanitarian bubble mask ±8 XY / −2..+64 z,
+  ZONE-INDEPENDENT — survives zone deletion); REMOTE-WORK anti-loop
+  (`Job.stuck_strikes` grows arrival tolerance to ~6.1 — work the block
+  from afar instead of looping).
+- **B5.8-E2 employed-loop fix** (gate-run find): `Job.last_bounce` bars
+  the exact (colonist, feet-block) pairing that bounced a claim as
+  unreachable until the colonist MOVES (identical search re-fails
+  identically; anyone else may claim) + the egress reset narrowed to
+  ARRIVED-only (claim churn kept a bounce-looper nominally "employed",
+  starving the stillness timer — the NO-INFINITE-LOOPS hole). The b5-chop
+  "load flake" was THIS, root-caused: a climbing-0 digger self-trapped in
+  the 3-deep default quarry (rim rise 3 > novice reach 2).
+- Pace: `WORK_DURATION_BASE` 3→6s (Ben: "instant" → deliberate; TOOL-0
+  replaces the flat bump with `tool_factor` — don't stack tunes).
+- Harness: b5 phase 7.6 (flat mode on the proven staircase = EXACTLY 108
+  jobs, tight bounds, flat bottom at the shared z) + b58 parts (e)
+  entombment repro (zone-delete with digger at pit bottom → egress fires,
+  colonist out, board empty precondition via the new (d) epilogue
+  cleanup) and (f) reach-loop repro (rim job cleared remotely), both
+  GATING.
+- **Gate:** unit 17/17, B4/B5/B5.5/B5.8 PASS, vanilla soak PASS, voxygen
+  check clean — full green on the quiet overnight machine.
+
 ### 2.10b B5.8 — Vertical mobility (the 4×-bitten trap, FIXED at the mechanism)
 
 **What:** colonists traverse vertically — scramble short faces (skill-
@@ -493,6 +532,63 @@ iteration runs; findings §2b-2e is the discovery log.
   Scenario staging uses the `bastion_teleport_colonist` fixture (vertical
   gates measure the mechanism, not cross-town goto — a separate
   pre-existing weakness, logged).
+
+### 2.10c TIMECTL — Time controls (the first META-controls verb)
+
+**What:** the UI-3 §3 "#1 missing god-game verb" — visible sim-speed
+control. An always-on `II/1×/2×/4×` button cluster (bottom-right of the
+overseer HUD) with the active state lit (paused = amber), a speed
+readout, a top-center PAUSED tag, and hotkeys (Space pause-toggle, +/−
+ladder step) bound to the same setter the buttons use.
+
+**How (all reuse, voxygen-only):** vanilla `TimeScale` ALREADY scales the
+whole sim's `DeltaTime` (`common/state/src/state.rs` tick; physics,
+agents, bastion jobs — everything) and ships an Admin `/time_scale`
+command; singleplayer pause (the `paused` AtomicBool) halts the server
+loop outright. The session's one setter (`bastion_set_sim_speed`) maps
+None→pause / Some(s)→unpause + `/time_scale s`; pause and scale are
+independent (resume returns to the pre-pause speed). The HUD mirrors
+TRUTH each frame (pause flag + the synced `TimeScale` resource) — chat
+commands and the ESC-menu auto-pause move the buttons too. Hotkeys ride
+the B1.5 input-context system: Space is free in the Overseer context
+because Jump is suppressed there; the Avatar context suppresses the
+pause key back. Zero wire/save changes.
+
+**Watch:** the vanilla ESC menu auto-unpauses on close (a cluster-pause
+doesn't survive an ESC round-trip — HUD stays honest); physics fidelity
+at high scales is the real top-speed ceiling, 4× shipped.
+
+### 2.10d TOOL0 — Work speed = f(equipped tool) + the E3 stability cluster
+
+**What:** TOOLS-UPGRADE §3 TOOL-0 — the work tick multiplies
+`common::bastion::tool_factor(work, equipped)`: bare/wrong tool = 1.0
+(the deliberately slow base — Ben's "slow mining" done as a tool gate,
+not a stacked constant), matching Pick/Axe/Hammer 1.5× (crude) → 3.5×
+(artifact apex) by the LOCKED `item::Quality`. Skill × tool multiply.
+Vanilla tool assets already ladder by Quality (stone=Low steel=Moderate)
+so tier progression works with shipped items; TOOL-1 adds material
+gating + crafting, TOOL-2 auto-equip. Curve unit-pinned
+(`tool_factor_curve`); b5 phase 7.7 asserts it end-to-end via
+`bastion_equip_tool`/`bastion_colonist_tool_factor` (no timing).
+
+**E3 stability cluster (the gate rounds' real finds):** the egress
+annulus OFF-BY-ONE (standable = rise ≤ reach, `s ≤ feet+reach−1`; the
+old bound read a 3-rise pit rim as escapable for a reach-2 novice — the
+recurring "b5-chop flake" was a REAL entrapment with a fail-safe that
+believed the colonist could leave); the CLAIM-CHURN trapped detector
+(8 consecutive unreachable releases without moving → annulus → bubble;
+guards: no fire near an access anchor or while any access plan pends,
+one per pass — an employed churner is invisible to the stillness timer
+by sampling); access steps EXCLUDED from the Mine top-down claim score
+(ascent stairs sequence bottom-up nearest-first); harness hooks exclude
+`is_access` scaffolding from designation measurements; E2's
+`last_bounce` bar removed (wobble-leaky, starved strike growth — never
+reached main).
+
+**Watch:** the assist's documented chimney slack (reach+2 in enclosed
+shafts, XP-on-use re-levels) makes self-exit race auto-ladder plans —
+execution-race determinism is SOFT-0 @B6's charter; the b1/b58 gates
+acknowledge it.
 
 ### 2.10 B-MAP1 — Overseer minimap (founds the map/overlay layer)
 
@@ -682,16 +778,20 @@ Full protocol: `readme/MEGA-PROMPT-autonomous-batch-builder.md`.
 ## 6. State & pointers (update every block)
 
 **Done (merged + tagged):** B0, B1, B1.5, B1.6(+B1.7), B2a, B3, B4, B5,
-B5.5, B5.6a, B5.6b-1, B-MAP1, B5.6b-2, **B5.8 (vertical mobility — the
+B5.5, B5.6a, B5.6b-1, B-MAP1, B5.6b-2, B5.8 (vertical mobility — the
 4×-bitten §5 trap FIXED at the mechanism; climbing skill + autonomous
-access + DF mining + ladder waiver), and B-ASSET1 (asset integration
-harness + render arena — §2.11; full 73-entry catalog graduated, quality
-+ rig gates standing — this merge).** **Next (per `readme/FLEET_STATUS.md`
-BUILD LANE, the routing authority under the self-advance protocol):**
-B5.6b-3 (zone interaction/edit-mode) / B5.6b-2.1 flat-floor per
-FLEET_STATUS, b-4 (erase-by-type), B6 (stockpiles/hauling — INCLUDES the
-committed SOFT-COLLISION SOFT-0/1), B7. Slots-into-gaps: B-TESTBED.
-Queued riders: ABSOLUTE-FLOOR depth mode.
+access + DF mining + ladder waiver), B5.6b-2.1 (flat-floor mine
+mode + B5.8-E/E2 anti-stuck cluster + pace tune), TIMECTL (visible time
+controls §2.10c), TOOL0 (tool-gated work speed + E3 stability cluster
+§2.10d — overnight 2026-07-10), **and B-ASSET1 (asset integration
+harness + render arena — §2.11; full catalog graduated; quality + rig +
+anatomy + compare-reference + anti-skip gates standing; sha-stamped
+harness — this merge).** **Next (per the OVERNIGHT AUTONOMOUS RUN
+roadmap + `readme/FLEET_STATUS.md` BUILD LANE):** god-hand in-engine
+(B6 branch open), B6 (stockpiles/hauling — INCLUDES the committed
+SOFT-COLLISION SOFT-0/1), B7 needs-decay + self-designation. Then
+B5.6b-3/b-4 zone-UX. Slots-into-gaps: B-TESTBED. Queued riders:
+ABSOLUTE-FLOOR depth mode.
 
 | Need | Read |
 |---|---|
