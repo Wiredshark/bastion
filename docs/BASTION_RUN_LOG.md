@@ -454,3 +454,22 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   a pit; Ben's verdict on the 6-deep slope mine (asked explicitly in the
   TEST LIST) decides whether B-UNDERGROUND jumps forward. Next per
   `readme/FLEET_STATUS.md`: **B5.8 (vertical mobility)** — self-advancing.
+
+### B5.8 — Vertical mobility: scramble, stair-carving, ladders
+
+- Start SHA: `efc777475a` (= `bastion-block-B5.6b-2`) · branch
+  `bastion/block-B5.8` · started 2026-07-09 under the SELF-ADVANCE
+  protocol (FLEET_STATUS BUILD LANE; no architect ping needed). Spec:
+  `readme/B5.8-vertical-mobility-prompt.md`. The 4×-bitten vertical-
+  reachability trap's fix block (architecture §5). Mechanisms in
+  preference order: (1) scramble — wire colonists to the existing climb
+  machinery + teach path costs 1-step/2-3-block faces; (2) auto
+  carve-steps sub-jobs INSIDE colony designations only (**HARD PAIR:
+  one `carve_ramp` lib shared with DF-DIG-VERBS DIG-1** — flagged in
+  DESIGNER-SUGGESTIONS; don't build twice); (3) buildable ladder
+  (native `SpriteKind::Ladder` EXISTS per the asset log — reuse, no new
+  asset). Gate: new `--b58-scenario` (scramble / pit-self-rescue /
+  ladder climb) + B4/B5/B5.5 re-run with hand-patched access geometry
+  REMOVED where the mechanisms cover it + vanilla clean. Watch: path-
+  cost integration is the risky bit (vertical-link graph annotation is
+  the sanctioned fallback); TRAVEL_SPEED/climb-speed eyeball for Ben.
