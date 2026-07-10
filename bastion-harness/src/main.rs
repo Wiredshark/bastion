@@ -2693,6 +2693,21 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
     // targets is unreachability that PERSISTS. The settle must outlast the
     // F3 stale-access pruner's 20s idle window so abandoned rescue
     // scaffolding gets swept before sampling. Max stays reported.
+    // Settle STAGING: jobless colonists resume the vanilla idle brain and
+    // WANDER (observed 100+ blocks off-site) — a leftover job then sits
+    // unclaimed at distance and the completion assert starves (run 30:
+    // 5/5 out, one job undone at 45s). Re-stage the crew on the pad, the
+    // same teleport stagecraft every b58 part uses.
+    for (i, n) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(
+                (kx - 4 + 2 * i as i32) as f32 + 0.5,
+                (ky + 4) as f32 + 0.5,
+                (k_gz + 2) as f32,
+            ),
+        );
+    }
     // Settle LOOP (break-early): must outlast the F3 pruner's 20s idle
     // window AND give the retry economy room to finish straggler jobs —
     // run 27: all five colonists out with one original job mid-retry at

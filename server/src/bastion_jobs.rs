@@ -863,6 +863,24 @@ impl<'a> System<'a> for Sys {
                         // violation the scenario asserts against). Same
                         // reach-cap/head-clear gates bound the lift.
                         vel.0.z = vel.0.z.max(CLIMB_ASSIST_VZ);
+                        // DISCRETE RUNG-STEP (run 29, Ben's auto-snap
+                        // backstop from the access-reliability batch): a
+                        // GROUNDED climber whose velocity route gets eaten
+                        // by ground physics (carved pockets, ledge lips)
+                        // still takes one guaranteed 1-block step per
+                        // second — the same supported/head-clear/reach
+                        // gates bound it, and the step target's body space
+                        // is verified clear so it can never snap into
+                        // rock. Reads as mounting a rung.
+                        if phys.on_ground.is_some()
+                            && tick.0 % 30 == 0
+                            && terrain
+                                .get(feet + Vec3::unit_z() * 3)
+                                .map(|b| !b.is_solid())
+                                .unwrap_or(true)
+                        {
+                            pos.0.z += 1.0;
+                        }
                         colonist.0.skills.climbing.add_xp(CLIMB_XP_RATE * dt.0);
                     }
                     // B6 SOFT-0 finding — LADDER MAGNETISM: the grab
@@ -908,6 +926,16 @@ impl<'a> System<'a> for Sys {
                                 .distance_squared(pos.0.xy());
                             da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
                         });
+                        if tick.0 % 60 == 30 {
+                            // B6 SOFT-0 debug (crowd-hover tail): is the
+                            // magnet engaging, toward where, from where?
+                            info!(
+                                ?feet,
+                                ?climb_col,
+                                ladder = ?lp,
+                                "bastion: magnet eval"
+                            );
+                        }
                         if let Some(cc) = climb_col {
                             let center =
                                 Vec2::new(cc.x as f32 + 0.5, cc.y as f32 + 0.5);
