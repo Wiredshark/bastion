@@ -739,3 +739,21 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   entombed in their own default-depth pits while the fail-safe believed
   they could climb out. Revert = `7effa936b6`. NEXT: god-hand
   in-engine.
+
+### GOD-HAND — SKIPPED overnight (blocked on asset integration; logged per rule 4)
+
+- The roadmap's next block, explored and deliberately SKIPPED: the v3
+  hand asset (per-part vox: palm + 8 finger segments + 2 thumb + a
+  `rig.json`) exists ONLY in the pilot's isolated `asset-lab/` sandbox —
+  NOT in the repo's `assets/` tree. Asset integration is the tester's
+  lane through the BASSET1 merge, explicitly HELD FOR MORNING by the
+  overnight plan (merged-state verification pending; possible re-forward-
+  merge). Reaching into asset-lab from the builder lane would cross two
+  session boundaries mid-hold. HAND-1's mechanics-only half (Link grab/
+  carry/drop) without the hand visual AND without the favor cost is
+  precisely the uncosted puppet-master anti-pattern HAND-CURSOR §0 draws
+  its pillar against — not shippable alone. → Advancing to **B6
+  stockpiles/hauling + SOFT-0/1 soft-collision (COMMITTED, Ben)** which
+  is fully buildable with no asset dependencies; god-hand fast-tracks
+  the moment BASSET1 lands the asset (FLEET_STATUS already says exactly
+  this).
