@@ -565,15 +565,48 @@ pub struct Job {
     /// place (the reactive egress becomes the rare backstop).
     #[serde(default)]
     pub depth: u8,
-    /// bastion (B5.8-E2): the (colonist, feet-block) whose claim last
-    /// bounced off this job as unreachable. That exact pairing is barred
-    /// from re-claiming — re-running the identical failed path search from
-    /// the identical spot re-fails identically, and the churn keeps the
-    /// colonist nominally "employed", which starved the emergency-egress
-    /// stillness timer (the b5-chop reclaim loop). Any other colonist, or
-    /// the same colonist after moving a block, stays eligible.
-    #[serde(default)]
-    pub last_bounce: Option<(crate::uid::Uid, Vec3<i32>)>,
+}
+
+/// bastion (TOOL-0, TOOLS-UPGRADE §3): the work-tick's TOOL factor — a
+/// multiplier on the server's `work_rate`. The verb↔tool map rides the
+/// shipped `ToolKind`s (Mine→Pick, Chop→Axe, Build→Hammer; Haul/Cook have
+/// no tool gate yet). NO or WRONG tool = 1.0 — the deliberately slow base
+/// (the "slow mining" home: upgrades must mean something); a MATCHING tool
+/// speeds work up, scaled by the LOCKED `item::Quality` (DF-QUALITY —
+/// reuse, never fork). Deterministic and pure — the curve is unit-pinned
+/// below. TOOL-1 adds the material-tier ladder + min-tier gating on hard
+/// blocks; TOOL-2 adds auto-equip-best + craft-quality stamps.
+pub fn tool_factor(
+    work: WorkType,
+    tool: Option<(
+        crate::comp::item::tool::ToolKind,
+        crate::comp::item::Quality,
+    )>,
+) -> f32 {
+    use crate::comp::item::{Quality, tool::ToolKind};
+    let wanted = match work {
+        WorkType::Mine => Some(ToolKind::Pick),
+        WorkType::Chop => Some(ToolKind::Axe),
+        WorkType::Build => Some(ToolKind::Hammer),
+        WorkType::Haul | WorkType::Cook => None,
+    };
+    match (wanted, tool) {
+        (Some(w), Some((k, q))) if k == w => {
+            // Quality ladder: a crude matching tool is a real relief over
+            // bare hands (1.5×); the artifact apex is 3.5×. Bounded so
+            // skill (+20%/level) stays a co-equal axis — both multiply.
+            1.5 + match q {
+                Quality::Low => 0.0,
+                Quality::Common => 0.25,
+                Quality::Moderate => 0.5,
+                Quality::High => 1.0,
+                Quality::Epic => 1.5,
+                Quality::Legendary | Quality::Artifact | Quality::Debug => 2.0,
+            }
+        },
+        // Verb has no tool gate, or bare hands / wrong tool: the slow base.
+        _ => 1.0,
+    }
 }
 
 /// The material B5's minimal Build path requires (single hardcoded material;
@@ -889,6 +922,53 @@ mod tests {
         assert_eq!(flat.column_range(97), None);
         // Floor at exactly the surface: the surface block itself goes.
         assert_eq!(flat.column_range(98), Some((98, 98)));
+    }
+
+    #[test]
+    fn tool_factor_curve() {
+        use crate::comp::item::{Quality, tool::ToolKind};
+        // TOOL-0 CURVE PIN: bare hands / wrong tool = the slow base (1.0);
+        // a MATCHING tool is a real relief (≥1.5×); quality is monotonic;
+        // ungated verbs ignore tools. If this needs editing, the tuning
+        // was deliberate (TOOLS-UPGRADE §2) — update the doc first.
+        assert_eq!(tool_factor(WorkType::Mine, None), 1.0);
+        assert_eq!(
+            tool_factor(WorkType::Mine, Some((ToolKind::Axe, Quality::High))),
+            1.0
+        );
+        assert_eq!(
+            tool_factor(WorkType::Mine, Some((ToolKind::Pick, Quality::Low))),
+            1.5
+        );
+        assert_eq!(
+            tool_factor(WorkType::Chop, Some((ToolKind::Axe, Quality::Low))),
+            1.5
+        );
+        assert_eq!(
+            tool_factor(WorkType::Build, Some((ToolKind::Hammer, Quality::Low))),
+            1.5
+        );
+        // Quality strictly climbs Low → Artifact for the matching tool.
+        let ladder = [
+            Quality::Low,
+            Quality::Common,
+            Quality::Moderate,
+            Quality::High,
+            Quality::Epic,
+            Quality::Artifact,
+        ];
+        let factors: Vec<f32> = ladder
+            .iter()
+            .map(|q| tool_factor(WorkType::Mine, Some((ToolKind::Pick, *q))))
+            .collect();
+        assert!(factors.windows(2).all(|w| w[0] < w[1] || w[0] == w[1]));
+        assert!(factors.windows(2).any(|w| w[0] < w[1]));
+        assert_eq!(*factors.last().unwrap(), 3.5); // the apex
+        // Haul/Cook: no tool gate yet — always the base.
+        assert_eq!(
+            tool_factor(WorkType::Haul, Some((ToolKind::Pick, Quality::Epic))),
+            1.0
+        );
     }
 
     #[test]

@@ -22,7 +22,7 @@ use crate::Tick;
 use common::{
     bastion::{
         BUILD_MATERIAL_ITEM, CHOP_DROP_ITEM, DesignationKind, Job, JobAudit, JobId,
-        MINE_DROP_ITEM, Region, ZExtent,
+        MINE_DROP_ITEM, Region, ZExtent, tool_factor,
     },
     comp,
     comp::{
@@ -224,7 +224,6 @@ fn plan_access(
             is_access: true,
             stuck_strikes: 0,
             depth: 0,
-            last_bounce: None,
         });
         steps += 1;
     }
@@ -339,6 +338,53 @@ pub fn resolve_surface_bounds(
     })
 }
 
+/// bastion (B5.8-E): the trapped-detector ANNULUS scan — r 3..=6 around
+/// `feet`. A shaft/small pit has ONLY walls out there; open ground has
+/// level cells. Level-or-lower surfaces COUNT as egress (walk off / hop
+/// down) — the first detector counted only upward steps, so any idle
+/// colonist beside a town wall read as "trapped" and fired spurious carves
+/// (part-e run-1). Wide pits (>7 across) evade this local test — the
+/// loop-breaker covers their job-holding cases; jobless wide-pit detection
+/// is a noted known-limit pending a real reachability probe. Returns
+/// (has_egress, nearest rim target for an access plan).
+fn egress_scan(
+    terrain: &TerrainGrid,
+    feet: Vec3<i32>,
+    reach: i32,
+) -> (bool, Option<Vec3<i32>>) {
+    const EGRESS_RING_R: i32 = 5;
+    let mut rim: Option<(i32, Vec3<i32>)> = None; // (xy dist, target)
+    for dx in -(EGRESS_RING_R + 1)..=(EGRESS_RING_R + 1) {
+        for dy in -(EGRESS_RING_R + 1)..=(EGRESS_RING_R + 1) {
+            let d = dx.abs().max(dy.abs());
+            if d < 3 {
+                continue;
+            }
+            let Some(s) = column_surface_z(terrain, feet.x + dx, feet.y + dy, feet.z)
+            else {
+                continue;
+            };
+            // Egress = a surface the colonist can STAND on: rise to stand
+            // is (s+1) − feet, climbable iff ≤ reach → s ≤ feet+reach−1.
+            // The original `s ≤ feet+reach` admitted rise reach+1 — one
+            // too generous, and EXACTLY the b5 quarry shape (3-rise pit,
+            // reach-2 novice): the detector read the unreachable rim as
+            // egress and never fired, so the pit-floor digger churned
+            // claims on far jobs forever (the "chop flake"'s true root).
+            if s >= feet.z - 4 && s <= feet.z + reach - 1 {
+                return (true, None);
+            }
+            if s > feet.z + reach - 1 {
+                let dd = dx.abs() + dy.abs();
+                if rim.as_ref().is_none_or(|(bd, _)| dd < *bd) {
+                    rim = Some((dd, Vec3::new(feet.x + dx, feet.y + dy, s)));
+                }
+            }
+        }
+    }
+    (false, rim.map(|(_, t)| t))
+}
+
 /// The job board resource.
 #[derive(Default)]
 pub struct JobBoard {
@@ -365,6 +411,18 @@ pub struct JobBoard {
     /// claim mask, so a trapped digger needs a trigger + permission source
     /// independent of BOTH (Ben's live-test entombment repro).
     egress_watch: HashMap<Uid, (Vec3<f32>, f32, bool)>,
+    /// bastion (B5.8-E3): per-colonist CLAIM-CHURN watch — (anchor
+    /// position, consecutive unreachable releases without leaving it). The
+    /// stillness timer can't see a colonist that cycles claim→unreachable→
+    /// re-claim (it reads as employed at nearly every pass, and its brief
+    /// jobless windows rarely coincide with the sampling tick); the churn
+    /// COUNT is the loop's own signature. Threshold → an on-the-spot
+    /// annulus test → an egress request, employed or not.
+    churn_watch: HashMap<Uid, (Vec3<f32>, u8)>,
+    /// bastion (B5.8-E3): egress requests raised OUTSIDE the sampling pass
+    /// (the churn detector fires from the every-tick upkeep loop); drained
+    /// into the next egress pass, which owns one-plan-at-a-time gating.
+    egress_pending: Vec<(Uid, Vec3<i32>, Vec3<i32>)>,
 }
 
 impl JobBoard {
@@ -425,7 +483,6 @@ impl JobBoard {
                             // Box-top-relative depth: the descent gate's
                             // "how far below the way out".
                             depth: (region.max.z - z).clamp(0, 255) as u8,
-                            last_bounce: None,
                         });
                         created.push(id);
                     }
@@ -508,7 +565,6 @@ impl JobBoard {
                             // Per-column surface-relative depth: the
                             // descent gate's "how far below the way out".
                             depth,
-                            last_bounce: None,
                         });
                         created.push(id);
                     }
@@ -773,6 +829,10 @@ impl<'a> System<'a> for Sys {
         // (from-feet, to-job, parent job id) — processed after the loop
         // (the board can't be restructured mid-borrow).
         let mut carve_requests: Vec<(Vec3<i32>, Vec3<i32>, JobId)> = Vec::new();
+        // B5.8-E3: unreachable releases feed the claim-churn detector
+        // (entity, pos, feet, reach) — processed post-loop (same borrow
+        // constraint as carve_requests).
+        let mut churn_events: Vec<(specs::Entity, Vec3<f32>, Vec3<i32>, i32)> = Vec::new();
         // `Colonist`'s storage is change-tracked (synced comp) — mutable
         // multi-storage joins over it need `LendJoin`, not `Join`.
         let mut upkeep_iter = (
@@ -938,17 +998,23 @@ impl<'a> System<'a> for Sys {
                                 {
                                     carve_requests.push((feet, job.pos, active.job));
                                 } else {
+                                    // B5.8-E3: no per-colonist re-claim bar
+                                    // here (E2 tried one; it leaked on
+                                    // physics wobble and starved the
+                                    // strike-grown remote-work convergence
+                                    // that marginal sites NEED). Retries are
+                                    // the mechanism; the CHURN DETECTOR
+                                    // below counts these releases so a
+                                    // colonist cycling in place still gets
+                                    // the humanitarian bubble (~10s of
+                                    // bounces) — employed or not.
                                     job.unreachable = true;
-                                    // B5.8-E2: bar THIS colonist from
-                                    // re-claiming from THIS block — the
-                                    // identical search re-fails identically,
-                                    // and the claim churn kept the colonist
-                                    // "employed" enough to starve the egress
-                                    // stillness timer (b5-chop loop). Anyone
-                                    // else — or this colonist after moving —
-                                    // may still try.
-                                    job.last_bounce =
-                                        uids.get(entity).map(|u| (*u, feet));
+                                    churn_events.push((
+                                        entity,
+                                        pos.0,
+                                        feet,
+                                        reach,
+                                    ));
                                     info!(
                                         job = active.job,
                                         pos = ?job.pos,
@@ -963,8 +1029,23 @@ impl<'a> System<'a> for Sys {
                 },
                 ActiveJobState::Arrived => {
                     // B5: accumulate work, rate scaled by the relevant skill.
+                    // TOOL-0 (TOOLS-UPGRADE §3): × the EQUIPPED-tool factor —
+                    // bare hands/wrong tool = the slow base, a matching
+                    // Pick/Axe/Hammer speeds it up by quality. Skill and
+                    // tool multiply (both axes pay). The factor itself is
+                    // `common::bastion::tool_factor` (pure, unit-pinned).
                     let skill_level = colonist.0.skills.level_for(job.work);
-                    job.progress += dt.0 * work_rate(skill_level);
+                    let tool = inventories.get(entity).and_then(|inv| {
+                        inv.equipped(comp::slot::EquipSlot::ActiveMainhand)
+                            .and_then(|item| match &*item.kind() {
+                                comp::item::ItemKind::Tool(t) => {
+                                    Some((t.kind, item.quality()))
+                                },
+                                _ => None,
+                            })
+                    });
+                    job.progress +=
+                        dt.0 * work_rate(skill_level) * tool_factor(job.work, tool);
                     if job.progress < 1.0 {
                         continue;
                     }
@@ -1135,6 +1216,60 @@ impl<'a> System<'a> for Sys {
             }
         }
 
+        // ── B5.8-E3: CLAIM-CHURN trapped detector ────────────────────────
+        // A colonist cycling claim→unreachable→re-claim reads as EMPLOYED
+        // at nearly every sampling pass, so the stillness timer never sees
+        // it (E2's reset tweak wasn't enough; E3 run-2 showed widening the
+        // accrual to employed colonists false-fires on legitimate WAITING
+        // instead). The loop's own signature — consecutive unreachable
+        // releases without leaving the spot — is unambiguous: count them,
+        // and at the threshold run the same annulus test the stillness
+        // path uses. Genuinely walled-in → egress request (drained by the
+        // next egress pass, which owns one-plan-at-a-time + claim release);
+        // open ground → not trapped, the retries keep converging via the
+        // strike-grown arrival (a hard target is not an emergency).
+        const CHURN_TRAPPED_RELEASES: u8 = 8; // ≈10s of ~1.2s bounce cycles
+        for (entity, posf, feet, reach) in churn_events {
+            let Some(uid) = uids.get(entity).copied() else {
+                continue;
+            };
+            let churn = board.churn_watch.entry(uid).or_insert((posf, 0));
+            if posf.distance_squared(churn.0) > 9.0 {
+                *churn = (posf, 1);
+                continue;
+            }
+            churn.1 = churn.1.saturating_add(1);
+            if churn.1 < CHURN_TRAPPED_RELEASES {
+                continue;
+            }
+            churn.1 = 0; // one shot; re-arms if the cycling continues
+            // TRAP-SPECIFIC guards (round-3 finding: an unguarded fire
+            // thrashed part (d)'s busy quarry — contended diggers bounce
+            // claims constantly without being trapped):
+            // 1. An access ANCHOR nearby = a way out already exists (the
+            //    proactive descent plans anchor every sanctioned dig).
+            // 2. Any access plan PENDING = the rescue economy is already
+            //    working; a second bubble just disorders it (one-plan-at-
+            //    a-time exists for exactly this reason).
+            let anchored = board.access_anchors.iter().any(|a| {
+                (a.x - feet.x).abs().max((a.y - feet.y).abs()) <= 8
+                    && a.z >= feet.z - 4
+                    && a.z <= feet.z + 2
+            });
+            let access_busy = board.jobs.values().any(|j| j.is_access);
+            if anchored || access_busy {
+                continue;
+            }
+            let (has_egress, rim) = egress_scan(&terrain, feet, reach);
+            if !has_egress && let Some(target) = rim {
+                info!(
+                    ?feet,
+                    "bastion: claim-churn trapped — egress requested (B5.8-E3)"
+                );
+                board.egress_pending.push((uid, feet, target));
+            }
+        }
+
         // ── B5.8: AUTONOMOUS ACCESS (self-rescue) ────────────────────────
         // A stuck ascent inside colony claims gets access that FITS THE
         // GEOMETRY (Ben's directive — autonomous access is the default):
@@ -1186,15 +1321,15 @@ impl<'a> System<'a> for Sys {
         // ── B5.8-E: EMERGENCY EGRESS (the "nobody entombed" fail-safe) ──
         // Ben's live-test repro: mine a shaft, DELETE the zone — the digger
         // is stranded: no job (no watchdog trigger) and no claims (no carve
-        // permission). The override: a JOBLESS colonist that has been
-        // stationary ~20s with NO reachable step up anywhere in a radius-5
-        // ring (a surviving stair/ladder step within scramble reach counts
-        // as egress — no spurious carving) gets an access plan under a
+        // permission). The override: a colonist that has been stationary
+        // ~20s while NOT actually working (jobless OR spinning on a claim —
+        // E3) with NO reachable step up anywhere in a radius-5 ring (a
+        // surviving stair/ladder step within scramble reach counts as
+        // egress — no spurious carving) gets an access plan under a
         // HUMANITARIAN BUBBLE mask around them, independent of zone state.
         // The emitted steps/rungs are ordinary access jobs — the trapped
         // colonist claims them and digs/builds its own way out.
         const EGRESS_STILL_SECS: f32 = 20.0;
-        const EGRESS_RING_R: i32 = 5;
         const EGRESS_BUBBLE_R: i32 = 8;
         if tick.0 % 30 == 7 {
             // Colonists ACTUALLY WORKING (Arrived, progress accruing) are
@@ -1202,17 +1337,43 @@ impl<'a> System<'a> for Sys {
             // their watch so the still-timer only accrues across
             // consecutive non-working seconds (brief between-claim gaps
             // were summing to spurious triggers). Merely being EMPLOYED
-            // must NOT reset it: a claim that bounces unreachable every
-            // cycle keeps its colonist nominally employed forever, and the
-            // reset starved the egress net out of ever firing (B5.8-E2,
-            // the b5-chop pit loop). Traveling colonists neither reset nor
-            // accrue; real movement resets via the position test below.
+            // must NOT reset it (E2: churn starved the timer) — but
+            // employed colonists also must NOT ACCRUE it (E3 run-2:
+            // colonists legitimately WAITING in line at a ladder/chokepoint
+            // fired spurious bubbles all over parts b/c). So: Arrived
+            // removes, jobless accrues, employed-Traveling FREEZES — and
+            // the claim-churn looper (employed at nearly every sample) is
+            // caught by its own signature in the upkeep loop instead (the
+            // churn detector below feeds `egress_pending`).
             for (_, uid, active) in (&colonists, &uids, &active_jobs).join() {
                 if matches!(active.state, ActiveJobState::Arrived) {
                     board.egress_watch.remove(uid);
                 }
             }
             let mut egress_requests: Vec<(Uid, Vec3<i32>, Vec3<i32>)> = Vec::new();
+            // Churn-detector fire (at most ONE per pass — extras are
+            // dropped and re-arm through continued cycling; round-3
+            // finding: batch-draining released whole crews' claims at
+            // once). It carries its own annulus verdict; release the
+            // stuck claim so the colonist is free for its rescue steps.
+            let churn_fire = board.egress_pending.pop();
+            board.egress_pending.clear();
+            if let Some((uid, from, to)) = churn_fire {
+                if let Some(entity) = id_maps.uid_entity(uid) {
+                    if let Some(active) = active_jobs.get(entity) {
+                        if let Some(job) = board.jobs.get_mut(&active.job) {
+                            if job.claimed_by == Some(uid) {
+                                job.claimed_by = None;
+                            }
+                        }
+                        active_jobs.remove(entity);
+                        if let Some(agent) = agents.get_mut(entity) {
+                            agent.rtsim_controller.activity = None;
+                        }
+                    }
+                    egress_requests.push((uid, from, to));
+                }
+            }
             for (colonist, pos, uid, ()) in
                 (&colonists, &positions, &uids, !&active_jobs).join()
             {
@@ -1230,47 +1391,14 @@ impl<'a> System<'a> for Sys {
                 }
                 let feet = pos.0.map(|e| e.floor() as i32);
                 let reach = 2 + colonist.0.skills.climbing.level.min(1) as i32;
-                // ANNULUS scan (r 3..=6): a shaft/small pit has ONLY walls
-                // out there; open ground has level cells. Level-or-lower
-                // surfaces COUNT as egress (walk off / hop down) — the
-                // first detector counted only upward steps, so any idle
-                // colonist beside a town wall read as "trapped" and fired
-                // spurious carves (part-e run-1). Wide pits (>7 across)
-                // evade this local test — the loop-breaker covers their
-                // job-holding cases; jobless wide-pit detection is a noted
-                // known-limit pending a real reachability probe.
-                let mut rim: Option<(i32, Vec3<i32>)> = None; // (xy dist, target)
-                let mut has_egress = false;
-                'ring: for dx in -(EGRESS_RING_R + 1)..=(EGRESS_RING_R + 1) {
-                    for dy in -(EGRESS_RING_R + 1)..=(EGRESS_RING_R + 1) {
-                        let d = dx.abs().max(dy.abs());
-                        if d < 3 {
-                            continue;
-                        }
-                        let Some(s) =
-                            column_surface_z(&terrain, feet.x + dx, feet.y + dy, feet.z)
-                        else {
-                            continue;
-                        };
-                        if s >= feet.z - 4 && s <= feet.z + reach {
-                            has_egress = true;
-                            break 'ring;
-                        }
-                        if s > feet.z + reach {
-                            let dd = dx.abs() + dy.abs();
-                            if rim.as_ref().is_none_or(|(bd, _)| dd < *bd) {
-                                rim = Some((dd, Vec3::new(feet.x + dx, feet.y + dy, s)));
-                            }
-                        }
-                    }
-                }
+                let (has_egress, rim) = egress_scan(&terrain, feet, reach);
                 if has_egress {
                     // Walkable/climbable ground within the annulus — not
                     // walled in.
                     *watch = (pos.0, 0.0, false);
                     continue;
                 }
-                let Some((_, target)) = rim else {
+                let Some(target) = rim else {
                     // Open/flat ground — just idling, not trapped.
                     *watch = (pos.0, 0.0, false);
                     continue;
@@ -1497,14 +1625,6 @@ impl<'a> System<'a> for Sys {
                 if job.claimed_by.is_some() || job.unreachable {
                     continue;
                 }
-                // B5.8-E2: this exact (colonist, standing-block) pairing
-                // already bounced off this job — identical retry, identical
-                // failure. Barred until the colonist moves; others eligible.
-                if job.last_bounce.is_some_and(|(u, f)| {
-                    u == *uid && f == pos.0.map(|e| e.floor() as i32)
-                }) {
-                    continue;
-                }
                 if job.kind == DesignationKind::Mine && !exposed.contains(id) {
                     continue;
                 }
@@ -1551,11 +1671,19 @@ impl<'a> System<'a> for Sys {
                 //    bottom-up by nearest-first — a top-weighted rung claim
                 //    is unreachable until the rungs below it exist.
                 let feet_z = pos.0.z.floor() as i32;
-                let depth_score = if job.kind == DesignationKind::Mine {
-                    -((job.pos.z - feet_z).clamp(-4, 4) as f32) * 8.0
-                } else {
-                    0.0
-                };
+                // B5.8-E3: access steps are EXCLUDED even though they're
+                // carved as Mine jobs — an ascent staircase's steps must go
+                // NEAREST-first (bottom-up from the trapped digger), and the
+                // top-down bonus (−8/level upward) crushed distance so the
+                // digger chased the highest shaft-face step it couldn't
+                // reach instead of the adjacent bottom one (the tool0-gate
+                // (e) bounce carousel).
+                let depth_score =
+                    if job.kind == DesignationKind::Mine && !job.is_access {
+                        -((job.pos.z - feet_z).clamp(-4, 4) as f32) * 8.0
+                    } else {
+                        0.0
+                    };
                 let clump_penalty = if claimed_pos.iter().any(|c| {
                     (c.x - job.pos.x).abs() < 2 && (c.y - job.pos.y).abs() < 2
                 }) {
