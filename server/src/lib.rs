@@ -1079,31 +1079,10 @@ impl Server {
             .collect()
     }
 
-    /// bastion (B-ASSET1, harness hook): teleport a named loaded colonist.
-    /// Cross-country travel is not what asset tests measure; the integrated
-    /// spot-check stages its fixture directly. rtsim wpos follows on the
-    /// next tick sync.
-    pub fn bastion_teleport_colonist(&mut self, name: &str, pos: Vec3<f32>) -> bool {
-        use specs::Join;
-        let ecs = self.state.ecs();
-        let colonists = ecs.read_storage::<comp::Colonist>();
-        let entities = ecs.entities();
-        let target = (&entities, &colonists)
-            .join()
-            .find(|(_, c)| c.0.name == name)
-            .map(|(e, _)| e);
-        drop(colonists);
-        let Some(entity) = target else {
-            return false;
-        };
-        let mut positions = ecs.write_storage::<comp::Pos>();
-        if let Some(p) = positions.get_mut(entity) {
-            p.0 = pos;
-            true
-        } else {
-            false
-        }
-    }
+    // bastion (B-ASSET1): the teleport-colonist helper now lives further
+    // down — the B5.8 merge brought an identical-signature version that also
+    // zeroes velocity and forces a chunk resync (physics would lerp long
+    // teleports otherwise); asset tests call it unchanged.
 
     /// bastion (B-ASSET1): clear a named colonist's goto order (`None` = all).
     /// Returns how many were cleared.
