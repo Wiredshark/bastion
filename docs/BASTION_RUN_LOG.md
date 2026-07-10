@@ -779,3 +779,26 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   PhysicsRead (check); (5) `--chokepoint-scenario`: 1-wide shaft+ladder
   whole-crew egress → all out, zero unreachable, open-ground control
   spacing normal, nobody inside terrain, vanilla NPC unaffected.
+
+- **WIP CHECKPOINT (overnight end): the MECHANISM is built and
+  COMPILING** (soft state + softened push + both triggers, commit
+  `a59308ed3e` + iterations), the `--chokepoint-scenario` exists and
+  drove 8 diagnostic iterations; three REAL engine finds fixed en
+  route: `SpriteKind::Ladder` has solid_height 1.0 (a rung is a
+  platform — an all-ladder shaft is an impassable pole; the scenario
+  now uses the open-column + rung-pillar shape B5.8's auto-pillars
+  build), interior-shaft anchor steering (vertical steer at the anchor
+  column — dropping the anchor at 1.6 XY pinned climbers under chamber
+  ceilings), and LADDER MAGNETISM toward the ladder's open neighbor
+  column (the ±2 grab band wedged climbers beside/on rungs). Run 7
+  proved the single-file climb end-to-end (1/5 out, 1 mid-shaft, peaks
+  tracked per colonist in the JSON now). OPEN: run 8's queue-patience
+  tweak (stall accrual ×0.2 while staged) paradoxically stalled
+  everything — zero releases, zero staged-routing logs, peaks at the
+  floor; suspect a steer-oscillator or a patience/anchor interaction.
+  RESUME AT: reproduce run 7 (drop the patience edit locally), bisect
+  run 8's silence, then re-attack the queue — candidates: patience only
+  while SOFT-active, or releasing queue-stalled claims to IDLE without
+  the unreachable flag. The block does NOT tag until the chokepoint
+  scenario + the full suite go green (gate + rollback discipline
+  holds).
