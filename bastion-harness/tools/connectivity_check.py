@@ -71,8 +71,11 @@ def audit(path):
     )
 
 if __name__ == '__main__':
-    targets = sorted(glob.glob('asset-lab/vox/real/*.vox')) \
-        + sorted(glob.glob('asset-lab/vox/components/*.vox'))
+    # File args override the default catalog+components sweep (the gate
+    # passes explicit globs; unstaged batches are auditable pre-staging).
+    targets = sys.argv[1:] or (
+        sorted(glob.glob('asset-lab/vox/real/*.vox'))
+        + sorted(glob.glob('asset-lab/vox/components/*.vox')))
     print(f'scanning {len(targets)} files (only offenders print)...')
     for t in targets:
         audit(t)
