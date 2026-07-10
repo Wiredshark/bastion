@@ -1297,6 +1297,15 @@ impl Server {
             .map(|c| c.0.skills.climbing)
     }
 
+    /// bastion (B-LIVE3, harness hook): designations completed (mine-done
+    /// lifecycle) since server start.
+    pub fn bastion_done_designations(&self) -> u64 {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .done_count
+    }
+
     /// bastion (B6 SOFT-0, harness hook): register an access anchor, as a
     /// player-designated or auto-built ladder would (scenarios that place
     /// ladder SPRITES directly bypass the designation path that normally

@@ -774,6 +774,15 @@ pub struct BastionColonist {
     /// hysteresis. serde-default: absent in old rtsim saves → off.
     #[serde(default)]
     pub soft_until: f64,
+    /// bastion (B-LIVE3, Ben's UNIVERSAL CLIMB-OUT fail-safe): while sim
+    /// `Time` < this, the climb assist lifts this colonist up ANY wall
+    /// contact — no ladder, no reach cap ("climb out of anywhere, as a
+    /// FINAL fail-safe, not a preference"). Granted only by the trapped
+    /// verdict (egress/churn no-egress) and on mine-done dispersal; the
+    /// teleport-to-ground ultimate backstop fires if this too fails.
+    /// 0.0 = off; serde-default for old saves.
+    #[serde(default)]
+    pub climb_free_until: f64,
 }
 
 const COLONIST_FIRST_NAMES: &[&str] = &[
@@ -1149,6 +1158,7 @@ impl BastionColonist {
             },
             work_priorities: WorkPriorities::default(),
             soft_until: 0.0,
+            climb_free_until: 0.0,
         }
     }
 }

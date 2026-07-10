@@ -996,11 +996,30 @@ impl SessionState {
         match kind {
             Some(kind) => {
                 // B5.6b-2.1: flat-floor mode derives the shared absolute
-                // floor from the CLICKED plane minus the stepper depth —
-                // every column bottoms out at one level (flat, square).
+                // floor from the TERRAIN SURFACE under the drag minus the
+                // stepper depth — every column bottoms out at one level
+                // (flat, square). Ben's live find: deriving from the PICK
+                // PLANE (region.max.z) put the floor ABOVE every column's
+                // surface whenever the camera plane sat above the ground
+                // (any angled drag on slopes) → the server resolved zero
+                // columns → "no terrain surface under the footprint"
+                // false-reject at perfectly valid volumes. Sample the real
+                // surface at the drag rect's center (the one height
+                // authority, slice-aware); the plane stays a fallback.
                 let mut extent = self.bastion_tools.z_extent;
                 if self.bastion_tools.flat_floor {
-                    extent.floor_z = Some(region.max.z - extent.down as i32);
+                    let center = Vec2::new(
+                        (region.min.x + region.max.x) as f32 / 2.0 + 0.5,
+                        (region.min.y + region.max.y) as f32 / 2.0 + 0.5,
+                    );
+                    let surface = bastion::overlay_surface_z(
+                        &self.client.borrow().state().terrain(),
+                        center,
+                        region.max.z as f32,
+                        self.scene.bastion_slice_z(),
+                    )
+                    .floor() as i32;
+                    extent.floor_z = Some(surface - extent.down as i32);
                 }
                 self.client
                     .borrow_mut()

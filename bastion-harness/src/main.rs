@@ -1005,6 +1005,26 @@ fn b5_scenario(args: &Args) -> ExitCode {
     }) == 0;
     server.bastion_cancel_designation(sl_wide);
     tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+    // B-LIVE1 regression (Ben's flat-drag false-reject): the PAINT-PLANE
+    // HINT decouples from the floor — a camera plane well above the
+    // ground (hint+12) with a valid surface-derived floor must resolve
+    // exactly the same 108 jobs. (The old client derived the floor FROM
+    // the plane, landing it above every surface → zero columns → the
+    // "no terrain surface under the footprint" reject on valid drags.)
+    let (fl2_jobs, _) = server.bastion_place_designation_surface(
+        sl_min_xy,
+        sl_max_xy,
+        sl_hint + 12,
+        ZExtent {
+            down: 0,
+            up: 0,
+            floor_z: Some(sl_gz),
+        },
+        DesignationKind::Mine,
+    );
+    let fl_hint_decoupled = fl2_jobs.len() == 108;
+    server.bastion_cancel_designation(sl_wide);
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
 
     // 7.7 (TOOL-0): the tool factor end-to-end — equip a stone pick into a
     // colonist's mainhand (Quality::Low → 1.5×), then a steel pick
@@ -1064,6 +1084,7 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_flat_total": fl_total,
         "b5_flat_bounds_ok": fl_bounds_ok,
         "b5_flat_floor_flat": fl_floor_flat,
+        "b5_flat_hint_decoupled": fl_hint_decoupled,
         "b5_tool_stone": tl_stone,
         "b5_tool_steel": tl_steel,
         "b5_tool_ok": tl_ok,
@@ -1099,6 +1120,7 @@ fn b5_scenario(args: &Args) -> ExitCode {
         && fl_total == 108
         && fl_bounds_ok
         && fl_floor_flat
+        && fl_hint_decoupled
         // TOOL-0: equipped-tool factor end-to-end (stone 1.5, steel 2.0,
         // wrong-verb 1.0); the curve itself is unit-pinned.
         && tl_ok
@@ -2775,6 +2797,58 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
 
     let mut peaks: Vec<f32> = peak_z.values().copied().collect();
     peaks.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    // ── B-LIVE3 regressions: the tiered fail-safe + the mine lifecycle ──
+    // (a) SEALED NO-LADDER PIT: a colonist with no exit of any kind MUST
+    // still get out — trapped verdict → egress plan + climb-free → the
+    // teleport-to-ground ultimate backstop. Entombment impossible by
+    // construction.
+    let (nx, ny) = (kx, ky - 12);
+    let n_gz = k_gz; // same forced pad
+    for x in (nx - 1)..=(nx + 1) {
+        for y in (ny - 1)..=(ny + 1) {
+            for z in (n_gz - 7)..=n_gz {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    tick(&mut server, 2);
+    let trapped = names.first().cloned().unwrap_or_default();
+    server.bastion_teleport_colonist(
+        &trapped,
+        Vec3::new(nx as f32 + 0.5, ny as f32 + 0.5, (n_gz - 7) as f32),
+    );
+    let mut fs_out = false;
+    for _ in 0..240 {
+        tick(&mut server, 30);
+        if server
+            .bastion_colonist_states()
+            .iter()
+            .any(|(n, p, _)| n == &trapped && p.z >= n_gz as f32 + 0.5)
+        {
+            fs_out = true;
+            break;
+        }
+    }
+
+    // (b) MINE LIFECYCLE: a small mine marks DONE when its last block
+    // clears (observable via the done counter).
+    let done_before = server.bastion_done_designations();
+    let m_region = Region {
+        min: Vec3::new(kx + 4, ky - 4, k_gz),
+        max: Vec3::new(kx + 5, ky - 3, k_gz),
+    };
+    server.bastion_place_designation(m_region, DesignationKind::Mine);
+    let mut ml_done = false;
+    for _ in 0..120 {
+        tick(&mut server, 30);
+        if server.bastion_done_designations() > done_before {
+            ml_done = true;
+            break;
+        }
+    }
+
     let result = serde_json::json!({
         "ck_jobs": ck_jobs,
         "ck_all_out": ck_all_out,
@@ -2786,6 +2860,8 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
         "ck_control_spacing": ck_control_spacing,
         "ck_peaks": peaks,
         "ck_rim_feet": k_gz + 1,
+        "ck_failsafe_out": fs_out,
+        "ck_mine_done": ml_done,
     });
     let pass = ck_jobs == 15
         && ck_all_out
@@ -2799,7 +2875,11 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
         // Hard terrain, always.
         && ck_in_terrain == 0
         // Open-ground spacing normal (no global relaxation).
-        && ck_control_spacing;
+        && ck_control_spacing
+        // B-LIVE3: sealed-pit fail-safe (climb-free or teleport) + the
+        // mine-done lifecycle.
+        && fs_out
+        && ml_done;
     println!("{}", result);
     println!("CHOKEPOINT SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 

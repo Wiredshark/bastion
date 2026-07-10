@@ -51,6 +51,11 @@ use vek::*;
 /// INSTANT — raised to a deliberate, satisfying pace (novice 6s, skill-10
 /// 2s). The designer's TOOLS-UPGRADE system later makes dig speed
 /// tool-gated on top of this base.
+// TIMESCALE-DESIGN landmine (flagged, migration deferred): this is REAL
+// seconds — under the per-game-time migration it derives from a game-time
+// spec × day_cycle_coefficient (ServerConstants is an ECS resource, the
+// plumbing is cheap when the design clears feasibility). At the B-LIVE2
+// 10-minute overseer day, 6 real-seconds ≈ 14.4 game-minutes per block.
 const WORK_DURATION_BASE: f32 = 6.0;
 /// bastion (B6 SOFT-0): how long a granted soft-collision pass lasts (the
 /// watchdog grace window and the density relief both use it). Long enough
@@ -409,6 +414,27 @@ fn egress_scan_with(
     (false, rim.map(|(_, t)| t))
 }
 
+/// bastion (B-LIVE3): the ULTIMATE-fail-safe teleport destination — the
+/// nearest real surface within a small spiral of `feet` (own column first).
+/// `None` only if no column in range resolves a surface at all.
+fn surface_teleport_dest(terrain: &TerrainGrid, feet: Vec3<i32>) -> Option<Vec3<i32>> {
+    for r in 0..=8i32 {
+        for dx in -r..=r {
+            for dy in -r..=r {
+                if dx.abs().max(dy.abs()) != r {
+                    continue;
+                }
+                if let Some(s) =
+                    column_surface_z(terrain, feet.x + dx, feet.y + dy, feet.z + 64)
+                {
+                    return Some(Vec3::new(feet.x + dx, feet.y + dy, s + 1));
+                }
+            }
+        }
+    }
+    None
+}
+
 /// The job board resource.
 #[derive(Default)]
 pub struct JobBoard {
@@ -453,6 +479,9 @@ pub struct JobBoard {
     /// crew found another way out — would otherwise freeze one-plan-at-a-
     /// time colony-wide forever AND sit flagged unreachable on the board.
     access_idle_secs: f32,
+    /// bastion (B-LIVE3, mine lifecycle): designations that reached DONE
+    /// (last non-access job completed). Telemetry for the harness/UI.
+    pub done_count: u64,
 }
 
 impl JobBoard {
@@ -762,17 +791,24 @@ impl<'a> System<'a> for Sys {
                 &mut colonists,
                 &char_states,
                 &mut velocities,
-                &active_jobs,
+                (&active_jobs).maybe(),
                 &mut positions,
                 &physics_states,
             )
                 .lend_join();
             while let Some((mut colonist, cs, vel, active, pos, phys)) = climb_iter.next() {
-                let Some(job_z) = board.jobs.get(&active.job).map(|j| j.pos.z) else {
-                    continue;
-                };
-                let target_feet = job_z as f32 + 1.0;
-                if target_feet <= pos.0.z + 0.2 {
+                // B-LIVE3: the fail-safe climbs WITHOUT a job (a dispersing
+                // or trapped-idle colonist has none — Ben's "climb out of
+                // anywhere"). Job-driven climbs still require the target
+                // ABOVE; the fail-safe climbs unconditionally upward while
+                // its window lasts (expiry bounds it; on open ground the
+                // trapped verdict never renews it).
+                let climb_free_now = colonist.0.climb_free_until > time.0;
+                let target_above = active
+                    .as_ref()
+                    .and_then(|a| board.jobs.get(&a.job))
+                    .map(|j| j.pos.z as f32 + 1.0 > pos.0.z + 0.2);
+                if !climb_free_now && target_above != Some(true) {
                     continue;
                 }
                 let feet = pos.0.map(|e| e.floor() as i32);
@@ -822,32 +858,25 @@ impl<'a> System<'a> for Sys {
                 });
                 let climbing = matches!(cs, comp::CharacterState::Climb(_));
                 let on_wall = phys.on_wall.is_some();
+                // B-LIVE3 (Ben's UNIVERSAL CLIMB-OUT): a colonist under the
+                // trapped fail-safe climbs ANY wall — no ladder, no reach
+                // cap. Granted only by the no-egress verdict / mine-done
+                // dispersal; expiry is the hysteresis; the teleport
+                // backstop covers even this failing.
+                let climb_free = colonist.0.climb_free_until > time.0;
                 // POSITION-DRIVEN lift (runs 3-14 lesson: every vanilla
                 // physics-TIMING dependency — jump→wall-contact→Climb-state
                 // entry — flakes run to run; velocity nudges inherit the
                 // flake. Workers on colony access move UP, period): wall
                 // contact suffices, airborne not required. Head space is
                 // checked so the lift can't push a body into a ceiling.
-                let supported = beside_ladder || ((climbing || on_wall) && ground_within_reach);
+                let supported = beside_ladder
+                    || ((climbing || on_wall) && (ground_within_reach || climb_free));
                 if supported {
                     let head_clear = terrain
                         .get(feet + Vec3::unit_z() * 2)
                         .map(|b| !b.is_solid())
                         .unwrap_or(true);
-                    if tick.0 % 60 == 0 {
-                        // B6 SOFT-0 debug: the run-12/14 no-lift mystery —
-                        // magnet visibly centers climbers but z never
-                        // rises. One line/2s per supported climber.
-                        info!(
-                            ?feet,
-                            head_clear,
-                            beside_ladder,
-                            climbing,
-                            on_wall,
-                            ground_within_reach,
-                            "bastion: assist eval"
-                        );
-                    }
                     if head_clear {
                         // VELOCITY-ONLY lift (B6 SOFT-0 runs 15-21): the
                         // original position-pop gets resolved straight
@@ -926,16 +955,6 @@ impl<'a> System<'a> for Sys {
                                 .distance_squared(pos.0.xy());
                             da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
                         });
-                        if tick.0 % 60 == 30 {
-                            // B6 SOFT-0 debug (crowd-hover tail): is the
-                            // magnet engaging, toward where, from where?
-                            info!(
-                                ?feet,
-                                ?climb_col,
-                                ladder = ?lp,
-                                "bastion: magnet eval"
-                            );
-                        }
                         // WEDGE ESCAPE (runs C2/C3, Ben's auto-snap class):
                         // the magnet can deliver a body ONTO the rung
                         // pillar when the open column lies on the far side
@@ -1075,6 +1094,10 @@ impl<'a> System<'a> for Sys {
         // (entity, pos, feet, reach) — processed post-loop (same borrow
         // constraint as carve_requests).
         let mut churn_events: Vec<(specs::Entity, Vec3<f32>, Vec3<i32>, i32)> = Vec::new();
+        // B-LIVE3 (mine lifecycle): designations that completed their last
+        // job this tick — the post-loop pass marks them done + disperses
+        // below-grade miners.
+        let mut done_regions: Vec<Region> = Vec::new();
         // `Colonist`'s storage is change-tracked (synced comp) — mutable
         // multi-storage joins over it need `LendJoin`, not `Join`.
         let mut upkeep_iter = (
@@ -1206,19 +1229,6 @@ impl<'a> System<'a> for Sys {
                         // Keep the intent asserted (rtsim brain is gated off
                         // while ActiveJob exists, but agents clear activity
                         // on their own in places).
-                        if tick.0 % 100 == 0 {
-                            // Unconditional eval log (B6 SOFT-0 debug): the
-                            // steer != target gate hid the empty-anchors
-                            // case for 6 straight scenario iterations.
-                            info!(
-                                job = active.job,
-                                anchors = board.access_anchors.len(),
-                                staged = steer != target,
-                                ?steer,
-                                colonist = ?pos.0,
-                                "bastion: staged routing eval"
-                            );
-                        }
                         if let Some(agent) = agent {
                             agent.rtsim_controller.activity =
                                 Some(common::rtsim::NpcActivity::Goto(steer, TRAVEL_SPEED));
@@ -1232,9 +1242,18 @@ impl<'a> System<'a> for Sys {
                         let sdist = pos.0.distance(steer);
                         if sdist + STUCK_EPSILON < active.best_dist {
                             active.best_dist = sdist;
-                            active.stuck_time = 0.0;
+                            // R3 fix-1 HYSTERESIS: zero the stall clock
+                            // only on ≥1 block of NET progress since the
+                            // last zero — sub-block wobble (magnet/hover/
+                            // physics jitter clears the 0.5 EPSILON
+                            // easily) must not starve the watchdog.
+                            if active.reset_dist - sdist >= 1.0 {
+                                active.reset_dist = sdist;
+                                active.stuck_time = 0.0;
+                            }
                         } else if sdist > active.best_dist + 4.0 {
                             active.best_dist = sdist;
+                            active.reset_dist = sdist;
                             active.stuck_time = 0.0;
                         } else {
                             // (B6 SOFT-0 run-8/9 bisect: the ×0.2 staged
@@ -1548,7 +1567,22 @@ impl<'a> System<'a> for Sys {
                         pos = ?job.pos,
                         "bastion: job completed"
                     );
+                    let done_pos = job.pos;
                     board.jobs.remove(&active.job);
+                    // B-LIVE3 (Ben's MINE LIFECYCLE): the designation this
+                    // job belonged to may just have finished — collect for
+                    // the post-loop done/disperse pass (the board's job map
+                    // is queryable here, but colonists/positions are
+                    // mid-borrow).
+                    for region in board.designated.iter() {
+                        if region.contains_point(done_pos)
+                            && !board.jobs.values().any(|j| {
+                                !j.is_access && region.contains_point(j.pos)
+                            })
+                        {
+                            done_regions.push(*region);
+                        }
+                    }
                     to_release.push(entity);
                 },
             }
@@ -1566,6 +1600,39 @@ impl<'a> System<'a> for Sys {
             active_jobs.remove(*entity);
             if let Some(agent) = agents.get_mut(*entity) {
                 agent.rtsim_controller.activity = None;
+            }
+        }
+
+        // ── B-LIVE3: MINE DONE + DISPERSE (Ben's mine lifecycle) ─────────
+        // A designation whose last block just cleared is DONE: log the
+        // completion, and every below-grade colonist inside it gets the
+        // dispersal package — a climb-free window (the universal climb-out:
+        // any wall, no ladder needed) plus a surface Goto nudge, so miners
+        // LEAVE a finished pit instead of loitering at the bottom. The
+        // teleport backstop covers even this failing. (Region stays in the
+        // claim mask — mask semantics unchanged this pass.)
+        for region in done_regions {
+            board.done_count += 1;
+            info!(?region, "bastion: MINE DONE — dispersing");
+            let mut disp_iter =
+                (&mut colonists, &positions, (&mut agents).maybe()).lend_join();
+            while let Some((mut colonist, pos, agent)) = disp_iter.next() {
+                let p = pos.0.map(|e| e.floor() as i32);
+                if region.contains_point_xy(p) && p.z < region.max.z {
+                    colonist.0.climb_free_until = time.0 + 45.0;
+                    if let Some(agent) = agent {
+                        // Nudge toward the surface above the region edge;
+                        // if the Goto gets overwritten, climb-free +
+                        // teleport still guarantee the exit.
+                        let out = Vec3::new(
+                            region.min.x as f32 - 2.0,
+                            pos.0.y,
+                            (region.max.z + 2) as f32,
+                        );
+                        agent.rtsim_controller.activity =
+                            Some(common::rtsim::NpcActivity::Goto(out, TRAVEL_SPEED));
+                    }
+                }
             }
         }
 
@@ -1600,6 +1667,32 @@ impl<'a> System<'a> for Sys {
                 continue;
             }
             churn.1 = churn.1.saturating_add(1);
+            // B-LIVE3 second threshold (Ben's ultimate fail-safe): ~16
+            // no-progress cycles (~40s) means EVERY tier above failed —
+            // whatever the egress verdict says (the shaft-mouth hover
+            // reads "escapable" forever because the shaft floor IS
+            // reachable ground, yet the colonist provably isn't making
+            // progress). Teleport directly; loudly logged.
+            if churn.1 >= CHURN_TRAPPED_RELEASES * 2 {
+                churn.1 = 0;
+                if let Some(d) = surface_teleport_dest(&terrain, feet)
+                    && let (Some(p), Some(v)) =
+                        (positions.get_mut(entity), velocities.get_mut(entity))
+                {
+                    tracing::warn!(
+                        ?feet,
+                        ?d,
+                        "bastion: ULTIMATE FAIL-SAFE — persistent-churn \
+                         teleport to ground (every tier above failed)"
+                    );
+                    p.0 = d.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+                    v.0 = Vec3::zero();
+                    if let Some(mut c) = colonists.get_mut(entity) {
+                        c.0.climb_free_until = 0.0;
+                    }
+                }
+                continue;
+            }
             if churn.1 < CHURN_TRAPPED_RELEASES {
                 continue;
             }
@@ -1766,9 +1859,9 @@ impl<'a> System<'a> for Sys {
                     egress_requests.push((uid, from, to));
                 }
             }
-            for (colonist, pos, uid, ()) in
-                (&colonists, &positions, &uids, !&active_jobs).join()
-            {
+            let mut still_iter =
+                (&mut colonists, &positions, &uids, !&active_jobs).lend_join();
+            while let Some((mut colonist, pos, uid, ())) = still_iter.next() {
                 let watch = board
                     .egress_watch
                     .entry(*uid)
@@ -1803,6 +1896,13 @@ impl<'a> System<'a> for Sys {
                     continue;
                 };
                 watch.2 = true;
+                // B-LIVE3: the climb-free fail-safe is granted at the
+                // VERDICT, per-colonist — NOT in the plan-emission loop,
+                // whose one-plan-at-a-time take(0) swallowed it whenever
+                // leftover access jobs existed anywhere (the sealed-pit
+                // regression sat trapped 240s because of exactly that).
+                // The teleport backstop keys off this window.
+                colonist.0.climb_free_until = time.0 + 45.0;
                 egress_requests.push((*uid, feet, target));
             }
             // ── B6 (reviewer F3): STALE ACCESS-PLAN PRUNING ──────────────
@@ -1867,6 +1967,51 @@ impl<'a> System<'a> for Sys {
                         }
                         info!(?from, "bastion: emergency egress found no route (retry)");
                     },
+                }
+                // B-LIVE3 (Ben's UNIVERSAL CLIMB-OUT): every trapped
+                // verdict ALSO grants the climb-free window — plan or no
+                // plan, the colonist may claw its own way up any wall as
+                // the fail-safe below the plan tier. 45s; the teleport
+                // backstop below fires if even that stalls.
+                if let Some(entity) = id_maps.uid_entity(uid)
+                    && let Some(mut c) = colonists.get_mut(entity)
+                {
+                    c.0.climb_free_until = time.0 + 45.0;
+                }
+            }
+
+            // ── B-LIVE3: TELEPORT-TO-GROUND, the ULTIMATE backstop ──────
+            // (Ben: "if all-out fails just teleport them to ground
+            // level.") Fires ONLY as the genuine last resort: the climb-
+            // free window is >30s old AND the trapped verdict still holds.
+            // Loudly logged — every firing means the normal tiers failed
+            // and deserves a look. Entombment is now impossible BY
+            // CONSTRUCTION: plan → climb-free → teleport.
+            let mut tp_iter =
+                (&mut colonists, &mut positions, &mut velocities).lend_join();
+            while let Some((mut colonist, pos, vel)) = tp_iter.next() {
+                let cf = colonist.0.climb_free_until;
+                if cf <= time.0 || cf - time.0 >= 15.0 {
+                    continue; // off, or the window is younger than 30s
+                }
+                let feet = pos.0.map(|e| e.floor() as i32);
+                let reach = 2 + colonist.0.skills.climbing.level.min(1) as i32;
+                let (has_egress, _) = egress_scan(&terrain, feet, reach);
+                if has_egress {
+                    // Reached open ground — the fail-safe worked; clear.
+                    colonist.0.climb_free_until = 0.0;
+                    continue;
+                }
+                if let Some(d) = surface_teleport_dest(&terrain, feet) {
+                    tracing::warn!(
+                        ?feet,
+                        ?d,
+                        "bastion: ULTIMATE FAIL-SAFE — teleporting trapped \
+                         colonist to ground (all normal tiers failed)"
+                    );
+                    pos.0 = d.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+                    vel.0 = Vec3::zero();
+                    colonist.0.climb_free_until = 0.0;
                 }
             }
         }
@@ -2141,6 +2286,7 @@ impl<'a> System<'a> for Sys {
                 state: ActiveJobState::Traveling,
                 best_dist: f32::MAX,
                 stuck_time: 0.0,
+                reset_dist: f32::MAX,
                 soft_granted: false,
             });
         }

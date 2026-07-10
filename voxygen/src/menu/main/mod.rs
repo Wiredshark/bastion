@@ -508,6 +508,9 @@ impl PlayState for MainMenuState {
                         &global_state.tokio_runtime,
                         &global_state.settings.language.selected_language,
                         &global_state.i18n,
+                        // bastion (B-LIVE2): overseer mode shortens the
+                        // game day to the TIMESCALE-DESIGN 10-min target.
+                        global_state.args.bastion_overseer,
                     );
                 },
                 #[cfg(feature = "singleplayer")]
