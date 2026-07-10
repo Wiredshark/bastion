@@ -2,6 +2,7 @@
 mod animation;
 mod bag;
 pub mod bastion;
+pub mod bastion_minimap;
 mod buffs;
 mod buttons;
 mod change_notification;
@@ -54,6 +55,7 @@ use group::Group;
 use img_ids::Imgs;
 use item_imgs::ItemImgs;
 use loot_scroller::LootScroller;
+use bastion_minimap::{BastionMiniMap, BastionMinimapTiles};
 use map::Map;
 use minimap::{MiniMap, VoxelMinimap};
 use popup::Popup;
@@ -250,6 +252,10 @@ widget_ids! {
         bastion_godmode_btn,
         bastion_selected_text,
         bastion_zone_labels[],
+        bastion_paint_label,
+        bastion_depth_minus_btn,
+        bastion_depth_text,
+        bastion_depth_plus_btn,
         bastion_radial_title,
         bastion_radial_btns[],
 
@@ -316,6 +322,7 @@ widget_ids! {
         world_map,
         popup,
         minimap,
+        bastion_minimap,
         prompt_dialog,
         bag,
         trade,
@@ -686,11 +693,18 @@ pub enum Event {
     // bastion (B2a): overseer interaction surface
     BastionSelectTool(crate::bastion::tools::ToolMode),
     BastionToggleGodMode,
+    /// bastion (B5.6b-2): the tool panel's precision depth stepper —
+    /// positive steps dig the selection deeper, negative shallower/upward
+    /// (same axis the scroll-while-painting path steps).
+    BastionStepZExtent(i32),
     BastionRadialPick {
         action: bastion::RadialAction,
         target: common::bastion::ContextTarget,
         point: Vec3<f32>,
     },
+    // bastion (B-MAP1): minimap navigation — the map is the interface.
+    BastionMinimapJump(Vec2<f32>),
+    BastionMinimapPan(Vec2<f32>),
 
     CharacterSelection,
     UseSlot {
@@ -1379,6 +1393,9 @@ pub struct Hud {
     crosshair_opacity: f32,
     floaters: Floaters,
     voxel_minimap: VoxelMinimap,
+    /// bastion (B-MAP1): the overseer minimap's tile engine + view state
+    /// (only maintained while the overseer HUD is active).
+    bastion_minimap: BastionMinimapTiles,
     map_drag: Vec2<f64>,
     force_chat: bool,
     clear_chat: bool,
@@ -1452,6 +1469,7 @@ impl Hud {
 
         Self {
             voxel_minimap: VoxelMinimap::new(&mut ui),
+            bastion_minimap: BastionMinimapTiles::new(&mut ui),
             ui,
             imgs,
             world_map,
@@ -1535,7 +1553,18 @@ impl Hud {
     ) -> Vec<Event> {
         span!(_guard, "update_layout", "Hud::update_layout");
         let mut events = core::mem::take(&mut self.events);
-        if global_state.settings.interface.map_show_voxel_map {
+        // bastion (B-MAP1): while the overseer HUD is up, the overseer
+        // minimap replaces the vanilla one (its tile engine is maintained
+        // instead of the vanilla voxel minimap — no double work). Flagless
+        // boots never set `bastion.active`, so vanilla is untouched.
+        if self.bastion.active {
+            self.bastion_minimap.maintain(
+                client,
+                &mut self.ui,
+                camera.get_focus_pos(),
+                self.bastion.slice_z,
+            );
+        } else if global_state.settings.interface.map_show_voxel_map {
             self.voxel_minimap.maintain(client, &mut self.ui);
         }
         let scale = self.ui.scale();
@@ -3506,29 +3535,62 @@ impl Hud {
         self.new_loot_messages.clear();
 
         let persisted_state = self.persisted_state.borrow();
-        // MiniMap
-        for event in MiniMap::new(
-            client,
-            &self.imgs,
-            &self.rot_imgs,
-            &self.world_map,
-            &self.fonts,
-            self.pulse,
-            camera.get_orientation(),
-            global_state,
-            &persisted_state.location_markers,
-            &self.voxel_minimap,
-            &self.extra_markers,
-        )
-        .set(self.ids.minimap, ui_widgets)
-        {
-            match event {
-                minimap::Event::SettingsChange(interface_change) => {
-                    events.push(Event::SettingsChange(interface_change.into()));
-                },
-                minimap::Event::MoveMiniMap(pos) => {
-                    global_state.settings.hud_position.minimap = pos;
-                },
+        // MiniMap — the overseer's rendered-tile map while the bastion HUD is
+        // active (B-MAP1), the vanilla player minimap otherwise.
+        if self.bastion.active {
+            for event in BastionMiniMap::new(
+                client,
+                &self.imgs,
+                &self.world_map,
+                &self.fonts,
+                camera,
+                &self.bastion_minimap,
+                global_state,
+            )
+            .set(self.ids.bastion_minimap, ui_widgets)
+            {
+                match event {
+                    bastion_minimap::Event::SettingsChange(interface_change) => {
+                        events.push(Event::SettingsChange(interface_change.into()));
+                    },
+                    bastion_minimap::Event::Jump(wpos) => {
+                        events.push(Event::BastionMinimapJump(wpos));
+                    },
+                    bastion_minimap::Event::Pan(delta) => {
+                        events.push(Event::BastionMinimapPan(delta));
+                    },
+                    bastion_minimap::Event::Zoom(zoom) => {
+                        self.bastion_minimap.zoom = zoom;
+                    },
+                    bastion_minimap::Event::ToggleLayer(layer) => {
+                        self.bastion_minimap.layers.toggle(layer);
+                    },
+                }
+            }
+        } else {
+            for event in MiniMap::new(
+                client,
+                &self.imgs,
+                &self.rot_imgs,
+                &self.world_map,
+                &self.fonts,
+                self.pulse,
+                camera.get_orientation(),
+                global_state,
+                &persisted_state.location_markers,
+                &self.voxel_minimap,
+                &self.extra_markers,
+            )
+            .set(self.ids.minimap, ui_widgets)
+            {
+                match event {
+                    minimap::Event::SettingsChange(interface_change) => {
+                        events.push(Event::SettingsChange(interface_change.into()));
+                    },
+                    minimap::Event::MoveMiniMap(pos) => {
+                        global_state.settings.hud_position.minimap = pos;
+                    },
+                }
             }
         }
         drop(persisted_state);
@@ -4002,10 +4064,17 @@ impl Hud {
                 &persisted_state.location_markers,
                 self.map_drag,
                 &self.extra_markers,
+                // bastion (B-MAP1): overseer layers + right-click fly-to.
+                self.bastion
+                    .active
+                    .then_some((&self.bastion_minimap, camera)),
             )
             .set(self.ids.map, ui_widgets)
             {
                 match event {
+                    map::Event::BastionFlyTo(wpos) => {
+                        events.push(Event::BastionMinimapJump(wpos));
+                    },
                     map::Event::Close => {
                         self.show.map(false);
                         self.show.want_grab = true;
@@ -4804,6 +4873,50 @@ impl Hud {
                 events.push(Event::BastionToggleGodMode);
             }
 
+            // --- B5.6b-2: precision depth stepper (designate tools only) ---
+            // The numeric half of the volume-selection UX: [−] "3 levels
+            // deep" [+], under the active designate button. Steps the SAME
+            // session field scroll-while-painting steps, so the two paths
+            // can't drift.
+            if let ToolMode::Designate(_) = self.bastion.tool {
+                let active_i = tools
+                    .iter()
+                    .position(|t| *t == self.bastion.tool)
+                    .unwrap_or(0);
+                if widget::Button::new()
+                    .w_h(26.0, 22.0)
+                    .color(btn_color)
+                    .label("−")
+                    .label_font_size(14)
+                    .label_color(label_color)
+                    .label_font_id(self.fonts.cyri.conrod_id)
+                    .down_from(self.ids.bastion_palette_btns[active_i], 4.0)
+                    .set(self.ids.bastion_depth_minus_btn, ui_widgets)
+                    .was_clicked()
+                {
+                    events.push(Event::BastionStepZExtent(-1));
+                }
+                widget::Text::new(&self.bastion.z_extent_label)
+                    .font_size(13)
+                    .font_id(self.fonts.cyri.conrod_id)
+                    .color(label_color)
+                    .right_from(self.ids.bastion_depth_minus_btn, 6.0)
+                    .set(self.ids.bastion_depth_text, ui_widgets);
+                if widget::Button::new()
+                    .w_h(26.0, 22.0)
+                    .color(btn_color)
+                    .label("+")
+                    .label_font_size(14)
+                    .label_color(label_color)
+                    .label_font_id(self.fonts.cyri.conrod_id)
+                    .right_from(self.ids.bastion_depth_text, 6.0)
+                    .set(self.ids.bastion_depth_plus_btn, ui_widgets)
+                    .was_clicked()
+                {
+                    events.push(Event::BastionStepZExtent(1));
+                }
+            }
+
             // --- Selection info line (bottom left, above the chat box) ---
             if let Some(info) = &self.bastion.selected_info {
                 widget::Text::new(info)
@@ -4837,6 +4950,20 @@ impl Hud {
                     // zone broken" + "pan dead over zones" demo bugs).
                     .graphics_for(ui_widgets.window)
                     .set(self.ids.bastion_zone_labels[i], ui_widgets);
+            }
+
+            // B5.6b-2: the live depth counter at the drag cursor ("3 levels
+            // deep"), while a designate drag is active. Same treatment as
+            // zone labels (world-anchored, input-transparent).
+            if let Some((wpos, text, col)) = self.bastion.paint_label.as_ref() {
+                widget::Text::new(text)
+                    .font_size(16)
+                    .font_id(self.fonts.cyri.conrod_id)
+                    .color(Color::Rgba(col[0], col[1], col[2], 1.0))
+                    .x_y(0.0, 0.0)
+                    .position_ingame(*wpos)
+                    .graphics_for(ui_widgets.window)
+                    .set(self.ids.bastion_paint_label, ui_widgets);
             }
 
             // --- Contextual radial menu ---
@@ -5754,15 +5881,21 @@ impl Hud {
     }
 
     /// bastion (B2a): the session mirrors its interaction state each frame.
+    /// (B-MAP1 adds `slice_z` so the minimap tiles can follow the Z-slice;
+    /// B5.6b-2 adds the depth-selection label for the tool panel stepper.)
     pub fn bastion_sync(
         &mut self,
         active: bool,
         tool: crate::bastion::tools::ToolMode,
         god_mode: crate::bastion::tools::GodMode,
+        slice_z: Option<f32>,
+        z_extent_label: String,
     ) {
         self.bastion.active = active;
         self.bastion.tool = tool;
         self.bastion.god_mode = god_mode;
+        self.bastion.slice_z = slice_z;
+        self.bastion.z_extent_label = z_extent_label;
         if !active {
             self.bastion.radial = None;
         }
@@ -5777,6 +5910,12 @@ impl Hud {
     /// frame (session feeds them from the overlay sync — ON mode only).
     pub fn bastion_set_zone_labels(&mut self, labels: Vec<(Vec3<f32>, String, [f32; 4])>) {
         self.bastion.zone_labels = labels;
+    }
+
+    /// bastion (B5.6b-2): set/clear the live depth-counter label shown at
+    /// the drag cursor while painting a designation.
+    pub fn bastion_set_paint_label(&mut self, label: Option<(Vec3<f32>, String, [f32; 4])>) {
+        self.bastion.paint_label = label;
     }
 
     /// bastion (B2a): open the contextual radial menu (replaces any open one).

@@ -681,7 +681,7 @@ impl SessionState {
                     client
                         .bastion_designations()
                         .iter()
-                        .any(|(r, _)| r.contains_point_xy(block)),
+                        .any(|(r, _, _)| r.contains_point_xy(block)),
                 )
             };
             use common::terrain::BlockKind;
@@ -801,15 +801,93 @@ impl SessionState {
         let min = Vec3::partial_min(anchor, current);
         let max = Vec3::partial_max(anchor, current);
         // B5.5: the erase brush previews red; placement previews yellow.
+        let designate = matches!(
+            self.bastion_tools.tool,
+            crate::bastion::tools::ToolMode::Designate(_)
+        );
         let color = if self.bastion_tools.tool == crate::bastion::tools::ToolMode::Erase {
             [1.0, 0.25, 0.2, 0.9]
         } else {
             [1.0, 1.0, 0.3, 0.9]
         };
-        let shapes = self.bastion_region_outline(min, max, color, 2.0);
+        let mut shapes = self.bastion_region_outline(min, max, color, 2.0);
+        // B5.6b-2: the drag half of the volume-selection UX — depth rings
+        // below (and above) the draped surface outline, one per selected
+        // level, bottom/top ring emphasized so the extent is countable while
+        // you scroll. Shifted copies of the SAME conformed segments: at
+        // paint time the surface sample is fresh, so shifted rings are the
+        // per-column surface-relative volume the server will resolve.
+        let extent = self.bastion_tools.z_extent;
+        if designate && (extent.down > 0 || extent.up > 0) {
+            let slice_z = self.scene.bastion_slice_z();
+            let segs = {
+                let client = self.client.borrow();
+                let terrain = client.state().terrain();
+                crate::bastion::draped_rect_outline(
+                    &terrain,
+                    min.xy(),
+                    max.xy(),
+                    min.z.max(max.z),
+                    slice_z,
+                    0.2,
+                    2.0,
+                )
+            };
+            let mut ring = |offset: f32, alpha: f32| {
+                for seg in &segs {
+                    let id = self.scene.debug.add_shape(crate::scene::DebugShape::Line(
+                        [
+                            seg[0] + Vec3::unit_z() * offset,
+                            seg[1] + Vec3::unit_z() * offset,
+                        ],
+                        0.12,
+                    ));
+                    self.scene.debug.set_context(
+                        id,
+                        [0.0; 4],
+                        [color[0], color[1], color[2], alpha],
+                        [0.0, 0.0, 0.0, 1.0],
+                    );
+                    shapes.push(id);
+                }
+            };
+            for lvl in 1..=extent.down {
+                let a = if lvl == extent.down { 0.85 } else { 0.3 };
+                ring(-(lvl as f32), a);
+            }
+            for lvl in 1..=extent.up {
+                let a = if lvl == extent.up { 0.85 } else { 0.3 };
+                ring(lvl as f32, a);
+            }
+        }
         if let Some(paint) = self.bastion_paint.as_mut() {
             paint.shapes = shapes;
         }
+        // Live "N levels" counter at the drag cursor (designate only).
+        self.hud.bastion_set_paint_label(designate.then(|| {
+            (
+                current + Vec3::unit_z() * 2.0,
+                self.bastion_tools.z_extent_label(),
+                color,
+            )
+        }));
+    }
+
+    /// bastion (B5.6b-2): switch the pinned tool, resetting the depth
+    /// selection to the kind default when the DESIGNATE KIND changes (a
+    /// custom mine depth shouldn't silently carry into stockpile painting).
+    fn bastion_set_tool(&mut self, tool: crate::bastion::tools::ToolMode) {
+        use crate::bastion::tools::ToolMode;
+        let old_kind = match self.bastion_tools.tool {
+            ToolMode::Designate(k) => Some(k),
+            _ => None,
+        };
+        if let ToolMode::Designate(k) = tool
+            && old_kind != Some(k)
+        {
+            self.bastion_tools.z_extent = common::bastion::ZExtent::default_for(k);
+        }
+        self.bastion_tools.tool = tool;
     }
 
     /// Finish the paint drag: `Some(kind)` places a designation, `None`
@@ -824,20 +902,29 @@ impl SessionState {
         for id in paint.shapes {
             self.scene.debug.remove_shape(id);
         }
-        // A designation reaches a couple of blocks under the paint plane so a
-        // surface drag marks the ground itself (B4 refines per-kind depth).
-        // Erase uses the SAME depth so erasing at the paint slice hits what
-        // was painted there.
+        // B5.6b-2: the live level-counter label ends with the drag.
+        self.hud.bastion_set_paint_label(None);
+        // B5.6b-2: placement is SURFACE-RELATIVE — the drag defines only the
+        // XY footprint (+ the paint plane as a z hint); the server resolves
+        // each column against its own terrain surface and applies the
+        // selected z_extent (default = the old plane-2..=plane depth). This
+        // replaces the old flat `min.z - 2` expansion, which cut zones off
+        // on slopes (B5.MINE-COVERAGE). Erase is unaffected: it matches by
+        // XY footprint below.
         let min_f: Vec3<f32> = Vec3::partial_min(paint.anchor, paint.current);
         let max_f: Vec3<f32> = Vec3::partial_max(paint.anchor, paint.current);
         let region = common::bastion::Region {
-            min: min_f.map(|e| e.floor() as i32) - Vec3::<i32>::new(0, 0, 2),
+            min: min_f.map(|e| e.floor() as i32),
             max: max_f.map(|e| e.floor() as i32),
         }
         .normalized();
         match kind {
             Some(kind) => {
-                self.client.borrow_mut().bastion_place_designation(region, kind);
+                self.client.borrow_mut().bastion_place_designation(
+                    region,
+                    kind,
+                    Some(self.bastion_tools.z_extent),
+                );
             },
             None => {
                 // B5.6a erase fix: the drag's z came from the camera
@@ -853,7 +940,7 @@ impl SessionState {
                     client
                         .bastion_designations()
                         .iter()
-                        .filter_map(|(r, _)| r.clip_xy(region.min.xy(), region.max.xy()))
+                        .filter_map(|(r, _, _)| r.clip_xy(region.min.xy(), region.max.xy()))
                         .collect()
                 };
                 let mut client = self.client.borrow_mut();
@@ -910,7 +997,7 @@ impl SessionState {
         let list = self.client.borrow().bastion_designations().to_vec();
         let mut kind_counts: HashMap<common::bastion::DesignationKind, u32> = HashMap::new();
         let mut labels: Vec<(Vec3<f32>, String, [f32; 4])> = Vec::new();
-        for (region, kind) in list {
+        for (region, kind, _extent) in list {
             // Border — always (both ON and SUBTLE), draped, kind-coloured.
             let border = self.bastion_region_outline(
                 region.min.map(|e| e as f32),
@@ -927,6 +1014,74 @@ impl SessionState {
             };
             if subtle {
                 continue; // SUBTLE = border only: no fill, no label.
+            }
+            // B5.6b-2: VOLUMETRIC rendering (ON only) — zones spanning more
+            // than one level draw countable depth rings: one flat ring per
+            // level boundary at the region's ABSOLUTE z-levels (the echoed
+            // bounds are the exact resolved volume bounds — box semantics,
+            // same as cancel/erase), plus 4 corner posts as subtle walls.
+            // Absolute (not surface-shifted) so the rings stay put as the
+            // dig progresses — mid-excavation the remaining volume reads
+            // from inside the pit. Depth-tested like all debug shapes:
+            // underground rings appear as terrain is dug or sliced away.
+            let levels = region.max.z - region.min.z + 1;
+            if levels > 1 {
+                let [r, g, b] = crate::bastion::tools::zone_rgb(kind);
+                let (min_f, max_f) = (
+                    region.min.map(|e| e as f32),
+                    region.max.map(|e| e as f32 + 1.0),
+                );
+                let corners = [
+                    Vec2::new(min_f.x, min_f.y),
+                    Vec2::new(max_f.x, min_f.y),
+                    Vec2::new(max_f.x, max_f.y),
+                    Vec2::new(min_f.x, max_f.y),
+                ];
+                let mut lines: Vec<([Vec3<f32>; 2], f32)> = Vec::new();
+                // Rings at each level bottom (the top face is the draped
+                // border above); the floor ring reads strongest. Slice-clip:
+                // skip rings above the slice plane (their terrain is hidden).
+                for z in region.min.z..=region.max.z {
+                    let zf = z as f32;
+                    if slice_z.is_some_and(|s| zf > s) {
+                        continue;
+                    }
+                    let a = if z == region.min.z { 0.8 } else { 0.3 };
+                    for i in 0..4 {
+                        let (c0, c1) = (corners[i], corners[(i + 1) % 4]);
+                        lines.push((
+                            [
+                                Vec3::new(c0.x, c0.y, zf),
+                                Vec3::new(c1.x, c1.y, zf),
+                            ],
+                            a,
+                        ));
+                    }
+                }
+                // Corner posts: floor to top face (subtle walls, v1),
+                // clamped to the slice; slice below the floor = no posts.
+                let top = slice_z.map_or(max_f.z, |s| max_f.z.min(s + 1.0));
+                if top > min_f.z {
+                    for c in corners {
+                        lines.push((
+                            [Vec3::new(c.x, c.y, min_f.z), Vec3::new(c.x, c.y, top)],
+                            0.35,
+                        ));
+                    }
+                }
+                for (seg, a) in lines {
+                    let id = self
+                        .scene
+                        .debug
+                        .add_shape(crate::scene::DebugShape::Line(seg, 0.1));
+                    self.scene.debug.set_context(
+                        id,
+                        [0.0; 4],
+                        [r, g, b, a * alpha],
+                        [0.0, 0.0, 0.0, 1.0],
+                    );
+                    self.bastion_designation_shapes.push(id);
+                }
             }
             // Fill — a terrain-conformed translucent area (ON only). Sample
             // (immutable terrain borrow) then emit one ConformedTris shape.
@@ -965,9 +1120,15 @@ impl SessionState {
                     slice_z,
                 )
             };
+            // B5.6b-2: volumetric zones state their depth on the label.
+            let text = if levels > 1 {
+                format!("{} {} · {} levels", kind.label(), idx, levels)
+            } else {
+                format!("{} {}", kind.label(), idx)
+            };
             labels.push((
                 Vec3::new(cx, cy, cz + 1.2),
-                format!("{} {}", kind.label(), idx),
+                text,
                 zone_border_color(kind, 1.0),
             ));
         }
@@ -1699,7 +1860,7 @@ impl PlayState for SessionState {
                                 if state && self.bastion_overseer_active() =>
                             {
                                 // B2a: cycle the pinned tool.
-                                self.bastion_tools.tool = self.bastion_tools.tool.next();
+                                self.bastion_set_tool(self.bastion_tools.tool.next());
                                 // B5.6a: tool change can flip overlay
                                 // auto-reveal (paint/erase reveals while
                                 // OFF) — rebuild.
@@ -2393,9 +2554,27 @@ impl PlayState for SessionState {
                         camera.set_orientation(Vec3::new(yaw, pitch, 0.0));
                     },
                     Event::Zoom(delta) if self.bastion_overseer_active() => {
-                        // Must precede the vanilla zoom_lock arm: zooming
-                        // while WASD-panning is core to the overseer feel.
-                        self.bastion_zoom_to_cursor(global_state, delta);
+                        // B5.6b-2: scrolling DURING a designate drag adjusts
+                        // the zone depth (one notch = one level) instead of
+                        // zooming — the drag-in-space half of the volume-
+                        // selection UX. The wheel arrives pre-scaled ~±15
+                        // per notch (window.rs X11-parity factor).
+                        if self.bastion_paint.is_some()
+                            && matches!(
+                                self.bastion_tools.tool,
+                                crate::bastion::tools::ToolMode::Designate(_)
+                            )
+                        {
+                            // Scroll down = dig deeper, up = shallower (then
+                            // upward) — physical direction matches the zone.
+                            let steps = if delta < 0.0 { 1 } else { -1 };
+                            self.bastion_tools.step_z_extent(steps);
+                            self.bastion_paint_update(global_state);
+                        } else {
+                            // Must precede the vanilla zoom_lock arm: zooming
+                            // while WASD-panning is core to the overseer feel.
+                            self.bastion_zoom_to_cursor(global_state, delta);
+                        }
                     },
                     Event::AnalogGameInput(input) => match input {
                         AnalogGameInput::MovementX(v) => {
@@ -2718,6 +2897,8 @@ impl PlayState for SessionState {
                 self.bastion_overseer_active(),
                 self.bastion_tools.tool,
                 self.bastion_tools.god_mode,
+                self.scene.bastion_slice_z(),
+                self.bastion_tools.z_extent_label(),
             );
 
             match self.scene.camera().get_mode() {
@@ -2977,10 +3158,32 @@ impl PlayState for SessionState {
                     },
                     // bastion (B2a): interaction-surface HUD events.
                     HudEvent::BastionSelectTool(tool) => {
-                        self.bastion_tools.tool = tool;
+                        self.bastion_set_tool(tool);
+                    },
+                    HudEvent::BastionStepZExtent(steps) => {
+                        // B5.6b-2: the tool panel's precision stepper steps
+                        // the same depth field as scroll-while-painting.
+                        self.bastion_tools.step_z_extent(steps);
                     },
                     HudEvent::BastionToggleGodMode => {
                         self.bastion_tools.god_mode = self.bastion_tools.god_mode.toggled();
+                    },
+                    // bastion (B-MAP1): minimap navigation. Only XY moves —
+                    // the overseer focus glide re-rides the terrain surface
+                    // (ground_z) on its own, so z corrects next frame.
+                    HudEvent::BastionMinimapJump(wpos2) => {
+                        if self.bastion_overseer_active() {
+                            let camera = self.scene.camera_mut();
+                            let f = camera.get_tgt_focus();
+                            camera.set_focus_pos(Vec3::new(wpos2.x, wpos2.y, f.z));
+                        }
+                    },
+                    HudEvent::BastionMinimapPan(delta) => {
+                        if self.bastion_overseer_active() {
+                            let camera = self.scene.camera_mut();
+                            let f = camera.get_tgt_focus();
+                            camera.set_focus_pos(Vec3::new(f.x + delta.x, f.y + delta.y, f.z));
+                        }
                     },
                     HudEvent::BastionRadialPick {
                         action,
@@ -3013,8 +3216,8 @@ impl PlayState for SessionState {
                                         let rects: Vec<common::bastion::Region> = client
                                             .bastion_designations()
                                             .iter()
-                                            .filter(|(r, _)| r.contains_point_xy(block))
-                                            .map(|(r, _)| *r)
+                                            .filter(|(r, _, _)| r.contains_point_xy(block))
+                                            .map(|(r, _, _)| *r)
                                             .collect();
                                         for r in rects {
                                             client.bastion_cancel_designation(r);

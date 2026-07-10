@@ -880,6 +880,43 @@ impl Server {
         board.place_designation(&terrain, region.normalized(), kind)
     }
 
+    /// bastion (B5.6b-2, harness hook): place a designation via the
+    /// surface-relative path — the same per-column resolution the in-game
+    /// paint message uses. Returns (created job ids, resolved echo bounds)
+    /// so scenarios can assert the echo-bounds invariant and per-column
+    /// coverage directly.
+    pub fn bastion_place_designation_surface(
+        &mut self,
+        min_xy: vek::Vec2<i32>,
+        max_xy: vek::Vec2<i32>,
+        hint_z: i32,
+        extent: common::bastion::ZExtent,
+        kind: common::bastion::DesignationKind,
+    ) -> (
+        Vec<common::bastion::JobId>,
+        Option<common::bastion::Region>,
+    ) {
+        let ecs = self.state.ecs();
+        let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+        let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
+        let bounds =
+            bastion_jobs::resolve_surface_bounds(&terrain, min_xy, max_xy, hint_z, extent);
+        let created =
+            board.place_designation_surface(&terrain, min_xy, max_xy, hint_z, extent, kind);
+        (created, bounds)
+    }
+
+    /// bastion (B5.6b-2, harness hook): the per-column surface the placement
+    /// path would resolve for (x, y) around `hint_z` — lets scenarios assert
+    /// coverage column-by-column against the same authority.
+    pub fn bastion_column_surface_z(&self, x: i32, y: i32, hint_z: i32) -> Option<i32> {
+        let terrain = self
+            .state
+            .ecs()
+            .read_resource::<common::terrain::TerrainGrid>();
+        bastion_jobs::column_surface_z(&terrain, x, y, hint_z)
+    }
+
     /// bastion (B4, harness hook): cancel designations in a region.
     pub fn bastion_cancel_designation(&mut self, region: common::bastion::Region) {
         self.state

@@ -5,7 +5,7 @@
 //! permissive here, enforced in B2b (colony membership from B3, favor/
 //! cooldown metering from B13).
 
-use common::bastion::DesignationKind;
+use common::bastion::{DesignationKind, ZExtent};
 
 /// The pinned interaction tool (the palette). `Pan` is the cursor default:
 /// drag pans, click selects. `Designate` turns left-drag into region paint;
@@ -148,9 +148,48 @@ impl GodMode {
 /// true.
 pub fn target_allowed(_mode: GodMode, _is_colony_member: Option<bool>) -> bool { true }
 
+/// bastion (B5.6b-2): UI clamp for the depth selection. The server's real
+/// cap is `MAX_DESIGNATION_VOLUME` (validated per footprint); this just
+/// keeps the stepper/scroll sane. 32 matches the volume cap's z-span.
+pub const Z_EXTENT_MAX_DOWN: u16 = 32;
+pub const Z_EXTENT_MAX_UP: u16 = 8;
+
 /// Live overseer interaction state (session-owned).
 #[derive(Default)]
 pub struct Tools {
     pub tool: ToolMode,
     pub god_mode: GodMode,
+    /// bastion (B5.6b-2): the current designation depth (surface-relative
+    /// [`ZExtent`]) the paint path sends. Scroll-while-painting and the tool
+    /// panel's stepper both edit THIS field — the two selection paths are
+    /// synced by construction. Persists across paints; reset to the kind
+    /// default when the designate kind changes (see the session's tool
+    /// cycling).
+    pub z_extent: ZExtent,
+}
+
+impl Tools {
+    /// Step the depth selection: positive = deeper (down+), negative =
+    /// shallower; below down=0 the steps extend UPWARD instead (up+), so one
+    /// axis scrolls through the whole sensible range:
+    /// `up=MAX_UP .. up=0/down=0 .. down=MAX_DOWN`.
+    pub fn step_z_extent(&mut self, steps: i32) {
+        let signed = self.z_extent.down as i32 - self.z_extent.up as i32 + steps;
+        if signed >= 0 {
+            self.z_extent.down = (signed as u16).min(Z_EXTENT_MAX_DOWN);
+            self.z_extent.up = 0;
+        } else {
+            self.z_extent.down = 0;
+            self.z_extent.up = ((-signed) as u16).min(Z_EXTENT_MAX_UP);
+        }
+    }
+
+    /// The live counter string for the depth UX ("3 levels deep").
+    pub fn z_extent_label(&self) -> String {
+        match (self.z_extent.down, self.z_extent.up) {
+            (d, 0) => format!("{} levels deep", d + 1),
+            (0, u) => format!("{} levels up", u + 1),
+            (d, u) => format!("{} levels ({} down, {} up)", d as u32 + 1 + u as u32, d, u),
+        }
+    }
 }

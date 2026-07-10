@@ -398,3 +398,97 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   SYSTEM-FRAMEWORKS, future-work + four new files) — untouched by this
   block; staging stays path-explicit throughout. Findings/build-plan:
   `docs/BASTION_BASSET1_FINDINGS.md` (committed at block start).
+- NOTE (merge-time): the ordering above was REVISED mid-block by Ben
+  (B-MAP1 → B5.6b-2 → B-ASSET1-resume); this block stood down 2026-07-09
+  with Parts 1–3 code-complete + headless-verified on its branch, and
+  resumed in an isolated worktree after b-2 landed. Continuation entry at
+  the log tail.
+
+### B-MAP1 — Overseer minimap (rendered tile pyramid + overlays + click-nav)
+
+- Start SHA: `de86387` · branch `bastion/block-BMAP1` · started 2026-07-09.
+  Built in an isolated git worktree (`.claude/worktrees/bmap1`) because the
+  primary tree is checked out on `bastion/block-B5.6b-1` with a live session
+  (plus asset-lab + doc-audit sessions active). Off green `bastion/main`
+  (B5.6a + docs commits). Spec: `readme/B-MAP1-overseer-minimap-prompt.md`.
+  Client-side; independent of the B5.6b chain. (Rebased onto post-B5.6b-1
+  main `c8643b72b2` at the merge slot per the architect's ordering.)
+
+- **PASS** (2026-07-09). Merge `e0300e253b`, tag `bastion-block-BMAP1`
+  (rebased onto `c8643b72b2` at the merge slot; adopted b-1's
+  `tools::zone_rgb` as the one zone-color legend). The god's map, both
+  surfaces: per-chunk RENDERED TILES (CPU voxel scan + NW hillshade,
+  slice-aware, TerrainChanges-invalidated, KeyedJobs-trickled, anchored
+  512-block window) crossfading to worldgen at far zoom; pin/layer API
+  (colonists/zones/piles/frustum + open extra_pins hook, §3s foundation —
+  architecture §2.10); click-jump/drag-pan/scroll-zoom; S/M/L/XL resize;
+  world-map (M) overseer layers (max zoom 16→128 px/chunk, flag-gated) +
+  RIGHT-CLICK FLY-TO. Recorded drift: CPU tiles instead of the prompt's
+  literal GPU RTT (consistency log; conrod UI is CPU-image-only). Gate:
+  compile green ×3; Ben live PASS in two rounds ("this is great" on items
+  1-8; resize + world-map asks folded in as 9-10, then "good enough to
+  merge" — unspecified improvements to capture next pass); vanilla
+  flagless surfaces untouched (all additions gated on the overseer HUD).
+  Watch: worktree-built exes resolve userdata exe-adjacent — launch with
+  VELOREN_USERDATA (test doc). Next per the revised order: B5.6b-2 (main
+  builder takes the tree).
+
+### B5.6b-2 — z_extent model + volumetric rendering + volume-selection UX
+
+- Start SHA: `72907ee641` · branch `bastion/block-B5.6b-2` · started 2026-07-09
+  (architect go via cross-session message; Ben's systems-first directive).
+  Spec: `readme/B5.6-zone-visuals-prompt.md` §B5.6b + `docs/BASTION_B5.6b_
+  FINDINGS.md` (b-2). Also closes B5.MINE-COVERAGE (surface-relative z) +
+  adds the coverage assertion. Schema guard: frameworks §2 purpose enum is
+  canonical. Watch/report: Z-slice adequacy for working-inside-a-dig.
+
+- **PASS** (2026-07-09, headless gate; Ben's eyeball BATCHED per the
+  architect's final self-advance protocol — TEST LIST goes with the tag
+  ping). Shipped: `ZExtent{down,up}` surface-relative model (defaults =
+  the legacy `plane-2..=plane` exactly, unit-tested) + the canonical
+  8-kind `Purpose` enum locked from FRAMEWORKS §2 (schema-guard test);
+  per-column server resolution (`column_surface_z` canopy-safe,
+  `place_designation_surface`, `resolve_surface_bounds`) with the
+  ECHO-BOUNDS INVARIANT (the in_game handler resolves exact bounds INLINE
+  and echoes them — cancel/erase through the stored rect cannot orphan;
+  deferred board op recomputes identical surfaces); wire `z_extent:
+  Option<ZExtent>` on place + echo (None = legacy — harness scenarios
+  untouched); client paint sends footprint+extent (flat `min.z-2`
+  pre-expansion DELETED); volume-selection UX = scroll-while-painting +
+  palette `[−] N levels [+]` stepper editing ONE session field (synced by
+  construction; kind-default reset) + live per-column ring preview +
+  world-anchored depth counter; committed volumetric zones = countable
+  ABSOLUTE-z rings + corner posts, slice-clipped, "· N levels" labels
+  (absolute-z rationale: findings AS-BUILT + consistency; per-column
+  upgrade in backlog). **B5.MINE-COVERAGE CLOSED** — root cause the
+  client's flat pre-expansion; proven by the new b5 phase 7.5 (terraformed
+  8-column staircase: surface path 72/72 per-column vs terraformed truth,
+  echoed bounds tight, cancel-through-bounds → 0 jobs, legacy flat path
+  exactly 45/72 with the 2 lowest columns at ZERO — kept as permanent
+  regression witness). Gate: unit tests 8/8; B4 PASS (4.2ms avg tick);
+  B5 PASS incl. 7.5 (3.9ms); B5.5 PASS (4.4ms); vanilla flagless 1000
+  ticks clean (9.4× real-time, 0 colonists); compile green ×4 (quiet
+  machine throughout). Docs: `docs/BASTION_B5.6b-2_TEST.md` + findings
+  AS-BUILT section. NET-PROTOCOL NOTE: two messages gained a field —
+  client+server revert together (restore ledger). **Z-SLICE ADEQUACY
+  (the architect's watch item):** code-side the slice interacts sanely
+  (rings clip, sampler clamps), but nothing lets the camera DESCEND into
+  a pit; Ben's verdict on the 6-deep slope mine (asked explicitly in the
+  TEST LIST) decides whether B-UNDERGROUND jumps forward. Next per
+  `readme/FLEET_STATUS.md`: **B5.8 (vertical mobility)** — self-advancing.
+
+### B-ASSET1 — continuation (resumed in isolated worktree, post-b-2)
+
+- Resumed 2026-07-09 per the architect's directive: worktree
+  `.claude/worktrees/basset1` on `bastion/block-BASSET1`, own cargo
+  target, headless-only while the systems builder owns the primary
+  checkout (B5.8). This merge brings `bastion/main` (B-MAP1 + B5.6b-2 +
+  architect docs) into the block branch; the only conflict was this
+  append-only log (both sides kept, chronological). Pre-stand-down state:
+  Parts 1–3 code-complete; loader + `--asset-test` live-verified headless
+  (cottage 7/7 incl. integrated-dynamic; palisade gate closed/open
+  matrix; useful-FAIL pair; 26/34 full sweep where all 8 fails are
+  marker-contract catches — findings §9). Remaining: graduate the
+  asset pilot's new `vox/real/` + `catalog.json` staged library
+  (scanner v2 for the new sidecar contract), quiet-window gate +
+  `--asset-arena` boot verify + merge/tag (architect sequences those).

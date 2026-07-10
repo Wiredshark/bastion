@@ -80,3 +80,38 @@ than editing the old one.
 | Revert command | `git reset --hard bastion-block-B5.6a` (on `bastion/main`) |
 | Reverting undoes | Terrain-conformed zone fills (`DebugShape::ConformedTris` + `bastion::draped_fill_tris`), the kind-color legend + overlap blending, world-anchored zone labels, SUBTLE=border-only; ALSO the three demo-bug fixes (canopy-safe overlay heights, input-transparent labels + XY zone matching, terrain-anchored grab plane) — reverting reintroduces tree-climbing overlays, dead Delete-zone near centroids, and off-center pan. |
 | Data-format caveats | None. Client-side (voxygen) + one additive `common::bastion::Region::contains_point_xy`. No net-protocol, comp, or rtsim changes. |
+
+## bastion-block-BMAP1 (2026-07-09)
+
+- Block: B-MAP1 (overseer minimap + world-map overseer layers)
+- Tag: `bastion-block-BMAP1` · merge `e0300e253b`
+- Previous green: `bastion-block-B5.6b-1` (main then advanced by docs
+  commits to `c8643b72b2`, the merge base)
+- Revert: `git reset --hard c8643b72b2` (or the b-1 tag to also drop the
+  docs commits)
+- Undoes: the bastion minimap + big-map overseer layers/fly-to + the
+  minimap size button (client-only; no data-format or protocol changes —
+  nothing serialized, safe to revert cold).
+
+## bastion-block-B5.6b-2 (2026-07-09)
+
+- Block: B5.6b-2 (z_extent surface-relative model + volumetric zones +
+  volume-selection UX; closes B5.MINE-COVERAGE; canonical Purpose enum)
+- Tag: `bastion-block-B5.6b-2`
+- Previous green: `bastion-block-BMAP1` (main then advanced by the
+  architect's docs-only checkpoint `72907ee641` = `fleet-ckpt-01`, the
+  merge base)
+- Revert: `git reset --hard 72907ee641` (or `bastion-block-BMAP1` to also
+  drop the architect checkpoint)
+- Undoes: `ZExtent` + `Purpose` in `common::bastion`; the surface-relative
+  placement path (`column_surface_z`/`place_designation_surface`/
+  `resolve_surface_bounds` + harness hooks); the `z_extent` field on
+  `BastionPlaceDesignation`/`BastionDesignation`; the client paint's
+  footprint+extent send (flat `min.z-2` pre-expansion returns, and with it
+  the MINE-COVERAGE slope gap); scroll/stepper depth UX + ring previews +
+  volumetric committed rendering; the b5 scenario's slope-coverage phase.
+- Data-format caveats: **NET PROTOCOL CHANGE** — two messages gained an
+  `Option<ZExtent>` field (client+server must match; there is no version
+  negotiation). No comp/rtsim `data.dat` changes; the job board is
+  runtime-only. Safe to revert cold as long as client+server revert
+  together.

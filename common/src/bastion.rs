@@ -136,6 +136,79 @@ impl Region {
 /// drag from queueing a mountain).
 pub const MAX_DESIGNATION_VOLUME: i64 = 64 * 64 * 32;
 
+/// bastion (B5.6b-2): a designation's vertical extent RELATIVE TO THE
+/// PAINTED SURFACE, resolved per column — `down` levels below and `up`
+/// levels above each cell's own terrain surface (so a zone painted across a
+/// slope follows the slope instead of being cut by one flat plane, the
+/// B5.MINE-COVERAGE root cause). Defaults preserve the pre-B5.6b-2
+/// semantics exactly (`ZExtent::default_for`). The SAME field the §3v mine
+/// framework ("8 levels down") and §3w boundary consumers expect — one
+/// schema, locked here.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ZExtent {
+    /// Levels below the per-cell surface (inclusive of the surface block).
+    pub down: u16,
+    /// Levels above the per-cell surface.
+    pub up: u16,
+}
+
+impl Default for ZExtent {
+    fn default() -> Self { Self { down: 2, up: 0 } }
+}
+
+impl ZExtent {
+    /// The default extent per designation kind — matches the previous
+    /// hardcoded paint depth (`plane-2 ..= plane`, i.e. down 2 / up 0) so
+    /// behavior is unchanged until the UI sets a custom depth.
+    pub fn default_for(_kind: DesignationKind) -> Self { Self::default() }
+
+    /// Total levels spanned (down + surface-inclusive + up counting quirk is
+    /// folded in: down already includes the surface block's own level).
+    pub fn levels(&self) -> u32 { self.down as u32 + 1 + self.up as u32 }
+}
+
+/// bastion (B5.6b-2, SCHEMA GUARD): THE canonical zone↔asset `purpose`
+/// enumeration — locked verbatim from `readme/BASTION-SYSTEM-FRAMEWORKS.md`
+/// §2 (the authoritative 8-kind list; other docs carry drifted 7/8/9-kind
+/// copies and DEFER to §2). The classification is the zone↔asset matching
+/// key ("what can be built in this zone?"). Zones use it as soft preference,
+/// not iron law (§2). Do NOT re-derive or extend without an architect pass
+/// on frameworks §2 itself.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Purpose {
+    /// residential → housing
+    Housing,
+    /// industrial → production
+    Production,
+    /// commercial → commerce
+    Commerce,
+    /// religious → faith
+    Faith,
+    /// civic → social
+    Social,
+    /// defensive → defense
+    Defense,
+    /// storage → storage
+    Storage,
+    /// agricultural → farming
+    Farming,
+}
+
+impl Purpose {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Purpose::Housing => "Housing",
+            Purpose::Production => "Production",
+            Purpose::Commerce => "Commerce",
+            Purpose::Faith => "Faith",
+            Purpose::Social => "Social",
+            Purpose::Defense => "Defense",
+            Purpose::Storage => "Storage",
+            Purpose::Farming => "Farming",
+        }
+    }
+}
+
 /// What a painted designation region means. B4 turns these into jobs.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DesignationKind {
@@ -152,6 +225,18 @@ impl DesignationKind {
             DesignationKind::Chop => "Chop",
             DesignationKind::Build => "Build",
             DesignationKind::Stockpile => "Stockpile",
+        }
+    }
+
+    /// bastion (B5.6b-2): the canonical [`Purpose`] a designation maps to,
+    /// for zone↔asset matching (frameworks §2). `Build` is `None` — a build
+    /// designation constructs a structure whose OWN asset purpose applies;
+    /// the designation itself carries none.
+    pub fn purpose(&self) -> Option<Purpose> {
+        match self {
+            DesignationKind::Mine | DesignationKind::Chop => Some(Purpose::Production),
+            DesignationKind::Stockpile => Some(Purpose::Storage),
+            DesignationKind::Build => None,
         }
     }
 }
@@ -552,6 +637,67 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn z_extent_default_preserves_legacy_paint_depth() {
+        // The old client pre-expansion was `plane-2 ..= plane` (3 levels).
+        // Every kind's default must reproduce it exactly, or existing
+        // paint behavior changes under users' feet.
+        for kind in [
+            DesignationKind::Mine,
+            DesignationKind::Chop,
+            DesignationKind::Build,
+            DesignationKind::Stockpile,
+        ] {
+            let e = ZExtent::default_for(kind);
+            assert_eq!((e.down, e.up), (2, 0), "{kind:?} default drifted");
+            assert_eq!(e.levels(), 3);
+        }
+    }
+
+    #[test]
+    fn purpose_enum_is_the_canonical_eight() {
+        // SCHEMA GUARD (B5.6b-2): frameworks §2's zone↔asset purpose list is
+        // canonical — 8 kinds, these labels. Other docs carry drifted 7/8/9-
+        // kind copies; if this test needs editing, frameworks §2 must have
+        // been deliberately changed FIRST (architect pass), not the reverse.
+        let all = [
+            Purpose::Housing,
+            Purpose::Production,
+            Purpose::Commerce,
+            Purpose::Faith,
+            Purpose::Social,
+            Purpose::Defense,
+            Purpose::Storage,
+            Purpose::Farming,
+        ];
+        let labels: Vec<_> = all.iter().map(|p| p.label()).collect();
+        assert_eq!(labels, vec![
+            "Housing",
+            "Production",
+            "Commerce",
+            "Faith",
+            "Social",
+            "Defense",
+            "Storage",
+            "Farming",
+        ]);
+        // Designation → purpose mapping: extraction/storage designations
+        // classify; Build carries its asset's own purpose (None here).
+        assert_eq!(
+            DesignationKind::Mine.purpose(),
+            Some(Purpose::Production)
+        );
+        assert_eq!(
+            DesignationKind::Chop.purpose(),
+            Some(Purpose::Production)
+        );
+        assert_eq!(
+            DesignationKind::Stockpile.purpose(),
+            Some(Purpose::Storage)
+        );
+        assert_eq!(DesignationKind::Build.purpose(), None);
     }
 }
 

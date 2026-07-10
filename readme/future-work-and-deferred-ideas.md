@@ -1314,8 +1314,15 @@ aesthetic gate, then multi-angle + diff. Not now — mapped.
   field-tested a hostile ignoring the god avatar (machine locked mid-gate). **Fold into B8** (raids exercise
   it hard), or do a 30-second manual test: found a colony, get a hostile near the god avatar, confirm it's
   ignored. **Do not let this fall off** — it's the one B3 residual.
-- **`TRAVEL_SPEED` eyeball** — B4's job-travel speed "looked brisk" in scenario timing but was never watched
-  rendered. Eyeball in the B4/B5 demo; tune the constant if colonists glide comically.
+- **`TRAVEL_SPEED` — RESOLVED (2026-07-09, Ben's eyeball): colonist gait = WALK by default, SPRINT reserved.**
+  Colonists always running doesn't read as sensible in-game; routine movement should read as a calm, organized
+  colony (legibility — same payoff as B6 work-crew dispersion). The flat `TRAVEL_SPEED` feeding
+  `NpcActivity::Goto` (`server/src/bastion_jobs.rs`) becomes **state-selected**: walk pace (≈ natural human
+  walk, clearly below run) for ALL routine travel (job travel / idle-wander / normal need-satisfaction); run
+  pace ONLY under an urgency state — flee/draft/combat (B8), critical-need panic (B7), optional urgent god
+  force-nudge (B2b). Same state-driven shape as §3u action-animation selection. Build: the default-walk drop is
+  the cheap near-term tuning (queued as **B5.10**, do-now/eyeball-tune); sprint triggers accrete with their
+  owning blocks (build-once, state-driven). Closes the multi-session-open TRAVEL_SPEED watch-item.
 - **`docs/` vs `readme/` split** — earlier sessions wrote findings to `docs/BASTION_*`; design + new
   bookkeeping live in `readme/`. The mega-prompt tells sessions to check both. Optional one-time cleanup:
   `git mv docs/BASTION_* readme/` to unify, if the split annoys.
