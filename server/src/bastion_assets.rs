@@ -274,28 +274,52 @@ impl AssetLabCatalog {
 }
 
 /// The bastion marker registry: gameplay-marker band byte → intended engine
-/// `StructureBlock`. This table is the engine half of the asset session's
-/// marker contract (known assignments from the asset-lab generators:
-/// 200 = gate bars, 206 = pressure plate, 207/208/209 = desk/bench/bed).
+/// `StructureBlock`. This MIRRORS `readme/ASSET_MARKER_REGISTRY.md` (the ONE
+/// authority, bytes 200–219; append new rows there first, then here). Kept as
+/// RON strings so the table reads like the doc and parses through the exact
+/// codepath asset `.ron` sidecars use — per-asset sidecars override this
+/// fallback where present.
 ///
-/// `open_variant` swaps operable-closed markers to their open pose (byte 200
-/// gate: `KeyholeBars` ↔ carved air — the dwarves/entrance.ron precedent).
-/// Function-point markers (206–209) carve to air: the dynamic tests need the
-/// CELLS to be walkable targets; visible furniture mapping is backlog.
+/// `open_variant` swaps the operable-closed gate byte (200) to carved air —
+/// poses as mappings until the operable-state machine block (DF-MECH) lands.
 pub fn marker_registry(open_variant: bool) -> HashMap<u8, StructureBlock> {
+    const TABLE: &[(u8, &str)] = &[
+        (200, "Sprite(DoorBars())"), // operable closed gate leaf (solid to A*)
+        (201, "Sprite(Anvil())"),    // smithy anvil work point
+        (202, "Sprite(Forge())"),    // smithy forge/hearth work point
+        (204, "Sprite(FireBowlGround())"), // brazier / fire light point
+        (206, "Filled(Rock, (r: 90, g: 90, b: 70))"), // trap trigger plate (inert until DF-MECH)
+        (207, "Sprite(DiningtableWoodWoodlandSquare())"), // desk / study point
+        (208, "Sprite(BenchWoodEnd())"), // bench / sit point
+        (209, "Sprite(Bedroll())"),  // bed / sleep point
+        (210, "Sprite(CraftingBench())"), // carpenter work point
+        (211, "Sprite(CraftingBench())"), // mason work point
+        (212, "Sprite(Forge())"),    // smelter furnace work point
+        (213, "Sprite(TanningRack())"), // tannery work point
+        (214, "Filled(Rock, (r: 60, g: 60, b: 50))"), // tripwire line (inert until DF-MECH)
+        (215, "Sprite(CookingPot())"), // cooking/kitchen work point
+        (216, "Sprite(Loom())"),     // loom/weaving work point
+        (217, "Filled(GlowingRock, (r: 0, g: 201, b: 177))"), // glow crystal (gnarling convention)
+        (218, "Filled(Rock, (r: 200, g: 190, b: 160))"), // worship point (REL-0 upgrades)
+        (219, "Sprite(CraftingBench())"), // trade depot drop/work point
+    ];
     let mut m = HashMap::default();
-    m.insert(
-        200u8,
-        if open_variant {
-            StructureBlock::Hollow
-        } else {
-            // The consumes string only feeds the (dropped) unlock SpriteCfg;
-            // pathing solidity comes from the KeyholeBars sprite itself.
-            StructureBlock::KeyholeBars("common.items.utility.lockpick_0".to_string())
-        },
-    );
-    for b in [206u8, 207, 208, 209] {
-        m.insert(b, StructureBlock::Hollow);
+    for (b, s) in TABLE {
+        match ron::from_str::<StructureBlock>(s) {
+            Ok(sb) => {
+                m.insert(*b, sb);
+            },
+            Err(e) => warn!(
+                byte = b,
+                target = s,
+                ?e,
+                "marker registry entry failed to parse — fix the TABLE to match \
+                 readme/ASSET_MARKER_REGISTRY.md"
+            ),
+        }
+    }
+    if open_variant {
+        m.insert(200, StructureBlock::Hollow);
     }
     m
 }
