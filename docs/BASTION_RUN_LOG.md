@@ -499,3 +499,35 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   for the b4/b5/b55 re-gate: exposure gating changes B4's buried-job
   path (now proactively flagged unreachable — assert-compatible) and
   the reach-aware carve trigger protects b55's exact-conservation.
+
+- **PASS (2026-07-10, headless gate; Ben's eyeball BATCHED — TEST LIST
+  with the tag ping).** The 4×-bitten vertical-reachability trap is FIXED
+  AT THE MECHANISM. Shipped (23 scenario iterations; findings §2b-2e is
+  the discovery log): skill-gated SCRAMBLE (`scramble_reach` from the new
+  `ColonistSkills.climbing` movement skill, XP-on-use; 3-up edges +
+  ladder mount/dismount edges pinned by `bastion_vertical_tests` 3/3);
+  AUTONOMOUS ACCESS by claim geometry (ONE masked-switchback `carve_ramp`
+  shared with DIG-1 + floor rule + multi-base; material-free wall-adjacent
+  LADDER PILLARS; access mask with air rights; one-plan-at-a-time; access
+  anchors + staged two-leg routing); DF-STYLE MINING (exposure-gated
+  claims w/ proactive buried-flagging, relative-clamped top-down weight,
+  crew dispersion, access-tier + on-site-range claim economy); player
+  LADDERS (`DesignationKind::Ladder`, Build-like materials, native
+  sprite); server-assisted climb EXECUTION (position-driven lift w/ reach
+  cap, ledge snap — the vanilla jump→Climb chain is timing-flaky, the
+  incremental A* resets on >2-block movement); Ben's LADDER COLLISION
+  WAIVER in phys (colonist pairs near Ladder sprites; terrain hard,
+  vanilla untouched); mid-travel moot check; teleport staging fixture.
+  KNOWN-OPEN (architect-sanctioned): the multi-colonist climb-execution
+  COMPOSITE outcomes — rotating jitter, each proven ≥3/23 runs; full
+  determinism = SOFT-COLLISION, COMMITTED at B6
+  (`readme/SOFT-COLLISION-design.md`). GATE: `--b58-scenario` PASS (run
+  23: gauntlet no-carve, tight→ladder, roomy→stairs-no-ladder, 5/5 rungs,
+  150/150 top-down dispersion-1.0 dig, 0 orphans); unit 117/117; B4 PASS;
+  **B5 PASS WITH THE HAND-CARVED EXIT RAMP REMOVED** (the spec's
+  workarounds-become-unnecessary proof); B5.5 PASS (conservation exact);
+  vanilla clean; voxygen check green. Docs:
+  `docs/BASTION_B58_TEST.md` + findings. Hygiene note: one text-mode
+  script edit slipped mid-block (BOM+churn) — caught same-minute via the
+  standing byte-check, reverted, redone with the Edit tool. NEXT per
+  FLEET_STATUS: B5.6b-3 — self-advancing after the tag ping.

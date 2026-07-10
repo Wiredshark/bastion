@@ -240,3 +240,25 @@ instead, referencing the old one).
   (down=2 → "3 levels deep" = surface + 2 below), matching the volume the
   zone actually claims; the wire `ZExtent{down,up}` counts offsets. One
   label authority: `Tools::z_extent_label`.
+
+## 2026-07-10 — B5.8 (vertical mobility)
+
+- **Spec vs build (recorded drift, sanctioned):** the spec's scramble rode
+  "the existing climb machinery"; as built, colonist vertical execution is
+  SERVER-ASSISTED (position-driven lift + ledge snap + dismount rules in
+  `bastion_jobs`) because the vanilla jump→wall-contact→Climb-state chain
+  proved ~50% timing-flaky per attempt (23-run evidence, findings §2c-2e).
+  The path GRAPH is the honest authority (reach-gated edges, 3 unit
+  tests); the assist only executes what the graph granted. Visual polish
+  (real climb animations for assisted moves) = future work.
+- **Gate drift (architect-sanctioned descope):** the multi-colonist
+  climb-execution COMPOSITE outcomes in `--b58-scenario` are KNOWN-OPEN
+  informational, not gating; Ben's LADDER COLLISION WAIVER shipped as the
+  narrow v1 and full determinism is owned by SOFT-COLLISION (COMMITTED at
+  B6, design doc in readme/). The B4 buried-job invariant now rides the
+  exposure gate's proactive unreachable-flagging (same assert, new
+  mechanism).
+- **Auto-access materials:** auto-built access (rescue rungs/steps) is
+  MATERIAL-FREE ("infrastructure from spoil"); player-placed ladders cost
+  `BUILD_MATERIAL_ITEM` like Build. Deliberate asymmetry — note for B6's
+  real recipe system.
