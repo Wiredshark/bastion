@@ -44,16 +44,20 @@ def check_rig(rig_dir):
     rig = json.load(open(rig_path, encoding='utf-8'))
     # Two schemas: v2 = {kind, skel: {bones: [{name, parent, rest}], offsets:
     # {name: [x,y,z]}}, animlist}; v1 = flat {boneN: {part, offset, ...}}.
+    # CONVENTION AMBIGUITY (exposed 2026-07-10 by the naval rudder fix):
+    # the god-hand assembler CHAINS rests down the parent hierarchy (proved
+    # exact), the naval assembler treats rests as ABSOLUTE world positions
+    # (proved exact post-fix). The two agree whenever the root rest is zero —
+    # which it was, until the rudder fix. Until rig.json pins `skel.rest_space`
+    # ("parent" | "absolute"), we try chained first and accept absolute only
+    # on an EXACT assembly match, with a loud convention warning. Fractional
+    # rests are LEGAL (godhand f4p x=27.5); composed positions are FLOORED.
+    conventions = {}
     if 'skel' in rig:
         offsets = rig['skel'].get('offsets', {})
         bones = {b['name']: b for b in rig['skel'].get('bones', [])}
 
         def world_rest(name):
-            # rest positions COMPOSE down the parent chain (hierarchical rigs,
-            # e.g. god-hand: f1d rest is relative to f1p, f1p to palm). Flat
-            # rigs (vessels: every parent = root at origin) reduce to rest+offset
-            # as before. Fractional rests are LEGAL (godhand f4p x=27.5); the
-            # pilot's assembler FLOORS the composed position — mirror that.
             p = [0.0, 0.0, 0.0]
             b = bones.get(name)
             while b:
@@ -61,17 +65,21 @@ def check_rig(rig_dir):
                 b = bones.get(b['parent']) if b.get('parent') else None
             return p
 
-        parts = [
-            (
-                name,
-                [
-                    math.floor(w + o)
-                    for w, o in zip(world_rest(name), offsets.get(name, [0, 0, 0]))
-                ],
-            )
-            for name in bones
-        ]
+        def placed(rest_fn):
+            return [
+                (name,
+                 [math.floor(w + o)
+                  for w, o in zip(rest_fn(name), offsets.get(name, [0, 0, 0]))])
+                for name in bones
+            ]
+
+        conventions['parent'] = placed(world_rest)
+        conventions['absolute'] = placed(
+            lambda n: bones[n].get('rest', [0, 0, 0]))
+        declared = rig['skel'].get('rest_space')
+        parts = conventions.get(declared) or conventions['parent']
     else:
+        declared = 'v1'
         parts = [
             (spec['part'], spec.get('offset', [0, 0, 0]))
             for _, spec in sorted(rig.items())
@@ -79,7 +87,8 @@ def check_rig(rig_dir):
         ]
     union = {}
     ok = True
-    for part_name, off in parts:
+    part_vox = {}
+    for part_name, _ in parts:
         part_path = os.path.join(rig_dir, part_name + '.vox')
         try:
             d = read_vox(part_path)
@@ -88,6 +97,7 @@ def check_rig(rig_dir):
             ok = False
             continue
         _, _, _, vox = d['models'][0]
+        part_vox[part_name] = vox
         n = components(vox)
         if n != 1:
             # ENGINE TRUTH: a rig part is ONE bone mesh — islands move together
@@ -95,8 +105,15 @@ def check_rig(rig_dir):
             # (rigging lines / cloth edges are legitimate islands), not a
             # failure. The hard gate is union==assembly + no split holes.
             print(f'{rig_id}/{part_name}: INFO — {n} components (islands move as one bone mesh; confirm intent)')
-        for (x, y, z), b in vox.items():
-            union[(x + off[0], y + off[1], z + off[2])] = b
+
+    def build_union(part_list):
+        u = {}
+        for part_name, off in part_list:
+            for (x, y, z), b in part_vox.get(part_name, {}).items():
+                u[(x + off[0], y + off[1], z + off[2])] = b
+        return u
+
+    union = build_union(parts)
     # Assembled diff (holes / overlaps), if the assembled vox exists.
     parent = os.path.dirname(rig_dir.rstrip('/\\'))
     candidates = [
@@ -110,8 +127,27 @@ def check_rig(rig_dir):
     if assembled_path:
         d = read_vox(assembled_path)
         _, _, _, avox = d['models'][0]
-        holes = [p for p in avox if p not in union]
-        extra = [p for p in union if p not in avox]
+
+        def diff(u):
+            return ([p for p in avox if p not in u],
+                    [p for p in u if p not in avox])
+
+        holes, extra = diff(union)
+        if (holes or extra) and declared not in conventions and len(conventions) > 1:
+            # undeclared rest_space: accept the OTHER convention only on an
+            # EXACT match — and say so loudly (schema ambiguity, not geometry).
+            for alt_name, alt_parts in conventions.items():
+                if alt_parts is parts:
+                    continue
+                alt_union = build_union(alt_parts)
+                ah, ae = diff(alt_union)
+                if not ah and not ae:
+                    union, holes, extra = alt_union, ah, ae
+                    print(f'{rig_id}: WARN — assembly matches rest_space='
+                          f'"{alt_name}" exactly, not the default parent-chain. '
+                          f'PIN skel.rest_space in rig.json before animation-code '
+                          f'(two assembler conventions are now in the wild).')
+                    break
         if holes:
             zs = sorted({z for _, _, z in holes})
             print(f'{rig_id}: {len(holes)} HOLES vs assembly (z levels {zs[:6]})')
