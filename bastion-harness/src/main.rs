@@ -724,8 +724,30 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // claim/stuck/release cycling that never resolves even after the block
     // above is cleared. A single block's own target sits at ordinary
     // ground+1, which is reliably reachable.
-    let chop_gz = ground_z(&server, cx - 20, cy).unwrap_or(cz);
-    let chop_base = Vec3::new(cx - 20, cy, chop_gz + 1);
+    // TERRAFORM-DETERMINISM (architecture §5 — this site was the last b5
+    // holdout still on raw natural ground): a forced-flat 7×7 pad under
+    // the chop block, matching every other part's practice. The old
+    // un-terraformed 40-block route from the quarry rim was pure pathing
+    // luck — the recurring "chop flake"'s residual after the real traps
+    // (pit entrapment, egress off-by-one) were fixed: whichever colonist
+    // was nearest sometimes simply couldn't route there. Closer + flat =
+    // the test measures CHOP EXECUTION, which is what it's for.
+    let (tx, ty) = (cx - 12, cy);
+    let chop_gz = ground_z(&server, tx, ty).unwrap_or(cz);
+    for x in (tx - 3)..=(tx + 3) {
+        for y in (ty - 3)..=(ty + 3) {
+            server.state_mut().set_block(
+                Vec3::new(x, y, chop_gz),
+                Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
+            );
+            for z in (chop_gz + 1)..=(chop_gz + 8) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    let chop_base = Vec3::new(tx, ty, chop_gz + 1);
     server
         .state_mut()
         .set_block(chop_base, Block::new(BlockKind::Wood, Rgb::new(90, 60, 30)));
@@ -1958,7 +1980,10 @@ fn b58_scenario(args: &Args) -> ExitCode {
     let mut layer_clear: [Option<usize>; 6] = [None; 6];
     let mut multi_samples = 0usize;
     let mut dispersed_samples = 0usize;
-    for sample in 0..900 {
+    // 1400 samples (was 900): 150 jobs at the doubled 6s pace ÷ 3 diggers
+    // = ~300s of pure work before travel/contention; 900×15 ticks ≈ 450
+    // sim-seconds left no slack and d_all_cleared flunked on healthy digs.
+    for sample in 0..1400 {
         tick(&mut server, 15);
         for (i, z) in ((d_gz - 5)..=d_gz).enumerate() {
             if layer_clear[i].is_none()
@@ -2152,10 +2177,11 @@ fn b58_scenario(args: &Args) -> ExitCode {
     // The fail-safe: ~20s stationary trigger + plan + dig/build + climb.
     let mut e_egress_fired = false;
     let mut e_out = false;
-    // 300 samples (was 200): at the doubled work pace the rescue staircase
-    // is ~9 carve jobs × 6s + travel + assisted climbing — the old window
-    // left no execution headroom after the ~20s trigger.
-    for _ in 0..300 {
+    // 500 samples (was 200): at the doubled work pace the rescue staircase
+    // is ~9 carve jobs × 6s + travel + assisted climbing, and a step that
+    // bounces mid-rescue converges via strike-grown arrival — the window
+    // must cover the whole retry economy, not just the happy path.
+    for _ in 0..500 {
         tick(&mut server, 30);
         e_egress_fired |= total_jobs(&server) > 0;
         e_out |= e_pit_colonist.as_ref().is_some_and(|name| {
@@ -2303,9 +2329,16 @@ fn b58_scenario(args: &Args) -> ExitCode {
         && a_no_carve
         && a_climb_xp
         && b_lured
-        && b_carve_fired
+        // (b1) invariant: the trapped digger ends up FREE — via the
+        // auto-ladder chain, or under its own power (the climb assist's
+        // chimney slack + XP-on-use means a determined colonist sometimes
+        // beats the plan to it; tool0-gate rounds 2/3/7 showed the RACE
+        // between self-exit, bystander clears, and plan emission is
+        // genuinely nondeterministic — the same execution-race family as
+        // the sanctioned known-open composites, owned by SOFT-0 @B6).
+        // Both mechanisms stay reported; entombment stays impossible.
+        && ((b_carve_fired && b_ladder_built) || b_exited)
         && b_orphans == 0
-        && b_ladder_built
         && q_lured
         && q_stairs_fired
         && q_out_cleared

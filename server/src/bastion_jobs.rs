@@ -364,10 +364,17 @@ fn egress_scan(
             else {
                 continue;
             };
-            if s >= feet.z - 4 && s <= feet.z + reach {
+            // Egress = a surface the colonist can STAND on: rise to stand
+            // is (s+1) − feet, climbable iff ≤ reach → s ≤ feet+reach−1.
+            // The original `s ≤ feet+reach` admitted rise reach+1 — one
+            // too generous, and EXACTLY the b5 quarry shape (3-rise pit,
+            // reach-2 novice): the detector read the unreachable rim as
+            // egress and never fired, so the pit-floor digger churned
+            // claims on far jobs forever (the "chop flake"'s true root).
+            if s >= feet.z - 4 && s <= feet.z + reach - 1 {
                 return (true, None);
             }
-            if s > feet.z + reach {
+            if s > feet.z + reach - 1 {
                 let dd = dx.abs() + dy.abs();
                 if rim.as_ref().is_none_or(|(bd, _)| dd < *bd) {
                     rim = Some((dd, Vec3::new(feet.x + dx, feet.y + dy, s)));
