@@ -111,6 +111,25 @@ impl PlayState for MainMenuState {
         // Pull in localizations
         let localized_strings = &global_state.i18n.read();
 
+        // bastion (B-ASSET1): --asset-arena boots straight into the throwaway
+        // arena world, no menu interaction. One attempt per app run (a failed
+        // arena server must not retry-loop); the normal poll/login machinery
+        // below takes over once the server is up.
+        #[cfg(feature = "singleplayer")]
+        if let Some(asset) = &global_state.args.asset_arena
+            && matches!(global_state.singleplayer, SingleplayerState::None)
+        {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static ARENA_STARTED: AtomicBool = AtomicBool::new(false);
+            if !ARENA_STARTED.swap(true, Ordering::SeqCst) {
+                global_state.singleplayer.run_bastion_arena(
+                    &global_state.tokio_runtime,
+                    asset,
+                    &global_state.args.asset_lab_dir,
+                );
+            }
+        }
+
         // Poll server creation
         #[cfg(feature = "singleplayer")]
         {

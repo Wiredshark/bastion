@@ -382,6 +382,28 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   not a verified bug — consistency note); lit-fill look (backlog); B5.10
   walk-gait queued; erase-by-type = b-4.
 
+### B-ASSET1 — Asset integration harness + render test arena (independent block)
+
+- Start SHA: `d1315f5` · branch `bastion/block-BASSET1` · started 2026-07-09 18:20.
+  Spec: `readme/B-ASSET1-integration-render-arena-prompt.md`; dynamic-test
+  contract: `readme/ASSET_DYNAMIC_TEST_SPEC.md`. Parts: (1) bastion-flagged
+  asset-lab loader through the real Structure/custom_indices path with
+  marker-fidelity asserts, (2) `--asset-test <id|all>` flat-arena dynamic
+  scenarios in the B0 harness (+ integrated-dynamic spot-check on real
+  terrain, + one required useful FAIL), (3) `--asset-arena` client
+  inspection mode. Multi-agent note: tree taken per the architect-confirmed
+  stagger (B5.6b-1 → B-ASSET1 → B-MAP1); recon + findings done offline
+  while b-1 held the tree. The architect's docs-only inputs commit is still
+  pending as uncommitted `readme/` edits in the shared tree (MEGA-PROMPT,
+  SYSTEM-FRAMEWORKS, future-work + four new files) — untouched by this
+  block; staging stays path-explicit throughout. Findings/build-plan:
+  `docs/BASTION_BASSET1_FINDINGS.md` (committed at block start).
+- NOTE (merge-time): the ordering above was REVISED mid-block by Ben
+  (B-MAP1 → B5.6b-2 → B-ASSET1-resume); this block stood down 2026-07-09
+  with Parts 1–3 code-complete + headless-verified on its branch, and
+  resumed in an isolated worktree after b-2 landed. Continuation entry at
+  the log tail.
+
 ### B-MAP1 — Overseer minimap (rendered tile pyramid + overlays + click-nav)
 
 - Start SHA: `de86387` · branch `bastion/block-BMAP1` · started 2026-07-09.
@@ -454,6 +476,22 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   a pit; Ben's verdict on the 6-deep slope mine (asked explicitly in the
   TEST LIST) decides whether B-UNDERGROUND jumps forward. Next per
   `readme/FLEET_STATUS.md`: **B5.8 (vertical mobility)** — self-advancing.
+
+### B-ASSET1 — continuation (resumed in isolated worktree, post-b-2)
+
+- Resumed 2026-07-09 per the architect's directive: worktree
+  `.claude/worktrees/basset1` on `bastion/block-BASSET1`, own cargo
+  target, headless-only while the systems builder owns the primary
+  checkout (B5.8). This merge brings `bastion/main` (B-MAP1 + B5.6b-2 +
+  architect docs) into the block branch; the only conflict was this
+  append-only log (both sides kept, chronological). Pre-stand-down state:
+  Parts 1–3 code-complete; loader + `--asset-test` live-verified headless
+  (cottage 7/7 incl. integrated-dynamic; palisade gate closed/open
+  matrix; useful-FAIL pair; 26/34 full sweep where all 8 fails are
+  marker-contract catches — findings §9). Remaining: graduate the
+  asset pilot's new `vox/real/` + `catalog.json` staged library
+  (scanner v2 for the new sidecar contract), quiet-window gate +
+  `--asset-arena` boot verify + merge/tag (architect sequences those).
 
 ### B5.8 — Vertical mobility: scramble, stair-carving, ladders
 
@@ -739,6 +777,8 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   entombed in their own default-depth pits while the fail-safe believed
   they could climb out. Revert = `7effa936b6`. NEXT: god-hand
   in-engine.
+
+- **B-ASSET1 MERGED + TAGGED `bastion-block-BASSET1`** (2026-07-10, merge `59824dcb59`, main was TOOL0 @ 8479027c96): asset integration harness + render arena. Loader through the REAL Structure/custom_indices pipeline (exact-cell marker fidelity, census, byte convention PINNED by unit test); `--asset-test` cast-driven dynamic suite (results → ASSET_INTEGRATION_LOG w/ exe sha); `--asset-arena` client inspection mode rides the next voxygen build (`--asset-arena` + BASTION_OVERSEER). Catalog graduated 73→80 through the standing gates. TOOLING SHIPPED (tools/): gate.py 7-step battery + anatomy/semantic-placement + compare-reference (PCA) + anim lint + adjacency precheck + catalog recheck + redo-campaign anti-skip audit (592-hash before-snapshot; detail-floor via the pilot's shared detail_metrics). Contracts pinned: rest_space per rig (hands=parent, vessels=absolute), FLOOR composed positions, sha-stamped harness (stale-exe guard — which caught its own staleness bug pre-merge). Gate at merge: cargo check green, stamped spot test 1/1 PASS (palisade gate scenario), static gate 7/7. *(Merged from main during the B6 forward-merge; ordered here by merge time.)*
 
 ### GOD-HAND — SKIPPED overnight (blocked on asset integration; logged per rule 4)
 

@@ -1,3 +1,13 @@
+# bastion (fleet infra P5): shared compile cache — deps compile ONCE per
+# machine and every worktree/session reuses them (the user-global sccache
+# cache dir is shared by construction), so a cold-worktree build stops
+# costing ~28 min. sccache passes incremental (dev-profile workspace
+# crates) straight through uncached — local warm iteration is unchanged;
+# the win is the big non-incremental dependency graph. Install:
+# `cargo install sccache` (user-level, no admin).
+[build]
+rustc-wrapper = "sccache"
+
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 

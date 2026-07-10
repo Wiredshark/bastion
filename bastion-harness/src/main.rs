@@ -11,6 +11,8 @@
 //! `docs/BASTION_B0_FINDINGS.md`) and asserts nothing by itself. Later blocks
 //! hang their Tier-1 assertions off the `Summary` it produces.
 
+mod asset_test;
+
 use clap::Parser;
 use common::resources::Time;
 use serde::{Deserialize, Serialize};
@@ -96,6 +98,18 @@ struct Args {
     /// spacing. Prints one JSON result line; exit code = pass/fail.
     #[arg(long)]
     chokepoint_scenario: bool,
+
+    /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
+    /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
+    /// or `all` (= every non-test, non-creature catalog entry). One JSON line
+    /// per asset + a summary; results append to
+    /// readme/ASSET_INTEGRATION_LOG.md; exit code reflects all-pass.
+    #[arg(long, value_name = "ID|all")]
+    asset_test: Option<String>,
+
+    /// bastion (B-ASSET1): asset-lab root directory (contains `vox/`).
+    #[arg(long, default_value = "asset-lab")]
+    asset_lab_dir: PathBuf,
 }
 
 /// Aggregate state dump. Deliberately coarse: aggregates are far more stable
@@ -127,7 +141,18 @@ struct Summary {
     colonist_count: usize,
 }
 
+/// Ties every test output to the exe that produced it (stale-exe guard).
+pub const BUILD_STAMP: &str = concat!(
+    env!("BASTION_BUILD_SHA"),
+    " built ",
+    env!("BASTION_BUILD_TIME")
+);
+
 fn main() -> ExitCode {
+    // Stderr, not stdout: JSON-line consumers stay untouched. BEFORE
+    // Args::parse so even a --help/parse-error run identifies its exe.
+    eprintln!("bastion-harness {BUILD_STAMP}");
+
     let args = Args::parse();
 
     // Logs to stderr so stdout carries exactly one line of JSON.
@@ -139,7 +164,14 @@ fn main() -> ExitCode {
         .with_writer(std::io::stderr)
         .init();
 
-    if args.b4_scenario {
+    if let Some(target) = &args.asset_test {
+        asset_test::run(&asset_test::AssetTestConfig {
+            seed: args.seed,
+            tps: args.tps,
+            target: target.clone(),
+            asset_lab_dir: args.asset_lab_dir.clone(),
+        })
+    } else if args.b4_scenario {
         b4_scenario(&args)
     } else if args.b5_scenario {
         b5_scenario(&args)

@@ -353,7 +353,6 @@ impact (client-only + a pile-scale tweak). **Standing note:** `--b5-scenario`
 is timing-flaky under machine load — run gate scenarios on a quiet machine
 (it was 6/6 at both the B5.5 tag and this branch when quiet).
 
-<<<<<<< HEAD
 ### 2.9 B5.6b — Zone-management UI (SPLIT into sub-blocks b-1..b-4)
 
 B5.6 was too large for one block; a builder scope-flag split it (architect-
@@ -650,6 +649,58 @@ minimap-window dragging in overseer mode.
 (tiles recognizable, dig-updates, overlay accuracy, click-jump) in-game —
 `docs/BASTION_BMAP1_TEST.md`.
 
+### 2.11 B-ASSET1 — Asset integration harness + render arena (the content release valve)
+
+**What:** the game-side bridge that graduates asset-lab content from
+static-verified to engine-verified: a runtime loader through the REAL
+`Structure`/`custom_indices` machinery with marker-fidelity asserts, the
+`--asset-test` flat-arena dynamic suite (real pathfinding/collision), and the
+`--asset-arena` client inspection mode. The pilot and this tester coordinate
+ONLY through files: `asset-lab/vox/real/catalog.json` + `<id>.ron` sidecars
+in, `readme/ASSET_INTEGRATION_LOG.md` results out (untracked, living).
+
+**Key pieces & where:**
+- `Structure::bastion_from_vox_bytes/_dot_vox` (`common/src/terrain/structure.rs`)
+  — vox-bytes → Structure outside the asset tree, plus `BastionVoxCensus`
+  (per-byte counts + cells, capped 128/byte). Byte convention PINNED by the
+  `bastion_dot_vox_index_convention` unit test: authored/RON byte ==
+  `dot_vox Voxel.i + 1` == engine slot (no translation).
+- `server/src/bastion_assets.rs` — catalog scan (contract v2 + legacy
+  fallback), `marker_registry` (mirrors `readme/ASSET_MARKER_REGISTRY.md`
+  bytes 200–219 as parse-checked RON strings; per-asset sidecars override),
+  `load_asset` (fidelity gate: byte resolution + EXACT authored-cell match;
+  sidecar parse failure = finding), `place_structure` (runtime placement via
+  `block_from_structure` + `State::set_block` — the ONLY runtime structure
+  stamping in the engine; B-AG6 reuses this, not spots), + shared helpers
+  `ground_z`/`flatten_pad`/`pick_flat_anchor`/`survey_pad`/`interior_target`.
+- `comp::bastion::BastionTestGoto` + upkeep in `bastion_jobs.rs` + the rtsim
+  clobber-gate extension (`rtsim/tick.rs`) — fixture goto with job-travel
+  semantics (per-tick Goto assert, 3D arrival, progress watchdog). Hooks:
+  `Server::bastion_goto/_states/_clear`, `bastion_teleport_colonist`,
+  `bastion_asset_place`.
+- `bastion-harness --asset-test <id|all>` (`bastion-harness/src/asset_test.rs`)
+  — cast-driven suites: interior (reach/egress/3-colonist multi-occupancy),
+  work-marker (reach the authored crafting cell), crossing (closed-blocks /
+  open-admits gate matrix; open pose = byte-200 → Hollow mapping), flora
+  path-around, figure-scale props load-only. Fixtures verified on the bare
+  pad first; integrated-dynamic spot check on real terrain (cottage);
+  `test_room_door_closed/_open` = the deliberate-FAIL pair.
+- `--asset-arena` (`voxygen/src/cli.rs` → `singleplayer::run_bastion_arena` →
+  env vars → `server/src/bastion_arena.rs`): throwaway world, pad at a
+  sim-probed flat anchor, spawn moved onto the pad, `/bastion_arena
+  next|prev|fixture|dismiss` chat controls.
+
+**Traps this block burned into code:** fixed-height pad clearing leaves
+cliff walls inside sloped pads (→ `pick_flat_anchor` + `survey_pad`
+adaptive clear); idle fixtures WANDER between orders (rtsim brain) — always
+teleport-stage between test poses; never walk fixtures cross-country;
+ad-hoc marker bytes break integration silently (→ the marker registry +
+staging gate, born from this block's 8 catches).
+
+**Tested by:** the suite is self-testing (61/64 graduation sweep; 3 gate
+fails = pilot sidecar typo pending same-day fix); standing gates per
+`docs/BASTION_BASSET1_TEST.md`.
+
 ## 3. Build methodology (how blocks land)
 
 Per-block cycle: **checkpoint** (clean tree, branch `bastion/block-<N>`, log
@@ -728,15 +779,19 @@ Full protocol: `readme/MEGA-PROMPT-autonomous-batch-builder.md`.
 
 **Done (merged + tagged):** B0, B1, B1.5, B1.6(+B1.7), B2a, B3, B4, B5,
 B5.5, B5.6a, B5.6b-1, B-MAP1, B5.6b-2, B5.8 (vertical mobility — the
-4×-bitten §5 trap FIXED at the mechanism), B5.6b-2.1 (flat-floor mine
+4×-bitten §5 trap FIXED at the mechanism; climbing skill + autonomous
+access + DF mining + ladder waiver), B5.6b-2.1 (flat-floor mine
 mode + B5.8-E/E2 anti-stuck cluster + pace tune), TIMECTL (visible time
-controls §2.10c), **TOOL0 (tool-gated work speed + E3 stability cluster
-§2.10d — this block, overnight 2026-07-10).** **Next (per the OVERNIGHT
-AUTONOMOUS RUN roadmap + `readme/FLEET_STATUS.md` BUILD LANE):**
-god-hand in-engine, B6 (stockpiles/hauling — INCLUDES the committed
+controls §2.10c), TOOL0 (tool-gated work speed + E3 stability cluster
+§2.10d — overnight 2026-07-10), **and B-ASSET1 (asset integration
+harness + render arena — §2.11; full catalog graduated; quality + rig +
+anatomy + compare-reference + anti-skip gates standing; sha-stamped
+harness — this merge).** **Next (per the OVERNIGHT AUTONOMOUS RUN
+roadmap + `readme/FLEET_STATUS.md` BUILD LANE):** god-hand in-engine
+(B6 branch open), B6 (stockpiles/hauling — INCLUDES the committed
 SOFT-COLLISION SOFT-0/1), B7 needs-decay + self-designation. Then
-B5.6b-3/b-4 zone-UX. Slots-into-gaps: B-ASSET1 merge (morning, tester
-holds it), B-TESTBED.
+B5.6b-3/b-4 zone-UX. Slots-into-gaps: B-TESTBED. Queued riders:
+ABSOLUTE-FLOOR depth mode.
 
 | Need | Read |
 |---|---|

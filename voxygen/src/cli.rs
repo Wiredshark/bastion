@@ -37,6 +37,19 @@ pub struct Args {
     #[clap(long, env = "BASTION_OVERSEER")]
     pub bastion_overseer: bool,
 
+    /// bastion (B-ASSET1): boot straight into the asset render arena — a
+    /// throwaway singleplayer world with a flat inspection pad, the given
+    /// asset-lab asset placed at its center, and chat controls
+    /// (/bastion_arena next|prev|fixture|dismiss). Pass an asset id or leave
+    /// empty for the first catalog entry. Implies --bastion-overseer.
+    #[clap(long, num_args = 0..=1, default_missing_value = "", value_name = "ASSET_ID")]
+    pub asset_arena: Option<String>,
+
+    /// bastion (B-ASSET1): asset-lab root directory for --asset-arena
+    /// (contains `vox/`).
+    #[clap(long, default_value = "asset-lab")]
+    pub asset_lab_dir: std::path::PathBuf,
+
     #[clap(subcommand)]
     pub command: Option<Commands>,
 }

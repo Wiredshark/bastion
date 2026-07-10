@@ -41,7 +41,11 @@ use wgpu::{Backends, Instance};
 fn main() {
     // Process CLI arguments
     use clap::Parser;
-    let args = cli::Args::parse();
+    let mut args = cli::Args::parse();
+    // bastion (B-ASSET1): the asset arena is an overseer-camera experience.
+    if args.asset_arena.is_some() {
+        args.bastion_overseer = true;
+    }
 
     if let Some(command) = args.command {
         match command {
