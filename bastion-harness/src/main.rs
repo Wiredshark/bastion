@@ -1864,12 +1864,24 @@ fn b58_scenario(args: &Args) -> ExitCode {
     );
     let mut q_max_total = 0usize;
     let mut q_out_cleared = false;
+    // B6: the INVARIANT is the quarry colonist gets OUT (roomy geometry →
+    // it self-extracts). q_out_cleared (the surface out-job dug) is a
+    // PROXY that the tiered fail-safe can preempt — a colonist rescued by
+    // the teleport backstop is OUT but may not clear the specific block.
+    // Track surface-reached directly.
+    let mut q_out = false;
     for _ in 0..150 {
         tick(&mut server, 30);
         q_max_total = q_max_total.max(total_jobs(&server));
         q_out_cleared = server
             .bastion_block_kind(q_out_job)
             .is_none_or(|k| !k.is_filled());
+        q_out |= q_pit_colonist.as_ref().is_some_and(|name| {
+            server
+                .bastion_colonist_states()
+                .iter()
+                .any(|(n, p, _)| n == name && p.z >= q_gz as f32 + 0.5)
+        });
         if q_out_cleared && total_jobs(&server) == 0 {
             break;
         }
@@ -2083,10 +2095,18 @@ fn b58_scenario(args: &Args) -> ExitCode {
     let d_all_cleared = layer_clear.iter().all(|c| c.is_some());
     // TOP-DOWN: clear order non-decreasing with depth (layer index 5 = the
     // TOP layer at d_gz; index 0 = the bottom). Top must finish first.
+    // TOL=2 samples (~1 sim-s): the exposure gate enforces BULK top-down
+    // (a buried block can't be claimed until its shell clears), but near
+    // the end MULTIPLE layers are simultaneously exposed and their last
+    // blocks clear in sampling-dependent order — a strict pairwise check
+    // false-fails on that tail tie (B6 gate: ~1 in 4). The tolerance keeps
+    // the property meaningful (a lower layer finishing many samples before
+    // an upper still fails) while accepting the near-simultaneous finish.
+    const TOP_DOWN_TOL: usize = 2;
     let d_top_down = d_all_cleared
-        && layer_clear
-            .windows(2)
-            .all(|w| w[0].unwrap_or(usize::MAX) >= w[1].unwrap_or(usize::MAX));
+        && layer_clear.windows(2).all(|w| {
+            w[0].unwrap_or(usize::MAX) + TOP_DOWN_TOL >= w[1].unwrap_or(usize::MAX)
+        });
     let d_dispersed_frac = if multi_samples > 0 {
         dispersed_samples as f64 / multi_samples as f64
     } else {
@@ -2361,6 +2381,7 @@ fn b58_scenario(args: &Args) -> ExitCode {
         "b58_q_lured": q_lured,
         "b58_q_stairs_fired": q_stairs_fired,
         "b58_q_out_cleared": q_out_cleared,
+        "b58_q_out": q_out,
         "b58_q_no_ladder": q_no_ladder,
         "b58_c_gave": c_gave,
         "b58_c_rung_jobs": c_rung_jobs,
@@ -2409,16 +2430,14 @@ fn b58_scenario(args: &Args) -> ExitCode {
         && ((b_carve_fired && b_ladder_built) || b_exited)
         && b_orphans == 0
         && q_lured
-        // (q) invariant, same shape as (b1): the quarry colonist ends up
-        // OUT with the out-job done — via auto-STAIRS if it stays stuck,
-        // or under its own power (the velocity-owned climb assist self-
-        // exits before the two-timeout plan trigger more often than not).
-        // The stairs-EMISSION pin is thereby no longer deterministic in
-        // b58 — logged as a consistency gap; a forced-emission scenario
-        // rides the AR-2/F4 batch. q_stairs_fired/q_no_ladder stay
-        // reported.
-        && ((q_stairs_fired && q_no_ladder) || q_out_cleared)
-        && q_out_cleared
+        // (q) INVARIANT (B6, gate-the-invariant): the quarry colonist
+        // ends up OUT — via auto-stairs, its own climb, or the teleport
+        // floor. q_stairs_fired (geometry chose stairs) + q_out_cleared
+        // (it dug the surface lure) are REPORTED: the tiered fail-safe
+        // makes WHICH tier rescues it, and whether it clears the specific
+        // block vs is teleported, non-deterministic by design. q_out is
+        // the invariant that matters (no entombment) and stays gating.
+        && q_out
         && c_gave
         && c_rung_jobs == 5
         && c_rungs_placed == 5
@@ -2432,11 +2451,16 @@ fn b58_scenario(args: &Args) -> ExitCode {
         // owns it) — reported, not gating. The SINGLE-colonist anti-stuck
         // invariants (e)/(f) below ARE gating and deterministic.
         // B5.8-E (Ben's live entombment bug): zone deleted, board empty,
-        // the fail-safe STILL carves the digger out. GATING — this is the
-        // "nobody entombed" invariant made player-action-proof.
+        // the fail-safe STILL gets the digger out. GATING — this is the
+        // "nobody entombed" invariant made player-action-proof. B6 shift
+        // (architect's gate philosophy — gate the INVARIANT, report the
+        // MECHANISM): with the tiered fail-safe (egress plan → climb-free
+        // → teleport), WHICH tier rescues the digger is non-deterministic
+        // by design, so e_egress_fired (the plan tier specifically) is now
+        // reported-not-gating. e_out (the digger IS out) is the invariant
+        // that matters and stays gating.
         && e_lured
         && e_board_empty
-        && e_egress_fired
         && e_out
         // B5.8-E part (f): the reach-loop breaks with PROGRESS (the block
         // gets worked remotely or an egress frees the digger) — GATING.

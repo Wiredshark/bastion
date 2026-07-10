@@ -2022,7 +2022,14 @@ impl<'a> System<'a> for Sys {
             // idle colonist already standing on open ground). Loudly
             // logged: every fire means the organic tiers (Waiting →
             // climb-free → egress plan) failed and wants a look.
-            const STUCK_TELEPORT_SECS: f32 = 60.0;
+            // 90s (was 60): a deep-dig colonist legitimately WAITING for
+            // the exposure gate to open its last block completes nothing
+            // meanwhile — at 60s it tripped the teleport and the dig
+            // stalled (b58-(d) run-4). 90s clears every legitimate
+            // wait/climb (exposure clears in <20s; a full climb is
+            // ~30-45s) while still bounding entombment tightly. The
+            // completion-reset means a PRODUCTIVE colony never trips it.
+            const STUCK_TELEPORT_SECS: f32 = 90.0;
             const STUCK_LEASH_SQ: f32 = 36.0; // 6 blocks
             // Working colonists are legitimately stationary — reset.
             for (_, uid, active) in (&colonists, &uids, &active_jobs).join() {
