@@ -823,15 +823,46 @@ impl<'a> System<'a> for Sys {
                     // ruling).
                     if let Some(lp) = nearest_ladder {
                         const LADDER_MAGNET_V: f32 = 1.5; // blocks/s
-                        let center =
-                            Vec2::new(lp.x as f32 + 0.5, lp.y as f32 + 0.5);
-                        let d = center - pos.0.xy();
-                        let dist = d.magnitude();
-                        if dist > 0.05 {
-                            let step = (LADDER_MAGNET_V * dt.0).min(dist);
-                            let nudge = d / dist * step;
-                            pos.0.x += nudge.x;
-                            pos.0.y += nudge.y;
+                        // Pull toward the ladder's OPEN NEIGHBOR column,
+                        // not the rung block itself: rungs have
+                        // solid_height 1.0 (a rung is a platform), so the
+                        // pillar is an impassable pole — the CLIMB space
+                        // is the air column beside it (run-6 finding: the
+                        // magnet parked climbers ON the bottom rung, where
+                        // the rung above failed the head-check). In an
+                        // open pit the climber already stands in that
+                        // neighbor → no-op; in an interior shaft it pulls
+                        // them off the rung into the shaft.
+                        let solid = |p: Vec3<i32>| {
+                            terrain.get(p).map(|b| b.is_solid()).unwrap_or(true)
+                        };
+                        let climb_col = [
+                            Vec2::new(1, 0),
+                            Vec2::new(-1, 0),
+                            Vec2::new(0, 1),
+                            Vec2::new(0, -1),
+                        ]
+                        .into_iter()
+                        .map(|d| Vec3::new(lp.x + d.x, lp.y + d.y, lp.z))
+                        .filter(|c| !solid(*c) && !solid(*c + Vec3::unit_z()))
+                        .min_by(|a, b| {
+                            let da = Vec2::new(a.x as f32 + 0.5, a.y as f32 + 0.5)
+                                .distance_squared(pos.0.xy());
+                            let db = Vec2::new(b.x as f32 + 0.5, b.y as f32 + 0.5)
+                                .distance_squared(pos.0.xy());
+                            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                        if let Some(cc) = climb_col {
+                            let center =
+                                Vec2::new(cc.x as f32 + 0.5, cc.y as f32 + 0.5);
+                            let d = center - pos.0.xy();
+                            let dist = d.magnitude();
+                            if dist > 0.05 {
+                                let step = (LADDER_MAGNET_V * dt.0).min(dist);
+                                let nudge = d / dist * step;
+                                pos.0.x += nudge.x;
+                                pos.0.y += nudge.y;
+                            }
                         }
                     }
                 }
@@ -1026,7 +1057,17 @@ impl<'a> System<'a> for Sys {
                             active.best_dist = sdist;
                             active.stuck_time = 0.0;
                         } else {
-                            active.stuck_time += dt.0;
+                            // B6 SOFT-0 QUEUE PATIENCE: while staged
+                            // routing is active (steer != target — walking
+                            // to or climbing an access anchor), the
+                            // colonist may be WAITING ITS TURN at a
+                            // single-file vertical link, which is not a
+                            // deadlock (run-7: the queue's tail bounced
+                            // unreachable while the head climbed). Stall
+                            // time accrues at 1/5 rate there — a genuine
+                            // blockage still times out, 5× later.
+                            active.stuck_time +=
+                                dt.0 * if steer != target { 0.2 } else { 1.0 };
                             if active.stuck_time > STUCK_TIMEOUT {
                                 // B6 SOFT-0 (trigger a — the GRACE WINDOW):
                                 // before degrading to carve/unreachable,

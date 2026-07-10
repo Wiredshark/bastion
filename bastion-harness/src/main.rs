@@ -2523,12 +2523,21 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
             }
         }
     }
-    // The 1×1 shaft at (kx+3, ky): air from chamber floor to the surface,
-    // laddered the whole way (the strict single-file chokepoint).
+    // The 1×1 CLIMB shaft at (kx+3, ky): OPEN air from chamber floor to
+    // the surface — the strict single-file chokepoint. The ladder RUNGS
+    // occupy the adjacent column (kx+4) as a pillar: `SpriteKind::Ladder`
+    // has solid_height 1.0 (a rung is a platform!), so a laddered column
+    // is an impassable pole — climbers rise in the open column BESIDE the
+    // rungs (the assist's ±2 grab + ledge snap; exactly how B5.8's
+    // auto-built pillars work). Run-5 finding: an all-ladder shaft
+    // blocked its own crew at the entrance.
     for z in (k_gz - 6)..=k_gz {
         server
             .state_mut()
-            .set_block(Vec3::new(kx + 3, ky, z), Block::air(SpriteKind::Ladder));
+            .set_block(Vec3::new(kx + 3, ky, z), Block::empty());
+        server
+            .state_mut()
+            .set_block(Vec3::new(kx + 4, ky, z), Block::air(SpriteKind::Ladder));
     }
     // Register the ladder base as an ACCESS ANCHOR (what the designation
     // path would do) — staged routing needs it or the crew beelines at
@@ -2569,10 +2578,17 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
     let mut ck_unreachable_max = 0usize;
     let mut ck_in_terrain = 0usize;
     let mut ck_cleared = false;
+    // Per-colonist peak height — the unambiguous "how far did each get"
+    // diagnostic (log-grep on wrapped positions proved unreliable).
+    let mut peak_z: std::collections::HashMap<String, f32> = std::collections::HashMap::new();
     for i in 0..400 {
         tick(&mut server, 30);
         ck_unreachable_max = ck_unreachable_max.max(server.bastion_job_audit().unreachable);
         for (n, p, _) in server.bastion_colonist_states() {
+            let e = peak_z.entry(n.clone()).or_insert(p.z);
+            if p.z > *e {
+                *e = p.z;
+            }
             if p.z >= k_gz as f32 + 0.5 {
                 ever_out.insert(n.clone());
             }
@@ -2634,6 +2650,8 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
         }
     }
 
+    let mut peaks: Vec<f32> = peak_z.values().copied().collect();
+    peaks.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
     let result = serde_json::json!({
         "ck_jobs": ck_jobs,
         "ck_all_out": ck_all_out,
@@ -2642,6 +2660,8 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
         "ck_unreachable_max": ck_unreachable_max,
         "ck_in_terrain": ck_in_terrain,
         "ck_control_spacing": ck_control_spacing,
+        "ck_peaks": peaks,
+        "ck_rim_feet": k_gz + 1,
     });
     let pass = ck_jobs == 5
         && ck_all_out
