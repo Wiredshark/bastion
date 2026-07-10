@@ -882,3 +882,33 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   push vs magnet), or airborne-agent interplay. NEXT: magnet telemetry
   → fix → 3-green ck streak → full suite → SOFT-0 bookkeeping + tag.
   Reviewer consult on the queue design pending (may shortcut).
+
+- **STRETCH 3 — BEN'S LIVE-FIX BATCH folded in + THE HOVER SOLVED
+  (branch @ `b73f8df150`+, NOT gated/tagged).** The reviewer's consult
+  answer NAILED the hover: sub-block wobble (magnet/hover/physics, all
+  clearing the 0.5 STUCK_EPSILON) reset stuck_time forever → ZERO
+  timeouts → zero churn → no net ever fired. R3 fix-1 shipped:
+  stuck-time HYSTERESIS (`ActiveJob.reset_dist`, zero only on ≥1 block
+  NET progress) — run E3 main phase went 5/5 first try. Batch contents
+  (commit-documented): flat-mine drag false-reject FIXED (client floor
+  from the SAMPLED surface at drag center, not the camera plane +
+  server max-surface fallback + `fl_hint_decoupled` regression);
+  overseer `day_length` = 10 min (the TimeScale day mechanism was
+  already correct per FR6 — the 30-min base day was just imperceptible
+  at 4×); MINE LIFECYCLE (done detection + `done_count` hook +
+  disperse); TIERED FAIL-SAFES (`climb_free_until` — any-wall climb,
+  jobless included, granted at the trapped VERDICT after discovering
+  the plan-loop's take(0) swallowed grants; teleport-to-ground at 30s
+  verdict + persistent-churn 16-cycle direct, warn-logged); reviewer
+  F4b debug logs stripped. E5 confirmed the sealed-pit fail-safe FIRES
+  (`ck_failsafe_out` true, egress steps=24 from the pit) and
+  `ck_mine_done` passes. REMAINING: RUN VARIANCE on both scenario parts
+  (main 3-5 of 5 across runs; fs_out flips) — every thread converges
+  on the reviewer-recommended WAITING-STATE refactor (a Waiting
+  ActiveJobState the watchdog skips, promoted by anchor-nearest/
+  density) as the structural fix: it retires the churn-as-progress
+  economy, the mid-climb-keep hack, AND the stillness-blindness for
+  employed waiters in one shape. RESUME AT: implement Waiting per the
+  consult answer → 3-green ck streak → full suite → gate/tag the folded
+  block (SOFT-0 + B-LIVE batch) → ping architect (play-tester rebuilds
+  for Ben's re-test).
