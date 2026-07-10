@@ -824,7 +824,11 @@ fn b5_scenario(args: &Args) -> ExitCode {
     for x in sl_min_xy.x..=sl_max_xy.x {
         let s = sl_gz + (x - sl_min_xy.x); // this column's surface
         for y in sl_min_xy.y..=sl_max_xy.y {
-            for z in (s - 5)..=s {
+            // Solid from below the BASE tier to this column's surface: the
+            // 7.6 flat floor reaches sl_gz on EVERY column — a per-surface
+            // underfill leaves natural (sometimes air) cells beneath the
+            // tall columns' fill (bit b-2.1: 106/108 jobs).
+            for z in (sl_gz - 6)..=s {
                 server.state_mut().set_block(
                     Vec3::new(x, y, z),
                     Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
