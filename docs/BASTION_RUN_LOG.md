@@ -757,3 +757,25 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   is fully buildable with no asset dependencies; god-hand fast-tracks
   the moment BASSET1 lands the asset (FLEET_STATUS already says exactly
   this).
+
+### B6 — stockpiles/hauling + SOFT-COLLISION (SOFT-0 first; COMMITTED)
+
+- Start SHA: `9bab3c366f` (= main after TOOL0) · branch
+  `bastion/block-B6` · overnight block 4. Order: **SOFT-0 FIRST** (self-
+  contained; closes the committed mechanism + the known-open climb
+  composites' root), then stockpiles/hauling, then SOFT-1 tuning
+  against the haul crews. SOFT-0 implementation map (from
+  SOFT-COLLISION-design.md §0-3): (1) `Colonist.soft_until: f64`
+  (serde-default; 0 = off) — phys-visible transient state, expiry-based
+  hysteresis; (2) trigger (a) the GRACE WINDOW in the watchdog: at
+  STUCK_TIMEOUT, if the colonist hasn't been granted soft-pass for this
+  stall yet (`ActiveJob.soft_granted`, server-only comp), grant soft
+  (+reset stuck_time) INSTEAD of releasing — only a still-stuck
+  soft-passed colonist goes unreachable; (3) trigger (b) density: > N
+  colonists within a small radius → soft (server-side O(n²), colonies
+  are small); (4) the softened push: extend the phys ladder-waiver site
+  (colonist pairs) — if either soft-active, SCALE the pushback by
+  ~0.15 (squeeze, not ghost); terrain untouched; needs Time in
+  PhysicsRead (check); (5) `--chokepoint-scenario`: 1-wide shaft+ladder
+  whole-crew egress → all out, zero unreachable, open-ground control
+  spacing normal, nobody inside terrain, vanilla NPC unaffected.
