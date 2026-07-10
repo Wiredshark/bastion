@@ -218,3 +218,25 @@ instead, referencing the old one).
   client-side `TerrainChanges` stream, of which the minimap is now the FIRST
   consumer. Flagged for the architect; backlog entry restates the overlay
   gap.
+
+## 2026-07-09 — B5.6b-2 (z_extent + volumetric + volume-UX)
+
+- **Spec vs build (recorded drift, deliberate):** the spec's volumetric
+  render ("top + subtle walls + depth rings", "volume reads correctly on a
+  slope") is built as ABSOLUTE-z rings over the echoed AABB + corner
+  posts, not per-column surface-following rings. Rationale in the findings
+  AS-BUILT §design-decision: per-column rings re-sampled at overlay
+  rebuild would sag into the dig mid-excavation (the sampler reads CURRENT
+  terrain); the AABB matches cancel/erase box semantics and stays put.
+  Cost: on slopes the ring stack shows the volume envelope (relief +
+  depth). PREVIEW rings during the drag ARE per-column (sampled fresh).
+  Architect: bless or queue the per-column upgrade (backlog entry exists).
+- **Docs drift, resolved by schema guard:** future-work §3e/§3m/§3q/§3z
+  carry 7/8/9-kind purpose lists; frameworks §2's 8-kind list is now
+  LOCKED as `common::bastion::Purpose` with a unit test naming §2 the
+  edit-first authority. Purpose is live but unconsumed until B6 —
+  consistent by construction hereafter.
+- **Terminology note:** "N levels deep" counts SURFACE-INCLUSIVE levels
+  (down=2 → "3 levels deep" = surface + 2 below), matching the volume the
+  zone actually claims; the wire `ZExtent{down,up}` counts offsets. One
+  label authority: `Tools::z_extent_label`.

@@ -363,9 +363,14 @@ pub struct Client {
     /// B4. B5.5: removals subtract from stored rects (AABB subtraction), so
     /// the list shrinks/splits too — `bastion_designations_rev` bumps on any
     /// change and voxygen rebuilds its overlay shapes when it moves.
+    // B5.6b-2: the third field is the surface-relative extent for volume
+    // rendering (`None` = legacy literal region). Erase subtraction pieces
+    // inherit their parent's extent (splits are XY-shaped in practice — the
+    // erase path cancels at each rect's own full z-range).
     bastion_designations: Vec<(
         common::bastion::Region,
         common::bastion::DesignationKind,
+        Option<common::bastion::ZExtent>,
     )>,
     bastion_designations_rev: u64,
     target_time_of_day: Option<TimeOfDay>,
@@ -2021,6 +2026,7 @@ impl Client {
     ) -> &[(
         common::bastion::Region,
         common::bastion::DesignationKind,
+        Option<common::bastion::ZExtent>,
     )] {
         &self.bastion_designations
     }
@@ -2031,12 +2037,21 @@ impl Client {
     pub fn bastion_designations_rev(&self) -> u64 { self.bastion_designations_rev }
 
     /// bastion (B2a): paint a designation region (server validates + echoes).
+    /// B5.6b-2: `z_extent: Some(_)` switches to the surface-relative path —
+    /// `region`'s XY is the footprint, `max.z` the paint-plane hint; the
+    /// server resolves per-column surfaces and echoes exact bounds. `None`
+    /// sends the region literally (legacy semantics).
     pub fn bastion_place_designation(
         &mut self,
         region: common::bastion::Region,
         kind: common::bastion::DesignationKind,
+        z_extent: Option<common::bastion::ZExtent>,
     ) {
-        self.send_msg(ClientGeneral::BastionPlaceDesignation { region, kind });
+        self.send_msg(ClientGeneral::BastionPlaceDesignation {
+            region,
+            kind,
+            z_extent,
+        });
     }
 
     /// bastion (B2a): apply a divine influence (stub until B13).
@@ -3220,11 +3235,15 @@ impl Client {
                 self.update_available_recipes();
             },
             ServerGeneral::Gizmos(gizmos) => frontend_events.push(Event::Gizmos(gizmos)),
-            ServerGeneral::BastionDesignation { region, kind } => {
+            ServerGeneral::BastionDesignation {
+                region,
+                kind,
+                z_extent,
+            } => {
                 // bastion (B2a): server-validated designation echo — kept for
                 // the overlay render. B4 replaces this list with job-board
                 // state.
-                self.bastion_designations.push((region, kind));
+                self.bastion_designations.push((region, kind, z_extent));
                 self.bastion_designations_rev += 1;
             },
             ServerGeneral::BastionDesignationRemoved { region } => {
@@ -3232,12 +3251,12 @@ impl Client {
                 // stored rect (exact 3D AABB subtraction, ≤6 pieces each);
                 // untouched rects pass through, covered rects vanish.
                 let old = std::mem::take(&mut self.bastion_designations);
-                for (r, kind) in old {
+                for (r, kind, extent) in old {
                     if r.intersects(&region) {
                         self.bastion_designations
-                            .extend(r.subtract(&region).into_iter().map(|p| (p, kind)));
+                            .extend(r.subtract(&region).into_iter().map(|p| (p, kind, extent)));
                     } else {
-                        self.bastion_designations.push((r, kind));
+                        self.bastion_designations.push((r, kind, extent));
                     }
                 }
                 self.bastion_designations_rev += 1;

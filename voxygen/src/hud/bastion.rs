@@ -93,6 +93,14 @@ pub struct BastionHudState {
     /// bastion (B-MAP1): active Z-slice, mirrored so the minimap tiles can
     /// render the slice level (below-ground slice → below-ground map).
     pub slice_z: Option<f32>,
+    /// bastion (B5.6b-2): the live depth counter during a designate drag
+    /// ("3 levels deep"), world-anchored at the drag cursor. `None` when no
+    /// drag is active. Drawn exactly like `zone_labels`.
+    pub paint_label: Option<(Vec3<f32>, String, [f32; 4])>,
+    /// bastion (B5.6b-2): the current depth selection as a label for the
+    /// tool panel's precision stepper (mirrored from the session's `Tools`,
+    /// so the stepper and scroll-while-painting stay synced by construction).
+    pub z_extent_label: String,
 }
 
 /// How many actions the pie shows before overflowing into "More…".

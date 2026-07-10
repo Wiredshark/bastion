@@ -22,7 +22,7 @@ use crate::Tick;
 use common::{
     bastion::{
         BUILD_MATERIAL_ITEM, CHOP_DROP_ITEM, DesignationKind, Job, JobAudit, JobId,
-        MINE_DROP_ITEM, Region,
+        MINE_DROP_ITEM, Region, ZExtent,
     },
     comp,
     comp::{
@@ -58,6 +58,18 @@ fn work_rate(skill_level: u16) -> f32 {
     (1.0 + skill_level as f32 * WORK_SKILL_BONUS) / WORK_DURATION_BASE
 }
 
+/// The per-block job predicate, shared by both placement paths. Mine =
+/// every filled block; Chop = wood only; Build = currently-empty positions
+/// (placing blocks, not removing); Stockpile = none yet (B6 zones).
+fn job_wanted(kind: DesignationKind, block: &Block) -> bool {
+    match kind {
+        DesignationKind::Mine => block.is_filled(),
+        DesignationKind::Chop => matches!(block.kind(), BlockKind::Wood),
+        DesignationKind::Build => !block.is_filled(),
+        DesignationKind::Stockpile => false,
+    }
+}
+
 /// Arbitration cadence in server ticks (~0.5s at 30 tps): "a few Hz, not
 /// every tick".
 pub const ARBITRATION_INTERVAL: u64 = 15;
@@ -77,6 +89,79 @@ const TRAVEL_SPEED: f32 = 0.8;
 /// the server unload sweep skips them. Empty in normal play.
 #[derive(Default)]
 pub struct BastionForceLoaded(pub HashSet<Vec2<i32>>);
+
+/// How far above the paint hint the per-column surface scan starts, and how
+/// far below it gives up. Painting happens near the surface; ±this window
+/// covers any slope a single drag can span (a 64-wide footprint on a 45°
+/// hillside is +/−32).
+const SURFACE_SCAN_UP: i32 = 48;
+const SURFACE_SCAN_DOWN: i32 = 96;
+
+/// Real, standable terrain — the canonical surface-kind filter shared with
+/// the harness scan and the client's `overlay_surface_z`
+/// (BASTION_ARCHITECTURE §5). Deliberately excludes Wood/Leaves so tree
+/// canopies never read as "the surface" (the recurring `is_filled()` gotcha
+/// that caused B5.MINE-COVERAGE's cousin bugs).
+pub fn is_surface_terrain(kind: BlockKind) -> bool {
+    matches!(
+        kind,
+        BlockKind::Rock
+            | BlockKind::WeakRock
+            | BlockKind::GlowingRock
+            | BlockKind::GlowingWeakRock
+            | BlockKind::Grass
+            | BlockKind::Snow
+            | BlockKind::ArtSnow
+            | BlockKind::Earth
+            | BlockKind::Sand
+            | BlockKind::Ice
+    )
+}
+
+/// bastion (B5.6b-2): the z of the topmost real-terrain block in column
+/// (x, y), scanned in a window around `hint_z` (the painted plane). This is
+/// THE per-column surface authority for surface-relative designations —
+/// resolved ONCE at placement time (digging afterwards does not re-resolve
+/// the volume). Returns `None` if no real terrain is in the window (e.g.
+/// painted over open water or an unloaded chunk).
+pub fn column_surface_z(terrain: &TerrainGrid, x: i32, y: i32, hint_z: i32) -> Option<i32> {
+    (hint_z - SURFACE_SCAN_DOWN..=hint_z + SURFACE_SCAN_UP)
+        .rev()
+        .find(|z| {
+            terrain
+                .get(Vec3::new(x, y, *z))
+                .is_ok_and(|b| is_surface_terrain(b.kind()))
+        })
+}
+
+/// bastion (B5.6b-2): resolve a painted XY footprint + [`ZExtent`] to the
+/// exact axis-aligned bounds of the per-column surface-relative volume.
+/// This is what the server ECHOES to clients as the designation rect — the
+/// echoed rect MUST bound every job the placement generates, or 3D
+/// `cancel_region` erase misses jobs and orphans them (the echo-bounds
+/// invariant, B5.6b findings §b-2). Returns `None` when no column resolves.
+pub fn resolve_surface_bounds(
+    terrain: &TerrainGrid,
+    min_xy: Vec2<i32>,
+    max_xy: Vec2<i32>,
+    hint_z: i32,
+    extent: ZExtent,
+) -> Option<Region> {
+    let mut z_min = i32::MAX;
+    let mut z_max = i32::MIN;
+    for y in min_xy.y..=max_xy.y {
+        for x in min_xy.x..=max_xy.x {
+            if let Some(s) = column_surface_z(terrain, x, y, hint_z) {
+                z_min = z_min.min(s - extent.down as i32);
+                z_max = z_max.max(s + extent.up as i32);
+            }
+        }
+    }
+    (z_min <= z_max).then(|| Region {
+        min: Vec3::new(min_xy.x, min_xy.y, z_min),
+        max: Vec3::new(max_xy.x, max_xy.y, z_max),
+    })
+}
 
 /// The job board resource.
 #[derive(Default)]
@@ -117,14 +202,7 @@ impl JobBoard {
                     let Ok(block) = terrain.get(pos) else {
                         continue;
                     };
-                    let wanted = match kind {
-                        DesignationKind::Mine => block.is_filled(),
-                        DesignationKind::Chop => matches!(block.kind(), BlockKind::Wood),
-                        DesignationKind::Build => !block.is_filled(),
-                        // B6: stockpile zones generate their own job type.
-                        DesignationKind::Stockpile => false,
-                    };
-                    if wanted {
+                    if job_wanted(kind, block) {
                         let id = self.next_id;
                         self.next_id += 1;
                         self.jobs.insert(id, Job {
@@ -148,6 +226,70 @@ impl JobBoard {
             ?kind,
             jobs = created.len(),
             "bastion: designation placed"
+        );
+        created
+    }
+
+    /// bastion (B5.6b-2): the surface-relative placement path — an XY
+    /// footprint + [`ZExtent`] resolved per column against the terrain
+    /// surface (see [`column_surface_z`]), replacing the client's old
+    /// hardcoded flat `min.z-2` expansion. On a slope every painted column
+    /// now gets jobs at ITS OWN surface (the B5.MINE-COVERAGE fix); on flat
+    /// ground with the default extent this generates exactly what
+    /// [`Self::place_designation`] did before. Columns with no resolvable
+    /// surface (open water, void) are skipped, same as out-of-bounds blocks
+    /// in the region path.
+    pub fn place_designation_surface(
+        &mut self,
+        terrain: &TerrainGrid,
+        min_xy: Vec2<i32>,
+        max_xy: Vec2<i32>,
+        hint_z: i32,
+        extent: ZExtent,
+        kind: DesignationKind,
+    ) -> Vec<JobId> {
+        let mut created = Vec::new();
+        let work = kind.work_type();
+        // Same one-job-per-block dedupe as the region path (free-item
+        // exploit guard — see `place_designation`).
+        let occupied: HashSet<Vec3<i32>> = self.jobs.values().map(|j| j.pos).collect();
+        for y in min_xy.y..=max_xy.y {
+            for x in min_xy.x..=max_xy.x {
+                let Some(surface) = column_surface_z(terrain, x, y, hint_z) else {
+                    continue;
+                };
+                for z in surface - extent.down as i32..=surface + extent.up as i32 {
+                    let pos = Vec3::new(x, y, z);
+                    if occupied.contains(&pos) {
+                        continue;
+                    }
+                    let Ok(block) = terrain.get(pos) else {
+                        continue;
+                    };
+                    if job_wanted(kind, block) {
+                        let id = self.next_id;
+                        self.next_id += 1;
+                        self.jobs.insert(id, Job {
+                            kind,
+                            work,
+                            pos,
+                            skill_floor: 0,
+                            claimed_by: None,
+                            unreachable: false,
+                            progress: 0.0,
+                            required_item: matches!(kind, DesignationKind::Build)
+                                .then_some(BUILD_MATERIAL_ITEM),
+                            needs_materials: false,
+                        });
+                        created.push(id);
+                    }
+                }
+            }
+        }
+        info!(
+            ?kind,
+            jobs = created.len(),
+            "bastion: surface designation placed"
         );
         created
     }

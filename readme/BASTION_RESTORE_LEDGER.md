@@ -92,3 +92,26 @@ than editing the old one.
 - Undoes: the bastion minimap + big-map overseer layers/fly-to + the
   minimap size button (client-only; no data-format or protocol changes —
   nothing serialized, safe to revert cold).
+
+## bastion-block-B5.6b-2 (2026-07-09)
+
+- Block: B5.6b-2 (z_extent surface-relative model + volumetric zones +
+  volume-selection UX; closes B5.MINE-COVERAGE; canonical Purpose enum)
+- Tag: `bastion-block-B5.6b-2`
+- Previous green: `bastion-block-BMAP1` (main then advanced by the
+  architect's docs-only checkpoint `72907ee641` = `fleet-ckpt-01`, the
+  merge base)
+- Revert: `git reset --hard 72907ee641` (or `bastion-block-BMAP1` to also
+  drop the architect checkpoint)
+- Undoes: `ZExtent` + `Purpose` in `common::bastion`; the surface-relative
+  placement path (`column_surface_z`/`place_designation_surface`/
+  `resolve_surface_bounds` + harness hooks); the `z_extent` field on
+  `BastionPlaceDesignation`/`BastionDesignation`; the client paint's
+  footprint+extent send (flat `min.z-2` pre-expansion returns, and with it
+  the MINE-COVERAGE slope gap); scroll/stepper depth UX + ring previews +
+  volumetric committed rendering; the b5 scenario's slope-coverage phase.
+- Data-format caveats: **NET PROTOCOL CHANGE** — two messages gained an
+  `Option<ZExtent>` field (client+server must match; there is no version
+  negotiation). No comp/rtsim `data.dat` changes; the job board is
+  runtime-only. Safe to revert cold as long as client+server revert
+  together.

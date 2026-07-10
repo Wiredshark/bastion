@@ -238,6 +238,10 @@ pub enum ServerGeneral {
     BastionDesignation {
         region: common::bastion::Region,
         kind: common::bastion::DesignationKind,
+        /// B5.6b-2: `Some` for surface-relative placements (`region` holds
+        /// the exact resolved bounds); the client keeps it so the volume
+        /// rendering can count levels. `None` for legacy literal regions.
+        z_extent: Option<common::bastion::ZExtent>,
     },
     /// bastion (B5.5): a cancelled/erased designation region echoed back so
     /// the client subtracts it from its stored overlay rects.
