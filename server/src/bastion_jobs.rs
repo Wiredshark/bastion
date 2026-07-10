@@ -482,6 +482,15 @@ pub struct JobBoard {
     /// bastion (B-LIVE3, mine lifecycle): designations that reached DONE
     /// (last non-access job completed). Telemetry for the harness/UI.
     pub done_count: u64,
+    /// bastion (B-LIVE3 / reviewer F5): the UNIVERSAL stuck watchdog —
+    /// (last position, seconds since it meaningfully moved) per colonist,
+    /// employed or not. Feeds the VERDICT-INDEPENDENT teleport backstop:
+    /// no `has_egress` gate, no churn threshold that can race its own
+    /// reset — just "a colonist that hasn't moved in N seconds and isn't
+    /// working goes to ground." Closes the `has_egress` FALSE-POSITIVE
+    /// hover the earlier verdict-gated tiers couldn't (Ben's "no colonist
+    /// EVER stuck" guarantee, made unconditional).
+    stuck_watch: HashMap<Uid, (Vec3<f32>, f32)>,
 }
 
 impl JobBoard {
@@ -1697,32 +1706,11 @@ impl<'a> System<'a> for Sys {
                 continue;
             }
             churn.1 = churn.1.saturating_add(1);
-            // B-LIVE3 second threshold (Ben's ultimate fail-safe): ~16
-            // no-progress cycles (~40s) means EVERY tier above failed —
-            // whatever the egress verdict says (the shaft-mouth hover
-            // reads "escapable" forever because the shaft floor IS
-            // reachable ground, yet the colonist provably isn't making
-            // progress). Teleport directly; loudly logged.
-            if churn.1 >= CHURN_TRAPPED_RELEASES * 2 {
-                churn.1 = 0;
-                if let Some(d) = surface_teleport_dest(&terrain, feet)
-                    && let (Some(p), Some(v)) =
-                        (positions.get_mut(entity), velocities.get_mut(entity))
-                {
-                    tracing::warn!(
-                        ?feet,
-                        ?d,
-                        "bastion: ULTIMATE FAIL-SAFE — persistent-churn \
-                         teleport to ground (every tier above failed)"
-                    );
-                    p.0 = d.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
-                    v.0 = Vec3::zero();
-                    if let Some(mut c) = colonists.get_mut(entity) {
-                        c.0.climb_free_until = 0.0;
-                    }
-                }
-                continue;
-            }
+            // (The dead persistent-churn teleport tier — churn.1 >= 16,
+            // unreachable because the reset below sawtooths it 0→8→0 —
+            // was REMOVED per reviewer F5. The verdict-INDEPENDENT
+            // `stuck_watch` teleport below now owns the ultimate backstop,
+            // closing the has_egress false-positive the old tiers missed.)
             if churn.1 < CHURN_TRAPPED_RELEASES {
                 continue;
             }
@@ -2010,38 +1998,69 @@ impl<'a> System<'a> for Sys {
                 }
             }
 
-            // ── B-LIVE3: TELEPORT-TO-GROUND, the ULTIMATE backstop ──────
-            // (Ben: "if all-out fails just teleport them to ground
-            // level.") Fires ONLY as the genuine last resort: the climb-
-            // free window is >30s old AND the trapped verdict still holds.
-            // Loudly logged — every firing means the normal tiers failed
-            // and deserves a look. Entombment is now impossible BY
-            // CONSTRUCTION: plan → climb-free → teleport.
+            // ── B-LIVE3 / reviewer F5: the UNIVERSAL stuck teleport, the
+            // ULTIMATE backstop (Ben: "if all-out fails just teleport them
+            // to ground level"). VERDICT-INDEPENDENT — no has_egress gate
+            // (the old tier's fatal hole: a shaft-mouth hover reads
+            // has_egress=TRUE as a false positive, so the verdict-gated
+            // teleport never fired and the colonist hovered forever). Pure
+            // position+time: a colonist that ISN'T working (Arrived
+            // resets — legitimate stationary) and hasn't moved
+            // `STUCK_LEASH` blocks in `STUCK_TELEPORT_SECS` is teleported
+            // to the nearest real surface — but ONLY when that surface is
+            // meaningfully ELSEWHERE (guards against no-op teleporting an
+            // idle colonist already standing on open ground). Loudly
+            // logged: every fire means the organic tiers (Waiting →
+            // climb-free → egress plan) failed and wants a look.
+            const STUCK_TELEPORT_SECS: f32 = 60.0;
+            const STUCK_LEASH_SQ: f32 = 36.0; // 6 blocks
+            // Working colonists are legitimately stationary — reset.
+            for (_, uid, active) in (&colonists, &uids, &active_jobs).join() {
+                if matches!(active.state, ActiveJobState::Arrived) {
+                    board.stuck_watch.remove(uid);
+                }
+            }
             let mut tp_iter =
-                (&mut colonists, &mut positions, &mut velocities).lend_join();
-            while let Some((mut colonist, pos, vel)) = tp_iter.next() {
-                let cf = colonist.0.climb_free_until;
-                if cf <= time.0 || cf - time.0 >= 15.0 {
-                    continue; // off, or the window is younger than 30s
+                (&colonists, &uids, &mut positions, &mut velocities).lend_join();
+            while let Some((_colonist, uid, pos, vel)) = tp_iter.next() {
+                let is_working = id_maps
+                    .uid_entity(*uid)
+                    .and_then(|e| active_jobs.get(e))
+                    .is_some_and(|a| matches!(a.state, ActiveJobState::Arrived));
+                if is_working {
+                    continue;
+                }
+                let w = board.stuck_watch.entry(*uid).or_insert((pos.0, 0.0));
+                if pos.0.distance_squared(w.0) > STUCK_LEASH_SQ {
+                    *w = (pos.0, 0.0);
+                    continue;
+                }
+                w.1 += 1.0; // this pass runs ~once per second
+                if w.1 < STUCK_TELEPORT_SECS {
+                    continue;
                 }
                 let feet = pos.0.map(|e| e.floor() as i32);
-                let reach = 2 + colonist.0.skills.climbing.level.min(1) as i32;
-                let (has_egress, _) = egress_scan(&terrain, feet, reach);
-                if has_egress {
-                    // Reached open ground — the fail-safe worked; clear.
-                    colonist.0.climb_free_until = 0.0;
+                if let Some(d) = surface_teleport_dest(&terrain, feet)
+                    && d.map(|e| e as f32).xy().distance(pos.0.xy()) < 3.0
+                    && (d.z as f32 - pos.0.z).abs() < 3.0
+                {
+                    // The nearest surface IS essentially here — the
+                    // colonist is on open ground, just idle. Not stuck;
+                    // reset (B7 gives it work; nothing to fix).
+                    *w = (pos.0, 0.0);
                     continue;
                 }
                 if let Some(d) = surface_teleport_dest(&terrain, feet) {
                     tracing::warn!(
                         ?feet,
                         ?d,
-                        "bastion: ULTIMATE FAIL-SAFE — teleporting trapped \
-                         colonist to ground (all normal tiers failed)"
+                        secs = w.1,
+                        "bastion: ULTIMATE FAIL-SAFE — teleporting stuck \
+                         colonist to ground (organic egress tiers failed)"
                     );
                     pos.0 = d.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
                     vel.0 = Vec3::zero();
-                    colonist.0.climb_free_until = 0.0;
+                    board.stuck_watch.remove(uid);
                 }
             }
         }

@@ -2833,15 +2833,29 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
     }
 
     // (b) MINE LIFECYCLE: a small mine marks DONE when its last block
-    // clears (observable via the done counter).
+    // clears (observable via the done counter). Re-stage the crew beside
+    // it first — after the fail-safe teleports they're scattered, and this
+    // part tests the DONE/DISPERSE lifecycle, not colonist availability
+    // (the crew-egress part above already proved they reach work).
     let done_before = server.bastion_done_designations();
     let m_region = Region {
         min: Vec3::new(kx + 4, ky - 4, k_gz),
         max: Vec3::new(kx + 5, ky - 3, k_gz),
     };
+    for (i, n) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(
+                (kx + 2 + i as i32) as f32 + 0.5,
+                (ky - 4) as f32 + 0.5,
+                (k_gz + 1) as f32,
+            ),
+        );
+    }
+    tick(&mut server, 5);
     server.bastion_place_designation(m_region, DesignationKind::Mine);
     let mut ml_done = false;
-    for _ in 0..120 {
+    for _ in 0..150 {
         tick(&mut server, 30);
         if server.bastion_done_designations() > done_before {
             ml_done = true;
