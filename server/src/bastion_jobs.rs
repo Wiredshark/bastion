@@ -224,6 +224,7 @@ fn plan_access(
             is_access: true,
             stuck_strikes: 0,
             depth: 0,
+            last_bounce: None,
         });
         steps += 1;
     }
@@ -424,6 +425,7 @@ impl JobBoard {
                             // Box-top-relative depth: the descent gate's
                             // "how far below the way out".
                             depth: (region.max.z - z).clamp(0, 255) as u8,
+                            last_bounce: None,
                         });
                         created.push(id);
                     }
@@ -506,6 +508,7 @@ impl JobBoard {
                             // Per-column surface-relative depth: the
                             // descent gate's "how far below the way out".
                             depth,
+                            last_bounce: None,
                         });
                         created.push(id);
                     }
@@ -936,9 +939,20 @@ impl<'a> System<'a> for Sys {
                                     carve_requests.push((feet, job.pos, active.job));
                                 } else {
                                     job.unreachable = true;
+                                    // B5.8-E2: bar THIS colonist from
+                                    // re-claiming from THIS block — the
+                                    // identical search re-fails identically,
+                                    // and the claim churn kept the colonist
+                                    // "employed" enough to starve the egress
+                                    // stillness timer (b5-chop loop). Anyone
+                                    // else — or this colonist after moving —
+                                    // may still try.
+                                    job.last_bounce =
+                                        uids.get(entity).map(|u| (*u, feet));
                                     info!(
                                         job = active.job,
                                         pos = ?job.pos,
+                                        colonist = ?feet,
                                         "bastion: job unreachable — claim released"
                                     );
                                 }
@@ -1183,12 +1197,20 @@ impl<'a> System<'a> for Sys {
         const EGRESS_RING_R: i32 = 5;
         const EGRESS_BUBBLE_R: i32 = 8;
         if tick.0 % 30 == 7 {
-            // Employed colonists are the watchdog's problem, not the
-            // trapped detector's — clear their watch so the still-timer
-            // only accrues across CONSECUTIVE jobless seconds (brief
-            // between-claim gaps were summing to spurious triggers).
-            for (_, uid, _) in (&colonists, &uids, &active_jobs).join() {
-                board.egress_watch.remove(uid);
+            // Colonists ACTUALLY WORKING (Arrived, progress accruing) are
+            // the watchdog's problem, not the trapped detector's — clear
+            // their watch so the still-timer only accrues across
+            // consecutive non-working seconds (brief between-claim gaps
+            // were summing to spurious triggers). Merely being EMPLOYED
+            // must NOT reset it: a claim that bounces unreachable every
+            // cycle keeps its colonist nominally employed forever, and the
+            // reset starved the egress net out of ever firing (B5.8-E2,
+            // the b5-chop pit loop). Traveling colonists neither reset nor
+            // accrue; real movement resets via the position test below.
+            for (_, uid, active) in (&colonists, &uids, &active_jobs).join() {
+                if matches!(active.state, ActiveJobState::Arrived) {
+                    board.egress_watch.remove(uid);
+                }
             }
             let mut egress_requests: Vec<(Uid, Vec3<i32>, Vec3<i32>)> = Vec::new();
             for (colonist, pos, uid, ()) in
@@ -1473,6 +1495,14 @@ impl<'a> System<'a> for Sys {
             let mut best: Option<(JobId, u8, f32)> = None;
             for (id, job) in board.jobs.iter() {
                 if job.claimed_by.is_some() || job.unreachable {
+                    continue;
+                }
+                // B5.8-E2: this exact (colonist, standing-block) pairing
+                // already bounced off this job — identical retry, identical
+                // failure. Barred until the colonist moves; others eligible.
+                if job.last_bounce.is_some_and(|(u, f)| {
+                    u == *uid && f == pos.0.map(|e| e.floor() as i32)
+                }) {
                     continue;
                 }
                 if job.kind == DesignationKind::Mine && !exposed.contains(id) {

@@ -565,6 +565,15 @@ pub struct Job {
     /// place (the reactive egress becomes the rare backstop).
     #[serde(default)]
     pub depth: u8,
+    /// bastion (B5.8-E2): the (colonist, feet-block) whose claim last
+    /// bounced off this job as unreachable. That exact pairing is barred
+    /// from re-claiming — re-running the identical failed path search from
+    /// the identical spot re-fails identically, and the churn keeps the
+    /// colonist nominally "employed", which starved the emergency-egress
+    /// stillness timer (the b5-chop reclaim loop). Any other colonist, or
+    /// the same colonist after moving a block, stays eligible.
+    #[serde(default)]
+    pub last_bounce: Option<(crate::uid::Uid, Vec3<i32>)>,
 }
 
 /// The material B5's minimal Build path requires (single hardcoded material;

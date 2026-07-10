@@ -1998,6 +1998,17 @@ fn b58_scenario(args: &Args) -> ExitCode {
         d_all_out,
         "b58: part (d) deep dig done"
     );
+    // (d) leftovers must not leak forward: d_rescue_cleared is sanctioned
+    // known-open (chokepoint composite), so uncleared rescue jobs — plus any
+    // egress/carve jobs the nets emitted — can legitimately outlive the
+    // loop. Part (e)'s e_board_empty PRECONDITION (its own wide cancel
+    // emptied the board) reads global job count; stale (d) jobs poisoned it
+    // at the doubled work pace. Cancel (d)'s whole area before moving on.
+    server.bastion_cancel_designation(Region {
+        min: Vec3::new(dx - 12, dy - 12, d_gz - 16),
+        max: Vec3::new(dx + 12, dy + 12, d_gz + 24),
+    });
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
 
     // ── (e) EMERGENCY EGRESS — Ben's live-test entombment repro ─────────
     // Mine a shaft via a zone, then DELETE the zone with the digger at the
