@@ -850,3 +850,35 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   resource the system reads. Then re-judge the patience edit against a
   working anchor. The block does NOT tag until the chokepoint scenario
   + the full suite go green (gate + rollback discipline holds).
+
+- **RUNS 11-28 (the second stretch): the mechanism now WORKS — 4 full
+  scenario PASSES (16, 20, 24, 28) with 5/5 crew egress through the
+  1-wide shaft — but a crowd-hover tail flakes ~50%.** The debug
+  suspect above was FALSE: the anchor steer had engaged since run 3 —
+  PowerShell `Out-File` wraps stderr at console width AND tracing ANSI
+  codes sit INSIDE field values, so every zero-count log grep was an
+  artifact (method now: raw `cmd /c` redirect + ANSI-strip before
+  matching — memory + BASTION_COMMON_ISSUES candidates). REAL fixes
+  landed this stretch, each commit-documented: velocity-ONLY climb
+  lift (phys ground-snap was resolving the position-pop straight back
+  down on open floor — masked since B5.8 because every b58 climber was
+  wall-pressed; and the pop could TUNNEL into ceilings once vz carried
+  momentum — one colonist permanently embedded, caught by the
+  hard-terrain assert); the Chaser dead-zone close (±3 assist grab);
+  queue-release at second timeout (idle-release, no unreachable
+  pollution; churn-counted so mirage anchors still end in the bubble);
+  MID-CLIMB KEEP (beside-rungs at timeout = climbing, not waiting);
+  reviewer F2 applied (churn guard = egress_scan VERDICT, not anchor
+  proximity) + F3 shipped early (stale access-plan pruner, 20s);
+  uid-keyed scenario identity (random NAMES COLLIDE — two "Yara of the
+  Vale"s); (q) gate takes the b1 invariant shape (the stronger assist
+  self-exits before plan triggers — stairs-EMISSION pin gap logged for
+  AR-2/F4). Suite state on this code: unit 19/19 + B4/B5/B5.5/B5.8 +
+  vanilla ALL GREEN (b58 confirmed twice). OPEN TAIL (the only
+  blocker): 1-2 stragglers hover at feet≈394, x 15869-70 (chamber side
+  of the shaft mouth), lifted 1 block, magnet never completes the
+  2-block slide — suspects: a magnet-engagement gate not meeting
+  (instrument it like the assist eval), crowd equilibrium (softened
+  push vs magnet), or airborne-agent interplay. NEXT: magnet telemetry
+  → fix → 3-green ck streak → full suite → SOFT-0 bookkeeping + tag.
+  Reviewer consult on the queue design pending (may shortcut).
