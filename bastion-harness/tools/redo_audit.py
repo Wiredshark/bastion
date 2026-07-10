@@ -92,10 +92,15 @@ if __name__ == '__main__':
                 print(f'  FLOOR: comparator missing {ref} (pattern {pattern})')
                 continue
             rm = detail_metrics.measure(ref)
+            # FLOOR_KEYS (optional module export) = which metrics gate;
+            # default: every numeric key. Lets the pilot ship informational
+            # metrics without them becoming accidental floors.
+            gate_keys = getattr(detail_metrics, 'FLOOR_KEYS', None) or [
+                k for k in rm if isinstance(rm[k], (int, float))]
             for asset in sorted(glob.glob(pattern)):
                 am = detail_metrics.measure(asset)
-                low = {k: (am[k], rm[k]) for k in rm
-                       if isinstance(rm[k], (int, float)) and am.get(k, 0) < rm[k]}
+                low = {k: (am.get(k, 0), rm[k]) for k in gate_keys
+                       if k in rm and am.get(k, 0) < rm[k]}
                 if low:
                     under_floor.append((asset, low))
                     print(f'  UNDER-FLOOR {asset} vs {ref}: ' + ', '.join(
