@@ -965,3 +965,41 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   drag accepts on any terrain, the overseer day runs 10 min so 4× reads
   as 4×, mines mark done + miners disperse. Revert = `13f7d1f503`. →
   play-tester rebuilds for Ben's re-test.
+
+### AR-2 — access-reliability hardening (in progress)
+
+- Start SHA: `2e72df4338` (= main after B6) · branch
+  `bastion/block-AR2`. Reviewer F1 (egress boundary unit test), F2
+  (verdict-based churn guard), F3 (stale access-plan pruner) all landed
+  INSIDE B6; the reviewer curated the reset-prone-accumulator class as
+  checklist B14. Remaining AR-2 items: the grace density-gate (R1/P4),
+  F4a idle-egress self-route, grace-per-stall-site.
+- **DONE (first increment): grace DENSITY-GATE (R1/P4).** The SOFT-0
+  watchdog grace only helps a colonist↔colonist stall, so it's now
+  granted only when another colonist is within squeeze range (2.5 XY);
+  a terrain-blocked stall skips straight to carve/unreachable instead
+  of burning a zero-benefit STUCK_TIMEOUT. Full suite green (unit
+  19/19, chokepoint ×2, B4/B5/B5.5/B5.8, vanilla). Committed on the
+  branch, NOT tagged (F4a + grace-per-stall-site round out the block).
+  RESUME: F4a idle-egress self-route (an idle below-grade colonist
+  self-routes to the nearest known exit — the organic version of what
+  the teleport floor guarantees), then gate + tag the AR-2 batch.
+- **DONE (2nd increment): reviewer F6 — teleport designation-mask
+  SCOPE HOLE.** The universal teleport's `board.designated.contains(feet)`
+  exclusion was POSITION-only, and `board.designated` is colony-wide and
+  does NOT shrink on claim-release — so a JOBLESS colonist trapped
+  INSIDE an active designation had no teleport backstop (the
+  "impossible by construction" net had an F5-class hole inside a zone;
+  the old comment claimed a demoted digger self-teleports, which never
+  fired). Fix: require BOTH a live job on the board AND being inside a
+  designation to count as a protected digger — a jobless colonist now
+  always teleports (closes the hole), real diggers stay protected (no
+  deep-dig over-fire regression), the chokepoint straggler (pre-carved
+  chamber, no designation) still teleports. NOT the reviewer's minimal
+  `active_jobs.is_some()→skip` (that excludes employed-but-STUCK
+  chokepoint stragglers and regressed CK to 7/10 in earlier testing —
+  the AND-designation clause is what keeps both). CK 8/8, B58 7/8.
+- **TAGGING AR-2** with the two substantive verified fixes (grace
+  density-gate R1/P4 + F6 scope-hole); F4a idle-egress DEFERRED (the
+  teleport floor already guarantees its invariant; the organic version
+  needs agent-steering plumbing in the stillness pass — backlog).
