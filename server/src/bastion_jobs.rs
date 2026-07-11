@@ -343,6 +343,54 @@ pub fn column_surface_z(terrain: &TerrainGrid, x: i32, y: i32, hint_z: i32) -> O
         })
 }
 
+/// How far ABOVE the flat floor a flat-floor column scans for its TRUE crest.
+/// `column_surface_z`'s ±window is centred on the PAINT PLANE, so a flat-floor
+/// pit painted from the BASE of a tall hill caps each hill column at
+/// `hint + SURFACE_SCAN_UP` and leaves a stub above it (Ben live-bug #4 —
+/// "the flatten doesn't flatten"). Flat mode instead scans up from the shared
+/// floor to the column's real top. This bounds that scan so it can't run away
+/// on pathological terrain; the paint's `MAX_DESIGNATION_VOLUME` gate (which
+/// now measures against these true crests) rejects a dig taller than any
+/// natural relief anyway.
+pub const FLAT_SURFACE_SCAN_MAX: i32 = 128;
+
+/// The TRUE crest z of a flat-floor column: the topmost real-terrain block at
+/// or above `floor_z`, scanned up to `floor_z + FLAT_SURFACE_SCAN_MAX`. Unlike
+/// [`column_surface_z`] (a ±window around the paint plane that caps a tall
+/// hill), this reaches the column's real top so a flat-floor pit cuts the
+/// whole hill down to the shared floor. Returns `None` when the floor cell
+/// itself has no real terrain at/above it in range (the column's surface is
+/// already at/below the floor — nothing to dig; [`ZExtent::column_range`]
+/// agrees, returning `None` for `surface < floor`).
+pub fn column_flat_surface_z(terrain: &TerrainGrid, x: i32, y: i32, floor_z: i32) -> Option<i32> {
+    (floor_z..=floor_z + FLAT_SURFACE_SCAN_MAX)
+        .rev()
+        .find(|z| {
+            terrain
+                .get(Vec3::new(x, y, *z))
+                .is_ok_and(|b| is_surface_terrain(b.kind()))
+        })
+}
+
+/// THE per-column surface authority a designation resolves against — flat-floor
+/// mode ([`ZExtent::floor_z`] set) reaches the column's true crest
+/// ([`column_flat_surface_z`], the flatten-hill fix), relative mode uses the
+/// ±window around the paint plane ([`column_surface_z`]). ONE function so
+/// job generation, echo bounds, AND the paint-time volume gate all resolve the
+/// SAME surface (the echo-bounds invariant + an honest volume cap depend on it).
+pub fn resolve_column_surface(
+    terrain: &TerrainGrid,
+    x: i32,
+    y: i32,
+    hint_z: i32,
+    extent: &ZExtent,
+) -> Option<i32> {
+    match extent.floor_z {
+        Some(floor) => column_flat_surface_z(terrain, x, y, floor),
+        None => column_surface_z(terrain, x, y, hint_z),
+    }
+}
+
 /// bastion (B5.6b-2): resolve a painted XY footprint + [`ZExtent`] to the
 /// exact axis-aligned bounds of the per-column surface-relative volume.
 /// This is what the server ECHOES to clients as the designation rect — the
@@ -360,7 +408,7 @@ pub fn resolve_surface_bounds(
     let mut z_max = i32::MIN;
     for y in min_xy.y..=max_xy.y {
         for x in min_xy.x..=max_xy.x {
-            if let Some(s) = column_surface_z(terrain, x, y, hint_z)
+            if let Some(s) = resolve_column_surface(terrain, x, y, hint_z, &extent)
                 && let Some((lo, hi)) = extent.column_range(s)
             {
                 z_min = z_min.min(lo);
@@ -632,7 +680,8 @@ impl JobBoard {
         let occupied: HashSet<Vec3<i32>> = self.jobs.values().map(|j| j.pos).collect();
         for y in min_xy.y..=max_xy.y {
             for x in min_xy.x..=max_xy.x {
-                let Some(surface) = column_surface_z(terrain, x, y, hint_z) else {
+                let Some(surface) = resolve_column_surface(terrain, x, y, hint_z, &extent)
+                else {
                     continue;
                 };
                 // B5.6b-2.1: ONE range authority (relative or flat-floor).

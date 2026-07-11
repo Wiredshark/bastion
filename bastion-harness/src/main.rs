@@ -1032,6 +1032,62 @@ fn b5_scenario(args: &Args) -> ExitCode {
     server.bastion_cancel_designation(sl_wide);
     tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
 
+    // 7.8 (BUILD 2a, flatten-hill — Ben live-bug #4): a flat-floor Mine
+    // painted at the BASE of a hill TALLER than the ±SURFACE_SCAN_UP (48)
+    // paint window must cut the WHOLE hill down to the shared floor. The old
+    // column_surface_z centred its window on the paint plane, so a hill column
+    // solid past hint+48 capped at hint+48 and left a stub above it ("the
+    // flatten doesn't flatten"; 75/150 in Ben's tight deep-dig). Build a 3×3
+    // hill cresting HILL_CREST(60) above the base; flat-floor at the base must
+    // reach the TRUE crest (bounds max.z = base+60), not the base+48 cap.
+    const HILL_CREST: i32 = 60; // > SURFACE_SCAN_UP(48): squarely in the bug's zone
+    let hh_min_xy = Vec2::new(cx - 24, cy + 24); // clear of the staircase (cy+18..20)
+    let hh_max_xy = Vec2::new(cx - 22, cy + 26);
+    let hh_gz = sl_gz; // reuse the staircase's base ground level
+    for x in hh_min_xy.x..=hh_max_xy.x {
+        for y in hh_min_xy.y..=hh_max_xy.y {
+            // Solid rock from below the base up to the crest; air above so the
+            // true-crest scan finds hh_gz+HILL_CREST as the topmost surface.
+            for z in (hh_gz - 6)..=(hh_gz + HILL_CREST) {
+                server.state_mut().set_block(
+                    Vec3::new(x, y, z),
+                    Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
+                );
+            }
+            for z in (hh_gz + HILL_CREST + 1)..=(hh_gz + HILL_CREST + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    tick(&mut server, 2);
+    // Paint from the BASE (hint at hh_gz, NOT the crest) with a flat floor at
+    // the base — the exact "mine a hill from the bottom" gesture Ben reported.
+    let (hh_jobs, hh_bounds) = server.bastion_place_designation_surface(
+        hh_min_xy,
+        hh_max_xy,
+        hh_gz,
+        ZExtent {
+            down: 0,
+            up: 0,
+            floor_z: Some(hh_gz),
+        },
+        DesignationKind::Mine,
+    );
+    let hh_cols = ((hh_max_xy.x - hh_min_xy.x + 1) * (hh_max_xy.y - hh_min_xy.y + 1)) as usize;
+    // Each column: floor hh_gz .. crest hh_gz+HILL_CREST inclusive.
+    let hh_total_ok = hh_jobs.len() == hh_cols * (HILL_CREST as usize + 1);
+    // THE fix: the resolved bounds reach the true crest (not capped at +48).
+    let hh_reaches_crest = hh_bounds.map(|b| b.max.z) == Some(hh_gz + HILL_CREST);
+    // CONTRAST TRIPWIRE (the closed bug): the old ±48 window would cap the
+    // bounds at hh_gz+48. Past that = the truncation is gone (the cause the
+    // architect asked to confirm). If this ever fails, the fix regressed.
+    let hh_past_old_cap = hh_bounds.map(|b| b.max.z).unwrap_or(i32::MIN) > hh_gz + 48;
+    server.bastion_cancel_designation(Region {
+        min: Vec3::new(hh_min_xy.x, hh_min_xy.y, hh_gz - 8),
+        max: Vec3::new(hh_max_xy.x, hh_max_xy.y, hh_gz + HILL_CREST + 8),
+    });
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+
     // 7.7 (TOOL-0): the tool factor end-to-end — equip a stone pick into a
     // colonist's mainhand (Quality::Low → 1.5×), then a steel pick
     // (Moderate → 2.0×): the vanilla tier ladder already rides quality, so
@@ -1091,6 +1147,9 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_flat_bounds_ok": fl_bounds_ok,
         "b5_flat_floor_flat": fl_floor_flat,
         "b5_flat_hint_decoupled": fl_hint_decoupled,
+        "b5_hill_total_ok": hh_total_ok,
+        "b5_hill_reaches_crest": hh_reaches_crest,
+        "b5_hill_past_old_cap": hh_past_old_cap,
         "b5_tool_stone": tl_stone,
         "b5_tool_steel": tl_steel,
         "b5_tool_ok": tl_ok,
@@ -1127,6 +1186,13 @@ fn b5_scenario(args: &Args) -> ExitCode {
         && fl_bounds_ok
         && fl_floor_flat
         && fl_hint_decoupled
+        // BUILD 2a flatten-hill (Ben live-bug #4): a hill cresting 60 above
+        // the base (>48) flat-floored from its base reaches the TRUE crest —
+        // every column floor..crest as jobs, bounds at base+60, PAST the old
+        // base+48 truncation cap.
+        && hh_total_ok
+        && hh_reaches_crest
+        && hh_past_old_cap
         // TOOL-0: equipped-tool factor end-to-end (stone 1.5, steel 2.0,
         // wrong-verb 1.0); the curve itself is unit-pinned.
         && tl_ok
