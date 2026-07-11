@@ -99,6 +99,13 @@ struct Args {
     #[arg(long)]
     chokepoint_scenario: bool,
 
+    /// bastion (CAVE-IN v1, FR11): mine the support under a floating chunk →
+    /// the chunk COLLAPSES (falls to resource) and a colonist in the crush
+    /// volume is EJECTED+injured, NEVER buried (the entombment invariant that
+    /// lets cave-ins coexist with the no-entombment guarantee).
+    #[arg(long)]
+    cavein_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -181,6 +188,8 @@ fn main() -> ExitCode {
         b58_scenario(&args)
     } else if args.chokepoint_scenario {
         chokepoint_scenario(&args)
+    } else if args.cavein_scenario {
+        cavein_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -2668,6 +2677,202 @@ fn b58_scenario(args: &Args) -> ExitCode {
     println!("{}", result);
     println!("B5.8 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (CAVE-IN v1, FR11): the mining-remnant collapse + the ENTOMBMENT
+/// invariant. A 3-cell arm rests on a single ground-level pillar (its ONLY
+/// link to the floor). A DIGGER (parked at the reachable adjacent stance,
+/// OUTSIDE the crush footprint) mines the pillar base; the 4-cell chunk (arm +
+/// pillar-top) severs from the ground → COLLAPSES (cells → air + resource) and
+/// the VICTIM pinned under the arm is EJECTED + INJURED, NEVER buried. The
+/// victim is re-pinned into the crush volume until the collapse fires (an idle
+/// colonist would otherwise drift out), then released so the eject stands.
+fn cavein_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-cavein-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-cavein".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-cavein-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = ground_z(&server, cx, cy).expect("no ground at site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+
+    // ── the structure: a forced pad + a 3-cell arm on a single pillar ───────
+    let (fx, fy) = (cx, cy);
+    for x in (fx - 4)..=(fx + 4) {
+        for y in (fy - 4)..=(fy + 5) {
+            for z in (gz - 2)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 12) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    // ARM: 3 cells at gz+3 running +x from (fx,fy), directly OVER the digger's
+    // stance (fx+1,fy). SUPPORT: a pillar (fx,fy) gz+1..gz+2 under the arm's
+    // root — its ONLY ground link. The digger mines the pillar BASE (gz+1)
+    // from the adjacent stance (fx+1,fy) — pulling the support out from UNDER
+    // the overhang it stands beneath, so the DIGGER IS the crush victim: a
+    // STATIONARY colonist at completion (no wandering to fight — the classic
+    // "miner pulls the last support and the ceiling comes down on them").
+    for dx in 0..=2 {
+        server.state_mut().set_block(Vec3::new(fx + dx, fy, gz + 3), rock);
+    }
+    server.state_mut().set_block(Vec3::new(fx, fy, gz + 1), rock);
+    server.state_mut().set_block(Vec3::new(fx, fy, gz + 2), rock);
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 1);
+    let names = server.bastion_rename_colonists_unique();
+    tick(&mut server, 20);
+    let digger = names.first().cloned().unwrap_or_default();
+    let stance = Vec3::new((fx + 1) as f32 + 0.5, fy as f32 + 0.5, (gz + 1) as f32);
+    server.bastion_teleport_colonist(&digger, stance);
+    let base_mood = server.bastion_colonist_mood(&digger).unwrap_or(0.6);
+
+    let base = Vec3::new(fx, fy, gz + 1);
+    server.bastion_place_designation(Region { min: base, max: base }, DesignationKind::Mine);
+
+    let arm_gone = |server: &Server| {
+        (0..=2).all(|dx| {
+            server.bastion_block_kind(Vec3::new(fx + dx, fy, gz + 3)) != Some(BlockKind::Rock)
+        })
+    };
+    let mut collapsed = false;
+    for _ in 0..120 {
+        tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL);
+        if arm_gone(&server) {
+            collapsed = true;
+            break;
+        }
+    }
+    // The eject-and-injure runs in the SAME tick as the collapse (post-loop);
+    // give a few ticks for the eject to settle.
+    tick(&mut server, 5);
+
+    let mood = server.bastion_colonist_mood(&digger).unwrap_or(base_mood);
+    // FEARED: the eject-and-injure dropped the victim's Mood (the injure that
+    // always applies — colonists carry Mood even on the synthetic spawn; the
+    // health-damage tick applies too when a colonist has Health).
+    let feared = mood < base_mood - 1e-4;
+    let d_feet = server
+        .bastion_colonist_states()
+        .into_iter()
+        .find(|(n, _, _)| *n == digger)
+        .map(|(_, p, _)| p.map(|e| e.floor() as i32));
+    // EJECTED: no longer at the mining stance (fx+1, fy) — shoved out of the
+    // crush footprint.
+    let ejected = d_feet.map(|f| !(f.x == fx + 1 && f.y == fy)).unwrap_or(false);
+    // NOT BURIED: the victim ended on solid ground, not embedded in a block.
+    let standable = d_feet
+        .map(|f| {
+            let solid = |p: Vec3<i32>| {
+                server.state().terrain().get(p).map(|b| b.is_filled()).unwrap_or(false)
+            };
+            !solid(f) && solid(f - Vec3::unit_z())
+        })
+        .unwrap_or(false);
+    let hp = server.bastion_colonist_health(&digger).map(|(c, _)| c);
+
+    // INVARIANT: a collapse fires AND the crush victim is EJECTED + FEARED +
+    // ends STANDABLE — never buried. That is what lets cave-ins coexist with
+    // the no-entombment guarantee.
+    let pass = collapsed && ejected && feared && standable;
+    let result = serde_json::json!({
+        "cavein_collapsed": collapsed,
+        "cavein_ejected": ejected,
+        "cavein_feared": feared,
+        "cavein_mood": mood,
+        "cavein_base_mood": base_mood,
+        "cavein_standable": standable,
+        "cavein_victim_hp": hp,
+    });
+    println!("{}", result);
+    println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }

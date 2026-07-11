@@ -1320,6 +1320,35 @@ impl Server {
             .map(|c| c.0.skills.climbing)
     }
 
+    /// bastion (CAVE-IN v1, harness hook): a colonist's (current, maximum)
+    /// health — lets a cave-in scenario assert a crush victim was INJURED
+    /// (current < max) but NOT killed / NOT buried (current > 0, still alive).
+    pub fn bastion_colonist_health(&self, name: &str) -> Option<(f32, f32)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let healths = ecs.read_storage::<comp::Health>();
+        (&colonists, &healths)
+            .join()
+            .find(|(c, _)| c.0.name == name)
+            .map(|(_, h)| (h.current(), h.maximum()))
+    }
+
+    /// bastion (CAVE-IN v1, harness hook): a colonist's Mood (0=breakdown..
+    /// 1=content) — a cave-in scenario asserts a crush victim was FEARED (Mood
+    /// dropped from the 0.6 default). Colonists always carry Mood (rtsim
+    /// promote), even the synthetic harness spawns that skip Health.
+    pub fn bastion_colonist_mood(&self, name: &str) -> Option<f32> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let moods = ecs.read_storage::<comp::bastion::Mood>();
+        (&colonists, &moods)
+            .join()
+            .find(|(c, _)| c.0.name == name)
+            .map(|(_, m)| m.0)
+    }
+
     /// bastion (B-LIVE3, harness hook): designations completed (mine-done
     /// lifecycle) since server start.
     pub fn bastion_done_designations(&self) -> u64 {

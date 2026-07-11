@@ -175,10 +175,13 @@ impl Clock {
             // alt-tab/window pause lets real time stall while the clock ran on)
             // — at high fps the negative nudge exceeds `average_dt`, giving a
             // negative dt, and `game_dt()`'s `Duration::from_secs_f64` then
-            // PANICS. A lower floor of 0 (one 0-dt frame, self-healing) was the
-            // missing half of the clamp. (Vanilla Veloren clock — byte-identical
-            // to B0, not a bastion change; upstream-Veloren fix candidate.)
-            .clamp(0.0, MAX_GAME_DT);
+            // PANICS. A lower floor was the missing half of the clamp — a tiny
+            // POSITIVE floor (not 0.0) also avoids a cosmetic NaN from an
+            // unguarded `dt.sqrt()` on a 0-dt frame (figure flicker); both are
+            // self-healing for the single overshoot frame. (Vanilla Veloren
+            // clock — byte-identical to B0, not a bastion change; upstream fix
+            // candidate.)
+            .clamp(1e-6, MAX_GAME_DT);
 
         self.tick += 1;
     }
