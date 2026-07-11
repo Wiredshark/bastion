@@ -957,3 +957,11 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   colonist names (random names collided ~1/24, the dominant residual
   flake source). Reviewer F5 (both teleport tiers were broken) fully
   addressed.
+
+- **TAGGED `bastion-block-B6` — main @ `6bd1c91a60`.** One line for the
+  morning: the 1-wide chokepoint red is CLOSED (a whole crew squeezes
+  through one ladder shaft), entombment is impossible BY CONSTRUCTION
+  (climb-out → teleport floor), and Ben's live batch is in — flat-mine
+  drag accepts on any terrain, the overseer day runs 10 min so 4× reads
+  as 4×, mines mark done + miners disperse. Revert = `13f7d1f503`. →
+  play-tester rebuilds for Ben's re-test.
