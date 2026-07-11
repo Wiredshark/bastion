@@ -456,6 +456,79 @@ fn has_standable_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<i3
     None
 }
 
+/// The 6 axis-aligned neighbour offsets (shared by the support flood-fill).
+const NEIGHBOURS6: [Vec3<i32>; 6] = [
+    Vec3::new(1, 0, 0),
+    Vec3::new(-1, 0, 0),
+    Vec3::new(0, 1, 0),
+    Vec3::new(0, -1, 0),
+    Vec3::new(0, 0, 1),
+    Vec3::new(0, 0, -1),
+];
+
+/// bastion (CAVE-IN v1 / FR11 Q2): the BOUNDED support check. With the block at
+/// `removed_pos` about to be mined away (treated as air here), flood each solid
+/// component that touched it, capped at `cap` cells. A component connected to
+/// the big ground/bedrock mass blows past the cap → SUPPORTED (assumed, so a
+/// large anchored mass is never spuriously collapsed — the known-limit large-
+/// overhang case defers to the future global check, and Q1's eject backstops
+/// any un-caught collapse). A component fully enumerated WITHIN the cap is a
+/// small remnant no longer connected to ground → a FLOATING CHUNK that should
+/// collapse. Returns the union of all floating cells (usually one small chunk),
+/// or `None` if nothing floats.
+///
+/// Each severed neighbour is flooded SEPARATELY (removing `removed_pos` may cut
+/// one mass into a grounded part and a floating part — a single merged flood
+/// would wrongly read the whole thing as grounded). PURE (terrain via
+/// `is_solid`) so it unit-tests without a `TerrainGrid` and stays deterministic.
+// CAVE-IN v1 WIP: the support-check core is done + unit-tested; it is WIRED
+// into the mine-job completion path (collapse + eject-and-injure) in the next
+// increment on this branch — allow dead_code only until that wiring lands.
+#[allow(dead_code)]
+fn floating_chunk(
+    is_solid: impl Fn(Vec3<i32>) -> bool,
+    removed_pos: Vec3<i32>,
+    cap: usize,
+) -> Option<Vec<Vec3<i32>>> {
+    // Model the post-removal terrain: removed_pos reads as air.
+    let solid = |p: Vec3<i32>| p != removed_pos && is_solid(p);
+    let mut visited: HashSet<Vec3<i32>> = HashSet::new();
+    let mut floating: Vec<Vec3<i32>> = Vec::new();
+    for d in NEIGHBOURS6 {
+        let start = removed_pos + d;
+        if !solid(start) || visited.contains(&start) {
+            continue;
+        }
+        // Flood this neighbour's solid component, bounded by the cap.
+        let mut comp: HashSet<Vec3<i32>> = HashSet::new();
+        comp.insert(start);
+        let mut stack = vec![start];
+        let mut grounded = false;
+        while let Some(b) = stack.pop() {
+            for dd in NEIGHBOURS6 {
+                let n = b + dd;
+                if solid(n) && comp.insert(n) {
+                    if comp.len() > cap {
+                        grounded = true; // big mass = connected to ground
+                        break;
+                    }
+                    stack.push(n);
+                }
+            }
+            if grounded {
+                break;
+            }
+        }
+        // Mark the component visited so a sibling neighbour in the SAME mass
+        // doesn't re-flood it.
+        visited.extend(comp.iter().copied());
+        if !grounded {
+            floating.extend(comp);
+        }
+    }
+    (!floating.is_empty()).then_some(floating)
+}
+
 /// bastion (B5.6b-2): resolve a painted XY footprint + [`ZExtent`] to the
 /// exact axis-aligned bounds of the per-column surface-relative volume.
 /// This is what the server ECHOES to clients as the designation rect — the
@@ -2739,5 +2812,48 @@ mod tests {
         // Higher reach widens the standable band by exactly one per level.
         assert!(egress_scan_with(flat_rim(102), feet, 3).0);
         assert!(!egress_scan_with(flat_rim(103), feet, 3).0);
+    }
+
+    /// CAVE-IN v1 (FR11 Q2): the BOUNDED support check. Removing a block that
+    /// severs a small chunk from the grounded mass reports it FLOATING; a
+    /// removal inside a big grounded mass (blows past the cap) reports nothing.
+    #[test]
+    fn floating_chunk_support() {
+        let cap = 64;
+        // A floating block at (0,0,102) held only by the support (0,0,101);
+        // everything at z<=100 is the grounded mass. Remove the support.
+        let with_floater = |p: Vec3<i32>| p.z <= 100 || p == Vec3::new(0, 0, 102);
+        assert_eq!(
+            floating_chunk(with_floater, Vec3::new(0, 0, 101), cap),
+            Some(vec![Vec3::new(0, 0, 102)])
+        );
+        // A multi-cell floater (an L of 3 at z=102) severs together.
+        let l_floater = |p: Vec3<i32>| {
+            p.z <= 100
+                || [
+                    Vec3::new(0, 0, 102),
+                    Vec3::new(1, 0, 102),
+                    Vec3::new(0, 1, 102),
+                ]
+                .contains(&p)
+        };
+        let mut got = floating_chunk(l_floater, Vec3::new(0, 0, 101), cap).unwrap();
+        got.sort_by_key(|p| (p.x, p.y, p.z));
+        assert_eq!(got, vec![
+            Vec3::new(0, 0, 102),
+            Vec3::new(0, 1, 102),
+            Vec3::new(1, 0, 102),
+        ]);
+        // Inside a big grounded mass → the component blows past the cap →
+        // SUPPORTED, nothing floats.
+        assert_eq!(
+            floating_chunk(|p: Vec3<i32>| p.z <= 100, Vec3::new(0, 0, 100), cap),
+            None
+        );
+        // Nothing solid around the removal → nothing floats.
+        assert_eq!(
+            floating_chunk(|_p: Vec3<i32>| false, Vec3::new(0, 0, 100), cap),
+            None
+        );
     }
 }
