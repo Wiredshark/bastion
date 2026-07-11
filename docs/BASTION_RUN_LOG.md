@@ -965,3 +965,22 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   drag accepts on any terrain, the overseer day runs 10 min so 4× reads
   as 4×, mines mark done + miners disperse. Revert = `13f7d1f503`. →
   play-tester rebuilds for Ben's re-test.
+
+### AR-2 — access-reliability hardening (in progress)
+
+- Start SHA: `2e72df4338` (= main after B6) · branch
+  `bastion/block-AR2`. Reviewer F1 (egress boundary unit test), F2
+  (verdict-based churn guard), F3 (stale access-plan pruner) all landed
+  INSIDE B6; the reviewer curated the reset-prone-accumulator class as
+  checklist B14. Remaining AR-2 items: the grace density-gate (R1/P4),
+  F4a idle-egress self-route, grace-per-stall-site.
+- **DONE (first increment): grace DENSITY-GATE (R1/P4).** The SOFT-0
+  watchdog grace only helps a colonist↔colonist stall, so it's now
+  granted only when another colonist is within squeeze range (2.5 XY);
+  a terrain-blocked stall skips straight to carve/unreachable instead
+  of burning a zero-benefit STUCK_TIMEOUT. Full suite green (unit
+  19/19, chokepoint ×2, B4/B5/B5.5/B5.8, vanilla). Committed on the
+  branch, NOT tagged (F4a + grace-per-stall-site round out the block).
+  RESUME: F4a idle-egress self-route (an idle below-grade colonist
+  self-routes to the nearest known exit — the organic version of what
+  the teleport floor guarantees), then gate + tag the AR-2 batch.
