@@ -590,6 +590,49 @@ shafts, XP-on-use re-levels) makes self-exit race auto-ladder plans —
 execution-race determinism is SOFT-0 @B6's charter; the b1/b58 gates
 acknowledge it.
 
+### 2.10e B6 — SOFT-collision + Ben's live-fix batch (the chokepoint red closed)
+
+**What:** the committed SOFT-COLLISION mechanism (the 1-wide chokepoint
+deadlock the B5.8 composites left known-open) PLUS Ben's whole live-fix
+batch, folded into one merge. **The headline: entombment is now
+impossible BY CONSTRUCTION, and a whole crew squeezes through one 1-wide
+ladder shaft deterministically** (`--chokepoint-scenario`, gated).
+
+**SOFT-0 mechanism:** `Colonist.soft_until` (transient, expiry =
+hysteresis) softens the phys colonist↔colonist push to ~15% (squeeze,
+not ghost; terrain HARD; vanilla untouched); two triggers — the watchdog
+GRACE WINDOW (one soft pass before the carve/unreachable pipeline) and
+local DENSITY (>N within 2 XY). The `Time` resource joined PhysicsRead.
+
+**The queue (reviewer R3 fix-2, DF-validated):** `ActiveJobState::Waiting`
+— a colonist staged at a single-file link with a queue-mate closer to the
+anchor WAITS (watchdog skips it entirely — queue time ≠ stuckness);
+promotion re-evaluates each arbitration pass. Emergent single-file, no
+forward path reservation (DF 53.15 confirms occupancy + re-anchor
+suffices). The stuck-time HYSTERESIS (`ActiveJob.reset_dist`, zero only on
+≥1 block NET progress) was THE fix for the long hover tail — sub-block
+wobble had been resetting the accumulator so no watchdog net ever fired.
+
+**The tiered fail-safe (Ben's "no colonist EVER stuck"):** organic tiers
+(Waiting → `climb_free` any-wall lift → egress plan) are preferred; the
+floor is a VERDICT-INDEPENDENT teleport — a colonist that completes no
+work and hasn't moved 6 blocks in 60s goes to the nearest real surface
+(no `has_egress` gate — that gate's false-positive at a shaft mouth was
+the hole; reset on job completion so a confined deep-digger isn't yanked).
+Every teleport is `warn!`-logged.
+
+**Ben's live-fix batch (same merge):** flat-mine drag false-reject (client
+derives the flat floor from the SAMPLED surface, not the camera pick plane
++ a server max-surface fallback); overseer 10-min `day_length` (the
+TimeScale day mechanism was already correct — the 30-min base was just
+imperceptible at 4×); mine lifecycle (done-detection + `done_count` +
+disperse).
+
+**Watch:** `WORK_DURATION_BASE` is still real-seconds (per-game-time
+migration deferred to TIMESCALE-DESIGN); the F4a idle-egress self-route is
+an AR-2 item (the scenario feeds a straggler jobs as a motivator — a
+truly-idle below-grade colonist relies on the teleport floor until AR-2).
+
 ### 2.10 B-MAP1 — Overseer minimap (founds the map/overlay layer)
 
 **What:** the god's minimap — rendered top-down terrain tiles (WoW-addon
@@ -783,15 +826,17 @@ B5.5, B5.6a, B5.6b-1, B-MAP1, B5.6b-2, B5.8 (vertical mobility — the
 access + DF mining + ladder waiver), B5.6b-2.1 (flat-floor mine
 mode + B5.8-E/E2 anti-stuck cluster + pace tune), TIMECTL (visible time
 controls §2.10c), TOOL0 (tool-gated work speed + E3 stability cluster
-§2.10d — overnight 2026-07-10), **and B-ASSET1 (asset integration
-harness + render arena — §2.11; full catalog graduated; quality + rig +
-anatomy + compare-reference + anti-skip gates standing; sha-stamped
-harness — this merge).** **Next (per the OVERNIGHT AUTONOMOUS RUN
-roadmap + `readme/FLEET_STATUS.md` BUILD LANE):** god-hand in-engine
-(B6 branch open), B6 (stockpiles/hauling — INCLUDES the committed
-SOFT-COLLISION SOFT-0/1), B7 needs-decay + self-designation. Then
-B5.6b-3/b-4 zone-UX. Slots-into-gaps: B-TESTBED. Queued riders:
-ABSOLUTE-FLOOR depth mode.
+§2.10d — overnight 2026-07-10), B-ASSET1 (asset integration harness +
+render arena — §2.11), SCCACHE (shared compile-cache infra), **and B6
+(SOFT-collision + Ben's live-fix batch — §2.10e; the 1-wide chokepoint
+red CLOSED, entombment impossible by construction, flat-mine drag +
+day-speed + mine-lifecycle fixed — this block).** **Next (per
+`readme/FLEET_STATUS.md`):** ACCESS-RELIABILITY-2 hardening (reviewer
+F1/F2/F3 + the F4a idle-egress self-route), the sccache LLD/debuginfo R7
+addendum, god-hand in-engine (BASSET1 unblocked it), AUTON-0/1 (arbiter
+in the SEQUENTIAL bastion system, NOT par_join — B10 determinism), then
+B7 (needs-decay + self-designation; PATH-0 slots there). Hauling (B6's
+other half) + SOFT-1 tuning ride the AR-2/B7 window.
 
 | Need | Read |
 |---|---|

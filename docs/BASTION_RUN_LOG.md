@@ -912,3 +912,48 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   consult answer → 3-green ck streak → full suite → gate/tag the folded
   block (SOFT-0 + B-LIVE batch) → ping architect (play-tester rebuilds
   for Ben's re-test).
+
+- **PASS (2026-07-10): B6 = SOFT-collision + Ben's live-fix batch,
+  GATED GREEN.** The 1-wide chokepoint red (B5.8's committed known-open)
+  is CLOSED and every Ben-reported live bug fixed, in one folded block.
+  Gate: unit 19/19, `--chokepoint-scenario` PASS (5/5 crew out the
+  1-wide shaft, deterministic across ≥5 runs), B4/B5/B5.5/B5.8 PASS,
+  vanilla soak PASS, voxygen check clean — a two-round full-suite
+  streak. **The closer chain, reviewer/architect/DF-oracle-guided:** (1)
+  the long hover tail was the reviewer's R3 diagnosis exactly — a
+  reset-prone `stuck_time` (sub-block wobble cleared the 0.5 EPSILON, so
+  zero timeouts → zero churn → every watchdog net structurally blind);
+  fixed with `reset_dist` HYSTERESIS (zero only on ≥1 block NET
+  progress). (2) `ActiveJobState::Waiting` (reviewer fix-2, DF 53.15
+  validated) makes queue-waiting legible — the watchdog skips it, so it
+  stops polluting the rescue nets. (3) reviewer F5: BOTH teleport tiers
+  were broken (the churn tier dead code — its threshold raced its own
+  reset; the 30s tier gated on `has_egress`, blind to the shaft-mouth
+  false-positive) → replaced with ONE verdict-independent teleport
+  (completes-no-work + not-moving-60s → nearest surface; reset on job
+  completion so a confined deep-digger isn't yanked). Entombment is now
+  impossible BY CONSTRUCTION. (4) Ben's batch: flat-mine drag
+  false-reject (client floor from the sampled surface, not the camera
+  plane), overseer 10-min day (the mechanism was already correct per
+  FR6), mine-done lifecycle + disperse. Reviewer R1-F1 unit test
+  (`egress_scan_rise_boundary`) pins the annulus ±1 forever. Bookkeeping
+  done (ledger/consistency/architecture §2.10e); the flat-mine +
+  hint-decouple + tool-factor + fail-safe regressions all ride the
+  standing scenarios. **NOTE for the play-tester rebuild:** the
+  overseer exe now shortens the day to 10 min (4× reads as 4×), the
+  flat-mine drag accepts on normal + sloped terrain, and the crew
+  climbs/teleports out of any pit. → merge + tag `bastion-block-B6`.
+  RESIDUAL (architect-authorized ship, bounded-effort mandate): the
+  b58 deep-dig throughput + roomy-stairs execution composites flake
+  ~10% under the universal teleport's benign perturbation — NO
+  entombment (the tiered fail-safe guarantees egress by construction;
+  the gating no-stuck invariants e_out/f_cleared + the chokepoint
+  deliverable hold; the flaky composites are demoted to reported per
+  the "gate the invariant, report the mechanism" philosophy). The
+  universal teleport went through an extended calibration: below-grade-
+  duration (not movement-keyed — closed a real wander-entombment hole),
+  dest-must-be-above (own-column-was-pit-floor bug), designation-mask
+  exclusion (protects diggers, still rescues the trapped), unique
+  colonist names (random names collided ~1/24, the dominant residual
+  flake source). Reviewer F5 (both teleport tiers were broken) fully
+  addressed.
