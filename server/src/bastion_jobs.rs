@@ -2398,9 +2398,29 @@ impl<'a> System<'a> for Sys {
                     steps,
                     "bastion: proactive descent access emitted (B5.8-E)"
                 );
+            } else if !AUTO_LADDER_ACCESS {
+                // B6-hotfix (Ben live-test, deep-dig throughput — registry
+                // D16): the descent gate holds a deep cell until access LEADS
+                // the descent. With the auto-ladder fallback disabled,
+                // plan_access returns None wherever STAIRS can't fit (a tight
+                // footprint can't switchback) and there is NO other access to
+                // wait for — so holding here would strand the deep cells
+                // UNMINEABLE forever (a tight pit stops at depth 2; b58 saw
+                // exactly 75/150). RELEASE the gate: the deep cells become
+                // claimable and the universal below-grade teleport is the
+                // declared egress (entombment stays impossible by
+                // construction — the gate's protective purpose is redundant
+                // under that stronger backstop). STAIRS still LEAD the
+                // descent wherever they DO fit (the branch above builds them
+                // + registers an anchor, and an anchored cell is never gated
+                // to begin with); only the can't-build-access case changes.
+                // Flag-tied: flip AUTO_LADDER_ACCESS back on and the old
+                // gated-descent returns with the ladders.
+                descent_gated.clear();
             }
-            // On None: the gate holds and this retries next cycle (the
-            // frontier keeps digging its SAFE layers meanwhile).
+            // On None with the auto-provider ON: the gate holds and retries
+            // next cycle (the frontier keeps digging its SAFE layers, the
+            // ladder plan leads the descent).
         }
         // 3. DISPERSION — claims (standing + taken this pass) repel new
         //    claims within 2 XY blocks, spreading a work crew across the

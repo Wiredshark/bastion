@@ -2114,6 +2114,17 @@ fn b58_scenario(args: &Args) -> ExitCode {
     let d_claims_total = server.bastion_total_claims() - d_claims_before;
     let d_blocks_dug = d_jobs.saturating_sub(server.bastion_jobs_in_region(d_region));
     let d_claims_ratio = d_claims_total as f64 / (d_blocks_dug.max(1)) as f64;
+    // B6-hotfix (B / registry D16): DEEP-LAYERS-REACHED — proof the descent
+    // gate RELEASES when auto-ladder is off and no access can be built. Pre-
+    // fix, this tight 5x5x6 dig stalled at exactly 75/150 (the top 3 layers,
+    // depth<=2) because the ACCESS-BEFORE-DESCENT gate held depth>2 cells
+    // waiting for an auto-ladder that no longer builds — a HARD STRUCTURAL
+    // cap. GATING on >90 proves the deep half (depth>=3) is now mined: it's
+    // well clear of the 75 cap (so it can't pass by luck) yet generously
+    // below the observed 150/150 quiet clear (so it can't false-red on the
+    // load-sensitive last-few-blocks throughput — that stays REPORTED via
+    // d_blocks_dug/d_all_cleared, registry B8/P6).
+    let d_deep_unlocked = d_blocks_dug > 90;
     // TOP-DOWN: clear order non-decreasing with depth (layer index 5 = the
     // TOP layer at d_gz; index 0 = the bottom). Top must finish first.
     // TOL=2 samples (~1 sim-s): the exposure gate enforces BULK top-down
@@ -2415,6 +2426,7 @@ fn b58_scenario(args: &Args) -> ExitCode {
         "b58_d_top_down": d_top_down,
         "b58_d_dispersed_frac": d_dispersed_frac,
         "b58_d_blocks_dug": d_blocks_dug,
+        "b58_d_deep_unlocked": d_deep_unlocked,
         "b58_d_claims_total": d_claims_total,
         "b58_d_claims_ratio": d_claims_ratio,
         "b58_d_rescue_cleared": d_rescue_cleared,
@@ -2480,6 +2492,13 @@ fn b58_scenario(args: &Args) -> ExitCode {
         // dig-throughput is reported. d_dispersed (crew spreads) stays
         // gating — it's a fast within-window property, not throughput.
         && d_dispersed_frac >= 0.5
+        // d_deep_unlocked: GATING (B6-hotfix / registry D16). Proves the
+        // descent gate RELEASES the deep layers when auto-ladder is off + no
+        // access is buildable — the fix for the tight-pit 75/150 stall. It's
+        // a STRUCTURAL threshold (>90, clear of the old 75 cap, below the
+        // 150/150 quiet clear) so it can't false-red on load-sensitive
+        // throughput the way d_all_cleared would.
+        && d_deep_unlocked
         // d_rescue_cleared / d_all_out: the KNOWN-OPEN multi-colonist
         // chokepoint composite (B5.8's sanctioned descope; SOFT-0 @B6
         // owns it) — reported, not gating. The SINGLE-colonist anti-stuck
