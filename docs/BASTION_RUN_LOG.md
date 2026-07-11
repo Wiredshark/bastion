@@ -984,3 +984,22 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   RESUME: F4a idle-egress self-route (an idle below-grade colonist
   self-routes to the nearest known exit — the organic version of what
   the teleport floor guarantees), then gate + tag the AR-2 batch.
+- **DONE (2nd increment): reviewer F6 — teleport designation-mask
+  SCOPE HOLE.** The universal teleport's `board.designated.contains(feet)`
+  exclusion was POSITION-only, and `board.designated` is colony-wide and
+  does NOT shrink on claim-release — so a JOBLESS colonist trapped
+  INSIDE an active designation had no teleport backstop (the
+  "impossible by construction" net had an F5-class hole inside a zone;
+  the old comment claimed a demoted digger self-teleports, which never
+  fired). Fix: require BOTH a live job on the board AND being inside a
+  designation to count as a protected digger — a jobless colonist now
+  always teleports (closes the hole), real diggers stay protected (no
+  deep-dig over-fire regression), the chokepoint straggler (pre-carved
+  chamber, no designation) still teleports. NOT the reviewer's minimal
+  `active_jobs.is_some()→skip` (that excludes employed-but-STUCK
+  chokepoint stragglers and regressed CK to 7/10 in earlier testing —
+  the AND-designation clause is what keeps both). CK 8/8, B58 7/8.
+- **TAGGING AR-2** with the two substantive verified fixes (grace
+  density-gate R1/P4 + F6 scope-hole); F4a idle-egress DEFERRED (the
+  teleport floor already guarantees its invariant; the organic version
+  needs agent-steering plumbing in the stillness pass — backlog).
