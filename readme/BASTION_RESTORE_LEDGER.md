@@ -93,6 +93,20 @@ than editing the old one.
   minimap size button (client-only; no data-format or protocol changes —
   nothing serialized, safe to revert cold).
 
+## bastion-block-AR2 (2026-07-10) — access-reliability hardening (first batch)
+
+- Block: AR-2 = grace density-gate (reviewer R1/P4) + reviewer F6
+  (universal-teleport designation-mask scope hole). Both server-side
+  `bastion_jobs` refinements on the B6 fail-safe cluster.
+- Tag: `bastion-block-AR2` (main `abb527dae1`)
+- Previous green: `bastion-block-B6` (main `6bd1c91a60` / the docs
+  tag-line `2e72df4338`)
+- Revert: `git reset --hard 2e72df4338` — pure refinement of B6's
+  mechanism; reverting restores B6's grace (fires on terrain stalls
+  too) and re-opens the F6 jobless-trapped-inside-designation hole.
+- Data-format caveats: NONE (runtime-only logic; no field/wire/save
+  changes). Safe cold revert.
+
 ## bastion-block-SCCACHE (2026-07-10)
 
 - Block: INFRA P5 — sccache shared compile cache (`rustc-wrapper` in
