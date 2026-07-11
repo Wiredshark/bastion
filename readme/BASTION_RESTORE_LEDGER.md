@@ -290,3 +290,20 @@ than editing the old one.
   string + one readme registry class (D16). Fully reversible cold. In-code
   half-revert: flip `AUTO_LADDER_ACCESS` back to `true` to restore BOTH
   auto-ladders AND the old gated-descent, no git revert needed.
+
+- Block: SLOPE (BUILD 2, slope-mining pair): flatten-hill (true-crest flat-floor
+  surface) + B15 standability (claimability gated on a standable stance)
+- Tag: `bastion-block-SLOPE` (main `a92afeae18`)
+- Previous green: `bastion-block-LADDEROFF` (main was at `f4f1f0b972` = LADDEROFF
+  + its docs commit, the SLOPE merge base)
+- Revert: `git reset --hard f4f1f0b972` on `bastion/main`
+- Undoes: `column_flat_surface_z` / `resolve_column_surface` / `FLAT_SURFACE_SCAN_MAX`
+  + the flat-mode surface swap in `place_designation_surface` /
+  `resolve_surface_bounds` + the `max_crest_for` volume gate (`in_game.rs`); the
+  `ActiveJob.stance` field, `has_standable_stance`, the `standable` claim gate,
+  and the stance-based arrive-target; b5 phases 7.8 (hill) + 7.9 (B15).
+- Data-format caveats: `comp::bastion::ActiveJob` gained a `stance: Vec3<i32>`
+  field, but it is SERVER-ONLY (`DenseVecStorage`, never NetSync'd or persisted)
+  — NO wire/save impact. No net-protocol, comp-sync, or rtsim/save changes.
+  Fully reversible cold. The flatten-hill change is server job-logic + one
+  in_game.rs volume estimate + harness; no client changes.

@@ -669,6 +669,34 @@ verifies harness-compiles-at-tag on a clean tree.
 auto-ladders AND the old gated-descent (no git revert); or
 `git reset --hard c2acf8ba01`. No net/comp/save changes.
 
+### 2.10g SLOPE — BUILD 2 (slope-mining pair) — tag `bastion-block-SLOPE`
+
+**What:** Ben's remaining slope-mining live bugs.
+**(2a) Flatten-hill** — a flat-floor Mine painted at a tall hill's BASE left a
+hilltop stub: `column_surface_z` centres its ±`SURFACE_SCAN_UP`(48) window on
+the PAINT PLANE, so a hill solid past hint+48 caps there. Fix: one surface
+authority (`resolve_column_surface`) — flat mode scans the shared floor UP to
+the column's true crest (`column_flat_surface_z`, bounded 128); relative mode
+unchanged. Wired into job-gen + echo-bounds + the paint-time volume gate (now
+measures the tallest true crest, so a too-tall hill is honestly rejected, not
+over-generated past `MAX_DESIGNATION_VOLUME`).
+**(2b) B15 standability** — the exposure gate admitted UNSTANDABLE work (a
+hillside `+1`-arrival-gap cell whose on-top space is a 1-wide slot the capsule
+wedges in; a floating block) → claimed → never Arrived → watchdog-unreachable →
+"slope-mine gives up." Fix: `has_standable_stance` — a TERRAIN-ONLY,
+ONCE-PER-CYCLE predicate (alongside `is_exposed`) building a `standable` set the
+claim gate keys off. Prefers ON-TOP (in-place); routes a wedged `+1`-slot (≥3
+lateral sides solid) to its reachable downhill ADJACENT stance. `ActiveJob`
+gains a server-only `stance` offset committed at claim (arrive-target
+`(job.pos+stance)+(0.5,0.5,0)`; default (0,0,1) = the old on-top). An isolated
+1-wide floater has no reachable stance → CLEAN-SKIP (no claim→unreachable churn;
+deferred to cave-in); a reachable ledge mines normally. Closes registry B15.
+The exposed→standable swap is regression-safe (b58 150/150 — on-top preferred +
+the wedge check; a first cut that preferred adjacent regressed to 87/150).
+**Reversible:** `git reset --hard f4f1f0b972`. `ActiveJob.stance` is server-only
+(no wire/save). Play-tester's `--slope-mine-scenario`/`--floating-block-scenario`
+fold in as the fuller SET-A/SET-B natural-slope + floating-remnant regression.
+
 ### 2.10 B-MAP1 — Overseer minimap (founds the map/overlay layer)
 
 **What:** the god's minimap — rendered top-down terrain tiles (WoW-addon
@@ -868,19 +896,19 @@ render arena — §2.11), SCCACHE (shared compile-cache infra), B6
 red CLOSED, entombment impossible by construction, flat-mine drag +
 day-speed + mine-lifecycle fixed), AR-2 (grace density-gate R1/P4 + the
 reviewer-F6 teleport designation-mask scope hole — hardening, tag
-`bastion-block-AR2`), **and LADDEROFF (§2.10f — Ben live-test bundle:
+`bastion-block-AR2`), LADDEROFF (§2.10f — Ben live-test bundle:
 auto-ladder off + Erase-deletes-ladders + crest-dismount snap +
 mine-oscillation-fixed-by-measurement + descent-gate release D16 + the
-harness-compiles-at-tag integrity fix — this block, tag
-`bastion-block-LADDEROFF`).** **Next (per `readme/FLEET_STATUS.md`):**
-BUILD 2 — the slope-mining pair (flatten-hill SURFACE_SCAN_UP fix + B15
-standability FR12 + natural-slope/floating-remnant fixtures); then the
-sccache LLD/debuginfo R7 addendum, god-hand in-engine (BASSET1 unblocked
-it), AUTON-0/1 (arbiter in the SEQUENTIAL bastion system, NOT par_join —
-B10 determinism; reviewer: gate CLAIM+execution on current==Work + a
-`climb_free_until` yield-guard on the jobless fail-safe path), then B7
-(needs-decay + self-designation; PATH-0 slots there). Hauling (B6's
-other half) + SOFT-1 tuning ride the B7 window.
+harness-compiles-at-tag integrity fix, tag `bastion-block-LADDEROFF`),
+**and SLOPE (§2.10g — BUILD 2 slope-mining pair: flatten-hill true-crest
+flat-floor + B15 standability [claimability gated on a standable stance,
+closes registry B15] — this block, tag `bastion-block-SLOPE`).** **Next
+(per `readme/FLEET_STATUS.md`):** the sccache LLD/debuginfo R7 addendum,
+god-hand in-engine (BASSET1 unblocked it), AUTON-0/1 (arbiter in the
+SEQUENTIAL bastion system, NOT par_join — B10 determinism; reviewer: gate
+CLAIM+execution on current==Work + a `climb_free_until` yield-guard on the
+jobless fail-safe path), then B7 (needs-decay + self-designation; PATH-0
+slots there). Hauling (B6's other half) + SOFT-1 tuning ride the B7 window.
 
 | Need | Read |
 |---|---|

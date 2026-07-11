@@ -152,3 +152,16 @@ gate held depth>2 cells unmineable once the auto-ladder fallback was off (tight 
 None → gate never releases → 75/150). Fix shipped in the LADDEROFF tag: release the descent gate when
 AUTO_LADDER_ACCESS is off AND no access is buildable; the universal teleport is the egress. Architect-endorsed;
 fully reversible with the flag. (Reviewer: curate/renumber as needed.)*
+
+*Builder append — 2026-07-11 (SLOPE / Build 2): **B15 CLOSED** — bastion-block-SLOPE
+gates Mine claimability on a TERRAIN-ONLY once-per-cycle STANDABLE stance
+(has_standable_stance): prefers on-top, routes a wedged +1-slot to its reachable
+downhill adjacent stance, clean-skips an isolated 1-wide floater (no reachable
+stance → no churn). The exposed→standable swap is regression-safe (b58 150/150;
+a first cut that preferred adjacent regressed to 87/150 — on-top-preferred + the
+≥3-solid-side wedge check is the fix). Play-tester confirmed the class on a real
+2:1 slope (65/75 give up pre-fix, 44 exposed-unstandable = the target; a solid
+slab yields 0 floaters — floaters need undercut/overhang). B15's "natural-slope
+in the test matrix, not flattened" rule now has b5 phase 7.9 (claim-level unit)
++ the play-tester's --slope-mine-scenario/--floating-block-scenario (SET-A/SET-B)
+as the regression. (Reviewer: curate.)*

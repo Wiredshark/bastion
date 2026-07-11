@@ -1066,3 +1066,48 @@ arrived>=2 is the documented pace-marginal throughput flake — seed-1337 on
 the 1-vs-2 boundary, 2/3 quiet PASS, all b4 INVARIANTS hold; passed on the
 tag-commit gate. Candidate for gate-the-invariant/report-the-mechanism if it
 recurs — not touched in Build 1.)
+
+## bastion-block-SLOPE — BUILD 2 (slope-mining pair) — TAGGED 2026-07-11 (merge `a92afeae18`)
+
+Ben's remaining slope-mining live bugs, off `bastion-block-LADDEROFF`. Two
+commits, gated at the tag.
+
+- **(2a) FLATTEN-HILL** (`443b570594`, Ben live-bug #4). A flat-floor Mine
+  painted at the BASE of a tall hill left a hilltop stub: `column_surface_z`
+  centres its ±`SURFACE_SCAN_UP`(48) scan on the PAINT PLANE, so a hill column
+  solid past hint+48 reads its "surface" as the window ceiling → the flat-floor
+  `column_range` digs only floor..hint+48. FIX: one surface authority
+  (`resolve_column_surface`) — flat mode scans up from the shared floor to the
+  column's TRUE crest (`column_flat_surface_z`, bounded `FLAT_SURFACE_SCAN_MAX`
+  =128); relative mode unchanged. Wired into job-gen + echo-bounds + the
+  paint-time volume gate (now measures the tallest true crest via
+  `max_crest_for`, so reaching the crest can't over-generate past
+  `MAX_DESIGNATION_VOLUME` — a too-tall hill is honestly REJECTED). TEST b5
+  phase 7.8: a 3×3 hill cresting 60 above base → 549 jobs floor..crest, bounds
+  at base+60, PAST the old base+48 cap.
+- **(2b) B15 STANDABILITY** (`1f316afe20`, Ben live-bug #5/#6, reviewer FR12).
+  The exposure gate admitted UNSTANDABLE work — a hillside `+1`-arrival-gap cell
+  (on-top walled to a 1-wide slot the capsule wedges in) or a floating block
+  passed exposure → claimed → never Arrived → watchdog-unreachable → "slope-mine
+  gives up with blocks left." (Play-tester split: REAL-UNREACHABLE, not churn —
+  Build-1's hysteresis already fixed the churn leg.) FIX: `has_standable_stance`
+  — a TERRAIN-ONLY, ONCE-PER-CYCLE predicate (alongside `is_exposed`) computing
+  a `standable` set; claims gate on it. PREFERS on-top (in-place), falls to an
+  ADJACENT-ground stance for a wedged `+1`-slot (≥3 lateral sides solid) — the
+  reachable downhill stance. `ActiveJob` gains a `stance` offset committed at
+  claim (server-only, no wire); arrive-target = `(job.pos+stance)+(0.5,0.5,0.0)`
+  (default (0,0,1) = the pre-B15 on-top target). An ISOLATED 1-wide floater has
+  no reachable stance → CLEAN-SKIP (not claimed, not flagged unreachable → no
+  churn; deferred to cave-in); a reachable LEDGE is mined normally. Access steps
+  exempt. REGRESSION-SAFE: the first cut over-gated (adjacent-first → b58
+  87/150); on-top-preferred + the wedge check restored b58 150/150. TEST b5
+  phase 7.9 (deterministic claim-level): on-top control claimed, adjacent-only
+  (rock-capped) claimed via the adjacent stance, isolated floater clean-skipped.
+
+REGISTRY: 2b CLOSES B15 (claimability admits unstandable work). Play-tester's
+`--slope-mine-scenario` + `--floating-block-scenario` (SET-A/SET-B natural-slope
++ floating-remnant fixtures) fold in as the fuller regression as they land.
+
+GATE (on the tag commit, clean tree): UNIT 19/19, BUILD PASS (harness compiles
+at commit), B5/B5.5/B5.8/CHOKEPOINT/VANILLA PASS; b58 150/150 d_all_cleared +
+d_deep_unlocked; b5 hill + B15 (ontop/adjacent/floater) asserts green.
