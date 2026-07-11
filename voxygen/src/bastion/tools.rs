@@ -9,7 +9,9 @@ use common::bastion::{DesignationKind, ZExtent};
 
 /// The pinned interaction tool (the palette). `Pan` is the cursor default:
 /// drag pans, click selects. `Designate` turns left-drag into region paint;
-/// `Erase` (B5.5) is the same drag but cancels designations in the region.
+/// `Erase` (B5.5) is the same drag but cancels designations in the region —
+/// and (B6-hotfix) also DELETES any built ladder rungs the drag covers
+/// (ladders only; an instant god-cleanup).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub enum ToolMode {
     #[default]

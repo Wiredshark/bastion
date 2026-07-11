@@ -12,7 +12,7 @@ use common::{
     mounting::{Rider, VolumeRider},
     resources::{DeltaTime, PlayerPhysicsSetting, PlayerPhysicsSettings},
     slowjob::SlowJobPool,
-    terrain::TerrainGrid,
+    terrain::{SpriteKind, TerrainGrid},
     uid::IdMaps,
     vol::ReadVol,
 };
@@ -937,6 +937,41 @@ impl<'a> System<'a> for Sys {
                         },
                         (None, _) => {
                             job_board.cancel_region(region);
+                            // B6-hotfix (Ben live-test: "a way to delete
+                            // ladders"): Erase ALSO removes built ladders
+                            // in-region. LADDERS ONLY — a targeted cleanup
+                            // god-action that can't nuke a wall. Set each
+                            // Ladder sprite block to its vacant (air) form
+                            // via BlockChange (the same path a build job
+                            // uses, in reverse), then drop the access
+                            // anchor for any emptied column so staged
+                            // routing doesn't point at a ghost link.
+                            let mut removed_any = false;
+                            {
+                                let mut guard = rare_writes.lock();
+                                for x in region.min.x..=region.max.x {
+                                    for y in region.min.y..=region.max.y {
+                                        for z in region.min.z..=region.max.z {
+                                            let p = vek::Vec3::new(x, y, z);
+                                            if let Ok(b) = terrain.get(p)
+                                                && b.get_sprite() == Some(SpriteKind::Ladder)
+                                            {
+                                                let vacant = b.into_vacant();
+                                                if guard
+                                                    .block_changes
+                                                    .try_set(p, vacant)
+                                                    .is_some()
+                                                {
+                                                    removed_any = true;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if removed_any {
+                                job_board.drop_access_anchors_in(region);
+                            }
                         },
                     }
                 }

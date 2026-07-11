@@ -57,6 +57,15 @@ use vek::*;
 // plumbing is cheap when the design clears feasibility). At the B-LIVE2
 // 10-minute overseer day, 6 real-seconds ≈ 14.4 game-minutes per block.
 const WORK_DURATION_BASE: f32 = 6.0;
+/// bastion (B6-hotfix, Ben live-test): master switch for the AUTO-BUILT
+/// ladder-pillar access fallback (`plan_access`). `false` = the colony
+/// carves STAIRS where geometry allows and builds no auto vertical link
+/// elsewhere (the universal teleport-to-ground fail-safe covers the rest,
+/// so no colonist is ever stuck); this removes the single-column
+/// queue-fight Ben saw. Flip to `true` to restore the pillar fallback —
+/// a one-line revert (all ladder code stays live for the player paint
+/// tool). Re-enable once SOFT-1 ORCA makes the 1-wide queue orderly.
+const AUTO_LADDER_ACCESS: bool = false;
 /// bastion (B6 SOFT-0): how long a granted soft-collision pass lasts (the
 /// watchdog grace window and the density relief both use it). Long enough
 /// to physically squeeze past a blocker at walk speed; short enough that
@@ -195,8 +204,21 @@ fn plan_access(
         });
         match stairs {
             Some(digs) => Some((digs, DesignationKind::Mine)),
-            None => ladder_pillar(terrain, mask, from, to.z)
+            // B6-hotfix (Ben live-test): AUTO-ladder access DISABLED — the
+            // single-column auto-pillar caused a queue-fight ("they all
+            // fight to use it") that did more harm than good. The colony
+            // now plans STAIRS where they route and NO auto vertical link
+            // where they don't; the universal teleport-to-ground fail-safe
+            // (B6, entombment impossible by construction) backstops any
+            // colonist a stair can't reach. REVERSIBLE by construction —
+            // flip the flag to restore the pillar fallback (Ben may want
+            // it back once SOFT-1 ORCA lands). ladder_pillar(),
+            // DesignationKind::Ladder, and all climb-assist/magnetism code
+            // STAY — the player Ladder paint tool + vertical-link
+            // pathfinding still use them; only the AUTO fallback goes dark.
+            None if AUTO_LADDER_ACCESS => ladder_pillar(terrain, mask, from, to.z)
                 .map(|cells| (cells, DesignationKind::Ladder)),
+            None => None,
         }
     };
     let (cells, kind) = plan?;
@@ -693,6 +715,20 @@ impl JobBoard {
         });
         info!(released = released.len(), "bastion: designation cancelled");
         released
+    }
+
+    /// bastion (B6-hotfix): drop access anchors whose base falls inside a
+    /// region — used when the Erase tool deletes the ladders in that region
+    /// so staged routing stops steering colonists at a now-ghost vertical
+    /// link. (Player + auto-built anchors alike; a re-painted ladder
+    /// re-registers its anchor on build.)
+    pub fn drop_access_anchors_in(&mut self, region: Region) {
+        let before = self.access_anchors.len();
+        self.access_anchors.retain(|a| !region.contains_point(*a));
+        let dropped = before - self.access_anchors.len();
+        if dropped > 0 {
+            info!(dropped, "bastion: access anchors dropped (ladder erased)");
+        }
     }
 
     /// Audit for the harness gate: claim counts + distinctness.
