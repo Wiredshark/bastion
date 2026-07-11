@@ -93,6 +93,51 @@ than editing the old one.
   minimap size button (client-only; no data-format or protocol changes —
   nothing serialized, safe to revert cold).
 
+## bastion-block-SCCACHE (2026-07-10)
+
+- Block: INFRA P5 — sccache shared compile cache (`rustc-wrapper` in
+  `.cargo/config.toml`). Not a game block; a build-speed infra commit.
+- Tag: `bastion-block-SCCACHE` (main `13f7d1f503`)
+- Revert: `git revert 13f7d1f503` (or delete the `[build] rustc-wrapper`
+  lines) — nothing else depends on it; sccache itself stays installed
+  user-side harmlessly.
+- Data-format caveats: NONE. Config-only. Reverting just stops routing
+  compiles through the wrapper.
+
+## bastion-block-B6 (2026-07-10) — SOFT-0 + Ben's live-fix batch (folded)
+
+- Block: B6 SOFT-0 soft-collision + the whole Ben live-fix batch
+  (B-LIVE1 flat-mine drag, B-LIVE2 day-speed, B-LIVE3 mine lifecycle +
+  tiered fail-safes) folded together — the chokepoint red closed +
+  every Ben-reported live bug in one merge.
+- Tag: `bastion-block-B6` (see run-log for merge SHA)
+- Previous green: `bastion-block-SCCACHE` (main `13f7d1f503`); the branch
+  also forward-merged BASSET1 + sccache.
+- Revert: `git reset --hard 13f7d1f503` (on `bastion/main`) — but note
+  this drops Ben's live-fix batch AND re-opens the chokepoint red AND
+  the flat-mine drag reject; prefer a targeted revert of a single sub-fix
+  if only one regresses.
+- Undoes (server): `Colonist.{soft_until, climb_free_until}` +
+  `ActiveJob.{reset_dist, soft_granted}` + `ActiveJobState::Waiting`;
+  the phys softened-push gate + `Time` in PhysicsRead; the watchdog
+  grace + density trigger; the stuck-time hysteresis; the Waiting queue
+  state; the universal verdict-independent stuck-teleport +
+  `surface_teleport_dest`; `climb_free` any-wall lift; mine-done
+  detection (`done_count`) + disperse; the churn/egress nets' B6
+  refinements; the flat-mine server fallback; harness hooks
+  (`bastion_done_designations`, `bastion_colonist_states_full`,
+  `bastion_register_access_anchor`, `bastion_equip_tool` [TOOL0]).
+- Undoes (voxygen): the flat-mine client floor-from-surface derivation;
+  the overseer `day_length`=10 min via the `run()` param.
+- Data-format caveats: **rtsim SAVE, serde-default** — `BastionColonist`
+  gained `soft_until` + `climb_free_until` (both `#[serde(default)]`,
+  transient runtime state, old saves load forward as 0.0). `ActiveJob`'s
+  new fields are server-runtime only (never serialized to disk).
+  `ActiveJobState::Waiting` is a new enum variant — a REVERTED build
+  reading a live save mid-Waiting would fail to deserialize the variant,
+  but ActiveJob isn't persisted (server-runtime), so no disk risk. No
+  wire-protocol change. Safe cold revert.
+
 ## bastion-block-TOOL0 (2026-07-10, overnight run)
 
 - Block: TOOL-0 (tool_factor work speed) + B5.8-E3 stability cluster

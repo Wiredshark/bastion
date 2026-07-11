@@ -777,4 +777,183 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   entombed in their own default-depth pits while the fail-safe believed
   they could climb out. Revert = `7effa936b6`. NEXT: god-hand
   in-engine.
-- **B-ASSET1 MERGED + TAGGED `bastion-block-BASSET1`** (2026-07-10, merge `59824dcb59`, main was TOOL0 @ 8479027c96): asset integration harness + render arena. Loader through the REAL Structure/custom_indices pipeline (exact-cell marker fidelity, census, byte convention PINNED by unit test); `--asset-test` cast-driven dynamic suite (results → ASSET_INTEGRATION_LOG w/ exe sha); `--asset-arena` client inspection mode rides the next voxygen build (`--asset-arena` + BASTION_OVERSEER). Catalog graduated 73→80 through the standing gates. TOOLING SHIPPED (tools/): gate.py 7-step battery + anatomy/semantic-placement + compare-reference (PCA) + anim lint + adjacency precheck + catalog recheck + redo-campaign anti-skip audit (592-hash before-snapshot; detail-floor via the pilot's shared detail_metrics). Contracts pinned: rest_space per rig (hands=parent, vessels=absolute), FLOOR composed positions, sha-stamped harness (stale-exe guard — which caught its own staleness bug pre-merge). Gate at merge: cargo check green, stamped spot test 1/1 PASS (palisade gate scenario), static gate 7/7.
+
+- **B-ASSET1 MERGED + TAGGED `bastion-block-BASSET1`** (2026-07-10, merge `59824dcb59`, main was TOOL0 @ 8479027c96): asset integration harness + render arena. Loader through the REAL Structure/custom_indices pipeline (exact-cell marker fidelity, census, byte convention PINNED by unit test); `--asset-test` cast-driven dynamic suite (results → ASSET_INTEGRATION_LOG w/ exe sha); `--asset-arena` client inspection mode rides the next voxygen build (`--asset-arena` + BASTION_OVERSEER). Catalog graduated 73→80 through the standing gates. TOOLING SHIPPED (tools/): gate.py 7-step battery + anatomy/semantic-placement + compare-reference (PCA) + anim lint + adjacency precheck + catalog recheck + redo-campaign anti-skip audit (592-hash before-snapshot; detail-floor via the pilot's shared detail_metrics). Contracts pinned: rest_space per rig (hands=parent, vessels=absolute), FLOOR composed positions, sha-stamped harness (stale-exe guard — which caught its own staleness bug pre-merge). Gate at merge: cargo check green, stamped spot test 1/1 PASS (palisade gate scenario), static gate 7/7. *(Merged from main during the B6 forward-merge; ordered here by merge time.)*
+
+### GOD-HAND — SKIPPED overnight (blocked on asset integration; logged per rule 4)
+
+- The roadmap's next block, explored and deliberately SKIPPED: the v3
+  hand asset (per-part vox: palm + 8 finger segments + 2 thumb + a
+  `rig.json`) exists ONLY in the pilot's isolated `asset-lab/` sandbox —
+  NOT in the repo's `assets/` tree. Asset integration is the tester's
+  lane through the BASSET1 merge, explicitly HELD FOR MORNING by the
+  overnight plan (merged-state verification pending; possible re-forward-
+  merge). Reaching into asset-lab from the builder lane would cross two
+  session boundaries mid-hold. HAND-1's mechanics-only half (Link grab/
+  carry/drop) without the hand visual AND without the favor cost is
+  precisely the uncosted puppet-master anti-pattern HAND-CURSOR §0 draws
+  its pillar against — not shippable alone. → Advancing to **B6
+  stockpiles/hauling + SOFT-0/1 soft-collision (COMMITTED, Ben)** which
+  is fully buildable with no asset dependencies; god-hand fast-tracks
+  the moment BASSET1 lands the asset (FLEET_STATUS already says exactly
+  this).
+
+### B6 — stockpiles/hauling + SOFT-COLLISION (SOFT-0 first; COMMITTED)
+
+- Start SHA: `9bab3c366f` (= main after TOOL0) · branch
+  `bastion/block-B6` · overnight block 4. Order: **SOFT-0 FIRST** (self-
+  contained; closes the committed mechanism + the known-open climb
+  composites' root), then stockpiles/hauling, then SOFT-1 tuning
+  against the haul crews. SOFT-0 implementation map (from
+  SOFT-COLLISION-design.md §0-3): (1) `Colonist.soft_until: f64`
+  (serde-default; 0 = off) — phys-visible transient state, expiry-based
+  hysteresis; (2) trigger (a) the GRACE WINDOW in the watchdog: at
+  STUCK_TIMEOUT, if the colonist hasn't been granted soft-pass for this
+  stall yet (`ActiveJob.soft_granted`, server-only comp), grant soft
+  (+reset stuck_time) INSTEAD of releasing — only a still-stuck
+  soft-passed colonist goes unreachable; (3) trigger (b) density: > N
+  colonists within a small radius → soft (server-side O(n²), colonies
+  are small); (4) the softened push: extend the phys ladder-waiver site
+  (colonist pairs) — if either soft-active, SCALE the pushback by
+  ~0.15 (squeeze, not ghost); terrain untouched; needs Time in
+  PhysicsRead (check); (5) `--chokepoint-scenario`: 1-wide shaft+ladder
+  whole-crew egress → all out, zero unreachable, open-ground control
+  spacing normal, nobody inside terrain, vanilla NPC unaffected.
+
+- **WIP CHECKPOINT (overnight end): the MECHANISM is built and
+  COMPILING** (soft state + softened push + both triggers, commit
+  `a59308ed3e` + iterations), the `--chokepoint-scenario` exists and
+  drove 8 diagnostic iterations; three REAL engine finds fixed en
+  route: `SpriteKind::Ladder` has solid_height 1.0 (a rung is a
+  platform — an all-ladder shaft is an impassable pole; the scenario
+  now uses the open-column + rung-pillar shape B5.8's auto-pillars
+  build), interior-shaft anchor steering (vertical steer at the anchor
+  column — dropping the anchor at 1.6 XY pinned climbers under chamber
+  ceilings), and LADDER MAGNETISM toward the ladder's open neighbor
+  column (the ±2 grab band wedged climbers beside/on rungs). Run 7
+  proved the single-file climb end-to-end (1/5 out, 1 mid-shaft, peaks
+  tracked per colonist in the JSON now). OPEN: run 8's queue-patience
+  tweak (stall accrual ×0.2 while staged) paradoxically stalled
+  everything — zero releases, zero staged-routing logs, peaks at the
+  floor; suspect a steer-oscillator or a patience/anchor interaction.
+  RESUME AT — CORRECTED SUSPECT: staged-routing log lines were ZERO in
+  runs 3-8 INCLUDING the partially-successful run 7 — so run 8's
+  silence is probably run-to-run VARIANCE (run 7's climber likely
+  escaped via magnetism drift alone), and the PRIMARY defect is that
+  the ANCHOR STEER NEVER ENGAGES despite the registered anchor
+  ((kx+3, ky, k_gz−6), all filter terms hand-checked sane). First step:
+  a temporary debug log in the steer block printing
+  `board.access_anchors.len()` + steer + target every %100 ticks
+  UNCONDITIONALLY (the current log is gated on steer != target, which
+  hides an empty-anchors case); verify the harness hook
+  `bastion_register_access_anchor` actually lands in the same JobBoard
+  resource the system reads. Then re-judge the patience edit against a
+  working anchor. The block does NOT tag until the chokepoint scenario
+  + the full suite go green (gate + rollback discipline holds).
+
+- **RUNS 11-28 (the second stretch): the mechanism now WORKS — 4 full
+  scenario PASSES (16, 20, 24, 28) with 5/5 crew egress through the
+  1-wide shaft — but a crowd-hover tail flakes ~50%.** The debug
+  suspect above was FALSE: the anchor steer had engaged since run 3 —
+  PowerShell `Out-File` wraps stderr at console width AND tracing ANSI
+  codes sit INSIDE field values, so every zero-count log grep was an
+  artifact (method now: raw `cmd /c` redirect + ANSI-strip before
+  matching — memory + BASTION_COMMON_ISSUES candidates). REAL fixes
+  landed this stretch, each commit-documented: velocity-ONLY climb
+  lift (phys ground-snap was resolving the position-pop straight back
+  down on open floor — masked since B5.8 because every b58 climber was
+  wall-pressed; and the pop could TUNNEL into ceilings once vz carried
+  momentum — one colonist permanently embedded, caught by the
+  hard-terrain assert); the Chaser dead-zone close (±3 assist grab);
+  queue-release at second timeout (idle-release, no unreachable
+  pollution; churn-counted so mirage anchors still end in the bubble);
+  MID-CLIMB KEEP (beside-rungs at timeout = climbing, not waiting);
+  reviewer F2 applied (churn guard = egress_scan VERDICT, not anchor
+  proximity) + F3 shipped early (stale access-plan pruner, 20s);
+  uid-keyed scenario identity (random NAMES COLLIDE — two "Yara of the
+  Vale"s); (q) gate takes the b1 invariant shape (the stronger assist
+  self-exits before plan triggers — stairs-EMISSION pin gap logged for
+  AR-2/F4). Suite state on this code: unit 19/19 + B4/B5/B5.5/B5.8 +
+  vanilla ALL GREEN (b58 confirmed twice). OPEN TAIL (the only
+  blocker): 1-2 stragglers hover at feet≈394, x 15869-70 (chamber side
+  of the shaft mouth), lifted 1 block, magnet never completes the
+  2-block slide — suspects: a magnet-engagement gate not meeting
+  (instrument it like the assist eval), crowd equilibrium (softened
+  push vs magnet), or airborne-agent interplay. NEXT: magnet telemetry
+  → fix → 3-green ck streak → full suite → SOFT-0 bookkeeping + tag.
+  Reviewer consult on the queue design pending (may shortcut).
+
+- **STRETCH 3 — BEN'S LIVE-FIX BATCH folded in + THE HOVER SOLVED
+  (branch @ `b73f8df150`+, NOT gated/tagged).** The reviewer's consult
+  answer NAILED the hover: sub-block wobble (magnet/hover/physics, all
+  clearing the 0.5 STUCK_EPSILON) reset stuck_time forever → ZERO
+  timeouts → zero churn → no net ever fired. R3 fix-1 shipped:
+  stuck-time HYSTERESIS (`ActiveJob.reset_dist`, zero only on ≥1 block
+  NET progress) — run E3 main phase went 5/5 first try. Batch contents
+  (commit-documented): flat-mine drag false-reject FIXED (client floor
+  from the SAMPLED surface at drag center, not the camera plane +
+  server max-surface fallback + `fl_hint_decoupled` regression);
+  overseer `day_length` = 10 min (the TimeScale day mechanism was
+  already correct per FR6 — the 30-min base day was just imperceptible
+  at 4×); MINE LIFECYCLE (done detection + `done_count` hook +
+  disperse); TIERED FAIL-SAFES (`climb_free_until` — any-wall climb,
+  jobless included, granted at the trapped VERDICT after discovering
+  the plan-loop's take(0) swallowed grants; teleport-to-ground at 30s
+  verdict + persistent-churn 16-cycle direct, warn-logged); reviewer
+  F4b debug logs stripped. E5 confirmed the sealed-pit fail-safe FIRES
+  (`ck_failsafe_out` true, egress steps=24 from the pit) and
+  `ck_mine_done` passes. REMAINING: RUN VARIANCE on both scenario parts
+  (main 3-5 of 5 across runs; fs_out flips) — every thread converges
+  on the reviewer-recommended WAITING-STATE refactor (a Waiting
+  ActiveJobState the watchdog skips, promoted by anchor-nearest/
+  density) as the structural fix: it retires the churn-as-progress
+  economy, the mid-climb-keep hack, AND the stillness-blindness for
+  employed waiters in one shape. RESUME AT: implement Waiting per the
+  consult answer → 3-green ck streak → full suite → gate/tag the folded
+  block (SOFT-0 + B-LIVE batch) → ping architect (play-tester rebuilds
+  for Ben's re-test).
+
+- **PASS (2026-07-10): B6 = SOFT-collision + Ben's live-fix batch,
+  GATED GREEN.** The 1-wide chokepoint red (B5.8's committed known-open)
+  is CLOSED and every Ben-reported live bug fixed, in one folded block.
+  Gate: unit 19/19, `--chokepoint-scenario` PASS (5/5 crew out the
+  1-wide shaft, deterministic across ≥5 runs), B4/B5/B5.5/B5.8 PASS,
+  vanilla soak PASS, voxygen check clean — a two-round full-suite
+  streak. **The closer chain, reviewer/architect/DF-oracle-guided:** (1)
+  the long hover tail was the reviewer's R3 diagnosis exactly — a
+  reset-prone `stuck_time` (sub-block wobble cleared the 0.5 EPSILON, so
+  zero timeouts → zero churn → every watchdog net structurally blind);
+  fixed with `reset_dist` HYSTERESIS (zero only on ≥1 block NET
+  progress). (2) `ActiveJobState::Waiting` (reviewer fix-2, DF 53.15
+  validated) makes queue-waiting legible — the watchdog skips it, so it
+  stops polluting the rescue nets. (3) reviewer F5: BOTH teleport tiers
+  were broken (the churn tier dead code — its threshold raced its own
+  reset; the 30s tier gated on `has_egress`, blind to the shaft-mouth
+  false-positive) → replaced with ONE verdict-independent teleport
+  (completes-no-work + not-moving-60s → nearest surface; reset on job
+  completion so a confined deep-digger isn't yanked). Entombment is now
+  impossible BY CONSTRUCTION. (4) Ben's batch: flat-mine drag
+  false-reject (client floor from the sampled surface, not the camera
+  plane), overseer 10-min day (the mechanism was already correct per
+  FR6), mine-done lifecycle + disperse. Reviewer R1-F1 unit test
+  (`egress_scan_rise_boundary`) pins the annulus ±1 forever. Bookkeeping
+  done (ledger/consistency/architecture §2.10e); the flat-mine +
+  hint-decouple + tool-factor + fail-safe regressions all ride the
+  standing scenarios. **NOTE for the play-tester rebuild:** the
+  overseer exe now shortens the day to 10 min (4× reads as 4×), the
+  flat-mine drag accepts on normal + sloped terrain, and the crew
+  climbs/teleports out of any pit. → merge + tag `bastion-block-B6`.
+  RESIDUAL (architect-authorized ship, bounded-effort mandate): the
+  b58 deep-dig throughput + roomy-stairs execution composites flake
+  ~10% under the universal teleport's benign perturbation — NO
+  entombment (the tiered fail-safe guarantees egress by construction;
+  the gating no-stuck invariants e_out/f_cleared + the chokepoint
+  deliverable hold; the flaky composites are demoted to reported per
+  the "gate the invariant, report the mechanism" philosophy). The
+  universal teleport went through an extended calibration: below-grade-
+  duration (not movement-keyed — closed a real wander-entombment hole),
+  dest-must-be-above (own-column-was-pit-floor bug), designation-mask
+  exclusion (protects diggers, still rescues the trapped), unique
+  colonist names (random names collided ~1/24, the dominant residual
+  flake source). Reviewer F5 (both teleport tiers were broken) fully
+  addressed.

@@ -313,6 +313,46 @@ instead, referencing the old one).
   with `tool_factor` — when it lands, the base constant's meaning shifts
   from "the rate" to "the no-tool floor"; re-tune then, don't stack.
 
+## B6 SOFT-0 + live-fix batch drift notes (2026-07-10)
+
+- **Entombment is now impossible BY CONSTRUCTION, not by verdict.** The
+  final tier is a VERDICT-INDEPENDENT teleport: a colonist that isn't
+  working and completes no job while not moving 6 blocks for 60s is
+  teleported to the nearest real surface. This deliberately does NOT
+  consult `egress_scan` — the earlier verdict-gated tiers left a
+  `has_egress` FALSE-POSITIVE hole (a shaft-mouth hover reads escapable
+  but isn't). The organic tiers (Waiting → climb-free → egress plan)
+  are the PREFERRED path and handle the vast majority; teleport is the
+  loud floor beneath them (every fire is `warn!`-logged — a fire means
+  the organic path failed and wants investigation). SOFT-COLLISION-
+  design §0 didn't spec a teleport tier; Ben directed it as the
+  ultimate backstop and it subsumes the design's "guaranteed egress."
+- **`ActiveJobState::Waiting` is new** — a third state the design didn't
+  name. Queue-waiting at a single-file link is now a first-class state
+  the watchdog skips entirely (queue time is not stuckness). Validated
+  against DF 53.15 (DF-CHOKEPOINT-BEHAVIOR-REF): DF has no explicit
+  Waiting (emergent repath) but our explicit density-promoted state is
+  MORE deterministic — the reference confirms no forward path
+  reservation is needed (occupancy + re-anchor suffices).
+- **The reset-prone-accumulator is a recurring smell (3rd instance).**
+  `stuck_time` (fixed by `reset_dist` hysteresis), `churn.1` (its
+  threshold raced its own reset → the F5 dead-code teleport), and the
+  original E2 employed-reset all share the shape: an accumulator whose
+  reset condition can fire before its threshold, silently disabling the
+  net it feeds. Flagged to the reviewer for BASTION_COMMON_ISSUES.
+- **`day_length`=10 min is overseer-scoped, not global.** The TimeScale
+  day mechanism was already correct (the imperceptibility was the 30-min
+  base day); the overseer flag shortens the day so 4× reads as 4×.
+  Vanilla sessions + the per-world meta stay untouched.
+  `WORK_DURATION_BASE` is still REAL seconds (flagged in-code) — the
+  per-game-time migration (TIMESCALE-DESIGN) is deferred; don't rekey
+  it to TimeOfDay-delta (desyncs under MAX_DELTA_TIME per FR6).
+- **The climb assist can lift WITHOUT a job (`climb_free`).** A
+  dispersing or trapped-idle colonist has no ActiveJob; the assist's
+  join is now `(&active_jobs).maybe()` so the fail-safe covers them.
+  Job-driven climbs still require the target above; climb_free lifts
+  unconditionally upward while its window lasts.
+
 ## TOOL0 + B5.8-E3 drift notes (2026-07-10, overnight)
 
 - **The climb assist has a documented SLACK of reach+2 in enclosed

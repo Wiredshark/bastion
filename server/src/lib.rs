@@ -967,15 +967,31 @@ impl Server {
     /// bastion (B4, harness hook): per-colonist state (name, position,
     /// claimed job + travel state) for loaded colonists.
     pub fn bastion_colonist_states(&self) -> Vec<(String, Vec3<f32>, Option<(u64, bool)>)> {
+        self.bastion_colonist_states_full()
+            .into_iter()
+            .map(|(_, n, p, j)| (n, p, j))
+            .collect()
+    }
+
+    /// bastion (B6, harness hook): colonist states WITH the entity `Uid` —
+    /// names are randomly drawn and CAN collide (chokepoint run-23: two
+    /// "Yara of the Vale"s collapsed a 5-colonist roster to 4 in every
+    /// name-keyed assert). Identity-sensitive scenario tracking keys on
+    /// the uid.
+    pub fn bastion_colonist_states_full(
+        &self,
+    ) -> Vec<(u64, String, Vec3<f32>, Option<(u64, bool)>)> {
         use specs::Join;
         let ecs = self.state.ecs();
         let colonists = ecs.read_storage::<comp::Colonist>();
         let positions = ecs.read_storage::<comp::Pos>();
+        let uids = ecs.read_storage::<common::uid::Uid>();
         let jobs = ecs.read_storage::<comp::bastion::ActiveJob>();
-        (&colonists, &positions, jobs.maybe())
+        (&colonists, &positions, &uids, jobs.maybe())
             .join()
-            .map(|(c, p, j)| {
+            .map(|(c, p, u, j)| {
                 (
+                    u.0.get(),
                     c.0.name.clone(),
                     p.0,
                     j.map(|j| {
@@ -1279,6 +1295,28 @@ impl Server {
             .join()
             .find(|c| c.0.name == name)
             .map(|c| c.0.skills.climbing)
+    }
+
+    /// bastion (B-LIVE3, harness hook): designations completed (mine-done
+    /// lifecycle) since server start.
+    pub fn bastion_done_designations(&self) -> u64 {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .done_count
+    }
+
+    /// bastion (B6 SOFT-0, harness hook): register an access anchor, as a
+    /// player-designated or auto-built ladder would (scenarios that place
+    /// ladder SPRITES directly bypass the designation path that normally
+    /// registers the base — without an anchor, staged routing can't find
+    /// the ladder and the B5.8 run-10 beeline/A*-reset failure returns).
+    pub fn bastion_register_access_anchor(&mut self, pos: Vec3<i32>) {
+        self.state
+            .ecs()
+            .write_resource::<bastion_jobs::JobBoard>()
+            .access_anchors
+            .push(pos);
     }
 
     /// bastion (TOOL-0, harness hook): equip an item asset into a loaded

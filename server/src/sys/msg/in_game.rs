@@ -316,7 +316,8 @@ impl Sys {
                         None => extent.levels() as i64,
                     };
                     let volume = footprint * nominal_levels;
-                    let resolved = (volume > 0
+                    let mut extent = extent;
+                    let mut resolved = (volume > 0
                         && volume <= common::bastion::MAX_DESIGNATION_VOLUME)
                         .then(|| {
                             crate::bastion_jobs::resolve_surface_bounds(
@@ -328,6 +329,58 @@ impl Sys {
                             )
                         })
                         .flatten();
+                    // B-LIVE1 (Ben's flat-mine drag false-reject): a flat
+                    // floor derived from a camera pick plane ABOVE the
+                    // ground lands above every column's surface — zero
+                    // columns resolve and a perfectly valid drag rejected
+                    // with "no terrain surface". Rare-path fallback:
+                    // reinterpret the floor relative to the footprint's
+                    // HIGHEST surface (the same "N deep from the ground I
+                    // clicked" intent the client derives), re-gate the
+                    // volume, re-resolve. The adjusted extent flows to the
+                    // echo AND job gen together (echo-bounds invariant).
+                    if resolved.is_none()
+                        && let Some(orig_floor) = extent.floor_z
+                    {
+                        let mut max_surface: Option<i32> = None;
+                        for y in region.min.y..=region.max.y {
+                            for x in region.min.x..=region.max.x {
+                                if let Some(s) = crate::bastion_jobs::column_surface_z(
+                                    terrain,
+                                    x,
+                                    y,
+                                    region.max.z,
+                                ) {
+                                    max_surface =
+                                        Some(max_surface.map_or(s, |m: i32| m.max(s)));
+                                }
+                            }
+                        }
+                        if let Some(ms) = max_surface {
+                            let clamped = ms - extent.down as i32;
+                            if clamped < orig_floor {
+                                extent.floor_z = Some(clamped);
+                                let nominal = ((region.max.z - clamped).max(0)
+                                    as i64
+                                    + 1)
+                                    + extent.up as i64
+                                    + 8;
+                                if footprint * nominal > 0
+                                    && footprint * nominal
+                                        <= common::bastion::MAX_DESIGNATION_VOLUME
+                                {
+                                    resolved =
+                                        crate::bastion_jobs::resolve_surface_bounds(
+                                            terrain,
+                                            region.min.xy(),
+                                            region.max.xy(),
+                                            region.max.z,
+                                            extent,
+                                        );
+                                }
+                            }
+                        }
+                    }
                     if let Some(bounds) = resolved {
                         client.send(ServerGeneral::BastionDesignation {
                             region: bounds,

@@ -51,7 +51,21 @@ use vek::*;
 /// INSTANT — raised to a deliberate, satisfying pace (novice 6s, skill-10
 /// 2s). The designer's TOOLS-UPGRADE system later makes dig speed
 /// tool-gated on top of this base.
+// TIMESCALE-DESIGN landmine (flagged, migration deferred): this is REAL
+// seconds — under the per-game-time migration it derives from a game-time
+// spec × day_cycle_coefficient (ServerConstants is an ECS resource, the
+// plumbing is cheap when the design clears feasibility). At the B-LIVE2
+// 10-minute overseer day, 6 real-seconds ≈ 14.4 game-minutes per block.
 const WORK_DURATION_BASE: f32 = 6.0;
+/// bastion (B6 SOFT-0): how long a granted soft-collision pass lasts (the
+/// watchdog grace window and the density relief both use it). Long enough
+/// to physically squeeze past a blocker at walk speed; short enough that
+/// spacing normalizes right after (expiry IS the hysteresis).
+const SOFT_GRACE_SECS: f64 = 3.0;
+/// bastion (B6 SOFT-0, trigger b): this many OTHER colonists within the
+/// density radius = a chokepoint pile-up → soft relief before deadlock.
+const SOFT_DENSITY_N: usize = 2;
+const SOFT_DENSITY_R: f32 = 2.0;
 /// Work-rate skill bonus: +20% speed per skill level.
 const WORK_SKILL_BONUS: f32 = 0.2;
 /// Flat completion XP grant (design doc: "grant skill XP on completion").
@@ -352,6 +366,22 @@ fn egress_scan(
     feet: Vec3<i32>,
     reach: i32,
 ) -> (bool, Option<Vec3<i32>>) {
+    egress_scan_with(
+        |x, y| column_surface_z(terrain, x, y, feet.z),
+        feet,
+        reach,
+    )
+}
+
+/// The pure core of [`egress_scan`], generic over the surface probe so the
+/// ±1 rise boundary is UNIT-TESTABLE without a `TerrainGrid` (reviewer F1:
+/// the off-by-one this fixed hid for weeks precisely because nothing pinned
+/// the boundary).
+fn egress_scan_with(
+    surface_of: impl Fn(i32, i32) -> Option<i32>,
+    feet: Vec3<i32>,
+    reach: i32,
+) -> (bool, Option<Vec3<i32>>) {
     const EGRESS_RING_R: i32 = 5;
     let mut rim: Option<(i32, Vec3<i32>)> = None; // (xy dist, target)
     for dx in -(EGRESS_RING_R + 1)..=(EGRESS_RING_R + 1) {
@@ -360,8 +390,7 @@ fn egress_scan(
             if d < 3 {
                 continue;
             }
-            let Some(s) = column_surface_z(terrain, feet.x + dx, feet.y + dy, feet.z)
-            else {
+            let Some(s) = surface_of(feet.x + dx, feet.y + dy) else {
                 continue;
             };
             // Egress = a surface the colonist can STAND on: rise to stand
@@ -383,6 +412,34 @@ fn egress_scan(
         }
     }
     (false, rim.map(|(_, t)| t))
+}
+
+/// bastion (B-LIVE3): the ULTIMATE-fail-safe teleport destination — the
+/// nearest real surface within a small spiral of `feet` (own column first).
+/// `None` only if no column in range resolves a surface at all.
+fn surface_teleport_dest(terrain: &TerrainGrid, feet: Vec3<i32>) -> Option<Vec3<i32>> {
+    for r in 0..=8i32 {
+        for dx in -r..=r {
+            for dy in -r..=r {
+                if dx.abs().max(dy.abs()) != r {
+                    continue;
+                }
+                if let Some(s) =
+                    column_surface_z(terrain, feet.x + dx, feet.y + dy, feet.z + 64)
+                    // The dest MUST be ABOVE the colonist — a teleport to
+                    // the OWN column (r=0) of a pit returns the pit floor
+                    // (below grade), teleporting the colonist to itself
+                    // (chokepoint sealed-pit fs: tp fired but fs_out stayed
+                    // false). Requiring `s ≥ feet.z` finds the surrounding
+                    // pad's rim instead — always an upward exit.
+                    && s + 1 > feet.z
+                {
+                    return Some(Vec3::new(feet.x + dx, feet.y + dy, s + 1));
+                }
+            }
+        }
+    }
+    None
 }
 
 /// The job board resource.
@@ -423,6 +480,26 @@ pub struct JobBoard {
     /// (the churn detector fires from the every-tick upkeep loop); drained
     /// into the next egress pass, which owns one-plan-at-a-time gating.
     egress_pending: Vec<(Uid, Vec3<i32>, Vec3<i32>)>,
+    /// bastion (B6, reviewer F3): consecutive seconds the access economy
+    /// has been IDLE (access jobs exist, none claimed). A stale abandoned
+    /// plan — e.g. a half-carved egress staircase nobody needs after the
+    /// crew found another way out — would otherwise freeze one-plan-at-a-
+    /// time colony-wide forever AND sit flagged unreachable on the board.
+    access_idle_secs: f32,
+    /// bastion (B-LIVE3, mine lifecycle): designations that reached DONE
+    /// (last non-access job completed). Telemetry for the harness/UI.
+    pub done_count: u64,
+    /// bastion (B-LIVE3 / reviewer F5): the UNIVERSAL stuck watchdog —
+    /// seconds each colonist has been continuously BELOW GRADE without
+    /// working. Feeds the VERDICT-INDEPENDENT teleport backstop: no
+    /// `has_egress` gate, no churn threshold racing its own reset, and —
+    /// critically — NOT movement-keyed (a colonist WANDERING below grade
+    /// kept resetting a stationary timer and never teleported, staying
+    /// stuck: the e-out hole). Reset only on reaching a SURFACE or
+    /// completing a job (productive); accumulate while stuck below grade
+    /// regardless of motion. Closes Ben's "no colonist EVER stuck"
+    /// guarantee unconditionally.
+    stuck_watch: HashMap<Uid, f32>,
 }
 
 impl JobBoard {
@@ -652,6 +729,7 @@ impl<'a> System<'a> for Sys {
         Entities<'a>,
         Read<'a, Tick>,
         Read<'a, DeltaTime>,
+        Read<'a, common::resources::Time>,
         Read<'a, IdMaps>,
         ReadExpect<'a, ProgramTime>,
         Write<'a, JobBoard>,
@@ -683,6 +761,7 @@ impl<'a> System<'a> for Sys {
             entities,
             tick,
             dt,
+            time,
             id_maps,
             program_time,
             mut board,
@@ -730,17 +809,24 @@ impl<'a> System<'a> for Sys {
                 &mut colonists,
                 &char_states,
                 &mut velocities,
-                &active_jobs,
+                (&active_jobs).maybe(),
                 &mut positions,
                 &physics_states,
             )
                 .lend_join();
             while let Some((mut colonist, cs, vel, active, pos, phys)) = climb_iter.next() {
-                let Some(job_z) = board.jobs.get(&active.job).map(|j| j.pos.z) else {
-                    continue;
-                };
-                let target_feet = job_z as f32 + 1.0;
-                if target_feet <= pos.0.z + 0.2 {
+                // B-LIVE3: the fail-safe climbs WITHOUT a job (a dispersing
+                // or trapped-idle colonist has none — Ben's "climb out of
+                // anywhere"). Job-driven climbs still require the target
+                // ABOVE; the fail-safe climbs unconditionally upward while
+                // its window lasts (expiry bounds it; on open ground the
+                // trapped verdict never renews it).
+                let climb_free_now = colonist.0.climb_free_until > time.0;
+                let target_above = active
+                    .as_ref()
+                    .and_then(|a| board.jobs.get(&a.job))
+                    .map(|j| j.pos.z as f32 + 1.0 > pos.0.z + 0.2);
+                if !climb_free_now && target_above != Some(true) {
                     continue;
                 }
                 let feet = pos.0.map(|e| e.floor() as i32);
@@ -751,17 +837,30 @@ impl<'a> System<'a> for Sys {
                 // stop band. Ladders are colony-built infrastructure;
                 // "working the ladder" from two blocks is fine worker
                 // fiction.
-                let beside_ladder = (-2..=2).any(|dx| {
-                    (-2..=2).any(|dy| {
-                        (0..=1).any(|dz| {
-                            terrain
-                                .get(feet + Vec3::new(dx, dy, dz))
-                                .ok()
-                                .and_then(|b| b.get_sprite())
+                // ±3 grab (was ±2): the vanilla Chaser abandons approaches
+                // 1.5-2.5 blocks out, and the anchor walk-steer hands over
+                // at 1.6 — a climber parked at 2.1-2.6 from the rung column
+                // sat in a DEAD ZONE outside the old grab for minutes
+                // (run-11 timestamps). ±3 lets the magnetism reach into the
+                // whole stop band and drag them the rest of the way in.
+                let mut nearest_ladder: Option<Vec3<i32>> = None;
+                for dx in -3..=3i32 {
+                    for dy in -3..=3i32 {
+                        for dz in 0..=1i32 {
+                            let p = feet + Vec3::new(dx, dy, dz);
+                            if terrain.get(p).ok().and_then(|b| b.get_sprite())
                                 == Some(SpriteKind::Ladder)
-                        })
-                    })
-                });
+                                && nearest_ladder.is_none_or(|b| {
+                                    (dx.abs() + dy.abs())
+                                        < (b.x - feet.x).abs() + (b.y - feet.y).abs()
+                                })
+                            {
+                                nearest_ladder = Some(p);
+                            }
+                        }
+                    }
+                }
+                let beside_ladder = nearest_ladder.is_some();
                 // REACH CAP on the wall/climb arms: lift only while
                 // standable ground is within the colonist's scramble reach
                 // below — otherwise the assist would elevator workers up
@@ -777,22 +876,148 @@ impl<'a> System<'a> for Sys {
                 });
                 let climbing = matches!(cs, comp::CharacterState::Climb(_));
                 let on_wall = phys.on_wall.is_some();
+                // B-LIVE3 (Ben's UNIVERSAL CLIMB-OUT): a colonist under the
+                // trapped fail-safe climbs ANY wall — no ladder, no reach
+                // cap. Granted only by the no-egress verdict / mine-done
+                // dispersal; expiry is the hysteresis; the teleport
+                // backstop covers even this failing.
+                let climb_free = colonist.0.climb_free_until > time.0;
                 // POSITION-DRIVEN lift (runs 3-14 lesson: every vanilla
                 // physics-TIMING dependency — jump→wall-contact→Climb-state
                 // entry — flakes run to run; velocity nudges inherit the
                 // flake. Workers on colony access move UP, period): wall
                 // contact suffices, airborne not required. Head space is
                 // checked so the lift can't push a body into a ceiling.
-                let supported = beside_ladder || ((climbing || on_wall) && ground_within_reach);
+                let supported = beside_ladder
+                    || ((climbing || on_wall) && (ground_within_reach || climb_free));
                 if supported {
                     let head_clear = terrain
                         .get(feet + Vec3::unit_z() * 2)
                         .map(|b| !b.is_solid())
                         .unwrap_or(true);
                     if head_clear {
-                        pos.0.z += CLIMB_ASSIST_VZ * dt.0;
-                        vel.0.z = vel.0.z.max(0.0);
+                        // VELOCITY-ONLY lift (B6 SOFT-0 runs 15-21): the
+                        // original position-pop gets resolved straight
+                        // back down by phys ground-snap when the climber
+                        // stands on open floor (on_wall=false at a shaft
+                        // mouth — every b58 climber was wall-pressed,
+                        // which masked this since B5.8). Owning vz makes
+                        // the integrator carry the ascent; and dropping
+                        // the pop entirely means the climb can NEVER
+                        // tunnel — phys owns all position integration
+                        // (run ck-3: pop+momentum embedded a climber in a
+                        // ceiling permanently, the exact hard-terrain
+                        // violation the scenario asserts against). Same
+                        // reach-cap/head-clear gates bound the lift.
+                        vel.0.z = vel.0.z.max(CLIMB_ASSIST_VZ);
+                        // DISCRETE RUNG-STEP (run 29, Ben's auto-snap
+                        // backstop from the access-reliability batch): a
+                        // GROUNDED climber whose velocity route gets eaten
+                        // by ground physics (carved pockets, ledge lips)
+                        // still takes one guaranteed 1-block step per
+                        // second — the same supported/head-clear/reach
+                        // gates bound it, and the step target's body space
+                        // is verified clear so it can never snap into
+                        // rock. Reads as mounting a rung.
+                        // head_clear (feet+2) IS the step's safety proof: a
+                        // 1.75-tall body stepped to feet+1 spans feet+1 ..
+                        // feet+2.75 — blocks feet+1 (its current torso ✓)
+                        // and feet+2 (head_clear ✓). An extra feet+3 probe
+                        // blocked pocket exits one block too early (runs
+                        // 32-34 stragglers under half-carved stair cells).
+                        if phys.on_ground.is_some() && tick.0 % 30 == 0 {
+                            pos.0.z += 1.0;
+                        }
                         colonist.0.skills.climbing.add_xp(CLIMB_XP_RATE * dt.0);
+                    }
+                    // B6 SOFT-0 finding — LADDER MAGNETISM: the grab
+                    // window is ±2 XY (the Chaser stop band, runs 13/18),
+                    // so a climber can start rising 2 blocks BESIDE the
+                    // ladder column; in an open pit it drifts over the
+                    // rim, but under a CEILING (an interior chamber→shaft)
+                    // it wedges airborne with no ground control and the
+                    // watchdog kills the claim. While on the ladder arm,
+                    // pull XY toward the ladder column center so the
+                    // climber slides INTO the shaft as it rises. Small
+                    // per-tick step; the hard terrain pass still resolves
+                    // any wall contact (clip-polish per Ben's taste
+                    // ruling).
+                    if let Some(lp) = nearest_ladder {
+                        const LADDER_MAGNET_V: f32 = 1.5; // blocks/s
+                        // Pull toward the ladder's OPEN NEIGHBOR column,
+                        // not the rung block itself: rungs have
+                        // solid_height 1.0 (a rung is a platform), so the
+                        // pillar is an impassable pole — the CLIMB space
+                        // is the air column beside it (run-6 finding: the
+                        // magnet parked climbers ON the bottom rung, where
+                        // the rung above failed the head-check). In an
+                        // open pit the climber already stands in that
+                        // neighbor → no-op; in an interior shaft it pulls
+                        // them off the rung into the shaft.
+                        let solid = |p: Vec3<i32>| {
+                            terrain.get(p).map(|b| b.is_solid()).unwrap_or(true)
+                        };
+                        let climb_col = [
+                            Vec2::new(1, 0),
+                            Vec2::new(-1, 0),
+                            Vec2::new(0, 1),
+                            Vec2::new(0, -1),
+                        ]
+                        .into_iter()
+                        .map(|d| Vec3::new(lp.x + d.x, lp.y + d.y, lp.z))
+                        .filter(|c| !solid(*c) && !solid(*c + Vec3::unit_z()))
+                        .min_by(|a, b| {
+                            let da = Vec2::new(a.x as f32 + 0.5, a.y as f32 + 0.5)
+                                .distance_squared(pos.0.xy());
+                            let db = Vec2::new(b.x as f32 + 0.5, b.y as f32 + 0.5)
+                                .distance_squared(pos.0.xy());
+                            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                        // WEDGE ESCAPE (runs C2/C3, Ben's auto-snap class):
+                        // the magnet can deliver a body ONTO the rung
+                        // pillar when the open column lies on the far side
+                        // — the climber then stands wedged between rung
+                        // solids (sprites are Air-KIND, so the hard-terrain
+                        // assert can't even see it) with the rung overhead
+                        // failing head-clear forever. Standing inside the
+                        // pillar footprint → snap to the open climb
+                        // column's floor and restart the climb properly.
+                        let on_pillar = terrain
+                            .get(feet)
+                            .ok()
+                            .and_then(|b| b.get_sprite())
+                            == Some(SpriteKind::Ladder);
+                        if on_pillar && let Some(cc) = climb_col {
+                            let solid_at = |p: Vec3<i32>| {
+                                terrain
+                                    .get(p)
+                                    .map(|b| b.is_solid())
+                                    .unwrap_or(false)
+                            };
+                            let mut sz = cc.z;
+                            while sz > cc.z - 8
+                                && !solid_at(Vec3::new(cc.x, cc.y, sz - 1))
+                            {
+                                sz -= 1;
+                            }
+                            pos.0 = Vec3::new(
+                                cc.x as f32 + 0.5,
+                                cc.y as f32 + 0.5,
+                                sz as f32,
+                            );
+                            vel.0 = Vec3::zero();
+                        } else if let Some(cc) = climb_col {
+                            let center =
+                                Vec2::new(cc.x as f32 + 0.5, cc.y as f32 + 0.5);
+                            let d = center - pos.0.xy();
+                            let dist = d.magnitude();
+                            if dist > 0.05 {
+                                let step = (LADDER_MAGNET_V * dt.0).min(dist);
+                                let nudge = d / dist * step;
+                                pos.0.x += nudge.x;
+                                pos.0.y += nudge.y;
+                            }
+                        }
                     }
                 }
                 // LEDGE SNAP — one rule kills every crest race: a HANGING
@@ -805,19 +1030,31 @@ impl<'a> System<'a> for Sys {
                     terrain.get(p).map(|b| b.is_solid()).unwrap_or(false)
                 };
                 if supported && !solid(feet - Vec3::unit_z()) {
-                    let snap = [
-                        Vec2::new(1, 0),
-                        Vec2::new(-1, 0),
-                        Vec2::new(0, 1),
-                        Vec2::new(0, -1),
-                    ]
-                    .into_iter()
-                    .map(|d| Vec3::new(feet.x + d.x, feet.y + d.y, feet.z))
-                    .find(|c| {
-                        !solid(*c)
-                            && !solid(*c + Vec3::unit_z())
-                            && solid(*c - Vec3::unit_z())
-                    });
+                    // Candidates at CURRENT height and ONE UP: the +1 is
+                    // the crest MANTLE (Ben's confirmed live bug + the
+                    // chokepoint run-35 straggler one block short at the
+                    // shaft lip) — the ledge you exit onto stands a block
+                    // ABOVE your hanging feet, so a same-height-only scan
+                    // never sees it.
+                    let snap = [0i32, 1]
+                        .into_iter()
+                        .flat_map(|dz| {
+                            [
+                                Vec2::new(1, 0),
+                                Vec2::new(-1, 0),
+                                Vec2::new(0, 1),
+                                Vec2::new(0, -1),
+                            ]
+                            .into_iter()
+                            .map(move |d| {
+                                Vec3::new(feet.x + d.x, feet.y + d.y, feet.z + dz)
+                            })
+                        })
+                        .find(|c| {
+                            !solid(*c)
+                                && !solid(*c + Vec3::unit_z())
+                                && solid(*c - Vec3::unit_z())
+                        });
                     if let Some(c) = snap {
                         pos.0 = Vec3::new(c.x as f32 + 0.5, c.y as f32 + 0.5, c.z as f32);
                         vel.0 = Vec3::zero();
@@ -875,6 +1112,17 @@ impl<'a> System<'a> for Sys {
         // (entity, pos, feet, reach) — processed post-loop (same borrow
         // constraint as carve_requests).
         let mut churn_events: Vec<(specs::Entity, Vec3<f32>, Vec3<i32>, i32)> = Vec::new();
+        // B-LIVE3 (mine lifecycle): designations that completed their last
+        // job this tick — the post-loop pass marks them done + disperses
+        // below-grade miners.
+        let mut done_regions: Vec<Region> = Vec::new();
+        // R3 fix-2 (WAITING): a position snapshot for the queue-order test
+        // (who is closer to a staged anchor) — the upkeep lend_join can't
+        // re-join positions mid-iteration.
+        let queue_snapshot: Vec<Vec3<f32>> = (&colonists, &positions)
+            .join()
+            .map(|(_, p)| p.0)
+            .collect();
         // `Colonist`'s storage is change-tracked (synced comp) — mutable
         // multi-storage joins over it need `LendJoin`, not `Join`.
         let mut upkeep_iter = (
@@ -965,35 +1213,74 @@ impl<'a> System<'a> for Sys {
                                     let db = b.xy().map(|e| e as f32).distance(pos.0.xy());
                                     da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
                                 })
-                                .filter(|a| {
-                                    // Already at the anchor: climb (the
-                                    // assist lifts); steer at the real
-                                    // target so the bearing pulls up+over.
-                                    a.xy().map(|e| e as f32 + 0.5).distance(pos.0.xy())
-                                        > 1.6
-                                })
                                 .map(|a| {
-                                    Vec3::new(
+                                    let base = Vec3::new(
                                         a.x as f32 + 0.5,
                                         a.y as f32 + 0.5,
                                         a.z as f32 + 1.0,
-                                    )
+                                    );
+                                    if pos.0.xy().distance(base.xy()) > 1.6 {
+                                        // Walking to the anchor base (a
+                                        // GROUND-level goal — run 12 proved
+                                        // an elevated steer from out here
+                                        // stalls the Chaser entirely). The
+                                        // Chaser stop band (1.5-2.5 out,
+                                        // b58 runs 13/18) is covered by the
+                                        // climb assist's ±3 ladder grab +
+                                        // magnetism, not by this steer.
+                                        base
+                                    } else {
+                                        // AT the anchor: steer straight UP
+                                        // its column (the assist lifts).
+                                        // B6 SOFT-0 finding: steering at
+                                        // the real target here pins the
+                                        // climber against the ceiling 1-2
+                                        // blocks OUTSIDE an interior shaft
+                                        // (chamber→1×1 ladder column) —
+                                        // b58's open-pit pillars never hit
+                                        // this because there was nothing
+                                        // overhead. Vertical bearing keeps
+                                        // the body inside the column; the
+                                        // staging condition itself expires
+                                        // near the top and hands steer
+                                        // back to the real target.
+                                        Vec3::new(base.x, base.y, target.z)
+                                    }
                                 })
                                 .unwrap_or(target)
                         } else {
                             target
                         };
+                        // R3 fix-2 (WAITING — single-file queue discipline):
+                        // when staged at an anchor and ANOTHER colonist is
+                        // meaningfully closer to it, WAIT — don't shove
+                        // into the funnel, don't run the watchdog on the
+                        // queue time. The colonist actually climbing (in
+                        // or nearly in the column) never yields; promotion
+                        // re-evaluates every arbitration pass.
+                        if steer != target {
+                            let my_d = pos.0.xy().distance(steer.xy());
+                            // Queue-mates only: near MY level (a pad worker
+                            // strolling past the shaft TOP is not ahead of
+                            // me in the climb queue — W1 over-yielded to
+                            // exactly those phantoms and parked the whole
+                            // chamber).
+                            if my_d > 1.2
+                                && queue_snapshot.iter().any(|q| {
+                                    (q.z - pos.0.z).abs() <= 4.0
+                                        && q.xy().distance(steer.xy()) + 0.5 < my_d
+                                })
+                            {
+                                active.state = ActiveJobState::Waiting;
+                                if let Some(agent) = agent {
+                                    agent.rtsim_controller.activity = None;
+                                }
+                                continue;
+                            }
+                        }
                         // Keep the intent asserted (rtsim brain is gated off
                         // while ActiveJob exists, but agents clear activity
                         // on their own in places).
-                        if steer != target && tick.0 % 100 == 0 {
-                            info!(
-                                job = active.job,
-                                ?steer,
-                                colonist = ?pos.0,
-                                "bastion: staged routing via access anchor"
-                            );
-                        }
                         if let Some(agent) = agent {
                             agent.rtsim_controller.activity =
                                 Some(common::rtsim::NpcActivity::Goto(steer, TRAVEL_SPEED));
@@ -1007,13 +1294,90 @@ impl<'a> System<'a> for Sys {
                         let sdist = pos.0.distance(steer);
                         if sdist + STUCK_EPSILON < active.best_dist {
                             active.best_dist = sdist;
-                            active.stuck_time = 0.0;
+                            // R3 fix-1 HYSTERESIS: zero the stall clock
+                            // only on ≥1 block of NET progress since the
+                            // last zero — sub-block wobble (magnet/hover/
+                            // physics jitter clears the 0.5 EPSILON
+                            // easily) must not starve the watchdog.
+                            if active.reset_dist - sdist >= 1.0 {
+                                active.reset_dist = sdist;
+                                active.stuck_time = 0.0;
+                            }
                         } else if sdist > active.best_dist + 4.0 {
                             active.best_dist = sdist;
+                            active.reset_dist = sdist;
                             active.stuck_time = 0.0;
                         } else {
+                            // (B6 SOFT-0 run-8/9 bisect: the ×0.2 staged
+                            // queue-patience factor is REMOVED while the
+                            // dead-Traveling-arm mystery is isolated —
+                            // plain accrual, the run-7 configuration.)
                             active.stuck_time += dt.0;
                             if active.stuck_time > STUCK_TIMEOUT {
+                                // B6 SOFT-0 QUEUE RELEASE: a stall while
+                                // STAGED at an anchor (steer != target) is
+                                // usually WAITING for a single-file
+                                // vertical link — not unreachability.
+                                // Release to IDLE with no unreachable flag,
+                                // no strikes, no carve: the job returns to
+                                // the pool clean and arbitration re-hands
+                                // it (often to whoever is now best-placed).
+                                // The churn detector still counts these
+                                // releases (flag-agnostic "cycling in
+                                // place" signature), so a colonist stuck
+                                // at a MIRAGE anchor still gets the
+                                // humanitarian bubble — no infinite loops.
+                                // (This replaces run-8's ×0.2 patience,
+                                // which starved all movement: waiting is
+                                // handled by RELEASING cleanly, not by
+                                // stalling the watchdog.)
+                                // B6 SOFT-0 (trigger a — the GRACE WINDOW):
+                                // before degrading further, one
+                                // soft-collision pass per assignment —
+                                // most chokepoint stalls are two colonists
+                                // mutually blocking; softened they squeeze
+                                // past and progress resumes. This ALSO
+                                // gives every claim ≥2 timeouts of real
+                                // walking time before any release path
+                                // (runs 12/13: a first-timeout queue
+                                // release never let the Chaser start from
+                                // a crowded spawn — whole crew floor-
+                                // parked).
+                                if !active.soft_granted {
+                                    active.soft_granted = true;
+                                    active.stuck_time = 0.0;
+                                    colonist.0.soft_until =
+                                        time.0 + SOFT_GRACE_SECS;
+                                    continue;
+                                }
+                                // B6 SOFT-0 QUEUE RELEASE (second+ timeout,
+                                // STAGED at an anchor): waiting for a
+                                // single-file vertical link is not
+                                // unreachability — release to IDLE with no
+                                // unreachable flag, no strikes, no carve;
+                                // the job returns to the pool clean and
+                                // arbitration re-hands it. The churn
+                                // detector still counts these (flag-
+                                // agnostic), so a MIRAGE anchor still ends
+                                // in the humanitarian bubble — no infinite
+                                // loops.
+                                // R3 fix-2 retired the mid-climb keep: the
+                                // WAITING state now owns queue discipline
+                                // (waiters never reach this timeout), and
+                                // the hysteresis makes a REAL climb's net
+                                // progress reset the clock — so a staged
+                                // timeout here is a genuine stall: clean
+                                // release + churn accrual.
+                                if steer != target {
+                                    let feet = pos.0.map(|e| e.floor() as i32);
+                                    let reach = 2
+                                        + colonist.0.skills.climbing.level.min(1)
+                                            as i32;
+                                    churn_events.push((entity, pos.0, feet, reach));
+                                    job.claimed_by = None;
+                                    to_release.push(entity);
+                                    continue;
+                                }
                                 job.claimed_by = None;
                                 // B5.8-E: strike — grows the remote-work
                                 // arrival tolerance (see the arrive calc).
@@ -1067,6 +1431,20 @@ impl<'a> System<'a> for Sys {
                                 to_release.push(entity);
                             }
                         }
+                    }
+                },
+                ActiveJobState::Waiting => {
+                    // R3 fix-2: promotion = re-enter Traveling at the
+                    // arbitration cadence; Traveling's staging re-Waits if
+                    // it's still not this colonist's turn. The flip-flop
+                    // IS the queue-order re-check, and the watchdog fields
+                    // reset each promotion so queue time never reads as
+                    // stall.
+                    if tick.0 % ARBITRATION_INTERVAL as u64 == 0 {
+                        active.state = ActiveJobState::Traveling;
+                        active.best_dist = f32::MAX;
+                        active.reset_dist = f32::MAX;
+                        active.stuck_time = 0.0;
                     }
                 },
                 ActiveJobState::Arrived => {
@@ -1237,7 +1615,32 @@ impl<'a> System<'a> for Sys {
                         pos = ?job.pos,
                         "bastion: job completed"
                     );
+                    let done_pos = job.pos;
                     board.jobs.remove(&active.job);
+                    // reviewer F5 / b58-(d) fix: completing a job is the
+                    // ground-truth "making progress" signal — reset the
+                    // universal stuck-watch. A colonist steadily clearing
+                    // blocks in a confined deep pit (small displacement, so
+                    // the leash alone would false-fire the teleport) stays
+                    // safe; only a colonist that completes NOTHING for the
+                    // full window is teleported.
+                    if let Some(u) = uids.get(entity) {
+                        board.stuck_watch.remove(u);
+                    }
+                    // B-LIVE3 (Ben's MINE LIFECYCLE): the designation this
+                    // job belonged to may just have finished — collect for
+                    // the post-loop done/disperse pass (the board's job map
+                    // is queryable here, but colonists/positions are
+                    // mid-borrow).
+                    for region in board.designated.iter() {
+                        if region.contains_point(done_pos)
+                            && !board.jobs.values().any(|j| {
+                                !j.is_access && region.contains_point(j.pos)
+                            })
+                        {
+                            done_regions.push(*region);
+                        }
+                    }
                     to_release.push(entity);
                 },
             }
@@ -1255,6 +1658,39 @@ impl<'a> System<'a> for Sys {
             active_jobs.remove(*entity);
             if let Some(agent) = agents.get_mut(*entity) {
                 agent.rtsim_controller.activity = None;
+            }
+        }
+
+        // ── B-LIVE3: MINE DONE + DISPERSE (Ben's mine lifecycle) ─────────
+        // A designation whose last block just cleared is DONE: log the
+        // completion, and every below-grade colonist inside it gets the
+        // dispersal package — a climb-free window (the universal climb-out:
+        // any wall, no ladder needed) plus a surface Goto nudge, so miners
+        // LEAVE a finished pit instead of loitering at the bottom. The
+        // teleport backstop covers even this failing. (Region stays in the
+        // claim mask — mask semantics unchanged this pass.)
+        for region in done_regions {
+            board.done_count += 1;
+            info!(?region, "bastion: MINE DONE — dispersing");
+            let mut disp_iter =
+                (&mut colonists, &positions, (&mut agents).maybe()).lend_join();
+            while let Some((mut colonist, pos, agent)) = disp_iter.next() {
+                let p = pos.0.map(|e| e.floor() as i32);
+                if region.contains_point_xy(p) && p.z < region.max.z {
+                    colonist.0.climb_free_until = time.0 + 45.0;
+                    if let Some(agent) = agent {
+                        // Nudge toward the surface above the region edge;
+                        // if the Goto gets overwritten, climb-free +
+                        // teleport still guarantee the exit.
+                        let out = Vec3::new(
+                            region.min.x as f32 - 2.0,
+                            pos.0.y,
+                            (region.max.z + 2) as f32,
+                        );
+                        agent.rtsim_controller.activity =
+                            Some(common::rtsim::NpcActivity::Goto(out, TRAVEL_SPEED));
+                    }
+                }
             }
         }
 
@@ -1276,30 +1712,39 @@ impl<'a> System<'a> for Sys {
                 continue;
             };
             let churn = board.churn_watch.entry(uid).or_insert((posf, 0));
-            if posf.distance_squared(churn.0) > 9.0 {
+            // Leash 6 (matches the stillness watch, same rationale): a
+            // climber hover-wobbling at a shaft mouth (magnet + falls)
+            // paces 3-5 blocks — the old 3-block leash reset the count
+            // every cycle and the F2 chain never reached its threshold
+            // (runs A1-A3: an unreleasable mid-climb claim + a blind
+            // stillness path + a never-firing churn = 600s of hover). The
+            // egress_scan verdict is the false-positive guard, not the
+            // leash.
+            if posf.distance_squared(churn.0) > 36.0 {
                 *churn = (posf, 1);
                 continue;
             }
             churn.1 = churn.1.saturating_add(1);
+            // (The dead persistent-churn teleport tier — churn.1 >= 16,
+            // unreachable because the reset below sawtooths it 0→8→0 —
+            // was REMOVED per reviewer F5. The verdict-INDEPENDENT
+            // `stuck_watch` teleport below now owns the ultimate backstop,
+            // closing the has_egress false-positive the old tiers missed.)
             if churn.1 < CHURN_TRAPPED_RELEASES {
                 continue;
             }
             churn.1 = 0; // one shot; re-arms if the cycling continues
-            // TRAP-SPECIFIC guards (round-3 finding: an unguarded fire
-            // thrashed part (d)'s busy quarry — contended diggers bounce
-            // claims constantly without being trapped):
-            // 1. An access ANCHOR nearby = a way out already exists (the
-            //    proactive descent plans anchor every sanctioned dig).
-            // 2. Any access plan PENDING = the rescue economy is already
-            //    working; a second bubble just disorders it (one-plan-at-
-            //    a-time exists for exactly this reason).
-            let anchored = board.access_anchors.iter().any(|a| {
-                (a.x - feet.x).abs().max((a.y - feet.y).abs()) <= 8
-                    && a.z >= feet.z - 4
-                    && a.z <= feet.z + 2
-            });
+            // GUARDS, reviewer-F2 shape (the original anchor-PROXIMITY
+            // guard was wrong: near-an-anchor ≠ usable-by-this-colonist —
+            // runs 25-26's shaft straggler churned forever beside a ladder
+            // it couldn't win, unrescued). The AUTHORITATIVE check is the
+            // egress_scan VERDICT below — the only guard kept above it is
+            // one-plan-at-a-time (a pending access plan means the rescue
+            // economy is already working; round-3 showed a second bubble
+            // disorders it; the F3 staleness pruner bounds how long that
+            // gate can hold).
             let access_busy = board.jobs.values().any(|j| j.is_access);
-            if anchored || access_busy {
+            if access_busy {
                 continue;
             }
             let (has_egress, rim) = egress_scan(&terrain, feet, reach);
@@ -1360,6 +1805,41 @@ impl<'a> System<'a> for Sys {
             }
         }
 
+        // ── B6 SOFT-0 (trigger b): CLUSTERING RELIEF ────────────────────
+        // A chokepoint IS high local density: > N other colonists within a
+        // small radius → soft-collision before the pile-up deadlocks.
+        // O(n²) over loaded colonists (colonies are small); ~1s cadence.
+        if tick.0 % 30 == 11 {
+            let snapshot: Vec<Vec3<f32>> = (&colonists, &positions)
+                .join()
+                .map(|(_, p)| p.0)
+                .collect();
+            let mut dense_iter = (&mut colonists, &positions).lend_join();
+            while let Some((mut colonist, pos)) = dense_iter.next() {
+                let nearby = snapshot
+                    .iter()
+                    .filter(|p| {
+                        let d = **p - pos.0;
+                        // Excludes self (distance 0 counts once — subtract
+                        // below).
+                        d.xy().magnitude_squared()
+                            < SOFT_DENSITY_R * SOFT_DENSITY_R
+                            && d.z.abs() < 2.0
+                    })
+                    .count()
+                    .saturating_sub(1); // self
+                // Skip the write when already soft well past the next
+                // pass — `Colonist` is change-tracked/synced, and a
+                // no-op refresh every second would re-sync the comp.
+                // (The read goes through Deref, not DerefMut — unflagged.)
+                if nearby >= SOFT_DENSITY_N
+                    && colonist.0.soft_until < time.0 + 1.5
+                {
+                    colonist.0.soft_until = time.0 + SOFT_GRACE_SECS;
+                }
+            }
+        }
+
         // ── B5.8-E: EMERGENCY EGRESS (the "nobody entombed" fail-safe) ──
         // Ben's live-test repro: mine a shaft, DELETE the zone — the digger
         // is stranded: no job (no watchdog trigger) and no claims (no carve
@@ -1416,14 +1896,21 @@ impl<'a> System<'a> for Sys {
                     egress_requests.push((uid, from, to));
                 }
             }
-            for (colonist, pos, uid, ()) in
-                (&colonists, &positions, &uids, !&active_jobs).join()
-            {
+            let mut still_iter =
+                (&mut colonists, &positions, &uids, !&active_jobs).lend_join();
+            while let Some((mut colonist, pos, uid, ())) = still_iter.next() {
                 let watch = board
                     .egress_watch
                     .entry(*uid)
                     .or_insert((pos.0, 0.0, false));
-                if pos.0.distance_squared(watch.0) > 9.0 {
+                // CONFINEMENT radius 6, not stillness radius 3 (chokepoint
+                // ck-2 straggler): a jobless colonist PACING inside a 5-wide
+                // chamber kept resetting the 3-block anchor and the trapped
+                // detector never accrued. The annulus scan is the actual
+                // false-positive guard (open-ground idlers read has_egress
+                // and reset regardless), so the position leash only needs
+                // to distinguish "roaming free" from "circling a cell".
+                if pos.0.distance_squared(watch.0) > 36.0 {
                     *watch = (pos.0, 0.0, false);
                     continue;
                 }
@@ -1446,8 +1933,42 @@ impl<'a> System<'a> for Sys {
                     continue;
                 };
                 watch.2 = true;
+                // B-LIVE3: the climb-free fail-safe is granted at the
+                // VERDICT, per-colonist — NOT in the plan-emission loop,
+                // whose one-plan-at-a-time take(0) swallowed it whenever
+                // leftover access jobs existed anywhere (the sealed-pit
+                // regression sat trapped 240s because of exactly that).
+                // The teleport backstop keys off this window.
+                colonist.0.climb_free_until = time.0 + 45.0;
                 egress_requests.push((*uid, feet, target));
             }
+            // ── B6 (reviewer F3): STALE ACCESS-PLAN PRUNING ──────────────
+            // An abandoned plan (access jobs exist, NOBODY claims them for
+            // ACCESS_STALE_SECS) is removed wholesale: it was freezing the
+            // one-plan-at-a-time gate colony-wide and leaving permanent
+            // unreachable flags on the board (chokepoint run-17: 12
+            // leftovers after the crew exited another way). Any claim
+            // resets the clock; already-built rungs/steps stay (they're
+            // real structure); the plan can re-emit fresh if still needed.
+            const ACCESS_STALE_SECS: f32 = 20.0;
+            let access_jobs_exist = board.jobs.values().any(|j| j.is_access);
+            let access_claimed =
+                board.jobs.values().any(|j| j.is_access && j.claimed_by.is_some());
+            if access_jobs_exist && !access_claimed {
+                board.access_idle_secs += 1.0; // this pass ≈ once per second
+                if board.access_idle_secs >= ACCESS_STALE_SECS {
+                    let before = board.jobs.len();
+                    board.jobs.retain(|_, j| !j.is_access);
+                    info!(
+                        pruned = before - board.jobs.len(),
+                        "bastion: stale access plan abandoned (F3 pruner)"
+                    );
+                    board.access_idle_secs = 0.0;
+                }
+            } else {
+                board.access_idle_secs = 0.0;
+            }
+
             let egress_pending = board.jobs.values().any(|j| j.is_access);
             for (uid, from, to) in egress_requests
                 .into_iter()
@@ -1483,6 +2004,104 @@ impl<'a> System<'a> for Sys {
                         }
                         info!(?from, "bastion: emergency egress found no route (retry)");
                     },
+                }
+                // B-LIVE3 (Ben's UNIVERSAL CLIMB-OUT): every trapped
+                // verdict ALSO grants the climb-free window — plan or no
+                // plan, the colonist may claw its own way up any wall as
+                // the fail-safe below the plan tier. 45s; the teleport
+                // backstop below fires if even that stalls.
+                if let Some(entity) = id_maps.uid_entity(uid)
+                    && let Some(mut c) = colonists.get_mut(entity)
+                {
+                    c.0.climb_free_until = time.0 + 45.0;
+                }
+            }
+
+            // ── B-LIVE3 / reviewer F5: the UNIVERSAL stuck teleport, the
+            // ULTIMATE backstop (Ben: "if all-out fails just teleport them
+            // to ground level"). VERDICT-INDEPENDENT — no has_egress gate
+            // (the old tier's fatal hole: a shaft-mouth hover reads
+            // has_egress=TRUE as a false positive, so the verdict-gated
+            // teleport never fired and the colonist hovered forever). Pure
+            // position+time: a colonist that ISN'T working (Arrived
+            // resets — legitimate stationary) and hasn't moved
+            // `STUCK_LEASH` blocks in `STUCK_TELEPORT_SECS` is teleported
+            // to the nearest real surface — but ONLY when that surface is
+            // meaningfully ELSEWHERE (guards against no-op teleporting an
+            // idle colonist already standing on open ground). Loudly
+            // logged: every fire means the organic tiers (Waiting →
+            // climb-free → egress plan) failed and wants a look.
+            // 60s: the COMPLETION-RESET (a colonist completing a job
+            // clears its watch) is the real deep-dig guard — a productive
+            // digger completes a block every few seconds and never
+            // accrues. 60s (vs 90) rescues the sealed-pit / quarry
+            // stragglers within their measurement windows while the
+            // completion-reset keeps the deep dig safe (the earlier 60s
+            // deep-dig regression PREDATED the completion-reset). Bounds
+            // entombment tightly.
+            const STUCK_TELEPORT_SECS: f32 = 60.0;
+            // Working colonists are legitimately stationary — reset.
+            for (_, uid, active) in (&colonists, &uids, &active_jobs).join() {
+                if matches!(active.state, ActiveJobState::Arrived) {
+                    board.stuck_watch.remove(uid);
+                }
+            }
+            let mut tp_iter =
+                (&colonists, &uids, &mut positions, &mut velocities).lend_join();
+            while let Some((_colonist, uid, pos, vel)) = tp_iter.next() {
+                let is_working = id_maps.uid_entity(*uid).and_then(|e| active_jobs.get(e))
+                    .is_some_and(|a| matches!(a.state, ActiveJobState::Arrived));
+                if is_working {
+                    board.stuck_watch.remove(uid);
+                    continue;
+                }
+                let feet = pos.0.map(|e| e.floor() as i32);
+                // INSIDE AN ACTIVE DESIGNATION = a work zone, so a
+                // below-grade colonist there is a digger (idle between
+                // blocks, or working) — teleporting it yanks the dig
+                // (b58-(d) over-fire). A TRAPPED colonist is outside any
+                // designation: a chokepoint straggler sits in the
+                // pre-carved chamber (not a designation), and an
+                // entombed colonist's zone was DELETED — both correctly
+                // still teleport. The mask distinguishes "in a work zone"
+                // from "stuck in dead space" without a reachability
+                // verdict; a genuinely-stuck DIGGER is demoted to jobless
+                // by the churn detector (claim released) → its zone
+                // reference is gone → it teleports on the next pass.
+                if board.designated.iter().any(|r| r.contains_point(feet)) {
+                    board.stuck_watch.remove(uid);
+                    continue;
+                }
+                let dest = surface_teleport_dest(&terrain, feet);
+                // BELOW GRADE = a real surface exists ABOVE, meaningfully
+                // elsewhere (the colonist is in a pit/shaft, not on open
+                // ground where dest ≈ current). NOT movement-keyed: a
+                // wanderer below grade still accumulates (the e-out hole).
+                let below_grade = dest.is_some_and(|d| {
+                    d.map(|e| e as f32).xy().distance(pos.0.xy()) >= 3.0
+                        || (d.z as f32 - pos.0.z) >= 3.0
+                });
+                if !below_grade {
+                    // On/at a surface — not stuck (B7 feeds idle colonists).
+                    board.stuck_watch.remove(uid);
+                    continue;
+                }
+                let secs = board.stuck_watch.entry(*uid).or_insert(0.0);
+                *secs += 1.0; // this pass runs ~once per second
+                if *secs < STUCK_TELEPORT_SECS {
+                    continue;
+                }
+                if let Some(d) = dest {
+                    tracing::warn!(
+                        ?feet,
+                        ?d,
+                        secs = *secs,
+                        "bastion: ULTIMATE FAIL-SAFE — teleporting stuck \
+                         colonist to ground (organic egress tiers failed)"
+                    );
+                    pos.0 = d.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+                    vel.0 = Vec3::zero();
+                    board.stuck_watch.remove(uid);
                 }
             }
         }
@@ -1757,7 +2376,48 @@ impl<'a> System<'a> for Sys {
                 state: ActiveJobState::Traveling,
                 best_dist: f32::MAX,
                 stuck_time: 0.0,
+                reset_dist: f32::MAX,
+                soft_granted: false,
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Reviewer F1 — THE ±1 BOUNDARY PIN. "Standable" means the rise to
+    /// STAND on a surface, (s+1) − feet, is ≤ reach: s ≤ feet+reach−1.
+    /// The original `s ≤ feet+reach` admitted rise reach+1 and read the b5
+    /// quarry rim (rise 3, reach-2 novice) as escapable — the trapped
+    /// detector never fired and the entrapment hid as the "chop flake"
+    /// for weeks. If this test needs changing, the CLIMB MODEL changed —
+    /// update scramble semantics first, not this assert.
+    #[test]
+    fn egress_scan_rise_boundary() {
+        let feet = Vec3::new(0, 0, 100);
+        let reach = 2;
+        let flat_rim = |s: i32| move |_x: i32, _y: i32| Some(s);
+        // Rise exactly reach (s = feet+reach−1 = 101 → stand 102 − 100 = 2):
+        // climbable, EGRESS.
+        assert!(egress_scan_with(flat_rim(101), feet, reach).0);
+        // Rise reach+1 (s = feet+reach = 102): NOT climbable — the exact
+        // off-by-one. Must read WALLED with the rim offered as a plan
+        // target.
+        let (has, rim) = egress_scan_with(flat_rim(102), feet, reach);
+        assert!(!has);
+        assert_eq!(rim.map(|r| r.z), Some(102));
+        // Level ground and modest drops count as egress (walk off).
+        assert!(egress_scan_with(flat_rim(100), feet, reach).0);
+        assert!(egress_scan_with(flat_rim(96), feet, reach).0);
+        // Below the −4 window: a sheer drop is neither egress nor a rim —
+        // (false, None) = "open/flat" upstream (not trapped, no carve).
+        let (has, rim) = egress_scan_with(flat_rim(90), feet, reach);
+        assert!(!has);
+        assert!(rim.is_none());
+        // Higher reach widens the standable band by exactly one per level.
+        assert!(egress_scan_with(flat_rim(102), feet, 3).0);
+        assert!(!egress_scan_with(flat_rim(103), feet, 3).0);
     }
 }

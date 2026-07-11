@@ -71,6 +71,7 @@ impl SingleplayerState {
         runtime: &Arc<Runtime>,
         selected_language: &String,
         i18n: &LocalizationHandle,
+        bastion_overseer: bool,
     ) {
         if let Self::Init(worlds) = self {
             let Some(world) = worlds.current() else {
@@ -110,6 +111,17 @@ impl SingleplayerState {
             settings.map_file = Some(file_opts);
             settings.world_seed = world.seed;
             settings.day_length = world.day_length;
+            // bastion (B-LIVE2, Ben's "the day is the same speed"): the
+            // TimeScale mechanism already multiplies the day advance
+            // (state.rs — landed with TIMECTL); the imperceptibility was
+            // the BASE day being 30 real-minutes (per-world meta), so 4×
+            // still crawled. In overseer/colony mode the TIMESCALE-DESIGN
+            // target is a 10-minute day at 1× (→ 2.5 min at 4×, visibly
+            // fast). Flag-scoped: the world meta stays vanilla and
+            // vanilla sessions are untouched.
+            if bastion_overseer {
+                settings.day_length = 10.0;
+            }
 
             let (stop_server_s, stop_server_r) = unbounded();
 

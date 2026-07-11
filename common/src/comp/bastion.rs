@@ -80,6 +80,22 @@ pub struct ActiveJob {
     /// around an unreachable target moves plenty without progressing.
     pub best_dist: f32,
     pub stuck_time: f32,
+    /// bastion (B-LIVE3, reviewer R3 fix-1 — stuck-time HYSTERESIS): the
+    /// distance at the last stuck_time ZERO. The accumulator only resets
+    /// on ≥1 block of NET progress since then, so sub-block jitter (magnet
+    /// nudges, hover bobbing, physics wobble — all ≥ the 0.5 EPSILON)
+    /// can't starve the watchdog forever; real walking (2+ blocks/s)
+    /// resets comfortably. Without this, a hovering colonist generated
+    /// ZERO timeouts → zero churn → no net ever fired.
+    #[serde(default)]
+    pub reset_dist: f32,
+    /// bastion (B6 SOFT-0): this stall already got its soft-collision
+    /// GRACE WINDOW (SOFT-COLLISION-design §0 trigger a). The watchdog
+    /// grants soft-pass ONCE per assignment before degrading to the
+    /// carve/unreachable pipeline — most chokepoint deadlocks clear in
+    /// the grace; a still-stuck soft colonist is genuinely blocked.
+    #[serde(default)]
+    pub soft_granted: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -88,6 +104,14 @@ pub enum ActiveJobState {
     Traveling,
     /// At the site, ready to work (B5 hooks here).
     Arrived,
+    /// bastion (B6, reviewer R3 fix-2): queued at a single-file vertical
+    /// link — another colonist is closer to the staged access anchor, so
+    /// this one WAITS ITS TURN. The watchdog skips Waiting entirely (no
+    /// stall accrual, no unreachable, no strikes, no churn — queue-waiting
+    /// is not stuckness); promotion back to Traveling happens every
+    /// arbitration pass, which re-evaluates the queue order. Emergent
+    /// single-file: nearest climbs, the rest hold.
+    Waiting,
 }
 
 impl Component for ActiveJob {
