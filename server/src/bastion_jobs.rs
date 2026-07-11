@@ -1343,7 +1343,23 @@ impl<'a> System<'a> for Sys {
                                 // release never let the Chaser start from
                                 // a crowded spawn — whole crew floor-
                                 // parked).
-                                if !active.soft_granted {
+                                // AR-2 (reviewer R1 / checklist P4):
+                                // DENSITY-GATE the grace — soft-collision
+                                // only helps a colonist↔colonist stall, so
+                                // grant the grace ONLY when another
+                                // colonist is within squeeze range. A
+                                // TERRAIN-blocked stall (nobody nearby)
+                                // skips straight to the carve/unreachable
+                                // pipeline instead of burning a zero-
+                                // benefit STUCK_TIMEOUT. `soft_granted`
+                                // still caps it at one attempt.
+                                let blocker_near = queue_snapshot.iter().any(|q| {
+                                    let d = *q - pos.0;
+                                    d.xy().magnitude_squared() < 6.25 // 2.5 XY
+                                        && d.z.abs() < 2.0
+                                        && d.magnitude_squared() > 0.01 // not self
+                                });
+                                if !active.soft_granted && blocker_near {
                                     active.soft_granted = true;
                                     active.stuck_time = 0.0;
                                     colonist.0.soft_until =
