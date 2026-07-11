@@ -391,6 +391,71 @@ pub fn resolve_column_surface(
     }
 }
 
+/// bastion (B15 / reviewer FR12): does this Mine target have a TERRAIN-ONLY
+/// standable work-stance? Returns the feet-cell OFFSET from `pos` of the best
+/// stance to COMMIT, or `None` when none exists (no way to stand and reach it)
+/// OR the only stance is standing on an ISOLATED 1-wide block (clean-SKIP — a
+/// precarious perch physics slides a colonist off before it can Arrive;
+/// deferred to a future cave-in/collapse). PURE + meant to be computed ONCE
+/// per arbitration cycle into a set (exactly like `is_exposed`): NO
+/// per-colonist path-reachability here (that is expensive and order-sensitive
+/// — the arrive/watchdog/teleport pipeline owns per-colonist reach downstream;
+/// this gate only answers "does a stance EXIST"). Fixes B15: the exposure gate
+/// admitted work with no standable stance (a hillside `+1`-arrival-gap cell
+/// whose on-top space is a 1-wide slot, or a floating block) → claimed →
+/// never Arrived → churn.
+///
+/// PREFERS ON-TOP (dig in place — least travel, the normal deep-dig stance)
+/// and falls back to an ADJACENT-ground stance only when on-top is unusable
+/// (a wedged `+1`-slot or an isolated perch) — that adjacent stance is exactly
+/// what a `+1`-gap hillside block has to its open (downhill) side.
+fn has_standable_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<i32>> {
+    let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
+    let open = |p: Vec3<i32>| terrain.get(p).map(|b| !b.is_filled()).unwrap_or(false);
+    let cardinals = [
+        Vec2::new(1, 0),
+        Vec2::new(-1, 0),
+        Vec2::new(0, 1),
+        Vec2::new(0, -1),
+    ];
+    // 1. ON-TOP (preferred — the in-place deep-dig stance): stand ON the block,
+    //    mine underfoot (the colonist then falls; the climb/teleport floor
+    //    covers the landing). Valid iff:
+    //    - body room above: pos+z1 (feet) AND pos+z2 (head) both open;
+    //    - NOT an ISOLATED 1-wide perch (all 4 lateral sides solid-free at the
+    //      block's own level) — nothing can path ONTO an isolated floater, so
+    //      that is the clean-SKIP case (falls through to None below unless an
+    //      adjacent stance exists);
+    //    - the on-top space is NOT a 1-wide SLOT walled by higher columns (the
+    //      `+1` arrival gap the capsule WEDGES in — ≥3 of the 4 lateral sides
+    //      solid at the stance level pos+z1). A wedged block routes to its open
+    //      side instead (step 2).
+    let on_top_clear = open(pos + Vec3::unit_z()) && open(pos + Vec3::unit_z() * 2);
+    let isolated = cardinals
+        .into_iter()
+        .all(|d| !solid(Vec3::new(pos.x + d.x, pos.y + d.y, pos.z)));
+    let slot_walls = cardinals
+        .into_iter()
+        .filter(|d| solid(Vec3::new(pos.x + d.x, pos.y + d.y, pos.z + 1)))
+        .count();
+    if on_top_clear && !isolated && slot_walls < 3 {
+        return Some(Vec3::unit_z());
+    }
+    // 2. ADJACENT-GROUND fallback: a cardinal neighbor cell at the block's own
+    //    level with a solid floor below + open feet + open head — stand there
+    //    and mine sideways. This is the reachable stance a wedged `+1`-gap
+    //    block has downhill, and the way a reachable floating LEDGE is worked;
+    //    an ISOLATED floater has none (its neighbors' floors are air) → None →
+    //    clean-SKIP (no claim→unreachable churn; deferred to cave-in).
+    for d in cardinals {
+        let feet = Vec3::new(pos.x + d.x, pos.y + d.y, pos.z);
+        if open(feet) && open(feet + Vec3::unit_z()) && solid(feet - Vec3::unit_z()) {
+            return Some(Vec3::new(d.x, d.y, 0));
+        }
+    }
+    None
+}
+
 /// bastion (B5.6b-2): resolve a painted XY footprint + [`ZExtent`] to the
 /// exact axis-aligned bounds of the per-column surface-relative volume.
 /// This is what the server ECHOES to clients as the designation rect — the
@@ -1311,7 +1376,13 @@ impl<'a> System<'a> for Sys {
                 to_release.push(entity);
                 continue;
             };
-            let target = job.pos.map(|e| e as f32) + Vec3::new(0.5, 0.5, 1.0);
+            // B15/FR12: arrive at the COMMITTED work-stance (feet offset), not
+            // always on-top. Default (0,0,1) reproduces the pre-B15
+            // `job.pos + (0.5,0.5,1.0)` on-top target exactly; an adjacent
+            // stance `(±1,0,0)`/`(0,±1,0)` sends the digger BESIDE a `+1`-gap
+            // block it can't stand on top of. Pinned at claim (not re-picked).
+            let target =
+                (job.pos + active.stance).map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
             match active.state {
                 ActiveJobState::Traveling => {
                     // B5.8: moot-check DURING travel too — a carve stair (or
@@ -2360,7 +2431,8 @@ impl<'a> System<'a> for Sys {
         // the pass — two idle colonists can't pick the same job); the
         // `ActiveJob` comps are inserted afterwards (can't insert while the
         // anti-join borrows the storage).
-        let mut assignments: Vec<(specs::Entity, JobId)> = Vec::new();
+        // (entity, job, committed work-STANCE offset) — B15/FR12.
+        let mut assignments: Vec<(specs::Entity, JobId, Vec3<i32>)> = Vec::new();
         // B5.8 (DF-style dig behavior, Ben's live-test requirement):
         // 1. REACHABILITY GATE — a Mine job is claimable only when EXPOSED
         //    (≥1 of its 6 neighbors non-filled): a digger can stand next to
@@ -2370,6 +2442,13 @@ impl<'a> System<'a> for Sys {
         //    effect: carve-stair steps self-sequence (only the next step is
         //    exposed). Computed once per cycle, not per colonist.
         let mut exposed: HashSet<JobId> = HashSet::new();
+        // B15 / reviewer FR12: the STANDABLE set — an exposed Mine cell is only
+        // CLAIMABLE if a colonist can actually STAND to work it (terrain-only,
+        // once-per-cycle, alongside exposure). Value = the committed work-STANCE
+        // (feet offset from job.pos) pinned at claim. Exposure ≠ standability
+        // was the bug: a hillside `+1`-gap cell or a floating block passed
+        // exposure, got claimed, then never Arrived → churn.
+        let mut standable: HashMap<JobId, Vec3<i32>> = HashMap::new();
         for (id, job) in board.jobs.iter_mut() {
             if job.kind != DesignationKind::Mine || job.claimed_by.is_some() {
                 continue;
@@ -2391,6 +2470,19 @@ impl<'a> System<'a> for Sys {
             });
             if is_exposed {
                 exposed.insert(*id);
+                // ACCESS steps (rescue rungs/stairs) are colony infrastructure
+                // laid on reachable ground by construction — never standability-
+                // gated (they use the on-top stance, as before). Ordinary Mine
+                // cells must have a real stance; a cell with none (isolated
+                // floater / walled `+1` gap) is left UNCLAIMED this cycle — NOT
+                // flagged unreachable, so no claim→unreachable churn — and
+                // retried each cycle as the shell opens (or deferred to
+                // cave-in). `job` isn't touched here beyond the read.
+                if job.is_access {
+                    standable.insert(*id, Vec3::unit_z());
+                } else if let Some(stance) = has_standable_stance(&terrain, job.pos) {
+                    standable.insert(*id, stance);
+                }
             } else {
                 // Fully enclosed: flag unreachable-for-now so the audit/UI
                 // reflect it (the periodic retry sweep re-tests as the dig
@@ -2501,7 +2593,12 @@ impl<'a> System<'a> for Sys {
                 if job.claimed_by.is_some() || job.unreachable {
                     continue;
                 }
-                if job.kind == DesignationKind::Mine && !exposed.contains(id) {
+                // B15 / FR12: a Mine cell is claimable only with a STANDABLE
+                // stance (⊆ exposed — access always qualifies; an ordinary cell
+                // needs a real stance). Replaces the bare exposure gate so
+                // unstandable `+1`-gap / floating cells aren't claimed-then-
+                // stuck.
+                if job.kind == DesignationKind::Mine && !standable.contains_key(id) {
                     continue;
                 }
                 // B5.8-E: held until return-access leads the descent.
@@ -2585,10 +2682,14 @@ impl<'a> System<'a> for Sys {
                     board.total_claims += 1;
                 }
                 info!(job = job_id, colonist = %uid, "bastion: job claimed");
-                assignments.push((entity, job_id));
+                // The committed stance (B15/FR12): the standable set's pinned
+                // offset for a gated Mine cell; on-top (0,0,1) for everything
+                // else (non-Mine jobs, and the pre-B15 default).
+                let stance = standable.get(&job_id).copied().unwrap_or(Vec3::unit_z());
+                assignments.push((entity, job_id, stance));
             }
         }
-        for (entity, job_id) in assignments {
+        for (entity, job_id, stance) in assignments {
             let _ = active_jobs.insert(entity, ActiveJob {
                 job: job_id,
                 state: ActiveJobState::Traveling,
@@ -2596,6 +2697,7 @@ impl<'a> System<'a> for Sys {
                 stuck_time: 0.0,
                 reset_dist: f32::MAX,
                 soft_granted: false,
+                stance,
             });
         }
     }
