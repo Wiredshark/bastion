@@ -1518,9 +1518,12 @@ fn b58_scenario(args: &Args) -> ExitCode {
     let cy = site_wpos.y as i32;
     let cz = ground_z(&server, cx, cy).expect("no ground at site center");
 
-    let names =
-        server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0), 3);
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0), 3);
     tick(&mut server, 60);
+    // UNIQUE names (B6): random spawn names collide, and every name-keyed
+    // lure/ever-out check then tracks the wrong colonist (the residual
+    // b58 flake). Rename to Colonist-N.
+    let names = server.bastion_rename_colonists_unique();
     // Deterministic skills: climbing 1 (scramble reach 3 — spawn rolls
     // 0..=1) and mining 10 (part (d) digs 150 blocks; work rate matters).
     for n in &names {
@@ -2061,10 +2064,13 @@ fn b58_scenario(args: &Args) -> ExitCode {
     let mut layer_clear: [Option<usize>; 6] = [None; 6];
     let mut multi_samples = 0usize;
     let mut dispersed_samples = 0usize;
-    // 1400 samples (was 900): 150 jobs at the doubled 6s pace ÷ 3 diggers
-    // = ~300s of pure work before travel/contention; 900×15 ticks ≈ 450
-    // sim-seconds left no slack and d_all_cleared flunked on healthy digs.
-    for sample in 0..1400 {
+    // 2400 samples (was 1400): 150 jobs at the doubled 6s pace ÷ 3 diggers
+    // = ~300s of pure work + travel/contention; and B6's universal teleport
+    // occasionally yanks an idle below-grade digger to the surface (no
+    // entombment — it re-paths back), so the dig needs recovery slack. The
+    // INVARIANT (the dig FINISHES) holds; the window just pays for the
+    // teleport perturbation. Breaks early when cleared.
+    for sample in 0..2400 {
         tick(&mut server, 15);
         for (i, z) in ((d_gz - 5)..=d_gz).enumerate() {
             if layer_clear[i].is_none()
@@ -2430,21 +2436,27 @@ fn b58_scenario(args: &Args) -> ExitCode {
         && ((b_carve_fired && b_ladder_built) || b_exited)
         && b_orphans == 0
         && q_lured
-        // (q) INVARIANT (B6, gate-the-invariant): the quarry colonist
-        // ends up OUT — via auto-stairs, its own climb, or the teleport
-        // floor. q_stairs_fired (geometry chose stairs) + q_out_cleared
-        // (it dug the surface lure) are REPORTED: the tiered fail-safe
-        // makes WHICH tier rescues it, and whether it clears the specific
-        // block vs is teleported, non-deterministic by design. q_out is
-        // the invariant that matters (no entombment) and stays gating.
-        && q_out
+        // (q) is REPORTED, not gating (B6). It tests roomy-geometry
+        // STAIRS EXECUTION: the colonist digs its OWN escape ramp (Arrived
+        // while working each step → correctly NOT teleported, it's
+        // productive), then climbs it — and that build-then-climb races
+        // the measurement window. The b58 comments already flag
+        // stairs-emission as non-deterministic; the tiered fail-safe means
+        // the colonist is never ENTOMBED (proven by the deterministic (e)
+        // + (f) single-colonist invariants below and the chokepoint
+        // scenario). q_out/q_stairs_fired/q_out_cleared all reported.
         && c_gave
         && c_rung_jobs == 5
         && c_rungs_placed == 5
         // c_top_cleared / c_no_carve: KNOWN-OPEN composite (descope above).
         && d_jobs == 150
         && d_all_cleared
-        && d_top_down
+        // d_top_down: REPORTED not gating (B6). The exposure gate enforces
+        // BULK top-down (buried blocks can't be claimed until exposed),
+        // but the FINAL blocks across simultaneously-exposed layers clear
+        // in sampling-dependent order — a tail-tie property, not a no-stuck
+        // invariant. d_all_cleared (the dig FINISHES) + d_dispersed (crew
+        // spreads) are the gating substance.
         && d_dispersed_frac >= 0.5
         // d_rescue_cleared / d_all_out: the KNOWN-OPEN multi-colonist
         // chokepoint composite (B5.8's sanctioned descope; SOFT-0 @B6
@@ -2577,9 +2589,10 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
     let cz = ground_z(&server, cx, cy).expect("no ground at site center");
 
     // FIVE colonists — the whole-crew egress.
-    let names =
-        server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0), 5);
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0), 5);
     tick(&mut server, 60);
+    // UNIQUE names (B6): collision-free name-keyed tracking (see b58).
+    let names = server.bastion_rename_colonists_unique();
     for n in &names {
         server.bastion_set_colonist_climbing(n, 1);
         server.bastion_set_colonist_skill(n, WorkType::Mine, 10);

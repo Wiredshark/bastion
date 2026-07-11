@@ -426,6 +426,13 @@ fn surface_teleport_dest(terrain: &TerrainGrid, feet: Vec3<i32>) -> Option<Vec3<
                 }
                 if let Some(s) =
                     column_surface_z(terrain, feet.x + dx, feet.y + dy, feet.z + 64)
+                    // The dest MUST be ABOVE the colonist — a teleport to
+                    // the OWN column (r=0) of a pit returns the pit floor
+                    // (below grade), teleporting the colonist to itself
+                    // (chokepoint sealed-pit fs: tp fired but fs_out stayed
+                    // false). Requiring `s ≥ feet.z` finds the surrounding
+                    // pad's rim instead — always an upward exit.
+                    && s + 1 > feet.z
                 {
                     return Some(Vec3::new(feet.x + dx, feet.y + dy, s + 1));
                 }
@@ -483,14 +490,16 @@ pub struct JobBoard {
     /// (last non-access job completed). Telemetry for the harness/UI.
     pub done_count: u64,
     /// bastion (B-LIVE3 / reviewer F5): the UNIVERSAL stuck watchdog —
-    /// (last position, seconds since it meaningfully moved) per colonist,
-    /// employed or not. Feeds the VERDICT-INDEPENDENT teleport backstop:
-    /// no `has_egress` gate, no churn threshold that can race its own
-    /// reset — just "a colonist that hasn't moved in N seconds and isn't
-    /// working goes to ground." Closes the `has_egress` FALSE-POSITIVE
-    /// hover the earlier verdict-gated tiers couldn't (Ben's "no colonist
-    /// EVER stuck" guarantee, made unconditional).
-    stuck_watch: HashMap<Uid, (Vec3<f32>, f32)>,
+    /// seconds each colonist has been continuously BELOW GRADE without
+    /// working. Feeds the VERDICT-INDEPENDENT teleport backstop: no
+    /// `has_egress` gate, no churn threshold racing its own reset, and —
+    /// critically — NOT movement-keyed (a colonist WANDERING below grade
+    /// kept resetting a stationary timer and never teleported, staying
+    /// stuck: the e-out hole). Reset only on reaching a SURFACE or
+    /// completing a job (productive); accumulate while stuck below grade
+    /// regardless of motion. Closes Ben's "no colonist EVER stuck"
+    /// guarantee unconditionally.
+    stuck_watch: HashMap<Uid, f32>,
 }
 
 impl JobBoard {
@@ -2022,15 +2031,15 @@ impl<'a> System<'a> for Sys {
             // idle colonist already standing on open ground). Loudly
             // logged: every fire means the organic tiers (Waiting →
             // climb-free → egress plan) failed and wants a look.
-            // 90s (was 60): a deep-dig colonist legitimately WAITING for
-            // the exposure gate to open its last block completes nothing
-            // meanwhile — at 60s it tripped the teleport and the dig
-            // stalled (b58-(d) run-4). 90s clears every legitimate
-            // wait/climb (exposure clears in <20s; a full climb is
-            // ~30-45s) while still bounding entombment tightly. The
-            // completion-reset means a PRODUCTIVE colony never trips it.
-            const STUCK_TELEPORT_SECS: f32 = 90.0;
-            const STUCK_LEASH_SQ: f32 = 36.0; // 6 blocks
+            // 60s: the COMPLETION-RESET (a colonist completing a job
+            // clears its watch) is the real deep-dig guard — a productive
+            // digger completes a block every few seconds and never
+            // accrues. 60s (vs 90) rescues the sealed-pit / quarry
+            // stragglers within their measurement windows while the
+            // completion-reset keeps the deep dig safe (the earlier 60s
+            // deep-dig regression PREDATED the completion-reset). Bounds
+            // entombment tightly.
+            const STUCK_TELEPORT_SECS: f32 = 60.0;
             // Working colonists are legitimately stationary — reset.
             for (_, uid, active) in (&colonists, &uids, &active_jobs).join() {
                 if matches!(active.state, ActiveJobState::Arrived) {
@@ -2040,38 +2049,53 @@ impl<'a> System<'a> for Sys {
             let mut tp_iter =
                 (&colonists, &uids, &mut positions, &mut velocities).lend_join();
             while let Some((_colonist, uid, pos, vel)) = tp_iter.next() {
-                let is_working = id_maps
-                    .uid_entity(*uid)
-                    .and_then(|e| active_jobs.get(e))
+                let is_working = id_maps.uid_entity(*uid).and_then(|e| active_jobs.get(e))
                     .is_some_and(|a| matches!(a.state, ActiveJobState::Arrived));
                 if is_working {
-                    continue;
-                }
-                let w = board.stuck_watch.entry(*uid).or_insert((pos.0, 0.0));
-                if pos.0.distance_squared(w.0) > STUCK_LEASH_SQ {
-                    *w = (pos.0, 0.0);
-                    continue;
-                }
-                w.1 += 1.0; // this pass runs ~once per second
-                if w.1 < STUCK_TELEPORT_SECS {
+                    board.stuck_watch.remove(uid);
                     continue;
                 }
                 let feet = pos.0.map(|e| e.floor() as i32);
-                if let Some(d) = surface_teleport_dest(&terrain, feet)
-                    && d.map(|e| e as f32).xy().distance(pos.0.xy()) < 3.0
-                    && (d.z as f32 - pos.0.z).abs() < 3.0
-                {
-                    // The nearest surface IS essentially here — the
-                    // colonist is on open ground, just idle. Not stuck;
-                    // reset (B7 gives it work; nothing to fix).
-                    *w = (pos.0, 0.0);
+                // INSIDE AN ACTIVE DESIGNATION = a work zone, so a
+                // below-grade colonist there is a digger (idle between
+                // blocks, or working) — teleporting it yanks the dig
+                // (b58-(d) over-fire). A TRAPPED colonist is outside any
+                // designation: a chokepoint straggler sits in the
+                // pre-carved chamber (not a designation), and an
+                // entombed colonist's zone was DELETED — both correctly
+                // still teleport. The mask distinguishes "in a work zone"
+                // from "stuck in dead space" without a reachability
+                // verdict; a genuinely-stuck DIGGER is demoted to jobless
+                // by the churn detector (claim released) → its zone
+                // reference is gone → it teleports on the next pass.
+                if board.designated.iter().any(|r| r.contains_point(feet)) {
+                    board.stuck_watch.remove(uid);
                     continue;
                 }
-                if let Some(d) = surface_teleport_dest(&terrain, feet) {
+                let dest = surface_teleport_dest(&terrain, feet);
+                // BELOW GRADE = a real surface exists ABOVE, meaningfully
+                // elsewhere (the colonist is in a pit/shaft, not on open
+                // ground where dest ≈ current). NOT movement-keyed: a
+                // wanderer below grade still accumulates (the e-out hole).
+                let below_grade = dest.is_some_and(|d| {
+                    d.map(|e| e as f32).xy().distance(pos.0.xy()) >= 3.0
+                        || (d.z as f32 - pos.0.z) >= 3.0
+                });
+                if !below_grade {
+                    // On/at a surface — not stuck (B7 feeds idle colonists).
+                    board.stuck_watch.remove(uid);
+                    continue;
+                }
+                let secs = board.stuck_watch.entry(*uid).or_insert(0.0);
+                *secs += 1.0; // this pass runs ~once per second
+                if *secs < STUCK_TELEPORT_SECS {
+                    continue;
+                }
+                if let Some(d) = dest {
                     tracing::warn!(
                         ?feet,
                         ?d,
-                        secs = w.1,
+                        secs = *secs,
                         "bastion: ULTIMATE FAIL-SAFE — teleporting stuck \
                          colonist to ground (organic egress tiers failed)"
                     );
