@@ -2057,6 +2057,9 @@ fn b58_scenario(args: &Args) -> ExitCode {
         min: Vec3::new(dx - 2, dy - 2, d_gz - 5),
         max: Vec3::new(dx + 2, dy + 2, d_gz),
     };
+    // B-LIVE4 (mine-oscillation): snapshot cumulative claims so the dig's
+    // claims-per-job ratio (the in/out-bob telemetry) can be read after.
+    let d_claims_before = server.bastion_total_claims();
     let d_jobs = server
         .bastion_place_designation(d_region, DesignationKind::Mine)
         .len();
@@ -2099,6 +2102,18 @@ fn b58_scenario(args: &Args) -> ExitCode {
         }
     }
     let d_all_cleared = layer_clear.iter().all(|c| c.is_some());
+    // B-LIVE4 (mine-oscillation): CLAIMS-PER-BLOCK-DUG over the dig window —
+    // 1.0 = each dug block claimed exactly once (no in/out bob), >1 =
+    // re-target churn (the play-tester measured 1.46× before auto-ladder-off
+    // removed the anchor colonists queued/bobbed at). Divided by blocks
+    // actually DUG (not the nominal 150) so the number is meaningful even
+    // when the dig doesn't fully clear the window — which it routinely
+    // doesn't on a loaded machine (the reason d_all_cleared is REPORTED).
+    // REPORTED, never gates (a throughput/quality mechanism — registry
+    // B8/P6, same class as d_all_cleared).
+    let d_claims_total = server.bastion_total_claims() - d_claims_before;
+    let d_blocks_dug = d_jobs.saturating_sub(server.bastion_jobs_in_region(d_region));
+    let d_claims_ratio = d_claims_total as f64 / (d_blocks_dug.max(1)) as f64;
     // TOP-DOWN: clear order non-decreasing with depth (layer index 5 = the
     // TOP layer at d_gz; index 0 = the bottom). Top must finish first.
     // TOL=2 samples (~1 sim-s): the exposure gate enforces BULK top-down
@@ -2399,6 +2414,9 @@ fn b58_scenario(args: &Args) -> ExitCode {
         "b58_d_all_cleared": d_all_cleared,
         "b58_d_top_down": d_top_down,
         "b58_d_dispersed_frac": d_dispersed_frac,
+        "b58_d_blocks_dug": d_blocks_dug,
+        "b58_d_claims_total": d_claims_total,
+        "b58_d_claims_ratio": d_claims_ratio,
         "b58_d_rescue_cleared": d_rescue_cleared,
         "b58_d_all_out": d_all_out,
         "b58_e_lured": e_lured,

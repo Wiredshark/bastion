@@ -973,6 +973,29 @@ impl Server {
             .collect()
     }
 
+    /// bastion (B6, harness hook): give every loaded colonist a UNIQUE
+    /// deterministic name (`Colonist-0`, `Colonist-1`, …). Random spawn
+    /// names collide (~1/24 per pair — with a 5-colonist crew that's a
+    /// meaningful chance every run), and every name-keyed scenario check
+    /// (fs/quarry/pit lures, ever-out sets) then tracks the wrong
+    /// colonist → intermittent false failures. Call once after spawn.
+    /// Returns the new names in join order.
+    pub fn bastion_rename_colonists_unique(&mut self) -> Vec<String> {
+        use specs::LendJoin;
+        let ecs = self.state.ecs();
+        let mut colonists = ecs.write_storage::<comp::Colonist>();
+        let mut names = Vec::new();
+        let mut i = 0;
+        let mut iter = (&mut colonists).lend_join();
+        while let Some(mut c) = iter.next() {
+            let name = format!("Colonist-{i}");
+            c.0.name = name.clone();
+            names.push(name);
+            i += 1;
+        }
+        names
+    }
+
     /// bastion (B6, harness hook): colonist states WITH the entity `Uid` —
     /// names are randomly drawn and CAN collide (chokepoint run-23: two
     /// "Yara of the Vale"s collapsed a 5-colonist roster to 4 in every
@@ -1304,6 +1327,17 @@ impl Server {
             .ecs()
             .read_resource::<bastion_jobs::JobBoard>()
             .done_count
+    }
+
+    /// bastion (B-LIVE4, harness hook): cumulative job-claim events over the
+    /// board's life (initial claims + re-claims after release). Snapshot
+    /// before/after a dig phase → claims-per-job ratio, the mine-oscillation
+    /// (in/out bob) telemetry.
+    pub fn bastion_total_claims(&self) -> u64 {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .total_claims
     }
 
     /// bastion (B6 SOFT-0, harness hook): register an access anchor, as a

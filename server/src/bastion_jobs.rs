@@ -522,6 +522,14 @@ pub struct JobBoard {
     /// regardless of motion. Closes Ben's "no colonist EVER stuck"
     /// guarantee unconditionally.
     stuck_watch: HashMap<Uid, f32>,
+    /// bastion (B-LIVE4, mine-oscillation): CUMULATIVE count of job-claim
+    /// events over the board's life — every `claimed_by = Some` in
+    /// arbitration bumps it (initial claims AND re-claims after a release).
+    /// Divided by jobs-that-existed it is the CLAIMS-PER-JOB ratio: 1.0 =
+    /// each job claimed once (no bob), >1 = re-target churn (the play-tester
+    /// measured 1.46× before the auto-ladder-off + commitment work). Pure
+    /// telemetry for the harness; never gates.
+    pub total_claims: u64,
 }
 
 impl JobBoard {
@@ -1095,6 +1103,85 @@ impl<'a> System<'a> for Sys {
                         pos.0 = Vec3::new(c.x as f32 + 0.5, c.y as f32 + 0.5, c.z as f32);
                         vel.0 = Vec3::zero();
                     }
+                }
+            }
+        }
+
+        // ── CREST-DISMOUNT SNAP (Ben live-test; reviewer FR + architect) ──
+        // A climber rising to a ledge tops out into air the instant its feet
+        // reach the target level — the lift's own gate (`target_above`, in
+        // the block above) flips false right there, cutting the assist
+        // exactly when the colonist must still cross the horizontal gap onto
+        // the ledge. It can't finish the dismount, slips back, and oscillates
+        // at the crest (the documented `ladder_pillar` failure: "gravity wins
+        // the crossing"). The universal below-grade teleport DOES rescue it,
+        // but only at the 60s floor — a long visible stall Ben live-flagged.
+        // This makes the dismount PROACTIVE: a job-carrying colonist that has
+        // RISEN to its target's crest level and is still HANGING (own column
+        // below is air — mid-slip or beside the ladder) snaps onto the
+        // nearest walkable dismount cell TOWARD the target — within 2 XY of
+        // its feet, at the crest or one below it, head-clear + solid beneath,
+        // and never FARTHER in XY from the target than it already is. Keyed
+        // to the path target (never a free warp); the hanging gate means one
+        // snap onto solid ground ends it (no jitter — next tick it's grounded
+        // and excluded). The 60s teleport stays the ultimate backstop.
+        {
+            let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_solid()).unwrap_or(false);
+            let mut dismount_iter =
+                (&active_jobs, &mut positions, &mut velocities).lend_join();
+            while let Some((active, pos, vel)) = dismount_iter.next() {
+                let Some(job) = board.jobs.get(&active.job) else {
+                    continue;
+                };
+                let feet = pos.0.map(|e| e.floor() as i32);
+                // The walkable stance ATOP the target block (Mine/access
+                // arrive = stand-on-top): a dismounting colonist's feet-block
+                // sits one above the target block.
+                let crest_z = job.pos.z + 1;
+                // "Risen to the crest": feet at the crest (±1 — a slip just
+                // under, or the topped-out air block just over). Still below,
+                // or well past, is not a dismount.
+                if feet.z < crest_z - 1 || feet.z > crest_z + 1 {
+                    continue;
+                }
+                // Must be HANGING (own column below is air): a colonist
+                // already standing on solid ground doesn't need the snap, and
+                // this makes the snap self-terminating (grounded next tick).
+                if solid(feet - Vec3::unit_z()) {
+                    continue;
+                }
+                let tgt = Vec2::new(job.pos.x, job.pos.y);
+                let feet_gap = (feet.x - tgt.x).abs().max((feet.y - tgt.y).abs());
+                // Nearest-to-target walkable dismount cell within 2 XY of
+                // feet, at the crest or one below it (≤1 level below), that
+                // does not move the colonist AWAY from the target.
+                let mut best: Option<(Vec3<i32>, i32)> = None;
+                for dz in [0i32, -1] {
+                    for dx in -2..=2i32 {
+                        for dy in -2..=2i32 {
+                            if dx == 0 && dy == 0 {
+                                continue;
+                            }
+                            let c = Vec3::new(feet.x + dx, feet.y + dy, crest_z + dz);
+                            let walkable = !solid(c)
+                                && !solid(c + Vec3::unit_z())
+                                && solid(c - Vec3::unit_z());
+                            if !walkable {
+                                continue;
+                            }
+                            let gap = (c.x - tgt.x).abs().max((c.y - tgt.y).abs());
+                            if gap > feet_gap {
+                                continue; // never snap away from the target
+                            }
+                            if best.is_none_or(|(_, bg)| gap < bg) {
+                                best = Some((c, gap));
+                            }
+                        }
+                    }
+                }
+                if let Some((c, _)) = best {
+                    pos.0 = Vec3::new(c.x as f32 + 0.5, c.y as f32 + 0.5, c.z as f32);
+                    vel.0 = Vec3::zero();
                 }
             }
         }
@@ -2424,6 +2511,9 @@ impl<'a> System<'a> for Sys {
                 if let Some(job) = board.jobs.get_mut(&job_id) {
                     job.claimed_by = Some(*uid);
                     claimed_pos.push(job.pos);
+                    // B-LIVE4: count every claim event (initial + re-claim)
+                    // for the mine-oscillation claims-per-job telemetry.
+                    board.total_claims += 1;
                 }
                 info!(job = job_id, colonist = %uid, "bastion: job claimed");
                 assignments.push((entity, job_id));
