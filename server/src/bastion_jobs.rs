@@ -57,6 +57,15 @@ use vek::*;
 // plumbing is cheap when the design clears feasibility). At the B-LIVE2
 // 10-minute overseer day, 6 real-seconds ≈ 14.4 game-minutes per block.
 const WORK_DURATION_BASE: f32 = 6.0;
+/// bastion (B6-hotfix, Ben live-test): master switch for the AUTO-BUILT
+/// ladder-pillar access fallback (`plan_access`). `false` = the colony
+/// carves STAIRS where geometry allows and builds no auto vertical link
+/// elsewhere (the universal teleport-to-ground fail-safe covers the rest,
+/// so no colonist is ever stuck); this removes the single-column
+/// queue-fight Ben saw. Flip to `true` to restore the pillar fallback —
+/// a one-line revert (all ladder code stays live for the player paint
+/// tool). Re-enable once SOFT-1 ORCA makes the 1-wide queue orderly.
+const AUTO_LADDER_ACCESS: bool = false;
 /// bastion (B6 SOFT-0): how long a granted soft-collision pass lasts (the
 /// watchdog grace window and the density relief both use it). Long enough
 /// to physically squeeze past a blocker at walk speed; short enough that
@@ -195,8 +204,21 @@ fn plan_access(
         });
         match stairs {
             Some(digs) => Some((digs, DesignationKind::Mine)),
-            None => ladder_pillar(terrain, mask, from, to.z)
+            // B6-hotfix (Ben live-test): AUTO-ladder access DISABLED — the
+            // single-column auto-pillar caused a queue-fight ("they all
+            // fight to use it") that did more harm than good. The colony
+            // now plans STAIRS where they route and NO auto vertical link
+            // where they don't; the universal teleport-to-ground fail-safe
+            // (B6, entombment impossible by construction) backstops any
+            // colonist a stair can't reach. REVERSIBLE by construction —
+            // flip the flag to restore the pillar fallback (Ben may want
+            // it back once SOFT-1 ORCA lands). ladder_pillar(),
+            // DesignationKind::Ladder, and all climb-assist/magnetism code
+            // STAY — the player Ladder paint tool + vertical-link
+            // pathfinding still use them; only the AUTO fallback goes dark.
+            None if AUTO_LADDER_ACCESS => ladder_pillar(terrain, mask, from, to.z)
                 .map(|cells| (cells, DesignationKind::Ladder)),
+            None => None,
         }
     };
     let (cells, kind) = plan?;
@@ -500,6 +522,14 @@ pub struct JobBoard {
     /// regardless of motion. Closes Ben's "no colonist EVER stuck"
     /// guarantee unconditionally.
     stuck_watch: HashMap<Uid, f32>,
+    /// bastion (B-LIVE4, mine-oscillation): CUMULATIVE count of job-claim
+    /// events over the board's life — every `claimed_by = Some` in
+    /// arbitration bumps it (initial claims AND re-claims after a release).
+    /// Divided by jobs-that-existed it is the CLAIMS-PER-JOB ratio: 1.0 =
+    /// each job claimed once (no bob), >1 = re-target churn (the play-tester
+    /// measured 1.46× before the auto-ladder-off + commitment work). Pure
+    /// telemetry for the harness; never gates.
+    pub total_claims: u64,
 }
 
 impl JobBoard {
@@ -693,6 +723,20 @@ impl JobBoard {
         });
         info!(released = released.len(), "bastion: designation cancelled");
         released
+    }
+
+    /// bastion (B6-hotfix): drop access anchors whose base falls inside a
+    /// region — used when the Erase tool deletes the ladders in that region
+    /// so staged routing stops steering colonists at a now-ghost vertical
+    /// link. (Player + auto-built anchors alike; a re-painted ladder
+    /// re-registers its anchor on build.)
+    pub fn drop_access_anchors_in(&mut self, region: Region) {
+        let before = self.access_anchors.len();
+        self.access_anchors.retain(|a| !region.contains_point(*a));
+        let dropped = before - self.access_anchors.len();
+        if dropped > 0 {
+            info!(dropped, "bastion: access anchors dropped (ladder erased)");
+        }
     }
 
     /// Audit for the harness gate: claim counts + distinctness.
@@ -1059,6 +1103,85 @@ impl<'a> System<'a> for Sys {
                         pos.0 = Vec3::new(c.x as f32 + 0.5, c.y as f32 + 0.5, c.z as f32);
                         vel.0 = Vec3::zero();
                     }
+                }
+            }
+        }
+
+        // ── CREST-DISMOUNT SNAP (Ben live-test; reviewer FR + architect) ──
+        // A climber rising to a ledge tops out into air the instant its feet
+        // reach the target level — the lift's own gate (`target_above`, in
+        // the block above) flips false right there, cutting the assist
+        // exactly when the colonist must still cross the horizontal gap onto
+        // the ledge. It can't finish the dismount, slips back, and oscillates
+        // at the crest (the documented `ladder_pillar` failure: "gravity wins
+        // the crossing"). The universal below-grade teleport DOES rescue it,
+        // but only at the 60s floor — a long visible stall Ben live-flagged.
+        // This makes the dismount PROACTIVE: a job-carrying colonist that has
+        // RISEN to its target's crest level and is still HANGING (own column
+        // below is air — mid-slip or beside the ladder) snaps onto the
+        // nearest walkable dismount cell TOWARD the target — within 2 XY of
+        // its feet, at the crest or one below it, head-clear + solid beneath,
+        // and never FARTHER in XY from the target than it already is. Keyed
+        // to the path target (never a free warp); the hanging gate means one
+        // snap onto solid ground ends it (no jitter — next tick it's grounded
+        // and excluded). The 60s teleport stays the ultimate backstop.
+        {
+            let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_solid()).unwrap_or(false);
+            let mut dismount_iter =
+                (&active_jobs, &mut positions, &mut velocities).lend_join();
+            while let Some((active, pos, vel)) = dismount_iter.next() {
+                let Some(job) = board.jobs.get(&active.job) else {
+                    continue;
+                };
+                let feet = pos.0.map(|e| e.floor() as i32);
+                // The walkable stance ATOP the target block (Mine/access
+                // arrive = stand-on-top): a dismounting colonist's feet-block
+                // sits one above the target block.
+                let crest_z = job.pos.z + 1;
+                // "Risen to the crest": feet at the crest (±1 — a slip just
+                // under, or the topped-out air block just over). Still below,
+                // or well past, is not a dismount.
+                if feet.z < crest_z - 1 || feet.z > crest_z + 1 {
+                    continue;
+                }
+                // Must be HANGING (own column below is air): a colonist
+                // already standing on solid ground doesn't need the snap, and
+                // this makes the snap self-terminating (grounded next tick).
+                if solid(feet - Vec3::unit_z()) {
+                    continue;
+                }
+                let tgt = Vec2::new(job.pos.x, job.pos.y);
+                let feet_gap = (feet.x - tgt.x).abs().max((feet.y - tgt.y).abs());
+                // Nearest-to-target walkable dismount cell within 2 XY of
+                // feet, at the crest or one below it (≤1 level below), that
+                // does not move the colonist AWAY from the target.
+                let mut best: Option<(Vec3<i32>, i32)> = None;
+                for dz in [0i32, -1] {
+                    for dx in -2..=2i32 {
+                        for dy in -2..=2i32 {
+                            if dx == 0 && dy == 0 {
+                                continue;
+                            }
+                            let c = Vec3::new(feet.x + dx, feet.y + dy, crest_z + dz);
+                            let walkable = !solid(c)
+                                && !solid(c + Vec3::unit_z())
+                                && solid(c - Vec3::unit_z());
+                            if !walkable {
+                                continue;
+                            }
+                            let gap = (c.x - tgt.x).abs().max((c.y - tgt.y).abs());
+                            if gap > feet_gap {
+                                continue; // never snap away from the target
+                            }
+                            if best.is_none_or(|(_, bg)| gap < bg) {
+                                best = Some((c, gap));
+                            }
+                        }
+                    }
+                }
+                if let Some((c, _)) = best {
+                    pos.0 = Vec3::new(c.x as f32 + 0.5, c.y as f32 + 0.5, c.z as f32);
+                    vel.0 = Vec3::zero();
                 }
             }
         }
@@ -2275,9 +2398,29 @@ impl<'a> System<'a> for Sys {
                     steps,
                     "bastion: proactive descent access emitted (B5.8-E)"
                 );
+            } else if !AUTO_LADDER_ACCESS {
+                // B6-hotfix (Ben live-test, deep-dig throughput — registry
+                // D16): the descent gate holds a deep cell until access LEADS
+                // the descent. With the auto-ladder fallback disabled,
+                // plan_access returns None wherever STAIRS can't fit (a tight
+                // footprint can't switchback) and there is NO other access to
+                // wait for — so holding here would strand the deep cells
+                // UNMINEABLE forever (a tight pit stops at depth 2; b58 saw
+                // exactly 75/150). RELEASE the gate: the deep cells become
+                // claimable and the universal below-grade teleport is the
+                // declared egress (entombment stays impossible by
+                // construction — the gate's protective purpose is redundant
+                // under that stronger backstop). STAIRS still LEAD the
+                // descent wherever they DO fit (the branch above builds them
+                // + registers an anchor, and an anchored cell is never gated
+                // to begin with); only the can't-build-access case changes.
+                // Flag-tied: flip AUTO_LADDER_ACCESS back on and the old
+                // gated-descent returns with the ladders.
+                descent_gated.clear();
             }
-            // On None: the gate holds and this retries next cycle (the
-            // frontier keeps digging its SAFE layers meanwhile).
+            // On None with the auto-provider ON: the gate holds and retries
+            // next cycle (the frontier keeps digging its SAFE layers, the
+            // ladder plan leads the descent).
         }
         // 3. DISPERSION — claims (standing + taken this pass) repel new
         //    claims within 2 XY blocks, spreading a work crew across the
@@ -2388,6 +2531,9 @@ impl<'a> System<'a> for Sys {
                 if let Some(job) = board.jobs.get_mut(&job_id) {
                     job.claimed_by = Some(*uid);
                     claimed_pos.push(job.pos);
+                    // B-LIVE4: count every claim event (initial + re-claim)
+                    // for the mine-oscillation claims-per-job telemetry.
+                    board.total_claims += 1;
                 }
                 info!(job = job_id, colonist = %uid, "bastion: job claimed");
                 assignments.push((entity, job_id));

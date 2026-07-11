@@ -2057,6 +2057,9 @@ fn b58_scenario(args: &Args) -> ExitCode {
         min: Vec3::new(dx - 2, dy - 2, d_gz - 5),
         max: Vec3::new(dx + 2, dy + 2, d_gz),
     };
+    // B-LIVE4 (mine-oscillation): snapshot cumulative claims so the dig's
+    // claims-per-job ratio (the in/out-bob telemetry) can be read after.
+    let d_claims_before = server.bastion_total_claims();
     let d_jobs = server
         .bastion_place_designation(d_region, DesignationKind::Mine)
         .len();
@@ -2099,6 +2102,29 @@ fn b58_scenario(args: &Args) -> ExitCode {
         }
     }
     let d_all_cleared = layer_clear.iter().all(|c| c.is_some());
+    // B-LIVE4 (mine-oscillation): CLAIMS-PER-BLOCK-DUG over the dig window —
+    // 1.0 = each dug block claimed exactly once (no in/out bob), >1 =
+    // re-target churn (the play-tester measured 1.46× before auto-ladder-off
+    // removed the anchor colonists queued/bobbed at). Divided by blocks
+    // actually DUG (not the nominal 150) so the number is meaningful even
+    // when the dig doesn't fully clear the window — which it routinely
+    // doesn't on a loaded machine (the reason d_all_cleared is REPORTED).
+    // REPORTED, never gates (a throughput/quality mechanism — registry
+    // B8/P6, same class as d_all_cleared).
+    let d_claims_total = server.bastion_total_claims() - d_claims_before;
+    let d_blocks_dug = d_jobs.saturating_sub(server.bastion_jobs_in_region(d_region));
+    let d_claims_ratio = d_claims_total as f64 / (d_blocks_dug.max(1)) as f64;
+    // B6-hotfix (B / registry D16): DEEP-LAYERS-REACHED — proof the descent
+    // gate RELEASES when auto-ladder is off and no access can be built. Pre-
+    // fix, this tight 5x5x6 dig stalled at exactly 75/150 (the top 3 layers,
+    // depth<=2) because the ACCESS-BEFORE-DESCENT gate held depth>2 cells
+    // waiting for an auto-ladder that no longer builds — a HARD STRUCTURAL
+    // cap. GATING on >90 proves the deep half (depth>=3) is now mined: it's
+    // well clear of the 75 cap (so it can't pass by luck) yet generously
+    // below the observed 150/150 quiet clear (so it can't false-red on the
+    // load-sensitive last-few-blocks throughput — that stays REPORTED via
+    // d_blocks_dug/d_all_cleared, registry B8/P6).
+    let d_deep_unlocked = d_blocks_dug > 90;
     // TOP-DOWN: clear order non-decreasing with depth (layer index 5 = the
     // TOP layer at d_gz; index 0 = the bottom). Top must finish first.
     // TOL=2 samples (~1 sim-s): the exposure gate enforces BULK top-down
@@ -2399,6 +2425,10 @@ fn b58_scenario(args: &Args) -> ExitCode {
         "b58_d_all_cleared": d_all_cleared,
         "b58_d_top_down": d_top_down,
         "b58_d_dispersed_frac": d_dispersed_frac,
+        "b58_d_blocks_dug": d_blocks_dug,
+        "b58_d_deep_unlocked": d_deep_unlocked,
+        "b58_d_claims_total": d_claims_total,
+        "b58_d_claims_ratio": d_claims_ratio,
         "b58_d_rescue_cleared": d_rescue_cleared,
         "b58_d_all_out": d_all_out,
         "b58_e_lured": e_lured,
@@ -2450,14 +2480,25 @@ fn b58_scenario(args: &Args) -> ExitCode {
         && c_rungs_placed == 5
         // c_top_cleared / c_no_carve: KNOWN-OPEN composite (descope above).
         && d_jobs == 150
-        && d_all_cleared
-        // d_top_down: REPORTED not gating (B6). The exposure gate enforces
-        // BULK top-down (buried blocks can't be claimed until exposed),
-        // but the FINAL blocks across simultaneously-exposed layers clear
-        // in sampling-dependent order — a tail-tie property, not a no-stuck
-        // invariant. d_all_cleared (the dig FINISHES) + d_dispersed (crew
-        // spreads) are the gating substance.
+        // d_all_cleared + d_top_down: REPORTED not gating (B6-hotfix,
+        // play-tester run-2 catch = registry B8/P6). Both are deep-dig
+        // THROUGHPUT/ordering mechanisms (did all 150 finish in the window;
+        // in what order), NOT the safety invariant — and d_all_cleared
+        // false-REDS under CPU load (the ~10% documented execution-race
+        // residual; play-tester saw both fails right after heavy builds,
+        // then 3 straight passes once settled). Per "gate the INVARIANT,
+        // report the MECHANISM": the no-stuck/entombment/egress/orphan
+        // invariants stay HARD-gated (e_out/f_cleared/orphans_final); the
+        // dig-throughput is reported. d_dispersed (crew spreads) stays
+        // gating — it's a fast within-window property, not throughput.
         && d_dispersed_frac >= 0.5
+        // d_deep_unlocked: GATING (B6-hotfix / registry D16). Proves the
+        // descent gate RELEASES the deep layers when auto-ladder is off + no
+        // access is buildable — the fix for the tight-pit 75/150 stall. It's
+        // a STRUCTURAL threshold (>90, clear of the old 75 cap, below the
+        // 150/150 quiet clear) so it can't false-red on load-sensitive
+        // throughput the way d_all_cleared would.
+        && d_deep_unlocked
         // d_rescue_cleared / d_all_out: the KNOWN-OPEN multi-colonist
         // chokepoint composite (B5.8's sanctioned descope; SOFT-0 @B6
         // owns it) — reported, not gating. The SINGLE-colonist anti-stuck
