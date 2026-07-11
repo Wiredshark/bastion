@@ -403,3 +403,16 @@ instead, referencing the old one).
   `/time_scale` needs Admin. In any future multiplayer overseer session
   the pause button no-ops and speed needs the admin role — fine for the
   colony-sim shape (solo god), noted for B10+.
+
+## LADDEROFF (2026-07-11) — harness-compiles-at-tag drift CLOSED
+- **Finding (architect integrity flag):** `bastion_rename_colonists_unique`
+  lived UNCOMMITTED in the one-checkout working tree; the harness calls it, so
+  `bastion-block-B6` (`6bd1c91a60`) and `bastion-block-AR2` (`c2acf8ba01`) do
+  NOT compile `bastion-harness` at the tagged tree — their gates ran green
+  against the working tree, not the tag. A trust gap (green ≠ validated-AT-tag),
+  not a runtime bug (Ben's voxygen exe was fine).
+- **Fix (this tag):** the method is committed; the LADDEROFF tag is
+  tree-identical to its gated commit, and the gate's build step runs on a CLEAN
+  tree = harness-compiles-at-tag proof. STANDING RULE from here: every tag must
+  build `bastion-harness` cleanly at the exact tagged commit, gated on that
+  commit, before tagging (the one-checkout server/harness drift hazard).

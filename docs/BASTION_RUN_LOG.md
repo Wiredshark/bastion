@@ -1003,3 +1003,66 @@ lives on `bastion/block-<N>` for fine-grained rollback.
   density-gate R1/P4 + F6 scope-hole); F4a idle-egress DEFERRED (the
   teleport floor already guarantees its invariant; the organic version
   needs agent-steering plumbing in the stillness pass — backlog).
+
+## bastion-block-LADDEROFF — B6-hotfix (Ben live-test bundle) — TAGGED 2026-07-11 (merge `fcfee0c602`)
+
+Ben's live-test bundle, shipped as BUILD 1 off `bastion/main` (four items +
+two approved adds, separate commits, gated on the tag commit). BUILD 2
+(flatten-hill + B15 standability FR12 + slope fixtures) held separate.
+
+- **(1) AUTO-LADDER DISABLED** (`b10dd88d3a`). `const AUTO_LADDER_ACCESS =
+  false`: `plan_access` carves STAIRS where they fit, NO auto vertical link
+  where they don't (`None => None`). Kills the single-column queue-fight Ben
+  saw. One-line reversible; `ladder_pillar`/`DesignationKind::Ladder`/
+  climb-assist all STAY for the player paint tool. The universal teleport
+  backstops any colonist a stair can't reach — entombment still impossible.
+- **(2) ERASE DELETES BUILT LADDERS** (`b10dd88d3a`). The Erase drag removes
+  `SpriteKind::Ladder` in-region (→ air via BlockChange) + drops the JobBoard
+  access-anchor for emptied columns (`drop_access_anchors_in`). Ladders only;
+  instant god-cleanup via the cancel path.
+- **(3) CREST-DISMOUNT SNAP** (`0b180a535e`). A climber tops out into air the
+  instant its feet reach the target level (the lift's `target_above` gate
+  flips false there) and can't cross the horizontal gap onto the ledge —
+  oscillates at the crest (Ben live-flagged). NEW isolated loop: a
+  job-carrying colonist RISEN to its target crest and still HANGING snaps onto
+  the nearest walkable dismount cell TOWARD the target (≤2 XY, at/one-below
+  crest, head-clear + solid beneath). Keyed to the path target (never a free
+  warp), self-terminating; the lift logic is UNTOUCHED; the 60s teleport stays
+  the backstop. (Reviewer option-1 over a parallel teleport.)
+- **(4) MINE-OSCILLATION resolved by MEASUREMENT** (`0b180a535e`). Parts
+  #2/#3 (sticky anchor, dispersion=initial-pick-only) already held by
+  construction; auto-ladder-off (item 1) removed the anchor colonists
+  queued/bobbed at — the play-tester's root cause (which ALSO nails Ben's
+  ladder-fighting complaint — same root). Added a cumulative `total_claims`
+  counter + `bastion_total_claims` hook + b58 claims-per-block-dug REPORTED
+  metric rather than re-grind the 40-iteration watchdog. Measured 1.12×
+  (the 1.46× was a STALE pre-integrity-fix number). NO watchdog change —
+  AR-2's hard-won determinism untouched.
+- **(B) DESCENT-GATE RELEASE — deep-dig throughput fix (registry D16)**
+  (`7ec7024ef5`). Item 1 had a silent side effect: the ACCESS-BEFORE-DESCENT
+  gate held depth>2 cells waiting for auto-access that no longer builds, so
+  tight deep digs stalled at exactly depth 2 (b58: 75/150). Fix: when
+  `plan_access` returns None AND auto-ladder is off, RELEASE the gate
+  (`descent_gated.clear()`) — deep cells become claimable, the teleport is the
+  egress (entombment still impossible; the gate's protective purpose is
+  redundant under the stronger backstop). STAIRS still LEAD where they fit.
+  RESULT: b58 blocks_dug 75→150/150, `d_all_cleared` false→TRUE. New GATING
+  `d_deep_unlocked` (blocks_dug>90 structural proof). Architect-decided.
+  Reversible with the flag.
+- **INTEGRITY FIX** (`0b180a535e`). `bastion_rename_colonists_unique` was
+  UNCOMMITTED in the one-checkout tree; the harness calls it, so b10dd88d3a
+  AND the B6/AR-2 tags did NOT compile the harness (gates ran green against
+  the WORKING TREE, not the tag). Committed → LADDEROFF compiles at-tag,
+  verified by tree-identity (the merge tree is byte-identical to the gated
+  commit `7ec7024ef5`). For the record: B6=`6bd1c91a60` / AR-2=`c2acf8ba01`
+  predate the method; their green was working-tree-validated. Every tag from
+  here builds the harness clean at-tag (the gate's build runs on a clean
+  tree to prove it).
+
+GATE (on the tag commit, clean tree): UNIT 19/19, BUILD PASS (harness
+compiles at commit), B4/B5/B5.5/B5.8/CHOKEPOINT/VANILLA PASS. b58
+d_deep_unlocked=true (150/150), e_out/f_cleared/orphans_final green. (b4
+arrived>=2 is the documented pace-marginal throughput flake — seed-1337 on
+the 1-vs-2 boundary, 2/3 quiet PASS, all b4 INVARIANTS hold; passed on the
+tag-commit gate. Candidate for gate-the-invariant/report-the-mechanism if it
+recurs — not touched in Build 1.)

@@ -268,3 +268,25 @@ than editing the old one.
   negotiation). No comp/rtsim `data.dat` changes; the job board is
   runtime-only. Safe to revert cold as long as client+server revert
   together.
+
+- Block: LADDEROFF (B6-hotfix, Ben live-test bundle): auto-ladder disable +
+  Erase-deletes-ladders + crest-dismount snap + mine-oscillation telemetry +
+  descent-gate release (D16) + harness-compiles-at-tag integrity fix
+- Tag: `bastion-block-LADDEROFF` (main `fcfee0c602`)
+- Previous green: `bastion-block-AR2` (main was at `c2acf8ba01` = AR-2 +
+  its restore-ledger commit, the LADDEROFF merge base)
+- Revert: `git reset --hard c2acf8ba01` on `bastion/main`
+- Undoes: `const AUTO_LADDER_ACCESS` + `plan_access` `None => None`; the Erase
+  ladder deletion (`JobBoard::drop_access_anchors_in` + the `in_game.rs`
+  `SpriteKind::Ladder` region scan); the crest-dismount snap loop
+  (`bastion_jobs.rs`); the `total_claims` counter + `bastion_total_claims`
+  hook + b58 claims/`d_deep_unlocked`/`d_blocks_dug` telemetry; the
+  descent-gate release; and RE-COMMITS `bastion_rename_colonists_unique`
+  (it was uncommitted before this tag — reverting PAST this tag returns the
+  harness to the won't-compile-at-tag drift, so re-add the method if you need
+  to run the harness at an earlier tag).
+- Data-format caveats: **NONE** — no net-protocol, comp, or rtsim/save
+  changes. All changes are server job-logic + harness + one voxygen tooltip
+  string + one readme registry class (D16). Fully reversible cold. In-code
+  half-revert: flip `AUTO_LADDER_ACCESS` back to `true` to restore BOTH
+  auto-ladders AND the old gated-descent, no git revert needed.

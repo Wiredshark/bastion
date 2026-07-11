@@ -633,6 +633,42 @@ migration deferred to TIMESCALE-DESIGN); the F4a idle-egress self-route is
 an AR-2 item (the scenario feeds a straggler jobs as a motivator — a
 truly-idle below-grade colonist relies on the teleport floor until AR-2).
 
+### 2.10f LADDEROFF — B6-hotfix (Ben live-test bundle) — tag `bastion-block-LADDEROFF`
+
+**What:** four Ben-live-test fixes + two approved adds, off `bastion/main`.
+(1) **Auto-ladder disabled** — `const AUTO_LADDER_ACCESS = false`;
+`plan_access` carves STAIRS where they fit, no auto vertical link where they
+don't. Kills the single-column queue-fight ("they all fight to use it"). The
+player Ladder paint tool + `ladder_pillar`/climb-assist all STAY; only the
+AUTO fallback goes dark. (2) **Erase deletes built ladders** — the Erase drag
+removes `SpriteKind::Ladder` in-region + drops the access anchor
+(`drop_access_anchors_in`), ladders-only, via the cancel path. (3)
+**Crest-dismount snap** — a HANGING job-carrier risen to its target crest
+snaps onto the nearest walkable dismount cell toward the target (fixes the
+ledge-oscillation: the lift cut out the instant feet reached target level;
+now the horizontal dismount is deterministic). Isolated loop; the lift logic
+is untouched; the 60s teleport stays the backstop. (4) **Mine-oscillation** —
+fixed BY item 1 (auto-ladder-off removed the anchor colonists bobbed at);
+proven by a new claims-per-block-dug telemetry (1.12×), NO watchdog change.
+
+**(B) Descent-gate release (registry D16):** disabling the auto-ladder
+silently starved the ACCESS-BEFORE-DESCENT gate — it held depth>2 cells
+waiting for auto-access that no longer builds, so tight deep digs stalled at
+depth 2 (75/150). Fix: when `plan_access` returns None AND auto-ladder is
+off, `descent_gated.clear()` — the deep cells become claimable and the
+universal teleport is the egress (entombment still impossible; the gate's
+purpose is redundant under the stronger backstop). Deep digs 75→150/150.
+
+**Integrity:** `bastion_rename_colonists_unique` was uncommitted in the
+one-checkout tree — the harness didn't compile at the B6/AR-2 tags (gates ran
+against the working tree). Committed here; the LADDEROFF tag is tree-identical
+to its gated commit, so the harness compiles AT the tag. Every tag from here
+verifies harness-compiles-at-tag on a clean tree.
+
+**Reversible:** flip `AUTO_LADDER_ACCESS` back to `true` to restore BOTH
+auto-ladders AND the old gated-descent (no git revert); or
+`git reset --hard c2acf8ba01`. No net/comp/save changes.
+
 ### 2.10 B-MAP1 — Overseer minimap (founds the map/overlay layer)
 
 **What:** the god's minimap — rendered top-down terrain tiles (WoW-addon
@@ -827,16 +863,24 @@ access + DF mining + ladder waiver), B5.6b-2.1 (flat-floor mine
 mode + B5.8-E/E2 anti-stuck cluster + pace tune), TIMECTL (visible time
 controls §2.10c), TOOL0 (tool-gated work speed + E3 stability cluster
 §2.10d — overnight 2026-07-10), B-ASSET1 (asset integration harness +
-render arena — §2.11), SCCACHE (shared compile-cache infra), **and B6
+render arena — §2.11), SCCACHE (shared compile-cache infra), B6
 (SOFT-collision + Ben's live-fix batch — §2.10e; the 1-wide chokepoint
 red CLOSED, entombment impossible by construction, flat-mine drag +
-day-speed + mine-lifecycle fixed — this block).** **Next (per
-`readme/FLEET_STATUS.md`):** ACCESS-RELIABILITY-2 hardening (reviewer
-F1/F2/F3 + the F4a idle-egress self-route), the sccache LLD/debuginfo R7
-addendum, god-hand in-engine (BASSET1 unblocked it), AUTON-0/1 (arbiter
-in the SEQUENTIAL bastion system, NOT par_join — B10 determinism), then
-B7 (needs-decay + self-designation; PATH-0 slots there). Hauling (B6's
-other half) + SOFT-1 tuning ride the AR-2/B7 window.
+day-speed + mine-lifecycle fixed), AR-2 (grace density-gate R1/P4 + the
+reviewer-F6 teleport designation-mask scope hole — hardening, tag
+`bastion-block-AR2`), **and LADDEROFF (§2.10f — Ben live-test bundle:
+auto-ladder off + Erase-deletes-ladders + crest-dismount snap +
+mine-oscillation-fixed-by-measurement + descent-gate release D16 + the
+harness-compiles-at-tag integrity fix — this block, tag
+`bastion-block-LADDEROFF`).** **Next (per `readme/FLEET_STATUS.md`):**
+BUILD 2 — the slope-mining pair (flatten-hill SURFACE_SCAN_UP fix + B15
+standability FR12 + natural-slope/floating-remnant fixtures); then the
+sccache LLD/debuginfo R7 addendum, god-hand in-engine (BASSET1 unblocked
+it), AUTON-0/1 (arbiter in the SEQUENTIAL bastion system, NOT par_join —
+B10 determinism; reviewer: gate CLAIM+execution on current==Work + a
+`climb_free_until` yield-guard on the jobless fail-safe path), then B7
+(needs-decay + self-designation; PATH-0 slots there). Hauling (B6's
+other half) + SOFT-1 tuning ride the B7 window.
 
 | Need | Read |
 |---|---|
