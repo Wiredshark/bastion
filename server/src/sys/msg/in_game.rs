@@ -304,12 +304,33 @@ impl Sys {
                     // the deferred board op recompute the same surfaces.
                     let footprint = (region.max.x - region.min.x + 1) as i64
                         * (region.max.y - region.min.y + 1) as i64;
-                    // B5.6b-2.1: flat-floor volumes are terrain-dependent —
-                    // estimate depth from the paint plane to the floor
-                    // (plus scan headroom for relief) for the cap check.
+                    // B5.6b-2.1 + flatten-hill (Ben live-bug #4): a flat-floor
+                    // dig removes each column from the shared floor up to its
+                    // TRUE crest, not to the paint plane — so measure the
+                    // TALLEST crest over the footprint for an HONEST volume
+                    // cap. The old paint-plane estimate under-counted a hill
+                    // painted from its base (region.max.z sits near the base),
+                    // which — once the surface resolution reaches the real
+                    // crest — would silently over-generate jobs. Bounded by
+                    // FLAT_SURFACE_SCAN_MAX inside column_flat_surface_z.
+                    let max_crest_for = |floor: i32| -> i32 {
+                        let mut m = floor;
+                        for y in region.min.y..=region.max.y {
+                            for x in region.min.x..=region.max.x {
+                                if let Some(s) =
+                                    crate::bastion_jobs::column_flat_surface_z(
+                                        terrain, x, y, floor,
+                                    )
+                                {
+                                    m = m.max(s);
+                                }
+                            }
+                        }
+                        m
+                    };
                     let nominal_levels = match extent.floor_z {
                         Some(floor) => {
-                            ((region.max.z - floor).max(0) as i64 + 1)
+                            ((max_crest_for(floor) - floor).max(0) as i64 + 1)
                                 + extent.up as i64
                                 + 8
                         },
@@ -360,8 +381,11 @@ impl Sys {
                             let clamped = ms - extent.down as i32;
                             if clamped < orig_floor {
                                 extent.floor_z = Some(clamped);
-                                let nominal = ((region.max.z - clamped).max(0)
-                                    as i64
+                                // True-crest volume (as above) — the clamped
+                                // floor now sits under the surfaces, so the
+                                // dig reaches each column's real top.
+                                let nominal = ((max_crest_for(clamped) - clamped)
+                                    .max(0) as i64
                                     + 1)
                                     + extent.up as i64
                                     + 8;

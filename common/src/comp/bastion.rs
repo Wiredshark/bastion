@@ -96,6 +96,18 @@ pub struct ActiveJob {
     /// the grace; a still-stuck soft colonist is genuinely blocked.
     #[serde(default)]
     pub soft_granted: bool,
+    /// bastion (B15 / reviewer FR12): the committed work-STANCE — the feet-cell
+    /// OFFSET from `job.pos` where the colonist stands to work the block.
+    /// (0,0,1) = ON-TOP (stand on the block; the default, = the pre-B15
+    /// `job.pos + (0.5,0.5,1.0)` arrive-target). A cardinal `(±1,0,0)`/`(0,±1,0)`
+    /// = an ADJACENT-ground stance (stand beside + mine sideways — the fix for
+    /// hillside `+1`-arrival-gap cells whose on-top stance is a 1-wide slot the
+    /// capsule can't occupy). PINNED at claim by the once-per-cycle
+    /// standability pass, NOT re-picked each tick (avoids re-introducing the R3
+    /// steer oscillation). Server-only; the serde default is inert (never
+    /// deserialized — every insert sets it explicitly).
+    #[serde(default)]
+    pub stance: vek::Vec3<i32>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
