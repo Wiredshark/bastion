@@ -2072,19 +2072,26 @@ impl<'a> System<'a> for Sys {
                     continue;
                 }
                 let feet = pos.0.map(|e| e.floor() as i32);
-                // INSIDE AN ACTIVE DESIGNATION = a work zone, so a
-                // below-grade colonist there is a digger (idle between
-                // blocks, or working) — teleporting it yanks the dig
-                // (b58-(d) over-fire). A TRAPPED colonist is outside any
-                // designation: a chokepoint straggler sits in the
-                // pre-carved chamber (not a designation), and an
-                // entombed colonist's zone was DELETED — both correctly
-                // still teleport. The mask distinguishes "in a work zone"
-                // from "stuck in dead space" without a reachability
-                // verdict; a genuinely-stuck DIGGER is demoted to jobless
-                // by the churn detector (claim released) → its zone
-                // reference is gone → it teleports on the next pass.
-                if board.designated.iter().any(|r| r.contains_point(feet)) {
+                // A REAL DIGGER = has a live job AND stands inside an
+                // active designation (a work zone). Teleporting it yanks
+                // the dig (b58-(d) over-fire). Both clauses are required
+                // (AR-2 reviewer F6): `board.designated` is colony-wide and
+                // does NOT shrink on claim-release, so a POSITION-only mask
+                // left a jobless colonist trapped INSIDE a designation with
+                // no teleport backstop — the "impossible by construction"
+                // net had a scope hole (the F5 class, inside a zone). The
+                // job clause closes it: a JOBLESS colonist always teleports
+                // (even inside a designation), so a churn-demoted or
+                // zone-orphaned colonist IS rescued. The chokepoint
+                // straggler sits in the pre-carved chamber (no designation)
+                // → teleports regardless. A digger's OWN job existing on
+                // the board is the real "it's working here" signal.
+                let is_real_digger = id_maps
+                    .uid_entity(*uid)
+                    .and_then(|e| active_jobs.get(e))
+                    .is_some_and(|a| board.jobs.contains_key(&a.job))
+                    && board.designated.iter().any(|r| r.contains_point(feet));
+                if is_real_digger {
                     board.stuck_watch.remove(uid);
                     continue;
                 }
