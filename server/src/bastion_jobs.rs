@@ -481,10 +481,6 @@ const NEIGHBOURS6: [Vec3<i32>; 6] = [
 /// one mass into a grounded part and a floating part — a single merged flood
 /// would wrongly read the whole thing as grounded). PURE (terrain via
 /// `is_solid`) so it unit-tests without a `TerrainGrid` and stays deterministic.
-// CAVE-IN v1 WIP: the support-check core is done + unit-tested; it is WIRED
-// into the mine-job completion path (collapse + eject-and-injure) in the next
-// increment on this branch — allow dead_code only until that wiring lands.
-#[allow(dead_code)]
 fn floating_chunk(
     is_solid: impl Fn(Vec3<i32>) -> bool,
     removed_pos: Vec3<i32>,
@@ -648,6 +644,46 @@ fn surface_teleport_dest(terrain: &TerrainGrid, feet: Vec3<i32>) -> Option<Vec3<
         }
     }
     None
+}
+
+/// CAVE-IN v1 (FR11): the bounded support-check cap (Q2), a collapse's fixed
+/// health damage as a FRACTION of max HP (Q6 — a setback, not death; lethality
+/// is a later dial), and the fear a collapse instils (Mood is 0=breakdown..
+/// 1=content, so fear DROPS it).
+const CAVEIN_SUPPORT_CAP: usize = 64;
+const CAVEIN_DAMAGE_FRAC: f32 = 0.25;
+const CAVEIN_FEAR: f32 = 0.25;
+
+/// CAVE-IN v1 (FR11 Q1): the eject destination for a colonist caught in a
+/// collapse's crush footprint — [`surface_teleport_dest`]'s ring search
+/// generalized to SKIP the falling columns (`crush_xy`), so the colonist is
+/// shoved to the nearest safe cell OUTSIDE the crush (never buried, and not
+/// pointlessly yanked into the falling rock). Falls back to the plain surface
+/// dest if the whole ring is crush.
+fn eject_dest(
+    terrain: &TerrainGrid,
+    feet: Vec3<i32>,
+    crush_xy: &HashSet<Vec2<i32>>,
+) -> Option<Vec3<i32>> {
+    for r in 1..=8i32 {
+        for dx in -r..=r {
+            for dy in -r..=r {
+                if dx.abs().max(dy.abs()) != r {
+                    continue;
+                }
+                let (x, y) = (feet.x + dx, feet.y + dy);
+                if crush_xy.contains(&Vec2::new(x, y)) {
+                    continue; // stay out of the falling footprint
+                }
+                if let Some(s) = column_surface_z(terrain, x, y, feet.z + 64)
+                    && s + 1 > feet.z
+                {
+                    return Some(Vec3::new(x, y, s + 1));
+                }
+            }
+        }
+    }
+    surface_teleport_dest(terrain, feet)
 }
 
 /// The job board resource.
@@ -980,6 +1016,10 @@ impl<'a> System<'a> for Sys {
         ReadStorage<'a, comp::CharacterState>,
         WriteStorage<'a, comp::Vel>,
         ReadStorage<'a, comp::PhysicsState>,
+        // CAVE-IN v1 (FR11 Q6): eject-and-injure a colonist caught in a
+        // collapse's crush volume — health damage + a fear (Mood) drop.
+        WriteStorage<'a, comp::Health>,
+        WriteStorage<'a, comp::bastion::Mood>,
     );
 
     const NAME: &'static str = "bastion_jobs";
@@ -1009,6 +1049,8 @@ impl<'a> System<'a> for Sys {
             char_states,
             mut velocities,
             physics_states,
+            mut healths,
+            mut moods,
         ): Self::SystemData,
     ) {
         let mut item_drop_emitter = item_drop_events.emitter();
@@ -1426,6 +1468,10 @@ impl<'a> System<'a> for Sys {
         // job this tick — the post-loop pass marks them done + disperses
         // below-grade miners.
         let mut done_regions: Vec<Region> = Vec::new();
+        // CAVE-IN v1 (FR11): floating chunks that collapsed this tick (their
+        // cells) — the post-loop pass ejects-and-injures colonists in each
+        // crush volume (can't cross-join Health/Mood inside the upkeep loop).
+        let mut collapses: Vec<Vec<Vec3<i32>>> = Vec::new();
         // R3 fix-2 (WAITING): a position snapshot for the queue-order test
         // (who is closer to a staged anchor) — the upkeep lend_join can't
         // re-join positions mid-iteration.
@@ -1948,6 +1994,49 @@ impl<'a> System<'a> for Sys {
                         "bastion: job completed"
                     );
                     let done_pos = job.pos;
+                    // CAVE-IN v1 (FR11 Q2/Q3): removing this block may sever a
+                    // bounded chunk from the ground mass — check AT COMPLETION
+                    // on the current terrain (block_change is deferred, so
+                    // floating_chunk treats done_pos as the air it's about to
+                    // become). A bounded floater COLLAPSES: its cells drop to
+                    // air + a resource item (the floating rock FALLS instead of
+                    // hanging — closes what 2b clean-skips), and the crush
+                    // volume below is queued for the post-loop eject-and-injure
+                    // (nobody is ever buried). Mine only (Chop/Build/Ladder
+                    // don't sever rock). A collapse cell that also had its own
+                    // Mine job is handled by that job's moot re-check (the block
+                    // is already air → dropped, no double-yield).
+                    if job.kind == DesignationKind::Mine {
+                        let is_filled =
+                            |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
+                        if let Some(cells) =
+                            floating_chunk(is_filled, done_pos, CAVEIN_SUPPORT_CAP)
+                        {
+                            for &cell in &cells {
+                                block_change.set(cell, Block::empty());
+                                item_drop_emitter.emit(CreateItemDropEvent {
+                                    pos: comp::Pos(
+                                        cell.map(|e| e as f32) + Vec3::broadcast(0.5),
+                                    ),
+                                    vel: comp::Vel(Vec3::zero()),
+                                    ori: comp::Ori::default(),
+                                    item: PickupItem::new(
+                                        Item::new_from_asset_expect(MINE_DROP_ITEM),
+                                        *program_time,
+                                        true,
+                                    ),
+                                    loot_owner: None,
+                                    persistent: true,
+                                });
+                            }
+                            info!(
+                                ?done_pos,
+                                cells = cells.len(),
+                                "bastion: CAVE-IN — floating chunk collapsed"
+                            );
+                            collapses.push(cells);
+                        }
+                    }
                     board.jobs.remove(&active.job);
                     // reviewer F5 / b58-(d) fix: completing a job is the
                     // ground-truth "making progress" signal — reset the
@@ -2023,6 +2112,56 @@ impl<'a> System<'a> for Sys {
                             Some(common::rtsim::NpcActivity::Goto(out, TRAVEL_SPEED));
                     }
                 }
+            }
+        }
+
+        // ── CAVE-IN v1 (FR11 Q1/Q6): EJECT-AND-INJURE ────────────────────
+        // THE INVARIANT that lets cave-ins coexist with the no-entombment
+        // guarantee: a colonist caught in a collapse's crush volume is EJECTED
+        // (nearest safe cell OUTSIDE the falling footprint) + INJURED (health
+        // damage + a fear drop), NEVER buried. Runs post-loop — the eject/
+        // injure need Pos/Vel/Health/Mood writes the upkeep lend_join can't
+        // hold. Victims are collected before mutating (the find-join reads
+        // positions; the eject writes them).
+        for cells in collapses {
+            let crush_xy: HashSet<Vec2<i32>> =
+                cells.iter().map(|c| Vec2::new(c.x, c.y)).collect();
+            let chunk_min_z = cells.iter().map(|c| c.z).min().unwrap_or(i32::MAX);
+            let mut victims: Vec<specs::Entity> = Vec::new();
+            for (entity, _colonist, pos) in (&entities, &colonists, &positions).join() {
+                let feet = pos.0.map(|e| e.floor() as i32);
+                if crush_xy.contains(&Vec2::new(feet.x, feet.y)) && feet.z <= chunk_min_z {
+                    victims.push(entity);
+                }
+            }
+            for entity in victims {
+                let feet = positions
+                    .get(entity)
+                    .map(|p| p.0.map(|e| e.floor() as i32))
+                    .unwrap_or_default();
+                if let Some(dest) = eject_dest(&terrain, feet, &crush_xy) {
+                    if let Some(pos) = positions.get_mut(entity) {
+                        pos.0 = dest.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+                    }
+                    if let Some(vel) = velocities.get_mut(entity) {
+                        vel.0 = Vec3::zero();
+                    }
+                }
+                if let Some(mut health) = healths.get_mut(entity) {
+                    let dmg = health.maximum() * CAVEIN_DAMAGE_FRAC;
+                    health.change_by(comp::HealthChange {
+                        amount: -dmg,
+                        by: None,
+                        cause: None,
+                        precise: false,
+                        time: *time,
+                        instance: rng.random(),
+                    });
+                }
+                if let Some(mood) = moods.get_mut(entity) {
+                    mood.0 = (mood.0 - CAVEIN_FEAR).max(0.0);
+                }
+                info!(?feet, "bastion: CAVE-IN — colonist ejected + injured (not buried)");
             }
         }
 
