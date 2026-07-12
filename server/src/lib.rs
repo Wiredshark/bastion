@@ -1664,6 +1664,19 @@ impl Server {
         self.state.terrain().get(pos).ok().map(|b| b.kind())
     }
 
+    /// bastion (GATHER, harness hook): is the block at `pos` still DIRECTLY
+    /// collectible? A collected sprite may stay VISIBLE (`into_collected` →
+    /// `into_vacant` keeps the sprite for regrowth semantics), so
+    /// sprite-presence is the wrong "was it foraged" probe — this is the
+    /// exact predicate the forage scan and verb both key on.
+    pub fn bastion_block_collectible(&self, pos: Vec3<i32>) -> bool {
+        use common::vol::ReadVol;
+        self.state
+            .terrain()
+            .get(pos)
+            .is_ok_and(|b| b.is_directly_collectible())
+    }
+
     /// bastion (B5, harness hook): whether any Build job in the board has
     /// `needs_materials` set (visibility into the stalled-blueprint state).
     pub fn bastion_any_job_needs_materials(&self) -> bool {

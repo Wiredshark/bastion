@@ -63,9 +63,14 @@ pub fn completion_block(kind: JobKind) -> Option<Block> {
             // B5.8: the native climbable ladder sprite — the vertical link
             // pathfinding knows about.
             DesignationKind::Ladder => Some(Block::air(SpriteKind::Ladder)),
-            DesignationKind::Stockpile | DesignationKind::Zone(_) => None,
+            // GATHER: the sprite is consumed by the authoritative
+            // interaction (`into_collected` in the manip handler) — never
+            // deleted here (the doc-comment above promised exactly this).
+            DesignationKind::Stockpile
+            | DesignationKind::Zone(_)
+            | DesignationKind::Gather => None,
         },
-        JobKind::Haul { .. } => None,
+        JobKind::Haul { .. } | JobKind::DepositRun { .. } => None,
     }
 }
 
@@ -109,6 +114,25 @@ pub fn emit_pickup(
         collector,
         comp::InventoryManip::Pickup(item),
     ));
+}
+
+/// GATHER a ground sprite through the VANILLA sprite interaction (loot
+/// table, capacity check, overflow-to-ground all owned by the
+/// authoritative handler — never a second collection mechanism; overflow
+/// drops re-enter the world where B6 hauling already collects them).
+/// Idempotent-safe like [`emit_pickup`]: the handler no-ops once the
+/// sprite is vacated (`is_directly_collectible` fails) or the block was
+/// already edited this tick (`can_set_block`); the SPRITE VACATING is the
+/// caller's confirmation signal.
+pub fn emit_collect(
+    emitter: &mut common::event::Emitter<InventoryManipEvent>,
+    collector: Entity,
+    sprite_pos: Vec3<i32>,
+) {
+    emitter.emit(InventoryManipEvent(collector, comp::InventoryManip::Collect {
+        sprite_pos,
+        required_item: None,
+    }));
 }
 
 /// DEPOSIT: drain every bag stack of `def` from the inventory and drop it

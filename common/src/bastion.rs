@@ -320,6 +320,13 @@ pub enum DesignationKind {
     /// registered as a footprint the utility magnet reads. Appended last
     /// (wire rule as above).
     Zone(ZoneKind),
+    /// bastion (GATHER, row 38): forage — the FOOD-LOOP verb. One job per
+    /// collectible plant sprite in the painted footprint (the
+    /// `TerrainResource` food allowlist); execution is the VANILLA sprite
+    /// interaction (`InventoryManip::Collect` — loot tables, capacity and
+    /// overflow all owned by the authoritative handler). Appended last
+    /// (wire rule as above).
+    Gather,
 }
 
 impl DesignationKind {
@@ -331,6 +338,7 @@ impl DesignationKind {
             DesignationKind::Stockpile => "Stockpile",
             DesignationKind::Ladder => "Ladder",
             DesignationKind::Zone(z) => z.label(),
+            DesignationKind::Gather => "Gather",
         }
     }
 
@@ -346,7 +354,11 @@ impl DesignationKind {
     pub fn footprint_mode(&self) -> FootprintMode {
         match self {
             // ZONE-0: zones are surface activity areas — pure XY.
-            DesignationKind::Chop | DesignationKind::Zone(_) => FootprintMode::Area2D,
+            // GATHER: forage sweeps a surface footprint (the branch this
+            // doc-comment promised it would get free).
+            DesignationKind::Chop
+            | DesignationKind::Zone(_)
+            | DesignationKind::Gather => FootprintMode::Area2D,
             DesignationKind::Mine
             | DesignationKind::Build
             | DesignationKind::Stockpile
@@ -360,7 +372,9 @@ impl DesignationKind {
     /// the designation itself carries none.
     pub fn purpose(&self) -> Option<Purpose> {
         match self {
-            DesignationKind::Mine | DesignationKind::Chop => Some(Purpose::Production),
+            DesignationKind::Mine
+            | DesignationKind::Chop
+            | DesignationKind::Gather => Some(Purpose::Production),
             DesignationKind::Stockpile => Some(Purpose::Storage),
             // ZONE-0: the zone kind carries its own locked Purpose.
             DesignationKind::Zone(z) => Some(z.purpose()),
@@ -594,6 +608,10 @@ impl DesignationKind {
             // (same as Stockpile's pre-B6 stance — priorities stay honored
             // if a zone kind ever emits work).
             DesignationKind::Stockpile | DesignationKind::Zone(_) => WorkType::Haul,
+            // GATHER: foraging is item logistics — Haul skill/priorities
+            // apply, no tool required (bare-hand tool_factor = base rate).
+            // A dedicated Forage skill is a designer-lane taxonomy call.
+            DesignationKind::Gather => WorkType::Haul,
         }
     }
 }
@@ -621,6 +639,16 @@ pub enum JobKind {
         /// The stockpile zone to carry it into.
         destination: ZoneId,
     },
+    /// bastion (GATHER deposit ruling): the ONE end-of-forage stockpile
+    /// trip — created PRE-CLAIMED for a specific colonist when it runs out
+    /// of claimable Gather targets while still carrying forage (the bag is
+    /// the batch unit; no per-sprite round-trips). Rides the whole proven
+    /// job pipeline (travel/watchdog/stuck-economy) instead of a bespoke
+    /// steer — the FR15 lesson. Appended last (wire rule as above).
+    DepositRun {
+        /// The stockpile zone to empty the forage bag into.
+        destination: ZoneId,
+    },
 }
 
 impl JobKind {
@@ -629,7 +657,7 @@ impl JobKind {
     pub fn designation(&self) -> Option<DesignationKind> {
         match self {
             JobKind::Designated(d) => Some(*d),
-            JobKind::Haul { .. } => None,
+            JobKind::Haul { .. } | JobKind::DepositRun { .. } => None,
         }
     }
 

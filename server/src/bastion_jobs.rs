@@ -281,6 +281,26 @@ fn job_wanted(kind: DesignationKind, block: &Block) -> bool {
         // B5.8: a ladder rung, like Build, goes into currently-open space.
         DesignationKind::Build | DesignationKind::Ladder => !block.is_filled(),
         DesignationKind::Stockpile | DesignationKind::Zone(_) => false,
+        // GATHER (row 38): forage — one job per collectible PLANT sprite
+        // (the TerrainResource food allowlist; Stones/Wood/Gem/Ore stay
+        // with the Mine/Chop economies). `is_directly_collectible` =
+        // vanilla's own "yields without a required item" predicate, so
+        // every job the scan creates is one the authoritative Collect
+        // handler will actually honor.
+        DesignationKind::Gather => {
+            block.is_directly_collectible()
+                && block.get_rtsim_resource().is_some_and(|r| {
+                    matches!(
+                        r,
+                        common::rtsim::TerrainResource::Grass
+                            | common::rtsim::TerrainResource::Flower
+                            | common::rtsim::TerrainResource::Fruit
+                            | common::rtsim::TerrainResource::Vegetable
+                            | common::rtsim::TerrainResource::Mushroom
+                            | common::rtsim::TerrainResource::Plant
+                    )
+                })
+        },
     }
 }
 
@@ -956,6 +976,14 @@ pub struct JobBoard {
     /// this table only prevents two jobs spending one item.
     reservations: HashMap<common::bastion::ReservationId, Uid>,
     next_reservation: common::bastion::ReservationId,
+    /// bastion (GATHER deposit ruling): per-colonist set of item defs its
+    /// forage collects put in its bag — recorded at emit from the SAME
+    /// reclaim source the authoritative handler consumes (a loot-TABLE
+    /// sprite could roll a different def than we recorded; such a leftover
+    /// rides the bag until a future re-roll — never lost, never duped).
+    /// Drained by the end-of-forage [`JobKind::DepositRun`]; keyed by Uid
+    /// so a demote/promote round-trip keeps the debt.
+    gathered_defs: HashMap<Uid, std::collections::HashSet<String>>,
     /// bastion (CASE-003 belt, persistence form): consecutive ticks each
     /// colonist's capsule CORE has sat inside solid terrain. At
     /// [`EMBED_PERSIST_TICKS`] the colonist is genuinely WEDGED (the
@@ -1239,7 +1267,8 @@ impl JobBoard {
                 .jobs
                 .iter()
                 .filter(|(_, j)| match j.kind {
-                    common::bastion::JobKind::Haul { destination, .. } => {
+                    common::bastion::JobKind::Haul { destination, .. }
+                    | common::bastion::JobKind::DepositRun { destination } => {
                         !live.contains(&destination)
                     },
                     _ => false,
@@ -2054,6 +2083,117 @@ impl<'a> System<'a> for Sys {
                 }
             }
         }
+        // ── GATHER deposit ruling (tick-offset 9, its own arbitration
+        // slot): the ONE end-of-forage stockpile trip. For each idle loaded
+        // colonist still carrying recorded forage, once NO claimable Gather
+        // target remains on the board and a stockpile exists, create a
+        // DepositRun PRE-CLAIMED for it (nearest zone — the haul-gen
+        // picker's shape) and put it straight to work; the bag was the
+        // batch unit, so this fires once per forage stint, not per sprite.
+        // Orphaned runs (claimant released/demoted → unclaimed) are swept
+        // here first — the claim loop never re-assigns them.
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 9 {
+            let orphans: Vec<JobId> = board
+                .jobs
+                .iter()
+                .filter(|(_, j)| {
+                    matches!(
+                        j.kind,
+                        common::bastion::JobKind::DepositRun { .. }
+                    ) && j.claimed_by.is_none()
+                })
+                .map(|(id, _)| *id)
+                .collect();
+            for id in orphans {
+                board.remove_job(id);
+            }
+            let gather_open = board.jobs.values().any(|j| {
+                j.kind.is(DesignationKind::Gather)
+                    && j.claimed_by.is_none()
+                    && !j.unreachable
+            });
+            if !gather_open && !board.stockpiles.is_empty() {
+                let mut deposit_runs: Vec<(specs::Entity, JobId)> = Vec::new();
+                for (entity, _, pos, uid, ()) in (
+                    &entities,
+                    &colonists,
+                    &positions,
+                    &uids,
+                    !&active_jobs,
+                )
+                    .join()
+                {
+                    if !is_loaded(entity)
+                        || !board
+                            .gathered_defs
+                            .get(uid)
+                            .is_some_and(|defs| !defs.is_empty())
+                    {
+                        continue;
+                    }
+                    let cell = pos.0.map(|e| e.floor() as i32);
+                    let Some((dest, drop_cell)) = board
+                        .stockpiles
+                        .iter()
+                        .min_by_key(|(_, r)| {
+                            let c = (r.min + r.max) / 2;
+                            let d = c - cell;
+                            (d.x as i64).pow(2)
+                                + (d.y as i64).pow(2)
+                                + (d.z as i64).pow(2)
+                        })
+                        .map(|(z, r)| {
+                            (*z, Vec3::new(
+                                (r.min.x + r.max.x) / 2,
+                                (r.min.y + r.max.y) / 2,
+                                r.max.z,
+                            ))
+                        })
+                    else {
+                        continue;
+                    };
+                    let id = board.next_id;
+                    board.next_id += 1;
+                    board.jobs.insert(id, Job {
+                        kind: common::bastion::JobKind::DepositRun {
+                            destination: dest,
+                        },
+                        work: common::bastion::WorkType::Haul,
+                        pos: drop_cell,
+                        skill_floor: 0,
+                        claimed_by: Some(*uid),
+                        unreachable: false,
+                        progress: 0.0,
+                        required_item: None,
+                        needs_materials: false,
+                        carve_attempted: false,
+                        is_access: false,
+                        stuck_strikes: 0,
+                        depth: 0,
+                        reservation: None,
+                    });
+                    board.total_claims += 1;
+                    info!(
+                        job = id,
+                        colonist = %uid,
+                        zone = dest,
+                        "bastion: forage deposit run created"
+                    );
+                    deposit_runs.push((entity, id));
+                }
+                for (entity, job_id) in deposit_runs {
+                    let _ = active_jobs.insert(entity, ActiveJob {
+                        job: job_id,
+                        state: ActiveJobState::Traveling,
+                        best_dist: f32::MAX,
+                        stuck_time: 0.0,
+                        reset_dist: f32::MAX,
+                        soft_granted: false,
+                        stance: Vec3::unit_z(),
+                    });
+                }
+            }
+        }
         // `Colonist`'s storage is change-tracked (synced comp) — mutable
         // multi-storage joins over it need `LendJoin`, not `Join`.
         let mut upkeep_iter = (
@@ -2149,7 +2289,10 @@ impl<'a> System<'a> for Sys {
                             common::bastion::JobKind::Designated(d) => job_wanted(d, b),
                             // Haul validity = the ITEM still exists — owned
                             // by the Haul arm, not the block moot-check.
-                            common::bastion::JobKind::Haul { .. } => true,
+                            // DepositRun validity = the ZONE still exists —
+                            // owned by its own Arrived arm.
+                            common::bastion::JobKind::Haul { .. }
+                            | common::bastion::JobKind::DepositRun { .. } => true,
                         });
                     if !still_wanted {
                         info!(
@@ -2505,6 +2648,52 @@ impl<'a> System<'a> for Sys {
                     }
                 },
                 ActiveJobState::Arrived => {
+                    // ── GATHER deposit ruling: the end-of-forage stockpile
+                    // trip — instant at arrival like Haul leg-2. Empty every
+                    // recorded forage def from the bag onto the zone cell
+                    // (spawn-loadout stacks of the same def ride along —
+                    // colony stock either way); a zone erased mid-trip drops
+                    // the job but KEEPS the recorded defs, so the next
+                    // trigger pass retries against a surviving stockpile.
+                    if let common::bastion::JobKind::DepositRun { destination } =
+                        job.kind
+                    {
+                        if board
+                            .stockpiles
+                            .iter()
+                            .any(|(z, _)| *z == destination)
+                        {
+                            if let Some(u) = uids.get(entity).copied() {
+                                let defs = board
+                                    .gathered_defs
+                                    .remove(&u)
+                                    .unwrap_or_default();
+                                let mut total = 0u32;
+                                if let Some(mut inv) = inventories.get_mut(entity)
+                                {
+                                    for def in &defs {
+                                        total += crate::bastion_actions::deposit_all_of(
+                                            &mut inv,
+                                            def,
+                                            job.pos,
+                                            &mut item_drop_emitter,
+                                            *program_time,
+                                        );
+                                    }
+                                }
+                                info!(
+                                    job = active.job,
+                                    zone = destination,
+                                    defs = defs.len(),
+                                    amount = total,
+                                    "bastion: forage deposited"
+                                );
+                            }
+                        }
+                        board.remove_job(active.job);
+                        to_release.push(entity);
+                        continue;
+                    }
                     // ── B6 HAUL: pickup + drop-off — BEFORE the block-work
                     // path (a haul's "work" is instant at each leg; no
                     // progress accumulation, no moot/tool machinery).
@@ -2630,6 +2819,66 @@ impl<'a> System<'a> for Sys {
                         continue;
                     }
 
+                    // ── GATHER (row 38): its own completion arm, like Haul —
+                    // the verb is the VANILLA sprite interaction, not a
+                    // terrain edit, so the completion_block machinery below
+                    // (whose `None` arm would spin this job forever) never
+                    // sees it. Work accrued above (Haul skill + bare-hand
+                    // tool factor); at full progress, emit the authoritative
+                    // Collect each tick until the SPRITE VACATES — the
+                    // handler is idempotent (re-emits no-op once collected
+                    // or if the block was edited this tick), and the vacated
+                    // block is the confirmation, exactly like Haul leg-1's
+                    // entity-vanish. Vacated-by-another-hand (a player beat
+                    // us to it) completes the same way: the world state is
+                    // the truth, and the handler's single consumption makes
+                    // a double-yield impossible.
+                    if job.kind.is(DesignationKind::Gather) {
+                        let block = terrain.get(job.pos).ok().copied();
+                        let collectible =
+                            block.is_some_and(|b| b.is_directly_collectible());
+                        if collectible {
+                            // Deposit ruling: record what this collect will
+                            // put in the bag — same reclaim source the
+                            // handler consumes (idempotent across re-emits:
+                            // a HashSet union).
+                            if let Some(u) = uids.get(entity)
+                                && let Some(items) = block.and_then(|b| {
+                                    comp::Item::try_reclaim_from_block(
+                                        b,
+                                        terrain.sprite_cfg_at(job.pos),
+                                    )
+                                })
+                            {
+                                let bag =
+                                    board.gathered_defs.entry(*u).or_default();
+                                for (_, item) in &items {
+                                    if let Some(def) = item
+                                        .item_definition_id()
+                                        .itemdef_id()
+                                    {
+                                        bag.insert(def.to_string());
+                                    }
+                                }
+                            }
+                            crate::bastion_actions::emit_collect(
+                                &mut inv_manip_emitter,
+                                entity,
+                                job.pos,
+                            );
+                        } else {
+                            colonist.0.skills.grant_xp(job.work, COMPLETION_XP);
+                            info!(
+                                job = active.job,
+                                pos = ?job.pos,
+                                "bastion: gathered"
+                            );
+                            board.remove_job(active.job);
+                            to_release.push(entity);
+                        }
+                        continue;
+                    }
+
                     // The world may have changed since this job was placed
                     // (vanilla mining, an explosion, another designation's
                     // completed edit): a Mine/Chop job whose block is already
@@ -2656,9 +2905,14 @@ impl<'a> System<'a> for Sys {
                             },
                             DesignationKind::Stockpile
                             | DesignationKind::Zone(_) => false,
+                            // Gather completes in its own arm above (the
+                            // Haul pattern) — defensive.
+                            DesignationKind::Gather => false,
                         },
-                        // Haul completes in its own arm above — defensive.
-                        common::bastion::JobKind::Haul { .. } => false,
+                        // Haul/DepositRun complete in their own arms above —
+                        // defensive.
+                        common::bastion::JobKind::Haul { .. }
+                        | common::bastion::JobKind::DepositRun { .. } => false,
                     });
                     if !still_valid {
                         info!(
@@ -3683,6 +3937,17 @@ impl<'a> System<'a> for Sys {
                 if job.claimed_by.is_some() || job.unreachable {
                     continue;
                 }
+                // GATHER deposit ruling: a DepositRun empties ONE specific
+                // colonist's bag — created pre-claimed; an orphan (claimant
+                // released/demoted) must never be re-assigned to a colonist
+                // whose bag holds nothing (the trigger pass sweeps orphans
+                // and re-creates for the right colonist).
+                if matches!(
+                    job.kind,
+                    common::bastion::JobKind::DepositRun { .. }
+                ) {
+                    continue;
+                }
                 // B15 / FR12: a Mine cell is claimable only with a STANDABLE
                 // stance (⊆ exposed — access always qualifies; an ordinary cell
                 // needs a real stance). Replaces the bare exposure gate so
@@ -3970,6 +4235,28 @@ mod tests {
         // Higher reach widens the standable band by exactly one per level.
         assert!(egress_scan_with(flat_rim(102), feet, 3).0);
         assert!(!egress_scan_with(flat_rim(103), feet, 3).0);
+    }
+
+    /// GATHER (row 38) pin: the forage predicate is the FOOD allowlist ∩
+    /// directly-collectible — plant sprites in; mineral sprites out (Stones
+    /// is hand-collectible but belongs to the Mine economy); bare terrain
+    /// out; and no OTHER kind accidentally claims a sprite cell.
+    #[test]
+    fn gather_job_predicate_is_the_food_allowlist() {
+        use common::terrain::{Block, BlockKind, SpriteKind};
+        let mush = Block::air(SpriteKind::Mushroom);
+        assert!(job_wanted(DesignationKind::Gather, &mush));
+        assert!(!job_wanted(
+            DesignationKind::Gather,
+            &Block::air(SpriteKind::Stones)
+        ));
+        assert!(!job_wanted(
+            DesignationKind::Gather,
+            &Block::new(BlockKind::Rock, vek::Rgb::new(120, 120, 120))
+        ));
+        assert!(!job_wanted(DesignationKind::Gather, &Block::empty()));
+        // A sprite cell is air — Mine (filled-only) must not want it.
+        assert!(!job_wanted(DesignationKind::Mine, &mush));
     }
 
     /// CAVE-IN v1 (FR11 Q2): the BOUNDED support check. Removing a block that

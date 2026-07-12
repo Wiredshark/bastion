@@ -22,11 +22,14 @@ pub enum ToolMode {
 }
 
 impl ToolMode {
-    pub const ALL: [ToolMode; 8] = [
+    pub const ALL: [ToolMode; 9] = [
         ToolMode::Pan,
         ToolMode::Inspect,
         ToolMode::Designate(DesignationKind::Mine),
         ToolMode::Designate(DesignationKind::Chop),
+        // GATHER (row 38): forage — an Area2D paint like Chop, so the
+        // existing 2D paint path serves it unchanged.
+        ToolMode::Designate(DesignationKind::Gather),
         ToolMode::Designate(DesignationKind::Build),
         ToolMode::Designate(DesignationKind::Stockpile),
         // B5.8: ladders — a 1-column upward designation (drag a spot, the
@@ -110,6 +113,9 @@ pub fn zone_rgb(kind: DesignationKind) -> [f32; 3] {
         // work-kind palette (one colour for the family until kinds
         // multiply enough to need per-kind hues).
         DesignationKind::Zone(_) => [1.0, 0.85, 0.3],
+        // GATHER: forage teal — nothing else in the palette sits in the
+        // blue-green band (Chop owns pure green, Zone owns gold).
+        DesignationKind::Gather => [0.2, 0.85, 0.7],
     }
 }
 

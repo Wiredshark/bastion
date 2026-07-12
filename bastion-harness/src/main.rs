@@ -161,6 +161,14 @@ struct Args {
     #[arg(long)]
     magnet_scenario: bool,
 
+    /// bastion (GATHER, row 38): the FOOD-LOOP forage verb — planted
+    /// mushroom sprites → one job each (scan honesty), collected through
+    /// the VANILLA sprite interaction, conservation EXACT (N sprites → N
+    /// mushrooms across bags + ground), a hand-vacated target completes
+    /// moot without wedging, the board drains.
+    #[arg(long)]
+    gather_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -269,6 +277,8 @@ fn main() -> ExitCode {
         zone_scenario(&args)
     } else if args.magnet_scenario {
         magnet_scenario(&args)
+    } else if args.gather_scenario {
+        gather_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3349,6 +3359,254 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (GATHER, row 38): the FOOD-LOOP forage verb, end to end — a
+/// painted footprint over planted mushroom sprites generates EXACTLY one
+/// job per sprite (scan honesty: the `TerrainResource` food allowlist ∩
+/// `is_directly_collectible`), colonists claim/approach/collect through
+/// the VANILLA sprite interaction (the authoritative handler owns loot,
+/// capacity and overflow), and CONSERVATION is exact: mushrooms are a
+/// plain 1:1 yield, so collected cells → the same count of
+/// `common.items.food.mushroom` across colonist bags + ground, over a
+/// pre-designation baseline. One sprite is hand-vacated mid-run (the
+/// vanished-target case): its job must complete moot — no wedged
+/// claimant, the board still drains to zero.
+fn gather_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region};
+    use common::{
+        terrain::{Block, BlockKind, SpriteKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-gather-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-gather".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-gather-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = ground_z(&server, cx, cy).expect("no ground at site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    // A flat forage meadow.
+    for x in (cx - 14)..=(cx + 14) {
+        for y in (cy - 10)..=(cy + 10) {
+            for z in (gz - 2)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    // PLANT: six mushrooms, spread so claims disperse.
+    let sprite_cells: Vec<Vec3<i32>> = [
+        (-8, -4),
+        (-8, 4),
+        (0, -6),
+        (0, 6),
+        (8, -4),
+        (8, 4),
+    ]
+    .into_iter()
+    .map(|(dx, dy)| Vec3::new(cx + dx, cy + dy, gz + 1))
+    .collect();
+    for c in &sprite_cells {
+        server
+            .state_mut()
+            .set_block(*c, Block::air(SpriteKind::Mushroom));
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        2,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+
+    // CONSERVATION BASELINE (pre-designation): spawn loadouts may carry
+    // food; only the DELTA is the forage yield. Ground counted over the
+    // whole meadow (overflow tosses land close).
+    const MUSHROOM: &str = "common.items.food.mushroom";
+    let center = Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 1.0);
+    let count_all = |server: &Server| -> u64 {
+        let bags: u64 = names
+            .iter()
+            .filter_map(|n| server.bastion_colonist_inventory(n))
+            .flat_map(|inv| inv.into_iter())
+            .filter(|(def, _)| def == MUSHROOM)
+            .map(|(_, amt)| amt as u64)
+            .sum();
+        bags + server.bastion_sum_items_near(center, 32.0, MUSHROOM)
+    };
+    let baseline = count_all(&server);
+
+    let region = Region {
+        min: Vec3::new(cx - 10, cy - 8, gz + 1),
+        max: Vec3::new(cx + 10, cy + 8, gz + 1),
+    };
+    let jobs = server
+        .bastion_place_designation(region, DesignationKind::Gather)
+        .len();
+
+    // Let claims commit and work start, then HAND-VACATE one still-LIVE
+    // sprite (the vanished-target case) — its job must complete moot.
+    // Collectibility is the probe, not sprite-presence: a collected sprite
+    // stays VISIBLE (`into_vacant` keeps it for regrowth semantics).
+    tick(&mut server, 60);
+    let vacated_by_hand = sprite_cells
+        .iter()
+        .find(|c| server.bastion_block_collectible(**c))
+        .copied();
+    if let Some(c) = vacated_by_hand {
+        server.state_mut().set_block(c, Block::empty());
+    }
+
+    // Drive until the board drains (early-exit keeps green runs quick).
+    let mut drained = false;
+    for _ in 0..900 {
+        tick(&mut server, 10);
+        if server.bastion_jobs_in_region(region) == 0 {
+            drained = true;
+            break;
+        }
+    }
+    let remaining_collectible = sprite_cells
+        .iter()
+        .filter(|c| server.bastion_block_collectible(**c))
+        .count();
+    let gathered = count_all(&server).saturating_sub(baseline);
+    // The hand-vacated sprite yields nothing — every other cell must have
+    // yielded exactly one mushroom (plain 1:1 item sprite, no loot roll).
+    let expected =
+        (sprite_cells.len() - usize::from(vacated_by_hand.is_some())) as u64;
+
+    // ── DEPOSIT (the ruling's ONE trigger): paint a stockpile now that no
+    // claimable Gather target remains — the trigger pass creates one
+    // pre-claimed DepositRun per carrying colonist, bags empty into the
+    // zone, and TOTAL conservation is unchanged by the trip.
+    let store = Region {
+        min: Vec3::new(cx - 12, cy - 2, gz + 1),
+        max: Vec3::new(cx - 10, cy + 2, gz + 1),
+    };
+    server.bastion_place_designation(store, DesignationKind::Stockpile);
+    let store_center = Vec3::new((cx - 11) as f32, cy as f32, gz as f32 + 1.0);
+    let mut store_count = 0u64;
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        store_count = server.bastion_sum_items_near(store_center, 6.0, MUSHROOM);
+        if store_count >= expected {
+            break;
+        }
+    }
+    let total_after = count_all(&server);
+    let bags_after: u64 = names
+        .iter()
+        .filter_map(|n| server.bastion_colonist_inventory(n))
+        .flat_map(|inv| inv.into_iter())
+        .filter(|(def, _)| def == MUSHROOM)
+        .map(|(_, amt)| amt as u64)
+        .sum();
+
+    let result = serde_json::json!({
+        "gather_jobs": jobs,
+        "gather_gathered": gathered,
+        "gather_expected": expected,
+        "gather_remaining_collectible": remaining_collectible,
+        "gather_drained": drained,
+        "gather_hand_vacated": vacated_by_hand.is_some(),
+        "gather_store": store_count,
+        "gather_bags_after": bags_after,
+        "gather_total_conserved": total_after == baseline + expected,
+        "gather_colonists": names.len(),
+    });
+    let pass = jobs == sprite_cells.len()
+        && drained
+        && remaining_collectible == 0
+        && gathered == expected
+        && store_count >= expected
+        && total_after == baseline + expected
+        && names.len() == 2;
+    println!("{}", result);
+    println!("GATHER SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
