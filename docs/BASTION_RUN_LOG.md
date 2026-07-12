@@ -1364,3 +1364,12 @@ seed 4 stable) - repro seeds in the session handoff note.
 
 ### bastion-block-EMBED-WATCH (bf858917ea, direct tag — Opus R11 green, architect-directed)
 CASE-003 belt v2: the embed net moved to the sequential system with 30-tick persistence (mid-phys form over-fired on dig-pocket/boundary transients and broke ck fs_out); + the CASE-004 Build-completion occupancy guard (solid placements defer on occupied cells); + staged_at_anchor + locomotion instrumentation; FR15 locomotion core REVERTED→DESIGN (rows 31.x queued). Gate 8/8 on the tag commit.
+
+### bastion-block-LOD0 (bce7ecfc68, feature 4f5b6f22ab)
+Row 32, the save-back loss guard (registry B11 root-fixed): colonist_record mirrors the
+live comp + canonical bag snapshot into Npc.bastion_colonist every loaded tick + demote
+flush; promote restores the persisted bag WHOLESALE (Option semantics: None=first
+promote keeps spawn loadout, Some=truth — replace-not-add killed the fresh-loadout
+dupe). --lod0-scenario 3/3: real mined XP + exact inventory survive demote→delete→
+re-promote. Gate 9/9 (the ladder gains the LOD0 leg). Skills/inventory half per FR4-e;
+Needs/Mood restore lands with B7.

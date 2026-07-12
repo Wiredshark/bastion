@@ -404,3 +404,5 @@ than editing the old one.
 | bastion-block-CASE003 | ecc069fd18 | CASE-003 wedge: fail-safe teleport standability + phys center-safety-net (shared eject_dest -> common) | revert tag bastion-block-DETRNG (0ce3517b71) | no save/wire change (behavior-only; CENTER_NET_FIRES is process-global telemetry) |
 
 | bastion-block-EMBED-WATCH | bf858917ea | belt v2 (persistence embed watch) + Build occupancy guard + staged_at_anchor + locomotion counters; FR15 core reverted | revert tag bastion-block-CASE003 (ecc069fd18) | no save/wire change |
+
+| bastion-block-LOD0 | bce7ecfc68 | LOD-0 save-back: per-tick record mirror + demote flush + wholesale bag restore (Option semantics) | revert tag bastion-block-EMBED-WATCH (bf858917ea) | BastionColonist.inventory serde-default None (old saves fine); rtsim data version unchanged |
