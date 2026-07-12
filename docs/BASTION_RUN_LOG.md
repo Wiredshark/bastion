@@ -1228,3 +1228,48 @@ NIGHT-HORROR-INTEGRATION-design.md held exactly; the only spec drift was the
 enum discriminant (always re-verify the tail).
 
 GATE NOTE: the tag-commit gate ran green on UNIT/BUILD/B4/B5.5/B5.8/CK/CAVEIN/VANILLA with ONE b5 miss (mine_cleared 26/27 under full-suite load) — quiet standalone 3/3 PASS 27/27, no night_horror mechanism (registration-only block): the documented B8 execution-race flake, logged per the sampling-flake mandate (sibling of b4 arrived + b58 d_all_cleared).
+
+## bastion-block-CHOP — CHOP redesign (FR10) — TAGGED 2026-07-12 (merge `05c016dbfa`)
+
+Mark trees → fell the WHOLE tree (trunk + canopy) → the wood drops. Replaces
+the Wood-slab Chop (the root of Ben's floating-tree: canopies never removed)
+with FR10's PRIMARY — the World tree oracle.
+
+- **`footprint_mode()` classifier** (`common::bastion`): Chop is the FIRST
+  `Area2D` kind — a pure XY paint. The UI (depth stepper + flat/slope toggle
+  HIDE), the paint path (`z_extent: None` on the wire), and the server (area
+  vs slab job-gen) all branch off this ONE flag; future Gather/Forage kinds
+  get the branch free (classified, never special-cased).
+- **SHARED whole-tree detection** (`server/src/bastion_chop.rs::detect_trees`
+  — ONE fn for the paint handler AND the `bastion_place_chop_area` harness
+  hook, B17 identity-by-construction from birth): `get_area_trees` candidates
+  → the engine's own `tree_valid_at` env-filter via `world.sample_columns()`
+  (never seeds from a building — D15) → the bounded Wood+Leaves flood
+  (`tree_fell_set`: cell cap 2048 + height band 40 + XY radius 10).
+  World-threading per FR10: `ReadExpect<Arc<World>>` + `ReadExpect<IndexOwned>`
+  in the `in_game` handler (read-only `Arc` — par_join/B10-safe);
+  `bastion_jobs` stays terrain-only (`place_chop_cells` makes jobs for
+  handed-in positions).
+- **PER-TREE marking, ZERO wire change:** each detected tree echoes as its
+  OWN `BastionDesignation` (region = the tree's tight AABB) — per-tree
+  outline boxes + cancel-through-the-box on the existing echo/render/erase
+  machinery, no message-schema change.
+- **Leaves:** `job_wanted`/`still_valid` accept Wood|Leaves; completion
+  captures the PRE-REMOVAL kind — Wood drops `CHOP_DROP_ITEM` (yield scales
+  with trunk size by construction), Leaves clears FREE. Closes the registry's
+  "Chop-ignores-Leaves".
+- **DENSE-FOREST finding (b5 runs 1-3):** forest canopies CONNECT — an
+  unbounded per-seed flood ate 13 trees' worth to the cap from ONE seed. The
+  XY radius is the per-tree boundary, and in dense stands the cell cap
+  legitimately clips (bounded work per seed; neighbours are their own seeds,
+  shared cells dedupe at placement). Gate the INVARIANTS (bounded, jobs
+  placed, whole-tree mixed kinds, per-tree cancel, leaf-no-drop), not the
+  per-tree-average mechanism.
+
+TESTS: `tree_fell_set` unit pins (component/cap/radius/height/non-tree-seed);
+b5 phase 7.10 GATING — 13 real worldgen trees on seed 1337 through the SHARED
+path, first tree's box holds BOTH Wood and Leaves, per-tree cancel clean, a
+chopped Leaves block clears with NO log. All pre-existing b5 phases intact.
+Legacy region-path Chop keeps per-block semantics (the harness fixture
+surface). Client: stepper hides on the Chop tool; Area2D paints send no
+extent.

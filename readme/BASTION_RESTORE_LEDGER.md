@@ -349,3 +349,23 @@ than editing the old one.
   net/comp/save changes. New asset files are additive. Fully reversible cold
   (a save containing a spawned night_horror would lose that entity on revert
   — acceptable; none exist pre-tag).
+
+- Block: CHOP (FR10 redesign): whole-tree felling — Area2D Chop paint +
+  World-oracle tree detection (shared handler/harness fn) + per-tree echo
+  boxes + Leaves-clear-no-drop
+- Tag: `bastion-block-CHOP` (main `05c016dbfa`)
+- Previous green: `bastion-block-NIGHTHORROR` (main was at `3a6fd2919e` =
+  NIGHTHORROR + its docs commit; the CHOP branch base is `6f4caddc6f`,
+  code-identical)
+- Revert: `git reset --hard 3a6fd2919e` on `bastion/main`
+- Undoes: `FootprintMode` + `footprint_mode()` (common); `bastion_chop.rs`
+  (shared detection) + the handler Area2D arm + the 4-tuple deferred op +
+  `place_chop_cells` + `tree_fell_set`/caps + the `bastion_place_chop_area`
+  hook; the Wood|Leaves `job_wanted`/`still_valid`/drop-branch semantics
+  (Chop reverts to Wood-only slabs); the client stepper-hide + Area2D paint;
+  b5 phase 7.10 + the `tree_fell_set` unit test.
+- Data-format caveats: **NO message-SCHEMA change** (the per-tree echo reuses
+  `BastionDesignation` verbatim — one message per tree). BEHAVIORAL wire note:
+  a new client sends `z_extent: None` for Chop paints; an OLD server would
+  treat that as a legacy region Chop (harmless — Wood-only slab). Client+
+  server ship together as always. No comp/save changes. Fully reversible cold.
