@@ -402,3 +402,5 @@ than editing the old one.
   scatter, identical feel). No net/comp/save changes. Fully reversible cold.
 
 | bastion-block-CASE003 | ecc069fd18 | CASE-003 wedge: fail-safe teleport standability + phys center-safety-net (shared eject_dest -> common) | revert tag bastion-block-DETRNG (0ce3517b71) | no save/wire change (behavior-only; CENTER_NET_FIRES is process-global telemetry) |
+
+| bastion-block-EMBED-WATCH | bf858917ea | belt v2 (persistence embed watch) + Build occupancy guard + staged_at_anchor + locomotion counters; FR15 core reverted | revert tag bastion-block-CASE003 (ecc069fd18) | no save/wire change |

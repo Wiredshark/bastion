@@ -1361,3 +1361,6 @@ sensitivity everywhere; formerly-deadlocked seeds 6/9/13 now pass (shared root).
 unit pins. Gate 8/8 all-green on the tag commit. By-catch for the bug lane: composite
 legs fail on non-gate seeds (failsafe leg flips run-to-run = seam-sensitive; mine_done
 seed 4 stable) - repro seeds in the session handoff note.
+
+### bastion-block-EMBED-WATCH (bf858917ea, direct tag — Opus R11 green, architect-directed)
+CASE-003 belt v2: the embed net moved to the sequential system with 30-tick persistence (mid-phys form over-fired on dig-pocket/boundary transients and broke ck fs_out); + the CASE-004 Build-completion occupancy guard (solid placements defer on occupied cells); + staged_at_anchor + locomotion instrumentation; FR15 locomotion core REVERTED→DESIGN (rows 31.x queued). Gate 8/8 on the tag commit.
