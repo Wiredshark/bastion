@@ -656,36 +656,120 @@ pub const CAVEIN_SUPPORT_CAP: usize = 64;
 pub const CAVEIN_DAMAGE_FRAC: f32 = 0.25;
 pub const CAVEIN_FEAR: f32 = 0.25;
 
-/// CAVE-IN v1 (FR11 Q1): the eject destination for a colonist caught in a
-/// collapse's crush footprint — [`surface_teleport_dest`]'s ring search
-/// generalized to SKIP the falling columns (`crush_xy`), so the colonist is
-/// shoved to the nearest safe cell OUTSIDE the crush (never buried, and not
-/// pointlessly yanked into the falling rock). Falls back to the plain surface
-/// dest if the whole ring is crush.
+/// CAVE-IN v1 (FR11 Q1, reviewer R8/F-CAVE-1+2): the eject destination for a
+/// colonist caught in a collapse's crush footprint — the NEAREST TRUE
+/// STANDABLE cell OUTSIDE the crush columns: air feet + air head + a solid
+/// floor, preferring a LATERAL step-out at the victim's own level and rising/
+/// dropping only as needed. Deliberately NOT a surface search: the original
+/// `column_surface_z`-based version scanned a ±window that is ALL ROCK deep
+/// underground and returned the window top — teleporting a deep-mine victim
+/// INTO solid stone (the exact entombment the invariant forbids). Returns
+/// `None` when no safe cell exists in range — the caller leaves the victim
+/// IN PLACE, which is safe by construction (the collapse only REMOVES rock;
+/// it never buries anyone where they stand).
 pub fn eject_dest(
     terrain: &TerrainGrid,
     feet: Vec3<i32>,
     crush_xy: &HashSet<Vec2<i32>>,
 ) -> Option<Vec3<i32>> {
+    let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
+    let standable = |c: Vec3<i32>| {
+        !solid(c) && !solid(c + Vec3::unit_z()) && solid(c - Vec3::unit_z())
+    };
+    // Nearest ring out; within a ring, smallest |dz| first (lateral step-out
+    // beats climbing), searching a modest vertical band around the victim.
     for r in 1..=8i32 {
-        for dx in -r..=r {
-            for dy in -r..=r {
-                if dx.abs().max(dy.abs()) != r {
-                    continue;
-                }
-                let (x, y) = (feet.x + dx, feet.y + dy);
-                if crush_xy.contains(&Vec2::new(x, y)) {
-                    continue; // stay out of the falling footprint
-                }
-                if let Some(s) = column_surface_z(terrain, x, y, feet.z + 64)
-                    && s + 1 > feet.z
-                {
-                    return Some(Vec3::new(x, y, s + 1));
+        for dz_abs in 0..=4i32 {
+            let dzs: &[i32] = if dz_abs == 0 { &[0] } else { &[dz_abs, -dz_abs] };
+            for &dz in dzs {
+                for dx in -r..=r {
+                    for dy in -r..=r {
+                        if dx.abs().max(dy.abs()) != r {
+                            continue;
+                        }
+                        let (x, y) = (feet.x + dx, feet.y + dy);
+                        if crush_xy.contains(&Vec2::new(x, y)) {
+                            continue; // never eject INTO the falling footprint
+                        }
+                        let c = Vec3::new(x, y, feet.z + dz);
+                        if standable(c) {
+                            return Some(c);
+                        }
+                    }
                 }
             }
         }
     }
-    surface_teleport_dest(terrain, feet)
+    None
+}
+
+/// CAVE-IN v1 (FR11 Q1/Q6, reviewer R8/F-CAVE-3): THE eject-and-injure — the
+/// ONE implementation both the live mine-completion path (`Sys::run`'s
+/// post-loop) and the harness's `bastion_force_collapse_check` call, so the
+/// tested path and the shipping path cannot drift. Every colonist whose feet
+/// stand in the collapse's crush volume (a falling column, at/below the chunk)
+/// is EJECTED to the nearest true standable cell outside the crush
+/// ([`eject_dest`]; `None` → left in place, safe — the collapse only REMOVES
+/// rock) + INJURED (−[`CAVEIN_DAMAGE_FRAC`] of max health + a [`CAVEIN_FEAR`]
+/// Mood drop). Returns the victim count. Generic over the colonist storage so
+/// a `ReadStorage` (the hook) and a `WriteStorage` (the system) both fit.
+pub fn cavein_eject_and_injure<'a, D>(
+    cells: &[Vec3<i32>],
+    terrain: &TerrainGrid,
+    time: common::resources::Time,
+    entities: &Entities<'a>,
+    colonists: &specs::Storage<'a, comp::Colonist, D>,
+    positions: &mut WriteStorage<'a, comp::Pos>,
+    velocities: &mut WriteStorage<'a, comp::Vel>,
+    healths: &mut WriteStorage<'a, comp::Health>,
+    moods: &mut WriteStorage<'a, comp::bastion::Mood>,
+) -> usize
+where
+    D: std::ops::Deref<Target = specs::storage::MaskedStorage<comp::Colonist>>,
+{
+    let crush_xy: HashSet<Vec2<i32>> =
+        cells.iter().map(|c| Vec2::new(c.x, c.y)).collect();
+    let chunk_min_z = cells.iter().map(|c| c.z).min().unwrap_or(i32::MAX);
+    let victims: Vec<specs::Entity> = (&**entities, colonists, &*positions)
+        .join()
+        .filter_map(|(e, _c, p)| {
+            let feet = p.0.map(|v| v.floor() as i32);
+            (crush_xy.contains(&Vec2::new(feet.x, feet.y)) && feet.z <= chunk_min_z)
+                .then_some(e)
+        })
+        .collect();
+    let mut count = 0;
+    for entity in victims {
+        let feet = positions
+            .get(entity)
+            .map(|p| p.0.map(|v| v.floor() as i32))
+            .unwrap_or_default();
+        if let Some(dest) = eject_dest(terrain, feet, &crush_xy) {
+            if let Some(pos) = positions.get_mut(entity) {
+                pos.0 = dest.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+            }
+            if let Some(vel) = velocities.get_mut(entity) {
+                vel.0 = Vec3::zero();
+            }
+        }
+        if let Some(mut health) = healths.get_mut(entity) {
+            let dmg = health.maximum() * CAVEIN_DAMAGE_FRAC;
+            health.change_by(comp::HealthChange {
+                amount: -dmg,
+                by: None,
+                cause: None,
+                precise: false,
+                time,
+                instance: rand::random(),
+            });
+        }
+        if let Some(mood) = moods.get_mut(entity) {
+            mood.0 = (mood.0 - CAVEIN_FEAR).max(0.0);
+        }
+        count += 1;
+        info!(?feet, "bastion: CAVE-IN — colonist ejected + injured (not buried)");
+    }
+    count
 }
 
 /// The job board resource.
@@ -2120,51 +2204,24 @@ impl<'a> System<'a> for Sys {
         // ── CAVE-IN v1 (FR11 Q1/Q6): EJECT-AND-INJURE ────────────────────
         // THE INVARIANT that lets cave-ins coexist with the no-entombment
         // guarantee: a colonist caught in a collapse's crush volume is EJECTED
-        // (nearest safe cell OUTSIDE the falling footprint) + INJURED (health
-        // damage + a fear drop), NEVER buried. Runs post-loop — the eject/
-        // injure need Pos/Vel/Health/Mood writes the upkeep lend_join can't
-        // hold. Victims are collected before mutating (the find-join reads
-        // positions; the eject writes them).
+        // (nearest true standable cell OUTSIDE the falling footprint) +
+        // INJURED (health damage + a fear drop), NEVER buried. Runs post-loop
+        // — the eject/injure need Pos/Vel/Health/Mood writes the upkeep
+        // lend_join can't hold. The SHARED `cavein_eject_and_injure` is the
+        // one implementation (the harness hook calls the same fn — reviewer
+        // R8/F-CAVE-3: the tested path IS the shipping path).
         for cells in collapses {
-            let crush_xy: HashSet<Vec2<i32>> =
-                cells.iter().map(|c| Vec2::new(c.x, c.y)).collect();
-            let chunk_min_z = cells.iter().map(|c| c.z).min().unwrap_or(i32::MAX);
-            let mut victims: Vec<specs::Entity> = Vec::new();
-            for (entity, _colonist, pos) in (&entities, &colonists, &positions).join() {
-                let feet = pos.0.map(|e| e.floor() as i32);
-                if crush_xy.contains(&Vec2::new(feet.x, feet.y)) && feet.z <= chunk_min_z {
-                    victims.push(entity);
-                }
-            }
-            for entity in victims {
-                let feet = positions
-                    .get(entity)
-                    .map(|p| p.0.map(|e| e.floor() as i32))
-                    .unwrap_or_default();
-                if let Some(dest) = eject_dest(&terrain, feet, &crush_xy) {
-                    if let Some(pos) = positions.get_mut(entity) {
-                        pos.0 = dest.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
-                    }
-                    if let Some(vel) = velocities.get_mut(entity) {
-                        vel.0 = Vec3::zero();
-                    }
-                }
-                if let Some(mut health) = healths.get_mut(entity) {
-                    let dmg = health.maximum() * CAVEIN_DAMAGE_FRAC;
-                    health.change_by(comp::HealthChange {
-                        amount: -dmg,
-                        by: None,
-                        cause: None,
-                        precise: false,
-                        time: *time,
-                        instance: rng.random(),
-                    });
-                }
-                if let Some(mood) = moods.get_mut(entity) {
-                    mood.0 = (mood.0 - CAVEIN_FEAR).max(0.0);
-                }
-                info!(?feet, "bastion: CAVE-IN — colonist ejected + injured (not buried)");
-            }
+            cavein_eject_and_injure(
+                &cells,
+                &terrain,
+                *time,
+                &entities,
+                &colonists,
+                &mut positions,
+                &mut velocities,
+                &mut healths,
+                &mut moods,
+            );
         }
 
         // ── B5.8-E3: CLAIM-CHURN trapped detector ────────────────────────

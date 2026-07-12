@@ -1383,10 +1383,9 @@ impl Server {
         for &c in &cells {
             self.state.set_block(c, common::terrain::Block::empty());
         }
-        // 3. Eject-and-injure the crush volume.
-        let crush_xy: hashbrown::HashSet<vek::Vec2<i32>> =
-            cells.iter().map(|c| vek::Vec2::new(c.x, c.y)).collect();
-        let chunk_min_z = cells.iter().map(|c| c.z).min().unwrap_or(i32::MAX);
+        // 3. Eject-and-injure the crush volume — the SAME shared fn the live
+        //    mine-completion path runs (reviewer R8/F-CAVE-3: the tested path
+        //    IS the shipping path; no parallel copy to drift).
         let ecs = self.state.ecs();
         let time = *ecs.read_resource::<common::resources::Time>();
         let entities = ecs.entities();
@@ -1396,45 +1395,17 @@ impl Server {
         let mut healths = ecs.write_storage::<comp::Health>();
         let mut moods = ecs.write_storage::<comp::bastion::Mood>();
         let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
-        let victims: Vec<(specs::Entity, Vec3<i32>)> = {
-            use specs::Join;
-            (&entities, &colonists, &positions)
-                .join()
-                .filter_map(|(e, _c, p)| {
-                    let feet = p.0.map(|v| v.floor() as i32);
-                    (crush_xy.contains(&vek::Vec2::new(feet.x, feet.y))
-                        && feet.z <= chunk_min_z)
-                        .then_some((e, feet))
-                })
-                .collect()
-        };
-        let mut count = 0;
-        for (entity, feet) in victims {
-            if let Some(dest) = bastion_jobs::eject_dest(&terrain, feet, &crush_xy) {
-                if let Some(p) = positions.get_mut(entity) {
-                    p.0 = dest.map(|v| v as f32) + Vec3::new(0.5, 0.5, 0.0);
-                }
-                if let Some(v) = velocities.get_mut(entity) {
-                    v.0 = Vec3::zero();
-                }
-            }
-            if let Some(mut h) = healths.get_mut(entity) {
-                let dmg = h.maximum() * bastion_jobs::CAVEIN_DAMAGE_FRAC;
-                h.change_by(comp::HealthChange {
-                    amount: -dmg,
-                    by: None,
-                    cause: None,
-                    precise: false,
-                    time,
-                    instance: rand::random(),
-                });
-            }
-            if let Some(mood) = moods.get_mut(entity) {
-                mood.0 = (mood.0 - bastion_jobs::CAVEIN_FEAR).max(0.0);
-            }
-            count += 1;
-        }
-        count
+        bastion_jobs::cavein_eject_and_injure(
+            &cells,
+            &terrain,
+            time,
+            &entities,
+            &colonists,
+            &mut positions,
+            &mut velocities,
+            &mut healths,
+            &mut moods,
+        )
     }
 
     /// bastion (B-LIVE3, harness hook): designations completed (mine-done
