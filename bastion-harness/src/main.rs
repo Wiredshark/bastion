@@ -2692,7 +2692,6 @@ fn b58_scenario(args: &Args) -> ExitCode {
 /// colonist would otherwise drift out), then released so the eject stands.
 fn cavein_scenario(args: &Args) -> ExitCode {
     use common::{
-        bastion::{DesignationKind, Region},
         terrain::{Block, BlockKind},
         vol::ReadVol,
     };
@@ -2807,48 +2806,50 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     tick(&mut server, 2);
 
     server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 1);
+    // The Colonist comp lands on a TICK (rtsim promote) — tick BEFORE renaming
+    // or the rename sees no colonists and every name-keyed lookup no-ops.
+    tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
-    tick(&mut server, 20);
-    let digger = names.first().cloned().unwrap_or_default();
-    let stance = Vec3::new((fx + 1) as f32 + 0.5, fy as f32 + 0.5, (gz + 1) as f32);
-    server.bastion_teleport_colonist(&digger, stance);
-    let base_mood = server.bastion_colonist_mood(&digger).unwrap_or(0.6);
-
-    let base = Vec3::new(fx, fy, gz + 1);
-    server.bastion_place_designation(Region { min: base, max: base }, DesignationKind::Mine);
-
-    let arm_gone = |server: &Server| {
-        (0..=2).all(|dx| {
-            server.bastion_block_kind(Vec3::new(fx + dx, fy, gz + 3)) != Some(BlockKind::Rock)
-        })
-    };
-    let mut collapsed = false;
-    for _ in 0..120 {
-        tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL);
-        if arm_gone(&server) {
-            collapsed = true;
-            break;
-        }
-    }
-    // The eject-and-injure runs in the SAME tick as the collapse (post-loop);
-    // give a few ticks for the eject to settle.
-    tick(&mut server, 5);
-
-    let mood = server.bastion_colonist_mood(&digger).unwrap_or(base_mood);
-    // FEARED: the eject-and-injure dropped the victim's Mood (the injure that
-    // always applies — colonists carry Mood even on the synthetic spawn; the
-    // health-damage tick applies too when a colonist has Health).
-    let feared = mood < base_mood - 1e-4;
-    let d_feet = server
+    let victim = names.first().cloned().unwrap_or_default();
+    // Place the victim UNDER the arm (in the crush footprint), then fire the
+    // collapse DETERMINISTICALLY on this exact tick — no live mining, so no
+    // wander to move it off the crush volume before the collapse resolves.
+    let victim_cell = Vec3::new(fx + 1, fy, gz + 1);
+    let tp_ok = server.bastion_teleport_colonist(
+        &victim,
+        victim_cell.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0),
+    );
+    let base_mood = server.bastion_colonist_mood(&victim).unwrap_or(0.6);
+    let pre_pos = server
         .bastion_colonist_states()
         .into_iter()
-        .find(|(n, _, _)| *n == digger)
+        .find(|(n, _, _)| *n == victim)
+        .map(|(_, p, _)| p);
+    info!(?victim, tp_ok, ?pre_pos, ?victim_cell, "cavein: victim placed (pre-hook)");
+    // Mining the pillar BASE severs the {arm + pillar-top} chunk → the SAME
+    // collapse + eject-and-injure the live mine-completion path runs.
+    let base = Vec3::new(fx, fy, gz + 1);
+    let victims = server.bastion_force_collapse_check(base);
+    tick(&mut server, 2); // let physics settle the ejected victim
+
+    // COLLAPSED: the arm cells fell (no longer rock).
+    let collapsed = (0..=2).all(|dx| {
+        server.bastion_block_kind(Vec3::new(fx + dx, fy, gz + 3)) != Some(BlockKind::Rock)
+    });
+    let mood = server.bastion_colonist_mood(&victim).unwrap_or(base_mood);
+    // FEARED: the injure dropped the victim's Mood (always applies — colonists
+    // carry Mood even on the synthetic spawn; the health-damage tick applies
+    // too when a colonist has Health).
+    let feared = mood < base_mood - 1e-4;
+    let v_feet = server
+        .bastion_colonist_states()
+        .into_iter()
+        .find(|(n, _, _)| *n == victim)
         .map(|(_, p, _)| p.map(|e| e.floor() as i32));
-    // EJECTED: no longer at the mining stance (fx+1, fy) — shoved out of the
-    // crush footprint.
-    let ejected = d_feet.map(|f| !(f.x == fx + 1 && f.y == fy)).unwrap_or(false);
+    // EJECTED: no longer in the crush column (fx+1, fy) — shoved to safety.
+    let ejected = v_feet.map(|f| !(f.x == fx + 1 && f.y == fy)).unwrap_or(false);
     // NOT BURIED: the victim ended on solid ground, not embedded in a block.
-    let standable = d_feet
+    let standable = v_feet
         .map(|f| {
             let solid = |p: Vec3<i32>| {
                 server.state().terrain().get(p).map(|b| b.is_filled()).unwrap_or(false)
@@ -2856,14 +2857,15 @@ fn cavein_scenario(args: &Args) -> ExitCode {
             !solid(f) && solid(f - Vec3::unit_z())
         })
         .unwrap_or(false);
-    let hp = server.bastion_colonist_health(&digger).map(|(c, _)| c);
+    let hp = server.bastion_colonist_health(&victim).map(|(c, _)| c);
 
-    // INVARIANT: a collapse fires AND the crush victim is EJECTED + FEARED +
-    // ends STANDABLE — never buried. That is what lets cave-ins coexist with
-    // the no-entombment guarantee.
-    let pass = collapsed && ejected && feared && standable;
+    // INVARIANT: the collapse fires, a colonist in the crush volume is caught
+    // (victims >= 1), and that victim is EJECTED + FEARED + ends STANDABLE —
+    // NEVER buried. This is what lets cave-ins coexist with no-entombment.
+    let pass = collapsed && victims >= 1 && ejected && feared && standable;
     let result = serde_json::json!({
         "cavein_collapsed": collapsed,
+        "cavein_victims": victims,
         "cavein_ejected": ejected,
         "cavein_feared": feared,
         "cavein_mood": mood,

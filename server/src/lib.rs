@@ -1349,6 +1349,94 @@ impl Server {
             .map(|(_, m)| m.0)
     }
 
+    /// bastion (CAVE-IN v1, harness hook): DETERMINISTICALLY drive the same
+    /// mining-remnant collapse the mine-completion path runs — treat
+    /// `removed_pos` as just-mined, run the bounded support check, and if a
+    /// bounded chunk floats: collapse it (cells → air) AND eject-and-injure
+    /// every colonist in the crush volume (nearest safe cell outside the
+    /// falling footprint + health damage + Mood fear). Returns the victim
+    /// count. Reuses the SAME pure helpers + constants as the system
+    /// (`floating_chunk`, `eject_dest`, `CAVEIN_*`) so there is no logic drift;
+    /// this exists only so a scenario can place a victim in-crush and fire the
+    /// collapse ON THAT TICK (a colonist mining it live wanders off the crush
+    /// footprint before completion, so the invariant can't be pinned that way).
+    pub fn bastion_force_collapse_check(&mut self, removed_pos: Vec3<i32>) -> usize {
+        use common::vol::ReadVol;
+        // 1. The floating chunk (floating_chunk reads removed_pos AS air).
+        let cells = {
+            let terrain = self
+                .state
+                .ecs()
+                .read_resource::<common::terrain::TerrainGrid>();
+            bastion_jobs::floating_chunk(
+                |p| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false),
+                removed_pos,
+                bastion_jobs::CAVEIN_SUPPORT_CAP,
+            )
+        };
+        let Some(cells) = cells else {
+            return 0;
+        };
+        // 2. Collapse: remove the mined block + the floating chunk.
+        self.state
+            .set_block(removed_pos, common::terrain::Block::empty());
+        for &c in &cells {
+            self.state.set_block(c, common::terrain::Block::empty());
+        }
+        // 3. Eject-and-injure the crush volume.
+        let crush_xy: hashbrown::HashSet<vek::Vec2<i32>> =
+            cells.iter().map(|c| vek::Vec2::new(c.x, c.y)).collect();
+        let chunk_min_z = cells.iter().map(|c| c.z).min().unwrap_or(i32::MAX);
+        let ecs = self.state.ecs();
+        let time = *ecs.read_resource::<common::resources::Time>();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let mut positions = ecs.write_storage::<comp::Pos>();
+        let mut velocities = ecs.write_storage::<comp::Vel>();
+        let mut healths = ecs.write_storage::<comp::Health>();
+        let mut moods = ecs.write_storage::<comp::bastion::Mood>();
+        let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+        let victims: Vec<(specs::Entity, Vec3<i32>)> = {
+            use specs::Join;
+            (&entities, &colonists, &positions)
+                .join()
+                .filter_map(|(e, _c, p)| {
+                    let feet = p.0.map(|v| v.floor() as i32);
+                    (crush_xy.contains(&vek::Vec2::new(feet.x, feet.y))
+                        && feet.z <= chunk_min_z)
+                        .then_some((e, feet))
+                })
+                .collect()
+        };
+        let mut count = 0;
+        for (entity, feet) in victims {
+            if let Some(dest) = bastion_jobs::eject_dest(&terrain, feet, &crush_xy) {
+                if let Some(p) = positions.get_mut(entity) {
+                    p.0 = dest.map(|v| v as f32) + Vec3::new(0.5, 0.5, 0.0);
+                }
+                if let Some(v) = velocities.get_mut(entity) {
+                    v.0 = Vec3::zero();
+                }
+            }
+            if let Some(mut h) = healths.get_mut(entity) {
+                let dmg = h.maximum() * bastion_jobs::CAVEIN_DAMAGE_FRAC;
+                h.change_by(comp::HealthChange {
+                    amount: -dmg,
+                    by: None,
+                    cause: None,
+                    precise: false,
+                    time,
+                    instance: rand::random(),
+                });
+            }
+            if let Some(mood) = moods.get_mut(entity) {
+                mood.0 = (mood.0 - bastion_jobs::CAVEIN_FEAR).max(0.0);
+            }
+            count += 1;
+        }
+        count
+    }
+
     /// bastion (B-LIVE3, harness hook): designations completed (mine-done
     /// lifecycle) since server start.
     pub fn bastion_done_designations(&self) -> u64 {

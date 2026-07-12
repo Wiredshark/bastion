@@ -481,7 +481,9 @@ const NEIGHBOURS6: [Vec3<i32>; 6] = [
 /// one mass into a grounded part and a floating part — a single merged flood
 /// would wrongly read the whole thing as grounded). PURE (terrain via
 /// `is_solid`) so it unit-tests without a `TerrainGrid` and stays deterministic.
-fn floating_chunk(
+/// `pub` so the harness's `bastion_force_collapse_check` can drive the same
+/// support check deterministically (no colonist-mining timing).
+pub fn floating_chunk(
     is_solid: impl Fn(Vec3<i32>) -> bool,
     removed_pos: Vec3<i32>,
     cap: usize,
@@ -650,9 +652,9 @@ fn surface_teleport_dest(terrain: &TerrainGrid, feet: Vec3<i32>) -> Option<Vec3<
 /// health damage as a FRACTION of max HP (Q6 — a setback, not death; lethality
 /// is a later dial), and the fear a collapse instils (Mood is 0=breakdown..
 /// 1=content, so fear DROPS it).
-const CAVEIN_SUPPORT_CAP: usize = 64;
-const CAVEIN_DAMAGE_FRAC: f32 = 0.25;
-const CAVEIN_FEAR: f32 = 0.25;
+pub const CAVEIN_SUPPORT_CAP: usize = 64;
+pub const CAVEIN_DAMAGE_FRAC: f32 = 0.25;
+pub const CAVEIN_FEAR: f32 = 0.25;
 
 /// CAVE-IN v1 (FR11 Q1): the eject destination for a colonist caught in a
 /// collapse's crush footprint — [`surface_teleport_dest`]'s ring search
@@ -660,7 +662,7 @@ const CAVEIN_FEAR: f32 = 0.25;
 /// shoved to the nearest safe cell OUTSIDE the crush (never buried, and not
 /// pointlessly yanked into the falling rock). Falls back to the plain surface
 /// dest if the whole ring is crush.
-fn eject_dest(
+pub fn eject_dest(
     terrain: &TerrainGrid,
     feet: Vec3<i32>,
     crush_xy: &HashSet<Vec2<i32>>,
