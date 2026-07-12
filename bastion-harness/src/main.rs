@@ -169,6 +169,12 @@ struct Args {
     #[arg(long)]
     gather_scenario: bool,
 
+    /// bastion (HIST-0, row 39): the Chronicle store — per-band caps hold
+    /// under a N≫cap soak, Legendary survives an end-of-time sweep, and
+    /// the store round-trips the B10 persistence boundary byte-for-byte.
+    #[arg(long)]
+    chronicle_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -279,6 +285,8 @@ fn main() -> ExitCode {
         magnet_scenario(&args)
     } else if args.gather_scenario {
         gather_scenario(&args)
+    } else if args.chronicle_scenario {
+        chronicle_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3359,6 +3367,103 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (HIST-0, row 39): the Chronicle store + `record()` capture
+/// seam, at the integration level — a live server soak-records N ≫ cap
+/// events per band through THE ONE entry point (bounded record-time,
+/// REPORTED), the per-band caps hold exactly (bounded growth), the world
+/// keeps ticking with the CleanUp rule live (no panic, counts stable —
+/// the windows are game-DAYS), and the store survives an end-of-time
+/// sweep (`Legendary` untouched) + the REAL B10 boundary
+/// (`Data::write_to` → `Data::from_reader`) byte-for-byte.
+fn chronicle_scenario(args: &Args) -> ExitCode {
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-chronicle-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-chronicle".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-chronicle-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+    tick(&mut server, 5);
+
+    // SOAK: N ≫ cap per pruning band (caps are 512/2048 — a constant
+    // change breaks this on purpose: "the per-band caps hold" is the
+    // done-when), plus a Legendary corpus. Record-time is REPORTED.
+    let soak_started = Instant::now();
+    server.bastion_chronicle_record_test(0, 4096);
+    server.bastion_chronicle_record_test(1, 4096);
+    server.bastion_chronicle_record_test(2, 64);
+    let soak_ms = soak_started.elapsed().as_millis() as u64;
+    let counts = server.bastion_chronicle_counts();
+    let caps_hold = counts == (512, 2048, 64);
+
+    // The world keeps ticking with the CleanUp rule live — no panic, and
+    // the counts stay put (the pruning windows are game-DAYS away).
+    tick(&mut server, 120);
+    let counts_after = server.bastion_chronicle_counts();
+    let stable = counts_after == counts;
+
+    // End-of-time sweep (Legendary untouched) + the REAL B10 boundary,
+    // byte-for-byte — both inside the hook.
+    let roundtrip = server.bastion_chronicle_roundtrip();
+
+    let result = serde_json::json!({
+        "chron_routine": counts.0,
+        "chron_notable": counts.1,
+        "chron_legendary": counts.2,
+        "chron_caps_hold": caps_hold,
+        "chron_stable": stable,
+        "chron_roundtrip": roundtrip,
+        "chron_soak_ms": soak_ms,
+    });
+    let pass = caps_hold && stable && roundtrip;
+    println!("{}", result);
+    println!("CHRONICLE SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }

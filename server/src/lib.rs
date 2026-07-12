@@ -788,6 +788,34 @@ impl Server {
             .bastion_spawn_colony(wpos, count)
     }
 
+    /// bastion (HIST-0, harness hook): soak-record chronicle test events
+    /// (band: 0 Routine / 1 Notable / other Legendary) through THE ONE
+    /// capture entry point.
+    pub fn bastion_chronicle_record_test(&mut self, band: u8, n: u32) -> u64 {
+        self.state
+            .ecs()
+            .write_resource::<rtsim::RtSim>()
+            .bastion_chronicle_record_test(band, n)
+    }
+
+    /// bastion (HIST-0, harness hook): (routine, notable, legendary)
+    /// chronicle counts.
+    pub fn bastion_chronicle_counts(&self) -> (usize, usize, usize) {
+        self.state
+            .ecs()
+            .read_resource::<rtsim::RtSim>()
+            .bastion_chronicle_counts()
+    }
+
+    /// bastion (HIST-0, harness hook): end-of-time sweep + the B10
+    /// persistence round-trip, byte-for-byte on the chronicle.
+    pub fn bastion_chronicle_roundtrip(&mut self) -> bool {
+        self.state
+            .ecs()
+            .write_resource::<rtsim::RtSim>()
+            .bastion_chronicle_roundtrip()
+    }
+
     /// bastion (B3): the colony roster.
     pub fn bastion_colony_roster(&self) -> Vec<common::bastion::BastionColonist> {
         self.state

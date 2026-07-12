@@ -1,5 +1,6 @@
 pub mod airship;
 pub mod architect;
+pub mod chronicle;
 pub mod faction;
 pub mod nature;
 pub mod npc;
@@ -9,6 +10,10 @@ pub mod sentiment;
 pub mod site;
 
 pub use self::{
+    chronicle::{
+        Attribution, Chronicle, ChronicleEvent, ChronicleKind, Importance,
+        Scope,
+    },
     faction::{Faction, FactionId, Factions},
     nature::Nature,
     npc::{Npc, NpcId, Npcs},
@@ -55,6 +60,11 @@ pub struct Data {
     pub architect: Architect,
     #[serde(default)]
     pub quests: Quests,
+    /// bastion (HIST-0): the world's PERMANENT memory — the persistent
+    /// twin of the fading `reports` feed (see [`chronicle`]). Sibling
+    /// pattern: `#[serde(default)]`, no version bump.
+    #[serde(default)]
+    pub chronicle: Chronicle,
 
     #[serde(default)]
     pub tick: u64,

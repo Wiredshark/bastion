@@ -99,6 +99,8 @@ impl Data {
             airship_sim: Default::default(),
             architect: Default::default(),
             quests: Default::default(),
+            // bastion (HIST-0): a fresh world's memory starts empty.
+            chronicle: Default::default(),
 
             tick: 0,
             time_of_day: TimeOfDay(settings.start_time),

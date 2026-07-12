@@ -73,6 +73,13 @@ impl Rule for CleanUp {
 
             // Clean up old reports
             data.reports.cleanup(data.time_of_day);
+
+            // bastion (HIST-0): the chronicle's decay sweep — expire
+            // pruning-band entries past their window (Legendary is never
+            // touched, by construction). Same cadence as the reports
+            // sweep; the per-record caps already bound growth between
+            // sweeps.
+            data.chronicle.cleanup(data.time_of_day);
         });
 
         Ok(Self)

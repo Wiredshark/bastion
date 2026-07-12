@@ -368,6 +368,73 @@ impl RtSim {
             .collect()
     }
 
+    /// bastion (HIST-0, harness): soak-record `n` chronicle test events at
+    /// an importance band (0 = Routine, 1 = Notable, other = Legendary)
+    /// through THE ONE capture entry point. Returns the last stamped seq.
+    pub fn bastion_chronicle_record_test(&mut self, band: u8, n: u32) -> u64 {
+        use ::rtsim::data::{ChronicleKind, Importance, Scope};
+        let data = self.state.get_data_mut();
+        let now = data.time_of_day;
+        let importance = match band {
+            0 => Importance::Routine,
+            1 => Importance::Notable,
+            _ => Importance::Legendary,
+        };
+        let mut last = 0;
+        for i in 0..n {
+            last = data.chronicle.record(
+                now,
+                ChronicleKind::Founding,
+                Vec::new(),
+                None,
+                Some(Vec3::new(i as i32, 0, 0)),
+                importance,
+                Scope::Colony,
+                None,
+            );
+        }
+        last
+    }
+
+    /// bastion (HIST-0, harness): (routine, notable, legendary) live
+    /// counts — the bounded-growth probe.
+    pub fn bastion_chronicle_counts(&self) -> (usize, usize, usize) {
+        self.state.data().chronicle.counts()
+    }
+
+    /// bastion (HIST-0, harness): the B10 boundary round-trip + the
+    /// immortality sweep, in vivo. (1) An end-of-time cleanup must not
+    /// touch a single Legendary entry; (2) the LIVE `Data` encodes through
+    /// the exact persistence encoder (`Data::write_to`) and decodes back
+    /// (`Data::from_reader`, version-checked) with the chronicle surviving
+    /// BYTE-FOR-BYTE (fingerprint equality) and counts intact.
+    pub fn bastion_chronicle_roundtrip(&mut self) -> bool {
+        let data = self.state.get_data_mut();
+        let legendary_before = data.chronicle.counts().2;
+        let end_of_time =
+            common::resources::TimeOfDay(data.time_of_day.0 + 1.0e12);
+        data.chronicle.cleanup(end_of_time);
+        if data.chronicle.counts().2 != legendary_before {
+            return false;
+        }
+        let mut bytes = Vec::new();
+        if data.write_to(&mut bytes).is_err() {
+            return false;
+        }
+        let decoded = match ::rtsim::data::Data::from_reader(bytes.as_slice())
+        {
+            Ok(d) => d,
+            Err(_) => return false,
+        };
+        match (data.chronicle.fingerprint(), decoded.chronicle.fingerprint())
+        {
+            (Some(a), Some(b)) => {
+                a == b && data.chronicle.counts() == decoded.chronicle.counts()
+            },
+            _ => false,
+        }
+    }
+
     pub fn hook_rtsim_entity_unload(&mut self, entity: RtSimEntity) {
         let data = self.state.get_data_mut();
 
