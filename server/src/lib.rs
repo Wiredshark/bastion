@@ -13,6 +13,8 @@ pub mod bastion_arena;
 // bastion (B-ASSET1): asset-lab runtime loader + placement (worldgen types).
 #[cfg(feature = "worldgen")]
 pub mod bastion_assets;
+// bastion (CHOP redesign, FR10): shared whole-tree detection (handler + hook).
+pub mod bastion_chop;
 pub mod bastion_jobs;
 pub mod bastion_piles;
 mod character_creator;
@@ -904,6 +906,34 @@ impl Server {
         let created =
             board.place_designation_surface(&terrain, min_xy, max_xy, hint_z, extent, kind);
         (created, bounds)
+    }
+
+    /// bastion (CHOP redesign FR10, harness hook): run the SAME whole-tree
+    /// detection the paint handler runs ([`bastion_chop::detect_trees`] — one
+    /// implementation, registry B17) over an XY footprint and place the
+    /// fell-set jobs. Returns `(trees, cells, jobs created)`.
+    pub fn bastion_place_chop_area(
+        &mut self,
+        min_xy: vek::Vec2<i32>,
+        max_xy: vek::Vec2<i32>,
+    ) -> (usize, usize, usize, Option<common::bastion::Region>) {
+        let ecs = self.state.ecs();
+        let world = ecs.read_resource::<Arc<World>>();
+        let index = ecs.read_resource::<IndexOwned>();
+        let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+        let trees = bastion_chop::detect_trees(&world, &index, &terrain, min_xy, max_xy);
+        let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
+        let (mut cells_total, mut jobs) = (0, 0);
+        for (_aabb, cells) in &trees {
+            cells_total += cells.len();
+            jobs += board.place_chop_cells(&terrain, cells).len();
+        }
+        (
+            trees.len(),
+            cells_total,
+            jobs,
+            trees.first().map(|(aabb, _)| *aabb),
+        )
     }
 
     /// bastion (B5.8, harness hook): positions of currently-claimed jobs —
