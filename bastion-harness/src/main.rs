@@ -3699,9 +3699,12 @@ fn zone_scenario(args: &Args) -> ExitCode {
             }
         }
     }
-    // The magnet must be a MEASURABLE bias (zone-time beats the mirrored
-    // control decisively), not decoration.
-    let magnet_works = in_zone > in_control.saturating_mul(2) && in_zone > 50;
+    // Opus R12 + the architect's option-(i) ruling: the magnet is
+    // DELIBERATELY subtle — a soft bias, not a visible herd. The
+    // attraction split is REPORTED for the deferred designer-tuning pass
+    // (DESIGNER-SUGGESTIONS 19), NOT gated; the gate below asserts the
+    // ruling's own invariants (zone registers, freedom always wins).
+    let magnet_reported = (in_zone, in_control);
 
     // FREEDOM: hand one colonist real work OUTSIDE the zone — the stronger
     // drive must pull it out (the job completes; soft, never a fence).
@@ -3725,14 +3728,13 @@ fn zone_scenario(args: &Args) -> ExitCode {
     }
 
     let result = serde_json::json!({
-        "zone_in_zone": in_zone,
-        "zone_in_control": in_control,
-        "zone_magnet_works": magnet_works,
+        "zone_in_zone": magnet_reported.0,
+        "zone_in_control": magnet_reported.1,
         "zone_jobs": jobs,
         "zone_freed": freed,
         "zone_colonists": names.len(),
     });
-    let pass = names.len() == 4 && magnet_works && jobs == 1 && freed;
+    let pass = names.len() == 4 && jobs == 1 && freed;
     println!("{}", result);
     println!("ZONE SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
