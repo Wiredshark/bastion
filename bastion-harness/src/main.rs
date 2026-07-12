@@ -124,6 +124,13 @@ struct Args {
     #[arg(long)]
     lod0_scenario: bool,
 
+    /// bastion (LOD-1, the tier dupe guard): demote a colonist mid-Arrived
+    /// — zero progress/completion/drop after the mode flip; the claim
+    /// releases via the sweep and the job completes exactly once, across a
+    /// rapid demote cycle.
+    #[arg(long)]
+    lod1_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -220,6 +227,8 @@ fn main() -> ExitCode {
         coord_scenario(&args)
     } else if args.lod0_scenario {
         lod0_scenario(&args)
+    } else if args.lod1_scenario {
+        lod1_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3300,6 +3309,224 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (LOD-1, the tier dupe guard): demote a colonist WHILE it is
+/// Arrived/mid-progress on a job — ZERO progress/completion/item-drop may
+/// land after the mode flip; the claim releases cleanly (the sweep) and the
+/// job completes EXACTLY ONCE by whoever legitimately takes it, across a
+/// rapid demote cycle with a stable roster.
+fn lod1_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, Region, WorkType},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-lod1-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-lod1".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-lod1-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = ground_z(&server, cx, cy).expect("no ground at site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 6)..=(cx + 6) {
+        for y in (cy - 6)..=(cy + 6) {
+            for z in (gz - 2)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 10) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        2,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+
+    // Rapid demote cycles: 3 rounds of [one single-block job → wait for an
+    // ARRIVED worker → demote it mid-work → assert nothing completes in the
+    // flip window → the job releases + completes exactly once by whoever
+    // takes it after].
+    let mut rounds_ok = 0u32;
+    let mut window_leaks = 0u32; // completions inside the demote window
+    let mut total_done_before = server.bastion_done_designations();
+    for round in 0..3 {
+        let cell = Vec3::new(cx - 2 + round * 2, cy + 3, gz);
+        let jobs = server
+            .bastion_place_designation(
+                Region { min: cell, max: cell },
+                DesignationKind::Mine,
+            )
+            .len();
+        if jobs != 1 {
+            info!(round, jobs, "lod1: unexpected job count");
+            break;
+        }
+        // Wait for an ARRIVED worker on it.
+        let mut worker: Option<String> = None;
+        'wait: for _ in 0..600 {
+            tick(&mut server, 1);
+            for (n, _, j) in server.bastion_colonist_states() {
+                if let Some((_, true)) = j {
+                    worker = Some(n);
+                    break 'wait;
+                }
+            }
+        }
+        let Some(worker) = worker else {
+            info!(round, "lod1: nobody arrived");
+            break;
+        };
+        let done_before = server.bastion_done_designations();
+        // DEMOTE MID-WORK.
+        if !server.bastion_force_demote(&worker) {
+            info!(round, "lod1: demote failed");
+            break;
+        }
+        // The flip window: nothing may complete for the demoted worker.
+        tick(&mut server, 3);
+        if server.bastion_done_designations() != done_before
+            || server
+                .bastion_block_kind(cell)
+                .is_none_or(|k| !k.is_filled())
+        {
+            window_leaks += 1;
+        }
+        // The job must now complete EXACTLY ONCE (sweep releases the ghost
+        // claim; the other colonist or the re-promoted worker retakes it).
+        let mut completed = false;
+        for _ in 0..240 {
+            tick(&mut server, 15);
+            if server
+                .bastion_block_kind(cell)
+                .is_none_or(|k| !k.is_filled())
+            {
+                completed = true;
+                break;
+            }
+        }
+        let done_now = server.bastion_done_designations();
+        if completed && done_now == done_before + 1 {
+            rounds_ok += 1;
+        }
+        total_done_before = done_now;
+    }
+    let _ = total_done_before;
+
+    // Exactly-once on drops: one stone per mined block — SUM amounts (B5.5
+    // pile aggregation merges drop ENTITIES; the sum is the conserved
+    // quantity). 3 rounds → exactly 3.
+    tick(&mut server, 30);
+    let stones = server.bastion_sum_items_near(
+        Vec3::new(cx as f32, (cy + 3) as f32, gz as f32),
+        12.0,
+        "common.items.crafting_ing.stones",
+    );
+    // Roster stable after the cycles.
+    let roster = server.bastion_colonist_states().len();
+    // No ghost claims left.
+    let audit = server.bastion_job_audit();
+
+    let result = serde_json::json!({
+        "lod1_rounds_ok": rounds_ok,
+        "lod1_window_leaks": window_leaks,
+        "lod1_stones": stones,
+        "lod1_roster": roster,
+        "lod1_jobs_left": audit.total,
+        "lod1_unreachable": audit.unreachable,
+    });
+    let pass = rounds_ok == 3
+        && window_leaks == 0
+        && stones == 3
+        && roster == names.len()
+        && audit.total == 0;
+    println!("{}", result);
+    println!("LOD1 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }

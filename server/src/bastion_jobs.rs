@@ -1289,6 +1289,10 @@ impl<'a> System<'a> for Sys {
         // collapse's crush volume — health damage + a fear (Mood) drop.
         WriteStorage<'a, comp::Health>,
         WriteStorage<'a, comp::bastion::Mood>,
+        // LOD-1: the Loaded-gate — entity→npc link + the rtsim data to read
+        // `Npc.mode` (read-only; the rtsim tick system holds the write).
+        ReadStorage<'a, common::rtsim::RtSimEntity>,
+        ReadExpect<'a, crate::rtsim::RtSim>,
     );
 
     const NAME: &'static str = "bastion_jobs";
@@ -1321,6 +1325,8 @@ impl<'a> System<'a> for Sys {
             physics_states,
             mut healths,
             mut moods,
+            rtsim_entities,
+            rtsim,
         ): Self::SystemData,
     ) {
         let mut item_drop_emitter = item_drop_events.emitter();
@@ -1338,6 +1344,31 @@ impl<'a> System<'a> for Sys {
         // Pre-deref so field borrows split (jobs mutably + anchors shared
         // inside the same loop).
         let board = &mut *board;
+
+        // ── LOD-1: the LOADED-GATE ───────────────────────────────────────
+        // Once `npc.mode` flips to Simulated, the ECS entity persists until
+        // its deferred DeleteEvent is consumed — and this system could
+        // still claim / progress / COMPLETE a job for it in that window
+        // (an Arrived completion would emit an item drop for an npc the
+        // rtsim tier already owns: the both-tiers dupe). Gate BOTH the
+        // claim loop and the travel/work upkeep on the authoritative mode
+        // (impossible-by-construction, spec §5D). Permissive defaults: an
+        // entity with no rtsim link (or a stale npc id) has no Simulated
+        // tier to dupe against — treat as loaded.
+        let rtsim_data = rtsim.state().data();
+        let is_loaded = |entity: specs::Entity| -> bool {
+            rtsim_entities.get(entity).is_none_or(|re| {
+                rtsim_data
+                    .npcs
+                    .get(*re)
+                    .is_none_or(|npc| {
+                        matches!(
+                            npc.mode,
+                            ::rtsim::data::npc::SimulationMode::Loaded
+                        )
+                    })
+            })
+        };
 
         // ── B5.8: climbing improves with use (Ben: climbing is a SKILL) ──
         // XP accrues while a colonist is actually in the Climb state; the
@@ -1770,6 +1801,12 @@ impl<'a> System<'a> for Sys {
         )
             .lend_join();
         while let Some((entity, mut colonist, pos, active, agent)) = upkeep_iter.next() {
+            // LOD-1 Loaded-gate: a demoting colonist (mode already flipped,
+            // DeleteEvent pending) gets NO travel/progress/COMPLETION —
+            // the rtsim tier owns it. The claim sweep releases its claim.
+            if !is_loaded(entity) {
+                continue;
+            }
             let Some(job) = board.jobs.get_mut(&active.job) else {
                 // Cancelled out from under the colonist → re-idle.
                 to_release.push(entity);
@@ -3211,6 +3248,10 @@ impl<'a> System<'a> for Sys {
         )
             .join()
         {
+            // LOD-1 Loaded-gate: never CLAIM for a demoting colonist.
+            if !is_loaded(entity) {
+                continue;
+            }
             let carries_material = inventories.get(entity).is_some_and(|inv| {
                 inv.slots().flatten().any(|item| {
                     item.item_definition_id().itemdef_id() == Some(BUILD_MATERIAL_ITEM)
