@@ -1111,3 +1111,75 @@ REGISTRY: 2b CLOSES B15 (claimability admits unstandable work). Play-tester's
 GATE (on the tag commit, clean tree): UNIT 19/19, BUILD PASS (harness compiles
 at commit), B5/B5.5/B5.8/CHOKEPOINT/VANILLA PASS; b58 150/150 d_all_cleared +
 d_deep_unlocked; b5 hill + B15 (ontop/adjacent/floater) asserts green.
+
+## bastion-block-CAVEIN — CAVE-IN v1 (FR11) + B16 crash-fix + R7 rust-lld — TAGGED 2026-07-12 (merge `437577ed25`)
+
+The first roadmap feature block after Ben's live-bug arc (Builds 1+2): floating
+mining remnants now FALL, with the entombment guarantee intact — plus the
+critical alt-tab crash fix and the R7 linker flip riding the same rebuild.
+
+- **CAVE-IN v1 (FR11, reviewer-FEASIBLE)** (`369b67e083` core, `3e759da4a5`
+  wiring, `30d55d988e` scenario):
+  - `floating_chunk` — the bounded support check (FR11 Q2): at a Mine job's
+    COMPLETION (Q3 — gate at the point of action, never designation-time),
+    flood each solid component severed by the removed block, capped at
+    `CAVEIN_SUPPORT_CAP`(64); a component enumerated within the cap is a
+    floating remnant → COLLAPSE. >cap = assumed supported (conservative — a big
+    anchored mass never spuriously falls; large overhangs defer to the future
+    global check). PURE + unit-tested (`floating_chunk_support`).
+  - COLLAPSE: the chunk's cells drop to air + a `MINE_DROP` resource each — the
+    floating rock Ben watched now FALLS (composes with 2b: the standability
+    gate clean-skips an isolated floater, cave-in collapses it).
+  - EJECT-AND-INJURE (Q1/Q6, hardened by reviewer R8): every colonist in the
+    crush volume is ejected to the nearest TRUE STANDABLE cell OUTSIDE the
+    falling footprint (`eject_dest` — an air-feet + air-head + solid-floor
+    ring search preferring same-level lateral step-outs; `None` → left in
+    place, safe since a collapse only REMOVES rock) + injured (−25% max
+    health + a 0.25 Mood fear drop; no DF-WOUND dependency). R8/F-CAVE-1
+    (HIGH, caught pre-tag): the first eject reused the SHALLOW-pit
+    `column_surface_z` scan, whose all-rock deep-mine window returned the
+    window TOP — teleporting a deep victim INTO stone; the rewrite air-checks
+    every candidate, so no unchecked destination survives. R8/F-CAVE-3: the
+    eject-and-injure is ONE shared fn (`cavein_eject_and_injure`) called by
+    BOTH `Sys::run` and the harness hook — the tested path IS the shipping
+    path, identical by construction (no parallel copy to drift; registry B17).
+  - **THE ENTOMBMENT INVARIANT (why cave-ins can coexist with no-entombment):**
+    the collapse REMOVES rock to air (never re-places solid onto a colonist),
+    and the eject+injure resolves anyone caught — a victim is shoved out, hurt,
+    set back; NEVER buried. Proven end-to-end by the new GATING
+    `--cavein-scenario`, TWO legs: SHALLOW (a 3-cell arm on a single pillar, a
+    colonist under it, the collapse fired deterministically via
+    `bastion_force_collapse_check` — needed because a live-mining digger
+    wanders off the crush footprint before completion) and DEEP (the same
+    collapse inside a sealed chamber 130 below the surface — the F-CAVE-1
+    geometry where the old eject embedded the victim in stone). Asserts, none
+    weakened: collapsed + victims≥1 + ejected + feared + standable
+    (not-embedded + near-ground) on BOTH legs; the Sys::run collapse TRIGGER
+    was separately proven live (the digger-as-victim runs collapsed via real
+    mining).
+  - REGRESSION-SAFE: b58 PASS ×2 (150/150, d_all_cleared, d_deep_unlocked,
+    e_out/f_cleared/orphans) — a connected dig has no floaters, and the
+    completion-path change costs one bounded flood per completed block.
+- **B16 / CASE-001 (CRITICAL, architect-triaged)** (`61aeec7cf9` + refine in
+  `341e260f67`): `common/src/clock.rs` `last_game_dt` clamp gains the missing
+  LOWER floor (`.clamp(1e-6, MAX_GAME_DT)`) — an alt-tab window pause let the
+  nudge-toward-real-time go NEGATIVE at high fps → `Duration::from_secs_f64`
+  PANIC (Ben's hard crash). 1e-6 (not 0.0) also kills a cosmetic figure
+  NaN-flicker (`dt.sqrt()` unguarded). Reviewer-confirmed; VANILLA Veloren
+  (byte-identical to B0) — upstream-fix candidate.
+- **R7 rust-lld** (`6afc26be34`, architect-approved): windows-gnu links via
+  the toolchain's BUNDLED rust-lld (self-contained linker — WinLibs GCC ships
+  no ld.lld, so this is the no-shim path). Harness link measured ~14% faster;
+  voxygen (link-bound) is the real target — the play-tester measures the delta
+  on its first post-flip rebuild; REVERT the config block if the voxygen
+  saving is negligible. The rustflags cache-bust was absorbed by this block's
+  gate build.
+- New harness hooks: `bastion_colonist_health`, `bastion_colonist_mood`,
+  `bastion_force_collapse_check`. Scenario-wiring lesson (in-branch): rename
+  colonists AFTER a tick — the Colonist comp lands on the rtsim promote, so a
+  rename-before-tick returns an empty roster and every name-keyed lookup
+  silently no-ops.
+
+GATE (on the tag commit, clean tree, LLD): UNIT 19/19 + `floating_chunk`
+unit test, BUILD PASS (harness compiles at commit), B4/B5/B5.5/B5.8/
+CHOKEPOINT/CAVEIN/VANILLA — see the gate line in the tag ping.

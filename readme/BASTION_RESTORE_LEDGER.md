@@ -307,3 +307,24 @@ than editing the old one.
   — NO wire/save impact. No net-protocol, comp-sync, or rtsim/save changes.
   Fully reversible cold. The flatten-hill change is server job-logic + one
   in_game.rs volume estimate + harness; no client changes.
+
+- Block: CAVEIN (CAVE-IN v1 FR11 + B16 clock crash-fix + R7 rust-lld):
+  mining-remnant collapse (bounded support check at mine-completion, floating
+  chunks fall to resource) + eject-and-injure (crush victims shoved to safety,
+  hurt, never buried) + the alt-tab dt-panic fix + the linker flip
+- Tag: `bastion-block-CAVEIN` (main `437577ed25`)
+- Previous green: `bastion-block-SLOPE` (main was at `e85ad68990` = SLOPE +
+  its docs commit, the CAVEIN merge base)
+- Revert: `git reset --hard e85ad68990` on `bastion/main`
+- Undoes: `floating_chunk`/`eject_dest`/`CAVEIN_*` + the mine-completion
+  collapse + the post-loop eject-and-injure (Health/Mood joined the bastion
+  system's SystemData) + hooks `bastion_force_collapse_check`/
+  `bastion_colonist_health`/`bastion_colonist_mood` + `--cavein-scenario`;
+  the B16 `clock.rs` lower clamp (REVERTING THIS RESTORES BEN'S ALT-TAB HARD
+  CRASH — cherry-pick `61aeec7cf9`+the `341e260f67` refine if you revert the
+  block but want the crash fix); the `.cargo/config.toml` rust-lld block
+  (reverting changes rustflags → another full-rebuild cache bust).
+- Data-format caveats: **NONE** — no net-protocol, comp-sync, or rtsim/save
+  changes (Health/Mood are existing comps; the system only gained write access
+  to them). `clock.rs` is client+server shared but pure-runtime (no wire).
+  Fully reversible cold, with the two riders above called out.

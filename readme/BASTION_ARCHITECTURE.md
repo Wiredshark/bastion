@@ -697,6 +697,51 @@ the wedge check; a first cut that preferred adjacent regressed to 87/150).
 (no wire/save). Play-tester's `--slope-mine-scenario`/`--floating-block-scenario`
 fold in as the fuller SET-A/SET-B natural-slope + floating-remnant regression.
 
+### 2.10h CAVEIN — CAVE-IN v1 + B16 crash-fix + R7 rust-lld — tag `bastion-block-CAVEIN`
+
+**What:** mining remnants now FALL (FR11 v1 = mining-remnant collapse), with
+the entombment guarantee intact — plus the critical alt-tab crash fix (B16)
+and the R7 linker flip riding the same rebuild.
+
+**Mechanism:** at a Mine job's COMPLETION (Q3 — gate at the point of action,
+never designation-time), `floating_chunk` floods each solid component severed
+by the removed block, capped at 64 (`CAVEIN_SUPPORT_CAP`); a component
+enumerated within the cap is a floating remnant → COLLAPSE (cells → air + a
+`MINE_DROP` each). >cap = assumed supported (conservative; big anchored masses
+never spuriously fall — large overhangs defer to a future global check). Pure
++ unit-tested. Composes with 2b/B15: the standability gate clean-SKIPS an
+isolated floater; the cave-in makes it FALL.
+
+**Eject-and-injure (Q1/Q6, hardened by reviewer R8):** every colonist in the
+crush volume (a falling column, at/below the chunk) is ejected to the nearest
+TRUE STANDABLE cell outside the crush — `eject_dest` is an air-feet + air-head
++ solid-floor ring search preferring same-level lateral step-outs; `None` →
+left in place (safe: a collapse only REMOVES rock) — and injured (−25% max
+health + a 0.25 Mood fear drop; no DF-WOUND dependency). R8/F-CAVE-1 (HIGH,
+caught pre-tag): the first eject reused the shallow-pit `column_surface_z`
+scan whose all-rock deep-mine window returned the window TOP — teleporting a
+deep victim INTO stone; the rewrite air-checks every candidate. R8/F-CAVE-3
+(registry B17): the eject-injure is ONE shared fn (`cavein_eject_and_injure`)
+called by BOTH `Sys::run` and the `bastion_force_collapse_check` harness hook
+— the tested path IS the shipping path by construction.
+
+**THE ENTOMBMENT INVARIANT:** a collapse removes rock to air (never re-places
+solid onto a colonist); anyone caught is shoved out, hurt, set back — NEVER
+buried. Proven by the GATING `--cavein-scenario`, two legs: SHALLOW pad and a
+sealed DEEP chamber 130 below the surface (the F-CAVE-1 geometry). Asserts:
+collapsed + victims≥1 + ejected + feared + standable (not-embedded +
+near-ground) on both legs.
+
+**Riders:** B16 (`clock.rs` `last_game_dt` gains the missing LOWER clamp,
+`1e-6` — alt-tab overshoot made dt negative → `Duration::from_secs_f64`
+panic; vanilla Veloren, upstream candidate). R7 (`.cargo/config.toml` links
+windows-gnu via the bundled rust-lld — self-contained linker, no shim; the
+play-tester measures the voxygen link delta → keep-or-revert).
+
+**Reversible:** `git reset --hard e85ad68990`; reverting also drops B16 (Ben's
+crash returns — cherry-pick it if reverting the block) and un-flips R7
+(another full-rebuild cache bust). No wire/comp/save changes.
+
 ### 2.10 B-MAP1 — Overseer minimap (founds the map/overlay layer)
 
 **What:** the god's minimap — rendered top-down terrain tiles (WoW-addon
@@ -900,15 +945,23 @@ reviewer-F6 teleport designation-mask scope hole — hardening, tag
 auto-ladder off + Erase-deletes-ladders + crest-dismount snap +
 mine-oscillation-fixed-by-measurement + descent-gate release D16 + the
 harness-compiles-at-tag integrity fix, tag `bastion-block-LADDEROFF`),
-**and SLOPE (§2.10g — BUILD 2 slope-mining pair: flatten-hill true-crest
+SLOPE (§2.10g — BUILD 2 slope-mining pair: flatten-hill true-crest
 flat-floor + B15 standability [claimability gated on a standable stance,
-closes registry B15] — this block, tag `bastion-block-SLOPE`).** **Next
-(per `readme/FLEET_STATUS.md`):** the sccache LLD/debuginfo R7 addendum,
-god-hand in-engine (BASSET1 unblocked it), AUTON-0/1 (arbiter in the
+closes registry B15], tag `bastion-block-SLOPE`), **and CAVEIN (§2.10h —
+CAVE-IN v1: mining remnants FALL with the entombment invariant proven
+shallow + deep [reviewer-R8-hardened eject], + the B16 alt-tab dt-panic
+crash fix + the R7 rust-lld linker flip — this block, tag
+`bastion-block-CAVEIN`).** **Next (per FLEET_STATUS's AUTHORITATIVE
+CURRENT QUEUE):** NIGHT_HORROR (FR14 — creature-integration pipeline;
+append Species=35, wendigo-verbatim manifests/offsets, Beast Claws
+loadout, /spawn + arena test) → CHOP redesign (FR10 — get_area_trees
+oracle + tree_valid_at, fell-whole-tree) → COORDINATION-stigmergic-v1
+(FR13 — decaying saturation field) → AUTON-0/1 (arbiter in the
 SEQUENTIAL bastion system, NOT par_join — B10 determinism; reviewer: gate
 CLAIM+execution on current==Work + a `climb_free_until` yield-guard on the
-jobless fail-safe path), then B7 (needs-decay + self-designation; PATH-0
-slots there). Hauling (B6's other half) + SOFT-1 tuning ride the B7 window.
+jobless fail-safe path). Then B7 (needs-decay + self-designation; PATH-0
+slots there); hauling (B6's other half) + SOFT-1 tuning ride the B7
+window; FR15 tight-dig locomotion is FILED for a Build-3 bug batch.
 
 | Need | Read |
 |---|---|
