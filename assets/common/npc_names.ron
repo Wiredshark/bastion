@@ -910,6 +910,12 @@
                 keyword: "wendigo",
                 generic: "name-body-biped_large-wendigo"
             ),
+            // bastion (NIGHT_HORROR, FR14): the keyword is what makes
+            // `/spawn enemy night_horror` + RandomWith("night_horror") parse.
+            night_horror: (
+                keyword: "night_horror",
+                generic: "name-body-biped_large-night_horror"
+            ),
             troll_cave: (
                 keyword: "troll_cave",
                 generic: "name-body-biped_large-troll_cave"

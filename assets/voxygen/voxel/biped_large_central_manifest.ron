@@ -156,6 +156,61 @@
             central: ("armor.empty"),
         )
     ),
+    // bastion (NIGHT_HORROR, FR14): parts in the NATIVE wendigo frame, so the
+    // offsets are the wendigo rows VERBATIM; Female reuses the male models —
+    // the wendigo convention exactly (it has no female sculpt either).
+    (NightHorror, Male): (
+        head: (
+            offset: (-15.0, -4.5, -3.5),
+            central: ("npc.night_horror.male.head"),
+        ),
+        torso_upper: (
+            offset: (-6.0, -5.5, -6.5),
+            central: ("npc.night_horror.male.torso_upper"),
+        ),
+        torso_lower: (
+            offset: (-4.0, -2.0, -4.0),
+            central: ("npc.night_horror.male.torso_lower"),
+        ),
+        jaw: (
+            offset: (0.0, 0.0, 0.0),
+            central: ("armor.empty"),
+        ),
+        tail: (
+            offset: (0.0, 0.0, 0.0),
+            central: ("armor.empty"),
+        ),
+        second: (
+            offset: (0.0, 0.0, 0.0),
+            central: ("armor.empty"),
+        )
+    ),
+    (NightHorror, Female): (
+        head: (
+            offset: (-15.0, -4.5, -3.5),
+            central: ("npc.night_horror.male.head"),
+        ),
+        torso_upper: (
+            offset: (-6.0, -5.5, -6.5),
+            central: ("npc.night_horror.male.torso_upper"),
+        ),
+        torso_lower: (
+            offset: (-4.0, -2.0, -4.0),
+            central: ("npc.night_horror.male.torso_lower"),
+        ),
+        jaw: (
+            offset: (0.0, 0.0, 0.0),
+            central: ("armor.empty"),
+        ),
+        tail: (
+            offset: (0.0, 0.0, 0.0),
+            central: ("armor.empty"),
+        ),
+        second: (
+            offset: (0.0, 0.0, 0.0),
+            central: ("armor.empty"),
+        )
+    ),
     (Cavetroll, Male): (
         head: (
             offset: (-8.0, -8.0, -8.5),

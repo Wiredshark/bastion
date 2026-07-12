@@ -610,6 +610,8 @@ impl Body {
                     biped_large::BodyType::Female => Vec3::new(4.6, 3.0, 5.9),
                 },
                 biped_large::Species::Wendigo => Vec3::new(4.6, 3.0, 6.0),
+                // bastion (NIGHT_HORROR): the native wendigo frame — same dims.
+                biped_large::Species::NightHorror => Vec3::new(4.6, 3.0, 6.0),
             },
             Body::BipedSmall(body) => match body.species {
                 biped_small::Species::Gnarling => Vec3::new(1.0, 0.75, 1.4),
@@ -1100,6 +1102,9 @@ impl Body {
                 biped_large::Species::Ogre => 320,
                 biped_large::Species::Cyclops => 1000,
                 biped_large::Species::Wendigo => 280,
+                // bastion (NIGHT_HORROR): wendigo-tier — a lone stalker mauls
+                // a colonist, a pack is a siege; not a boss health pool.
+                biped_large::Species::NightHorror => 280,
                 biped_large::Species::Cavetroll => 240,
                 biped_large::Species::Mountaintroll => 240,
                 biped_large::Species::Swamptroll => 240,
@@ -1754,6 +1759,7 @@ impl Body {
                 (biped_large::Species::Ogre, biped_large::BodyType::Male) => (1.5, -0.25, 4.5),
                 (biped_large::Species::Cyclops, _) => (3.0, 1.1, 6.6),
                 (biped_large::Species::Wendigo, _) => (1.25, -0.2, 4.3),
+                (biped_large::Species::NightHorror, _) => (1.25, -0.2, 4.3),
                 (biped_large::Species::Cavetroll, _) => (1.8, 0.1, 4.1),
                 (biped_large::Species::Mountaintroll, _) => (1.9, 0.5, 4.2),
                 (biped_large::Species::Swamptroll, _) => (1.9, 0.0, 4.3),

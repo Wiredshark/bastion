@@ -37,6 +37,8 @@ impl Body {
             },
             Species::Cyclops => "noun-cyclops",
             Species::Wendigo => "noun-wendigo",
+            // bastion (NIGHT_HORROR, FR14): the wendigo-lineage stalker.
+            Species::NightHorror => "noun-night_horror",
             Species::Werewolf => "noun-werewolf",
             Species::Cavetroll => "noun-cave_troll",
             Species::Mountaintroll => "noun-mountain_troll",
@@ -120,6 +122,9 @@ enum_iter! {
         Strigoi = 32,
         Executioner = 33,
         Gigasfire = 34,
+        // bastion (NIGHT_HORROR, FR14): appended at the END — explicit
+        // discriminants are wire-stable, never renumber (the D7 lesson).
+        NightHorror = 35,
     }
 }
 
@@ -161,6 +166,7 @@ pub struct AllSpecies<SpeciesMeta> {
     pub strigoi: SpeciesMeta,
     pub executioner: SpeciesMeta,
     pub gigas_fire: SpeciesMeta,
+    pub night_horror: SpeciesMeta,
 }
 
 impl<'a, SpeciesMeta> core::ops::Index<&'a Species> for AllSpecies<SpeciesMeta> {
@@ -204,6 +210,7 @@ impl<'a, SpeciesMeta> core::ops::Index<&'a Species> for AllSpecies<SpeciesMeta> 
             Species::Strigoi => &self.strigoi,
             Species::Executioner => &self.executioner,
             Species::Gigasfire => &self.gigas_fire,
+            Species::NightHorror => &self.night_horror,
         }
     }
 }

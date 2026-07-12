@@ -1,0 +1,15 @@
+// bastion (NIGHT_HORROR, FR14): the stalker's spoils — hide + claws, with a
+// rare ominous trophy (the grim eyeball; ties the DF-BEAST trophy line).
+// Tuned from the wendigo table (its icy_fang/frozen_heart theme is the frost
+// lineage; night_horror is the physical stalker, so hide/claw instead).
+[
+  (1, All([
+        MultiDrop(Item("common.items.crafting_ing.hide.rugged_hide"), 1, 3),
+        MultiDrop(Item("common.items.crafting_ing.animal_misc.claw"), 2, 4),
+        Lottery([
+          (0.15, Item("common.items.crafting_ing.animal_misc.grim_eyeball")),
+          (0.85, Nothing),
+        ])
+      ],
+   )),
+]

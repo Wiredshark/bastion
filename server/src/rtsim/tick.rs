@@ -414,6 +414,10 @@ fn get_npc_entity_info(
                 comp::biped_large::Species::Ogre => "common.entity.wild.aggressive.ogre",
                 comp::biped_large::Species::Cyclops => "common.entity.wild.aggressive.cyclops",
                 comp::biped_large::Species::Wendigo => "common.entity.wild.aggressive.wendigo",
+                // bastion (NIGHT_HORROR, FR14): the wendigo-lineage stalker.
+                comp::biped_large::Species::NightHorror => {
+                    "common.entity.wild.aggressive.night_horror"
+                },
                 comp::biped_large::Species::Werewolf => "common.entity.wild.aggressive.werewolf",
                 comp::biped_large::Species::Cavetroll => "common.entity.wild.aggressive.cave_troll",
                 comp::biped_large::Species::Mountaintroll => {
