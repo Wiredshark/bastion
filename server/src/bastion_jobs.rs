@@ -22,7 +22,7 @@ use crate::Tick;
 use common::{
     bastion::{
         BUILD_MATERIAL_ITEM, CHOP_DROP_ITEM, DesignationKind, Job, JobAudit, JobId,
-        MINE_DROP_ITEM, Region, ZExtent, tool_factor,
+        MINE_DROP_ITEM, Region, ZExtent,
     },
     comp,
     comp::{
@@ -39,7 +39,6 @@ use common::{
 use common_ecs::{Job as EcsJob, Origin, Phase, System};
 use common_state::BlockChange;
 use hashbrown::{HashMap, HashSet};
-use rand::RngExt as _;
 use specs::{
     Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, Write, WriteExpect, WriteStorage,
 };
@@ -80,7 +79,7 @@ const WORK_SKILL_BONUS: f32 = 0.2;
 /// Flat completion XP grant (design doc: "grant skill XP on completion").
 const COMPLETION_XP: f32 = 8.0;
 
-fn work_rate(skill_level: u16) -> f32 {
+pub(crate) fn work_rate(skill_level: u16) -> f32 {
     (1.0 + skill_level as f32 * WORK_SKILL_BONUS) / WORK_DURATION_BASE
 }
 
@@ -2020,7 +2019,7 @@ impl<'a> System<'a> for Sys {
             // stance `(±1,0,0)`/`(0,±1,0)` sends the digger BESIDE a `+1`-gap
             // block it can't stand on top of. Pinned at claim (not re-picked).
             let target =
-                (job.pos + active.stance).map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+                crate::bastion_actions::approach_target(job.pos, active.stance);
             match active.state {
                 ActiveJobState::Traveling => {
                     // ── B6 FETCH LEG (Build material from a stockpile) ──
@@ -2053,11 +2052,10 @@ impl<'a> System<'a> for Sys {
                                     // The Chaser parks 1.5-2.5 out — emit
                                     // within the whole band.
                                     if pos.0.distance(ip) < 2.8 {
-                                        inv_manip_emitter.emit(
-                                            common::event::InventoryManipEvent(
-                                                entity,
-                                                comp::InventoryManip::Pickup(u),
-                                            ),
+                                        crate::bastion_actions::emit_pickup(
+                                            &mut inv_manip_emitter,
+                                            entity,
+                                            u,
                                         );
                                     }
                                     fetch_steer = Some(ip);
@@ -2467,11 +2465,10 @@ impl<'a> System<'a> for Sys {
                                 // a consumed uid no-ops in the handler); the
                                 // entity vanishing is the confirmation,
                                 // checked next tick.
-                                inv_manip_emitter.emit(
-                                    common::event::InventoryManipEvent(
-                                        entity,
-                                        comp::InventoryManip::Pickup(item),
-                                    ),
+                                crate::bastion_actions::emit_pickup(
+                                    &mut inv_manip_emitter,
+                                    entity,
+                                    item,
                                 );
                                 continue;
                             }
@@ -2522,37 +2519,13 @@ impl<'a> System<'a> for Sys {
                         if let Some(req) = job.required_item
                             && let Some(mut inv) = inventories.get_mut(entity)
                         {
-                            let slots: Vec<_> = inv
-                                .slots_with_id()
-                                .filter_map(|(slot, i)| {
-                                    i.as_ref()
-                                        .is_some_and(|i| {
-                                            i.item_definition_id().itemdef_id()
-                                                == Some(req)
-                                        })
-                                        .then_some(slot)
-                                })
-                                .collect();
-                            for slot in slots {
-                                if let Some(item_out) = inv.remove(slot) {
-                                    dropped += item_out.amount();
-                                    item_drop_emitter.emit(CreateItemDropEvent {
-                                        pos: comp::Pos(
-                                            job.pos.map(|e| e as f32)
-                                                + Vec3::new(0.5, 0.5, 1.0),
-                                        ),
-                                        vel: comp::Vel(Vec3::zero()),
-                                        ori: comp::Ori::default(),
-                                        item: PickupItem::new(
-                                            item_out,
-                                            *program_time,
-                                            true,
-                                        ),
-                                        loot_owner: None,
-                                        persistent: true,
-                                    });
-                                }
-                            }
+                            dropped = crate::bastion_actions::deposit_all_of(
+                                &mut inv,
+                                req,
+                                job.pos,
+                                &mut item_drop_emitter,
+                                *program_time,
+                            );
                         }
                         info!(
                             job = active.job,
@@ -2584,8 +2557,12 @@ impl<'a> System<'a> for Sys {
                                 _ => None,
                             })
                     });
-                    job.progress +=
-                        dt.0 * work_rate(skill_level) * tool_factor(job.work, tool);
+                    job.progress += crate::bastion_actions::work_progress(
+                        dt.0,
+                        skill_level,
+                        job.work,
+                        tool,
+                    );
                     if job.progress < 1.0 {
                         continue;
                     }
@@ -2705,18 +2682,13 @@ impl<'a> System<'a> for Sys {
                     // this line but our own loop (job positions are unique —
                     // `place_designation` dedupes — so a later iteration
                     // can't race this block either).
-                    let new_block = match job.kind {
-                        common::bastion::JobKind::Designated(d) => match d {
-                            DesignationKind::Mine | DesignationKind::Chop => Block::empty(),
-                            DesignationKind::Build => {
-                                Block::new(BlockKind::Rock, Rgb::new(150, 150, 150))
-                            },
-                            // B5.8: the native climbable ladder sprite — the
-                            // vertical link pathfinding knows about.
-                            DesignationKind::Ladder => Block::air(SpriteKind::Ladder),
-                            DesignationKind::Stockpile => continue,
-                        },
-                        common::bastion::JobKind::Haul { .. } => continue,
+                    // B-AG5-CORE: THE completion edit lives in
+                    // bastion_actions (None = no terrain edit for this
+                    // kind — same continue semantics as before).
+                    let Some(new_block) =
+                        crate::bastion_actions::completion_block(job.kind)
+                    else {
+                        continue;
                     };
                     block_change.set(job.pos, new_block);
                     // B5.8: a player-built ladder line registers as an
@@ -2751,23 +2723,13 @@ impl<'a> System<'a> for Sys {
                         // one entity per block. Gentle toss (was ±2.0
                         // horizontal): drops land close, so spawn-time
                         // merging within MAX_ITEM_MERGE_DIST actually fires.
-                        item_drop_emitter.emit(CreateItemDropEvent {
-                            pos: comp::Pos(job.pos.map(|e| e as f32) + Vec3::broadcast(0.5)),
-                            vel: comp::Vel(
-                                (Vec2::unit_x()
-                                    .rotated_z(rng.random::<f32>() * std::f32::consts::TAU)
-                                    * 0.5)
-                                    .with_z(rng.random_range(2.0..4.0)),
-                            ),
-                            ori: comp::Ori::default(),
-                            item: PickupItem::new(
-                                Item::new_from_asset_expect(item_id),
-                                *program_time,
-                                true,
-                            ),
-                            loot_owner: None,
-                            persistent: true,
-                        });
+                        crate::bastion_actions::emit_drop(
+                            &mut item_drop_emitter,
+                            job.pos,
+                            Item::new_from_asset_expect(item_id),
+                            *program_time,
+                            &mut rng,
+                        );
                     }
 
                     colonist.0.skills.grant_xp(job.work, COMPLETION_XP);

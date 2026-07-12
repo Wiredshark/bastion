@@ -15,6 +15,7 @@ pub mod bastion_arena;
 pub mod bastion_assets;
 // bastion (CHOP redesign, FR10): shared whole-tree detection (handler + hook).
 pub mod bastion_chop;
+pub mod bastion_actions;
 pub mod bastion_jobs;
 pub mod bastion_piles;
 mod character_creator;
