@@ -20,6 +20,19 @@ rustflags = [
     # Required for mimalloc
     "-C",
     "link-arg=-lpsapi",
+    # bastion (R7, architect-approved 2026-07-11): link with the toolchain's
+    # BUNDLED rust-lld instead of GNU ld — the link-time lever on this
+    # Windows-GNU setup (WinLibs GCC ships no ld.lld; the self-contained
+    # linker route needs no shim). Harness link measured ~14% faster; voxygen
+    # (link-bound) is the real target — play-tester measures the delta on its
+    # first post-flip rebuild; REVERT this block if the voxygen saving is
+    # negligible (<~1 min). NOTE: changing rustflags busts every warm cache
+    # (one full rebuild per worktree, absorbed by the CAVEIN gate build).
+    "-Zunstable-options",
+    "-C",
+    "link-self-contained=+linker",
+    "-C",
+    "linker-features=+lld",
 ]
 
 # Clever way to get workspace dir, from https://github.com/rust-lang/cargo/issues/3946#issuecomment-973132993
