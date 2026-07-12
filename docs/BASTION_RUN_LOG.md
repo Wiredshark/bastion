@@ -1309,3 +1309,39 @@ apart, the whole 5-crew spawned beside site A — the field forms over A
 0 orphans. PASS first-run. `bastion_saturation_at` harness hook.
 
 GATE NOTE: gate on 4a397821dc all-green except chokepoint fs_out (load); quiet x9 = 8 PASS + 1 ck_in_terrain=1 — classified the PRE-EXISTING wedge hazard (run-C2/C3 climb/magnet class) surfaced by the B8 same-seed nondeterminism, NOT a COORD regression (different asserts flake different runs; COORD writes no positions). The wedge is in the BUG LANE at SAFETY severity (entombment-adjacent); --deterministic-rtsim (the next block) makes it reproducible. The merge tree's only non-md delta vs the gated commit is cmd.rs = the cfg(test)-only aura-guard unit pin (shipping binaries bit-identical).
+
+## bastion-block-DETRNG — deterministic harness rng + conservation asserts — TAGGED 2026-07-12 (merge `0ce3517b71`)
+
+The B8 flake class retired at the root (architect-approved test-infra; the
+play-tester proved same-seed b5 runs flipped PASS/FAIL — rtsim's per-tick
+rules seeded their RNGs from OS ENTROPY, the documented B0 §4 caveat, so
+`--seed` never reproduced a run; that one hole was the whole known-flaky
+ledger: b4 arrived, b5 mine_cleared/stone_sum, b58 d_all_cleared, ck
+fs_out/in_terrain).
+
+- **`rtsim::tick_rng`** — THE one constructor every rule RNG goes through
+  (identity beats convention): OS entropy in the live game; (world seed,
+  tick, salt)-derived ChaCha under `rtsim::DETERMINISTIC_RTSIM`. The 3
+  behavioral sites converted (cleanup, migrate, npc_ai — the per-NPC salt
+  keeps each stream independent of the rayon `par_iter` order: deterministic
+  under parallelism BY CONSTRUCTION, the B10 pattern). The harness sets the
+  flag before `Server::new`; **Ben's live game never sets it** — rtsim
+  entropy is game behavior and stays.
+- **`bastion_jobs`' drop-toss rng → tick-seeded** (the 4th site; cosmetic
+  scatter → pile merge grouping; deterministic everywhere, same feel).
+- **CONSERVATION BELT (genuinely needed):** `cavein_drop_cells` counter +
+  hook; b5's stone gate becomes `27 ≤ stone_sum ≤ 27 + collapse drops`. The
+  deterministic majority path finishes the b5 mine as **26 mined + 1
+  COLLAPSE-SEVERED cell** (a real B15×cave-in composition) — the literal
+  `==27` was wrong in BOTH directions.
+- b5 window 120→180 (headroom) + `recursion_limit=256` (the `json!` literal
+  outgrew the default).
+
+PROVEN: same-seed full-JSON md5-identity when scheduling aligns; assert-level
+stability 4/4 under scheduling variance. **RESIDUAL SEAM (documented, out of
+scope):** async chunk-gen/thread scheduling still decides races (e.g.
+mine-vs-collapse on a last block) — telemetry varies, the invariant-form
+asserts tolerate it; full tick-determinism = a future infra project.
+UNBLOCKS: CASE-003's seed-sweep repro (the wedge is now hunt-able).
+
+FOLLOW-UPS IN-BLOCK: b5 stone gate -> exact per-block accounting + mine_cleared REPORTED; b4 arrived>=1 (mechanic) + count REPORTED — the last two flake-family members moved to invariant form (architect pre-approved). Final gate: 8/8 ALL GREEN on the tag commit.

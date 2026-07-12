@@ -385,3 +385,18 @@ than editing the old one.
 - Data-format caveats: **NONE** — board-resident runtime state only; the bark
   rides the existing chat pipeline. No net/comp/save changes. Fully
   reversible cold.
+
+- Block: DETRNG (B8 root fix): deterministic harness rng (`rtsim::tick_rng` +
+  `DETERMINISTIC_RTSIM` flag; the 3 rtsim rule sites + the bastion_jobs
+  drop-toss) + the cave-in conservation belt (`cavein_drop_cells` +
+  bounded stone asserts) + b5 window headroom
+- Tag: `bastion-block-DETRNG` (main `0ce3517b71`)
+- Previous green: `bastion-block-COORD` (main was at `17e0fbf91e`)
+- Revert: `git reset --hard 17e0fbf91e` on `bastion/main`
+- Undoes: rtsim tick_rng/static + the 4 rng-site conversions (rules revert to
+  OS entropy — the same-seed flake class RETURNS), the harness flag-set + the
+  rtsim dep, the conservation counter/hook/asserts, the wider b5 window.
+- Data-format caveats: **NONE** — runtime-only. The LIVE GAME's rtsim rng is
+  UNCHANGED by default (the flag is harness-set only); the one live-game
+  behavior delta is the bastion drop-toss becoming tick-seeded (cosmetic
+  scatter, identical feel). No net/comp/save changes. Fully reversible cold.

@@ -957,10 +957,11 @@ the creature-integration pipeline's reference instance; /spawn enemy
 night_horror is live] → [CHOP SHIPPED — tag `bastion-block-CHOP`:
 whole-tree felling via the World oracle, Area2D paint, per-tree boxes,
 leaves-clear-no-drop] → [COORD SHIPPED — tag `bastion-block-COORD`:
-the stigmergic saturation field, emergent crew division + flow-bark] →
---deterministic-rtsim (approved test-infra: seed rtsim tick RNG from the
-world seed, flag-gated + conservation asserts — retires the B8 flake class,
-makes the ck wedge reproducible) → AUTON-0/1
+the stigmergic saturation field, emergent crew division + flow-bark] → [DETRNG
+SHIPPED — tag `bastion-block-DETRNG`: deterministic harness rng +
+invariant-form gates, the flake class retired] → CASE-003 (the chokepoint
+soft-collision wedge: seed-sweep repro + terrain-aware push + center
+safety-net — SAFETY, architect-triaged) → AUTON-0/1
 (FR13 — decaying saturation field) → AUTON-0/1 (arbiter in the
 SEQUENTIAL bastion system, NOT par_join — B10 determinism; reviewer: gate
 CLAIM+execution on current==Work + a `climb_free_until` yield-guard on the
