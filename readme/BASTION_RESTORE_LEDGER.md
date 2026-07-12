@@ -369,3 +369,19 @@ than editing the old one.
   a new client sends `z_extent: None` for Chop paints; an OLD server would
   treat that as a legacy region Chop (harmless — Wood-only slab). Client+
   server ship together as always. No comp/save changes. Fully reversible cold.
+
+- Block: COORD (COORDINATION-stigmergic-v1, FR13-REV): the decaying saturation
+  field — emergent crew division (deposit-while-working, decay, claim-time
+  gradient read) + the coordination flow-bark
+- Tag: `bastion-block-COORD` (main `e3b792fc44`)
+- Previous green: `bastion-block-CHOP` (main was at `f96ada1f69` = CHOP + its
+  docs commit; the COORD branch base is `5deade74c8`, code-identical)
+- Revert: `git reset --hard f96ada1f69` on `bastion/main`
+- Undoes: the `saturation`/`last_bark` board fields + COORD_* constants +
+  `coord_cell` + the decay/deposit pass + the `sat_penalty` scoring term + the
+  flow-bark (ChatEvent emitter in the bastion_jobs SystemData) +
+  `saturation_at`/`bastion_saturation_at` + `--coord-scenario`. Allocation
+  reverts to distance/top-down/clump-only (the mad-scramble returns).
+- Data-format caveats: **NONE** — board-resident runtime state only; the bark
+  rides the existing chat pipeline. No net/comp/save changes. Fully
+  reversible cold.

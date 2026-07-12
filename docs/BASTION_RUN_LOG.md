@@ -1273,3 +1273,39 @@ chopped Leaves block clears with NO log. All pre-existing b5 phases intact.
 Legacy region-path Chop keeps per-block semantics (the harness fixture
 surface). Client: stepper hides on the Chop tool; Area2D paints send no
 extent.
+
+## bastion-block-COORD — COORDINATION-stigmergic-v1 (FR13-REV) — TAGGED 2026-07-12 (merge `e3b792fc44`)
+
+Ben's mad-scramble (the whole crew piling the nearest work) fixed with the
+ant-inspired STIGMERGIC design (FR13-REV, reviewer-FEASIBLE — chosen by Ben
+over the explicit sector partition; genuinely smaller: a scoring-term
+generalization + a decaying field, no scheduler).
+
+- **THE FIELD:** `saturation: HashMap<coarse-cell, f32>` on the JobBoard
+  (COORD_CELL=4). A colonist WORKING (Arrived) deposits 1/cycle at its job's
+  cell; the field decays ×0.95/cycle → a steady worker equilibrates at 20.
+  DETERMINISM (FR13-REV Q2, B0-safe): per-cell decay is order-FREE; deposits
+  iterate the sequential entity-ordered join (fixed-order float sums); reads
+  are LOCAL key lookups — no global min-search, no tie-break hazard.
+- **ALLOCATION (Q1):** `score = dist + depth + clump + saturation×0.75` —
+  repelled from crowded cells, drawn to the under-served frontier. ADDITIVE
+  alongside the in-pass clump repel (deviation from Q1's "replace," reasoned:
+  the field only knows LAST cycle's work; clump still prevents same-pass
+  re-clumping and the b58 dispersion gate rides on it). Near-flat field ≈
+  today's behavior (Q5 — continuous degrade, no small-job threshold).
+- **ANTI-BOB (Q3, the load-bearer):** the field is read ONLY at claim time (a
+  commitment point), never continuously; re-flow happens through job
+  COMPLETION (monotonic). NO crowding-re-flow band in v1 (per the recommend —
+  add the T_high/T_low hysteresis band only if it proves necessary).
+- **THE BARK (Q4):** a REAL flow (own cell ≥ claimed cell + 5) emits
+  `npc_say("Crowded here — I'll work where they're short-handed")` via a
+  ChatEvent emitter with a 30s per-colonist cooldown (`allowed_to_speak` is
+  capability, not rate-limit). The emergence, narrated.
+
+TEST: `--coord-scenario` (GATING, in the suite): two equal 98-job slabs ~20
+apart, the whole 5-crew spawned beside site A — the field forms over A
+(sat_peak 18.7 = the predicted 15-30 equilibrium band) and the crew SPLITS
+(both sites claimed SIMULTANEOUSLY — impossible under pure distance-greedy),
+0 orphans. PASS first-run. `bastion_saturation_at` harness hook.
+
+GATE NOTE: gate on 4a397821dc all-green except chokepoint fs_out (load); quiet x9 = 8 PASS + 1 ck_in_terrain=1 — classified the PRE-EXISTING wedge hazard (run-C2/C3 climb/magnet class) surfaced by the B8 same-seed nondeterminism, NOT a COORD regression (different asserts flake different runs; COORD writes no positions). The wedge is in the BUG LANE at SAFETY severity (entombment-adjacent); --deterministic-rtsim (the next block) makes it reproducible. The merge tree's only non-md delta vs the gated commit is cmd.rs = the cfg(test)-only aura-guard unit pin (shipping binaries bit-identical).
