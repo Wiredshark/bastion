@@ -132,6 +132,75 @@ impl Season {
     }
 }
 
+// ─── bastion (SEASON-2, row 42): THE seasonal consumer interface ────────
+//
+// The ONE read every seasonal consumer plugs into — DF-FARM growth,
+// DF-ROT rate, DF-LIVESTOCK breeding, DF-NIGHT flavour, DF-FESTIVAL's
+// schedule (already on [`SeasonalSchedule`]); later DF-TEMP/DF-BIOME-FX.
+// NO consumer forks a private season counter (registered in the
+// shared-substrate registry): everything derives from the four sibling
+// reads below + [`SeasonConfig::current`] for the year length +
+// [`SeasonalSchedule`] for day-of-year events. All PURE functions of the
+// master clock — this block is the CONTRACT, not the behaviours (no
+// consumer is wired here).
+//
+//   [`season`]      — the quarter bucket (discrete; UI labels, coarse
+//                     gates).
+//   [`year_phase`]  — the raw 0..1 annual position (custom curves).
+//   [`day_of_year`] — the ordinal ([`SeasonalSchedule`]'s key).
+//   [`season_bias`] — the canonical CONTINUOUS annual wave (below).
+
+/// bastion (SEASON-2): [`Season::at`] as a free function — the documented
+/// interface surface is these four sibling reads, uniformly callable.
+pub fn season(time_of_day: f64, days_in_year: f64) -> Season {
+    Season::at(time_of_day, days_in_year)
+}
+
+/// bastion (SEASON-2): the canonical seasonal WAVE, `-1.0..=1.0` — the
+/// one continuous signal consumers MAP into their own semantics (FARM:
+/// growth × (1 + k·bias); ROT: faster in the warm half; NIGHT: longer
+/// in the cold half — each owns its k, none owns a private season).
+/// A cosine anchored to the quarter definitions: +1 at MID-SUMMER
+/// (phase 0.375), −1 at MID-WINTER (phase 0.875), 0 near the
+/// spring/autumn midpoints — continuous across the year wrap (biology
+/// doesn't step at quarter boundaries; consumers wanting steps bucket
+/// via [`season`], the reverse being impossible is why the contract
+/// ships the wave).
+pub fn season_bias(time_of_day: f64, days_in_year: f64) -> f32 {
+    let phase = year_phase(time_of_day, days_in_year);
+    ((phase - 0.375) * std::f64::consts::TAU).cos() as f32
+}
+
+#[cfg(test)]
+mod bastion_season2_tests {
+    use super::*;
+
+    /// SEASON-2's contract pinned: the wave's anchors are exact (+1
+    /// mid-summer, −1 mid-winter, 0 at the spring/autumn midpoints),
+    /// it stays in range, it's continuous across the year wrap, and the
+    /// free-function surface agrees with the underlying derivations.
+    #[test]
+    fn bastion_season_bias_wave_anchors() {
+        let days = 160.0;
+        let day = crate::resources::DAY;
+        let year = day * days;
+        let at = |phase: f64| season_bias(year * phase, days);
+        assert!((at(0.375) - 1.0).abs() < 1e-6, "mid-summer peak");
+        assert!((at(0.875) + 1.0).abs() < 1e-6, "mid-winter trough");
+        assert!(at(0.125).abs() < 1e-6, "mid-spring zero crossing");
+        assert!(at(0.625).abs() < 1e-6, "mid-autumn zero crossing");
+        // Range + wrap continuity (the wave never steps).
+        for i in 0..=64 {
+            let b = at(i as f64 / 64.0);
+            assert!((-1.0..=1.0).contains(&b));
+        }
+        assert!((at(1.0 - 1e-9) - at(0.0)).abs() < 1e-3, "wrap continuity");
+        // The uniform free-fn surface agrees with the originals.
+        assert_eq!(season(year * 0.3, days), Season::at(year * 0.3, days));
+        assert_eq!(season(year * 0.3, days), Season::Summer);
+    }
+}
+
 /// bastion (SEASON-1, row 42): the day-of-year SCHEDULE — named events
 /// fire on a configured in-game day (harvest = an autumn day, a holy-day
 /// = day H): the in-game-calendar mirror of
