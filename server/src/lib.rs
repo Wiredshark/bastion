@@ -1463,6 +1463,21 @@ impl Server {
         common::bastion::CENTER_NET_FIRES.load(core::sync::atomic::Ordering::Relaxed)
     }
 
+    /// bastion (FR15 instrumentation, harness hook): locomotion baseline
+    /// counters `(no_progress_ticks, travel_timeouts, failsafe_teleports)` —
+    /// REPORTED telemetry for the before/after fix-1/fix-2 comparison.
+    pub fn bastion_locomotion_stats(&self) -> (u64, u64, u64) {
+        let board = self
+            .state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>();
+        (
+            board.no_progress_ticks,
+            board.travel_timeouts,
+            board.failsafe_teleports,
+        )
+    }
+
     /// bastion (COORDINATION-stigmergic-v1, harness hook): the saturation
     /// field at a position's coarse cell.
     pub fn bastion_saturation_at(&self, pos: Vec3<i32>) -> f32 {

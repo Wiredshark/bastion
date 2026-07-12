@@ -108,7 +108,30 @@ pub struct ActiveJob {
     /// deserialized — every insert sets it explicitly).
     #[serde(default)]
     pub stance: vek::Vec3<i32>,
+    /// bastion (FR15 fix-1): the COMMITTED walk path — up to [`WP_CAP`]
+    /// waypoints from the ONE-SHOT full-path compute at claim
+    /// (`bastion_full_path`; no incremental reset-on-move → no corner bob).
+    /// `wp_len == 0` = no committed path (the plain steer + watchdog
+    /// pipeline, unchanged); `wp_next` indexes the current drive target;
+    /// `wp_recomputes` bounds mid-travel re-plans when mining/building
+    /// invalidates a segment. Server-only (serde defaults inert — every
+    /// insert sets them; fixed-size so `ActiveJob` stays `Copy`).
+    #[serde(default)]
+    pub waypoints: [vek::Vec3<i32>; WP_CAP],
+    #[serde(default)]
+    pub wp_len: u8,
+    #[serde(default)]
+    pub wp_next: u8,
+    #[serde(default)]
+    pub wp_recomputes: u8,
 }
+
+/// bastion (FR15 fix-1): committed-waypoint capacity. Tight-dig walk paths
+/// are short (within the dig); a longer full path is SUBSAMPLED (every
+/// ceil(n/WP_CAP)-th node + always the final node), which preserves the
+/// commitment through the corners while bounding the component (Copy-able,
+/// fixed wire size).
+pub const WP_CAP: usize = 16;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ActiveJobState {

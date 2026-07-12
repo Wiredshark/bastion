@@ -1341,6 +1341,8 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_build_placed": build_placed,
         "b5_stone_sum": stone_sum,
         "b5_cavein_drop_cells": server.bastion_cavein_drop_cells(),
+        // FR15 baseline (reported): (no_progress_ticks, timeouts, teleports).
+        "b5_locomotion": server.bastion_locomotion_stats(),
         "b5_stone_entities": stone_entities,
         "b5_log_sum": log_sum,
         "b5_build_stall_untouched": build_stall_untouched,
@@ -2755,6 +2757,8 @@ fn b58_scenario(args: &Args) -> ExitCode {
         "b58_f_cleared": f_cleared,
         "b58_orphans_final": orphans_final,
         "b58_soak_avg_tick_ms": avg_tick_ms,
+        // FR15 baseline (reported): (no_progress_ticks, timeouts, teleports).
+        "b58_locomotion": server.bastion_locomotion_stats(),
     });
     // GATE NOTE (architect-sanctioned descope, final, 2026-07-10): the
     // CLIMB-EXECUTION COMPOSITE outcomes — b_exited/b_drained (b1),

@@ -1174,6 +1174,50 @@ where
 
     path_result.map(|path| path.nodes.into_iter().map(|n| n.pos).collect())
 }
+
+/// bastion (FR15 fix-1): compute a COMPLETE path ONCE — no per-call budget,
+/// no reset-on-move — for the bastion job-travel WAYPOINT COMMIT. The
+/// incremental machinery above resets its search whenever the agent moves
+/// >2 blocks from the search anchor (`start.distance_squared(startf) > 4.0`),
+/// which is exactly the beeline-then-bob at corners (FR15 Bug A): the agent
+/// moves, the search restarts, the turn is never found. This wrapper drives
+/// the SAME [`find_path`] (one pathfinder, identical walkable/transition
+/// semantics — B17 one-implementation) with a fresh one-shot search polled
+/// to completion. Bounded by [`PathLength::Medium`] (5000 iters total —
+/// tight-dig paths are short); returns `None` on unreachable/exhausted (the
+/// caller falls back to the plain steer + watchdog pipeline, unchanged).
+pub fn bastion_full_path<V>(
+    vol: &V,
+    startf: Vec3<f32>,
+    endf: Vec3<f32>,
+    traversal_cfg: &TraversalConfig,
+) -> Option<Vec<Vec3<i32>>>
+where
+    V: BaseVol<Vox = Block> + ReadVol,
+{
+    let mut astar = None;
+    // `find_path` polls a bounded slice per call (Medium = 400 iters); loop
+    // until terminal. The search's own `max_iters` (Medium = 5000) caps the
+    // total, so <= ceil(5000/400) + 1 calls always terminates.
+    for _ in 0..16 {
+        match find_path(
+            &mut astar,
+            vol,
+            startf,
+            endf,
+            traversal_cfg,
+            PathLength::Medium,
+            None,
+        ) {
+            PathResult::Pending => continue,
+            PathResult::Path(path, _cost) => {
+                return Some(path.nodes.into_iter().collect());
+            },
+            PathResult::None(_) | PathResult::Exhausted(_) => return None,
+        }
+    }
+    None
+}
 // Enable when airbraking/sensible flight is a thing
 #[cfg(feature = "rrt_pathfinding")]
 fn find_air_path<V>(

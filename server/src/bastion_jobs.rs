@@ -418,6 +418,73 @@ pub fn resolve_column_surface(
     }
 }
 
+/// bastion (FR15 fix-1): the walk-plan TraversalConfig — the agent system's
+/// B5.8 skill mapping mirrored (novice = 2-block faces, level 1+ = the 3-up
+/// scramble edges), so the claim-time full path uses the SAME vertical edges
+/// the colonist can actually execute.
+fn walk_cfg(climb_lvl: u32) -> common::path::TraversalConfig {
+    common::path::TraversalConfig {
+        node_tolerance: 1.0,
+        slow_factor: 0.0,
+        on_ground: true,
+        in_liquid: false,
+        min_tgt_dist: 1.0,
+        can_climb: true,
+        scramble_reach: 2 + (climb_lvl.min(1) as u8),
+        can_fly: false,
+        vectored_propulsion: false,
+        is_target_loaded: true,
+    }
+}
+
+/// bastion (FR15 fix-1): SUBSAMPLE a full path into the fixed-size waypoint
+/// commit — every ceil(n/WP_CAP)-th node, and the FINAL node ALWAYS lands
+/// (overwriting the tail slot when full: the goal matters more than a
+/// middle). Trivial paths (n <= 1) commit nothing (wp_len = 0 → the plain
+/// steer pipeline). ONE implementation for the claim-time commit and the
+/// mid-travel re-plan (B17).
+fn commit_waypoints(
+    path: Vec<Vec3<i32>>,
+) -> ([Vec3<i32>; comp::bastion::WP_CAP], u8) {
+    let mut waypoints = [Vec3::zero(); comp::bastion::WP_CAP];
+    let mut wp_len = 0u8;
+    // FLAT-DOMINANT routes only (z-span <= 2), by measurement: five
+    // instrumented variants all agreed — committed waypoints beat the
+    // beeline on flat geometry (b5 608-1056 vs 1566 no-progress ticks,
+    // 0 timeouts every variant) and NEVER beat baseline on vertical-heavy
+    // routes (b58 3-7x baseline across every steer/advance rule tried;
+    // the vertical legs belong to the proven anchor-staging + climb-assist
+    // pipeline). A vertical path commits nothing → wp_len = 0 → the
+    // baseline pipeline, untouched. (FR15 known-limit: vertical waypoint
+    // routing needs per-leg instrumentation before another attempt.)
+    if path
+        .iter()
+        .map(|p| p.z)
+        .max()
+        .zip(path.iter().map(|p| p.z).min())
+        .is_some_and(|(hi, lo)| hi - lo > 2)
+    {
+        return (waypoints, 0);
+    }
+    let n = path.len();
+    if n > 1 {
+        let stride = n.div_ceil(comp::bastion::WP_CAP);
+        for (i, wp) in path.into_iter().enumerate() {
+            if i == n - 1 {
+                let slot = (wp_len as usize).min(comp::bastion::WP_CAP - 1);
+                waypoints[slot] = wp;
+                wp_len = (slot + 1) as u8;
+            } else if i % stride == 0
+                && (wp_len as usize) < comp::bastion::WP_CAP - 1
+            {
+                waypoints[wp_len as usize] = wp;
+                wp_len += 1;
+            }
+        }
+    }
+    (waypoints, wp_len)
+}
+
 /// bastion (B15 / reviewer FR12): does this Mine target have a TERRAIN-ONLY
 /// standable work-stance? Returns the feet-cell OFFSET from `pos` of the best
 /// stance to COMMIT, or `None` when none exists (no way to stand and reach it)
@@ -897,6 +964,16 @@ pub struct JobBoard {
     /// bastion (B-LIVE3, mine lifecycle): designations that reached DONE
     /// (last non-access job completed). Telemetry for the harness/UI.
     pub done_count: u64,
+    /// bastion (FR15 instrumentation): locomotion baseline counters —
+    /// REPORTED telemetry, never gated. `no_progress_ticks` = travel-upkeep
+    /// ticks spent not improving toward the current steer (the A*-bob
+    /// signature accrues here); `travel_timeouts` = watchdog trips
+    /// (`stuck_time > STUCK_TIMEOUT`); `failsafe_teleports` = ULTIMATE
+    /// FAIL-SAFE fires. Baselined BEFORE the fix-1 movement change
+    /// (playbook: instrument failure/progress first), compared after.
+    pub no_progress_ticks: u64,
+    pub travel_timeouts: u64,
+    pub failsafe_teleports: u64,
     /// bastion (B-LIVE3 / reviewer F5): the UNIVERSAL stuck watchdog —
     /// seconds each colonist has been continuously BELOW GRADE without
     /// working. Feeds the VERDICT-INDEPENDENT teleport backstop: no
@@ -1816,7 +1893,13 @@ impl<'a> System<'a> for Sys {
                         let feet = pos.0.map(|e| e.floor() as i32);
                         let reach =
                             2 + colonist.0.skills.climbing.level.min(1) as i32;
-                        let steer = if job.pos.z - feet.z > reach {
+                        let over_reach = job.pos.z - feet.z > reach;
+                        // FR15: the anchor lookup is HOISTED so the
+                        // no-anchor case can fall through to the committed
+                        // waypoint path (a terraced route the full-path
+                        // compute found) or the climb-free egress (fix-2)
+                        // instead of beelining at an unreachable top target.
+                        let anchor_steer = if over_reach {
                             board
                                 .access_anchors
                                 .iter()
@@ -1867,7 +1950,161 @@ impl<'a> System<'a> for Sys {
                                         Vec3::new(base.x, base.y, target.z)
                                     }
                                 })
-                                .unwrap_or(target)
+                        } else {
+                            None
+                        };
+                        let staged_at_anchor = anchor_steer.is_some();
+                        let steer = if let Some(s) = anchor_steer {
+                            s
+                        } else if !over_reach && active.wp_len > 0 {
+                            // (HORIZONTAL-only by measurement: routing
+                            // over-reach ascents through committed paths
+                            // regressed BOTH dig scenarios — stale claim-
+                            // time paths in an actively-mined dig + slow
+                            // climb routes lose to the plain beeline the
+                            // Chaser already handles. b5 4379 vs 643,
+                            // reviewer's fix-1 scoping restored.)
+                            // FR15 fix-1 DRIVE: follow the COMMITTED path
+                            // (claim-time full-path — no per-tick re-search,
+                            // no reset-on-move corner bob). Advance on
+                            // proximity (2D-biased: nodes are walk cells, z
+                            // wobbles on steps); when a dig/build since the
+                            // plan invalidated the current cell, RE-PLAN
+                            // (bounded, the reviewer's segment-still-clear
+                            // recompute) else drop the commit — the plain
+                            // steer + watchdog pipeline is the unchanged
+                            // fallback either way.
+                            while active.wp_next < active.wp_len {
+                                let wi = (active.wp_next as usize)
+                                    .min(comp::bastion::WP_CAP - 1);
+                                let wpf = active.waypoints[wi].map(|e| e as f32)
+                                    + Vec3::new(0.5, 0.5, 0.0);
+                                // Reached LATERALLY, at-level or with the
+                                // node up to ~4 ABOVE (reached-at-its-base:
+                                // ascent is the climb-assist's job, and
+                                // steering AT a near-overhead node starves
+                                // the horizontal velocity that drives wall
+                                // contact — b58 gauntlet, 17396 ticks vs
+                                // 2469 baseline). A node >2 BELOW does NOT
+                                // advance: the agent must steer AT it and
+                                // walk off the edge — v4 advanced through
+                                // whole descent columns and parked agents
+                                // hovering at rims (b5 1557 vs 608). The
+                                // loop clears a climbed ascent stack in one
+                                // tick.
+                                let dz_up = wpf.z - pos.0.z;
+                                if pos.0.xy().distance(wpf.xy()) < 1.2
+                                    && dz_up < 4.0
+                                    && dz_up > -2.0
+                                {
+                                    active.wp_next += 1;
+                                    // An INTENTIONAL steer switch — rebase
+                                    // the watchdog (the anchor→target
+                                    // handoff's rule; without this every
+                                    // sub-4-block waypoint stride accrues
+                                    // phantom stuck_time against the OLD
+                                    // waypoint's best_dist).
+                                    active.best_dist = f32::MAX;
+                                    active.reset_dist = f32::MAX;
+                                    active.stuck_time = 0.0;
+                                } else {
+                                    break;
+                                }
+                            }
+                            if active.wp_next >= active.wp_len {
+                                // Path consumed — home in on the real target.
+                                active.wp_len = 0;
+                                active.best_dist = f32::MAX;
+                                active.reset_dist = f32::MAX;
+                                target
+                            } else {
+                                let wp =
+                                    active.waypoints[active.wp_next as usize];
+                                let open = |p: Vec3<i32>| {
+                                    terrain
+                                        .get(p)
+                                        .map(|b| !b.is_filled())
+                                        .unwrap_or(false)
+                                };
+                                if open(wp) && open(wp + Vec3::unit_z()) {
+                                    wp.map(|e| e as f32)
+                                        + Vec3::new(0.5, 0.5, 0.0)
+                                } else if active.wp_recomputes < 2 {
+                                    active.wp_recomputes += 1;
+                                    let goal = (job.pos + active.stance)
+                                        .map(|e| e as f32)
+                                        + Vec3::new(0.5, 0.5, 0.0);
+                                    let (wps, len) =
+                                        common::path::bastion_full_path(
+                                            &*terrain,
+                                            pos.0,
+                                            goal,
+                                            &walk_cfg(
+                                                colonist.0.skills.climbing.level
+                                                    as u32,
+                                            ),
+                                        )
+                                        .map(commit_waypoints)
+                                        .unwrap_or((
+                                            [Vec3::zero();
+                                                comp::bastion::WP_CAP],
+                                            0,
+                                        ));
+                                    active.waypoints = wps;
+                                    active.wp_len = len;
+                                    active.wp_next = 0;
+                                    active.best_dist = f32::MAX;
+                                    active.reset_dist = f32::MAX;
+                                    // This tick steers plain; the fresh
+                                    // commit (if any) drives from next tick.
+                                    target
+                                } else {
+                                    active.wp_len = 0;
+                                    active.best_dist = f32::MAX;
+                                    active.reset_dist = f32::MAX;
+                                    target
+                                }
+                            }
+                        } else if over_reach && active.stuck_time > 4.0 {
+                            // FR15 fix-2: STAIRLESS over-reach ascent with
+                            // no anchor, EVIDENCED wall-hang (4s of no
+                            // progress — beeline-first by measurement: a
+                            // preemptive climb taxed every ascent and
+                            // regressed b5/b58; the Chaser handles most).
+                            // Fires well before the 10s release machinery.
+                            // The per-colonist CLIMB-OUT-ASSIST: grant the
+                            // universal climb-free window (the mine-done
+                            // dispersal package; write-guarded, the comp is
+                            // change-tracked) + steer UP THE OWN COLUMN
+                            // (vertical bearing keeps the body on its wall;
+                            // the assist lifts). Each colonist climbs its
+                            // OWN wall — no shared ladder, no queue-fight
+                            // BY CONSTRUCTION. The staging condition
+                            // expires as feet rise within reach; teleport
+                            // stays the rare backstop. Any committed path
+                            // is VOID once we climb a different route.
+                            if colonist.0.climb_free_until < time.0 + 1.5 {
+                                colonist.0.climb_free_until = time.0 + 15.0;
+                            }
+                            active.wp_len = 0;
+                            // Steer at the NEAREST RIM (the reviewer's
+                            // fix-2 spec — egress_scan's annulus target):
+                            // lateral + vertical components keep the wall
+                            // contact decisive; a straight-up own-column
+                            // steer fought overhangs (bad-seam draws blew
+                            // up to 5 fail-safe teleports). Sheer shaft
+                            // (no rim in the annulus) → own column.
+                            match egress_scan(&terrain, feet, reach).1 {
+                                Some(rim) => {
+                                    rim.map(|e| e as f32)
+                                        + Vec3::new(0.5, 0.5, 1.0)
+                                },
+                                None => Vec3::new(
+                                    pos.0.x,
+                                    pos.0.y,
+                                    (job.pos.z + 1) as f32,
+                                ),
+                            }
                         } else {
                             target
                         };
@@ -1878,7 +2115,12 @@ impl<'a> System<'a> for Sys {
                         // queue time. The colonist actually climbing (in
                         // or nearly in the column) never yields; promotion
                         // re-evaluates every arbitration pass.
-                        if steer != target {
+                        // FR15: gated on ANCHOR staging specifically — a
+                        // committed-WAYPOINT steer is also != target, but a
+                        // crew-mate near my next waypoint is not a queue
+                        // (the misfire parked whole crews in the fix-1
+                        // first flight: b58 [20767,36,3] vs [2469,3,0]).
+                        if staged_at_anchor {
                             let my_d = pos.0.xy().distance(steer.xy());
                             // Queue-mates only: near MY level (a pad worker
                             // strolling past the shaft TOP is not ahead of
@@ -1933,7 +2175,12 @@ impl<'a> System<'a> for Sys {
                             // dead-Traveling-arm mystery is isolated —
                             // plain accrual, the run-7 configuration.)
                             active.stuck_time += dt.0;
+                            // FR15 instrumentation: a tick spent NOT
+                            // improving toward the current steer — the
+                            // A*-bob accrues here (reported baseline).
+                            board.no_progress_ticks += 1;
                             if active.stuck_time > STUCK_TIMEOUT {
+                                board.travel_timeouts += 1;
                                 // B6 SOFT-0 QUEUE RELEASE: a stall while
                                 // STAGED at an anchor (steer != target) is
                                 // usually WAITING for a single-file
@@ -2004,7 +2251,11 @@ impl<'a> System<'a> for Sys {
                                 // progress reset the clock — so a staged
                                 // timeout here is a genuine stall: clean
                                 // release + churn accrual.
-                                if steer != target {
+                                // FR15: anchor-staging SPECIFICALLY (a
+                                // stalled waypoint traveler takes the
+                                // ordinary carve/unreachable pipeline, the
+                                // pre-fix behavior for direct steers).
+                                if staged_at_anchor {
                                     let feet = pos.0.map(|e| e.floor() as i32);
                                     let reach = 2
                                         + colonist.0.skills.climbing.level.min(1)
@@ -2830,6 +3081,9 @@ impl<'a> System<'a> for Sys {
                     pos.0 = d.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
                     vel.0 = Vec3::zero();
                     board.stuck_watch.remove(uid);
+                    // FR15 instrumentation: fix-2's success measure is this
+                    // reverting to a RARE backstop (reported baseline).
+                    board.failsafe_teleports += 1;
                 }
             }
         }
@@ -2912,8 +3166,11 @@ impl<'a> System<'a> for Sys {
         // the pass — two idle colonists can't pick the same job); the
         // `ActiveJob` comps are inserted afterwards (can't insert while the
         // anti-join borrows the storage).
-        // (entity, job, committed work-STANCE offset) — B15/FR12.
-        let mut assignments: Vec<(specs::Entity, JobId, Vec3<i32>)> = Vec::new();
+        // (entity, job, committed work-STANCE offset, claim-time pos,
+        // climbing level) — B15/FR12 + FR15 fix-1 (the pos/skill feed the
+        // one-shot full-path waypoint commit at insert).
+        let mut assignments: Vec<(specs::Entity, JobId, Vec3<i32>, Vec3<f32>, u32)> =
+            Vec::new();
         // B5.8 (DF-style dig behavior, Ben's live-test requirement):
         // 1. REACHABILITY GATE — a Mine job is claimable only when EXPOSED
         //    (≥1 of its 6 neighbors non-filled): a digger can stand next to
@@ -3213,10 +3470,40 @@ impl<'a> System<'a> for Sys {
                 // offset for a gated Mine cell; on-top (0,0,1) for everything
                 // else (non-Mine jobs, and the pre-B15 default).
                 let stance = standable.get(&job_id).copied().unwrap_or(Vec3::unit_z());
-                assignments.push((entity, job_id, stance));
+                assignments.push((
+                    entity,
+                    job_id,
+                    stance,
+                    pos.0,
+                    colonist.0.skills.climbing.level as u32,
+                ));
             }
         }
-        for (entity, job_id, stance) in assignments {
+        for (entity, job_id, stance, cpos, climb_lvl) in assignments {
+            // FR15 fix-1: the ONE-SHOT full-path WAYPOINT COMMIT — computed
+            // once at claim (bastion_full_path: no incremental budget, no
+            // reset-on-move → no corner bob), target = the committed stance
+            // FEET cell. A long path is SUBSAMPLED to WP_CAP (stride + the
+            // final node — commitment through the corners, bounded size).
+            // None/trivial → wp_len = 0 and the plain steer + watchdog
+            // pipeline runs exactly as before (graceful fallback, no new
+            // failure mode). Claim is low-frequency; the bounded search
+            // (Medium: 5000 iters) is a claim-time cost, not per-tick.
+            let (waypoints, wp_len) = board
+                .jobs
+                .get(&job_id)
+                .and_then(|job| {
+                    let goal = (job.pos + stance).map(|e| e as f32)
+                        + Vec3::new(0.5, 0.5, 0.0);
+                    common::path::bastion_full_path(
+                        &*terrain,
+                        cpos,
+                        goal,
+                        &walk_cfg(climb_lvl),
+                    )
+                })
+                .map(commit_waypoints)
+                .unwrap_or(([Vec3::zero(); comp::bastion::WP_CAP], 0));
             let _ = active_jobs.insert(entity, ActiveJob {
                 job: job_id,
                 state: ActiveJobState::Traveling,
@@ -3225,6 +3512,10 @@ impl<'a> System<'a> for Sys {
                 reset_dist: f32::MAX,
                 soft_granted: false,
                 stance,
+                waypoints,
+                wp_len,
+                wp_next: 0,
+                wp_recomputes: 0,
             });
         }
     }
