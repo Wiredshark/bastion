@@ -4600,18 +4600,29 @@ fn bag1_scenario(args: &Args) -> ExitCode {
         }
     };
 
-    // Pick the densest CIVILISED cluster (a town). `npc.home` is DEAD at
-    // worldgen (the generator's only with_home call is commented out — a
-    // vanilla quirk; it only populates via runtime migration), so site
-    // population can't be derived from it. Role::Civilised(Some(profession))
-    // IS set reliably at generation for every real townsfolk NPC — cluster
-    // on that (Sonnet's proofread, R-BAG1).
-    let site_wpos: Vec2<f32> = {
+    // 35.1: SETTLE FIRST — the rtsim NPC table is EMPTY before ticking
+    // (measured: 0 civilised pre-tick vs 1985 sixty ticks later; town
+    // population arrives via the tick-driven population rules, not at
+    // `Data::generate`). The original pre-tick pick could only ever see
+    // the earliest spawns — which is exactly how it landed on the airship
+    // dock. Let the world people itself before choosing the fixture site.
+    tick(&mut server, 120);
+    // Pick the densest GROUNDED civilised cluster (a real town street).
+    // `npc.home` is DEAD at worldgen (the generator's only with_home call
+    // is commented out — a vanilla quirk), so site population can't be
+    // derived from it; Role::Civilised(Some(profession)) IS set reliably —
+    // cluster on that (Sonnet's proofread, R-BAG1). 35.1: the Captain
+    // exclusion alone still picked an AIRSHIP DOCK (crew/passengers are
+    // civilised non-Captains whose mount-frozen wpos stacks at one point =
+    // an artificially dense "cluster"), so the cluster input now also
+    // requires GROUNDED: npc z within a few blocks of the approximate
+    // terrain altitude (worldgen's own cheap no-chunk-load query) — deck
+    // riders and platform crew filter out, street villagers stay.
+    let all_civ: Vec<(Vec2<f32>, f32)> = {
         let ecs = server.state().ecs();
         let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
         let data = rtsim.state().data();
-        let civilised: Vec<Vec2<f32>> = data
-            .npcs
+        data.npcs
             .npcs
             .iter()
             .filter(|(_, n)| {
@@ -4621,19 +4632,36 @@ fn bag1_scenario(args: &Args) -> ExitCode {
                         if !matches!(p, common::rtsim::Profession::Captain)
                 ) && n.bastion_colonist.is_none()
             })
-            .map(|(_, n)| n.wpos.xy())
-            .collect();
-        civilised
-            .iter()
-            .max_by_key(|p| {
-                civilised
-                    .iter()
-                    .filter(|q| p.distance_squared(**q) < 100.0 * 100.0)
-                    .count()
-            })
-            .copied()
-            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+            .map(|(_, n)| (n.wpos.xy(), n.wpos.z))
+            .collect()
     };
+    let grounded: Vec<Vec2<f32>> = all_civ
+        .iter()
+        .filter(|(xy, z)| {
+            server
+                .world()
+                .sim()
+                .get_alt_approx(xy.map(|e| e as i32))
+                .is_some_and(|alt| (z - alt).abs() < 6.0)
+        })
+        .map(|(xy, _)| *xy)
+        .collect();
+    let airborne_civ = all_civ.len() - grounded.len();
+    let site_wpos: Vec2<f32> = grounded
+        .iter()
+        .max_by_key(|p| {
+            grounded
+                .iter()
+                .filter(|q| p.distance_squared(**q) < 100.0 * 100.0)
+                .count()
+        })
+        .copied()
+        .unwrap_or_else(|| Vec2::new(16384.0, 16384.0));
+    info!(
+        grounded = grounded.len(),
+        airborne = airborne_civ,
+        "bag1 (35.1): civilised ground filter"
+    );
     server.bastion_force_load_area(site_wpos, 6);
     // Let the town promote + the promoted agents act on their intents.
     tick(&mut server, 60);
