@@ -3778,6 +3778,13 @@ impl<'a> System<'a> for Sys {
                     let needs_fetch = board.jobs.get(&job_id).is_some_and(|j| {
                         j.required_item.is_some()
                             && !carries_material
+                            // 34.1 (Sonnet tag-review R-B6HAUL): a RE-CLAIMED
+                            // mid-fetch job already HOLDS its reservation —
+                            // reserving again orphaned a second one (the
+                            // `.or(fetch_rid)` kept the old id and the new
+                            // one leaked, one item permanently unreservable
+                            // per re-claim).
+                            && j.reservation.is_none()
                             && !matches!(
                                 j.kind,
                                 common::bastion::JobKind::Haul { .. }
