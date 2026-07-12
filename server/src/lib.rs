@@ -818,6 +818,23 @@ impl Server {
             .0
     }
 
+    /// bastion (SEASON-1, harness hook): does the named event fire on the
+    /// given day-of-year, through the LOADED RON schedule (the exact query
+    /// consumers will use)?
+    pub fn bastion_seasonal_event(&self, day_of_year: u32, name: &str) -> bool {
+        common::time::SeasonalSchedule::current().is_event_on(day_of_year, name)
+    }
+
+    /// bastion (SEASON-1, harness hook): every scheduled event name firing
+    /// on the given day-of-year (name-sorted), through the loaded schedule.
+    pub fn bastion_seasonal_events_on(&self, day_of_year: u32) -> Vec<String> {
+        common::time::SeasonalSchedule::current()
+            .events_on(day_of_year)
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    }
+
     /// bastion (B-AG2, harness hook): the archetype table's weight for
     /// (key, activity) — probes the EXACT lookup path the brain's
     /// converted gates use (`archetype_chance`).

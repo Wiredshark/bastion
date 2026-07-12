@@ -189,6 +189,12 @@ struct Args {
     #[arg(long)]
     season_scenario: bool,
 
+    /// bastion (SEASON-1, row 42): the day-of-year schedule — named
+    /// events fire on exactly their configured in-game day through the
+    /// loaded RON schedule (Calendar::is_event's in-game mirror).
+    #[arg(long)]
+    season1_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -305,6 +311,8 @@ fn main() -> ExitCode {
         archetype_scenario(&args)
     } else if args.season_scenario {
         season_scenario(&args)
+    } else if args.season1_scenario {
+        season1_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3385,6 +3393,103 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (SEASON-1, row 42): the day-of-year schedule in vivo — the
+/// RON-loaded `SeasonalSchedule` fires "harvest" on exactly day 90 (an
+/// autumn day of the 160-day year) and "holy_day" on exactly day 20,
+/// through the SAME query consumers will use; adjacent days, unknown
+/// names, and empty days all stay silent; and the fire-day agrees with
+/// SEASON-0's own day-of-year derivation (a harvest-day tod round-trips
+/// to the firing ordinal). Pure lookup — deterministic by construction.
+fn season1_scenario(args: &Args) -> ExitCode {
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-season1-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-season1".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-season1-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+    tick(&mut server, 5);
+
+    // The loaded schedule fires on EXACTLY the configured days.
+    let fires_ok = server.bastion_seasonal_event(90, "harvest")
+        && !server.bastion_seasonal_event(89, "harvest")
+        && !server.bastion_seasonal_event(91, "harvest")
+        && server.bastion_seasonal_event(20, "holy_day")
+        && !server.bastion_seasonal_event(90, "holy_day")
+        && !server.bastion_seasonal_event(90, "no_such_event");
+    let day90 = server.bastion_seasonal_events_on(90);
+    let day20 = server.bastion_seasonal_events_on(20);
+    let listing_ok = day90 == vec!["harvest".to_string()]
+        && day20 == vec!["holy_day".to_string()]
+        && server.bastion_seasonal_events_on(37).is_empty();
+
+    // Cross-derivation agreement: a tod ON the harvest day derives to
+    // ordinal 90 via SEASON-0, and that ordinal fires the event — the
+    // two blocks compose (day-of-year IS the schedule's key), and day 90
+    // is an AUTUMN day (index 2) as the done-when phrases it.
+    let (season_idx, _, doy, days_in_year) =
+        server.bastion_season_probe(60.0 * 60.0 * 24.0 * 90.5);
+    let compose_ok = days_in_year == 160.0
+        && doy == 90
+        && season_idx == 2
+        && server.bastion_seasonal_event(doy, "harvest");
+
+    let result = serde_json::json!({
+        "season1_fires_ok": fires_ok,
+        "season1_listing_ok": listing_ok,
+        "season1_compose_ok": compose_ok,
+        "season1_day90": day90,
+        "season1_day20": day20,
+    });
+    let pass = fires_ok && listing_ok && compose_ok;
+    println!("{}", result);
+    println!("SEASON1 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }

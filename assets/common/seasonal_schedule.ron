@@ -1,0 +1,14 @@
+// bastion (SEASON-1, row 42): the day-of-year event schedule — the
+// in-game mirror of the real-world Calendar's holiday set
+// (common/src/time.rs::SeasonalSchedule). Days are 0-based ordinals
+// into the season_config.ron year (160 days: spring 0-39, summer
+// 40-79, autumn 80-119, winter 120-159). MECHANISM-PROOF entries only —
+// real festival content lands with DF-FESTIVAL, which subscribes to
+// this schedule; entries here are the done-when's own two examples
+// (harvest = an autumn day; a holy-day).
+(
+    events: {
+        "harvest": 90,
+        "holy_day": 20,
+    },
+)

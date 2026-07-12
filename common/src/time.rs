@@ -132,6 +132,106 @@ impl Season {
     }
 }
 
+/// bastion (SEASON-1, row 42): the day-of-year SCHEDULE — named events
+/// fire on a configured in-game day (harvest = an autumn day, a holy-day
+/// = day H): the in-game-calendar mirror of
+/// [`crate::calendar::Calendar::is_event`], keyed on SEASON-0's derived
+/// [`day_of_year`] instead of the real-world wall-clock date. The
+/// real-world [`crate::calendar::Calendar`] stays completely orthogonal
+/// — both can independently trigger the same festival (the design doc's
+/// explicit invariant). This is ONLY the schedule/query mechanism:
+/// no festival content, no consumers (DF-FESTIVAL subscribes later;
+/// SEASON-2 owns the one-interface contract).
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct SeasonalSchedule {
+    /// Named event → the day-of-year it fires (0-based, `< days_in_year`).
+    pub events: std::collections::HashMap<String, u32>,
+}
+
+impl crate::assets::FileAsset for SeasonalSchedule {
+    const EXTENSION: &'static str = "ron";
+
+    fn from_bytes(
+        bytes: std::borrow::Cow<[u8]>,
+    ) -> Result<Self, crate::assets::BoxedError> {
+        crate::assets::load_ron(&bytes)
+    }
+}
+
+impl SeasonalSchedule {
+    /// The loaded schedule (hot-reloadable asset); an EMPTY schedule on a
+    /// missing/broken asset — graceful: nothing fires, nothing panics.
+    pub fn current() -> Self {
+        use crate::assets::AssetExt;
+        Self::load("common.seasonal_schedule")
+            .map(|h| h.read().clone())
+            .unwrap_or_default()
+    }
+
+    /// [`crate::calendar::Calendar::is_event`]'s mirror, one axis over:
+    /// does `name` fire on this in-game day-of-year? Pure lookup —
+    /// deterministic by construction (same day, same answer, always).
+    pub fn is_event_on(&self, day_of_year: u32, name: &str) -> bool {
+        self.events.get(name).is_some_and(|d| *d == day_of_year)
+    }
+
+    /// Every named event firing on this day, name-sorted (a deterministic
+    /// iteration order for future consumers; the map itself is unordered).
+    pub fn events_on(&self, day_of_year: u32) -> Vec<&str> {
+        let mut names: Vec<&str> = self
+            .events
+            .iter()
+            .filter(|(_, d)| **d == day_of_year)
+            .map(|(n, _)| n.as_str())
+            .collect();
+        names.sort_unstable();
+        names
+    }
+}
+
+#[cfg(test)]
+mod bastion_season1_tests {
+    use super::*;
+
+    fn sample() -> SeasonalSchedule {
+        crate::assets::load_ron(
+            br#"(
+    events: {
+        "harvest": 90,
+        "holy_day": 20,
+        "founders_day": 20,
+    },
+)"#,
+        )
+        .expect("inline schedule RON parses")
+    }
+
+    /// SEASON-1's done-when in miniature: a named event fires on exactly
+    /// its configured day-of-year (not adjacent days), same-day events
+    /// coexist, unknown names and the empty default never fire, and the
+    /// harvest entry really is an AUTUMN day under the shipped year shape.
+    #[test]
+    fn bastion_seasonal_schedule_fires_on_day() {
+        let s = sample();
+        assert!(s.is_event_on(90, "harvest"));
+        assert!(!s.is_event_on(89, "harvest"));
+        assert!(!s.is_event_on(91, "harvest"));
+        assert!(s.is_event_on(20, "holy_day"));
+        assert!(!s.is_event_on(90, "holy_day"));
+        assert!(!s.is_event_on(90, "no_such_event"));
+        assert_eq!(s.events_on(20), vec!["founders_day", "holy_day"]);
+        assert_eq!(s.events_on(90), vec!["harvest"]);
+        assert!(s.events_on(37).is_empty());
+        assert!(!SeasonalSchedule::default().is_event_on(90, "harvest"));
+        // The done-when's own phrasing pinned: harvest = an AUTUMN day
+        // (day 90 of a 160-day year sits in the third quarter), through
+        // SEASON-0's derivation.
+        let day = crate::resources::DAY;
+        assert_eq!(Season::at(day * 90.0, 160.0), Season::Autumn);
+        assert_eq!(day_of_year(day * 90.0, 160.0), 90);
+    }
+}
+
 #[cfg(test)]
 mod bastion_season_tests {
     use super::*;
