@@ -31,7 +31,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Parser)]
 #[command(name = "bastion-harness", about)]
@@ -3506,6 +3506,18 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
     let mut ever_out: std::collections::HashSet<u64> = std::collections::HashSet::new();
     let mut ck_unreachable_max = 0usize;
     let mut ck_in_terrain = 0usize;
+    // CASE-003 trip forensics: on each in-terrain hit, capture the
+    // soft-collision signature (nearest-other distance + overlap count —
+    // the B19 hypothesis is another colonist packed inside the AABB) and
+    // per-uid consecutive-TICK streaks (persistent pinch vs transient
+    // clip). The probe runs EVERY tick — a transient pinch lives a handful
+    // of ticks and the 1s sample cadence catches ~3% of them; the GATE
+    // counter (ck_in_terrain) stays sample-cadence for gate-compat, the
+    // per-tick count is reported alongside.
+    let mut ck_in_terrain_ticks = 0usize;
+    let mut ck_trip_events: Vec<serde_json::Value> = Vec::new();
+    let mut ck_trip_streaks: std::collections::HashMap<u64, (u32, u32, u32)> =
+        std::collections::HashMap::new();
     let mut ck_cleared = false;
     // Per-colonist peak height — the unambiguous "how far did each get"
     // diagnostic (log-grep on wrapped positions proved unreliable).
@@ -3516,19 +3528,89 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
     // crew squeeze itself finishes in ~60s; the window pays for the known
     // idle-behavior gap (B7 rally) without weakening the 5/5 promise.
     for i in 0..600 {
-        tick(&mut server, 30);
+        for t in 0..30u64 {
+            tick(&mut server, 1);
+            // CASE-003 fine probe (every tick): center-in-terrain +
+            // the pair signature at the moment of the trip.
+            let roster = server.bastion_colonist_states_full();
+            let mut tripped_now: std::collections::HashSet<u64> =
+                std::collections::HashSet::new();
+            for (u, n, p, _) in &roster {
+                let bp = p.map(|e| e.floor() as i32) + Vec3::unit_z();
+                let bkind = server
+                    .state()
+                    .terrain()
+                    .get(bp)
+                    .ok()
+                    .map(|b| b.kind());
+                if bkind.is_some_and(|k| k.is_filled()) {
+                    ck_in_terrain_ticks += 1;
+                    tripped_now.insert(*u);
+                    let mut nearest = f32::INFINITY;
+                    let mut n_overlap = 0u32;
+                    for (u2, _, p2, _) in &roster {
+                        if u2 != u {
+                            let d = (*p2 - *p).magnitude();
+                            nearest = nearest.min(d);
+                            // Humanoid collider radius ≈ 0.4 → centers
+                            // closer than ~2r means the soft push let
+                            // AABBs overlap.
+                            if d < 0.9 {
+                                n_overlap += 1;
+                            }
+                        }
+                    }
+                    warn!(
+                        sample = i,
+                        tick_in_sample = t,
+                        uid = u,
+                        name = %n,
+                        pos = ?p,
+                        cell = ?bp,
+                        kind = ?bkind,
+                        nearest_other = nearest,
+                        overlapping_others = n_overlap,
+                        "CK-TRIP: colonist center in terrain"
+                    );
+                    if ck_trip_events.len() < 24 {
+                        ck_trip_events.push(serde_json::json!({
+                            "sample": i,
+                            "tick_in_sample": t,
+                            "uid": u,
+                            "name": n,
+                            "pos": [p.x, p.y, p.z],
+                            "cell": [bp.x, bp.y, bp.z],
+                            "kind": format!("{:?}", bkind),
+                            "nearest_other": nearest,
+                            "overlapping_others": n_overlap,
+                        }));
+                    }
+                }
+            }
+            for (u, _, _, _) in &roster {
+                let s = ck_trip_streaks.entry(*u).or_insert((0, 0, 0));
+                if tripped_now.contains(u) {
+                    s.0 += 1;
+                    s.1 += 1;
+                    s.2 = s.2.max(s.1);
+                } else {
+                    s.1 = 0;
+                }
+            }
+        }
         ck_unreachable_max = ck_unreachable_max.max(server.bastion_job_audit().unreachable);
-        for (u, _n, p, _) in server.bastion_colonist_states_full() {
-            let e = peak_z.entry(u).or_insert(p.z);
+        let roster = server.bastion_colonist_states_full();
+        for (u, _n, p, _) in &roster {
+            let e = peak_z.entry(*u).or_insert(p.z);
             if p.z > *e {
                 *e = p.z;
             }
             if p.z >= k_gz as f32 + 0.5 {
-                ever_out.insert(u);
+                ever_out.insert(*u);
             }
-            // Hard-terrain invariant: the colonist's center block must
-            // never be solid (soft-collision must never push through a
-            // wall).
+            // Hard-terrain invariant (the GATE counter, sample cadence):
+            // the colonist's center block must never be solid
+            // (soft-collision must never push through a wall).
             let bp = p.map(|e| e.floor() as i32) + Vec3::unit_z();
             if server
                 .state()
@@ -3719,6 +3801,13 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
         "ck_unreachable_max": ck_unreachable_max,
         "ck_unreachable_final": ck_unreachable_final,
         "ck_in_terrain": ck_in_terrain,
+        "ck_in_terrain_ticks": ck_in_terrain_ticks,
+        // CASE-003 belt telemetry: >0 means the phys CENTER-SAFETY-NET
+        // corrected an embedding this run — the invariant HELD by
+        // construction, but a writer bug exists (REPORTED, never gated).
+        "ck_center_net_fires": server.bastion_center_net_fires(),
+        "ck_trip_events": ck_trip_events,
+        "ck_trip_streak_max": ck_trip_streaks.values().map(|s| s.2).max().unwrap_or(0),
         "ck_control_spacing": ck_control_spacing,
         "ck_peaks": peaks,
         "ck_rim_feet": k_gz + 1,

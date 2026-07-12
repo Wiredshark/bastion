@@ -815,6 +815,90 @@ pub struct BastionColonist {
     pub climb_free_until: f64,
 }
 
+/// bastion (CASE-003 belt): count of per-tick CENTER-SAFETY-NET fires — a
+/// colonist's torso-center was found inside solid terrain after physics
+/// integration and was relocated to the nearest standable cell. The net is
+/// the "entombment impossible by construction" guarantee; the counter is
+/// REPORTED telemetry (harness + ops visibility): with the writer-side bugs
+/// fixed it should sit at 0, and any climb marks a NEW embedding writer to
+/// hunt (never gate on it — the net firing is the invariant HOLDING).
+pub static CENTER_NET_FIRES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// CAVE-IN v1 (FR11, reviewer R8/F-CAVE-1) + CASE-003: the nearest TRUE
+/// STANDABLE cell for relocating a colonist — air at the feet AND head with a
+/// solid floor, preferring a LATERAL step-out at the victim's own level and
+/// rising/dropping only as needed. Deliberately NOT a surface search: a
+/// surface-window scan deep underground is ALL ROCK and returns the window
+/// top — teleporting a deep-mine victim INTO solid stone (the exact
+/// entombment the invariant forbids; R8 F-CAVE-1). Returns `None` when no
+/// safe cell exists in range — the caller leaves the victim IN PLACE.
+///
+/// ONE implementation for every relocation caller (cave-in eject, the phys
+/// center-safety-net) — identity by construction (B17). The closure-based
+/// core is the testable engine ([`floating_chunk`]'s pattern); the
+/// [`TerrainGrid`](crate::terrain::TerrainGrid) wrapper is the shipping path.
+pub fn eject_dest_impl(
+    solid: impl Fn(Vec3<i32>) -> bool,
+    feet: Vec3<i32>,
+    crush_xy: &hashbrown::HashSet<Vec2<i32>>,
+) -> Option<Vec3<i32>> {
+    let standable =
+        |c: Vec3<i32>| !solid(c) && !solid(c + Vec3::unit_z()) && solid(c - Vec3::unit_z());
+    // Nearest ring out; within a ring, smallest |dz| first (lateral step-out
+    // beats climbing), searching a modest vertical band around the victim.
+    for r in 1..=8i32 {
+        for dz_abs in 0..=4i32 {
+            let dzs: &[i32] = if dz_abs == 0 { &[0] } else { &[dz_abs, -dz_abs] };
+            for &dz in dzs {
+                for dx in -r..=r {
+                    for dy in -r..=r {
+                        if dx.abs().max(dy.abs()) != r {
+                            continue;
+                        }
+                        let (x, y) = (feet.x + dx, feet.y + dy);
+                        if crush_xy.contains(&Vec2::new(x, y)) {
+                            continue; // never eject INTO the falling footprint
+                        }
+                        let c = Vec3::new(x, y, feet.z + dz);
+                        if standable(c) {
+                            return Some(c);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// [`eject_dest_impl`] over live terrain (the shipping path). An errored
+/// terrain read (unloaded chunk) counts as NOT solid for the feet/head test
+/// and NOT solid for the floor test — i.e. an unloaded cell can never be
+/// accepted as standable (the floor check fails), so the search never
+/// relocates anyone into unknown space.
+pub fn eject_dest(
+    terrain: &crate::terrain::TerrainGrid,
+    feet: Vec3<i32>,
+    crush_xy: &hashbrown::HashSet<Vec2<i32>>,
+) -> Option<Vec3<i32>> {
+    use crate::vol::ReadVol;
+    eject_dest_impl(
+        |p| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false),
+        feet,
+        crush_xy,
+    )
+}
+
+/// [`eject_dest`] with no crush exclusion — the CENTER-SAFETY-NET's form
+/// (callers outside this crate may not depend on hashbrown directly).
+pub fn eject_dest_free(
+    terrain: &crate::terrain::TerrainGrid,
+    feet: Vec3<i32>,
+) -> Option<Vec3<i32>> {
+    eject_dest(terrain, feet, &hashbrown::HashSet::new())
+}
+
 const COLONIST_FIRST_NAMES: &[&str] = &[
     "Awen", "Bram", "Cerys", "Doran", "Eira", "Fenn", "Gwil", "Hesta", "Ivo", "Jena", "Kell",
     "Lira", "Maddoc", "Nia", "Osric", "Peri", "Quill", "Rhosyn", "Sten", "Tegan", "Ulric", "Vada",
@@ -1190,5 +1274,50 @@ impl BastionColonist {
             soft_until: 0.0,
             climb_free_until: 0.0,
         }
+    }
+}
+
+#[cfg(test)]
+mod eject_tests {
+    use super::*;
+
+    /// CASE-003 class pin: a cell whose FLOOR is solid but whose feet or
+    /// HEAD cell is occupied (a tree trunk standing on the surface, a 1-high
+    /// cave crack) is NOT standable — the search must skip it and land on a
+    /// genuinely open cell. This is the exact hole `surface_teleport_dest`
+    /// had: a surface scan that sees THROUGH non-surface solids accepted the
+    /// inside of a trunk as a destination.
+    #[test]
+    fn eject_skips_occupied_and_one_high_cells() {
+        // Flat ground: everything z <= 10 is solid. A trunk occupies
+        // (1,0,11) and (1,0,12) — feet AND head of the r=1 cell east.
+        // A "crack" at (0,1,·): solid ceiling at (0,1,12) → head blocked.
+        let solid = |p: Vec3<i32>| {
+            p.z <= 10
+                || (p.xy() == Vec2::new(1, 0) && (p.z == 11 || p.z == 12))
+                || (p.xy() == Vec2::new(0, 1) && p.z == 12)
+        };
+        let none = hashbrown::HashSet::new();
+        let dest = eject_dest_impl(solid, Vec3::new(0, 0, 11), &none)
+            .expect("open cells exist in ring 1");
+        // Must not be the trunk cell nor the crack cell; must be standable.
+        assert_ne!(dest.xy(), Vec2::new(1, 0), "landed inside the trunk");
+        assert_ne!(dest.xy(), Vec2::new(0, 1), "landed in the 1-high crack");
+        assert!(!solid(dest) && !solid(dest + Vec3::unit_z()) && solid(dest - Vec3::unit_z()));
+    }
+
+    /// No standable cell in range → None (caller leaves the victim in
+    /// place); and the crush exclusion is honoured.
+    #[test]
+    fn eject_none_when_sealed_and_crush_excluded() {
+        // Solid EVERYWHERE: nothing standable.
+        assert_eq!(
+            eject_dest_impl(|_| true, Vec3::new(0, 0, 5), &hashbrown::HashSet::new()),
+            None
+        );
+        // Exactly one open column at (1,0) — but it is in the crush set.
+        let solid = |p: Vec3<i32>| !(p.xy() == Vec2::new(1, 0) && p.z > 10);
+        let crush: hashbrown::HashSet<Vec2<i32>> = [Vec2::new(1, 0)].into_iter().collect();
+        assert_eq!(eject_dest_impl(solid, Vec3::new(0, 0, 11), &crush), None);
     }
 }

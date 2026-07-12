@@ -1456,6 +1456,13 @@ impl Server {
             .cavein_drop_cells
     }
 
+    /// bastion (CASE-003, harness hook): total phys CENTER-SAFETY-NET fires
+    /// (process-global, monotonic). REPORTED telemetry — with the writer-side
+    /// bugs fixed this sits at 0; any climb marks a NEW embedding writer.
+    pub fn bastion_center_net_fires(&self) -> u64 {
+        common::bastion::CENTER_NET_FIRES.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
     /// bastion (COORDINATION-stigmergic-v1, harness hook): the saturation
     /// field at a position's coarse cell.
     pub fn bastion_saturation_at(&self, pos: Vec3<i32>) -> f32 {

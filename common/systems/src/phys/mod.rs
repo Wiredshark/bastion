@@ -1163,6 +1163,42 @@ impl PhysicsData<'_> {
                                     vel.0 = physics_state.ground_vel;
                                 }
 
+                                // bastion (CASE-003 belt): the per-tick
+                                // CENTER-SAFETY-NET — no colonist torso-center
+                                // may remain inside solid terrain after
+                                // integration. The resolver's exhaustion path
+                                // REVERTS to the tick-start pos, so an in-wall
+                                // pos written by a NON-phys writer (the seed-21
+                                // fail-safe teleport into a tree trunk) is
+                                // otherwise LOCKED in place forever. Relocate
+                                // to the nearest true-standable cell (the ONE
+                                // shared eject_dest); None → leave in place
+                                // (the slow job-watchdog remains the backstop).
+                                // Terrain-read + own-entity-write only, so
+                                // rayon order-free (deterministic); the fire
+                                // counter is REPORTED telemetry, never a gate.
+                                if read.colonists.contains(entity) {
+                                    let center = cpos.0.map(|e| e.floor() as i32)
+                                        + Vec3::unit_z();
+                                    if read
+                                        .terrain
+                                        .get(center)
+                                        .is_ok_and(|b| b.is_filled())
+                                        && let Some(d) = common::bastion::eject_dest_free(
+                                            &read.terrain,
+                                            center - Vec3::unit_z(),
+                                        )
+                                    {
+                                        cpos.0 = d.map(|e| e as f32)
+                                            + Vec3::new(0.5, 0.5, 0.0);
+                                        vel.0 = Vec3::zero();
+                                        common::bastion::CENTER_NET_FIRES.fetch_add(
+                                            1,
+                                            core::sync::atomic::Ordering::Relaxed,
+                                        );
+                                    }
+                                }
+
                                 tgt_pos = cpos.0;
                             },
                             Collider::Point => {

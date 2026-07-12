@@ -649,16 +649,45 @@ fn egress_scan_with(
 
 /// bastion (B-LIVE3): the ULTIMATE-fail-safe teleport destination — the
 /// nearest real surface within a small spiral of `feet` (own column first).
-/// `None` only if no column in range resolves a surface at all.
+/// `None` only if no column in range resolves a STANDABLE surface at all.
+///
+/// CASE-003 (the chokepoint-wedge root, seed-21 repro): `column_surface_z`
+/// deliberately sees THROUGH non-surface-terrain solids (Wood/Leaves — so
+/// designations resolve the ground UNDER a tree), which means a tree standing
+/// on the returned surface can occupy the destination cell. The original
+/// picker accepted it and teleported the colonist INTO the trunk — where the
+/// phys terrain resolver's exhaustion path (revert to tick-start pos + zero
+/// velocity) LOCKED it in place, and the stuck-watch re-fired 60s later to
+/// the SAME deterministic cell (a permanent teleport→wedge loop). The accept
+/// condition now requires the destination feet AND head cells to be air; an
+/// occupied column is skipped and the spiral finds the next clear one. An
+/// errored read (unloaded chunk) REJECTS the column — never teleport into
+/// unknown space.
 fn surface_teleport_dest(terrain: &TerrainGrid, feet: Vec3<i32>) -> Option<Vec3<i32>> {
+    surface_teleport_dest_impl(
+        |x, y| column_surface_z(terrain, x, y, feet.z + 64),
+        |p| terrain.get(p).is_ok_and(|b| !b.is_filled()),
+        feet,
+    )
+}
+
+/// The testable core of [`surface_teleport_dest`] (`floating_chunk`'s
+/// closure pattern): `surface_z(x, y)` resolves a column's surface,
+/// `open(cell)` is "this cell is loaded air". ONE implementation — the
+/// `TerrainGrid` wrapper above is the shipping path.
+fn surface_teleport_dest_impl(
+    surface_z: impl Fn(i32, i32) -> Option<i32>,
+    open: impl Fn(Vec3<i32>) -> bool,
+    feet: Vec3<i32>,
+) -> Option<Vec3<i32>> {
     for r in 0..=8i32 {
         for dx in -r..=r {
             for dy in -r..=r {
                 if dx.abs().max(dy.abs()) != r {
                     continue;
                 }
-                if let Some(s) =
-                    column_surface_z(terrain, feet.x + dx, feet.y + dy, feet.z + 64)
+                let (x, y) = (feet.x + dx, feet.y + dy);
+                if let Some(s) = surface_z(x, y)
                     // The dest MUST be ABOVE the colonist — a teleport to
                     // the OWN column (r=0) of a pit returns the pit floor
                     // (below grade), teleporting the colonist to itself
@@ -666,8 +695,13 @@ fn surface_teleport_dest(terrain: &TerrainGrid, feet: Vec3<i32>) -> Option<Vec3<
                     // false). Requiring `s ≥ feet.z` finds the surrounding
                     // pad's rim instead — always an upward exit.
                     && s + 1 > feet.z
+                    // CASE-003: TRUE-STANDABLE dest — feet + head cells must
+                    // be air (a tree trunk / any non-surface solid standing
+                    // on the scanned surface occupies them; skip the column).
+                    && open(Vec3::new(x, y, s + 1))
+                    && open(Vec3::new(x, y, s + 2))
                 {
-                    return Some(Vec3::new(feet.x + dx, feet.y + dy, s + 1));
+                    return Some(Vec3::new(x, y, s + 1));
                 }
             }
         }
@@ -740,52 +774,12 @@ pub fn tree_fell_set(
     cells
 }
 
-/// CAVE-IN v1 (FR11 Q1, reviewer R8/F-CAVE-1+2): the eject destination for a
-/// colonist caught in a collapse's crush footprint — the NEAREST TRUE
-/// STANDABLE cell OUTSIDE the crush columns: air feet + air head + a solid
-/// floor, preferring a LATERAL step-out at the victim's own level and rising/
-/// dropping only as needed. Deliberately NOT a surface search: the original
-/// `column_surface_z`-based version scanned a ±window that is ALL ROCK deep
-/// underground and returned the window top — teleporting a deep-mine victim
-/// INTO solid stone (the exact entombment the invariant forbids). Returns
-/// `None` when no safe cell exists in range — the caller leaves the victim
-/// IN PLACE, which is safe by construction (the collapse only REMOVES rock;
-/// it never buries anyone where they stand).
-pub fn eject_dest(
-    terrain: &TerrainGrid,
-    feet: Vec3<i32>,
-    crush_xy: &HashSet<Vec2<i32>>,
-) -> Option<Vec3<i32>> {
-    let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
-    let standable = |c: Vec3<i32>| {
-        !solid(c) && !solid(c + Vec3::unit_z()) && solid(c - Vec3::unit_z())
-    };
-    // Nearest ring out; within a ring, smallest |dz| first (lateral step-out
-    // beats climbing), searching a modest vertical band around the victim.
-    for r in 1..=8i32 {
-        for dz_abs in 0..=4i32 {
-            let dzs: &[i32] = if dz_abs == 0 { &[0] } else { &[dz_abs, -dz_abs] };
-            for &dz in dzs {
-                for dx in -r..=r {
-                    for dy in -r..=r {
-                        if dx.abs().max(dy.abs()) != r {
-                            continue;
-                        }
-                        let (x, y) = (feet.x + dx, feet.y + dy);
-                        if crush_xy.contains(&Vec2::new(x, y)) {
-                            continue; // never eject INTO the falling footprint
-                        }
-                        let c = Vec3::new(x, y, feet.z + dz);
-                        if standable(c) {
-                            return Some(c);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    None
-}
+/// CAVE-IN v1 (FR11 Q1, reviewer R8/F-CAVE-1+2) + CASE-003: the nearest
+/// true-standable relocation cell — MOVED to `common::bastion` so the phys
+/// CENTER-SAFETY-NET (common-systems, which cannot see server code) and the
+/// cave-in eject share the ONE implementation (B17 identity-by-construction).
+/// Re-exported here so every existing server caller keeps its path.
+pub use common::bastion::eject_dest;
 
 /// CAVE-IN v1 (FR11 Q1/Q6, reviewer R8/F-CAVE-3): THE eject-and-injure — the
 /// ONE implementation both the live mine-completion path (`Sys::run`'s
@@ -3239,6 +3233,39 @@ impl<'a> System<'a> for Sys {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// CASE-003 pin: the fail-safe picker must SKIP a column whose surface
+    /// is occupied by a non-surface solid (a tree trunk standing on the
+    /// scanned ground) and land on the next clear column — never inside the
+    /// trunk. This is the seed-21 wedge: `column_surface_z` sees through
+    /// Wood, the old picker teleported the colonist into it.
+    #[test]
+    fn surface_teleport_skips_occupied_column() {
+        // Every column's surface is z=10; a trunk occupies (0,0,11)+(0,0,12).
+        let surface_z = |_x: i32, _y: i32| Some(10);
+        let open = |p: Vec3<i32>| {
+            p.z > 10 && !(p.xy() == Vec2::new(0, 0) && (p.z == 11 || p.z == 12))
+        };
+        let dest = surface_teleport_dest_impl(surface_z, open, Vec3::new(0, 0, 5))
+            .expect("clear columns exist in the spiral");
+        assert_ne!(dest.xy(), Vec2::new(0, 0), "teleported into the trunk");
+        assert_eq!(dest.z, 11);
+    }
+
+    /// The pit-rim guard stays: a below-grade colonist never gets its OWN
+    /// pit floor (s+1 must be strictly above the feet) — the dest is the
+    /// surrounding pad's rim.
+    #[test]
+    fn surface_teleport_requires_above_grade() {
+        let surface_z = |x: i32, y: i32| if (x, y) == (0, 0) { Some(4) } else { Some(10) };
+        let open = |p: Vec3<i32>| {
+            p.z > if p.xy() == Vec2::new(0, 0) { 4 } else { 10 }
+        };
+        let dest =
+            surface_teleport_dest_impl(surface_z, open, Vec3::new(0, 0, 5)).unwrap();
+        assert_ne!(dest.xy(), Vec2::new(0, 0), "teleported to own pit floor");
+        assert_eq!(dest.z, 11);
+    }
 
     /// Reviewer F1 — THE ±1 BOUNDARY PIN. "Standable" means the rise to
     /// STAND on a surface, (s+1) − feet, is ≤ reach: s ≤ feet+reach−1.
