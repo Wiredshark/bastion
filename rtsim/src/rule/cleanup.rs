@@ -1,6 +1,4 @@
 use crate::{RtState, Rule, RuleError, event::OnTick};
-use rand::prelude::*;
-use rand_chacha::ChaChaRng;
 
 /// Prevent performing cleanup for every NPC every tick
 const NPC_SENTIMENT_TICK_SKIP: u64 = 30;

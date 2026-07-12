@@ -8,8 +8,6 @@ use crate::{
     event::OnSetup,
     generate::wanted_population,
 };
-use rand::prelude::*;
-use rand_chacha::ChaChaRng;
 use tracing::warn;
 use world::site::Structure;
 

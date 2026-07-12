@@ -620,6 +620,7 @@ dependencies = [
  "tracing-subscriber",
  "vek 0.17.2",
  "veloren-common",
+ "veloren-rtsim",
  "veloren-server",
 ]
 
