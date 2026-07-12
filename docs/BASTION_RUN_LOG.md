@@ -1373,3 +1373,12 @@ promote keeps spawn loadout, Some=truth — replace-not-add killed the fresh-loa
 dupe). --lod0-scenario 3/3: real mined XP + exact inventory survive demote→delete→
 re-promote. Gate 9/9 (the ladder gains the LOD0 leg). Skills/inventory half per FR4-e;
 Needs/Mood restore lands with B7.
+
+### bastion-block-LOD1 (51150baca3)
+Row 33, the tier dupe guard: is_loaded gate (RtSimEntity→Npc.mode) on BOTH bastion_jobs
+loops (claim + travel/work incl. the Arrived completion arm) — a demoting colonist is
+never processed by both tiers (spec 5D impossible-by-construction; demote-flush/
+DeleteEvent untouched; claim sweep = the release, regression-guarded). --lod1-scenario
+2/2 + gate 10/10: 3 rapid mid-work demotes, zero flip-window leaks, exactly-once
+completion (stone SUM conserved), stable roster, zero ghost claims. Packet's proofread
+note honored (gate on Sys, not the stale unload-hook seam).

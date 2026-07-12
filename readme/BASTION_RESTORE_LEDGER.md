@@ -406,3 +406,5 @@ than editing the old one.
 | bastion-block-EMBED-WATCH | bf858917ea | belt v2 (persistence embed watch) + Build occupancy guard + staged_at_anchor + locomotion counters; FR15 core reverted | revert tag bastion-block-CASE003 (ecc069fd18) | no save/wire change |
 
 | bastion-block-LOD0 | bce7ecfc68 | LOD-0 save-back: per-tick record mirror + demote flush + wholesale bag restore (Option semantics) | revert tag bastion-block-EMBED-WATCH (bf858917ea) | BastionColonist.inventory serde-default None (old saves fine); rtsim data version unchanged |
+
+| bastion-block-LOD1 | 51150baca3 | LOD-1 Loaded-gate on bastion_jobs (tier dupe guard) + --lod1-scenario gate leg | revert tag bastion-block-LOD0 (bce7ecfc68) | no save/wire change |
