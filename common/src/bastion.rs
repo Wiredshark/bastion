@@ -543,12 +543,53 @@ impl DesignationKind {
     }
 }
 
+/// bastion (B6 JOB-CORE): a painted stockpile zone's stable id (the board
+/// hands them out; `Haul.destination` references one).
+pub type ZoneId = u64;
+/// bastion (B6 JOB-CORE): a reservation's stable id — ONE item can be
+/// reserved by ONE job (the double-spend guard); the table lives on the
+/// board (single authority, D2 — stock itself stays DERIVED from physical
+/// items, never a second mutable count).
+pub type ReservationId = u64;
+
+/// bastion (B6 JOB-CORE): the job's TYPE. `Designated` wraps every pre-B6
+/// designation job unchanged (a type change, not a behavior change);
+/// `Haul` carries a loose item into a stockpile zone. APPEND-ONLY, never
+/// reorder (wire-stable — the NightHorror Species discipline). Later
+/// variants land only with their owning block (Gather = row 38).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum JobKind {
+    Designated(DesignationKind),
+    Haul {
+        /// The loose `PickupItem` entity to carry.
+        item: crate::uid::Uid,
+        /// The stockpile zone to carry it into.
+        destination: ZoneId,
+    },
+}
+
+impl JobKind {
+    /// The wrapped designation kind, `None` for non-designation jobs —
+    /// the compat shim for the many call sites that match on it.
+    pub fn designation(&self) -> Option<DesignationKind> {
+        match self {
+            JobKind::Designated(d) => Some(*d),
+            JobKind::Haul { .. } => None,
+        }
+    }
+
+    /// Is this a designation job of the given kind?
+    pub fn is(&self, kind: DesignationKind) -> bool {
+        self.designation() == Some(kind)
+    }
+}
+
 /// One unit of colonist work — a block-level task generated from a
 /// designation (B4). Serde-ready (B10). `claimed_by` is a transient claim
 /// (entity `Uid`); claims are released on cancel/failure/demote.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Job {
-    pub kind: DesignationKind,
+    pub kind: JobKind,
     pub work: WorkType,
     /// Target block.
     pub pos: Vec3<i32>,
@@ -595,6 +636,11 @@ pub struct Job {
     /// place (the reactive egress becomes the rare backstop).
     #[serde(default)]
     pub depth: u8,
+    /// bastion (B6 JOB-CORE): the item reservation this job holds (a Haul's
+    /// cargo, a Build's material) — released on completion/cancel/release.
+    /// serde-default: pre-B6 saves have none.
+    #[serde(default)]
+    pub reservation: Option<ReservationId>,
 }
 
 /// bastion (TOOL-0, TOOLS-UPGRADE §3): the work-tick's TOOL factor — a

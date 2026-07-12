@@ -1519,6 +1519,30 @@ impl Server {
         }
     }
 
+    /// bastion (B6, harness fixture): spawn a loose persistent item drop at
+    /// a position (test fixtures — e.g. seeding a stockpile with exactly one
+    /// material for the reservation race test).
+    pub fn bastion_spawn_item(&mut self, pos: Vec3<f32>, asset_id: &str, amount: u32) -> bool {
+        let Ok(mut item) = comp::Item::new_from_asset(asset_id) else {
+            return false;
+        };
+        if amount > 1 && item.set_amount(amount).is_err() {
+            return false;
+        }
+        let ecs = self.state.ecs();
+        let program_time = *ecs.read_resource::<common::resources::ProgramTime>();
+        ecs.read_resource::<common::event::EventBus<common::event::CreateItemDropEvent>>()
+            .emit_now(common::event::CreateItemDropEvent {
+                pos: comp::Pos(pos),
+                vel: comp::Vel(Vec3::zero()),
+                ori: comp::Ori::default(),
+                item: comp::PickupItem::new(item, program_time, true),
+                loot_owner: None,
+                persistent: true,
+            });
+        true
+    }
+
     /// bastion (LOD-0, harness hook): the named colonist's LIVE bag
     /// inventory in canonical `(id, amount)` form — built by the SAME
     /// `colonist_record` the save-back uses (B17), for exact conservation

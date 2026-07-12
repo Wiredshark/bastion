@@ -243,7 +243,7 @@ fn plan_access(
         let id = board.next_id;
         board.next_id += 1;
         board.jobs.insert(id, Job {
-            kind,
+            kind: common::bastion::JobKind::Designated(kind),
             work: kind.work_type(),
             pos,
             skill_floor: 0,
@@ -260,7 +260,8 @@ fn plan_access(
             is_access: true,
             stuck_strikes: 0,
             depth: 0,
-        });
+            reservation: None,
+            });
         steps += 1;
     }
     Some((kind, steps))
@@ -321,6 +322,9 @@ pub const STUCK_TIMEOUT: f32 = 10.0;
 /// instant on a human timescale, an eternity past any legitimate mining
 /// transient).
 pub const EMBED_PERSIST_TICKS: u32 = 30;
+/// bastion (B6 HAUL): pending-haul cap per loaded colonist (throttle — the
+/// generator never floods the board; more spawn as deliveries complete).
+pub const HAUL_JOBS_PER_COLONIST: usize = 2;
 /// Progress threshold per watchdog sample (blocks).
 const STUCK_EPSILON: f32 = 0.5;
 /// Walk speed factor for job travel.
@@ -938,6 +942,17 @@ pub struct JobBoard {
     /// carries its own cadence.
     last_bark: HashMap<Uid, f64>,
     stuck_watch: HashMap<Uid, f32>,
+    /// bastion (B6 HAUL): painted stockpile zones `(id, region)` — the haul
+    /// destinations. Registered at placement, dropped on cancel (dependent
+    /// haul jobs cancel with their zone).
+    pub stockpiles: Vec<(common::bastion::ZoneId, Region)>,
+    next_zone: common::bastion::ZoneId,
+    /// bastion (B6 JOB-CORE): the reservation table — ONE item entity
+    /// reserved by ONE job (the double-spend guard). Stock itself stays
+    /// DERIVED from physical items (D2: never a second mutable count);
+    /// this table only prevents two jobs spending one item.
+    reservations: HashMap<common::bastion::ReservationId, Uid>,
+    next_reservation: common::bastion::ReservationId,
     /// bastion (CASE-003 belt, persistence form): consecutive ticks each
     /// colonist's capsule CORE has sat inside solid terrain. At
     /// [`EMBED_PERSIST_TICKS`] the colonist is genuinely WEDGED (the
@@ -978,6 +993,15 @@ impl JobBoard {
         // B5.8: the designation volume joins the colony's claim mask
         // (whether or not blocks matched — the CLAIM is the painted box).
         self.designated.push(region);
+        // B6 HAUL: a Stockpile paint REGISTERS a zone (the haul
+        // destination) — it generates no block jobs (job_wanted = false);
+        // haul jobs are generated separately against loose items.
+        if kind == DesignationKind::Stockpile {
+            let id = self.next_zone;
+            self.next_zone += 1;
+            self.stockpiles.push((id, region));
+            info!(zone = id, ?region, "bastion: stockpile zone registered");
+        }
         // One job per block, regardless of kind: repainting a region — or
         // overlapping designations (Mine and Chop both match a Wood block,
         // since wood `is_filled()`) — must not create duplicate jobs. Each
@@ -999,7 +1023,7 @@ impl JobBoard {
                         let id = self.next_id;
                         self.next_id += 1;
                         self.jobs.insert(id, Job {
-                            kind,
+                            kind: common::bastion::JobKind::Designated(kind),
                             work,
                             pos,
                             skill_floor: 0,
@@ -1018,6 +1042,7 @@ impl JobBoard {
                             // Box-top-relative depth: the descent gate's
                             // "how far below the way out".
                             depth: (region.max.z - z).clamp(0, 255) as u8,
+                            reservation: None,
                         });
                         created.push(id);
                     }
@@ -1082,7 +1107,7 @@ impl JobBoard {
                         self.next_id += 1;
                         let depth = (surface - z).clamp(0, 255) as u8;
                         self.jobs.insert(id, Job {
-                            kind,
+                            kind: common::bastion::JobKind::Designated(kind),
                             work,
                             pos,
                             skill_floor: 0,
@@ -1101,6 +1126,7 @@ impl JobBoard {
                             // Per-column surface-relative depth: the
                             // descent gate's "how far below the way out".
                             depth,
+                            reservation: None,
                         });
                         created.push(id);
                     }
@@ -1159,7 +1185,7 @@ impl JobBoard {
             let id = self.next_id;
             self.next_id += 1;
             self.jobs.insert(id, Job {
-                kind: DesignationKind::Chop,
+                kind: common::bastion::JobKind::Designated(DesignationKind::Chop),
                 work: DesignationKind::Chop.work_type(),
                 pos,
                 skill_floor: 0,
@@ -1172,7 +1198,8 @@ impl JobBoard {
                 is_access: false,
                 stuck_strikes: 0,
                 depth: 0,
-            });
+                reservation: None,
+                        });
             created.push(id);
         }
         if !created.is_empty() {
@@ -1186,6 +1213,30 @@ impl JobBoard {
     /// released (their `ActiveJob` comps are cleared by the system within
     /// one cycle because the job id no longer exists).
     pub fn cancel_region(&mut self, region: Region) -> Vec<Uid> {
+        // B6 HAUL: erase intersecting stockpile zones; haul jobs whose
+        // DESTINATION zone died are cancelled with it (their pos is the
+        // ITEM, not the zone — pos-based cancel below can't catch them)
+        // and their reservations released.
+        let before = self.stockpiles.len();
+        self.stockpiles.retain(|(_, r)| !r.intersects(&region));
+        if self.stockpiles.len() != before {
+            let live: HashSet<common::bastion::ZoneId> =
+                self.stockpiles.iter().map(|(z, _)| *z).collect();
+            let dead: Vec<JobId> = self
+                .jobs
+                .iter()
+                .filter(|(_, j)| match j.kind {
+                    common::bastion::JobKind::Haul { destination, .. } => {
+                        !live.contains(&destination)
+                    },
+                    _ => false,
+                })
+                .map(|(id, _)| *id)
+                .collect();
+            for id in dead {
+                self.remove_job(id);
+            }
+        }
         // B5.8: the claim mask shrinks with the cancellation (exact AABB
         // subtraction, ≤6 pieces per intersected region).
         self.designated = std::mem::take(&mut self.designated)
@@ -1199,6 +1250,7 @@ impl JobBoard {
             })
             .collect();
         let mut released = Vec::new();
+        let mut dead_rids = Vec::new();
         self.jobs.retain(|_, job| {
             let inside = job.pos.x >= region.min.x
                 && job.pos.x <= region.max.x
@@ -1209,10 +1261,78 @@ impl JobBoard {
             if inside && let Some(uid) = job.claimed_by {
                 released.push(uid);
             }
+            if inside && let Some(rid) = job.reservation {
+                // B6: a cancelled job's reservation dies with it.
+                dead_rids.push(rid);
+            }
             !inside
         });
+        for rid in dead_rids {
+            self.reservations.remove(&rid);
+        }
         info!(released = released.len(), "bastion: designation cancelled");
         released
+    }
+
+    /// bastion (B6): reserve an item entity for a job. The caller stores
+    /// the id on `Job.reservation`; release goes through [`Self::remove_job`]
+    /// or [`Self::release_reservation`].
+    pub fn reserve(&mut self, item: Uid) -> common::bastion::ReservationId {
+        let id = self.next_reservation;
+        self.next_reservation += 1;
+        self.reservations.insert(id, item);
+        id
+    }
+
+    pub fn release_reservation(&mut self, id: common::bastion::ReservationId) {
+        self.reservations.remove(&id);
+    }
+
+    /// Is this item entity already reserved by any job? (Linear scan —
+    /// colonies are small; the table holds at most a few dozen entries.)
+    pub fn is_reserved(&self, item: Uid) -> bool {
+        self.reservations.values().any(|u| *u == item)
+    }
+
+    pub fn reserved_item(
+        &self,
+        id: common::bastion::ReservationId,
+    ) -> Option<Uid> {
+        self.reservations.get(&id).copied()
+    }
+
+    /// bastion (B6): remove a job AND release its reservation — THE removal
+    /// path (B17: one place, so a cancelled/moot/completed job can never
+    /// leak a reservation).
+    pub fn remove_job(&mut self, id: JobId) -> Option<Job> {
+        let job = self.jobs.remove(&id);
+        if let Some(j) = &job
+            && let Some(rid) = j.reservation
+        {
+            self.reservations.remove(&rid);
+        }
+        job
+    }
+
+    /// bastion (B6): is this cell inside a stockpile footprint? XY + a
+    /// tolerant z-band (items REST ON the painted surface; the paint's
+    /// z-band needn't contain the resting z exactly).
+    pub fn stockpile_at(&self, cell: Vec3<i32>) -> Option<common::bastion::ZoneId> {
+        self.stockpiles
+            .iter()
+            .find(|(_, r)| {
+                r.contains_point_xy(cell)
+                    && cell.z >= r.min.z - 2
+                    && cell.z <= r.max.z + 3
+            })
+            .map(|(id, _)| *id)
+    }
+
+    pub fn zone_region(&self, id: common::bastion::ZoneId) -> Option<Region> {
+        self.stockpiles
+            .iter()
+            .find(|(z, _)| *z == id)
+            .map(|(_, r)| *r)
     }
 
     /// bastion (B6-hotfix): drop access anchors whose base falls inside a
@@ -1289,10 +1409,16 @@ impl<'a> System<'a> for Sys {
         // collapse's crush volume — health damage + a fear (Mood) drop.
         WriteStorage<'a, comp::Health>,
         WriteStorage<'a, comp::bastion::Mood>,
-        // LOD-1: the Loaded-gate — entity→npc link + the rtsim data to read
-        // `Npc.mode` (read-only; the rtsim tick system holds the write).
-        ReadStorage<'a, common::rtsim::RtSimEntity>,
-        ReadExpect<'a, crate::rtsim::RtSim>,
+        // LOD-1 + B6 (nested: the flat tuple hit specs' arity ceiling):
+        // the Loaded-gate's entity→npc link + rtsim data (read-only), and
+        // B6's loose-drop scan + the vanilla pickup path (reuse, never a
+        // second pickup mechanism).
+        (
+            ReadStorage<'a, common::rtsim::RtSimEntity>,
+            ReadExpect<'a, crate::rtsim::RtSim>,
+            ReadStorage<'a, comp::PickupItem>,
+            ReadExpect<'a, common::event::EventBus<common::event::InventoryManipEvent>>,
+        ),
     );
 
     const NAME: &'static str = "bastion_jobs";
@@ -1325,12 +1451,12 @@ impl<'a> System<'a> for Sys {
             physics_states,
             mut healths,
             mut moods,
-            rtsim_entities,
-            rtsim,
+            (rtsim_entities, rtsim, pickup_items, inventory_manip_events),
         ): Self::SystemData,
     ) {
         let mut item_drop_emitter = item_drop_events.emitter();
         let mut chat_emitter = chat_events.emitter();
+        let mut inv_manip_emitter = inventory_manip_events.emitter();
         // DETRNG (B8 root fix): tick-seeded, not OS entropy — the toss
         // velocities this feeds are cosmetic scatter (drop landing spots →
         // pile merge grouping), and seeding them per-tick makes the whole
@@ -1790,6 +1916,82 @@ impl<'a> System<'a> for Sys {
             .join()
             .map(|(_, p)| p.0)
             .collect();
+
+        // ── B6 HAUL: job generation (arbitration cadence, own offset) ────
+        // Scan loose bastion-output drops (stone/log — the two defs the
+        // colony produces; required_item is &'static so the def rides
+        // there) not already inside a stockpile footprint, not reserved,
+        // not already targeted. Reserve AT GENERATION (the double-spend
+        // guard starts before any claim); throttled per colonist.
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 7 && !board.stockpiles.is_empty()
+        {
+            let cap = queue_snapshot.len() * HAUL_JOBS_PER_COLONIST;
+            let mut pending = board
+                .jobs
+                .values()
+                .filter(|j| matches!(j.kind, common::bastion::JobKind::Haul { .. }))
+                .count();
+            if pending < cap {
+                let occupied: HashSet<Vec3<i32>> =
+                    board.jobs.values().map(|j| j.pos).collect();
+                for (pickup, ipos, iuid) in
+                    (&pickup_items, &positions, &uids).join()
+                {
+                    if pending >= cap {
+                        break;
+                    }
+                    let matched = match pickup.item().item_definition_id().itemdef_id()
+                    {
+                        Some(d) if d == MINE_DROP_ITEM => Some(MINE_DROP_ITEM),
+                        Some(d) if d == CHOP_DROP_ITEM => Some(CHOP_DROP_ITEM),
+                        _ => None,
+                    };
+                    let Some(static_def) = matched else { continue };
+                    let cell = ipos.0.map(|e| e.floor() as i32);
+                    if board.stockpile_at(cell).is_some()
+                        || board.is_reserved(*iuid)
+                        || occupied.contains(&cell)
+                    {
+                        continue;
+                    }
+                    let Some(dest) = board
+                        .stockpiles
+                        .iter()
+                        .min_by_key(|(_, r)| {
+                            let c = (r.min + r.max) / 2;
+                            let d = c - cell;
+                            (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64).pow(2)
+                        })
+                        .map(|(z, _)| *z)
+                    else {
+                        continue;
+                    };
+                    let rid = board.reserve(*iuid);
+                    let id = board.next_id;
+                    board.next_id += 1;
+                    board.jobs.insert(id, Job {
+                        kind: common::bastion::JobKind::Haul {
+                            item: *iuid,
+                            destination: dest,
+                        },
+                        work: common::bastion::WorkType::Haul,
+                        pos: cell,
+                        skill_floor: 0,
+                        claimed_by: None,
+                        unreachable: false,
+                        progress: 0.0,
+                        required_item: Some(static_def),
+                        needs_materials: false,
+                        carve_attempted: false,
+                        is_access: false,
+                        stuck_strikes: 0,
+                        depth: 0,
+                        reservation: Some(rid),
+                    });
+                    pending += 1;
+                }
+            }
+        }
         // `Colonist`'s storage is change-tracked (synced comp) — mutable
         // multi-storage joins over it need `LendJoin`, not `Join`.
         let mut upkeep_iter = (
@@ -1821,6 +2023,59 @@ impl<'a> System<'a> for Sys {
                 (job.pos + active.stance).map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
             match active.state {
                 ActiveJobState::Traveling => {
+                    // ── B6 FETCH LEG (Build material from a stockpile) ──
+                    // A claimant holding an item reservation and NOT yet
+                    // carrying steers at the RESERVED ITEM, not the site;
+                    // the vanilla pickup fires within reach, and `carrying`
+                    // flipping hands steering back to the job. The Arrived
+                    // transition is suppressed while fetching (standing at
+                    // the ITEM is not arrival at the JOB). Haul jobs manage
+                    // their own legs (their reservation IS the cargo).
+                    let mut fetch_steer: Option<Vec3<f32>> = None;
+                    if let Some(rid) = job.reservation
+                        && !matches!(job.kind, common::bastion::JobKind::Haul { .. })
+                    {
+                        let carrying = job.required_item.is_some_and(|req| {
+                            inventories.get(entity).is_some_and(|inv| {
+                                inv.slots().flatten().any(|i| {
+                                    i.item_definition_id().itemdef_id()
+                                        == Some(req)
+                                })
+                            })
+                        });
+                        if !carrying {
+                            let item_uid = board.reservations.get(&rid).copied();
+                            let ipos = item_uid
+                                .and_then(|u| id_maps.uid_entity(u))
+                                .and_then(|ie| positions.get(ie).map(|p| p.0));
+                            match (item_uid, ipos) {
+                                (Some(u), Some(ip)) => {
+                                    // The Chaser parks 1.5-2.5 out — emit
+                                    // within the whole band.
+                                    if pos.0.distance(ip) < 2.8 {
+                                        inv_manip_emitter.emit(
+                                            common::event::InventoryManipEvent(
+                                                entity,
+                                                comp::InventoryManip::Pickup(u),
+                                            ),
+                                        );
+                                    }
+                                    fetch_steer = Some(ip);
+                                },
+                                _ => {
+                                    // The reserved item vanished (a player
+                                    // grabbed it, a merge consumed it):
+                                    // release reservation + claim; next
+                                    // arbitration re-evaluates materials.
+                                    board.reservations.remove(&rid);
+                                    job.reservation = None;
+                                    job.needs_materials = true;
+                                    to_release.push(entity);
+                                    continue;
+                                },
+                            }
+                        }
+                    }
                     // B5.8: moot-check DURING travel too — a carve stair (or
                     // any other edit) can consume the claimed block before
                     // the claimant arrives; without this the zombie job
@@ -1829,7 +2084,12 @@ impl<'a> System<'a> for Sys {
                     let still_wanted = terrain
                         .get(job.pos)
                         .ok()
-                        .is_some_and(|b| job_wanted(job.kind, b));
+                        .is_some_and(|b| match job.kind {
+                            common::bastion::JobKind::Designated(d) => job_wanted(d, b),
+                            // Haul validity = the ITEM still exists — owned
+                            // by the Haul arm, not the block moot-check.
+                            common::bastion::JobKind::Haul { .. } => true,
+                        });
                     if !still_wanted {
                         info!(
                             job = active.job,
@@ -1837,7 +2097,7 @@ impl<'a> System<'a> for Sys {
                             pos = ?job.pos,
                             "bastion: job moot mid-travel — target block changed; dropped"
                         );
-                        board.jobs.remove(&active.job);
+                        board.remove_job(active.job);
                         to_release.push(entity);
                         continue;
                     }
@@ -1851,7 +2111,7 @@ impl<'a> System<'a> for Sys {
                     let arrive =
                         ARRIVE_DIST + (job.stuck_strikes.min(3) as f32) * 1.2;
                     let dist = pos.0.distance(target);
-                    if dist < arrive {
+                    if fetch_steer.is_none() && dist < arrive {
                         active.state = ActiveJobState::Arrived;
                         if let Some(agent) = agent {
                             agent.rtsim_controller.activity = None;
@@ -1954,6 +2214,9 @@ impl<'a> System<'a> for Sys {
                             // kept inert for that future pass.)
                             target
                         };
+                        // B6: the FETCH override wins every steer — the
+                        // reserved item IS the destination until carried.
+                        let steer = fetch_steer.unwrap_or(steer);
                         // R3 fix-2 (WAITING — single-file queue discipline):
                         // when staged at an anchor and ANOTHER colonist is
                         // meaningfully closer to it, WAIT — don't shove
@@ -2181,6 +2444,130 @@ impl<'a> System<'a> for Sys {
                     }
                 },
                 ActiveJobState::Arrived => {
+                    // ── B6 HAUL: pickup + drop-off — BEFORE the block-work
+                    // path (a haul's "work" is instant at each leg; no
+                    // progress accumulation, no moot/tool machinery).
+                    // progress encodes the leg: <0.5 = at the ITEM (leg 1),
+                    // >=0.5 = at the ZONE (leg 2).
+                    if let common::bastion::JobKind::Haul { item, destination } =
+                        job.kind
+                    {
+                        let carrying = job.required_item.is_some_and(|req| {
+                            inventories.get(entity).is_some_and(|inv| {
+                                inv.slots().flatten().any(|i| {
+                                    i.item_definition_id().itemdef_id()
+                                        == Some(req)
+                                })
+                            })
+                        });
+                        if job.progress < 0.5 {
+                            // LEG 1: standing at the item.
+                            if id_maps.uid_entity(item).is_some() {
+                                // Emit the VANILLA pickup (a re-emit against
+                                // a consumed uid no-ops in the handler); the
+                                // entity vanishing is the confirmation,
+                                // checked next tick.
+                                inv_manip_emitter.emit(
+                                    common::event::InventoryManipEvent(
+                                        entity,
+                                        comp::InventoryManip::Pickup(item),
+                                    ),
+                                );
+                                continue;
+                            }
+                            if carrying {
+                                // Cargo aboard — LEG 2: retarget the zone's
+                                // drop cell (center column, painted top).
+                                if let Some((_, r)) = board
+                                    .stockpiles
+                                    .iter()
+                                    .find(|(z, _)| *z == destination)
+                                {
+                                    job.pos = Vec3::new(
+                                        (r.min.x + r.max.x) / 2,
+                                        (r.min.y + r.max.y) / 2,
+                                        r.max.z,
+                                    );
+                                    job.progress = 0.5;
+                                    active.state = ActiveJobState::Traveling;
+                                    active.best_dist = f32::MAX;
+                                    active.reset_dist = f32::MAX;
+                                    active.stuck_time = 0.0;
+                                } else {
+                                    // Zone died mid-haul (the cancel path
+                                    // also sweeps these — defensive).
+                                    let rid = job.reservation;
+                                    if let Some(rid) = rid {
+                                        board.reservations.remove(&rid);
+                                    }
+                                    board.jobs.remove(&active.job);
+                                    to_release.push(entity);
+                                }
+                            } else {
+                                // Item vanished and we don't hold it (a
+                                // player grabbed it / merged away) — moot.
+                                let rid = job.reservation;
+                                if let Some(rid) = rid {
+                                    board.reservations.remove(&rid);
+                                }
+                                board.jobs.remove(&active.job);
+                                to_release.push(entity);
+                            }
+                            continue;
+                        }
+                        // LEG 2: at the zone — drop the WHOLE held stack of
+                        // the cargo def (fresh colonists carry none of the
+                        // bastion outputs; pile merging re-aggregates).
+                        let mut dropped = 0u32;
+                        if let Some(req) = job.required_item
+                            && let Some(mut inv) = inventories.get_mut(entity)
+                        {
+                            let slots: Vec<_> = inv
+                                .slots_with_id()
+                                .filter_map(|(slot, i)| {
+                                    i.as_ref()
+                                        .is_some_and(|i| {
+                                            i.item_definition_id().itemdef_id()
+                                                == Some(req)
+                                        })
+                                        .then_some(slot)
+                                })
+                                .collect();
+                            for slot in slots {
+                                if let Some(item_out) = inv.remove(slot) {
+                                    dropped += item_out.amount();
+                                    item_drop_emitter.emit(CreateItemDropEvent {
+                                        pos: comp::Pos(
+                                            job.pos.map(|e| e as f32)
+                                                + Vec3::new(0.5, 0.5, 1.0),
+                                        ),
+                                        vel: comp::Vel(Vec3::zero()),
+                                        ori: comp::Ori::default(),
+                                        item: PickupItem::new(
+                                            item_out,
+                                            *program_time,
+                                            true,
+                                        ),
+                                        loot_owner: None,
+                                        persistent: true,
+                                    });
+                                }
+                            }
+                        }
+                        info!(
+                            job = active.job,
+                            zone = destination,
+                            amount = dropped,
+                            "bastion: haul delivered"
+                        );
+                        let rid = job.reservation;
+                        if let Some(rid) = rid {
+                            board.reservations.remove(&rid);
+                        }
+                        board.jobs.remove(&active.job);
+                        to_release.push(entity);
+                        continue;
+                    }
                     // B5: accumulate work, rate scaled by the relevant skill.
                     // TOOL-0 (TOOLS-UPGRADE §3): × the EQUIPPED-tool factor —
                     // bare hands/wrong tool = the slow base, a matching
@@ -2217,16 +2604,20 @@ impl<'a> System<'a> for Sys {
                     // free — so capture it with the validity read.
                     let completed_kind = terrain.get(job.pos).ok().map(|b| b.kind());
                     let still_valid = completed_kind.is_some_and(|k| match job.kind {
-                        DesignationKind::Mine => {
-                            terrain.get(job.pos).ok().is_some_and(|b| b.is_filled())
+                        common::bastion::JobKind::Designated(d) => match d {
+                            DesignationKind::Mine => {
+                                terrain.get(job.pos).ok().is_some_and(|b| b.is_filled())
+                            },
+                            DesignationKind::Chop => {
+                                matches!(k, BlockKind::Wood | BlockKind::Leaves)
+                            },
+                            DesignationKind::Build | DesignationKind::Ladder => {
+                                terrain.get(job.pos).ok().is_some_and(|b| !b.is_filled())
+                            },
+                            DesignationKind::Stockpile => false,
                         },
-                        DesignationKind::Chop => {
-                            matches!(k, BlockKind::Wood | BlockKind::Leaves)
-                        },
-                        DesignationKind::Build | DesignationKind::Ladder => {
-                            terrain.get(job.pos).ok().is_some_and(|b| !b.is_filled())
-                        },
-                        DesignationKind::Stockpile => false,
+                        // Haul completes in its own arm above — defensive.
+                        common::bastion::JobKind::Haul { .. } => false,
                     });
                     if !still_valid {
                         info!(
@@ -2235,7 +2626,7 @@ impl<'a> System<'a> for Sys {
                             pos = ?job.pos,
                             "bastion: job moot — target block changed under it; dropped"
                         );
-                        board.jobs.remove(&active.job);
+                        board.remove_job(active.job);
                         to_release.push(entity);
                         continue;
                     }
@@ -2262,7 +2653,7 @@ impl<'a> System<'a> for Sys {
                     // above (progress stays >= 1.0, retried next tick; the
                     // occupant walks on within ticks — and the phys net
                     // remains the belt if any writer still slips through).
-                    if job.kind == DesignationKind::Build
+                    if job.kind.is(DesignationKind::Build)
                         && queue_snapshot.iter().any(|p| {
                             let feet = p.map(|e| e.floor() as i32);
                             feet == job.pos || feet + Vec3::unit_z() == job.pos
@@ -2315,18 +2706,23 @@ impl<'a> System<'a> for Sys {
                     // `place_designation` dedupes — so a later iteration
                     // can't race this block either).
                     let new_block = match job.kind {
-                        DesignationKind::Mine | DesignationKind::Chop => Block::empty(),
-                        DesignationKind::Build => Block::new(BlockKind::Rock, Rgb::new(150, 150, 150)),
-                        // B5.8: the native climbable ladder sprite — the
-                        // vertical link pathfinding knows about.
-                        DesignationKind::Ladder => Block::air(SpriteKind::Ladder),
-                        DesignationKind::Stockpile => continue,
+                        common::bastion::JobKind::Designated(d) => match d {
+                            DesignationKind::Mine | DesignationKind::Chop => Block::empty(),
+                            DesignationKind::Build => {
+                                Block::new(BlockKind::Rock, Rgb::new(150, 150, 150))
+                            },
+                            // B5.8: the native climbable ladder sprite — the
+                            // vertical link pathfinding knows about.
+                            DesignationKind::Ladder => Block::air(SpriteKind::Ladder),
+                            DesignationKind::Stockpile => continue,
+                        },
+                        common::bastion::JobKind::Haul { .. } => continue,
                     };
                     block_change.set(job.pos, new_block);
                     // B5.8: a player-built ladder line registers as an
                     // access anchor too (one per column — XY dedupe), so
                     // staged routing finds it.
-                    if job.kind == DesignationKind::Ladder
+                    if job.kind.is(DesignationKind::Ladder)
                         && !board
                             .access_anchors
                             .iter()
@@ -2336,20 +2732,17 @@ impl<'a> System<'a> for Sys {
                         board.access_anchors.push(job.pos);
                     }
 
-                    if let Some(item_id) = match job.kind {
-                        DesignationKind::Mine => Some(MINE_DROP_ITEM),
+                    if let Some(item_id) = match job.kind.designation() {
+                        Some(DesignationKind::Mine) => Some(MINE_DROP_ITEM),
                         // CHOP redesign (FR10): only WOOD yields — leaves
                         // clear with no drop (yield scales with trunk size by
                         // construction: one drop per Wood block).
-                        DesignationKind::Chop
+                        Some(DesignationKind::Chop)
                             if completed_kind == Some(BlockKind::Wood) =>
                         {
                             Some(CHOP_DROP_ITEM)
                         },
-                        DesignationKind::Chop => None,
-                        DesignationKind::Build
-                        | DesignationKind::Stockpile
-                        | DesignationKind::Ladder => None,
+                        _ => None,
                     } {
                         // B5.5: colonist output is a player resource —
                         // persistent (no despawn timer) and mergeable
@@ -2397,7 +2790,7 @@ impl<'a> System<'a> for Sys {
                     // don't sever rock). A collapse cell that also had its own
                     // Mine job is handled by that job's moot re-check (the block
                     // is already air → dropped, no double-yield).
-                    if job.kind == DesignationKind::Mine {
+                    if job.kind.is(DesignationKind::Mine) {
                         let is_filled =
                             |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
                         if let Some(cells) =
@@ -2429,7 +2822,7 @@ impl<'a> System<'a> for Sys {
                             collapses.push(cells);
                         }
                     }
-                    board.jobs.remove(&active.job);
+                    board.remove_job(active.job);
                     // reviewer F5 / b58-(d) fix: completing a job is the
                     // ground-truth "making progress" signal — reset the
                     // universal stuck-watch. A colonist steadily clearing
@@ -3117,7 +3510,7 @@ impl<'a> System<'a> for Sys {
         // exposure, got claimed, then never Arrived → churn.
         let mut standable: HashMap<JobId, Vec3<i32>> = HashMap::new();
         for (id, job) in board.jobs.iter_mut() {
-            if job.kind != DesignationKind::Mine || job.claimed_by.is_some() {
+            if !job.kind.is(DesignationKind::Mine) || job.claimed_by.is_some() {
                 continue;
             }
             let is_exposed = [
@@ -3167,7 +3560,7 @@ impl<'a> System<'a> for Sys {
         let mut descent_gated: HashSet<JobId> = HashSet::new();
         let mut descent_plan: Option<(JobId, Vec3<i32>, u8)> = None;
         for (id, job) in board.jobs.iter() {
-            if job.kind != DesignationKind::Mine
+            if !job.kind.is(DesignationKind::Mine)
                 || job.is_access
                 || job.depth <= 2
                 || !exposed.contains(id)
@@ -3269,14 +3662,31 @@ impl<'a> System<'a> for Sys {
                 // needs a real stance). Replaces the bare exposure gate so
                 // unstandable `+1`-gap / floating cells aren't claimed-then-
                 // stuck.
-                if job.kind == DesignationKind::Mine && !standable.contains_key(id) {
+                if job.kind.is(DesignationKind::Mine) && !standable.contains_key(id) {
                     continue;
                 }
                 // B5.8-E: held until return-access leads the descent.
                 if descent_gated.contains(id) {
                     continue;
                 }
-                if job.required_item.is_some() && !carries_material {
+                // B6: a material job with nothing in hand is claimable IF a
+                // STOCKPILED loose item of the def is reservable (the fetch
+                // leg); Haul jobs are exempt (their cargo IS the job target,
+                // reserved at generation). Availability only — the
+                // reservation itself commits WITH the claim below.
+                if let Some(req) = job.required_item
+                    && !carries_material
+                    && !matches!(job.kind, common::bastion::JobKind::Haul { .. })
+                    && !(&pickup_items, &positions, &uids).join().any(
+                        |(pi, ipos, iuid)| {
+                            pi.item().item_definition_id().itemdef_id() == Some(req)
+                                && board
+                                    .stockpile_at(ipos.0.map(|e| e.floor() as i32))
+                                    .is_some()
+                                && !board.is_reserved(*iuid)
+                        },
+                    )
+                {
                     continue;
                 }
                 if colonist.0.skills.level_for(job.work) < job.skill_floor {
@@ -3300,7 +3710,7 @@ impl<'a> System<'a> for Sys {
                 // colonist takes its own rescue rungs over re-claiming the
                 // unreachable job; a wall crew finishes the ladder before
                 // chasing the job on top.
-                let priority = if job.is_access || job.kind == DesignationKind::Ladder {
+                let priority = if job.is_access || job.kind.is(DesignationKind::Ladder) {
                     priority.saturating_add(1)
                 } else {
                     priority
@@ -3323,7 +3733,7 @@ impl<'a> System<'a> for Sys {
                 // reach instead of the adjacent bottom one (the tool0-gate
                 // (e) bounce carousel).
                 let depth_score =
-                    if job.kind == DesignationKind::Mine && !job.is_access {
+                    if job.kind.is(DesignationKind::Mine) && !job.is_access {
                         -((job.pos.z - feet_z).clamp(-4, 4) as f32) * 8.0
                     } else {
                         0.0
@@ -3359,9 +3769,47 @@ impl<'a> System<'a> for Sys {
                 }
             }
             if let Some((job_id, _, _)) = best {
+                // B6: commit the FETCH reservation with the claim (scoring
+                // only checked availability). If the item raced away
+                // between passes, skip this claim — next arbitration
+                // re-evaluates.
+                let mut fetch_rid = None;
+                {
+                    let needs_fetch = board.jobs.get(&job_id).is_some_and(|j| {
+                        j.required_item.is_some()
+                            && !carries_material
+                            && !matches!(
+                                j.kind,
+                                common::bastion::JobKind::Haul { .. }
+                            )
+                    });
+                    if needs_fetch {
+                        let req = board
+                            .jobs
+                            .get(&job_id)
+                            .and_then(|j| j.required_item);
+                        let cand = (&pickup_items, &positions, &uids)
+                            .join()
+                            .find(|(pi, ipos, iuid)| {
+                                pi.item().item_definition_id().itemdef_id() == req
+                                    && board
+                                        .stockpile_at(
+                                            ipos.0.map(|e| e.floor() as i32),
+                                        )
+                                        .is_some()
+                                    && !board.is_reserved(**iuid)
+                            })
+                            .map(|(_, _, iuid)| *iuid);
+                        match cand {
+                            Some(iuid) => fetch_rid = Some(board.reserve(iuid)),
+                            None => continue,
+                        }
+                    }
+                }
                 let mut claimed_cell = None;
                 if let Some(job) = board.jobs.get_mut(&job_id) {
                     job.claimed_by = Some(*uid);
+                    job.reservation = job.reservation.or(fetch_rid);
                     claimed_pos.push(job.pos);
                     claimed_cell = Some(coord_cell(job.pos));
                     // B-LIVE4: count every claim event (initial + re-claim)

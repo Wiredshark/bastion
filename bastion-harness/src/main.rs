@@ -137,6 +137,12 @@ struct Args {
     #[arg(long)]
     belt_exercise_scenario: bool,
 
+    /// bastion (B6-HAUL+JOB-CORE, row 34): the reservation race (2 Builds,
+    /// 1 stockpiled stone → exactly one completes) + auto-haul conservation
+    /// (mined stones flow into a painted stockpile, totals exact).
+    #[arg(long)]
+    b6haul_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -237,6 +243,8 @@ fn main() -> ExitCode {
         lod1_scenario(&args)
     } else if args.belt_exercise_scenario {
         belt_exercise_scenario(&args)
+    } else if args.b6haul_scenario {
+        b6haul_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3317,6 +3325,256 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (B6-HAUL+JOB-CORE, row 34): (B) the RESERVATION RACE — two Build
+/// jobs share exactly ONE stockpiled stone; the reservation guarantees
+/// exactly one completes (the other stalls on materials). (A) CONSERVATION —
+/// mined stones auto-haul into a painted stockpile with loose→stockpile
+/// totals conserved exactly (no dupe, no loss). B first so A's stones can't
+/// feed B's builders.
+fn b6haul_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{BUILD_MATERIAL_ITEM, DesignationKind, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-b6haul-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-b6haul".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-b6haul-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = ground_z(&server, cx, cy).expect("no ground at site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 8)..=(cx + 8) {
+        for y in (cy - 8)..=(cy + 8) {
+            for z in (gz - 2)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 10) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        2,
+    );
+    tick(&mut server, 30);
+    let _names = server.bastion_rename_colonists_unique();
+
+    // ── PHASE B FIRST: the reservation race (no other stones exist yet). ──
+    // Zone B (3×3) seeded with EXACTLY ONE stone; two Build jobs both
+    // requiring one. Exactly one may complete.
+    let zb = Region {
+        min: Vec3::new(cx - 6, cy - 6, gz + 1),
+        max: Vec3::new(cx - 4, cy - 4, gz + 1),
+    };
+    server.bastion_place_designation(zb, DesignationKind::Stockpile);
+    let spawned = server.bastion_spawn_item(
+        Vec3::new((cx - 5) as f32 + 0.5, (cy - 5) as f32 + 0.5, (gz + 2) as f32),
+        BUILD_MATERIAL_ITEM,
+        1,
+    );
+    tick(&mut server, 15); // let the drop land + settle
+    let b1 = Vec3::new(cx + 4, cy - 4, gz + 1);
+    let b2 = Vec3::new(cx + 4, cy + 4, gz + 1);
+    let bjobs = server
+        .bastion_place_designation(Region { min: b1, max: b1 }, DesignationKind::Build)
+        .len()
+        + server
+            .bastion_place_designation(Region { min: b2, max: b2 }, DesignationKind::Build)
+            .len();
+    let mut built = 0usize;
+    for _ in 0..240 {
+        tick(&mut server, 15);
+        built = [b1, b2]
+            .iter()
+            .filter(|p| {
+                server.bastion_block_kind(**p).is_some_and(|k| k.is_filled())
+            })
+            .count();
+        if built >= 1 {
+            // give the second job a chance to (wrongly) complete too
+            tick(&mut server, 450);
+            built = [b1, b2]
+                .iter()
+                .filter(|p| {
+                    server
+                        .bastion_block_kind(**p)
+                        .is_some_and(|k| k.is_filled())
+                })
+                .count();
+            break;
+        }
+    }
+    let race_exactly_one = built == 1;
+    // The single stone is CONSUMED (zone B holds zero).
+    let zb_left = server.bastion_sum_items_near(
+        Vec3::new((cx - 5) as f32, (cy - 5) as f32, (gz + 1) as f32),
+        4.0,
+        BUILD_MATERIAL_ITEM,
+    );
+    // Clear phase B: erase the zone + the leftover stalled Build job.
+    server.bastion_cancel_designation(zb);
+    server.bastion_cancel_designation(Region { min: b1, max: b1 });
+    server.bastion_cancel_designation(Region { min: b2, max: b2 });
+    tick(&mut server, 30);
+
+    // ── PHASE A: conservation through auto-haul. ─────────────────────────
+    // Mine a 5-block line (5 loose stones), paint zone A, wait for
+    // delivery: zone A sums to 5 and nothing is left loose outside.
+    let mrow = Region {
+        min: Vec3::new(cx - 2, cy + 6, gz),
+        max: Vec3::new(cx + 2, cy + 6, gz),
+    };
+    let mjobs = server
+        .bastion_place_designation(mrow, DesignationKind::Mine)
+        .len();
+    let mut mined = false;
+    for _ in 0..240 {
+        tick(&mut server, 15);
+        if (cx - 2..=cx + 2).all(|x| {
+            server
+                .bastion_block_kind(Vec3::new(x, cy + 6, gz))
+                .is_none_or(|k| !k.is_filled())
+        }) {
+            mined = true;
+            break;
+        }
+    }
+    let za = Region {
+        min: Vec3::new(cx - 7, cy + 2, gz + 1),
+        max: Vec3::new(cx - 5, cy + 4, gz + 1),
+    };
+    server.bastion_place_designation(za, DesignationKind::Stockpile);
+    let za_center = Vec3::new((cx - 6) as f32, (cy + 3) as f32, (gz + 1) as f32);
+    let mut delivered = false;
+    for _ in 0..400 {
+        tick(&mut server, 15);
+        if server.bastion_sum_items_near(za_center, 4.0, BUILD_MATERIAL_ITEM) >= 5 {
+            delivered = true;
+            break;
+        }
+    }
+    tick(&mut server, 60);
+    let za_sum = server.bastion_sum_items_near(za_center, 4.0, BUILD_MATERIAL_ITEM);
+    // Conservation: EVERYTHING on the pad is in the zone — total == zone
+    // sum == 5 (no dupe, no loss; nothing left loose outside).
+    let pad_total = server.bastion_sum_items_near(
+        Vec3::new(cx as f32, cy as f32, gz as f32),
+        24.0,
+        BUILD_MATERIAL_ITEM,
+    );
+    let conserved = za_sum == 5 && pad_total == 5;
+
+    let audit = server.bastion_job_audit();
+    let result = serde_json::json!({
+        "b6_spawned": spawned,
+        "b6_build_jobs": bjobs,
+        "b6_built": built,
+        "b6_race_exactly_one": race_exactly_one,
+        "b6_zoneb_left": zb_left,
+        "b6_mine_jobs": mjobs,
+        "b6_mined": mined,
+        "b6_delivered": delivered,
+        "b6_zonea_sum": za_sum,
+        "b6_pad_total": pad_total,
+        "b6_conserved": conserved,
+        "b6_jobs_left": audit.total,
+    });
+    let pass = spawned
+        && bjobs == 2
+        && race_exactly_one
+        && zb_left == 0
+        && mjobs == 5
+        && mined
+        && delivered
+        && conserved;
+    println!("{}", result);
+    println!("B6HAUL SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
