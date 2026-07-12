@@ -5248,6 +5248,15 @@ fn handle_aura(
     else {
         return Err(action.help_content());
     };
+    // ARCH-001 (registry B16 sweep): a negative/NaN/inf/OVERFLOWING duration
+    // reaches Duration::from_secs_f32 downstream and PANICS the server (e.g.
+    // `/aura 10 -1` or `/aura 10 1e20`). Reject at parse; try_from_secs_f32's
+    // error condition matches the panic condition exactly.
+    if aura_duration.is_some_and(|duration| Duration::try_from_secs_f32(duration).is_err()) {
+        return Err(Content::Plain(
+            "Aura duration must be a finite, non-negative number that fits a duration.".into(),
+        ));
+    }
     let new_entity = new_entity.unwrap_or(false);
     let aura_kind = match aura_kind_variant {
         AuraKindVariant::Buff => {

@@ -315,7 +315,10 @@ fn body_to_voice(body: &Body) -> Option<VoiceKind> {
             _ => return None,
         },
         Body::BipedLarge(body) => match body.species {
-            biped_large::Species::Wendigo => VoiceKind::Wendigo,
+            // bastion (NIGHT_HORROR): the wendigo lineage shares its voice.
+            biped_large::Species::Wendigo | biped_large::Species::NightHorror => {
+                VoiceKind::Wendigo
+            },
             biped_large::Species::Occultsaurok
             | biped_large::Species::Mightysaurok
             | biped_large::Species::Slysaurok => VoiceKind::Saurok,

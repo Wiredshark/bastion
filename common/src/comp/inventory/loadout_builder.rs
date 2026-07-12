@@ -544,7 +544,8 @@ pub fn default_chest(body: &Body) -> Option<&'static str> {
             | biped_large::Species::Cavetroll
             | biped_large::Species::Mountaintroll
             | biped_large::Species::Swamptroll
-            | biped_large::Species::Wendigo => "common.items.npc_armor.biped_large.generic",
+            | biped_large::Species::Wendigo
+            | biped_large::Species::NightHorror => "common.items.npc_armor.biped_large.generic",
             biped_large::Species::Cyclops => "common.items.npc_armor.biped_large.cyclops",
             biped_large::Species::Dullahan => "common.items.npc_armor.biped_large.dullahan",
             biped_large::Species::Tursus => "common.items.npc_armor.biped_large.tursus",
@@ -839,6 +840,12 @@ pub fn default_main_tool(body: &Body) -> Option<&'static str> {
             ) => Some("common.items.npc_weapons.hammer.troll_hammer"),
             (biped_large::Species::Wendigo, _) => {
                 Some("common.items.npc_weapons.unique.wendigo_magic")
+            },
+            // bastion (NIGHT_HORROR, FR14 + reviewer Q2): a PHYSICAL stalker —
+            // the beast-claw melee set (the werewolf's), not the wendigo's
+            // frost magic.
+            (biped_large::Species::NightHorror, _) => {
+                Some("common.items.npc_weapons.unique.beast_claws")
             },
             (biped_large::Species::Werewolf, _) => {
                 Some("common.items.npc_weapons.unique.beast_claws")

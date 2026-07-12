@@ -9,6 +9,7 @@ noun-ogre-male = an ogre
 noun-ogre-female = an ogre
 noun-cyclops = a cyclops
 noun-wendigo = a wendigo
+noun-night_horror = a night horror
 noun-werewolf = a werewolf
 noun-cave_troll = a cave troll
 noun-mountain_troll = a mountain troll
