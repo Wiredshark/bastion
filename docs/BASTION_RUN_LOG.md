@@ -1183,3 +1183,48 @@ critical alt-tab crash fix and the R7 linker flip riding the same rebuild.
 GATE (on the tag commit, clean tree, LLD): UNIT 19/19 + `floating_chunk`
 unit test, BUILD PASS (harness compiles at commit), B4/B5/B5.5/B5.8/
 CHOKEPOINT/CAVEIN/VANILLA — see the gate line in the tag ping.
+
+## bastion-block-NIGHTHORROR — NIGHT_HORROR (FR14) + ARCH-001 — TAGGED 2026-07-12 (merge `e1a6d2ba27`)
+
+The first creature taken fully asset→animated→behaving→in-game→testable —
+the REUSABLE CREATURE-INTEGRATION PIPELINE's reference instance (FR14
+FEASIBLE; wendigo scaffold throughout). Ben's ask: "finish it up, get it
+animated, add behavior, in-game, with a way to test."
+
+- **REGISTER** (`6f4caddc6f`): `Species::NightHorror = 35` — appended at the
+  END (explicit discriminants are wire-stable; the spec's "=13" was STALE,
+  drift-checked against the real tail Gigasfire=34). Touch-points: noun key +
+  `AllSpecies` field + `Index` arm; dims/health(280, wendigo-tier)/mount
+  offset; the rtsim wild-entity map → `common.entity.wild.aggressive.
+  night_horror`; the `npc_names.ron` keyword (what makes `/spawn` +
+  `RandomWith` parse); `VoiceKind::Wendigo` (the lineage); generic biped_large
+  armor + the **BEAST CLAWS** melee set (the werewolf's physical claws —
+  reviewer Q2: a stalker, not the wendigo's frost magic); loot = rugged hide +
+  claws + a rare grim-eyeball trophy (the DF-BEAST trophy line).
+- **MODEL**: the pilot's 11 wendigo-frame parts →
+  `assets/voxygen/voxel/npc/night_horror/male/`; central + lateral manifest
+  rows are the WENDIGO rows VERBATIM with paths swapped (incl. the leg_r
+  x-quirk); `(NightHorror, Female)` = alias to the male models — the exact
+  wendigo convention (zero duplicate assets, exhaustive matches satisfied).
+- **ANIMATION**: the biped_large motion set is skeleton-shared (free); the 11
+  per-species OFFSET-TABLE arms (the one non-obvious compile-error
+  touch-point every future creature hits) are wendigo-verbatim.
+- **TEST**: `/spawn enemy night_horror [amount] [ai]` — works via the keyword,
+  zero new command code. The optional `bastion_arena` spawn action is a
+  documented follow-up. Stalk/ambush/night-active tuning + the fear aura = v2
+  (spec'd in NIGHT-HORROR-INTEGRATION-design.md STEP 4).
+- **ARCH-001 rider** (`a456846f4c`, separate/cherry-pickable): the `/aura`
+  duration is rejected at parse via `Duration::try_from_secs_f32(..).is_err()`
+  — closes the negative/NaN/inf/OVERFLOW `from_secs_f32` panic (registry B16
+  sweep; vanilla, admin-only; reviewer-amended over the GPT draft, which
+  missed the overflow case — the bridge's hard-problems-only lesson).
+
+VERIFIED: workspace `cargo check` clean ×2 (every exhaustive match armed) +
+a warm re-check covering ARCH-001; `veloren-common` 120/120 (the entity-config
+walker validates the new `.ron` chain end-to-end: body parse → loadout →
+loot); full gate on the tag commit — see the tag ping for the line.
+PIPELINE NOTE (for the next creature): the 5-step checklist in
+NIGHT-HORROR-INTEGRATION-design.md held exactly; the only spec drift was the
+enum discriminant (always re-verify the tail).
+
+GATE NOTE: the tag-commit gate ran green on UNIT/BUILD/B4/B5.5/B5.8/CK/CAVEIN/VANILLA with ONE b5 miss (mine_cleared 26/27 under full-suite load) — quiet standalone 3/3 PASS 27/27, no night_horror mechanism (registration-only block): the documented B8 execution-race flake, logged per the sampling-flake mandate (sibling of b4 arrived + b58 d_all_cleared).

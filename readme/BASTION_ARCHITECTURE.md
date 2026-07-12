@@ -952,9 +952,9 @@ CAVE-IN v1: mining remnants FALL with the entombment invariant proven
 shallow + deep [reviewer-R8-hardened eject], + the B16 alt-tab dt-panic
 crash fix + the R7 rust-lld linker flip — this block, tag
 `bastion-block-CAVEIN`).** **Next (per FLEET_STATUS's AUTHORITATIVE
-CURRENT QUEUE):** NIGHT_HORROR (FR14 — creature-integration pipeline;
-append Species=35, wendigo-verbatim manifests/offsets, Beast Claws
-loadout, /spawn + arena test) → CHOP redesign (FR10 — get_area_trees
+CURRENT QUEUE):** [NIGHT_HORROR SHIPPED — tag `bastion-block-NIGHTHORROR`,
+the creature-integration pipeline's reference instance; /spawn enemy
+night_horror is live] → CHOP redesign (FR10 — get_area_trees
 oracle + tree_valid_at, fell-whole-tree) → COORDINATION-stigmergic-v1
 (FR13 — decaying saturation field) → AUTON-0/1 (arbiter in the
 SEQUENTIAL bastion system, NOT par_join — B10 determinism; reviewer: gate

@@ -328,3 +328,24 @@ than editing the old one.
   changes (Health/Mood are existing comps; the system only gained write access
   to them). `clock.rs` is client+server shared but pure-runtime (no wire).
   Fully reversible cold, with the two riders above called out.
+
+- Block: NIGHTHORROR (NIGHT_HORROR FR14 + the ARCH-001 /aura guard): the
+  creature-integration pipeline's reference instance — night_horror registered
+  end-to-end (species 35, wendigo-frame model/manifests/offsets, Beast Claws
+  hostile, /spawn-testable)
+- Tag: `bastion-block-NIGHTHORROR` (main `e1a6d2ba27`)
+- Previous green: `bastion-block-CAVEIN` (main was at `d76147aa91` = CAVEIN +
+  its docs commit; the NIGHTHORROR branch base is `1d4d48ddd0`, code-identical)
+- Revert: `git reset --hard d76147aa91` on `bastion/main`
+- Undoes: the Species::NightHorror registration (enum 35 + every touch-point:
+  body dims/health/mount, rtsim wild map, npc_names keyword, voice, loadout,
+  anim offset arms, both figure manifests, i18n) + the 11 model parts + the
+  wild-entity/loot `.ron`s; ALSO the ARCH-001 `/aura` parse guard
+  (`a456846f4c` — cherry-pick it if reverting the block; it is vanilla-safe
+  and reviewer-approved standalone).
+- Data-format caveats: `Species::NightHorror = 35` is a NEW wire/save enum
+  variant — appended at the END so existing ids never shift; old
+  clients/saves simply never reference 35 (additive, safe). No other
+  net/comp/save changes. New asset files are additive. Fully reversible cold
+  (a save containing a spawned night_horror would lose that entity on revert
+  — acceptable; none exist pre-tag).
