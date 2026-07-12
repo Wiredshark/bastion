@@ -285,6 +285,25 @@ impl DesignationKind {
         }
     }
 
+    /// bastion (CHOP redesign, FR10 — the first AREA-kind, classified not
+    /// special-cased): how a designation's painted footprint resolves.
+    /// `Volume` kinds paint a 3D slab (the `ZExtent`/flat-floor model);
+    /// `Area2D` kinds paint a PURE XY footprint — no depth stepper, no
+    /// z-extent on the wire (`z_extent: None`), and the server resolves
+    /// content from the footprint itself (Chop: whole trees rooted in it).
+    /// The UI (hide the stepper), the paint path (2D vs volume), and the
+    /// server (area vs slab job-gen) all branch off this ONE flag, so a
+    /// future Gather/Forage/surface-zone kind gets the branch free.
+    pub fn footprint_mode(&self) -> FootprintMode {
+        match self {
+            DesignationKind::Chop => FootprintMode::Area2D,
+            DesignationKind::Mine
+            | DesignationKind::Build
+            | DesignationKind::Stockpile
+            | DesignationKind::Ladder => FootprintMode::Volume,
+        }
+    }
+
     /// bastion (B5.6b-2): the canonical [`Purpose`] a designation maps to,
     /// for zone↔asset matching (frameworks §2). `Build` is `None` — a build
     /// designation constructs a structure whose OWN asset purpose applies;
@@ -297,6 +316,17 @@ impl DesignationKind {
             DesignationKind::Build | DesignationKind::Ladder => None,
         }
     }
+}
+
+/// bastion (CHOP redesign, FR10): a designation's footprint semantics — see
+/// [`DesignationKind::footprint_mode`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum FootprintMode {
+    /// A 3D slab: the painted XY × a per-column [`ZExtent`] (surface-relative
+    /// or flat-floor).
+    Volume,
+    /// A pure XY footprint — no depth; the server resolves the content.
+    Area2D,
 }
 
 /// bastion (B5.8): headroom cleared above each ramp step — the step's own

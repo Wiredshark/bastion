@@ -12,7 +12,7 @@ use common::{
     mounting::{Rider, VolumeRider},
     resources::{DeltaTime, PlayerPhysicsSetting, PlayerPhysicsSettings},
     slowjob::SlowJobPool,
-    terrain::{SpriteKind, TerrainGrid},
+    terrain::{BlockKind, SpriteKind, TerrainGrid},
     uid::IdMaps,
     vol::ReadVol,
 };
@@ -22,9 +22,17 @@ use common_state::{AreasContainer, BlockChange, BuildArea};
 use core::mem;
 use rayon::prelude::*;
 use specs::{Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, Write, WriteStorage};
-use std::{borrow::Cow, time::Instant};
+use std::{borrow::Cow, sync::Arc, time::Instant};
 use tracing::{debug, trace, warn};
 use vek::*;
+// bastion (CHOP redesign, FR10): the tree ORACLE — Chop tree-detection runs in
+// this handler (World stays out of the terrain-only bastion_jobs system). The
+// non-worldgen stub World has no oracle, so detection is cfg-gated (degrades
+// to no-trees there).
+#[cfg(not(feature = "worldgen"))]
+use crate::test_world::{IndexOwned, World};
+#[cfg(feature = "worldgen")]
+use world::{IndexOwned, World, util::Sampler};
 
 #[cfg(feature = "persistent_world")]
 pub type TerrainPersistenceData<'a> = Option<Write<'a, TerrainPersistence>>;
@@ -80,11 +88,17 @@ impl Sys {
         // B5.6b-2: the third field is Some(extent) for surface-relative
         // placements (region = footprint XY + paint-plane hint in max.z);
         // None keeps the legacy literal-region path. Always None for cancel.
+        // CHOP redesign (FR10): the fourth field carries a resolved FELL-SET
+        // (one whole tree's block positions) for the Area2D Chop path; None
+        // for every volume/legacy/cancel op.
         bastion_designations: &mut Vec<(
             common::bastion::Region,
             Option<common::bastion::DesignationKind>,
             Option<common::bastion::ZExtent>,
+            Option<Vec<Vec3<i32>>>,
         )>,
+        world: &Arc<World>,
+        index: &IndexOwned,
         controller: Option<&mut Controller>,
         settings: &Read<'_, Settings>,
         build_areas: &Read<'_, AreasContainer<BuildArea>>,
@@ -411,7 +425,7 @@ impl Sys {
                             kind,
                             z_extent: Some(extent),
                         })?;
-                        bastion_designations.push((region, Some(kind), Some(extent)));
+                        bastion_designations.push((region, Some(kind), Some(extent), None));
                     } else {
                         client.send(ServerGeneral::server_msg(
                             common::comp::ChatType::CommandError,
@@ -423,6 +437,55 @@ impl Sys {
                             )),
                         ))?;
                     }
+                } else if kind == common::bastion::DesignationKind::Chop {
+                    // ── CHOP redesign (FR10): the first Area2D kind ────────
+                    // The paint is a PURE XY footprint; the fell-set = every
+                    // whole tree ROOTED in it, resolved here via the World
+                    // oracle (get_area_trees candidates → tree_valid_at
+                    // confirm → bounded Wood+Leaves flood-fill). Each tree
+                    // echoes as its OWN designation (region = the tree's
+                    // tight AABB) — the client renders per-tree outline boxes
+                    // and cancel-through-the-echo reaches exactly that tree,
+                    // all with ZERO message-schema change.
+                    let area = (region.max.x - region.min.x + 1) as i64
+                        * (region.max.y - region.min.y + 1) as i64;
+                    if area <= 0 || area > 64 * 64 {
+                        client.send(ServerGeneral::server_msg(
+                            common::comp::ChatType::CommandError,
+                            common::comp::Content::Plain(format!(
+                                "Chop area {} outside 1..={} tiles",
+                                area,
+                                64 * 64
+                            )),
+                        ))?;
+                    } else {
+                        // The SHARED detection (bastion_chop::detect_trees) —
+                        // the harness hook calls the same fn (B17: the tested
+                        // path IS the shipping path).
+                        let trees = crate::bastion_chop::detect_trees(
+                            world,
+                            index,
+                            terrain,
+                            region.min.xy(),
+                            region.max.xy(),
+                        );
+                        if trees.is_empty() {
+                            client.send(ServerGeneral::server_msg(
+                                common::comp::ChatType::CommandInfo,
+                                common::comp::Content::Plain(
+                                    "No trees rooted in the marked area.".into(),
+                                ),
+                            ))?;
+                        }
+                        for (aabb, cells) in trees {
+                            client.send(ServerGeneral::BastionDesignation {
+                                region: aabb,
+                                kind,
+                                z_extent: None,
+                            })?;
+                            bastion_designations.push((aabb, Some(kind), None, Some(cells)));
+                        }
+                    }
                 } else {
                     let volume = region.volume();
                     if volume > 0 && volume <= common::bastion::MAX_DESIGNATION_VOLUME {
@@ -432,7 +495,7 @@ impl Sys {
                             z_extent: None,
                         })?;
                         // bastion (B4): job generation happens post-loop.
-                        bastion_designations.push((region, Some(kind), None));
+                        bastion_designations.push((region, Some(kind), None, None));
                     } else {
                         client.send(ServerGeneral::server_msg(
                             common::comp::ChatType::CommandError,
@@ -462,7 +525,7 @@ impl Sys {
             ClientGeneral::BastionCancelDesignation { region } => {
                 // bastion (B4): jobs removed + claims released post-loop.
                 let region = region.normalized();
-                bastion_designations.push((region, None, None));
+                bastion_designations.push((region, None, None, None));
                 // bastion (B5.5): echo the removal so the client subtracts
                 // it from its overlay rects (mirrors the place echo above).
                 client.send(ServerGeneral::BastionDesignationRemoved { region })?;
@@ -584,6 +647,10 @@ impl<'a> System<'a> for Sys {
             Read<'a, common::resources::Time>,
             specs::WriteExpect<'a, crate::rtsim::RtSim>,
             Write<'a, crate::bastion_jobs::JobBoard>,
+            // CHOP redesign (FR10): the tree oracle — read-only Arc, safe
+            // inside the parallel client join (B10: no shared mutable state).
+            ReadExpect<'a, Arc<World>>,
+            ReadExpect<'a, IndexOwned>,
         ),
     );
 
@@ -618,7 +685,7 @@ impl<'a> System<'a> for Sys {
             mut terrain_persistence,
             players,
             admins,
-            (mut god_anchors, time, mut rtsim, mut job_board),
+            (mut god_anchors, time, mut rtsim, mut job_board, world, index),
         ): Self::SystemData,
     ) {
         let time_for_vd_changes = Instant::now();
@@ -699,6 +766,8 @@ impl<'a> System<'a> for Sys {
                             &mut bastion_anchor,
                             &mut bastion_spawn,
                             &mut bastion_designations,
+                            &*world,
+                            &*index,
                             controller.as_deref_mut(),
                             &settings,
                             &build_areas,
@@ -944,9 +1013,11 @@ impl<'a> System<'a> for Sys {
                 // per-column surfaces the handler's echo bounds came from
                 // (terrain can't change between the two — block edits land
                 // post-tick), so the echoed rect bounds every job created.
-                for (region, op, extent) in bastion_designation_updates.drain(..) {
-                    match (op, extent) {
-                        (Some(kind), Some(extent)) => {
+                for (region, op, extent, chop_cells) in
+                    bastion_designation_updates.drain(..)
+                {
+                    match (op, extent, chop_cells) {
+                        (Some(kind), Some(extent), _) => {
                             job_board.place_designation_surface(
                                 &terrain,
                                 region.min.xy(),
@@ -956,10 +1027,19 @@ impl<'a> System<'a> for Sys {
                                 kind,
                             );
                         },
-                        (Some(kind), None) => {
+                        // CHOP redesign (FR10): a resolved fell-set — one
+                        // whole tree's cells from the handler's oracle pass.
+                        (
+                            Some(common::bastion::DesignationKind::Chop),
+                            None,
+                            Some(cells),
+                        ) => {
+                            job_board.place_chop_cells(&terrain, &cells);
+                        },
+                        (Some(kind), None, _) => {
                             job_board.place_designation(&terrain, region, kind);
                         },
-                        (None, _) => {
+                        (None, _, _) => {
                             job_board.cancel_region(region);
                             // B6-hotfix (Ben live-test: "a way to delete
                             // ladders"): Erase ALSO removes built ladders

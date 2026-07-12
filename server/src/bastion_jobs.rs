@@ -272,7 +272,12 @@ fn plan_access(
 fn job_wanted(kind: DesignationKind, block: &Block) -> bool {
     match kind {
         DesignationKind::Mine => block.is_filled(),
-        DesignationKind::Chop => matches!(block.kind(), BlockKind::Wood),
+        // CHOP redesign (FR10): a fell-set covers the WHOLE tree — trunk
+        // (Wood) AND canopy (Leaves; cleared, no drop — the drop branch keys
+        // on the block kind). Fixes the registry's "Chop-ignores-Leaves".
+        DesignationKind::Chop => {
+            matches!(block.kind(), BlockKind::Wood | BlockKind::Leaves)
+        },
         // B5.8: a ladder rung, like Build, goes into currently-open space.
         DesignationKind::Build | DesignationKind::Ladder => !block.is_filled(),
         DesignationKind::Stockpile => false,
@@ -656,6 +661,63 @@ pub const CAVEIN_SUPPORT_CAP: usize = 64;
 pub const CAVEIN_DAMAGE_FRAC: f32 = 0.25;
 pub const CAVEIN_FEAR: f32 = 0.25;
 
+/// CHOP redesign (FR10): the caps bounding a single tree's fell-set walk. A
+/// large oak fits comfortably; a canopy MERGED into a worldgen Wood roof (the
+/// D15 residual) is CLIPPED instead of felling the building, and the height
+/// band stops vertical runaway. The XY RADIUS is the real per-tree boundary:
+/// forest canopies CONNECT (b5 run-1: one seed flooded 13 trees' worth to the
+/// cell cap), so the walk is confined to a tree-plausible column around the
+/// base — neighbouring trees are their own seeds.
+/// In DENSE forest even a tight radius catches neighbouring merged canopy, so
+/// per-tree sets there legitimately clip at the cap (bounded work per seed;
+/// the neighbours are their own seeds and shared cells dedupe at placement) —
+/// the cap is the guarantee, not a defect (b5 runs 1-2 finding).
+pub const TREE_FELL_CELL_CAP: usize = 2048;
+pub const TREE_FELL_HEIGHT_CAP: i32 = 40;
+pub const TREE_FELL_RADIUS: i32 = 10;
+
+/// CHOP redesign (FR10 Part 2 step 3): from a CONFIRMED tree base (the caller
+/// seeds only from `tree_valid_at`-confirmed oracle positions — never a
+/// building), flood the connected Wood+Leaves component: the tree's full
+/// block-set (trunk + branches + canopy). Bounded by [`TREE_FELL_CELL_CAP`] +
+/// [`TREE_FELL_HEIGHT_CAP`] above the base and 2 below it (roots). PURE
+/// (terrain via `is_tree_block`) so it unit-tests without a `TerrainGrid`.
+pub fn tree_fell_set(
+    is_tree_block: impl Fn(Vec3<i32>) -> bool,
+    base: Vec3<i32>,
+    cell_cap: usize,
+    height_cap: i32,
+    radius: i32,
+) -> Vec<Vec3<i32>> {
+    if !is_tree_block(base) {
+        return Vec::new();
+    }
+    let mut seen: HashSet<Vec3<i32>> = HashSet::new();
+    seen.insert(base);
+    let mut stack = vec![base];
+    let mut cells = Vec::new();
+    while let Some(p) = stack.pop() {
+        cells.push(p);
+        if cells.len() >= cell_cap {
+            break; // clipped — never fell past the cap (D15 guard)
+        }
+        for d in NEIGHBOURS6 {
+            let n = p + d;
+            if n.z < base.z - 2
+                || n.z > base.z + height_cap
+                || (n.x - base.x).abs() > radius
+                || (n.y - base.y).abs() > radius
+            {
+                continue;
+            }
+            if is_tree_block(n) && seen.insert(n) {
+                stack.push(n);
+            }
+        }
+    }
+    cells
+}
+
 /// CAVE-IN v1 (FR11 Q1, reviewer R8/F-CAVE-1+2): the eject destination for a
 /// colonist caught in a collapse's crush footprint — the NEAREST TRUE
 /// STANDABLE cell OUTSIDE the crush columns: air feet + air head + a solid
@@ -998,6 +1060,57 @@ impl JobBoard {
             jobs = created.len(),
             "bastion: surface designation placed"
         );
+        created
+    }
+
+    /// CHOP redesign (FR10): generate Chop jobs for a RESOLVED fell-set — the
+    /// block positions of one whole tree, computed by the HANDLER via the
+    /// World oracle (`get_area_trees` → `tree_valid_at` → [`tree_fell_set`]).
+    /// `bastion_jobs` stays terrain-only: this just makes one job per
+    /// handed-in position (re-validated against `job_wanted`, deduped), and
+    /// the fell-set's tight AABB joins the claim mask exactly like a painted
+    /// designation (the same AABB is echoed to the client as the per-tree
+    /// outline box, so cancel-through-the-echo reaches every job).
+    pub fn place_chop_cells(
+        &mut self,
+        terrain: &TerrainGrid,
+        cells: &[Vec3<i32>],
+    ) -> Vec<JobId> {
+        let mut created = Vec::new();
+        let occupied: HashSet<Vec3<i32>> = self.jobs.values().map(|j| j.pos).collect();
+        let (mut min, mut max) = (Vec3::broadcast(i32::MAX), Vec3::broadcast(i32::MIN));
+        for &pos in cells {
+            let Ok(block) = terrain.get(pos) else {
+                continue;
+            };
+            if !job_wanted(DesignationKind::Chop, block) || occupied.contains(&pos) {
+                continue;
+            }
+            min = Vec3::partial_min(min, pos);
+            max = Vec3::partial_max(max, pos);
+            let id = self.next_id;
+            self.next_id += 1;
+            self.jobs.insert(id, Job {
+                kind: DesignationKind::Chop,
+                work: DesignationKind::Chop.work_type(),
+                pos,
+                skill_floor: 0,
+                claimed_by: None,
+                unreachable: false,
+                progress: 0.0,
+                required_item: None,
+                needs_materials: false,
+                carve_attempted: false,
+                is_access: false,
+                stuck_strikes: 0,
+                depth: 0,
+            });
+            created.push(id);
+        }
+        if !created.is_empty() {
+            self.designated.push(Region { min, max });
+        }
+        info!(jobs = created.len(), "bastion: chop fell-set placed (FR10)");
         created
     }
 
@@ -1943,10 +2056,20 @@ impl<'a> System<'a> for Sys {
                     // placement used; a job it no longer holds for is moot.
                     // Checked before Build's material consumption so a moot
                     // Build job doesn't eat the material.
-                    let still_valid = terrain.get(job.pos).ok().is_some_and(|b| match job.kind {
-                        DesignationKind::Mine => b.is_filled(),
-                        DesignationKind::Chop => matches!(b.kind(), BlockKind::Wood),
-                        DesignationKind::Build | DesignationKind::Ladder => !b.is_filled(),
+                    // CHOP redesign (FR10): the drop branch below needs the
+                    // block's PRE-REMOVAL kind — Wood drops, Leaves clears
+                    // free — so capture it with the validity read.
+                    let completed_kind = terrain.get(job.pos).ok().map(|b| b.kind());
+                    let still_valid = completed_kind.is_some_and(|k| match job.kind {
+                        DesignationKind::Mine => {
+                            terrain.get(job.pos).ok().is_some_and(|b| b.is_filled())
+                        },
+                        DesignationKind::Chop => {
+                            matches!(k, BlockKind::Wood | BlockKind::Leaves)
+                        },
+                        DesignationKind::Build | DesignationKind::Ladder => {
+                            terrain.get(job.pos).ok().is_some_and(|b| !b.is_filled())
+                        },
                         DesignationKind::Stockpile => false,
                     });
                     if !still_valid {
@@ -2041,7 +2164,15 @@ impl<'a> System<'a> for Sys {
 
                     if let Some(item_id) = match job.kind {
                         DesignationKind::Mine => Some(MINE_DROP_ITEM),
-                        DesignationKind::Chop => Some(CHOP_DROP_ITEM),
+                        // CHOP redesign (FR10): only WOOD yields — leaves
+                        // clear with no drop (yield scales with trunk size by
+                        // construction: one drop per Wood block).
+                        DesignationKind::Chop
+                            if completed_kind == Some(BlockKind::Wood) =>
+                        {
+                            Some(CHOP_DROP_ITEM)
+                        },
+                        DesignationKind::Chop => None,
                         DesignationKind::Build
                         | DesignationKind::Stockpile
                         | DesignationKind::Ladder => None,
@@ -3053,5 +3184,46 @@ mod tests {
             floating_chunk(|_p: Vec3<i32>| false, Vec3::new(0, 0, 100), cap),
             None
         );
+    }
+
+    /// CHOP redesign (FR10): the bounded whole-tree flood — connected
+    /// component from the base, clipped by the cell cap (the D15 guard) and
+    /// the height band.
+    #[test]
+    fn tree_fell_set_bounds() {
+        // A 3-block trunk (z 10..12) + a 3-block canopy arm at z 12.
+        let tree: Vec<Vec3<i32>> = vec![
+            Vec3::new(0, 0, 10),
+            Vec3::new(0, 0, 11),
+            Vec3::new(0, 0, 12),
+            Vec3::new(1, 0, 12),
+            Vec3::new(0, 1, 12),
+        ];
+        let tset: HashSet<Vec3<i32>> = tree.iter().copied().collect();
+        let is_tree = |p: Vec3<i32>| tset.contains(&p);
+        let mut got = tree_fell_set(is_tree, Vec3::new(0, 0, 10), 4096, 40, 16);
+        got.sort_by_key(|p| (p.x, p.y, p.z));
+        let mut want = tree.clone();
+        want.sort_by_key(|p| (p.x, p.y, p.z));
+        assert_eq!(got, want);
+        // The CELL CAP clips (never fells past it): an infinite Wood plane
+        // yields exactly cap cells.
+        let plane = |p: Vec3<i32>| p.z == 10;
+        assert_eq!(tree_fell_set(plane, Vec3::new(0, 0, 10), 16, 40, 64).len(), 16);
+        // The XY RADIUS is the per-tree boundary (forest canopies CONNECT —
+        // without it one seed floods the whole forest to the cap): an
+        // infinite plane with radius 2 yields exactly the 5×5 column window.
+        assert_eq!(
+            tree_fell_set(plane, Vec3::new(0, 0, 10), 4096, 40, 2).len(),
+            25
+        );
+        // The HEIGHT band bounds the walk: an infinite column stops at
+        // base+height_cap (and 2 below).
+        let column = |p: Vec3<i32>| p.x == 0 && p.y == 0;
+        let cells = tree_fell_set(column, Vec3::new(0, 0, 10), 4096, 5, 16);
+        assert!(cells.iter().all(|p| p.z >= 8 && p.z <= 15));
+        assert_eq!(cells.len(), 8); // z 8..=15
+        // A non-tree seed yields nothing.
+        assert!(tree_fell_set(is_tree, Vec3::new(9, 9, 9), 4096, 40, 16).is_empty());
     }
 }

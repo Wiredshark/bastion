@@ -4888,7 +4888,13 @@ impl Hud {
             // deep" [+], under the active designate button. Steps the SAME
             // session field scroll-while-painting steps, so the two paths
             // can't drift.
-            if let ToolMode::Designate(_) = self.bastion.tool {
+            // CHOP redesign (FR10): the stepper is a VOLUME control — an
+            // Area2D kind (Chop) paints a pure XY footprint, so the depth
+            // stepper + flat/slope toggle hide with it (footprint_mode is the
+            // one classifier the UI, paint path, and server all branch on).
+            if let ToolMode::Designate(kind) = self.bastion.tool
+                && kind.footprint_mode() == common::bastion::FootprintMode::Volume
+            {
                 let active_i = tools
                     .iter()
                     .position(|t| *t == self.bastion.tool)

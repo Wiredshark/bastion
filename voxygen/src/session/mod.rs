@@ -1006,24 +1006,33 @@ impl SessionState {
                 // false-reject at perfectly valid volumes. Sample the real
                 // surface at the drag rect's center (the one height
                 // authority, slice-aware); the plane stays a fallback.
-                let mut extent = self.bastion_tools.z_extent;
-                if self.bastion_tools.flat_floor {
-                    let center = Vec2::new(
-                        (region.min.x + region.max.x) as f32 / 2.0 + 0.5,
-                        (region.min.y + region.max.y) as f32 / 2.0 + 0.5,
-                    );
-                    let surface = bastion::overlay_surface_z(
-                        &self.client.borrow().state().terrain(),
-                        center,
-                        region.max.z as f32,
-                        self.scene.bastion_slice_z(),
-                    )
-                    .floor() as i32;
-                    extent.floor_z = Some(surface - extent.down as i32);
+                // CHOP redesign (FR10): an Area2D kind paints a PURE XY
+                // footprint — no volume, no extent on the wire. The server
+                // resolves whole trees rooted in it and echoes per-tree boxes.
+                if kind.footprint_mode() == common::bastion::FootprintMode::Area2D {
+                    self.client
+                        .borrow_mut()
+                        .bastion_place_designation(region, kind, None);
+                } else {
+                    let mut extent = self.bastion_tools.z_extent;
+                    if self.bastion_tools.flat_floor {
+                        let center = Vec2::new(
+                            (region.min.x + region.max.x) as f32 / 2.0 + 0.5,
+                            (region.min.y + region.max.y) as f32 / 2.0 + 0.5,
+                        );
+                        let surface = bastion::overlay_surface_z(
+                            &self.client.borrow().state().terrain(),
+                            center,
+                            region.max.z as f32,
+                            self.scene.bastion_slice_z(),
+                        )
+                        .floor() as i32;
+                        extent.floor_z = Some(surface - extent.down as i32);
+                    }
+                    self.client
+                        .borrow_mut()
+                        .bastion_place_designation(region, kind, Some(extent));
                 }
-                self.client
-                    .borrow_mut()
-                    .bastion_place_designation(region, kind, Some(extent));
             },
             None => {
                 // B5.6a erase fix: the drag's z came from the camera

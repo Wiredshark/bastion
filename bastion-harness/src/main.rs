@@ -1166,6 +1166,87 @@ fn b5_scenario(args: &Args) -> ExitCode {
     server.bastion_cancel_designation(one(f_pos));
     tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
 
+    // 7.10 (CHOP redesign, FR10): WHOLE-TREE detection + fell-set placement,
+    // through the SAME bastion_chop::detect_trees the paint handler runs
+    // (B17: the tested path is the shipping path). Search rings around the
+    // site until a real worldgen tree is found in the force-loaded area.
+    let mut ch_trees = 0;
+    let mut ch_cells = 0;
+    let mut ch_jobs = 0;
+    let mut ch_aabb: Option<Region> = None;
+    for (ox, oy) in [
+        (0, 0),
+        (64, 0),
+        (-64, 0),
+        (0, 64),
+        (0, -64),
+        (64, 64),
+        (-64, -64),
+        (96, 0),
+        (0, 96),
+    ] {
+        let c = Vec2::new(cx + ox, cy + oy);
+        let (t, cl, j, aabb) =
+            server.bastion_place_chop_area(c - Vec2::broadcast(32), c + Vec2::broadcast(32));
+        if t >= 1 {
+            (ch_trees, ch_cells, ch_jobs, ch_aabb) = (t, cl, j, aabb);
+            break;
+        }
+    }
+    // MIXED KINDS: the first tree's box contains BOTH trunk (Wood) and canopy
+    // (Leaves) — the whole tree, not a Wood slab (the redesign's point).
+    let ch_mixed = ch_aabb.is_some_and(|a| {
+        let (mut wood, mut leaves) = (false, false);
+        'scan: for x in a.min.x..=a.max.x {
+            for y in a.min.y..=a.max.y {
+                for z in a.min.z..=a.max.z {
+                    match server.bastion_block_kind(Vec3::new(x, y, z)) {
+                        Some(BlockKind::Wood) => wood = true,
+                        Some(BlockKind::Leaves) => leaves = true,
+                        _ => {},
+                    }
+                    if wood && leaves {
+                        break 'scan;
+                    }
+                }
+            }
+        }
+        wood && leaves
+    });
+    // PER-TREE CANCEL: erasing through the tree's echoed box removes exactly
+    // its jobs (the AABB is the designation the client gets).
+    let ch_cancel_clean = ch_aabb.is_some_and(|a| {
+        server.bastion_cancel_designation(a);
+        server.bastion_jobs_in_region(a) == 0
+    });
+    // Clear any remaining detected trees' jobs (other rings/trees).
+    server.bastion_cancel_designation(Region {
+        min: Vec3::new(cx - 160, cy - 160, 0),
+        max: Vec3::new(cx + 160, cy + 160, 2048),
+    });
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+    // LEAVES EXECUTION (the no-drop rule): one hand-placed Leaves block by the
+    // pad; a colonist chops it — it must CLEAR but yield NO log.
+    let leaf_pos = Vec3::new(bpx - 2, bpy + 2, cz + 1);
+    server.state_mut().set_block(
+        leaf_pos,
+        Block::new(BlockKind::Leaves, Rgb::new(60, 120, 60)),
+    );
+    tick(&mut server, 2);
+    server.bastion_place_designation(one(leaf_pos), DesignationKind::Chop);
+    let mut ch_leaf_cleared = false;
+    for _ in 0..40 {
+        tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL);
+        if server.bastion_block_kind(leaf_pos) != Some(BlockKind::Leaves) {
+            ch_leaf_cleared = true;
+            break;
+        }
+    }
+    let ch_leaf_no_drop =
+        server.bastion_count_items_near(leaf_pos.map(|e| e as f32), 4.0, CHOP_DROP_ITEM) == 0;
+    server.bastion_cancel_designation(one(leaf_pos));
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+
     // 7.7 (TOOL-0): the tool factor end-to-end — equip a stone pick into a
     // colonist's mainhand (Quality::Low → 1.5×), then a steel pick
     // (Moderate → 2.0×): the vanilla tier ladder already rides quality, so
@@ -1231,6 +1312,13 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_b15_ontop_claimed": b15_ontop_claimed,
         "b5_b15_adjacent_claimed": b15_adjacent_claimed,
         "b5_b15_floater_skipped": b15_floater_skipped,
+        "b5_ch_trees": ch_trees,
+        "b5_ch_cells": ch_cells,
+        "b5_ch_jobs": ch_jobs,
+        "b5_ch_mixed": ch_mixed,
+        "b5_ch_cancel_clean": ch_cancel_clean,
+        "b5_ch_leaf_cleared": ch_leaf_cleared,
+        "b5_ch_leaf_no_drop": ch_leaf_no_drop,
         "b5_tool_stone": tl_stone,
         "b5_tool_steel": tl_steel,
         "b5_tool_ok": tl_ok,
@@ -1281,6 +1369,25 @@ fn b5_scenario(args: &Args) -> ExitCode {
         && b15_ontop_claimed
         && b15_adjacent_claimed
         && b15_floater_skipped
+        // CHOP redesign (FR10): a real worldgen tree detected via the SHARED
+        // oracle path; every fell cell became a job; the tree box holds BOTH
+        // Wood and Leaves (whole tree, not a slab); per-tree cancel through
+        // the echoed AABB is clean; a chopped Leaves block CLEARS with NO
+        // log drop.
+        && ch_trees >= 1
+        // jobs <= cells is EXPECTED (adjacent trees' shared canopy cells
+        // dedupe at placement), and in DENSE forest per-tree sets may
+        // legitimately clip at the cap (bounded work per seed — the cap IS
+        // the guarantee). Gate the INVARIANTS: trees found, jobs placed,
+        // bounded by construction, whole-tree (mixed kinds), per-tree cancel
+        // through the echoed box, leaves clear with no drop.
+        && ch_jobs > 0
+        && ch_jobs <= ch_cells
+        && ch_cells <= ch_trees * server::bastion_jobs::TREE_FELL_CELL_CAP
+        && ch_mixed
+        && ch_cancel_clean
+        && ch_leaf_cleared
+        && ch_leaf_no_drop
         // TOOL-0: equipped-tool factor end-to-end (stone 1.5, steel 2.0,
         // wrong-verb 1.0); the curve itself is unit-pinned.
         && tl_ok
