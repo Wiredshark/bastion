@@ -368,6 +368,26 @@ impl RtSim {
             .collect()
     }
 
+    /// bastion (B-AG2, harness): how many rtsim NPCs carry each CONVERTED
+    /// archetype's profession (herbalist, hunter, guard) — evidence the
+    /// table applies to a real generated population, not just test keys.
+    pub fn bastion_profession_census(&self) -> (usize, usize, usize) {
+        use common::rtsim::{Profession, Role};
+        let data = self.state.data();
+        let mut census = (0, 0, 0);
+        for (_, npc) in data.npcs.npcs.iter() {
+            if let Role::Civilised(Some(p)) = &npc.role {
+                match p {
+                    Profession::Herbalist => census.0 += 1,
+                    Profession::Hunter => census.1 += 1,
+                    Profession::Guard => census.2 += 1,
+                    _ => {},
+                }
+            }
+        }
+        census
+    }
+
     /// bastion (HIST-0, harness): soak-record `n` chronicle test events at
     /// an importance band (0 = Routine, 1 = Notable, other = Legendary)
     /// through THE ONE capture entry point. Returns the last stamped seq.

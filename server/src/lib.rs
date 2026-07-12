@@ -788,6 +788,32 @@ impl Server {
             .bastion_spawn_colony(wpos, count)
     }
 
+    /// bastion (B-AG2, harness hook): the archetype table's weight for
+    /// (key, activity) — probes the EXACT lookup path the brain's
+    /// converted gates use (`archetype_chance`).
+    pub fn bastion_archetype_weight(
+        &self,
+        key: &str,
+        activity: &str,
+    ) -> Option<f32> {
+        ::rtsim::rule::npc_ai::archetype::archetype_chance(key, activity)
+    }
+
+    /// bastion (B-AG2, harness hook): an archetype's full allowed set
+    /// (name-sorted) — the same-code/different-data contrast probe.
+    pub fn bastion_archetype_allowed(&self, key: &str) -> Vec<(String, f32)> {
+        ::rtsim::rule::npc_ai::archetype::allowed_set(key)
+    }
+
+    /// bastion (B-AG2, harness hook): (herbalist, hunter, guard) counts in
+    /// the generated rtsim population.
+    pub fn bastion_profession_census(&self) -> (usize, usize, usize) {
+        self.state
+            .ecs()
+            .read_resource::<rtsim::RtSim>()
+            .bastion_profession_census()
+    }
+
     /// bastion (HIST-0, harness hook): soak-record chronicle test events
     /// (band: 0 Routine / 1 Notable / other Legendary) through THE ONE
     /// capture entry point.

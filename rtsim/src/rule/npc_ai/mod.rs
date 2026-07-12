@@ -23,6 +23,9 @@
 //! passed to the Veloren server's agent system which attempts to act in
 //! accordance with it.
 
+/// bastion (B-AG2): archetype-keyed decision data — one shared brain,
+/// many configs (see the converted gates in `villager`).
+pub mod archetype;
 mod airship_ai;
 #[cfg(feature = "airship_log")]
 mod airship_logger;
@@ -735,6 +738,19 @@ fn choose_plaza(ctx: &mut NpcCtx, site: SiteId) -> Option<Vec2<f32>> {
 
 const WALKING_SPEED: f32 = 0.35;
 
+/// bastion (B-AG2): THE shared archetype gate — replaces the brain's
+/// scattered `matches!(profession, X) && ctx.rng.random_bool(HARDCODED)`
+/// pattern at converted sites with one lookup against the RON table
+/// (`assets/common/rtsim/archetypes.ron`): same code path for every
+/// archetype, the DATA decides. The rng rolls ONLY when the archetype
+/// lists the activity — preserving each NPC's rng stream exactly as the
+/// old short-circuit did (it rolled only on a profession match).
+fn archetype_gate(ctx: &mut NpcCtx, activity: &str) -> bool {
+    archetype::archetype_key(ctx.npc.profession())
+        .and_then(|key| archetype::archetype_chance(key, activity))
+        .is_some_and(|w| ctx.rng.random_bool(w.clamp(0.0, 1.0) as f64))
+}
+
 fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
     choose(move |ctx, state: &mut DefaultState, consider| {
         // Consider moving home if the home site gets too full
@@ -926,9 +942,12 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
             }
         }
 
-        // Villagers with roles should perform those roles
-        if matches!(ctx.npc.profession(), Some(Profession::Herbalist))
-            && ctx.rng.random_bool(0.8)
+        // Villagers with roles should perform those roles.
+        // bastion (B-AG2): the herbalist/hunter/guard gates below read the
+        // archetype TABLE through one shared code path (weights + allowed
+        // lists were the inline constants + matches!, moved verbatim to
+        // data); farmer/merchant/chef convert in the §4 expansion pass.
+        if archetype_gate(ctx, "gather_forest")
             && let Some(forest_wpos) = find_forest(ctx)
         {
             consider.casual(
@@ -957,8 +976,7 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
             );
         }
 
-        if matches!(ctx.npc.profession(), Some(Profession::Hunter))
-            && ctx.rng.random_bool(0.8)
+        if archetype_gate(ctx, "hunt_forest")
             && let Some(forest_wpos) = find_forest(ctx)
         {
             consider.casual(
@@ -976,8 +994,7 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
             );
         }
 
-        if matches!(ctx.npc.profession(), Some(Profession::Guard))
-            && ctx.rng.random_bool(0.7)
+        if archetype_gate(ctx, "patrol_plaza")
             && let Some(plaza_wpos) = choose_plaza(ctx, visiting_site)
         {
             consider.casual(

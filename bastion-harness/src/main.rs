@@ -175,6 +175,13 @@ struct Args {
     #[arg(long)]
     chronicle_scenario: bool,
 
+    /// bastion (B-AG2, row 40): archetype-keyed decision data — the RON
+    /// table loads, the brain's ONE lookup path yields the moved-verbatim
+    /// weights, contrasting archetypes get different allowed sets through
+    /// the same code, unknown keys close gracefully.
+    #[arg(long)]
+    archetype_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -287,6 +294,8 @@ fn main() -> ExitCode {
         gather_scenario(&args)
     } else if args.chronicle_scenario {
         chronicle_scenario(&args)
+    } else if args.archetype_scenario {
+        archetype_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3367,6 +3376,121 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (B-AG2, row 40): archetype-keyed decision data over ONE shared
+/// brain — the done-when is the Playbook's own criterion: two contrasting
+/// archetype configs, the same activity vocabulary, produce DIFFERENT
+/// data-driven outcomes through the IDENTICAL lookup path (the exact
+/// `archetype_chance` the brain's converted gates call), with the
+/// moved-verbatim weights loading from the RON asset and unknown
+/// keys/activities closing gracefully (None/empty — never a crash, never
+/// invented behavior). The generated population census (how many
+/// herbalists/hunters/guards actually exist) is REPORTED alongside as
+/// evidence the table applies to real NPCs; live brain scheduling is the
+/// known seam, so behavior trajectories aren't gated.
+fn archetype_scenario(args: &Args) -> ExitCode {
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-archetype-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-archetype".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-archetype-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+    tick(&mut server, 5);
+
+    // The moved-verbatim weights, through the brain's own lookup path.
+    let herb = server.bastion_archetype_weight("herbalist", "gather_forest");
+    let hunt = server.bastion_archetype_weight("hunter", "hunt_forest");
+    let guard = server.bastion_archetype_weight("guard", "patrol_plaza");
+    let weights_ok = herb == Some(0.8) && hunt == Some(0.8) && guard == Some(0.7);
+
+    // The CONTRAST (the done-when): same code path, different archetype
+    // key → a different allowed set; and cross-lookups close (a guard has
+    // no gather_forest, a herbalist no patrol_plaza).
+    let herb_set = server.bastion_archetype_allowed("herbalist");
+    let guard_set = server.bastion_archetype_allowed("guard");
+    let contrast = !herb_set.is_empty()
+        && !guard_set.is_empty()
+        && herb_set != guard_set
+        && server
+            .bastion_archetype_weight("guard", "gather_forest")
+            .is_none()
+        && server
+            .bastion_archetype_weight("herbalist", "patrol_plaza")
+            .is_none();
+
+    // GRACEFUL: unconverted/unknown keys yield nothing (the old
+    // non-matching-profession behavior), never a panic.
+    let graceful = server.bastion_archetype_weight("farmer", "gather_forest").is_none()
+        && server
+            .bastion_archetype_weight("no_such_archetype", "anything")
+            .is_none()
+        && server.bastion_archetype_allowed("no_such_archetype").is_empty();
+
+    // REPORTED: the generated population the table applies to, and that
+    // the world ticks on with the converted gates live (no panic).
+    let census = server.bastion_profession_census();
+    tick(&mut server, 60);
+
+    let result = serde_json::json!({
+        "ag2_weight_herbalist": herb,
+        "ag2_weight_hunter": hunt,
+        "ag2_weight_guard": guard,
+        "ag2_weights_ok": weights_ok,
+        "ag2_contrast": contrast,
+        "ag2_graceful": graceful,
+        "ag2_census_herbalist": census.0,
+        "ag2_census_hunter": census.1,
+        "ag2_census_guard": census.2,
+    });
+    let pass = weights_ok && contrast && graceful;
+    println!("{}", result);
+    println!("ARCHETYPE SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }

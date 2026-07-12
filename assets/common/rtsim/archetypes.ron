@@ -1,0 +1,32 @@
+// bastion (B-AG2, row 40): the archetype decision table — ONE shared
+// brain reads these instead of hardcoded per-profession branches
+// (rtsim/src/rule/npc_ai/archetype.rs). Weight = the chance the brain's
+// consideration pass takes the activity when its preconditions hold
+// (the exact semantics of the old inline `random_bool` constants, moved
+// verbatim: herbalist/hunter 0.8, guard 0.7). An activity absent from an
+// archetype's map is NOT ALLOWED for it; an archetype absent here gets
+// no data-driven activities at all (graceful default).
+//
+// Converted this block: herbalist / hunter / guard. The §4 expansion
+// pass (agency-bible.md) sweeps farmer / merchant / chef and adds
+// species-class keys for wild bodies — extend HERE, not with new code
+// branches.
+(
+    archetypes: {
+        "herbalist": (
+            activities: {
+                "gather_forest": 0.8,
+            },
+        ),
+        "hunter": (
+            activities: {
+                "hunt_forest": 0.8,
+            },
+        ),
+        "guard": (
+            activities: {
+                "patrol_plaza": 0.7,
+            },
+        ),
+    },
+)
