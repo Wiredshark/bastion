@@ -400,3 +400,5 @@ than editing the old one.
   UNCHANGED by default (the flag is harness-set only); the one live-game
   behavior delta is the bastion drop-toss becoming tick-seeded (cosmetic
   scatter, identical feel). No net/comp/save changes. Fully reversible cold.
+
+| bastion-block-CASE003 | ecc069fd18 | CASE-003 wedge: fail-safe teleport standability + phys center-safety-net (shared eject_dest -> common) | revert tag bastion-block-DETRNG (0ce3517b71) | no save/wire change (behavior-only; CENTER_NET_FIRES is process-global telemetry) |

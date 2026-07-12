@@ -48,7 +48,7 @@
 | 27 | CHOP | Whole-tree felling without floating canopy. | DONE | MIXED | [Chop redesign](CHOP-REDESIGN-design.md) |
 | 28 | COORD | Stigmergic crew saturation/dispersion field. | DONE | NEW | [Coordination](COLONIST-COORDINATION-design.md) |
 | 29 | DETRNG | Deterministic harness RNG and invariant gates. | DONE | MIXED | [Fleet status §BUILD LANE](FLEET_STATUS.md) |
-| 30 | CASE-003 | Terrain-aware soft push and center-safety net. | CURRENT | MIXED | [Fleet status §BUILD LANE](FLEET_STATUS.md) |
+| 30 | CASE-003 | Terrain-aware soft push and center-safety net. | DONE | MIXED | [Fleet status §BUILD LANE](FLEET_STATUS.md) |
 | 31 | FR15-TIGHTDIG | Close tight-dig stance/reposition/depth locomotion as one class. | TODO | MIXED | [Build Review Log §FR15](BUILD_REVIEW_LOG.md) |
 | 32 | LOD-0 | Save back skills, inventory, and later needs. | TODO | CHEAP | [LOD §12](LOD-PERSISTENCE-SPEC.md) |
 | 33 | LOD-1 | Atomic loaded↔simulated transition and dupe guard. | TODO | NEW | [LOD §12](LOD-PERSISTENCE-SPEC.md) |

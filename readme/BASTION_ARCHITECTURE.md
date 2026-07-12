@@ -957,11 +957,11 @@ the creature-integration pipeline's reference instance; /spawn enemy
 night_horror is live] → [CHOP SHIPPED — tag `bastion-block-CHOP`:
 whole-tree felling via the World oracle, Area2D paint, per-tree boxes,
 leaves-clear-no-drop] → [COORD SHIPPED — tag `bastion-block-COORD`:
-the stigmergic saturation field, emergent crew division + flow-bark] → [DETRNG
-SHIPPED — tag `bastion-block-DETRNG`: deterministic harness rng +
-invariant-form gates, the flake class retired] → CASE-003 (the chokepoint
-soft-collision wedge: seed-sweep repro + terrain-aware push + center
-safety-net — SAFETY, architect-triaged) → AUTON-0/1
+the stigmergic saturation field, emergent crew division + flow-bark] → [CASE-003
+SHIPPED — tag `bastion-block-CASE003`: the wedge was the FAIL-SAFE TELEPORT
+(not soft-collision) — picker standability + the phys CENTER-SAFETY-NET on the
+shared eject_dest] → FR15-TIGHTDIG (row 31: committed waypoint path +
+per-colonist climb-free pit egress) → LOD-0 (row 32)
 (FR13 — decaying saturation field) → AUTON-0/1 (arbiter in the
 SEQUENTIAL bastion system, NOT par_join — B10 determinism; reviewer: gate
 CLAIM+execution on current==Work + a `climb_free_until` yield-guard on the

@@ -1345,3 +1345,19 @@ asserts tolerate it; full tick-determinism = a future infra project.
 UNBLOCKS: CASE-003's seed-sweep repro (the wedge is now hunt-able).
 
 FOLLOW-UPS IN-BLOCK: b5 stone gate -> exact per-block accounting + mine_cleared REPORTED; b4 arrived>=1 (mechanic) + count REPORTED — the last two flake-family members moved to invariant form (architect pre-approved). Final gate: 8/8 ALL GREEN on the tag commit.
+
+### bastion-block-CASE003 (merge ecc069fd18)
+Row 30, entombment-SAFETY. The chokepoint wedge REPRO-CONFIRMED via DETRNG seed-sweep
+(the block's stated dependency paying off): seed 21 = ULTIMATE FAIL-SAFE teleporting a
+cave-stuck colonist INTO a tree trunk (column_surface_z sees through Wood; picker had no
+air check), phys revert-lock persisting it, stuck-watch re-firing to the same cell.
+Soft-collision hypothesis REFUTED for the reproducible class (nearest_other=84 at trip;
+0 pair-pinch trips in 24 seeds) - packet's phys push changes deferred, Opus-ratified
+(R10, no findings). Fix: picker standability (feet+head air, skip occupied columns) +
+phys per-tick CENTER-SAFETY-NET on the ONE shared eject_dest (moved to common::bastion).
+Telemetry: ck_center_net_fires (reported; fired on seeds 7/8/1337 = a REMAINING embedding
+writer, diagnostics landed, hunt filed). 16-seed re-sweep: in_terrain 0/0 at per-tick
+sensitivity everywhere; formerly-deadlocked seeds 6/9/13 now pass (shared root). 4 new
+unit pins. Gate 8/8 all-green on the tag commit. By-catch for the bug lane: composite
+legs fail on non-gate seeds (failsafe leg flips run-to-run = seam-sensitive; mine_done
+seed 4 stable) - repro seeds in the session handoff note.
