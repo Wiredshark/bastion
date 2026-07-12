@@ -176,7 +176,14 @@ impl Rule for NpcAi {
                             } else {
                                 simulated_dt
                             },
-                            rng: ChaChaRng::from_seed(rand::rng().random::<[u8; 32]>()),
+                            // DETRNG (B8 root fix): the per-NPC salt makes
+                            // each stream independent of the par_iter order —
+                            // deterministic under rayon by construction.
+                            rng: crate::tick_rng(
+                                ctx.index.seed,
+                                ctx.event.tick,
+                                npc.seed,
+                            ),
                             gizmos: gizmos.as_mut(),
                             system_data: &*ctx.system_data,
                             current_action_priority: 0,
