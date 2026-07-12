@@ -6660,3 +6660,30 @@ fn handle_spot(
 ) -> CmdResult<()> {
     Err(Content::localized("command-spot-world_feature"))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    /// ARCH-001 (registry B16): the /aura duration guard's exact predicate —
+    /// `Duration::try_from_secs_f32(d).is_err()` must reject EVERY value that
+    /// would panic `from_secs_f32` downstream (negative, NaN, ±inf, AND the
+    /// finite-overflow case the first fix missed: 1e20 fits an f32 but not a
+    /// Duration), while accepting ordinary durations. Pins the guard without
+    /// needing a live client repro.
+    #[test]
+    fn aura_duration_guard_rejects_unrepresentable() {
+        for bad in [-1.0f32, f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 1e20] {
+            assert!(
+                Duration::try_from_secs_f32(bad).is_err(),
+                "guard must reject {bad}"
+            );
+        }
+        for good in [0.0f32, 1.0, 10.0, 3600.0] {
+            assert!(
+                Duration::try_from_secs_f32(good).is_ok(),
+                "guard must accept {good}"
+            );
+        }
+    }
+}

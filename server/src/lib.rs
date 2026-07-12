@@ -1447,6 +1447,15 @@ impl Server {
             .done_count
     }
 
+    /// bastion (COORDINATION-stigmergic-v1, harness hook): the saturation
+    /// field at a position's coarse cell.
+    pub fn bastion_saturation_at(&self, pos: Vec3<i32>) -> f32 {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .saturation_at(pos)
+    }
+
     /// bastion (B-LIVE4, harness hook): cumulative job-claim events over the
     /// board's life (initial claims + re-claims after release). Snapshot
     /// before/after a dig phase → claims-per-job ratio, the mine-oscillation

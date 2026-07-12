@@ -106,6 +106,13 @@ struct Args {
     #[arg(long)]
     cavein_scenario: bool,
 
+    /// bastion (COORDINATION-stigmergic-v1, FR13-REV): two dig sites, a crew
+    /// spawned at one — the saturation field must SPLIT the crew (both sites
+    /// worked concurrently) instead of the mad-scramble (everyone piling the
+    /// nearest site until exhaustion).
+    #[arg(long)]
+    coord_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -190,6 +197,8 @@ fn main() -> ExitCode {
         chokepoint_scenario(&args)
     } else if args.cavein_scenario {
         cavein_scenario(&args)
+    } else if args.coord_scenario {
+        coord_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -2784,6 +2793,175 @@ fn b58_scenario(args: &Args) -> ExitCode {
     println!("{}", result);
     println!("B5.8 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (COORDINATION-stigmergic-v1, FR13-REV): the anti-mad-scramble. Two
+/// equal dig slabs ~20 apart; the whole crew spawns beside site A. WITHOUT
+/// the saturation field, distance-greedy allocation piles everyone on A until
+/// it exhausts; WITH it, A's cells saturate as they're worked and the gradient
+/// pulls part of the crew to the under-served B — asserted as BOTH sites
+/// holding claims SIMULTANEOUSLY at some sample, plus the field actually
+/// forming over A. Placement geometry is forced rock (deterministic).
+fn coord_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind},
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-coord-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-coord".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-coord-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    // One long forced pad; site A slab at x+4..x+10, site B at x+24..x+30
+    // (centers ~20 apart — inside the field's equilibrium pull).
+    let gz = {
+        let terrain = server.state().terrain();
+        use common::vol::ReadVol;
+        (0..2048)
+            .rev()
+            .find(|z| {
+                terrain
+                    .get(Vec3::new(cx, cy, *z))
+                    .is_ok_and(|b| b.is_filled())
+            })
+            .unwrap_or(100)
+    };
+    for x in (cx - 2)..=(cx + 34) {
+        for y in (cy - 6)..=(cy + 6) {
+            for z in (gz - 3)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 12) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+    server.bastion_spawn_colony(Vec3::new(cx as f32 + 1.0, cy as f32, gz as f32 + 2.0), 5);
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    for (i, n) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            n,
+            Vec3::new(cx as f32 + 1.5, (cy - 2 + i as i32) as f32 + 0.5, (gz + 1) as f32),
+        );
+    }
+    tick(&mut server, 5);
+    let site_a = Region {
+        min: Vec3::new(cx + 4, cy - 3, gz - 1),
+        max: Vec3::new(cx + 10, cy + 3, gz),
+    };
+    let site_b = Region {
+        min: Vec3::new(cx + 24, cy - 3, gz - 1),
+        max: Vec3::new(cx + 30, cy + 3, gz),
+    };
+    let jobs_a = server.bastion_place_designation(site_a, DesignationKind::Mine).len();
+    let jobs_b = server.bastion_place_designation(site_b, DesignationKind::Mine).len();
+
+    let in_region = |p: &Vec3<i32>, r: &Region| {
+        p.x >= r.min.x
+            && p.x <= r.max.x
+            && p.y >= r.min.y
+            && p.y <= r.max.y
+            && p.z >= r.min.z
+            && p.z <= r.max.z
+    };
+    let mut split_seen = false;
+    let mut sat_peak = 0.0f32;
+    for _ in 0..400 {
+        tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL);
+        let claims = server.bastion_claimed_job_positions();
+        let a = claims.iter().any(|p| in_region(p, &site_a));
+        let b = claims.iter().any(|p| in_region(p, &site_b));
+        if a && b {
+            split_seen = true;
+        }
+        let sat = server.bastion_saturation_at(Vec3::new(cx + 7, cy, gz));
+        sat_peak = sat_peak.max(sat);
+        // Both observed + the field formed: done early.
+        if split_seen && sat_peak > 5.0 {
+            break;
+        }
+    }
+    let orphans = server.bastion_orphaned_claims();
+
+    // INVARIANTS: both slabs generated jobs; the field FORMS over the worked
+    // site; the crew SPLITS (both sites claimed simultaneously — the
+    // mad-scramble is broken); no orphaned claims.
+    let pass = jobs_a > 0 && jobs_b > 0 && sat_peak > 5.0 && split_seen && orphans == 0;
+    let result = serde_json::json!({
+        "coord_jobs_a": jobs_a,
+        "coord_jobs_b": jobs_b,
+        "coord_sat_peak": sat_peak,
+        "coord_split_seen": split_seen,
+        "coord_orphans": orphans,
+    });
+    println!("{}", result);
+    println!("COORD SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }

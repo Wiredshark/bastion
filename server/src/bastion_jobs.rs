@@ -284,6 +284,28 @@ fn job_wanted(kind: DesignationKind, block: &Block) -> bool {
     }
 }
 
+/// bastion (COORDINATION-stigmergic-v1, FR13-REV): the field's tuning. CELL =
+/// coarse-grid size in blocks. A worked cell gains DEPOSIT per worker per
+/// cycle and the whole field decays by DECAY per cycle → a single steady
+/// worker equilibrates at DEPOSIT/(1−DECAY) = 20, which × WEIGHT = ~15 score
+/// units of repel (score is in distance-blocks; cf. the ±32 top-down band and
+/// the +12 clump repel) — enough to out-pull a modest distance difference,
+/// never enough to crush the top-down ordering. The bark fires only on a REAL
+/// flow (the colonist's own cell is ≥ BARK_MIN_DIFF more saturated than the
+/// claimed one) and at most once per BARK_COOLDOWN per colonist.
+pub const COORD_CELL: i32 = 4;
+pub const COORD_DEPOSIT: f32 = 1.0;
+pub const COORD_DECAY: f32 = 0.95;
+pub const COORD_SAT_WEIGHT: f32 = 0.75;
+pub const COORD_BARK_COOLDOWN_SECS: f64 = 30.0;
+pub const COORD_BARK_MIN_DIFF: f32 = 5.0;
+
+/// The saturation field's coarse cell for a world position (euclidean division
+/// so negative coordinates bucket correctly).
+pub fn coord_cell(pos: Vec3<i32>) -> Vec2<i32> {
+    Vec2::new(pos.x.div_euclid(COORD_CELL), pos.y.div_euclid(COORD_CELL))
+}
+
 /// Arbitration cadence in server ticks (~0.5s at 30 tps): "a few Hz, not
 /// every tick".
 pub const ARBITRATION_INTERVAL: u64 = 15;
@@ -891,6 +913,21 @@ pub struct JobBoard {
     /// completing a job (productive); accumulate while stuck below grade
     /// regardless of motion. Closes Ben's "no colonist EVER stuck"
     /// guarantee unconditionally.
+    /// bastion (COORDINATION-stigmergic-v1, FR13-REV): the SATURATION FIELD —
+    /// the "pheromone." A coarse-celled decaying scalar over the job board:
+    /// a colonist WORKING a cell deposits each arbitration cycle; the field
+    /// decays each cycle. High = "worked/crowded here", low = under-served.
+    /// The claim scoring reads it as a penalty (LOCAL key lookup only — no
+    /// global min-search, so no tie-break hazard; FR13-REV Q2, B0-safe:
+    /// per-cell decay is order-free, deposits iterate the deterministic
+    /// entity-ordered join). Generalizes the ±2XY clump repel into a smooth
+    /// cross-frontier gradient; near-flat field ≈ today's behavior (Q5 — no
+    /// small-job threshold needed).
+    saturation: HashMap<Vec2<i32>, f32>,
+    /// bastion (FR13-REV Q4): per-colonist bark cooldown — `allowed_to_speak`
+    /// is a capability check, not a rate limit, so the coordination bark
+    /// carries its own cadence.
+    last_bark: HashMap<Uid, f64>,
     stuck_watch: HashMap<Uid, f32>,
     /// bastion (B-LIVE4, mine-oscillation): CUMULATIVE count of job-claim
     /// events over the board's life — every `claimed_by = Some` in
@@ -1063,6 +1100,16 @@ impl JobBoard {
         created
     }
 
+    /// COORDINATION-stigmergic-v1 (harness): the saturation at a world
+    /// position's coarse cell — scenarios assert the field forms over a
+    /// worked site and steers the split.
+    pub fn saturation_at(&self, pos: Vec3<i32>) -> f32 {
+        self.saturation
+            .get(&coord_cell(pos))
+            .copied()
+            .unwrap_or(0.0)
+    }
+
     /// CHOP redesign (FR10): generate Chop jobs for a RESOLVED fell-set — the
     /// block positions of one whole tree, computed by the HANDLER via the
     /// World oracle (`get_area_trees` → `tree_valid_at` → [`tree_fell_set`]).
@@ -1212,6 +1259,8 @@ impl<'a> System<'a> for Sys {
         WriteExpect<'a, BlockChange>,
         ReadExpect<'a, TerrainGrid>,
         ReadExpect<'a, common::event::EventBus<CreateItemDropEvent>>,
+        // COORDINATION-stigmergic-v1 (FR13-REV Q4): the coordination bark.
+        ReadExpect<'a, common::event::EventBus<common::event::ChatEvent>>,
         ReadStorage<'a, comp::CharacterState>,
         WriteStorage<'a, comp::Vel>,
         ReadStorage<'a, comp::PhysicsState>,
@@ -1245,6 +1294,7 @@ impl<'a> System<'a> for Sys {
             mut block_change,
             terrain,
             item_drop_events,
+            chat_events,
             char_states,
             mut velocities,
             physics_states,
@@ -1253,6 +1303,7 @@ impl<'a> System<'a> for Sys {
         ): Self::SystemData,
     ) {
         let mut item_drop_emitter = item_drop_events.emitter();
+        let mut chat_emitter = chat_events.emitter();
         let mut rng = rand::rng();
         // Pre-deref so field borrows split (jobs mutably + anchors shared
         // inside the same loop).
@@ -2809,6 +2860,25 @@ impl<'a> System<'a> for Sys {
             return;
         }
 
+        // ── COORDINATION-stigmergic-v1 (FR13-REV): the saturation field ──
+        // DECAY (per-cell independent → order-free, deterministic), prune the
+        // near-zero tail so the map tracks only the live frontier; then
+        // DEPOSIT for every colonist currently WORKING (Arrived) — the join
+        // is sequential + entity-ordered, so the float sums are fixed-order
+        // deterministic (FR13-REV Q2). Read at claim time only (a commitment
+        // point) — never continuously (the Q3/B14 anti-bob split: the field
+        // steers ALLOCATION; job completion is the monotonic re-flow trigger).
+        board.saturation.values_mut().for_each(|v| *v *= COORD_DECAY);
+        board.saturation.retain(|_, v| *v > 0.05);
+        for (_colonist, active) in (&colonists, &active_jobs).join() {
+            if matches!(active.state, ActiveJobState::Arrived)
+                && let Some(job) = board.jobs.get(&active.job)
+            {
+                let cell = coord_cell(job.pos);
+                *board.saturation.entry(cell).or_insert(0.0) += COORD_DEPOSIT;
+            }
+        }
+
         // B5: a Build job is only eligible for a colonist currently carrying
         // its required material (the single-material stand-in for real
         // hauling/recipes — B6). Also flag/clear `needs_materials` here so
@@ -3066,7 +3136,21 @@ impl<'a> System<'a> for Sys {
                 } else {
                     0.0
                 };
-                let score = dist + depth_score + clump_penalty;
+                // COORDINATION-stigmergic-v1 (FR13-REV Q1): the saturation
+                // gradient — repelled from worked/crowded cells, drawn to the
+                // under-served frontier. ADDITIVE alongside the in-pass clump
+                // repel (the field only knows LAST cycle's work; clump_penalty
+                // still prevents same-pass re-clumping — the b58 dispersion
+                // gate rides on it). A near-flat field adds ~0 → today's
+                // distance/top-down behavior (Q5: continuous degrade, no
+                // small-job threshold).
+                let sat_penalty = board
+                    .saturation
+                    .get(&coord_cell(job.pos))
+                    .copied()
+                    .unwrap_or(0.0)
+                    * COORD_SAT_WEIGHT;
+                let score = dist + depth_score + clump_penalty + sat_penalty;
                 let better = match &best {
                     None => true,
                     Some((_, bp, bs)) => priority > *bp || (priority == *bp && score < *bs),
@@ -3076,12 +3160,44 @@ impl<'a> System<'a> for Sys {
                 }
             }
             if let Some((job_id, _, _)) = best {
+                let mut claimed_cell = None;
                 if let Some(job) = board.jobs.get_mut(&job_id) {
                     job.claimed_by = Some(*uid);
                     claimed_pos.push(job.pos);
+                    claimed_cell = Some(coord_cell(job.pos));
                     // B-LIVE4: count every claim event (initial + re-claim)
                     // for the mine-oscillation claims-per-job telemetry.
                     board.total_claims += 1;
+                }
+                // COORDINATION-stigmergic-v1 (FR13-REV Q4): narrate a REAL
+                // flow — the colonist leaves a markedly more saturated spot
+                // for an under-served one. Own per-colonist cooldown
+                // (allowed_to_speak is capability, not rate-limit).
+                if let Some(new_cell) = claimed_cell {
+                    let here = board
+                        .saturation
+                        .get(&coord_cell(pos.0.map(|e| e.floor() as i32)))
+                        .copied()
+                        .unwrap_or(0.0);
+                    let there =
+                        board.saturation.get(&new_cell).copied().unwrap_or(0.0);
+                    let barked = board.last_bark.get(uid).copied().unwrap_or(f64::MIN);
+                    if here >= there + COORD_BARK_MIN_DIFF
+                        && time.0 - barked > COORD_BARK_COOLDOWN_SECS
+                    {
+                        board.last_bark.insert(*uid, time.0);
+                        chat_emitter.emit(common::event::ChatEvent {
+                            msg: comp::UnresolvedChatMsg::npc_say(
+                                *uid,
+                                common::comp::Content::Plain(
+                                    "Crowded here — I'll work where they're \
+                                     short-handed."
+                                        .into(),
+                                ),
+                            ),
+                            from_client: false,
+                        });
+                    }
                 }
                 info!(job = job_id, colonist = %uid, "bastion: job claimed");
                 // The committed stance (B15/FR12): the standable set's pinned
