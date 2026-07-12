@@ -316,6 +316,11 @@ const ARRIVE_DIST: f32 = 2.5;
 /// progress (seconds). `pub` so scenario harnesses can size their sampling
 /// windows against it (see `bastion-harness`'s B4 scenario).
 pub const STUCK_TIMEOUT: f32 = 10.0;
+/// bastion (CASE-003 belt, persistence form): consecutive core-in-solid
+/// ticks before the EMBED WATCH relocates a colonist (~1s at 30 tps —
+/// instant on a human timescale, an eternity past any legitimate mining
+/// transient).
+pub const EMBED_PERSIST_TICKS: u32 = 30;
 /// Progress threshold per watchdog sample (blocks).
 const STUCK_EPSILON: f32 = 0.5;
 /// Walk speed factor for job travel.
@@ -933,6 +938,13 @@ pub struct JobBoard {
     /// carries its own cadence.
     last_bark: HashMap<Uid, f64>,
     stuck_watch: HashMap<Uid, f32>,
+    /// bastion (CASE-003 belt, persistence form): consecutive ticks each
+    /// colonist's capsule CORE has sat inside solid terrain. At
+    /// [`EMBED_PERSIST_TICKS`] the colonist is genuinely WEDGED (the
+    /// revert-locked class — the seed-21 tree teleport) and is relocated;
+    /// transient core-solid states (a top-down digger settling into its own
+    /// fresh 1-deep pocket) clear in a few ticks and never trip it.
+    embed_watch: HashMap<Uid, u32>,
     /// bastion (B-LIVE4, mine-oscillation): CUMULATIVE count of job-claim
     /// events over the board's life — every `claimed_by = Some` in
     /// arbitration bumps it (initial claims AND re-claims after a release).
@@ -2203,6 +2215,24 @@ impl<'a> System<'a> for Sys {
                     if !block_change.can_set_block(job.pos) {
                         continue;
                     }
+                    // CASE-004 (the embedding writer, IDENTIFIED by the
+                    // CENTER-SAFETY-NET fire-site diagnostics): a Build
+                    // completion placed SOLID rock into a cell a colonist's
+                    // body occupied — tick_start == embedded_at, fractional
+                    // xy, i.e. someone STANDING there when the block
+                    // landed. NEVER complete a solid placement into an
+                    // occupied cell: defer exactly like `can_set_block`
+                    // above (progress stays >= 1.0, retried next tick; the
+                    // occupant walks on within ticks — and the phys net
+                    // remains the belt if any writer still slips through).
+                    if job.kind == DesignationKind::Build
+                        && queue_snapshot.iter().any(|p| {
+                            let feet = p.map(|e| e.floor() as i32);
+                            feet == job.pos || feet + Vec3::unit_z() == job.pos
+                        })
+                    {
+                        continue;
+                    }
 
                     // Build: consume the required material from the
                     // colonist's inventory now — if it's gone (taken by a
@@ -2461,6 +2491,74 @@ impl<'a> System<'a> for Sys {
                 &mut healths,
                 &mut moods,
             );
+        }
+
+        // ── CASE-003 belt (persistence form): the EMBED WATCH ────────────
+        // A colonist whose capsule CORE (±0.2 around center, torso level)
+        // sits inside solid terrain for EMBED_PERSIST_TICKS consecutive
+        // ticks is genuinely WEDGED — the revert-locked class (phys reverts
+        // an externally-written in-wall pos to tick-start forever; the
+        // seed-21 fail-safe-teleport-into-a-tree repro) — and is relocated
+        // to the nearest true-standable cell (the ONE shared eject_dest;
+        // None → left in place, the job-watchdog remains the slow
+        // backstop). Transient core-solid states are NORMAL MINING (a
+        // top-down digger settling into its own fresh 1-deep pocket clears
+        // within ticks as it mines on; boundary straddles resolve next
+        // tick) — PERSISTENCE is the discriminator, learned the hard way:
+        // the first belt lived mid-phys with a bare center test and fired
+        // on those legitimate transients every ck run. Post-phys settled
+        // positions, sequential, deterministic. CENTER_NET_FIRES stays the
+        // REPORTED telemetry (0 expected; any climb = a real wedge writer).
+        {
+            let mut embed_iter =
+                (&colonists, &mut positions, &mut velocities, &uids).lend_join();
+            while let Some((_, mut pos, mut vel, uid)) = embed_iter.next() {
+                let core_solid = [
+                    (-0.2f32, -0.2f32),
+                    (-0.2, 0.2),
+                    (0.2, -0.2),
+                    (0.2, 0.2),
+                ]
+                .into_iter()
+                .all(|(dx, dy)| {
+                    let corner =
+                        Vec3::new(pos.0.x + dx, pos.0.y + dy, pos.0.z)
+                            .map(|e| e.floor() as i32)
+                            + Vec3::unit_z();
+                    terrain
+                        .get(corner)
+                        .map(|b| b.is_filled())
+                        .unwrap_or(false)
+                });
+                if core_solid {
+                    let n = board.embed_watch.entry(*uid).or_insert(0);
+                    *n += 1;
+                    if *n >= EMBED_PERSIST_TICKS {
+                        *n = 0;
+                        let feet = pos.0.map(|e| e.floor() as i32);
+                        if let Some(d) =
+                            eject_dest(&terrain, feet, &HashSet::new())
+                        {
+                            tracing::warn!(
+                                embedded_at = ?pos.0,
+                                relocated_to = ?d,
+                                "bastion EMBED WATCH: colonist WEDGED in \
+                                 terrain (persisted a full second) — \
+                                 relocated; hunt the writer"
+                            );
+                            pos.0 = d.map(|e| e as f32)
+                                + Vec3::new(0.5, 0.5, 0.0);
+                            vel.0 = Vec3::zero();
+                            common::bastion::CENTER_NET_FIRES.fetch_add(
+                                1,
+                                core::sync::atomic::Ordering::Relaxed,
+                            );
+                        }
+                    }
+                } else {
+                    board.embed_watch.remove(uid);
+                }
+            }
         }
 
         // ── B5.8-E3: CLAIM-CHURN trapped detector ────────────────────────
