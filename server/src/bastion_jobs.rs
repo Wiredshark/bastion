@@ -456,6 +456,77 @@ fn has_standable_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<i3
     None
 }
 
+/// The 6 axis-aligned neighbour offsets (shared by the support flood-fill).
+const NEIGHBOURS6: [Vec3<i32>; 6] = [
+    Vec3::new(1, 0, 0),
+    Vec3::new(-1, 0, 0),
+    Vec3::new(0, 1, 0),
+    Vec3::new(0, -1, 0),
+    Vec3::new(0, 0, 1),
+    Vec3::new(0, 0, -1),
+];
+
+/// bastion (CAVE-IN v1 / FR11 Q2): the BOUNDED support check. With the block at
+/// `removed_pos` about to be mined away (treated as air here), flood each solid
+/// component that touched it, capped at `cap` cells. A component connected to
+/// the big ground/bedrock mass blows past the cap → SUPPORTED (assumed, so a
+/// large anchored mass is never spuriously collapsed — the known-limit large-
+/// overhang case defers to the future global check, and Q1's eject backstops
+/// any un-caught collapse). A component fully enumerated WITHIN the cap is a
+/// small remnant no longer connected to ground → a FLOATING CHUNK that should
+/// collapse. Returns the union of all floating cells (usually one small chunk),
+/// or `None` if nothing floats.
+///
+/// Each severed neighbour is flooded SEPARATELY (removing `removed_pos` may cut
+/// one mass into a grounded part and a floating part — a single merged flood
+/// would wrongly read the whole thing as grounded). PURE (terrain via
+/// `is_solid`) so it unit-tests without a `TerrainGrid` and stays deterministic.
+/// `pub` so the harness's `bastion_force_collapse_check` can drive the same
+/// support check deterministically (no colonist-mining timing).
+pub fn floating_chunk(
+    is_solid: impl Fn(Vec3<i32>) -> bool,
+    removed_pos: Vec3<i32>,
+    cap: usize,
+) -> Option<Vec<Vec3<i32>>> {
+    // Model the post-removal terrain: removed_pos reads as air.
+    let solid = |p: Vec3<i32>| p != removed_pos && is_solid(p);
+    let mut visited: HashSet<Vec3<i32>> = HashSet::new();
+    let mut floating: Vec<Vec3<i32>> = Vec::new();
+    for d in NEIGHBOURS6 {
+        let start = removed_pos + d;
+        if !solid(start) || visited.contains(&start) {
+            continue;
+        }
+        // Flood this neighbour's solid component, bounded by the cap.
+        let mut comp: HashSet<Vec3<i32>> = HashSet::new();
+        comp.insert(start);
+        let mut stack = vec![start];
+        let mut grounded = false;
+        while let Some(b) = stack.pop() {
+            for dd in NEIGHBOURS6 {
+                let n = b + dd;
+                if solid(n) && comp.insert(n) {
+                    if comp.len() > cap {
+                        grounded = true; // big mass = connected to ground
+                        break;
+                    }
+                    stack.push(n);
+                }
+            }
+            if grounded {
+                break;
+            }
+        }
+        // Mark the component visited so a sibling neighbour in the SAME mass
+        // doesn't re-flood it.
+        visited.extend(comp.iter().copied());
+        if !grounded {
+            floating.extend(comp);
+        }
+    }
+    (!floating.is_empty()).then_some(floating)
+}
+
 /// bastion (B5.6b-2): resolve a painted XY footprint + [`ZExtent`] to the
 /// exact axis-aligned bounds of the per-column surface-relative volume.
 /// This is what the server ECHOES to clients as the designation rect — the
@@ -575,6 +646,130 @@ fn surface_teleport_dest(terrain: &TerrainGrid, feet: Vec3<i32>) -> Option<Vec3<
         }
     }
     None
+}
+
+/// CAVE-IN v1 (FR11): the bounded support-check cap (Q2), a collapse's fixed
+/// health damage as a FRACTION of max HP (Q6 — a setback, not death; lethality
+/// is a later dial), and the fear a collapse instils (Mood is 0=breakdown..
+/// 1=content, so fear DROPS it).
+pub const CAVEIN_SUPPORT_CAP: usize = 64;
+pub const CAVEIN_DAMAGE_FRAC: f32 = 0.25;
+pub const CAVEIN_FEAR: f32 = 0.25;
+
+/// CAVE-IN v1 (FR11 Q1, reviewer R8/F-CAVE-1+2): the eject destination for a
+/// colonist caught in a collapse's crush footprint — the NEAREST TRUE
+/// STANDABLE cell OUTSIDE the crush columns: air feet + air head + a solid
+/// floor, preferring a LATERAL step-out at the victim's own level and rising/
+/// dropping only as needed. Deliberately NOT a surface search: the original
+/// `column_surface_z`-based version scanned a ±window that is ALL ROCK deep
+/// underground and returned the window top — teleporting a deep-mine victim
+/// INTO solid stone (the exact entombment the invariant forbids). Returns
+/// `None` when no safe cell exists in range — the caller leaves the victim
+/// IN PLACE, which is safe by construction (the collapse only REMOVES rock;
+/// it never buries anyone where they stand).
+pub fn eject_dest(
+    terrain: &TerrainGrid,
+    feet: Vec3<i32>,
+    crush_xy: &HashSet<Vec2<i32>>,
+) -> Option<Vec3<i32>> {
+    let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
+    let standable = |c: Vec3<i32>| {
+        !solid(c) && !solid(c + Vec3::unit_z()) && solid(c - Vec3::unit_z())
+    };
+    // Nearest ring out; within a ring, smallest |dz| first (lateral step-out
+    // beats climbing), searching a modest vertical band around the victim.
+    for r in 1..=8i32 {
+        for dz_abs in 0..=4i32 {
+            let dzs: &[i32] = if dz_abs == 0 { &[0] } else { &[dz_abs, -dz_abs] };
+            for &dz in dzs {
+                for dx in -r..=r {
+                    for dy in -r..=r {
+                        if dx.abs().max(dy.abs()) != r {
+                            continue;
+                        }
+                        let (x, y) = (feet.x + dx, feet.y + dy);
+                        if crush_xy.contains(&Vec2::new(x, y)) {
+                            continue; // never eject INTO the falling footprint
+                        }
+                        let c = Vec3::new(x, y, feet.z + dz);
+                        if standable(c) {
+                            return Some(c);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// CAVE-IN v1 (FR11 Q1/Q6, reviewer R8/F-CAVE-3): THE eject-and-injure — the
+/// ONE implementation both the live mine-completion path (`Sys::run`'s
+/// post-loop) and the harness's `bastion_force_collapse_check` call, so the
+/// tested path and the shipping path cannot drift. Every colonist whose feet
+/// stand in the collapse's crush volume (a falling column, at/below the chunk)
+/// is EJECTED to the nearest true standable cell outside the crush
+/// ([`eject_dest`]; `None` → left in place, safe — the collapse only REMOVES
+/// rock) + INJURED (−[`CAVEIN_DAMAGE_FRAC`] of max health + a [`CAVEIN_FEAR`]
+/// Mood drop). Returns the victim count. Generic over the colonist storage so
+/// a `ReadStorage` (the hook) and a `WriteStorage` (the system) both fit.
+pub fn cavein_eject_and_injure<'a, D>(
+    cells: &[Vec3<i32>],
+    terrain: &TerrainGrid,
+    time: common::resources::Time,
+    entities: &Entities<'a>,
+    colonists: &specs::Storage<'a, comp::Colonist, D>,
+    positions: &mut WriteStorage<'a, comp::Pos>,
+    velocities: &mut WriteStorage<'a, comp::Vel>,
+    healths: &mut WriteStorage<'a, comp::Health>,
+    moods: &mut WriteStorage<'a, comp::bastion::Mood>,
+) -> usize
+where
+    D: std::ops::Deref<Target = specs::storage::MaskedStorage<comp::Colonist>>,
+{
+    let crush_xy: HashSet<Vec2<i32>> =
+        cells.iter().map(|c| Vec2::new(c.x, c.y)).collect();
+    let chunk_min_z = cells.iter().map(|c| c.z).min().unwrap_or(i32::MAX);
+    let victims: Vec<specs::Entity> = (&**entities, colonists, &*positions)
+        .join()
+        .filter_map(|(e, _c, p)| {
+            let feet = p.0.map(|v| v.floor() as i32);
+            (crush_xy.contains(&Vec2::new(feet.x, feet.y)) && feet.z <= chunk_min_z)
+                .then_some(e)
+        })
+        .collect();
+    let mut count = 0;
+    for entity in victims {
+        let feet = positions
+            .get(entity)
+            .map(|p| p.0.map(|v| v.floor() as i32))
+            .unwrap_or_default();
+        if let Some(dest) = eject_dest(terrain, feet, &crush_xy) {
+            if let Some(pos) = positions.get_mut(entity) {
+                pos.0 = dest.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+            }
+            if let Some(vel) = velocities.get_mut(entity) {
+                vel.0 = Vec3::zero();
+            }
+        }
+        if let Some(mut health) = healths.get_mut(entity) {
+            let dmg = health.maximum() * CAVEIN_DAMAGE_FRAC;
+            health.change_by(comp::HealthChange {
+                amount: -dmg,
+                by: None,
+                cause: None,
+                precise: false,
+                time,
+                instance: rand::random(),
+            });
+        }
+        if let Some(mood) = moods.get_mut(entity) {
+            mood.0 = (mood.0 - CAVEIN_FEAR).max(0.0);
+        }
+        count += 1;
+        info!(?feet, "bastion: CAVE-IN — colonist ejected + injured (not buried)");
+    }
+    count
 }
 
 /// The job board resource.
@@ -907,6 +1102,10 @@ impl<'a> System<'a> for Sys {
         ReadStorage<'a, comp::CharacterState>,
         WriteStorage<'a, comp::Vel>,
         ReadStorage<'a, comp::PhysicsState>,
+        // CAVE-IN v1 (FR11 Q6): eject-and-injure a colonist caught in a
+        // collapse's crush volume — health damage + a fear (Mood) drop.
+        WriteStorage<'a, comp::Health>,
+        WriteStorage<'a, comp::bastion::Mood>,
     );
 
     const NAME: &'static str = "bastion_jobs";
@@ -936,6 +1135,8 @@ impl<'a> System<'a> for Sys {
             char_states,
             mut velocities,
             physics_states,
+            mut healths,
+            mut moods,
         ): Self::SystemData,
     ) {
         let mut item_drop_emitter = item_drop_events.emitter();
@@ -1353,6 +1554,10 @@ impl<'a> System<'a> for Sys {
         // job this tick — the post-loop pass marks them done + disperses
         // below-grade miners.
         let mut done_regions: Vec<Region> = Vec::new();
+        // CAVE-IN v1 (FR11): floating chunks that collapsed this tick (their
+        // cells) — the post-loop pass ejects-and-injures colonists in each
+        // crush volume (can't cross-join Health/Mood inside the upkeep loop).
+        let mut collapses: Vec<Vec<Vec3<i32>>> = Vec::new();
         // R3 fix-2 (WAITING): a position snapshot for the queue-order test
         // (who is closer to a staged anchor) — the upkeep lend_join can't
         // re-join positions mid-iteration.
@@ -1875,6 +2080,49 @@ impl<'a> System<'a> for Sys {
                         "bastion: job completed"
                     );
                     let done_pos = job.pos;
+                    // CAVE-IN v1 (FR11 Q2/Q3): removing this block may sever a
+                    // bounded chunk from the ground mass — check AT COMPLETION
+                    // on the current terrain (block_change is deferred, so
+                    // floating_chunk treats done_pos as the air it's about to
+                    // become). A bounded floater COLLAPSES: its cells drop to
+                    // air + a resource item (the floating rock FALLS instead of
+                    // hanging — closes what 2b clean-skips), and the crush
+                    // volume below is queued for the post-loop eject-and-injure
+                    // (nobody is ever buried). Mine only (Chop/Build/Ladder
+                    // don't sever rock). A collapse cell that also had its own
+                    // Mine job is handled by that job's moot re-check (the block
+                    // is already air → dropped, no double-yield).
+                    if job.kind == DesignationKind::Mine {
+                        let is_filled =
+                            |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
+                        if let Some(cells) =
+                            floating_chunk(is_filled, done_pos, CAVEIN_SUPPORT_CAP)
+                        {
+                            for &cell in &cells {
+                                block_change.set(cell, Block::empty());
+                                item_drop_emitter.emit(CreateItemDropEvent {
+                                    pos: comp::Pos(
+                                        cell.map(|e| e as f32) + Vec3::broadcast(0.5),
+                                    ),
+                                    vel: comp::Vel(Vec3::zero()),
+                                    ori: comp::Ori::default(),
+                                    item: PickupItem::new(
+                                        Item::new_from_asset_expect(MINE_DROP_ITEM),
+                                        *program_time,
+                                        true,
+                                    ),
+                                    loot_owner: None,
+                                    persistent: true,
+                                });
+                            }
+                            info!(
+                                ?done_pos,
+                                cells = cells.len(),
+                                "bastion: CAVE-IN — floating chunk collapsed"
+                            );
+                            collapses.push(cells);
+                        }
+                    }
                     board.jobs.remove(&active.job);
                     // reviewer F5 / b58-(d) fix: completing a job is the
                     // ground-truth "making progress" signal — reset the
@@ -1951,6 +2199,29 @@ impl<'a> System<'a> for Sys {
                     }
                 }
             }
+        }
+
+        // ── CAVE-IN v1 (FR11 Q1/Q6): EJECT-AND-INJURE ────────────────────
+        // THE INVARIANT that lets cave-ins coexist with the no-entombment
+        // guarantee: a colonist caught in a collapse's crush volume is EJECTED
+        // (nearest true standable cell OUTSIDE the falling footprint) +
+        // INJURED (health damage + a fear drop), NEVER buried. Runs post-loop
+        // — the eject/injure need Pos/Vel/Health/Mood writes the upkeep
+        // lend_join can't hold. The SHARED `cavein_eject_and_injure` is the
+        // one implementation (the harness hook calls the same fn — reviewer
+        // R8/F-CAVE-3: the tested path IS the shipping path).
+        for cells in collapses {
+            cavein_eject_and_injure(
+                &cells,
+                &terrain,
+                *time,
+                &entities,
+                &colonists,
+                &mut positions,
+                &mut velocities,
+                &mut healths,
+                &mut moods,
+            );
         }
 
         // ── B5.8-E3: CLAIM-CHURN trapped detector ────────────────────────
@@ -2739,5 +3010,48 @@ mod tests {
         // Higher reach widens the standable band by exactly one per level.
         assert!(egress_scan_with(flat_rim(102), feet, 3).0);
         assert!(!egress_scan_with(flat_rim(103), feet, 3).0);
+    }
+
+    /// CAVE-IN v1 (FR11 Q2): the BOUNDED support check. Removing a block that
+    /// severs a small chunk from the grounded mass reports it FLOATING; a
+    /// removal inside a big grounded mass (blows past the cap) reports nothing.
+    #[test]
+    fn floating_chunk_support() {
+        let cap = 64;
+        // A floating block at (0,0,102) held only by the support (0,0,101);
+        // everything at z<=100 is the grounded mass. Remove the support.
+        let with_floater = |p: Vec3<i32>| p.z <= 100 || p == Vec3::new(0, 0, 102);
+        assert_eq!(
+            floating_chunk(with_floater, Vec3::new(0, 0, 101), cap),
+            Some(vec![Vec3::new(0, 0, 102)])
+        );
+        // A multi-cell floater (an L of 3 at z=102) severs together.
+        let l_floater = |p: Vec3<i32>| {
+            p.z <= 100
+                || [
+                    Vec3::new(0, 0, 102),
+                    Vec3::new(1, 0, 102),
+                    Vec3::new(0, 1, 102),
+                ]
+                .contains(&p)
+        };
+        let mut got = floating_chunk(l_floater, Vec3::new(0, 0, 101), cap).unwrap();
+        got.sort_by_key(|p| (p.x, p.y, p.z));
+        assert_eq!(got, vec![
+            Vec3::new(0, 0, 102),
+            Vec3::new(0, 1, 102),
+            Vec3::new(1, 0, 102),
+        ]);
+        // Inside a big grounded mass → the component blows past the cap →
+        // SUPPORTED, nothing floats.
+        assert_eq!(
+            floating_chunk(|p: Vec3<i32>| p.z <= 100, Vec3::new(0, 0, 100), cap),
+            None
+        );
+        // Nothing solid around the removal → nothing floats.
+        assert_eq!(
+            floating_chunk(|_p: Vec3<i32>| false, Vec3::new(0, 0, 100), cap),
+            None
+        );
     }
 }

@@ -1320,6 +1320,94 @@ impl Server {
             .map(|c| c.0.skills.climbing)
     }
 
+    /// bastion (CAVE-IN v1, harness hook): a colonist's (current, maximum)
+    /// health — lets a cave-in scenario assert a crush victim was INJURED
+    /// (current < max) but NOT killed / NOT buried (current > 0, still alive).
+    pub fn bastion_colonist_health(&self, name: &str) -> Option<(f32, f32)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let healths = ecs.read_storage::<comp::Health>();
+        (&colonists, &healths)
+            .join()
+            .find(|(c, _)| c.0.name == name)
+            .map(|(_, h)| (h.current(), h.maximum()))
+    }
+
+    /// bastion (CAVE-IN v1, harness hook): a colonist's Mood (0=breakdown..
+    /// 1=content) — a cave-in scenario asserts a crush victim was FEARED (Mood
+    /// dropped from the 0.6 default). Colonists always carry Mood (rtsim
+    /// promote), even the synthetic harness spawns that skip Health.
+    pub fn bastion_colonist_mood(&self, name: &str) -> Option<f32> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let moods = ecs.read_storage::<comp::bastion::Mood>();
+        (&colonists, &moods)
+            .join()
+            .find(|(c, _)| c.0.name == name)
+            .map(|(_, m)| m.0)
+    }
+
+    /// bastion (CAVE-IN v1, harness hook): DETERMINISTICALLY drive the same
+    /// mining-remnant collapse the mine-completion path runs — treat
+    /// `removed_pos` as just-mined, run the bounded support check, and if a
+    /// bounded chunk floats: collapse it (cells → air) AND eject-and-injure
+    /// every colonist in the crush volume (nearest safe cell outside the
+    /// falling footprint + health damage + Mood fear). Returns the victim
+    /// count. Reuses the SAME pure helpers + constants as the system
+    /// (`floating_chunk`, `eject_dest`, `CAVEIN_*`) so there is no logic drift;
+    /// this exists only so a scenario can place a victim in-crush and fire the
+    /// collapse ON THAT TICK (a colonist mining it live wanders off the crush
+    /// footprint before completion, so the invariant can't be pinned that way).
+    pub fn bastion_force_collapse_check(&mut self, removed_pos: Vec3<i32>) -> usize {
+        use common::vol::ReadVol;
+        // 1. The floating chunk (floating_chunk reads removed_pos AS air).
+        let cells = {
+            let terrain = self
+                .state
+                .ecs()
+                .read_resource::<common::terrain::TerrainGrid>();
+            bastion_jobs::floating_chunk(
+                |p| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false),
+                removed_pos,
+                bastion_jobs::CAVEIN_SUPPORT_CAP,
+            )
+        };
+        let Some(cells) = cells else {
+            return 0;
+        };
+        // 2. Collapse: remove the mined block + the floating chunk.
+        self.state
+            .set_block(removed_pos, common::terrain::Block::empty());
+        for &c in &cells {
+            self.state.set_block(c, common::terrain::Block::empty());
+        }
+        // 3. Eject-and-injure the crush volume — the SAME shared fn the live
+        //    mine-completion path runs (reviewer R8/F-CAVE-3: the tested path
+        //    IS the shipping path; no parallel copy to drift).
+        let ecs = self.state.ecs();
+        let time = *ecs.read_resource::<common::resources::Time>();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let mut positions = ecs.write_storage::<comp::Pos>();
+        let mut velocities = ecs.write_storage::<comp::Vel>();
+        let mut healths = ecs.write_storage::<comp::Health>();
+        let mut moods = ecs.write_storage::<comp::bastion::Mood>();
+        let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+        bastion_jobs::cavein_eject_and_injure(
+            &cells,
+            &terrain,
+            time,
+            &entities,
+            &colonists,
+            &mut positions,
+            &mut velocities,
+            &mut healths,
+            &mut moods,
+        )
+    }
+
     /// bastion (B-LIVE3, harness hook): designations completed (mine-done
     /// lifecycle) since server start.
     pub fn bastion_done_designations(&self) -> u64 {

@@ -99,6 +99,13 @@ struct Args {
     #[arg(long)]
     chokepoint_scenario: bool,
 
+    /// bastion (CAVE-IN v1, FR11): mine the support under a floating chunk →
+    /// the chunk COLLAPSES (falls to resource) and a colonist in the crush
+    /// volume is EJECTED+injured, NEVER buried (the entombment invariant that
+    /// lets cave-ins coexist with the no-entombment guarantee).
+    #[arg(long)]
+    cavein_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -181,6 +188,8 @@ fn main() -> ExitCode {
         b58_scenario(&args)
     } else if args.chokepoint_scenario {
         chokepoint_scenario(&args)
+    } else if args.cavein_scenario {
+        cavein_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -2668,6 +2677,284 @@ fn b58_scenario(args: &Args) -> ExitCode {
     println!("{}", result);
     println!("B5.8 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (CAVE-IN v1, FR11): the mining-remnant collapse + the ENTOMBMENT
+/// invariant. A 3-cell arm rests on a single ground-level pillar (its ONLY
+/// link to the floor). A DIGGER (parked at the reachable adjacent stance,
+/// OUTSIDE the crush footprint) mines the pillar base; the 4-cell chunk (arm +
+/// pillar-top) severs from the ground → COLLAPSES (cells → air + resource) and
+/// the VICTIM pinned under the arm is EJECTED + INJURED, NEVER buried. The
+/// victim is re-pinned into the crush volume until the collapse fires (an idle
+/// colonist would otherwise drift out), then released so the eject stands.
+fn cavein_scenario(args: &Args) -> ExitCode {
+    use common::{
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-cavein-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-cavein".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-cavein-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = ground_z(&server, cx, cy).expect("no ground at site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+
+    // ── the structure: a forced pad + a 3-cell arm on a single pillar ───────
+    let (fx, fy) = (cx, cy);
+    for x in (fx - 4)..=(fx + 4) {
+        for y in (fy - 4)..=(fy + 5) {
+            for z in (gz - 2)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 12) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    // ARM: 3 cells at gz+3 running +x from (fx,fy), directly OVER the digger's
+    // stance (fx+1,fy). SUPPORT: a pillar (fx,fy) gz+1..gz+2 under the arm's
+    // root — its ONLY ground link. The digger mines the pillar BASE (gz+1)
+    // from the adjacent stance (fx+1,fy) — pulling the support out from UNDER
+    // the overhang it stands beneath, so the DIGGER IS the crush victim: a
+    // STATIONARY colonist at completion (no wandering to fight — the classic
+    // "miner pulls the last support and the ceiling comes down on them").
+    for dx in 0..=2 {
+        server.state_mut().set_block(Vec3::new(fx + dx, fy, gz + 3), rock);
+    }
+    server.state_mut().set_block(Vec3::new(fx, fy, gz + 1), rock);
+    server.state_mut().set_block(Vec3::new(fx, fy, gz + 2), rock);
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 1);
+    // The Colonist comp lands on a TICK (rtsim promote) — tick BEFORE renaming
+    // or the rename sees no colonists and every name-keyed lookup no-ops.
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let victim = names.first().cloned().unwrap_or_default();
+    // Place the victim UNDER the arm (in the crush footprint), then fire the
+    // collapse DETERMINISTICALLY on this exact tick — no live mining, so no
+    // wander to move it off the crush volume before the collapse resolves.
+    let victim_cell = Vec3::new(fx + 1, fy, gz + 1);
+    let tp_ok = server.bastion_teleport_colonist(
+        &victim,
+        victim_cell.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0),
+    );
+    let base_mood = server.bastion_colonist_mood(&victim).unwrap_or(0.6);
+    let pre_pos = server
+        .bastion_colonist_states()
+        .into_iter()
+        .find(|(n, _, _)| *n == victim)
+        .map(|(_, p, _)| p);
+    info!(?victim, tp_ok, ?pre_pos, ?victim_cell, "cavein: victim placed (pre-hook)");
+    // Mining the pillar BASE severs the {arm + pillar-top} chunk → the SAME
+    // collapse + eject-and-injure the live mine-completion path runs.
+    let base = Vec3::new(fx, fy, gz + 1);
+    let victims = server.bastion_force_collapse_check(base);
+    tick(&mut server, 2); // let physics settle the ejected victim
+
+    // COLLAPSED: the arm cells fell (no longer rock).
+    let collapsed = (0..=2).all(|dx| {
+        server.bastion_block_kind(Vec3::new(fx + dx, fy, gz + 3)) != Some(BlockKind::Rock)
+    });
+    let mood = server.bastion_colonist_mood(&victim).unwrap_or(base_mood);
+    // FEARED: the injure dropped the victim's Mood (always applies — colonists
+    // carry Mood even on the synthetic spawn; the health-damage tick applies
+    // too when a colonist has Health).
+    let feared = mood < base_mood - 1e-4;
+    let v_feet = server
+        .bastion_colonist_states()
+        .into_iter()
+        .find(|(n, _, _)| *n == victim)
+        .map(|(_, p, _)| p.map(|e| e.floor() as i32));
+    // EJECTED: no longer in the crush column (fx+1, fy) — shoved to safety.
+    let ejected = v_feet.map(|f| !(f.x == fx + 1 && f.y == fy)).unwrap_or(false);
+    // NOT BURIED: the victim's body is NOT EMBEDDED in rock (feet + head cells
+    // open — the actual buried test) AND ground is within a short settle drop
+    // (≤3 below — the eject lands feet-on-ground, but the post-eject settle
+    // ticks can catch the victim MID-STEP/mid-fall, where the original
+    // "solid directly below feet" probe false-failed under load: a B8-class
+    // timing assert on the mechanism, not the invariant. A genuinely buried
+    // victim still fails (feet solid); a void-stranded one still fails (no
+    // ground below).
+    let standable = v_feet
+        .map(|f| {
+            let solid = |p: Vec3<i32>| {
+                server.state().terrain().get(p).map(|b| b.is_filled()).unwrap_or(false)
+            };
+            !solid(f)
+                && !solid(f + Vec3::unit_z())
+                && (1..=3).any(|d| solid(f - Vec3::unit_z() * d))
+        })
+        .unwrap_or(false);
+    let hp = server.bastion_colonist_health(&victim).map(|(c, _)| c);
+
+    // ── DEEP leg (reviewer R8/F-CAVE-1): the SAME collapse 130 BELOW the
+    // surface, inside a sealed rock chamber — the geometry where the old
+    // surface-scanning eject teleported the victim INTO the rock above (its
+    // ±window was all stone, so it returned the window top). The rewritten
+    // eject must step the victim LATERALLY to a standable chamber cell.
+    let (dxc, dyc) = (fx + 20, fy);
+    let cz0 = gz - 130; // chamber air floor level
+    for x in (dxc - 4)..=(dxc + 4) {
+        for y in (dyc - 4)..=(dyc + 4) {
+            for z in (cz0 - 2)..=(cz0 + 5) {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+        }
+    }
+    for x in (dxc - 3)..=(dxc + 3) {
+        for y in (dyc - 3)..=(dyc + 3) {
+            for z in cz0..=(cz0 + 4) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    // The same arm-on-a-pillar: base cz0, pillar-top cz0+1, 3-cell arm cz0+2.
+    for dx in 0..=2 {
+        server.state_mut().set_block(Vec3::new(dxc + dx, dyc, cz0 + 2), rock);
+    }
+    server.state_mut().set_block(Vec3::new(dxc, dyc, cz0), rock);
+    server.state_mut().set_block(Vec3::new(dxc, dyc, cz0 + 1), rock);
+    tick(&mut server, 2);
+    server.bastion_teleport_colonist(
+        &victim,
+        Vec3::new((dxc + 1) as f32 + 0.5, dyc as f32 + 0.5, cz0 as f32),
+    );
+    let deep_mood_before = server.bastion_colonist_mood(&victim).unwrap_or(0.6);
+    let deep_victims = server.bastion_force_collapse_check(Vec3::new(dxc, dyc, cz0));
+    tick(&mut server, 2);
+    let deep_feared = server.bastion_colonist_mood(&victim).unwrap_or(deep_mood_before)
+        < deep_mood_before - 1e-4;
+    let d_feet = server
+        .bastion_colonist_states()
+        .into_iter()
+        .find(|(n, _, _)| *n == victim)
+        .map(|(_, p, _)| p.map(|e| e.floor() as i32));
+    let deep_ejected =
+        d_feet.map(|f| !(f.x == dxc + 1 && f.y == dyc)).unwrap_or(false);
+    // The R8 kill-shot assert: the deep victim is NOT EMBEDDED (feet + head
+    // open) and on/near chamber ground — the old eject put it inside solid
+    // rock ~110 above; any embedding fails here.
+    let deep_standable = d_feet
+        .map(|f| {
+            let solid = |p: Vec3<i32>| {
+                server.state().terrain().get(p).map(|b| b.is_filled()).unwrap_or(false)
+            };
+            !solid(f)
+                && !solid(f + Vec3::unit_z())
+                && (1..=3).any(|d| solid(f - Vec3::unit_z() * d))
+        })
+        .unwrap_or(false);
+
+    // INVARIANT (shallow AND deep): the collapse fires, a colonist in the
+    // crush volume is caught, and that victim is EJECTED + FEARED + ends
+    // STANDABLE (not embedded) — NEVER buried. This is what lets cave-ins
+    // coexist with no-entombment, at any depth.
+    let pass = collapsed
+        && victims >= 1
+        && ejected
+        && feared
+        && standable
+        && deep_victims >= 1
+        && deep_ejected
+        && deep_feared
+        && deep_standable;
+    let result = serde_json::json!({
+        "cavein_collapsed": collapsed,
+        "cavein_victims": victims,
+        "cavein_ejected": ejected,
+        "cavein_feared": feared,
+        "cavein_mood": mood,
+        "cavein_base_mood": base_mood,
+        "cavein_standable": standable,
+        "cavein_victim_hp": hp,
+        "cavein_deep_victims": deep_victims,
+        "cavein_deep_ejected": deep_ejected,
+        "cavein_deep_feared": deep_feared,
+        "cavein_deep_standable": deep_standable,
+    });
+    println!("{}", result);
+    println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }

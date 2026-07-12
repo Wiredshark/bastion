@@ -170,7 +170,18 @@ impl Clock {
         self.last_real_dt = tick_time;
         self.last_game_dt = (self.average_dt
             + (self.real_time.as_secs_f64() - self.game_time.as_secs_f64()) * NUDGE_RATE)
-            .min(MAX_GAME_DT);
+            // B16 / CASE-001 (hard crash): the nudge back toward real time can
+            // go NEGATIVE when the game clock has OVERSHOT real time (e.g. an
+            // alt-tab/window pause lets real time stall while the clock ran on)
+            // — at high fps the negative nudge exceeds `average_dt`, giving a
+            // negative dt, and `game_dt()`'s `Duration::from_secs_f64` then
+            // PANICS. A lower floor was the missing half of the clamp — a tiny
+            // POSITIVE floor (not 0.0) also avoids a cosmetic NaN from an
+            // unguarded `dt.sqrt()` on a 0-dt frame (figure flicker); both are
+            // self-healing for the single overshoot frame. (Vanilla Veloren
+            // clock — byte-identical to B0, not a bastion change; upstream fix
+            // candidate.)
+            .clamp(1e-6, MAX_GAME_DT);
 
         self.tick += 1;
     }
