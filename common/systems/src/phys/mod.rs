@@ -1189,6 +1189,19 @@ impl PhysicsData<'_> {
                                             center - Vec3::unit_z(),
                                         )
                                     {
+                                        // The embed site + the tick-start pos
+                                        // identify WHICH writer embedded the
+                                        // colonist (the counter alone cannot).
+                                        tracing::warn!(
+                                            embedded_at = ?cpos.0,
+                                            tick_start = ?pos.0,
+                                            center_cell = ?center,
+                                            relocated_to = ?d,
+                                            "bastion CENTER-SAFETY-NET: colonist \
+                                             center in terrain after integration \
+                                             — relocated (a pos writer embedded \
+                                             this colonist; hunt it)"
+                                        );
                                         cpos.0 = d.map(|e| e as f32)
                                             + Vec3::new(0.5, 0.5, 0.0);
                                         vel.0 = Vec3::zero();
