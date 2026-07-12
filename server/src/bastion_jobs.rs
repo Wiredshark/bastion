@@ -326,6 +326,103 @@ pub fn coord_cell(pos: Vec3<i32>) -> Vec2<i32> {
     Vec2::new(pos.x.div_euclid(COORD_CELL), pos.y.div_euclid(COORD_CELL))
 }
 
+/// bastion (FR15-TIGHTDIG, row 31): the VARIANT toggle — the
+/// displacement+arc-length progress metric + the reinstated
+/// committed-path steer run ONLY when `BASTION_TIGHTDIG=1` is in the
+/// environment (read once). Off = today's beeline stuck-economy,
+/// bit-for-bit. The paired-A/B harness (`--b58-paired`) runs one leg
+/// each way on the same seed and reports the DELTA — the FR17-approved
+/// interim measurement (tick-determinism is the real fix, a separate B8
+/// block); the default stays OFF until the Opus gate rules on the
+/// evidence.
+pub fn tightdig_enabled() -> bool {
+    static TIGHTDIG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *TIGHTDIG.get_or_init(|| {
+        std::env::var("BASTION_TIGHTDIG").is_ok_and(|v| v == "1")
+    })
+}
+
+/// bastion (FR15-TIGHTDIG): the progress WINDOW length (seconds) — the
+/// displacement verdict is judged once per window; STUCK_TIMEOUT (10s)
+/// therefore allows ~5 consecutive no-progress verdicts before the
+/// stall economy engages, comparable patience to the beeline metric.
+pub const TIGHTDIG_WINDOW: f64 = 2.0;
+/// Net displacement from the window anchor that counts as PROGRESS —
+/// ≥ 1.0 subsumes the old 1-block reset hysteresis (sub-block wobble
+/// never resets), and 1.5 tolerates routing AWAY from the beeline
+/// (the false-fire this block exists to fix).
+pub const TIGHTDIG_MIN_PROGRESS: f32 = 1.5;
+/// A steer-target move larger than this is a SWITCH (anchor → target,
+/// fetch engage/release) — re-anchor the window, don't read it as
+/// stall or jump.
+pub const TIGHTDIG_STEER_SWITCH: f32 = 2.0;
+
+/// bastion (FR15-TIGHTDIG): the INPUT-SWAP measure — a synthetic
+/// "distance" that drives the EXISTING watchdog branch structure
+/// (improve→reset / jump→rebase / else→accrue) from the drive-owned
+/// displacement window instead of beeline-to-steer, so the whole tuned
+/// stall economy downstream (hysteresis, grace, queue-release, carve)
+/// is reused VERBATIM — the FR15 lesson applied: change the measure's
+/// INPUT, never the economy's structure. Absolute values are
+/// meaningless; only the deltas steer the branches:
+/// `best − 1 − ε` = a progressing window verdict (forces the reset arm),
+/// `best + 5`     = a steer switch (forces the >+4 rebase arm, no accrual),
+/// `best`         = no verdict yet / not progressing (forces accrual).
+/// Progressing = net displacement from the window anchor ≥
+/// [`TIGHTDIG_MIN_PROGRESS`] per [`TIGHTDIG_WINDOW`], AND (committed
+/// path ACTIVE this tick ⇒ its waypoint index advanced within the
+/// window) — displacement is measured on the COLONIST, so all three
+/// steer sources (anchor / fetch / beeline-or-path) read correctly by
+/// construction.
+#[expect(clippy::too_many_arguments, reason = "a pure measure over drive state")]
+fn tightdig_measure(
+    progress_watch: &mut HashMap<Uid, (Vec3<f32>, f64, usize)>,
+    last_steer: &mut HashMap<Uid, Vec3<f32>>,
+    path_idx: Option<usize>,
+    committed_active: bool,
+    u: Uid,
+    pos: Vec3<f32>,
+    steer: Vec3<f32>,
+    now: f64,
+    best_dist: f32,
+) -> f32 {
+    // Fresh assignments carry best_dist = f32::MAX, where ±small deltas
+    // SATURATE away (MAX − 1.5 == MAX) and no branch could ever fire —
+    // clamp to a finite working base; only deltas matter.
+    let base = best_dist.min(1.0e6);
+    let switched = last_steer
+        .get(&u)
+        .is_some_and(|ls| ls.distance(steer) > TIGHTDIG_STEER_SWITCH);
+    last_steer.insert(u, steer);
+    let idx_now = path_idx.unwrap_or(0);
+    if switched {
+        progress_watch.insert(u, (pos, now, idx_now));
+        return base + 5.0;
+    }
+    match progress_watch.get(&u).copied() {
+        None => {
+            progress_watch.insert(u, (pos, now, idx_now));
+            base
+        },
+        Some((anchor, start, idx0)) => {
+            if now - start < TIGHTDIG_WINDOW {
+                return base;
+            }
+            let displaced = pos.distance(anchor);
+            let s_ok = !committed_active || idx_now > idx0;
+            progress_watch.insert(u, (pos, now, idx_now));
+            if displaced >= TIGHTDIG_MIN_PROGRESS && s_ok {
+                base - 1.0 - STUCK_EPSILON
+            } else {
+                // The existing accrual arm downstream counts
+                // no_progress_ticks per tick under BOTH metrics — no
+                // second counter here.
+                base
+            }
+        },
+    }
+}
+
 /// Arbitration cadence in server ticks (~0.5s at 30 tps): "a few Hz, not
 /// every tick".
 pub const ARBITRATION_INTERVAL: u64 = 15;
@@ -961,6 +1058,28 @@ pub struct JobBoard {
     /// carries its own cadence.
     last_bark: HashMap<Uid, f64>,
     stuck_watch: HashMap<Uid, f32>,
+    /// bastion (FR15-TIGHTDIG, flag-gated): per-colonist PROGRESS WINDOW —
+    /// (window anchor position, window start time, committed-path index at
+    /// window start). The drive-owned displacement signal: progressing =
+    /// net displacement from the anchor ≥ [`TIGHTDIG_MIN_PROGRESS`] per
+    /// [`TIGHTDIG_WINDOW`], AND (committed-path active ⇒ the path index
+    /// advanced). Replaces the beeline best-dist inputs at the watchdog
+    /// reset sites when [`tightdig_enabled`]; board-side because
+    /// `ActiveJob` is `Copy` (the stuck_watch pattern).
+    progress_watch: HashMap<Uid, (Vec3<f32>, f64, usize)>,
+    /// bastion (FR15-TIGHTDIG, flag-gated): per-colonist COMMITTED PATH —
+    /// (waypoints, next index, the target it was computed for). The
+    /// reinstated FR15 committed-path steer: computed ONCE via
+    /// `bastion_full_path` (bounded, one-shot), steered waypoint-by-
+    /// waypoint, invalidated when the job target moves; `None`/exhausted
+    /// falls back to the plain beeline steer (today's behavior).
+    path_cache: HashMap<Uid, (Vec<Vec3<i32>>, usize, Vec3<f32>)>,
+    /// bastion (FR15-TIGHTDIG, flag-gated): last tick's steer target —
+    /// a steer SWITCH (anchor reached → real target, fetch engaged, …)
+    /// re-anchors the progress window instead of reading as stall/jump
+    /// (re-expresses the old `sdist > best_dist + 4.0` rebase under the
+    /// new metric, no dangling beeline reader).
+    last_steer: HashMap<Uid, Vec3<f32>>,
     /// bastion (B6 HAUL): painted stockpile zones `(id, region)` — the haul
     /// destinations. Registered at placement, dropped on cancel (dependent
     /// haul jobs cancel with their zone).
@@ -1934,14 +2053,24 @@ impl<'a> System<'a> for Sys {
         // component for the harness/arena to read; the order stays attached
         // until explicitly removed. Inert when no fixture carries the comp.
         {
-            let mut goto_iter = (&mut test_gotos, &positions, (&mut agents).maybe()).lend_join();
-            while let Some((goto, pos, mut agent)) = goto_iter.next() {
+            let mut goto_iter = (
+                &entities,
+                &mut test_gotos,
+                &positions,
+                &uids,
+                (&mut agents).maybe(),
+            )
+                .lend_join();
+            while let Some((_, goto, pos, uid, mut agent)) = goto_iter.next() {
                 if goto.arrived || goto.stuck {
                     continue;
                 }
                 goto.elapsed += dt.0;
-                let dist = pos.0.distance(goto.target);
-                if dist < ARRIVE_DIST {
+                // ARRIVAL is always the REAL distance; only the watchdog
+                // compare below takes the FR15-TIGHTDIG input swap (same
+                // mirror-semantics as job travel, per this block's design).
+                let real_dist = pos.0.distance(goto.target);
+                if real_dist < ARRIVE_DIST {
                     goto.arrived = true;
                     if let Some(agent) = agent.as_deref_mut() {
                         agent.rtsim_controller.activity = None;
@@ -1952,6 +2081,21 @@ impl<'a> System<'a> for Sys {
                     agent.rtsim_controller.activity =
                         Some(common::rtsim::NpcActivity::Goto(goto.target, TRAVEL_SPEED));
                 }
+                let dist = if tightdig_enabled() {
+                    tightdig_measure(
+                        &mut board.progress_watch,
+                        &mut board.last_steer,
+                        None,
+                        false,
+                        *uid,
+                        pos.0,
+                        goto.target,
+                        time.0,
+                        goto.best_dist,
+                    )
+                } else {
+                    real_dist
+                };
                 if dist + STUCK_EPSILON < goto.best_dist {
                     goto.best_dist = dist;
                     goto.stuck_time = 0.0;
@@ -2402,6 +2546,88 @@ impl<'a> System<'a> for Sys {
                         let staged_at_anchor = anchor_steer.is_some();
                         let steer = if let Some(s) = anchor_steer {
                             s
+                        } else if tightdig_enabled()
+                            && let Some(u) = uids.get(entity).copied()
+                        {
+                            // FR15-TIGHTDIG Part 2 (flag-gated, Opus-gated
+                            // block): the REINSTATED committed-path steer.
+                            // The original FR15 revert traded legs because
+                            // the beeline watchdog misread path-following
+                            // as stall; the displacement-window measure
+                            // (tightdig_measure below) owns the progress
+                            // verdict now, so the steer and the metric
+                            // change TOGETHER — the approved FR17 shape.
+                            // One bounded full-path per target
+                            // (bastion_full_path, inert since the revert),
+                            // waypoint-by-waypoint; None/exhausted → the
+                            // plain beeline target (pre-block behavior).
+                            let stale = board.path_cache.get(&u).is_none_or(
+                                |(_, _, for_t)| {
+                                    for_t.distance_squared(target) > 1.0
+                                },
+                            );
+                            if stale {
+                                let cfg = common::path::TraversalConfig {
+                                    node_tolerance: 1.5,
+                                    slow_factor: 0.0,
+                                    on_ground: true,
+                                    in_liquid: false,
+                                    min_tgt_dist: 1.0,
+                                    can_climb: true,
+                                    // Conservative base reach (per-colonist
+                                    // trained reach is a tunable the paired
+                                    // A/B judges — FR15 lesson: no solo
+                                    // tuning).
+                                    scramble_reach: 2,
+                                    can_fly: false,
+                                    vectored_propulsion: false,
+                                    is_target_loaded: true,
+                                };
+                                match common::path::bastion_full_path(
+                                    &*terrain,
+                                    pos.0,
+                                    target,
+                                    &cfg,
+                                ) {
+                                    Some(wps) if !wps.is_empty() => {
+                                        board
+                                            .path_cache
+                                            .insert(u, (wps, 0, target));
+                                    },
+                                    _ => {
+                                        board.path_cache.remove(&u);
+                                    },
+                                }
+                            }
+                            let mut steer = target;
+                            let mut exhausted = false;
+                            if let Some((wps, idx, _)) =
+                                board.path_cache.get_mut(&u)
+                            {
+                                while *idx < wps.len() {
+                                    let wp = wps[*idx].map(|e| e as f32)
+                                        + Vec3::new(0.5, 0.5, 0.0);
+                                    if pos.0.xy().distance(wp.xy()) < 1.2
+                                        && (pos.0.z - wp.z).abs() < 2.0
+                                    {
+                                        *idx += 1;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                if *idx < wps.len() {
+                                    steer = wps[*idx].map(|e| e as f32)
+                                        + Vec3::new(0.5, 0.5, 0.0);
+                                } else {
+                                    // Path walked out — beeline the last
+                                    // leg (arrive owns the rest).
+                                    exhausted = true;
+                                }
+                            }
+                            if exhausted {
+                                board.path_cache.remove(&u);
+                            }
+                            steer
                         } else {
                             // (FR15 committed-waypoint drive + fix-2
                             // travel-steer: REVERTED BY MEASUREMENT after 9
@@ -2413,9 +2639,9 @@ impl<'a> System<'a> for Sys {
                             // beeline/anchor steers: every variant traded
                             // one leg for another (v8/v9: pit carve-rescue
                             // starved, fail-safe teleports 9-15 vs 0).
-                            // Design-level rework escalated; see the FR15
-                            // run-log entry. bastion_full_path (common) is
-                            // kept inert for that future pass.)
+                            // FR15-TIGHTDIG reinstates it BEHIND THE FLAG
+                            // above, paired with the displacement metric;
+                            // this arm is the flag-OFF baseline, verbatim.)
                             target
                         };
                         // B6: the FETCH override wins every steer — the
@@ -2466,7 +2692,34 @@ impl<'a> System<'a> for Sys {
                         // measure means the steer target switched (anchor
                         // reached → real target) — rebase, don't count it
                         // as being stuck.
-                        let sdist = pos.0.distance(steer);
+                        // FR15-TIGHTDIG (flag-gated INPUT SWAP): the same
+                        // three-branch machinery below runs unchanged; the
+                        // MEASURE feeding it becomes the drive-owned
+                        // displacement window (steer-agnostic — correct
+                        // under anchor, fetch-override, and committed-path
+                        // steers by construction).
+                        let sdist = if tightdig_enabled()
+                            && let Some(u) = uids.get(entity).copied()
+                        {
+                            let committed_active = anchor_steer.is_none()
+                                && fetch_steer.is_none()
+                                && board.path_cache.contains_key(&u);
+                            let path_idx =
+                                board.path_cache.get(&u).map(|(_, i, _)| *i);
+                            tightdig_measure(
+                                &mut board.progress_watch,
+                                &mut board.last_steer,
+                                path_idx,
+                                committed_active,
+                                u,
+                                pos.0,
+                                steer,
+                                time.0,
+                                active.best_dist,
+                            )
+                        } else {
+                            pos.0.distance(steer)
+                        };
                         if sdist + STUCK_EPSILON < active.best_dist {
                             active.best_dist = sdist;
                             // R3 fix-1 HYSTERESIS: zero the stall clock
@@ -3142,6 +3395,14 @@ impl<'a> System<'a> for Sys {
                 }
             }
             active_jobs.remove(*entity);
+            // FR15-TIGHTDIG: the travel episode is over — its window,
+            // committed path, and steer memory are stale (a fresh claim
+            // re-anchors from scratch, exactly like best_dist = MAX).
+            if let Some(u) = uids.get(*entity) {
+                board.progress_watch.remove(u);
+                board.path_cache.remove(u);
+                board.last_steer.remove(u);
+            }
             if let Some(agent) = agents.get_mut(*entity) {
                 agent.rtsim_controller.activity = None;
             }

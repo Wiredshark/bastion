@@ -195,6 +195,15 @@ struct Args {
     #[arg(long)]
     season1_scenario: bool,
 
+    /// bastion (FR15-TIGHTDIG Part 1): the paired A/B — run the FULL b58
+    /// scenario twice as subprocesses on the same seed (baseline, then
+    /// BASTION_TIGHTDIG=1) and report the field-wise telemetry DELTA.
+    /// Gate = both legs' own composites PASS (the safety invariants);
+    /// the delta itself is REPORTED (the FR17-approved interim
+    /// measurement for scheduling-seam-dominated telemetry).
+    #[arg(long)]
+    b58_paired: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -313,6 +322,8 @@ fn main() -> ExitCode {
         season_scenario(&args)
     } else if args.season1_scenario {
         season1_scenario(&args)
+    } else if args.b58_paired {
+        b58_paired(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3395,6 +3406,88 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (FR15-TIGHTDIG Part 1): the paired A/B — the FULL b58 scenario
+/// run twice as SUBPROCESSES of this same exe on the same seed (leg A:
+/// baseline; leg B: `BASTION_TIGHTDIG=1`), telemetry parsed from each
+/// leg's stdout JSON and the field-wise numeric DELTA reported. The b58
+/// leg itself is untouched (zero refactor risk to the proven gate leg);
+/// pairing = same binary, same machine, same seed, back-to-back — the
+/// FR17-approved interim for scheduling-seam-dominated telemetry
+/// (tick-determinism is the real fix, a separate B8 block). GATE: both
+/// legs' own composites PASS (the safety invariants hold under BOTH
+/// metrics); the delta is REPORTED, never gated.
+fn b58_paired(args: &Args) -> ExitCode {
+    let exe = std::env::current_exe().expect("own exe path");
+    let run_leg = |tightdig: bool| -> Option<(serde_json::Value, bool)> {
+        let mut cmd = std::process::Command::new(&exe);
+        cmd.arg("--b58-scenario")
+            .arg("--seed")
+            .arg(args.seed.to_string())
+            .arg("--tps")
+            .arg(args.tps.to_string())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+        if tightdig {
+            cmd.env("BASTION_TIGHTDIG", "1");
+        } else {
+            cmd.env_remove("BASTION_TIGHTDIG");
+        }
+        let out = cmd.output().ok()?;
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let json = stdout
+            .lines()
+            .find(|l| l.trim_start().starts_with('{') && l.contains("b58_"))
+            .and_then(|l| serde_json::from_str::<serde_json::Value>(l.trim()).ok())?;
+        let pass = stdout.contains("B5.8 SCENARIO: PASS");
+        Some((json, pass))
+    };
+
+    let Some((base, base_pass)) = run_leg(false) else {
+        println!("{{\"paired_error\":\"baseline leg failed to run/parse\"}}");
+        println!("B58PAIRED: FAIL");
+        return ExitCode::FAILURE;
+    };
+    let Some((variant, variant_pass)) = run_leg(true) else {
+        println!("{{\"paired_error\":\"variant leg failed to run/parse\"}}");
+        println!("B58PAIRED: FAIL");
+        return ExitCode::FAILURE;
+    };
+
+    // Field-wise numeric delta (variant − baseline); booleans reported as
+    // agree/disagree.
+    let mut delta = serde_json::Map::new();
+    if let (Some(b), Some(v)) = (base.as_object(), variant.as_object()) {
+        for (k, bv) in b {
+            match (bv.as_f64(), v.get(k).and_then(|x| x.as_f64())) {
+                (Some(a), Some(c)) => {
+                    delta.insert(format!("d_{k}"), serde_json::json!(c - a));
+                },
+                _ => {
+                    if let (Some(a), Some(c)) =
+                        (bv.as_bool(), v.get(k).and_then(|x| x.as_bool()))
+                    {
+                        delta.insert(
+                            format!("agree_{k}"),
+                            serde_json::json!(a == c),
+                        );
+                    }
+                },
+            }
+        }
+    }
+    let result = serde_json::json!({
+        "paired_base_pass": base_pass,
+        "paired_variant_pass": variant_pass,
+        "paired_base": base,
+        "paired_variant": variant,
+        "paired_delta": serde_json::Value::Object(delta),
+    });
+    let pass = base_pass && variant_pass;
+    println!("{}", result);
+    println!("B58PAIRED: {}", if pass { "PASS" } else { "FAIL" });
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
 
