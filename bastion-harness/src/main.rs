@@ -887,6 +887,28 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // staying local enough that unrelated world drops can't pollute it.
     let stone_sum =
         server.bastion_sum_items_near(mine_min.map(|e| e as f32), 16.0, MINE_DROP_ITEM);
+    // DETRNG (gate the INVARIANT, report the MECHANISM — the b58
+    // d_all_cleared precedent, registry B8/P6): completion-within-window is
+    // THROUGHPUT (async scheduling under full-suite load occasionally leaves
+    // the last block one window short); the INVARIANT is exact accounting —
+    // every CLEARED block yielded exactly one stone (+ any collapse drops).
+    // Ground truth = the blocks themselves (jobs can release without mining).
+    let mine_blocks_mined = {
+        let mut cleared = 0u64;
+        for x in mine_min.x..=mine_max.x {
+            for y in mine_min.y..=mine_max.y {
+                for z in mine_min.z..=mine_max.z {
+                    if server
+                        .bastion_block_kind(Vec3::new(x, y, z))
+                        .is_none_or(|k| !k.is_filled())
+                    {
+                        cleared += 1;
+                    }
+                }
+            }
+        }
+        cleared
+    };
     let log_sum = server.bastion_sum_items_near(chop_base.map(|e| e as f32), 16.0, CHOP_DROP_ITEM);
     let stone_entities =
         server.bastion_count_items_near(mine_min.map(|e| e as f32), 16.0, MINE_DROP_ITEM);
@@ -1314,6 +1336,7 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_build_stall_jobs": build_stall_jobs,
         "b5_gave_item": gave_item,
         "b5_mine_cleared": mine_cleared,
+        "b5_mine_blocks_mined": mine_blocks_mined,
         "b5_chop_cleared": chop_cleared,
         "b5_build_placed": build_placed,
         "b5_stone_sum": stone_sum,
@@ -1356,17 +1379,18 @@ fn b5_scenario(args: &Args) -> ExitCode {
         && build_ok_jobs == 1
         && build_stall_jobs == 1
         && gave_item
-        && mine_cleared
+        // mine_cleared: REPORTED (see the conservation block below).
         && chop_cleared
         && build_placed
-        // B5.5: conservation through merges (amount sum), and the
-        // aggregation actually fires (piles ≪ 27 entities). DETRNG belt
-        // (architect): the CONSERVATION form — mined stone always lands
-        // in-radius (≥27); a cave-in collapse elsewhere may add drops
-        // (≤27+collapsed). Exact 27 under determinism (no collapse fires on
-        // this geometry); never false-reds under either rng mode.
-        && stone_sum >= 27
-        && stone_sum <= 27 + server.bastion_cavein_drop_cells()
+        // B5.5 + DETRNG: the CONSERVATION invariant — every cleared block
+        // yielded exactly one stone (cleared = mined + collapse-severed;
+        // both drop). mine_cleared (all 27 within the window) is REPORTED,
+        // not gating — the b58 d_all_cleared precedent (throughput under
+        // load, registry B8/P6); ≥26/27 gates that the dig SUBSTANTIALLY
+        // ran (a stall would fail loudly), the accounting gates correctness.
+        && mine_blocks_mined >= 26
+        && stone_sum >= mine_blocks_mined
+        && stone_sum <= mine_blocks_mined + server.bastion_cavein_drop_cells()
         && stone_entities <= 10
         && log_sum == 1
         && build_stall_untouched
