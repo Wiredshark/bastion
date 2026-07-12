@@ -788,6 +788,36 @@ impl Server {
             .bastion_spawn_colony(wpos, count)
     }
 
+    /// bastion (SEASON-0, harness hook): (season-index, year_phase,
+    /// day_of_year, days_in_year) at a given TimeOfDay under the LOADED
+    /// RON config — the in-vivo derivation probe (pure of any stored
+    /// state by construction).
+    pub fn bastion_season_probe(&self, tod: f64) -> (u8, f64, u32, f64) {
+        use common::time::{Season, SeasonConfig, day_of_year, year_phase};
+        let cfg = SeasonConfig::current();
+        let season = match Season::at(tod, cfg.days_in_year) {
+            Season::Spring => 0,
+            Season::Summer => 1,
+            Season::Autumn => 2,
+            Season::Winter => 3,
+        };
+        (
+            season,
+            year_phase(tod, cfg.days_in_year),
+            day_of_year(tod, cfg.days_in_year),
+            cfg.days_in_year,
+        )
+    }
+
+    /// bastion (SEASON-0, harness hook): the server's CURRENT TimeOfDay
+    /// (the master clock the derivation reads).
+    pub fn bastion_time_of_day(&self) -> f64 {
+        self.state
+            .ecs()
+            .read_resource::<common::resources::TimeOfDay>()
+            .0
+    }
+
     /// bastion (B-AG2, harness hook): the archetype table's weight for
     /// (key, activity) — probes the EXACT lookup path the brain's
     /// converted gates use (`archetype_chance`).

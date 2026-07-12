@@ -1,0 +1,9 @@
+// bastion (SEASON-0, row 42): the in-game year's length in DAYS — the
+// tunable the season quarters derive from (common/src/time.rs::Season;
+// year_phase/day_of_year use it too). 160 days = 4 seasons of 40, one
+// season per the existing DAYS_IN_MONTH convention. Purely derived from
+// the TimeOfDay master clock — retuning this NEVER drifts a running
+// world (there is no stored season state to migrate).
+(
+    days_in_year: 160.0,
+)

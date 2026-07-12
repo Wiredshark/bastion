@@ -182,6 +182,13 @@ struct Args {
     #[arg(long)]
     archetype_scenario: bool,
 
+    /// bastion (SEASON-0, row 42): Season/year_phase/day_of_year derive
+    /// purely from the TimeOfDay master clock under the RON-tunable year
+    /// length — quarter boundaries exact, wrap-around clean, the live
+    /// clock derives without panic.
+    #[arg(long)]
+    season_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -296,6 +303,8 @@ fn main() -> ExitCode {
         chronicle_scenario(&args)
     } else if args.archetype_scenario {
         archetype_scenario(&args)
+    } else if args.season_scenario {
+        season_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3376,6 +3385,112 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (SEASON-0, row 42): the in-game year derives PURELY from the
+/// TimeOfDay master clock — season quarters exact at the boundaries under
+/// the RON-loaded year length, wrap-around clean (year N+1 buckets like
+/// year N), phase/ordinal consistent, and the server's LIVE clock derives
+/// without panic. No stored state exists to drift, so pause/speed
+/// independence holds by construction — asserted anyway via probe
+/// idempotence (same tod → same answer, before and after ticking).
+fn season_scenario(args: &Args) -> ExitCode {
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-season-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-season".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-season-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+    tick(&mut server, 5);
+
+    // The RON config loaded (not the hardcoded fallback path — the value
+    // matches the shipped asset).
+    let (_, _, _, days_in_year) = server.bastion_season_probe(0.0);
+    let config_ok = days_in_year == 160.0;
+    let day = 60.0 * 60.0 * 24.0;
+    let year = day * days_in_year;
+
+    // Quarter boundaries exact + wrap-around clean, through the LOADED
+    // config path.
+    let season_at = |server: &Server, tod: f64| server.bastion_season_probe(tod).0;
+    let quarters_ok = season_at(&server, 0.0) == 0
+        && season_at(&server, year * 0.25 - 1.0) == 0
+        && season_at(&server, year * 0.25) == 1
+        && season_at(&server, year * 0.5) == 2
+        && season_at(&server, year * 0.75) == 3
+        && season_at(&server, year - 1.0) == 3
+        && season_at(&server, year + day) == 0
+        && season_at(&server, year * 7.5) == 2;
+    let (_, phase_mid, doy_mid, _) = server.bastion_season_probe(year * 0.5 + day * 3.0);
+    let ordinals_ok = (phase_mid - (0.5 + 3.0 / days_in_year)).abs() < 1e-9
+        && doy_mid == (days_in_year / 2.0) as u32 + 3;
+
+    // The LIVE clock derives; and the derivation is STATELESS — the same
+    // tod answers identically before and after 60 ticks of world time
+    // (nothing accumulated, nothing drifted).
+    let live_tod = server.bastion_time_of_day();
+    let live_before = server.bastion_season_probe(live_tod);
+    tick(&mut server, 60);
+    let live_after = server.bastion_season_probe(live_tod);
+    let stateless_ok = live_before == live_after;
+
+    let result = serde_json::json!({
+        "season_days_in_year": days_in_year,
+        "season_config_ok": config_ok,
+        "season_quarters_ok": quarters_ok,
+        "season_ordinals_ok": ordinals_ok,
+        "season_stateless_ok": stateless_ok,
+        "season_live_tod": live_tod,
+        "season_live_index": live_before.0,
+    });
+    let pass = config_ok && quarters_ok && ordinals_ok && stateless_ok;
+    println!("{}", result);
+    println!("SEASON SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
