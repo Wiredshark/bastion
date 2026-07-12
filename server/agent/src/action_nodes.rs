@@ -554,9 +554,15 @@ impl AgentData<'_> {
                     break 'activity; // Don't fall through to idle wandering
                 },
                 Some(NpcActivity::Gather(_resources)) => {
-                    // TODO: Implement
-                    controller.push_action(ControlAction::Dance);
-                    break 'activity; // Don't fall through to idle wandering
+                    // bastion (B-AG1): real gathering is row 38's block
+                    // (GATHER — sprite search + collect). Until it lands,
+                    // DEGRADE GRACEFULLY: fall through to idle wandering.
+                    // The previous stub pushed Dance and broke out — a
+                    // promoted gatherer danced in place indefinitely, the
+                    // exact stuck-looking NPC the promote-handoff exists to
+                    // prevent. Wandering reads as alive AND keeps the NPC
+                    // moving through re-plans (rtsim re-decides on its own
+                    // cadence).
                 },
                 Some(NpcActivity::Dance(dir)) => {
                     // Look at targets specified by rtsim

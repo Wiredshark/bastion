@@ -143,6 +143,12 @@ struct Args {
     #[arg(long)]
     b6haul_scenario: bool,
 
+    /// bastion (B-AG1, row 35): promoted vanilla townsfolk act on their
+    /// rtsim intents — ≥1 promoted non-colonist NPC really MOVES (the
+    /// promote-time handoff drives movement; no frozen idle, no panic).
+    #[arg(long)]
+    bag1_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -245,6 +251,8 @@ fn main() -> ExitCode {
         belt_exercise_scenario(&args)
     } else if args.b6haul_scenario {
         b6haul_scenario(&args)
+    } else if args.bag1_scenario {
+        bag1_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3325,6 +3333,227 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (B-AG1, row 35): the promote-time rtsim-intent handoff,
+/// population-wide — force-load a real SITE so vanilla townsfolk/travellers
+/// promote, then assert the handoff drives REAL movement (not frozen idle):
+/// ≥1 promoted non-colonist NPC travels ≥5 blocks in the window, and the
+/// run completes without panic (every activity arm degrades). Colonists are
+/// excluded (their travel intent belongs to the job system by design).
+fn bag1_scenario(args: &Args) -> ExitCode {
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-bag1-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-bag1".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-bag1-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    // Pick the densest CIVILISED cluster (a town). `npc.home` is DEAD at
+    // worldgen (the generator's only with_home call is commented out — a
+    // vanilla quirk; it only populates via runtime migration), so site
+    // population can't be derived from it. Role::Civilised(Some(profession))
+    // IS set reliably at generation for every real townsfolk NPC — cluster
+    // on that (Sonnet's proofread, R-BAG1).
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        let civilised: Vec<Vec2<f32>> = data
+            .npcs
+            .npcs
+            .iter()
+            .filter(|(_, n)| {
+                matches!(
+                    n.role,
+                    common::rtsim::Role::Civilised(Some(p))
+                        if !matches!(p, common::rtsim::Profession::Captain)
+                ) && n.bastion_colonist.is_none()
+            })
+            .map(|(_, n)| n.wpos.xy())
+            .collect();
+        civilised
+            .iter()
+            .max_by_key(|p| {
+                civilised
+                    .iter()
+                    .filter(|q| p.distance_squared(**q) < 100.0 * 100.0)
+                    .count()
+            })
+            .copied()
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 6);
+    // Let the town promote + the promoted agents act on their intents.
+    tick(&mut server, 60);
+
+    // Snapshot loaded NON-colonist rtsim NPCs (wpos mirrors the live entity
+    // every loaded tick — the same field the sync arm writes back).
+    let snapshot = |server: &Server| -> Vec<(::rtsim::data::NpcId, Vec3<f32>)> {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.npcs
+            .npcs
+            .iter()
+            .filter(|(_, npc)| {
+                npc.bastion_colonist.is_none()
+                    && matches!(
+                        npc.mode,
+                        ::rtsim::data::npc::SimulationMode::Loaded
+                    )
+            })
+            // The slotmap key itself is the stable before/after pairing.
+            .map(|(id, npc)| (id, npc.wpos))
+            .collect()
+    };
+
+    // Diagnostics: role census (is the ground-townsfolk population even
+    // nonzero at worldgen, or does the architect rule populate lazily?).
+    {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        let mut civ = 0;
+        let mut captains = 0;
+        let mut wild = 0;
+        let mut other = 0;
+        for (_, n) in data.npcs.npcs.iter() {
+            match n.role {
+                common::rtsim::Role::Civilised(Some(
+                    common::rtsim::Profession::Captain,
+                )) => captains += 1,
+                common::rtsim::Role::Civilised(Some(_)) => civ += 1,
+                common::rtsim::Role::Wild => wild += 1,
+                _ => other += 1,
+            }
+        }
+        info!(civ, captains, wild, other, "bag1: role census");
+    }
+    // Diagnostics: what does the rtsim population near this site look like?
+    {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        let total = data.npcs.npcs.len();
+        let near = data
+            .npcs
+            .npcs
+            .iter()
+            .filter(|(_, n)| n.wpos.xy().distance(site_wpos) < 300.0)
+            .count();
+        let near_loaded = data
+            .npcs
+            .npcs
+            .iter()
+            .filter(|(_, n)| {
+                n.wpos.xy().distance(site_wpos) < 300.0
+                    && matches!(n.mode, ::rtsim::data::npc::SimulationMode::Loaded)
+            })
+            .count();
+        let sites = data.sites.sites.len();
+        info!(total, near, near_loaded, sites, ?site_wpos, "bag1: population probe");
+    }
+    let before = snapshot(&server);
+    let promoted = before.len();
+    // Discriminator probe: promoted-in-DATA vs actually-EMBODIED (ECS
+    // entity exists) vs ACTING (agent holds an rtsim activity). max=0.0
+    // exactly would mean frozen wpos (no entity), not lazy townsfolk.
+    {
+        let ecs = server.state().ecs();
+        let entities = ecs.entities();
+        let rtsim_ents = ecs.read_storage::<common::rtsim::RtSimEntity>();
+        let agents = ecs.read_storage::<common::comp::Agent>();
+        let positions = ecs.read_storage::<common::comp::Pos>();
+        use specs::Join;
+        let mut embodied = 0;
+        let mut acting = 0;
+        for (e, _, epos) in (&entities, &rtsim_ents, &positions).join() {
+            if epos.0.xy().distance(site_wpos) < 200.0 {
+                embodied += 1;
+                if let Some(act) =
+                    agents.get(e).and_then(|a| a.rtsim_controller.activity)
+                {
+                    acting += 1;
+                    info!(?act, "bag1: activity");
+                }
+            }
+        }
+        info!(promoted, embodied, acting, "bag1: embodiment probe");
+    }
+    tick(&mut server, 900);
+    let after = snapshot(&server);
+
+    let mut movers_5 = 0usize;
+    let mut max_moved = 0.0f32;
+    for (id, p0) in &before {
+        if let Some((_, p1)) = after.iter().find(|(i, _)| i == id) {
+            let d = p0.xy().distance(p1.xy());
+            max_moved = max_moved.max(d);
+            if d >= 5.0 {
+                movers_5 += 1;
+            }
+        }
+    }
+
+    let result = serde_json::json!({
+        "bag1_promoted": promoted,
+        "bag1_movers_5": movers_5,
+        "bag1_max_moved": max_moved,
+    });
+    // ≥1 real mover proves the intent handoff drives movement; stationary
+    // intents (Sit/Talk/Dance) are legitimate, so the bar is existential,
+    // not universal. The run completing = no arm froze or panicked.
+    let pass = promoted > 0 && movers_5 >= 1;
+    println!("{}", result);
+    println!("BAG1 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
