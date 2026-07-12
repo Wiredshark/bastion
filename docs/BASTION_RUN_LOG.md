@@ -1382,3 +1382,10 @@ DeleteEvent untouched; claim sweep = the release, regression-guarded). --lod1-sc
 2/2 + gate 10/10: 3 rapid mid-work demotes, zero flip-window leaks, exactly-once
 completion (stone SUM conserved), stable roster, zero ghost claims. Packet's proofread
 note honored (gate on Sys, not the stale unload-hook seam).
+
+### bastion-block-BELT-EXERCISE-TEST (a3ee084346)
+Row 31.3 (Opus R11 follow-up): --belt-exercise-scenario — sealed-pocket injection
+(revert-locked, persists by construction) proves the EMBED WATCH persist→relocate path
+FIRES (net_fires+1, relocation cell-verified, destination free); FAILING-capable. Build
+occupancy guard confirmed full-body (feet+torso) by inspection. Harness-only diff; game
+code identical to the 10/10-gated 51150baca3; ladder = 11 legs.
