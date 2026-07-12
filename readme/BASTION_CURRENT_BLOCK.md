@@ -1,5 +1,11 @@
 # Project Bastion — Current Build Block
 
+## ⛔ BUILDER HARD RULES — apply to EVERY block, no exceptions
+- **NO SUB-AGENTS, EVER.** Never spawn `Task` / `Agent` / `Workflow` or anything that starts a second agent context — they are massive token dumps and are **permanently BANNED**. Do 100% of the work in your own single context.
+- **Direct work only:** read this packet → grep/read only the files you need → write the code → run the gate. No delegation-by-spawn.
+- **Only offload allowed:** a long review → the **Sonnet reviewer SESSION** via `send_message` (`local_5f3f9b01`); the safety gate → the **Opus reviewer session**. Never a spawn.
+- **Never idle-wait:** pipeline other code while a build/test runs. **Low token:** terse bookkeeping (append, don't re-narrate); don't reread the whole roadmap.
+
 > The only actionable builder assignment. Builder reads: this file → the block's [Implementation Playbook](BASTION_IMPLEMENTATION_PLAYBOOK.md) entry → its [Design Index](BASTION_MASTER_DESIGN_INDEX.md) resolver → only the named authoritative design sections → the relevant [Shared-Engine Registry](BASTION_SHARED_ENGINE_REGISTRY.md) entries. Sequence authority = [Master Build List](BASTION_MASTER_BUILD_LIST.md) (architect-owned; builder need not read it during implementation).
 
 ---
