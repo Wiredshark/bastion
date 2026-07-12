@@ -618,6 +618,29 @@ impl DesignationKind {
 
 /// bastion (B6 JOB-CORE): a painted stockpile zone's stable id (the board
 /// hands them out; `Haul.destination` references one).
+/// bastion (FOCUS-0, row 43): the PERSONAL-NEED vocabulary — the locked
+/// venue interface (frameworks §2-adjacent, the `Purpose`/`ChronicleKind`
+/// discipline: append-only, never reorder — wire- and save-stable).
+/// Venues declare what they satisfy against THIS enum (DF-RELIGION's
+/// temple satisfies `Pray`, the tavern `Drink`/`Socialize`, …); the
+/// facet-derived per-colonist WEIGHTS are B-AG3-dependent and explicitly
+/// NOT built yet (deferred with it), as are self-generated need-jobs
+/// (FOCUS-1) and the focus→work_rate hook (FOCUS-2). This block is the
+/// vocabulary + the save-shape ONLY.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Need {
+    Pray,
+    Socialize,
+    Drink,
+    Craft,
+    Family,
+    SeeAnimals,
+    AdmireArt,
+    Learn,
+    Acquire,
+    Fight,
+}
+
 pub type ZoneId = u64;
 /// bastion (B6 JOB-CORE): a reservation's stable id — ONE item can be
 /// reserved by ONE job (the double-spend guard); the table lives on the
@@ -956,6 +979,16 @@ pub struct BastionColonist {
     /// scenario run). serde-default: absent in old saves → `None`.
     #[serde(default)]
     pub inventory: Option<Vec<(String, u32)>>,
+    /// bastion (FOCUS-0): per-colonist PERSONAL-NEED state keyed by the
+    /// locked [`Need`] vocabulary — a serde-defaulted COLLECTION, not one
+    /// struct field per need (the Playbook's explicit shape: future
+    /// `Need` variants join without a struct migration; old saves default
+    /// EMPTY). Same 1.0-satisfied semantics as the bodily `Needs` comp.
+    /// Empty = no tracked personal-need state yet — FOCUS-1 populates it;
+    /// the B-AG3-deferred facet-derivation later sets per-colonist
+    /// weights. Schema only this block: nothing reads or writes it.
+    #[serde(default)]
+    pub personal_needs: std::collections::HashMap<Need, f32>,
 }
 
 /// bastion (CASE-003 belt): count of per-tick CENTER-SAFETY-NET fires — a
@@ -1061,6 +1094,38 @@ const COLONIST_BACKSTORIES: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// FOCUS-0 pin: the Need-keyed collection round-trips serde, and —
+    /// the lock's whole point — a payload WITHOUT the field decodes with
+    /// an EMPTY default (old saves load fine; the "not fixed fields"
+    /// shape means future variants join without migration). Encoder:
+    /// `ron` (common's in-crate encoder); `#[serde(default)]` semantics
+    /// are encoder-independent, and the persistence-encoder-faithful
+    /// (rmp) round-trip already rides the rtsim-level tests + the lod0
+    /// gate leg's in-vivo whole-record round-trip.
+    #[test]
+    fn bastion_need_collection_serde_shape() {
+        use std::collections::HashMap;
+        #[derive(serde::Deserialize)]
+        struct New {
+            #[expect(dead_code, reason = "decode-shape witness")]
+            name: String,
+            #[serde(default)]
+            personal_needs: HashMap<Need, f32>,
+        }
+        // An old-shape payload (no field) -> empty default.
+        let decoded: New =
+            ron::from_str(r#"(name: "Trell")"#).expect("decode old shape");
+        assert!(decoded.personal_needs.is_empty());
+        // A populated map round-trips exactly.
+        let mut needs = HashMap::new();
+        needs.insert(Need::Pray, 0.3f32);
+        needs.insert(Need::Socialize, 1.0);
+        needs.insert(Need::Fight, 0.75);
+        let text = ron::to_string(&needs).expect("encode");
+        let back: HashMap<Need, f32> = ron::from_str(&text).expect("decode");
+        assert_eq!(needs, back);
+    }
 
     fn r(min: (i32, i32, i32), max: (i32, i32, i32)) -> Region {
         Region {
@@ -1417,6 +1482,9 @@ impl BastionColonist {
             soft_until: 0.0,
             climb_free_until: 0.0,
             inventory: None,
+            // FOCUS-0: fresh settlers start with no tracked personal-need
+            // state (FOCUS-1 populates it).
+            personal_needs: Default::default(),
         }
     }
 }
