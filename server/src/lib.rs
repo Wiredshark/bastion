@@ -1447,6 +1447,15 @@ impl Server {
             .done_count
     }
 
+    /// bastion (DETRNG belt, harness hook): cumulative cave-in collapse drop
+    /// cells — the conservation companion for stone accounting.
+    pub fn bastion_cavein_drop_cells(&self) -> u64 {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .cavein_drop_cells
+    }
+
     /// bastion (COORDINATION-stigmergic-v1, harness hook): the saturation
     /// field at a position's coarse cell.
     pub fn bastion_saturation_at(&self, pos: Vec3<i32>) -> f32 {

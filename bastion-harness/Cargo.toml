@@ -14,6 +14,9 @@ chrono = { workspace = true }
 [dependencies]
 server = { package = "veloren-server", path = "../server" }
 common = { package = "veloren-common", path = "../common" }
+# DETRNG (B8 root fix): direct dep only to flip rtsim::DETERMINISTIC_RTSIM at
+# boot — the harness runs reproducibly; the live game keeps its entropy.
+rtsim = { package = "veloren-rtsim", path = "../rtsim" }
 
 chrono = { workspace = true }
 clap = { workspace = true }

@@ -18,7 +18,9 @@ impl Rule for CleanUp {
     fn start(rtstate: &mut RtState) -> Result<Self, RuleError> {
         rtstate.bind::<Self, OnTick>(|ctx| {
             let data = &mut *ctx.state.data_mut();
-            let mut rng = ChaChaRng::from_seed(rand::rng().random::<[u8; 32]>());
+            // DETRNG (B8 root fix): the shared constructor — OS entropy in the
+            // live game, (world seed, tick)-derived under the harness flag.
+            let mut rng = crate::tick_rng(ctx.index.seed, ctx.event.tick, 0xC1EA);
 
             // TODO: Use `.into_par_iter()` for these by implementing rayon traits in upstream slotmap.
 

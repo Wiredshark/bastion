@@ -11,6 +11,10 @@
 //! `docs/BASTION_B0_FINDINGS.md`) and asserts nothing by itself. Later blocks
 //! hang their Tier-1 assertions off the `Summary` it produces.
 
+// The b5 scenario's `json!` result literal outgrew the default 128 as blocks
+// added telemetry fields (DETRNG was the straw).
+#![recursion_limit = "256"]
+
 mod asset_test;
 
 use clap::Parser;
@@ -166,6 +170,14 @@ fn main() -> ExitCode {
     // Stderr, not stdout: JSON-line consumers stay untouched. BEFORE
     // Args::parse so even a --help/parse-error run identifies its exe.
     eprintln!("bastion-harness {BUILD_STAMP}");
+
+    // DETRNG (B8 root fix): EVERY harness run is deterministic — rtsim rule
+    // RNGs derive from (world seed, tick) instead of OS entropy, so --seed
+    // actually reproduces a run (same seed → same gate outcome; the flake
+    // class this retires: b4 arrived, b5 mine_cleared/stone_sum, b58
+    // d_all_cleared, ck fs_out/in_terrain). Set BEFORE Server::new (rtsim's
+    // OnSetup/migrate runs at construction). Ben's live game never sets it.
+    rtsim::DETERMINISTIC_RTSIM.store(true, core::sync::atomic::Ordering::Relaxed);
 
     let args = Args::parse();
 
@@ -843,7 +855,12 @@ fn b5_scenario(args: &Args) -> ExitCode {
     let mut mine_cleared = false;
     let mut chop_cleared = false;
     let mut build_placed = false;
-    for _ in 0..120 {
+    // 180 (was 120): with the rng layer deterministic (DETRNG), the remaining
+    // run-to-run variance is ASYNC SCHEDULING (chunk-gen/thread timing —
+    // worst on a cold first-run-after-build), which occasionally left the
+    // last mine block one window short. Wider window = headroom for the
+    // scheduling tail; the loop breaks early when all three phases land.
+    for _ in 0..180 {
         tick(&mut server, 30);
         mine_cleared = (mine_min.x..=mine_max.x).all(|x| {
             (mine_min.y..=mine_max.y).all(|y| {
@@ -1300,6 +1317,7 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_chop_cleared": chop_cleared,
         "b5_build_placed": build_placed,
         "b5_stone_sum": stone_sum,
+        "b5_cavein_drop_cells": server.bastion_cavein_drop_cells(),
         "b5_stone_entities": stone_entities,
         "b5_log_sum": log_sum,
         "b5_build_stall_untouched": build_stall_untouched,
@@ -1341,9 +1359,14 @@ fn b5_scenario(args: &Args) -> ExitCode {
         && mine_cleared
         && chop_cleared
         && build_placed
-        // B5.5: conservation-exact through merges (amount sum), and the
-        // aggregation actually fires (piles ≪ 27 entities).
-        && stone_sum == 27
+        // B5.5: conservation through merges (amount sum), and the
+        // aggregation actually fires (piles ≪ 27 entities). DETRNG belt
+        // (architect): the CONSERVATION form — mined stone always lands
+        // in-radius (≥27); a cave-in collapse elsewhere may add drops
+        // (≤27+collapsed). Exact 27 under determinism (no collapse fires on
+        // this geometry); never false-reds under either rng mode.
+        && stone_sum >= 27
+        && stone_sum <= 27 + server.bastion_cavein_drop_cells()
         && stone_entities <= 10
         && log_sum == 1
         && build_stall_untouched

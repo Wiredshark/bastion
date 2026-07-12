@@ -144,6 +144,32 @@ pub mod event;
 pub mod generate;
 pub mod rule;
 
+/// bastion (DETRNG, B8 root fix): OPT-IN deterministic rtsim RNG. Rtsim's
+/// per-tick rules historically seeded their RNGs from OS entropy (the B0 §4
+/// caveat), so `--seed` never reproduced a run — the root of the harness's
+/// entire flake class (same-seed gates flipping PASS/FAIL). When this flag is
+/// set (ONCE at boot, before any tick — the bastion harness sets it; Ben's
+/// live game never does, keeping its entropy), [`tick_rng`] derives every
+/// rule RNG from (world seed, tick, salt) instead: same seed → same run.
+pub static DETERMINISTIC_RTSIM: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+/// The ONE constructor every rtsim rule RNG goes through (identity beats
+/// convention — no site can drift back to bare OS entropy unnoticed). `salt`
+/// distinguishes call sites (and per-NPC streams: pass the npc seed).
+pub fn tick_rng(world_seed: u32, tick: u64, salt: u32) -> rand_chacha::ChaChaRng {
+    use rand::prelude::*;
+    if DETERMINISTIC_RTSIM.load(core::sync::atomic::Ordering::Relaxed) {
+        let mut s = [0u8; 32];
+        s[0..4].copy_from_slice(&world_seed.to_le_bytes());
+        s[4..12].copy_from_slice(&tick.to_le_bytes());
+        s[12..16].copy_from_slice(&salt.to_le_bytes());
+        rand_chacha::ChaChaRng::from_seed(s)
+    } else {
+        rand_chacha::ChaChaRng::from_seed(rand::rng().random::<[u8; 32]>())
+    }
+}
+
 pub use self::{
     data::Data,
     event::{Event, EventCtx, OnTick},

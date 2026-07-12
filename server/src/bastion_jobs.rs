@@ -937,6 +937,11 @@ pub struct JobBoard {
     /// measured 1.46× before the auto-ladder-off + commitment work). Pure
     /// telemetry for the harness; never gates.
     pub total_claims: u64,
+    /// bastion (DETRNG belt, architect): cumulative MINE_DROP cells spawned
+    /// by cave-in collapses — the conservation companion: total stone in the
+    /// world == blocks mined + this (`stone_sum == mined + collapsed`), an
+    /// invariant that holds under ANY rng mode.
+    pub cavein_drop_cells: u64,
 }
 
 impl JobBoard {
@@ -1304,7 +1309,16 @@ impl<'a> System<'a> for Sys {
     ) {
         let mut item_drop_emitter = item_drop_events.emitter();
         let mut chat_emitter = chat_events.emitter();
-        let mut rng = rand::rng();
+        // DETRNG (B8 root fix): tick-seeded, not OS entropy — the toss
+        // velocities this feeds are cosmetic scatter (drop landing spots →
+        // pile merge grouping), and seeding them per-tick makes the whole
+        // system reproducible under --seed (the last b5 residual:
+        // stone_entities varied run-to-run). Same scatter feel in the live
+        // game; deterministic everywhere.
+        let mut rng = {
+            use rand::SeedableRng;
+            rand::rngs::StdRng::seed_from_u64(tick.0 ^ 0xBA57_10AA)
+        };
         // Pre-deref so field borrows split (jobs mutably + anchors shared
         // inside the same loop).
         let board = &mut *board;
@@ -2302,6 +2316,7 @@ impl<'a> System<'a> for Sys {
                                 cells = cells.len(),
                                 "bastion: CAVE-IN — floating chunk collapsed"
                             );
+                            board.cavein_drop_cells += cells.len() as u64;
                             collapses.push(cells);
                         }
                     }
