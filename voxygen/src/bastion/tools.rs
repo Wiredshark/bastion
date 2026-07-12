@@ -106,6 +106,10 @@ pub fn zone_rgb(kind: DesignationKind) -> [f32; 3] {
         DesignationKind::Stockpile => [0.85, 0.35, 0.95],
         // B5.8: ladder — wood-rung tan, distinct from Chop's leaf green.
         DesignationKind::Ladder => [0.85, 0.7, 0.35],
+        // ZONE-0: activity zones — warm social gold, distinct from the
+        // work-kind palette (one colour for the family until kinds
+        // multiply enough to need per-kind hues).
+        DesignationKind::Zone(_) => [1.0, 0.85, 0.3],
     }
 }
 

@@ -736,6 +736,40 @@ impl AgentData<'_> {
                     * agent.psyche.idle_wander_factor;
             }
 
+            // bastion (ZONE-0): the ACTIVITY-ZONE soft magnet — a nearby
+            // Meeting zone pulls a COLONIST's idle wander toward its
+            // center, using EXACTLY the patrol-origin mechanism above (a
+            // weak bearing BIAS on the random walk, never a Goto). Needs
+            // always win BY CONSTRUCTION: hunger/threat/work branch off
+            // long before this idle fall-through executes, and the bias
+            // cannot hold anyone (a stronger drive simply never runs this
+            // code). Vanilla NPCs keep pure wander (colonist-gated).
+            if read_data.colonists.contains(*self.entity)
+                && let Some(center) = read_data
+                    .activity_zones
+                    .0
+                    .iter()
+                    .map(|(_, r)| {
+                        Vec2::new(
+                            (r.min.x + r.max.x) as f32 / 2.0,
+                            (r.min.y + r.max.y) as f32 / 2.0,
+                        )
+                    })
+                    .filter(|c| {
+                        c.distance_squared(self.pos.0.xy())
+                            < common::bastion::ZONE_MAGNET_RANGE.powi(2)
+                    })
+                    .min_by(|a, b| {
+                        a.distance_squared(self.pos.0.xy())
+                            .partial_cmp(&b.distance_squared(self.pos.0.xy()))
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+            {
+                agent.bearing += (center - self.pos.0.xy())
+                    / (0.01 + common::bastion::ZONE_MAGNET_RANGE)
+                    * common::bastion::ZONE_MAGNET_WEIGHT;
+            }
+
             // Stop if we're too close to a wall
             // or about to walk off a cliff
             // NOTE: costs 1 us (imbris) <- before cliff raycast added

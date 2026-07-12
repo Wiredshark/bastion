@@ -63,7 +63,7 @@ pub fn completion_block(kind: JobKind) -> Option<Block> {
             // B5.8: the native climbable ladder sprite — the vertical link
             // pathfinding knows about.
             DesignationKind::Ladder => Some(Block::air(SpriteKind::Ladder)),
-            DesignationKind::Stockpile => None,
+            DesignationKind::Stockpile | DesignationKind::Zone(_) => None,
         },
         JobKind::Haul { .. } => None,
     }

@@ -280,7 +280,7 @@ fn job_wanted(kind: DesignationKind, block: &Block) -> bool {
         },
         // B5.8: a ladder rung, like Build, goes into currently-open space.
         DesignationKind::Build | DesignationKind::Ladder => !block.is_filled(),
-        DesignationKind::Stockpile => false,
+        DesignationKind::Stockpile | DesignationKind::Zone(_) => false,
     }
 }
 
@@ -945,6 +945,10 @@ pub struct JobBoard {
     /// destinations. Registered at placement, dropped on cancel (dependent
     /// haul jobs cancel with their zone).
     pub stockpiles: Vec<(common::bastion::ZoneId, Region)>,
+    /// bastion (ZONE-0): painted ACTIVITY zones `(id, kind, region)` — the
+    /// soft-magnet footprints, mirrored into [`ActivityZones`] each
+    /// arbitration pass. Same lifecycle as stockpiles.
+    pub activity_zones: Vec<(common::bastion::ZoneId, common::bastion::ZoneKind, Region)>,
     next_zone: common::bastion::ZoneId,
     /// bastion (B6 JOB-CORE): the reservation table — ONE item entity
     /// reserved by ONE job (the double-spend guard). Stock itself stays
@@ -1000,6 +1004,14 @@ impl JobBoard {
             self.next_zone += 1;
             self.stockpiles.push((id, region));
             info!(zone = id, ?region, "bastion: stockpile zone registered");
+        }
+        // ZONE-0: an activity zone registers its footprint the same way —
+        // no jobs, just the magnet's geometry.
+        if let DesignationKind::Zone(zk) = kind {
+            let id = self.next_zone;
+            self.next_zone += 1;
+            self.activity_zones.push((id, zk, region));
+            info!(zone = id, kind = ?zk, ?region, "bastion: activity zone registered");
         }
         // One job per block, regardless of kind: repainting a region — or
         // overlapping designations (Mine and Chop both match a Wood block,
@@ -1218,6 +1230,8 @@ impl JobBoard {
         // and their reservations released.
         let before = self.stockpiles.len();
         self.stockpiles.retain(|(_, r)| !r.intersects(&region));
+        // ZONE-0: activity zones erase with the same brush.
+        self.activity_zones.retain(|(_, _, r)| !r.intersects(&region));
         if self.stockpiles.len() != before {
             let live: HashSet<common::bastion::ZoneId> =
                 self.stockpiles.iter().map(|(z, _)| *z).collect();
@@ -1417,6 +1431,8 @@ impl<'a> System<'a> for Sys {
             ReadExpect<'a, crate::rtsim::RtSim>,
             ReadStorage<'a, comp::PickupItem>,
             ReadExpect<'a, common::event::EventBus<common::event::InventoryManipEvent>>,
+            // ZONE-0: the activity-zone mirror the agent magnet reads.
+            specs::Write<'a, common::bastion::ActivityZones>,
         ),
     );
 
@@ -1450,7 +1466,13 @@ impl<'a> System<'a> for Sys {
             physics_states,
             mut healths,
             mut moods,
-            (rtsim_entities, rtsim, pickup_items, inventory_manip_events),
+            (
+                rtsim_entities,
+                rtsim,
+                pickup_items,
+                inventory_manip_events,
+                mut activity_zones,
+            ),
         ): Self::SystemData,
     ) {
         let mut item_drop_emitter = item_drop_events.emitter();
@@ -1915,6 +1937,21 @@ impl<'a> System<'a> for Sys {
             .join()
             .map(|(_, p)| p.0)
             .collect();
+
+        // ── ZONE-0: mirror activity zones for the agent magnet ───────────
+        // (Arbitration cadence; zones are few — a rewrite beats dirty
+        // tracking at this size. The mirror is read-only geometry; the
+        // board stays the single authority.)
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 5 {
+            let mirror: Vec<(common::bastion::ZoneKind, Region)> = board
+                .activity_zones
+                .iter()
+                .map(|(_, k, r)| (*k, *r))
+                .collect();
+            if activity_zones.0 != mirror {
+                activity_zones.0 = mirror;
+            }
+        }
 
         // ── B6 HAUL: job generation (arbitration cadence, own offset) ────
         // Scan loose bastion-output drops (stone/log — the two defs the
@@ -2591,7 +2628,8 @@ impl<'a> System<'a> for Sys {
                             DesignationKind::Build | DesignationKind::Ladder => {
                                 terrain.get(job.pos).ok().is_some_and(|b| !b.is_filled())
                             },
-                            DesignationKind::Stockpile => false,
+                            DesignationKind::Stockpile
+                            | DesignationKind::Zone(_) => false,
                         },
                         // Haul completes in its own arm above — defensive.
                         common::bastion::JobKind::Haul { .. } => false,

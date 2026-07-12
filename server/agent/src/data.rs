@@ -486,6 +486,9 @@ pub struct ReadData<'a> {
     /// that don't yet know about the colony job system (e.g. opportunistic
     /// item-drop looting) can be gated off for them where needed.
     pub colonists: ReadStorage<'a, Colonist>,
+    /// bastion (ZONE-0): activity-zone footprints (mirrored from the job
+    /// board) — the idle-wander soft magnet's geometry.
+    pub activity_zones: specs::Read<'a, common::bastion::ActivityZones>,
 }
 
 pub enum Path {

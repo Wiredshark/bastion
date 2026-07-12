@@ -259,6 +259,49 @@ impl Purpose {
     }
 }
 
+/// bastion (ZONE-0, row 37): ACTIVITY-ZONE subtypes — each carries its
+/// locked [`Purpose`]. A zone is a SOFT MAGNET (DF activity zones reframed
+/// per the pillar): it RAISES an activity's utility within its footprint,
+/// never forces — a colonist with a stronger drive always leaves freely.
+/// APPEND-ONLY, wire-stable (the JobKind/Species discipline). ZONE-0 ships
+/// Meeting (the proof zone biasing EXISTING idle behavior); further kinds
+/// land with their owning blocks (Refuse/Gather = ZONE-1, needs-gated
+/// kinds = ZONE-2+).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ZoneKind {
+    Meeting,
+}
+
+impl ZoneKind {
+    pub fn purpose(&self) -> Purpose {
+        match self {
+            ZoneKind::Meeting => Purpose::Social,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            ZoneKind::Meeting => "Meeting",
+        }
+    }
+}
+
+/// bastion (ZONE-0): the ACTIVITY-ZONE mirror — an ECS resource the job
+/// board rewrites each arbitration pass (zones are few and tiny) so the
+/// AGENT system can read footprints without seeing the board. The magnet
+/// reads this; the board stays the single authority.
+#[derive(Clone, Debug, Default)]
+pub struct ActivityZones(pub Vec<(ZoneKind, Region)>);
+
+/// bastion (ZONE-0): the soft magnet's pull weight on the idle-wander
+/// BEARING — the same order as the vanilla patrol-origin pull (0.015 ×
+/// wander factor), deliberately weak: a bias, never a command. Graduates
+/// to a RON asset when zone kinds multiply (flagged in the Opus notes).
+pub const ZONE_MAGNET_WEIGHT: f32 = 0.1;
+/// bastion (ZONE-0): beyond this XY distance a zone exerts no pull (no
+/// cross-map teleport-attraction; idle colonists drift in when nearby).
+pub const ZONE_MAGNET_RANGE: f32 = 48.0;
+
 /// What a painted designation region means. B4 turns these into jobs.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DesignationKind {
@@ -272,6 +315,11 @@ pub enum DesignationKind {
     /// Appended LAST: `DesignationKind` is on the wire (client+server
     /// recompile together; see the b-2 net-protocol ledger note).
     Ladder,
+    /// bastion (ZONE-0): an activity zone — a SOFT MAGNET carrying its
+    /// [`ZoneKind`] (which carries its [`Purpose`]). Generates NO jobs;
+    /// registered as a footprint the utility magnet reads. Appended last
+    /// (wire rule as above).
+    Zone(ZoneKind),
 }
 
 impl DesignationKind {
@@ -282,6 +330,7 @@ impl DesignationKind {
             DesignationKind::Build => "Build",
             DesignationKind::Stockpile => "Stockpile",
             DesignationKind::Ladder => "Ladder",
+            DesignationKind::Zone(z) => z.label(),
         }
     }
 
@@ -296,7 +345,8 @@ impl DesignationKind {
     /// future Gather/Forage/surface-zone kind gets the branch free.
     pub fn footprint_mode(&self) -> FootprintMode {
         match self {
-            DesignationKind::Chop => FootprintMode::Area2D,
+            // ZONE-0: zones are surface activity areas — pure XY.
+            DesignationKind::Chop | DesignationKind::Zone(_) => FootprintMode::Area2D,
             DesignationKind::Mine
             | DesignationKind::Build
             | DesignationKind::Stockpile
@@ -312,6 +362,8 @@ impl DesignationKind {
         match self {
             DesignationKind::Mine | DesignationKind::Chop => Some(Purpose::Production),
             DesignationKind::Stockpile => Some(Purpose::Storage),
+            // ZONE-0: the zone kind carries its own locked Purpose.
+            DesignationKind::Zone(z) => Some(z.purpose()),
             // Structures carry their asset's purpose, not the designation's.
             DesignationKind::Build | DesignationKind::Ladder => None,
         }
@@ -538,7 +590,10 @@ impl DesignationKind {
             DesignationKind::Chop => WorkType::Chop,
             // B5.8: placing a ladder is construction work.
             DesignationKind::Build | DesignationKind::Ladder => WorkType::Build,
-            DesignationKind::Stockpile => WorkType::Haul,
+            // ZONE-0: zones generate no jobs; Haul is the inert mapping
+            // (same as Stockpile's pre-B6 stance — priorities stay honored
+            // if a zone kind ever emits work).
+            DesignationKind::Stockpile | DesignationKind::Zone(_) => WorkType::Haul,
         }
     }
 }

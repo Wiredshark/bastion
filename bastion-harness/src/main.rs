@@ -149,6 +149,12 @@ struct Args {
     #[arg(long)]
     bag1_scenario: bool,
 
+    /// bastion (ZONE-0, row 37): the activity-zone SOFT MAGNET — idle
+    /// colonists measurably congregate in a painted Meeting zone vs a
+    /// mirrored control, and a real job still pulls one out freely.
+    #[arg(long)]
+    zone_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -253,6 +259,8 @@ fn main() -> ExitCode {
         b6haul_scenario(&args)
     } else if args.bag1_scenario {
         bag1_scenario(&args)
+    } else if args.zone_scenario {
+        zone_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3333,6 +3341,191 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (ZONE-0, row 37): the activity-zone SOFT MAGNET — idle colonists
+/// spend measurably more idle time inside a painted Meeting zone than in a
+/// mirrored control area (attraction works), AND a colonist handed a real
+/// job leaves the zone and completes it (a stronger drive always wins — the
+/// soft-not-fence pillar, asserted not assumed). Save/load persistence is
+/// NOT asserted: the job board (all designations, stockpiles included) is
+/// session-state today — flagged to the Opus pass as an inherited
+/// infrastructure gap, not silently dropped.
+fn zone_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region, ZoneKind};
+    use common::{
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-zone-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-zone".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-zone-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = ground_z(&server, cx, cy).expect("no ground at site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    // A wide flat pad so the wander has room to show its bias.
+    for x in (cx - 14)..=(cx + 14) {
+        for y in (cy - 10)..=(cy + 10) {
+            for z in (gz - 2)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        4,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+
+    // The MAGNET zone: the east quadrant. The CONTROL: its west mirror —
+    // same size, same distance from spawn, no zone.
+    let zone_rect = Region {
+        min: Vec3::new(cx + 4, cy - 5, gz + 1),
+        max: Vec3::new(cx + 12, cy + 5, gz + 1),
+    };
+    let control = Region {
+        min: Vec3::new(cx - 12, cy - 5, gz + 1),
+        max: Vec3::new(cx - 4, cy + 5, gz + 1),
+    };
+    server.bastion_place_designation(zone_rect, DesignationKind::Zone(ZoneKind::Meeting));
+
+    // SAMPLE: idle colonist-ticks in zone vs control over the window.
+    let mut in_zone = 0u64;
+    let mut in_control = 0u64;
+    for _ in 0..300 {
+        tick(&mut server, 10);
+        for (_, p, _) in server.bastion_colonist_states() {
+            let cell = p.map(|e| e.floor() as i32);
+            if zone_rect.contains_point_xy(cell) {
+                in_zone += 1;
+            } else if control.contains_point_xy(cell) {
+                in_control += 1;
+            }
+        }
+    }
+    // The magnet must be a MEASURABLE bias (zone-time beats the mirrored
+    // control decisively), not decoration.
+    let magnet_works = in_zone > in_control.saturating_mul(2) && in_zone > 50;
+
+    // FREEDOM: hand one colonist real work OUTSIDE the zone — the stronger
+    // drive must pull it out (the job completes; soft, never a fence).
+    let job_cell = Vec3::new(cx - 10, cy, gz);
+    let jobs = server
+        .bastion_place_designation(
+            Region { min: job_cell, max: job_cell },
+            DesignationKind::Mine,
+        )
+        .len();
+    let mut freed = false;
+    for _ in 0..240 {
+        tick(&mut server, 15);
+        if server
+            .bastion_block_kind(job_cell)
+            .is_none_or(|k| !k.is_filled())
+        {
+            freed = true;
+            break;
+        }
+    }
+
+    let result = serde_json::json!({
+        "zone_in_zone": in_zone,
+        "zone_in_control": in_control,
+        "zone_magnet_works": magnet_works,
+        "zone_jobs": jobs,
+        "zone_freed": freed,
+        "zone_colonists": names.len(),
+    });
+    let pass = names.len() == 4 && magnet_works && jobs == 1 && freed;
+    println!("{}", result);
+    println!("ZONE SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }

@@ -390,6 +390,9 @@ impl Server {
         state.ecs_mut().insert(bastion_jobs::JobBoard::default());
         state
             .ecs_mut()
+            .insert(common::bastion::ActivityZones::default());
+        state
+            .ecs_mut()
             .insert(bastion_jobs::BastionForceLoaded::default());
         state
             .ecs_mut()
