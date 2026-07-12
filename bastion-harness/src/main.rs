@@ -131,6 +131,12 @@ struct Args {
     #[arg(long)]
     lod1_scenario: bool,
 
+    /// bastion (31.3 BELT-EXERCISE, Opus R11 follow-up): inject a PERSISTENT
+    /// embed (sealed pocket, revert-locked) and prove the EMBED WATCH's
+    /// persist→relocate path fires — fails if the relocation breaks.
+    #[arg(long)]
+    belt_exercise_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -229,6 +235,8 @@ fn main() -> ExitCode {
         lod0_scenario(&args)
     } else if args.lod1_scenario {
         lod1_scenario(&args)
+    } else if args.belt_exercise_scenario {
+        belt_exercise_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3309,6 +3317,208 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (31.3 BELT-EXERCISE, Opus R11 follow-up): force-inject a colonist
+/// into a PERSISTENT embed and prove the EMBED WATCH's persist→relocate path
+/// actually fires — the standing gates only prove "no embed occurs"; this
+/// one FAILS if the relocate path breaks. The injection is a sealed pocket
+/// (feet air, torso + all ring-1 solid): the phys resolver revert-locks a
+/// tick-start in-wall pos, so the embed persists by construction until the
+/// watch trips at EMBED_PERSIST_TICKS.
+fn belt_exercise_scenario(args: &Args) -> ExitCode {
+    use common::{
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-belt-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-belt".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-belt-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = ground_z(&server, cx, cy).expect("no ground at site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    // Open pad: floor at gz, air above.
+    for x in (cx - 6)..=(cx + 6) {
+        for y in (cy - 6)..=(cy + 6) {
+            for z in (gz - 2)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 10) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    // THE POCKET at (cx+3, cy): feet cell air, torso LID solid, all ring-1
+    // solid at feet+torso level — a colonist teleported in is core-solid
+    // (the ±0.2 corners all read the lid) and the resolver revert-locks it
+    // (tick-start in-wall pos → revert + zero velocity, forever). Ring-2 is
+    // the open pad → eject_dest's nearest standable target.
+    let (px, py, pz) = (cx + 3, cy, gz + 1);
+    for dx in -1..=1 {
+        for dy in -1..=1 {
+            if !(dx == 0 && dy == 0) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(px + dx, py + dy, pz), rock);
+            }
+            server
+                .state_mut()
+                .set_block(Vec3::new(px + dx, py + dy, pz + 1), rock);
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new((cx - 3) as f32, cy as f32, gz as f32 + 2.0),
+        1,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let subject = names.first().cloned().unwrap_or_default();
+    let fires_before = server.bastion_center_net_fires();
+
+    // INJECT: teleport into the pocket (feet air, torso solid).
+    let injected = server.bastion_teleport_colonist(
+        &subject,
+        Vec3::new(px as f32 + 0.5, py as f32 + 0.5, pz as f32),
+    );
+    // PERSISTENCE: still pocket-bound after 10 ticks (well under the
+    // 30-tick threshold) — the revert-lock holds; nothing else rescues it.
+    tick(&mut server, 10);
+    let mid_pos = server
+        .bastion_colonist_states()
+        .into_iter()
+        .find(|(n, _, _)| *n == subject)
+        .map(|(_, p, _)| p);
+    let persisted = mid_pos.is_some_and(|p| {
+        p.xy().distance(Vec2::new(px as f32 + 0.5, py as f32 + 0.5)) < 1.0
+    });
+
+    // THE TRIP: past EMBED_PERSIST_TICKS the watch must relocate.
+    tick(&mut server, 40);
+    let end_pos = server
+        .bastion_colonist_states()
+        .into_iter()
+        .find(|(n, _, _)| *n == subject)
+        .map(|(_, p, _)| p);
+    let fires_after = server.bastion_center_net_fires();
+    // Relocated = the FEET CELL left the pocket interior. (A radius test
+    // mis-graded the legitimate nearest destination: eject_dest's ring-1 at
+    // dz+2 is ATOP the pocket wall — same xy column, entirely free.)
+    let relocated = end_pos.is_some_and(|p| {
+        p.map(|e| e.floor() as i32) != Vec3::new(px, py, pz)
+    });
+    // The colonist ends FREE: center cell clear (the invariant itself) and
+    // still on the pad (not flung). Instant standability of the SAMPLED pos
+    // is over-strict — an idle wander hop puts z mid-arc (first run: z
+    // 399.7 mid-jump); eject_dest's destination standability is already
+    // unit-pinned, the live path's job is center-clear.
+    let dest_ok = end_pos.is_some_and(|p| {
+        let center = p.map(|e| e.floor() as i32) + Vec3::unit_z();
+        let center_clear = !server
+            .bastion_block_kind(center)
+            .is_some_and(|k| k.is_filled());
+        let on_pad = (p.x - cx as f32).abs() < 8.0 && (p.y - cy as f32).abs() < 8.0;
+        center_clear && on_pad
+    });
+
+    let result = serde_json::json!({
+        "belt_injected": injected,
+        "belt_persisted": persisted,
+        "belt_relocated": relocated,
+        "belt_dest_standable": dest_ok,
+        "belt_net_fires": fires_after - fires_before,
+        "belt_mid_pos": format!("{:?}", mid_pos),
+        "belt_end_pos": format!("{:?}", end_pos),
+    });
+    let pass = injected
+        && persisted
+        && relocated
+        && dest_ok
+        && fires_after > fires_before;
+    println!("{}", result);
+    println!("BELT SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
