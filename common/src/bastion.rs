@@ -813,6 +813,20 @@ pub struct BastionColonist {
     /// 0.0 = off; serde-default for old saves.
     #[serde(default)]
     pub climb_free_until: f64,
+    /// bastion (LOD-0, the save-back): the colonist's BAG-SLOT inventory as
+    /// `(itemdef id, amount)` pairs — the persistent truth mirrored from the
+    /// live ECS `Inventory` every loaded tick and restored on promote, so
+    /// carried items survive unload/re-promote and save/reload with no loss
+    /// and no dupe (registry B11's inventory half). Sorted by id with
+    /// duplicate stacks merged (a canonical form, so equality means
+    /// equality). `None` = never captured (a FIRST promote keeps the spawn
+    /// loadout); `Some` = the truth, INCLUDING a legitimately empty bag —
+    /// promote then REPLACES the fresh spawn-default bag wholesale, which is
+    /// what kills the dupe (re-created entities roll a NEW random villager
+    /// loadout; restoring on top of it doubled food/coins in the first
+    /// scenario run). serde-default: absent in old saves → `None`.
+    #[serde(default)]
+    pub inventory: Option<Vec<(String, u32)>>,
 }
 
 /// bastion (CASE-003 belt): count of per-tick CENTER-SAFETY-NET fires — a
@@ -1273,6 +1287,7 @@ impl BastionColonist {
             work_priorities: WorkPriorities::default(),
             soft_until: 0.0,
             climb_free_until: 0.0,
+            inventory: None,
         }
     }
 }

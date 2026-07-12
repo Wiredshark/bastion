@@ -446,6 +446,33 @@ fn get_npc_entity_info(
     }
 }
 
+/// bastion (LOD-0, the save-back): the CANONICAL persistent record for a
+/// loaded colonist — the live ECS `Colonist` comp plus the bag-slot
+/// inventory snapshot in canonical form (sorted by id, duplicate stacks
+/// merged, so record equality is state equality). ONE builder for the
+/// per-tick mirror AND the demote flush (B17).
+pub(crate) fn colonist_record(
+    c: &comp::Colonist,
+    inv: Option<&comp::Inventory>,
+) -> common::bastion::BastionColonist {
+    let mut rec = c.0.clone();
+    rec.inventory = inv
+        .map(|inv| {
+            let mut items: Vec<(String, u32)> = Vec::new();
+            for item in inv.slots().flatten() {
+                if let Some(id) = item.item_definition_id().itemdef_id() {
+                    match items.iter_mut().find(|(i, _)| i == id) {
+                        Some((_, n)) => *n += item.amount(),
+                        None => items.push((id.to_string(), item.amount())),
+                    }
+                }
+            }
+            items.sort();
+            items
+        });
+    rec
+}
+
 #[derive(Default)]
 pub struct Sys;
 impl<'a> System<'a> for Sys {
@@ -513,7 +540,7 @@ impl<'a> System<'a> for Sys {
             id_maps,
             server_constants,
             weather_grid,
-            inventories,
+            mut inventories,
             rtsim_gizmos,
             ability_map,
             msm,
@@ -557,23 +584,32 @@ impl<'a> System<'a> for Sys {
         }
 
         // Tick rtsim
+        // bastion (LOD-0): the system data is BOUND (not a dropped
+        // temporary) so the inventory storage can be RECLAIMED from its
+        // Mutex after the tick — the colonist save-back below snapshots
+        // bag slots into the persistent rtsim record.
+        let mut npc_system_data = NpcSystemData {
+            positions: positions.clone(),
+            id_maps,
+            server_constants,
+            weather_grid,
+            inventories: Mutex::new(inventories),
+            rtsim_gizmos,
+            ability_map,
+            msm,
+        };
         rtsim.state.tick(
-            &mut NpcSystemData {
-                positions: positions.clone(),
-                id_maps,
-                server_constants,
-                weather_grid,
-                inventories: Mutex::new(inventories),
-                rtsim_gizmos,
-                ability_map,
-                msm,
-            },
+            &mut npc_system_data,
             &world,
             index.as_index_ref(),
             *time_of_day,
             *time,
             dt.0,
         );
+        let mut inventories = npc_system_data
+            .inventories
+            .into_inner()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         // Perform a save if required
         if rtsim
@@ -726,6 +762,46 @@ impl<'a> System<'a> for Sys {
                             if let Some(mut stats) = stats_storage.get_mut(entity) {
                                 stats.name = comp::Content::Plain(colonist.name.clone());
                             }
+                            // LOD-0: RESTORE the persisted bag — REPLACE,
+                            // don't add: a re-created entity rolls a FRESH
+                            // random spawn loadout, and restoring on top of
+                            // it DOUBLES food/coins (the first scenario
+                            // run's dupe). `None` = never captured (a
+                            // genuine first promote) → keep the spawn
+                            // default; `Some` (even empty) = the truth,
+                            // wholesale. An id that no longer resolves
+                            // degrades to a warn (old save, renamed asset),
+                            // never a panic.
+                            if let Some(persisted) = &colonist.inventory
+                                && let Some(mut inv) = inventories.get_mut(entity)
+                            {
+                                inv.drain().for_each(drop);
+                                for (id, amount) in persisted {
+                                    match comp::Item::new_from_asset(id) {
+                                        Ok(mut item) => {
+                                            let n = (*amount).max(1);
+                                            if n > 1 && item.set_amount(n).is_err() {
+                                                // Non-stackable: push singles.
+                                                for _ in 1..n {
+                                                    if let Ok(extra) =
+                                                        comp::Item::new_from_asset(id)
+                                                    {
+                                                        let _ = inv.push(extra);
+                                                    }
+                                                }
+                                            }
+                                            let _ = inv.push(item);
+                                        },
+                                        Err(e) => tracing::warn!(
+                                            id = id.as_str(),
+                                            ?e,
+                                            "bastion LOD-0: persisted item id \
+                                             no longer resolves — dropped on \
+                                             promote"
+                                        ),
+                                    }
+                                }
+                            }
                             tracing::info!(
                                 name = colonist.name.as_str(),
                                 "bastion: colonist promoted to loaded entity"
@@ -733,6 +809,18 @@ impl<'a> System<'a> for Sys {
                         }
                         // Update rtsim NPC state
                         npc.wpos = pos.0;
+                        // bastion (LOD-0, the save-back): mirror the LIVE
+                        // colonist state into the persistent rtsim record
+                        // EVERY loaded tick — the ECS comp was a one-time
+                        // CLONE, so XP/inventory mutations never reached
+                        // the record and a leveled colonist came back
+                        // DE-LEVELED after unload or save/reload (registry
+                        // B11). With the record save-ready every tick,
+                        // demotion and periodic rtsim saves lose nothing.
+                        if let Some(c) = colonists.get(entity) {
+                            npc.bastion_colonist =
+                                Some(colonist_record(c, inventories.get(entity)));
+                        }
 
                         // Update entity state
                         if let Some(agent) = agent {
@@ -757,6 +845,14 @@ impl<'a> System<'a> for Sys {
                         }
                     },
                     SimulationMode::Simulated => {
+                        // bastion (LOD-0): the DEMOTE FLUSH — the entity is
+                        // about to be deleted; capture its final state into
+                        // the persistent record (the per-tick mirror covers
+                        // every earlier tick; this covers the last one).
+                        if let Some(c) = colonists.get(entity) {
+                            npc.bastion_colonist =
+                                Some(colonist_record(c, inventories.get(entity)));
+                        }
                         delete_emitter.emit(DeleteEvent(entity));
                     },
                 }

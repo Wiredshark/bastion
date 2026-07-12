@@ -1478,6 +1478,65 @@ impl Server {
         )
     }
 
+    /// bastion (LOD-0, harness hook): force-DEMOTE a loaded colonist — flip
+    /// the rtsim mode to Simulated AND delete the live entity in one step.
+    /// (A bare mode flip cannot demote: the "Load in NPCs" pass runs BEFORE
+    /// the sync loop each tick and flips a Simulated npc in a loaded chunk
+    /// straight back to Loaded — the real demote is chunk-unload-driven.)
+    /// The per-tick save-back mirror holds the colonist's state as of the
+    /// last completed tick, so the deletion loses nothing; the load pass
+    /// then RE-CREATES + RE-PROMOTES from the persisted record — the exact
+    /// promote-restores-persisted-state path LOD-0 must prove.
+    pub fn bastion_force_demote(&mut self, name: &str) -> bool {
+        use specs::Join;
+        if !self
+            .state
+            .ecs()
+            .write_resource::<rtsim::RtSim>()
+            .bastion_force_demote(name)
+        {
+            return false;
+        }
+        let entity = {
+            let ecs = self.state.ecs();
+            let entities = ecs.entities();
+            let colonists = ecs.read_storage::<comp::Colonist>();
+            (&entities, &colonists)
+                .join()
+                .find(|(_, c)| c.0.name == name)
+                .map(|(e, _)| e)
+        };
+        match entity {
+            Some(e) => {
+                if let Err(err) = self.state.delete_entity_recorded(e) {
+                    tracing::warn!(?err, "bastion LOD-0: force-demote delete failed");
+                    false
+                } else {
+                    true
+                }
+            },
+            None => false,
+        }
+    }
+
+    /// bastion (LOD-0, harness hook): the named colonist's LIVE bag
+    /// inventory in canonical `(id, amount)` form — built by the SAME
+    /// `colonist_record` the save-back uses (B17), for exact conservation
+    /// asserts across promote cycles (no loss, no dupe).
+    pub fn bastion_colonist_inventory(&self, name: &str) -> Option<Vec<(String, u32)>> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let inventories = ecs.read_storage::<comp::Inventory>();
+        (&entities, &colonists)
+            .join()
+            .find(|(_, c)| c.0.name == name)
+            .and_then(|(e, c)| {
+                crate::rtsim::tick::colonist_record(c, inventories.get(e)).inventory
+            })
+    }
+
     /// bastion (COORDINATION-stigmergic-v1, harness hook): the saturation
     /// field at a position's coarse cell.
     pub fn bastion_saturation_at(&self, pos: Vec3<i32>) -> f32 {

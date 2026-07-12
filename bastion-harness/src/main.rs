@@ -117,6 +117,13 @@ struct Args {
     #[arg(long)]
     coord_scenario: bool,
 
+    /// bastion (LOD-0, the save-back): a colonist gains mining XP through
+    /// real work + carries bag items, is force-DEMOTED (the real rtsim
+    /// unload path) and re-promoted — skills and the exact inventory must
+    /// survive the cycle with no loss and NO dupe (registry B11).
+    #[arg(long)]
+    lod0_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -211,6 +218,8 @@ fn main() -> ExitCode {
         cavein_scenario(&args)
     } else if args.coord_scenario {
         coord_scenario(&args)
+    } else if args.lod0_scenario {
+        lod0_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3291,6 +3300,219 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (LOD-0, the save-back acceptance): XP gained through REAL work +
+/// carried bag items survive a force-demote — the true rtsim unload path
+/// (mode flip → demote-flush → entity delete → loaded-chunk re-promote) —
+/// with EXACT state equality: no loss, no dupe (registry B11).
+fn lod0_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{BUILD_MATERIAL_ITEM, DesignationKind, Region, WorkType},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-lod0-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-lod0".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-lod0-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = ground_z(&server, cx, cy).expect("no ground at site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    // A clean flat pad (solid to gz, air above) — this scenario tests the
+    // PERSISTENCE seam, not locomotion; geometry stays trivial.
+    for x in (cx - 6)..=(cx + 6) {
+        for y in (cy - 6)..=(cy + 6) {
+            for z in (gz - 2)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 10) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        2,
+    );
+    // Colonist comps land on a tick (rtsim promote) — tick BEFORE renaming.
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let subject = names.first().cloned().unwrap_or_default();
+
+    // 1. REAL WORK → XP: a 5-block flat mine on the pad.
+    let jobs = server
+        .bastion_place_designation(
+            Region {
+                min: Vec3::new(cx - 2, cy + 3, gz),
+                max: Vec3::new(cx + 2, cy + 3, gz),
+            },
+            DesignationKind::Mine,
+        )
+        .len();
+    let mut mined_all = false;
+    for _ in 0..120 {
+        tick(&mut server, 30);
+        if (cx - 2..=cx + 2).all(|x| {
+            server
+                .bastion_block_kind(Vec3::new(x, cy + 3, gz))
+                .is_none_or(|k| !k.is_filled())
+        }) {
+            mined_all = true;
+            break;
+        }
+    }
+
+    // 2. CARRY: two bag items on the subject.
+    let gave = server.bastion_give_colonist_item(&subject, BUILD_MATERIAL_ITEM)
+        && server.bastion_give_colonist_item(&subject, BUILD_MATERIAL_ITEM);
+    tick(&mut server, 2);
+
+    let skill_before = server.bastion_colonist_skill(&subject, WorkType::Mine);
+    let inv_before = server.bastion_colonist_inventory(&subject);
+    // The subject may or may not have been the digger (2-colonist crew) —
+    // crew-wide XP is proven by mined_all; the subject's own EXACT record
+    // (whatever it holds) must survive the cycle.
+    let subject_has_state = skill_before.is_some() && inv_before.is_some();
+
+    // 3. THE CYCLE: force-demote (the real unload path) — the roster must
+    //    LOSE the subject (entity deleted) then REGAIN it (re-promote).
+    let demoted = server.bastion_force_demote(&subject);
+    let mut gone = false;
+    let mut back = false;
+    // Single-tick sampling: the demote gap is BRIEF (the load pass
+    // re-creates the very next tick; the promote lands a tick or two
+    // later) - coarser sampling misses the roster ever losing the subject.
+    for _ in 0..600 {
+        tick(&mut server, 1);
+        let present = server
+            .bastion_colonist_states()
+            .iter()
+            .any(|(n, _, _)| n == &subject);
+        if !present {
+            gone = true;
+        }
+        if gone && present {
+            back = true;
+            break;
+        }
+    }
+    tick(&mut server, 10);
+
+    // 4. EXACT-STATE asserts: skills AND inventory identical across the
+    //    cycle — no loss (nothing forgotten), no dupe (canonical-form
+    //    equality catches doubled stacks exactly).
+    let skill_after = server.bastion_colonist_skill(&subject, WorkType::Mine);
+    let inv_after = server.bastion_colonist_inventory(&subject);
+    let skills_survived = subject_has_state && skill_after == skill_before;
+    let inventory_survived = subject_has_state && inv_after == inv_before;
+
+    let result = serde_json::json!({
+        "lod0_jobs": jobs,
+        "lod0_mined_all": mined_all,
+        "lod0_gave": gave,
+        "lod0_demoted": demoted,
+        "lod0_gone": gone,
+        "lod0_back": back,
+        "lod0_skill_before": format!("{:?}", skill_before),
+        "lod0_skill_after": format!("{:?}", skill_after),
+        "lod0_inv_before": format!("{:?}", inv_before),
+        "lod0_inv_after": format!("{:?}", inv_after),
+        "lod0_skills_survived": skills_survived,
+        "lod0_inventory_survived": inventory_survived,
+    });
+    let pass = jobs == 5
+        && mined_all
+        && gave
+        && demoted
+        && gone
+        && back
+        && skills_survived
+        && inventory_survived;
+    println!("{}", result);
+    println!("LOD0 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }

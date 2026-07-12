@@ -336,6 +336,27 @@ impl RtSim {
         found
     }
 
+    /// bastion (LOD-0, harness): force-DEMOTE a loaded colonist by flipping
+    /// its rtsim mode to Simulated — the sync loop's demote arm FLUSHES the
+    /// live state into the persistent record and deletes the entity; the
+    /// loaded-chunk spawn machinery then RE-PROMOTES it (the chunk stays
+    /// loaded), exercising the REAL unload/re-promote cycle end-to-end.
+    /// Returns whether a matching loaded colonist was found.
+    pub fn bastion_force_demote(&mut self, name: &str) -> bool {
+        let data = self.state.get_data_mut();
+        let mut found = false;
+        for (_, npc) in data.npcs.npcs.iter_mut() {
+            if let Some(colonist) = &npc.bastion_colonist
+                && colonist.name == name
+                && matches!(npc.mode, ::rtsim::data::npc::SimulationMode::Loaded)
+            {
+                npc.mode = ::rtsim::data::npc::SimulationMode::Simulated;
+                found = true;
+            }
+        }
+        found
+    }
+
     /// bastion (B3): the colony roster (headless harness dump + inspectors).
     pub fn bastion_colony_roster(&self) -> Vec<common::bastion::BastionColonist> {
         self.state
