@@ -1731,12 +1731,20 @@ impl<'a> System<'a> for Sys {
                             {
                                 sz -= 1;
                             }
-                            pos.0 = Vec3::new(
-                                cc.x as f32 + 0.5,
-                                cc.y as f32 + 0.5,
-                                sz as f32,
-                            );
-                            vel.0 = Vec3::zero();
+                            // 31.1 (CASE-004-MAGNET, B19): the scanned
+                            // floor's HEAD cell must be clear before the
+                            // snap writes (sz can sit below the pair
+                            // climb_col proved open at the LADDER's z).
+                            // Blocked → hold position; the ledge/belt
+                            // machinery stays the recovery path.
+                            if !solid_at(Vec3::new(cc.x, cc.y, sz + 1)) {
+                                pos.0 = Vec3::new(
+                                    cc.x as f32 + 0.5,
+                                    cc.y as f32 + 0.5,
+                                    sz as f32,
+                                );
+                                vel.0 = Vec3::zero();
+                            }
                         } else if let Some(cc) = climb_col {
                             let center =
                                 Vec2::new(cc.x as f32 + 0.5, cc.y as f32 + 0.5);
@@ -1745,8 +1753,26 @@ impl<'a> System<'a> for Sys {
                             if dist > 0.05 {
                                 let step = (LADDER_MAGNET_V * dt.0).min(dist);
                                 let nudge = d / dist * step;
-                                pos.0.x += nudge.x;
-                                pos.0.y += nudge.y;
+                                // 31.1 (CASE-004-MAGNET, the confirmed
+                                // BC-004 writer, B19): climb_col proved
+                                // headroom at the LADDER's z — a mid-climb
+                                // nudge lands at the colonist's OWN z,
+                                // where the column can be pinched. Gate
+                                // the write on 2-high openness at the
+                                // DESTINATION cell (the exact climb_col
+                                // predicate, own-z); blocked → skip the
+                                // nudge entirely — never write, so no
+                                // embed occurs at all (the belt stays a
+                                // backstop, not the mechanism).
+                                let dest = Vec3::new(
+                                    (pos.0.x + nudge.x).floor() as i32,
+                                    (pos.0.y + nudge.y).floor() as i32,
+                                    pos.0.z.floor() as i32,
+                                );
+                                if !solid(dest) && !solid(dest + Vec3::unit_z()) {
+                                    pos.0.x += nudge.x;
+                                    pos.0.y += nudge.y;
+                                }
                             }
                         }
                     }

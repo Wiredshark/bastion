@@ -155,6 +155,12 @@ struct Args {
     #[arg(long)]
     zone_scenario: bool,
 
+    /// bastion (31.1 CASE-004-MAGNET): the ladder-magnet write-gates — a
+    /// lip-pinched shaft climb never embeds the capsule core (asserted
+    /// per-tick), the belt stays silent, and the climb still completes.
+    #[arg(long)]
+    magnet_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -261,6 +267,8 @@ fn main() -> ExitCode {
         bag1_scenario(&args)
     } else if args.zone_scenario {
         zone_scenario(&args)
+    } else if args.magnet_scenario {
+        magnet_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3341,6 +3349,208 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (31.1 CASE-004-MAGNET): the ladder-magnet write-gates — a climb
+/// up a shaft whose flanks are pinched by irregular lips must NEVER put the
+/// climber's capsule core inside solid at any tick (asserted DIRECTLY every
+/// tick, not via "the belt didn't fire"), the belt must stay silent
+/// (net_fires == 0 — the gap is closed at the writer, the belt is a
+/// backstop again), and the climb itself must still succeed (the job on
+/// top completes — no regression to ordinary climbing).
+fn magnet_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region};
+    use common::{
+        terrain::{Block, BlockKind, SpriteKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-magnet-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-magnet".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-magnet-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = ground_z(&server, cx, cy).expect("no ground at site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 6)..=(cx + 6) {
+        for y in (cy - 6)..=(cy + 6) {
+            for z in (gz - 2)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 12) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    // THE FIXTURE: a 6-high rung pillar at (cx+3, cy) against a solid wall
+    // block-column west of it; the climb columns east/north/south carry
+    // IRREGULAR LIPS (solids at alternating z) so mid-climb nudge
+    // destinations are blocked at several heights — the write-gate's
+    // blocked branch executes while the climb assist still has a route.
+    let (px, py) = (cx + 3, cy);
+    for z in (gz + 1)..=(gz + 6) {
+        server
+            .state_mut()
+            .set_block(Vec3::new(px, py, z), Block::air(SpriteKind::Ladder));
+        server.state_mut().set_block(Vec3::new(px - 1, py, z), rock); // wall
+    }
+    // Lips pinching the flanks at staggered heights.
+    server.state_mut().set_block(Vec3::new(px + 1, py, gz + 3), rock);
+    server.state_mut().set_block(Vec3::new(px, py + 1, gz + 4), rock);
+    server.state_mut().set_block(Vec3::new(px, py - 1, gz + 2), rock);
+    // A work platform on top with one Mine job (the reason to climb).
+    for x in (px - 1)..=(px + 1) {
+        for y in (py - 1)..=(py + 1) {
+            server.state_mut().set_block(Vec3::new(x, y, gz + 7), rock);
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new((cx - 2) as f32, cy as f32, gz as f32 + 2.0),
+        1,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let subject = names.first().cloned().unwrap_or_default();
+    let fires_before = server.bastion_center_net_fires();
+
+    let job_cell = Vec3::new(px, py, gz + 7);
+    let jobs = server
+        .bastion_place_designation(
+            Region { min: job_cell, max: job_cell },
+            DesignationKind::Mine,
+        )
+        .len();
+
+    // THE DIRECT ASSERT: every tick, the climber's capsule CORE (±0.2 at
+    // torso level — the belt's own true-embed predicate) must never sit
+    // fully in solid. Sampled across the whole climb window.
+    let mut core_solid_ticks = 0u64;
+    let mut completed = false;
+    for _ in 0..3600 {
+        tick(&mut server, 1);
+        if let Some(p) = server
+            .bastion_colonist_states()
+            .into_iter()
+            .find(|(n, _, _)| *n == subject)
+            .map(|(_, p, _)| p)
+        {
+            let all_solid = [(-0.2f32, -0.2f32), (-0.2, 0.2), (0.2, -0.2), (0.2, 0.2)]
+                .into_iter()
+                .all(|(dx, dy)| {
+                    let corner = Vec3::new(p.x + dx, p.y + dy, p.z)
+                        .map(|e| e.floor() as i32)
+                        + Vec3::unit_z();
+                    server
+                        .bastion_block_kind(corner)
+                        .is_some_and(|k| k.is_filled())
+                });
+            if all_solid {
+                core_solid_ticks += 1;
+            }
+        }
+        if server
+            .bastion_block_kind(job_cell)
+            .is_none_or(|k| !k.is_filled())
+        {
+            completed = true;
+            break;
+        }
+    }
+    let fires_after = server.bastion_center_net_fires();
+
+    let result = serde_json::json!({
+        "magnet_jobs": jobs,
+        "magnet_core_solid_ticks": core_solid_ticks,
+        "magnet_net_fires": fires_after - fires_before,
+        "magnet_completed": completed,
+    });
+    let pass = jobs == 1
+        && core_solid_ticks == 0
+        && fires_after == fires_before
+        && completed;
+    println!("{}", result);
+    println!("MAGNET SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
