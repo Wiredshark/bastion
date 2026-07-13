@@ -204,6 +204,13 @@ struct Args {
     #[arg(long)]
     b58_paired: bool,
 
+    /// bastion (B7-0, row 44): needs decay exactly (rate × time), mood
+    /// recomputes per the design-§3 formula each cadence (topped-up ==
+    /// base, hand-computed starved case exact), and both survive the
+    /// demote/promote round-trip via the colonist record.
+    #[arg(long)]
+    needs_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -324,6 +331,8 @@ fn main() -> ExitCode {
         season1_scenario(&args)
     } else if args.b58_paired {
         b58_paired(&args)
+    } else if args.needs_scenario {
+        needs_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3375,6 +3384,19 @@ fn cavein_scenario(args: &Args) -> ExitCode {
         })
         .unwrap_or(false);
 
+    // B7-0 (fork ruling (a), test-guarded): the fear must PERSIST through
+    // a mood recompute as a CaveIn chronicle THOUGHT — not vanish when the
+    // formula overwrites the direct drop. Cross a cadence boundary, then
+    // the most-afraid colonist must still sit measurably below base
+    // (0.6 − the fresh −0.15 thought ≈ 0.45; unafraid peers hold 0.6).
+    tick(&mut server, 20);
+    let min_mood_after_recompute = names
+        .iter()
+        .filter_map(|n| server.bastion_colonist_needs_mood(n))
+        .map(|(_, _, _, m)| m)
+        .fold(f32::INFINITY, f32::min);
+    let fear_persists = min_mood_after_recompute < 0.55;
+
     // INVARIANT (shallow AND deep): the collapse fires, a colonist in the
     // crush volume is caught, and that victim is EJECTED + FEARED + ends
     // STANDABLE (not embedded) — NEVER buried. This is what lets cave-ins
@@ -3387,8 +3409,11 @@ fn cavein_scenario(args: &Args) -> ExitCode {
         && deep_victims >= 1
         && deep_ejected
         && deep_feared
-        && deep_standable;
+        && deep_standable
+        && fear_persists;
     let result = serde_json::json!({
+        "cavein_fear_persists": fear_persists,
+        "cavein_min_mood_after_recompute": min_mood_after_recompute,
         "cavein_collapsed": collapsed,
         "cavein_victims": victims,
         "cavein_ejected": ejected,
@@ -3404,6 +3429,160 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (B7-0, row 44): needs/mood in vivo — decay is EXACT arithmetic
+/// (rate × game-time, asserted to tolerance over a measured tick window),
+/// mood recomputes per the design-§3 formula on the arbitration cadence
+/// (topped-up == base EXACTLY since every shortfall is zero above
+/// comfort; the hand-computed fully-starved case lands on 0.09), and
+/// both meters survive the demote/promote round-trip through the
+/// colonist record (the values would snap back to defaults 1.0/0.6 if
+/// the mirror or restore failed). No behavior consumer exists yet —
+/// B7-2 owns that; this proves the substrate true and observable.
+fn needs_scenario(args: &Args) -> ExitCode {
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-needs-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-needs".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-needs-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: vek::Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| vek::Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    server.bastion_spawn_colony(
+        vek::Vec3::new(site_wpos.x, site_wpos.y, 2048.0),
+        2,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let subject = names.first().cloned().unwrap_or_default();
+
+    // (a) DECAY is exact: rate × time over a measured window, and
+    // strictly monotone down.
+    let before = server.bastion_colonist_needs_mood(&subject);
+    let window: u64 = 600;
+    tick(&mut server, window);
+    let after = server.bastion_colonist_needs_mood(&subject);
+    let (decay_ok, monotone_ok) = match (before, after) {
+        (Some(b), Some(a)) => {
+            let secs = window as f32 / args.tps as f32;
+            let expect = |v: f32, rate: f32| (v - rate * secs).max(0.0);
+            let ok = (a.0 - expect(b.0, 0.0004)).abs() < 1e-3
+                && (a.1 - expect(b.1, 0.0003)).abs() < 1e-3
+                && (a.2 - expect(b.2, 0.0002)).abs() < 1e-3;
+            (ok, a.0 < b.0 && a.1 < b.1 && a.2 < b.2)
+        },
+        _ => (false, false),
+    };
+
+    // (b) Topped-up mood == base EXACTLY (all meters still far above
+    // comfort after the short window; every shortfall is 0).
+    let mood_base_ok = after.is_some_and(|(_, _, _, m)| m == 0.6);
+
+    // (c) The hand-computed starved case: set all meters to 0, cross a
+    // cadence boundary, mood == clamp01(0.6−0.25−0.2−0.06) = 0.09.
+    let set_ok = server.bastion_set_needs(&subject, 0.0, 0.0, 0.0);
+    tick(&mut server, 16);
+    let starved = server.bastion_colonist_needs_mood(&subject);
+    let starved_ok = starved.is_some_and(|(_, _, _, m)| (m - 0.09).abs() < 1e-4);
+
+    // (d) PERSISTENCE: demote (flush) → re-promote (restore) — the
+    // meters would snap back to 1.0/0.6 defaults if the mirror failed.
+    let demoted = server.bastion_force_demote(&subject);
+    let mut roundtrip = None;
+    for _ in 0..40 {
+        tick(&mut server, 15);
+        if let Some(v) = server.bastion_colonist_needs_mood(&subject) {
+            roundtrip = Some(v);
+            break;
+        }
+    }
+    // Needs stay near zero (decay only moves them down; the mood
+    // recompute keeps ≈0.09) — generous tolerance for the re-promote gap.
+    let persist_ok = roundtrip.is_some_and(|(h, r, c, m)| {
+        h < 0.05 && r < 0.05 && c < 0.05 && (m - 0.09).abs() < 5e-2
+    });
+
+    let result = serde_json::json!({
+        "needs_before": before,
+        "needs_after": after,
+        "needs_decay_ok": decay_ok,
+        "needs_monotone_ok": monotone_ok,
+        "needs_mood_base_ok": mood_base_ok,
+        "needs_set_ok": set_ok,
+        "needs_starved_mood": starved.map(|s| s.3),
+        "needs_starved_ok": starved_ok,
+        "needs_demoted": demoted,
+        "needs_roundtrip": roundtrip,
+        "needs_persist_ok": persist_ok,
+        "needs_colonists": names.len(),
+    });
+    let pass = decay_ok
+        && monotone_ok
+        && mood_base_ok
+        && set_ok
+        && starved_ok
+        && demoted
+        && persist_ok
+        && names.len() == 2;
+    println!("{}", result);
+    println!("NEEDS SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }

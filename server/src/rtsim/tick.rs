@@ -454,8 +454,14 @@ fn get_npc_entity_info(
 pub(crate) fn colonist_record(
     c: &comp::Colonist,
     inv: Option<&comp::Inventory>,
+    needs: Option<&comp::bastion::Needs>,
+    mood: Option<&comp::bastion::Mood>,
 ) -> common::bastion::BastionColonist {
     let mut rec = c.0.clone();
+    // B7-0: mirror the live meters (same wholesale-Option semantics as
+    // the bag below).
+    rec.needs = needs.map(|n| (n.hunger, n.rest, n.recreation));
+    rec.mood = mood.map(|m| m.0);
     rec.inventory = inv
         .map(|inv| {
             let mut items: Vec<(String, u32)> = Vec::new();
@@ -511,6 +517,10 @@ impl<'a> System<'a> for Sys {
             ReadStorage<'a, comp::bastion::ActiveJob>,
             // bastion (B-ASSET1): test-goto fixtures own their activity too.
             ReadStorage<'a, comp::bastion::BastionTestGoto>,
+            // bastion (B7-0): the cave-in fear queue lives on the board —
+            // this system drains it into the chronicle (it owns the rtsim
+            // data mutably; bastion_jobs holds a long-lived read guard).
+            specs::Write<'a, crate::bastion_jobs::JobBoard>,
         ),
     );
 
@@ -552,6 +562,7 @@ impl<'a> System<'a> for Sys {
                 mut stats_storage,
                 bastion_active_jobs,
                 bastion_test_gotos,
+                mut job_board,
             ),
         ): Self::SystemData,
     ) {
@@ -623,6 +634,26 @@ impl<'a> System<'a> for Sys {
 
         let chunk_states = rtsim.state.resource::<ChunkStates>();
         let data = &mut *rtsim.state.data_mut();
+
+        // B7-0 (the cave-in fear emitter, fork ruling (a)): drain the
+        // queue bastion_jobs filled last tick into the chronicle — the
+        // lasting fear is a decaying CaveIn THOUGHT the mood recompute
+        // reads (a direct Mood write would be overwritten within a
+        // cadence). Stamped on the chronicle's own clock.
+        for (re, pos) in std::mem::take(&mut job_board.pending_cavein_thoughts)
+        {
+            let now = data.time_of_day;
+            data.chronicle.record(
+                now,
+                ::rtsim::data::ChronicleKind::CaveIn,
+                vec![common::rtsim::Actor::Npc(re)],
+                None,
+                Some(pos),
+                ::rtsim::data::Importance::Notable,
+                ::rtsim::data::Scope::Colony,
+                None,
+            );
+        }
 
         let mut create_event = |id: NpcId, npc: &Npc, steering: Option<NpcBuilder>| match npc.body {
             Body::Ship(body) => {
@@ -755,10 +786,28 @@ impl<'a> System<'a> for Sys {
                             let _ = colonists
                                 .insert(entity, comp::Colonist(colonist.clone()));
                             let _ = player_colony.insert(entity, comp::PlayerColony);
-                            let _ = bastion_needs
-                                .insert(entity, comp::bastion::Needs::default());
-                            let _ = bastion_moods
-                                .insert(entity, comp::bastion::Mood::default());
+                            let _ = bastion_needs.insert(
+                                entity,
+                                // B7-0: RESTORE the persisted meters —
+                                // wholesale-replace like the bag (None =
+                                // a genuine first promote keeps defaults).
+                                colonist.needs.map_or_else(
+                                    comp::bastion::Needs::default,
+                                    |(hunger, rest, recreation)| {
+                                        comp::bastion::Needs {
+                                            hunger,
+                                            rest,
+                                            recreation,
+                                        }
+                                    },
+                                ),
+                            );
+                            let _ = bastion_moods.insert(
+                                entity,
+                                colonist
+                                    .mood
+                                    .map_or_else(comp::bastion::Mood::default, comp::bastion::Mood),
+                            );
                             if let Some(mut stats) = stats_storage.get_mut(entity) {
                                 stats.name = comp::Content::Plain(colonist.name.clone());
                             }
@@ -818,8 +867,12 @@ impl<'a> System<'a> for Sys {
                         // B11). With the record save-ready every tick,
                         // demotion and periodic rtsim saves lose nothing.
                         if let Some(c) = colonists.get(entity) {
-                            npc.bastion_colonist =
-                                Some(colonist_record(c, inventories.get(entity)));
+                            npc.bastion_colonist = Some(colonist_record(
+                                c,
+                                inventories.get(entity),
+                                bastion_needs.get(entity),
+                                bastion_moods.get(entity),
+                            ));
                         }
 
                         // Update entity state
@@ -850,8 +903,12 @@ impl<'a> System<'a> for Sys {
                         // the persistent record (the per-tick mirror covers
                         // every earlier tick; this covers the last one).
                         if let Some(c) = colonists.get(entity) {
-                            npc.bastion_colonist =
-                                Some(colonist_record(c, inventories.get(entity)));
+                            npc.bastion_colonist = Some(colonist_record(
+                                c,
+                                inventories.get(entity),
+                                bastion_needs.get(entity),
+                                bastion_moods.get(entity),
+                            ));
                         }
                         delete_emitter.emit(DeleteEvent(entity));
                     },

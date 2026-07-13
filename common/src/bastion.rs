@@ -618,6 +618,76 @@ impl DesignationKind {
 
 /// bastion (B6 JOB-CORE): a painted stockpile zone's stable id (the board
 /// hands them out; `Haul.destination` references one).
+/// bastion (B7-0, row 44): one survival need's tuning — decay drains the
+/// meter per game-second toward 0.0; the need penalizes mood only BELOW
+/// its comfort band; `weight` is NEGATIVE (a shortfall subtracts).
+#[derive(Clone, Debug, Deserialize)]
+pub struct NeedTuning {
+    pub decay_per_sec: f32,
+    pub comfort: f32,
+    pub weight: f32,
+}
+
+/// bastion (B7-0): the needs/mood tuning — RON
+/// (`assets/common/bastion_mood.ron`), graceful default (the
+/// `SeasonConfig` idiom). Holds the base and the three bodily-need
+/// tunings ONLY: the thought table keys on `ChronicleKind`, which lives
+/// in the rtsim crate common cannot depend on — it ships as its own
+/// server-side asset, and [`crate::comp::bastion::mood_formula`] takes
+/// the summed thought term as a plain input (the formula is
+/// layering-agnostic by construction).
+#[derive(Clone, Debug, Deserialize)]
+pub struct MoodConfig {
+    pub mood_base: f32,
+    pub hunger: NeedTuning,
+    pub rest: NeedTuning,
+    pub recreation: NeedTuning,
+}
+
+impl Default for MoodConfig {
+    fn default() -> Self {
+        Self {
+            mood_base: 0.6,
+            hunger: NeedTuning {
+                decay_per_sec: 0.0004,
+                comfort: 0.5,
+                weight: -0.5,
+            },
+            rest: NeedTuning {
+                decay_per_sec: 0.0003,
+                comfort: 0.5,
+                weight: -0.4,
+            },
+            recreation: NeedTuning {
+                decay_per_sec: 0.0002,
+                comfort: 0.4,
+                weight: -0.15,
+            },
+        }
+    }
+}
+
+impl crate::assets::FileAsset for MoodConfig {
+    const EXTENSION: &'static str = "ron";
+
+    fn from_bytes(
+        bytes: std::borrow::Cow<[u8]>,
+    ) -> Result<Self, crate::assets::BoxedError> {
+        crate::assets::load_ron(&bytes)
+    }
+}
+
+impl MoodConfig {
+    /// The loaded tuning (hot-reloadable asset); the compiled default on
+    /// a missing/broken asset — graceful, never a panic.
+    pub fn current() -> Self {
+        use crate::assets::AssetExt;
+        Self::load("common.bastion_mood")
+            .map(|h| h.read().clone())
+            .unwrap_or_default()
+    }
+}
+
 /// bastion (FOCUS-0, row 43): the PERSONAL-NEED vocabulary — the locked
 /// venue interface (frameworks §2-adjacent, the `Purpose`/`ChronicleKind`
 /// discipline: append-only, never reorder — wire- and save-stable).
@@ -989,6 +1059,18 @@ pub struct BastionColonist {
     /// weights. Schema only this block: nothing reads or writes it.
     #[serde(default)]
     pub personal_needs: std::collections::HashMap<Need, f32>,
+    /// bastion (B7-0): the persistent mirror of the bodily `Needs` comp
+    /// `(hunger, rest, recreation)` — captured from the live ECS every
+    /// loaded tick, restored WHOLESALE on promote (the LOD-0 inventory
+    /// semantics: `None` = never captured, a first promote keeps the
+    /// fresh defaults; `Some` replaces them). serde-default: old saves →
+    /// `None`.
+    #[serde(default)]
+    pub needs: Option<(f32, f32, f32)>,
+    /// bastion (B7-0): the persistent mirror of `Mood` — same capture/
+    /// restore semantics as `needs`.
+    #[serde(default)]
+    pub mood: Option<f32>,
 }
 
 /// bastion (CASE-003 belt): count of per-tick CENTER-SAFETY-NET fires — a
@@ -1485,6 +1567,10 @@ impl BastionColonist {
             // FOCUS-0: fresh settlers start with no tracked personal-need
             // state (FOCUS-1 populates it).
             personal_needs: Default::default(),
+            // B7-0: never-captured until the first loaded tick mirrors
+            // the live meters (LOD-0 semantics).
+            needs: None,
+            mood: None,
         }
     }
 }

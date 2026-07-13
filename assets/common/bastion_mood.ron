@@ -1,0 +1,13 @@
+// bastion (B7-0, row 44): the needs/mood tuning
+// (common/src/bastion.rs::MoodConfig). Decay drains a meter per
+// GAME-SECOND toward 0.0 (hunger ~42 game-min full-to-empty at 0.0004);
+// a need penalizes mood only BELOW its comfort band; weights are
+// NEGATIVE (a shortfall subtracts from the base). The thought table is
+// a SEPARATE server-side asset (bastion_thoughts.ron) — its keys are
+// rtsim's ChronicleKind, which this crate layer cannot see.
+(
+    mood_base: 0.6,
+    hunger: (decay_per_sec: 0.0004, comfort: 0.5, weight: -0.5),
+    rest: (decay_per_sec: 0.0003, comfort: 0.5, weight: -0.4),
+    recreation: (decay_per_sec: 0.0002, comfort: 0.4, weight: -0.15),
+)

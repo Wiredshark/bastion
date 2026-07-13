@@ -69,6 +69,98 @@ impl Component for Mood {
     type Storage = specs::DenseVecStorage<Self>;
 }
 
+/// bastion (B7-0, row 44): decay all three meters by `dt` game-seconds,
+/// saturating at 0.0. Pure; the caller owns the cadence (per-tick,
+/// dt-scaled — decay is rate × time, cadence-independent).
+pub fn decay_needs(needs: &mut Needs, dt: f32, cfg: &crate::bastion::MoodConfig) {
+    needs.hunger = (needs.hunger - cfg.hunger.decay_per_sec * dt).max(0.0);
+    needs.rest = (needs.rest - cfg.rest.decay_per_sec * dt).max(0.0);
+    needs.recreation =
+        (needs.recreation - cfg.recreation.decay_per_sec * dt).max(0.0);
+}
+
+/// bastion (B7-0): a need's penalty basis — nonzero only BELOW the
+/// comfort band, so a topped-up colonist is unperturbed and a starving
+/// one is heavily penalized. Continuous (mood tracks pressure smoothly).
+pub fn shortfall(value: f32, comfort: f32) -> f32 {
+    (comfort - value).max(0.0)
+}
+
+/// bastion (B7-0): a thought's decayed contribution — linear to zero
+/// over its lifetime, a PURE function of `(deposit_time, now)` (no
+/// per-tick state, no drift; the determinism house invariant).
+pub fn thought_decay(magnitude: f32, deposit: f64, now: f64, lifetime: f64) -> f32 {
+    if lifetime <= 0.0 {
+        return 0.0;
+    }
+    let age = (now - deposit).max(0.0);
+    if age >= lifetime {
+        0.0
+    } else {
+        magnitude * (1.0 - age / lifetime) as f32
+    }
+}
+
+/// bastion (B7-0): THE mood formula (design §3 — RimWorld's base+Σ,
+/// named prior art): `clamp01(base + Σ w_need·shortfall(need) +
+/// thought_sum)`. Order-free (addition commutes); RECOMPUTED each
+/// cadence, never integrated across ticks (no float accumulation). The
+/// thought term arrives summed (the server owns the chronicle query —
+/// the kind table keys on rtsim's `ChronicleKind`, which common cannot
+/// see; the formula is layering-agnostic by taking the sum).
+pub fn mood_formula(
+    cfg: &crate::bastion::MoodConfig,
+    needs: &Needs,
+    thought_sum: f32,
+) -> f32 {
+    (cfg.mood_base
+        + cfg.hunger.weight * shortfall(needs.hunger, cfg.hunger.comfort)
+        + cfg.rest.weight * shortfall(needs.rest, cfg.rest.comfort)
+        + cfg.recreation.weight
+            * shortfall(needs.recreation, cfg.recreation.comfort)
+        + thought_sum)
+        .clamp(0.0, 1.0)
+}
+
+#[cfg(test)]
+mod bastion_b70_tests {
+    use super::*;
+
+    /// B7-0's formula pinned: topped-up == base exactly; the fully
+    /// starved case matches the hand-computed value; decay arithmetic is
+    /// exact and saturates; thought decay is linear-pure; clamp holds.
+    #[test]
+    fn bastion_mood_formula_exact() {
+        let cfg = crate::bastion::MoodConfig::default();
+        let full = Needs::default();
+        assert_eq!(mood_formula(&cfg, &full, 0.0), cfg.mood_base);
+        // Fully starved: clamp01(0.6 − 0.5·0.5 − 0.4·0.5 − 0.15·0.4)
+        // = clamp01(0.6 − 0.25 − 0.2 − 0.06) = 0.09.
+        let starved = Needs {
+            hunger: 0.0,
+            rest: 0.0,
+            recreation: 0.0,
+        };
+        assert!((mood_formula(&cfg, &starved, 0.0) - 0.09).abs() < 1e-6);
+        // A big negative thought clamps at 0, a big positive at 1.
+        assert_eq!(mood_formula(&cfg, &starved, -5.0), 0.0);
+        assert_eq!(mood_formula(&cfg, &full, 5.0), 1.0);
+        // Decay: exact rate × time, saturating at 0.
+        let mut n = Needs::default();
+        decay_needs(&mut n, 100.0, &cfg);
+        assert!((n.hunger - (1.0 - 0.04)).abs() < 1e-6);
+        assert!((n.rest - (1.0 - 0.03)).abs() < 1e-6);
+        assert!((n.recreation - (1.0 - 0.02)).abs() < 1e-6);
+        decay_needs(&mut n, 1.0e9, &cfg);
+        assert_eq!((n.hunger, n.rest, n.recreation), (0.0, 0.0, 0.0));
+        // Thought decay: full at age 0, half at half-life, zero past.
+        assert!((thought_decay(-0.15, 0.0, 0.0, 100.0) + 0.15).abs() < 1e-6);
+        assert!((thought_decay(-0.15, 0.0, 50.0, 100.0) + 0.075).abs() < 1e-6);
+        assert_eq!(thought_decay(-0.15, 0.0, 100.0, 100.0), 0.0);
+        assert_eq!(thought_decay(-0.15, 0.0, 500.0, 100.0), 0.0);
+    }
+}
+
 /// The colonist's current job assignment (B4). Server-side only; the job
 /// system owns the colonist's rtsim-controller activity while this exists.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]

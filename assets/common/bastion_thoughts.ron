@@ -1,0 +1,16 @@
+// bastion (B7-0, row 44): the thought table — ChronicleKind ->
+// (signed magnitude, lifetime in game-seconds); consumed by
+// server/src/bastion_mood.rs::thought_sum. v1 SEED SET per the design
+// (§3): a witnessed/experienced Death weighs heavily and fades over two
+// game-days. More thoughts are PURE DATA added here as their emitter
+// events land (HIST-1: sleep-quality, meals, great works...) — the
+// formula never reshapes. An event only weighs on colonists named in
+// its actors.
+(
+    thoughts: {
+        Death: (-0.15, 172800.0),
+        // B7-0 fork ruling (a): the cave-in fear as the FIRST live
+        // emitter (bastion_jobs' crush caller records it per victim).
+        CaveIn: (-0.2, 172800.0),
+    },
+)

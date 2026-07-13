@@ -926,7 +926,7 @@ pub fn cavein_eject_and_injure<'a, D>(
     velocities: &mut WriteStorage<'a, comp::Vel>,
     healths: &mut WriteStorage<'a, comp::Health>,
     moods: &mut WriteStorage<'a, comp::bastion::Mood>,
-) -> usize
+) -> Vec<specs::Entity>
 where
     D: std::ops::Deref<Target = specs::storage::MaskedStorage<comp::Colonist>>,
 {
@@ -941,8 +941,7 @@ where
                 .then_some(e)
         })
         .collect();
-    let mut count = 0;
-    for entity in victims {
+    for &entity in &victims {
         let feet = positions
             .get(entity)
             .map(|p| p.0.map(|v| v.floor() as i32))
@@ -967,12 +966,15 @@ where
             });
         }
         if let Some(mood) = moods.get_mut(entity) {
+            // B7-0: TRANSITIONAL — the recompute overwrites this within a
+            // cadence; the lasting fear is the CaveIn chronicle THOUGHT the
+            // caller records for each returned victim. The direct drop
+            // remains only as the sub-cadence instant reaction.
             mood.0 = (mood.0 - CAVEIN_FEAR).max(0.0);
         }
-        count += 1;
         info!(?feet, "bastion: CAVE-IN — colonist ejected + injured (not buried)");
     }
-    count
+    victims
 }
 
 /// The job board resource.
@@ -1080,6 +1082,13 @@ pub struct JobBoard {
     /// (re-expresses the old `sdist > best_dist + 4.0` rebase under the
     /// new metric, no dangling beeline reader).
     last_steer: HashMap<Uid, Vec3<f32>>,
+    /// bastion (B7-0, the cave-in fear emitter): crush victims queued for
+    /// the rtsim tick to record as CaveIn chronicle THOUGHTS next tick —
+    /// this system holds a long-lived rtsim READ guard (the LOD gate), so
+    /// it can't write the chronicle itself; the tick owns the data
+    /// mutably by construction. A one-tick deferral on a two-game-day
+    /// thought.
+    pub pending_cavein_thoughts: Vec<(common::rtsim::RtSimEntity, Vec3<i32>)>,
     /// bastion (B6 HAUL): painted stockpile zones `(id, region)` — the haul
     /// destinations. Registered at placement, dropped on cancel (dependent
     /// haul jobs cancel with their zone).
@@ -1581,6 +1590,9 @@ impl<'a> System<'a> for Sys {
             ReadExpect<'a, common::event::EventBus<common::event::InventoryManipEvent>>,
             // ZONE-0: the activity-zone mirror the agent magnet reads.
             specs::Write<'a, common::bastion::ActivityZones>,
+            // B7-0: the survival meters (decayed per tick; the mood
+            // recompute reads them each arbitration cadence).
+            WriteStorage<'a, comp::bastion::Needs>,
         ),
     );
 
@@ -1620,12 +1632,56 @@ impl<'a> System<'a> for Sys {
                 pickup_items,
                 inventory_manip_events,
                 mut activity_zones,
+                mut needs_storage,
             ),
         ): Self::SystemData,
     ) {
         let mut item_drop_emitter = item_drop_events.emitter();
         let mut chat_emitter = chat_events.emitter();
         let mut inv_manip_emitter = inventory_manip_events.emitter();
+
+        // ── B7-0 (row 44): needs DECAY every tick (rate × dt — cadence-
+        // independent arithmetic), MOOD recomputed each arbitration cadence
+        // per the design-§3 formula (base + Σ w·shortfall + Σ thought-decay
+        // from the chronicle) — RECOMPUTED, never integrated (no float
+        // drift; the determinism house invariant). NO behavior consumer
+        // reads it yet — B7-2 owns preemption/breaks; this block makes mood
+        // true and observable.
+        {
+            let mood_cfg = common::bastion::MoodConfig::current();
+            for (_, needs) in (&colonists, &mut needs_storage).join() {
+                comp::bastion::decay_needs(needs, dt.0, &mood_cfg);
+            }
+            if tick.0 % ARBITRATION_INTERVAL as u64 == 11 {
+                let table = crate::bastion_mood::ThoughtTable::current();
+                let data = rtsim.state().data();
+                for (_, needs, mood, re) in (
+                    &colonists,
+                    &needs_storage,
+                    &mut moods,
+                    (&rtsim_entities).maybe(),
+                )
+                    .join()
+                {
+                    let thought_sum = re
+                        .map(|re| {
+                            crate::bastion_mood::thought_sum(
+                                &data.chronicle,
+                                &table,
+                                common::rtsim::Actor::Npc(*re),
+                                // The chronicle stamps TimeOfDay — decay
+                                // compares on the SAME clock (sim Time is
+                                // a different axis).
+                                data.time_of_day.0,
+                            )
+                        })
+                        .unwrap_or(0.0);
+                    mood.0 = comp::bastion::mood_formula(
+                        &mood_cfg, needs, thought_sum,
+                    );
+                }
+            }
+        }
         // DETRNG (B8 root fix): tick-seeded, not OS entropy — the toss
         // velocities this feeds are cosmetic scatter (drop landing spots →
         // pile merge grouping), and seeding them per-tick makes the whole
@@ -3451,7 +3507,7 @@ impl<'a> System<'a> for Sys {
         // one implementation (the harness hook calls the same fn — reviewer
         // R8/F-CAVE-3: the tested path IS the shipping path).
         for cells in collapses {
-            cavein_eject_and_injure(
+            let victims = cavein_eject_and_injure(
                 &cells,
                 &terrain,
                 *time,
@@ -3462,6 +3518,25 @@ impl<'a> System<'a> for Sys {
                 &mut healths,
                 &mut moods,
             );
+            // B7-0 (the FIRST thought emitter, fork ruling (a)): the
+            // lasting fear is a CaveIn chronicle THOUGHT per victim — the
+            // mood recompute would overwrite the direct drop above within
+            // a cadence; the thought persists and decays properly (the
+            // exact thought→mood pattern the design specs, first proof
+            // instance). QUEUED on the board and recorded by the rtsim
+            // tick next tick (which owns the data mutably by
+            // construction; this system holds a long-lived read guard
+            // for the LOD gate) — a one-tick deferral on a two-game-day
+            // thought.
+            for e in &victims {
+                if let (Some(re), Some(p)) =
+                    (rtsim_entities.get(*e), positions.get(*e))
+                {
+                    board
+                        .pending_cavein_thoughts
+                        .push((*re, p.0.map(|v| v.floor() as i32)));
+                }
+            }
         }
 
         // ── CASE-003 belt (persistence form): the EMBED WATCH ────────────

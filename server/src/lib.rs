@@ -16,6 +16,7 @@ pub mod bastion_assets;
 // bastion (CHOP redesign, FR10): shared whole-tree detection (handler + hook).
 pub mod bastion_chop;
 pub mod bastion_actions;
+pub mod bastion_mood;
 pub mod bastion_jobs;
 pub mod bastion_piles;
 mod character_creator;
@@ -809,6 +810,50 @@ impl Server {
         )
     }
 
+    /// bastion (B7-0, harness hook): (hunger, rest, recreation, mood) for
+    /// a named loaded colonist.
+    pub fn bastion_colonist_needs_mood(
+        &self,
+        name: &str,
+    ) -> Option<(f32, f32, f32, f32)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let needs = ecs.read_storage::<comp::bastion::Needs>();
+        let moods = ecs.read_storage::<comp::bastion::Mood>();
+        (&entities, &colonists, &needs, &moods)
+            .join()
+            .find(|(_, c, _, _)| c.0.name == name)
+            .map(|(_, _, n, m)| (n.hunger, n.rest, n.recreation, m.0))
+    }
+
+    /// bastion (B7-0, harness hook): TEST setter for a named colonist's
+    /// meters — drives the starved-case formula assert (the next mood
+    /// cadence recomputes from these).
+    pub fn bastion_set_needs(
+        &mut self,
+        name: &str,
+        hunger: f32,
+        rest: f32,
+        recreation: f32,
+    ) -> bool {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let mut needs = ecs.write_storage::<comp::bastion::Needs>();
+        for (_, c, n) in (&entities, &colonists, &mut needs).join() {
+            if c.0.name == name {
+                n.hunger = hunger;
+                n.rest = rest;
+                n.recreation = recreation;
+                return true;
+            }
+        }
+        false
+    }
+
     /// bastion (SEASON-0, harness hook): the server's CURRENT TimeOfDay
     /// (the master clock the derivation reads).
     pub fn bastion_time_of_day(&self) -> f64 {
@@ -1530,7 +1575,7 @@ impl Server {
         let mut healths = ecs.write_storage::<comp::Health>();
         let mut moods = ecs.write_storage::<comp::bastion::Mood>();
         let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
-        bastion_jobs::cavein_eject_and_injure(
+        let victims = bastion_jobs::cavein_eject_and_injure(
             &cells,
             &terrain,
             time,
@@ -1540,7 +1585,27 @@ impl Server {
             &mut velocities,
             &mut healths,
             &mut moods,
-        )
+        );
+        // B7-0: queue the fear thoughts EXACTLY like the live mine-
+        // completion caller — the deterministic test hook must not
+        // silently skip the emitter (R8's tested-path-IS-shipping-path
+        // includes the thought; the cavein leg's fear-persists assert
+        // rides this).
+        {
+            let rtsim_entities =
+                ecs.read_storage::<common::rtsim::RtSimEntity>();
+            let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
+            for e in &victims {
+                if let (Some(re), Some(p)) =
+                    (rtsim_entities.get(*e), positions.get(*e))
+                {
+                    board
+                        .pending_cavein_thoughts
+                        .push((*re, p.0.map(|v| v.floor() as i32)));
+                }
+            }
+        }
+        victims.len()
     }
 
     /// bastion (B-LIVE3, harness hook): designations completed (mine-done
@@ -1662,7 +1727,8 @@ impl Server {
             .join()
             .find(|(_, c)| c.0.name == name)
             .and_then(|(e, c)| {
-                crate::rtsim::tick::colonist_record(c, inventories.get(e)).inventory
+                crate::rtsim::tick::colonist_record(c, inventories.get(e), None, None)
+                    .inventory
             })
     }
 
