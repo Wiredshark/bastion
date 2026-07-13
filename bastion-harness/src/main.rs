@@ -260,6 +260,14 @@ struct Args {
     #[arg(long)]
     path_scenario: bool,
 
+    /// bastion (FARM/PROD-2, row 46): the renewable food loop — till,
+    /// seed-consuming sow, staged Growth through the vanilla attribute,
+    /// auto-harvest with strictly-positive seed yield, and the cell
+    /// CYCLING back through sow (the harvest->haul->fetch->re-sow
+    /// economy riding B6 end-to-end).
+    #[arg(long)]
+    farm_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -394,6 +402,8 @@ fn main() -> ExitCode {
         derive_scenario(&args)
     } else if args.path_scenario {
         path_scenario(&args)
+    } else if args.farm_scenario {
+        farm_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -4702,6 +4712,300 @@ fn path_scenario(args: &Args) -> ExitCode {
         && no_embeds;
     println!("{}", result);
     println!("PATH SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (FARM/PROD-2, row 46): the renewable food loop in vivo. A
+/// 3×3 plot on the plateau + a stockpile seeded with one 14-stack of
+/// wheat seeds: colonists TILL the rock to earth (9 cells), FETCH+SOW
+/// (each sow consumes ONE seed — the B6 fetch contract), the crop climbs
+/// the vanilla Growth attribute stage by stage (probed strictly rising;
+/// stage 0 is reserved for worldgen volunteers), auto-HARVEST jobs fire
+/// at maturity, yields land as wheat + MORE seeds than sown (the
+/// conservation invariant, strictly positive), and the cell CYCLES —
+/// re-sown after harvest through the harvest->haul->fetch->re-sow chain
+/// (B6's economy end-to-end). Job counts stay bounded (the dedupe: one
+/// live job per target cell — no flooding). Outcome bools only; counts
+/// on the telemetry line.
+fn farm_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region};
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    const SEEDS: &str = "common.items.bastion.wheat_seeds";
+    const WHEAT: &str = "common.items.bastion.wheat";
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-farm-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-farm".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-farm-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        3,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let center = Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0);
+    let fires_before = server.bastion_center_net_fires();
+
+    // The plot (3×3, west) + the stockpile (2×2, near the colony) with
+    // ONE 14-seed stack — the sow economy's bootstrap stock.
+    let plot = Region {
+        min: Vec3::new(cx - 8, cy - 3, gz),
+        max: Vec3::new(cx - 6, cy - 1, gz),
+    };
+    let plot_probe = Region {
+        min: plot.min,
+        max: plot.max + Vec3::unit_z(),
+    };
+    let paint_jobs = server
+        .bastion_place_designation(plot, DesignationKind::Farm)
+        .len();
+    let store = Region {
+        min: Vec3::new(cx - 2, cy - 4, gz),
+        max: Vec3::new(cx - 1, cy - 3, gz + 1),
+    };
+    server.bastion_place_designation(store, DesignationKind::Stockpile);
+    server.bastion_spawn_item(
+        Vec3::new(cx as f32 - 1.5, cy as f32 - 3.5, gz as f32 + 1.5),
+        SEEDS,
+        14,
+    );
+    tick(&mut server, 5);
+
+    let cell_kind = |server: &Server, x: i32, y: i32| {
+        server.bastion_block_kind(Vec3::new(x, y, gz))
+    };
+    let tilled_count = |server: &Server| {
+        let mut n = 0;
+        for y in plot.min.y..=plot.max.y {
+            for x in plot.min.x..=plot.max.x {
+                if cell_kind(server, x, y) == Some(BlockKind::Earth) {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+    let grown_cells = |server: &Server, min_g: u8| {
+        let mut n = 0;
+        for y in plot.min.y..=plot.max.y {
+            for x in plot.min.x..=plot.max.x {
+                if server
+                    .bastion_sprite_growth(Vec3::new(x, y, gz + 1))
+                    .is_some_and(|g| g >= min_g)
+                {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+
+    // (1) TILL: all 9 cells become Earth.
+    let mut tilled = false;
+    let mut jobs_bounded = true;
+    for _ in 0..360 {
+        tick(&mut server, 10);
+        jobs_bounded &= server.bastion_jobs_in_region(plot_probe) <= 18;
+        if tilled_count(&server) == 9 {
+            tilled = true;
+            break;
+        }
+    }
+    // (2) SOW: seeds fetched from the stockpile, sprites at Growth >= 1.
+    let mut sown = false;
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        jobs_bounded &= server.bastion_jobs_in_region(plot_probe) <= 18;
+        if grown_cells(&server, 1) >= 9 {
+            sown = true;
+            break;
+        }
+    }
+    // (3) GROWTH: a probed corner cell rises strictly and reaches max.
+    let probe_cell = Vec3::new(plot.min.x, plot.min.y, gz + 1);
+    let g1 = server.bastion_sprite_growth(probe_cell).unwrap_or(0);
+    let mut rose = false;
+    let mut matured = false;
+    for _ in 0..900 {
+        tick(&mut server, 10);
+        let g = server.bastion_sprite_growth(probe_cell).unwrap_or(0);
+        if g > g1 {
+            rose = true;
+        }
+        if g >= 15 || grown_cells(&server, 15) > 0 {
+            matured = true;
+            break;
+        }
+    }
+    // (4) HARVEST + YIELD: wheat appears (2 per harvest) and MORE seeds
+    // than a sowing consumed come back (strictly positive conservation).
+    let mut harvested = false;
+    let mut wheat_n = 0;
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        wheat_n = server.bastion_sum_items_near(center, f32::INFINITY, WHEAT);
+        if wheat_n >= 2 {
+            harvested = true;
+            break;
+        }
+    }
+    // CONSERVATION (the honest ledger — run-4 lesson: fetched stacks
+    // live in BAGS, invisible to ground counts): every spawned seed is
+    // either an ITEM somewhere (ground + bags) or a GROWING crop; a
+    // harvest nets +1 (consumed 1 at sow, yields 2). With 14 spawned
+    // and >= 1 harvest, total + growing >= 15 proves strict positivity.
+    let seeds_total = server.bastion_colony_item_total(SEEDS)
+        + grown_cells(&server, 1) as u64;
+    let seed_positive = harvested && seeds_total >= 15;
+    // (5) THE CYCLE: the harvested cell gets RE-SOWN (harvest returned it
+    // to tilled; the yield seeds ride haul->stockpile->fetch->sow or a
+    // carrier's bag — either path is the loop closing).
+    let mut cycled = false;
+    for _ in 0..900 {
+        tick(&mut server, 10);
+        jobs_bounded &= server.bastion_jobs_in_region(plot_probe) <= 18;
+        // fresh young growth anywhere = a second sowing happened after
+        // the first harvest (mature cells are 15; young are 1..=9).
+        let young = (1..=9).contains(
+            &server.bastion_sprite_growth(probe_cell).unwrap_or(99),
+        );
+        if young || grown_cells(&server, 1) > grown_cells(&server, 10) {
+            cycled = true;
+            break;
+        }
+    }
+    let no_embeds = server.bastion_center_net_fires() == fires_before;
+
+    let result = serde_json::json!({
+        "farm_colonists": names.len(),
+        "farm_paint_jobs_zero": paint_jobs == 0,
+        "farm_tilled": tilled,
+        "farm_sown": sown,
+        "farm_growth_rose": rose,
+        "farm_matured": matured,
+        "farm_harvested": harvested,
+        "farm_seed_positive": seed_positive,
+        "farm_cycled": cycled,
+        "farm_jobs_bounded": jobs_bounded,
+        "farm_no_embeds": no_embeds,
+    });
+    println!(
+        "FARM TELEMETRY: tilled={} wheat={wheat_n} seeds={seeds_total} g1={g1}",
+        tilled_count(&server)
+    );
+    let pass = names.len() == 3
+        && paint_jobs == 0
+        && tilled
+        && sown
+        && rose
+        && matured
+        && harvested
+        && seed_positive
+        && cycled
+        && jobs_bounded
+        && no_embeds;
+    println!("{}", result);
+    println!("FARM SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);

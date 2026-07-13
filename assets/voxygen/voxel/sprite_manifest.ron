@@ -5661,7 +5661,48 @@ Corn: [(
     wind_sway: 0.4,
 )],
 // Yellow Wheat
+// bastion (FARM/PROD-2, row 46): the FIRST consumer of the Growth
+// attribute's staged-variant filter (the ":327 TODO"'s anticipated
+// design — one sprite, growth-driven looks). Farm-sown wheat carries
+// Growth 0..=15: young stages render the GREEN models, mature stages
+// the yellow — zero new assets, both model families already ship.
+// GROWTH 0 IS RESERVED: category-declared attrs default to 0, so every
+// WORLDGEN-placed WheatYellow reads Growth(0) — it must fall through to
+// the yellow fallback (vanilla look untouched). Farm-sown wheat starts
+// at Growth(1); stages 1..9 render green, 10..15 yellow, and the
+// filterless configs stay LAST as the worldgen fallback (first match
+// wins).
 WheatYellow: [(
+    filter: (growth_stage: Some((start: 1, end: 10))),
+    variations: [
+        (
+            model: "voxygen.voxel.sprite.wheat_green.wheat-0",
+            offset: (-6.0, -6.0, 0.0),
+            lod_axes: (0.0, 0.0, 0.7),
+        ),
+        (
+            model: "voxygen.voxel.sprite.wheat_green.wheat-1",
+            offset: (-6.0, -6.0, 0.0),
+            lod_axes: (0.0, 0.0, 0.7),
+        ),
+    ],
+    wind_sway: 0.4,
+), (
+    filter: (growth_stage: Some((start: 10, end: 16))),
+    variations: [
+        (
+            model: "voxygen.voxel.sprite.wheat_yellow.wheat-0",
+            offset: (-6.0, -6.0, 0.0),
+            lod_axes: (0.0, 0.0, 0.7),
+        ),
+        (
+            model: "voxygen.voxel.sprite.wheat_yellow.wheat-1",
+            offset: (-6.0, -6.0, 0.0),
+            lod_axes: (0.0, 0.0, 0.7),
+        ),
+    ],
+    wind_sway: 0.4,
+), (
     variations: [
         (
             model: "voxygen.voxel.sprite.wheat_yellow.wheat-0",

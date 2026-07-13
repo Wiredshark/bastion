@@ -70,9 +70,14 @@ pub fn completion_block(kind: JobKind) -> Option<Block> {
             // GATHER: the sprite is consumed by the authoritative
             // interaction (`into_collected` in the manip handler) — never
             // deleted here (the doc-comment above promised exactly this).
+            // FARM (row 46): completion edits are STATE-DRIVEN (till
+            // converts ground, sow places the crop sprite, harvest
+            // clears it) — owned by the farm completion arm, never this
+            // generic map.
             DesignationKind::Stockpile
             | DesignationKind::Zone(_)
-            | DesignationKind::Gather => None,
+            | DesignationKind::Gather
+            | DesignationKind::Farm => None,
         },
         JobKind::Haul { .. }
         | JobKind::DepositRun { .. }

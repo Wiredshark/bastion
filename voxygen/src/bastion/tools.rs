@@ -116,6 +116,14 @@ pub fn zone_rgb(kind: DesignationKind) -> [f32; 3] {
         // GATHER: forage teal — nothing else in the palette sits in the
         // blue-green band (Chop owns pure green, Zone owns gold).
         DesignationKind::Gather => [0.2, 0.85, 0.7],
+        // B7-1: bed — restful lavender (found UNCOVERED here during
+        // FARM's build: DesignationKind appends don't break the harness
+        // gate but DO break voxygen — reported; check voxygen on every
+        // enum append).
+        DesignationKind::Bed => [0.7, 0.55, 0.95],
+        // FARM (row 46): field wheat-straw — warmer than Ladder's tan,
+        // dimmer than Zone's gold.
+        DesignationKind::Farm => [0.8, 0.75, 0.2],
     }
 }
 

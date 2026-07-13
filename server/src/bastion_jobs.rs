@@ -32,7 +32,7 @@ use common::{
     },
     event::CreateItemDropEvent,
     resources::{DeltaTime, ProgramTime},
-    terrain::{Block, BlockKind, SpriteKind, TerrainGrid},
+    terrain::{Block, BlockKind, SpriteKind, TerrainGrid, sprite::Growth},
     uid::{IdMaps, Uid},
     vol::ReadVol,
 };
@@ -290,6 +290,10 @@ fn job_wanted(kind: DesignationKind, block: &Block) -> bool {
         // vanilla's own "yields without a required item" predicate, so
         // every job the scan creates is one the authoritative Collect
         // handler will actually honor.
+        // FARM (row 46): the paint registers a persistent plot and
+        // generates NO jobs — the farm trigger pass owns per-cell job
+        // creation from cell state (the Stockpile-registration shape).
+        DesignationKind::Farm => false,
         DesignationKind::Gather => {
             block.is_directly_collectible()
                 && block.get_rtsim_resource().is_some_and(|r| {
@@ -373,6 +377,27 @@ pub const SLEEP_MARGIN: f32 = 0.1;
 pub const FOOD_DEFS: &[&str] = &["common.items.food.mushroom"];
 /// bastion (B7-3): hunger restored per food item eaten.
 pub const FOOD_RESTORE: f32 = 0.5;
+
+/// bastion (FARM/PROD-2, row 46): the sow verb's consumed item — a REAL
+/// item (the B6 fetch contract: required_item + the material-haul
+/// machinery deliver stockpiled seeds to sow jobs for free).
+pub const FARM_SEED_ITEM: &str = "common.items.bastion.wheat_seeds";
+/// bastion (FARM): the harvest crop item.
+pub const FARM_WHEAT_ITEM: &str = "common.items.bastion.wheat";
+/// bastion (FARM): harvest yields — SEED_YIELD (2) > the 1 seed sowing
+/// consumed = the conservation invariant holds STRICTLY (the crop can
+/// never extinguish; mirrors B5's drop-conservation proof shape).
+pub const FARM_WHEAT_YIELD: u32 = 2;
+pub const FARM_SEED_YIELD: u32 = 2;
+/// bastion (FARM): game-seconds per growth stage. Sown wheat carries
+/// Growth 1..=15 (0 is RESERVED — worldgen wheat defaults to attr 0 and
+/// must keep its mature look; the sprite manifest's staged filters start
+/// at 1). 14 stages x 6s = 84 game-seconds sow-to-mature — v1 const
+/// (accelerated per the design; a RON tuning pass rides a later
+/// checkpoint).
+pub const FARM_STAGE_SECS: f64 = 6.0;
+pub const FARM_GROWTH_SOWN: u8 = 1;
+pub const FARM_GROWTH_MAX: u8 = 15;
 
 /// bastion (B7-2): the preempt-attempt cooldown (game-seconds) — the
 /// anti-livelock (c) guard window.
@@ -1130,6 +1155,15 @@ pub struct JobBoard {
     /// break threshold (cleared on recovery) — the sustained-window arm
     /// of the breakdown staircase.
     mood_below_since: HashMap<Uid, f64>,
+    /// bastion (FARM/PROD-2, row 46): registered farm plots — persistent
+    /// footprints (the stockpiles shape); the farm pass reads cell state
+    /// inside them and generates till/sow/harvest jobs forever.
+    pub farms: Vec<(common::bastion::ZoneId, Region)>,
+    /// bastion (FARM): per-sown-cell last stage-advance time (game
+    /// seconds) — the deterministic growth clock. BTreeMap: structural
+    /// ordering, never hash-iteration order (the PATH-0 discipline).
+    /// Evicted at harvest and by the pass when the sprite vanishes.
+    farm_growth: std::collections::BTreeMap<(i32, i32, i32), f64>,
     /// bastion (B7-2): preempt attempts fired (telemetry — the
     /// anti-thrash assert counts these against the cooldown-rate bound).
     pub preempt_attempts: u64,
@@ -1212,6 +1246,17 @@ impl JobBoard {
             self.next_zone += 1;
             self.activity_zones.push((id, zk, region));
             info!(zone = id, kind = ?zk, ?region, "bastion: activity zone registered");
+        }
+        // FARM (row 46): a farm paint REGISTERS the plot (the Stockpile
+        // shape) — no jobs here (job_wanted = false for Farm); the farm
+        // pass owns per-cell job creation from cell state, forever.
+        // v1 farms are FLAT plots: region.min.z is the field's ground
+        // level (per-column surface resolution is a slope extension).
+        if kind == DesignationKind::Farm {
+            let id = self.next_zone;
+            self.next_zone += 1;
+            self.farms.push((id, region));
+            info!(zone = id, ?region, "bastion: farm plot registered");
         }
         // One job per block, regardless of kind: repainting a region — or
         // overlapping designations (Mine and Chop both match a Wood block,
@@ -2392,6 +2437,13 @@ impl<'a> System<'a> for Sys {
                     {
                         Some(d) if d == MINE_DROP_ITEM => Some(MINE_DROP_ITEM),
                         Some(d) if d == CHOP_DROP_ITEM => Some(CHOP_DROP_ITEM),
+                        // FARM (row 46): harvest outputs are colony
+                        // stock — hauling them to the stockpile is what
+                        // closes the harvest->haul->fetch->re-sow cycle.
+                        Some(d) if d == FARM_SEED_ITEM => Some(FARM_SEED_ITEM),
+                        Some(d) if d == FARM_WHEAT_ITEM => {
+                            Some(FARM_WHEAT_ITEM)
+                        },
                         _ => None,
                     };
                     let Some(static_def) = matched else { continue };
@@ -2569,6 +2621,153 @@ impl<'a> System<'a> for Sys {
                 }
             }
         }
+        // ── FARM/PROD-2 (row 46): the farm pass — growth clock + the
+        // state-driven job trigger, ONE bounded scan (O(Σ plot area) at
+        // the arbitration cadence, never per-tick, never world-wide; the
+        // packet's cost-bound invariant). Per column of every registered
+        // plot: ground = (x, y, plot.min.z), crop cell = ground + z1.
+        //   RAW ground (filled, not Earth)          -> a TILL job (ground)
+        //   TILLED (Earth) + empty crop cell        -> a SOW job (crop
+        //     cell, required_item = seeds — B6's material-haul delivers
+        //     stockpiled seeds for free)
+        //   GROWING (WheatYellow, Growth 1..14)     -> advance the stage
+        //     clock (set_block with_attr — bounded: one edit per cell per
+        //     FARM_STAGE_SECS, never a runaway)
+        //   MATURE (Growth == FARM_GROWTH_MAX)      -> a HARVEST job
+        // Dedupe: one live job per target cell (the paint path's own
+        // free-item-exploit rule).
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 3 && !board.farms.is_empty()
+        {
+            let occupied: std::collections::HashSet<Vec3<i32>> =
+                board.jobs.values().map(|j| j.pos).collect();
+            let mut new_jobs: Vec<(Vec3<i32>, Option<&'static str>)> =
+                Vec::new();
+            let mut stage_ups: Vec<(Vec3<i32>, Block, u8)> = Vec::new();
+            let mut evict: Vec<Vec3<i32>> = Vec::new();
+            for (_, plot) in board.farms.iter() {
+                let gz = plot.min.z;
+                for y in plot.min.y..=plot.max.y {
+                    for x in plot.min.x..=plot.max.x {
+                        let gpos = Vec3::new(x, y, gz);
+                        let cpos = gpos + Vec3::unit_z();
+                        let Ok(ground) = terrain.get(gpos).copied() else {
+                            continue;
+                        };
+                        let Ok(crop) = terrain.get(cpos).copied() else {
+                            continue;
+                        };
+                        if !ground.is_filled() {
+                            continue; // no field under a hole
+                        }
+                        // Plain air reads Some(SpriteKind::Empty) — the
+                        // vanilla encoding (run-1 find: a None-only arm
+                        // silently skipped every empty field cell).
+                        match crop.get_sprite() {
+                            Some(SpriteKind::WheatYellow) => {
+                                let g = crop
+                                    .get_attr::<Growth>()
+                                    .map(|g| g.0)
+                                    .unwrap_or(0);
+                                if g >= FARM_GROWTH_MAX {
+                                    if !occupied.contains(&cpos) {
+                                        new_jobs.push((cpos, None));
+                                    }
+                                } else if g >= FARM_GROWTH_SOWN {
+                                    let ck = (cpos.x, cpos.y, cpos.z);
+                                    let last = board
+                                        .farm_growth
+                                        .get(&ck)
+                                        .copied()
+                                        .unwrap_or(time.0);
+                                    if time.0 - last >= FARM_STAGE_SECS {
+                                        if let Ok(nb) = crop
+                                            .with_attr(Growth(g + 1))
+                                        {
+                                            stage_ups.push((cpos, nb, g + 1));
+                                        }
+                                    } else {
+                                        board
+                                            .farm_growth
+                                            .entry(ck)
+                                            .or_insert(time.0);
+                                    }
+                                }
+                                // Growth 0 on a farm cell = a worldgen
+                                // volunteer — left alone (the reserved
+                                // stage; harvesting volunteers is a
+                                // later nicety).
+                            },
+                            None | Some(SpriteKind::Empty) => {
+                                if ground.kind() == BlockKind::Earth {
+                                    // TILLED + empty -> SOW (seeds).
+                                    if !occupied.contains(&cpos) {
+                                        new_jobs.push((
+                                            cpos,
+                                            Some(FARM_SEED_ITEM),
+                                        ));
+                                    }
+                                } else if !occupied.contains(&gpos) {
+                                    // RAW -> TILL (the ground block).
+                                    new_jobs.push((gpos, None));
+                                }
+                            },
+                            Some(_) => {}, // genuinely foreign sprite
+                        }
+                        // A vanished sprite leaves a stale clock entry.
+                        if matches!(
+                            crop.get_sprite(),
+                            None | Some(SpriteKind::Empty)
+                        ) && board
+                            .farm_growth
+                            .contains_key(&(cpos.x, cpos.y, cpos.z))
+                        {
+                            evict.push(cpos);
+                        }
+                    }
+                }
+            }
+            for cpos in evict {
+                board.farm_growth.remove(&(cpos.x, cpos.y, cpos.z));
+            }
+            for (cpos, nb, g) in stage_ups {
+                block_change.set(cpos, nb);
+                board
+                    .farm_growth
+                    .insert((cpos.x, cpos.y, cpos.z), time.0);
+                if g == FARM_GROWTH_MAX {
+                    info!(pos = ?cpos, "bastion: crop MATURE");
+                }
+            }
+            for (pos, req) in new_jobs {
+                let id = board.next_id;
+                board.next_id += 1;
+                info!(
+                    job = id,
+                    ?pos,
+                    sow = req.is_some(),
+                    "bastion: farm job created"
+                );
+                board.jobs.insert(id, Job {
+                    kind: common::bastion::JobKind::Designated(
+                        DesignationKind::Farm,
+                    ),
+                    work: common::bastion::WorkType::Farm,
+                    pos,
+                    skill_floor: 0,
+                    claimed_by: None,
+                    unreachable: false,
+                    progress: 0.0,
+                    required_item: req,
+                    needs_materials: false,
+                    carve_attempted: false,
+                    is_access: false,
+                    stuck_strikes: 0,
+                    depth: 0,
+                    reservation: None,
+                });
+            }
+        }
+
         // ── B7-2 (row 44, OPUS-GATED): the NEED-CHECK pass — the
         // preemption FIRST half. At its own arbitration slot, a loaded
         // colonist whose survival need sits below its interrupt
@@ -2911,6 +3110,19 @@ impl<'a> System<'a> for Sys {
                         .get(job.pos)
                         .ok()
                         .is_some_and(|b| match job.kind {
+                            // FARM (row 46): job_wanted is the PAINT
+                            // predicate (deliberately false — the trigger
+                            // owns creation); a farm job's validity is
+                            // STATE-DRIVEN and the completion arm
+                            // moot-releases foreign states itself — so
+                            // mid-travel it stays wanted (run-3 find:
+                            // routing Farm through job_wanted mooted
+                            // every job mid-travel into a create/claim/
+                            // drop churn loop, 6729 creations, zero
+                            // completions).
+                            common::bastion::JobKind::Designated(
+                                DesignationKind::Farm,
+                            ) => true,
                             common::bastion::JobKind::Designated(d) => job_wanted(d, b),
                             // Haul validity = the ITEM still exists — owned
                             // by the Haul arm, not the block moot-check.
@@ -3766,6 +3978,152 @@ impl<'a> System<'a> for Sys {
                     // us to it) completes the same way: the world state is
                     // the truth, and the handler's single consumption makes
                     // a double-yield impossible.
+                    // ── FARM/PROD-2 (row 46): the state-driven farm
+                    // completion — ONE arm, the phase read from the cell
+                    // at completion time (self-healing: a stale job
+                    // completes as whatever the cell actually needs; a
+                    // foreign state is a clean moot release).
+                    if job.kind.is(DesignationKind::Farm) {
+                        let here = terrain.get(job.pos).ok().copied();
+                        let below =
+                            terrain.get(job.pos - Vec3::unit_z()).ok().copied();
+                        let mut acted = false;
+                        match here {
+                            // TILL: the job sits ON the raw ground block.
+                            Some(g)
+                                if g.is_filled()
+                                    && g.kind() != BlockKind::Earth =>
+                            {
+                                block_change.set(
+                                    job.pos,
+                                    Block::new(
+                                        BlockKind::Earth,
+                                        vek::Rgb::new(105, 75, 50),
+                                    ),
+                                );
+                                acted = true;
+                                info!(pos = ?job.pos, "bastion: tilled");
+                            },
+                            // SOW: the job sits on the EMPTY crop cell
+                            // above tilled ground — consume ONE seed (the
+                            // Build-material decrement; missing = the
+                            // stall path, B6's haul machinery feeds it).
+                            Some(c)
+                                if matches!(
+                                    c.get_sprite(),
+                                    None | Some(SpriteKind::Empty)
+                                ) && !c.is_filled()
+                                    && below.is_some_and(|g| {
+                                        g.kind() == BlockKind::Earth
+                                    }) =>
+                            {
+                                let taken = inventories
+                                    .get_mut(entity)
+                                    .and_then(|mut inv| {
+                                        let slot = inv
+                                            .slots_with_id()
+                                            .find_map(|(slot, it)| {
+                                                it.as_ref()
+                                                    .is_some_and(|i| {
+                                                        i.item_definition_id()
+                                                            .itemdef_id()
+                                                            == Some(
+                                                                FARM_SEED_ITEM,
+                                                            )
+                                                    })
+                                                    .then_some(slot)
+                                            });
+                                        slot.and_then(|slot| {
+                                            match inv.slot_mut(slot) {
+                                                Some(Some(it))
+                                                    if it.amount() > 1 =>
+                                                {
+                                                    it.decrease_amount(1)
+                                                        .ok()
+                                                        .map(|_| ())
+                                                },
+                                                Some(Some(_)) => inv
+                                                    .remove(slot)
+                                                    .map(|_| ()),
+                                                _ => None,
+                                            }
+                                        })
+                                    });
+                                if taken.is_none() {
+                                    job.progress = 0.0;
+                                    job.needs_materials = true;
+                                    to_release.push(entity);
+                                    continue;
+                                }
+                                if let Ok(nb) = Block::air(
+                                    SpriteKind::WheatYellow,
+                                )
+                                .with_attr(Growth(FARM_GROWTH_SOWN))
+                                {
+                                    block_change.set(job.pos, nb);
+                                    board.farm_growth.insert(
+                                        (job.pos.x, job.pos.y, job.pos.z),
+                                        time.0,
+                                    );
+                                    acted = true;
+                                    info!(pos = ?job.pos, "bastion: sown");
+                                }
+                            },
+                            // HARVEST: the mature crop cell.
+                            Some(c)
+                                if c.get_sprite()
+                                    == Some(SpriteKind::WheatYellow)
+                                    && c.get_attr::<Growth>()
+                                        .map(|g| g.0)
+                                        .unwrap_or(0)
+                                        >= FARM_GROWTH_MAX =>
+                            {
+                                block_change.set(job.pos, Block::empty());
+                                board.farm_growth.remove(&(
+                                    job.pos.x,
+                                    job.pos.y,
+                                    job.pos.z,
+                                ));
+                                for _ in 0..FARM_WHEAT_YIELD {
+                                    crate::bastion_actions::emit_drop(
+                                        &mut item_drop_emitter,
+                                        job.pos,
+                                        Item::new_from_asset_expect(
+                                            FARM_WHEAT_ITEM,
+                                        ),
+                                        *program_time,
+                                        &mut rng,
+                                    );
+                                }
+                                for _ in 0..FARM_SEED_YIELD {
+                                    crate::bastion_actions::emit_drop(
+                                        &mut item_drop_emitter,
+                                        job.pos,
+                                        Item::new_from_asset_expect(
+                                            FARM_SEED_ITEM,
+                                        ),
+                                        *program_time,
+                                        &mut rng,
+                                    );
+                                }
+                                acted = true;
+                                info!(
+                                    pos = ?job.pos,
+                                    "bastion: harvested (cell returns to                                      tilled)"
+                                );
+                            },
+                            _ => {}, // foreign/moot — release below
+                        }
+                        if acted {
+                            colonist.0.skills.grant_xp(job.work, COMPLETION_XP);
+                        }
+                        if let Some(u) = uids.get(entity) {
+                            board.stuck_watch.remove(u);
+                        }
+                        board.remove_job(active.job);
+                        to_release.push(entity);
+                        continue;
+                    }
                     if job.kind.is(DesignationKind::Gather) {
                         let block = terrain.get(job.pos).ok().copied();
                         let collectible =
@@ -3843,6 +4201,9 @@ impl<'a> System<'a> for Sys {
                             // Gather completes in its own arm above (the
                             // Haul pattern) — defensive.
                             DesignationKind::Gather => false,
+                            // Farm completes in its own state-driven arm
+                            // above — defensive.
+                            DesignationKind::Farm => false,
                         },
                         // Self-jobs complete in their own arms above —
                         // defensive.
@@ -4767,19 +5128,30 @@ impl<'a> System<'a> for Sys {
         // its required material (the single-material stand-in for real
         // hauling/recipes — B6). Also flag/clear `needs_materials` here so
         // the state is visible even before any colonist attempts the job.
-        let any_colonist_has_material = |inventories: &WriteStorage<comp::Inventory>| {
-            (&colonists, inventories).join().any(|(_, inv)| {
-                inv.slots().flatten().any(|item| {
-                    item.item_definition_id().itemdef_id() == Some(BUILD_MATERIAL_ITEM)
-                })
+        // FARM (row 46) generalization: the availability signal is now
+        // PER-DEF (sow jobs require seeds, Build requires stones — one
+        // hardcoded BUILD_MATERIAL bool mis-flagged every non-Build
+        // material job). Same semantic per def as the B5 original.
+        let carried_defs: std::collections::HashSet<String> = (&colonists, &inventories)
+            .join()
+            .flat_map(|(_, inv)| {
+                inv.slots()
+                    .flatten()
+                    .filter_map(|item| {
+                        item.item_definition_id()
+                            .itemdef_id()
+                            .map(|s| s.to_string())
+                    })
+                    .collect::<Vec<_>>()
             })
-        };
-        let material_available = any_colonist_has_material(&inventories);
+            .collect();
         for job in board.jobs.values_mut() {
             // Keyed off required_item (not kind): B5.8's auto-access ladder
             // jobs are material-free and must not be flagged.
-            if job.required_item.is_some() && job.claimed_by.is_none() {
-                job.needs_materials = !material_available;
+            if let Some(req) = job.required_item
+                && job.claimed_by.is_none()
+            {
+                job.needs_materials = !carried_defs.contains(req);
             }
         }
 
@@ -4941,11 +5313,22 @@ impl<'a> System<'a> for Sys {
             if !is_loaded(entity) {
                 continue;
             }
-            let carries_material = inventories.get(entity).is_some_and(|inv| {
-                inv.slots().flatten().any(|item| {
-                    item.item_definition_id().itemdef_id() == Some(BUILD_MATERIAL_ITEM)
+            // FARM (row 46) generalization: the colonist's carried-def
+            // set — the claim branch below checks the JOB'S OWN
+            // required def, not a hardcoded build material.
+            let carried_defs: std::collections::HashSet<String> = inventories
+                .get(entity)
+                .map(|inv| {
+                    inv.slots()
+                        .flatten()
+                        .filter_map(|item| {
+                            item.item_definition_id()
+                                .itemdef_id()
+                                .map(|s| s.to_string())
+                        })
+                        .collect()
                 })
-            });
+                .unwrap_or_default();
             // Highest priority, then lowest score (distance + B5.8's
             // top-down and dispersion shaping).
             let mut best: Option<(JobId, u8, f32)> = None;
@@ -4985,7 +5368,7 @@ impl<'a> System<'a> for Sys {
                 // reserved at generation). Availability only — the
                 // reservation itself commits WITH the claim below.
                 if let Some(req) = job.required_item
-                    && !carries_material
+                    && !carried_defs.contains(req)
                     && !matches!(job.kind, common::bastion::JobKind::Haul { .. })
                     && !(&pickup_items, &positions, &uids).join().any(
                         |(pi, ipos, iuid)| {
@@ -5086,8 +5469,11 @@ impl<'a> System<'a> for Sys {
                 let mut fetch_rid = None;
                 {
                     let needs_fetch = board.jobs.get(&job_id).is_some_and(|j| {
-                        j.required_item.is_some()
-                            && !carries_material
+                        // FARM generalization: the JOB'S OWN def decides
+                        // (a colonist carrying seeds needn't fetch for a
+                        // sow, but must still fetch stones for a build).
+                        j.required_item
+                            .is_some_and(|req| !carried_defs.contains(req))
                             // 34.1 (Sonnet tag-review R-B6HAUL): a RE-CLAIMED
                             // mid-fetch job already HOLDS its reservation —
                             // reserving again orphaned a second one (the

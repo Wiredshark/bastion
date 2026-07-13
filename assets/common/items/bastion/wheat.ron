@@ -1,0 +1,13 @@
+// bastion (FARM/PROD-2, row 46): the farm loop's first crop — the
+// harvest yield. An INGREDIENT, not direct food (DF-COOK turns it into
+// meals later; the B7-3 FOOD_DEFS eat-loop stays mushroom-only until
+// then).
+ItemDef(
+    legacy_name: "Wheat",
+    legacy_description: "A sheaf of farm-grown wheat, ready for the mill.",
+    kind: Ingredient(
+        descriptor: "",
+    ),
+    quality: Common,
+    tags: [],
+)

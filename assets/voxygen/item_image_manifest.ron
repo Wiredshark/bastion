@@ -3836,6 +3836,17 @@
         "voxel.sprite.mushrooms.mushroom-10",
         (0.0, 0.0, 0.0), (-50.0, 70.0, 40.0), 1.0,
     ),
+    // bastion (FARM/PROD-2): crop + seed icons reuse the shipped wheat
+    // sprite models (mature yellow for the sheaf, young green for seed
+    // grain) — zero new art.
+    Simple("common.items.bastion.wheat"): VoxTrans(
+        "voxel.sprite.wheat_yellow.wheat-0",
+        (0.0, 0.0, 0.0), (-50.0, 70.0, 40.0), 0.9,
+    ),
+    Simple("common.items.bastion.wheat_seeds"): VoxTrans(
+        "voxel.sprite.wheat_green.wheat-0",
+        (0.0, 0.0, 0.0), (-50.0, 70.0, 40.0), 0.9,
+    ),
     Simple("common.items.mineral.ore.velorite"): VoxTrans(
         "voxel.item.mineral.ore.velorite",
         (0.0, 0.0, 0.0), (-60.0, 30.0, 15.0), 0.8,

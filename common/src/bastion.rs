@@ -333,6 +333,14 @@ pub enum DesignationKind {
     /// completion. The rest-loop venue B7-2's preemption targets.
     /// Appended last (wire rule as above).
     Bed,
+    /// bastion (FARM/PROD-2, row 46): a PERSISTENT farm footprint — the
+    /// paint registers the plot (the Stockpile-registration precedent)
+    /// and generates NO jobs itself; the farm trigger pass reads each
+    /// cell's state (raw -> till, tilled -> sow, mature -> harvest) and
+    /// generates the right job, forever (cells CYCLE — unlike Mine/
+    /// Gather cells, a farm cell never completes out of the footprint).
+    /// Appended LAST (wire rule).
+    Farm,
 }
 
 impl DesignationKind {
@@ -346,6 +354,7 @@ impl DesignationKind {
             DesignationKind::Zone(z) => z.label(),
             DesignationKind::Gather => "Gather",
             DesignationKind::Bed => "Bed",
+            DesignationKind::Farm => "Farm",
         }
     }
 
@@ -363,9 +372,12 @@ impl DesignationKind {
             // ZONE-0: zones are surface activity areas — pure XY.
             // GATHER: forage sweeps a surface footprint (the branch this
             // doc-comment promised it would get free).
+            // FARM (row 46): a field is a surface plot (the same free
+            // branch this doc-comment promised surface kinds).
             DesignationKind::Chop
             | DesignationKind::Zone(_)
-            | DesignationKind::Gather => FootprintMode::Area2D,
+            | DesignationKind::Gather
+            | DesignationKind::Farm => FootprintMode::Area2D,
             DesignationKind::Mine
             | DesignationKind::Build
             | DesignationKind::Stockpile
@@ -382,7 +394,8 @@ impl DesignationKind {
         match self {
             DesignationKind::Mine
             | DesignationKind::Chop
-            | DesignationKind::Gather => Some(Purpose::Production),
+            | DesignationKind::Gather
+            | DesignationKind::Farm => Some(Purpose::Production),
             DesignationKind::Stockpile => Some(Purpose::Storage),
             // ZONE-0: the zone kind carries its own locked Purpose.
             DesignationKind::Zone(z) => Some(z.purpose()),
@@ -590,6 +603,9 @@ pub enum WorkType {
     Build,
     Haul,
     Cook,
+    /// bastion (FARM/PROD-2, row 46): field work — till, sow, harvest.
+    /// Appended LAST (wire rule).
+    Farm,
 }
 
 impl WorkType {
@@ -600,6 +616,7 @@ impl WorkType {
             WorkType::Build => "build",
             WorkType::Haul => "haul",
             WorkType::Cook => "cook",
+            WorkType::Farm => "farm",
         }
     }
 }
@@ -625,6 +642,7 @@ impl DesignationKind {
             // apply, no tool required (bare-hand tool_factor = base rate).
             // A dedicated Forage skill is a designer-lane taxonomy call.
             DesignationKind::Gather => WorkType::Haul,
+            DesignationKind::Farm => WorkType::Farm,
         }
     }
 }
@@ -976,7 +994,10 @@ pub fn tool_factor(
         WorkType::Mine => Some(ToolKind::Pick),
         WorkType::Chop => Some(ToolKind::Axe),
         WorkType::Build => Some(ToolKind::Hammer),
-        WorkType::Haul | WorkType::Cook => None,
+        // FARM (row 46): bare-hand base rate v1 — vanilla ships no
+        // dedicated farm tool tier; a Hoe tier is TOOLS-UPGRADE data
+        // when it lands.
+        WorkType::Haul | WorkType::Cook | WorkType::Farm => None,
     };
     match (wanted, tool) {
         (Some(w), Some((k, q))) if k == w => {
@@ -1059,6 +1080,10 @@ pub struct ColonistSkills {
     /// colonist records saved before B5.8 still load.
     #[serde(default)]
     pub climbing: SkillLevel,
+    /// bastion (FARM/PROD-2): field work. `serde(default)` — records
+    /// saved before row 46 load with an untrained farmer.
+    #[serde(default)]
+    pub farming: SkillLevel,
 }
 
 impl ColonistSkills {
@@ -1070,6 +1095,7 @@ impl ColonistSkills {
             WorkType::Build => self.construction.add_xp(xp),
             WorkType::Haul => self.hauling.add_xp(xp),
             WorkType::Cook => self.cooking.add_xp(xp),
+            WorkType::Farm => self.farming.add_xp(xp),
         }
     }
 
@@ -1082,6 +1108,7 @@ impl ColonistSkills {
             WorkType::Build => self.construction.level,
             WorkType::Haul => self.hauling.level,
             WorkType::Cook => self.cooking.level,
+            WorkType::Farm => self.farming.level,
         }
     }
 
@@ -1094,6 +1121,7 @@ impl ColonistSkills {
             WorkType::Build => &mut self.construction,
             WorkType::Haul => &mut self.hauling,
             WorkType::Cook => &mut self.cooking,
+            WorkType::Farm => &mut self.farming,
         };
         s.level = level;
     }
@@ -1107,7 +1135,13 @@ pub struct WorkPriorities {
     pub build: u8,
     pub haul: u8,
     pub cook: u8,
+    /// bastion (FARM/PROD-2): serde-defaulted to the standard 3 so
+    /// pre-row-46 saves farm at normal priority, not never.
+    #[serde(default = "default_work_priority")]
+    pub farm: u8,
 }
+
+fn default_work_priority() -> u8 { 3 }
 
 impl Default for WorkPriorities {
     fn default() -> Self {
@@ -1117,6 +1151,7 @@ impl Default for WorkPriorities {
             build: 3,
             haul: 3,
             cook: 3,
+            farm: 3,
         }
     }
 }
@@ -1130,6 +1165,7 @@ impl WorkPriorities {
             WorkType::Build => self.build,
             WorkType::Haul => self.haul,
             WorkType::Cook => self.cook,
+            WorkType::Farm => self.farm,
         }
     }
 
@@ -1141,6 +1177,7 @@ impl WorkPriorities {
             WorkType::Build => self.build = p,
             WorkType::Haul => self.haul = p,
             WorkType::Cook => self.cook = p,
+            WorkType::Farm => self.farm = p,
         }
     }
 }
@@ -1735,6 +1772,7 @@ impl BastionColonist {
                 hauling: skill(rng),
                 cooking: skill(rng),
                 melee: skill(rng),
+                farming: skill(rng),
                 // B5.8: most settlers start a poor climber (0..=1 — reach
                 // gating makes 3-block scrambles a TRAINED capability).
                 climbing: SkillLevel {

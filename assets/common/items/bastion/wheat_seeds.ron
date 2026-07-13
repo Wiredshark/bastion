@@ -1,0 +1,13 @@
+// bastion (FARM/PROD-2, row 46): the sow verb's required item — the
+// seed-conservation invariant rides this being a REAL item (sowing
+// consumes one via the B6 fetch contract; harvest yields more than it
+// consumed, so the crop can never extinguish).
+ItemDef(
+    legacy_name: "Wheat Seeds",
+    legacy_description: "A handful of seed grain — one sowing's worth.",
+    kind: Ingredient(
+        descriptor: "",
+    ),
+    quality: Common,
+    tags: [],
+)

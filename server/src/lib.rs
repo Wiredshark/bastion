@@ -1052,6 +1052,51 @@ impl Server {
         out
     }
 
+    /// bastion (FARM/PROD-2, harness hook): the COLONY-TOTAL count of an
+    /// item def — loose ground items PLUS every colonist's bag (the
+    /// seed-conservation invariant counts both: a fetched stack lives in
+    /// a bag, invisible to the ground-only counter).
+    pub fn bastion_colony_item_total(&self, asset_id: &str) -> u64 {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let items = ecs.read_storage::<comp::PickupItem>();
+        let ground: u64 = (&items)
+            .join()
+            .filter(|pi| {
+                pi.item().item_definition_id().itemdef_id() == Some(asset_id)
+            })
+            .map(|pi| pi.item().amount() as u64)
+            .sum();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let inventories = ecs.read_storage::<comp::Inventory>();
+        let bags: u64 = (&colonists, &inventories)
+            .join()
+            .flat_map(|(_, inv)| {
+                inv.slots().flatten().filter_map(|it| {
+                    (it.item_definition_id().itemdef_id() == Some(asset_id))
+                        .then(|| it.amount() as u64)
+                })
+            })
+            .sum();
+        ground + bags
+    }
+
+    /// bastion (FARM/PROD-2, harness hook): a cell's crop growth stage
+    /// (None = no sprite / no Growth attr) — the scenario's staged-
+    /// growth probe.
+    pub fn bastion_sprite_growth(&self, pos: Vec3<i32>) -> Option<u8> {
+        use common::vol::ReadVol;
+        self.state
+            .terrain()
+            .get(pos)
+            .ok()
+            .and_then(|b| {
+                b.get_attr::<common::terrain::sprite::Growth>()
+                    .ok()
+                    .map(|g| g.0)
+            })
+    }
+
     /// bastion (PATH-0, harness hook): the path scheduler's telemetry —
     /// (grants_total, peak_tick_iters, peak_wait). The scenario asserts
     /// the cap held and no requester was starved.
@@ -1787,6 +1832,7 @@ impl Server {
                 common::bastion::WorkType::Build => s.construction,
                 common::bastion::WorkType::Haul => s.hauling,
                 common::bastion::WorkType::Cook => s.cooking,
+                common::bastion::WorkType::Farm => s.farming,
             }
         })
     }
