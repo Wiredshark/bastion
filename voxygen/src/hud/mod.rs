@@ -260,6 +260,7 @@ widget_ids! {
         bastion_time_btns[],
         bastion_time_label,
         bastion_time_paused_tag,
+        bastion_season_label,
         bastion_radial_title,
         bastion_radial_btns[],
 
@@ -5024,6 +5025,31 @@ impl Hud {
                     })
                     .left_from(self.ids.bastion_time_btns[0], 10.0)
                     .set(self.ids.bastion_time_label, ui_widgets);
+                // --- SEASON-HUD (42.1): the season clock made VISIBLE ---
+                // UI-only: reads the SEASON-0/2 derived interface off the
+                // synced master clock — no new sim state, no new wiring
+                // (the legibility half the season blocks owed; decoupled
+                // from the row-106 climate-FX lane by design).
+                {
+                    let tod = client
+                        .state()
+                        .ecs()
+                        .read_resource::<common::resources::TimeOfDay>()
+                        .0;
+                    let days_in_year =
+                        common::time::SeasonConfig::current().days_in_year;
+                    let season_text = format!(
+                        "{:?} · Day {}",
+                        common::time::season(tod, days_in_year),
+                        common::time::day_of_year(tod, days_in_year) + 1,
+                    );
+                    widget::Text::new(&season_text)
+                        .font_size(13)
+                        .font_id(self.fonts.cyri.conrod_id)
+                        .color(label_color)
+                        .up_from(self.ids.bastion_time_btns[0], 8.0)
+                        .set(self.ids.bastion_season_label, ui_widgets);
+                }
                 // The unmissable paused state (spec: nobody may think the
                 // game froze): a large top-center tag while paused.
                 if paused {
