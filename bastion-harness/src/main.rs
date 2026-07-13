@@ -275,6 +275,15 @@ struct Args {
     #[arg(long)]
     run_scenario: bool,
 
+    /// bastion (AUTON-0, row 48): the drive arbiter — Work flows through
+    /// the gated claim entry (liveness), a REAL below-flee-health signal
+    /// preempts Work within a tick, claims stay suppressed while
+    /// fleeing, recovery re-employs, switches stay bounded (commitment +
+    /// hysteresis), the entombment backstop never false-fires, and
+    /// PATH-0 stays healthy under the drive storm.
+    #[arg(long)]
+    auton_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -413,6 +422,8 @@ fn main() -> ExitCode {
         farm_scenario(&args)
     } else if args.run_scenario {
         run_scenario(&args)
+    } else if args.auton_scenario {
+        auton_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -5248,6 +5259,276 @@ fn run_scenario(args: &Args) -> ExitCode {
         && no_embeds;
     println!("{}", result);
     println!("RUN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (AUTON-0, row 48): the arbiter in vivo. Three colonists, two
+/// mine strips. (a) LIVENESS: Idle->Work flows through the gated claim
+/// entry and the first strip completes — the "plays itself" baseline
+/// survives the authority refactor. (b) FLEE PREEMPT <= 1 ARBITER TICK:
+/// the REAL below-flee-health signal (a health-fraction hook write, no
+/// synthetic drive injection) flips a mid-work colonist to Flee and
+/// releases its job through the standard seam; with all three low, the
+/// second strip FREEZES (claims suppressed under a non-Work drive).
+/// (c) RECOVERY: healths restored -> drives return to Work under the
+/// commitment/hysteresis cadence -> the strip completes. (d) THRASH
+/// BOUND: total drive switches stay small. (e) GUARD 4: zero failsafe
+/// teleports + zero embeds across the whole storm (the entombment
+/// machinery untouched by drive-switching). (f) GUARD 5: PATH-0 keeps
+/// granting after the storm. Outcome bools only.
+fn auton_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region};
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-auton-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-auton".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-auton-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        3,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let fires_before = server.bastion_center_net_fires();
+    let (_, _, teleports_before) = server.bastion_locomotion_stats();
+
+    // (a) LIVENESS: strip 1 completes through the gated claim entry.
+    let mine1 = Region {
+        min: Vec3::new(cx - 10, cy - 4, gz),
+        max: Vec3::new(cx - 9, cy + 5, gz),
+    };
+    let m1 = server
+        .bastion_place_designation(mine1, DesignationKind::Mine)
+        .len();
+    let mut worked = false;
+    let mut lively = false;
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        if !worked
+            && names.iter().any(|n| {
+                server.bastion_colonist_drive(n).as_deref() == Some("Work")
+            })
+        {
+            worked = true;
+        }
+        if server.bastion_jobs_in_region(mine1) == 0 {
+            lively = true;
+            break;
+        }
+    }
+
+    // (b) FLEE PREEMPT: strip 2 — a fresh SURFACE strip at new XY (the
+    // FARM/B7-2 fixture lesson, third instance: fleeing colonists are
+    // JOBLESS, and a gz-1 trench puts them below grade where the 60s
+    // jobless-rescue teleport CORRECTLY fires — that is the fail-safe
+    // working, not a false trip, but it scatters the crew and pollutes
+    // the no-false-teleport assert; surface geometry keeps the storm
+    // honest).
+    let mine2 = Region {
+        min: Vec3::new(cx - 13, cy - 4, gz),
+        max: Vec3::new(cx - 12, cy + 5, gz),
+    };
+    let m2 = server
+        .bastion_place_designation(mine2, DesignationKind::Mine)
+        .len();
+    let switches0 = server.bastion_drive_switches();
+    let mut subject = None;
+    for _ in 0..300 {
+        tick(&mut server, 5);
+        if let Some(n) = names.iter().find(|n| {
+            server.bastion_colonist_drive(n).as_deref() == Some("Work")
+        }) {
+            subject = Some(n.clone());
+            break;
+        }
+    }
+    let subject = subject.unwrap_or_else(|| names[0].clone());
+    server.bastion_set_health_fraction(&subject, 0.1);
+    tick(&mut server, 2);
+    let flee_fast = server.bastion_colonist_drive(&subject).as_deref()
+        == Some("Flee");
+    // All three low -> full stop: claims suppressed under non-Work.
+    for n in &names {
+        server.bastion_set_health_fraction(n, 0.1);
+    }
+    tick(&mut server, 30);
+    let frozen_at = server.bastion_jobs_in_region(mine2);
+    // THE THREAT PERSISTS: vanilla restores a WORKING colonist's health
+    // to full behind our backs (a max-update heal — observed exactly
+    // 100.0 on the two mid-work colonists while the idle one kept its
+    // 10.75; the diag run's find) which legitimately drops the flee
+    // signal. The freeze assert tests "claims suppressed WHILE the
+    // signal holds" — so the fixture re-asserts the threat each probe
+    // cycle, exactly what a real persistent hostile does.
+    // Re-assert every second: the vanilla heal restores workers FAST
+    // (the 150-tick cadence lost the race — the heal->Work->dig->re-tank
+    // flap showed in the switch count); at 30 ticks the healed window is
+    // shorter than one travel leg, so suppression is honestly observable.
+    for _ in 0..15 {
+        tick(&mut server, 30);
+        for n in &names {
+            server.bastion_set_health_fraction(n, 0.1);
+        }
+    }
+    let frozen = server.bastion_jobs_in_region(mine2) == frozen_at
+        && frozen_at > 0;
+
+    // (c) RECOVERY: heal -> Work returns -> strip 2 completes.
+    for n in &names {
+        server.bastion_set_health_fraction(n, 1.0);
+    }
+    let mut recovered = false;
+    for _ in 0..900 {
+        tick(&mut server, 10);
+        if server.bastion_jobs_in_region(mine2) == 0 {
+            recovered = true;
+            break;
+        }
+    }
+    // (d) THRASH BOUND: the whole run's switches stay small (3 colonists
+    // x a handful of legitimate transitions; commitment+hysteresis).
+    let switches = server.bastion_drive_switches() - switches0;
+    let bounded = switches <= 40;
+    // (e) GUARD 4: the entombment machinery untouched by the storm.
+    let (_, _, teleports_after) = server.bastion_locomotion_stats();
+    let no_false_teleports = teleports_after == teleports_before;
+    let no_embeds = server.bastion_center_net_fires() == fires_before;
+    // (f) GUARD 5: PATH-0 alive after the storm (recovery travel was
+    // scheduler-served; waits pruned).
+    let (grants, _, peak_wait) = server.bastion_path_stats();
+    let path_alive = grants > 0 && peak_wait <= 7;
+
+    let result = serde_json::json!({
+        "auton_colonists": names.len(),
+        "auton_m1": m1,
+        "auton_m2": m2,
+        "auton_worked": worked,
+        "auton_lively": lively,
+        "auton_flee_fast": flee_fast,
+        "auton_frozen": frozen,
+        "auton_recovered": recovered,
+        "auton_bounded": bounded,
+        "auton_no_false_teleports": no_false_teleports,
+        "auton_no_embeds": no_embeds,
+        "auton_path_alive": path_alive,
+    });
+    println!(
+        "AUTON TELEMETRY: switches={switches} frozen_at={frozen_at} grants={grants} peak_wait={peak_wait}"
+    );
+    let pass = names.len() == 3
+        && m1 == 20
+        && m2 == 20
+        && worked
+        && lively
+        && flee_fast
+        && frozen
+        && recovered
+        && bounded
+        && no_false_teleports
+        && no_embeds
+        && path_alive;
+    println!("{}", result);
+    println!("AUTON SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);

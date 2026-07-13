@@ -294,6 +294,8 @@ impl State {
         ecs.register::<comp::PlayerColony>();
         ecs.register::<comp::bastion::Needs>();
         ecs.register::<comp::bastion::Mood>();
+        // bastion (AUTON-0): the per-colonist drive arbiter.
+        ecs.register::<comp::bastion::Arbiter>();
         ecs.register::<comp::BastionGodAnchor>();
         // bastion (B4): colonist job assignment (server-side).
         ecs.register::<comp::bastion::ActiveJob>();

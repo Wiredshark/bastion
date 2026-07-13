@@ -57,6 +57,46 @@ impl Component for Needs {
     type Storage = specs::DenseVecStorage<Self>;
 }
 
+/// bastion (AUTON-0, row 48): the arbiter's drive — WHAT a colonist's
+/// autonomy layer has decided it is doing. Utility-AI shape (The Sims/
+/// RimWorld prior art per the packet): score → pick max → COMMIT.
+/// Self-jobs (RestAt/EatFrom/Despond) are deliberately NOT a variant —
+/// they are an exempt occupancy the arbiter steps around (GUARD 6: B7
+/// keeps sole authority for that colonist until the self-job completes;
+/// the full unification is AUTON-2's job). Work carries no JobId — the
+/// ActiveJob comp IS the work handle (no dual source of truth).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Drive {
+    Work,
+    Flee,
+    Idle,
+}
+
+/// bastion (AUTON-0): the per-colonist arbiter state — the current
+/// drive, the same-tier commitment deadline (anti-thrash hysteresis;
+/// higher-tier Flee preemption ignores it per-tick), and the last
+/// scored urgencies (work, flee, idle) as REPORTED telemetry.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Arbiter {
+    pub current: Drive,
+    pub committed_until: f64,
+    pub last_scores: (f32, f32, f32),
+}
+
+impl Default for Arbiter {
+    fn default() -> Self {
+        Self {
+            current: Drive::Idle,
+            committed_until: 0.0,
+            last_scores: (0.0, 0.0, 0.0),
+        }
+    }
+}
+
+impl Component for Arbiter {
+    type Storage = specs::DenseVecStorage<Self>;
+}
+
 /// Mood aggregate, 0.0 (breakdown) ..= 1.0 (content). B7 feeds it.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Mood(pub f32);

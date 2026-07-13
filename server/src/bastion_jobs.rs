@@ -512,6 +512,21 @@ pub const RUN_DRAIN_PER_SEC: f32 = 15.0;
 /// needs a fresh trigger once energy recovers).
 pub const RUN_MIN_ENERGY: f32 = 10.0;
 
+/// bastion (AUTON-0, row 48): the arbiter's same-tier COMMITMENT window
+/// (game-seconds ~= 15 ticks — the spec's anti-thrash hold). Higher-tier
+/// Flee preemption ignores it (per-tick, FR3-e).
+pub const ARB_COMMIT_SECS: f64 = 0.5;
+/// bastion (AUTON-0): the switch HYSTERESIS — a challenger must beat the
+/// incumbent's score by this margin at a selection tick (with the
+/// commitment window, the two anti-thrash halves).
+pub const ARB_HYSTERESIS: f32 = 0.15;
+/// bastion (AUTON-0): the skeleton's urgency levels. Work/Idle are flat
+/// v1 (AUTON-1/2 shape the real curves); Flee is the top tier. The
+/// ORDER is the contract: flee > work > idle.
+pub const URGENCY_FLEE: f32 = 1.0;
+pub const URGENCY_WORK: f32 = 0.5;
+pub const URGENCY_IDLE: f32 = 0.1;
+
 /// Chunks the harness (and future scenario tooling) forces to stay loaded —
 /// the server unload sweep skips them. Empty in normal play.
 #[derive(Default)]
@@ -1175,6 +1190,9 @@ pub struct JobBoard {
     /// break threshold (cleared on recovery) — the sustained-window arm
     /// of the breakdown staircase.
     mood_below_since: HashMap<Uid, f64>,
+    /// bastion (AUTON-0): cumulative drive switches (REPORTED telemetry —
+    /// the thrash-bound gate reads the delta over a window).
+    pub drive_switches: u64,
     /// bastion (FARM/PROD-2, row 46): registered farm plots — persistent
     /// footprints (the stockpiles shape); the farm pass reads cell state
     /// inside them and generates till/sow/harvest jobs forever.
@@ -1801,6 +1819,8 @@ impl<'a> System<'a> for Sys {
             WriteStorage<'a, comp::bastion::Needs>,
             // RUN-0: the stamina the run gait drains (vanilla regens it).
             WriteStorage<'a, comp::Energy>,
+            // AUTON-0: the per-colonist drive arbiter.
+            WriteStorage<'a, comp::bastion::Arbiter>,
         ),
     );
 
@@ -1842,6 +1862,7 @@ impl<'a> System<'a> for Sys {
                 mut activity_zones,
                 mut needs_storage,
                 mut energies,
+                mut arbiters,
             ),
         ): Self::SystemData,
     ) {
@@ -2669,6 +2690,126 @@ impl<'a> System<'a> for Sys {
                 }
             }
         }
+        // ── AUTON-0 (row 48): THE ARBITER — per-colonist drive
+        // selection (utility shape: score -> pick max -> COMMIT).
+        // PER-TICK: the Flee signal + higher-tier preemption (a
+        // spike must not wait the cadence — FR3-e). AT THE CADENCE
+        // (%15==1): same-tier selection under commitment+hysteresis.
+        // GUARD 6: a colonist on a SELF-JOB (RestAt/EatFrom/Despond)
+        // is skipped entirely — B7 keeps sole authority until it
+        // completes. GUARD 2: colonist-scoped (the join). GUARD 3:
+        // sequential + rng-free. GUARD 4: touches its OWN state
+        // only — never stuck_watch.
+        {
+            let select_tick =
+                tick.0 % ARBITRATION_INTERVAL as u64 == 1;
+            // Work-availability computed ONCE per selection tick —
+            // any claimable non-self job on the board.
+            let work_available = select_tick
+                && board.jobs.values().any(|j| {
+                    j.claimed_by.is_none()
+                        && !j.unreachable
+                        && !matches!(
+                            j.kind,
+                            common::bastion::JobKind::DepositRun { .. }
+                                | common::bastion::JobKind::RestAt { .. }
+                                | common::bastion::JobKind::EatFrom { .. }
+                                | common::bastion::JobKind::Despond { .. }
+                        )
+                });
+            let mut switches = 0u64;
+            let mut flee_preempts: Vec<specs::Entity> = Vec::new();
+            for (entity, _, _uid) in
+                (&entities, &colonists, &uids).join()
+            {
+                if !is_loaded(entity) {
+                    continue;
+                }
+                // GUARD 6: self-job occupancy — step around.
+                if active_jobs.get(entity).is_some_and(|aj| {
+                    board.jobs.get(&aj.job).is_some_and(|j| {
+                        matches!(
+                            j.kind,
+                            common::bastion::JobKind::RestAt { .. }
+                                | common::bastion::JobKind::EatFrom { .. }
+                                | common::bastion::JobKind::Despond { .. }
+                        )
+                    })
+                }) {
+                    continue;
+                }
+                if arbiters.get(entity).is_none() {
+                    let _ = arbiters
+                        .insert(entity, Default::default());
+                }
+                // The Flee signal — vanilla's OWN two trusted field
+                // reads (the Opus Flee ruling): a hostile target on
+                // the Agent comp, or health below the psyche's flee
+                // fraction. No spatial query, no rng.
+                let flee_sig = agents.get(entity).is_some_and(|ag| {
+                    ag.target.is_some_and(|t| t.hostile)
+                        || healths.get(entity).is_some_and(|h| {
+                            h.fraction() < ag.psyche.flee_health
+                        })
+                });
+                let Some(arb) = arbiters.get_mut(entity) else {
+                    continue;
+                };
+                // PER-TICK higher-tier preemption.
+                if flee_sig
+                    && arb.current != comp::bastion::Drive::Flee
+                {
+                    arb.current = comp::bastion::Drive::Flee;
+                    arb.committed_until = time.0 + ARB_COMMIT_SECS;
+                    arb.last_scores =
+                        (0.0, URGENCY_FLEE, URGENCY_IDLE);
+                    switches += 1;
+                    if active_jobs.contains(entity) {
+                        // The 3-step clear = the release seam (the
+                        // claim sweep self-heals the claim <=15t).
+                        flee_preempts.push(entity);
+                    }
+                    info!("bastion: FLEE — drive preempts work (per-tick)");
+                    continue;
+                }
+                // Same-tier selection at the cadence, committed.
+                if select_tick && time.0 >= arb.committed_until {
+                    let work_sig = active_jobs.contains(entity)
+                        || work_available;
+                    let w = if work_sig { URGENCY_WORK } else { 0.0 };
+                    let f = if flee_sig { URGENCY_FLEE } else { 0.0 };
+                    let i = URGENCY_IDLE;
+                    arb.last_scores = (w, f, i);
+                    let next = if f >= w && f >= i {
+                        comp::bastion::Drive::Flee
+                    } else if w >= i {
+                        comp::bastion::Drive::Work
+                    } else {
+                        comp::bastion::Drive::Idle
+                    };
+                    if next != arb.current {
+                        let score_of = |d: comp::bastion::Drive| match d
+                        {
+                            comp::bastion::Drive::Work => w,
+                            comp::bastion::Drive::Flee => f,
+                            comp::bastion::Drive::Idle => i,
+                        };
+                        if score_of(next)
+                            > score_of(arb.current) + ARB_HYSTERESIS
+                        {
+                            arb.current = next;
+                            arb.committed_until =
+                                time.0 + ARB_COMMIT_SECS;
+                            switches += 1;
+                        }
+                    }
+                }
+            }
+            board.drive_switches += switches;
+            for e in flee_preempts {
+                to_release.push(e);
+            }
+        }
         // ── FARM/PROD-2 (row 46): the farm pass — growth clock + the
         // state-driven job trigger, ONE bounded scan (O(Σ plot area) at
         // the arbitration cadence, never per-tick, never world-wide; the
@@ -3432,7 +3573,25 @@ impl<'a> System<'a> for Sys {
                         // Keep the intent asserted (rtsim brain is gated off
                         // while ActiveJob exists, but agents clear activity
                         // on their own in places).
-                        if let Some(agent) = agent {
+                        // AUTON-0 GUARD 1 + GUARD 6: the Work-drive gate —
+                        // self-job travel fires UNGATED (B7's authority;
+                        // suppressing it would regress the Opus-cleared
+                        // no-entombment/no-thrash guarantees), Work travel
+                        // requires the Work drive (or an unseen arbiter —
+                        // permissive default pre-first-selection).
+                        let auton_travel_ok = matches!(
+                            job.kind,
+                            common::bastion::JobKind::RestAt { .. }
+                                | common::bastion::JobKind::EatFrom { .. }
+                                | common::bastion::JobKind::Despond { .. }
+                        ) || arbiters
+                            .get(entity)
+                            .is_none_or(|a| {
+                                a.current == comp::bastion::Drive::Work
+                            });
+                        if let Some(agent) = agent
+                            && auton_travel_ok
+                        {
                             agent.rtsim_controller.activity =
                                 Some(common::rtsim::NpcActivity::Goto(
                                     steer,
@@ -5362,6 +5521,15 @@ impl<'a> System<'a> for Sys {
         {
             // LOD-1 Loaded-gate: never CLAIM for a demoting colonist.
             if !is_loaded(entity) {
+                continue;
+            }
+            // AUTON-0 GUARD 1: the claim loop is the Work drive's SOLE
+            // entry — a non-Work colonist claims nothing (permissive
+            // for colonists the arbiter has not seen yet).
+            if arbiters
+                .get(entity)
+                .is_some_and(|a| a.current != comp::bastion::Drive::Work)
+            {
                 continue;
             }
             // FARM (row 46) generalization: the colonist's carried-def

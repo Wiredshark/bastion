@@ -1052,6 +1052,52 @@ impl Server {
         out
     }
 
+    /// bastion (AUTON-0, harness hook): set a colonist's health fraction
+    /// — drives the below-flee-health signal deterministically (the
+    /// scenario's Flee trigger; no synthetic drive injection, the REAL
+    /// signal path).
+    pub fn bastion_set_health_fraction(
+        &mut self,
+        name: &str,
+        fraction: f32,
+    ) -> bool {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let mut healths = ecs.write_storage::<comp::Health>();
+        for (e, c) in (&entities, &colonists).join() {
+            if c.0.name == name {
+                if let Some(mut h) = healths.get_mut(e) {
+                    h.set_fraction(fraction);
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// bastion (AUTON-0, harness hook): a colonist's current drive.
+    pub fn bastion_colonist_drive(&self, name: &str) -> Option<String> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let arbiters = ecs.read_storage::<comp::bastion::Arbiter>();
+        (&colonists, &arbiters)
+            .join()
+            .find(|(c, _)| c.0.name == name)
+            .map(|(_, a)| format!("{:?}", a.current))
+    }
+
+    /// bastion (AUTON-0, harness hook): cumulative drive switches (the
+    /// thrash bound reads the delta).
+    pub fn bastion_drive_switches(&self) -> u64 {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .drive_switches
+    }
+
     /// bastion (RUN-0, harness hook): flip a colonist's emergency-run
     /// flag — the TEST trigger (RUN-1 owns real triggers). The governor
     /// still force-reverts it at the energy floor regardless.
