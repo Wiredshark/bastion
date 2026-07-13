@@ -76,7 +76,9 @@ pub fn completion_block(kind: JobKind) -> Option<Block> {
         },
         JobKind::Haul { .. }
         | JobKind::DepositRun { .. }
-        | JobKind::RestAt { .. } => None,
+        | JobKind::RestAt { .. }
+        | JobKind::EatFrom { .. }
+        | JobKind::Despond { .. } => None,
     }
 }
 

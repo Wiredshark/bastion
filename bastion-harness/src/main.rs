@@ -227,6 +227,15 @@ struct Args {
     #[arg(long)]
     preempt_scenario: bool,
 
+    /// bastion (B7-3, row 44): the EAT job + the BREAKDOWN staircase —
+    /// hunger preempts for a pre-claimed EatFrom (exactly one food item
+    /// consumed, B6-reserved); with two needs below the interrupt the
+    /// LOWER meter goes first; mood sustained under break_minor rolls a
+    /// Despond hold (work freezes) that lifts on its own clock once
+    /// needs recover, with exactly one break fired.
+    #[arg(long)]
+    b73_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -353,6 +362,8 @@ fn main() -> ExitCode {
         bed_scenario(&args)
     } else if args.preempt_scenario {
         preempt_scenario(&args)
+    } else if args.b73_scenario {
+        b73_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3745,6 +3756,309 @@ fn preempt_scenario(args: &Args) -> ExitCode {
         && names.len() == 1;
     println!("{}", result);
     println!("PREEMPT SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (B7-3, row 44): the survival loop's LAST verb + the breakdown
+/// staircase — (a) EAT: hunger below the interrupt drops the mine claim
+/// for a pre-claimed EatFrom at the spawned mushroom; EXACTLY one is
+/// consumed (ground 1 -> 0; the +FOOD_RESTORE jump only happens on a
+/// successful bag decrement, so the meter and the ground count prove the
+/// chain together), and the mine then completes; (b) URGENCY: hunger AND
+/// rest both below the interrupt, hunger lower — the NO-BED fixture
+/// makes the ordering assert strict (a rest-first ranking would walk the
+/// bedless rest path forever and never eat; hunger jumping AT ALL proves
+/// the lower meter won); (c) BREAKDOWN: all needs zeroed (mood pins to
+/// the floor), no food/bed to preempt for — the sustained-window roll
+/// fires a Despond (the ONLY possible attempts-counter source here),
+/// work FREEZES through a 30 game-second probe inside the hold, needs
+/// restored -> the despond lifts on its own clock -> the mine RESUMES,
+/// and the attempts counter shows EXACTLY one break (recovery cleared
+/// the staircase; the shared cooldown + top-tier hold allow no second).
+fn b73_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region};
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    const MUSHROOM: &str = "common.items.food.mushroom";
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-b73-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-b73".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-b73-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    // FLUSH PLATEAU (the B7-1 fixture-geometry lesson). NO bed anywhere
+    // in this scenario — (b)'s strictness and (c)'s isolation need the
+    // rest path permanently unservable.
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        1,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let a = names.first().cloned().unwrap_or_default();
+    let center = Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0);
+    let fires_before = server.bastion_center_net_fires();
+
+    // ── (a) EAT: a mine strip claims A; ONE mushroom to the west.
+    let mine = Region {
+        min: Vec3::new(cx + 6, cy - 2, gz),
+        max: Vec3::new(cx + 7, cy + 2, gz),
+    };
+    let mine_jobs = server
+        .bastion_place_designation(mine, DesignationKind::Mine)
+        .len();
+    tick(&mut server, 90);
+    let food_pos =
+        Vec3::new(cx as f32 - 6.5, cy as f32 + 0.5, gz as f32 + 1.5);
+    server.bastion_spawn_item(food_pos, MUSHROOM, 1);
+    tick(&mut server, 5);
+    let ground_before =
+        server.bastion_sum_items_near(center, f32::INFINITY, MUSHROOM);
+    server.bastion_set_needs(&a, 0.15, 1.0, 1.0);
+    let mut ate = false;
+    let mut jobs_at_eat = 0usize;
+    for _ in 0..360 {
+        tick(&mut server, 10);
+        let hunger = server
+            .bastion_colonist_needs_mood(&a)
+            .map(|v| v.0)
+            .unwrap_or(0.0);
+        // 0.15 + FOOD_RESTORE(0.5) ≈ 0.65 minus trip decay; no other
+        // mechanism can RAISE hunger, so ≥0.55 = the eat completed.
+        if hunger >= 0.55 {
+            ate = true;
+            jobs_at_eat = server.bastion_jobs_in_region(mine);
+            break;
+        }
+    }
+    let ground_after =
+        server.bastion_sum_items_near(center, f32::INFINITY, MUSHROOM);
+    let eat_conserved = ground_before == 1 && ground_after == 0;
+    let paused = jobs_at_eat > 0;
+    let mut resumed = false;
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        if server.bastion_jobs_in_region(mine) == 0 {
+            resumed = true;
+            break;
+        }
+    }
+
+    // ── (b) URGENCY: a second mushroom; hunger 0.10 + rest 0.18 (both
+    // below the interrupt, hunger LOWER). No bed exists: were rest
+    // ranked first, the bedless rest path would no-op every pass and
+    // hunger could never jump — so the jump itself proves the ordering.
+    server.bastion_spawn_item(food_pos, MUSHROOM, 1);
+    tick(&mut server, 5);
+    server.bastion_set_needs(&a, 0.10, 0.18, 1.0);
+    let mut hunger_first = false;
+    let mut rest_at_jump = 1.0f32;
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        let (h, r) = server
+            .bastion_colonist_needs_mood(&a)
+            .map(|v| (v.0, v.1))
+            .unwrap_or((0.0, 1.0));
+        if h >= 0.55 {
+            hunger_first = true;
+            rest_at_jump = r;
+            break;
+        }
+    }
+    // rest only DECAYS here (no bed): still below its 0.18 start at the
+    // hunger jump = rest sat unserved while the lower meter got served.
+    let urgency_ordered = hunger_first && rest_at_jump < 0.19;
+
+    // ── (c) BREAKDOWN: both mushrooms are eaten and no bed exists, so
+    // NO need-preempt can fire — the attempts counter can only move via
+    // the breakdown roll. Zero all needs (mood pins to the floor), let
+    // the sustained window + roll fire a Despond mid-mine.
+    // FIXTURE LESSON (run-2 of this scenario's own development): the
+    // resume assert needs post-lift claimable work — a gz-1 strip under
+    // a partially-undesignated gz layer dead-ends at the overhang lip
+    // (1-high gap = no standable stance, B15 refuses — correctly), so
+    // resumption there was geometrically impossible. A SURFACE strip
+    // (every cell top-exposed) makes resumption purely behavioral; 33
+    // cells comfortably outlast the sustain+roll window.
+    let mine2 = Region {
+        min: Vec3::new(cx - 8, cy - 5, gz),
+        max: Vec3::new(cx - 6, cy + 5, gz),
+    };
+    let mine2_jobs = server
+        .bastion_place_designation(mine2, DesignationKind::Mine)
+        .len();
+    tick(&mut server, 60);
+    let attempts0 = server.bastion_preempt_attempts();
+    server.bastion_set_needs(&a, 0.0, 0.0, 0.0);
+    let mut broke = false;
+    let mut jobs_frozen_at = 0usize;
+    for _ in 0..720 {
+        tick(&mut server, 10);
+        if server.bastion_preempt_attempts() > attempts0 {
+            broke = true;
+            jobs_frozen_at = server.bastion_jobs_in_region(mine2);
+            break;
+        }
+    }
+    // HOLD: 30 game-seconds inside the 60s despond — zero digging.
+    tick(&mut server, 900);
+    let held = broke
+        && server.bastion_jobs_in_region(mine2) == jobs_frozen_at;
+    // RECOVER: restore needs (mood recomputes ≥ break_minor at the next
+    // %11, BEFORE the next %13 pass — cycle order makes the clear
+    // race-free); the despond lifts on its own clock and work resumes.
+    server.bastion_set_needs(&a, 1.0, 1.0, 1.0);
+    let mut resumed_after_break = false;
+    for _ in 0..720 {
+        tick(&mut server, 10);
+        if server.bastion_jobs_in_region(mine2) < jobs_frozen_at {
+            resumed_after_break = true;
+            break;
+        }
+    }
+    let single_break =
+        server.bastion_preempt_attempts() - attempts0 == 1;
+    let fires_after = server.bastion_center_net_fires();
+    let no_embeds = fires_after == fires_before;
+
+    // The diffed JSON holds OUTCOME bools + placement counts only —
+    // rtsim's OS-entropy wander shifts travel timing run-to-run (the B8
+    // caveat), so timing-coupled telemetry (floats, mid-run job counts)
+    // prints separately, outside the ×2 determinism diff.
+    let result = serde_json::json!({
+        "b73_mine_jobs": mine_jobs,
+        "b73_ate": ate,
+        "b73_ground_before": ground_before,
+        "b73_ground_after": ground_after,
+        "b73_eat_conserved": eat_conserved,
+        "b73_paused": paused,
+        "b73_resumed": resumed,
+        "b73_hunger_first": hunger_first,
+        "b73_urgency_ordered": urgency_ordered,
+        "b73_mine2_jobs": mine2_jobs,
+        "b73_broke": broke,
+        "b73_held": held,
+        "b73_resumed_after_break": resumed_after_break,
+        "b73_single_break": single_break,
+        "b73_no_embeds": no_embeds,
+        "b73_colonists": names.len(),
+    });
+    println!(
+        "B73 TELEMETRY: rest_at_jump={:.3} jobs_at_eat={} jobs_frozen_at={}",
+        rest_at_jump, jobs_at_eat, jobs_frozen_at
+    );
+    let pass = mine_jobs == 10
+        && ate
+        && eat_conserved
+        && paused
+        && resumed
+        && urgency_ordered
+        && broke
+        && held
+        && resumed_after_break
+        && single_break
+        && no_embeds
+        && names.len() == 1;
+    println!("{}", result);
+    println!("B73 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);

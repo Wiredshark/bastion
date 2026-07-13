@@ -663,7 +663,26 @@ pub struct MoodConfig {
     pub hunger: NeedTuning,
     pub rest: NeedTuning,
     pub recreation: NeedTuning,
+    /// bastion (B7-3): mood below this arms the breakdown staircase
+    /// (despondent-only v1). serde-defaulted for older RONs.
+    #[serde(default = "default_break_minor")]
+    pub break_minor: f32,
+    /// Sustained-below window before the per-cadence roll starts.
+    #[serde(default = "default_break_sustain")]
+    pub break_sustain_secs: f64,
+    /// Per-cadence break chance once sustained (not an instant flip —
+    /// forgiving, per the prior art).
+    #[serde(default = "default_break_chance")]
+    pub break_chance: f32,
+    /// How long a despondent colonist stays down.
+    #[serde(default = "default_despond_secs")]
+    pub despond_secs: f64,
 }
+
+fn default_break_minor() -> f32 { 0.25 }
+fn default_break_sustain() -> f64 { 30.0 }
+fn default_break_chance() -> f32 { 0.15 }
+fn default_despond_secs() -> f64 { 60.0 }
 
 impl Default for MoodConfig {
     fn default() -> Self {
@@ -687,6 +706,10 @@ impl Default for MoodConfig {
                 weight: -0.15,
                 interrupt: 0.0,
             },
+            break_minor: 0.25,
+            break_sustain_secs: 30.0,
+            break_chance: 0.15,
+            despond_secs: 60.0,
         }
     }
 }
@@ -811,6 +834,25 @@ pub enum JobKind {
         /// The bed's block position ([`BedSlot`] key).
         bed_pos: Vec3<i32>,
     },
+    /// bastion (B7-3, row 44): EAT a food item — the hunger need-job
+    /// (the RestAt shape: pre-claimed by the NEED-CHECK pass, rides the
+    /// pipeline). Targets a loose/stockpiled food ITEM by Uid (items
+    /// move — the Haul leg-1 vanish-confirm pattern) with a B6
+    /// reservation (the double-spend guard applies to food exactly as
+    /// to build materials). Appended last (wire rule).
+    EatFrom {
+        /// The food item entity.
+        item: crate::uid::Uid,
+    },
+    /// bastion (B7-3): the BREAKDOWN state (design §3, despondent-only
+    /// v1) — "the break is itself a top-tier job in the same preemption
+    /// frame": a pre-claimed self-job at the colonist's own feet that
+    /// idles until `until`, blocking all claims (an honest visible
+    /// collapse, never a frozen sim). Appended last (wire rule).
+    Despond {
+        /// Sim time when the despondency lifts.
+        until: f64,
+    },
 }
 
 impl JobKind {
@@ -821,7 +863,9 @@ impl JobKind {
             JobKind::Designated(d) => Some(*d),
             JobKind::Haul { .. }
             | JobKind::DepositRun { .. }
-            | JobKind::RestAt { .. } => None,
+            | JobKind::RestAt { .. }
+            | JobKind::EatFrom { .. }
+            | JobKind::Despond { .. } => None,
         }
     }
 

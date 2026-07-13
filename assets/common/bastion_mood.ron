@@ -13,4 +13,12 @@
     hunger: (decay_per_sec: 0.0004, comfort: 0.5, weight: -0.5, interrupt: 0.2),
     rest: (decay_per_sec: 0.0003, comfort: 0.5, weight: -0.4, interrupt: 0.2),
     recreation: (decay_per_sec: 0.0002, comfort: 0.4, weight: -0.15, interrupt: 0.0),
+    // The BREAKDOWN staircase (B7-3): mood sustained below break_minor
+    // for break_sustain_secs game-seconds rolls break_chance per
+    // arbitration pass; a hit despawns the colonist's will for
+    // despond_secs (a Despond self-job at own feet — blocks all claims).
+    break_minor: 0.25,
+    break_sustain_secs: 30.0,
+    break_chance: 0.15,
+    despond_secs: 60.0,
 )

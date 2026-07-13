@@ -367,6 +367,13 @@ pub const BED_REST_RECOVERY_PER_SEC: f32 = 0.02;
 /// Sleep past the comfort band by this much — waking AT the band would
 /// re-cross it within seconds of decay (rested, not barely-at-band).
 pub const SLEEP_MARGIN: f32 = 0.1;
+/// bastion (B7-3): what a colonist recognizes as FOOD (the eat-job's
+/// target defs) — v1 is the forage loop's own yield; extends as food
+/// economies land (DF-FARM/DF-COOK).
+pub const FOOD_DEFS: &[&str] = &["common.items.food.mushroom"];
+/// bastion (B7-3): hunger restored per food item eaten.
+pub const FOOD_RESTORE: f32 = 0.5;
+
 /// bastion (B7-2): the preempt-attempt cooldown (game-seconds) — the
 /// anti-livelock (c) guard window.
 pub const PREEMPT_COOLDOWN_SECS: f64 = 60.0;
@@ -1119,6 +1126,10 @@ pub struct JobBoard {
     /// sleep does not need it — the meter sits above interrupt). The
     /// last_bark shape.
     preempt_cooldown: HashMap<Uid, f64>,
+    /// bastion (B7-3): when each colonist's mood first dropped below the
+    /// break threshold (cleared on recovery) — the sustained-window arm
+    /// of the breakdown staircase.
+    mood_below_since: HashMap<Uid, f64>,
     /// bastion (B7-2): preempt attempts fired (telemetry — the
     /// anti-thrash assert counts these against the cooldown-rate bound).
     pub preempt_attempts: u64,
@@ -1519,6 +1530,73 @@ impl JobBoard {
             self.reservations.remove(&rid);
         }
         job
+    }
+
+    /// bastion (B7-3): insert a PRE-CLAIMED EatFrom job (the RestAt
+    /// shape) carrying its food reservation AND the matched def as
+    /// `required_item` — the B6 fetch contract (the fetch's `carrying`
+    /// flip derives from required_item; a reservation alone would be
+    /// fetched-then-released as a moot material job — the b73 run-1
+    /// silent-release find).
+    pub fn insert_eat_job(
+        &mut self,
+        item: Uid,
+        pos: Vec3<i32>,
+        uid: Uid,
+        reservation: common::bastion::ReservationId,
+        required: &'static str,
+    ) -> JobId {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.jobs.insert(id, Job {
+            kind: common::bastion::JobKind::EatFrom { item },
+            work: common::bastion::WorkType::Haul,
+            pos,
+            skill_floor: 0,
+            claimed_by: Some(uid),
+            unreachable: false,
+            progress: 0.0,
+            required_item: Some(required),
+            needs_materials: false,
+            carve_attempted: false,
+            is_access: false,
+            stuck_strikes: 0,
+            depth: 0,
+            reservation: Some(reservation),
+        });
+        self.total_claims += 1;
+        id
+    }
+
+    /// bastion (B7-3): insert a PRE-CLAIMED Despond job at the
+    /// colonist's own feet — the breakdown state as a top-tier self-job
+    /// (blocks all claims until it lifts).
+    pub fn insert_despond_job(
+        &mut self,
+        feet: Vec3<i32>,
+        uid: Uid,
+        until: f64,
+    ) -> JobId {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.jobs.insert(id, Job {
+            kind: common::bastion::JobKind::Despond { until },
+            work: common::bastion::WorkType::Haul,
+            pos: feet,
+            skill_floor: 0,
+            claimed_by: Some(uid),
+            unreachable: false,
+            progress: 0.0,
+            required_item: None,
+            needs_materials: false,
+            carve_attempted: false,
+            is_access: false,
+            stuck_strikes: 0,
+            depth: 0,
+            reservation: None,
+        });
+        self.total_claims += 1;
+        id
     }
 
     /// bastion (B7-1): insert a PRE-CLAIMED RestAt job (the DepositRun
@@ -2379,6 +2457,8 @@ impl<'a> System<'a> for Sys {
                         j.kind,
                         common::bastion::JobKind::DepositRun { .. }
                             | common::bastion::JobKind::RestAt { .. }
+                            | common::bastion::JobKind::EatFrom { .. }
+                            | common::bastion::JobKind::Despond { .. }
                     ) && j.claimed_by.is_none()
                 })
                 .map(|(id, _)| *id)
@@ -2485,9 +2565,16 @@ impl<'a> System<'a> for Sys {
         // never enter the claim selection (the RestAt/DepositRun skip),
         // so "out-tiers all work and access" holds BY CONSTRUCTION, not
         // by winning a comparison. Needs rank by urgency (lowest meter
-        // first) — only rest is live today (hunger/recreation are
-        // B7-3; recreation interrupt is 0 = never preempts).
-        let mut preempt_pending: Vec<(specs::Entity, Uid, Vec3<i32>)> =
+        // first) — rest and hunger are live (B7-3); recreation's
+        // interrupt is 0 = never preempts. B7-3 also adds the BREAKDOWN
+        // staircase (sustained low mood -> a rolled Despond hold) ahead
+        // of the need path.
+        enum PendingNeed {
+            Rest(Vec3<i32>),
+            Eat(Uid, common::bastion::ReservationId, Vec3<i32>, &'static str),
+            Despond(f64),
+        }
+        let mut preempt_pending: Vec<(specs::Entity, Uid, PendingNeed)> =
             Vec::new();
         if tick.0 % ARBITRATION_INTERVAL as u64 == 13 {
             let mood_cfg = common::bastion::MoodConfig::current();
@@ -2503,18 +2590,78 @@ impl<'a> System<'a> for Sys {
                 if !is_loaded(entity) {
                     continue;
                 }
-                // Urgency ranking over live needs (generic shape; one
-                // real candidate until B7-3 wires the rest).
-                let mut candidates: Vec<f32> = Vec::new();
+                // B7-3: an already-despondent colonist HOLDS — the break
+                // is TOP-tier (even needs don't preempt it out; its own
+                // clock in the Arrived arm lifts it).
+                use rand::RngExt;
+                if active_jobs.get(entity).is_some_and(|aj| {
+                    board.jobs.get(&aj.job).is_some_and(|j| {
+                        matches!(
+                            j.kind,
+                            common::bastion::JobKind::Despond { .. }
+                        )
+                    })
+                }) {
+                    continue;
+                }
+                // B7-3 BREAKDOWN arm (before the need path — a break
+                // outranks a need preempt in the same pass): mood
+                // SUSTAINED below break_minor -> a per-cadence roll ->
+                // a Despond self-job at own feet. Shares the preempt
+                // cooldown (one break attempt per window).
+                if let Some(mood) = moods.get(entity) {
+                    if mood.0 < mood_cfg.break_minor {
+                        let since = *board
+                            .mood_below_since
+                            .entry(*uid)
+                            .or_insert(time.0);
+                        if time.0 - since >= mood_cfg.break_sustain_secs
+                            && !board
+                                .preempt_cooldown
+                                .get(uid)
+                                .is_some_and(|until| time.0 < *until)
+                            && rng.random::<f32>() < mood_cfg.break_chance
+                        {
+                            board
+                                .preempt_cooldown
+                                .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
+                            board.preempt_attempts += 1;
+                            if active_jobs.contains(entity) {
+                                to_release.push(entity);
+                            }
+                            info!(
+                                colonist = %uid,
+                                "bastion: BREAKDOWN — despondent (mood sustained below the break threshold)"
+                            );
+                            preempt_pending.push((
+                                entity,
+                                *uid,
+                                PendingNeed::Despond(
+                                    time.0 + mood_cfg.despond_secs,
+                                ),
+                            ));
+                            continue;
+                        }
+                    } else {
+                        board.mood_below_since.remove(uid);
+                    }
+                }
+                // Urgency ranking over live needs (lowest meter first —
+                // B7-3 makes it real: hunger and rest both live).
+                let mut candidates: Vec<(f32, u8)> = Vec::new();
                 if needs.rest < mood_cfg.rest.interrupt {
-                    candidates.push(needs.rest);
+                    candidates.push((needs.rest, 0));
+                }
+                if needs.hunger < mood_cfg.hunger.interrupt {
+                    candidates.push((needs.hunger, 1));
                 }
                 candidates.sort_by(|a, b| {
-                    a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                    a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
                 });
                 if candidates.is_empty() {
                     continue;
                 }
+                let want_eat = candidates.first().is_some_and(|c| c.1 == 1);
                 if board
                     .preempt_cooldown
                     .get(uid)
@@ -2522,15 +2669,82 @@ impl<'a> System<'a> for Sys {
                 {
                     continue;
                 }
-                // Already on this need job? (RestAt is the rest need.)
+                // Already on a need job? (Either kind — no re-preempt.)
                 if active_jobs.get(entity).is_some_and(|aj| {
                     board.jobs.get(&aj.job).is_some_and(|j| {
                         matches!(
                             j.kind,
                             common::bastion::JobKind::RestAt { .. }
+                                | common::bastion::JobKind::EatFrom { .. }
                         )
                     })
                 }) {
+                    continue;
+                }
+                // B7-3: the EAT path — the most-urgent need is hunger:
+                // target the nearest unreserved FOOD item (B6
+                // reservation commits WITH the pending entry — the
+                // double-spend guard).
+                if want_eat {
+                    let feet = pos.0.map(|e| e.floor() as i32);
+                    let food = (&pickup_items, &positions, &uids)
+                        .join()
+                        .filter(|(pi, _, iuid)| {
+                            pi.item()
+                                .item_definition_id()
+                                .itemdef_id()
+                                .is_some_and(|d| FOOD_DEFS.contains(&d))
+                                && !board.is_reserved(**iuid)
+                        })
+                        .min_by_key(|(_, ipos, _)| {
+                            let c = ipos.0.map(|e| e.floor() as i32) - feet;
+                            (c.x as i64).pow(2)
+                                + (c.y as i64).pow(2)
+                                + (c.z as i64).pow(2)
+                        })
+                        .map(|(pi, ipos, iuid)| {
+                            // The matched def as the job's required_item —
+                            // the B6 fetch contract (reservation +
+                            // required_item travel TOGETHER: the fetch's
+                            // `carrying` flip is derived from it; a
+                            // reservation alone gets fetched-then-released
+                            // as a moot material job).
+                            let def = pi
+                                .item()
+                                .item_definition_id()
+                                .itemdef_id()
+                                .and_then(|d| {
+                                    FOOD_DEFS
+                                        .iter()
+                                        .find(|f| **f == d)
+                                        .copied()
+                                })
+                                .unwrap_or(FOOD_DEFS[0]);
+                            (*iuid, ipos.0.map(|e| e.floor() as i32), def)
+                        });
+                    if let Some((item, ipos, def)) = food {
+                        let rid = board.reserve(item);
+                        board
+                            .preempt_cooldown
+                            .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
+                        board.preempt_attempts += 1;
+                        if active_jobs.contains(entity) {
+                            to_release.push(entity);
+                        }
+                        info!(
+                            colonist = %uid,
+                            item = %item,
+                            "bastion: need preempt — hunger below interrupt"
+                        );
+                        preempt_pending.push((
+                            entity,
+                            *uid,
+                            PendingNeed::Eat(item, rid, ipos, def),
+                        ));
+                    }
+                    // No food anywhere: honest starvation endure — the
+                    // meter decays to the mood floor (and the breakdown
+                    // staircase above eventually takes over).
                     continue;
                 }
                 // A bed to target: OWN bed first (registered + free),
@@ -2574,7 +2788,7 @@ impl<'a> System<'a> for Sys {
                     bed = ?bed_pos,
                     "bastion: need preempt — rest below interrupt"
                 );
-                preempt_pending.push((entity, *uid, bed_pos));
+                preempt_pending.push((entity, *uid, PendingNeed::Rest(bed_pos)));
             }
         }
 
@@ -2689,7 +2903,9 @@ impl<'a> System<'a> for Sys {
                             // BED slot — likewise its own arm.
                             common::bastion::JobKind::Haul { .. }
                             | common::bastion::JobKind::DepositRun { .. }
-                            | common::bastion::JobKind::RestAt { .. } => true,
+                            | common::bastion::JobKind::RestAt { .. }
+                            | common::bastion::JobKind::EatFrom { .. }
+                            | common::bastion::JobKind::Despond { .. } => true,
                         });
                     if !still_wanted {
                         info!(
@@ -3246,6 +3462,104 @@ impl<'a> System<'a> for Sys {
                         }
                         continue;
                     }
+                    // ── B7-3: EAT — the Haul leg-1 pickup shape (emit the
+                    // VANILLA pickup; the uid vanishing is the
+                    // confirmation, checked next tick), then consume ONE
+                    // recognized food item from the bag and restore
+                    // hunger. Item sniped pre-pickup with no food carried
+                    // = a clean moot release (the preempt cooldown holds
+                    // re-fire; the next pass re-targets). One-shot either
+                    // way — still-hungry re-fires via the need-check.
+                    if let common::bastion::JobKind::EatFrom { item } =
+                        job.kind
+                    {
+                        if id_maps.uid_entity(item).is_some() {
+                            crate::bastion_actions::emit_pickup(
+                                &mut inv_manip_emitter,
+                                entity,
+                                item,
+                            );
+                            continue;
+                        }
+                        // Uid gone (ideally: into OUR bag). Eat one of ANY
+                        // recognized food def — covers forage-carried food
+                        // too; none aboard = moot. The decrement is the
+                        // Build-material pattern (stack -1 in place, lone
+                        // item removed — never the whole stack).
+                        let ate = inventories
+                            .get_mut(entity)
+                            .and_then(|mut inv| {
+                                let slot = inv.slots_with_id().find_map(
+                                    |(slot, it)| {
+                                        it.as_ref()
+                                            .is_some_and(|i| {
+                                                i.item_definition_id()
+                                                    .itemdef_id()
+                                                    .is_some_and(|d| {
+                                                        FOOD_DEFS
+                                                            .contains(&d)
+                                                    })
+                                            })
+                                            .then_some(slot)
+                                    },
+                                );
+                                slot.and_then(|slot| {
+                                    match inv.slot_mut(slot) {
+                                        Some(Some(it))
+                                            if it.amount() > 1 =>
+                                        {
+                                            it.decrease_amount(1)
+                                                .ok()
+                                                .map(|_| ())
+                                        },
+                                        Some(Some(_)) => {
+                                            inv.remove(slot).map(|_| ())
+                                        },
+                                        _ => None,
+                                    }
+                                })
+                            });
+                        if ate.is_some() {
+                            if let Some(needs) =
+                                needs_storage.get_mut(entity)
+                            {
+                                needs.hunger =
+                                    (needs.hunger + FOOD_RESTORE).min(1.0);
+                            }
+                            info!(
+                                job = active.job,
+                                "bastion: ate — hunger restored"
+                            );
+                        } else {
+                            info!(
+                                job = active.job,
+                                "bastion: food sniped — eat moot"
+                            );
+                        }
+                        // remove_job releases the food reservation (B6
+                        // machinery — THE removal path).
+                        board.remove_job(active.job);
+                        to_release.push(entity);
+                        continue;
+                    }
+                    // ── B7-3: DESPOND — the breakdown state as a self-job
+                    // at own feet (instant arrive): HOLD doing nothing —
+                    // the ActiveJob itself blocks all claims and the
+                    // need-check's despond-hold skips preemption — until
+                    // the clock passes `until`, then release back to life.
+                    if let common::bastion::JobKind::Despond { until } =
+                        job.kind
+                    {
+                        if time.0 >= until {
+                            info!(
+                                job = active.job,
+                                "bastion: despond lifted — resuming"
+                            );
+                            board.remove_job(active.job);
+                            to_release.push(entity);
+                        }
+                        continue;
+                    }
                     // ── GATHER deposit ruling: the end-of-forage stockpile
                     // trip — instant at arrival like Haul leg-2. Empty every
                     // recorded forage def from the bag onto the zone cell
@@ -3509,11 +3823,13 @@ impl<'a> System<'a> for Sys {
                             // Haul pattern) — defensive.
                             DesignationKind::Gather => false,
                         },
-                        // Haul/DepositRun/RestAt complete in their own arms
-                        // above — defensive.
+                        // Self-jobs complete in their own arms above —
+                        // defensive.
                         common::bastion::JobKind::Haul { .. }
                         | common::bastion::JobKind::DepositRun { .. }
-                        | common::bastion::JobKind::RestAt { .. } => false,
+                        | common::bastion::JobKind::RestAt { .. }
+                        | common::bastion::JobKind::EatFrom { .. }
+                        | common::bastion::JobKind::Despond { .. } => false,
                     });
                     if !still_valid {
                         info!(
@@ -3778,8 +4094,22 @@ impl<'a> System<'a> for Sys {
         // ── B7-2: the preemption SECOND half — create the pre-claimed
         // need-jobs now that the drain has cleanly released the old work
         // (same tick: release-then-create, coherent by ordering).
-        for (entity, uid, bed_pos) in preempt_pending.drain(..) {
-            let id = board.insert_rest_job(bed_pos, uid);
+        for (entity, uid, pending) in preempt_pending.drain(..) {
+            let id = match pending {
+                PendingNeed::Rest(bed_pos) => {
+                    board.insert_rest_job(bed_pos, uid)
+                },
+                PendingNeed::Eat(item, rid, ipos, def) => {
+                    board.insert_eat_job(item, ipos, uid, rid, def)
+                },
+                PendingNeed::Despond(until) => {
+                    let feet = positions
+                        .get(entity)
+                        .map(|p| p.0.map(|v| v.floor() as i32))
+                        .unwrap_or_default();
+                    board.insert_despond_job(feet, uid, until)
+                },
+            };
             let _ = active_jobs.insert(entity, comp::bastion::ActiveJob {
                 job: id,
                 state: comp::bastion::ActiveJobState::Traveling,
@@ -4611,6 +4941,8 @@ impl<'a> System<'a> for Sys {
                     job.kind,
                     common::bastion::JobKind::DepositRun { .. }
                         | common::bastion::JobKind::RestAt { .. }
+                        | common::bastion::JobKind::EatFrom { .. }
+                        | common::bastion::JobKind::Despond { .. }
                 ) {
                     continue;
                 }
