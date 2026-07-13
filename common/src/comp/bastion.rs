@@ -122,6 +122,51 @@ pub fn mood_formula(
         .clamp(0.0, 1.0)
 }
 
+/// bastion (B-AG3 slice 1): the care multiplier is CLAMPED — a stack of
+/// scorned values can mute a thought to a quarter, never erase it; a
+/// stack of held values can quadruple it, never explode it.
+pub const CARE_MIN: f32 = 0.25;
+pub const CARE_MAX: f32 = 4.0;
+/// bastion (B-AG3 slice 1): a Neurotic colonist (vanilla Big-Five trait,
+/// public `Personality::is` API) feels NEGATIVE thoughts half again as
+/// hard — the one temperament term this slice consumes (DF/RimWorld's
+/// standard neuroticism→bad-thought amplification).
+pub const NEUROTIC_NEGATIVE_AMP: f32 = 1.5;
+
+/// bastion (B-AG3 slice 1): how much THIS colonist cares about one
+/// thought — the personalized multiplier on the thought's table weight.
+/// `values` is the colonist's ±50 weight map; `affinities` is the
+/// thought-kind's `(Value, affinity)` row (the ChronicleKind→Value table
+/// lives server-side — this is the pure math, layering-agnostic exactly
+/// like [`mood_formula`]'s summed thought term). Empty values OR an
+/// empty affinity row → exactly 1.0 (+ the neurotic amp if applicable):
+/// the pre-B-AG3 formula for unvalued colonists, bit-for-bit when
+/// non-neurotic. PURE — no state, no rng; two colonists differing only
+/// in `values` produce different multipliers from the SAME thought (the
+/// slice's whole point).
+pub fn care_factor(
+    values: &std::collections::HashMap<crate::bastion::Value, i8>,
+    affinities: &[(crate::bastion::Value, f32)],
+    neurotic: bool,
+    base_weight: f32,
+) -> f32 {
+    let mut care = 1.0f32;
+    for (value, affinity) in affinities {
+        if let Some(w) = values.get(value) {
+            care += (f32::from(*w) / 50.0) * affinity;
+        }
+    }
+    let care = care.clamp(CARE_MIN, CARE_MAX);
+    // The amp applies AFTER the clamp (a maxed-care neurotic feels a bad
+    // thought at 6.0×, bounded) and only to negative thoughts — good
+    // news is not amplified by anxiety.
+    if neurotic && base_weight < 0.0 {
+        care * NEUROTIC_NEGATIVE_AMP
+    } else {
+        care
+    }
+}
+
 #[cfg(test)]
 mod bastion_b70_tests {
     use super::*;
@@ -158,6 +203,53 @@ mod bastion_b70_tests {
         assert!((thought_decay(-0.15, 0.0, 50.0, 100.0) + 0.075).abs() < 1e-6);
         assert_eq!(thought_decay(-0.15, 0.0, 100.0, 100.0), 0.0);
         assert_eq!(thought_decay(-0.15, 0.0, 500.0, 100.0), 0.0);
+    }
+
+    /// B-AG3 slice 1: the care multiplier pinned — identity for the
+    /// unvalued; DIVERGENT for two colonists with different value maps on
+    /// the SAME affinity row (the block's done-when in pure form); exact
+    /// arithmetic at the ±50 scale; clamped both ways; the neurotic amp
+    /// hits negative thoughts only, after the clamp.
+    #[test]
+    fn bastion_care_factor_exact() {
+        use crate::bastion::Value;
+        use std::collections::HashMap;
+        let empty: HashMap<Value, i8> = HashMap::new();
+        let row = [(Value::Kin, 0.6f32), (Value::Glory, -0.4)];
+        // Identity: no values, or no affinity row -> exactly 1.0.
+        assert_eq!(care_factor(&empty, &row, false, -0.15), 1.0);
+        let mut kin = HashMap::new();
+        kin.insert(Value::Kin, 50i8);
+        assert_eq!(care_factor(&kin, &[], false, -0.15), 1.0);
+        // DIVERGENCE: same row, two different value maps.
+        let mut glory = HashMap::new();
+        glory.insert(Value::Glory, 50i8);
+        let care_kin = care_factor(&kin, &row, false, -0.15);
+        let care_glory = care_factor(&glory, &row, false, -0.15);
+        assert!((care_kin - 1.6).abs() < 1e-6); // 1 + (50/50)·0.6
+        assert!((care_glory - 0.6).abs() < 1e-6); // 1 + (50/50)·(−0.4)
+        assert!(care_kin > care_glory);
+        // Scorn: a negative weight flips the affinity's direction.
+        let mut scorns_kin = HashMap::new();
+        scorns_kin.insert(Value::Kin, -50i8);
+        assert!((care_factor(&scorns_kin, &row, false, -0.15) - 0.4).abs() < 1e-6);
+        // Clamps: stacked scorn floors at CARE_MIN, stacked zeal caps at
+        // CARE_MAX.
+        let big_row = [(Value::Kin, 5.0f32)];
+        assert_eq!(care_factor(&kin, &big_row, false, -0.15), CARE_MAX);
+        let neg_row = [(Value::Kin, -5.0f32)];
+        assert_eq!(care_factor(&kin, &neg_row, false, -0.15), CARE_MIN);
+        // Neurotic: ×1.5 on NEGATIVE thoughts only, applied post-clamp.
+        assert!(
+            (care_factor(&kin, &row, true, -0.15) - 1.6 * NEUROTIC_NEGATIVE_AMP)
+                .abs()
+                < 1e-6
+        );
+        assert!((care_factor(&kin, &row, true, 0.15) - 1.6).abs() < 1e-6);
+        assert_eq!(
+            care_factor(&kin, &big_row, true, -0.15),
+            CARE_MAX * NEUROTIC_NEGATIVE_AMP
+        );
     }
 }
 

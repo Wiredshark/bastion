@@ -758,6 +758,27 @@ pub enum Need {
     Fight,
 }
 
+/// bastion (B-AG3 slice 1): the VALUE vocabulary — what a colonist
+/// believes in / prioritizes. DISTINCT from vanilla's Big-Five
+/// [`crate::rtsim::Personality`] (temperament — HOW one reacts): a value
+/// is WHAT one holds dear, the axis the culture-keying tables (CHAR-1)
+/// and the chronicle-thought care weighting read. Same discipline as
+/// [`Need`]: append-only, never reorder — wire- and save-stable. The
+/// starting set pulls from the build report's culture examples
+/// (glory/tradition/kin/wealth/piety/nature) + DF's ethic/value list
+/// (craftsmanship, independence) — not invented from scratch.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Value {
+    Glory,
+    Tradition,
+    Kin,
+    Wealth,
+    Piety,
+    Nature,
+    Craft,
+    Freedom,
+}
+
 /// bastion (B7-1, row 44): what kind of bed a [`BedSlot`] is — drives the
 /// completion sprite and the quality scalar (a frame rests better than a
 /// bedroll). v1 places bedrolls; frames are a data extension (vanilla
@@ -1174,6 +1195,17 @@ pub struct BastionColonist {
     /// weights. Schema only this block: nothing reads or writes it.
     #[serde(default)]
     pub personal_needs: std::collections::HashMap<Need, f32>,
+    /// bastion (B-AG3 slice 1): per-colonist VALUE weights on the locked
+    /// [`Value`] vocabulary — ±50 (the agency bible's scale: positive =
+    /// holds the value, negative = scorns it). Same serde-defaulted
+    /// COLLECTION shape as `personal_needs` (future variants join without
+    /// a migration; old saves + fresh colonists default EMPTY = a care
+    /// factor of exactly 1.0 = the pre-B-AG3 mood behavior bit-for-bit).
+    /// Value ROLLING (culture keying / facet derivation) is a later
+    /// slice — this block reads the map in the thought-care weighting
+    /// only; the test hook is the sole writer.
+    #[serde(default)]
+    pub values: std::collections::HashMap<Value, i8>,
     /// bastion (B7-0): the persistent mirror of the bodily `Needs` comp
     /// `(hunger, rest, recreation)` — captured from the live ECS every
     /// loaded tick, restored WHOLESALE on promote (the LOD-0 inventory
@@ -1329,6 +1361,34 @@ mod tests {
         let text = ron::to_string(&needs).expect("encode");
         let back: HashMap<Need, f32> = ron::from_str(&text).expect("decode");
         assert_eq!(needs, back);
+    }
+
+    /// bastion (B-AG3 slice 1): the `values` collection carries the same
+    /// wire guarantees as `personal_needs` — absent field decodes to an
+    /// empty default (old saves), a populated ±50 map round-trips exactly.
+    #[test]
+    fn bastion_value_collection_serde_shape() {
+        use std::collections::HashMap;
+        #[derive(serde::Deserialize)]
+        struct New {
+            #[expect(dead_code, reason = "decode-shape witness")]
+            name: String,
+            #[serde(default)]
+            values: HashMap<Value, i8>,
+        }
+        // An old-shape payload (no field) -> empty default.
+        let decoded: New =
+            ron::from_str(r#"(name: "Trell")"#).expect("decode old shape");
+        assert!(decoded.values.is_empty());
+        // A populated map round-trips exactly, negatives included
+        // (scorned values are first-class).
+        let mut values = HashMap::new();
+        values.insert(Value::Glory, 50i8);
+        values.insert(Value::Kin, -35);
+        values.insert(Value::Piety, 10);
+        let text = ron::to_string(&values).expect("encode");
+        let back: HashMap<Value, i8> = ron::from_str(&text).expect("decode");
+        assert_eq!(values, back);
     }
 
     fn r(min: (i32, i32, i32), max: (i32, i32, i32)) -> Region {
@@ -1689,6 +1749,9 @@ impl BastionColonist {
             // FOCUS-0: fresh settlers start with no tracked personal-need
             // state (FOCUS-1 populates it).
             personal_needs: Default::default(),
+            // B-AG3: no value weights until a later slice ROLLS them
+            // (empty = care factor 1.0 — mood behavior unchanged).
+            values: Default::default(),
             // B7-0: never-captured until the first loaded tick mirrors
             // the live meters (LOD-0 semantics).
             needs: None,

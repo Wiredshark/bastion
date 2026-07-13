@@ -1,0 +1,17 @@
+// bastion (B-AG3 slice 1): ChronicleKind -> [(Value, affinity)] — how
+// much HOLDING each value changes caring about that kind of event;
+// consumed by server/src/bastion_mood.rs::thought_sum through
+// common::comp::bastion::care_factor (care = 1 + Σ weight/50 · affinity,
+// clamped 0.25..4.0). A kind with no row = care 1.0 (the pre-B-AG3
+// weighting); rows are PURE DATA and join as thought emitters land —
+// the math never reshapes. Signs read naturally: a Kin-valuing colonist
+// takes a Death harder (+0.8); a Glory-valuing one shrugs off danger
+// and rough living (negative affinities on CaveIn/SleptOnGround).
+(
+    affinities: {
+        Death: [(Kin, 0.8), (Piety, 0.4), (Glory, -0.3)],
+        CaveIn: [(Kin, 0.6), (Wealth, 0.3), (Glory, -0.4)],
+        SleptInBed: [(Tradition, 0.5), (Kin, 0.3)],
+        SleptOnGround: [(Tradition, 0.5), (Glory, -0.5), (Nature, -0.3)],
+    },
+)

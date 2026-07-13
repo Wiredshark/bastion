@@ -236,6 +236,14 @@ struct Args {
     #[arg(long)]
     b73_scenario: bool,
 
+    /// bastion (B-AG3 slice 1, row 41): the VALUES divergence — two
+    /// colonists with different ±50 value weights receive the SAME
+    /// chronicle thought kind and show measurably different mood deltas
+    /// (the care multiplier personalizing the B7-0 thought term); the
+    /// weight map round-trips through the live colonist.
+    #[arg(long)]
+    values_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -364,6 +372,8 @@ fn main() -> ExitCode {
         preempt_scenario(&args)
     } else if args.b73_scenario {
         b73_scenario(&args)
+    } else if args.values_scenario {
+        values_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -4059,6 +4069,192 @@ fn b73_scenario(args: &Args) -> ExitCode {
         && names.len() == 1;
     println!("{}", result);
     println!("B73 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (B-AG3 slice 1, row 41): "two NPCs experience the same event
+/// differently" — the slice's whole point, in vivo. Two colonists, needs
+/// topped (zero shortfall terms), one valuing Kin +50 and one Glory +50;
+/// the SAME thought kind (CaveIn: Kin +0.6 / Glory −0.4 affinity)
+/// deposited to both through the REAL pipeline (board queue → rtsim
+/// drain → chronicle → the %11 recompute's care-weighted read). The
+/// Kin-valuer's mood must drop measurably harder. Robust to the
+/// unknown per-NPC Neurotic roll: worst case is A@1.6× vs B@0.6×1.5=0.9×
+/// — strictly ordered for any combination. The ±50 weight map is also
+/// round-tripped through the live change-tracked colonist (set hook →
+/// get hook). Outcome JSON is bools only; mood floats print on the
+/// non-diffed telemetry line (the B73 entropy lesson).
+fn values_scenario(args: &Args) -> ExitCode {
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-values-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-values".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-values-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    // FLUSH PLATEAU (the fixture-geometry class); no jobs at all — pure
+    // mood observation.
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        2,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let a = names.first().cloned().unwrap_or_default();
+    let b = names.get(1).cloned().unwrap_or_default();
+
+    // Values: A holds Kin (+50), B holds Glory (+50). CaveIn's affinity
+    // row (Kin +0.6, Glory −0.4) makes A care 1.6× and B 0.6× about the
+    // same fear.
+    let set_ok = server.bastion_set_values(&a, "Kin", 50)
+        && server.bastion_set_values(&b, "Glory", 50);
+    let values_roundtrip = set_ok
+        && server.bastion_colonist_values(&a)
+            == vec![("Kin".to_string(), 50i8)]
+        && server.bastion_colonist_values(&b)
+            == vec![("Glory".to_string(), 50i8)];
+    // Needs topped: the shortfall terms are zero for BOTH, so mood is
+    // base + thoughts only — the cleanest divergence read.
+    server.bastion_set_needs(&a, 1.0, 1.0, 1.0);
+    server.bastion_set_needs(&b, 1.0, 1.0, 1.0);
+    // Past a recompute (%11 of the 15-cadence): the equal baseline.
+    tick(&mut server, 40);
+    let mood_a0 = server.bastion_colonist_mood(&a).unwrap_or(-1.0);
+    let mood_b0 = server.bastion_colonist_mood(&b).unwrap_or(-1.0);
+    let equal_baseline = (mood_a0 - mood_b0).abs() < 1e-4 && mood_a0 > 0.0;
+
+    // The SAME thought kind to both, through the real queue.
+    let dep_ok = server.bastion_deposit_thought(&a, "CaveIn")
+        && server.bastion_deposit_thought(&b, "CaveIn");
+    // Drain (next rtsim tick) + the next %11 recompute.
+    tick(&mut server, 40);
+    let mood_a1 = server.bastion_colonist_mood(&a).unwrap_or(mood_a0);
+    let mood_b1 = server.bastion_colonist_mood(&b).unwrap_or(mood_b0);
+    let delta_a = mood_a1 - mood_a0;
+    let delta_b = mood_b1 - mood_b0;
+    // Both feel the fear; the Kin-valuer feels it MEASURABLY harder
+    // (0.05 margin > the worst-case neurotic-roll gap analysis above).
+    let both_dropped = delta_a < -0.05 && delta_b < -0.02;
+    let a_more_affected = delta_a < delta_b - 0.05;
+
+    let result = serde_json::json!({
+        "values_roundtrip": values_roundtrip,
+        "values_deposited": dep_ok,
+        "values_equal_baseline": equal_baseline,
+        "values_both_dropped": both_dropped,
+        "values_a_more_affected": a_more_affected,
+        "values_colonists": names.len(),
+    });
+    println!(
+        "VALUES TELEMETRY: a0={mood_a0:.4} b0={mood_b0:.4} a1={mood_a1:.4} \
+         b1={mood_b1:.4} da={delta_a:.4} db={delta_b:.4}"
+    );
+    let pass = values_roundtrip
+        && dep_ok
+        && equal_baseline
+        && both_dropped
+        && a_more_affected
+        && names.len() == 2;
+    println!("{}", result);
+    println!("VALUES SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);

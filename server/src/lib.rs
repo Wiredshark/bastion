@@ -854,6 +854,104 @@ impl Server {
         false
     }
 
+    /// bastion (B-AG3 slice 1, harness hook): set ONE value weight (±50)
+    /// on a named colonist — the slice's sole writer (rolling is a later
+    /// slice). Colonist storage is change-tracked: find immutably, then
+    /// `get_mut` (the bastion_assign_bed_owner pattern). Unknown value
+    /// names return false (the vocabulary is the locked enum).
+    pub fn bastion_set_values(
+        &mut self,
+        name: &str,
+        value: &str,
+        weight: i8,
+    ) -> bool {
+        use common::bastion::Value;
+        use specs::Join;
+        let value = match value {
+            "Glory" => Value::Glory,
+            "Tradition" => Value::Tradition,
+            "Kin" => Value::Kin,
+            "Wealth" => Value::Wealth,
+            "Piety" => Value::Piety,
+            "Nature" => Value::Nature,
+            "Craft" => Value::Craft,
+            "Freedom" => Value::Freedom,
+            _ => return false,
+        };
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let mut colonists = ecs.write_storage::<comp::Colonist>();
+        let found = (&entities, &colonists)
+            .join()
+            .find(|(_, c)| c.0.name == name)
+            .map(|(e, _)| e);
+        if let Some(e) = found
+            && let Some(mut c) = colonists.get_mut(e)
+        {
+            c.0.values.insert(value, weight);
+            return true;
+        }
+        false
+    }
+
+    /// bastion (B-AG3 slice 1, harness hook): queue ONE chronicle thought
+    /// for a named colonist at its own feet — the values-divergence
+    /// scenario's deterministic depositor. Rides the REAL pipeline from
+    /// the queue on (board `pending_thoughts` → the rtsim tick's drain →
+    /// `chronicle.record` → the %11 recompute reads it back through the
+    /// care weighting); only the EMITTER is synthetic (the CAVEIN leg
+    /// owns the live-emitter path). Kinds limited to the thought-table
+    /// set; unknown names return false.
+    pub fn bastion_deposit_thought(&mut self, name: &str, kind: &str) -> bool {
+        use specs::Join;
+        let kind = match kind {
+            "Death" => ::rtsim::data::ChronicleKind::Death,
+            "CaveIn" => ::rtsim::data::ChronicleKind::CaveIn,
+            "SleptInBed" => ::rtsim::data::ChronicleKind::SleptInBed,
+            "SleptOnGround" => ::rtsim::data::ChronicleKind::SleptOnGround,
+            _ => return false,
+        };
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let positions = ecs.read_storage::<comp::Pos>();
+        let rtsim_entities = ecs.read_storage::<common::rtsim::RtSimEntity>();
+        let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
+        for (_, c, p, re) in
+            (&entities, &colonists, &positions, &rtsim_entities).join()
+        {
+            if c.0.name == name {
+                board.pending_thoughts.push((
+                    *re,
+                    p.0.map(|v| v.floor() as i32),
+                    kind,
+                ));
+                return true;
+            }
+        }
+        false
+    }
+
+    /// bastion (B-AG3 slice 1, harness hook): a named colonist's value
+    /// weights, name-sorted (probe/round-trip verification).
+    pub fn bastion_colonist_values(&self, name: &str) -> Vec<(String, i8)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let mut out: Vec<(String, i8)> = colonists
+            .join()
+            .find(|c| c.0.name == name)
+            .map(|c| {
+                c.0.values
+                    .iter()
+                    .map(|(v, w)| (format!("{v:?}"), *w))
+                    .collect()
+            })
+            .unwrap_or_default();
+        out.sort();
+        out
+    }
+
     /// bastion (B7-2, harness hook): cumulative preempt attempts (the
     /// anti-thrash rate bound reads the delta over a window).
     pub fn bastion_preempt_attempts(&self) -> u64 {

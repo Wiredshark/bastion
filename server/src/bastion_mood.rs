@@ -42,23 +42,73 @@ impl ThoughtTable {
     }
 }
 
+/// bastion (B-AG3 slice 1): [`rtsim::data::ChronicleKind`] → the
+/// `(Value, affinity)` row the care multiplier reads — how much holding
+/// each value changes caring about that kind of event. Same server-side
+/// home as [`ThoughtTable`] (keys on `ChronicleKind`, invisible to
+/// `common`); same graceful-empty semantics (a kind with no row = care
+/// 1.0 = the pre-B-AG3 weighting). PURE DATA — rows join as thought
+/// emitters land, the math never reshapes.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct ValueAffinityTable {
+    pub affinities:
+        HashMap<rtsim::data::ChronicleKind, Vec<(common::bastion::Value, f32)>>,
+}
+
+impl FileAsset for ValueAffinityTable {
+    const EXTENSION: &'static str = "ron";
+
+    fn from_bytes(bytes: Cow<[u8]>) -> Result<Self, BoxedError> {
+        load_ron(&bytes)
+    }
+}
+
+impl ValueAffinityTable {
+    /// The loaded table (hot-reloadable); EMPTY on missing/broken —
+    /// every care factor is 1.0 and mood behaves exactly as before.
+    pub fn current() -> Self {
+        Self::load("common.bastion_value_affinities")
+            .map(|h| h.read().clone())
+            .unwrap_or_default()
+    }
+}
+
 /// The summed thought term for one colonist: every chronicle entry whose
 /// `actors` names them and whose kind the table maps, decayed by
 /// [`common::comp::bastion::thought_decay`] (pure `(deposit, now)` — no
-/// per-tick state). Order-free (addition commutes) — the determinism
-/// house invariant, same as the formula it feeds.
+/// per-tick state), and — B-AG3 slice 1 — scaled by THIS colonist's
+/// [`common::comp::bastion::care_factor`] (their ±50 value weights ×
+/// the kind's affinity row, with the Neurotic negative amp). Empty
+/// values/rows = care 1.0 = the B7-0 sum bit-for-bit (non-neurotic).
+/// Order-free (addition commutes) — the determinism house invariant,
+/// same as the formula it feeds.
 pub fn thought_sum(
     chronicle: &rtsim::data::Chronicle,
     table: &ThoughtTable,
+    affinity_table: &ValueAffinityTable,
     actor: common::rtsim::Actor,
     now: f64,
+    values: &HashMap<common::bastion::Value, i8>,
+    neurotic: bool,
 ) -> f32 {
     chronicle
         .events()
         .filter(|e| e.actors.contains(&actor))
         .filter_map(|e| {
             table.thoughts.get(&e.kind).map(|(mag, life)| {
-                common::comp::bastion::thought_decay(*mag, e.at_tod.0, now, *life)
+                let care = common::comp::bastion::care_factor(
+                    values,
+                    affinity_table
+                        .affinities
+                        .get(&e.kind)
+                        .map(Vec::as_slice)
+                        .unwrap_or(&[]),
+                    neurotic,
+                    *mag,
+                );
+                care * common::comp::bastion::thought_decay(
+                    *mag, e.at_tod.0, now, *life,
+                )
             })
         })
         .sum()

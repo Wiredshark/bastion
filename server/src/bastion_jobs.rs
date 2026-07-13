@@ -1795,8 +1795,10 @@ impl<'a> System<'a> for Sys {
             }
             if tick.0 % ARBITRATION_INTERVAL as u64 == 11 {
                 let table = crate::bastion_mood::ThoughtTable::current();
+                let affinities =
+                    crate::bastion_mood::ValueAffinityTable::current();
                 let data = rtsim.state().data();
-                for (_, needs, mood, re) in (
+                for (colonist, needs, mood, re) in (
                     &colonists,
                     &needs_storage,
                     &mut moods,
@@ -1806,14 +1808,28 @@ impl<'a> System<'a> for Sys {
                 {
                     let thought_sum = re
                         .map(|re| {
+                            // B-AG3 slice 1: temperament comes from
+                            // vanilla's Big-Five (PURE consumer — the
+                            // public trait API off the SAME rtsim read
+                            // guard the chronicle uses; zero new
+                            // coupling). Values live on the colonist.
+                            let neurotic =
+                                data.npcs.get(*re).is_some_and(|npc| {
+                                    npc.personality.is(
+                                        common::rtsim::PersonalityTrait::Neurotic,
+                                    )
+                                });
                             crate::bastion_mood::thought_sum(
                                 &data.chronicle,
                                 &table,
+                                &affinities,
                                 common::rtsim::Actor::Npc(*re),
                                 // The chronicle stamps TimeOfDay — decay
                                 // compares on the SAME clock (sim Time is
                                 // a different axis).
                                 data.time_of_day.0,
+                                &colonist.0.values,
+                                neurotic,
                             )
                         })
                         .unwrap_or(0.0);
