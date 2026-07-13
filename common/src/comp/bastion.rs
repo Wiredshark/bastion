@@ -144,6 +144,56 @@ pub const NEUROTIC_NEGATIVE_AMP: f32 = 1.5;
 /// non-neurotic. PURE — no state, no rng; two colonists differing only
 /// in `values` produce different multipliers from the SAME thought (the
 /// slice's whole point).
+/// bastion (FOCUS-0-DERIVE, row 43.1): the derived per-colonist NEED
+/// WEIGHT — how much THIS colonist's mind makes them care about each
+/// personal [`crate::bastion::Need`], from their rolled [`crate::bastion::Value`]
+/// weights + vanilla Big-Five traits. Baseline 1.0; a value-mapped need
+/// scales 1 + weight/50 (so ±50 spans 0..2); `Socialize` reads the
+/// boolean trait API at 3 levels (Extroverted/Sociable 1.5, Introverted
+/// 0.5, else 1.0 — the architect's no-vanilla-getter ruling);
+/// `Drink`/`AdmireArt`/`Learn` have no clean correlate and STAY 1.0
+/// (the design's degrade-gracefully law — no forced weak mapping, no
+/// invented Value). Clamped 0..=2. PURE — a FOCUS-1 scorer eventually
+/// consumes this; nothing does yet (this block produces + proves only).
+pub fn derive_need_weight(
+    need: crate::bastion::Need,
+    personality: &crate::rtsim::Personality,
+    values: &std::collections::HashMap<crate::bastion::Value, i8>,
+) -> f32 {
+    use crate::bastion::{Need, Value};
+    use crate::rtsim::PersonalityTrait;
+    let from_value = |v: Value| -> f32 {
+        1.0 + values.get(&v).copied().map_or(0.0, |w| f32::from(w) / 50.0)
+    };
+    let w = match need {
+        // The near-1:1 vocabulary correspondences (the mapping is the
+        // enums' own design — Pray↔Piety, Family↔Kin, Craft↔Craft,
+        // SeeAnimals↔Nature, Acquire↔Wealth, Fight↔Glory).
+        Need::Pray => from_value(Value::Piety),
+        Need::Family => from_value(Value::Kin),
+        Need::Craft => from_value(Value::Craft),
+        Need::SeeAnimals => from_value(Value::Nature),
+        Need::Acquire => from_value(Value::Wealth),
+        Need::Fight => from_value(Value::Glory),
+        // Temperament-derived: the boolean-trait 3-level.
+        Need::Socialize => {
+            if personality.is(PersonalityTrait::Extroverted)
+                || personality.is(PersonalityTrait::Sociable)
+            {
+                1.5
+            } else if personality.is(PersonalityTrait::Introverted) {
+                0.5
+            } else {
+                1.0
+            }
+        },
+        // No clean correlate — baseline (degrade gracefully; never
+        // force a weak mapping).
+        Need::Drink | Need::AdmireArt | Need::Learn => 1.0,
+    };
+    w.clamp(0.0, 2.0)
+}
+
 pub fn care_factor(
     values: &std::collections::HashMap<crate::bastion::Value, i8>,
     affinities: &[(crate::bastion::Value, f32)],
@@ -250,6 +300,55 @@ mod bastion_b70_tests {
             care_factor(&kin, &big_row, true, -0.15),
             CARE_MAX * NEUROTIC_NEGATIVE_AMP
         );
+    }
+
+    /// FOCUS-0-DERIVE (43.1): the derivation pinned — value-mapped needs
+    /// scale 1 + weight/50 exactly (±50 spans 0..2); unmapped needs sit
+    /// at baseline regardless of values; Socialize's 3-level trait gate
+    /// is consistent with the public `.is()` API over a seeded
+    /// personality sample, and both extremes occur in the sample.
+    #[test]
+    fn bastion_derive_need_weight_exact() {
+        use crate::bastion::{Need, Value};
+        use crate::rtsim::{Personality, PersonalityTrait};
+        use rand::SeedableRng;
+        use std::collections::HashMap;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0xF0C0_5D34);
+        let neutral = Personality::random(&mut rng);
+        // Value arms: exact linear map, empty = baseline.
+        let empty: HashMap<Value, i8> = HashMap::new();
+        assert_eq!(derive_need_weight(Need::Pray, &neutral, &empty), 1.0);
+        let mut v = HashMap::new();
+        v.insert(Value::Piety, 50i8);
+        v.insert(Value::Kin, -50);
+        v.insert(Value::Wealth, 25);
+        assert_eq!(derive_need_weight(Need::Pray, &neutral, &v), 2.0);
+        assert_eq!(derive_need_weight(Need::Family, &neutral, &v), 0.0);
+        assert!((derive_need_weight(Need::Acquire, &neutral, &v) - 1.5).abs() < 1e-6);
+        // Unmapped needs: baseline even with a loud value map.
+        assert_eq!(derive_need_weight(Need::Drink, &neutral, &v), 1.0);
+        assert_eq!(derive_need_weight(Need::AdmireArt, &neutral, &v), 1.0);
+        assert_eq!(derive_need_weight(Need::Learn, &neutral, &v), 1.0);
+        // Socialize: 3-level, consistent with the public trait API; a
+        // 400-draw seeded sample contains both extremes.
+        let (mut saw_high, mut saw_low) = (false, false);
+        for _ in 0..400 {
+            let p = Personality::random(&mut rng);
+            let w = derive_need_weight(Need::Socialize, &p, &empty);
+            let expect = if p.is(PersonalityTrait::Extroverted)
+                || p.is(PersonalityTrait::Sociable)
+            {
+                1.5
+            } else if p.is(PersonalityTrait::Introverted) {
+                0.5
+            } else {
+                1.0
+            };
+            assert_eq!(w, expect);
+            saw_high |= w == 1.5;
+            saw_low |= w == 0.5;
+        }
+        assert!(saw_high && saw_low, "seeded sample must span the gate");
     }
 }
 

@@ -244,6 +244,14 @@ struct Args {
     #[arg(long)]
     values_scenario: bool,
 
+    /// bastion (FOCUS-0-DERIVE, row 43.1): generation-time value rolls
+    /// produce a genuinely varied roster; per-colonist Need weights
+    /// derive EXACTLY from values (Pray = 1 + Piety/50) and the
+    /// boolean-trait 3-level (Socialize); unmapped needs stay baseline;
+    /// the roll survives a demote/promote round-trip.
+    #[arg(long)]
+    derive_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -374,6 +382,8 @@ fn main() -> ExitCode {
         b73_scenario(&args)
     } else if args.values_scenario {
         values_scenario(&args)
+    } else if args.derive_scenario {
+        derive_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -4203,8 +4213,12 @@ fn values_scenario(args: &Args) -> ExitCode {
 
     // Values: A holds Kin (+50), B holds Glory (+50). CaveIn's affinity
     // row (Kin +0.6, Glory −0.4) makes A care 1.6× and B 0.6× about the
-    // same fear.
-    let set_ok = server.bastion_set_values(&a, "Kin", 50)
+    // same fear. CLEAR first — FOCUS-0-DERIVE rolls real values at
+    // generation, and this fixture's exact care math needs exactly one
+    // weight per colonist.
+    let set_ok = server.bastion_clear_values(&a)
+        && server.bastion_clear_values(&b)
+        && server.bastion_set_values(&a, "Kin", 50)
         && server.bastion_set_values(&b, "Glory", 50);
     let values_roundtrip = set_ok
         && server.bastion_colonist_values(&a)
@@ -4255,6 +4269,245 @@ fn values_scenario(args: &Args) -> ExitCode {
         && names.len() == 2;
     println!("{}", result);
     println!("VALUES SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (FOCUS-0-DERIVE, row 43.1): the correlation over REAL
+/// generated variance — a 12-colonist roster rolled by
+/// `BastionColonist::generate` (no hook seeding): every colonist's
+/// derived Pray weight equals 1 + Piety/50 EXACTLY (the strongest form
+/// — exactness subsumes correlation), the max-Piety colonist strictly
+/// out-derives the min-Piety one (the directional statistical check
+/// over spread the roster must exhibit), Socialize matches the
+/// independent boolean-trait probe at 3 levels for every colonist,
+/// unmapped Drink stays baseline for every colonist regardless of loud
+/// values, and one colonist's rolled map survives a demote/promote
+/// round-trip byte-for-byte (the record-mirror persistence). Outcome
+/// JSON bools only; distributions on the telemetry line.
+fn derive_scenario(args: &Args) -> ExitCode {
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-derive-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-derive".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-derive-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        12,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+
+    // Per-colonist reads: Piety weight, derived Pray weight, Socialize
+    // weight + the independent trait probes, unmapped Drink.
+    let mut rolled_full = true;
+    let mut pray_exact = true;
+    let mut social_consistent = true;
+    let mut drink_baseline = true;
+    let mut pieties: Vec<(String, i8)> = Vec::new();
+    let mut hi_traits = 0usize;
+    let mut lo_traits = 0usize;
+    for n in &names {
+        let vals = server.bastion_colonist_values(n);
+        rolled_full &= vals.len() == 8;
+        let piety = vals
+            .iter()
+            .find(|(v, _)| v == "Piety")
+            .map(|(_, w)| *w)
+            .unwrap_or(0);
+        pieties.push((n.clone(), piety));
+        let pray = server.bastion_derived_need_weight(n, "Pray").unwrap_or(-1.0);
+        pray_exact &=
+            (pray - (1.0 + f32::from(piety) / 50.0)).abs() < 1e-5;
+        let soc = server
+            .bastion_derived_need_weight(n, "Socialize")
+            .unwrap_or(-1.0);
+        let extro = server.bastion_colonist_trait(n, "Extroverted") == Some(true)
+            || server.bastion_colonist_trait(n, "Sociable") == Some(true);
+        let intro = server.bastion_colonist_trait(n, "Introverted") == Some(true);
+        let expect = if extro {
+            1.5
+        } else if intro {
+            0.5
+        } else {
+            1.0
+        };
+        social_consistent &= soc == expect;
+        hi_traits += usize::from(extro);
+        lo_traits += usize::from(intro);
+        let drink =
+            server.bastion_derived_need_weight(n, "Drink").unwrap_or(-1.0);
+        drink_baseline &= drink == 1.0;
+    }
+    // The roster must exhibit real spread and the directional check must
+    // hold over it: the max-Piety colonist strictly out-derives the min.
+    pieties.sort_by_key(|(_, p)| *p);
+    let spread = pieties
+        .first()
+        .zip(pieties.last())
+        .is_some_and(|((_, lo), (_, hi))| hi > lo);
+    let ordered = pieties.first().zip(pieties.last()).is_some_and(
+        |((lo_n, _), (hi_n, _))| {
+            let lo_w = server
+                .bastion_derived_need_weight(lo_n, "Pray")
+                .unwrap_or(2.0);
+            let hi_w = server
+                .bastion_derived_need_weight(hi_n, "Pray")
+                .unwrap_or(-1.0);
+            hi_w > lo_w
+        },
+    );
+
+    // ROUND-TRIP: the max-Piety colonist's whole rolled map survives
+    // demote -> promote (the colonist_record whole-struct mirror). POLL
+    // for the re-promoted entity (the BED/NEEDS-leg precedent — a fixed
+    // wait races the despawn/respawn window; the getter reads empty for
+    // a mid-gap name). First non-empty read = the restored map.
+    let rt_name = pieties.last().map(|(n, _)| n.clone()).unwrap_or_default();
+    // Tick BEFORE demoting: force_demote matches the RTSIM RECORD's
+    // name, and the record only captures the rename on a sync tick —
+    // zero ticks since bastion_rename_colonists_unique = a silent
+    // lookup miss (this scenario's own find; the BED/NEEDS legs tick
+    // whole phases between rename and demote so never saw it).
+    tick(&mut server, 15);
+    let vals_before = server.bastion_colonist_values(&rt_name);
+    let demoted = server.bastion_force_demote(&rt_name);
+    let mut roundtrip = false;
+    for _ in 0..40 {
+        tick(&mut server, 15);
+        let vals_after = server.bastion_colonist_values(&rt_name);
+        if !vals_after.is_empty() {
+            roundtrip = demoted
+                && !vals_before.is_empty()
+                && vals_before == vals_after;
+            break;
+        }
+    }
+
+    let result = serde_json::json!({
+        "derive_colonists": names.len(),
+        "derive_rolled_full": rolled_full,
+        "derive_spread": spread,
+        "derive_pray_exact": pray_exact,
+        "derive_ordered": ordered,
+        "derive_social_consistent": social_consistent,
+        "derive_drink_baseline": drink_baseline,
+        "derive_demoted": demoted,
+        "derive_roundtrip": roundtrip,
+    });
+    println!(
+        "DERIVE TELEMETRY: pieties={:?} hi_traits={hi_traits} lo_traits={lo_traits}",
+        pieties.iter().map(|(_, p)| *p).collect::<Vec<_>>()
+    );
+    let pass = names.len() == 12
+        && rolled_full
+        && spread
+        && pray_exact
+        && ordered
+        && social_consistent
+        && drink_baseline
+        && roundtrip;
+    println!("{}", result);
+    println!("DERIVE SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);

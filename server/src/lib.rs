@@ -932,6 +932,101 @@ impl Server {
         false
     }
 
+    /// bastion (FOCUS-0-DERIVE, harness hook): CLEAR a named colonist's
+    /// value weights. Since 43.1 rolls REAL values at generation, exact
+    /// care-math fixtures (the VALUES leg) clear first, then set the one
+    /// weight under test — composable with bastion_set_values.
+    pub fn bastion_clear_values(&mut self, name: &str) -> bool {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let mut colonists = ecs.write_storage::<comp::Colonist>();
+        let found = (&entities, &colonists)
+            .join()
+            .find(|(_, c)| c.0.name == name)
+            .map(|(e, _)| e);
+        if let Some(e) = found
+            && let Some(mut c) = colonists.get_mut(e)
+        {
+            c.0.values.clear();
+            return true;
+        }
+        false
+    }
+
+    /// bastion (FOCUS-0-DERIVE, harness hook): the LIVE derived need
+    /// weight for a named colonist — reads their rolled values (ECS) +
+    /// vanilla personality (rtsim, boolean-trait API) through the same
+    /// lookup shape the mood recompute uses, then the pure derivation.
+    pub fn bastion_derived_need_weight(
+        &self,
+        name: &str,
+        need: &str,
+    ) -> Option<f32> {
+        use common::bastion::Need;
+        use specs::Join;
+        let need = match need {
+            "Pray" => Need::Pray,
+            "Socialize" => Need::Socialize,
+            "Drink" => Need::Drink,
+            "Craft" => Need::Craft,
+            "Family" => Need::Family,
+            "SeeAnimals" => Need::SeeAnimals,
+            "AdmireArt" => Need::AdmireArt,
+            "Learn" => Need::Learn,
+            "Acquire" => Need::Acquire,
+            "Fight" => Need::Fight,
+            _ => return None,
+        };
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let rtsim_entities = ecs.read_storage::<common::rtsim::RtSimEntity>();
+        let rtsim = ecs.read_resource::<rtsim::RtSim>();
+        let data = rtsim.state().data();
+        (&colonists, &rtsim_entities)
+            .join()
+            .find(|(c, _)| c.0.name == name)
+            .and_then(|(c, re)| {
+                data.npcs.get(*re).map(|npc| {
+                    comp::bastion::derive_need_weight(
+                        need,
+                        &npc.personality,
+                        &c.0.values,
+                    )
+                })
+            })
+    }
+
+    /// bastion (FOCUS-0-DERIVE, harness hook): a named colonist's
+    /// boolean personality trait (the vanilla public API) — the roster
+    /// correlation groups by trait independently of the weight probe.
+    pub fn bastion_colonist_trait(
+        &self,
+        name: &str,
+        trait_name: &str,
+    ) -> Option<bool> {
+        use common::rtsim::PersonalityTrait;
+        use specs::Join;
+        let t = match trait_name {
+            "Extroverted" => PersonalityTrait::Extroverted,
+            "Introverted" => PersonalityTrait::Introverted,
+            "Sociable" => PersonalityTrait::Sociable,
+            "Neurotic" => PersonalityTrait::Neurotic,
+            _ => return None,
+        };
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let rtsim_entities = ecs.read_storage::<common::rtsim::RtSimEntity>();
+        let rtsim = ecs.read_resource::<rtsim::RtSim>();
+        let data = rtsim.state().data();
+        (&colonists, &rtsim_entities)
+            .join()
+            .find(|(c, _)| c.0.name == name)
+            .and_then(|(_, re)| {
+                data.npcs.get(*re).map(|npc| npc.personality.is(t))
+            })
+    }
+
     /// bastion (B-AG3 slice 1, harness hook): a named colonist's value
     /// weights, name-sorted (probe/round-trip verification).
     pub fn bastion_colonist_values(&self, name: &str) -> Vec<(String, i8)> {

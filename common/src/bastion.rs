@@ -1749,9 +1749,29 @@ impl BastionColonist {
             // FOCUS-0: fresh settlers start with no tracked personal-need
             // state (FOCUS-1 populates it).
             personal_needs: Default::default(),
-            // B-AG3: no value weights until a later slice ROLLS them
-            // (empty = care factor 1.0 — mood behavior unchanged).
-            values: Default::default(),
+            // FOCUS-0-DERIVE (43.1): the REAL generation-time value roll
+            // (architect's ruling — a feature, not test-only): every
+            // value gets a ±50 weight from the SAME rng thread as
+            // skills/name/backstory (the 0..=5 precedent), so rosters
+            // carry genuine variance at spawn, deterministic under a
+            // seeded caller. Old saves keep their serde-default (empty =
+            // baseline) — the roll only shapes NEW colonists.
+            values: {
+                let mut v = std::collections::HashMap::new();
+                for value in [
+                    Value::Glory,
+                    Value::Tradition,
+                    Value::Kin,
+                    Value::Wealth,
+                    Value::Piety,
+                    Value::Nature,
+                    Value::Craft,
+                    Value::Freedom,
+                ] {
+                    v.insert(value, rng.random_range(-50i8..=50));
+                }
+                v
+            },
             // B7-0: never-captured until the first loaded tick mirrors
             // the live meters (LOD-0 semantics).
             needs: None,
