@@ -268,6 +268,13 @@ struct Args {
     #[arg(long)]
     farm_scenario: bool,
 
+    /// bastion (RUN-0, row 47): the emergency-run gait — walk stays the
+    /// default; the run flag yields a measurably higher travel rate and
+    /// drains Energy; the governor force-reverts at the floor; energy
+    /// regenerates after. Colonist-only by construction.
+    #[arg(long)]
+    run_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -404,6 +411,8 @@ fn main() -> ExitCode {
         path_scenario(&args)
     } else if args.farm_scenario {
         farm_scenario(&args)
+    } else if args.run_scenario {
+        run_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -5006,6 +5015,239 @@ fn farm_scenario(args: &Args) -> ExitCode {
         && no_embeds;
     println!("{}", result);
     println!("FARM SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (RUN-0, row 47): walk vs run measured as DISPLACEMENT RATE on
+/// the flat plateau (same start, same westward trip, fixed windows) —
+/// the run gait must beat walk by the gait ratio's margin; Energy drains
+/// while flagged, the governor FORCE-reverts at the floor (the test flag
+/// stays up — only the governor can drop it), and vanilla's stats system
+/// regenerates energy back afterward. Colonist-only by construction (the
+/// flag lives on BastionColonist).
+fn run_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region};
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-run-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-run".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-run-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        1,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let a = names.first().cloned().unwrap_or_default();
+    let fires_before = server.bastion_center_net_fires();
+    let east = Vec3::new(cx as f32 + 13.5, cy as f32 + 0.5, gz as f32 + 1.0);
+
+    // (A) WALK: the default gait's displacement rate over a fixed
+    // mid-travel window.
+    server.bastion_teleport_colonist(&a, east);
+    server.bastion_place_designation(
+        Region {
+            min: Vec3::new(cx - 13, cy, gz),
+            max: Vec3::new(cx - 13, cy, gz),
+        },
+        DesignationKind::Mine,
+    );
+    let pos_of = |server: &Server| {
+        server
+            .bastion_colonist_states()
+            .into_iter()
+            .find(|(n, _, _)| *n == a)
+            .map(|(_, p, _)| p)
+    };
+    let start = pos_of(&server).unwrap_or(east);
+    for _ in 0..60 {
+        tick(&mut server, 5);
+        if pos_of(&server).is_some_and(|p| p.xy().distance(start.xy()) > 2.0) {
+            break;
+        }
+    }
+    let p1 = pos_of(&server).unwrap_or(start);
+    tick(&mut server, 45);
+    let p2 = pos_of(&server).unwrap_or(p1);
+    let walk_rate = p1.xy().distance(p2.xy()) / 45.0;
+    // Let the walk trip finish (job completes; colonist idles).
+    tick(&mut server, 600);
+
+    // (B) RUN: flag up, the same trip shape one row over.
+    let (e_full, _, _) =
+        server.bastion_colonist_energy(&a).unwrap_or((0.0, 0.0, false));
+    let set_ok = server.bastion_set_running(&a, true);
+    server.bastion_teleport_colonist(&a, east);
+    server.bastion_place_designation(
+        Region {
+            min: Vec3::new(cx - 13, cy + 1, gz),
+            max: Vec3::new(cx - 13, cy + 1, gz),
+        },
+        DesignationKind::Mine,
+    );
+    let start2 = pos_of(&server).unwrap_or(east);
+    for _ in 0..60 {
+        tick(&mut server, 5);
+        if pos_of(&server).is_some_and(|p| p.xy().distance(start2.xy()) > 2.0)
+        {
+            break;
+        }
+    }
+    let q1 = pos_of(&server).unwrap_or(start2);
+    tick(&mut server, 45);
+    let q2 = pos_of(&server).unwrap_or(q1);
+    let run_rate = q1.xy().distance(q2.xy()) / 45.0;
+    let ran_faster = run_rate > walk_rate * 1.15 && walk_rate > 0.01;
+
+    // (C) DRAIN while flagged + the governor's forced revert at the
+    // floor (the hook never turns it off — only the governor can).
+    let (e_mid, _, running_mid) =
+        server.bastion_colonist_energy(&a).unwrap_or((0.0, 0.0, false));
+    let drained = e_mid < e_full - 5.0;
+    let mut reverted = false;
+    let mut e_floor = 0.0;
+    for _ in 0..900 {
+        tick(&mut server, 10);
+        if let Some((e, _, running)) = server.bastion_colonist_energy(&a) {
+            if !running {
+                reverted = true;
+                e_floor = e;
+                break;
+            }
+        }
+    }
+    // (D) REGEN: vanilla stats regens it back while walking/idle.
+    tick(&mut server, 300);
+    let (e_after, _, _) =
+        server.bastion_colonist_energy(&a).unwrap_or((0.0, 0.0, false));
+    let regened = e_after > e_floor + 2.0;
+    let no_embeds = server.bastion_center_net_fires() == fires_before;
+
+    let result = serde_json::json!({
+        "run_colonists": names.len(),
+        "run_walk_measured": walk_rate > 0.01,
+        "run_ran_faster": ran_faster,
+        "run_set_ok": set_ok,
+        "run_drained": drained,
+        "run_running_mid": running_mid,
+        "run_reverted": reverted,
+        "run_regened": regened,
+        "run_no_embeds": no_embeds,
+    });
+    println!(
+        "RUN TELEMETRY: walk={walk_rate:.3} run={run_rate:.3} e_full={e_full:.1} e_mid={e_mid:.1} e_floor={e_floor:.1} e_after={e_after:.1}"
+    );
+    let pass = names.len() == 1
+        && set_ok
+        && walk_rate > 0.01
+        && ran_faster
+        && drained
+        && running_mid
+        && reverted
+        && regened
+        && no_embeds;
+    println!("{}", result);
+    println!("RUN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);

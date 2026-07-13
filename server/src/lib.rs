@@ -1052,6 +1052,43 @@ impl Server {
         out
     }
 
+    /// bastion (RUN-0, harness hook): flip a colonist's emergency-run
+    /// flag — the TEST trigger (RUN-1 owns real triggers). The governor
+    /// still force-reverts it at the energy floor regardless.
+    pub fn bastion_set_running(&mut self, name: &str, running: bool) -> bool {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let mut colonists = ecs.write_storage::<comp::Colonist>();
+        let found = (&entities, &colonists)
+            .join()
+            .find(|(_, c)| c.0.name == name)
+            .map(|(e, _)| e);
+        if let Some(e) = found
+            && let Some(mut c) = colonists.get_mut(e)
+        {
+            c.0.running = running;
+            return true;
+        }
+        false
+    }
+
+    /// bastion (RUN-0, harness hook): a colonist's (energy current, max,
+    /// running) — the governor's probes.
+    pub fn bastion_colonist_energy(
+        &self,
+        name: &str,
+    ) -> Option<(f32, f32, bool)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let energies = ecs.read_storage::<comp::Energy>();
+        (&colonists, &energies)
+            .join()
+            .find(|(c, _)| c.0.name == name)
+            .map(|(c, e)| (e.current(), e.maximum(), c.0.running))
+    }
+
     /// bastion (FARM/PROD-2, harness hook): the COLONY-TOTAL count of an
     /// item def — loose ground items PLUS every colonist's bag (the
     /// seed-conservation invariant counts both: a fetched stack lives in

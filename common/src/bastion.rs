@@ -1255,6 +1255,15 @@ pub struct BastionColonist {
     /// restore semantics as `needs`.
     #[serde(default)]
     pub mood: Option<f32>,
+    /// bastion (RUN-0, row 47): the emergency-run gait flag — walk
+    /// (TRAVEL_SPEED) is every colonist's default; true feeds RUN_SPEED
+    /// into the SAME Goto call sites (no parallel movement path). Set by
+    /// urgency triggers (RUN-1's job; a test hook this block), CLEARED
+    /// by the energy governor when Energy crosses the low threshold —
+    /// resource-governed, not timer-governed (the design's framing).
+    /// serde-default: old saves walk.
+    #[serde(default)]
+    pub running: bool,
     /// bastion (B7-1): the bed this colonist OWNS (its [`BedSlot`] key) —
     /// the persistent ownership truth (the board's slot table is
     /// session-state; its `owner` field is the runtime lookup). Assigned
@@ -1816,6 +1825,9 @@ impl BastionColonist {
             mood: None,
             // B7-1: no bed until one is assigned.
             owned_bed: None,
+            // RUN-0: everyone walks until an urgency trigger says
+            // otherwise.
+            running: false,
         }
     }
 }

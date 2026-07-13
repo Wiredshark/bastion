@@ -491,6 +491,26 @@ pub const HAUL_JOBS_PER_COLONIST: usize = 2;
 const STUCK_EPSILON: f32 = 0.5;
 /// Walk speed factor for job travel.
 const TRAVEL_SPEED: f32 = 0.8;
+/// bastion (RUN-0, row 47): the emergency-run gait — the full vanilla
+/// speed_factor (1.0 > the 0.8 walk; within the range every vanilla
+/// mover already uses, so zero physics/anim risk — the velocity-driven
+/// figure anim reads it as running for free).
+pub const RUN_SPEED: f32 = 1.0;
+/// bastion (RUN-0): energy drained per game-second while the run flag is
+/// up (flag-based, not distance-based — a deliberate v1 simplification;
+/// vanilla's stats system regenerates it back with accelerating regen
+/// whenever the drain stops). MUST DOMINATE the regen: vanilla's
+/// accelerating regen caps at 10/s (energy.rs::regen's min(10.0)) and
+/// ticks UNCONDITIONALLY — a drain below the cap loses the race and the
+/// governor never fires (the scenario's own find: 6/s drained early,
+/// then the accelerated regen outpaced it back to full mid-run). 15/s =
+/// a net −5/s against a maxed regen; a full colonist gets a ~7–18s
+/// burst — the design's "reserved sprint".
+pub const RUN_DRAIN_PER_SEC: f32 = 15.0;
+/// bastion (RUN-0): the governor's floor — Energy below this FORCES the
+/// run flag off (the colonist physically can't sustain it; re-running
+/// needs a fresh trigger once energy recovers).
+pub const RUN_MIN_ENERGY: f32 = 10.0;
 
 /// Chunks the harness (and future scenario tooling) forces to stay loaded —
 /// the server unload sweep skips them. Empty in normal play.
@@ -1779,6 +1799,8 @@ impl<'a> System<'a> for Sys {
             // B7-0: the survival meters (decayed per tick; the mood
             // recompute reads them each arbitration cadence).
             WriteStorage<'a, comp::bastion::Needs>,
+            // RUN-0: the stamina the run gait drains (vanilla regens it).
+            WriteStorage<'a, comp::Energy>,
         ),
     );
 
@@ -1819,6 +1841,7 @@ impl<'a> System<'a> for Sys {
                 inventory_manip_events,
                 mut activity_zones,
                 mut needs_storage,
+                mut energies,
             ),
         ): Self::SystemData,
     ) {
@@ -1837,6 +1860,24 @@ impl<'a> System<'a> for Sys {
             let mood_cfg = common::bastion::MoodConfig::current();
             for (_, needs) in (&colonists, &mut needs_storage).join() {
                 comp::bastion::decay_needs(needs, dt.0, &mood_cfg);
+            }
+            // ── RUN-0 (row 47): the energy governor — the run gait
+            // DRAINS Energy per tick while flagged; crossing the floor
+            // FORCES the drop back to walk (resource-governed; vanilla's
+            // stats system owns the regen back). Colonist-only by
+            // construction (the flag lives on BastionColonist).
+            {
+                let mut gov_iter =
+                    (&mut colonists, &mut energies).lend_join();
+                while let Some((mut colonist, mut energy)) = gov_iter.next() {
+                    if colonist.0.running {
+                        energy.change_by(-RUN_DRAIN_PER_SEC * dt.0);
+                        if energy.current() < RUN_MIN_ENERGY {
+                            colonist.0.running = false;
+                            info!("bastion: WINDED — run dropped to walk (energy floor)");
+                        }
+                    }
+                }
             }
             if tick.0 % ARBITRATION_INTERVAL as u64 == 11 {
                 let table = crate::bastion_mood::ThoughtTable::current();
@@ -2337,7 +2378,14 @@ impl<'a> System<'a> for Sys {
                 }
                 if let Some(agent) = agent.as_deref_mut() {
                     agent.rtsim_controller.activity =
-                        Some(common::rtsim::NpcActivity::Goto(goto.target, TRAVEL_SPEED));
+                        Some(common::rtsim::NpcActivity::Goto(
+                            goto.target,
+                            // RUN-0 note: the harness test-goto mover is
+                            // NOT colonist job travel — it keeps the
+                            // fixed walk factor (fixtures measure at a
+                            // known gait).
+                            TRAVEL_SPEED,
+                        ));
                 }
                 let dist = if tightdig_enabled() {
                     tightdig_measure(
@@ -3386,7 +3434,10 @@ impl<'a> System<'a> for Sys {
                         // on their own in places).
                         if let Some(agent) = agent {
                             agent.rtsim_controller.activity =
-                                Some(common::rtsim::NpcActivity::Goto(steer, TRAVEL_SPEED));
+                                Some(common::rtsim::NpcActivity::Goto(
+                                    steer,
+                                    if colonist.0.running { RUN_SPEED } else { TRAVEL_SPEED },
+                                ));
                         }
                         // Watchdog: distance to the CURRENT steer target
                         // must keep improving; pacing near an unreachable
