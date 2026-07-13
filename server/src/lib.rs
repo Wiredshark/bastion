@@ -1517,6 +1517,48 @@ impl Server {
         board.place_designation(&terrain, region.normalized(), kind)
     }
 
+    /// bastion (AUTON-1, harness hook): queue a BUILD PLAN — intent only,
+    /// no jobs (the generator pass owns job creation). Returns the plan's
+    /// frozen cell count.
+    pub fn bastion_queue_build_plan(
+        &mut self,
+        region: common::bastion::Region,
+    ) -> usize {
+        let ecs = self.state.ecs();
+        let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+        let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
+        board.queue_build_plan(&terrain, region.normalized())
+    }
+
+    /// bastion (AUTON-1, harness hook): generator telemetry —
+    /// `(gen_mine_jobs, gen_build_jobs, plans_completed, open_plans,
+    /// pending_mine, pending_build)`. The scenario's bound + quiescence
+    /// asserts read these.
+    pub fn bastion_selfgen_stats(&self) -> (u64, u64, u64, usize, usize, usize) {
+        let board = self
+            .state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>();
+        let pending_mine = board
+            .jobs
+            .values()
+            .filter(|j| j.kind.is(common::bastion::DesignationKind::Mine))
+            .count();
+        let pending_build = board
+            .jobs
+            .values()
+            .filter(|j| j.kind.is(common::bastion::DesignationKind::Build))
+            .count();
+        (
+            board.gen_mine_jobs,
+            board.gen_build_jobs,
+            board.plans_completed,
+            board.plans.len(),
+            pending_mine,
+            pending_build,
+        )
+    }
+
     /// bastion (B5.6b-2, harness hook): place a designation via the
     /// surface-relative path — the same per-column resolution the in-game
     /// paint message uses. Returns (created job ids, resolved echo bounds)

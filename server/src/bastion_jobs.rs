@@ -487,6 +487,35 @@ pub const EMBED_PERSIST_TICKS: u32 = 30;
 /// bastion (B6 HAUL): pending-haul cap per loaded colonist (throttle — the
 /// generator never floods the board; more spawn as deliveries complete).
 pub const HAUL_JOBS_PER_COLONIST: usize = 2;
+/// bastion (AUTON-1, row 49): the self-designation generator set — the
+/// colony-state→jobs emitters that feed the board without player paint.
+/// Server-side only (no wire surface). Haul is the grandfathered B6
+/// auto-generator, now registered under the same policy gate.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum GeneratorKind {
+    Mine,
+    Build,
+    Haul,
+}
+/// bastion (AUTON-1): THE DF-POLICY HOOK POINT — when the policy system
+/// (row 86, POL-1..4) lands, the god's standing orders enable/disable/tune
+/// each generator HERE, and nowhere else. v1 is unconditionally enabled:
+/// there is no policy system yet, and zero-policy must remain a complete
+/// healthy colony (D10) regardless.
+pub fn generator_enabled(_kind: GeneratorKind) -> bool { true }
+/// bastion (AUTON-1): the mine generator's scan half-width around the
+/// colony anchor (blocks, xy).
+pub const MINE_GEN_RADIUS: i32 = 12;
+/// bastion (AUTON-1): scan volume top, relative to the anchor's z.
+pub const MINE_GEN_Z_TOP: i32 = 2;
+/// bastion (AUTON-1): scan volume height — one z-slab per firing (the
+/// PATH-0 budget discipline: bounded work per pass, cursor wraps).
+pub const MINE_GEN_Z_SLABS: i32 = 9;
+/// bastion (AUTON-1): pending-mine cap per loaded colonist (the
+/// HAUL_JOBS_PER_COLONIST throttle shape).
+pub const MINE_GEN_JOBS_PER_COLONIST: usize = 2;
+/// bastion (AUTON-1): pending-build cap per loaded colonist.
+pub const BUILD_GEN_JOBS_PER_COLONIST: usize = 2;
 /// Progress threshold per watchdog sample (blocks).
 const STUCK_EPSILON: f32 = 0.5;
 /// Walk speed factor for job travel.
@@ -1248,6 +1277,27 @@ pub struct JobBoard {
     /// world == blocks mined + this (`stone_sum == mined + collapsed`), an
     /// invariant that holds under ANY rng mode.
     pub cavein_drop_cells: u64,
+    /// bastion (AUTON-1, row 49): QUEUED BUILD PLANS — intent only, frozen
+    /// cell lists (the farm-plot registration shape: the paint records, a
+    /// generator owns job creation). The build generator emits jobs for
+    /// unfilled cells; a plan whose every cell is filled retires. Frozen at
+    /// queue time on purpose — re-resolving surfaces after partial builds
+    /// would shift the target under the plan.
+    pub plans: Vec<(common::bastion::ZoneId, Vec<Vec3<i32>>)>,
+    /// bastion (AUTON-1): the mine generator's z-slab cursor — one slab of
+    /// the scan volume per firing; session-state (a reboot rescans, which
+    /// is idempotent by the dedupe).
+    selfgen_cursor: i32,
+    /// bastion (AUTON-1): columns of RETIRED plans — permanently off-limits
+    /// to the mine generator. A finished platform is Rock-class, exposed,
+    /// and near home: without this, the next plan's demand would send the
+    /// diggers straight through the last plan's building.
+    built_xy: std::collections::HashSet<Vec2<i32>>,
+    /// bastion (AUTON-1): generator telemetry (REPORTED — the scenario's
+    /// quiescence assert reads the deltas; never gates live play).
+    pub gen_mine_jobs: u64,
+    pub gen_build_jobs: u64,
+    pub plans_completed: u64,
 }
 
 impl JobBoard {
@@ -1507,6 +1557,46 @@ impl JobBoard {
         created
     }
 
+    /// bastion (AUTON-1, row 49): queue a BUILD PLAN — intent only, NO jobs
+    /// (the farm-paint precedent: registration here, job creation owned by
+    /// the generator pass). Cells are the region's currently-empty positions
+    /// (`job_wanted(Build)`), FROZEN at queue time. The region joins the
+    /// claim mask — queueing IS the player's paint-equivalent intent, so
+    /// access carving may serve the plan like any painted designation.
+    /// Returns the plan's cell count (0 = nothing queued).
+    pub fn queue_build_plan(
+        &mut self,
+        terrain: &TerrainGrid,
+        region: Region,
+    ) -> usize {
+        let mut cells = Vec::new();
+        // Bottom-up cell order — the generator emits in this order, so
+        // floors fill before the courses above them.
+        for z in region.min.z..=region.max.z {
+            for y in region.min.y..=region.max.y {
+                for x in region.min.x..=region.max.x {
+                    let pos = Vec3::new(x, y, z);
+                    let Ok(block) = terrain.get(pos) else {
+                        continue;
+                    };
+                    if job_wanted(DesignationKind::Build, block) {
+                        cells.push(pos);
+                    }
+                }
+            }
+        }
+        if cells.is_empty() {
+            return 0;
+        }
+        let n = cells.len();
+        let id = self.next_zone;
+        self.next_zone += 1;
+        self.designated.push(region);
+        info!(plan = id, cells = n, "bastion: build plan queued (AUTON-1)");
+        self.plans.push((id, cells));
+        n
+    }
+
     /// Cancel all jobs inside a region. Returns the uids whose claims were
     /// released (their `ActiveJob` comps are cleared by the system within
     /// one cycle because the job id no longer exists).
@@ -1519,6 +1609,12 @@ impl JobBoard {
         self.stockpiles.retain(|(_, r)| !r.intersects(&region));
         // ZONE-0: activity zones erase with the same brush.
         self.activity_zones.retain(|(_, _, r)| !r.intersects(&region));
+        // AUTON-1: a plan any of whose cells the eraser touches dies whole —
+        // otherwise the generator re-emits the jobs the player just erased
+        // (the eraser-vs-generator fight; whole-plan removal because a
+        // half-erased blueprint is not a smaller blueprint, it's a mistake).
+        self.plans
+            .retain(|(_, cells)| !cells.iter().any(|c| region.contains_point(*c)));
         if self.stockpiles.len() != before {
             let live: HashSet<common::bastion::ZoneId> =
                 self.stockpiles.iter().map(|(z, _)| *z).collect();
@@ -2479,13 +2575,278 @@ impl<'a> System<'a> for Sys {
             }
         }
 
+        // ── AUTON-1 (row 49): SELF-DESIGNATION generators (slot 2 — own
+        // cadence, the haul-gen discipline). The colony makes its own
+        // work: BUILD jobs from queued plans (unfilled cells), MINE jobs
+        // from exposed rock near home — DEMAND-DRIVEN (deficit = unfilled
+        // plan cells − stone supply − pending mine yield; BUILD_MATERIAL
+        // == MINE_DROP, so the plan's material bill IS the mine quota).
+        // Both idempotent via the board's one-job-per-block dedupe; both
+        // capped per colonist; demand-zero = quiescence — the runaway
+        // bound is structural, not tuned. Gated on a live plan: v1's only
+        // demand source (AUTON-2 adds standing stock floors).
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 2 && !board.plans.is_empty() {
+            let mut occupied: std::collections::HashSet<Vec3<i32>> =
+                board.jobs.values().map(|j| j.pos).collect();
+            // One terrain read per plan cell per firing, reused by all
+            // three consumers (build emission, plan retirement, mine
+            // demand) — the farm pass's bounded-scan shape.
+            let mut demand = 0usize;
+            let mut build_new: Vec<Vec3<i32>> = Vec::new();
+            let mut retired: Vec<common::bastion::ZoneId> = Vec::new();
+            let pending_build = board
+                .jobs
+                .values()
+                .filter(|j| j.kind.is(DesignationKind::Build))
+                .count();
+            let mut build_budget = (queue_snapshot.len()
+                * BUILD_GEN_JOBS_PER_COLONIST)
+                .saturating_sub(pending_build);
+            for (zid, cells) in board.plans.iter() {
+                let mut unfilled = 0usize;
+                for pos in cells {
+                    let filled = terrain
+                        .get(*pos)
+                        .ok()
+                        .is_some_and(|b| b.is_filled());
+                    if filled {
+                        continue;
+                    }
+                    unfilled += 1;
+                    if generator_enabled(GeneratorKind::Build)
+                        && build_budget > 0
+                        && !occupied.contains(pos)
+                    {
+                        build_new.push(*pos);
+                        occupied.insert(*pos);
+                        build_budget -= 1;
+                    }
+                }
+                if unfilled == 0 {
+                    retired.push(*zid);
+                }
+                demand += unfilled;
+            }
+            for pos in build_new {
+                let id = board.next_id;
+                board.next_id += 1;
+                board.jobs.insert(id, Job {
+                    kind: common::bastion::JobKind::Designated(
+                        DesignationKind::Build,
+                    ),
+                    work: DesignationKind::Build.work_type(),
+                    pos,
+                    skill_floor: 0,
+                    claimed_by: None,
+                    unreachable: false,
+                    progress: 0.0,
+                    required_item: Some(BUILD_MATERIAL_ITEM),
+                    needs_materials: false,
+                    carve_attempted: false,
+                    is_access: false,
+                    stuck_strikes: 0,
+                    depth: 0,
+                    reservation: None,
+                });
+                board.gen_build_jobs += 1;
+            }
+            if !retired.is_empty() {
+                // The finished footprint joins the permanent no-dig set
+                // BEFORE the plan record drops (see `built_xy`).
+                let built: Vec<Vec2<i32>> = board
+                    .plans
+                    .iter()
+                    .filter(|(zid, _)| retired.contains(zid))
+                    .flat_map(|(_, cells)| cells.iter().map(|c| c.xy()))
+                    .collect();
+                board.built_xy.extend(built);
+                board
+                    .plans
+                    .retain(|(zid, _)| !retired.contains(zid));
+                board.plans_completed += retired.len() as u64;
+                info!(plans = retired.len(), "bastion: build plan(s) complete (AUTON-1)");
+            }
+            // MINE: dig only what the plan still owes. Supply counts every
+            // stone that will eventually serve a build — loose/piled
+            // pickups (stack AMOUNTS, not entities) and colonist bags
+            // (fetched or hauled stock in transit) — so the generator
+            // never over-digs while deliveries are mid-flight.
+            if generator_enabled(GeneratorKind::Mine) && demand > 0 {
+                let mut supply = 0u64;
+                for pickup in (&pickup_items).join() {
+                    if pickup.item().item_definition_id().itemdef_id()
+                        == Some(MINE_DROP_ITEM)
+                    {
+                        supply += pickup.item().amount() as u64;
+                    }
+                }
+                for (_, inv) in (&colonists, &inventories).join() {
+                    supply += inv
+                        .slots()
+                        .flatten()
+                        .filter(|i| {
+                            i.item_definition_id().itemdef_id()
+                                == Some(MINE_DROP_ITEM)
+                        })
+                        .map(|i| i.amount() as u64)
+                        .sum::<u64>();
+                }
+                let pending_mine = board
+                    .jobs
+                    .values()
+                    .filter(|j| j.kind.is(DesignationKind::Mine))
+                    .count();
+                let deficit = demand
+                    .saturating_sub(supply as usize)
+                    .saturating_sub(pending_mine);
+                let cap = queue_snapshot.len() * MINE_GEN_JOBS_PER_COLONIST;
+                let quota = deficit.min(cap.saturating_sub(pending_mine));
+                // Anchor = the colony's placed-intent centroid (order-free
+                // mean — beds iterate a HashMap, but a sum commutes). No
+                // structures = no home = nowhere to dig near; skip.
+                let mut sum = Vec3::<i64>::zero();
+                let mut n = 0i64;
+                for (_, r) in
+                    board.stockpiles.iter().chain(board.farms.iter())
+                {
+                    let c = (r.min + r.max) / 2;
+                    sum += c.map(|e| e as i64);
+                    n += 1;
+                }
+                for pos in board.beds.keys() {
+                    sum += pos.map(|e| e as i64);
+                    n += 1;
+                }
+                if quota > 0 && n > 0 {
+                    let anchor = (sum / n).map(|e| e as i32);
+                    // Columns the colony's intent occupies are off-limits
+                    // (don't dig under the blueprint, the stockpile, the
+                    // plot, or a bed).
+                    let mut skip_xy: std::collections::HashSet<Vec2<i32>> =
+                        board.built_xy.clone();
+                    for (_, cells) in board.plans.iter() {
+                        for c in cells {
+                            skip_xy.insert(c.xy());
+                        }
+                    }
+                    for (_, r) in
+                        board.stockpiles.iter().chain(board.farms.iter())
+                    {
+                        for y in r.min.y..=r.max.y {
+                            for x in r.min.x..=r.max.x {
+                                skip_xy.insert(Vec2::new(x, y));
+                            }
+                        }
+                    }
+                    for pos in board.beds.keys() {
+                        skip_xy.insert(pos.xy());
+                    }
+                    // One z-slab per firing, top-down (surface digs come
+                    // first — reachable without access work); the cursor
+                    // wraps, so a full sweep re-tries as the world and the
+                    // demand evolve.
+                    let slab_z =
+                        anchor.z + MINE_GEN_Z_TOP - board.selfgen_cursor;
+                    board.selfgen_cursor =
+                        (board.selfgen_cursor + 1) % MINE_GEN_Z_SLABS;
+                    let mut emitted = 0usize;
+                    'scan: for y in (anchor.y - MINE_GEN_RADIUS)
+                        ..=(anchor.y + MINE_GEN_RADIUS)
+                    {
+                        for x in (anchor.x - MINE_GEN_RADIUS)
+                            ..=(anchor.x + MINE_GEN_RADIUS)
+                        {
+                            if emitted >= quota {
+                                break 'scan;
+                            }
+                            let pos = Vec3::new(x, y, slab_z);
+                            if skip_xy.contains(&pos.xy())
+                                || occupied.contains(&pos)
+                            {
+                                continue;
+                            }
+                            let Ok(block) = terrain.get(pos) else {
+                                continue;
+                            };
+                            // Rock-class only — the colony's mineral
+                            // economy (stone), not "any filled block"
+                            // (digging up grass for masonry is nonsense).
+                            if !matches!(
+                                block.kind(),
+                                BlockKind::Rock | BlockKind::WeakRock
+                            ) {
+                                continue;
+                            }
+                            // Exposed = a face a digger can reach (any
+                            // open 6-neighbour).
+                            let exposed = [
+                                Vec3::unit_x(),
+                                -Vec3::unit_x(),
+                                Vec3::unit_y(),
+                                -Vec3::unit_y(),
+                                Vec3::unit_z(),
+                                -Vec3::unit_z(),
+                            ]
+                            .iter()
+                            .any(|d| {
+                                terrain
+                                    .get(pos + *d)
+                                    .ok()
+                                    .is_some_and(|b| !b.is_filled())
+                            });
+                            if !exposed {
+                                continue;
+                            }
+                            let surface = resolve_column_surface(
+                                &terrain,
+                                x,
+                                y,
+                                slab_z,
+                                &common::bastion::ZExtent::default(),
+                            )
+                            .unwrap_or(slab_z);
+                            let depth =
+                                (surface - slab_z).clamp(0, 255) as u8;
+                            let id = board.next_id;
+                            board.next_id += 1;
+                            board.jobs.insert(id, Job {
+                                kind: common::bastion::JobKind::Designated(
+                                    DesignationKind::Mine,
+                                ),
+                                work: DesignationKind::Mine.work_type(),
+                                pos,
+                                skill_floor: 0,
+                                claimed_by: None,
+                                unreachable: false,
+                                progress: 0.0,
+                                required_item: None,
+                                needs_materials: false,
+                                carve_attempted: false,
+                                is_access: false,
+                                stuck_strikes: 0,
+                                depth,
+                                reservation: None,
+                            });
+                            occupied.insert(pos);
+                            board.gen_mine_jobs += 1;
+                            emitted += 1;
+                        }
+                    }
+                }
+            }
+        }
+
         // ── B6 HAUL: job generation (arbitration cadence, own offset) ────
         // Scan loose bastion-output drops (stone/log — the two defs the
         // colony produces; required_item is &'static so the def rides
         // there) not already inside a stockpile footprint, not reserved,
         // not already targeted. Reserve AT GENERATION (the double-spend
         // guard starts before any claim); throttled per colonist.
-        if tick.0 % ARBITRATION_INTERVAL as u64 == 7 && !board.stockpiles.is_empty()
+        // AUTON-1: registered under the generator policy gate (const-true
+        // today — the POL hook point).
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 7
+            && !board.stockpiles.is_empty()
+            && generator_enabled(GeneratorKind::Haul)
         {
             let cap = queue_snapshot.len() * HAUL_JOBS_PER_COLONIST;
             let mut pending = board

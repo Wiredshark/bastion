@@ -284,6 +284,16 @@ struct Args {
     #[arg(long)]
     auton_scenario: bool,
 
+    /// bastion (AUTON-1, row 49): the self-designation generators — an
+    /// UN-DESIGNATED colony (zero painted work) generates and works its
+    /// own job stream: a queued build plan creates material demand, the
+    /// mine generator digs exactly that much exposed rock near home, the
+    /// existing haul-gen moves the stone, fetch feeds the builders, the
+    /// plan completes, and generation QUIESCES (demand-zero = the
+    /// structural runaway bound).
+    #[arg(long)]
+    selfgen_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -424,6 +434,8 @@ fn main() -> ExitCode {
         run_scenario(&args)
     } else if args.auton_scenario {
         auton_scenario(&args)
+    } else if args.selfgen_scenario {
+        selfgen_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -5026,6 +5038,268 @@ fn farm_scenario(args: &Args) -> ExitCode {
         && no_embeds;
     println!("{}", result);
     println!("FARM SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (AUTON-1, row 49): the self-designation loop, end to end on an
+/// UN-DESIGNATED colony — zero painted work jobs, only intent (a stockpile
+/// zone + a QUEUED build plan). The queued plan creates material demand;
+/// the mine generator digs exactly that much exposed rock near home; the
+/// existing haul-gen moves the stone; fetch feeds the builders; the plan
+/// completes and retires; generation QUIESCES (demand-zero: the counters
+/// freeze structurally, not by tuning). Bounds hold at every poll;
+/// aggregate-identical across runs (the runner's ×2 diff).
+fn selfgen_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region};
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    const STONE: &str = "common.items.crafting_ing.stones";
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-selfgen-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-selfgen".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-selfgen-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    // The FARM strip fixture verbatim: a flat rock slab with clear air
+    // above — every mine-gen candidate is honest exposed surface rock.
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        3,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let fires_before = server.bastion_center_net_fires();
+
+    // INTENT ONLY — a stockpile zone (haul destination) and a QUEUED 2×2
+    // platform plan one level up. Neither creates a single job: the
+    // stockpile kind never does, and queueing records the frozen cell
+    // list for the generator. ZERO painted work designations.
+    // The stockpile sits at STRIP CENTER on purpose: it is the mine
+    // generator's anchor, and the ±MINE_GEN_RADIUS scan circle must fit
+    // inside the controlled flat fixture — the first ×2 draw anchored it
+    // 4 south and the scan's edge row bordered raw worldgen: a pit-
+    // trapped stone's haul churned unreachable through the rough ground
+    // in one run and not the other (the fixture-geometry class, 4th
+    // instance).
+    let store = Region {
+        min: Vec3::new(cx - 1, cy, gz),
+        max: Vec3::new(cx, cy + 1, gz + 1),
+    };
+    server.bastion_place_designation(store, DesignationKind::Stockpile);
+    let plan = Region {
+        min: Vec3::new(cx + 4, cy + 2, gz + 1),
+        max: Vec3::new(cx + 5, cy + 3, gz + 1),
+    };
+    let plan_cells = server.bastion_queue_build_plan(plan);
+    tick(&mut server, 2);
+    let big_probe = Region {
+        min: Vec3::new(cx - 64, cy - 64, gz - 32),
+        max: Vec3::new(cx + 64, cy + 64, gz + 32),
+    };
+    // The "zero player designation" proof: the board is EMPTY after all
+    // the intent is placed — every job that ever appears is generated.
+    let zero_paint = server.bastion_jobs_in_region(big_probe) == 0;
+
+    let store_center =
+        Vec3::new(cx as f32, cy as f32 + 1.0, gz as f32 + 1.0);
+    let plan_built = |server: &Server| -> usize {
+        let mut n = 0;
+        for y in plan.min.y..=plan.max.y {
+            for x in plan.min.x..=plan.max.x {
+                if server
+                    .bastion_block_kind(Vec3::new(x, y, gz + 1))
+                    .is_some_and(|k| k == BlockKind::Rock)
+                {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+
+    // (1) GENERATE + WORK the loop end to end: mine jobs appear (demand-
+    // driven), stone reaches the stockpile, the platform gets built.
+    let cap_mine = 3 * 2; // colonists × MINE_GEN_JOBS_PER_COLONIST
+    let cap_build = 3 * 2;
+    let mut generated = false;
+    let mut hauled = false;
+    let mut built = false;
+    let mut bounded = true;
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        let (gm, _gb, _pc, _open, pm, pb) = server.bastion_selfgen_stats();
+        bounded &= pm <= cap_mine && pb <= cap_build;
+        generated |= gm > 0;
+        hauled |=
+            server.bastion_sum_items_near(store_center, 4.0, STONE) >= 1;
+        if plan_built(&server) == 4 {
+            built = true;
+            break;
+        }
+    }
+    // (2) The plan RETIRES once its every cell is filled.
+    let mut plan_closed = false;
+    for _ in 0..60 {
+        tick(&mut server, 10);
+        let (_, _, pc, open, _, _) = server.bastion_selfgen_stats();
+        if open == 0 && pc == 1 {
+            plan_closed = true;
+            break;
+        }
+    }
+    // (3) QUIESCENCE — the structural runaway bound: with no live plan
+    // there is no demand, and the counters FREEZE (the pass gates off).
+    let (gm0, gb0, _, _, _, _) = server.bastion_selfgen_stats();
+    tick(&mut server, 450);
+    let (gm1, gb1, _, _, _, _) = server.bastion_selfgen_stats();
+    let quiesced = gm1 == gm0 && gb1 == gb0;
+    // (4) DRAIN — leftover generated mine jobs (supply-lag over-emits)
+    // get worked off by the normal claim path; the board ends clean.
+    let mut drained = false;
+    for _ in 0..120 {
+        tick(&mut server, 10);
+        let (_, _, _, _, pm, pb) = server.bastion_selfgen_stats();
+        if pm == 0 && pb == 0 {
+            drained = true;
+            break;
+        }
+    }
+    let (gm_final, gb_final, pc_final, open_final, _, _) =
+        server.bastion_selfgen_stats();
+    let net_fires_delta = server.bastion_center_net_fires() - fires_before;
+
+    let result = serde_json::json!({
+        "selfgen_colonists": names.len(),
+        "selfgen_zero_paint": zero_paint,
+        "selfgen_plan_cells": plan_cells,
+        "selfgen_generated": generated,
+        "selfgen_mine_total": gm_final,
+        "selfgen_build_total": gb_final,
+        "selfgen_hauled": hauled,
+        "selfgen_built": built,
+        "selfgen_plan_closed": plan_closed,
+        "selfgen_plans_completed": pc_final,
+        "selfgen_open_plans": open_final,
+        "selfgen_quiesced": quiesced,
+        "selfgen_drained": drained,
+        "selfgen_bounded": bounded,
+        "selfgen_net_fires_delta": net_fires_delta,
+    });
+    println!(
+        "SELFGEN TELEMETRY: mine={gm_final} build={gb_final} plans_done={pc_final} fires={net_fires_delta}"
+    );
+    let pass = names.len() == 3
+        && zero_paint
+        && plan_cells == 4
+        && generated
+        && gm_final >= 4
+        && gb_final >= 4
+        && hauled
+        && built
+        && plan_closed
+        && quiesced
+        && drained
+        && bounded;
+    println!("{}", result);
+    println!("SELFGEN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
