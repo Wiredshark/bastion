@@ -63,6 +63,10 @@ pub fn completion_block(kind: JobKind) -> Option<Block> {
             // B5.8: the native climbable ladder sprite — the vertical link
             // pathfinding knows about.
             DesignationKind::Ladder => Some(Block::air(SpriteKind::Ladder)),
+            // B7-1: the vanilla bedroll sprite (the Ladder pattern — a
+            // designation with its own named-sprite completion; frames
+            // are the BedKind data extension).
+            DesignationKind::Bed => Some(Block::air(SpriteKind::Bedroll)),
             // GATHER: the sprite is consumed by the authoritative
             // interaction (`into_collected` in the manip handler) — never
             // deleted here (the doc-comment above promised exactly this).
@@ -70,7 +74,9 @@ pub fn completion_block(kind: JobKind) -> Option<Block> {
             | DesignationKind::Zone(_)
             | DesignationKind::Gather => None,
         },
-        JobKind::Haul { .. } | JobKind::DepositRun { .. } => None,
+        JobKind::Haul { .. }
+        | JobKind::DepositRun { .. }
+        | JobKind::RestAt { .. } => None,
     }
 }
 

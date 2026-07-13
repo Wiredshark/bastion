@@ -211,6 +211,14 @@ struct Args {
     #[arg(long)]
     needs_scenario: bool,
 
+    /// bastion (B7-1, row 44): the bed + closed rest loop — placement
+    /// registers a BedSlot, a pre-claimed RestAt travels/sleeps/restores
+    /// rest to comfort, occupancy is capacity-1, owned sleep beats
+    /// communal on mood, ownership persists demote/promote, and a killed
+    /// sleeper's occupancy releases.
+    #[arg(long)]
+    bed_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -333,6 +341,8 @@ fn main() -> ExitCode {
         b58_paired(&args)
     } else if args.needs_scenario {
         needs_scenario(&args)
+    } else if args.bed_scenario {
+        bed_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3429,6 +3439,345 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (B7-1, row 44): the bed + the CLOSED REST LOOP in vivo — a
+/// painted Bed designation builds through the real pipeline (material
+/// fetch included) and REGISTERS a BedSlot; a pre-claimed RestAt job
+/// travels (the proven pipeline), OCCUPIES (capacity-1), restores `rest`
+/// to the comfort band, and completes with the sleep-quality thought;
+/// owned sleep beats communal on the next mood recompute; two RestAts at
+/// ONE bed resolve to exactly one sleeper; ownership persists the
+/// demote/promote round-trip on the colonist record; and killing a
+/// sleeper releases its occupancy (the orphan sweep).
+fn bed_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region};
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-bed-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-bed".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-bed-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    // FLUSH PLATEAU, no rim: a pad dug at the center's own ground level
+    // sits BELOW the surrounding terrain (a pit whose walls both trap
+    // wanderers AND false-trigger the anti-stuck teleport), and a rim
+    // wall recreates the same wall-hugging stuck class INSIDE. Fill to
+    // the AREA'S MAX ground instead — the pad meets or tops its
+    // surroundings, wanderers stay routable, nothing to hug.
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| {
+            (-12..=12).step_by(8).map(move |dy| (dx, dy))
+        })
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        3,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let (a, bn, c) = (
+        names.first().cloned().unwrap_or_default(),
+        names.get(1).cloned().unwrap_or_default(),
+        names.get(2).cloned().unwrap_or_default(),
+    );
+
+    // Material: a stockpile + stones dropped INSIDE it (stockpiled by
+    // position — the B6 fetch path engages, the proven machinery).
+    let store = Region {
+        min: Vec3::new(cx - 6, cy - 2, gz + 1),
+        max: Vec3::new(cx - 4, cy + 2, gz + 1),
+    };
+    server.bastion_place_designation(store, DesignationKind::Stockpile);
+    for i in 0..3 {
+        server.bastion_spawn_item(
+            Vec3::new((cx - 5) as f32, (cy - 1 + i) as f32, gz as f32 + 1.5),
+            "common.items.crafting_ing.stones",
+            1,
+        );
+    }
+    tick(&mut server, 10);
+
+    // Two beds painted; built through the REAL pipeline (claim -> fetch ->
+    // place -> the completion arm registers the slot).
+    let bed1 = Vec3::new(cx + 4, cy - 3, gz + 1);
+    let bed2 = Vec3::new(cx + 4, cy + 3, gz + 1);
+    for bed in [bed1, bed2] {
+        server.bastion_place_designation(
+            Region { min: bed, max: bed },
+            DesignationKind::Bed,
+        );
+    }
+    let mut beds_built = false;
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        if server.bastion_bed_slot(bed1).is_some()
+            && server.bastion_bed_slot(bed2).is_some()
+        {
+            beds_built = true;
+            break;
+        }
+    }
+
+    // SLEEP: A owns bed1; B sleeps communal in bed2. Both restless.
+    let own_ok = server.bastion_assign_bed_owner(&a, bed1);
+    server.bastion_set_needs(&a, 1.0, 0.1, 1.0);
+    server.bastion_set_needs(&bn, 1.0, 0.1, 1.0);
+    let rest_a = server.bastion_assign_rest(&a, bed1);
+    let rest_b = server.bastion_assign_rest(&bn, bed2);
+    let mut slept = false;
+    for _ in 0..360 {
+        tick(&mut server, 10);
+        let ra = server.bastion_colonist_needs_mood(&a).map(|v| v.1);
+        let rb = server.bastion_colonist_needs_mood(&bn).map(|v| v.1);
+        let done = server
+            .bastion_bed_slot(bed1)
+            .is_some_and(|(_, occ)| occ.is_none())
+            && server
+                .bastion_bed_slot(bed2)
+                .is_some_and(|(_, occ)| occ.is_none());
+        // COMPLETION-aware: rest crosses the band mid-sleep (the margin
+        // sleeps past it) — wait for the occupancies to clear too, so
+        // the mood probe reads post-thought.
+        if done
+            && ra.is_some_and(|r| r >= 0.5)
+            && rb.is_some_and(|r| r >= 0.5)
+        {
+            slept = true;
+            break;
+        }
+    }
+    // Occupancy cleared after completion; the ownership mood delta shows
+    // on the next recompute (A: +SleptInBed thought; B: none).
+    tick(&mut server, 20);
+    let occupancy_clear = server
+        .bastion_bed_slot(bed1)
+        .is_some_and(|(_, occ)| occ.is_none())
+        && server
+            .bastion_bed_slot(bed2)
+            .is_some_and(|(_, occ)| occ.is_none());
+    let mood_a = server
+        .bastion_colonist_needs_mood(&a)
+        .map(|v| v.3)
+        .unwrap_or(0.0);
+    let mood_b = server
+        .bastion_colonist_needs_mood(&bn)
+        .map(|v| v.3)
+        .unwrap_or(1.0);
+    let owned_beats_communal = mood_a > mood_b + 0.03;
+
+    // COLLISION (deterministic head-start): A occupies bed1 on a LONG
+    // sleep (rest 0.05); only then does C target the SAME bed on what
+    // would be a 4-second sleep — capacity-1's real invariant is that C
+    // releases CLEAN while A finishes undisturbed (sequential reuse
+    // after A completes would be legal; simultaneous never is).
+    server.bastion_set_needs(&a, 1.0, 0.05, 1.0);
+    let _ = server.bastion_assign_rest(&a, bed1);
+    let a_uid = server.bastion_colonist_uid(&a);
+    let mut a_occupies = false;
+    for _ in 0..240 {
+        tick(&mut server, 5);
+        if server
+            .bastion_bed_slot(bed1)
+            .is_some_and(|(_, occ)| occ.is_some() && occ == a_uid)
+        {
+            a_occupies = true;
+            break;
+        }
+    }
+    server.bastion_set_needs(&c, 1.0, 0.45, 1.0);
+    let _ = server.bastion_assign_rest(&c, bed1);
+    let mut winner_slept = false;
+    for _ in 0..360 {
+        tick(&mut server, 10);
+        let ra = server
+            .bastion_colonist_needs_mood(&a)
+            .map(|v| v.1)
+            .unwrap_or(0.0);
+        if ra >= 0.5 {
+            winner_slept = true;
+            break;
+        }
+    }
+    tick(&mut server, 30);
+    let rc = server
+        .bastion_colonist_needs_mood(&c)
+        .map(|v| v.1)
+        .unwrap_or(1.0);
+    // C never slept (its 0.45 would cross 0.5 within seconds of any
+    // sleep tick) — it released against the occupied bed.
+    let exactly_one = a_occupies && winner_slept && rc < 0.5;
+
+    // KILL-WHILE-SLEEPING: B re-sleeps in bed2; killed mid-sleep, the
+    // occupancy releases via the orphan sweep.
+    server.bastion_set_needs(&bn, 1.0, 0.05, 1.0);
+    let _ = server.bastion_assign_rest(&bn, bed2);
+    let mut occupied_mid = false;
+    for _ in 0..240 {
+        tick(&mut server, 5);
+        if server
+            .bastion_bed_slot(bed2)
+            .is_some_and(|(_, occ)| occ.is_some())
+        {
+            occupied_mid = true;
+            break;
+        }
+    }
+    let killed = server.bastion_kill_colonist(&bn);
+    tick(&mut server, 60);
+    // Diagnostics: is B still a loaded colonist post-kill (Some = comps
+    // intact, None = despawned/removed)?
+    let b_after_kill = server.bastion_colonist_needs_mood(&bn).is_some();
+    let released_on_death = server
+        .bastion_bed_slot(bed2)
+        .is_some_and(|(_, occ)| occ.is_none());
+
+    // PERSISTENCE: A's ownership survives demote/promote on the record.
+    let owned_before = server.bastion_colonist_owned_bed(&a) == Some(bed1);
+    let demoted = server.bastion_force_demote(&a);
+    let mut owned_after = false;
+    for _ in 0..40 {
+        tick(&mut server, 15);
+        if server.bastion_colonist_owned_bed(&a) == Some(bed1) {
+            owned_after = true;
+            break;
+        }
+    }
+
+    let result = serde_json::json!({
+        "bed_built": beds_built,
+        "bed_own_ok": own_ok,
+        "bed_rest_assigned": rest_a && rest_b,
+        "bed_slept": slept,
+        "bed_occupancy_clear": occupancy_clear,
+        "bed_mood_a": mood_a,
+        "bed_mood_b": mood_b,
+        "bed_owned_beats_communal": owned_beats_communal,
+        "bed_collision_winner": winner_slept,
+        "bed_collision_exactly_one": exactly_one,
+        "bed_occupied_mid": occupied_mid,
+        "bed_killed": killed,
+        "bed_released_on_death": released_on_death,
+        "bed_b_alive_after_kill": b_after_kill,
+        "bed_owned_before": owned_before,
+        "bed_demoted": demoted,
+        "bed_owned_after_roundtrip": owned_after,
+        "bed_colonists": names.len(),
+    });
+    let pass = beds_built
+        && own_ok
+        && rest_a
+        && rest_b
+        && slept
+        && occupancy_clear
+        && owned_beats_communal
+        && winner_slept
+        && exactly_one
+        && occupied_mid
+        && killed
+        && released_on_death
+        && owned_before
+        && demoted
+        && owned_after
+        && names.len() == 3;
+    println!("{}", result);
+    println!("BED SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }

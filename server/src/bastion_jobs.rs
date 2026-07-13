@@ -279,7 +279,10 @@ fn job_wanted(kind: DesignationKind, block: &Block) -> bool {
             matches!(block.kind(), BlockKind::Wood | BlockKind::Leaves)
         },
         // B5.8: a ladder rung, like Build, goes into currently-open space.
-        DesignationKind::Build | DesignationKind::Ladder => !block.is_filled(),
+        // B7-1: a bed too.
+        DesignationKind::Build
+        | DesignationKind::Ladder
+        | DesignationKind::Bed => !block.is_filled(),
         DesignationKind::Stockpile | DesignationKind::Zone(_) => false,
         // GATHER (row 38): forage — one job per collectible PLANT sprite
         // (the TerrainResource food allowlist; Stones/Wood/Gem/Ore stay
@@ -356,6 +359,14 @@ pub const TIGHTDIG_MIN_PROGRESS: f32 = 1.5;
 /// fetch engage/release) — re-anchor the window, don't read it as
 /// stall or jump.
 pub const TIGHTDIG_STEER_SWITCH: f32 = 2.0;
+
+/// bastion (B7-1): rest restored per game-second of sleep at quality 1.0
+/// (a bedroll's 0.6 scales it down) — 0→comfort in ~40s on a bedroll.
+/// Tunable; the BedKind quality split is the design's lever.
+pub const BED_REST_RECOVERY_PER_SEC: f32 = 0.02;
+/// Sleep past the comfort band by this much — waking AT the band would
+/// re-cross it within seconds of decay (rested, not barely-at-band).
+pub const SLEEP_MARGIN: f32 = 0.1;
 
 /// bastion (FR15-TIGHTDIG): the INPUT-SWAP measure — a synthetic
 /// "distance" that drives the EXISTING watchdog branch structure
@@ -1082,13 +1093,22 @@ pub struct JobBoard {
     /// (re-expresses the old `sdist > best_dist + 4.0` rebase under the
     /// new metric, no dangling beeline reader).
     last_steer: HashMap<Uid, Vec3<f32>>,
-    /// bastion (B7-0, the cave-in fear emitter): crush victims queued for
-    /// the rtsim tick to record as CaveIn chronicle THOUGHTS next tick —
-    /// this system holds a long-lived rtsim READ guard (the LOD gate), so
-    /// it can't write the chronicle itself; the tick owns the data
-    /// mutably by construction. A one-tick deferral on a two-game-day
-    /// thought.
-    pub pending_cavein_thoughts: Vec<(common::rtsim::RtSimEntity, Vec3<i32>)>,
+    /// bastion (B7-0/B7-1, the thought queue): (who, where, what kind) of
+    /// chronicle THOUGHT to record — drained by the rtsim tick next tick
+    /// (this system holds a long-lived rtsim READ guard for the LOD gate,
+    /// so it can't write the chronicle itself; the tick owns the data
+    /// mutably by construction). A one-tick deferral on multi-game-day
+    /// thoughts. Emitters: cave-in fear (B7-0), sleep quality (B7-1).
+    pub pending_thoughts: Vec<(
+        common::rtsim::RtSimEntity,
+        Vec3<i32>,
+        ::rtsim::data::ChronicleKind,
+    )>,
+    /// bastion (B7-1): the bed slots, keyed by block position — the
+    /// reservations-table shape (capacity-1 occupancy). OWNERSHIP truth
+    /// persists on the colonist record; this is the runtime table
+    /// (rebuilt as beds are built/assigned; the board is session-state).
+    pub beds: HashMap<Vec3<i32>, common::bastion::BedSlot>,
     /// bastion (B6 HAUL): painted stockpile zones `(id, region)` — the haul
     /// destinations. Registered at placement, dropped on cancel (dependent
     /// haul jobs cancel with their zone).
@@ -1199,7 +1219,9 @@ impl JobBoard {
                             progress: 0.0,
                             required_item: matches!(
                                 kind,
-                                DesignationKind::Build | DesignationKind::Ladder
+                                DesignationKind::Build
+                                    | DesignationKind::Ladder
+                                    | DesignationKind::Bed
                             )
                             .then_some(BUILD_MATERIAL_ITEM),
                             needs_materials: false,
@@ -1283,7 +1305,9 @@ impl JobBoard {
                             progress: 0.0,
                             required_item: matches!(
                                 kind,
-                                DesignationKind::Build | DesignationKind::Ladder
+                                DesignationKind::Build
+                                    | DesignationKind::Ladder
+                                    | DesignationKind::Bed
                             )
                             .then_some(BUILD_MATERIAL_ITEM),
                             needs_materials: false,
@@ -1482,6 +1506,32 @@ impl JobBoard {
             self.reservations.remove(&rid);
         }
         job
+    }
+
+    /// bastion (B7-1): insert a PRE-CLAIMED RestAt job (the DepositRun
+    /// shape — rides the whole proven travel pipeline; the caller inserts
+    /// the ActiveJob comp).
+    pub fn insert_rest_job(&mut self, bed_pos: Vec3<i32>, uid: Uid) -> JobId {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.jobs.insert(id, Job {
+            kind: common::bastion::JobKind::RestAt { bed_pos },
+            work: common::bastion::WorkType::Haul,
+            pos: bed_pos,
+            skill_floor: 0,
+            claimed_by: Some(uid),
+            unreachable: false,
+            progress: 0.0,
+            required_item: None,
+            needs_materials: false,
+            carve_attempted: false,
+            is_access: false,
+            stuck_strikes: 0,
+            depth: 0,
+            reservation: None,
+        });
+        self.total_claims += 1;
+        id
     }
 
     /// bastion (B6): is this cell inside a stockpile footprint? XY + a
@@ -2293,6 +2343,21 @@ impl<'a> System<'a> for Sys {
         // Orphaned runs (claimant released/demoted → unclaimed) are swept
         // here first — the claim loop never re-assigns them.
         if tick.0 % ARBITRATION_INTERVAL as u64 == 9 {
+            // B7-1: occupancy held by a uid that no longer resolves to a
+            // live entity (killed / despawned mid-sleep) releases — the
+            // kill-while-sleeping invariant's sweep (the to_release drain
+            // covers orderly paths; this covers death).
+            for slot in board.beds.values_mut() {
+                if slot.occupant.is_some_and(|u| {
+                    id_maps.uid_entity(u).is_none_or(|e| {
+                        healths
+                            .get(e)
+                            .is_some_and(|h| h.is_dead || h.should_die())
+                    })
+                }) {
+                    slot.occupant = None;
+                }
+            }
             let orphans: Vec<JobId> = board
                 .jobs
                 .iter()
@@ -2411,6 +2476,17 @@ impl<'a> System<'a> for Sys {
             if !is_loaded(entity) {
                 continue;
             }
+            // B7-1: a DEAD colonist releases its job (the corpse was
+            // re-occupying its bed every tick, outrunning the orphan
+            // sweep — caught by the kill-while-sleeping assert). The
+            // to_release drain clears any bed occupancy it held.
+            if healths
+                .get(entity)
+                .is_some_and(|h| h.is_dead || h.should_die())
+            {
+                to_release.push(entity);
+                continue;
+            }
             let Some(job) = board.jobs.get_mut(&active.job) else {
                 // Cancelled out from under the colonist → re-idle.
                 to_release.push(entity);
@@ -2490,9 +2566,11 @@ impl<'a> System<'a> for Sys {
                             // Haul validity = the ITEM still exists — owned
                             // by the Haul arm, not the block moot-check.
                             // DepositRun validity = the ZONE still exists —
-                            // owned by its own Arrived arm.
+                            // owned by its own Arrived arm. RestAt: the
+                            // BED slot — likewise its own arm.
                             common::bastion::JobKind::Haul { .. }
-                            | common::bastion::JobKind::DepositRun { .. } => true,
+                            | common::bastion::JobKind::DepositRun { .. }
+                            | common::bastion::JobKind::RestAt { .. } => true,
                         });
                     if !still_wanted {
                         info!(
@@ -2957,6 +3035,98 @@ impl<'a> System<'a> for Sys {
                     }
                 },
                 ActiveJobState::Arrived => {
+                    // ── B7-1: SLEEP — occupy the bed's slot (capacity-1),
+                    // restore `rest` per tick scaled by bed quality, and
+                    // complete at the comfort band with a sleep-quality
+                    // thought (owned bed → SleptInBed via the thought
+                    // queue; communal sleep deposits none — the ownership
+                    // mood-delta the design wants). An occupied/vanished
+                    // bed is a clean moot release (B7-2's assigner
+                    // re-routes later; nothing wedges).
+                    if let common::bastion::JobKind::RestAt { bed_pos } =
+                        job.kind
+                    {
+                        let Some(u) = uids.get(entity).copied() else {
+                            board.remove_job(active.job);
+                            to_release.push(entity);
+                            continue;
+                        };
+                        let slot_state = board
+                            .beds
+                            .get(&bed_pos)
+                            .map(|s| (s.occupant, s.owner, s.kind));
+                        match slot_state {
+                            Some((occ, owner, kind))
+                                if occ.is_none() || occ == Some(u) =>
+                            {
+                                if let Some(slot) = board.beds.get_mut(&bed_pos)
+                                {
+                                    slot.occupant = Some(u);
+                                }
+                                let mut slept = false;
+                                if let Some(needs) =
+                                    needs_storage.get_mut(entity)
+                                {
+                                    let cfg =
+                                        common::bastion::MoodConfig::current();
+                                    needs.rest = (needs.rest
+                                        + BED_REST_RECOVERY_PER_SEC
+                                            * kind.quality()
+                                            * dt.0)
+                                        .min(1.0);
+                                    // Sleep to comfort + margin: completing
+                                    // AT the band means decay re-crosses it
+                                    // within seconds (rested, not barely).
+                                    slept = needs.rest
+                                        >= cfg.rest.comfort + SLEEP_MARGIN;
+                                }
+                                if slept {
+                                    if let Some(slot) =
+                                        board.beds.get_mut(&bed_pos)
+                                    {
+                                        slot.occupant = None;
+                                    }
+                                    // Owned-bed sleep deposits the better
+                                    // thought; communal sleep none (the
+                                    // delta the design asserts).
+                                    if owner == Some(u)
+                                        && let Some(re) =
+                                            rtsim_entities.get(entity)
+                                    {
+                                        board.pending_thoughts.push((
+                                            *re,
+                                            bed_pos,
+                                            ::rtsim::data::ChronicleKind::SleptInBed,
+                                        ));
+                                    }
+                                    info!(
+                                        job = active.job,
+                                        pos = ?bed_pos,
+                                        owned = (owner == Some(u)),
+                                        "bastion: slept — rest restored"
+                                    );
+                                    board.remove_job(active.job);
+                                    to_release.push(entity);
+                                }
+                            },
+                            Some(_) => {
+                                // Capacity-1: occupied by someone else.
+                                info!(
+                                    job = active.job,
+                                    pos = ?bed_pos,
+                                    "bastion: bed occupied — rest released"
+                                );
+                                board.remove_job(active.job);
+                                to_release.push(entity);
+                            },
+                            None => {
+                                // Bed gone (mined out / cancelled) — moot.
+                                board.remove_job(active.job);
+                                to_release.push(entity);
+                            },
+                        }
+                        continue;
+                    }
                     // ── GATHER deposit ruling: the end-of-forage stockpile
                     // trip — instant at arrival like Haul leg-2. Empty every
                     // recorded forage def from the bag onto the zone cell
@@ -3209,7 +3379,9 @@ impl<'a> System<'a> for Sys {
                             DesignationKind::Chop => {
                                 matches!(k, BlockKind::Wood | BlockKind::Leaves)
                             },
-                            DesignationKind::Build | DesignationKind::Ladder => {
+                            DesignationKind::Build
+                            | DesignationKind::Ladder
+                            | DesignationKind::Bed => {
                                 terrain.get(job.pos).ok().is_some_and(|b| !b.is_filled())
                             },
                             DesignationKind::Stockpile
@@ -3218,10 +3390,11 @@ impl<'a> System<'a> for Sys {
                             // Haul pattern) — defensive.
                             DesignationKind::Gather => false,
                         },
-                        // Haul/DepositRun complete in their own arms above —
-                        // defensive.
+                        // Haul/DepositRun/RestAt complete in their own arms
+                        // above — defensive.
                         common::bastion::JobKind::Haul { .. }
-                        | common::bastion::JobKind::DepositRun { .. } => false,
+                        | common::bastion::JobKind::DepositRun { .. }
+                        | common::bastion::JobKind::RestAt { .. } => false,
                     });
                     if !still_valid {
                         info!(
@@ -3329,6 +3502,18 @@ impl<'a> System<'a> for Sys {
                     {
                         info!(pos = ?job.pos, "bastion: access anchor registered (built)");
                         board.access_anchors.push(job.pos);
+                    }
+                    // B7-1: a completed bed registers its slot (the same
+                    // build-completion registration pattern as the ladder
+                    // anchor above). Unowned, unoccupied — assignment
+                    // comes via the hook this block, B7-2 automation later.
+                    if job.kind.is(DesignationKind::Bed) {
+                        board.beds.insert(job.pos, common::bastion::BedSlot {
+                            kind: common::bastion::BedKind::Bedroll,
+                            owner: None,
+                            occupant: None,
+                        });
+                        info!(pos = ?job.pos, "bastion: bed registered (built)");
                     }
 
                     if let Some(item_id) = match job.kind.designation() {
@@ -3454,10 +3639,18 @@ impl<'a> System<'a> for Sys {
             // FR15-TIGHTDIG: the travel episode is over — its window,
             // committed path, and steer memory are stale (a fresh claim
             // re-anchors from scratch, exactly like best_dist = MAX).
+            // B7-1: and any bed occupancy this colonist held releases
+            // (moot/cancel/demote all funnel through here; completion
+            // released it already — idempotent).
             if let Some(u) = uids.get(*entity) {
                 board.progress_watch.remove(u);
                 board.path_cache.remove(u);
                 board.last_steer.remove(u);
+                for slot in board.beds.values_mut() {
+                    if slot.occupant == Some(*u) {
+                        slot.occupant = None;
+                    }
+                }
             }
             if let Some(agent) = agents.get_mut(*entity) {
                 agent.rtsim_controller.activity = None;
@@ -3532,9 +3725,11 @@ impl<'a> System<'a> for Sys {
                 if let (Some(re), Some(p)) =
                     (rtsim_entities.get(*e), positions.get(*e))
                 {
-                    board
-                        .pending_cavein_thoughts
-                        .push((*re, p.0.map(|v| v.floor() as i32)));
+                    board.pending_thoughts.push((
+                        *re,
+                        p.0.map(|v| v.floor() as i32),
+                        ::rtsim::data::ChronicleKind::CaveIn,
+                    ));
                 }
             }
         }
@@ -4281,6 +4476,7 @@ impl<'a> System<'a> for Sys {
                 if matches!(
                     job.kind,
                     common::bastion::JobKind::DepositRun { .. }
+                        | common::bastion::JobKind::RestAt { .. }
                 ) {
                     continue;
                 }

@@ -854,6 +854,130 @@ impl Server {
         false
     }
 
+    /// bastion (B7-1, harness hook): assign bed OWNERSHIP — writes the
+    /// board slot's fast lookup AND the colonist record's persistent
+    /// truth (mirrored by colonist_record every loaded tick).
+    pub fn bastion_assign_bed_owner(&mut self, name: &str, pos: Vec3<i32>) -> bool {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let mut colonists = ecs.write_storage::<comp::Colonist>();
+        let uids = ecs.read_storage::<common::uid::Uid>();
+        let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
+        // Colonist's storage is change-tracked: find immutably, then
+        // get_mut (the tick.rs idiom).
+        let found = (&entities, &colonists, &uids)
+            .join()
+            .find(|(_, c, _)| c.0.name == name)
+            .map(|(e, _, u)| (e, *u));
+        if let Some((e, uid)) = found {
+            let Some(slot) = board.beds.get_mut(&pos) else {
+                return false;
+            };
+            slot.owner = Some(uid);
+            if let Some(mut c) = colonists.get_mut(e) {
+                c.0.owned_bed = Some(pos);
+            }
+            return true;
+        }
+        false
+    }
+
+    /// bastion (B7-1, harness hook): a PRE-CLAIMED RestAt job (the
+    /// DepositRun insertion pattern — B7-2's preempt trigger creates
+    /// these automatically later).
+    pub fn bastion_assign_rest(&mut self, name: &str, bed_pos: Vec3<i32>) -> bool {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let uids = ecs.read_storage::<common::uid::Uid>();
+        let mut active_jobs = ecs.write_storage::<comp::bastion::ActiveJob>();
+        let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
+        for (e, c, uid) in (&entities, &colonists, &uids).join() {
+            if c.0.name == name {
+                if active_jobs.contains(e) {
+                    return false;
+                }
+                let id = board.insert_rest_job(bed_pos, *uid);
+                let _ = active_jobs.insert(e, comp::bastion::ActiveJob {
+                    job: id,
+                    state: comp::bastion::ActiveJobState::Traveling,
+                    best_dist: f32::MAX,
+                    stuck_time: 0.0,
+                    reset_dist: f32::MAX,
+                    soft_granted: false,
+                    stance: Vec3::unit_z(),
+                });
+                return true;
+            }
+        }
+        false
+    }
+
+    /// bastion (B7-1, harness hook): a bed slot's (owner, occupant) as
+    /// raw uid u64s, `None` if no bed there.
+    pub fn bastion_bed_slot(&self, pos: Vec3<i32>) -> Option<(Option<u64>, Option<u64>)> {
+        let board = self
+            .state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>();
+        board
+            .beds
+            .get(&pos)
+            .map(|s| (s.owner.map(|u| u.0.get()), s.occupant.map(|u| u.0.get())))
+    }
+
+    /// bastion (B7-1, harness hook): a named colonist's uid as u64.
+    pub fn bastion_colonist_uid(&self, name: &str) -> Option<u64> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let uids = ecs.read_storage::<common::uid::Uid>();
+        (&colonists, &uids)
+            .join()
+            .find(|(c, _)| c.0.name == name)
+            .map(|(_, u)| u.0.get())
+    }
+
+    /// bastion (B7-1, harness hook): the persistent owned-bed key on the
+    /// colonist record (the save/load roundtrip probe).
+    pub fn bastion_colonist_owned_bed(&self, name: &str) -> Option<Vec3<i32>> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        colonists
+            .join()
+            .find(|c| c.0.name == name)
+            .and_then(|c| c.0.owned_bed)
+    }
+
+    /// bastion (B7-1, harness hook): KILL a named colonist (health to
+    /// zero through the normal damage path) — the kill-while-sleeping
+    /// occupancy-release assert drives this.
+    pub fn bastion_kill_colonist(&mut self, name: &str) -> bool {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let time = *ecs.read_resource::<common::resources::Time>();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let mut healths = ecs.write_storage::<comp::Health>();
+        let found = (&entities, &colonists)
+            .join()
+            .find(|(_, c)| c.0.name == name)
+            .map(|(e, _)| e);
+        let _ = time;
+        if let Some(e) = found
+            && let Some(mut health) = healths.get_mut(e)
+        {
+            // The real death API — plain damage is absorbed by death
+            // protection; kill() zeroes health AND strips it.
+            health.kill();
+            return true;
+        }
+        false
+    }
+
     /// bastion (SEASON-0, harness hook): the server's CURRENT TimeOfDay
     /// (the master clock the derivation reads).
     pub fn bastion_time_of_day(&self) -> f64 {
@@ -1599,9 +1723,11 @@ impl Server {
                 if let (Some(re), Some(p)) =
                     (rtsim_entities.get(*e), positions.get(*e))
                 {
-                    board
-                        .pending_cavein_thoughts
-                        .push((*re, p.0.map(|v| v.floor() as i32)));
+                    board.pending_thoughts.push((
+                        *re,
+                        p.0.map(|v| v.floor() as i32),
+                        ::rtsim::data::ChronicleKind::CaveIn,
+                    ));
                 }
             }
         }

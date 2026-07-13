@@ -635,17 +635,17 @@ impl<'a> System<'a> for Sys {
         let chunk_states = rtsim.state.resource::<ChunkStates>();
         let data = &mut *rtsim.state.data_mut();
 
-        // B7-0 (the cave-in fear emitter, fork ruling (a)): drain the
-        // queue bastion_jobs filled last tick into the chronicle — the
-        // lasting fear is a decaying CaveIn THOUGHT the mood recompute
-        // reads (a direct Mood write would be overwritten within a
-        // cadence). Stamped on the chronicle's own clock.
-        for (re, pos) in std::mem::take(&mut job_board.pending_cavein_thoughts)
+        // B7-0/B7-1 (the thought queue): drain what bastion_jobs queued
+        // last tick into the chronicle — decaying THOUGHTS the mood
+        // recompute reads (a direct Mood write would be overwritten
+        // within a cadence). Stamped on the chronicle's own clock.
+        // Emitters: cave-in fear, sleep quality.
+        for (re, pos, kind) in std::mem::take(&mut job_board.pending_thoughts)
         {
             let now = data.time_of_day;
             data.chronicle.record(
                 now,
-                ::rtsim::data::ChronicleKind::CaveIn,
+                kind,
                 vec![common::rtsim::Actor::Npc(re)],
                 None,
                 Some(pos),

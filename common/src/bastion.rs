@@ -327,6 +327,12 @@ pub enum DesignationKind {
     /// overflow all owned by the authoritative handler). Appended last
     /// (wire rule as above).
     Gather,
+    /// bastion (B7-1, row 44): a BED — placed like a Ladder (a designation
+    /// with its own completion arm placing a specific named sprite;
+    /// vanilla ships the sprites), registered as a [`BedSlot`] on
+    /// completion. The rest-loop venue B7-2's preemption targets.
+    /// Appended last (wire rule as above).
+    Bed,
 }
 
 impl DesignationKind {
@@ -339,6 +345,7 @@ impl DesignationKind {
             DesignationKind::Ladder => "Ladder",
             DesignationKind::Zone(z) => z.label(),
             DesignationKind::Gather => "Gather",
+            DesignationKind::Bed => "Bed",
         }
     }
 
@@ -362,7 +369,8 @@ impl DesignationKind {
             DesignationKind::Mine
             | DesignationKind::Build
             | DesignationKind::Stockpile
-            | DesignationKind::Ladder => FootprintMode::Volume,
+            | DesignationKind::Ladder
+            | DesignationKind::Bed => FootprintMode::Volume,
         }
     }
 
@@ -378,6 +386,8 @@ impl DesignationKind {
             DesignationKind::Stockpile => Some(Purpose::Storage),
             // ZONE-0: the zone kind carries its own locked Purpose.
             DesignationKind::Zone(z) => Some(z.purpose()),
+            // B7-1: a bed IS its purpose (unlike Build's blank canvas).
+            DesignationKind::Bed => Some(Purpose::Housing),
             // Structures carry their asset's purpose, not the designation's.
             DesignationKind::Build | DesignationKind::Ladder => None,
         }
@@ -602,8 +612,11 @@ impl DesignationKind {
         match self {
             DesignationKind::Mine => WorkType::Mine,
             DesignationKind::Chop => WorkType::Chop,
-            // B5.8: placing a ladder is construction work.
-            DesignationKind::Build | DesignationKind::Ladder => WorkType::Build,
+            // B5.8: placing a ladder is construction work. B7-1: so is a
+            // bed.
+            DesignationKind::Build
+            | DesignationKind::Ladder
+            | DesignationKind::Bed => WorkType::Build,
             // ZONE-0: zones generate no jobs; Haul is the inert mapping
             // (same as Stockpile's pre-B6 stance — priorities stay honored
             // if a zone kind ever emits work).
@@ -711,6 +724,40 @@ pub enum Need {
     Fight,
 }
 
+/// bastion (B7-1, row 44): what kind of bed a [`BedSlot`] is — drives the
+/// completion sprite and the quality scalar (a frame rests better than a
+/// bedroll). v1 places bedrolls; frames are a data extension (vanilla
+/// ships both sprite families).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BedKind {
+    Bedroll,
+    Frame,
+}
+
+impl BedKind {
+    /// The rest-recovery quality multiplier (design §4).
+    pub fn quality(&self) -> f32 {
+        match self {
+            BedKind::Bedroll => 0.6,
+            BedKind::Frame => 1.0,
+        }
+    }
+}
+
+/// bastion (B7-1): one bed's slot state — the reservations-table shape
+/// (capacity-1 occupancy, insert on claim, remove on release/death),
+/// keyed by block position on the board. OWNERSHIP truth persists on
+/// `BastionColonist::owned_bed` (the LOD-0 mirror pattern — the board is
+/// session-state); the slot's `owner` is the fast lookup written at
+/// assignment. `occupant` is transient by nature (a claim, not a fact
+/// about the world).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BedSlot {
+    pub kind: BedKind,
+    pub owner: Option<crate::uid::Uid>,
+    pub occupant: Option<crate::uid::Uid>,
+}
+
 pub type ZoneId = u64;
 /// bastion (B6 JOB-CORE): a reservation's stable id — ONE item can be
 /// reserved by ONE job (the double-spend guard); the table lives on the
@@ -742,6 +789,17 @@ pub enum JobKind {
         /// The stockpile zone to empty the forage bag into.
         destination: ZoneId,
     },
+    /// bastion (B7-1, row 44): SLEEP at a bed — travel to the bed cell
+    /// (the proven pipeline), occupy its [`BedSlot`] (capacity-1), and
+    /// restore `rest` per tick scaled by bed quality until the comfort
+    /// band, depositing a sleep-quality thought at completion. Created
+    /// PRE-CLAIMED (the DepositRun shape); the automatic
+    /// preempt-on-threshold trigger is B7-2's. Appended last (wire rule
+    /// as above).
+    RestAt {
+        /// The bed's block position ([`BedSlot`] key).
+        bed_pos: Vec3<i32>,
+    },
 }
 
 impl JobKind {
@@ -750,7 +808,9 @@ impl JobKind {
     pub fn designation(&self) -> Option<DesignationKind> {
         match self {
             JobKind::Designated(d) => Some(*d),
-            JobKind::Haul { .. } | JobKind::DepositRun { .. } => None,
+            JobKind::Haul { .. }
+            | JobKind::DepositRun { .. }
+            | JobKind::RestAt { .. } => None,
         }
     }
 
@@ -1071,6 +1131,13 @@ pub struct BastionColonist {
     /// restore semantics as `needs`.
     #[serde(default)]
     pub mood: Option<f32>,
+    /// bastion (B7-1): the bed this colonist OWNS (its [`BedSlot`] key) —
+    /// the persistent ownership truth (the board's slot table is
+    /// session-state; its `owner` field is the runtime lookup). Assigned
+    /// by the assignment hook this block, by B7-2's auto-assignment
+    /// later. serde-default: old saves → `None`.
+    #[serde(default)]
+    pub owned_bed: Option<Vec3<i32>>,
 }
 
 /// bastion (CASE-003 belt): count of per-tick CENTER-SAFETY-NET fires — a
@@ -1571,6 +1638,8 @@ impl BastionColonist {
             // the live meters (LOD-0 semantics).
             needs: None,
             mood: None,
+            // B7-1: no bed until one is assigned.
+            owned_bed: None,
         }
     }
 }

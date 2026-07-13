@@ -12,5 +12,9 @@
         // B7-0 fork ruling (a): the cave-in fear as the FIRST live
         // emitter (bastion_jobs' crush caller records it per victim).
         CaveIn: (-0.2, 172800.0),
+        // B7-1: sleep quality — own-bed comfort lingers a day; ground
+        // sleep stings (the B7-2 fallback's data, shipped with the kind).
+        SleptInBed: (0.08, 86400.0),
+        SleptOnGround: (-0.1, 86400.0),
     },
 )

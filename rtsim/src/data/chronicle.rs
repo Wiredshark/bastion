@@ -100,6 +100,11 @@ pub enum ChronicleKind {
     Breach,
     Flood,
     Migration,
+    // ── bastion (B7-1): the sleep-quality thoughts (design §3's own
+    //    list: "slept in own bed +, slept on the ground −") — appended
+    //    per the lock's extension rule as their emitter landed.
+    SleptInBed,
+    SleptOnGround,
 }
 
 /// The importance BAND (S5) — a small canonical enum, `Purpose`-enum
