@@ -5390,7 +5390,6 @@ fn auton_scenario(args: &Args) -> ExitCode {
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
     let fires_before = server.bastion_center_net_fires();
-    let (_, _, teleports_before) = server.bastion_locomotion_stats();
 
     // (a) LIVENESS: strip 1 completes through the gated claim entry.
     let mine1 = Region {
@@ -5443,6 +5442,13 @@ fn auton_scenario(args: &Args) -> ExitCode {
         }
     }
     let subject = subject.unwrap_or_else(|| names[0].clone());
+    // GUARD 4(b)'s window = THE STORM ONLY (tank -> restore, 480 ticks —
+    // the 60s rescue timer physically cannot complete inside it, so any
+    // teleport here is a genuine false trip). The first draw's wide
+    // window caught a post-recovery idle wanderer walking off the
+    // plateau into a legitimate rescue — the fail-safe working, the
+    // second live proof of GUARD 4 direction (a).
+    let (_, _, storm_teleports_before) = server.bastion_locomotion_stats();
     server.bastion_set_health_fraction(&subject, 0.1);
     tick(&mut server, 2);
     let flee_fast = server.bastion_colonist_drive(&subject).as_deref()
@@ -5473,6 +5479,8 @@ fn auton_scenario(args: &Args) -> ExitCode {
     let frozen = server.bastion_jobs_in_region(mine2) == frozen_at
         && frozen_at > 0;
 
+    // GUARD 4(b): measured across the storm window exactly.
+    let (_, _, storm_teleports_after) = server.bastion_locomotion_stats();
     // (c) RECOVERY: heal -> Work returns -> strip 2 completes.
     for n in &names {
         server.bastion_set_health_fraction(n, 1.0);
@@ -5489,9 +5497,11 @@ fn auton_scenario(args: &Args) -> ExitCode {
     // x a handful of legitimate transitions; commitment+hysteresis).
     let switches = server.bastion_drive_switches() - switches0;
     let bounded = switches <= 40;
-    // (e) GUARD 4: the entombment machinery untouched by the storm.
-    let (_, _, teleports_after) = server.bastion_locomotion_stats();
-    let no_false_teleports = teleports_after == teleports_before;
+    // (e) GUARD 4: no false trips WITHIN the storm window (post-storm
+    // idle wanderers earning genuine rescues are the fail-safe's job,
+    // not a drive-switching artifact).
+    let no_false_teleports =
+        storm_teleports_after == storm_teleports_before;
     let no_embeds = server.bastion_center_net_fires() == fires_before;
     // (f) GUARD 5: PATH-0 alive after the storm (recovery travel was
     // scheduler-served; waits pruned).

@@ -2725,6 +2725,16 @@ impl<'a> System<'a> for Sys {
                 if !is_loaded(entity) {
                     continue;
                 }
+                // A corpse needs no drive: dead colonists are the
+                // upkeep death gate's business (B7-1), not the
+                // arbiter's — and a drive write on a dying colonist
+                // races vanilla's death processing for no benefit.
+                if healths
+                    .get(entity)
+                    .is_some_and(|h| h.is_dead || h.should_die())
+                {
+                    continue;
+                }
                 // GUARD 6: self-job occupancy — step around.
                 if active_jobs.get(entity).is_some_and(|aj| {
                     board.jobs.get(&aj.job).is_some_and(|j| {
