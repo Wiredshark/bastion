@@ -20,6 +20,54 @@ use rand::rng;
 use rayon::iter::ParallelIterator;
 use specs::{LendJoin, ParJoin, WriteStorage};
 
+/// bastion (PATH-0): THE traversal-config builder — extracted from the
+/// agent tick so the sequential path scheduler builds byte-identical
+/// configs (zero mirror drift; the scheduler passes the colonist's OWN
+/// body/physics/scale — colonists are never mounted). `search_allowed`
+/// is decided here too: a colonist whose current activity is a job-travel
+/// Goto never searches inline (the scheduler owns those searches —
+/// PATH-0's budget covers the N-scaling load); vanilla NPCs and
+/// colonists in any other state (combat, flee) search inline exactly as
+/// before.
+pub(crate) fn traversal_config_for(
+    scale: f32,
+    moving_body: Option<&Body>,
+    physics_state: &comp::PhysicsState,
+    colonist: Option<&comp::Colonist>,
+    goto_scheduled: bool,
+) -> TraversalConfig {
+    // This controls how picky NPCs are about their pathfinding.
+    // Giants are larger and so can afford to be less precise
+    // when trying to move around the world
+    // (especially since they would otherwise get stuck on
+    // obstacles that smaller entities would not).
+    let node_tolerance = scale * 1.5;
+    let slow_factor = moving_body.map_or(0.0, |b| 1.0 - 1.0 / (1.0 + b.base_accel() * 0.01));
+    TraversalConfig {
+        node_tolerance,
+        slow_factor,
+        on_ground: physics_state.on_ground.is_some(),
+        in_liquid: physics_state.in_liquid().is_some(),
+        min_tgt_dist: scale * moving_body.map_or(1.0, |body| body.max_radius()),
+        can_climb: moving_body.is_some_and(Body::can_climb),
+        // bastion (B5.8): vertical reach for colony workers
+        // only (vanilla NPC pathing unchanged), mapped from
+        // the colonist's CLIMBING movement skill — novices
+        // manage 2-block faces, level 1+ unlocks the 3-up
+        // scramble edges. The skill grows with use.
+        scramble_reach: match colonist {
+            Some(c) if moving_body.is_some_and(Body::can_climb) => {
+                2 + (c.0.skills.climbing.level.min(1) as u8)
+            },
+            _ => 0,
+        },
+        can_fly: moving_body.is_some_and(|b| b.fly_thrust().is_some()),
+        vectored_propulsion: moving_body.is_some_and(|b| b.vectored_propulsion()),
+        is_target_loaded: true,
+        search_allowed: !goto_scheduled,
+    }
+}
+
 /// This system will allow NPCs to modify their controller
 #[derive(Default)]
 pub struct Sys;
@@ -178,36 +226,23 @@ impl<'a> System<'a> for Sys {
                         Some(CharacterState::GlideWield(_) | CharacterState::Glide(_))
                     ) && physics_state.on_ground.is_none();
 
-                    // This controls how picky NPCs are about their pathfinding.
-                    // Giants are larger and so can afford to be less precise
-                    // when trying to move around the world
-                    // (especially since they would otherwise get stuck on
-                    // obstacles that smaller entities would not).
-                    let node_tolerance = scale * 1.5;
-                    let slow_factor =
-                        moving_body.map_or(0.0, |b| 1.0 - 1.0 / (1.0 + b.base_accel() * 0.01));
-                    let traversal_config = TraversalConfig {
-                        node_tolerance,
-                        slow_factor,
-                        on_ground: physics_state.on_ground.is_some(),
-                        in_liquid: physics_state.in_liquid().is_some(),
-                        min_tgt_dist: scale * moving_body.map_or(1.0, |body| body.max_radius()),
-                        can_climb: moving_body.is_some_and(Body::can_climb),
-                        // bastion (B5.8): vertical reach for colony workers
-                        // only (vanilla NPC pathing unchanged), mapped from
-                        // the colonist's CLIMBING movement skill — novices
-                        // manage 2-block faces, level 1+ unlocks the 3-up
-                        // scramble edges. The skill grows with use.
-                        scramble_reach: match read_data.colonists.get(entity) {
-                            Some(c) if moving_body.is_some_and(Body::can_climb) => {
-                                2 + (c.0.skills.climbing.level.min(1) as u8)
-                            },
-                            _ => 0,
-                        },
-                        can_fly: moving_body.is_some_and(|b| b.fly_thrust().is_some()),
-                        vectored_propulsion: moving_body.is_some_and(|b| b.vectored_propulsion()),
-                        is_target_loaded: true,
-                    };
+                    // bastion (PATH-0): built by THE shared builder (the
+                    // sequential path scheduler uses the same fn — zero
+                    // mirror drift). A colonist mid-Goto is SCHEDULED:
+                    // its searches run in the budgeted sequential system,
+                    // never inline here.
+                    let goto_scheduled = read_data.colonists.get(entity).is_some()
+                        && matches!(
+                            agent.rtsim_controller.activity,
+                            Some(common::rtsim::NpcActivity::Goto(..))
+                        );
+                    let traversal_config = traversal_config_for(
+                        scale,
+                        moving_body,
+                        physics_state,
+                        read_data.colonists.get(entity),
+                        goto_scheduled,
+                    );
                     let health_fraction = health.map_or(1.0, Health::fraction);
 
                     // Package all this agent's data into a convenient struct

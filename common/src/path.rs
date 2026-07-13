@@ -113,6 +113,15 @@ pub struct TraversalConfig {
     pub vectored_propulsion: bool,
     /// Whether chunk containing target position is currently loaded
     pub is_target_loaded: bool,
+    /// bastion (PATH-0): whether THIS chase call may run/resume the A*
+    /// search inline. Colonists on job travel are SCHEDULED (the
+    /// sequential budgeted path scheduler owns their searches; the agent
+    /// tick only follows delivered routes) — they pass false. Vanilla
+    /// NPCs (and colonists in non-Goto states, e.g. combat) pass true
+    /// and search exactly as before. When false with no route, `chase`
+    /// holds the Pending stance — byte-identical to a mid-search tick
+    /// today — until the scheduler's `search_step` delivers.
+    pub search_allowed: bool,
 }
 
 const DIAGONALS: [Vec2<i32>; 8] = [
@@ -645,42 +654,16 @@ impl Chaser {
 
         // Find a route if we don't have one.
         if self.route.is_none() {
-            // Reset astar if last tgt is too far from tgt.
-            if self
-                .last_search_tgt
-                .is_some_and(|last_tgt| tgt.distance_squared(last_tgt) > 2.0)
-            {
-                self.astar = None;
+            if !traversal_cfg.search_allowed {
+                // bastion (PATH-0): the search is deferred to the
+                // sequential scheduler — hold the Pending stance (the
+                // pre-existing mid-search behavior, no new movement
+                // class); `search_step` delivers the route between
+                // agent ticks.
+                self.path_state = PathState::Pending;
+            } else {
+                self.search_step_inner(vol, pos, tgt, &traversal_cfg);
             }
-            match find_path(
-                &mut self.astar,
-                vol,
-                pos,
-                tgt,
-                &traversal_cfg,
-                self.path_length,
-                self.flee_from,
-            ) {
-                PathResult::Pending => {
-                    self.path_state = PathState::Pending;
-                },
-                PathResult::None(path) => {
-                    self.path_state = PathState::None;
-                    self.route = Some((Route { path, next_idx: 0 }, false, tgt));
-                },
-                PathResult::Exhausted(path) => {
-                    self.path_state = PathState::Exhausted;
-                    self.route = Some((Route { path, next_idx: 0 }, false, tgt));
-                },
-                PathResult::Path(path, _) => {
-                    self.flee_from = None;
-                    self.path_state = PathState::Path;
-                    self.path_length = Default::default();
-                    self.route = Some((Route { path, next_idx: 0 }, true, tgt));
-                },
-            }
-
-            self.last_search_tgt = Some(tgt);
         }
 
         if let Some((route, ..)) = &mut self.route {
@@ -749,6 +732,93 @@ impl Chaser {
         }
 
         None
+    }
+
+    /// bastion (PATH-0): the search half of [`Chaser::chase`], verbatim —
+    /// run/resume the incremental A* toward `tgt` and store the result.
+    /// Shared by the inline path (search_allowed) and the sequential
+    /// scheduler's [`Chaser::search_step`]. No traverse, no stuck-shuffle
+    /// rng — deterministic in scheduler context.
+    fn search_step_inner<V>(
+        &mut self,
+        vol: &V,
+        pos: Vec3<f32>,
+        tgt: Vec3<f32>,
+        traversal_cfg: &TraversalConfig,
+    ) where
+        V: BaseVol<Vox = Block> + ReadVol,
+    {
+        // Reset astar if last tgt is too far from tgt.
+        if self
+            .last_search_tgt
+            .is_some_and(|last_tgt| tgt.distance_squared(last_tgt) > 2.0)
+        {
+            self.astar = None;
+        }
+        match find_path(
+            &mut self.astar,
+            vol,
+            pos,
+            tgt,
+            traversal_cfg,
+            self.path_length,
+            self.flee_from,
+        ) {
+            PathResult::Pending => {
+                self.path_state = PathState::Pending;
+            },
+            PathResult::None(path) => {
+                self.path_state = PathState::None;
+                self.route = Some((Route { path, next_idx: 0 }, false, tgt));
+            },
+            PathResult::Exhausted(path) => {
+                self.path_state = PathState::Exhausted;
+                self.route = Some((Route { path, next_idx: 0 }, false, tgt));
+            },
+            PathResult::Path(path, _) => {
+                self.flee_from = None;
+                self.path_state = PathState::Path;
+                self.path_length = Default::default();
+                self.route = Some((Route { path, next_idx: 0 }, true, tgt));
+            },
+        }
+
+        self.last_search_tgt = Some(tgt);
+    }
+
+    /// bastion (PATH-0): does this chaser need the scheduler to run a
+    /// search? Route presence is the exact condition `chase`'s own search
+    /// arm keys on, read AFTER the agent tick applied its invalidations.
+    pub fn needs_search(&self) -> bool { self.route.is_none() }
+
+    /// bastion (PATH-0): the scheduler's search entry — one budgeted
+    /// search/resume for `tgt`, storing the route the next agent tick
+    /// follows. A no-op if a route already exists (grant raced an inline
+    /// delivery — never double-spends budget on a routed chaser).
+    pub fn search_step<V>(
+        &mut self,
+        vol: &V,
+        pos: Vec3<f32>,
+        tgt: Vec3<f32>,
+        traversal_cfg: &TraversalConfig,
+    ) where
+        V: BaseVol<Vox = Block> + ReadVol,
+    {
+        if self.route.is_none() {
+            self.search_step_inner(vol, pos, tgt, traversal_cfg);
+        }
+    }
+
+    /// bastion (PATH-0): the per-call iteration budget the NEXT search
+    /// step hands `astar.poll` — `find_path`'s own [`PathLength`] map,
+    /// exposed as the scheduler's budget-accounting unit.
+    pub fn planned_iters(&self) -> u64 {
+        match self.path_length {
+            PathLength::Small => 250,
+            PathLength::Medium => 400,
+            PathLength::Long => 500,
+            PathLength::Longest => 750,
+        }
     }
 
     pub fn get_route(&self) -> Option<&Route> { self.route.as_ref().map(|(r, ..)| r) }
@@ -1560,6 +1630,7 @@ mod bastion_vertical_tests {
             can_fly: false,
             vectored_propulsion: false,
             is_target_loaded: true,
+            search_allowed: true,
         }
     }
 

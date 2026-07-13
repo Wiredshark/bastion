@@ -3067,6 +3067,11 @@ impl<'a> System<'a> for Sys {
                                     can_fly: false,
                                     vectored_propulsion: false,
                                     is_target_loaded: true,
+                                    // PATH-0: the flag gates Chaser
+                                    // searches only; bastion_full_path
+                                    // (TIGHTDIG, flag-OFF) is outside
+                                    // the scheduler's budget by status.
+                                    search_allowed: true,
                                 };
                                 match common::path::bastion_full_path(
                                     &*terrain,

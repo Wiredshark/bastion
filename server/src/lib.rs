@@ -18,6 +18,7 @@ pub mod bastion_chop;
 pub mod bastion_actions;
 pub mod bastion_mood;
 pub mod bastion_jobs;
+pub mod bastion_path;
 pub mod bastion_piles;
 mod character_creator;
 pub mod chat;
@@ -389,6 +390,10 @@ impl Server {
         state.ecs_mut().insert(Vec::<ChunkRequest>::new());
         // bastion (B4): job board + harness-pinned chunk set.
         state.ecs_mut().insert(bastion_jobs::JobBoard::default());
+        // bastion (PATH-0): the sequential path scheduler's state.
+        state
+            .ecs_mut()
+            .insert(bastion_path::PathScheduler::default());
         state
             .ecs_mut()
             .insert(common::bastion::ActivityZones::default());
@@ -1045,6 +1050,17 @@ impl Server {
             .unwrap_or_default();
         out.sort();
         out
+    }
+
+    /// bastion (PATH-0, harness hook): the path scheduler's telemetry —
+    /// (grants_total, peak_tick_iters, peak_wait). The scenario asserts
+    /// the cap held and no requester was starved.
+    pub fn bastion_path_stats(&self) -> (u64, u64, u32) {
+        let s = self
+            .state
+            .ecs()
+            .read_resource::<bastion_path::PathScheduler>();
+        (s.grants_total, s.peak_tick_iters, s.peak_wait)
     }
 
     /// bastion (B7-2, harness hook): cumulative preempt attempts (the

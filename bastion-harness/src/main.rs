@@ -252,6 +252,14 @@ struct Args {
     #[arg(long)]
     derive_scenario: bool,
 
+    /// bastion (PATH-0, row 45): the sequential budgeted path scheduler
+    /// under synthetic-N load — 18 colonists' first-tick searches exceed
+    /// the per-tick iteration cap, so real contention occurs; the cap
+    /// holds (measured), no requester starves (peak deferral bounded by
+    /// the round-robin), and the colony's work still completes.
+    #[arg(long)]
+    path_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -384,6 +392,8 @@ fn main() -> ExitCode {
         values_scenario(&args)
     } else if args.derive_scenario {
         derive_scenario(&args)
+    } else if args.path_scenario {
+        path_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -4508,6 +4518,190 @@ fn derive_scenario(args: &Args) -> ExitCode {
         && roundtrip;
     println!("{}", result);
     println!("DERIVE SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (PATH-0, row 45): the budget + no-starvation proof under
+/// SYNTHETIC N (the architect's re-scope — nothing grows N organically
+/// yet). 18 colonists all claim a 46-job strip across the plateau: the
+/// first arbitration puts 18 routeless Goto chasers before the
+/// scheduler at once (18 × 250 fresh-search iters = 4500 > the 3000
+/// cap), so real contention provably occurs and the round-robin's
+/// deferral bound is exercised, not just asserted. PASS requires: the
+/// scheduler actually served the load (grants > colonist count), the
+/// per-tick iteration spend NEVER exceeded the cap, the worst deferral
+/// stayed within the rotation bound (≤ 7 ticks — vs ceil(4500/3000) =
+/// 2 nominal, wide margin for re-search bursts), the mine COMPLETED
+/// (movement resolves under the budget — staggered, never stalled),
+/// and zero embeds. Two runs must produce identical outcome bools.
+fn path_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region};
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-path-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-path".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-path-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    // SYNTHETIC N: 18 colonists (the re-scoped premise — spawn what
+    // nothing yet grows).
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        18,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let fires_before = server.bastion_center_net_fires();
+
+    // The far strip: 2×23 = 46 surface cells at the west edge — every
+    // colonist claims and travels ~13 blocks, all searching at once.
+    let mine = Region {
+        min: Vec3::new(cx - 14, cy - 11, gz),
+        max: Vec3::new(cx - 13, cy + 11, gz),
+    };
+    let mine_jobs = server
+        .bastion_place_designation(mine, DesignationKind::Mine)
+        .len();
+    let mut resolved = false;
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        if server.bastion_jobs_in_region(mine) == 0 {
+            resolved = true;
+            break;
+        }
+    }
+    let (grants, peak_iters, peak_wait) = server.bastion_path_stats();
+    let fires_after = server.bastion_center_net_fires();
+
+    // The scheduler served real load; the cap held every tick; the
+    // worst deferral stayed inside the rotation bound; work completed.
+    let scheduler_active = grants > names.len() as u64;
+    let cap_held = peak_iters > 0
+        && peak_iters <= server::bastion_path::PATH_TICK_ITER_CAP;
+    let no_starvation = peak_wait <= 7;
+    let no_embeds = fires_after == fires_before;
+
+    let result = serde_json::json!({
+        "path_colonists": names.len(),
+        "path_mine_jobs": mine_jobs,
+        "path_scheduler_active": scheduler_active,
+        "path_cap_held": cap_held,
+        "path_no_starvation": no_starvation,
+        "path_resolved": resolved,
+        "path_no_embeds": no_embeds,
+    });
+    println!(
+        "PATH TELEMETRY: grants={grants} peak_tick_iters={peak_iters} \
+         peak_wait={peak_wait} cap={}",
+        server::bastion_path::PATH_TICK_ITER_CAP
+    );
+    let pass = names.len() == 18
+        && mine_jobs == 46
+        && scheduler_active
+        && cap_held
+        && no_starvation
+        && resolved
+        && no_embeds;
+    println!("{}", result);
+    println!("PATH SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);

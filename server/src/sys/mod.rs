@@ -33,6 +33,13 @@ pub fn add_server_systems(dispatch_builder: &mut DispatcherBuilder) {
     dispatch::<melee::Sys>(dispatch_builder, &[&projectile::Sys::sys_name()]);
     //Note: server should not depend on interpolation system
     dispatch::<agent::Sys>(dispatch_builder, &[]);
+    // bastion (PATH-0): the sequential path scheduler runs AFTER the
+    // agent tick — the tick surfaces routeless Goto colonists (holding
+    // the Pending stance), this system searches under the global budget,
+    // and the NEXT agent tick follows the delivered route (1-tick
+    // latency; the packet's enqueue/consume-last-result shape in pull
+    // form).
+    dispatch::<crate::bastion_path::Sys>(dispatch_builder, &[&agent::Sys::sys_name()]);
     // bastion (B4): job arbitration + travel intents for colonists.
     dispatch::<crate::bastion_jobs::Sys>(dispatch_builder, &[]);
     dispatch::<crate::bastion_piles::Sys>(dispatch_builder, &[]);
