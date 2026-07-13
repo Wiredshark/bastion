@@ -639,7 +639,15 @@ pub struct NeedTuning {
     pub decay_per_sec: f32,
     pub comfort: f32,
     pub weight: f32,
+    /// bastion (B7-2): below this the need PREEMPTS work (the low edge
+    /// of the hysteresis band; the high edge is `comfort + SLEEP_MARGIN`
+    /// — B7-1's wake threshold IS the doc's NEED_SATISFIED). Wide band =
+    /// no work/need flicker. serde-default keeps older RONs parseable.
+    #[serde(default = "default_need_interrupt")]
+    pub interrupt: f32,
 }
+
+fn default_need_interrupt() -> f32 { 0.2 }
 
 /// bastion (B7-0): the needs/mood tuning — RON
 /// (`assets/common/bastion_mood.ron`), graceful default (the
@@ -665,16 +673,19 @@ impl Default for MoodConfig {
                 decay_per_sec: 0.0004,
                 comfort: 0.5,
                 weight: -0.5,
+                interrupt: 0.2,
             },
             rest: NeedTuning {
                 decay_per_sec: 0.0003,
                 comfort: 0.5,
                 weight: -0.4,
+                interrupt: 0.2,
             },
             recreation: NeedTuning {
                 decay_per_sec: 0.0002,
                 comfort: 0.4,
                 weight: -0.15,
+                interrupt: 0.0,
             },
         }
     }

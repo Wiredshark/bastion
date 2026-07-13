@@ -367,6 +367,9 @@ pub const BED_REST_RECOVERY_PER_SEC: f32 = 0.02;
 /// Sleep past the comfort band by this much — waking AT the band would
 /// re-cross it within seconds of decay (rested, not barely-at-band).
 pub const SLEEP_MARGIN: f32 = 0.1;
+/// bastion (B7-2): the preempt-attempt cooldown (game-seconds) — the
+/// anti-livelock (c) guard window.
+pub const PREEMPT_COOLDOWN_SECS: f64 = 60.0;
 
 /// bastion (FR15-TIGHTDIG): the INPUT-SWAP measure — a synthetic
 /// "distance" that drives the EXISTING watchdog branch structure
@@ -1109,6 +1112,16 @@ pub struct JobBoard {
     /// persists on the colonist record; this is the runtime table
     /// (rebuilt as beds are built/assigned; the board is session-state).
     pub beds: HashMap<Vec3<i32>, common::bastion::BedSlot>,
+    /// bastion (B7-2): per-colonist preempt cooldown — the (c) livelock
+    /// guard: at most one need-preempt ATTEMPT per window regardless of
+    /// outcome (a failed attempt cannot re-fire inside it — the colonist
+    /// does reachable work meanwhile, the honest ENDURE; a successful
+    /// sleep does not need it — the meter sits above interrupt). The
+    /// last_bark shape.
+    preempt_cooldown: HashMap<Uid, f64>,
+    /// bastion (B7-2): preempt attempts fired (telemetry — the
+    /// anti-thrash assert counts these against the cooldown-rate bound).
+    pub preempt_attempts: u64,
     /// bastion (B6 HAUL): painted stockpile zones `(id, region)` — the haul
     /// destinations. Registered at placement, dropped on cancel (dependent
     /// haul jobs cancel with their zone).
@@ -2365,6 +2378,7 @@ impl<'a> System<'a> for Sys {
                     matches!(
                         j.kind,
                         common::bastion::JobKind::DepositRun { .. }
+                            | common::bastion::JobKind::RestAt { .. }
                     ) && j.claimed_by.is_none()
                 })
                 .map(|(id, _)| *id)
@@ -2459,6 +2473,111 @@ impl<'a> System<'a> for Sys {
                 }
             }
         }
+        // ── B7-2 (row 44, OPUS-GATED): the NEED-CHECK pass — the
+        // preemption FIRST half. At its own arbitration slot, a loaded
+        // colonist whose survival need sits below its interrupt
+        // threshold (not already on that need job, preempt cooldown
+        // clear) DROPS its work through the to_release seam and is
+        // queued for a pre-claimed need-job. The CREATION half runs
+        // AFTER the to_release drain below — the drain removes whatever
+        // ActiveJob an entity holds at drain time, so a same-slot insert
+        // would be destroyed by our own release. Pre-claimed self-jobs
+        // never enter the claim selection (the RestAt/DepositRun skip),
+        // so "out-tiers all work and access" holds BY CONSTRUCTION, not
+        // by winning a comparison. Needs rank by urgency (lowest meter
+        // first) — only rest is live today (hunger/recreation are
+        // B7-3; recreation interrupt is 0 = never preempts).
+        let mut preempt_pending: Vec<(specs::Entity, Uid, Vec3<i32>)> =
+            Vec::new();
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 13 {
+            let mood_cfg = common::bastion::MoodConfig::current();
+            for (entity, colonist, pos, uid, needs) in (
+                &entities,
+                &colonists,
+                &positions,
+                &uids,
+                &needs_storage,
+            )
+                .join()
+            {
+                if !is_loaded(entity) {
+                    continue;
+                }
+                // Urgency ranking over live needs (generic shape; one
+                // real candidate until B7-3 wires the rest).
+                let mut candidates: Vec<f32> = Vec::new();
+                if needs.rest < mood_cfg.rest.interrupt {
+                    candidates.push(needs.rest);
+                }
+                candidates.sort_by(|a, b| {
+                    a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                if candidates.is_empty() {
+                    continue;
+                }
+                if board
+                    .preempt_cooldown
+                    .get(uid)
+                    .is_some_and(|until| time.0 < *until)
+                {
+                    continue;
+                }
+                // Already on this need job? (RestAt is the rest need.)
+                if active_jobs.get(entity).is_some_and(|aj| {
+                    board.jobs.get(&aj.job).is_some_and(|j| {
+                        matches!(
+                            j.kind,
+                            common::bastion::JobKind::RestAt { .. }
+                        )
+                    })
+                }) {
+                    continue;
+                }
+                // A bed to target: OWN bed first (registered + free),
+                // else the nearest unoccupied slot. No bed = no preempt
+                // (the need decays toward the mood floor — the honest
+                // bedless-colony ENDURE, visible via the B7-0 formula).
+                let feet = pos.0.map(|e| e.floor() as i32);
+                let own = colonist.0.owned_bed.filter(|p| {
+                    board
+                        .beds
+                        .get(p)
+                        .is_some_and(|s| s.occupant.is_none())
+                });
+                let bed = own.or_else(|| {
+                    board
+                        .beds
+                        .iter()
+                        .filter(|(_, s)| s.occupant.is_none())
+                        .min_by_key(|(p, _)| {
+                            let d = **p - feet;
+                            (d.x as i64).pow(2)
+                                + (d.y as i64).pow(2)
+                                + (d.z as i64).pow(2)
+                        })
+                        .map(|(p, _)| *p)
+                });
+                let Some(bed_pos) = bed else { continue };
+                board
+                    .preempt_cooldown
+                    .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
+                board.preempt_attempts += 1;
+                if active_jobs.contains(entity) {
+                    // Drop the work-job through THE seam (claim freed
+                    // for others, activity cleared, bed occupancy
+                    // released — conservation by reuse, no second path
+                    // to get wrong).
+                    to_release.push(entity);
+                }
+                info!(
+                    colonist = %uid,
+                    bed = ?bed_pos,
+                    "bastion: need preempt — rest below interrupt"
+                );
+                preempt_pending.push((entity, *uid, bed_pos));
+            }
+        }
+
         // `Colonist`'s storage is change-tracked (synced comp) — mutable
         // multi-storage joins over it need `LendJoin`, not `Join`.
         let mut upkeep_iter = (
@@ -3655,6 +3774,21 @@ impl<'a> System<'a> for Sys {
             if let Some(agent) = agents.get_mut(*entity) {
                 agent.rtsim_controller.activity = None;
             }
+        }
+        // ── B7-2: the preemption SECOND half — create the pre-claimed
+        // need-jobs now that the drain has cleanly released the old work
+        // (same tick: release-then-create, coherent by ordering).
+        for (entity, uid, bed_pos) in preempt_pending.drain(..) {
+            let id = board.insert_rest_job(bed_pos, uid);
+            let _ = active_jobs.insert(entity, comp::bastion::ActiveJob {
+                job: id,
+                state: comp::bastion::ActiveJobState::Traveling,
+                best_dist: f32::MAX,
+                stuck_time: 0.0,
+                reset_dist: f32::MAX,
+                soft_granted: false,
+                stance: Vec3::unit_z(),
+            });
         }
 
         // ── B-LIVE3: MINE DONE + DISPERSE (Ben's mine lifecycle) ─────────

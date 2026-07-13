@@ -7,7 +7,10 @@
 // rtsim's ChronicleKind, which this crate layer cannot see.
 (
     mood_base: 0.6,
-    hunger: (decay_per_sec: 0.0004, comfort: 0.5, weight: -0.5),
-    rest: (decay_per_sec: 0.0003, comfort: 0.5, weight: -0.4),
-    recreation: (decay_per_sec: 0.0002, comfort: 0.4, weight: -0.15),
+    // interrupt = the preemption threshold (B7-2): below it the need
+    // drops work and self-assigns its need-job; recreation never
+    // preempts (interrupt 0 — mood-only meter per the B7 ruling).
+    hunger: (decay_per_sec: 0.0004, comfort: 0.5, weight: -0.5, interrupt: 0.2),
+    rest: (decay_per_sec: 0.0003, comfort: 0.5, weight: -0.4, interrupt: 0.2),
+    recreation: (decay_per_sec: 0.0002, comfort: 0.4, weight: -0.15, interrupt: 0.0),
 )

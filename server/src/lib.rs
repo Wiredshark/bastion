@@ -854,6 +854,30 @@ impl Server {
         false
     }
 
+    /// bastion (B7-2, harness hook): cumulative preempt attempts (the
+    /// anti-thrash rate bound reads the delta over a window).
+    pub fn bastion_preempt_attempts(&self) -> u64 {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .preempt_attempts
+    }
+
+    /// bastion (B7-2, harness hook): register a bed slot DIRECTLY on the
+    /// board (the completion arm's registration, callable) — preemption
+    /// tests need beds to exist without re-proving the build pipeline
+    /// (the BED leg owns that), and the unreachable-endure fixture needs
+    /// a bed sealed inside solid rock.
+    pub fn bastion_register_bed(&mut self, pos: Vec3<i32>) {
+        let ecs = self.state.ecs();
+        let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
+        board.beds.insert(pos, common::bastion::BedSlot {
+            kind: common::bastion::BedKind::Bedroll,
+            owner: None,
+            occupant: None,
+        });
+    }
+
     /// bastion (B7-1, harness hook): assign bed OWNERSHIP — writes the
     /// board slot's fast lookup AND the colonist record's persistent
     /// truth (mirrored by colonist_record every loaded tick).

@@ -219,6 +219,14 @@ struct Args {
     #[arg(long)]
     bed_scenario: bool,
 
+    /// bastion (B7-2, row 44, OPUS-gated): need preemption — rest below
+    /// the interrupt drops work for a pre-claimed RestAt, runs to the
+    /// satisfied band, resumes; an unreachable bed degrades to ENDURE
+    /// (works through the cooldown, meter keeps decaying, no livelock,
+    /// zero embeds).
+    #[arg(long)]
+    preempt_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -343,6 +351,8 @@ fn main() -> ExitCode {
         needs_scenario(&args)
     } else if args.bed_scenario {
         bed_scenario(&args)
+    } else if args.preempt_scenario {
+        preempt_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -3439,6 +3449,303 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (B7-2, row 44, OPUS-gated): NEED PREEMPTION in vivo — (1) a
+/// colonist mid-MINE whose `rest` crosses the interrupt DROPS the work
+/// (claim freed to the board), self-assigns a pre-claimed RestAt (no
+/// scoring competition — impossible by construction), sleeps to the
+/// satisfied band, and RESUMES: the mine completes only after the nap.
+/// (2) A colonist whose only bed is SEALED inside rock degrades to
+/// ENDURE: the travel watchdog releases the unreachable RestAt, the
+/// orphan sweep removes it, the preempt cooldown holds re-attempts off,
+/// and the colonist DOES REACHABLE WORK meanwhile while the meter keeps
+/// decaying — no livelock, no thrash, zero embeds (the no-entombment
+/// counters stay silent). Deterministic per seed.
+fn preempt_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region};
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-preempt-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-preempt".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-preempt-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    // FLUSH PLATEAU (the B7-1 fixture-geometry lesson).
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        1,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let a = names.first().cloned().unwrap_or_default();
+
+    // The reachable bed + a mine strip.
+    let bed = Vec3::new(cx - 6, cy, gz + 1);
+    server.bastion_register_bed(bed);
+    let mine = Region {
+        min: Vec3::new(cx + 6, cy - 2, gz),
+        max: Vec3::new(cx + 7, cy + 2, gz),
+    };
+    let mine_jobs = server
+        .bastion_place_designation(mine, DesignationKind::Mine)
+        .len();
+    // Let A claim and dig a little.
+    tick(&mut server, 90);
+    let dug_before_preempt =
+        mine_jobs - server.bastion_jobs_in_region(mine);
+
+    // PREEMPT: rest below the interrupt — the need-check drops the mine
+    // claim and self-assigns RestAt; A sleeps to the satisfied band.
+    server.bastion_set_needs(&a, 1.0, 0.15, 1.0);
+    let mut preempted_rested = false;
+    let mut jobs_at_rest_peak = 0usize;
+    for _ in 0..360 {
+        tick(&mut server, 10);
+        let rest = server
+            .bastion_colonist_needs_mood(&a)
+            .map(|v| v.1)
+            .unwrap_or(0.0);
+        if rest >= 0.58 {
+            preempted_rested = true;
+            jobs_at_rest_peak = server.bastion_jobs_in_region(mine);
+            break;
+        }
+    }
+    // The nap PAUSED the mine (jobs remained at the rest peak), and the
+    // work then RESUMES to completion.
+    let paused = jobs_at_rest_peak > 0;
+    let mut resumed = false;
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        if server.bastion_jobs_in_region(mine) == 0 {
+            resumed = true;
+            break;
+        }
+    }
+
+    // PHASE 2 — UNREACHABLE ENDURE: a FLOATING bed A OWNS (the own-bed
+    // preference deterministically out-picks the old ground slot — which
+    // never unregisters; slot lifecycle on block destruction is a known
+    // gap, reported). First fixture generation SEALED the bed in a 1-thick
+    // box — and the colonist slept against the OUTSIDE through the wall
+    // (the arrive radius reaches through 1 block; enclosure is not
+    // unreachability — DISTANCE is). The floating slab has no route up:
+    // the travel watchdog releases, the cooldown holds, and A mines
+    // REACHABLE work while the meter keeps decaying.
+    let sky_bed = Vec3::new(cx, cy + 9, gz + 6);
+    server
+        .state_mut()
+        .set_block(sky_bed - Vec3::unit_z(), rock);
+    server.bastion_register_bed(sky_bed);
+    let own2 = server.bastion_assign_bed_owner(&a, sky_bed);
+    let mine2 = Region {
+        min: Vec3::new(cx + 6, cy - 5, gz - 1),
+        max: Vec3::new(cx + 7, cy + 5, gz - 1),
+    };
+    let mine2_jobs = server
+        .bastion_place_designation(mine2, DesignationKind::Mine)
+        .len();
+    let fires_before = server.bastion_center_net_fires();
+    let attempts_before = server.bastion_preempt_attempts();
+    server.bastion_set_needs(&a, 1.0, 0.15, 1.0);
+    let rest_start = 0.15f32;
+    // Two cooldown windows' worth of ticks (2 × 60s at 30tps = 3600).
+    tick(&mut server, 3600);
+    let (rest_end, endure_dug) = (
+        server
+            .bastion_colonist_needs_mood(&a)
+            .map(|v| v.1)
+            .unwrap_or(1.0),
+        mine2_jobs - server.bastion_jobs_in_region(mine2),
+    );
+    let fires_after = server.bastion_center_net_fires();
+    // ENDURE: the meter kept decaying (no phantom sleep), work happened
+    // anyway (no livelock/thrash), nothing embedded.
+    let endured = own2 && rest_end < rest_start && endure_dug >= 1;
+    let no_embeds = fires_after == fires_before;
+    // ANTI-THRASH BY CONSTRUCTION (architect assert #1): this fixture
+    // WOULD flap without the guards — the watchdog releases an
+    // unreachable RestAt in ~10-20s, so without the 60s cooldown the
+    // 120s window would fire ~6-8 attempts; the rate bound proves the
+    // guard: at most 3 (t≈0, 60, 120).
+    let attempts_endure =
+        server.bastion_preempt_attempts() - attempts_before;
+    let thrash_bounded = (1..=3).contains(&attempts_endure);
+    // HYSTERESIS HOVER (the other would-thrash construction): rest just
+    // ABOVE the interrupt never fires an attempt at all.
+    let attempts_hover0 = server.bastion_preempt_attempts();
+    server.bastion_set_needs(&a, 1.0, 0.21, 1.0);
+    tick(&mut server, 600);
+    let hover_silent =
+        server.bastion_preempt_attempts() == attempts_hover0;
+
+    // MID-TRAVEL WEDGE (architect assert #2): preempt a colonist that is
+    // BELOW GRADE (in a pit, mid-work) — the RestAt swaps out its
+    // in-progress travel; the pit walls wedge the bed approach; the
+    // stuck_watch teleport (orthogonal to need logic) must still get it
+    // OUT. Zero embeds throughout.
+    let pit = Vec3::new(cx - 10, cy + 8, gz);
+    for dz in 0..3 {
+        server
+            .state_mut()
+            .set_block(pit - Vec3::unit_z() * dz, air);
+    }
+    let tp_ok = server.bastion_teleport_colonist(
+        &a,
+        pit.map(|e| e as f32) + Vec3::new(0.5, 0.5, -2.0),
+    );
+    server.bastion_set_needs(&a, 1.0, 0.1, 1.0);
+    // The cooldown from the hover phase may still hold — wait it out,
+    // then give the preempt + wedge + teleport time to play out.
+    let mut out_of_pit = false;
+    for _ in 0..900 {
+        tick(&mut server, 10);
+        if let Some((_, p, _)) = server
+            .bastion_colonist_states()
+            .into_iter()
+            .find(|(n, _, _)| *n == a)
+        {
+            if p.z >= gz as f32 && p.xy().distance(pit.map(|e| e as f32).xy()) > 2.0
+            {
+                out_of_pit = true;
+                break;
+            }
+        }
+    }
+    let fires_final = server.bastion_center_net_fires();
+    let wedge_survived = tp_ok && out_of_pit && fires_final == fires_before;
+
+    let result = serde_json::json!({
+        "preempt_mine_jobs": mine_jobs,
+        "preempt_dug_before": dug_before_preempt,
+        "preempt_rested": preempted_rested,
+        "preempt_jobs_at_rest_peak": jobs_at_rest_peak,
+        "preempt_paused": paused,
+        "preempt_resumed": resumed,
+        "preempt_mine2_jobs": mine2_jobs,
+        "preempt_endure_dug": endure_dug,
+        "preempt_rest_end": rest_end,
+        "preempt_endured": endured,
+        "preempt_no_embeds": no_embeds,
+        "preempt_attempts_endure": attempts_endure,
+        "preempt_thrash_bounded": thrash_bounded,
+        "preempt_hover_silent": hover_silent,
+        "preempt_wedge_survived": wedge_survived,
+        "preempt_out_of_pit": out_of_pit,
+        "preempt_colonists": names.len(),
+    });
+    let pass = mine_jobs == 10
+        && preempted_rested
+        && paused
+        && resumed
+        && endured
+        && no_embeds
+        && thrash_bounded
+        && hover_silent
+        && wedge_survived
+        && names.len() == 1;
+    println!("{}", result);
+    println!("PREEMPT SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
