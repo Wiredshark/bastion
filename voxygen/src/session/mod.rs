@@ -151,6 +151,12 @@ pub struct SessionState {
     bastion_selected: Vec<specs::Entity>,
     /// bastion (B3): overhead marker shapes for loaded colonists.
     bastion_colonist_markers: HashMap<specs::Entity, DebugShapeId>,
+    /// bastion (UI-4.1): world-space highlight rings under the SELECTED
+    /// colonists — a flat ground disc that tracks each one, so a picked
+    /// colonist reads at a glance in the world (not just the HUD line).
+    /// Keyed by entity, synced against `bastion_selected` (the same
+    /// marker-sync shape as the overhead markers).
+    bastion_selection_rings: HashMap<specs::Entity, DebugShapeId>,
     /// bastion (B2a): how many echoed designations already have overlay
     /// shapes, + those shapes (debug-pipeline line rectangles).
     /// Last-seen `Client::bastion_designations_rev` (B5.5: rebuild-on-rev).
@@ -297,6 +303,7 @@ impl SessionState {
             bastion_boxsel: None,
             bastion_selected: Vec::new(),
             bastion_colonist_markers: HashMap::new(),
+            bastion_selection_rings: HashMap::new(),
             bastion_designation_synced: 0,
             bastion_designation_shapes: Vec::new(),
             bastion_inspect_sent: None,
@@ -640,6 +647,68 @@ impl SessionState {
                 id,
                 [pos.x, pos.y, pos.z + 2.4, 0.0],
                 [0.25, 0.95, 1.0, 0.9],
+                [0.0, 0.0, 0.0, 1.0],
+            );
+        }
+    }
+
+    /// bastion (UI-4.1): a flat highlight ring under each SELECTED colonist,
+    /// tracking it as it moves. Mirrors `bastion_sync_colonist_markers`
+    /// exactly (add/reuse/remove a per-entity debug shape), but keyed on the
+    /// selection set instead of all colonists, and drawn as a wide, thin
+    /// ground disc (a flat `Cylinder`) in a warm gold — distinct from the
+    /// cyan overhead marker — so the picked colonist reads at a glance in
+    /// the world. Deselecting or a vanished entity drops its ring.
+    fn bastion_sync_selection_rings(&mut self) {
+        use specs::Join;
+        let sel: Vec<(specs::Entity, Vec3<f32>)> = {
+            let client = self.client.borrow();
+            let ecs = client.state().ecs();
+            let positions = ecs.read_storage::<comp::Pos>();
+            // Only the selected entities that are still LOADED colonists
+            // (a vanished/despawned one is dropped below).
+            let colonists = ecs.read_storage::<comp::Colonist>();
+            self.bastion_selected
+                .iter()
+                .filter_map(|&e| {
+                    (colonists.contains(e))
+                        .then(|| positions.get(e).map(|p| (e, p.0)))
+                        .flatten()
+                })
+                .collect()
+        };
+        let live_set: std::collections::HashSet<specs::Entity> =
+            sel.iter().map(|(e, _)| *e).collect();
+        let stale: Vec<(specs::Entity, DebugShapeId)> = self
+            .bastion_selection_rings
+            .iter()
+            .filter(|(e, _)| !live_set.contains(e))
+            .map(|(e, id)| (*e, *id))
+            .collect();
+        for (e, id) in stale {
+            self.bastion_selection_rings.remove(&e);
+            self.scene.debug.remove_shape(id);
+        }
+        for (e, pos) in sel {
+            let id = match self.bastion_selection_rings.get(&e) {
+                Some(id) => *id,
+                None => {
+                    let id = self.scene.debug.add_shape(
+                        crate::scene::DebugShape::Cylinder {
+                            radius: 0.7,
+                            height: 0.05,
+                        },
+                    );
+                    self.bastion_selection_rings.insert(e, id);
+                    id
+                },
+            };
+            // At the feet (pos.z), a hair up so it rides the ground without
+            // z-fighting. Warm gold, semi-opaque.
+            self.scene.debug.set_context(
+                id,
+                [pos.x, pos.y, pos.z + 0.05, 0.0],
+                [1.0, 0.85, 0.3, 0.85],
                 [0.0, 0.0, 0.0, 1.0],
             );
         }
@@ -3109,10 +3178,19 @@ impl PlayState for SessionState {
                 }
                 self.bastion_sync_designations();
                 self.bastion_sync_colonist_markers();
+                self.bastion_sync_selection_rings();
                 self.bastion_sync_inspector();
-            } else if !self.bastion_colonist_markers.is_empty() {
-                let ids: Vec<DebugShapeId> =
-                    self.bastion_colonist_markers.drain().map(|(_, id)| id).collect();
+            } else if !self.bastion_colonist_markers.is_empty()
+                || !self.bastion_selection_rings.is_empty()
+            {
+                // Left overseer: drop every colony debug shape (markers +
+                // selection rings) so nothing lingers in third-person.
+                let ids: Vec<DebugShapeId> = self
+                    .bastion_colonist_markers
+                    .drain()
+                    .map(|(_, id)| id)
+                    .chain(self.bastion_selection_rings.drain().map(|(_, id)| id))
+                    .collect();
                 for id in ids {
                     self.scene.debug.remove_shape(id);
                 }
