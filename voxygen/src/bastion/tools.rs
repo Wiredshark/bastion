@@ -22,7 +22,7 @@ pub enum ToolMode {
 }
 
 impl ToolMode {
-    pub const ALL: [ToolMode; 10] = [
+    pub const ALL: [ToolMode; 11] = [
         ToolMode::Pan,
         ToolMode::Inspect,
         ToolMode::Designate(DesignationKind::Mine),
@@ -34,12 +34,18 @@ impl ToolMode {
         ToolMode::Designate(DesignationKind::Stockpile),
         // FARM/PROD-2 (row 46): the farm-plot paint — was shipped in the
         // sim + zone-color legend but never wired to a palette button, so
-        // Farm was UNSELECTABLE in the client (the missing 10th entry;
-        // Play-Tester find, blocked Ben's FARM + AUTON-2 recovery testing).
+        // Farm was UNSELECTABLE in the client (Play-Tester find, blocked
+        // Ben's FARM + AUTON-2 recovery testing).
         ToolMode::Designate(DesignationKind::Farm),
         // B5.8: ladders — a 1-column upward designation (drag a spot, the
         // up-extent sets the height; kind default = 4 rungs).
         ToolMode::Designate(DesignationKind::Ladder),
+        // B7-1 / EXHAUSTIVENESS-ASSERTS (row 51.52): beds — placed like a
+        // Ladder (a designation with a Bedroll-placing completion arm), had
+        // a reserved palette color but no button (the 3rd missing-wiring
+        // instance, surfaced by the exhaustiveness pass + architect-ruled a
+        // confirmed bug). Wired here.
+        ToolMode::Designate(DesignationKind::Bed),
         ToolMode::Erase,
     ];
 
@@ -232,6 +238,40 @@ impl Tools {
             format!("{base} · FLAT floor")
         } else {
             base
+        }
+    }
+}
+
+#[cfg(test)]
+mod exhaustiveness_tests {
+    use super::*;
+    use strum::IntoEnumIterator;
+
+    /// bastion (EXHAUSTIVENESS-ASSERTS, row 51.52): the overseer tool
+    /// palette (`ToolMode::ALL`) must cover EXACTLY the paintable
+    /// designations — the guard for the FARM-PALETTE bug class (a paintable
+    /// `DesignationKind` silently dropped from the hand-listed array while
+    /// the append-only enum grew). BIDIRECTIONAL: every `is_tool_paintable`
+    /// kind has a `Designate` button, and every `Designate` button is a
+    /// paintable kind. Pairs with the EXHAUSTIVE `DesignationKind::
+    /// is_tool_paintable` match (common) — that forces every NEW variant to
+    /// be categorized at compile time (the gate's UNIT leg compiles common);
+    /// this links the categorization to the voxygen palette. (Dev/CI test:
+    /// `cargo test -p veloren-voxygen`; the exhaustive-match half is
+    /// compile-time.)
+    #[test]
+    fn tool_palette_matches_paintable_designations() {
+        for k in DesignationKind::iter() {
+            let in_palette = ToolMode::ALL.contains(&ToolMode::Designate(k));
+            assert_eq!(
+                k.is_tool_paintable(),
+                in_palette,
+                "DesignationKind::{k:?}: is_tool_paintable()={} but present in \
+                 ToolMode::ALL={in_palette} — they must AGREE. If paintable, add a \
+                 ToolMode::Designate({k:?}) entry to ALL (the Farm/Bed fix shape); if not, \
+                 remove it or fix is_tool_paintable. This is the Farm-palette-bug guard.",
+                k.is_tool_paintable(),
+            );
         }
     }
 }

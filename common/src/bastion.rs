@@ -267,8 +267,12 @@ impl Purpose {
 /// Meeting (the proof zone biasing EXISTING idle behavior); further kinds
 /// land with their owning blocks (Refuse/Gather = ZONE-1, needs-gated
 /// kinds = ZONE-2+).
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ZoneKind {
+    // `Default` so `DesignationKind` can derive `strum::EnumIter` (the
+    // EXHAUSTIVENESS-ASSERTS iteration; a data variant needs a default to
+    // enumerate). Meaningless as a "default zone" — only the iterator uses it.
+    #[default]
     Meeting,
 }
 
@@ -303,7 +307,9 @@ pub const ZONE_MAGNET_WEIGHT: f32 = 0.1;
 pub const ZONE_MAGNET_RANGE: f32 = 48.0;
 
 /// What a painted designation region means. B4 turns these into jobs.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, strum::EnumIter,
+)]
 pub enum DesignationKind {
     Mine,
     Chop,
@@ -355,6 +361,39 @@ impl DesignationKind {
             DesignationKind::Gather => "Gather",
             DesignationKind::Bed => "Bed",
             DesignationKind::Farm => "Farm",
+        }
+    }
+
+    /// bastion (EXHAUSTIVENESS-ASSERTS, row 51.52): is this kind placed by
+    /// the player PAINTING it with the overseer area toolbar (a
+    /// `ToolMode::Designate` button)? An EXHAUSTIVE match — no wildcard — so
+    /// a NEW `DesignationKind` variant fails to COMPILE here until it's
+    /// categorized. Paired with the voxygen parity test, this is the
+    /// compile-time guard the FARM-PALETTE bug lacked (Farm was a real
+    /// paintable kind silently missing from the hand-listed `ToolMode::ALL`;
+    /// the append-only-enum-vs-hand-mirrored-array trap). Every `true` kind
+    /// MUST have a `ToolMode::ALL` entry; every `ToolMode::Designate(_)`
+    /// MUST be `true` here.
+    pub fn is_tool_paintable(&self) -> bool {
+        match self {
+            DesignationKind::Mine
+            | DesignationKind::Chop
+            | DesignationKind::Gather
+            | DesignationKind::Build
+            | DesignationKind::Stockpile
+            | DesignationKind::Farm
+            | DesignationKind::Ladder
+            // Bed: RULED a confirmed bug (architect, this pass) — 3rd
+            // instance of the missing-wiring class (Mine-legend/Farm/Bed):
+            // Bed has a reserved palette color (voxygen tools.rs) + a
+            // completion arm placing a Bedroll sprite ("placed like a
+            // Ladder", which IS paintable), yet had no ToolMode::ALL button.
+            // Categorized paintable here + given its button in the same pass;
+            // EXHAUSTIVENESS surfaced it exactly as intended.
+            | DesignationKind::Bed => true,
+            // NON-paintable: Zone(_) is placed via the activity-zone UX, not
+            // the paint toolbar.
+            DesignationKind::Zone(_) => false,
         }
     }
 
