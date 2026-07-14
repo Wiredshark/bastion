@@ -7835,9 +7835,23 @@ fn bed_scenario(args: &Args) -> ExitCode {
     // KILL-WHILE-SLEEPING: B re-sleeps in bed2; killed mid-sleep, the
     // occupancy releases via the orphan sweep.
     server.bastion_set_needs(&bn, 1.0, 0.05, 1.0);
-    let _ = server.bastion_assign_rest(&bn, bed2);
     let mut occupied_mid = false;
-    for _ in 0..240 {
+    // BED-OCCUPIED-MID robustness (flake fix): by this phase B has run
+    // LIVE under the arbiter through A's long sleep + C's collision + the
+    // 3600-tick winner loop, so B usually already holds an ActiveJob — a
+    // SINGLE assign_rest then NO-OPS (returns false when B is busy), B
+    // rests wherever the arbiter put it, and bed2 never fills (the ~75%
+    // occupied_mid flake — an arbiter-vs-assign timing RACE, NOT a
+    // CHOP-FELLING regression: the field flaps false/false/true and the
+    // bed-occupancy logic is untouched). Fix = RE-ASSERT the assignment
+    // each iteration (assign_rest is a safe no-op while B is busy; it
+    // takes the moment B goes idle, and at 5-tick cadence it out-paces the
+    // arbiter's 15-tick selection, so B is reliably steered to bed2 — then
+    // resting-bound, the arbiter won't override). Window 240->480 for the
+    // extra travel headroom. The real invariant (released_on_death) was
+    // always sound; this only makes its precondition reliable.
+    for _ in 0..480 {
+        let _ = server.bastion_assign_rest(&bn, bed2);
         tick(&mut server, 5);
         if server
             .bastion_bed_slot(bed2)
