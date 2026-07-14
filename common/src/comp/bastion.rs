@@ -279,6 +279,58 @@ pub fn stagger_interrupt(
     (base * (1.0 - 0.4 * h)).clamp(INTERRUPT_FLOOR.min(base), base * 1.5)
 }
 
+/// bastion (AUTON-3, row 51): the DRIVE-ORDER guard — Flee's modulated
+/// urgency can never sink below this, and the floor sits strictly above
+/// Work's modulated CEILING (0.6), so the AUTON-0 safety ordering
+/// (Flee > Work > Idle) survives EVERY possible trait roll. Baked in now
+/// so B8's live threats inherit a correct invariant, not a landmine.
+pub const FLEE_URGENCY_FLOOR: f32 = 0.8;
+
+/// bastion (AUTON-3, row 51): TRAIT-MODULATED drive urgencies — the E2
+/// legibility mechanism: two colonists in the SAME state score their
+/// drives differently because of WHO THEY ARE. Distinct from AUTON-2's
+/// threshold-stagger (when a need becomes urgent); this shapes which
+/// drive WINS the arbiter's pick. One value + one personality pair per
+/// axis, mirror-simple (the spec's own examples):
+/// - WORK  × (1 + 0.4·g), g = Wealth/100 ∈ [−0.5, 0.5] → [0.4, 0.6]
+///   (the greedy work harder; ceiling 0.6 < the Flee floor).
+/// - FLEE  × (1 − 0.2·b), b = Glory/100 + 0.25·Adventurous −
+///   0.25·Worried ∈ [−0.75, 0.75] → [0.85, 1.15], then `.max(floor)`
+///   (glory-seekers stand their ground longer — but NEVER below the
+///   order guard; bravest possible = 0.85 > 0.8 floor > 0.6 ceiling).
+/// - IDLE  × (1 + 0.4·s), s = Kin/100 + 0.25·(Sociable∨Extroverted) −
+///   0.25·Introverted ∈ [−0.75, 0.75] → [0.07, 0.13] (the social idle
+///   richer; ceiling 0.13 < Work's floor 0.4 — work-when-available
+///   still always wins, the AUTON-0 liveness contract).
+/// Returns (work, flee, idle) — the `Arbiter.last_scores` order. PURE +
+/// RNG-free (field reads only — the determinism house invariant).
+#[expect(clippy::too_many_arguments)]
+pub fn modulated_urgencies(
+    base: (f32, f32, f32),
+    values: &std::collections::HashMap<crate::bastion::Value, i8>,
+    adventurous: bool,
+    worried: bool,
+    sociable: bool,
+    introverted: bool,
+) -> (f32, f32, f32) {
+    use crate::bastion::Value;
+    let vw = |v: Value| -> f32 {
+        values.get(&v).copied().map_or(0.0, |w| f32::from(w) / 100.0)
+    };
+    let g = vw(Value::Wealth);
+    let b = vw(Value::Glory)
+        + if adventurous { 0.25 } else { 0.0 }
+        - if worried { 0.25 } else { 0.0 };
+    let s = vw(Value::Kin)
+        + if sociable { 0.25 } else { 0.0 }
+        - if introverted { 0.25 } else { 0.0 };
+    (
+        base.0 * (1.0 + 0.4 * g),
+        (base.1 * (1.0 - 0.2 * b)).max(FLEE_URGENCY_FLOOR.min(base.1)),
+        base.2 * (1.0 + 0.4 * s),
+    )
+}
+
 pub fn care_factor(
     values: &std::collections::HashMap<crate::bastion::Value, i8>,
     affinities: &[(crate::bastion::Value, f32)],
@@ -305,6 +357,69 @@ pub fn care_factor(
 #[cfg(test)]
 mod bastion_b70_tests {
     use super::*;
+
+    /// AUTON-3: the drive-order guard pinned. THE FLEE-FLOOR ASSERT
+    /// (the packet's load-bearing guard, unit form): the BRAVEST
+    /// possible roll (Glory +50, Adventurous, not Worried → b = 0.75)
+    /// still scores Flee at 0.85 — above the 0.8 floor and strictly
+    /// above the GREEDIEST possible Work ceiling (Wealth +50 → 0.6):
+    /// the AUTON-0 ordering survives every trait combination. Plus:
+    /// identity (no traits = bases exactly), the zero-preservation
+    /// guard (a no-signal flee base of 0.0 stays 0.0 — modulation can
+    /// not invent a flee), and Idle's ceiling (most-social 0.13) under
+    /// Work's floor (least-greedy 0.4) — work-when-available always
+    /// wins.
+    #[test]
+    fn auton3_drive_order_guard() {
+        use crate::bastion::Value;
+        use std::collections::HashMap;
+        let base = (0.5f32, 1.0f32, 0.1f32);
+        let none = HashMap::new();
+        // Identity.
+        assert_eq!(
+            modulated_urgencies(base, &none, false, false, false, false),
+            base
+        );
+        // Bravest Flee vs greediest Work — the order guard, exact.
+        let mut brave = HashMap::new();
+        brave.insert(Value::Glory, 50i8);
+        let (_, flee_min, _) =
+            modulated_urgencies(base, &brave, true, false, false, false);
+        let mut greedy = HashMap::new();
+        greedy.insert(Value::Wealth, 50i8);
+        let (work_max, _, _) =
+            modulated_urgencies(base, &greedy, false, false, false, false);
+        assert!((flee_min - 0.85).abs() < 1e-6);
+        assert!((work_max - 0.6).abs() < 1e-6);
+        assert!(flee_min > work_max);
+        assert!(flee_min >= FLEE_URGENCY_FLOOR);
+        // Zero-preservation: no flee signal (base 0.0) stays 0.0 even
+        // for the most fearful roll (modulation cannot INVENT a flee).
+        let mut fearful = HashMap::new();
+        fearful.insert(Value::Glory, -50i8);
+        let (_, f0, _) = modulated_urgencies(
+            (0.5, 0.0, 0.1),
+            &fearful,
+            false,
+            true,
+            false,
+            false,
+        );
+        assert_eq!(f0, 0.0);
+        // Idle ceiling < Work floor: the liveness contract.
+        let mut social = HashMap::new();
+        social.insert(Value::Kin, 50i8);
+        let (_, _, idle_max) =
+            modulated_urgencies(base, &social, false, false, true, false);
+        let mut lazy_poor = HashMap::new();
+        lazy_poor.insert(Value::Wealth, -50i8);
+        let (work_min, _, _) = modulated_urgencies(
+            base, &lazy_poor, false, false, false, false,
+        );
+        assert!((idle_max - 0.13).abs() < 1e-6);
+        assert!((work_min - 0.4).abs() < 1e-6);
+        assert!(idle_max < work_min);
+    }
 
     /// AUTON-2: the trait-stagger pinned. THE OPUS FLOOR ASSERT (unit
     /// form): the hardiest POSSIBLE colonist (both values +50,

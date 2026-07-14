@@ -3100,9 +3100,30 @@ impl<'a> System<'a> for Sys {
                 });
             let mut switches = 0u64;
             let mut flee_preempts: Vec<specs::Entity> = Vec::new();
-            for (entity, _, _uid) in
+            // AUTON-3 (row 51): personality for the urgency modulation
+            // rides the same rtsim read guard the mood/preempt passes
+            // use — zero new coupling. Resolved lazily per colonist
+            // ONLY inside the two scoring branches (flee-fire + the
+            // 15-tick selection), never per tick for the idle majority.
+            let arb_data = rtsim.state().data();
+            for (entity, colonist, _uid) in
                 (&entities, &colonists, &uids).join()
             {
+                let personality4 = || {
+                    rtsim_entities
+                        .get(entity)
+                        .and_then(|re| arb_data.npcs.get(*re))
+                        .map_or((false, false, false, false), |npc| {
+                            use common::rtsim::PersonalityTrait as PT;
+                            (
+                                npc.personality.is(PT::Adventurous),
+                                npc.personality.is(PT::Worried),
+                                npc.personality.is(PT::Sociable)
+                                    || npc.personality.is(PT::Extroverted),
+                                npc.personality.is(PT::Introverted),
+                            )
+                        })
+                };
                 if !is_loaded(entity) {
                     continue;
                 }
@@ -3152,8 +3173,19 @@ impl<'a> System<'a> for Sys {
                 {
                     arb.current = comp::bastion::Drive::Flee;
                     arb.committed_until = time.0 + ARB_COMMIT_SECS;
-                    arb.last_scores =
-                        (0.0, URGENCY_FLEE, URGENCY_IDLE);
+                    // AUTON-3: the recorded scores are the MODULATED
+                    // ones (what UI-4 will show); the floor guard keeps
+                    // the preemption decision itself unchanged (Flee
+                    // fired on the signal, not on the score).
+                    let (adv, wor, soc, intr) = personality4();
+                    arb.last_scores = comp::bastion::modulated_urgencies(
+                        (0.0, URGENCY_FLEE, URGENCY_IDLE),
+                        &colonist.0.values,
+                        adv,
+                        wor,
+                        soc,
+                        intr,
+                    );
                     switches += 1;
                     if active_jobs.contains(entity) {
                         // The 3-step clear = the release seam (the
@@ -3167,9 +3199,26 @@ impl<'a> System<'a> for Sys {
                 if select_tick && time.0 >= arb.committed_until {
                     let work_sig = active_jobs.contains(entity)
                         || work_available;
-                    let w = if work_sig { URGENCY_WORK } else { 0.0 };
-                    let f = if flee_sig { URGENCY_FLEE } else { 0.0 };
-                    let i = URGENCY_IDLE;
+                    // AUTON-3: the flat consts become per-colonist
+                    // MODULATED urgencies (the input-swap class — the
+                    // selection/commitment/hysteresis machinery below
+                    // is untouched). Zero-preservation in the pure fn
+                    // keeps signal-gated zeros at zero (no invented
+                    // flee/work), and the floor guard keeps the
+                    // ordering safe for every roll.
+                    let (adv, wor, soc, intr) = personality4();
+                    let (w, f, i) = comp::bastion::modulated_urgencies(
+                        (
+                            if work_sig { URGENCY_WORK } else { 0.0 },
+                            if flee_sig { URGENCY_FLEE } else { 0.0 },
+                            URGENCY_IDLE,
+                        ),
+                        &colonist.0.values,
+                        adv,
+                        wor,
+                        soc,
+                        intr,
+                    );
                     arb.last_scores = (w, f, i);
                     let next = if f >= w && f >= i {
                         comp::bastion::Drive::Flee

@@ -1517,6 +1517,57 @@ impl Server {
         board.place_designation(&terrain, region.normalized(), kind)
     }
 
+    /// bastion (AUTON-3, harness hook): a named colonist's last drive
+    /// scores `(work, flee, idle)` — the post-modulation urgencies the
+    /// arbiter recorded at its last scoring write. THE UI-4 read surface
+    /// in probe form (the B7-0-before-B9 precedent: data before display).
+    pub fn bastion_colonist_last_scores(
+        &self,
+        name: &str,
+    ) -> Option<(f32, f32, f32)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let arbiters = ecs.read_storage::<comp::bastion::Arbiter>();
+        (&entities, &colonists, &arbiters)
+            .join()
+            .find(|(_, c, _)| c.0.name == name)
+            .map(|(_, _, a)| a.last_scores)
+    }
+
+    /// bastion (AUTON-3, harness hook): the urgency-modulation
+    /// personality axes for a named colonist — `(adventurous, worried,
+    /// sociable_or_extroverted, introverted)`; the scenario predicts
+    /// scores with the mechanism's own pub fn from these (mirror-free).
+    pub fn bastion_colonist_personality4(
+        &self,
+        name: &str,
+    ) -> Option<(bool, bool, bool, bool)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let rtsim_entities =
+            ecs.read_storage::<common::rtsim::RtSimEntity>();
+        let rtsim = ecs.read_resource::<crate::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        (&entities, &colonists, &rtsim_entities)
+            .join()
+            .find(|(_, c, _)| c.0.name == name)
+            .and_then(|(_, _, re)| data.npcs.get(*re))
+            .map(|npc| {
+                use common::rtsim::PersonalityTrait as PT;
+                (
+                    npc.personality.is(PT::Adventurous),
+                    npc.personality.is(PT::Worried),
+                    npc.personality.is(PT::Sociable)
+                        || npc.personality.is(PT::Extroverted),
+                    npc.personality.is(PT::Introverted),
+                )
+            })
+    }
+
     /// bastion (AUTON-1, harness hook): queue a BUILD PLAN — intent only,
     /// no jobs (the generator pass owns job creation). Returns the plan's
     /// frozen cell count.

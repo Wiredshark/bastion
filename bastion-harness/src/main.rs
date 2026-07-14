@@ -309,6 +309,13 @@ struct Args {
     #[arg(long)]
     chronicle_capture_scenario: bool,
 
+    /// bastion (AUTON-3, row 51): trait-modulated drive urgencies +
+    /// last_scores — same state, measurably different scores per
+    /// temperament; recorded scores match the pure fn exactly; no
+    /// invented flee; the drive-order guard holds on the live roll.
+    #[arg(long)]
+    auton3_scenario: bool,
+
     /// bastion (AUTON-2, row 50): THE DEATH-SPIRAL GATE (E1). Phase A: a
     /// RECOVERABLE shortage (stock < eaters, live pre-painted farm) —
     /// the trait-stagger splits the crew (anxious/default preempt to
@@ -470,6 +477,8 @@ fn main() -> ExitCode {
         spiral_scenario(&args)
     } else if args.chronicle_capture_scenario {
         hist1_scenario(&args)
+    } else if args.auton3_scenario {
+        auton3_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -5565,6 +5574,192 @@ fn haulpin_scenario(args: &Args) -> ExitCode {
         && stones == 2;
     println!("{}", result);
     println!("HAULPIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (AUTON-3, row 51): trait-modulated drive urgencies + the
+/// last_scores read surface — E2 legibility, provable without a UI: two
+/// colonists in the SAME state (same work available, no threats) score
+/// their drives DIFFERENTLY because of who they are, the recorded
+/// scores match the mechanism's own pub fn EXACTLY (mirror-free
+/// prediction from set values + read personality), zero-preservation
+/// holds live (no invented flee), and the live brave roll samples the
+/// drive-order guard above the floor.
+fn auton3_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region};
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-auton3-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-auton3".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-auton3-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, 500.0),
+        2,
+    );
+    tick(&mut server, 30);
+    let mut names = server.bastion_rename_colonists_unique();
+    names.sort();
+    let (a, b) = (names[0].clone(), names[1].clone());
+
+    // DESIGNED opposite rolls on the urgency axes (Glory/Wealth/Kin —
+    // disjoint from the stagger's Craft/Tradition; the trait-surface
+    // ownership discipline): A = brave-greedy-loner, B = the mirror.
+    let mut values_ok = true;
+    for (name, w) in [(&a, 50i8), (&b, -50i8)] {
+        values_ok &= server.bastion_set_values(name, "Glory", w);
+        values_ok &= server.bastion_set_values(name, "Wealth", w);
+        values_ok &= server.bastion_set_values(name, "Kin", -w);
+    }
+    // Work must EXIST for the work axis to score (work_sig gates the
+    // base): a small painted mine anywhere on natural ground — the
+    // jobs' reachability is irrelevant to SCORING.
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let mine = Region {
+        min: Vec3::new(cx + 4, cy + 4, 380),
+        max: Vec3::new(cx + 5, cy + 5, 420),
+    };
+    let jobs = server
+        .bastion_place_designation(mine, DesignationKind::Mine)
+        .len();
+
+    // Let two selection cadences pass, then read the recorded scores.
+    tick(&mut server, 45);
+    let p4 = |server: &Server, n: &str| {
+        server
+            .bastion_colonist_personality4(n)
+            .unwrap_or((false, false, false, false))
+    };
+    let predict = |server: &Server, n: &str, glory: i8, wealth: i8, kin: i8| {
+        let mut vals = std::collections::HashMap::new();
+        vals.insert(common::bastion::Value::Glory, glory);
+        vals.insert(common::bastion::Value::Wealth, wealth);
+        vals.insert(common::bastion::Value::Kin, kin);
+        let (adv, wor, soc, intr) = p4(server, n);
+        common::comp::bastion::modulated_urgencies(
+            (0.5, 0.0, 0.1),
+            &vals,
+            adv,
+            wor,
+            soc,
+            intr,
+        )
+    };
+    let pred_a = predict(&server, &a, 50, 50, -50);
+    let pred_b = predict(&server, &b, -50, -50, 50);
+    let got_a = server.bastion_colonist_last_scores(&a);
+    let got_b = server.bastion_colonist_last_scores(&b);
+    let scores_match = got_a == Some(pred_a) && got_b == Some(pred_b);
+    // The E2 claim: same state, measurably different scores — by
+    // design A works harder and idles poorer than B.
+    let differ = pred_a.0 > pred_b.0 && pred_a.2 < pred_b.2;
+    // Zero-preservation LIVE: no threat exists, so both recorded flee
+    // scores are exactly 0.0 — modulation invented nothing.
+    let no_invented_flee =
+        got_a.is_some_and(|s| s.1 == 0.0) && got_b.is_some_and(|s| s.1 == 0.0);
+    // The drive-order guard sampled on the LIVE brave roll: A's flee
+    // with a real signal base would sit at/above the floor and above
+    // any possible work score (the unit test pins the absolute
+    // bravest; this samples the seed's actual colonist).
+    let (adv, wor, soc, intr) = p4(&server, &a);
+    let mut brave_vals = std::collections::HashMap::new();
+    brave_vals.insert(common::bastion::Value::Glory, 50i8);
+    brave_vals.insert(common::bastion::Value::Wealth, 50i8);
+    brave_vals.insert(common::bastion::Value::Kin, -50i8);
+    let a_signaled = common::comp::bastion::modulated_urgencies(
+        (0.5, 1.0, 0.1),
+        &brave_vals,
+        adv,
+        wor,
+        soc,
+        intr,
+    );
+    let guard_holds = a_signaled.1
+        >= common::comp::bastion::FLEE_URGENCY_FLOOR
+        && a_signaled.1 > 0.6 + 1e-6;
+
+    let result = serde_json::json!({
+        "auton3_colonists": names.len(),
+        "auton3_values_ok": values_ok,
+        "auton3_work_exists": jobs > 0,
+        "auton3_scores_populated": got_a.is_some() && got_b.is_some(),
+        "auton3_scores_match": scores_match,
+        "auton3_differ": differ,
+        "auton3_no_invented_flee": no_invented_flee,
+        "auton3_guard_holds": guard_holds,
+    });
+    println!(
+        "AUTON3 TELEMETRY: a={got_a:?} b={got_b:?} pred_a={pred_a:?} pred_b={pred_b:?}"
+    );
+    let pass = names.len() == 2
+        && values_ok
+        && jobs > 0
+        && scores_match
+        && differ
+        && no_invented_flee
+        && guard_holds;
+    println!("{}", result);
+    println!("AUTON3 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
