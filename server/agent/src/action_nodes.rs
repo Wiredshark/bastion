@@ -183,8 +183,8 @@ impl AgentData<'_> {
     }
 
     pub fn unstuck_if(&self, condition: bool, controller: &mut Controller) {
-        if condition && rng().random_bool(0.05) {
-            if matches!(self.char_state, CharacterState::Climb(_)) || rng().random_bool(0.5) {
+        if condition && self.helper_random_bool(0.05) {
+            if matches!(self.char_state, CharacterState::Climb(_)) || self.helper_random_bool(0.5) {
                 controller.push_basic_input(InputKind::Jump);
             } else {
                 controller.push_basic_input(InputKind::Roll);
@@ -2425,8 +2425,17 @@ impl AgentData<'_> {
     }
 
     pub fn can_sense_directly_near(&self, e_pos: &Pos) -> bool {
-        let chance = rng().random_bool(0.3);
+        let chance = self.helper_random_bool(0.3);
         e_pos.0.distance_squared(self.pos.0) < 5_f32.powi(2) && chance
+    }
+
+    /// Draw from the deterministic per-agent helper stream in harness mode,
+    /// otherwise preserve the existing live OS entropy.
+    fn helper_random_bool(&self, probability: f64) -> bool {
+        self.helper_rng.borrow_mut().as_mut().map_or_else(
+            || rng().random_bool(probability),
+            |rng| rng.random_bool(probability),
+        )
     }
 
     pub fn menacing(

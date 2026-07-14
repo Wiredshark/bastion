@@ -47,6 +47,7 @@ use tracing::{error, warn};
 #[derive(Clone)]
 pub struct SlowJobPool {
     internal: Arc<Mutex<InternalSlowJobPool>>,
+    inline: bool,
 }
 
 #[derive(Debug)]
@@ -371,6 +372,17 @@ impl SlowJobPool {
     pub fn new(global_limit: u64, jobs_metrics_cnt: usize, threadpool: Arc<ThreadPool>) -> Self {
         Self {
             internal: InternalSlowJobPool::new(global_limit, jobs_metrics_cnt, threadpool),
+            inline: false,
+        }
+    }
+
+    /// Deterministic harness policy: execute slow jobs before `spawn`
+    /// returns, so simulation ticks cannot race wall-clock completion of
+    /// chunk/weather work. Live uses [`SlowJobPool::new`] unchanged.
+    pub fn new_inline(jobs_metrics_cnt: usize, threadpool: Arc<ThreadPool>) -> Self {
+        Self {
+            internal: InternalSlowJobPool::new(1, jobs_metrics_cnt, threadpool),
+            inline: true,
         }
     }
 
@@ -395,6 +407,13 @@ impl SlowJobPool {
     where
         F: FnOnce() + Send + Sync + 'static,
     {
+        if self.inline {
+            f();
+            return Ok(SlowJob {
+                name: name.to_owned(),
+                id: u64::MAX,
+            });
+        }
         let mut lock = self.internal.lock().expect("lock poisoned while try_run");
         //spawn already queued
         lock.spawn_queued();
@@ -409,6 +428,13 @@ impl SlowJobPool {
     where
         F: FnOnce() + Send + Sync + 'static,
     {
+        if self.inline {
+            f();
+            return SlowJob {
+                name: name.to_owned(),
+                id: u64::MAX,
+            };
+        }
         self.internal
             .lock()
             .expect("lock poisoned while spawn")
@@ -471,6 +497,23 @@ mod tests {
             pool.configure("BAZ", |x| x / baz);
         }
         pool
+    }
+
+    #[test]
+    fn inline_pool_finishes_before_spawn_returns() {
+        let threadpool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let pool = SlowJobPool::new_inline(0, Arc::new(threadpool));
+        let finished = Arc::new(AtomicBool::new(false));
+        let finished_in_job = Arc::clone(&finished);
+
+        let _job = pool.spawn("INLINE", move || {
+            finished_in_job.store(true, Ordering::SeqCst);
+        });
+
+        assert!(finished.load(Ordering::SeqCst));
     }
 
     #[test]

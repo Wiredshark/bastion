@@ -460,7 +460,20 @@ impl World {
         };
 
         // Only use for rng affecting dynamic elements like chests and entities!
-        let mut dynamic_rng = ChaCha8Rng::from_seed(rand::rng().random());
+        // ARCH-003: in deterministic worldgen mode this RNG (which also drives
+        // farm-field crop sprites, scatter, shrubs, etc.) must not come from OS
+        // entropy, or the same seed scatters different flora each run — a phantom
+        // crop sprite then perturbs colonist pathfinding (a walkability clearance
+        // read) and desyncs the whole deterministic run. Seed it per-chunk from
+        // (world seed, chunk pos) so it is a pure function of the seed and is
+        // call-order-independent (chunk gen may be threaded). Live binaries never
+        // set the flag and keep OS entropy — bit-for-bit unchanged.
+        let mut dynamic_rng = if common::deterministic_worldgen_enabled() {
+            let chunk_seed = crate::util::RandomField::new(index.seed).get(chunk_pos.with_z(0));
+            ChaCha8Rng::seed_from_u64(u64::from(chunk_seed))
+        } else {
+            ChaCha8Rng::from_seed(rand::rng().random())
+        };
 
         // Apply layers (paths, caves, etc.)
         let mut canvas = Canvas {

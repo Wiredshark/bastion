@@ -14,7 +14,7 @@ use common::{
     path::TraversalConfig,
     rtsim::{NpcAction, RtSimEntity},
 };
-use rand::{RngExt, prelude::ThreadRng};
+use rand::{RngExt, rngs::StdRng};
 use server_agent::{data::AgentEmitters, util::is_steering};
 use specs::Entity as EcsEntity;
 use tracing::warn;
@@ -46,7 +46,7 @@ pub struct BehaviorData<'a, 'b, 'c> {
     pub read_data: &'a ReadData<'a>,
     pub emitters: &'a mut AgentEmitters<'c>,
     pub controller: &'a mut Controller,
-    pub rng: &'b mut ThreadRng,
+    pub rng: &'b mut StdRng,
 }
 
 /// Behavior function
@@ -927,7 +927,7 @@ fn do_combat(bdata: &mut BehaviorData) -> bool {
                     agent.behavior_state.timers
                         [ActionStateBehaviorTreeTimers::TimerBehaviorTree as usize] = 0.01;
                     agent.flee_from_pos = {
-                        let random = || rand::rng().random_range(-1.0..1.0);
+                        let mut random = || bdata.rng.random_range(-1.0..1.0);
                         Some(Pos(
                             agent_data.pos.0 + Vec3::new(random(), random(), random())
                         ))

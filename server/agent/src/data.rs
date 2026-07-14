@@ -30,6 +30,7 @@ use common::{
     uid::{IdMaps, Uid},
 };
 use common_base::dev_panic;
+use std::cell::RefCell;
 use specs::{Entities, Entity as EcsEntity, Read, ReadExpect, ReadStorage, SystemData, shred};
 
 event_emitters! {
@@ -74,6 +75,9 @@ pub struct AgentData<'a> {
     pub cached_spatial_grid: &'a common::CachedSpatialGrid,
     pub msm: &'a MaterialStatManifest,
     pub rtsim_entity: Option<&'a RtSimEntity>,
+    /// ARCH-003: deterministic harness stream for helpers that historically
+    /// called `rand::rng()` internally. `None` preserves live OS entropy.
+    pub helper_rng: RefCell<Option<rand::rngs::SmallRng>>,
 }
 
 pub struct TargetData<'a> {

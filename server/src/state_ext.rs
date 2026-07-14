@@ -35,7 +35,7 @@ use common_net::{
     msg::{CharacterInfo, PlayerListUpdate, ServerGeneral},
     sync::WorldSyncExt,
 };
-use common_state::State;
+use common_state::{ExecutionMode, State};
 use specs::{
     Builder, Entity as EcsEntity, EntityBuilder as EcsEntityBuilder, Join, WorldExt, WriteStorage,
     storage::{GenericReadStorage, GenericWriteStorage},
@@ -326,6 +326,20 @@ impl StateExt for State {
 
         let item_body = comp::body::item::Body::from(world_item.item());
         let body = comp::Body::Item(item_body);
+        // ARCH-003: live drops keep their randomized presentation, but the
+        // deterministic harness must not overwrite the event's stable
+        // orientation with an OS-seeded draw. Item orientation participates
+        // in capsule collision geometry, so this is simulation state rather
+        // than a cosmetic-only value.
+        let item_orientation = if self
+            .ecs()
+            .read_resource::<ExecutionMode>()
+            .is_deterministic()
+        {
+            ori
+        } else {
+            item_body.orientation(&mut rand::rng())
+        };
         let light_emitter = match &*world_item.item().kind() {
             ItemKind::Lantern(lantern) => Some(comp::LightEmitter {
                 col: lantern.color(),
@@ -343,7 +357,7 @@ impl StateExt for State {
                 .with(pos)
                 .with(ori)
                 .with(vel)
-                .with(item_body.orientation(&mut rand::rng()))
+                .with(item_orientation)
                 .with(item_body.mass())
                 .with(item_body.density())
                 .with(body.collider())

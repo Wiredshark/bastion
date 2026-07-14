@@ -404,6 +404,12 @@ fn main() -> ExitCode {
     // d_all_cleared, ck fs_out/in_terrain). Set BEFORE Server::new (rtsim's
     // OnSetup/migrate runs at construction). Ben's live game never sets it.
     rtsim::DETERMINISTIC_RTSIM.store(true, core::sync::atomic::Ordering::Relaxed);
+    // ARCH-003: also make WORLDGEN reproducible from --seed. The per-chunk
+    // "dynamic" decoration RNG (world/src/lib.rs) otherwise seeds from OS
+    // entropy, scattering different flora each run; a phantom crop sprite then
+    // perturbs colonist pathfinding and desyncs the deterministic run. Live
+    // binaries never call this and keep their OS-entropy scatter.
+    common::enable_deterministic_worldgen();
 
     let args = Args::parse();
 

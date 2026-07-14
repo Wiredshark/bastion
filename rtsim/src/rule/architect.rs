@@ -5,7 +5,7 @@ use common::{
     terrain::CoordinateConversions,
 };
 use rand::{
-    RngExt, rng,
+    RngExt,
     seq::{IndexedRandom, IteratorRandom},
 };
 use world::{CONFIG, IndexRef, World, sim::SimChunk, site::SiteKind};
@@ -61,7 +61,7 @@ fn architect_tick(ctx: EventCtx<Architect, OnTick>) {
 
     let data = &mut *ctx.state.data_mut();
 
-    let mut rng = rng();
+    let mut rng = crate::tick_rng(ctx.index.seed, ctx.event.tick, 0xA7C4_17EC);
     let mut count_to_spawn = rng.random_range(1..20);
 
     let pop = data.architect.population.clone();
@@ -74,23 +74,23 @@ fn architect_tick(ctx: EventCtx<Architect, OnTick>) {
         for _ in 0..count {
             let (body, role) = match pop {
                 TrackedPopulation::Adventurers => (
-                    Body::Humanoid(comp::humanoid::Body::random()),
+                    random_humanoid(&mut rng),
                     Role::Civilised(Some(Profession::Adventurer(rng.random_range(0..=3)))),
                 ),
                 TrackedPopulation::Merchants => (
-                    Body::Humanoid(comp::humanoid::Body::random()),
+                    random_humanoid(&mut rng),
                     Role::Civilised(Some(Profession::Merchant)),
                 ),
                 TrackedPopulation::Guards => (
-                    Body::Humanoid(comp::humanoid::Body::random()),
+                    random_humanoid(&mut rng),
                     Role::Civilised(Some(Profession::Guard)),
                 ),
                 TrackedPopulation::Captains => (
-                    Body::Humanoid(comp::humanoid::Body::random()),
+                    random_humanoid(&mut rng),
                     Role::Civilised(Some(Profession::Captain)),
                 ),
                 TrackedPopulation::OtherTownNpcs => (
-                    Body::Humanoid(comp::humanoid::Body::random()),
+                    random_humanoid(&mut rng),
                     Role::Civilised(Some(match rng.random_range(0..10) {
                         0 => Profession::Hunter,
                         1 => Profession::Blacksmith,
@@ -101,15 +101,15 @@ fn architect_tick(ctx: EventCtx<Architect, OnTick>) {
                     })),
                 ),
                 TrackedPopulation::Pirates => (
-                    Body::Humanoid(comp::humanoid::Body::random()),
+                    random_humanoid(&mut rng),
                     Role::Civilised(Some(Profession::Pirate(false))),
                 ),
                 TrackedPopulation::PirateCaptains => (
-                    Body::Humanoid(comp::humanoid::Body::random()),
+                    random_humanoid(&mut rng),
                     Role::Civilised(Some(Profession::Pirate(true))),
                 ),
                 TrackedPopulation::Cultists => (
-                    Body::Humanoid(comp::humanoid::Body::random()),
+                    random_humanoid(&mut rng),
                     Role::Civilised(Some(Profession::Cultist)),
                 ),
                 TrackedPopulation::GigasFrost => (
@@ -239,7 +239,7 @@ fn architect_tick(ctx: EventCtx<Architect, OnTick>) {
             break;
         }
 
-        if spawn_npc(data, ctx.world, ctx.index, &death) {
+        if spawn_npc(data, ctx.world, ctx.index, &death, &mut rng) {
             count_to_spawn -= 1;
         } else {
             failed_spawn.push(death);
@@ -260,6 +260,13 @@ fn randomize_body(body: Body, rng: &mut impl RngExt) -> Body {
         Body::Humanoid(_) => random_humanoid(),
         body => body,
     }
+}
+
+fn random_humanoid(rng: &mut impl RngExt) -> Body {
+    let species = comp::humanoid::ALL_SPECIES
+        .choose(rng)
+        .expect("humanoid species catalog must not be empty");
+    Body::Humanoid(comp::humanoid::Body::random_with(rng, species))
 }
 
 fn role_personality(rng: &mut impl RngExt, role: &Role) -> Personality {
@@ -418,10 +425,15 @@ fn spawn_profession(
     }
 }
 
-fn spawn_npc(data: &mut Data, world: &World, index: IndexRef, death: &Death) -> bool {
-    let mut rng = rng();
-    let body = randomize_body(death.body, &mut rng);
-    let personality = role_personality(&mut rng, &death.role);
+fn spawn_npc(
+    data: &mut Data,
+    world: &World,
+    index: IndexRef,
+    death: &Death,
+    rng: &mut impl RngExt,
+) -> bool {
+    let body = randomize_body(death.body, rng);
+    let personality = role_personality(rng, &death.role);
     // First try and respawn in the same faction.
     let did_spawn = if let Some(faction_id) = death.faction
         && data.factions.get(faction_id).is_some()
@@ -430,7 +442,7 @@ fn spawn_npc(data: &mut Data, world: &World, index: IndexRef, death: &Death) -> 
             .sites
             .iter()
             .filter(|(_, site)| site.faction == Some(faction_id) && !site.is_loaded())
-            .choose(&mut rng)
+            .choose(&mut *rng)
         {
             let wpos = site.wpos;
             let wpos = wpos
@@ -454,7 +466,7 @@ fn spawn_npc(data: &mut Data, world: &World, index: IndexRef, death: &Death) -> 
                 world,
                 index,
                 death,
-                &mut rng,
+                &mut *rng,
                 body,
                 personality,
                 *profession,
@@ -498,7 +510,7 @@ fn spawn_npc(data: &mut Data, world: &World, index: IndexRef, death: &Death) -> 
                                 .and_then(|s| index.sites.get(s).kind)
                                 .is_some_and(|s| site_filter(&s))
                     })
-                    .choose(&mut rng)
+                    .choose(&mut *rng)
                 {
                     let wpos = site.wpos;
                     let wpos = wpos
@@ -591,16 +603,16 @@ fn spawn_npc(data: &mut Data, world: &World, index: IndexRef, death: &Death) -> 
                     world,
                     index,
                     death,
-                    &mut rng,
+                    &mut *rng,
                     body,
                     personality,
                     profession,
                 ) {
-                    spawn_anywhere(data, world, death, &mut rng, body, personality)
+                    spawn_anywhere(data, world, death, &mut *rng, body, personality)
                 }
             },
             Role::Wild | Role::Monster => {
-                spawn_anywhere(data, world, death, &mut rng, body, personality)
+                spawn_anywhere(data, world, death, &mut *rng, body, personality)
             },
             Role::Vehicle => {
                 // Vehicles don't die as of now.

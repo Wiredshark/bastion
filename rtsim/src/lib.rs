@@ -154,12 +154,27 @@ pub mod rule;
 pub static DETERMINISTIC_RTSIM: core::sync::atomic::AtomicBool =
     core::sync::atomic::AtomicBool::new(false);
 
+/// Whether Bastion's opt-in deterministic headless mode was enabled at boot.
+///
+/// Server construction reads this once to select deterministic ECS/Rayon
+/// execution. Live binaries never set the flag and therefore keep their
+/// normal parallel execution and entropy.
+pub fn deterministic_rtsim_enabled() -> bool {
+    DETERMINISTIC_RTSIM.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+/// Enable deterministic rtsim RNG and server tick execution before boot.
+/// The Bastion harness is the intended caller; live binaries do not call it.
+pub fn enable_deterministic_rtsim() {
+    DETERMINISTIC_RTSIM.store(true, core::sync::atomic::Ordering::Relaxed);
+}
+
 /// The ONE constructor every rtsim rule RNG goes through (identity beats
 /// convention — no site can drift back to bare OS entropy unnoticed). `salt`
 /// distinguishes call sites (and per-NPC streams: pass the npc seed).
 pub fn tick_rng(world_seed: u32, tick: u64, salt: u32) -> rand_chacha::ChaChaRng {
     use rand::prelude::*;
-    if DETERMINISTIC_RTSIM.load(core::sync::atomic::Ordering::Relaxed) {
+    if deterministic_rtsim_enabled() {
         let mut s = [0u8; 32];
         s[0..4].copy_from_slice(&world_seed.to_le_bytes());
         s[4..12].copy_from_slice(&tick.to_le_bytes());

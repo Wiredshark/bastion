@@ -111,7 +111,7 @@ use common_net::{
     msg::{ClientType, DisconnectReason, PlayerListUpdate, ServerGeneral, ServerInfo, ServerMsg},
     sync::WorldSyncExt,
 };
-use common_state::{AreasContainer, BlockDiff, BuildArea, State};
+use common_state::{AreasContainer, BlockDiff, BuildArea, ExecutionMode, State};
 use common_systems::add_local_systems;
 use metrics::{EcsSystemMetrics, GameplayMetrics, PhysicsMetrics, TickMetrics};
 use network::{ListenAddr, Network, Pid};
@@ -266,6 +266,7 @@ pub struct Server {
     disconnect_all_clients_requested: bool,
 
     event_dispatcher: SendDispatcher<'static>,
+    execution_mode: ExecutionMode,
 }
 
 impl Server {
@@ -310,7 +311,18 @@ impl Server {
 
         let battlemode_buffer = BattleModeBuffer::default();
 
-        let pools = State::pools(GameMode::Server);
+        // DETRNG/ARCH-003: the harness sets the rtsim flag before Server::new.
+        // Read it once at construction so execution policy cannot change
+        // halfway through a run. Live never sets it and remains parallel.
+        let execution_mode = rtsim::execution_mode();
+        let pools = State::pools_with_mode(GameMode::Server, execution_mode);
+        if execution_mode.is_deterministic() {
+            let rayon_threads = pools.current_num_threads();
+            assert_eq!(
+                rayon_threads, 1,
+                "ARCH-003 deterministic execution requires a one-worker Rayon pool"
+            );
+        }
 
         // Load plugins before generating the world.
         #[cfg(feature = "plugins")]
@@ -362,10 +374,11 @@ impl Server {
 
         report_stage(ServerInitStage::StartingSystems);
 
-        let mut state = State::server(
+        let mut state = State::server_with_mode(
             Arc::clone(&pools),
             map_size_lg,
             Arc::clone(&map.default_chunk),
+            execution_mode,
             |dispatcher_builder| {
                 add_local_systems(dispatcher_builder);
                 sys::msg::add_server_systems(dispatcher_builder);
@@ -717,6 +730,7 @@ impl Server {
         {
             match rtsim::RtSim::new(
                 &settings.world,
+                settings.world_seed,
                 index.as_index_ref(),
                 &world,
                 data_dir.to_owned(),
@@ -746,6 +760,7 @@ impl Server {
             disconnect_all_clients_requested: false,
 
             event_dispatcher: Self::create_event_dispatcher(pools),
+            execution_mode,
         };
 
         // bastion (B-ASSET1): the --asset-arena test chamber. Inert unless
@@ -1796,15 +1811,11 @@ impl Server {
         hint_z: i32,
         extent: common::bastion::ZExtent,
         kind: common::bastion::DesignationKind,
-    ) -> (
-        Vec<common::bastion::JobId>,
-        Option<common::bastion::Region>,
-    ) {
+    ) -> (Vec<common::bastion::JobId>, Option<common::bastion::Region>) {
         let ecs = self.state.ecs();
         let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
         let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
-        let bounds =
-            bastion_jobs::resolve_surface_bounds(&terrain, min_xy, max_xy, hint_z, extent);
+        let bounds = bastion_jobs::resolve_surface_bounds(&terrain, min_xy, max_xy, hint_z, extent);
         let created =
             board.place_designation_surface(&terrain, min_xy, max_xy, hint_z, extent, kind);
         (created, bounds)
@@ -2119,7 +2130,16 @@ impl Server {
         let positions = ecs.read_storage::<comp::Pos>();
         (&colonists, &gotos, &positions)
             .join()
-            .map(|(c, g, p)| (c.0.name.clone(), p.0, g.target, g.elapsed, g.arrived, g.stuck))
+            .map(|(c, g, p)| {
+                (
+                    c.0.name.clone(),
+                    p.0,
+                    g.target,
+                    g.elapsed,
+                    g.arrived,
+                    g.stuck,
+                )
+            })
             .collect()
     }
 
@@ -2307,10 +2327,7 @@ impl Server {
 
     /// bastion (B5.8, harness hook): a loaded colonist's climbing skill —
     /// scenarios assert XP accrues with use.
-    pub fn bastion_colonist_climbing(
-        &self,
-        name: &str,
-    ) -> Option<common::bastion::SkillLevel> {
+    pub fn bastion_colonist_climbing(&self, name: &str) -> Option<common::bastion::SkillLevel> {
         use specs::Join;
         let ecs = self.state.ecs();
         let colonists = ecs.read_storage::<comp::Colonist>();
@@ -2384,8 +2401,8 @@ impl Server {
             self.state.set_block(c, common::terrain::Block::empty());
         }
         // 3. Eject-and-injure the crush volume — the SAME shared fn the live
-        //    mine-completion path runs (reviewer R8/F-CAVE-3: the tested path
-        //    IS the shipping path; no parallel copy to drift).
+        //    mine-completion path runs (reviewer R8/F-CAVE-3: the tested path IS the
+        //    shipping path; no parallel copy to drift).
         let ecs = self.state.ecs();
         let time = *ecs.read_resource::<common::resources::Time>();
         let entities = ecs.entities();
@@ -2459,10 +2476,7 @@ impl Server {
     /// counters `(no_progress_ticks, travel_timeouts, failsafe_teleports)` —
     /// REPORTED telemetry for the before/after fix-1/fix-2 comparison.
     pub fn bastion_locomotion_stats(&self) -> (u64, u64, u64) {
-        let board = self
-            .state
-            .ecs()
-            .read_resource::<bastion_jobs::JobBoard>();
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
         (
             board.no_progress_ticks,
             board.travel_timeouts,
@@ -2595,10 +2609,7 @@ impl Server {
         let Ok(item) = comp::Item::new_from_asset(asset_id) else {
             return false;
         };
-        let time = *self
-            .state
-            .ecs()
-            .read_resource::<common::resources::Time>();
+        let time = *self.state.ecs().read_resource::<common::resources::Time>();
         let ecs = self.state.ecs();
         let colonists = ecs.read_storage::<comp::Colonist>();
         let entities = ecs.entities();

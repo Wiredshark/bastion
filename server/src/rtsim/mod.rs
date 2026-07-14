@@ -30,8 +30,20 @@ use tracing::{debug, error, info, trace, warn};
 use vek::*;
 use world::{IndexRef, World};
 
+/// Translate DETRNG's boot-time flag into the server/common-state execution
+/// policy. Keeping this adapter here avoids a dependency from common-state
+/// back into rtsim while making the live default explicit.
+pub(crate) fn execution_mode() -> common_state::ExecutionMode {
+    if ::rtsim::deterministic_rtsim_enabled() {
+        common_state::ExecutionMode::DeterministicSerial
+    } else {
+        common_state::ExecutionMode::Parallel
+    }
+}
+
 pub struct RtSim {
     file_path: PathBuf,
+    world_seed: u32,
     last_saved: Option<Instant>,
     state: RtState,
     save_thread: Option<(Sender<Data>, JoinHandle<()>)>,
@@ -40,6 +52,7 @@ pub struct RtSim {
 impl RtSim {
     pub fn new(
         settings: &WorldSettings,
+        world_seed: u32,
         index: IndexRef,
         world: &World,
         data_dir: PathBuf,
@@ -122,6 +135,7 @@ impl RtSim {
 
         let mut this = Self {
             last_saved: None,
+            world_seed,
             state: RtState::new(data).with_resource(ChunkStates(Grid::populate_from(
                 world.sim().get_size().as_(),
                 |_| None,
@@ -249,11 +263,14 @@ impl RtSim {
     /// names.
     pub fn bastion_spawn_colony(&mut self, wpos: Vec3<f32>, count: u8) -> Vec<String> {
         use common::rtsim::{Profession, Role};
-        use rand::RngExt as _;
+        use rand::{RngExt as _, prelude::IndexedRandom};
         use rtsim::data::npc::Npc;
 
-        let mut rng = rand::rng();
         let data = self.state.get_data_mut();
+        // DETRNG/ARCH-003: colony generation is simulation input, not
+        // cosmetic entropy. Reuse the one rtsim RNG authority so the
+        // harness gets a stable stream while live still receives OS entropy.
+        let mut rng = ::rtsim::tick_rng(self.world_seed, data.tick, 0xBA57_C010);
         // Home = nearest site, so simulated-mode AI keeps them local.
         let home = data
             .sites
@@ -279,7 +296,12 @@ impl RtSim {
                 rng.random_range(-5.0..5.0),
                 0.0,
             );
-            let body = common::comp::Body::Humanoid(common::comp::humanoid::Body::random());
+            let species = *common::comp::humanoid::ALL_SPECIES
+                .choose(&mut rng)
+                .expect("humanoid species catalog must not be empty");
+            let body = common::comp::Body::Humanoid(common::comp::humanoid::Body::random_with(
+                &mut rng, &species,
+            ));
             let mut npc = Npc::new(
                 rng.random(),
                 wpos + offset,
