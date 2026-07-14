@@ -5533,7 +5533,12 @@ fn haulpin_scenario(args: &Args) -> ExitCode {
     let mut seen_job = false;
     let mut bounded = true;
     let mut max_res = 0usize;
-    for _ in 0..240 {
+    // Structural window (the deadline-shaped-assert lesson, applied
+    // here after the AUTON-3 gate storm exposed the margin): 3 cycles
+    // × ~25s each fit 240 polls with ZERO headroom — any scheduling
+    // breath dropped one emission (observed 2/3/3 across identical
+    // runs). 480 polls = 2× headroom for the same ≥3-emissions bar.
+    for _ in 0..480 {
         tick(&mut server, 10);
         let pit_jobs = server.bastion_jobs_in_region(pit_probe);
         let (_, res) = server.bastion_board_probe();

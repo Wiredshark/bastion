@@ -3102,17 +3102,20 @@ impl<'a> System<'a> for Sys {
             let mut flee_preempts: Vec<specs::Entity> = Vec::new();
             // AUTON-3 (row 51): personality for the urgency modulation
             // rides the same rtsim read guard the mood/preempt passes
-            // use — zero new coupling. Resolved lazily per colonist
-            // ONLY inside the two scoring branches (flee-fire + the
-            // 15-tick selection), never per tick for the idle majority.
-            let arb_data = rtsim.state().data();
-            for (entity, colonist, _uid) in
-                (&entities, &colonists, &uids).join()
-            {
-                let personality4 = || {
+            // use — zero new coupling — and, CRITICALLY, at the SAME
+            // CADENCE: the guard is acquired ONCE per selection tick
+            // (the mood-pass pattern), never per tick (a per-tick
+            // acquisition changed the rtsim lock cadence suite-wide and
+            // rolled five timing-family legs red at once — the AUTON-3
+            // gate's own forensics). The rare flee-fire branch acquires
+            // ad hoc.
+            let arb_data =
+                select_tick.then(|| rtsim.state().data());
+            let personality4_of =
+                |data: &::rtsim::data::Data, entity: specs::Entity| {
                     rtsim_entities
                         .get(entity)
-                        .and_then(|re| arb_data.npcs.get(*re))
+                        .and_then(|re| data.npcs.get(*re))
                         .map_or((false, false, false, false), |npc| {
                             use common::rtsim::PersonalityTrait as PT;
                             (
@@ -3124,6 +3127,9 @@ impl<'a> System<'a> for Sys {
                             )
                         })
                 };
+            for (entity, colonist, _uid) in
+                (&entities, &colonists, &uids).join()
+            {
                 if !is_loaded(entity) {
                     continue;
                 }
@@ -3176,8 +3182,12 @@ impl<'a> System<'a> for Sys {
                     // AUTON-3: the recorded scores are the MODULATED
                     // ones (what UI-4 will show); the floor guard keeps
                     // the preemption decision itself unchanged (Flee
-                    // fired on the signal, not on the score).
-                    let (adv, wor, soc, intr) = personality4();
+                    // fired on the signal, not on the score). Ad-hoc
+                    // guard acquisition — flee-fires are rare.
+                    let (adv, wor, soc, intr) = personality4_of(
+                        &rtsim.state().data(),
+                        entity,
+                    );
                     arb.last_scores = comp::bastion::modulated_urgencies(
                         (0.0, URGENCY_FLEE, URGENCY_IDLE),
                         &colonist.0.values,
@@ -3206,7 +3216,11 @@ impl<'a> System<'a> for Sys {
                     // keeps signal-gated zeros at zero (no invented
                     // flee/work), and the floor guard keeps the
                     // ordering safe for every roll.
-                    let (adv, wor, soc, intr) = personality4();
+                    let (adv, wor, soc, intr) = arb_data
+                        .as_ref()
+                        .map_or((false, false, false, false), |d| {
+                            personality4_of(d, entity)
+                        });
                     let (w, f, i) = comp::bastion::modulated_urgencies(
                         (
                             if work_sig { URGENCY_WORK } else { 0.0 },
