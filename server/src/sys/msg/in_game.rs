@@ -97,6 +97,10 @@ impl Sys {
             Option<common::bastion::ZExtent>,
             Option<Vec<Vec3<i32>>>,
         )>,
+        // bastion (UI-4): inspector requests — target uids gathered here,
+        // resolved + answered in the post-join drain (the bastion_spawn
+        // deferral pattern; the payload sources can't be read in-join).
+        bastion_inspects: &mut Vec<common::uid::Uid>,
         world: &Arc<World>,
         index: &IndexOwned,
         controller: Option<&mut Controller>,
@@ -534,6 +538,11 @@ impl Sys {
                     common::comp::Content::Plain("Designations cancelled.".to_string()),
                 ))?;
             },
+            ClientGeneral::BastionInspect { target } => {
+                // bastion (UI-4): deferred to the post-join drain — the
+                // reply needs storages the par_join must not touch.
+                bastion_inspects.push(target);
+            },
             ClientGeneral::BastionSpawnColony { pos, count } => {
                 // bastion (B3): validated here, spawned post-loop (rtsim
                 // resource can't be touched inside the parallel join).
@@ -651,6 +660,14 @@ impl<'a> System<'a> for Sys {
             // inside the parallel client join (B10: no shared mutable state).
             ReadExpect<'a, Arc<World>>,
             ReadExpect<'a, IndexOwned>,
+            // bastion (UI-4, row 62): the inspector's payload sources —
+            // READ-ONLY, touched only in the post-join drain at request
+            // cadence (~1Hz per open panel), never inside the par_join.
+            ReadStorage<'a, common::comp::Colonist>,
+            ReadStorage<'a, common::comp::bastion::Needs>,
+            ReadStorage<'a, common::comp::bastion::Mood>,
+            ReadStorage<'a, common::comp::bastion::Arbiter>,
+            ReadStorage<'a, common::rtsim::RtSimEntity>,
         ),
     );
 
@@ -685,7 +702,19 @@ impl<'a> System<'a> for Sys {
             mut terrain_persistence,
             players,
             admins,
-            (mut god_anchors, time, mut rtsim, mut job_board, world, index),
+            (
+                mut god_anchors,
+                time,
+                mut rtsim,
+                mut job_board,
+                world,
+                index,
+                insp_colonists,
+                insp_needs,
+                insp_moods,
+                insp_arbiters,
+                insp_rtsim_entities,
+            ),
         ): Self::SystemData,
     ) {
         let time_for_vd_changes = Instant::now();
@@ -747,6 +776,7 @@ impl<'a> System<'a> for Sys {
                     let mut bastion_anchor = None;
                     let mut bastion_spawn = None;
                     let mut bastion_designations = Vec::new();
+                    let mut bastion_inspects = Vec::new();
                     let _ = super::try_recv_all(client, 2, |client, msg| {
                         Self::handle_client_in_game_msg(
                             emitters,
@@ -766,6 +796,7 @@ impl<'a> System<'a> for Sys {
                             &mut bastion_anchor,
                             &mut bastion_spawn,
                             &mut bastion_designations,
+                            &mut bastion_inspects,
                             &*world,
                             &*index,
                             controller.as_deref_mut(),
@@ -903,6 +934,8 @@ impl<'a> System<'a> for Sys {
                              .filter(|_| old_player_physics_setting != new_player_physics_setting));
                      let spectating_entity_update = spectating_entity.map(|e| (entity, e));
                     let bastion_anchor_update = bastion_anchor.map(|on| (entity, on));
+                    let bastion_inspects_update = (!bastion_inspects.is_empty())
+                        .then_some((entity, bastion_inspects));
                     (
                         skill_set_update,
                         spectating_entity_update,
@@ -910,14 +943,16 @@ impl<'a> System<'a> for Sys {
                         bastion_anchor_update,
                         bastion_spawn,
                         bastion_designations,
+                        bastion_inspects_update,
                     )
                 },
             )
             // NOTE: Would be nice to combine this with the map_init somehow, but I'm not sure if
             // that's possible.
-            .filter(|(x, y, z, w, v, d)| {
+            .filter(|(x, y, z, w, v, d, i)| {
                 x.is_some() || y.is_some() || z.is_some() || w.is_some() || v.is_some()
                     || !d.is_empty()
+                    || i.is_some()
             })
             // NOTE: I feel like we shouldn't actually need to allocate here, but hopefully this
             // doesn't turn out to be important as there shouldn't be that many connected clients.
@@ -940,6 +975,7 @@ impl<'a> System<'a> for Sys {
                 bastion_anchor_update,
                 bastion_spawn_update,
                 bastion_designation_updates,
+                bastion_inspects_update,
             )| {
                 if let Some((entity, new_skill_set)) = skill_set_update {
                     // We know this exists, because we already iterated over it with the skillset
@@ -1007,6 +1043,66 @@ impl<'a> System<'a> for Sys {
                 if let &mut Some((pos, count)) = bastion_spawn_update {
                     // bastion (B3): spawn the starting band (validated above).
                     rtsim.bastion_spawn_colony(pos, count);
+                }
+                // bastion (UI-4): answer inspector requests — read-only
+                // payload assembly at request cadence (~1Hz per open
+                // panel; the rtsim guard is acquired per REQUEST, never
+                // per tick — the AUTON-3 cadence lesson). A non-colonist
+                // (or stale) target answers `payload: None`, which the
+                // client renders as nothing — the packet's no-crash
+                // invariant for non-colonist picks.
+                if let Some((requester, targets)) = bastion_inspects_update {
+                    if let Some(client) = clients.get(*requester) {
+                        for target in targets.drain(..) {
+                            let payload =
+                                id_maps.uid_entity(target).and_then(|e| {
+                                    let colonist = insp_colonists.get(e)?;
+                                    let needs = insp_needs.get(e)?;
+                                    let (p4, consc, neur) = insp_rtsim_entities
+                                        .get(e)
+                                        .and_then(|re| {
+                                            let data = rtsim.state().data();
+                                            data.npcs.get(*re).map(|npc| {
+                                                use common::rtsim::PersonalityTrait as PT;
+                                                (
+                                                    (
+                                                        npc.personality.is(PT::Adventurous),
+                                                        npc.personality.is(PT::Worried),
+                                                        npc.personality.is(PT::Sociable)
+                                                            || npc.personality
+                                                                .is(PT::Extroverted),
+                                                        npc.personality.is(PT::Introverted),
+                                                    ),
+                                                    npc.personality.is(PT::Conscientious),
+                                                    npc.personality.is(PT::Neurotic),
+                                                )
+                                            })
+                                        })
+                                        .unwrap_or(((false, false, false, false), false, false));
+                                    let arb = insp_arbiters.get(e);
+                                    Some(common::comp::bastion::BastionInspectPayload {
+                                        name: colonist.0.name.clone(),
+                                        hunger: needs.hunger,
+                                        rest: needs.rest,
+                                        recreation: needs.recreation,
+                                        mood: insp_moods.get(e).map_or(0.0, |m| m.0),
+                                        personality4: p4,
+                                        conscientious: consc,
+                                        neurotic: neur,
+                                        drive: arb.map_or(
+                                            common::comp::bastion::Drive::Idle,
+                                            |a| a.current,
+                                        ),
+                                        last_scores: arb
+                                            .map_or((0.0, 0.0, 0.0), |a| a.last_scores),
+                                    })
+                                });
+                            let _ = client.send(ServerGeneral::BastionInspectInfo {
+                                target,
+                                payload,
+                            });
+                        }
+                    }
                 }
                 // bastion (B4): apply deferred designation ops to the board.
                 // B5.6b-2: surface-relative placements recompute the same

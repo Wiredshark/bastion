@@ -373,6 +373,14 @@ pub struct Client {
         Option<common::bastion::ZExtent>,
     )>,
     bastion_designations_rev: u64,
+    /// bastion (UI-4, row 62): the latest inspector reply — (target,
+    /// payload). `payload: None` = the target is not an inspectable
+    /// colonist (the panel renders nothing). Overwritten per reply; the
+    /// HUD polls at ~1Hz while a panel is open.
+    bastion_inspect: Option<(
+        common::uid::Uid,
+        Option<comp::bastion::BastionInspectPayload>,
+    )>,
     target_time_of_day: Option<TimeOfDay>,
     dt_adjustment: f64,
 
@@ -1146,6 +1154,7 @@ impl Client {
             bastion_terrain_anchor: None,
             bastion_designations: Vec::new(),
             bastion_designations_rev: 0,
+            bastion_inspect: None,
             target_time_of_day: None,
             dt_adjustment: 1.0,
 
@@ -1274,6 +1283,7 @@ impl Client {
                     | ClientGeneral::BastionContextAction { .. }
                     | ClientGeneral::BastionSpawnColony { .. }
                     | ClientGeneral::BastionCancelDesignation { .. }
+                    | ClientGeneral::BastionInspect { .. }
                     | ClientGeneral::SetBattleMode(_) => {
                         #[cfg(feature = "tracy")]
                         {
@@ -2035,6 +2045,23 @@ impl Client {
     /// way (add, erase-subtract, split). Voxygen rebuilds its overlay shapes
     /// when this moves — index-based incremental sync can't express removal.
     pub fn bastion_designations_rev(&self) -> u64 { self.bastion_designations_rev }
+
+    /// bastion (UI-4, row 62): request one colonist's inspector payload
+    /// (the HUD sends on selection + ~1Hz while its panel is open).
+    pub fn bastion_inspect_request(&mut self, target: common::uid::Uid) {
+        self.send_msg(ClientGeneral::BastionInspect { target });
+    }
+
+    /// bastion (UI-4): the latest inspector reply — `(target, payload)`;
+    /// `payload: None` = not an inspectable colonist.
+    pub fn bastion_inspect(
+        &self,
+    ) -> Option<&(
+        common::uid::Uid,
+        Option<comp::bastion::BastionInspectPayload>,
+    )> {
+        self.bastion_inspect.as_ref()
+    }
 
     /// bastion (B2a): paint a designation region (server validates + echoes).
     /// B5.6b-2: `z_extent: Some(_)` switches to the surface-relative path —
@@ -3260,6 +3287,12 @@ impl Client {
                     }
                 }
                 self.bastion_designations_rev += 1;
+            },
+            ServerGeneral::BastionInspectInfo { target, payload } => {
+                // bastion (UI-4): the inspector reply — latest wins (the
+                // HUD shows one panel; stale replies for other targets
+                // are simply overwritten).
+                self.bastion_inspect = Some((target, payload));
             },
             _ => unreachable!("Not a in_game message"),
         }

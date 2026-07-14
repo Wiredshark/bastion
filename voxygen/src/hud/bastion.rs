@@ -85,6 +85,11 @@ pub struct BastionHudState {
     pub god_mode: GodMode,
     /// Info line for the current selection.
     pub selected_info: Option<String>,
+    /// bastion (UI-4, row 62): the unit-inspector text block — one line
+    /// per row, plain text (placeholder-first: no icons/art). Empty =
+    /// no panel (nothing selected, or a non-colonist). Fed each frame
+    /// by the session from the client's inspect reply cache.
+    pub inspect_lines: Vec<String>,
     pub radial: Option<BastionRadial>,
     /// bastion (B5.6b-1): world-anchored zone labels ("Mine 1"), each at a
     /// world centroid with its kind colour. Set by the session's overlay

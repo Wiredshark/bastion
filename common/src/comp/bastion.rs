@@ -279,6 +279,28 @@ pub fn stagger_interrupt(
     (base * (1.0 - 0.4 * h)).clamp(INTERRUPT_FLOOR.min(base), base * 1.5)
 }
 
+/// bastion (UI-4, row 62): the inspector payload — one selected
+/// colonist's inner state, server→client on request (the
+/// `BastionInspect`/`BastionInspectInfo` wire pair; request/response on
+/// selection rather than comp-sync, because it is a single-target
+/// on-demand query). Re-packages the reads the harness probes already
+/// established; READ-ONLY by construction (the panel writes nothing).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BastionInspectPayload {
+    pub name: String,
+    pub hunger: f32,
+    pub rest: f32,
+    pub recreation: f32,
+    pub mood: f32,
+    /// (adventurous, worried, sociable_or_extroverted, introverted)
+    pub personality4: (bool, bool, bool, bool),
+    pub conscientious: bool,
+    pub neurotic: bool,
+    pub drive: Drive,
+    /// (work, flee, idle) — the post-modulation urgencies (AUTON-3).
+    pub last_scores: (f32, f32, f32),
+}
+
 /// bastion (AUTON-3, row 51): the DRIVE-ORDER guard — Flee's modulated
 /// urgency can never sink below this, and the floor sits strictly above
 /// Work's modulated CEILING (0.6), so the AUTON-0 safety ordering

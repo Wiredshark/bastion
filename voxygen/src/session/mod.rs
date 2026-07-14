@@ -156,6 +156,10 @@ pub struct SessionState {
     /// Last-seen `Client::bastion_designations_rev` (B5.5: rebuild-on-rev).
     bastion_designation_synced: u64,
     bastion_designation_shapes: Vec<DebugShapeId>,
+    /// bastion (UI-4, row 62): the inspector request throttle — the last
+    /// (target, send time); re-sends immediately on target change, else
+    /// at ~1Hz while a single colonist stays selected.
+    bastion_inspect_sent: Option<(common::uid::Uid, std::time::Instant)>,
     /// bastion (B5.6a): the Z-slice height the draped overlay was built
     /// against — a slice toggle re-clamps the draped surface, so the overlay
     /// rebuilds when this changes even if the rev didn't.
@@ -295,6 +299,7 @@ impl SessionState {
             bastion_colonist_markers: HashMap::new(),
             bastion_designation_synced: 0,
             bastion_designation_shapes: Vec::new(),
+            bastion_inspect_sent: None,
             bastion_designation_slice: None,
             bastion_visuals: crate::bastion::tools::VisualsMode::default(),
             bastion_designation_dirty: false,
@@ -1057,6 +1062,86 @@ impl SessionState {
                 }
             },
         }
+    }
+
+    /// bastion (UI-4, row 62): the unit-inspector pump — when exactly one
+    /// colonist is selected, request its payload from the server
+    /// (immediately on target change, ~1Hz while held) and mirror the
+    /// latest matching reply into the HUD's plain-text block; anything
+    /// else (no selection, multi-select, non-colonist reply) clears it.
+    /// READ-ONLY end to end — the panel writes no sim state.
+    fn bastion_sync_inspector(&mut self) {
+        let target = if self.bastion_selected.len() == 1 {
+            let client = self.client.borrow();
+            let ecs = client.state().ecs();
+            ecs.read_storage::<common::uid::Uid>()
+                .get(self.bastion_selected[0])
+                .copied()
+        } else {
+            None
+        };
+        let Some(uid) = target else {
+            self.bastion_inspect_sent = None;
+            self.hud.bastion_set_inspect(Vec::new());
+            return;
+        };
+        let stale = self
+            .bastion_inspect_sent
+            .is_none_or(|(u, t)| u != uid || t.elapsed().as_secs_f32() > 1.0);
+        if stale {
+            self.client.borrow_mut().bastion_inspect_request(uid);
+            self.bastion_inspect_sent = Some((uid, std::time::Instant::now()));
+        }
+        let lines = {
+            let client = self.client.borrow();
+            match client.bastion_inspect() {
+                Some((t, Some(p))) if *t == uid => {
+                    let mut traits: Vec<&str> = Vec::new();
+                    if p.personality4.0 {
+                        traits.push("Adventurous");
+                    }
+                    if p.personality4.1 {
+                        traits.push("Worried");
+                    }
+                    if p.personality4.2 {
+                        traits.push("Sociable");
+                    }
+                    if p.personality4.3 {
+                        traits.push("Introverted");
+                    }
+                    if p.conscientious {
+                        traits.push("Conscientious");
+                    }
+                    if p.neurotic {
+                        traits.push("Neurotic");
+                    }
+                    vec![
+                        format!("- {} -", p.name),
+                        format!(
+                            "Drive: {:?}  (W {:.2} / F {:.2} / I {:.2})",
+                            p.drive,
+                            p.last_scores.0,
+                            p.last_scores.1,
+                            p.last_scores.2
+                        ),
+                        format!(
+                            "Hunger {:.2}  Rest {:.2}  Rec {:.2}",
+                            p.hunger, p.rest, p.recreation
+                        ),
+                        format!("Mood {:.2}", p.mood),
+                        if traits.is_empty() {
+                            "Traits: (none)".to_string()
+                        } else {
+                            format!("Traits: {}", traits.join(", "))
+                        },
+                    ]
+                },
+                // Reply pending, stale, or a non-colonist target
+                // (payload: None) — show nothing, never crash.
+                _ => Vec::new(),
+            }
+        };
+        self.hud.bastion_set_inspect(lines);
     }
 
     /// bastion (B2a/B5.5): keep the designation overlay in sync with the
@@ -3024,6 +3109,7 @@ impl PlayState for SessionState {
                 }
                 self.bastion_sync_designations();
                 self.bastion_sync_colonist_markers();
+                self.bastion_sync_inspector();
             } else if !self.bastion_colonist_markers.is_empty() {
                 let ids: Vec<DebugShapeId> =
                     self.bastion_colonist_markers.drain().map(|(_, id)| id).collect();

@@ -251,6 +251,7 @@ widget_ids! {
         bastion_palette_btns[],
         bastion_godmode_btn,
         bastion_selected_text,
+        bastion_inspect_text,
         bastion_zone_labels[],
         bastion_paint_label,
         bastion_depth_minus_btn,
@@ -5072,6 +5073,21 @@ impl Hud {
                     .set(self.ids.bastion_selected_text, ui_widgets);
             }
 
+            // --- UI-4 (row 62): the unit-inspector panel — a plain-text
+            // block above the selection info line (placeholder-first: no
+            // art). Empty lines = no panel (nothing/non-colonist
+            // selected); the session feeds it each frame from the
+            // client's inspect reply.
+            if !self.bastion.inspect_lines.is_empty() {
+                let text = self.bastion.inspect_lines.join("\n");
+                widget::Text::new(&text)
+                    .bottom_left_with_margins_on(ui_widgets.window, 365.0, 10.0)
+                    .font_size(13)
+                    .font_id(self.fonts.cyri.conrod_id)
+                    .color(label_color)
+                    .set(self.ids.bastion_inspect_text, ui_widgets);
+            }
+
             // --- B5.6b-1: world-anchored zone labels ("Mine 1") at centroids.
             // position_ingame projects the world point to screen (as overhead
             // nametags do); hidden in SUBTLE/OFF because the session feeds an
@@ -6055,6 +6071,13 @@ impl Hud {
     /// bastion (B2a): set/clear the selection info line.
     pub fn bastion_set_selected(&mut self, info: Option<String>) {
         self.bastion.selected_info = info;
+    }
+
+    /// bastion (UI-4, row 62): set/clear the unit-inspector text block
+    /// (empty = hidden). The session feeds it each frame from the
+    /// client's inspect reply cache.
+    pub fn bastion_set_inspect(&mut self, lines: Vec<String>) {
+        self.bastion.inspect_lines = lines;
     }
 
     /// bastion (B5.6b-1): set the world-anchored zone labels to draw this

@@ -151,6 +151,10 @@ pub enum ClientGeneral {
     /// bastion (B4): cancel designations — removes all jobs inside the
     /// region and releases their claims.
     BastionCancelDesignation { region: common::bastion::Region },
+    /// bastion (UI-4, row 62): request one colonist's inspector payload
+    /// (sent on single-colonist selection + ~1Hz while the panel is
+    /// open). Server replies `ServerGeneral::BastionInspectInfo`.
+    BastionInspect { target: common::uid::Uid },
 
     //Only in Game, via terrain stream
     TerrainChunkRequest {
@@ -218,7 +222,8 @@ impl ClientMsg {
                         | ClientGeneral::BastionApplyInfluence { .. }
                         | ClientGeneral::BastionContextAction { .. }
                         | ClientGeneral::BastionSpawnColony { .. }
-                        | ClientGeneral::BastionCancelDesignation { .. } => {
+                        | ClientGeneral::BastionCancelDesignation { .. }
+                        | ClientGeneral::BastionInspect { .. } => {
                             c_type == ClientType::Game && presence.is_some()
                         },
                         ClientGeneral::SpectatePosition(_) | ClientGeneral::SpectateEntity(_) => {

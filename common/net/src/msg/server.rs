@@ -248,6 +248,13 @@ pub enum ServerGeneral {
     BastionDesignationRemoved {
         region: common::bastion::Region,
     },
+    /// bastion (UI-4, row 62): one colonist's inspector payload, the
+    /// reply to `ClientGeneral::BastionInspect` (request/response on
+    /// selection — a single-target on-demand query, not comp-sync).
+    BastionInspectInfo {
+        target: Uid,
+        payload: Option<comp::bastion::BastionInspectPayload>,
+    },
 }
 
 impl ServerGeneral {
@@ -398,7 +405,8 @@ impl ServerMsg {
                         | ServerGeneral::UpdateRecipes
                         | ServerGeneral::Gizmos(_)
                         | ServerGeneral::BastionDesignation { .. }
-                        | ServerGeneral::BastionDesignationRemoved { .. } => {
+                        | ServerGeneral::BastionDesignationRemoved { .. }
+                        | ServerGeneral::BastionInspectInfo { .. } => {
                             c_type == ClientType::Game && presence.is_some()
                         },
                         // Always possible
