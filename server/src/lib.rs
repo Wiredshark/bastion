@@ -16,6 +16,7 @@ pub mod bastion_assets;
 // bastion (CHOP redesign, FR10): shared whole-tree detection (handler + hook).
 pub mod bastion_chop;
 pub mod bastion_actions;
+pub mod bastion_flat_arena;
 pub mod bastion_mood;
 pub mod bastion_jobs;
 pub mod bastion_path;
@@ -515,7 +516,11 @@ impl Server {
         state.ecs_mut().insert(map);
 
         #[cfg(feature = "worldgen")]
-        let spawn_point = SpawnPoint({
+        let spawn_point = SpawnPoint(if bastion_flat_arena::enabled() {
+            // bastion (FLAT-TEST-ARENA): land on the slab, not at the
+            // nearest town with a sim-derived (pre-override) altitude.
+            bastion_flat_arena::spawn_wpos(bastion_flat_arena::world_center_wpos(&world))
+        } else {
             let index = index.as_index_ref();
             // NOTE: all of these `.map(|e| e as [type])` calls should compile into no-ops,
             // but are needed to be explicit about casting (and to make the compiler stop
@@ -535,7 +540,13 @@ impl Server {
             world.find_accessible_pos(index, TerrainChunkSize::center_wpos(spawn_chunk), false)
         });
         #[cfg(not(feature = "worldgen"))]
-        let spawn_point = SpawnPoint::default();
+        let spawn_point = if bastion_flat_arena::enabled() {
+            SpawnPoint(bastion_flat_arena::spawn_wpos(
+                bastion_flat_arena::world_center_wpos(&world),
+            ))
+        } else {
+            SpawnPoint::default()
+        };
 
         // Set the spawn point we calculated above
         state.ecs_mut().insert(spawn_point);
@@ -1448,15 +1459,28 @@ impl Server {
                 if self.state.terrain().get_key_arc(key).is_some() {
                     continue;
                 }
-                let Ok((chunk, supplement)) = self.world.generate_chunk(
-                    self.index.as_index_ref(),
+                // bastion (FLAT-TEST-ARENA): the same runtime override the
+                // live chunk generator applies — the harness force-load
+                // path honors the arena too (the ARENA leg tests through
+                // here).
+                let gen_result = crate::bastion_flat_arena::override_chunk(
+                    crate::bastion_flat_arena::world_center_wpos(&self.world),
                     key,
-                    None,
-                    // NOTE: despite the name, this closure means "cancel?"
-                    // (see chunk_generator.rs's `cancel.load(..)`).
-                    || false,
-                    None,
-                ) else {
+                )
+                .ok_or(())
+                .or_else(|()| {
+                    self.world.generate_chunk(
+                        self.index.as_index_ref(),
+                        key,
+                        None,
+                        // NOTE: despite the name, this closure means
+                        // "cancel?" (see chunk_generator.rs's
+                        // `cancel.load(..)`).
+                        || false,
+                        None,
+                    )
+                });
+                let Ok((chunk, supplement)) = gen_result else {
                     continue;
                 };
                 let chunk = std::sync::Arc::new(chunk);
@@ -2550,6 +2574,13 @@ impl Server {
     pub fn bastion_block_kind(&self, pos: Vec3<i32>) -> Option<common::terrain::BlockKind> {
         use common::vol::ReadVol;
         self.state.terrain().get(pos).ok().map(|b| b.kind())
+    }
+
+    /// bastion (FLAT-TEST-ARENA, harness hook): the arena's anchor — the
+    /// same world-center wpos the generation override keys on, so the
+    /// ARENA leg samples exactly where the slab is.
+    pub fn bastion_world_center_wpos(&self) -> Vec2<u32> {
+        crate::bastion_flat_arena::world_center_wpos(&self.world)
     }
 
     /// bastion (GATHER, harness hook): is the block at `pos` still DIRECTLY

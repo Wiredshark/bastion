@@ -69,8 +69,18 @@ impl ChunkGenerator {
 
         slowjob_pool.spawn("CHUNK_GENERATOR", move || {
             let index = index.as_index_ref();
-            let payload = world
-                .generate_chunk(index, key, rtsim_resources, || cancel.load(Ordering::Relaxed), Some(time))
+            // bastion (FLAT-TEST-ARENA): the runtime arena override — a
+            // flat slab inside the radius when BASTION_FLAT_ARENA is set,
+            // the real generator otherwise (a single cold branch when
+            // the flag is absent).
+            let payload = crate::bastion_flat_arena::override_chunk(
+                crate::bastion_flat_arena::world_center_wpos(&world),
+                key,
+            )
+            .map(Ok)
+            .unwrap_or_else(|| {
+                world.generate_chunk(index, key, rtsim_resources, || cancel.load(Ordering::Relaxed), Some(time))
+            })
                 // FIXME: Since only the first entity who cancels a chunk is notified, we end up
                 // delaying chunk re-requests for up to 3 seconds for other clients, which isn't
                 // great.  We *could* store all the other requesting clients here, but it could

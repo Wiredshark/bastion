@@ -316,6 +316,13 @@ struct Args {
     #[arg(long)]
     auton3_scenario: bool,
 
+    /// bastion (FLAT-TEST-ARENA, row 50.5): the BASTION_FLAT_ARENA env
+    /// toggle — chunks inside the radius generate as a flat slab
+    /// (equal surface height everywhere sampled), chunks beyond stay
+    /// normal, and a colony spawns and works on the flat.
+    #[arg(long)]
+    arena_scenario: bool,
+
     /// bastion (AUTON-2, row 50): THE DEATH-SPIRAL GATE (E1). Phase A: a
     /// RECOVERABLE shortage (stock < eaters, live pre-painted farm) —
     /// the trait-stagger splits the crew (anxious/default preempt to
@@ -479,6 +486,8 @@ fn main() -> ExitCode {
         hist1_scenario(&args)
     } else if args.auton3_scenario {
         auton3_scenario(&args)
+    } else if args.arena_scenario {
+        arena_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -5765,6 +5774,222 @@ fn auton3_scenario(args: &Args) -> ExitCode {
         && guard_holds;
     println!("{}", result);
     println!("AUTON3 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (FLAT-TEST-ARENA, row 50.5): the runtime flat playtest arena.
+/// With `BASTION_FLAT_ARENA` set BEFORE boot: (1) the SpawnPoint resource
+/// is the slab center (not the town/sim calc — the whole point is Ben
+/// lands ON the arena); (2) chunks inside the radius generate as one
+/// uniform grass slab — the pinned surface height everywhere sampled,
+/// out to the rim chunk itself; (3) chunks beyond the rim generate
+/// normal terrain (not the slab signature); (4) the arena is PLAYABLE —
+/// a colony spawns on it and completes real mine work; the slab surface
+/// survives the work session intact.
+fn arena_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region};
+    use common::terrain::{Block, BlockKind, TerrainChunkSize};
+    use common::vol::{ReadVol, RectVolSize};
+    use server::bastion_flat_arena::{FLAT_ARENA_RADIUS_CHUNKS, FLAT_ARENA_Z};
+    use vek::{Rgb, Vec2, Vec3};
+
+    // THE FLAG — before the runtime and server exist (still
+    // single-threaded, so the 2024-edition `set_var` contract is
+    // trivially met). The override's OnceLock latches it at the first
+    // generated chunk, inside boot.
+    unsafe { std::env::set_var("BASTION_FLAT_ARENA", "1") };
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-arena-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-arena".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-arena-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let chunk_sz = TerrainChunkSize::RECT_SIZE.x as i32;
+    let center = server.bastion_world_center_wpos();
+    let cx = center.x as i32;
+    let cy = center.y as i32;
+
+    // (1) SPAWN OWNERSHIP: the resource the join path hands every new
+    // player — dead center, first air cell above the slab.
+    let spawn = server
+        .state()
+        .ecs()
+        .read_resource::<server::SpawnPoint>()
+        .0;
+    let spawn_on_slab = (spawn.x - (cx as f32 + 0.5)).abs() < 1.0
+        && (spawn.y - (cy as f32 + 0.5)).abs() < 1.0
+        && (spawn.z - (FLAT_ARENA_Z as f32 + 1.0)).abs() < 2.0;
+
+    // Load three windows: the colony's play area, a rim-chunk window
+    // (the override's own boundary), and a beyond-the-rim window.
+    server.bastion_force_load_area(Vec2::new(cx as f32, cy as f32), 8);
+    let rx = cx + FLAT_ARENA_RADIUS_CHUNKS * chunk_sz + chunk_sz / 2;
+    server.bastion_force_load_area(Vec2::new(rx as f32, cy as f32), 1);
+    let ox = cx + (FLAT_ARENA_RADIUS_CHUNKS + 4) * chunk_sz + chunk_sz / 4;
+    server.bastion_force_load_area(Vec2::new(ox as f32, cy as f32), 2);
+
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+
+    // (2) FLAT + GRASS: five spread columns across the loaded slab all
+    // sit at the PINNED surface height (the ctor makes everything below
+    // FLAT_ARENA_Z solid, so the surface solid is Z-1), in grass; the
+    // rim chunk itself is still slab.
+    let z0 = FLAT_ARENA_Z - 1;
+    let in_samples: [(i32, i32); 5] =
+        [(0, 0), (240, 180), (-240, -180), (200, -240), (-160, 240)];
+    let inside_flat = in_samples
+        .iter()
+        .all(|(dx, dy)| ground_z(&server, cx + dx, cy + dy) == Some(z0));
+    let inside_grass = in_samples.iter().all(|(dx, dy)| {
+        server
+            .bastion_block_kind(Vec3::new(cx + dx, cy + dy, z0))
+            .is_some_and(|k| k == BlockKind::Grass)
+    });
+    let rim_flat = ground_z(&server, rx, cy) == Some(z0);
+
+    // (3) BEYOND THE RIM: normal generation — three columns must NOT all
+    // carry the slab signature (test-world surfaces live hundreds of
+    // blocks below FLAT_ARENA_Z).
+    let outside_normal = ![-10, 0, 10]
+        .iter()
+        .all(|dx| ground_z(&server, ox + dx, cy) == Some(z0));
+
+    // (4) PLAYABLE: a proud rock patch ON the slab (the selfgen fixture
+    // idiom), a mine designation over it, a colony working it down.
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    for x in (cx + 6)..=(cx + 8) {
+        for y in (cy + 6)..=(cy + 8) {
+            for z in FLAT_ARENA_Z..=(FLAT_ARENA_Z + 1) {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+        }
+    }
+    tick(&mut server, 2);
+    let names = server.bastion_spawn_colony(
+        Vec3::new(cx as f32, cy as f32, FLAT_ARENA_Z as f32 + 2.0),
+        3,
+    );
+    tick(&mut server, 30);
+    server.bastion_place_designation(
+        Region {
+            min: Vec3::new(cx + 6, cy + 6, FLAT_ARENA_Z),
+            max: Vec3::new(cx + 8, cy + 8, FLAT_ARENA_Z + 1),
+        },
+        DesignationKind::Mine,
+    );
+    let mut dug = false;
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        dug = (cx + 6..=cx + 8).any(|x| {
+            (cy + 6..=cy + 8).any(|y| {
+                (FLAT_ARENA_Z..=FLAT_ARENA_Z + 1).any(|z| {
+                    server
+                        .bastion_block_kind(Vec3::new(x, y, z))
+                        .is_some_and(|k| k != BlockKind::Rock)
+                })
+            })
+        });
+        if dug {
+            break;
+        }
+    }
+    let alive = names
+        .iter()
+        .filter(|n| server.bastion_colonist_needs_mood(n).is_some())
+        .count();
+    // The slab SURVIVES the work session: the same five columns, still
+    // the pinned height (mining stays in the proud patch; nothing eats
+    // the arena floor).
+    let surface_intact = in_samples
+        .iter()
+        .all(|(dx, dy)| ground_z(&server, cx + dx, cy + dy) == Some(z0));
+
+    let result = serde_json::json!({
+        "arena_spawn_on_slab": spawn_on_slab,
+        "arena_z0": z0,
+        "arena_inside_flat": inside_flat,
+        "arena_inside_grass": inside_grass,
+        "arena_rim_flat": rim_flat,
+        "arena_outside_normal": outside_normal,
+        "arena_dug": dug,
+        "arena_alive": alive,
+        "arena_surface_intact": surface_intact,
+    });
+    println!(
+        "ARENA TELEMETRY: spawn=({:.1},{:.1},{:.1}) center=({cx},{cy}) z0={z0}",
+        spawn.x, spawn.y, spawn.z
+    );
+    let pass = spawn_on_slab
+        && inside_flat
+        && inside_grass
+        && rim_flat
+        && outside_normal
+        && dug
+        && alive == 3
+        && surface_intact;
+    println!("{}", result);
+    println!("ARENA SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
