@@ -45,6 +45,16 @@ pub struct Args {
     #[clap(long, num_args = 0..=1, default_missing_value = "", value_name = "ASSET_ID")]
     pub asset_arena: Option<String>,
 
+    /// bastion (FLAT-TEST-ARENA, row 50.5): make a NEW singleplayer world
+    /// spawn onto a flat grass playtest slab at world center (the rest of
+    /// the map beyond the ~16-chunk radius generates normally). Resolved
+    /// here in the main thread from this flag OR the `BASTION_FLAT_ARENA`
+    /// env var, then re-asserted into the process env so the singleplayer
+    /// server THREAD reliably reads it (the external env alone was not
+    /// reaching that read — the live-path bug). Implies --bastion-overseer.
+    #[clap(long, env = "BASTION_FLAT_ARENA")]
+    pub bastion_flat_arena: bool,
+
     /// bastion (B-ASSET1): asset-lab root directory for --asset-arena
     /// (contains `vox/`).
     #[clap(long, default_value = "asset-lab")]

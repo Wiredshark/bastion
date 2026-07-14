@@ -46,6 +46,25 @@ fn main() {
     if args.asset_arena.is_some() {
         args.bastion_overseer = true;
     }
+    // bastion (FLAT-TEST-ARENA live-path fix): the singleplayer server reads
+    // BASTION_FLAT_ARENA from its own process env (bastion_flat_arena::enabled),
+    // but it runs on a spawned thread and the external env was not reaching
+    // that read in real launches (the gate-green-but-inert bug — the harness
+    // set the var IN-process, the live client did not). clap resolved the flag
+    // above from `--bastion-flat-arena` OR the env; re-assert it into the
+    // process env NOW so the later-spawned server thread reliably sees it
+    // (the asset-arena env-transport pattern, at its safe point — main(),
+    // single-threaded, before any thread spawns). A flat-arena session is an
+    // overseer-camera colony experience, like the asset arena.
+    if args.bastion_flat_arena {
+        args.bastion_overseer = true;
+        // SAFETY: main(), before any thread is spawned — no concurrent env
+        // access (the run_bastion_arena set_var precedent).
+        #[expect(unsafe_code)]
+        unsafe {
+            std::env::set_var("BASTION_FLAT_ARENA", "1");
+        }
+    }
 
     if let Some(command) = args.command {
         match command {

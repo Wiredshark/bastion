@@ -515,6 +515,16 @@ impl Server {
 
         state.ecs_mut().insert(map);
 
+        // bastion (FLAT-TEST-ARENA, live-path diagnostic): log the resolved
+        // arena state at EVERY boot so a real singleplayer launch self-reports
+        // whether the flag reached this server thread's env read (the
+        // gate-green-but-inert bug's decisive signal — if this logs `false`
+        // on a launch that set BASTION_FLAT_ARENA / passed --bastion-flat-arena,
+        // the transport, not the override, is at fault).
+        info!(
+            flat_arena_enabled = bastion_flat_arena::enabled(),
+            "bastion: FLAT-TEST-ARENA env check at server boot"
+        );
         #[cfg(feature = "worldgen")]
         let spawn_point = SpawnPoint(if bastion_flat_arena::enabled() {
             // bastion (FLAT-TEST-ARENA): land on the slab, not at the
