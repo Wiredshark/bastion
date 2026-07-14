@@ -294,6 +294,14 @@ struct Args {
     #[arg(long)]
     selfgen_scenario: bool,
 
+    /// bastion (49.2/B37): the haul-pinning fix — a churning unreachable
+    /// haul DROPS at the strike cap and frees its reservation instead of
+    /// pinning the item (and its merged pile) forever; the generator
+    /// re-emits from a fresh scan (retry-by-rescan). Asserts the cycle
+    /// repeats, reservations stay ≤1, and the item conserves.
+    #[arg(long)]
+    haulpin_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -436,6 +444,8 @@ fn main() -> ExitCode {
         auton_scenario(&args)
     } else if args.selfgen_scenario {
         selfgen_scenario(&args)
+    } else if args.haulpin_scenario {
+        haulpin_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -5300,6 +5310,216 @@ fn selfgen_scenario(args: &Args) -> ExitCode {
         && bounded;
     println!("{}", result);
     println!("SELFGEN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (49.2/B37): the haul-pinning fix — an item sealed in a void the
+/// haul-gen can see but no hauler can reach. WITHOUT the fix the first
+/// haul job churns claim→unreachable→re-claim forever holding its
+/// reservation (the AUTON-1 run-2 starvation: the pinned pile is dead
+/// stock). WITH it the job drops at HAUL_DROP_STRIKES, the reservation
+/// frees with it, and the slot-7 generator re-emits from a fresh scan —
+/// retry-by-rescan, item fetchable between tries. Asserts the full cycle
+/// repeats (next_id delta counts emissions exactly), reservations never
+/// exceed the one live job, jobs stay bounded, and the item conserves.
+fn haulpin_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region};
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    const STONE: &str = "common.items.crafting_ing.stones";
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-haulpin-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-haulpin".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-haulpin-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    // The SEALED VOID — sized against the STRIKE-GROWN arrival envelope
+    // (the first draw's lesson): tolerance grows to ARRIVE_DIST 2.5 +
+    // 3×1.2 = 6.1 and arrival measures to block+(0,0,1), so a 3-deep
+    // void "converges" by remote-grab through the cap at 6.0. The void
+    // floor sits at gz-7 (own written floor at gz-8 — native below the
+    // slab could be a cave): feet gz+1 to target gz-6 = 7.0 > 6.1 from
+    // EVERY standable cell — the genuine never-converges class (AUTON-1
+    // run-2's), not the remote-work-marginal one.
+    let pit = Vec3::new(cx + 8, cy + 2, gz - 7);
+    server.state_mut().set_block(pit - Vec3::unit_z(), rock);
+    server.state_mut().set_block(pit, air);
+    server.state_mut().set_block(pit + Vec3::unit_z(), air);
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        3,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let fires_before = server.bastion_center_net_fires();
+
+    let store = Region {
+        min: Vec3::new(cx - 1, cy, gz),
+        max: Vec3::new(cx, cy + 1, gz + 1),
+    };
+    server.bastion_place_designation(store, DesignationKind::Stockpile);
+    // Baseline BEFORE the bait exists — every haul emission counts.
+    let (id0, _) = server.bastion_board_probe();
+    // A 2-stack — the merged-pile stand-in: the pinning bug held BOTH
+    // stones behind one dead job.
+    server.bastion_spawn_item(
+        Vec3::new(pit.x as f32 + 0.5, pit.y as f32 + 0.5, pit.z as f32 + 0.5),
+        STONE,
+        2,
+    );
+    tick(&mut server, 5);
+
+    let pit_probe = Region {
+        min: pit - Vec3::broadcast(1),
+        max: pit + Vec3::broadcast(1),
+    };
+
+    // Run: haul jobs against the sealed item must CYCLE — emit, strike
+    // out, DROP (reservation freed), re-emit from a fresh scan. next_id's
+    // delta counts emissions exactly (nothing else creates jobs here: no
+    // designations, no plans, and the void item is the only loose stock).
+    let mut seen_job = false;
+    let mut bounded = true;
+    let mut max_res = 0usize;
+    for _ in 0..240 {
+        tick(&mut server, 10);
+        let pit_jobs = server.bastion_jobs_in_region(pit_probe);
+        let (_, res) = server.bastion_board_probe();
+        seen_job |= pit_jobs >= 1;
+        bounded &= pit_jobs <= 1;
+        max_res = max_res.max(res);
+    }
+    let (id1, res_final) = server.bastion_board_probe();
+    let emissions = id1 - id0;
+    // ≥3 emissions = the first job PLUS at least two post-drop re-emits:
+    // the drop fired repeatedly and each drop freed the reservation (a
+    // re-emit is impossible against a reserved item). Bounded above by
+    // the cadence (one re-emit per slot-7 firing at most).
+    let cycled = emissions >= 3;
+    let stones = server.bastion_colony_item_total(STONE);
+    let net_fires_delta = server.bastion_center_net_fires() - fires_before;
+
+    let result = serde_json::json!({
+        "haulpin_colonists": names.len(),
+        "haulpin_seen_job": seen_job,
+        "haulpin_emissions": emissions,
+        "haulpin_cycled": cycled,
+        "haulpin_bounded": bounded,
+        "haulpin_max_reservations": max_res,
+        "haulpin_final_reservations": res_final,
+        "haulpin_stones_conserved": stones,
+        "haulpin_net_fires_delta": net_fires_delta,
+    });
+    println!(
+        "HAULPIN TELEMETRY: emissions={emissions} max_res={max_res} final_res={res_final} stones={stones} fires={net_fires_delta}"
+    );
+    let pass = names.len() == 3
+        && seen_job
+        && cycled
+        && bounded
+        && max_res <= 1
+        && res_final <= 1
+        && stones == 2;
+    println!("{}", result);
+    println!("HAULPIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);

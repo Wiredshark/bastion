@@ -1559,6 +1559,19 @@ impl Server {
         )
     }
 
+    /// bastion (49.2/B37, harness hook): board vitals for the haul-pinning
+    /// scenario — `(next_id, live_reservations)`. `next_id` bumps once per
+    /// job creation, so its delta counts re-emissions exactly (no racy
+    /// transition polling); the reservation count proves drops FREE their
+    /// items (a re-emit is only possible against an unreserved item).
+    pub fn bastion_board_probe(&self) -> (u64, usize) {
+        let board = self
+            .state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>();
+        (board.probe_next_id(), board.probe_reservations())
+    }
+
     /// bastion (B5.6b-2, harness hook): place a designation via the
     /// surface-relative path — the same per-column resolution the in-game
     /// paint message uses. Returns (created job ids, resolved echo bounds)

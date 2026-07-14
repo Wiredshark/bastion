@@ -487,6 +487,11 @@ pub const EMBED_PERSIST_TICKS: u32 = 30;
 /// bastion (B6 HAUL): pending-haul cap per loaded colonist (throttle — the
 /// generator never floods the board; more spawn as deliveries complete).
 pub const HAUL_JOBS_PER_COLONIST: usize = 2;
+/// bastion (49.2/B37): unreachable-strike cap for HAUL jobs — at this many
+/// stall timeouts the job DROPS and its reservation frees (the pinning
+/// fix). 3 = the arrival-tolerance growth cap (`stuck_strikes.min(3)`):
+/// once tolerance stops growing, further churn can't converge.
+pub const HAUL_DROP_STRIKES: u8 = 3;
 /// bastion (AUTON-1, row 49): the self-designation generator set — the
 /// colony-state→jobs emitters that feed the board without player paint.
 /// Server-side only (no wire surface). Haul is the grandfathered B6
@@ -1701,6 +1706,12 @@ impl JobBoard {
     /// bastion (B6): remove a job AND release its reservation — THE removal
     /// path (B17: one place, so a cancelled/moot/completed job can never
     /// leak a reservation).
+    /// bastion (49.2/B37, harness probes): board vitals — private fields
+    /// exposed read-only for the pinning scenario's exact cycle counting.
+    pub fn probe_next_id(&self) -> u64 { self.next_id }
+
+    pub fn probe_reservations(&self) -> usize { self.reservations.len() }
+
     pub fn remove_job(&mut self, id: JobId) -> Option<Job> {
         let job = self.jobs.remove(&id);
         if let Some(j) = &job
@@ -2544,6 +2555,10 @@ impl<'a> System<'a> for Sys {
         // (entity, pos, feet, reach) — processed post-loop (same borrow
         // constraint as carve_requests).
         let mut churn_events: Vec<(specs::Entity, Vec3<f32>, Vec3<i32>, i32)> = Vec::new();
+        // 49.2/B37: churning HAULS to drop post-loop (remove_job needs the
+        // board while the loop holds a job borrow — the carve_requests
+        // constraint).
+        let mut haul_drops: Vec<JobId> = Vec::new();
         // B-LIVE3 (mine lifecycle): designations that completed their last
         // job this tick — the post-loop pass marks them done + disperses
         // below-grade miners.
@@ -4139,6 +4154,36 @@ impl<'a> System<'a> for Sys {
                                     && job.pos.z - feet.z > reach
                                 {
                                     carve_requests.push((feet, job.pos, active.job));
+                                } else if matches!(
+                                    job.kind,
+                                    common::bastion::JobKind::Haul { .. }
+                                ) && job.stuck_strikes >= HAUL_DROP_STRIKES
+                                {
+                                    // 49.2/B37: a HAUL that keeps striking
+                                    // out is DROPPED, not eternally churned —
+                                    // reserve-at-generation otherwise PINS
+                                    // the item (and, merged, its whole pile)
+                                    // to a job nobody can finish, starving
+                                    // fetch of stock that physically exists
+                                    // (the AUTON-1 run-2 starvation). The
+                                    // post-loop remove_job frees the
+                                    // reservation; the slot-7 generator
+                                    // re-emits from a FRESH scan next cadence
+                                    // if the item still qualifies — retry-by-
+                                    // rescan (item fetchable between tries)
+                                    // instead of retry-by-churn (item pinned
+                                    // forever). Designated kinds keep the
+                                    // unreachable economy: their targets are
+                                    // TERRAIN, which neighboring work
+                                    // legitimately un-blocks (the 60-tick
+                                    // amnesty exists for exactly them).
+                                    info!(
+                                        job = active.job,
+                                        pos = ?job.pos,
+                                        strikes = job.stuck_strikes,
+                                        "bastion: churning haul dropped — reservation freed (49.2)"
+                                    );
+                                    haul_drops.push(active.job);
                                 } else {
                                     // B5.8-E3: no per-colonist re-claim bar
                                     // here (E2 tried one; it leaked on
@@ -5227,6 +5272,12 @@ impl<'a> System<'a> for Sys {
                     board.embed_watch.remove(uid);
                 }
             }
+        }
+
+        // ── 49.2/B37: drop churning hauls (gathered in-loop) ────────────
+        // remove_job frees the reservation with the job — the whole point.
+        for id in haul_drops {
+            board.remove_job(id);
         }
 
         // ── B5.8-E3: CLAIM-CHURN trapped detector ────────────────────────
