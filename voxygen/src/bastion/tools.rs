@@ -22,7 +22,7 @@ pub enum ToolMode {
 }
 
 impl ToolMode {
-    pub const ALL: [ToolMode; 9] = [
+    pub const ALL: [ToolMode; 10] = [
         ToolMode::Pan,
         ToolMode::Inspect,
         ToolMode::Designate(DesignationKind::Mine),
@@ -32,6 +32,11 @@ impl ToolMode {
         ToolMode::Designate(DesignationKind::Gather),
         ToolMode::Designate(DesignationKind::Build),
         ToolMode::Designate(DesignationKind::Stockpile),
+        // FARM/PROD-2 (row 46): the farm-plot paint — was shipped in the
+        // sim + zone-color legend but never wired to a palette button, so
+        // Farm was UNSELECTABLE in the client (the missing 10th entry;
+        // Play-Tester find, blocked Ben's FARM + AUTON-2 recovery testing).
+        ToolMode::Designate(DesignationKind::Farm),
         // B5.8: ladders — a 1-column upward designation (drag a spot, the
         // up-extent sets the height; kind default = 4 rungs).
         ToolMode::Designate(DesignationKind::Ladder),
