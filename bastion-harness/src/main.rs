@@ -9251,7 +9251,14 @@ fn b6haul_scenario(args: &Args) -> ExitCode {
             .bastion_place_designation(Region { min: b2, max: b2 }, DesignationKind::Build)
             .len();
     let mut built = 0usize;
-    for _ in 0..240 {
+    // B6HAUL-WIDEN: 240→480 — the poll ceiling (row-34 origin, never
+    // retuned) went marginal under gate cold-cache/sequential load (b6haul
+    // is the 11th sequential leg → worldgen assets evicted → slow cold
+    // chunk-gen misses the window). The loop breaks on success so this is
+    // free in the common case, headroom for the slow tail (the HAULPIN
+    // structural-window precedent). Proven not an ARENA regression: b6haul
+    // x5 = 5/5 alone at both parent and child commits.
+    for _ in 0..480 {
         tick(&mut server, 15);
         built = [b1, b2]
             .iter()
@@ -9297,7 +9304,8 @@ fn b6haul_scenario(args: &Args) -> ExitCode {
         .bastion_place_designation(mrow, DesignationKind::Mine)
         .len();
     let mut mined = false;
-    for _ in 0..240 {
+    // B6HAUL-WIDEN: 240→480 (see the race loop above).
+    for _ in 0..480 {
         tick(&mut server, 15);
         if (cx - 2..=cx + 2).all(|x| {
             server
@@ -9315,7 +9323,8 @@ fn b6haul_scenario(args: &Args) -> ExitCode {
     server.bastion_place_designation(za, DesignationKind::Stockpile);
     let za_center = Vec3::new((cx - 6) as f32, (cy + 3) as f32, (gz + 1) as f32);
     let mut delivered = false;
-    for _ in 0..400 {
+    // B6HAUL-WIDEN: 400→600 (see the race loop above).
+    for _ in 0..600 {
         tick(&mut server, 15);
         if server.bastion_sum_items_near(za_center, 4.0, BUILD_MATERIAL_ITEM) >= 5 {
             delivered = true;
