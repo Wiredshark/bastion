@@ -3685,6 +3685,24 @@ fn preempt_scenario(args: &Args) -> ExitCode {
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
     let a = names.first().cloned().unwrap_or_default();
+    // AUTON-2 made the interrupt PER-COLONIST (the trait-stagger), so
+    // "rest just above the interrupt" only means something relative to
+    // THIS colonist's own effective threshold. Own the value surface
+    // (the SPIRAL discipline: FOCUS-0 rolls all eight values at spawn)
+    // and compute the effective interrupt with the mechanism's own pub
+    // fn — the hysteresis fixture then aims at the colonist's real band
+    // edge for ANY seed's temperament roll.
+    server.bastion_set_values(&a, "Craft", 0);
+    server.bastion_set_values(&a, "Tradition", 0);
+    let (a_consc, a_neur) = server
+        .bastion_colonist_temperament(&a)
+        .unwrap_or((false, false));
+    let eff_rest = {
+        let mut vals = std::collections::HashMap::new();
+        vals.insert(common::bastion::Value::Craft, 0i8);
+        vals.insert(common::bastion::Value::Tradition, 0i8);
+        common::comp::bastion::stagger_interrupt(0.2, &vals, a_consc, a_neur)
+    };
 
     // The reachable bed + a mine strip.
     let bed = Vec3::new(cx - 6, cy, gz + 1);
@@ -3779,9 +3797,12 @@ fn preempt_scenario(args: &Args) -> ExitCode {
         server.bastion_preempt_attempts() - attempts_before;
     let thrash_bounded = (1..=3).contains(&attempts_endure);
     // HYSTERESIS HOVER (the other would-thrash construction): rest just
-    // ABOVE the interrupt never fires an attempt at all.
+    // ABOVE the colonist's OWN effective interrupt never fires an
+    // attempt at all (threshold-aware since AUTON-2's trait-stagger —
+    // the flat 0.21 broke deterministically for anxious-rolled seeds
+    // whose staggered edge sits above it).
     let attempts_hover0 = server.bastion_preempt_attempts();
-    server.bastion_set_needs(&a, 1.0, 0.21, 1.0);
+    server.bastion_set_needs(&a, 1.0, eff_rest + 0.01, 1.0);
     tick(&mut server, 600);
     let hover_silent =
         server.bastion_preempt_attempts() == attempts_hover0;
