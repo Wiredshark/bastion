@@ -1383,9 +1383,1927 @@ DeleteEvent untouched; claim sweep = the release, regression-guarded). --lod1-sc
 completion (stone SUM conserved), stable roster, zero ghost claims. Packet's proofread
 note honored (gate on Sys, not the stale unload-hook seam).
 
+### bastion-block-B6HAUL (03b649c451)
+Row 34, typed jobs + reservations + auto-haul: JobKind (Designated wraps every pre-B6
+job byte-identical; Haul{item,destination} net-new, append-only) + Job.reservation
+(serde-default) + ONE ReservationTable on JobBoard (item Uid per job, stock stays
+DERIVED from physical items, D2), remove_job() releasing the reservation with the job.
+Stockpile designation ACTIVATED (was inert since B4): zone registration, haul-job
+generation off loose bastion-output drops (reserve at generation), execution via
+vanilla InventoryManip::Pickup (leg 1) + CreateItemDropEvent into the zone (leg 2).
+Build-fetch: a material job with nothing in hand claims a stockpiled item availability-
+checked at scoring, reservation BOUND at commit (raced-away item skips the claim, no
+double-spend). --b6haul-scenario 3/3: 2 Builds/1 stockpiled stone → exactly one
+completes; 5 mined stones auto-haul, zone sum == pad total exact. Gate 12/12 (ladder
+gains the B6HAUL leg). Sonnet tag-review (lean single-pass, MIXED-class): METHOD
+matches its named reuse (vanilla Pickup, no second pickup mechanism; JobKind didn't
+front-load Gather per row 38's ownership). One LOW-PRI finding filed as row 34.1
+(B6-FETCH-REQUEUE) — a re-claimed mid-fetch Build job can orphan a second reservation
+on `needs_fetch` not checking `job.reservation.is_some()` first; a slow leak, not a
+double-spend, doesn't block the tag.
+
 ### bastion-block-BELT-EXERCISE-TEST (a3ee084346)
 Row 31.3 (Opus R11 follow-up): --belt-exercise-scenario — sealed-pocket injection
 (revert-locked, persists by construction) proves the EMBED WATCH persist→relocate path
 FIRES (net_fires+1, relocation cell-verified, destination free); FAILING-capable. Build
 occupancy guard confirmed full-body (feet+torso) by inspection. Harness-only diff; game
 code identical to the 10/10-gated 51150baca3; ladder = 11 legs.
+
+### bastion-block-BAG5CORE (5fc29a4101)
+Row 36, canonical world-action helpers: six verbs extracted into a new `bastion_actions`
+module (`approach_target`, `work_progress`, `completion_block`, `emit_drop`,
+`emit_pickup`, `deposit_all_of`) — `bastion_jobs::Sys::run` now calls these instead of
+inlining the logic (7 call sites migrated, net −76 lines in `bastion_jobs.rs`); the
+committed-path steer chain stays drive machinery, deliberately not folded in. No
+NPC-drive/self-designation code (B-AG3-gated, out of scope). Byte-identical spot-checked
+(b6haul/lod1/b5 scenarios pass post-refactor); full 12-leg gate 11/12 — the one non-pass
+is the KNOWN pre-existing `ck`/fs_out seam-flip flake (2-PASS/1-FAIL on an identical
+binary, documented scheduling-noise class, not a regression; safety invariants clean
+throughout) — treated as green. Sonnet tag-review (lean, MIXED-class): confirmed all six
+functions are genuinely called (not dead extraction), METHOD matches the packet. Clean,
+no findings.
+
+### bastion-block-BAG1 (4522857fd4)
+Row 35, loaded NPCs continue their rtsim lives: the promote-time write→read intent
+bridge (`tick.rs:826-841` → `action_nodes.rs::idle()`) was ALREADY population-wide and
+wired — Sonnet's audit found it, not a rebuild. The one real gap: `NpcActivity::Gather`
+was a `TODO` stub that danced in place indefinitely; fixed as an honest degrade
+(falls through to idle-wander, a `// row 38` pointer left for when real gathering
+lands). VERIFIED dynamically via an airship-dock cluster (8 promoted, 8 embodied, 4
+acting, all `GotoFlying` — the mechanism fires population-wide, not colonist-specific);
+the intended ground-townsfolk fixture couldn't locate a promotable cluster (harness
+geography, not a code gap — `tick.rs:667-734`'s promotion-eligibility confirmed clean,
+no role filter; filed as row 35.1). No dedicated gate ladder leg — this commit sits
+between the B-AG5-CORE gate and ZONE-0's commits (no gather-intent fixture exercises it
+directly; `action_nodes` compiles clean); ZONE-0's eventual Opus-gated full-ladder run
+covers it retroactively.
+
+### bastion-block-CASE004-MAGNET (bb858c1cf9)
+Row 31.1, the confirmed BC-004/R11 writer closed: `climb_col` proves headroom at the
+LADDER's z, but both ladder-magnet branches wrote the COLONIST's position at ITS OWN z
+— the else-nudge could step into a mid-climb pinch (torso in wall, belt-relocated) and
+the on_pillar snap's scanned floor never checked its own head cell. Both writes now
+GATE on the exact `climb_col` predicate evaluated at the destination/own z — blocked
+means skip the write entirely (no relocate; `eject_dest` stays the primitive for a
+different problem). `--magnet-scenario` 2/2 PASS: a lip-pinched shaft climb asserts the
+capsule core NEVER sits in solid at any tick (direct, per-tick — the belt's own
+4-corner predicate), `CENTER_NET_FIRES` stays 0, climb completes unregressed. Gate
+13/13 (ladder gains the MAGNET leg). Sonnet tag-review (lean, MIXED-class): diff matches
+the packet exactly (own-z gate on the nudge, head-clear gate on the snap, skip-not-
+relocate on both) — clean, no findings.
+
+### bastion-block-ZONE0 (7b6d7ee08c)
+Row 37, the activity-zone soft magnet — mechanism commit `518ac9c46c` (`ZoneKind`
+schema + `DesignationKind::Zone`, appended wire-stable; board registry + cancel beside
+stockpiles; the `ActivityZones` resource mirror so agents read footprints without
+touching the board; the magnet itself — colonist-gated, the vanilla patrol-origin
+bearing-pull aimed at the nearest in-range zone center, structurally outside the
+stuck-economy). **Opus-gated (§R12): GREEN-LIGHT** — mechanism sound (needs-win-by-
+construction confirmed, the magnet sits in `idle()`'s last fall-through), stuck-economy
+interaction verified STRUCTURALLY IMPOSSIBLE (grepped the whole diff for every
+stuck-economy symbol — zero hits; the magnet only writes `agent.bearing`, an idle
+colonist never job-travels), shape sound (weight 0.1/range 48, safe soft regime). This
+close-out commit aligns the `--zone-scenario` gate with the accepted ruling (Opus
+option-i, architect-confirmed): attraction is REPORTED telemetry for the
+DESIGNER-SUGGESTIONS §19 tuning pass, not asserted to a threshold; the gate asserts
+zone-registration + the FREEDOM invariant (a stronger-drive Mine job pulls a zone-side
+colonist out and completes), 2/2 PASS. The 13/13 gate at `bb858c1cf9` certified the
+whole lineage including the mechanism commit; the ladder now carries 14 legs (ZONE
+added). Bonus telemetry for §19: run-1 measured 111 zone-samples vs 1 control (the bias
+IS measurable on good draws); run-2, 2 vs 0 (draw-variant, the subtle-soft regime R12
+describes) — folded into the designer-suggestions entry.
+
+### bastion-block-GATHER (8ce1b77821)
+Row 38, forage — the FOOD-LOOP verb: `DesignationKind::Gather` (Area2D, Chop's exact
+pattern), scans the painted footprint for `Block::is_collectible()` sprites filtered to
+the food `TerrainResource` allowlist, one deduplicated `JobKind::Gather` per target,
+approach via `has_standable_stance` (reused, not a second solver), executes through the
+authoritative `ControlAction::Collect` (item created by the interaction, never minted in
+`bastion_jobs`). Deposit ruling (Sonnet, confirmed option (a) + one closing trigger):
+gathered items ride the bag (no per-sprite round-trip, no batching-threshold design
+call — bag capacity is the natural batch); ONE pre-claimed `JobKind::DepositRun` per
+carrying colonist fires at its own arbitration slot once no claimable Gather target
+remains (orphan-swept, excluded from the ordinary claim loop so it can't double-fire),
+`deposit_all_of` per held def at the nearest accepting zone (reuses B6-HAUL leg-2's
+picker, not a second one); `cancel_region`'s dead-zone sweep extended to cover
+`DepositRun`. Gate 15/15 (ladder gains the GATHER leg; b58 telemetry in-band, claims
+1.33/orphans 0). `--gather-scenario` 2/2: scan honesty (6 planted sprites → 6 jobs),
+exact conservation (gathered == expected, one hand-vacated vanished-target completes
+moot cleanly), board drains, every gathered item lands at the store with conservation
+through the deposit trip. A `job_wanted`-allowlist unit pin lives in
+`server`'s own test module (outside the ladder's common-only UNIT leg — ran green
+manually this once, rides future server test runs).
+
+**Two reported, non-blocking notes (not filed as findings — both correctly
+characterized by the builder as documented limits, conservation holds in both):** (1)
+run-to-run telemetry variance on an identical binary (store 14/bags 0 vs store 9/bags 2)
+is the known scheduling-seam class (B8) — run-2 just exercised the designed corner where
+a non-gatherer's spawn-loadout food stays bagged; core invariants identical both runs.
+(2) a loot-table sprite could in principle roll a different def than the one recorded at
+emit-time — the leftover just rides the bag (never lost/duped), and a future general
+bag→stockpile sweep block would subsume it. Sonnet: no tag-review pass (CHEAP-class,
+self-verify covers it per the backstop rule's own scope).
+
+### bastion-block-HIST0 (410460f875)
+Row 39, the Chronicle — the world's permanent memory + the ONE `record()` capture seam.
+`ChronicleEvent { seq, kind, actors, site, pos, at_tod, importance, scope, attribution }`
+— the Gap-Audit Addendum's locked kind list VERBATIM (54: core ten + eight source
+groups, verified exact count), plus two well-justified additions beyond the packet's
+literal schema: `seq` (a monotonic capture ordinal, the HIST-3 cross-link key) and `pos`
+(the D7 bucketed spatial key, `site` now a rollup derived from it) — both extend, don't
+reshape, the locked fields. Store: banded (`Routine`/`Notable` are cap-evicting deques,
+O(1) at record; `Legendary` a plain append-only `Vec` NEVER touched by `cleanup()` — by
+construction, verified directly in the diff, not just by the test). `Data` gains
+`#[serde(default)] chronicle`, sibling pattern, no version bump. `record()` reachable
+from both tiers via `RtSim` resource access (`server/src/rtsim/mod.rs`/`lib.rs`
+harness hooks) — plain `write_resource`/`read_resource`, no manual locking, no
+`par_join` involvement (checked directly per the architect's specific concurrency ask —
+clean). `cleanup()` rides the existing `CleanUp` rule at the same cadence as
+`reports.cleanup`. 3 in-crate unit tests (bounded-growth + legendary-immortality under a
+4x/2x-cap soak with a real `cleanup(TimeOfDay(MAX/2))` call; seq-monotonic-across-bands;
+byte-exact double round-trip) + `--chronicle-scenario` 2/2: caps pinned exact
+(512/2048/64, so a cap retune breaks the scenario on purpose), 120-tick stability with
+`CleanUp` live, and the REAL `Data::write_to`→`Data::from_reader` B10 boundary
+round-trips the chronicle byte-for-byte. Gate 16/16 (ladder gains the CHRON leg). Sonnet
+tag-review (lean, NEW-class): read the full `chronicle.rs` + the resource-access call
+sites directly — schema/kind-count verified exact, cap/eviction/immortality logic
+verified by inspection (not just trusting the tests), no concurrency footgun. Clean, no
+findings.
+
+**D7 flag, relayed to the architect (not resolved here — a vocabulary-lock decision):**
+the Addendum's sphere-weight field (GOD-DOMAIN's domain-vector) is deliberately ABSENT —
+no sphere vocabulary is locked anywhere in code or the design catalogs yet, and
+inventing ~10 sphere names at HIST-0 would re-derive an unlocked vocabulary (exactly the
+D7 registry class this fleet already tracks). An `Option` field appends save-compatibly
+the moment GOD-DOMAIN locks a sphere enum — flagged now so it lands at that lock, not as
+a retrofit. Builder's call to defer was correct; the lock itself is the architect's.
+
+### bastion-block-BAG2 (0093d4b7e8)
+Row 40, archetype-keyed decision data over one shared brain: `rtsim/src/rule/npc_ai/archetype.rs`
+(new) — `ArchetypeConfigs` RON asset (`assets/common/rtsim/archetypes.ron`, the in-tree
+`FileAsset`/`load_ron` idiom) mapping archetype key → `{activity: weight}`; key-presence
+IS the allowed-list, the weight IS the old hardcoded `random_bool` constant — one map
+serves both packet requirements. `archetype_gate()` is the ONE shared lookup every
+converted site calls; the RNG rolls ONLY when the archetype lists the activity, verified
+directly in the diff to preserve each NPC's rng-call COUNT and ORDER exactly as the old
+`matches!(profession,X) && rng.random_bool(CONST)` short-circuit (DETRNG/B8-clean — no
+determinism drift). Three same-shaped villager gates converted verbatim: Herbalist
+`gather_forest` 0.8, Hunter `hunt_forest` 0.8, Guard `patrol_plaza` 0.7 (constants moved
+byte-identical to the RON table). Farmer/Merchant/Chef stay hardcoded, explicitly noted
+as the §4 expansion's scope, not a gap here. Graceful at every layer: asset-load failure
+warns + closes every gate (no crash), unknown key/activity → `None`/empty, a
+no-archetype NPC behaves exactly like the old non-matching-profession case. Gate 17/17
+(ladder gains the AG2 leg; b58 telemetry in-band, claims 1.21). `--archetype-scenario`
+2/2: moved weights load exact (0.8/0.8/0.7) through the brain's real lookup path, the
+archetype CONTRAST holds (herbalist's allowed-set ≠ guard's, cross-lookups closed — the
+Playbook's own done-when), graceful-unknown probes all clean, world ticks on with the
+converted gates live. 2 in-crate unit tests (same-code/different-data contrast + graceful
+unknowns; key-derivation pins the converted set — `veloren-rtsim` tests, outside the
+ladder's common-only UNIT leg, ran green manually, same standing note as GATHER/HIST-0).
+Sonnet tag-review (lean, MIXED-class): read `archetype.rs` in full + the 3 converted call
+sites in `npc_ai/mod.rs` directly — confirmed the shared-lookup shape, the graceful-degrade
+chain (`?`/`.ok()`/`.unwrap_or_default()`, no panics), and the RNG short-circuit
+preservation by inspection, not just trusting the claim. Clean, no findings. Review-tier
+(self-verify+tag, proposed pre-build) held: selection weights only, zero movement writes,
+zero stuck-economy contact — confirmed in the actual diff, matching the architect's
+ratified read.
+
+**Two recon notes for the §4 expansion (reported, not gated):** (1) census telemetry read
+0/0/0 herbalist/hunter/guard in generated rtsim data at seed 1337 tick 5. **CORRECTED
+(2026-07-12, at the 35.1 tag):** this was NOT sparse worldgen profession distribution as
+originally characterized — it was the same root cause B-AG1's fixture hit (`bastion-block-B-AG1-FIXTURE-GEO`
+`73cd8df83d`): rtsim's NPC table is EMPTY pre-tick (0 civilised before ticking vs 1985
+sixty ticks later — population is tick-driven), so a tick-5 census undercounts
+regardless of profession rarity. Whoever picks up §4 should census AFTER settling, not
+read this as a distribution signal. (2) `think()`'s `Role::Wild` arm is literally
+`idle()` today — wild-species archetype keys (wolf/deer/etc.) are the single biggest §4
+win, since NONE of them get any archetype differentiation yet. Folded (2) into
+DESIGNER-SUGGESTIONS as a forward pointer.
+
+### bastion-block-SEASON0 (73397de696)
+Row 42's SEASON-0 sub-block (SEASON-1/2 remain separate, unblocked future work): the
+annual-rhythm derived clock. `common/src/time.rs` gains `Season{Spring,Summer,Autumn,
+Winter}` + `year_phase(0..1)` + `day_of_year` — PURE functions of `TimeOfDay`, `DayPeriod`/
+`MoonPeriod`'s exact shape one scale up (quarter-bucketing via `rem_euclid`). No second
+clock, no stored state, zero per-entity cost (nothing wired into any consuming system —
+that's SEASON-2's scope; the day-D schedule hook is SEASON-1's). Year length is a RON
+tunable (`SeasonConfig`, `assets/common/season_config.ron`, `days_in_year: 160` = 4×
+`DAYS_IN_MONTH`, the `FileAsset`/`load_ron` idiom, graceful default on missing/broken
+asset). `Calendar`/`CalendarEvent` (the real-world-date system) correctly left untouched,
+not conflated. 22 unit tests now in the ladder's common UNIT leg (boundaries exact,
+year-wraparound identity, phase/ordinal consistency, re-bucketing under a different
+tunable year length — confirms the tunable is real, not decorative).
+`--season-scenario` 2/2: the RON value loads through the in-vivo path (160, not the
+fallback), quarter/wrap/ordinal asserts hold under the LOADED config, live `TimeOfDay`
+derives correctly, and STATELESSNESS is asserted explicitly (same `tod` → identical
+answer before/after 60 ticks — pause/speed independence by construction, verified
+anyway, not just assumed from the pure-function shape).
+
+**Gate note (known flake, not a new finding):** the 18-leg run came back 17/18 on
+`ck_failsafe_out=false` — the documented CK seam-flip probe (every OTHER safety probe
+in the same run green: `all_out`/`cleared` true, `net_fires`/`in_terrain`/trips all 0).
+SEASON-0 has zero surface for CK to exercise (pure derived functions, nothing wired to
+anything CK touches). Classified via a same-binary ×3 rerun: 2 PASS / 1 FAIL — the exact
+seam-flake signature already documented at the BAG5CORE tag. Tagged per that precedent;
+the SEASON leg itself passed in the full ladder. Sonnet: no tag-review pass (CHEAP-class,
+self-verify covers it per the backstop rule's own scope).
+
+### bastion-block-SEASON1 (889f1e20ed)
+Row 42's SEASON-1 sub-block (SEASON-2 remains, separate unblocked future work): the
+day-of-year `SeasonalSchedule` hook. `common/src/time.rs` gains `SeasonalSchedule` —
+`Calendar::is_event`'s mirror one axis over (named event → in-game `day_of_year`
+instead of the real-world wall-clock date), built physically separate from
+`calendar.rs` (not conflated, both can independently trigger the same festival per the
+design invariant). RON-configured (`assets/common/seasonal_schedule.ron`, same tunable
+discipline as SEASON-0's year length; graceful empty schedule on missing/broken asset —
+nothing fires, nothing panics). Query surface: `is_event_on(day_of_year, name)` +
+`events_on(day)` (name-sorted, deterministic iteration) — pure lookup, no stored
+mutable state beyond the loaded schedule. Shipped entries are the done-when's two
+examples (harvest=day 90/autumn, holy_day=day 20) — mechanism only, DF-FESTIVAL
+subscribes later, SEASON-2 owns the consumer contract. 23 unit tests now in the
+ladder's common UNIT leg (exact-day firing, no adjacent-day bleed, same-day coexistence
+sorted, unknown/empty never fire, day-90-is-Autumn pinned through SEASON-0's own
+derivation — confirms composition through the public API, not a private season
+calculation). `--season1-scenario` 2/2: loaded RON fires through the real consumer
+query path, listings exact, and the end-to-end compose probe holds (day-90.5 `tod` →
+ordinal 90 → autumn → fires harvest, entirely through SEASON-0's public derivation, no
+private math anywhere). Gate 19/19 (ladder gains the SEASON1 leg; CK passed this draw,
+b58 in band). Sonnet: no tag-review pass (CHEAP-class, self-verify covers it per the
+backstop rule's own scope).
+
+### bastion-block-FOCUS0-ENUM (c752571be1)
+Row 43, the narrowed FOCUS-0 (schema only — see row 43.1 for the deferred
+facet-derivation half). One file, +68 lines: `common::bastion::Need`
+{Pray/Socialize/Drink/Craft/Family/SeeAnimals/AdmireArt/Learn/Acquire/Fight} — the
+design doc's list verbatim, locked venue-interface vocabulary (`Purpose`/`ChronicleKind`
+discipline: append-only, never reorder). `BastionColonist.personal_needs:
+HashMap<Need, f32>`, `#[serde(default)]` — the Playbook's explicit collection-not-fixed-
+fields shape (future `Need` variants join with no struct migration; old saves default
+EMPTY; 1.0-satisfied semantics matching the bodily `Needs` comp). Schema only: nothing
+reads or writes the collection yet — facet-derivation stays deferred with B-AG3 (row
+43.1), need-jobs are FOCUS-1, the work_rate hook is FOCUS-2. 1 unit test
+(`bastion_need_collection_serde_shape`, ladder's common UNIT leg, 24 tests now):
+old-shape payload → empty default; a populated map round-trips exactly. No scenario leg
+(schema only, no runtime surface to exercise). Sonnet tag-review (lean, NEW-class):
+read the diff directly — matches the packet exactly, schema-only confirmed (grepped for
+any other read/write site, none found beyond the constructor default). Clean, no
+findings.
+
+**Gate note — NEW flake-registry candidate, filed:** the 19-leg gate came back 18/19
+with `LOD1` red (`lod1_stones=2`, expected 3; every other probe green — jobs done,
+roster stable, no leaks). Classified via a same-binary ×3 rerun: 3/3 PASS with
+`stones=3` — a residual scheduling-seam draw (a timing shift moved one drop-toss outside
+the count-probe's radius; the stones-count is position-sensitive telemetry, same class
+as `ck_failsafe_out`). First LOD1 flake observed across ~10 gates today. FOCUS-0's
+change (a read-nothing schema append) has zero execution-path surface — the
+identical-binary discrimination confirms non-correlation. Tagged per the CK/BAG5CORE
+precedent. **Filed as `BASTION_COMMON_ISSUES.md` B22** (a new flake-registry class,
+alongside the CK seam) so future gates classify an `lod1_stones` miscount on sight
+instead of re-diagnosing it each time.
+
+### bastion-block-SEASON2 (641b74b5c5)
+Row 42's SEASON-2 sub-block — the last of SEASON-0..2, row now fully DONE. The
+documented ONE-INTERFACE contract from the design doc's §3: `season()` / `year_phase()`
+/ `day_of_year()` / `season_bias()` as four sibling pure reads (+ `SeasonConfig::current()`
++ `SeasonalSchedule`) in `common/src/time.rs` — the declared plug-in point for every
+seasonal consumer (DF-FARM/DF-ROT/DF-LIVESTOCK/DF-NIGHT/DF-FESTIVAL, later DF-TEMP/
+DF-BIOME-FX). No consumer wired — the contract, not the behaviours, per the doc's own
+scope. New derivation: `season_bias` — a continuous annual wave (`-1..=1`, cosine
+anchored to the quarter definitions: `((phase - 0.375) * TAU).cos()`, verified directly
+— +1 at mid-summer phase 0.375, -1 at mid-winter phase 0.875, zero-crossings at the
+spring/autumn midpoints). **Design-shape choice by the builder (flagged, verified
+sound):** a continuous wave over discrete per-season step constants — the doc only
+specified "an optional `season_bias` others map," no concrete shape mandated. Reasoning
+holds: a consumer can bucket a wave via `season()` but can't un-bucket a stepped
+constant, and biology/consumption curves don't step at quarter boundaries. Sonnet
+tag-review (lean, CHEAP-class): read `season_bias`'s implementation directly, confirmed
+the cosine anchoring matches the claimed peak/trough/crossing points exactly. Clean, no
+findings — the shape choice stands. 25 unit tests now (`bastion_season_bias_wave_anchors`
+— anchors exact, range over 65 samples, wrap continuity, free-fn surface agreement). No
+scenario leg (pure-contract precedent per FOCUS-0-ENUM — the in-vivo config path is
+already gated by the SEASON-0/1 legs this interface composes over). Gate 19/19 (CK and
+LOD1 both passed this draw, b58 in band).
+
+**Registry note (Sonnet's side of the split):** filed the interface in
+DESIGNER-SUGGESTIONS.md so no future consumer forks a private season counter.
+
+### bastion-block-FR15-TIGHTDIG (ed29c00781)
+Row 31, the drive-owned progress metric + reinstated committed-path steer — the FR15/
+FR17 re-spec, ALL flag-gated (`BASTION_TIGHTDIG=1`; flag OFF = today's stuck-economy
+bit-for-bit, no behavior change for the default path). Re-verified against live code
+before handoff (bastion_jobs.rs had drifted ~500 lines since the packet was first
+staged) — surfaced a real addition since the original FR17 review: B6-HAUL's
+`fetch_steer` override (a third steer source alongside anchor/beeline) needed explicit
+coverage, flagged to the builder and to Opus. **Opus R13 verdict: GREEN-LIGHT, no
+blocking findings** — no-entombment backstop zero-contact (independently re-confirmed,
+not just re-asserted from LOD-1's prior proof), all three steer sources (anchor/fetch/
+beeline) verified correct including the new fetch case, `dispersed_frac` judged
+intended behavior for tight-dig geometry (not a regression). Ships **FLAG-DEFAULT-OFF**
+per Opus's recommendation — staged rollout, not an immediate behavior change; see row
+31.4 for the validate→flip→remove-flag follow-up (tied to the play-tester batch-test-
+checkpoint) and the `dispersed_frac` WATCH item (revisit if committed-path steering
+ever engages in open-area crew work). Evidence chain: noise-floor run on identical code
+first, then 4/4 paired-A/B PASS (every gating boolean agreed in every pair — the
+scheduling-noise cancellation working as designed), then a 19/19 flag-OFF ladder on the
+tag commit (confirms zero behavior change with the flag off). Architect directed the
+gate directly with Opus (not routed through Sonnet) — bookkeeping only on this end.
+
+### bastion-block-B-AG1-FIXTURE-GEO (73cd8df83d, row 35.1)
+Follow-up fill to B-AG1's fixture-geography gap (filed at the B-AG1 tag). Root cause
+found: rtsim's NPC table is EMPTY pre-tick (0 civilised before ticking vs 1985 sixty
+ticks later — population is tick-driven), so the ORIGINAL pre-tick densest-cluster pick
+could only ever find pre-populated special entities (the airship dock, captains
+included from spawn) — never ground townsfolk, which don't exist until the sim
+settles. **Fixed two ways:** settle-first (tick before clustering) + a GROUNDED filter
+(npc z within 6 of `get_alt_approx`, excludes deck/mount riders, includes street-level
+villagers). `--bag1-scenario` now PASSES 2/2 for real: promoted 241/142 walking
+villagers, movers 215/121, max displacement 230/214 blocks (vs the dock-era 0/0/0;
+magnitudes vary with the scheduling seam, the PASS verdict is stable both runs).
+
+**Bookkeeping correction (same root cause, different symptom):** B-AG2's earlier recon
+note ("census 0/0/0 herbalist/hunter/guard at tick 5 — a worldgen distribution
+question") was WRONG — it's the same empty-pre-tick-table root cause as B-AG1's fixture
+gap, not sparse profession distribution. Corrected above at the B-AG2 entry.
+
+### bastion-block-SEASONHUD (93c1970d42)
+Row 42.1, the season-clock legibility win (Ben's gap-audit find: the clock ships but is
+invisible to the player). One file, +26 lines: a "Season · Day N" readout stacked above
+the overseer's TIME-CONTROLS cluster, derived on read through SEASON-2's one-interface
+contract (`season()`/`day_of_year()`/`SeasonConfig::current()`) — no new sim state, no
+private season math, the interface holding cleanly at its FIRST real consumer. Display
+is 1-based (Day 1..=160) over the 0-based internal ordinal — a UI-edge convention, not a
+schema change. Decoupled from the row-106 climate-FX lane per the row's own note.
+Voxygen compiles clean; visual eyeball routes to the Play-Tester's next Ben-exe rebuild
+(their build lane, not this tag's gate). Sonnet: no tag-review pass (CHEAP-class,
+self-verify covers it).
+
+**Gate note — a THIRD B22 flake-class instance, generalized the class:** the covering
+19-leg ladder (which also gated 35.1's first full-ladder run) came back 18/19 on B6HAUL's
+`b6_built=1/2` + `b6_mined=false`, every invariant green in the same run (conserved,
+delivered, race-exactly-one, jobs_left 0). Classified via a same-binary ×3 rerun:
+FAIL/PASS/PASS — and critically the SHORTFALL MOVED BETWEEN PHASES across runs
+(built=0/mined=true vs built=1/mined=false), confirming a completion racing a timing
+window, not a broken writer (neither commit under this tag touches any B6HAUL path —
+voxygen-only + a harness fn). **Generalized B22** (now 3 instances: CK/LOD1/B6HAUL) with
+the sharper rule the pattern makes clear: COMPLETION-WITHIN-WINDOW asserts (a timing
+deadline, a spawn radius, a race against a tick boundary) can flake on scheduling noise;
+INVARIANT asserts (conservation/no-leak/exactly-one-claimant) never have — every
+instance so far had every invariant probe green in the same failing run.
+
+### bastion-block-B70 (0aea5c63e6, row 44, B7-0 sub-block)
+The needs-decay + mood-formula substrate (design §3). Decay runs on the existing
+`Needs` shells at a per-tick rate × dt, tunables in a new RON asset
+(`assets/common/bastion_mood.ron` → `MoodConfig`, graceful default if absent). `Mood`
+is RECOMPUTED (not integrated) each arbitration cadence on its own slot (`%15==11`) per
+the design's RimWorld-style `base + Σ need-penalties + Σ decaying-thought` formula —
+shortfall-below-comfort only, order-free, no float drift across ticks. The thought term
+(`bastion_mood.rs::thought_sum`) reads the HIST-0 chronicle (actors-contains match,
+pure `(deposit, now)` linear decay); the kind→weight table ships SERVER-SIDE
+(`bastion_thoughts.ron`, keyed on rtsim's `ChronicleKind` — `common` can't see rtsim's
+types, so the formula takes `thought_sum` as an opaque input, the layering the
+architect ratified pre-build). Persistence rides the existing LOD-0 mirror
+(`BastionColonist.needs`/`.mood` already serde-defaulted `Option`s) — captured every
+loaded tick, flushed on demote, restored wholesale on promote.
+
+**The cave-in fork, resolved per the reviewer's ruling (a):** the pre-existing CAVE-IN
+eject-and-injure mechanic wrote `Mood` DIRECTLY, which B7-0's recompute-each-cadence
+formula would have silently overwritten within ~15 ticks (a regression of a mechanic
+that works today). Fixed by folding ONE emitter into the crush path — `bastion_jobs`
+holds a long-lived rtsim READ guard (the LOD gate) so it can't write the chronicle
+itself, so crush victims QUEUE on the board and the rtsim tick drains the queue into
+`chronicle.record(ChronicleKind::CaveIn, victims)` next tick. The fear-persists
+scenario assert EARNED ITS KEEP here: it failed first because the deterministic test
+hook bypassed the queue (tested-path≠shipping-path, caught by the assert itself), then
+passed once the hook was made to queue identically — `cavein_min_mood_after_recompute
+0.20` (base minus TWO fresh CaveIn thoughts, hand-verified), proving the
+queue→drain→chronicle→thought_sum→formula pipeline end to end, not just each piece in
+isolation. En-route catch during the same wiring: the first pass fed decay's `now` from
+sim `Time` while the chronicle stamps `TimeOfDay` — two different clocks; both sides
+now read `data.time_of_day`.
+
+**Verification:** `bastion_mood_formula_exact` unit leg (26 cases — 0.6-exact base,
+0.09-exact hand-computed starved case, exact+saturating decay, linear-pure thought
+decay, clamps); `--needs-scenario` 2/2 (decay arithmetic to 1e-3 over 600 ticks,
+monotone, 0.09 across a cadence, `(0,0,0,0.09)` roundtrip); CAVEIN scenario PASS with
+fear-persists. Full 20-leg gate: 20/20 green, including a new NEEDS leg — every
+flake-registry leg (the B22 instances above) green this draw. Sonnet tag-review: clean,
+no findings — the fork resolution is minimal (~10 lines) and test-guarded rather than
+merely present, exactly the shape asked for.
+
+**Reported-tier observation (non-blocking, logged not investigated inline):** builder
+flagged `b58_d_claims_ratio` drawing {1.879, 1.327, 1.858} across the B7-0 gate + a ×2
+post-tag persistence check, vs. the session-long {1.21-1.35} band across ~10 prior
+gates — draw-dependent (one draw in-band), every gating invariant green in all 3 runs
+(150/150, 148/150, 149/150 dug; e_out/f_cleared/orphans clean). Candidate cause:
+B7-0's new per-tick `WriteStorage<Needs>` + cadence recompute widening the claim-churn
+distribution's right tail. Filed as a new watch entry, [`BASTION_COMMON_ISSUES.md`
+B23](BASTION_COMMON_ISSUES.md); recommended follow-up is a paired A/B (commit vs.
+parent, reusing the FR15 harness) — queued as non-blocking, not run inline so as not to
+pull the builder off B7-1/2/3.
+
+B7-1 (bed object + closed rest loop) packet delivered same pass — depends on B7-0 only,
+not B7-2's preemption (which hasn't landed). Row 44 → CURRENT.
+
+### bastion-block-B71 (4e56c3d8ca, row 44, B7-1 sub-block)
+The bed object + closed rest loop (design §4). Shipped all four packet corrections
+against the raw design doc: **(1)** `DesignationKind::Bed` follows the `Ladder`
+placement precedent — its own completion arm placing a named sprite — NOT `Build`'s
+generic stand-in Rock, which the doc's own text had wrongly pointed at. **(2)** zero
+asset requests — vanilla's real `SpriteKind::Bedroll`/frame-biome sprites cover
+BedKind::Bedroll/Frame exactly. **(3)** the sleep action is genuinely NEW mechanism
+inside the job-board framework (a rest-restoring `Arrived` arm, quality-scaled) —
+vanilla's mount-buffs (player-only) and the rtsim village-NPC sleep path
+(unloaded-tier, no bed-targeting) confirmed non-reusable, exactly as flagged.
+**(4)** `BedSlot` follows the board's `reservations` shape (capacity-1, keyed by
+block-pos) rather than a nonexistent "container store." The pre-claimed `RestAt`
+harness assignment rides the `DepositRun` precedent (bastion_jobs.rs ~2355).
+`BedKind` carries a quality stub (Bedroll 0.6 / Frame 1.0 — frames go pure-data
+later). The B7-0 thought queue GENERALIZED from a cave-in-only shape to
+`(who, where, kind)` — cave-in fear and sleep quality are now two emitters draining
+through the one pipeline; `ChronicleKind` gains `SleptInBed`/`SleptOnGround`
+(append-only; `SleptOnGround` is B7-2 fallback data, unused until preemption lands).
+Ownership persists on `BastionColonist.owned_bed` (LOD-0 mirror, free on
+`colonist_record` clone); occupancy releases at job completion, the claim-release
+seam (`to_release`), and a new DEATH-AWARE cadence sweep.
+
+**Verification (`--bed-scenario`, leg 21, 2/2 PASS):** beds build through the REAL
+pipeline (stockpiled material → fetch → place → slot registers, not a scripted
+shortcut); the rest loop closes (sleep to comfort + a `SLEEP_MARGIN` 0.1 hysteresis
+band — waking colonists re-cross the band within seconds of decay, not
+instantly-reflicker); owned beats communal 0.680 vs. 0.600 on the next recompute (the
+`SleptInBed` thought delta, matches the formula by hand); the occupancy-collision
+phase uses a deterministic head-start and asserts the REAL capacity-1 invariant — a
+second colonist releases clean while the first finishes undisturbed (sequential reuse
+legal, simultaneous never); a killed sleeper's occupancy releases; ownership survives
+demote/promote. Full 21-leg gate: 21/21 green, including a new BED leg — every
+flake-registry leg green this draw; `b58_d_claims_ratio` drew 1.4 this run, back
+inside the pre-B7-0 band (the B23 watch item, now the Tier-B paired-A/B's to own).
+
+**THREE real finds shipped in the commit:**
+1. **Dead colonists kept their `ActiveJob`** — the upkeep loop gated on `is_loaded`,
+   never on death: a killed sleeper's CORPSE re-occupied its own bed every tick,
+   outrunning the orphan sweep. Caught by the kill-while-sleeping scenario assert
+   (the second assert this sub-block to earn its keep, after B7-0's fear-persists) —
+   exactly the leaked-reservation class the assert was written to catch. Fixed: dead
+   colonists now release via `to_release`; death checks read `is_dead ||
+   should_die()`.
+2. **Plain `HealthChange` damage is absorbed by colonist death protection** —
+   `Health::kill()` is the real kill API; the test hook was fixed to use it.
+3. **Fixture geometry produced the failure mode it was built to detect** — new
+   `BASTION_COMMON_ISSUES` class, see below.
+
+Sonnet tag-review: clean, no findings beyond confirming the four packet corrections
+landed as specced and the verification numbers check out by hand (0.680/0.600 delta,
+capacity-1 head-start ordering). B7-2 (preemption, ★OPUS-GATE) is next — packet
+in flight, architect flagged in parallel per row 44's own note. Row 44 stays CURRENT.
+
+**B23 CLOSED (builder follow-up A/B, run between B7-1 and B7-2):** the intended
+paired A/B hit a worktree `cd` path flaw that made BOTH interleave legs resolve to
+the PRE-B7-0 parent binary — which answered the question more directly than the
+pair would have: five clean quiet-machine draws on the parent ALONE —
+`{1.268, 1.273, 1.353, 1.220, 1.866}` — already contain a 1.866, matching the
+post-B7-0 1.88/1.86 draws that raised the watch in the first place. **The elevated
+tail predates the B7 diff entirely** — the original {1.21-1.35} band was a
+small-sample lucky streak, not the metric's true spread. Closed as noise, not a
+regression; `BASTION_COMMON_ISSUES.md` B23 updated with the corrected ~1.2-1.9
+observed band so a future 1.8-ish draw doesn't re-raise it. General lesson folded
+into B23's writeup: verify both A/B legs actually built/ran the commit you think
+they did before trusting either verdict from a paired run — a worktree/cd/cache bug
+can silently collapse a pair into two draws of the same binary.
+
+### bastion-block-B72 (656c1efda8, row 44, B7-2 sub-block) — ★OPUS-GATE, CLEAR-TO-TAG (§R14)
+The self-job preemption mechanism (design §5) — the load-bearing build-once block.
+**Shipped simpler than the raw design doc, live-verified before the packet went
+out:** the doc frames preemption as winning a numeric priority tier ABOVE `is_access`
+in the existing per-job selection compare; the actual shape reuses the pre-claimed
+self-job pattern `DepositRun`/`RestAt` already proved — a pre-claimed job never
+enters the claim-selection loop at all, so "out-tiers all work and access" is
+**impossible by construction**, not a comparison it has to win. No new priority-tier
+field exists or was needed.
+
+**The mechanism:** a new NEED-CHECK pass (own arbitration slot, `%15==13`) — for
+each loaded colonist below its RON-configured `NeedTuning.interrupt` (recreation's
+interrupt is 0, so it never preempts — hunger/rest are the live needs, ranked by
+urgency, generic over N needs so B7-3 adds a candidate for free): drops the current
+work-job through the proven `to_release` seam (already carries B7-1's death-aware
+bed-occupancy release), THEN creates the pre-claimed `RestAt` job AFTER the drain
+completes in the same tick (the drain clears whatever `ActiveJob` an entity holds at
+drain time, so create-before-drain would be destroyed by the colonist's own release).
+Wake threshold reuses B7-1's `comfort + SLEEP_MARGIN` — the design doc's
+`NEED_SATISFIED`, already shipped, just not named that until now. **Anti-livelock
+trio:** the hysteresis band itself; an unreachable need-job degrades to ENDURE (the
+existing watchdog releases it, the orphan sweep extended to cover `RestAt`, so the
+colonist returns to reachable work while the need keeps honestly decaying); a
+per-colonist 60s `PREEMPT_COOLDOWN` bounding retry rate regardless of outcome.
+`preempt_attempts` telemetry added for visibility.
+
+**Why Opus has something concrete to verify, by construction:** zero new steer/drive
+code — a `RestAt` job IS a travel job, so the existing `best_dist`/`stuck_time`
+watchdog and the movement-independent `stuck_watch` teleport backstop (FR17
+orthogonality) apply automatically; preemption only swaps the `ActiveJob` TARGET, the
+stuck-economy machinery itself is untouched. Conservation rides the one proven
+`to_release` seam (no second release path to get wrong, incl. B7-1's bed-occupancy
+release). Determinism: arbitration-pass order, pure threshold reads.
+
+**Verification (`--preempt-scenario`, leg 22, 2/2 PASS):** (1) preempt-pause-resume
+on a live mine (10 unclaimed jobs visible at the rest peak, work resumes after the
+nap); (2) **anti-thrash by construction** — an unreachable-bed fixture that would
+fire ~6-8 preempt attempts/120s unguarded fired EXACTLY 2 (t≈0, t≈60), asserted
+≤3; a hovering-just-above-interrupt case fired ZERO; (3) mid-travel wedge — a
+colonist preempted WHILE ALREADY EN ROUTE that then wedges below-grade extracts via
+`stuck_watch`, zero embeds across all phases (the sharper no-entombment case, per
+the packet's ask); (4) unreachable-endure — a floating owned bed left rest decaying
+honestly (0.15→0.114) while 14 blocks got mined, no livelock. Full 22-leg gate:
+22/22 green, new PREEMPT leg included, every flake-registry leg green;
+`b58_d_claims_ratio` drew 1.22 (comfortably inside B23's corrected ~1.2-1.9 band).
+
+**Two finds:** (a) enclosure ≠ unreachability — the sleep-arrive radius reaches
+through a 1-block wall (a gen-1 sealed-box fixture had the colonist sleeping against
+the OUTSIDE of the box; the underlying distance-based arrive logic is the honest
+construction, not a bug — joins the B24 fixture-geometry class, another instance of
+a fixture producing an artifact rather than exercising the real mechanism). (b)
+**Reported, not fixed:** bed slots never unregister when their block is destroyed —
+a mined-out bed stays targetable. Filed for B7-3/designer-lane triage, not blocking
+this tag.
+
+Sonnet tag-review: clean read on the mechanism and verification; no findings beyond
+what the builder self-reported.
+
+**★ OPUS CLEAR-TO-TAG (BUILD_REVIEW_LOG §R14):** all 3 safety claims confirmed true
+by code-read of 656c1efda8 — preemption composition (the pre-claimed-self-job
+bypass is genuinely impossible-by-construction, not a claim), no-entombment-survives-
+preemption (the mid-travel wedge case specifically verified — a colonist preempted
+while already en route that wedges still gets the `stuck_watch` teleport), and
+anti-livelock (hysteresis + ENDURE-degrade + `PREEMPT_COOLDOWN` all independently
+confirmed present and load-bearing). Row 44 flips B7-2 → **DONE**. Builder's decision
+to proceed to B7-3 on the then-ungated commit (additive-only extension to the
+NEED-CHECK pass, separate commit) turned out moot — no fix was ever needed — but was
+the correct bounded-risk call to make at the time given the "never idle" standing
+rule; would have paid off cleanly either way. **Note:** a same-checkout collision with an unrelated external agent
+(Grok, sharing the working tree without worktree isolation, briefly switched the
+branch to `grok/test-env`) happened in this window — reflog-confirmed 656c1efda8
+committed cleanly on `bastion/block-B6HAUL` BEFORE any contamination; architect
+resolved it (Grok isolated to its own worktree, fleet checkout restored) with zero
+loss on either side. Grok's own CI commit (`d05e8714d0`) lives on `grok/test-env`
+and is UNGATED external code — it needs Sonnet + Opus clearance before it may ever
+merge into the fleet branch.
+
+### bastion-block-B73 (1287b161b9, row 44, B7-3 sub-block — B7 COMPLETE)
+The eat-job + the despondent breakdown state (design §3/§7) — the last B7 sub-block,
+built additively on B7-2's Opus-cleared NEED-CHECK pass, zero new preemption code,
+separate commit from `bastion-block-B72`. **Tier decided by the architect: self-verify
++ tag, no dedicated Opus gate** (B7-3 adds no new preemption/steer surface — it rides
+R14's cleared mechanism — and both despond-safety properties are independently
+scenario-asserted AND construction-provable). Sonnet's lean tag-review WAS the gate
+here; both requested safety properties verified directly against live code, not just
+taken on the builder's word:
+
+- **No-entombment holds:** `Despond` is inserted via `insert_despond_job` at the
+  colonist's own feet (`bastion_jobs.rs` — the board method) and seeded with the
+  IDENTICAL `ActiveJob{state: Traveling, best_dist: f32::MAX, ...}` shape every other
+  job gets — no special-cased "instant arrive," the near-zero travel distance to its
+  own feet just resolves to Arrived on the next tick through the ordinary watchdog
+  path. Verified further: the `embed_watch` center-net (the B19/B20 belt-v2 mechanism
+  — `HashMap<Uid, u32>` persistent-core-in-solid counter, `EMBED_PERSIST_TICKS`
+  threshold, relocate via the shared `eject_dest`) iterates **every colonist
+  unconditionally** — no `ActiveJob`/`JobKind`/Despond filter at all — so it protects
+  a despondent colonist exactly as it protects a mining one. Stronger than the
+  packet asked for: no-entombment doesn't depend on Despond correctly riding the
+  travel watchdog at all, since the fully job-orthogonal center-net covers it
+  independently either way.
+- **No-thrash holds:** the breakdown arm (preceding the need-preemption check in the
+  same pass) reads: (1) if the colonist is ALREADY on a `Despond` job, skip
+  evaluation entirely — no re-trigger while despondent; (2) a sustained-window gate
+  (`mood_below_since` + `break_sustain_secs`, cleared the moment mood recovers above
+  `break_minor`); (3) shares the SAME `preempt_cooldown`/`PREEMPT_COOLDOWN_SECS` table
+  as need-preemption — one break attempt per 60s window, not a separate budget; (4)
+  a probabilistic roll (`break_chance`) — not an instant flip on crossing the
+  threshold. All four confirmed present and wired exactly as claimed.
+
+**Mechanism:** EAT — hunger joins the urgency ranking as the second live candidate
+(rest was the only one B7-2 exercised); targets the nearest unreserved food item
+(v1: `common.items.food.mushroom`, verified to be the SAME def GATHER's sprite-
+reclaim records — forage→stockpile→eat closes end-to-end); the B6 reservation
+commits with the pending entry; the Arrived arm mirrors Haul leg-1 (pickup emit,
+uid-vanish confirm) then consumes one via the Build-material decrement path,
+`hunger += 0.5`; `remove_job` releases the reservation (one path, B17 discipline); no
+food available = an honest starvation endure, no cooldown burned on a guaranteed
+failure. BREAKDOWN — covered above. Both new `JobKind` arms (`EatFrom`, `Despond`)
+join every existing self-job arm (claim-skip, mid-travel, still-valid, orphan
+sweep) — no special-cased gap left for either.
+
+**Verification (`--b73-scenario`, leg 23, 2/2 identical outcome-JSON):** (a)
+eat+conservation — hunger 0.15 mid-mine preempts a 10-job mine, exactly one
+mushroom consumed (ground count AND meter jump verified together — the meter only
+moves on a successful bag decrement), hunger ≥0.55, mine completes to zero after;
+(b) urgency, proven by fixture construction — hunger 0.10 + rest 0.18 with NO bed
+existing: a rest-first ranking would walk the bedless rest path forever and never
+eat, so the hunger preemption firing AT ALL proves the lower meter won, not just
+that SOME preemption fired; (c) breakdown→hold→recover — needs zeroed (mood pinned
+to floor), Despond fires mid-mine, work FROZEN through a 30-game-second probe inside
+the hold, needs restored, mood recomputes above `break_minor` at the next cadence
+(race-free ordering, `%11 < %13`), Despond lifts on its own clock, mining resumes;
+`preempt_attempts` delta EXACTLY 1; zero embeds throughout all three scenarios.
+
+**Gate: 22/23, one CK leg (`ck_failsafe_out`) B22-flake-classified** — every other CK
+field green (all_out, cleared, zero embeds/trips, unreachable_final 0); reruns 1-2 on
+the identical binary both PASS (met the ≥1/3 threshold before a 3rd rerun finished);
+cross-checked B7-3 could not be the cause — CK colonists spawn full-metered and only
+decay ~0.05-0.1 across the scenario, nowhere near the 0.2 interrupt, so no
+need-preempt can fire mid-CK regardless. `b58_d_claims_ratio` not separately called
+out this run (implicitly in-band).
+
+**REGISTRY FIND — a real bug, root-caused same-session (run-1 FAIL → fixed → green):**
+a reservation without `required_item` gets fetched then SILENTLY released. The B6
+material-fetch path activates for any non-Haul job holding a reservation and derives
+its `carrying` flip from `job.required_item`; `EatFrom` v1 supplied the reservation
+but left `required_item: None` — the fetch steered and picked up the mushroom
+(ground count dropped!), `carrying` never flipped, the next tick's
+reserved-uid-vanished arm released the WHOLE job with no log, the claim loop
+re-employed the colonist ~0.2s later, the orphan sweep silently reaped the released
+board job, and the colonist ended up hoarding the mushroom with every other probe
+green except the hunger meter. **Fixed:** the fetch contract now travels as a pair —
+`insert_eat_job` carries the matched def alongside the reservation. Filed as new
+`BASTION_COMMON_ISSUES` B26 (see registry). Diagnosis footnote worth keeping: item
+Uids and JobIds are different namespaces — a log line reading "item=2... job
+claimed job=2" is a coincidence, not a link; don't cross-reference IDs across
+namespaces without checking they're actually the same space.
+
+**Two more fixture-geometry finds** (the B7-1/B7-2 class keeps growing, folded into
+B24): (i) a gz-1 strip fixture under a partially-undesignated overhang dead-ends at
+the lip — a 1-high gap has no standable stance, and B15 CORRECTLY refuses it; the
+resume-assert fixture needed a top-exposed surface strip instead so resumption tests
+BEHAVIOR, not accidental geometry. (ii) the ×2-determinism-diff discipline needs
+refining: only diff OUTCOME booleans/placement counts, not floats or mid-run counts —
+rtsim's OS-level scheduling entropy (the B8 caveat) shifts travel timing between
+identical-seed runs even when every outcome is identical; timing-sensitive telemetry
+now lives on a separate non-diffed line. **Emergent, expected, not a bug:** with
+hunger AND rest both tanked simultaneously, mood can pin to 0 and a legitimate
+"stealth despond" fires before the colonist ever reaches food — the intended
+staircase behavior under double deprivation, not a race.
+
+**Pre-existing shared exposure, noted not filed as new:** `EatFrom`'s arrive-and-
+pickup inherits Haul leg-1's drifted-item shape (the item can re-emit out of the
+arrive range with no completion) — an existing class, green since B6; the B26 fetch
+fix covers most of it for `EatFrom` incidentally (steers to the item's live
+position), but it's the same underlying shared-exposure shape as Haul's, not
+independently hardened.
+
+**B7 IS COMPLETE.** Row 44 → DONE. This unblocks the whole cluster:
+**B-AG3 (row 41) → FOCUS-0-DERIVE (row 43.1)** per the master-list's own recorded
+order. Builder banked read-grounding for B-AG3 during the gate window (facet/value
+vocabulary, personalized-thought read, a grudge-representation fork needing a packet
+ruling, Mind-LOD soak assert) — packet next.
+
+### bastion-block-BAG3V (199a834f57, row 41, B-AG3 narrowed slice 1)
+The `Value` vocabulary lock + personality/values as a weight on B7-0's existing mood
+formula (Sonnet's narrowed first-slice packet, architect-approved). Both prior-art
+claims from the packet live-verified BEFORE building, one refinement surfaced:
+`Personality`'s Big-Five scalars (`common/src/rtsim.rs`) are PRIVATE — the only
+public surface is `.is(PersonalityTrait::X)` boolean queries — so the temperament
+term consumes the boolean API (`Neurotic`) rather than a raw field. Zero touches to
+vanilla either way. `Sentiments`' asymmetric decay confirmed exactly as documented
+(~26min casual thresholds up to ~47h HERO/VILLAIN). Both `Personality` and
+`Sentiments` reachable from the mood recompute THROUGH THE SAME rtsim read-guard the
+chronicle already uses (`data.npcs.get`) — zero new coupling, answering the packet's
+reachability done-when directly.
+
+**Mechanism, exactly the packet's shape:** (1) `Value` enum locked, append-only —
+`Glory, Tradition, Kin, Wealth, Piety, Nature, Craft, Freedom` (8, within the
+packet's 5-8 bound; drawn from the build report's culture examples + DF's ethics
+list, not invented fresh). (2) `values: HashMap<Value, i8>` on `BastionColonist`
+(±50, serde-defaulted, the `personal_needs` shape verbatim) — old saves and fresh
+colonists alike start EMPTY, meaning care=1.0 (neutral), meaning **pre-B-AG3 mood
+stays bit-for-bit** until something actually writes a value weight; persistence
+rides the existing whole-struct `colonist_record` mirror, zero new plumbing. (3) a
+new pure `care_factor` fn beside `mood_formula`: `care = clamp(1 + Σ weight/50 ·
+affinity, 0.25..4.0)`, then ×1.5 `NEUROTIC_NEGATIVE_AMP` on NEGATIVE thoughts only,
+applied POST-clamp (a maxed-neurotic bad thought caps at 6.0×, bounded). (4)
+`ValueAffinityTable` (RON, `assets/common/bastion_value_affinities.ron`) mapping
+`ChronicleKind → [(Value, f32)]`, rows for the 4 currently-tabled kinds (e.g. CaveIn:
+Kin +0.6, Wealth +0.3, Glory −0.4) — the same server-side-only pattern as
+`bastion_thoughts.ron` (keys on rtsim's `ChronicleKind`, `common` can't see it). (5)
+`thought_sum` scales each decayed thought's weight by `care` — a MULTIPLIER on the
+existing term, `mood_formula`'s signature unchanged, B7-0's own pins stayed green
+throughout.
+
+**Verification:** two new UNIT cases — the `values` serde shape (old payload → empty;
+±50 round-trips including negatives) + `care_factor` pinned exactly (identity case,
+a 1.6-vs-0.6 divergence on one row, a scorn/negative-affinity flip, both clamp
+edges, neurotic-amplifies-negative-only post-clamp). `--values-scenario` (leg 24,
+2/2): needs topped (zero shortfall contribution, isolating the value-weight effect),
+colonist A = Kin+50, colonist B = Glory+50, the SAME `CaveIn` chronicle kind reaches
+both through the REAL pipeline (board queue → rtsim drain → chronicle →
+`%11`-cadence care-weighted recompute — only the depositor hook is synthetic, the
+CAVEIN scenario already owns the live emitter). Baselines EXACTLY 0.6000/0.6000; A
+dropped −0.3199 (= 0.2 × 1.6, exact to hand math); B dropped −0.1200 (= 0.2 × 0.6,
+exact); identical floats both runs. Margin analysis: even the worst-case
+unknown-Neurotic combination (A at 1.6 vs. B at 0.6×1.5=0.9) stays strictly ordered
+— the result doesn't depend on controlling for personality, a genuinely robust
+proof. Full 24-leg gate: 24/24 green, new VALUES leg included, CK clean this draw,
+`b58_d_claims_ratio` 1.33 (in the corrected B23 band), UNIT at 28 cases with the two
+new pins. Outcome-JSON diffs stayed bools-only, floats on the non-diffed telemetry
+line — the B7-3 entropy lesson applied from the start this time, not retrofitted.
+
+Sonnet tag-review: clean, no findings — the reuse claims held up exactly as
+predicted, the one refinement (boolean-API-only access to Personality) is a sensible
+adaptation that preserves the "zero touches to vanilla" property rather than a
+compromise of it.
+
+**FOCUS-0-DERIVE (43.1) unblock question, answered by the builder's own check:**
+43.1 can unblock off this slice ALONE — it does not need 41.1 (the emotion pipeline)
+or 41.2 (Mind-LOD). `religiosity→Pray` maps to `Value::Piety` weight → `Need::Pray`
+(this slice's schema, ready now); `gregariousness→Socialize` maps to vanilla
+`extraversion` → `Need::Socialize`. Two open provisos flagged for whoever crafts
+43.1's packet: (a) nothing currently ROLLS a colonist's `values` at creation (slice
+1's only writer is the test hook) — a real natural-roster correlation assert needs
+population variance, so 43.1 needs either a small value-roll at colonist generation
+(mirrors the existing skills 0..=5 precedent) or a hook-seeded sampled roster; (b)
+`Personality`'s raw scalars stay private, so facet-side derivation works at 3-level
+(high/mid/low) granularity via the boolean trait API, OR would need a new pub getter
+on vanilla's `Personality` (a policy call, not yet made). **This reopens the
+architect's just-set cluster order** (B7→B-AG3→B-AG3.1→B-AG3.2→43.1) since 43.1 no
+longer strictly needs 41.1/41.2 first — escalated to the architect rather than
+resequenced unilaterally, since the order was an explicit, recent architect call.
+
+**RESOLUTION:** architect resequenced to B7→B-AG3-slice→**43.1**→41.1→41.2 (43.1's
+provisos made it clearly the better next block). On the two provisos: (a) ship the
+REAL generation-time value-roll if cheap — architect's preference, adopted; (b)
+confirmed default to the boolean-trait API at 3-level granularity, no vanilla-file
+changes. Separately, tier-assessing 41.1 (the emotion pipeline) surfaced it's
+already substantially delivered by B7-0/B7-1/B7-3 + the slice together — only 2 of
+HIST-0's 54 ChronicleKinds have a live emitter today, so there's no real pipeline
+work left until HIST-1/2 lands more emitters. **Architect closed 41.1 as
+DONE-by-existing-work** (not held as a placeholder) and folded its one real
+remaining piece (ChronicleKind→Value affinity coverage) into row 54 (HIST-1..2) as
+a linked dependent note. 41.2 (Mind-LOD) stays READY, sequencing explicitly deferred
+to the architect — the builder's LOD read-grounding found its loaded-only property
+already holds structurally, so its real remaining content is a soak-assert plus ONE
+genuine open design fork (frozen vs. throttled-decay for long-unloaded colonists'
+needs) that the architect routed to the **designer**, not a packet-craft guess —
+logged on row 41.2 verbatim.
+
+### bastion-block-FOCUS0DERIVE (ffd7ab1aed, row 43.1 — THE FOCUS-0 ARC CLOSES)
+Derive per-colonist Need weights from B-AG3's facets/values, built exactly to the
+packet's shape. **The real generation-time value-roll** (architect's ruling, shipped
+as a genuine feature not a test-only hook): `BastionColonist::generate(rng)` now
+rolls all 8 `Value` weights ±50 uniform from the SAME rng thread as skills/name/
+backstory — the 0..=5 skill-roll precedent extended verbatim, det-safe by the same
+argument. Old saves keep serde-default empty (baseline); only newly-generated
+colonists roll. **`derive_need_weight`** (a pure fn, `care_factor`'s neighbor):
+`Pray = 1 + Piety/50`, `Family←Kin`, `Craft←Craft`, `SeeAnimals←Nature`,
+`Acquire←Wealth`, `Fight←Glory` (all direct, exact); `Socialize` via the boolean-
+trait 3-level API (`Extroverted|Sociable` → 1.5, `Introverted` → 0.5, else 1.0 — no
+vanilla getter, honoring the architect's ruling); `Drink`/`AdmireArt`/`Learn` stay at
+baseline 1.0 (no forced correlation — the design's own degrade-gracefully law);
+clamped `0..=2`. **Produced and proven only** — nothing consumes the derived weight
+yet, that's FOCUS-1's job.
+
+**One ripple, caught by the packet's own stop-and-flag clause and resolved
+cleanly:** rolled values feed slice 1's LIVE `care_factor` path — every new
+colonist now takes value-weighted thoughts for real (bounded by the existing
+0.25..4.0 clamp — the whole point of shipping a real roll). This meant the VALUES
+leg's exact-math fixture (the two hand-computed colonists from slice 1's own
+verification) suddenly carried 7 extra rolled keys alongside its two deliberately-
+set ones. Fixed with a new `bastion_clear_values` hook + clear-then-set in that
+fixture; its exact deltas (−0.3199/−0.1200) reverified green post-roll, rerun ×2 in
+this block's own verification pass.
+
+**Verification:** one new UNIT case (29 in the leg) — derivation pinned exact
+(Piety 50→Pray 2.0, Kin −50→Family 0.0, Wealth 25→Acquire 1.5), unmapped needs
+baseline under a loud map (not silently wrong), Socialize's 3-level bucketing
+checked consistent with the public `.is()` API over a 400-draw seeded sample
+spanning both extremes. `--derive-scenario` (leg 25, 2/2): a 12-colonist roster
+from REAL `generate()` rolls — no hook-seeding, genuine variance (Piety spanning
+roughly −45..47 this seed) — asserts: `rolled_full` (8 entries each colonist),
+spread, `pray_exact` (every colonist's Pray weight matches `1 + Piety/50` to 1e-5 —
+exactness subsumes the weaker correlation check), `ordered` (max-Piety strictly
+out-derives min-Piety — the directional statistical proof the done-when asked for),
+`social_consistent` (every colonist agrees with the independent 3-level trait
+probe), `drink_baseline` (1.0 across all 12), `roundtrip` (the max-Piety colonist's
+entire rolled value map survives `force_demote`→promote byte-for-byte — slice 1's
+free-persistence claim now proven against genuinely ROLLED data through the live
+LOD boundary, not a hand-set fixture). Full 25-leg gate: 25/25 green, new DERIVE
+leg, and notably every mood-adjacent leg held its directional asserts with the
+value roll now LIVE across the whole ladder — the roll's ripple didn't destabilize
+anything it touched. Outcome-JSON stayed identical across both runs.
+
+**Two harness-methodology finds, worth keeping as testing-discipline notes (not
+game-code bugs):** (1) `bastion_force_demote` matches against the rtsim RECORD's
+name, and the record only captures a rename on a SYNC TICK — renaming then
+demoting with zero ticks between is a SILENT lookup miss (the record never saw the
+new name, so BED/NEEDS hooks read nothing, not an error). General rule: after
+`bastion_rename_colonists_unique`, tick at least one sync before any RECORD-name
+lookup hook — ECS-side name hooks are immediate, record-side ones are not the same
+tick. `derive_demoted` is now its own standalone outcome bool specifically so this
+class can't hide silently inside a composite assert again. (2) a FIXED post-demote
+wait can race the despawn/respawn window (a getter reads empty mid-gap); the
+existing BED/NEEDS poll-until-ready pattern was the right precedent to follow
+instead of a fixed sleep, and was applied here too.
+
+Sonnet tag-review: clean, no findings — every done-when landed 1:1, the ripple was
+caught and fixed exactly where the packet said to stop-and-flag rather than after
+the fact, and the two harness finds are genuinely useful testing-discipline lessons
+rather than symptoms of a deeper problem.
+
+**Side note banked for whenever PATH-0 (row 45) is reached, not urgent now:** the
+existing PATH-0 spec's "frontier+1 = PATH-0-WITH-B7" near-cap premise assumed the
+"B7" migration would grow colonist count N; the B7 that actually shipped is needs/
+mood (no population growth mechanism), so at today's N the near-cap precondition
+PATH-0 was written against likely still doesn't hold. Whoever crafts PATH-0's
+packet should re-check what actually grows N first, or accept a synthetic-N
+scenario instead of a natural one.
+
+### bastion-block-PATH0 (42f4eb832c, row 45) — ★OPUS-GATE-AT-TAG, CLEAR (§R15)
+The deterministic global path budget/scheduler, re-scoped to synthetic-N (the
+premise investigation confirmed no master-list block was supposed to grow colonist
+count N and got skipped — see the builder's N-investigation above; the "ships WITH
+B7 migration" premise in `PATHFINDING-SCALE-SPEC.md` was simply a wrong guess about
+what B7 would ship). Colonist Goto searches lifted OUT of the agent system's
+`.par_join()` (`server/src/sys/agent/mod.rs:76`, parallel per-entity) into a
+sequential Uid-ordered cursor'd round-robin, budgeted under `PATH_TICK_ITER_CAP`
+(3000 iteration units per tick); `find_path`/`astar.poll` reused wholesale via an
+extracted `search_step` — no new search algorithm, only the scheduler and the
+enqueue/consume seam around it, exactly per the packet's framing. Entropy-free — no
+rng anywhere in the scheduling path, no stuck-shuffle tiebreak needed since the
+cursor rotation itself is the deterministic tiebreak.
+
+**Scoping calls honored:** `bastion_full_path`/TIGHTDIG's unbudgeted whole-search
+stayed explicitly OUT of scope (flag-gated off today, deferred to row 31.4's own
+staged-rollout checkpoint rather than baked in speculatively) — noted, not solved,
+per the packet's ruling. Combat/vanilla pathing stays inline-unchanged behind the
+existing config-root gate — this scheduler only claims Bastion colonist Goto
+searches, nothing else.
+
+**Tier: build→gate-at-tag with Opus AT TAG** (architect's final call, superseding
+an earlier back-and-forth on timing — a shared-scheduler/per-tick-cap IS a real
+dynamic surface in principle, but the pattern itself — sequential id-ordered queue +
+budget — is well-trodden, not novel, so no pre-build hold; Opus verified the
+FINISHED code+scenario, not a pre-build plan). **Opus CLEAR (BUILD_REVIEW_LOG §R15),
+all four load-bearing properties confirmed directly in code:**
+- **(a) Determinism-by-construction** — `BTreeMap` + `sort_unstable_by_key(Uid)`
+  drive the ordering, zero `HashMap` anywhere in the request queue, zero rng in the
+  scheduling path. Two synthetic-N runs are aggregate-identical. Explicitly, honestly
+  scoped: this is determinism-FRIENDLY, not a fix for the separate ARCH-003 entropy
+  seam (which the Bug-Tester proved persists single-threaded too — a different class
+  of problem, reconcile at merge when `codex/arch003` lands, not claimed as closed
+  here).
+- **(b) Starvation-free BY CONSTRUCTION, not by tuning** — the cursor round-robin
+  makes denial impossible by construction: every enqueued request eventually gets
+  its turn as the cursor rotates, there is no path for a request to be silently
+  dropped. Measured: peak_wait = 1 tick in the 18-colonist synthetic over-cap test
+  (the cap saturates exactly at 3000/3000 iteration units with 18 colonists
+  requesting simultaneously) — deferral is real but bounded, never indefinite.
+- **(c) No-entombment / stuck-recovery preserved** — a colonist awaiting a budgeted
+  path sits in a state BYTE-IDENTICAL to an ordinary mid-search tick (nothing new
+  for `stuck_watch` to distinguish), so the existing teleport backstop fires exactly
+  as before if such a colonist wedges. FR15's watch-point resolves to N/A: the
+  1-tick consume-last-result latency changes WHEN a route arrives, never the
+  stuck-economy's own tuning inputs.
+- **(d) Vanilla NPCs unaffected** — the scheduler claims Bastion colonist Goto
+  requests only, gated at the config root; combat pathing and vanilla NPC pathing
+  never enter this queue.
+
+Synthetic-N proof (the re-scoped done-when, replacing the spec's original
+natural-growth assumption): 18 colonists saturate the budget cap exactly (peak
+3000/3000 iteration units), the mine still resolves under that load, movement stays
+staggered rather than frozen.
+
+**Registry, filed during the premise investigation, both non-blocking:** D19
+(vanilla's Architect-rule respawn homeostat silently converts colony population
+into plain-villager population over long soaks — colonist deaths leak out of
+colonist-N, deferred to B-AG6's natural landing point) and B29 (the Architect
+rule's respawn uses OS-entropy `rand::rng`, not the `tick_rng` pattern — irrelevant
+today, a real trap for any future long-soak scenario crossing a game-day).
+
+**★ ARCH-003 overlap, reconcile at merge (not urgent now, not a live collision):**
+this scheduler restructures the same pathfinding/agent-scheduling code the
+Bug-Tester is fixing on the separate `codex/arch003` branch. PATH-0 does NOT close
+that seam — kept the framing honest in the tag itself rather than over-claiming.
+When the branches merge, ARCH-003's fix should ideally fold into PATH-0's cleaner
+scheduler rather than fight it as a separate patch.
+
+Sonnet/Opus tag-review: clean, all four load-bearing properties confirmed directly
+in code, no findings beyond what the packet asked to verify. Row 45 → DONE.
+
+**Mechanism precision addendum** (the builder's own tag report arrived after the
+Opus-summary bookkeeping above — folding in the primary-source detail rather than
+leaving it thinner than what was actually built; nothing here contradicts the
+verdict, it's more precise than the summary): the new file is
+`server/src/bastion_path.rs` (7 files touched, +572). The actual shape is a **PULL
+model, not a push queue** — the request IS the visible routeless+Goto state itself
+(no queue mutation from the parallel agent tick, read-only visibility, which is
+WHY zero shared state gets touched by the parallel join). The gate lives on a new
+additive `TraversalConfig.search_allowed` field (the `scramble_reach` precedent) set
+`false` at the agent tick's single config-construction site for colonist+Goto only;
+with `search_allowed: false` and no route yet, `Chaser::chase` holds its
+PRE-EXISTING `Pending` stance rather than searching inline — no new movement class
+introduced. `Chaser::search_step` is `chase()`'s search half extracted VERBATIM
+(the existing 250-750-iteration per-call budgets `find_path` already hands
+`astar.poll`, now summed via a new `Chaser::planned_iters`). The exact
+Goto-executing arm (corrected from an earlier tentative citation of
+`behavior_tree.rs:428`, which turned out to be the item-pickup arm): **
+`server/agent/src/action_nodes.rs:269`** (`Some(NpcActivity::Goto(..)) =>
+path_toward_target`).
+
+Concrete numbers from the synthetic-N proof: 18 colonists × 250 fresh-search iters
+= 4500 > 3000 at first arbitration — real, provable contention, not a contrived
+edge case; peak_wait measured 1 tick (nominal ceiling 2, assert bound 7); the
+46-job mine completes to zero under load; `b58_d_claims_ratio` 1.227 (in band);
+grants split 440/538 across the two runs (entropy-shifted mid-run totals,
+deliberately outside the diffed outcome-JSON, the B7-3 lesson applied). The
+PREEMPT leg's mid-travel-wedge case (a colonist wedged mid-Goto) was re-run ON
+scheduler-delivered paths specifically and stayed green — the closest thing to a
+direct regression check on property (c) beyond the general 26-leg gate.
+
+**Scope call surfaced by the builder, not previously spelled out:** colonist
+combat/flee pathing stays inline and OUTSIDE this scheduler's budget — deliberate,
+not an oversight, because combat targets are invisible outside the behavior tree,
+latency-critical, and rare, so budgeting them would risk exactly the kind of
+starvation this block exists to prevent elsewhere. The scheduler covers N-scaling
+JOB-TRAVEL load specifically. Also confirmed for the ARCH-003 merge note: the
+ambient-rng call sites (`stuck_check`'s `rng()`) are byte-unchanged by this block —
+consistent with "does not close that seam," not just asserted but verified
+untouched.
+
+### bastion-block-FARM (682211eac9, row 46) — the renewable food loop ships
+Farm plots + growth sim + harvest, built to the packet's shape. **First tag to run
+the new permanent VOXCHECK leg** (B30 — `cargo check -p veloren-voxygen`, wired as
+leg 3 right after BUILD, confirmed structural before this tag) — green, confirming
+FARM is the first client-buildable tag since B7-1 broke voxygen six tags ago.
+
+**Prior-art calls, live-verified, with a real trap surfaced along the way:** the
+`Growth` sprite attribute IS already render-consumed by voxygen's attribute-filter
+machinery, but no manifest entry had ever used it — FARM is genuinely the first
+real consumer. Ships with ZERO new assets: `WheatYellow`'s manifest gained
+growth-filtered configs (GREEN models render stages 1..9, YELLOW 10..15, the
+original filterless models stay LAST as the fallback). **The trap, caught before
+shipping:** category-declared attributes default to 0, so every WORLDGEN
+`WheatYellow` placed anywhere in the game reads `Growth(0)` — a naive 0-indexed
+filter would have regressed every piece of vanilla wheat in the world down to
+shoots. Resolved by reserving `Growth(0)` for the mature fallback and having farm
+wheat sow at `Growth(1)` instead — worldgen's untouched `Growth(0)` reads now fall
+through cleanly to the same mature look it always had. Vanilla stays byte-preserved
+by construction, not by luck.
+
+**Designation-shape ruling:** `Farm` is a top-level `DesignationKind` registering a
+PERSISTENT footprint, following the `Stockpile` precedent rather than `Gather`'s —
+farm cells CYCLE (till→sow→grow→harvest→re-tilled, forever), unlike Gather's
+complete-and-vanish single pass.
+
+**Mechanism:** (1) painting a plot registers it in `board.farms`, generating zero
+jobs itself (v1 plots are flat, no terracing). (2) THE FARM PASS — one bounded scan
+(`%15==3` cadence, cost is O(Σ plot area), the explicit cost-bound the packet asked
+for) drives state transitions: raw ground → TILL; tilled + an empty crop cell →
+SOW (`required_item = wheat_seeds`); GROWING → a deterministic stage clock (a
+per-cell last-advance timestamp in a tuple-keyed `BTreeMap`, one `set_block` per
+cell per `FARM_STAGE_SECS` [6s], bounded by construction — no per-tick scan of
+every growing cell); MATURE (`Growth==15`) → HARVEST. One live job per target cell,
+reusing the paint-path's existing exploit-guard dedupe. (3) ONE state-driven
+completion arm handles all four job kinds (self-healing — a job whose cell state no
+longer matches what it expects moot-releases rather than erroring): TILL → Earth;
+SOW consumes ONE seed via the same decrement path `Build` uses (a missing seed
+correctly stalls as `needs_materials`, which B6's haul machinery then feeds) and
+places `WheatYellow@Growth(1)`; HARVEST drops 2 wheat + 2 seeds — strictly more
+than the 1 seed consumed — and returns the cell to Earth, re-sowable. (4) new items
+`common.items.bastion.wheat` + `wheat_seeds` (data-only, icons reuse shipped
+models; wheat is an INGREDIENT not a `FOOD_DEFS` entry — crop→meal→eat is
+DF-COOK's job, not this block's). (5) `WorkType::Farm` + a farming skill + a farm
+work-priority, all serde-defaulted; bare-hand tool base for v1.
+
+**Four registry finds, all filed:** (1) **B31** — `job_wanted` serves two
+independent masters (paint-time eligibility and mid-travel validity), and Farm's
+state-driven completion model needed to opt OUT of the mid-travel re-check
+entirely; missing that opt-out caused a completely silent create/claim/drop churn
+(6729 creations, 6720 claims, ZERO completions) that a bounded job-COUNT invariant
+never caught (the board never held more than 9 jobs at once) — only the
+creations:claims:completions ratio revealed it. (2) **B32** — plain air reads
+`Some(SpriteKind::Empty)`, never bare `None`; a vacancy match on `None` alone
+silently swallowed every empty field cell into a foreign-state skip arm, diagnosed
+by a raw-read probe. (3) **B33** — the B6 material-fetch machinery was hardcoded to
+`BUILD_MATERIAL` at three separate sites (availability, claim-carry, fetch-commit);
+generalized per-def so `Sow`'s `wheat_seeds` requirement works and every FUTURE
+material-carrying job kind (recipes, DF-COOK) inherits the generalization for free
+— Build itself is unchanged by construction. (4) **B30** — the voxygen gate gap,
+now fixed and permanently gate-guarded (above).
+
+**Verification (`--farm-scenario`, leg 27, 2/2):** 3 colonists, a 3×3 plot, a
+stockpile bootstrapped with one 14-seed stack. Paint creates zero jobs (confirms
+(2) is fixed); all 9 cells till (rock→Earth); all 9 sow at `Growth>=1` (fetched
+through the now-generalized machinery, confirms (3) is fixed and confirms no
+regression of (1)); a probed cell's growth rises strictly and the plot matures;
+harvest auto-fires (wheat=2); **seed conservation as an honest ledger** — a run-4
+lesson folded in mid-block: fetched seed stacks live in colonist BAGS, invisible
+to ground-only counts, so the verification added `bastion_colony_item_total`
+(counts ground + bags together) — every seed is accounted for as either an ITEM or
+a GROWING crop, each harvest nets +1, and the ledger reads EXACTLY 15 = 14 + 1 in
+both runs. The full harvest→haul→fetch→re-sow cycle closes and was observed live
+(fresh growth visible after the first harvest). Jobs stayed bounded ≤18 at every
+probe; zero embeds throughout. Full 28-leg gate: 28/28 green (26 from PATH0 + new
+FARM scenario leg + the new permanent VOXCHECK leg).
+
+**Known-scope, not gaps:** unloaded farms freeze (the loaded-only decay class,
+D19's LOD sibling — deferred to the 41.2/LOD lane, same fix shape as that fork);
+worldgen-placed wheat is left alone in v1 (not swept into the farm system);
+`FARM_STAGE_SECS` is a const for v1 (RON-tunable at a future checkpoint);
+wheat→meal is explicitly DF-COOK's (PROD-3).
+
+Sonnet tag-review: clean. All four registry finds were caught and fixed by the
+builder BEFORE tagging (run-1 fails diagnosed and resolved in the same block, not
+shipped-then-discovered), the Growth(0)-reservation trap specifically is exactly
+the kind of vanilla-preservation catch that's easy to miss and expensive to find
+later. Row 46 → DONE.
+
+### bastion-block-RUN0 (39543568ea, row 47, RUN-0 sub-block)
+The emergency-run gait + energy governor, narrowed to RUN-0 only per the design
+doc's own sub-block split (RUN-1/RUN-2 both genuinely blocked, deferred to rows
+47.1/47.2). Gate: 28/29, one B5 red — B22's FOURTH instance, and this time the
+CAUSAL mechanism got named rather than just classified: adding
+`WriteStorage<Energy>` to `bastion_jobs`' `SystemData` changes the ECS dispatcher's
+dependency graph (the system now serializes against vanilla's stats system, which
+also writes `Energy`), shifting tick scheduling with zero logic change — exactly
+the noise B5's completion-window assert re-draws on. 3/3 identical-binary reruns
+confirmed the classification (B22 filed with this as its fourth instance and the
+new general rule: a SystemData storage addition IS a scheduling change).
+
+**Substrate checks, verified before building rather than assumed:** colonists
+already carry `comp::Energy` (`Energy::new(body)` at every NPC spawn,
+`state_ext.rs:240`) and vanilla ALREADY regenerates it unconditionally (`stats.rs`,
+an accelerating regen) — the recovery half of the governor was free, needing no new
+code. `RUN_SPEED = 1.0` sits inside vanilla's existing speed envelope (walk 0.8,
+`MAX_FLEE` 0.65) — zero new anim/physics surface, the existing velocity-driven
+figure animation reads the higher speed as running for free.
+
+**Mechanism, exactly the packet's shape:** (1) `running: bool` on `BastionColonist`
+— serde-defaulted false, the ONLY new persisted state; `Chaser`/pathing stay
+byte-untouched. (2) the gait choice happens AT the existing Goto write site (the
+job-travel call), choosing `RUN_SPEED` vs `TRAVEL_SPEED` off the flag — the
+harness's own test-goto mover deliberately keeps a fixed walk gait (so fixtures
+measure at a known speed) and the disperse-egress Goto stays walk too (an
+always-run there would be RUN-1 trigger material, correctly left alone). (3) THE
+GOVERNOR, per-tick: drains Energy 15/s while flagged; below `RUN_MIN_ENERGY = 10`
+FORCES `running = false` ("winded") — resource-governed, not timer-governed,
+exactly the design's framing; a fresh trigger is required to run again; recovery
+rides vanilla's existing regen, untouched by this block. (4) colonist-only by
+construction — the same PATH-0 config-root-gate discipline, vanilla NPCs provably
+unaffected.
+
+**The block's real find (run-1 fail → root-caused → fixed → green), filed as
+B34:** a Bastion drain competing against vanilla's regen must beat the regen's CAP
+rate, not its base rate. Vanilla's `Energy::regen` is unconditional AND
+accelerating up to a 10/s cap; the first attempt used a 6/s drain, which lost the
+race — energy dipped to ~88 then the accelerating regen outpaced the drain and
+pulled it back to full with the run flag still set, so the low-energy floor was
+structurally unreachable and the force-revert governor never fired. No error
+anywhere — telemetry showed the floor was simply never observed, energy ended near
+max, the flag stayed true. Fixed: 15/s, a comfortable net −5/s against a maxed
+regen, giving the intended ~7-18s reserved sprint before winding.
+
+**Stuck-watchdog composition, checked explicitly since asked for by name:**
+`RUN_SPEED` sits inside vanilla's existing envelope and the watchdog keys on
+PROGRESS (best_dist improvement + hysteresis), not absolute speed — a faster
+colonist improves `best_dist` faster, making it strictly LESS stuck-prone while
+running, and the winded drop returns to the exact gait every stuck-economy
+constant was already calibrated against. No timing interaction found; the full
+ladder (every stuck-economy leg) serves as the regression net and stayed green.
+
+**Verification (`--run-scenario`, leg 29, 2/2):** measured DISPLACEMENT RATE over
+fixed mid-travel windows — deliberately not arrival timing, to avoid the exact
+completion-window flake shape B5 just hit. WALK: 0.200/0.223 blocks-per-tick
+(default, nothing ran unflagged); RUN: 0.308/0.331 (~1.5×, asserted >1.15×);
+energy drained 100→~66 across the trip; the governor force-reverted at 11.3/9.9
+(within a point of the 10.0 floor both runs — the test hook never turns the flag
+off itself, only the governor can); vanilla regen returned energy to full after;
+zero embeds. Energy MAX varies per the random humanoid body roll (rtsim entropy),
+so every energy assert is relative/boolean by design rather than an absolute
+value — the B7-3 telemetry-split lesson applied to a new axis. PATH-0 composition
+pre-checked and confirmed clean: speed is not a pathfinding search input, zero
+contact between the two blocks.
+
+**Scope honored:** no triggers built (RUN-1's job, correctly blocked); no winded
+debuff beyond the hard floor (RUN-2's job, blocked on DF-FOCUS); the
+`MAX_FLEE_SPEED` being slower than walk (0.65 < 0.8, a real oddity) was left
+exactly where it belongs — for RUN-1 to fix when the flee trigger actually lands.
+
+Sonnet tag-review: clean. The B34 find is a genuinely valuable, generalizable
+lesson (any future Bastion drain against a vanilla accelerating-regen resource
+will hit the identical class if not checked against the cap explicitly), and the
+explicit stuck-watchdog composition check is exactly the kind of due diligence
+that should happen by default on any speed-touching block, not just when asked.
+Row 47 → DONE.
+
+### bastion-block-AUTON0 (afc175f89c, row 48) — "THE PLAYS ITSELF KEYSTONE SHIPS"
+The per-colonist utility arbiter skeleton (Work/Idle/Flee), ★OPUS-GATE — the
+METHOD was drafted, amended twice through crossed-message rounds (self-job
+authority, the write-vs-clear site map, the real Flee signals), and locked at
+`readme/AUTON0-BUILD-PACKET.md` with 6 guards BEFORE the builder ever saw it —
+see the packet-craft exchange earlier in this session for the full derivation.
+Mechanism commit `40aa8b2174` + a pre-tag dead-colonist-skip fix `afc175f89c`.
+Gate: 30/30 all green on the rerun, new AUTON leg, scenario 2/2 aggregate-
+identical (Guard 3's ARCH-003-aware tolerance, not bit-identical).
+
+**All 6 guards verified in the tag report, guard by guard:**
+- **Guard 1** (the narrowed map, built exactly as adopted): gated exactly ONE
+  writer — `:3436` the job-travel Goto, condition `self-job OR arbiter.current==
+  Work` — plus the claim-loop entry; `:4583` the disperse fail-safe stayed
+  EXEMPT (candidate-(b) cited in-code); the 3 harness sites untouched; the
+  release/demote clears explicitly unconditional; the Arrived/Waiting clears
+  follow the gated entry by construction, no separate gate needed.
+- **Guard 2**: colonist-scoped joins, the Arbiter component only colonists
+  carry, vanilla byte-unchanged, VANILLA leg green.
+- **Guard 3**: sequential system, RNG-free (flat constants, field-read signals,
+  timestamps only), two runs aggregate-identical under the ARCH-003-open
+  tolerance.
+- **Guard 4** (stuck-watch independence) — demonstrated TWICE, unprompted,
+  rather than merely asserted: (1) fleeing jobless colonists in their own trench
+  earned the 60s jobless rescue — drive-INDEPENDENT, proving the backstop still
+  fires when genuinely needed regardless of drive state; (2) in the first gate
+  draw, a post-recovery idle wanderer walked 35 blocks off the plateau into a
+  genuine rescue — another organic, unprompted confirmation. Direction (b)'s
+  "never false-trips" claim was then scoped precisely: the storm window (480
+  ticks) is short enough that the 60s stuck-watch timer structurally CANNOT
+  complete inside it, so any teleport there would be provably false — and the
+  gate measured EXACTLY zero across the whole window. Registry corollary filed
+  as **B35**: a global fire-counter asserted "zero for the whole scenario" is
+  the WRONG claim when the counter legitimately fires outside the window under
+  test — scope the assert to the window, not the run.
+- **Guard 5** (PATH-0 composition): exercised live, not just argued — post-storm
+  PATH-0 kept granting normally, `peak_wait` measured 0; the packet's predicted
+  self-cleaning `waits`-pruning behavior was actually observed, not just trusted
+  from the earlier code-read.
+- **Guard 6** (self-job authority): self-job colonists (RestAt/EatFrom/Despond)
+  skipped entirely at the TOP of the arbiter's per-colonist pass — no drive set,
+  nothing gated for them; the `:3436` self-job travel arm fires UNGATED exactly
+  as specced. B7-2/B7-3's Opus-cleared no-entombment/no-thrash guarantees
+  preserved BY CONSTRUCTION, not by luck. `Drive` stays `{Work, Flee, Idle}` —
+  the full self-job-to-drive unification stays AUTON-2's deliberate job.
+
+**Root-caused fix, pre-tag (not shipped-then-discovered):** the arbiter now
+explicitly skips DEAD/dying colonists at the pass top (`is_dead || should_die`).
+A corpse needs no drive, and a drive write racing vanilla's own death processing
+on a dying colonist was the actual bug — caught by the BED corpse-probe on the
+first gate draw, root-resolved (not merely B22-classified as noise) before the
+tag landed; re-run confirmed 3/3 post-fix.
+
+**FLEE, built for real (not stubbed), both signals live:** `agent.target.
+is_some_and(|t| t.hostile)` (vanilla's own combat-awareness field, code-identical
+to the vanilla tree's own read) and `fraction() < psyche.flee_health` (the health
+threshold, exercised through the REAL health-write path — no synthetic
+injection). One genuine vanilla-interaction find surfaced along the way, RUN-0's
+sibling class: vanilla silently restores a WORKING colonist's health to full
+behind the scenario's back (a max-update-class heal — the mid-work pair read
+exactly 100.0 within ~180 ticks of being set to 0.1, while the idle subject held
+its low health). **The arbiter responded correctly the whole time** (Flee
+dropped exactly when the signal genuinely dropped, Work correctly resumed) — the
+FIXTURE was dishonest, simulating a persistent threat with a one-shot write that
+vanilla quietly undid. Fixed by re-asserting the threat every second, matching
+how a real hostile actually behaves. Filed as **B36**.
+
+**Mechanism:** `comp::bastion::{Drive, Arbiter}` — `Work` carries no `JobId`
+(`ActiveJob` itself is already the handle, no duplicate state); per-tick Flee
+preemption rides the STANDARD release seam (sweep-safe ≤15 ticks, FR3-e);
+selection runs at `%15==1` under a 0.5s commitment window + 0.15 hysteresis;
+urgencies are flat v1 constants (flee 1.0 > work 0.5 > idle 0.1 — the ORDER is
+the contract this block ships; AUTON-1/2 shape the real curves later);
+work-availability is O(jobs) once per selection, not per candidate.
+
+**Verification (`--auton-scenario`, leg 30, 2/2):** (a) liveness — Idle→Work
+through the gated entry, a full mine strip completes (the block's whole risk
+surface survived end to end); (b) Flee latency — the drive reads Flee within 2
+sim ticks of the health write (well inside the ≤1-arbiter-tick per-tick-check
+requirement); (c) a combined storm (all three pressure sources at once) froze a
+second strip at exactly 20/20 for the full 450-tick window — zero jobs leaked,
+claims provably suppressed, not just quiescent; (d) recovery — the frozen strip
+returns to zero after the storm passes; (e) thrash — 16-18 drive-switches
+against a bound of 40 (the small run-to-run variance is the vanilla-heal race
+noted above, telemetry-only, not a correctness signal). Every done-when landed
+1:1: max-urgency pick, commit-no-thrash, per-tick Flee preemption, sole
+activity-writer, aggregate-determinism, vanilla untouched, the backstop fires
+when needed and never false-trips.
+
+Sonnet tag-review: clean — every guard has concrete evidence, not just an
+assertion, and the two things caught pre-tag (the dead-colonist race, the
+dishonest health fixture) were both root-caused rather than papered over. Row
+48 → DONE.
+
+**★ OPUS FINAL SIGN-OFF: CLEARED (BUILD_REVIEW_LOG §R16, 2026-07-13).** Opus
+re-verified all 6 guards + the dead-colonist skip + the Flee ruling directly
+against the tagged commit `afc175f89c`, not the packet's description of it: 2
+gated activity-authority sites (Goto-steer `:3592`, claim-loop entry `:5539`),
+both `(arbiter.current==Work OR self-job)`; the self-job skip at `:2738`
+confirmed triply-safe; the dead-colonist skip at `:2732` confirmed present;
+Flee's signal at `:2759` confirmed RNG-free (two direct field reads, no spatial
+query). Both gate reds were real, root-fixed findings, not classified away —
+and the teleport red specifically was live proof that Guard 4's stuck-watch
+backstop fires independent of drive state, the exact property it needed to
+demonstrate. AUTON-1 (self-designation generators) is next.
+
+### bastion-block-AUTON1 (ede5b80b1a, row 49) — G2 CLOSES: the colony designates its own work
+The self-designation generators (mine/haul/build), self-verify+tag per the
+architect's tier call (data-generation into the existing job board, not a new
+authority mechanism — confirmed, not just claimed, by the builder's own
+craft-time findings). Gate: 29/31 first draw + B5/PREEMPT both 3/3 PASS on
+identical-binary reruns → both flake-classified per B22 → effective 31/31,
+SELFGEN green in-suite. Scenario 2/2 aggregate-identical with EXACT counters
+matching across runs (mine=4, build=4, plans_done=1, fires=0 both times).
+
+**Scope, as ruled:** mine/haul/build only; defense/muster deferred (no threat
+data until B8); hygiene/expand skipped (no refuse or population-pressure state
+to read yet). The DF-POLICY hook is ONE check site — `generator_enabled
+(GeneratorKind)`, const-true for v1, the doc names POL-1..4 as the future
+plug-in point rather than hardwiring "always on" deep. The existing B6 haul
+generator was registered under the same hook (behavior-identical, just now
+consistently gateable). Ore-sprite mining stays row 49.1 as filed at craft time.
+
+**Mechanism** (one pass, `%15==2`, gated on a live plan existing — inert in
+every other scenario by construction): the BUILD generator runs a per-plan
+UNFILLED CENSUS (one terrain read per cell per firing, the SAME scan reused by
+emission, retirement, and demand-calculation — not three separate scans) →
+capped Build jobs with `required_item = BUILD_MATERIAL_ITEM` (the B26 fetch
+contract, honored correctly this time), deduped via the existing `:1379`
+one-job-per-block occupied-set. Plans themselves are `board.plans` — FROZEN
+cell lists set by `queue_build_plan`, intent-only at queue time (zero jobs
+created until the generator itself emits them — the farm-paint precedent
+applied to plans); a plan's AABB joins the claim mask; once every cell is
+filled the plan RETIRES. The MINE generator only runs when `deficit > 0`,
+where `deficit = unfilled-plan-cells − stone-supply(pickup stack amounts +
+colonist bags) − pending-mine-jobs` — since `BUILD_MATERIAL == MINE_DROP ==
+stone`, the plan's own bill of materials IS the mine quota, no separate
+tuning knob needed. The scan anchors at the structure centroid (an order-free
+mean of plan cells; no live plan → no scan), advances ONE z-slab per firing
+(radius 12, 9 slabs total, a wrapping cursor — the same budgeted-shape PATH-0
+already established), and candidates require Rock-class + exposed + outside
+the SKIP COLUMNS (plans + stockpiles + farms + beds + `built_xy`) with real
+per-column depth gating (not a flat scan). Cancel (the eraser) drops any
+touched plan whole. **Quiescence is structural, not tuned:** demand hitting
+zero stops generation by construction — "no runaway job creation" is an exact
+freeze assert, not a cap that could theoretically still be exceeded.
+
+**Reuse ledger, confirmed clean:** job creation rides the existing `Job`
+literal contract; dedupe is the existing placement occupied-set; claim,
+travel, fetch, and completion are ALL untouched — a generated job is
+indistinguishable from a player-painted one once it hits the board, so the
+"no special-casing" done-when holds by construction, not by careful parallel
+maintenance. Haul reuses the existing B6 generator as-is, just gated under the
+same policy hook. Zero new wire enums (VOXCHECK stayed green), zero
+`SystemData` changes (no dispatcher reshuffle — B22's fourth-instance lesson
+from RUN-0 didn't recur here for exactly that reason).
+
+**The ×2 story, root-caused not classified:** the first draw SPLIT — run1 was
+a full pass (mined EXACTLY 4, matching the deficit precisely — the demand
+arithmetic proven live, not just by construction), run2 built 2 of 4 then
+starved. Two real causes, both caught and fixed: (a) a fourth instance of the
+B24 fixture-geometry class — the stockpile anchor sat 4 cells south of the
+strip's center, putting the mine scan's first candidate row on the strip's
+south EDGE against raw undesignated worldgen; a pit-trapped stone's haul
+churned `unreachable` ×6 approaching through the rough terrain band. Fixed by
+centering the anchor so the ±12 scan circle sits entirely inside controlled
+flat rock. (b) That churn EXPOSED a real, previously-latent B6-class bug,
+filed as B37/row 49.2: a haul job reserves its target at generation time and
+never releases that reservation if the target becomes permanently
+unreachable — `should_merge` amplifies this, since a merged pile shares ONE
+reservation across N physical stones, so a single bad unreachable-haul job
+pinned BOTH of run2's remaining stones behind it, exactly matching the
+observed 2-of-4 starvation. Post-fix: 2/2 green with byte-identical outcome
+JSON, including the exact counters.
+
+**Verification (`--selfgen-scenario`, leg 31):** an un-designated 3-colonist
+colony, given only intent (a bootstrapped stockpile + one queued 2×2 platform
+plan). Asserts: ZERO board jobs exist immediately post-setup (the zero-paint
+proof — nothing was ever player-designated); generation stays bounded ≤
+colonists×2 at EVERY poll, not just at the end; stone physically reaches the
+stockpile; all 4 plan cells get built; the plan retires EXACTLY once; both
+generation counters freeze across a full 450-tick post-retirement window
+(quiescence, not just eventual silence); the board drains back to zero jobs;
+two runs are counter-identical. `CENTER_NET` fires are reported, not asserted
+(the AUTON-0 lesson applied proactively) — 0/0 regardless. Colonists pick up
+every generated job through the completely NORMAL claim path, flowing under
+AUTON-0's Work drive with no special-casing anywhere in the pipeline.
+
+**Registry, beyond B37/B24's fourth instance:** filed as **D20** — a
+generator's own completed output can re-satisfy its own candidate filter on a
+later pass (a retired plan's finished platform is exposed rock, which the
+mine generator's purely physical candidate test can't distinguish from
+untouched terrain); worked around today via the skip-column list, but
+`built_xy` only tracks GENERATOR-built structures — player-painted
+constructions have no footprint registry yet, an honest open edge rather than
+a fully-closed gap.
+
+Sonnet tag-review: clean — the demand-driven quiescence design turns "no
+runaway job creation" from a tuned-cap promise into a provable structural
+fact, exactly the "impossible by construction" pattern this whole build has
+favored, and both ×2-draw causes were root-caused to real, separately-useful
+findings rather than being waved off as noise. Row 49 → DONE (architect's lean
+sign-off already recorded above; this entry backfills the full mechanism for
+the permanent record). AUTON-2 (need-drives + the death-spiral E1 gate) is
+next — a full Opus-METHOD block, routing through the architect at
+packet-craft same as AUTON-0.
+
+### bastion-block-HAULPIN (5d6b8a133d, row 49.2) — the B37 fix
+The AUTON-1 follow-up, self-verify+tag: a churning unreachable Haul job now
+DROPS at `HAUL_DROP_STRIKES=3` — the arrival-tolerance growth cap, chosen
+because once tolerance stops growing, further churn cannot converge — via the
+existing post-loop `remove_job` (which already frees the reservation; wired
+through the `carve_requests` deferred-borrow pattern already established
+elsewhere). The slot-7 generator then re-emits from a FRESH scan next cadence:
+this replaces retry-BY-CHURN (the same job endlessly retrying, its item and
+the WHOLE merged pile behind it pinned forever — exactly AUTON-1 run-2's
+2-build starvation) with retry-BY-RESCAN (an item that's fetchable between
+tries gets picked up by a later generator pass instead of staying hostage to
+one bad job). Designated (player-painted) kinds deliberately KEEP the
+unreachable economy as-is — terrain targets can legitimately un-block later,
+and the existing 60-tick amnesty already belongs to them; this fix is scoped
+to generator-created haul jobs specifically.
+
+**Verification (`--haulpin-scenario`, leg 32, 2/2):** a 2-stack sealed SEVEN
+blocks deep — deliberately BEYOND the 6.1-block arrival-tolerance envelope a
+remote-grab could reach (the first-draw finding: a 3-deep seal converges via
+remote-grab at 6.0, just inside the max tolerance, so 3-deep alone wouldn't
+have exercised the drop path at all). The cycle emit→strike→drop→re-emit
+fires EXACTLY 3 times both runs (counted via `next_id` deltas, not a racy
+transition poll); reservations never exceed 1 at any point; the stack
+conserves; outcome identical across both runs.
+
+**Evidence chain, honored per the earlier-agreed recovery condition** (the
+cargo-collision incident from earlier this session): HAULPIN's own ×2 PASS
+ran clean at its actual commit BEFORE any AUTON-2 edit existed; the 33-leg
+suite ran green at the DIRECT CHILD commit (AUTON-2), re-validating HAULPIN's
+own scenario leg specifically; and the closing check — a diff confirming
+AUTON-2's `bastion_jobs.rs` delta is exactly 3 hunks, none touching the
+release/drain/reservation code HAULPIN's fix lives in. New read-only probes:
+`JobBoard::probe_next_id`/`probe_reservations` + `bastion_board_probe`.
+
+Sonnet tag-review: clean, no findings. Row 49.2 → DONE.
+
+### bastion-block-AUTON2 (01151c61c1, row 50) — THE E1 GATE
+The trait-stagger + the death-spiral scenario, ★OPUS-GATE (packet-craft AND
+tag). Committed as its own 4 files (+790) — the fleet's docs untouched, the
+same discipline as every prior block.
+
+**Mechanism, exactly per the packet:** `stagger_interrupt` (a pure fn, rides
+`care_factor`'s established pattern): a hardiness composite `h` from
+Craft/Tradition VALUES (±0.5 each) plus Conscientious (+0.5) / Neurotic (−0.5)
+PERSONALITY traits; effective threshold `eff = base × (1 − 0.4h)`, clamped to
+`[INTERRUPT_FLOOR (0.05), base × 1.5]`. The safety-floor property Opus asked
+for by name: the hardiest POSSIBLE colonist (`h = 1.5`, unit-pinned exact)
+lands at `eff = 0.08` — comfortably above the `0.05` floor, never at or below
+it. The `.min(base)` on the ceiling side keeps recreation's own never-preempt
+`0.0` untouched and the clamp well-formed (ceiling `0.3 < comfort 0.5`).
+Swapped in as the TWO threshold INPUTS at their existing read sites (`:3442`/
+`:3445`) — B7-2/B7-3's own machinery (cooldown, hysteresis, self-job
+authority, the Despond staircase, all already Opus-cleared) is completely
+untouched; the stagger rides the existing rtsim personality-read guard idiom.
+`FOOD_DEFS` gained `FARM_WHEAT` (the const's own designed extension point,
+its doc-comment already anticipated this — data, not machinery; without it no
+shortage could ever recover through production, since wheat wasn't
+recognized as food at all before this).
+
+**Read-only probes added:** `bastion_despond_jobs`, `bastion_colonist_
+temperament`, plus board probes (`probe_next_id`/`probe_reservations`,
+HAULPIN's own).
+
+**The E1 death-spiral scenario (`--autonomy-death-spiral-scenario`):** boot A
+tests work-BEFORE-workers (paint and stock the colony BEFORE any colonist
+spawns — the root fix for the anti-wander finding below, not a band-aid on
+top of it), temperament-aware role assignment plus predictions computed via
+the mechanism's own public fn (not re-derived by the scenario), and 3
+separated 1-wheat starters (B38-aware — deliberately not one merged pile) set
+against 4 eaters, so the depth genuinely requires recovery to ride
+IN-WINDOW harvests, not just existing stock. The split assert is now
+crossing-tolerant by design: holders who NEVER preempt above their own
+threshold (the correctness property) PLUS every colonist below threshold
+genuinely attempting to preempt (an attempts-delta count) — replacing an
+earlier, stricter fed-in-window count the builder had self-imposed and then
+disclosed was actually measuring three ALREADY-FILED, separate concerns (see
+below), not the stagger itself. RECOVERY is asserted at the COLONY level, per
+the architect's ruling below, with a structural window rather than a fixed
+wall-clock guess; the floor gets its own DIRECT assert. A PURE-STAGGER model
+sufficed end-to-end — the packet's food-urgency Work-scorer fallback was
+never needed, and wasn't built.
+
+**★ Acceptance-criteria ruling, disclosed and resolved before tagging:** the
+builder's own scenario originally required ALL colonists fed within a fixed
+window — stricter than the packet's actual done-when. Forensics traced every
+failure of that stricter bar to three ALREADY-FILED, non-stagger causes: B38
+(a merged pile serializes concurrent eating to the preempt-cooldown cadence
+regardless of stock size — though this scenario used separated starters
+specifically to avoid it contaminating the READ), the simulated-tier
+population-geography scatter (colonists can wander 80+ blocks during idle
+bootstrap before any work exists to anchor them — banked to the Design
+backlog as IDLE-HOME-LEASH), and the residual ARCH-003 scheduling variance
+(this is the suite's single most timing-exposed leg — 10+ minutes of
+emergent economy vs every other leg's arena-confined runtime). None of the
+three are the stagger mechanism. The architect ruled E1's "recoverable-band
+auto-recovers without input" at the COLONY level (`stock≥start`, `≥5/6 fed`,
+all alive, a straggler's meter still positive-and-retrying — reported, not
+gated) rather than an every-individual-deadline reading, since every
+individual-level mechanism property (the floor, the stagger's own
+never-preempt-above-threshold discipline) already has its own direct,
+independent assert — nothing about individual behavior goes unverified by
+loosening this one aggregate measure. Also corrected en route: no
+`--deterministic-rtsim` CLI flag exists (B8's fix made the harness's
+determinism unconditional, always-on) — the run-to-run divergence chased
+here was genuinely the known-open ARCH-003 residual, not a new bug, just
+unusually visible on this scenario's length.
+
+**Gate: 32/33 first draw.** UNIT 30/30 (the stagger floor pinned exact,
+0.08 ≥ 0.05); SPIRAL green in-suite; two runs aggregate-identical (stock0=3,
+stock1=44/38, holders=2, eaters=4, fed_in_window=2, split=true, floor=true,
+despond=(true,true) both runs). **The one non-green leg, PREEMPT, was B22
+flake-classified** — the exact `preempt_endured`/`endure_dug=0` signature
+already established at the AUTON-1 gate, confirmed identical pre-stagger (so
+not introduced by this block). **★ Flagged for the record, not swept past:**
+this classification rode WEAKER evidence than the established protocol this
+time — 1 of 3 reruns passed, not the usual 3/3 — the builder disclosed this
+themselves and offered a quiet-machine rerun. Whether that rerun happens
+before Opus's final sign-off is the architect's call, made separately from
+this bookkeeping pass.
+
+**Registry, four classes surfaced across the ten-draw forensics chain (all
+filed separately, not here):** trait-surface ownership (rolled-personality
+vs. set-values needing the prediction to own its whole read surface), a
+window functioning as its own decay clock (a legitimate threshold-crossing
+during a measurement window, not a bug), the idle deep-wander/starving-amid-
+plenty finding (IDLE-HOME-LEASH, Design backlog), and B38 (merged-pile eat
+serialization, its own future block).
+
+Sonnet tag-review: the mechanism itself never misfired across any of the ten
+draws — every red was root-caused to a scenario/fixture/prediction/window
+issue, never the stagger or the recovery logic.
+
+**★ OPUS FINAL SIGN-OFF: CLEARED (BUILD_REVIEW_LOG §R17, 2026-07-13).** Opus
+re-verified directly against the tagged commit: the safety floor is
+construction-enforced (`bastion.rs:279`'s clamp, the `0.0`-base `.min(base)`
+edge case specifically checked and correct); the colony-level acceptance
+ruling was applied correctly (SPIRAL aggregate-identical, straggler-eventually
+-eats correctly treated as telemetry not a gate); determinism holds against
+the PREEMPT flake specifically because the SIGNATURE match to the
+already-established AUTON-1 instance was the deciding evidence, not the rerun
+ratio alone. Row 50 → DONE, mechanism cleared.
+
+**★ WALK-BACK, SAME DAY:** on reflection the architect asked for the proper-
+evidence rerun anyway before calling the TAG fully closed — 1/3 was genuinely
+weaker than the established B22 protocol, and an Opus-final block shouldn't
+get a lower evidence bar than precedent just because the signature happened
+to match. The mechanism sign-off above stands (verified independently in
+code), but the tag's full closure is HELD pending a quiet-machine ×3 PREEMPT
+rerun the builder is running now. If clean or signature-matching 3/3 →
+CLEARED for real; if it reveals something new → re-opens immediately.
+
+**★★ THE REGRESSION, FOUND AND RESOLVED (2026-07-14).** The quiet rerun did
+exactly what it was asked to: 0/3 PASS, all three BYTE-IDENTICAL — a genuine
+deterministic finding, not scheduling noise, and on a DIFFERENT assert than
+the known flake. `preempt_hover_silent` (which had been TRUE at the AUTON-1
+gate) flipped FALSE under AUTON-2. The loaded gate-box's timing noise had
+been producing the familiar `endure_dug` flake AND masking this second,
+genuinely deterministic failure behind it on the SAME leg — a real B22
+misclassification, self-caught: the earlier gate-time call had matched the
+FAIL to the known-flaky LEG by name without diffing which FIELD actually
+failed. General rule now registered: classify by failing field, not leg
+name — the same leg can carry a genuinely flaky assert and a genuinely
+broken one simultaneously.
+
+**Diagnosis (read-only throughout, both findings confirmed by direct
+measurement, not theory):**
+- **What the assert protects:** `preempt_hover_silent` is B7-2's anti-thrash
+  hysteresis companion — set rest to `0.21` (one notch above the interrupt),
+  tick 600, assert zero preempt attempts fire. It guards against band-edge
+  preempt-flicker/attempt-spam. Critical disambiguation the builder
+  specifically checked before reporting severity: "hover" here means the
+  METER hovering at a threshold — a name collision with the unrelated R3/
+  FR15 physics-hover/`stuck_watch` class, not a shared surface. The assert
+  reads only the attempts counter; `no_embeds`/`CENTER_NET` stayed green in
+  every quiet run. Zero stuck-economy or safety surface.
+- **The regression mechanism:** the live base interrupt is unchanged (`0.2`,
+  verified in both code and `bastion_mood.ron`); the colonist's roll is
+  unchanged (same seed, this exact assert was green at the AUTON-1 gate);
+  therefore by elimination the only thing that moved is `stagger_interrupt`
+  itself — confirmed directly, not inferred, by the sim's own threshold
+  comparison measuring this colonist's effective rest threshold as strictly
+  `>0.21` (bracketed to `0.21–0.30`, consistent with a Neurotic-only or
+  Craft+Tradition-negative roll). The fixture's hardcoded `0.21` predates
+  per-colonist thresholds by three blocks; the preempt firing at `0.21` is
+  CORRECT stagger behavior (an anxious colonist rests earlier), not a bug.
+
+**Architect ruling:** test-only fixture code, Sonnet-tier — no full Opus
+re-pass needed (the mechanism itself, already reviewed, is untouched and
+behaving as specified). Approved a small, harness-only fix.
+
+**The fix (`bastion-harness/src/main.rs`, +21/−2, two hunks):** the fixture
+colonist's Craft/Tradition values are zeroed (isolating temperament as the
+only variable), its temperament is read via `bastion_colonist_temperament`,
+and the hover-phase threshold is computed via the mechanism's OWN public
+`stagger_interrupt(0.2, &vals, consc, neur)` — no mirrored/duplicated math —
+landing in `{0.16, 0.20, 0.24}` depending on temperament (the two opposing
+terms cancel when both traits roll true, coinciding with neither-true's
+`0.20`). The hover level becomes `eff_rest + 0.01`, restoring the original
+fixture's exact intent (band-edge-plus-one-notch) relative to the colonist's
+REAL edge instead of a stale flat one. Cross-phase safety was explicitly
+checked, not assumed: the endure force (`0.15`) sits below the minimum
+possible edge (`0.16`) and the wedge force (`0.1`) below all three — every
+other phase in the same scenario keeps firing correctly for every possible
+temperament roll. Diff reviewed and approved by both Sonnet and the
+architect before building.
+
+**Closure evidence, all conditions satisfied:** PREEMPT quiet ×3 with the fix
+= PASS/PASS/PASS. UNIT 30/30 (the stagger floor pin included). SPIRAL
+re-verified via TWO separate ×2 draws: the first came back run1-fully-green/
+run2-one-field-flip (`spiral_stagger_split`, on code the fix does not touch,
+matching an already-documented pre-existing ARCH-003 sensitivity from the
+original ten-draw forensics chain — correctly NOT reclassified as a
+regression, per the same diff-the-field discipline just re-learned); a
+second confirmatory ×2 was requested anyway, given SPIRAL is the block's own
+named E1 gate scenario, and came back fully green both runs, every field,
+identical outcome JSONs.
+
+**Commits:** the fixture fix landed solo as `b0b7016d89` ("AUTON-2 closure:
+threshold-aware PREEMPT hysteresis fixture") — own-commit discipline, kept
+separate from HIST-1's own unparking commit that followed on top.
+
+**★ OPUS SIGN-OFF FULLY STANDS, NO RETRACTION.** The floor/recovery/degrade/
+determinism properties Opus verified against the tagged commit were never in
+question — this whole arc was a SEPARATE finding in a different assert,
+diagnosed, ruled, fixed, and closed entirely at the Sonnet/architect tier as
+directed. E1's mechanism is complete AND the tag is now fully closed.
+Row 50 → DONE, no caveats remaining.
+
+### bastion-block-HIST1 (574f401132, row 54, HIST-1 sub-block)
+Tap the rtsim event bus into the Chronicle sink — a real first emitter beyond
+Bastion's own two (CaveIn, SleptInBed). Self-verify+tag, CHEAP. Gate: 34/34
+all green FIRST DRAW, zero flakes, zero reruns needed — includes the fixed
+PREEMPT fixture running clean in-suite, a clean SPIRAL, and the CHRON-baseline
+recheck the parking checklist called for (HIST-0's own leg stays green with
+`ChronicleEvents` now live and registered).
+
+**Mechanism, exactly per the packet:** `ChronicleEvents` (`rtsim/src/rule/
+chronicle_events.rs`) is `ReportEvents`' SIBLING rule — same shape, same
+registration site — binding `OnDeath`+`OnTheft`, one `record()` call each,
+not a new capture mechanism. Death records `actors=[victim, killer?]` (the
+deed lands in BOTH figures' histories — the mood `thought_sum` and the future
+legends browser both filter by `actors.contains`), position from `wpos`,
+`Importance::Notable`, `Scope::World`, and deliberately NO witness gate
+(`Reports` keeps its own — gossip needs witnesses to spread, history doesn't
+need anyone watching to have happened). Theft records `[thief]`, site+pos.
+Same underlying event, two independent sinks; `Reports`' existing behavior
+stays byte-untouched.
+
+**Verification (`--chronicle-capture-scenario`, leg 34, 2/2):** one death
+driven through the REAL pipeline (the BED corpse-probe's kill hook → the
+server's actual death event → rtsim's `OnDeath` → both sinks, not a synthetic
+shortcut) produces EXACTLY one Death entry (delta-baselined against whatever
+existed before), `actors` length exactly 1, AND `Reports` growing too — the
+regression-free half asserted directly, not assumed from the diff. One theft
+driven through the REAL emission path (`bastion_emit_test_theft` →
+`hook_pickup_owned_sprite`, vanilla's own existing hook, not a new one)
+produces exactly one Theft entry with position set. Conservation held across
+a 300-tick settle window (one event in, one record out, no dupes, no drops).
+New read-only probes: `bastion_hist1_probe`, `bastion_emit_test_theft`.
+
+**The parking story, worth keeping on record:** this block was written during
+AUTON-2's own verification window under the architect's write-only condition
+(don't build against the tree while another gate runs). That condition
+self-sharpened mid-fill when the builder realized a registered `Rule` is LIVE
+BEHAVIOR at every rtsim boot — "don't run cargo for it" wasn't actually
+sufficient, since the code itself changing what OTHER scenarios observe once
+compiled matters regardless of whether cargo runs specifically for it. Kept
+fully OUT of the tree for the whole AUTON-2 arc as a result (memory-banked as
+a corollary to the no-cargo-during-gate rule), restored via its own written
+checklist once both AUTON-2 tags landed, compiled first-try, verified 2/2
+first-try.
+
+**Coverage note:** Death now has BOTH a live emitter and existing thought/
+affinity rows (fully covered end-to-end). Theft has a brand-new live emitter
+but NO thought/affinity rows yet — a fresh instance of exactly the coverage
+gap row 54's own linked note describes; left for whoever extends
+`bastion_value_affinities.ron`/`bastion_thoughts.ron` next, not solved here.
+
+HIST-2 (the live feed panel) stays explicitly out of scope — it needs the
+unbuilt B9 HUD + client sync, neither of which exist yet.
+
+Sonnet tag-review: clean, no findings, exactly the packet's shape delivered
+end-to-end through real pipelines rather than synthetic shortcuts. Row 54 →
+DONE (HIST-1; HIST-2 remains TODO, blocked).
+
+### bastion-block-AUTON3 (5e9ed6385f, row 51) — THE AUTONOMY ARC CLOSES (48-51)
+Trait-modulated drive-urgency SCORING + `last_scores` as server-side data,
+self-verify+tag (architect-confirmed tier). Tag rides the closure commit per
+the AUTON-0 precedent: mechanism `c09933e463` + the storm fixes
+`5e9ed6385f`. **Rows 48-51 — the whole autonomy arc — ship end to end.**
+
+**Scope, exactly as narrowed at packet-craft:** trait-modulated SCORING
+(which drive WINS the arbiter's pick — distinct from AUTON-2's threshold-
+stagger, which governs WHEN a need becomes urgent) plus `last_scores` as
+probe-readable data, the same "build the data before the display exists"
+precedent B7-0 set ahead of B9's HUD. Explicitly NOT built, per the
+narrowing: UI-4's actual display (now next in line, priority-bumped), DF-
+POLICY's weight-biasing, and Ben's live-tuning pass — all real, all correctly
+deferred to their own dependencies landing.
+
+**Mechanism:** `modulated_urgencies(base, values, adventurous, worried,
+sociable, introverted) -> (work, flee, idle)`, pure and RNG-free. One VALUE
+plus one PERSONALITY-trait pair drives each axis: Wealth → Work, scaling into
+`[0.4, 0.6]`; Glory + Adventurous + Worried → Flee, scaling into
+`[0.85, 1.15]` then floored at `0.8`; Kin + (Sociable or Extroverted) +
+Introverted → Idle, scaling into `[0.07, 0.13]`. Input-swapped at the
+arbiter's two existing `last_scores` write sites only — selection,
+commitment, and hysteresis machinery stayed completely untouched, the
+packet's stop-line held throughout. The axes (Glory/Wealth/Kin) are
+deliberately DISJOINT from the stagger's own axes (Craft/Tradition) — the two
+trait-modulation systems compose independently rather than fighting over the
+same value reads.
+
+**★ The drive-order safety guard, unit-pinned exact (the load-bearing
+property flagged at packet-craft):** the bravest possible colonist's Flee
+urgency (`0.85`, the floor) still exceeds the greediest possible colonist's
+Work urgency ceiling (`0.6`) — a margin of `0.25`, tested directly, not
+eyeballed. The `.min(base)` clamp gives zero-preservation: a colonist with no
+signal on an axis (a `0.0` baseline) can never be modulated UP into
+inventing urgency that wasn't there — the third application of the same
+recreation-zero discipline B7-2's stagger already established. Idle's
+ceiling (`0.13`) stays below Work's floor (`0.4`) for every possible roll,
+preserving AUTON-0's own liveness contract (a colonist never gets stuck
+unable to pick Work over Idle) unconditionally. `UNIT` 31/31.
+
+**Verification (`--auton3-scenario`, leg 35, 2/2):** two colonists rolled
+with DESIGNED-OPPOSITE traits (colonist A: brave/greedy/loner, +50/+50/−50;
+colonist B: the mirror), work painted so the Work axis actually scores.
+`last_scores` recorded matched the mechanism's OWN prediction (computed via
+its public fn, not re-derived by the scenario) to the exact f32 BIT — proving
+E2's legibility claim ("colonists visibly differ from the same state")
+directly and quantitatively, without needing any UI to exist yet. Recorded
+Flee stayed `0.0` for both colonists (zero-preservation observed live, not
+just asserted); the safety-floor guard was sampled against the actual live
+brave roll, not a synthetic worst case; ×2 identical.
+
+**THE GATE STORM, root-caused in one cycle, not classified away:** the first
+35-leg draw came back 30/35 — five reds at once (`CK`, `ZONE`, `BED`, `B73`,
+`HAULPIN`). Every one of the five was already an established timing-sensitive
+leg, failing in its OWN historically-documented shape, and CRITICALLY: zero
+scoring/pick/urgency asserts failed anywhere in the entire suite. The
+drive-order math itself was proven roll-invariant by construction before any
+further digging — the floor/ceiling separations hold in every direction, so
+five simultaneous REAL behavioral regressions from the modulation logic
+would have been arithmetically impossible. Root cause, confirmed: the
+diff deferred the rtsim NPC lookup lazily (correct) but left the READ-GUARD
+ACQUISITION itself hoisted to the top of the per-colonist arbiter pass,
+firing every tick (~30/s) instead of the pass's historic ZERO — a suite-wide
+lock-acquisition CADENCE change against the rtsim thread, exactly the
+ARCH-003-sensitive scheduling class (RUN-0's SystemData lesson's sibling, one
+level closer to the metal). **Filed as B39.**
+
+**Two fixes, cleanly separated causes:** (1) the guard is now acquired ONCE
+per selection tick (`select_tick.then(...)`, mirroring the mood-pass's own
+established cadence pattern) with an ad-hoc acquisition only in the rare
+flee-fire branch — restores CK/ZONE/BED/B73/AUTON3 to green. (2) HAULPIN's
+own remaining red, re-examined via the field-not-leg-name discipline rather
+than assumed to share fix (1)'s cause: `emissions` came back 2/3/3 across
+three identical-binary reruns — TIMING-MARGINAL, not truly nondeterministic.
+Its `--haulpin-scenario` window (240 polls) fit its 3 strike-drop cycles
+(~25s each) with ZERO headroom; the original tag-time draw happened to land
+exactly on 3, but any ordinary scheduling breath could legitimately drop it
+to 2. Widened structurally to 480 polls (2× headroom) — fixture-only, the
+HAULPIN mechanism itself untouched. **Filed as B40 — the fourth confirmed
+instance of this exact "deadline-shaped assert needs structural headroom"
+class** (after SPIRAL's recovery window and SPIRAL's floor window); a
+consistency-sweep across the harness's remaining windowed asserts was
+proposed and queued as master-list row 50.8, low-priority housekeeping.
+
+Closure draw: 33/35, all five storm legs verified green in-suite; `LOD1`/
+`BED` field-classified per B22 (`LOD1`'s `rounds_ok` = its own pre-existing
+registry class, 2/3 rerun; `BED`'s `b_alive_after_kill` = the pre-existing
+B7-1 kill-race field, 3/3 rerun) → effective 35/35. `UNIT` 31/31. Scenario
+×2 byte-identical.
+
+**Files:** `common/src/comp/bastion.rs` (`modulated_urgencies` +
+`FLEE_URGENCY_FLOOR` + the unit pin), `server/src/bastion_jobs.rs` (the two
+input swaps + the once-per-selection-tick guard fix), `server/src/lib.rs`
+(2 new probes: `bastion_colonist_last_scores` — the exact surface UI-4 will
+read — and `bastion_colonist_personality4`), `bastion-harness/src/main.rs`
+(the scenario + arg + dispatch + HAULPIN's widened window). Commits:
+`c09933e463` (mechanism) + `5e9ed6385f` (storm fixes, tag).
+
+Sonnet tag-review: clean. The storm forensics are exactly the standard this
+whole session has held to — proved the new mechanism innocent BEFORE
+searching elsewhere, root-caused rather than pattern-matched to a known
+class, and separated two co-occurring causes instead of assuming one fix
+would explain both reds. **Rows 48-51 → DONE. The autonomy arc — the "plays
+itself" promise from AUTON-0's own framing through E1's death-spiral
+prevention through this block's legible individuality — ships complete.**
+Deferred riders, all already tracked elsewhere: UI-4 (next, priority-bumped),
+DF-POLICY, Ben's tuning pass, B8's eventual live Flee (the safety guard is
+already waiting for it), and the small follow-ups (49.1, 50.7, 50.8).
+
+### bastion-block-UI4 (e28cc2b7d0, row 62) — THE ARC BECOMES VISIBLE
+The unit inspector panel, Ben's priority bump — Sonnet-tier, the wire-
+plumbing scope expansion pre-approved through the packet's own check-in
+condition. Gate: 34/35 first draw, `BED`'s `b_alive_after_kill` field-
+classified per B22 (the pre-existing B7-1 kill-race class, confirmed by the
+SAME field/classification the last two gates have both hit — 3/3 rerun) →
+effective 35/35.
+
+**What it delivers:** click a colonist → a live panel showing needs meters,
+mood, personality traits, the current `Drive`, and AUTON-3's `last_scores`
+(Work/Flee/Idle numbers), refreshing at ~1Hz. This is the FIRST display
+surface for everything rows 44-51 built — mood/needs (B7), values/
+personality (B-AG3), the arbiter and its drives (AUTON-0/2/3) all become
+inspectable rather than only inferable from behavior.
+
+**The wire plumbing, exactly as approved at the check-in:** two tail-
+appended variants, shipped together in one commit (the B30 discipline) —
+`ClientGeneral::BastionInspect { target: Uid }` and `ServerGeneral::
+BastionInspectInfo { target, payload: Option<BastionInspectPayload> }`. The
+server side uses the SAME deferred pattern `bastion_spawn` already
+established: requests are gathered during the parallel join, resolved and
+answered in the sequential post-join drain — payload-source reads never
+happen mid-join. Notably, the rtsim read guard is acquired at REQUEST
+cadence (once per actual inspect request, not once per tick) — B39's lesson
+from AUTON-3's own gate storm, applied proactively here rather than
+re-learned the hard way a second time. The payload itself is pure
+re-packaging of the ALREADY-EXISTING probe reads (`needs_mood`+
+`personality4`+`last_scores`+`temperament`), now keyed by `Uid` instead of
+name — zero new data-gathering logic anywhere. A non-colonist or stale
+target resolves to a `None` payload (the no-crash invariant, not an error
+path). `SystemData` grew by 5 READ-only storages on the `msg::in_game`
+system — the dispatcher-reshuffle class (B22's RUN-0 lesson) — declared
+explicitly and suite-verified rather than assumed harmless.
+
+**Client:** a latest-wins reply cache plus a getter, nothing fancier needed
+for a single-target on-demand query. **Voxygen:** `bastion_sync_inspector`
+reuses `bastion_pick_entity`/`bastion_select_set` exactly — no second
+selection mechanism built alongside the existing one — refreshing
+immediately on target change and holding at ~1Hz otherwise, clearing
+cleanly on deselect, multi-select, or a non-colonist pick. One plain-text
+block rendered above the existing selection-info line, following the
+established `selected_info` widget pattern. Placeholder-first throughout —
+zero new art, per the standing asset-lane rule. Read-only end to end: no
+sim-state write anywhere in the whole path.
+
+**Verification:** `VOXCHECK` green (the client half genuinely compiles, per
+the B30 discipline this whole cluster now enforces structurally); the
+34/35-effective-35/35 suite gates the server half. The VISUAL half is
+explicitly a Ben-eyeball item, not gate-able — flagged to the Play-Tester
+lane for the next `BEN-TEST-CHECKLIST` entry on its following client build:
+click a colonist → panel appears; click ground or multi-select → panel
+clears; force a drive switch → watch the W/F/I numbers actually move.
+
+**Files (9, +284):** `common/src/comp/bastion.rs` (the payload struct),
+`common/net`'s wire pair + verify arms, `server/src/client.rs` (the stream
+arm) + `server/src/in_game.rs` (the deferred handler), `client/src/lib.rs`
+(the reply cache), `voxygen/src/hud/mod.rs` + a new `hud/bastion.rs` +
+`session/mod.rs`.
+
+Sonnet tag-review: clean, no findings — the scope expansion was disclosed
+and pre-approved rather than built silently, the deferral pattern and
+request-cadence guard are exactly the right reuse of AUTON-3's own lesson,
+and the read-only/no-crash/placeholder-first invariants all held throughout.
+Row 62 → DONE. FLAT-TEST-ARENA (row 50.5) is next per Ben's reroute order;
+B8 resumes behind it.
+
+### bastion-block-CHOPFELL (50aff8808a, row 51.6) — base-cut → whole-tree timber
+Ben-direct design, self-verify+tag with a targeted-Opus-at-tag on three named
+safety points. Gate: 37/37 CLEAN — every leg green, including the one that
+took real forensic work to get there (`BED`).
+
+**Mechanism:** `place_chop_cells` → `place_chop_fell` (`server/src/
+bastion_jobs.rs:1466`) — ONE base-cut job per tree instead of one per block,
+at the ground-rooted base specifically. The whole fell-set is FROZEN into
+`chop_fell_sets` (a `HashMap`) keyed by the job id, mirroring the B6-HAUL
+container-store / B7 BedSlot co-located-table shape exactly — reuse, not a
+new storage pattern. On completion: XP for the whole tree, the set pushed to
+`board.felling` (a `Vec`), then drained top-down one z-band per tick for the
+visual. Both callers updated (`in_game.rs:1037` player-paint, `lib.rs:1564`
+harness-hook); eviction wired into both `remove_job` AND `cancel_region` (no
+orphaned side-table entries on either exit path). `detect_trees` threads the
+base position through; `tree_fell_set`/the FR10 caps untouched, exactly as
+scoped.
+
+**Why the base-cut approach gives no-float BY CONSTRUCTION, not by luck:**
+the fell-set is sorted into a total order (z DESC, y, x) AT PLACEMENT TIME;
+the felling pass drains one z-band per tick, top-down; since the base
+(minimum z) sorts LAST, the remainder at every point in the drain is
+necessarily a contiguous, base-rooted top segment — a floating fragment is
+structurally impossible to produce, not merely untested. Bonus, free: this
+is also exactly what closes FR10's old floating-canopy residual, since the
+base is now always reachable and always the last thing removed.
+
+**Economy, exactly the design's pins:** a granularity refactor, not a
+rebalance — yield conserved (`CHOP_DROP` per Wood, unchanged), and per-Wood
+labor conserved (`threshold = CHOP_WORK_PER_BLOCK(1.0) × Wood`, so a bigger
+tree costs proportionally more, not a flat per-job cost). Proven, not just
+argued: a 9-Wood vs 3-Wood threshold ratio of exactly 3.0 measured at 2.95×
+via `cut_polls` telemetry (444 vs 1311) — deterministic, travel-free
+measurement, matching Ben's explicit hard requirement.
+
+**A genuine design-vs-code discrepancy, found and disclosed rather than
+silently "corrected":** the original design doc's stated reasoning — "leaves
+clear free in the existing model" — turned out to be factually WRONG about
+the CURRENT code (leaves already cost labor/XP as their own jobs today, they
+were never free). But the design's actual INTENDED economic outcome still
+holds under the new model, just for a different, correct reason: since
+canopy is most of a tree's cell count, a whole-tree fell now completes
+faster overall than the old per-block accumulation would have implied — same
+practical effect the design wanted, reached via the real mechanism rather
+than the design doc's mistaken premise. Worth keeping the discrepancy on
+record rather than quietly matching the design's wording.
+
+**The `BED` leg, the one real forensic effort in this tag — CHOP-FELLING
+fully exonerated, not just asserted clean:** first draws showed `BED` red on
+`bed_occupied_mid` (a DIFFERENT field than the historically-known
+`b_alive_after_kill` telemetry flake). Attribution, not assumption: BED run
+×5 at the PARENT commit (pre-CHOP-FELLING, `a6de03b44d`) came back 3P/2F —
+the flake existed BEFORE this block's diff, proving CHOP-FELLING did not
+introduce it. Structurally confirmed too: bed occupancy is set in the
+`ActiveJobState::Arrived` `RestAt` branch, which never reaches the threshold
+gate this block actually touched. **Filed as B42**: the scenario's single
+`assign_rest(&bn, bed2)` call can silently no-op (`let _ =` discards the
+`false`-when-busy return) against a LIVE arbiter that's already claimed the
+target by the time the scenario reaches that phase — a genuine race, not
+random noise. Fixed harness-side: re-assert the assignment every iteration
+(a safe no-op while busy, takes the moment the target idles, out-paces the
+arbiter's own 15-tick selection cadence at a 5-tick reassert) plus widening
+the window 240→480. Verified: 5/5 clean post-fix (was ~40-75% flaky).
+
+**Fixing that flake EXPOSED a second, rarer, genuinely different one —
+correctly separated rather than bundled:** with `occupied_mid` now reliable,
+a residual ~15%-alone (0/5 at the pre-fix parent, meaning it was MASKED by
+the dominant flake, not introduced by fixing it) case surfaced: the ultimate
+fail-safe correctly teleporting a below-grade colonist (z=392 vs 393) TWICE
+during bed-build, its own 60s delay eating into the scenario's early timed
+phases. The safety backstop DOES fire and DOES rescue the colonist — this is
+a CASE-003-class physics-embed timing cost, not an entombment failure. Filed
+separately as **B43 (`BED-STUCK-EMBED`)** via the standing Bug-Tester
+routing workflow, explicitly NOT bundled into this tag.
+
+**B6HAUL-WIDEN landed in the same commit bundle** (`a6de03b44d`): b6haul's
+own poll-window ceilings widened (the established 240→480-class fix,
+matching B40's shape) — fixing a marginal-window flake exposed by overall
+suite growth (b6haul is now the 11th-or-so sequential leg; by its turn,
+worldgen assets are cache-evicted and its cold-start runs slower against
+windows that were never retuned since row 34's origin). Unrelated to
+CHOP-FELLING's own logic, bundled purely because it surfaced during the same
+gate-storm investigation and shares evidence.
+
+**Targeted Opus-at-tag, requested on exactly the three points the packet
+named, no full re-review:** (a) no-float — held by construction as described
+above, live-measured (max-z monotone non-increasing, base-present-whenever-
+any-cell-present, both small and large trees). (b) ordering determinism —
+`sort_unstable_by` on a pure integer z/y/x total order, zero rng, zero hash
+iteration, drains a `Vec` by index; ×2 identity holds byte-identical. (c) the
+side-table's B22-class scheduling perturbation — checked clean: `chop_fell_
+sets`/`felling` are new `JobBoard` fields, NOT new `SystemData`/dispatcher
+storage (unlike RUN-0's class), and the BED attribution above is direct
+empirical confirmation the per-tick HashMap lookup doesn't perturb
+scheduling (the flake pre-existed at the parent, unchanged by this diff).
+
+Sonnet tag-review: clean. Genuinely thorough forensics on BED rather than a
+convenient flake-classify-and-move-on, a real design-vs-implementation gap
+disclosed instead of quietly smoothed over, and a newly-surfaced bug
+correctly separated from the tag that happened to expose it. Row 51.6 →
+DONE, pending the targeted Opus pass on the three named points. UI-4.1 (row
+62.1) is next.
+
+### bastion-block-UI41 (f6ac4c8bc7, row 62.1) — the arc gets a world-space marker
+The highlight ring on selected colonists, self-verify+tag, CHEAP. No server/
+wire/harness change at all — pure voxygen render, so VOXCHECK alone is the
+code-level gate (no scenario gate needed, same shape as the Farm-palette
+fix).
+
+**Mechanism:** mirrors `bastion_sync_colonist_markers` exactly — the SAME
+proven per-entity `DebugShape` sync pattern, now keyed on `bastion_selected`
+instead of the colonist-marker set (`HashMap<Entity, DebugShapeId>`, add/
+set_context/remove_shape). Since no dedicated ring primitive exists in the
+`DebugShape` enum (only `Line`/`Cylinder`/`CapsulePrism`/`TrainTrack`), a
+flat wide `Cylinder` (radius 0.7, height 0.05) at the colonist's feet
+approximates a ring — a deliberate reuse of an existing primitive rather
+than adding a new `DebugShape` variant for one feature. Color `[1.0, 0.85,
+0.3, 0.85]` (warm gold), distinct from the existing cyan overhead colonist
+marker so the two don't visually collide. Tracks the selected colonist's
+position every frame (not a one-shot draw at select-time); clears on
+deselect, multi-select, or a non-colonist pick — the exact same trigger set
+UI-4's own panel already uses. Leaving overseer mode drains markers and
+rings together.
+
+**Status, honestly framed per B41's own lesson:** VISUAL-UNVERIFIED until
+Ben actually eyeballs it — VOXCHECK proves the code compiles and the render
+call is wired correctly, not that it looks right or reads clearly in
+practice. A Ben-checklist item was routed via the architect to the
+Play-Tester: enter overseer, click a colonist → a gold ring appears under it
+and follows it; deselect → ring gone; box-select multiple → a ring under
+each. This ships in the SAME combined voxygen rebuild as the ARENA and
+Farm-palette fixes, so one Play-Tester build + one Ben session verifies all
+three at once.
+
+Sonnet tag-review: clean, small, exactly the scope asked for. Row 62.1 →
+DONE (implementation confirmed; real-world visual confirmation still
+pending, tracked honestly rather than assumed).
+
+**Sequencing note:** CHOP-FELLING (already in flight when the Ben-directive
+resequence landed) finished before ARCH-003-INTEGRATE rather than after;
+ARCH-003-INTEGRATE is architect-directed rather than builder-self-initiated,
+so the builder proceeded to UI-4.1 in parallel while that integration step
+waits on the architect specifically. EXHAUSTIVENESS-ASSERTS (row 51.52) is
+next, now folding in a THIRD instance of the Farm-bug class the work itself
+surfaced: `DesignationKind::Bed` also has no `ToolMode::Designate` entry —
+confirmed a real bug (not intentional auto-placement) by checking the code
+directly, ruled to be fixed as part of the same exhaustiveness pass rather
+than a separate decision.

@@ -711,6 +711,9 @@ want to inhabit it more intimately.
 
 ## 4. Open watch-items from build sessions (track, don't lose)
 
+### DEFERRED HARDENING — figure manifest load: bubble `load_spec()` error instead of `.unwrap()` (B9/B18 panic-path) — 2026-07-12
+**DEFERRED by the architect (roadmap-first, Ben); revisit when figure code is next touched or in a dedicated panic-path pass — NOT now.** `voxygen/src/scene/figure/cache.rs` `FigureModelCache::new` does `<Skel::Body as BodySpec>::load_spec().unwrap()`, so a `.ron`-manifest ↔ `#[repr(u32)]` `Species`-enum mismatch (or any manifest load error) HARD-PANICS the whole client. The code's OWN comment flags it: *"NOTE: It might be better to bubble this error up rather than panicking."* **Hardening:** bubble the error → log + skip/placeholder the offending figure so a bad/missing manifest degrades gracefully instead of crashing the client. **Why deferred, not now:** the B18 process rule (a voxygen-launch + `/spawn`-render smoke in every new figure/body/species done-when) covers dev-time DETECTION; this error-bubble is the defense-in-depth that makes it non-fatal in the wild — a nice-to-have, not a roadmap blocker. **Surfaced during:** B18 curation (the night_horror interim exe panicked `cache.rs:325` `NoSuchEnumVariant` loading `biped_large_central_manifest`). Refs: BASTION_COMMON_ISSUES **B18** (headless-gate ≠ client-render) + **B9** (panic/unwrap path).
+
 ### 3z. Textures & surfaces — the material framework (what "texture" means in a per-voxel-color engine)
 **The core fact:** Veloren has NO UV-mapped textures on models or terrain — it's **per-voxel color**
 throughout. Models carry palette colors (census: per-file RGBA); terrain blocks are colored by worldgen
@@ -1350,3 +1353,122 @@ aesthetic gate, then multi-angle + diff. Not now — mapped.
 
 *End. This is the catch-all so nothing discussed-but-not-placed gets lost. Move items OUT of here into the
 main doc / a block as they get a real design pass.*
+
+---
+
+## §-SECTION RECONCILE — CONSUMED-BY the designed corpus (architect-authorized bookkeeping, 2026-07-10)
+
+**Purpose:** this catch-all's own closing line asks that items be moved OUT / annotated as they get a real
+design pass. The GENERAL-DESIGNER run designed ~26 topics; this table marks which §-sections are now **CONSUMED**
+(designed — consume the design doc, don't re-derive from the sketch here), **PARTIAL** (partly designed / split),
+**PIPELINE/BUILT** (the asset-lab or a built block owns it), or **STILL-OPEN** (deferred / not yet designed).
+When reading a §-section below, check its row FIRST — a CONSUMED section's authoritative form is its design doc.
+
+| § | Topic | Status | Designed in / owned by |
+|---|---|---|---|
+| **1a** | Hazard Events engine | **CONSUMED** | `HAZARD-EVENTS-design.md` |
+| **1b** | Trigger→Link→Effect (traps/mech/operable) | **CONSUMED** | `DF-MECH-design.md` (DF-MECH/TRAP/OPERABLE) |
+| **1c** | Staged voxel removal | **PARTIAL** | a B5 build-note; folded into DF-DIG-VERBS + the timber HazardEvent |
+| **2** | Deferred polish (tree-fall, overlays, slice QoL) | **PARTIAL/BUILT** | overlays/slice → B1.8 (built); faked tree-fall → HAZARD-EVENTS aftermath |
+| **3a** | Fluid / water physics | **CONSUMED** | `DF-FLUID-design.md` (experimental-flag + static fallback; DF-MAGMA = sibling) |
+| **3b** | Dialogue & Voice | **PARTIAL** | dialogue/event box → `UI-DIALOGUE-SELECTION-design.md`; voice STILL-OPEN |
+| **3c** | Autonomous building (template catalog) | **CONSUMED** | `BUILD-FRAMEWORK-design.md` |
+| **3d** | Time controls / fast-forward | **PARTIAL** | flagged as the #1 meta-verb in `UI-MISSING-VERBS-audit.md`; needs a build, not a pass |
+| **3e–3m** | Asset pipeline / component / delegation / validation / debug / animation-how | **PIPELINE (live)** | the asset-lab (`ASSET_SYSTEM_GUIDE.md` + the pipeline) — built/ongoing, not a design topic |
+| **3f** | Autonomous civilizational advancement (tech) | **STILL-OPEN** | DF-KNOWLEDGE — Tier-3 defer |
+| **3h** | Embodiment spectrum (RPG modes) | **PARTIAL** | the hand/embody side → GOD-HAND + UI-1 skillbar-swap; B12 the block STILL-OPEN |
+| **3n** | Colony founding / embark | **CONSUMED** | `FOUNDING-EMBARK-DESIGN.md` |
+| **3o** | Headless harness | **BUILT** | B0 |
+| **3q** | Control spectrum generalizes | **CONSUMED** | `BASTION-SYSTEM-FRAMEWORKS.md §1` (the master pattern; referenced by every pass) |
+| **3r** | Custom-creature capability | **PARTIAL** | husbandry species → DF-LIVESTOCK; bosses/god-companion → DF-BEAST (defer) |
+| **3s** | World connective tissue (roads/bridges/territory/nations/sea) | **PARTIAL** | intra-colony roads → BUILD-FRAMEWORK/§3x; sea lanes → SHIPS-NAVAL; world faction-network → Divine-Politics bible |
+| **3t** | Deep-research world-sim frameworks | **CONSUMED** | `BASTION-SYSTEM-FRAMEWORKS.md §8` (the steal catalog) |
+| **3u** | Action animations (native-vs-custom) | **CONSUMED** | the per-verb animation line-items across passes + `GOD-HAND-design.md §2` |
+| **3v** | 3D zones + mining framework | **CONSUMED** | DF-ZONES + DF-DIG-VERBS + DF-CAVERN-GEOLOGY + `WORLDGEN-CAVES-ORE-density-investigation.md` |
+| **3w** | Colony boundary | **PARTIAL** | the boundary overlay → `UI-MISSING-ELEMENTS-audit.md` (overlay-layer platform); the sim STILL-OPEN |
+| **3x** | Selection / site-prep / road building | **CONSUMED** | `BUILD-FRAMEWORK-design.md` (site-prep = place→PREP→build; roads) |
+| **3y** | Nature & environment sim | **PARTIAL** | §3y.A wildlife/population → DF-LIVESTOCK (shared engine); crop lifecycle → DF-FARM; weather/temp → DF-TEMP/DF-BIOME-FX (defer) |
+| **3z** | Textures / materials framework | **PARTIAL** | the material axis referenced by DF-QUALITY + DF-GEOLOGY; a full materials pass STILL-OPEN |
+| **5** | Design-pass debts (the DF-* checklist) | **CONSUMED** | cleared by the run — see `DESIGN_PASS_LOG.md` DONE entries |
+
+**STILL-OPEN (deferred, per the Tier-3 guard — design at their build era, not now):** DF-KNOWLEDGE (§3f), the
+weather/temperature/biome-fx nature tiers (§3y remainder), a full materials/textures pass (§3z), voice (§3b),
+B12 embodiment as a block (§3h), + the Tier-3 epics in the ledger (VILLAIN/NIGHT/BEAST/ECON/GUILD/ART/FESTIVAL/
+MINECART/RECLAIM/HYDRO). DF-MAGMA = design alongside DF-FLUID when attempted.
+
+*Reconcile by the GENERAL DESIGNER (architect-authorized), 2026-07-10 — so this catch-all stops drifting into a
+stale duplicate of the designed corpus. Authoritative form of a CONSUMED section = its design doc; this sketch
+is history.*
+
+## TREE STRUCTURAL INTEGRITY / COLLAPSE (Chop Phase-2, deferred) — 2026-07-10
+**Ben (noted-for-later):** *"any tree without a base to the ground should collapse."* Deferred Phase-2 of the CHOP
+redesign (readme/CHOP-REDESIGN-design.md §6). Phase-1 (2D-area mark + fell whole tree + drop wood + strip z-levels)
+ships WITHOUT it.
+- **Concept:** the sim continuously enforces *"a tree/segment with no ground-connected base ⇒ COLLAPSE"* (remove +
+  drop its wood, not float) — the reactive generalization of "fell the whole tree" (catches partial chops, cave-ins,
+  explosions that sever a trunk).
+- **Reuse (grounded):** the engine already propagates `block_updates` + re-validates sprite attachment on every
+  terrain change (`common/state/src/state.rs:675-784`) → the natural TRIGGER hook (no new tick loop). The existing
+  `TREE-FELLING-design.md` already has the top-down fell-order + NO-FLOAT invariant (bounded trunk-rooted flood-fill)
+  — Phase-2 is its reactive form + reuses that machinery + the Phase-1 whole-tree flood-fill. NO general
+  unsupported-terrain-falls mechanic exists (general collapse = net-new physics).
+- **Two scopes priced:** (A) ★ TREE-SCOPED collapse (RECOMMENDED, bounded/buildable) — on any Wood/Leaves removal,
+  flood-fill the affected component; no path to a ground-rooted trunk base ⇒ collapse+drop; reuses Phase-1 flood-fill
+  + CHOP_DROP_ITEM + the block_updates hook. (B) GENERAL unsupported-collapse (a full structure-integrity physics
+  feature — perf-heavy, changes mine/build semantics; a separate big feature, NOT chop-phase-2).
+- **Recommendation:** Phase-2 = (A); (B) is a distinct large feature to price on its own if Ben wants world-wide
+  structural physics. Ties to [[CHOP-REDESIGN-design]] + [[TREE-FELLING-design]].
+
+## WORLD STRUCTURAL INTEGRITY / CAVE-INS (distinct future feature — NOT specced) — 2026-07-10
+**A world-scale structural-physics feature, priced on its own when that frontier nears** (architect-endorsed
+2026-07-10 as separate from the bounded CHOP Phase-2 tree-collapse). **Do NOT spec now** — this line exists so it's
+discoverable later.
+- **Concept:** GENERAL unsupported-collapse — any terrain voxel with no support-path to ground falls. Enables
+  **DF-style cave-ins** (mine out a pillar → the ceiling caves), **unsupported player/colony builds falling**, and
+  emergent collapse drama.
+- **Why it's a distinct feature (not a chop sub-phase):** it's **world-wide structural physics** — a support scan on
+  block changes across arbitrary terrain (**perf-heavy**) and it **changes MINE/BUILD semantics** (mining needs
+  support planning; builds need footings). That's a large gameplay + performance commitment that earns its own
+  priced feature doc.
+- **Reuse seed (already found):** the engine's `State::apply_terrain_changes` → `block_updates` propagation +
+  per-terrain-change revalidation hook (`common/state/src/state.rs:675-784`) is the natural trigger — the SAME hook
+  the bounded tree-collapse (CHOP Phase-2) uses, generalized from tree-blocks to all terrain. The tree-scoped
+  collapse is effectively the bounded pilot of this.
+- **Ties:** [[CHOP-REDESIGN-design]] §6 (the tree-scoped bounded cousin) · [[DF-CAVERN-GEOLOGY-design]] (the Breach /
+  dig-too-deep hazard, cave-in-adjacent) · the §1a Hazard-Events engine. Revisit when structural-hazard gameplay
+  reaches the frontier.
+
+**★ ELEVATED (2026-07-11): the above is now an ACTIVE design pass → readme/WORLD-STRUCTURAL-INTEGRITY-design.md.**
+Ben promoted it ("both, but THINK HARD about the cave-ins"): greenlit the bounded reach-fix NOW (mine floating blocks
+from an adjacent cell) + a deep design for cave-ins. See the design doc; entombment-tension resolved (the teleport
+fail-safe ENABLES cave-ins — eject-and-injure, never bury-stuck). Reviewer-feasibility-gated before build.
+
+## COLONIST LOCOMOTION SMOOTHNESS (Ben wishlist, future-tier) — 2026-07-11
+Colonists sway/over-turn instead of walking straight (functional, unnatural; fixing it likely also improves pathing
+EFFICIENCY — same root). Diagnose: (a) jittery re-pathing [incremental A* resets ~every 2 blocks → heading churn —
+most likely], (b) over-correcting steering, (c) missing turn/walk-blend anim. Prior-art to reuse: PATH SMOOTHING
+(funnel/string-pulling — straightens zigzag = smoother AND shorter), Reynolds STEERING (arrive/seek + damping),
+motion-matching-lite LOCOMOTION anim. Survey Veloren's skeletal anim first. Full detail: DESIGNER-SUGGESTIONS §15.
+Banked; route to a design pass when it reaches the frontier.
+
+## RIMWORLD-STYLE DISCRETE MINING (stand-and-mine) — Ben wishlist, future-tier — 2026-07-11
+Agents run back-and-forth repositioning mid-block (looks weird); Ben wants RimWorld stand-and-mine (walk to an
+adjacent mining spot, STAND STILL, mine to completion, next). Prior-art = RimWorld mine-job (one job/cell, no
+mid-mine reposition). Diagnose: (a) claim re-scoring each cycle, (b) stance not committed through COMPLETION (B15
+commits at claim — verify held to done), (c) locomotion sway (§15). Fix likely = commit the mining stance for the
+whole block-dig (don't re-path until done/failed) — same sticky-commitment family as B15/coordination. Full: DESIGNER-
+SUGGESTIONS §16.
+
+## DYNAMIC GRASS / VEGETATION REGROWTH — Ben wishlist, future-tier — 2026-07-11
+Exposed/scarred dirt (cleared/placed block) should regrow grass from adjacent grass + respawn biome 3D flora over
+time (heal mining/build scars into a living world). Prior-art = Minecraft grass-block spread (light-gated CA random-
+tick), colony-game regrowth. Reuse: Veloren grass sprites + biome flora; trigger off the apply_terrain_changes
+block_updates hook (shared w/ cave-in/tree-collapse) + a slow ambient sweep. ★ PERF+DETERMINISM crux: bound to near-
+colony/recently-disturbed (a world-wide grass CA is expensive), terrain-only + order-independent. Full: DESIGNER-
+SUGGESTIONS §17.
+
+## VANILLA-DIALOGUE RESKIN (grim-tender NPC barks) — Ben flag, designer-lane, future-tier — 2026-07-11
+night_horror renders + fights live ✅ (pipeline win), but the NPC reaction bubble ("Oh my goodness!") is still VANILLA
+Veloren dialogue — off our grim-tender voice. Reskin the vanilla NPC reaction/combat barks (the npc-speech-* keys)
+into our voice, culture-flavoured — extends BASTION-LORE-CONTENT §E (coordination barks) to the general NPC bark
+vocabulary. Content-only, zero code/art. Full: DESIGNER-SUGGESTIONS §18. Bundle with a dialogue-content pass.

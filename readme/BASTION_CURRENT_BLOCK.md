@@ -1,43 +1,43 @@
 # Project Bastion — Current Build Block
 
 ## ⛔ BUILDER HARD RULES — apply to EVERY block, no exceptions
-- **NO SUB-AGENTS, EVER.** Never spawn `Task` / `Agent` / `Workflow` or anything that starts a second agent context — they are massive token dumps and are **permanently BANNED**. Do 100% of the work in your own single context.
-- **Direct work only:** read this packet → grep/read only the files you need → write the code → run the gate. No delegation-by-spawn.
-- **Only offload allowed:** a long review → the **Sonnet reviewer SESSION** via `send_message` (`local_5f3f9b01`); the safety gate → the **Opus reviewer session**. Never a spawn.
-- **Never idle-wait:** pipeline other code while a build/test runs. **Low token:** terse bookkeeping (append, don't re-narrate); don't reread the whole roadmap.
-
-> The only actionable builder assignment. Builder reads: this file → the block's [Implementation Playbook](BASTION_IMPLEMENTATION_PLAYBOOK.md) entry → its [Design Index](BASTION_MASTER_DESIGN_INDEX.md) resolver → only the named authoritative design sections → the relevant [Shared-Engine Registry](BASTION_SHARED_ENGINE_REGISTRY.md) entries. Sequence authority = [Master Build List](BASTION_MASTER_BUILD_LIST.md) (architect-owned; builder need not read it during implementation).
+- **NO SUB-AGENTS, EVER.** Never spawn `Task` / `Agent` / `Workflow` or anything that starts a second agent context — permanently BANNED. Do 100% of the work in your own single context.
+- **You BUILD, you don't interpret or evaluate.** Build from the crafted packet below; don't re-derive it from the design docs. Not confident on the APPROACH → one-line flag to the architect (that's the router = the token budget), never grind variants.
+- **Prompt supply = Sonnet DIRECT.** From the NEXT block onward, pull your next-block prompt from the Sonnet reviewer (`local_5f3f9b01`) directly. Through the ARCHITECT only: anything needing OPUS (safety gates), commissioning heavy review, or an ORDER question.
+- **Never idle-wait — PIPELINE PROTOCOL (built-in reflex):** the moment you kick off ANY long-running background task (a full gate, a release build, a long test), BEFORE you wait, REQUEST a PARALLEL-FILL prompt from Sonnet (`local_5f3f9b01`): "gating block X touching files Y — give me an independent fill task in non-colliding files." Sonnet picks a queued item + crafts it. You ALWAYS have fill work; you NEVER sit idle on a running task. (Short compiles of a few seconds — just wait.) **Low token:** terse bookkeeping (append, don't re-narrate).
+- **TRACEABILITY when juggling (main block + fill) — never lose a thread:** keep a one-line WIP-STATE for EACH in-flight task — `<block> | <files> | <resume-point>` (e.g. `LOD-1 | bastion_jobs.rs | committed 51150, gating→on-green tag / on-red fix`). Fill work stays in its OWN files + its OWN commit/branch — NEVER mix two blocks' changes in one commit. When a background gate returns: finish the MAIN block first (tag or fix), THEN resume the fill from its WIP note. If you can't cleanly separate the two, that's a flag-to-architect, not a guess.
 
 ---
 
-**BLOCK:** FR15-TIGHTDIG — tight-dig stance/reposition/depth locomotion (one class, two fixes)
-**MASTER-LIST NUMBER:** 31
+**BLOCK:** LOD-1 — Atomic Loaded↔Simulated transition + dupe guard
+**MASTER-LIST NUMBER:** 33
 **STATUS:** CURRENT
-**TAG:** `bastion-block-TIGHTDIG` (on completion)
-**ROLLBACK TAG:** `bastion-block-CASE003`
+**TAG (on completion):** `bastion-block-LOD1`
+**ROLLBACK TAG:** `bastion-block-LOD0` (bce7ecfc68 — last green)
+**REVIEW-TIER:** self-verify + tag (Sonnet milestone-rollup pass at the LOD-cluster close; NOT Opus — dupe-guard is correctness, not entombment/panic/safety-net).
 
-**ONE-LINE OUTCOME:** every reachable tight-dig target is worked — no A*-bob stalls (horizontal) and no wall-hang→teleport in stairless deep pits (vertical); the teleport reverts to a rare backstop.
+### GOAL
+No colonist is ever processed by BOTH the Loaded ECS tier (the job board) AND the Simulated rtsim tier in the same tick. Closes the transition dupe window: once `npc.mode` flips to `Simulated`, the ECS entity persists until its deferred `DeleteEvent` is consumed — and today `bastion_jobs::Sys` can still claim/progress/complete a job for it (incl. mid-`Arrived`, which can emit an item drop for an entity rtsim now considers Simulated). That's the real bug to close — not hypothetical.
 
-**WHY THIS BLOCK IS CURRENT:** row 31; depends CASE-003 (tagged).
-**HARD DEPENDENCIES COMPLETE:** CASE-003 (safety net + fail-safe standability), DETRNG (deterministic repro for locomotion scenarios).
-**NEXT BLOCK FOR CONTEXT ONLY:** LOD-0 (row 32; not actionable).
+### METHOD
+- Gate `bastion_jobs::Sys` on `Loaded` (spec §5D "gate on Loaded" — the impossible-by-construction fix, NOT a dispatch-order fix). Read each candidate entity's `RtSimEntity` component → look up its `Npc.mode` → EXCLUDE non-`Loaded` entities from BOTH the claim/arbitration loop AND the `ActiveJobState::Arrived` progress/completion loop.
+- No existing helper does the mode-lookup yet (verified: `RtSimEntity` is only read in `sys/agent/behavior_tree/mod.rs` + `sys/msg/gizmos.rs`, neither for mode-gating) — add the lookup.
+- DO NOT touch the demote-flush / `DeleteEvent` mechanism (vanilla-shared, D12) — gate Bastion's own consumer instead.
+- REUSE the claim sweep (the `// ── Claim sweep` comment-anchor block, `tick.0 % ARBITRATION_INTERVAL == 3`) for `ActiveJob` release on demote — it already works; regression-guard only, no new despawn logic.
+- ⚠ PROOFREAD NOTE (Sonnet, vs live code): the spec §7 seam citation (extend `hook_rtsim_entity_unload`, `mod.rs:371`) is STALE — the builder's own LOD-0 diff put the demote flush in `tick.rs` `Sys::run`'s `SimulationMode` match block. Attach LOD-1 to the `bastion_jobs::Sys` gate + reference `tick.rs`'s mode-match, NOT `mod.rs:350/371`.
 
-**AUTHORITATIVE DESIGN:** [Build Review Log §FR15 + §FR15-REFINEMENT](BUILD_REVIEW_LOG.md) (reviewer FEASIBLE-WITH-CHANGES, option (a): TWO per-axis fixes).
-**CURRENT CODE-TRUTH:** bastion drives travel via `NpcActivity::Goto` per tick (`bastion_jobs.rs` travel upkeep); vertical staged-routing filters `board.access_anchors` and `unwrap_or(target)`s when none in range; `climb_free_until` + crest-dismount/ledge-snap exist (B-LIVE3/R5/R6); `ActiveJob` is `Copy` (a waypoint Vec breaks it — fixed-size array + len, or audit Copy uses).
+### WHERE TO LOOK (cite by symbol/anchor — these files churn, lines rot)
+- `server/src/bastion_jobs.rs` — `Sys::run`'s claim/arbitration loop AND the `ActiveJobState::Arrived` progress/completion arm (both need the Loaded-gate); the `// ── Claim sweep` anchor.
+- `server/src/rtsim/tick.rs` — `Sys::run`'s `SimulationMode::{Loaded => …, Simulated => { flush + DeleteEvent }}` match block (REFERENCE ONLY — confirm ordering; don't duplicate its logic).
+- `rtsim/src/data/npc.rs::SimulationMode` (L43, stable) — the mode enum; `RtSimEntity` comp — the entity→npc link to read.
 
-**APPROVED CODING SOLUTION (fix-1 FIRST, then fix-2):**
-1. Fix-1 (horizontal A*-bob → committed staged path): compute the full path ONCE at claim (deterministic `find_path`, FxBuildHasher per FR1), store waypoints on `ActiveJob`, `Goto` the CURRENT waypoint and advance on arrival; re-compute only when a segment is no longer clear. Works through the Goto bastion owns — NO vanilla Chaser touch. Instrument failure/progress BEFORE changing movement (playbook row: no new velocity shoves).
-2. Fix-2 (stairless deep-pit egress): extend `climb_free_until` + a steer to the nearest rim for a colonist done/wall-hanging in a tight pit — per-colonist climb-out (each climbs its OWN wall; no shared-ladder queue-fight BY CONSTRUCTION; the D16 hard constraint). Teleport stays the rare ultimate backstop.
-**EXISTING SUBSYSTEMS TO REUSE:** `find_path`, `Goto` drive + arrival/watchdog semantics, `climb_free_until`, crest-dismount/ledge-snap, `egress_scan` rim targets.
-**GENUINELY NEW CODE:** waypoint storage/advance on ActiveJob + segment-clear re-check; the pit-egress climb-free grant trigger.
+### INVARIANTS (assert in the gate)
+- No colonist processed by both tiers in any single tick — including mid-`Arrived` progress/completion after a demote.
+- No stuck `ActiveJob` claim survives a demote (claim sweep — regression-guard only).
+- The Loaded-gate must NOT touch the demote-flush / `DeleteEvent` mechanism (vanilla-shared).
 
-**DO NOT:** touch the vanilla Chaser/A*; add another velocity shove; reintroduce a shared ladder (queue-fight); re-pick stance per tick (R3 oscillation).
-**HEADLESS SCENARIO:** b5 phases (tight/deep digs) + `--slope-mine-scenario`/`--floating-block-scenario` (SET-A/B) + b58; instrument bob-counts/wall-hang before vs after.
-**ASSERTED INVARIANTS:** all inherited gates green; tight-dig completion (the FR15 target geometry mined out); teleport-fire count REPORTED (expect a drop).
-**REVIEW TIER:** self-verify + tag (routine); escalate to the architect only if the mechanism surprises.
-**DONE-WHEN:** fix-1 verified (bob eliminated on the repro geometry) → fix-2 verified (stairless pit egress without teleport) → inherited gates green → tagged `bastion-block-TIGHTDIG`.
+### DONE-WHEN
+A scenario that demotes a colonist WHILE it is `Arrived` / mid-progress on a job (not just idle) asserts ZERO progress / completion / item-drop happens after the mode flip, across a rapid load/unload cycle. (Narrower than the full `--lod-soak-scenario` — that's LOD-3's combined gate; LOD-1 needs its own scoped assertion now.) All 8 inherited gates + this new leg green → tag `bastion-block-LOD1`.
 
-**POST-GREEN PROCEDURE:** rerun gates; commit; tag; record rollback (→ `bastion-block-CASE003`); flip Master-Build-List row 31 → DONE; update FLEET_STATUS / RUN_LOG / RESTORE_LEDGER; swap this file to the row-32 packet (LOD-0) resolved via Playbook + Design-Index.
-
----
-_Packet staged by the builder at CASE-003 tag time per the architect's post-green step; architect owns the order — reorder/veto via a new packet if this mis-resolves row 31._
+### POST-GREEN
+Tag → one-line RUN_LOG + RESTORE_LEDGER (rollback → `bastion-block-LOD0`) → then pull the NEXT block's prompt from Sonnet (`local_5f3f9b01`) DIRECT per the new workflow. The architect flips the master-list rows; you don't touch that doc.

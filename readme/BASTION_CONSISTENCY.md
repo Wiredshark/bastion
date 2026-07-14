@@ -28,6 +28,15 @@ instead, referencing the old one).
   Build to be unreachable/untestable until B6 lands, which is not the case.
   See `readme/BASTION_BACKLOG.md`'s B5 section for the plan to replace the
   stand-in with real hauling once B6 exists.
+
+  **RESOLVED by B6-HAUL+JOB-CORE (row 34, tag `bastion-block-B6HAUL`, 2026-07-12):** the
+  single-material stand-in is replaced — a Build job with nothing in hand now claims
+  iff a stockpiled item of the required def is reservable (availability checked at
+  scoring, reservation bound at commit), fetches it via vanilla `InventoryManip::Pickup`,
+  and only then completes. Real hauling exists (loose bastion-output drops auto-generate
+  Haul jobs into painted Stockpile zones). The design doc's original framing (B5
+  unreachable without B6) is still historically inaccurate for what B5 shipped, but the
+  gap it described is now closed.
 - **Build "ghost" visual**: the same design-doc passage describes a
   blueprint voxel as "a ghost until... construction, replacing ghost with
   real voxel" — implying a distinct, player-visible pending-construction
@@ -416,3 +425,14 @@ instead, referencing the old one).
   tree = harness-compiles-at-tag proof. STANDING RULE from here: every tag must
   build `bastion-harness` cleanly at the exact tagged commit, gated on that
   commit, before tagging (the one-checkout server/harness drift hazard).
+
+## HIST-0 — deferred cross-block dependency (2026-07-12, architect-decided)
+
+- **HIST-0's sphere-weight `Option` field ← GOD-DOMAIN's sphere/domain-vector enum lock.**
+  `ChronicleEvent` (`rtsim/src/data/chronicle.rs`) deliberately omits the Gap-Audit
+  Addendum's sphere-weight field — no sphere vocabulary is locked anywhere in code or the
+  design catalogs yet, and inventing one at HIST-0 would be the D7 unlocked-vocabulary
+  anti-pattern. The field appends save-compatibly (an `Option`, serde-default-safe)
+  whenever GOD-DOMAIN's design pass locks a real sphere/domain-vector enum. **Not a bug,
+  not current scope — a forward pointer:** whoever picks up GOD-DOMAIN should wire this
+  field in as part of that pass, not treat it as a HIST-0 retrofit.

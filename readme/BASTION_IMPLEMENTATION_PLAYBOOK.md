@@ -5,6 +5,11 @@
 > [Design Index](BASTION_MASTER_DESIGN_INDEX.md); ownership contracts live in the
 > [Shared-Engine Registry](BASTION_SHARED_ENGINE_REGISTRY.md).
 
+## ⛔ GLOBAL BUILDER RULES (apply to EVERY block, no exceptions)
+- **NO SUB-AGENTS, EVER** — never spawn `Task` / `Agent` / `Workflow` or anything that starts a second agent context. They are massive token dumps and are **permanently BANNED**. Do 100% of the work in your own single context: read → grep only what you need → write → run the gate.
+- **Only offload allowed:** a long review → the **Sonnet reviewer SESSION** via `send_message` (`local_5f3f9b01`); the safety gate → the **Opus reviewer session**. Never a spawn.
+- **Never idle-wait** (pipeline other code while a build/test runs). **Low token:** terse bookkeeping, don't reread the whole roadmap.
+
 ## Universal implementation law
 
 1. Extend authoritative Veloren paths; never create private terrain, inventory, combat, buff, or persistence paths.

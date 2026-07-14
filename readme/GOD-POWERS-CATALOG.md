@@ -238,3 +238,58 @@ Ordered by which new system unblocks the most verbs:
   menu and extends it with the divine-politics levers; it supersedes nothing.
 
 *End of God-Powers / Divine-Acts Catalog v0.1 — the verbs of a god, costed, and ordered so B13 has a menu.*
+
+---
+
+## Schema addition — ALIGNMENT WEIGHT + CAST-VFX PRESET per power (architect-approved 2026-07-10)
+
+From UI-5 / GOD-HAND (the good/evil hand): **the powers ARE the deeds that move the god's alignment.** Every
+catalog power gains TWO per-power fields (a schema lock — the god-hand + alignment systems read them):
+
+- **`alignment_weight`** (−1 cruel … 0 neutral … +1 benevolent): how casting this power drifts the god's
+  alignment (UI-5/GOD-HAND §0 — alignment is EARNED by deeds, not chosen). E.g. *Bless a Harvest* +, *Heal* +,
+  *Call to Shelter* +, *Answer a Prayer* +; *Smite/Wrath* −, *Plague/Curse* −, a careless *Throw* −; most
+  *Blessings* mildly +, most terrain/neutral acts ~0. Tunable in RON.
+- **`cast_vfx`** (a preset id on Veloren's `outcome.rs` Outcome bus): the power's cast effect, with a **GOOD-tint
+  and an EVIL-tint variant** (reagent/ParticleMode preset — the same power wears the god's face; UI-5 §divine-
+  effects / GOD-HAND §4). NO new particle system — reuse the Outcome/ParticleMode/glow bus.
+
+**Also (GOD-HAND §1):** the god-hand's physical verbs (grab/lift/carry/drop/throw/stroke/slap/tap/sculpt/paint)
+join the catalog as the god's *physical* repertoire — each with its `alignment_weight` (stroke +, slap/throw −,
+gentle-set-down +, careless-drop −) + its `anim::hand_*` (GOD-HAND §2) + Outcome VFX. The catalog is thus the
+single source of the god's whole verb set (miracles + blessings + passives + hand-verbs), each carrying its
+alignment weight + cast VFX. See `GOD-HAND-design.md` (the map) + `UI-HAND-ALIGNMENT-DIVINE-EFFECTS-design.md`
+(the alignment/effect detail).
+
+---
+
+## GAP-AUDIT ADDENDUM — new divine verbs from the overnight design run (2026-07-10, architect-approved lock)
+
+*(The overnight passes (DIVINE-CHAMPION/DF-CURSE/SACRED-SITES/DF-ANCESTORS/DF-BEAST/DF-FESTIVAL/DF-OMEN/DF-KNOWLEDGE/
+COLONIST-EMERGENCY-RUN) added divine acts not yet in the catalog. Locked here with `alignment_weight` (−1..+1) +
+`cast_vfx` per the schema section above, so the god-power schema covers the full repertoire before it hardens.
+Reconcile-note: **Curse a colonist** already exists above (Buff+thought) — extend it with DF-CURSE's LIFT condition
+(atonement/quest/mercy), don't duplicate.)*
+
+| New power | Source pass | Shape | `alignment_weight` | `cast_vfx` (good↔evil tint on outcome.rs) | Reuse / mechanism |
+|---|---|---|---|---|---|
+| **Anoint a champion** | DIVINE-CHAMPION | ② Blessing | **+0.7** | radiant STROKE-glow (gold) | the hand STROKE + a blessed champion-state (favor) |
+| **Lay a geas** (bind a vow) | DF-CURSE | ② | **~0** (lawful) | a binding-rune mark | a DF-SYNDROME tripwire binding (break→curse) |
+| **Consecrate a site** | SACRED-SITES | ② | **+0.5** | warm hallow-glow | extends DF-ROOMS ROOM-3 aura to any ground |
+| **Desecrate a site** | SACRED-SITES | ② | **−0.6** | dark blight-aura | a cursed-site aura on ground |
+| **Cleanse a haunt** | SACRED-SITES / DF-ANCESTORS | ① Miracle | **+0.5** | a clearing light | lift a cursed-site / quiet a haunting |
+| **Lay a soul to rest** | DF-ANCESTORS | ① Miracle | **+0.6** (mercy) | a gentle release-light | quiet a restless dead |
+| **Raise the dead** | DF-ANCESTORS | ② | **−0.9** (necromancy) | dark reanimation | undead body-swap — the dread power |
+| **Bless the hunt** | DF-BEAST | ② Blessing | **+0.4** | a buff-glow on the party | a Buff on the hunt party |
+| **Tame a beast** | DF-BEAST | ① Miracle | **~0** (awe) | an awe-light on the beast | DF-LIVESTOCK Pet, god-gated (rare + costed) |
+| **Loose a beast** | DF-BEAST | ② | **−0.8** | a goad/rage VFX | set a titan on a rival (rtsim) |
+| **Bless a feast** | DF-FESTIVAL | ② Blessing | **+0.5** | warm feast-glow | a stronger festival mood-lift |
+| **Blight a feast** | DF-FESTIVAL | ② | **−0.5** | a curdling VFX | the feast that sours |
+| **Manifest a sign** | DF-OMEN | ① Miracle | **~0** | the cast-VFX aimed at the sky (alignment-tinted) | a portent — the MEANING stays the colony's |
+| **Inspire a revelation** | DF-KNOWLEDGE / DF-OMEN | ② Blessing | **+0.4** | a dream/insight glow | a discovery or a dream-secret whispered |
+| **Command an emergency-run** | COLONIST-EMERGENCY-RUN | ② directive | **~0** | a rally-pulse | the colony runs, at a collective `comp::Energy` cost |
+
+**These join the alignment-weight + cast-VFX schema.** Notably: the god's TWO HANDS are now both in the catalog —
+**Anoint a champion (+0.7)** ↔ **Lay a curse / Raise the dead (−0.9)** — the bless/afflict poles that drive the
+GOD-EPITHET drift. `cast_vfx` reuses the GOD-HAND alignment aura + `outcome.rs`/ParticleMode presets (NO new
+particle system).

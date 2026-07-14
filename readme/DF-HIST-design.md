@@ -428,3 +428,55 @@ pass finds the small, specific net-new work: a persistent player-facing sink, th
 system emits into (the load-bearing seam, lock it first), and two viewers (the live feed = the near-term DF-LOG
 win, the Legends browser = the deep slice) — sequenced HIST-0..HIST-6 with testable Done-whens, and the LOD law
 applied to the world's memory.*
+
+---
+
+## GAP-AUDIT ADDENDUM — the full ChronicleEvent kind-list (2026-07-10, architect-approved lock)
+
+*(HIST-0's rule: lock the `ChronicleEvent` schema BEFORE emitters harden. The original spec named ~10 kinds
+(`Death, Theft, Founding, WarDeclared, Harvest, Masterwork, Famine, Siege, DivineAct, Birth`). The corpus now
+emits ~20+ more — enumerated here so `record()` callers + the DF-HIST glyph batch don't churn. Add as the enum
+grows; this is the intended coverage list, grouped by source.)*
+
+- **Production / economy** (DF-PRODUCTION, DF-TRADE, BUILD-FRAMEWORK): `GreatWorkCompleted`, `CaravanArrived`,
+  `CaravanLost`, `TradeDealStruck`.
+- **Faith / omens** (DF-RELIGION, DF-OMEN, DF-FESTIVAL): `TempleBuilt`, `ProphetArose`, `PrayerAnswered`,
+  `TempleStoodEmpty`, `FestivalHeld`, `OmenSeen`, `ProphecyFulfilled`, `ProphecyFalse`.
+- **The remembering world — the 4 faces** (REPUTATION, GOD-EPITHET, SACRED-SITES, COLLECTIVE-RENOWN): `ReputationRose`,
+  `ReputationFell`, `EpithetShifted`, `SacredSiteMade`, `SiteDesecrated`, `RenownEarned`, `ColonyBynamed`.
+- **Legendary figures — the triad** (DF-VILLAIN, DIVINE-CHAMPION, DF-BEAST): `NemesisRose`, `NemesisFell`,
+  `ChampionAnointed`, `ChampionFell`, `BeastSlain`, `BeastNamed`.
+- **The dead** (DF-ANCESTORS): `HeroMartyred`, `AncestorVenerated`, `GhostRestless`, `SoulLaidToRest`.
+- **The divine hand** (DF-CURSE, SACRED-SITES, GOD-POWERS): `CurseLaid`, `CurseLifted`, `GeasBound`, `GeasBroken`,
+  `Consecration`, `Miracle`.
+- **Knowledge** (DF-KNOWLEDGE): `TechDiscovered`, `KnowledgeLost`, `KnowledgeTaught`.
+- **The colony's life** (DF-RECLAIM, milestones, hazards, DF-CAVERN): `ColonyFell`, `MilestoneFirst` (first-birth/
+  death/winter-survived/masterwork), `CaveIn`, `Breach`, `Flood`, `Migration`.
+
+**Schema stays `ChronicleEvent { kind, actors, site, at_tod, importance, scope, attribution }`** — the kind-list
+above is the enum's intended coverage; the `importance`/`scope`/`attribution` fields (already specced) handle the
+weighting/filtering. **Lock the enum with this list so the glyph batch + `record()` emit-points land once.** (The
+glyph batch: the core 6 shipped; the rest attach to their kind as emitters land — do NOT fork per-system glyph sets.)
+
+## ADDENDUM (2026-07-10) — ChronicleEvent schema requirements from GOD-DOMAIN/Scry + reviewer code-survey
+The GOD-DOMAIN flagship (WATCHER's **Scry-the-Memory-of-a-Place**) + the domain-vector both DERIVE from this
+chronicle, and the reviewer surveyed the live rtsim event model (`rtsim/src/data/report.rs`). Three requirements this
+places on the ChronicleEvent schema (D7 vocabulary-lock — decide these when locking the enum):
+1. **A SPATIAL KEY on events — RESOLVED (FR9): a bucketed `Vec3<i32>`.** Precedent exists: `ReportKind::Theft{…,
+   site: Option<SiteId>, …}` place-keys an event, but `ReportKind::Death{actor, killer}` is placeless. **Standardize
+   on a bucketed `Vec3<i32>`** (a tile-cell — a chunk-column or 4-block grid) as the **canonical spatial field**, NOT
+   `SiteId` or room-id: **every deed has a `pos`** (universal — `SiteId` is null outside sites, which is the exact
+   `Death` inconsistency; room-id needs DF-ROOMS), it's fine enough to scry-a-spot, and **site/room are ROLLUPS
+   derived from the pos** (always coarsen pos→site, never refine SiteId→spot). This one field resolves the
+   granularity+uniformity gaps: every scry-able event carries the bucketed pos. (Kinds may still be *actor-scoped* —
+   a life-arc — but carry the pos where the deed happened when there is one.)
+2. **A PERMANENT tier, distinct from rtsim's FADING Reports.** rtsim `Report`s DECAY (`Report::remember_for` — murder
+   15d, theft 1.5d, then forgotten) — that's the *recent-events feed*. The **chronicle is the PERMANENT memory** ("the
+   ground remembers forever"): a fallen colony's ruin, a legendary death, the god's domain-drift must persist for the
+   remembering-world. So the ChronicleEvent sink is a **separate persistent store**, not an extension of the fading
+   rtsim Reports. (rtsim Reports = the last few days; the chronicle = the ages.)
+3. **A DOMAIN SPHERE-WEIGHT on each event** (for GOD-DOMAIN): each event tags which sphere(s) it feeds (raise-dead →
+   +dead, forge-masterwork → +forge…) so the god's domain-vector derives from the same stream as the epithet. A small
+   optional field on the schema.
+Scale note: rtsim ships ~2 ReportKinds; the chronicle corpus is ~35 (the gap-audit) — the sink is a big net-new
+enum regardless, so fold these three fields in at the D7 lock rather than retrofitting. (Source: reviewer §FR8-claim6.)

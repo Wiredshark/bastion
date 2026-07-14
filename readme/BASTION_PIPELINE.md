@@ -16,6 +16,23 @@ irreducible.
    → `READY-INTEGRATED`. Runs in a build slot (serializes with the engine chain). → logs `ASSET_INTEGRATION_LOG.md`.
 4. **SYSTEM BUILDER** (`MEGA-PROMPT`) — builds `[DESIGNED]` blocks from Done-whens; checkpoint→build→gate→
    merge-or-rollback→tag. Uses a STAND-IN for any asset not yet `READY-INTEGRATED` and hot-swaps later.
+   **★ STANDING GATE LEG (added 2026-07-13, B30): `cargo check -p veloren-voxygen` is a PERMANENT leg of every
+   gate, not a discipline rule.** Root cause: the gate previously built only `common`+`server`+the harness — an
+   exhaustive wire-enum append (`DesignationKind::Bed`, B7-1) can silently break the CLIENT crate's own
+   exhaustive matches (`voxygen/src/bastion/tools.rs`'s `zone_rgb`) while sailing through every other leg; this
+   went undetected for SIX tags in a row (B71→PATH0) before the FARM tag caught and fixed it. A marginal
+   type-check cost next to the existing ~40min gate, and it's the concrete down-payment on
+   `TEST-INFRASTRUCTURE-AUDIT`'s biggest gap (zero client-crate coverage). Structural, not optional — the
+   six-in-a-row failure is why this isn't left to a "remember to check" rule.
+4b. **BUILD-REVIEWER — Mode-A BACKSTOP** (`BUILD-REVIEWER-prompt.md`) — after a block TAGS, does a Mode-A code
+   review **within ~1 block of the tag** → `BUILD_REVIEW_LOG.md` (R-series). **BACKSTOP, NOT tag-blocking** (preserves
+   Ben's cadence — a block ships on green-gate + play-test; the code-review follows fast). Reads the IMPLEMENTATION
+   (complements the harness's BEHAVIOR gate — catches the annulus-off-by-one class the gate misses). Findings →
+   follow-up commits; a **CRITICAL** finding → flag the architect immediately (→ re-tag). **HOT-FILE ESCALATION:** if
+   the backstop-delay lets too much slip on hot SHARED files (esp. `server/src/bastion_jobs.rs`), the reviewer
+   PROPOSES bumping hot-file changes specifically to review-BEFORE-tag and the architect makes it a targeted rule.
+   *[Formalized 2026-07-12 after a 3-block Mode-A backlog — NIGHT_HORROR→CHOP→COORDINATION — slipped in the fast
+   post-CAVE-IN cadence; the reviewer self-caught it via a git-vs-R-log audit.]*
 5. **INTEGRATE (LIVE)** — the system builder edits the real game `assets/` manifests to make an
    `READY-INTEGRATED` asset permanent. **Flag-gated + additive** so it's a one-line revert.
 

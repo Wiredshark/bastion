@@ -208,3 +208,32 @@ Colony-tier religion sits just past **B7** (worship is a B7 need); REL-0 (the bu
 - **[AN-C] worship set** — named in the design §5: `anim::pray` (kneel+bow), `anim::kneel`, `anim::bless`
   (priest raised-arms). **v1 is NATIVE** (Sit/Cheer/Talk facing the altar — the tavern arena-crowd reused
   wholesale, the cheapest custom-animation topic in the ledger); enrichment pays the debt in the §3u batch.
+
+### DF-TRADE (caravans / depot / trade) — `DF-TRADE-design.md`, session 2026-07-09
+- **READY now:** the **caravan vehicle** — `Body::Cart`/`Body::Carriage` (+ `cart.structure`/`carriage.structure`
+  voxels) and the roaming `Profession::Merchant` NPC already ship. Goods crates/barrels dress a loaded cart from
+  existing furniture sprites. No new asset needed for the caravan itself.
+- **NEEDS:DF-TRADE → READY on TRADE-1:** **trade depot / market-stall structure** (the goods pool + caravan
+  destination; workshop-shell analog, function-harness drop/work point). Near-term → ASSET_REQUESTS.
+- **NEEDS:DF-TRADE-UI → READY on TRADE-5:** **trade-route overlay set** (caravan map dot, route line, blessed/
+  cursed markers — the §3s map-is-interface layer). Near-term core-3 → ASSET_REQUESTS.
+- **NEEDS (light, optional):** **loaded-pack animal** attachment (mule/horse pack — cart alternative; quadruped
+  bodies ship, only the pack sprite is missing). Low priority.
+- **feeds DF-HIST:** trade chronicle glyphs (caravan-arrived / caravan-lost / deal-struck) join the DF-HIST
+  event-glyph batch — not a separate set.
+- **Animation:** **all NATIVE** (cart-drive = mount/Sit; unload = B6-haul carry; haggle = merchant Talk
+  gesture; pack-walk = quadruped walk). Zero new skeletons — among the cheapest topics for animation debt.
+
+## Appendix — DF-POLICY (DF-ORDERS + DF-STANDING) asset note (from `DF-POLICY-design.md`, 2026-07-09)
+The colony policy layer (Manage tier for quotas & rules) is a **UI-in-code + policy-data** system — **zero 3D,
+zero in-world sprites, zero animation, zero asset-pipeline demand** (like DF-HIST, but even lighter — DF-HIST at
+least needed event glyphs; policy reuses those).
+- **[A/READY — no new art]** The whole surface is a HUD **manager/policy panel** (orders list: target · census ·
+  trend · condition-active) + a **standing-rules toggle list**, authored-in-code in the existing HUD style.
+  Order/rule status marks (quota-met, condition-active, stalled, forbidden) are **UI-in-code glyphs**, not a
+  pipeline batch.
+- **[reuse]** Zone-scoped orders reuse the **DF-ZONES overlay**; policy-triggered Chronicle events (*famine-
+  policy-engaged*, *great-work-completed*, *order-stalled*) reuse the **DF-HIST event-glyph batch** — do not
+  fork a separate set.
+- **Animation:** **none** — policy emits existing work verbs (produce/haul/chop) whose animation is owed by
+  their own systems; standing rules flip defaults and add no verb. Zero new animation debt.
