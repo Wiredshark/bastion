@@ -6176,7 +6176,7 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
         }
     }
     tick(&mut server, 2);
-    server.bastion_spawn_colony(
+    let names = server.bastion_spawn_colony(
         Vec3::new(cx as f32, cy as f32, gz as f32 + 2.0),
         1,
     );
@@ -6222,7 +6222,7 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
     let mut fell_tree = |server: &mut Server,
                          base: Vec3<i32>,
                          all: &[Vec3<i32>]|
-     -> (usize, u32, f32, bool, bool, bool, bool, u64, u32) {
+     -> (usize, u32, f32, bool, bool, bool, bool, u64, u32, f32) {
         let (cells, wood_n, threshold, created) =
             server.bastion_place_chop_tree(base);
         tick(server, 1);
@@ -6235,6 +6235,12 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
         let mut felled = false;
         let mut topdown_ok = true;
         let mut no_orphan = true;
+        // CHOP-PROGRESS-INDICATOR (row 51.61) tool-check: the MAX Chop
+        // progress fraction the colonist's inspector activity reports during
+        // the cut — proves the "Doing: Chop N%" line populates AND advances
+        // (>0) before the tree falls (the UI-4-inspector-driven check the
+        // architect's tooling standard asks for).
+        let mut activity_max = 0.0f32;
         let mut last_max = present_max_z(server, all);
         for _ in 0..3000 {
             tick(server, 1);
@@ -6244,6 +6250,11 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
             }
             if !felled {
                 cut_polls += 1;
+                if let Some((common::bastion::WorkType::Chop, f)) =
+                    server.bastion_colonist_activity(&names[0])
+                {
+                    activity_max = activity_max.max(f);
+                }
             }
             let now_max = present_max_z(server, all);
             if felled {
@@ -6275,16 +6286,20 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
         );
         (
             cells, wood_n, threshold, one_job, felled, topdown_ok, no_orphan,
-            drops, cut_polls,
+            drops, cut_polls, activity_max,
         )
     };
 
     let small_all = tree_cells(cx - 8);
     let big_all = tree_cells(cx + 8);
-    let (s_cells, s_wood, s_thresh, s_one, s_felled, s_td, s_orphan, s_drops, s_cut) =
-        fell_tree(&mut server, small_base, &small_all);
-    let (b_cells, b_wood, b_thresh, b_one, b_felled, b_td, b_orphan, b_drops, b_cut) =
-        fell_tree(&mut server, big_base, &big_all);
+    let (
+        s_cells, s_wood, s_thresh, s_one, s_felled, s_td, s_orphan, s_drops,
+        s_cut, s_activity,
+    ) = fell_tree(&mut server, small_base, &small_all);
+    let (
+        b_cells, b_wood, b_thresh, b_one, b_felled, b_td, b_orphan, b_drops,
+        b_cut, b_activity,
+    ) = fell_tree(&mut server, big_base, &big_all);
 
     // Size-scaling: the DETERMINISTIC, travel-free proof — the frozen
     // thresholds are exactly Wood-proportional (9:3 = 3.0). Cut times are
@@ -6311,6 +6326,11 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
         "chopfell_big_no_orphan": b_orphan,
         "chopfell_big_drops": b_drops,
         "chopfell_size_scales": size_scales,
+        // CHOP-PROGRESS-INDICATOR (51.61): max Chop progress the inspector
+        // activity reported mid-cut (>0 ⇒ the "Doing: Chop N%" line
+        // populates + advances before the fall).
+        "chopfell_small_activity": s_activity,
+        "chopfell_big_activity": b_activity,
     });
     println!(
         "CHOPFELL TELEMETRY: small(wood={s_wood} thr={s_thresh} cut_polls={s_cut} drops={s_drops}) \
@@ -6328,7 +6348,11 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
         && s_orphan
         && b_orphan
         && s_drops == 3
-        && b_drops == 9;
+        && b_drops == 9
+        // CHOP-PROGRESS-INDICATOR (51.61): the cutting colonist's inspector
+        // activity reported Chop-with-progress (>0) during each cut.
+        && s_activity > 0.0
+        && b_activity > 0.0;
     println!("{}", result);
     println!("CHOPFELL SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 

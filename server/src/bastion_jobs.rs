@@ -4809,6 +4809,18 @@ impl<'a> System<'a> for Sys {
                         .chop_fell_sets
                         .get(&active.job)
                         .map_or(1.0, |f| f.threshold);
+                    // CHOP-PROGRESS-INDICATOR (row 51.61): surface this work
+                    // job + its progress on the colonist's Arbiter for the
+                    // UI-4 inspector (display-only — the sim never reads
+                    // `activity`; uses the Arbiter write access this system
+                    // already holds, so NO new SystemData / dispatcher
+                    // reshuffle). Refreshed every work tick so a base-cut
+                    // reads as PROGRESSING; the to_release drain clears it so
+                    // it never lingers stale between jobs.
+                    if let Some(arb) = arbiters.get_mut(entity) {
+                        arb.activity =
+                            Some((job.work, (job.progress / threshold).clamp(0.0, 1.0)));
+                    }
                     if job.progress < threshold {
                         continue;
                     }
@@ -5352,6 +5364,13 @@ impl<'a> System<'a> for Sys {
                 }
             }
             active_jobs.remove(*entity);
+            // CHOP-PROGRESS-INDICATOR (row 51.61): the job is over — clear
+            // the inspector's activity so it never shows a stale progress
+            // between jobs (a preempt/completion funnels through here before
+            // the next claim, so a non-work self-job starts clean = None).
+            if let Some(arb) = arbiters.get_mut(*entity) {
+                arb.activity = None;
+            }
             // FR15-TIGHTDIG: the travel episode is over — its window,
             // committed path, and steer memory are stale (a fresh claim
             // re-anchors from scratch, exactly like best_dist = MAX).

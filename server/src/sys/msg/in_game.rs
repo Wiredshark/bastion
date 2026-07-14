@@ -1097,6 +1097,10 @@ impl<'a> System<'a> for Sys {
                                         ),
                                         last_scores: arb
                                             .map_or((0.0, 0.0, 0.0), |a| a.last_scores),
+                                        // CHOP-PROGRESS-INDICATOR (row 51.61):
+                                        // current work job + progress, ridden
+                                        // to the inspector from the Arbiter.
+                                        activity: arb.and_then(|a| a.activity),
                                     })
                                 });
                             let _ = client.send(ServerGeneral::BastionInspectInfo {

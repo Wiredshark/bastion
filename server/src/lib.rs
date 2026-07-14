@@ -1585,6 +1585,26 @@ impl Server {
             .map(|(_, _, a)| a.last_scores)
     }
 
+    /// bastion (CHOP-PROGRESS-INDICATOR, harness hook): the colonist's
+    /// current work job + progress fraction (the inspector's "Doing" line
+    /// source) — `Some((WorkType, 0..1))` while on a progress-bearing work
+    /// job, `None` when idle/self-job. The scenario asserts a cutting
+    /// colonist reports `Some((Chop, >0))`.
+    pub fn bastion_colonist_activity(
+        &self,
+        name: &str,
+    ) -> Option<(common::bastion::WorkType, f32)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let arbiters = ecs.read_storage::<comp::bastion::Arbiter>();
+        (&entities, &colonists, &arbiters)
+            .join()
+            .find(|(_, c, _)| c.0.name == name)
+            .and_then(|(_, _, a)| a.activity)
+    }
+
     /// bastion (AUTON-3, harness hook): the urgency-modulation
     /// personality axes for a named colonist — `(adventurous, worried,
     /// sociable_or_extroverted, introverted)`; the scenario predicts

@@ -81,6 +81,13 @@ pub struct Arbiter {
     pub current: Drive,
     pub committed_until: f64,
     pub last_scores: (f32, f32, f32),
+    /// bastion (CHOP-PROGRESS-INDICATOR, row 51.61): the colonist's CURRENT
+    /// work job + its progress fraction (0..1), for the UI-4 inspector's
+    /// "what are they doing" line. `None` = not on a progress-bearing work
+    /// job (idle, or a self-job like rest/eat/haul that completes without a
+    /// progress bar). REPORTED display state only — the sim never reads it;
+    /// written by the work tick, ridden to the client on BastionInspectInfo.
+    pub activity: Option<(crate::bastion::WorkType, f32)>,
 }
 
 impl Default for Arbiter {
@@ -89,6 +96,7 @@ impl Default for Arbiter {
             current: Drive::Idle,
             committed_until: 0.0,
             last_scores: (0.0, 0.0, 0.0),
+            activity: None,
         }
     }
 }
@@ -299,6 +307,11 @@ pub struct BastionInspectPayload {
     pub drive: Drive,
     /// (work, flee, idle) — the post-modulation urgencies (AUTON-3).
     pub last_scores: (f32, f32, f32),
+    /// bastion (CHOP-PROGRESS-INDICATOR, row 51.61): current work job +
+    /// progress fraction (0..1), or `None` if not on a progress-bearing
+    /// work job. The inspector renders "Chopping 45%" so a base-cut (or any
+    /// work) reads as PROGRESSING before it completes.
+    pub activity: Option<(crate::bastion::WorkType, f32)>,
 }
 
 /// bastion (AUTON-3, row 51): the DRIVE-ORDER guard — Flee's modulated

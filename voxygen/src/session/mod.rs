@@ -1193,6 +1193,15 @@ impl SessionState {
                             p.last_scores.1,
                             p.last_scores.2
                         ),
+                        // CHOP-PROGRESS-INDICATOR (row 51.61): the current
+                        // work job + its % — a base-cut (or any work) reads
+                        // as PROGRESSING here before it completes.
+                        match p.activity {
+                            Some((wt, frac)) => {
+                                format!("Doing: {:?} {:.0}%", wt, frac * 100.0)
+                            },
+                            None => "Doing: (idle)".to_string(),
+                        },
                         format!(
                             "Hunger {:.2}  Rest {:.2}  Rec {:.2}",
                             p.hunger, p.rest, p.recreation
