@@ -78,6 +78,36 @@ const SOFT_DENSITY_R: f32 = 2.0;
 const WORK_SKILL_BONUS: f32 = 0.2;
 /// Flat completion XP grant (design doc: "grant skill XP on completion").
 const COMPLETION_XP: f32 = 8.0;
+/// bastion (CHOP-FELLING, row 51.6): base-cut labor per WOOD cell of the
+/// fell-set — the size-scaled completion threshold is
+/// `CHOP_WORK_PER_BLOCK × wood_count` (progress-units; 1.0 = exactly the
+/// old per-block model's cost per Wood block, so per-wood labor is
+/// conserved through the granularity refactor; Leaves gate no labor by
+/// the design's explicit pin). Code-const like the TOOL-0 factors; RON
+/// promotion is a tuning-pass concern.
+pub const CHOP_WORK_PER_BLOCK: f32 = 1.0;
+
+/// bastion (CHOP-FELLING): one tree's stored fell-set, keyed by its single
+/// base-cut job — "what you saw outlined is what falls" (the set is FROZEN
+/// at placement, immune to mid-life terrain drift; the frozen-plan-cells
+/// precedent). `threshold` is the job's size-scaled completion bar,
+/// `wood_count` the placement-time Wood tally (XP + threshold source; drops
+/// re-read kinds at removal time for conservation).
+pub struct ChopFell {
+    pub cells: Vec<Vec3<i32>>,
+    pub threshold: f32,
+    pub wood_count: u32,
+}
+
+/// bastion (CHOP-FELLING): a tree mid-fall — the v1.5 top-down stagger.
+/// `cells` sorted (z DESC, y, x): one z-band clears per tick, so at every
+/// intermediate state the remainder is base-connected (no-float BY
+/// CONSTRUCTION — the base is in the LAST band) and the order is a total
+/// order (gate determinism). `cursor` = next cell to clear.
+pub struct FellingTree {
+    pub cells: Vec<Vec3<i32>>,
+    pub cursor: usize,
+}
 
 pub(crate) fn work_rate(skill_level: u16) -> f32 {
     (1.0 + skill_level as f32 * WORK_SKILL_BONUS) / WORK_DURATION_BASE
@@ -1308,6 +1338,18 @@ pub struct JobBoard {
     pub gen_mine_jobs: u64,
     pub gen_build_jobs: u64,
     pub plans_completed: u64,
+    /// bastion (CHOP-FELLING, row 51.6): fell-sets keyed by their base-cut
+    /// job (the B6-HAUL container-store / B7 BedSlot co-located side-table
+    /// shape — `Job` stays lean, only chop base-cuts have entries). Evicted
+    /// by `remove_job` AND swept by `cancel_region` (whose in-region purge
+    /// bypasses `remove_job` via `jobs.retain`).
+    pub chop_fell_sets: HashMap<JobId, ChopFell>,
+    /// bastion (CHOP-FELLING): trees mid-fall — drained one z-band per tick
+    /// by the felling pass (top-down; ~0.4s for a typical tree at 30tps).
+    /// Independent of the job (already completed): cancel can't stop a
+    /// falling tree, and colonist death mid-fall changes nothing (XP was
+    /// granted at completion).
+    pub felling: Vec<FellingTree>,
 }
 
 impl JobBoard {
@@ -1515,56 +1557,88 @@ impl JobBoard {
             .unwrap_or(0.0)
     }
 
-    /// CHOP redesign (FR10): generate Chop jobs for a RESOLVED fell-set — the
-    /// block positions of one whole tree, computed by the HANDLER via the
-    /// World oracle (`get_area_trees` → `tree_valid_at` → [`tree_fell_set`]).
-    /// `bastion_jobs` stays terrain-only: this just makes one job per
-    /// handed-in position (re-validated against `job_wanted`, deduped), and
-    /// the fell-set's tight AABB joins the claim mask exactly like a painted
-    /// designation (the same AABB is echoed to the client as the per-tree
-    /// outline box, so cancel-through-the-echo reaches every job).
-    pub fn place_chop_cells(
+    /// CHOP-FELLING (row 51.6, refining FR10): ONE base-cut job per
+    /// RESOLVED fell-set — the whole tree's positions, computed by the
+    /// HANDLER via the World oracle (`get_area_trees` → `tree_valid_at` →
+    /// [`tree_fell_set`]). The job sits at the ground-rooted BASE (always
+    /// walkable-to — kills FR10's unreachable-canopy floating residual);
+    /// the set is FROZEN in the `chop_fell_sets` side-table under the
+    /// job's id; completion fells the whole set top-down (the timber
+    /// event). Threshold = `CHOP_WORK_PER_BLOCK × wood_count` (bigger
+    /// trees take proportionally longer — Ben's hard requirement). The
+    /// set's tight AABB joins the claim mask exactly like a painted
+    /// designation (same client outline echo; cancel-through-the-echo
+    /// reaches the one job).
+    pub fn place_chop_fell(
         &mut self,
         terrain: &TerrainGrid,
+        base: Vec3<i32>,
         cells: &[Vec3<i32>],
-    ) -> Vec<JobId> {
-        let mut created = Vec::new();
+    ) -> Option<JobId> {
         let occupied: HashSet<Vec3<i32>> = self.jobs.values().map(|j| j.pos).collect();
+        // Re-validate the handed-in set against the same predicate the old
+        // per-cell path used; the kept cells are what falls (and what the
+        // AABB spans). Wood tallied here — the frozen threshold source.
+        let mut kept = Vec::new();
+        let mut wood_count: u32 = 0;
         let (mut min, mut max) = (Vec3::broadcast(i32::MAX), Vec3::broadcast(i32::MIN));
         for &pos in cells {
             let Ok(block) = terrain.get(pos) else {
                 continue;
             };
-            if !job_wanted(DesignationKind::Chop, block) || occupied.contains(&pos) {
+            if !job_wanted(DesignationKind::Chop, block) {
                 continue;
+            }
+            if block.kind() == BlockKind::Wood {
+                wood_count += 1;
             }
             min = Vec3::partial_min(min, pos);
             max = Vec3::partial_max(max, pos);
-            let id = self.next_id;
-            self.next_id += 1;
-            self.jobs.insert(id, Job {
-                kind: common::bastion::JobKind::Designated(DesignationKind::Chop),
-                work: DesignationKind::Chop.work_type(),
-                pos,
-                skill_floor: 0,
-                claimed_by: None,
-                unreachable: false,
-                progress: 0.0,
-                required_item: None,
-                needs_materials: false,
-                carve_attempted: false,
-                is_access: false,
-                stuck_strikes: 0,
-                depth: 0,
-                reservation: None,
-                        });
-            created.push(id);
+            kept.push(pos);
         }
-        if !created.is_empty() {
-            self.designated.push(Region { min, max });
+        // The base must be part of the valid set and unoccupied (one tree,
+        // one job — a re-paint over a pending base is a no-op, the FR10
+        // dedupe contract).
+        if kept.is_empty() || !kept.contains(&base) || occupied.contains(&base) {
+            info!(?base, "bastion: chop fell-set rejected (empty/baseless/occupied)");
+            return None;
         }
-        info!(jobs = created.len(), "bastion: chop fell-set placed (FR10)");
-        created
+        // Top-down total order NOW (z DESC, then y, x): the felling pass
+        // drains bands in this exact order — deterministic, base LAST.
+        kept.sort_unstable_by(|a, b| {
+            b.z.cmp(&a.z).then(a.y.cmp(&b.y)).then(a.x.cmp(&b.x))
+        });
+        let id = self.next_id;
+        self.next_id += 1;
+        self.jobs.insert(id, Job {
+            kind: common::bastion::JobKind::Designated(DesignationKind::Chop),
+            work: DesignationKind::Chop.work_type(),
+            pos: base,
+            skill_floor: 0,
+            claimed_by: None,
+            unreachable: false,
+            progress: 0.0,
+            required_item: None,
+            needs_materials: false,
+            carve_attempted: false,
+            is_access: false,
+            stuck_strikes: 0,
+            depth: 0,
+            reservation: None,
+        });
+        self.chop_fell_sets.insert(id, ChopFell {
+            cells: kept,
+            threshold: (CHOP_WORK_PER_BLOCK * wood_count as f32).max(1.0),
+            wood_count,
+        });
+        self.designated.push(Region { min, max });
+        info!(
+            job = id,
+            ?base,
+            wood = wood_count,
+            "bastion: chop base-cut placed (CHOP-FELLING)"
+        );
+        Some(id)
     }
 
     /// bastion (AUTON-1, row 49): queue a BUILD PLAN — intent only, NO jobs
@@ -1677,6 +1751,11 @@ impl JobBoard {
         for rid in dead_rids {
             self.reservations.remove(&rid);
         }
+        // CHOP-FELLING: the in-region purge above bypasses `remove_job`
+        // (jobs.retain), so orphaned fell-sets are swept here — a set
+        // whose base-cut job is gone must never fell (RFC-2229 disjoint
+        // field capture makes the self.jobs read legal).
+        self.chop_fell_sets.retain(|id, _| self.jobs.contains_key(id));
         info!(released = released.len(), "bastion: designation cancelled");
         released
     }
@@ -1724,6 +1803,9 @@ impl JobBoard {
         {
             self.reservations.remove(&rid);
         }
+        // CHOP-FELLING: a removed base-cut takes its stored fell-set with
+        // it (moot/unreachable-drop/cancel — the tree stays standing).
+        self.chop_fell_sets.remove(&id);
         job
     }
 
@@ -4698,7 +4780,17 @@ impl<'a> System<'a> for Sys {
                         job.work,
                         tool,
                     );
-                    if job.progress < 1.0 {
+                    // CHOP-FELLING (row 51.6): a base-cut completes at its
+                    // SIZE-SCALED bar (CHOP_WORK_PER_BLOCK × Wood count,
+                    // frozen at placement — bigger trees take longer, Ben's
+                    // hard requirement); every other job at the classic 1.0.
+                    // Disjoint-field read: `chop_fell_sets` never aliases
+                    // the `jobs` borrow.
+                    let threshold = board
+                        .chop_fell_sets
+                        .get(&active.job)
+                        .map_or(1.0, |f| f.threshold);
+                    if job.progress < threshold {
                         continue;
                     }
 
@@ -4994,6 +5086,56 @@ impl<'a> System<'a> for Sys {
                         continue;
                     }
 
+                    // ── CHOP-FELLING (row 51.6): a base-cut with a stored
+                    // fell-set fells the WHOLE TREE — the timber event. The
+                    // base block is NOT edited here: the entire set (base
+                    // included, base LAST) drains through the felling pass
+                    // top-down, so the remainder is always ground-connected
+                    // (no-float by construction) and the FR10
+                    // floating-canopy residual is gone. XP for the whole
+                    // tree lands now (the worker is present; the bands
+                    // outlive the job). Drops happen per-band at removal
+                    // time, per Wood cell in place (DF's logs, raining down
+                    // with the stagger).
+                    if job.kind.is(DesignationKind::Chop)
+                        && let Some(fell) =
+                            board.chop_fell_sets.remove(&active.job)
+                    {
+                        let done_pos = job.pos;
+                        colonist.0.skills.grant_xp(
+                            job.work,
+                            COMPLETION_XP * fell.wood_count as f32,
+                        );
+                        info!(
+                            job = active.job,
+                            base = ?done_pos,
+                            wood = fell.wood_count,
+                            cells = fell.cells.len(),
+                            "bastion: TIMBER — base cut done, tree felling"
+                        );
+                        board.felling.push(FellingTree {
+                            cells: fell.cells,
+                            cursor: 0,
+                        });
+                        board.remove_job(active.job);
+                        // B-LIVE3 parity with the classic arm: the tree's
+                        // designation AABB retires now (its only job is
+                        // gone) — the client outline clears as the tree
+                        // starts to fall.
+                        for region in board.designated.iter() {
+                            if region.contains_point(done_pos)
+                                && !board.jobs.values().any(|j| {
+                                    !j.is_access
+                                        && region.contains_point(j.pos)
+                                })
+                            {
+                                done_regions.push(*region);
+                            }
+                        }
+                        to_release.push(entity);
+                        continue;
+                    }
+
                     // Build: consume the required material from the
                     // colonist's inventory now — if it's gone (taken by a
                     // faster claimant elsewhere; single-material stand-in so
@@ -5211,6 +5353,52 @@ impl<'a> System<'a> for Sys {
                 agent.rtsim_controller.activity = None;
             }
         }
+        // ── CHOP-FELLING (row 51.6): advance staggered fells — ONE
+        // z-band per tick, TOP-DOWN (the v1.5 "remove smoothly over time"
+        // fall read; a typical tree ≈ 12 bands ≈ 0.4s at 30tps). Order is
+        // the placement-time total order (z DESC, y, x): deterministic,
+        // base in the LAST band, so the remainder is base-connected at
+        // every intermediate state — no-float by construction. Kinds are
+        // re-read at removal: an already-empty cell is skipped (never
+        // conjure a drop), Wood drops CHOP_DROP_ITEM in place, Leaves
+        // clear free. A cell another system edited THIS tick
+        // (can_set_block) pauses the band mid-way and resumes next tick —
+        // order preserved, still top-down.
+        if !board.felling.is_empty() {
+            for tree in board.felling.iter_mut() {
+                let Some(&first) = tree.cells.get(tree.cursor) else {
+                    continue;
+                };
+                let band_z = first.z;
+                while let Some(&cell) = tree.cells.get(tree.cursor) {
+                    if cell.z != band_z {
+                        break;
+                    }
+                    if !block_change.can_set_block(cell) {
+                        break;
+                    }
+                    match terrain.get(cell).ok().map(|b| b.kind()) {
+                        Some(BlockKind::Wood) => {
+                            block_change.set(cell, Block::empty());
+                            crate::bastion_actions::emit_drop(
+                                &mut item_drop_emitter,
+                                cell,
+                                Item::new_from_asset_expect(CHOP_DROP_ITEM),
+                                *program_time,
+                                &mut rng,
+                            );
+                        },
+                        Some(BlockKind::Leaves) => {
+                            block_change.set(cell, Block::empty());
+                        },
+                        _ => {},
+                    }
+                    tree.cursor += 1;
+                }
+            }
+            board.felling.retain(|t| t.cursor < t.cells.len());
+        }
+
         // ── B7-2: the preemption SECOND half — create the pre-claimed
         // need-jobs now that the drain has cleanly released the old work
         // (same tick: release-then-create, coherent by ordering).

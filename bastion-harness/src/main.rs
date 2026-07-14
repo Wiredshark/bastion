@@ -323,6 +323,13 @@ struct Args {
     #[arg(long)]
     arena_scenario: bool,
 
+    /// bastion (CHOP-FELLING, row 51.6): one base-cut job per tree; on
+    /// completion the whole stored fell-set falls top-down (no floating
+    /// remainder at any step), drops conserved (== Wood count), and a
+    /// bigger tree takes proportionally longer to cut than a smaller one.
+    #[arg(long)]
+    chopfell_scenario: bool,
+
     /// bastion (AUTON-2, row 50): THE DEATH-SPIRAL GATE (E1). Phase A: a
     /// RECOVERABLE shortage (stock < eaters, live pre-painted farm) —
     /// the trait-stagger splits the crew (anxious/default preempt to
@@ -488,6 +495,8 @@ fn main() -> ExitCode {
         auton3_scenario(&args)
     } else if args.arena_scenario {
         arena_scenario(&args)
+    } else if args.chopfell_scenario {
+        chopfell_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -5990,6 +5999,332 @@ fn arena_scenario(args: &Args) -> ExitCode {
         && surface_intact;
     println!("{}", result);
     println!("ARENA SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (CHOP-FELLING, row 51.6): the work-model refactor proven end
+/// to end on fixture-built trees (the oracle-free placement hook; the
+/// flood + placement + completion + stagger are the shipping fns). A
+/// SMALL tree (3 Wood) and a BIG tree (9 Wood), worked in turn by ONE
+/// colonist:
+/// (1) each placement = exactly ONE base-cut job (not N per-block jobs);
+/// (2) SIZE SCALES — the frozen completion threshold is
+///     CHOP_WORK_PER_BLOCK×Wood, so big:small = 9:3 = 3.0 EXACTLY
+///     (the deterministic, travel-free size-scaling proof — cut TIMES
+///     are reported as telemetry only, never gated: timing is the
+///     scheduling class);
+/// (3) felling staggers TOP-DOWN — at every observed tick the present
+///     set's max-z is monotone non-increasing AND the base is still
+///     present while any cell is (base falls LAST) — no floating
+///     remainder ever;
+/// (4) drops conserved EXACTLY: one CHOP_DROP per Wood cell, none for
+///     leaves, no dupes (small=3, big=9).
+fn chopfell_scenario(args: &Args) -> ExitCode {
+    use common::bastion::CHOP_DROP_ITEM;
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-chopfell-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-chopfell".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-chopfell-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+
+    // A flat rock slab with clear air above (the selfgen fixture idiom) —
+    // the trees stand ON honest ground, the base-cut is trivially
+    // reachable, and no worldgen terrain intrudes on the fell math.
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 14) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    let wood = Block::new(BlockKind::Wood, Rgb::new(110, 68, 22));
+    let leaves = Block::new(BlockKind::Leaves, Rgb::new(30, 130, 40));
+
+    // SMALL tree @ cx-8: 3-Wood trunk + a 3×3×2 leaf canopy (18 leaves;
+    // 21 cells; wood_count 3). BIG tree @ cx+8: 6-tall trunk + a 3-cell
+    // branch + a 3×3×2 canopy (9 Wood; 27 cells). Mirror-offset ±8 from
+    // center = equal-ish walk (travel is confound-symmetric AND kept out
+    // of the gated asserts anyway).
+    let small_base = Vec3::new(cx - 8, cy, gz + 1);
+    for dz in 0..3 {
+        server.state_mut().set_block(small_base + Vec3::unit_z() * dz, wood);
+    }
+    for dx in -1..=1 {
+        for dy in -1..=1 {
+            for dz in 3..5 {
+                server.state_mut().set_block(
+                    Vec3::new(cx - 8 + dx, cy + dy, gz + 1 + dz),
+                    leaves,
+                );
+            }
+        }
+    }
+    let big_base = Vec3::new(cx + 8, cy, gz + 1);
+    for dz in 0..6 {
+        server.state_mut().set_block(big_base + Vec3::unit_z() * dz, wood);
+    }
+    for dx in 1..=3 {
+        server
+            .state_mut()
+            .set_block(Vec3::new(cx + 8 + dx, cy, gz + 1 + 5), wood);
+    }
+    for dx in -1..=1 {
+        for dy in -1..=1 {
+            for dz in 6..8 {
+                server.state_mut().set_block(
+                    Vec3::new(cx + 8 + dx, cy + dy, gz + 1 + dz),
+                    leaves,
+                );
+            }
+        }
+    }
+    tick(&mut server, 2);
+    server.bastion_spawn_colony(
+        Vec3::new(cx as f32, cy as f32, gz as f32 + 2.0),
+        1,
+    );
+    tick(&mut server, 30);
+
+    // The whole-tree cell lists (for the present-set invariants).
+    let tree_cells = |bx: i32| -> Vec<Vec3<i32>> {
+        let mut v = Vec::new();
+        let trunk_h = if bx == cx - 8 { 3 } else { 6 };
+        for dz in 0..trunk_h {
+            v.push(Vec3::new(bx, cy, gz + 1 + dz));
+        }
+        if bx == cx + 8 {
+            for dx in 1..=3 {
+                v.push(Vec3::new(bx + dx, cy, gz + 1 + 5));
+            }
+        }
+        let (lo, hi) = if bx == cx - 8 { (3, 5) } else { (6, 8) };
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in lo..hi {
+                    v.push(Vec3::new(bx + dx, cy + dy, gz + 1 + dz));
+                }
+            }
+        }
+        v
+    };
+    let present_max_z = |server: &Server, cells: &[Vec3<i32>]| -> Option<i32> {
+        cells
+            .iter()
+            .filter(|c| {
+                server.bastion_block_kind(**c).is_some_and(|k| {
+                    matches!(k, BlockKind::Wood | BlockKind::Leaves)
+                })
+            })
+            .map(|c| c.z)
+            .max()
+    };
+
+    // Fell one tree end to end; return
+    // (cells, wood, threshold, one_job, felled, topdown_ok, no_orphan,
+    //  drops, cut_polls).
+    let mut fell_tree = |server: &mut Server,
+                         base: Vec3<i32>,
+                         all: &[Vec3<i32>]|
+     -> (usize, u32, f32, bool, bool, bool, bool, u64, u32) {
+        let (cells, wood_n, threshold, created) =
+            server.bastion_place_chop_tree(base);
+        tick(server, 1);
+        let probe = common::bastion::Region {
+            min: base - Vec3::new(5, 5, 1),
+            max: base + Vec3::new(5, 5, 12),
+        };
+        let one_job = created && server.bastion_jobs_in_region(probe) == 1;
+        let mut cut_polls = 0u32;
+        let mut felled = false;
+        let mut topdown_ok = true;
+        let mut no_orphan = true;
+        let mut last_max = present_max_z(server, all);
+        for _ in 0..3000 {
+            tick(server, 1);
+            let (_sets, felling, _rem) = server.bastion_chop_fell_stats();
+            if felling > 0 {
+                felled = true;
+            }
+            if !felled {
+                cut_polls += 1;
+            }
+            let now_max = present_max_z(server, all);
+            if felled {
+                if let (Some(a), Some(b)) = (last_max, now_max)
+                    && b > a
+                {
+                    topdown_ok = false;
+                }
+                // base falls LAST: if any cell survives, the base Wood
+                // must too (no floating remainder).
+                if now_max.is_some()
+                    && !server
+                        .bastion_block_kind(base)
+                        .is_some_and(|k| k == BlockKind::Wood)
+                {
+                    no_orphan = false;
+                }
+            }
+            last_max = now_max;
+            if felled && now_max.is_none() {
+                break;
+            }
+        }
+        tick(server, 60); // settle drops/merges
+        let drops = server.bastion_sum_items_near(
+            base.map(|e| e as f32),
+            8.0,
+            CHOP_DROP_ITEM,
+        );
+        (
+            cells, wood_n, threshold, one_job, felled, topdown_ok, no_orphan,
+            drops, cut_polls,
+        )
+    };
+
+    let small_all = tree_cells(cx - 8);
+    let big_all = tree_cells(cx + 8);
+    let (s_cells, s_wood, s_thresh, s_one, s_felled, s_td, s_orphan, s_drops, s_cut) =
+        fell_tree(&mut server, small_base, &small_all);
+    let (b_cells, b_wood, b_thresh, b_one, b_felled, b_td, b_orphan, b_drops, b_cut) =
+        fell_tree(&mut server, big_base, &big_all);
+
+    // Size-scaling: the DETERMINISTIC, travel-free proof — the frozen
+    // thresholds are exactly Wood-proportional (9:3 = 3.0). Cut times are
+    // reported only (scheduling class, never gated).
+    let size_scales = (b_thresh - 3.0 * s_thresh).abs() < 1e-3
+        && (s_thresh - 3.0).abs() < 1e-3
+        && (b_thresh - 9.0).abs() < 1e-3;
+
+    let result = serde_json::json!({
+        "chopfell_small_cells": s_cells,
+        "chopfell_small_wood": s_wood,
+        "chopfell_small_threshold": s_thresh,
+        "chopfell_one_job_small": s_one,
+        "chopfell_small_felled": s_felled,
+        "chopfell_small_topdown": s_td,
+        "chopfell_small_no_orphan": s_orphan,
+        "chopfell_small_drops": s_drops,
+        "chopfell_big_cells": b_cells,
+        "chopfell_big_wood": b_wood,
+        "chopfell_big_threshold": b_thresh,
+        "chopfell_one_job_big": b_one,
+        "chopfell_big_felled": b_felled,
+        "chopfell_big_topdown": b_td,
+        "chopfell_big_no_orphan": b_orphan,
+        "chopfell_big_drops": b_drops,
+        "chopfell_size_scales": size_scales,
+    });
+    println!(
+        "CHOPFELL TELEMETRY: small(wood={s_wood} thr={s_thresh} cut_polls={s_cut} drops={s_drops}) \
+         big(wood={b_wood} thr={b_thresh} cut_polls={b_cut} drops={b_drops})"
+    );
+    let pass = s_one
+        && b_one
+        && s_wood == 3
+        && b_wood == 9
+        && size_scales
+        && s_felled
+        && b_felled
+        && s_td
+        && b_td
+        && s_orphan
+        && b_orphan
+        && s_drops == 3
+        && b_drops == 9;
+    println!("{}", result);
+    println!("CHOPFELL SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);

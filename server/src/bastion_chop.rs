@@ -24,18 +24,20 @@ use common::{
 };
 use vek::*;
 
-/// Every whole tree ROOTED in the XY footprint: `(tight AABB, fell cells)`
-/// per tree. The AABB is what echoes to the client as the per-tree outline
-/// box; the cells become the Chop jobs. Under the non-worldgen stub World
-/// (no oracle) this degrades to no trees.
+/// Every whole tree ROOTED in the XY footprint: `(tight AABB, base, fell
+/// cells)` per tree. The AABB is what echoes to the client as the per-tree
+/// outline box; the BASE (the ground-rooted trunk cell `seed_z` found) is
+/// where the single base-cut job sits (CHOP-FELLING, row 51.6); the cells
+/// are the stored fell-set. Under the non-worldgen stub World (no oracle)
+/// this degrades to no trees.
 pub fn detect_trees(
     world: &World,
     index: &IndexOwned,
     terrain: &TerrainGrid,
     min_xy: Vec2<i32>,
     max_xy: Vec2<i32>,
-) -> Vec<(Region, Vec<Vec3<i32>>)> {
-    let mut trees: Vec<(Region, Vec<Vec3<i32>>)> = Vec::new();
+) -> Vec<(Region, Vec3<i32>, Vec<Vec3<i32>>)> {
+    let mut trees: Vec<(Region, Vec3<i32>, Vec<Vec3<i32>>)> = Vec::new();
     #[cfg(feature = "worldgen")]
     {
         let sim = world.sim();
@@ -86,7 +88,11 @@ pub fn detect_trees(
                 mn = Vec3::partial_min(mn, *c);
                 mx = Vec3::partial_max(mx, *c);
             }
-            trees.push((Region { min: mn, max: mx }, cells));
+            trees.push((
+                Region { min: mn, max: mx },
+                Vec3::new(attr.pos.x, attr.pos.y, seed_z),
+                cells,
+            ));
         }
     }
     #[cfg(not(feature = "worldgen"))]

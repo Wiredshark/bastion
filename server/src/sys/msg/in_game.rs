@@ -88,14 +88,15 @@ impl Sys {
         // B5.6b-2: the third field is Some(extent) for surface-relative
         // placements (region = footprint XY + paint-plane hint in max.z);
         // None keeps the legacy literal-region path. Always None for cancel.
-        // CHOP redesign (FR10): the fourth field carries a resolved FELL-SET
-        // (one whole tree's block positions) for the Area2D Chop path; None
-        // for every volume/legacy/cancel op.
+        // CHOP-FELLING (row 51.6, refining FR10): the fourth field carries a
+        // resolved (base, FELL-SET) for the Area2D Chop path — one base-cut
+        // job per tree, the whole set fells on completion; None for every
+        // volume/legacy/cancel op.
         bastion_designations: &mut Vec<(
             common::bastion::Region,
             Option<common::bastion::DesignationKind>,
             Option<common::bastion::ZExtent>,
-            Option<Vec<Vec3<i32>>>,
+            Option<(Vec3<i32>, Vec<Vec3<i32>>)>,
         )>,
         // bastion (UI-4): inspector requests — target uids gathered here,
         // resolved + answered in the post-join drain (the bastion_spawn
@@ -481,13 +482,14 @@ impl Sys {
                                 ),
                             ))?;
                         }
-                        for (aabb, cells) in trees {
+                        for (aabb, base, cells) in trees {
                             client.send(ServerGeneral::BastionDesignation {
                                 region: aabb,
                                 kind,
                                 z_extent: None,
                             })?;
-                            bastion_designations.push((aabb, Some(kind), None, Some(cells)));
+                            bastion_designations
+                                .push((aabb, Some(kind), None, Some((base, cells))));
                         }
                     }
                 } else {
@@ -1123,14 +1125,15 @@ impl<'a> System<'a> for Sys {
                                 kind,
                             );
                         },
-                        // CHOP redesign (FR10): a resolved fell-set — one
-                        // whole tree's cells from the handler's oracle pass.
+                        // CHOP-FELLING (row 51.6): a resolved (base, fell-set)
+                        // — one base-cut job per tree; the whole set fells on
+                        // completion.
                         (
                             Some(common::bastion::DesignationKind::Chop),
                             None,
-                            Some(cells),
+                            Some((base, cells)),
                         ) => {
-                            job_board.place_chop_cells(&terrain, &cells);
+                            job_board.place_chop_fell(&terrain, base, &cells);
                         },
                         (Some(kind), None, _) => {
                             job_board.place_designation(&terrain, region, kind);

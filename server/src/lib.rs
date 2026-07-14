@@ -1816,15 +1816,82 @@ impl Server {
         let trees = bastion_chop::detect_trees(&world, &index, &terrain, min_xy, max_xy);
         let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
         let (mut cells_total, mut jobs) = (0, 0);
-        for (_aabb, cells) in &trees {
+        for (_aabb, base, cells) in &trees {
             cells_total += cells.len();
-            jobs += board.place_chop_cells(&terrain, cells).len();
+            // CHOP-FELLING (row 51.6): ONE base-cut job per tree.
+            jobs += board
+                .place_chop_fell(&terrain, *base, cells)
+                .is_some() as usize;
         }
         (
             trees.len(),
             cells_total,
             jobs,
-            trees.first().map(|(aabb, _)| *aabb),
+            trees.first().map(|(aabb, _, _)| *aabb),
+        )
+    }
+
+    /// bastion (CHOP-FELLING, harness hook): place a base-cut from an
+    /// EXPLICIT base — the oracle-free path for the fixture-built trees the
+    /// test_world can't grow (the oracle half degrades under the stub
+    /// World; the fell-set flood + placement below are the REAL shipping
+    /// fns — B17: the tested path is the shipping path from the flood in).
+    /// Returns `(fell-set size, wood count, size-scaled threshold, job
+    /// created)` — the threshold is the deterministic size-scaling proof
+    /// (`CHOP_WORK_PER_BLOCK × wood_count`), travel-free.
+    pub fn bastion_place_chop_tree(
+        &mut self,
+        base: vek::Vec3<i32>,
+    ) -> (usize, u32, f32, bool) {
+        use common::vol::ReadVol;
+        let ecs = self.state.ecs();
+        let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+        let is_tree = |p: vek::Vec3<i32>| {
+            terrain
+                .get(p)
+                .map(|b| {
+                    matches!(
+                        b.kind(),
+                        common::terrain::BlockKind::Wood
+                            | common::terrain::BlockKind::Leaves
+                    )
+                })
+                .unwrap_or(false)
+        };
+        let cells = bastion_jobs::tree_fell_set(
+            &is_tree,
+            base,
+            bastion_jobs::TREE_FELL_CELL_CAP,
+            bastion_jobs::TREE_FELL_HEIGHT_CAP,
+            bastion_jobs::TREE_FELL_RADIUS,
+        );
+        let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
+        let id = board.place_chop_fell(&terrain, base, &cells);
+        let (wood, threshold, created) = match id {
+            Some(id) => board
+                .chop_fell_sets
+                .get(&id)
+                .map_or((0, 0.0, true), |f| (f.wood_count, f.threshold, true)),
+            None => (0, 0.0, false),
+        };
+        (cells.len(), wood, threshold, created)
+    }
+
+    /// bastion (CHOP-FELLING, harness probe): `(stored fell-sets, trees
+    /// mid-fall, cells remaining across all falls)` — read-only.
+    pub fn bastion_chop_fell_stats(&self) -> (usize, usize, usize) {
+        let board = self
+            .state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>();
+        (
+            board.chop_fell_sets.len(),
+            board.felling.len(),
+            board
+                .felling
+                .iter()
+                .map(|t| t.cells.len() - t.cursor)
+                .sum(),
         )
     }
 
