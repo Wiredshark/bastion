@@ -973,6 +973,24 @@ image_ids! {
         buff_6: "voxygen.element.animation.buff_frame.7",
         buff_7: "voxygen.element.animation.buff_frame.8",
 
+        // bastion (TOOLBAR-ICONS, row 51.5): overseer tool-palette icons —
+        // asset-lab art copied into the voxygen tree, one per ToolMode +
+        // the God/Free toggle. Readability pass DEFERRED to the asset-lane
+        // resume (known misreads flagged: mine reads mattock, chop reads
+        // hook/scythe, pan reads crown-ish, gather↔farm look-alike). Bed has
+        // NO icon yet (added to the palette after this set) → text fallback.
+        bastion_tool_pan: "voxygen.element.ui.bastion.tool_pan",
+        bastion_tool_inspect: "voxygen.element.ui.bastion.tool_inspect",
+        bastion_tool_mine: "voxygen.element.ui.bastion.tool_mine",
+        bastion_tool_chop: "voxygen.element.ui.bastion.tool_chop",
+        bastion_tool_gather: "voxygen.element.ui.bastion.tool_gather",
+        bastion_tool_build: "voxygen.element.ui.bastion.tool_build",
+        bastion_tool_stockpile: "voxygen.element.ui.bastion.tool_stockpile",
+        bastion_tool_farm: "voxygen.element.ui.bastion.tool_farm",
+        bastion_tool_ladder: "voxygen.element.ui.bastion.tool_ladder",
+        bastion_tool_erase: "voxygen.element.ui.bastion.tool_erase",
+        bastion_tool_god: "voxygen.element.ui.bastion.tool_god",
+
         <BlankGraphic>
         nothing: (),
     }

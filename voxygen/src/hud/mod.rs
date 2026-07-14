@@ -4835,31 +4835,61 @@ impl Hud {
         // colony HUD re-skins this; the events/data model stay.
         if self.bastion.active {
             use crate::bastion::tools::ToolMode;
+            use common::bastion::DesignationKind;
             let btn_color = Color::Rgba(0.08, 0.10, 0.12, 0.85);
             let btn_active = Color::Rgba(0.25, 0.45, 0.25, 0.95);
             let label_color = Color::Rgba(0.9, 0.9, 0.85, 1.0);
 
             // --- Tool palette (top center) + God/Free toggle ---
+            // TOOLBAR-ICONS (row 51.5): each tool is a square ICON button
+            // (asset-lab art). Active tool = full-bright icon, others dimmed.
+            // Bed has no icon yet (added to the palette after this set) →
+            // transparent image + text label, so it reads as a labeled
+            // button until its icon lands (asset-lane backlog). Known icon
+            // misreads (mine/chop/pan/gather↔farm) are a deferred readability
+            // pass, not this wire-up's concern.
             let tools = ToolMode::ALL;
             if self.ids.bastion_palette_btns.len() < tools.len() {
                 self.ids
                     .bastion_palette_btns
                     .resize(tools.len(), &mut ui_widgets.widget_id_generator());
             }
+            let icon_active = Color::Rgba(1.0, 1.0, 1.0, 1.0);
+            let icon_normal = Color::Rgba(0.62, 0.64, 0.62, 0.9);
             for (i, tool) in tools.iter().enumerate() {
                 let is_active = *tool == self.bastion.tool;
-                let mut btn = widget::Button::new()
-                    .w_h(86.0, 26.0)
-                    .color(if is_active { btn_active } else { btn_color })
-                    .label(tool.label())
-                    .label_font_size(12)
-                    .label_color(label_color)
-                    .label_font_id(self.fonts.cyri.conrod_id);
+                let icon = match tool {
+                    ToolMode::Pan => self.imgs.bastion_tool_pan,
+                    ToolMode::Inspect => self.imgs.bastion_tool_inspect,
+                    ToolMode::Designate(DesignationKind::Mine) => self.imgs.bastion_tool_mine,
+                    ToolMode::Designate(DesignationKind::Chop) => self.imgs.bastion_tool_chop,
+                    ToolMode::Designate(DesignationKind::Gather) => self.imgs.bastion_tool_gather,
+                    ToolMode::Designate(DesignationKind::Build) => self.imgs.bastion_tool_build,
+                    ToolMode::Designate(DesignationKind::Stockpile) => {
+                        self.imgs.bastion_tool_stockpile
+                    },
+                    ToolMode::Designate(DesignationKind::Farm) => self.imgs.bastion_tool_farm,
+                    ToolMode::Designate(DesignationKind::Ladder) => self.imgs.bastion_tool_ladder,
+                    ToolMode::Erase => self.imgs.bastion_tool_erase,
+                    // Bed (+ any future paintable kind without art) → no icon.
+                    _ => self.imgs.nothing,
+                };
+                let mut btn = widget::Button::image(icon)
+                    .w_h(34.0, 34.0)
+                    .image_color(if is_active { icon_active } else { icon_normal });
+                // Text fallback for the icon-less Bed button.
+                if matches!(tool, ToolMode::Designate(DesignationKind::Bed)) {
+                    btn = btn
+                        .label(tool.label())
+                        .label_font_size(9)
+                        .label_color(if is_active { btn_active } else { label_color })
+                        .label_font_id(self.fonts.cyri.conrod_id);
+                }
                 btn = if i == 0 {
                     btn.top_left_with_margins_on(
                         ui_widgets.window,
                         6.0,
-                        ui_widgets.win_w / 2.0 - (tools.len() as f64 + 1.0) * 90.0 / 2.0,
+                        ui_widgets.win_w / 2.0 - (tools.len() as f64 + 1.0) * 38.0 / 2.0,
                     )
                 } else {
                     btn.right_from(self.ids.bastion_palette_btns[i - 1], 4.0)
@@ -4871,14 +4901,16 @@ impl Hud {
                     events.push(Event::BastionSelectTool(*tool));
                 }
             }
+            // God/Free toggle: kept as a TEXT button — it shows the current
+            // MODE (God vs Free), which an icon alone can't convey.
             if widget::Button::new()
-                .w_h(86.0, 26.0)
+                .w_h(64.0, 34.0)
                 .color(btn_color)
                 .label(self.bastion.god_mode.label())
-                .label_font_size(12)
+                .label_font_size(11)
                 .label_color(Color::Rgba(1.0, 0.85, 0.4, 1.0))
                 .label_font_id(self.fonts.cyri.conrod_id)
-                .right_from(self.ids.bastion_palette_btns[tools.len() - 1], 12.0)
+                .right_from(self.ids.bastion_palette_btns[tools.len() - 1], 10.0)
                 .set(self.ids.bastion_godmode_btn, ui_widgets)
                 .was_clicked()
             {
