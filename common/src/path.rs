@@ -10,7 +10,7 @@ use fxhash::FxBuildHasher;
 use hashbrown::HashMap;
 #[cfg(feature = "rrt_pathfinding")]
 use kiddo::{SquaredEuclidean, float::kdtree::KdTree, nearest_neighbour::NearestNeighbour}; /* For RRT paths (disabled for now) */
-use rand::{RngExt, rng};
+use rand::{RngExt, SeedableRng, rng, rngs::SmallRng};
 #[cfg(feature = "rrt_pathfinding")]
 use rand::{
     distr::{Distribution, Uniform},
@@ -503,9 +503,20 @@ pub struct Chaser {
 
     /// (position, requested walk dir)
     recent_states: VecDeque<(Time, Vec3<f32>, Vec3<f32>)>,
+    /// ARCH-003: a per-tick deterministic stream installed by the server's
+    /// deterministic harness mode. Live mode leaves this as `None` and keeps
+    /// the existing OS-seeded entropy.
+    deterministic_rng: Option<SmallRng>,
 }
 
 impl Chaser {
+    /// Select the random stream used by hidden Chaser state transitions.
+    /// Reinstalling a seed once per agent tick makes those transitions a pure
+    /// function of (world seed, tick, uid) in deterministic harness mode.
+    pub fn set_deterministic_seed(&mut self, seed: Option<u64>) {
+        self.deterministic_rng = seed.map(SmallRng::seed_from_u64);
+    }
+
     fn stuck_check(
         &mut self,
         pos: Vec3<f32>,
@@ -568,7 +579,11 @@ impl Chaser {
                     max_distance_sqr.is_some_and(|d| d < (average_speed * TOLERANCE).powi(2));
 
                 let bearing = if is_stuck {
-                    match rng().random_range(0..100u32) {
+                    let choice = self.deterministic_rng.as_mut().map_or_else(
+                        || rng().random_range(0..100u32),
+                        |rng| rng.random_range(0..100u32),
+                    );
+                    match choice {
                         0..10 => -bearing,
                         10..20 => Vec3::new(bearing.y, bearing.x, bearing.z),
                         20..30 => Vec3::new(-bearing.y, bearing.x, bearing.z),
@@ -1636,11 +1651,7 @@ mod bastion_vertical_tests {
 
     /// Poll to completion — `find_path` yields `Pending` every ~400
     /// iterations (the Chaser normally resumes it across ticks).
-    fn route_to(
-        vol: &MockVol,
-        cfg: &TraversalConfig,
-        end: Vec3<f32>,
-    ) -> PathResult<Vec3<i32>> {
+    fn route_to(vol: &MockVol, cfg: &TraversalConfig, end: Vec3<f32>) -> PathResult<Vec3<i32>> {
         let mut astar = None;
         for _ in 0..64 {
             match find_path(
@@ -1673,8 +1684,8 @@ mod bastion_vertical_tests {
         // The route must actually use the climb line beside the ladder —
         // some node adjacent to the ladder column above ground level.
         assert!(
-            path.iter().any(|n| n.z > 2
-                && (n.xy() - Vec2::new(9, 0)).map(|e: i32| e.abs()).sum() <= 1),
+            path.iter()
+                .any(|n| n.z > 2 && (n.xy() - Vec2::new(9, 0)).map(|e: i32| e.abs()).sum() <= 1),
             "path exists but skips the ladder line: {:?}",
             path.iter().collect::<Vec<_>>()
         );

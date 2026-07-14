@@ -12,6 +12,26 @@
 pub use common_assets as assets;
 pub use uuid;
 
+/// ARCH-003: when set ONCE at boot (before any chunk is generated — the bastion
+/// harness sets it; live binaries never do), worldgen seeds its per-chunk
+/// "dynamic" decoration RNG from (world seed, chunk pos) instead of OS entropy,
+/// so `--seed` reproduces flora/scatter/site sprites exactly. Live keeps its
+/// OS-entropy scatter (bit-for-bit unchanged). Mirrors `rtsim::DETERMINISTIC_RTSIM`
+/// but lives here so `veloren-world` (which cannot depend on rtsim) can read it.
+pub static DETERMINISTIC_WORLDGEN: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+/// Whether deterministic worldgen was enabled at boot (see [`DETERMINISTIC_WORLDGEN`]).
+pub fn deterministic_worldgen_enabled() -> bool {
+    DETERMINISTIC_WORLDGEN.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+/// Enable deterministic worldgen RNG seeding before boot. The bastion harness is
+/// the intended caller; live binaries do not call it.
+pub fn enable_deterministic_worldgen() {
+    DETERMINISTIC_WORLDGEN.store(true, core::sync::atomic::Ordering::Relaxed);
+}
+
 // Modules
 
 pub mod combat;

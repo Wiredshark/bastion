@@ -137,12 +137,35 @@ pub struct State {
     // Avoid lifetime annotation by storing a thread pool instead of the whole dispatcher
     thread_pool: Arc<ThreadPool>,
     dispatcher: SendDispatcher<'static>,
+    execution_mode: ExecutionMode,
 }
 
 pub type Pools = Arc<ThreadPool>;
 
+/// Selects how ECS systems and nested Rayon work execute.
+///
+/// The live game uses [`Parallel`](Self::Parallel). The Bastion headless
+/// harness opts into [`DeterministicSerial`](Self::DeterministicSerial) at
+/// boot so identical inputs have one system/entity execution order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExecutionMode {
+    Parallel,
+    DeterministicSerial,
+}
+
+impl ExecutionMode {
+    pub const fn is_deterministic(self) -> bool { matches!(self, Self::DeterministicSerial) }
+}
+
 impl State {
     pub fn pools(game_mode: GameMode) -> Pools {
+        Self::pools_with_mode(game_mode, ExecutionMode::Parallel)
+    }
+
+    /// Build the pool used by dispatch, nested Rayon iterators, worldgen, and
+    /// slow jobs. A one-worker pool removes work-stealing only for the
+    /// deterministic harness; live construction remains unchanged.
+    pub fn pools_with_mode(game_mode: GameMode, execution_mode: ExecutionMode) -> Pools {
         let (thread_name_infix, is_main_task) = match game_mode {
             GameMode::Server => ("s", true),
             GameMode::Client => ("c", true),
@@ -176,9 +199,15 @@ impl State {
             }
         };
 
+        let num_threads = if execution_mode.is_deterministic() {
+            1
+        } else {
+            num_cpus::get().max(common::consts::MIN_RECOMMENDED_RAYON_THREADS)
+        };
+
         Arc::new(
             ThreadPoolBuilder::new()
-                .num_threads(num_cpus::get().max(common::consts::MIN_RECOMMENDED_RAYON_THREADS))
+                .num_threads(num_threads)
                 .thread_name(move |i| format!("rayon-{}-{}", thread_name_infix, i))
                 .spawn_handler(|thread| {
                     let mut b = std::thread::Builder::new();
@@ -227,11 +256,34 @@ impl State {
         add_systems: impl Fn(&mut DispatcherBuilder),
         #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
     ) -> Self {
-        Self::new(
+        Self::server_with_mode(
+            pools,
+            map_size_lg,
+            default_chunk,
+            ExecutionMode::Parallel,
+            add_systems,
+            #[cfg(feature = "plugins")]
+            plugin_mgr,
+        )
+    }
+
+    /// Create server state with an explicit execution policy. This is kept
+    /// separate from [`State::server`] so every existing live caller remains
+    /// parallel by default.
+    pub fn server_with_mode(
+        pools: Pools,
+        map_size_lg: MapSizeLg,
+        default_chunk: Arc<TerrainChunk>,
+        execution_mode: ExecutionMode,
+        add_systems: impl Fn(&mut DispatcherBuilder),
+        #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
+    ) -> Self {
+        Self::new_with_mode(
             GameMode::Server,
             pools,
             map_size_lg,
             default_chunk,
+            execution_mode,
             add_systems,
             #[cfg(feature = "plugins")]
             plugin_mgr,
@@ -243,6 +295,27 @@ impl State {
         pools: Pools,
         map_size_lg: MapSizeLg,
         default_chunk: Arc<TerrainChunk>,
+        add_systems: impl Fn(&mut DispatcherBuilder),
+        #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
+    ) -> Self {
+        Self::new_with_mode(
+            game_mode,
+            pools,
+            map_size_lg,
+            default_chunk,
+            ExecutionMode::Parallel,
+            add_systems,
+            #[cfg(feature = "plugins")]
+            plugin_mgr,
+        )
+    }
+
+    fn new_with_mode(
+        game_mode: GameMode,
+        pools: Pools,
+        map_size_lg: MapSizeLg,
+        default_chunk: Arc<TerrainChunk>,
+        execution_mode: ExecutionMode,
         add_systems: impl Fn(&mut DispatcherBuilder),
         #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
     ) -> Self {
@@ -263,11 +336,13 @@ impl State {
                 Arc::clone(&pools),
                 map_size_lg,
                 default_chunk,
+                execution_mode,
                 #[cfg(feature = "plugins")]
                 plugin_mgr,
             ),
             thread_pool: pools,
             dispatcher,
+            execution_mode,
         }
     }
 
@@ -279,6 +354,7 @@ impl State {
         thread_pool: Arc<ThreadPool>,
         map_size_lg: MapSizeLg,
         default_chunk: Arc<TerrainChunk>,
+        execution_mode: ExecutionMode,
         #[cfg(feature = "plugins")] mut plugin_mgr: PluginMgr,
     ) -> specs::World {
         prof_span!("State::setup_ecs_world");
@@ -418,15 +494,20 @@ impl State {
         ecs.insert(TerrainChanges::default());
         ecs.insert(EventBus::<LocalEvent>::default());
         ecs.insert(game_mode);
+        ecs.insert(execution_mode);
         ecs.insert(EventBus::<Outcome>::default());
         ecs.insert(common::CachedSpatialGrid::default());
         ecs.insert(EntitiesDiedLastTick::default());
         ecs.insert(RtsimGizmos::default());
 
-        let num_cpu = num_cpus::get() as u64;
-        let slow_limit = (num_cpu / 2 + num_cpu / 4).max(1);
-        tracing::trace!(?slow_limit, "Slow Thread limit");
-        ecs.insert(SlowJobPool::new(slow_limit, 10_000, thread_pool));
+        if execution_mode.is_deterministic() {
+            ecs.insert(SlowJobPool::new_inline(10_000, thread_pool));
+        } else {
+            let num_cpu = num_cpus::get() as u64;
+            let slow_limit = (num_cpu / 2 + num_cpu / 4).max(1);
+            tracing::trace!(?slow_limit, "Slow Thread limit");
+            ecs.insert(SlowJobPool::new(slow_limit, 10_000, thread_pool));
+        }
 
         // TODO: only register on the server
         ecs.insert(comp::group::GroupManager::default());
@@ -894,8 +975,18 @@ impl State {
             (dt.as_secs_f32() * time_scale as f32).min(MAX_DELTA_TIME);
 
         section_span!(guard, "run systems");
-        // This dispatches all the systems in parallel.
-        self.dispatcher.dispatch(&self.ecs);
+        if self.execution_mode.is_deterministic() {
+            // `dispatch_seq` fixes the Specs/Shred system order. Running it
+            // inside this State's one-worker pool also captures nested
+            // `par_join`/`par_iter` calls; otherwise sequential dispatch from
+            // the main thread would fall back to Rayon's global pool.
+            let pool = Arc::clone(&self.thread_pool);
+            let dispatcher = &mut self.dispatcher;
+            let ecs = &self.ecs;
+            pool.install(move || dispatcher.dispatch_seq(ecs));
+        } else {
+            self.dispatcher.dispatch(&self.ecs);
+        }
         drop(guard);
 
         self.maintain_ecs();

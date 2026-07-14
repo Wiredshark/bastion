@@ -210,8 +210,17 @@ impl Server {
         let mut frontend_events = Vec::new();
 
         span!(guard, "run event systems");
-        // This dispatches all the systems in parallel.
-        self.event_dispatcher.dispatch(self.state.ecs());
+        if self.execution_mode.is_deterministic() {
+            // Match State::tick: stable system order, and enter the State's
+            // one-worker pool so nested Rayon iterators cannot escape to the
+            // global work-stealing pool.
+            let pool = Arc::clone(self.state.thread_pool());
+            let dispatcher = &mut self.event_dispatcher;
+            let ecs = self.state.ecs();
+            pool.install(move || dispatcher.dispatch_seq(ecs));
+        } else {
+            self.event_dispatcher.dispatch(self.state.ecs());
+        }
         drop(guard);
 
         span!(guard, "handle serial events");

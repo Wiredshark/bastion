@@ -2,9 +2,12 @@ pub mod behavior_tree;
 use server_agent::data::AgentEvents;
 pub use server_agent::{action_nodes, attack, consts, data, util};
 
-use crate::sys::agent::{
-    behavior_tree::{BehaviorData, BehaviorTree},
-    data::{AgentData, ReadData},
+use crate::{
+    Settings, Tick,
+    sys::agent::{
+        behavior_tree::{BehaviorData, BehaviorTree},
+        data::{AgentData, ReadData},
+    },
 };
 use common::{
     comp::{
@@ -16,9 +19,24 @@ use common::{
 };
 use common_base::prof_span;
 use common_ecs::{Job, Origin, ParMode, Phase, System};
-use rand::rng;
+use rand::{RngExt, SeedableRng, rng, rngs::{SmallRng, StdRng}};
 use rayon::iter::ParallelIterator;
-use specs::{LendJoin, ParJoin, WriteStorage};
+use specs::{LendJoin, ParJoin, Read, ReadExpect, WriteStorage};
+use std::cell::RefCell;
+
+fn deterministic_agent_seed(world_seed: u32, tick: u64, uid: common::uid::Uid) -> u64 {
+    // SplitMix64 finalizer over the three stable identities. This is stream
+    // separation, not simulation randomness: identical (world,tick,entity)
+    // inputs reproduce, while neighboring seeds and different agents do not
+    // share streams.
+    let mut x = (world_seed as u64).rotate_left(32)
+        ^ tick.rotate_left(17)
+        ^ uid.0.get()
+        ^ 0xA6E3_7D91_5B4C_2F08;
+    x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^ (x >> 31)
+}
 
 /// bastion (PATH-0): THE traversal-config builder — extracted from the
 /// agent tick so the sequential path scheduler builds byte-identical
@@ -77,6 +95,9 @@ impl<'a> System<'a> for Sys {
         AgentEvents<'a>,
         WriteStorage<'a, Agent>,
         WriteStorage<'a, Controller>,
+        ReadExpect<'a, common_state::ExecutionMode>,
+        Read<'a, Tick>,
+        ReadExpect<'a, Settings>,
     );
 
     const NAME: &'static str = "agent";
@@ -85,7 +106,15 @@ impl<'a> System<'a> for Sys {
 
     fn run(
         job: &mut Job<Self>,
-        (read_data, events, mut agents, mut controllers): Self::SystemData,
+        (
+            read_data,
+            events,
+            mut agents,
+            mut controllers,
+            execution_mode,
+            tick,
+            settings,
+        ): Self::SystemData,
     ) {
         job.cpu_stats.measure(ParMode::Rayon);
 
@@ -145,7 +174,25 @@ impl<'a> System<'a> for Sys {
                     (_, is_rider, is_volume_rider),
                 )| {
                     let mut emitters = events.get_emitters();
-                    let mut rng = rng();
+                    let deterministic_seed = execution_mode
+                        .is_deterministic()
+                        .then(|| deterministic_agent_seed(settings.world_seed, tick.0, *uid));
+                    // Chaser owns hidden route state and historically drew
+                    // directly from `rand::rng()` when unsticking. Give it a
+                    // separate deterministic stream in harness mode so an
+                    // otherwise invisible route-index mutation cannot split
+                    // two same-seed runs. Live mode explicitly retains the
+                    // original OS-seeded path.
+                    agent.chaser.set_deterministic_seed(
+                        deterministic_seed.map(|seed| seed ^ 0xC4A5_E211_0B71_5EED),
+                    );
+                    let mut rng = if let Some(seed) = deterministic_seed {
+                        StdRng::seed_from_u64(seed)
+                    } else {
+                        // Preserve live entropy. Only the deterministic
+                        // harness derives an agent stream from stable inputs.
+                        StdRng::from_rng(&mut rng())
+                    };
 
                     // The entity that is moving, if riding it's the mount, otherwise it's itself
                     let moving_entity = is_rider
@@ -276,6 +323,9 @@ impl<'a> System<'a> for Sys {
                         msm: &read_data.msm,
                         poise: read_data.poises.get(entity),
                         stance: read_data.stances.get(entity),
+                        helper_rng: RefCell::new(deterministic_seed.map(|seed| {
+                            SmallRng::seed_from_u64(seed ^ 0x51A7_C0DE_55AA_7711)
+                        })),
                     };
 
                     ///////////////////////////////////////////////////////////

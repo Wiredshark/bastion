@@ -1353,6 +1353,20 @@ pub struct JobBoard {
 }
 
 impl JobBoard {
+    /// Decision-order view of the otherwise lookup-optimized job map.
+    ///
+    /// `HashMap` iteration is deliberately unspecified. In deterministic
+    /// harness mode, sorting the monotonic `JobId`s pins equal-score claim
+    /// ties and same-depth access-plan ties without imposing a tree-map cost
+    /// on the live game.
+    fn decision_job_ids(&self, deterministic: bool) -> Vec<JobId> {
+        let mut ids = self.jobs.keys().copied().collect::<Vec<_>>();
+        if deterministic {
+            ids.sort_unstable();
+        }
+        ids
+    }
+
     /// Generate jobs for a validated designation region. Returns created ids.
     /// v1 generation: Mine = every filled block in the region; Chop = every
     /// wood block; Build = every currently-empty position (the inverse of
@@ -2006,6 +2020,10 @@ impl<'a> System<'a> for Sys {
             ReadExpect<'a, crate::rtsim::RtSim>,
             ReadStorage<'a, comp::PickupItem>,
             ReadExpect<'a, common::event::EventBus<common::event::InventoryManipEvent>>,
+            // ARCH-003: pins job-decision-order ties (equal-score claims,
+            // same-depth access plans) deterministically in harness mode —
+            // HashMap iteration order is otherwise unspecified.
+            ReadExpect<'a, common_state::ExecutionMode>,
             // ZONE-0: the activity-zone mirror the agent magnet reads.
             specs::Write<'a, common::bastion::ActivityZones>,
             // B7-0: the survival meters (decayed per tick; the mood
@@ -2053,6 +2071,7 @@ impl<'a> System<'a> for Sys {
                 rtsim,
                 pickup_items,
                 inventory_manip_events,
+                execution_mode,
                 mut activity_zones,
                 mut needs_storage,
                 mut energies,
@@ -6159,11 +6178,12 @@ impl<'a> System<'a> for Sys {
         // downward as the dig deepens, one plan per ~4 layers).
         let mut descent_gated: HashSet<JobId> = HashSet::new();
         let mut descent_plan: Option<(JobId, Vec3<i32>, u8)> = None;
-        for (id, job) in board.jobs.iter() {
+        for id in board.decision_job_ids(execution_mode.is_deterministic()) {
+            let job = &board.jobs[&id];
             if !job.kind.is(DesignationKind::Mine)
                 || job.is_access
                 || job.depth <= 2
-                || !exposed.contains(id)
+                || !exposed.contains(&id)
             {
                 continue;
             }
@@ -6175,12 +6195,12 @@ impl<'a> System<'a> for Sys {
             if anchored {
                 continue;
             }
-            descent_gated.insert(*id);
+            descent_gated.insert(id);
             if descent_plan
                 .as_ref()
                 .is_none_or(|(_, p, _)| job.pos.z > p.z)
             {
-                descent_plan = Some((*id, job.pos, job.depth));
+                descent_plan = Some((id, job.pos, job.depth));
             }
         }
         // The proactive access plan for the shallowest gated layer (one
@@ -6273,7 +6293,8 @@ impl<'a> System<'a> for Sys {
             // Highest priority, then lowest score (distance + B5.8's
             // top-down and dispersion shaping).
             let mut best: Option<(JobId, u8, f32)> = None;
-            for (id, job) in board.jobs.iter() {
+            for id in board.decision_job_ids(execution_mode.is_deterministic()) {
+                let job = &board.jobs[&id];
                 if job.claimed_by.is_some() || job.unreachable {
                     continue;
                 }
@@ -6296,11 +6317,11 @@ impl<'a> System<'a> for Sys {
                 // needs a real stance). Replaces the bare exposure gate so
                 // unstandable `+1`-gap / floating cells aren't claimed-then-
                 // stuck.
-                if job.kind.is(DesignationKind::Mine) && !standable.contains_key(id) {
+                if job.kind.is(DesignationKind::Mine) && !standable.contains_key(&id) {
                     continue;
                 }
                 // B5.8-E: held until return-access leads the descent.
-                if descent_gated.contains(id) {
+                if descent_gated.contains(&id) {
                     continue;
                 }
                 // B6: a material job with nothing in hand is claimable IF a
@@ -6399,7 +6420,7 @@ impl<'a> System<'a> for Sys {
                     Some((_, bp, bs)) => priority > *bp || (priority == *bp && score < *bs),
                 };
                 if better {
-                    best = Some((*id, priority, score));
+                    best = Some((id, priority, score));
                 }
             }
             if let Some((job_id, _, _)) = best {
