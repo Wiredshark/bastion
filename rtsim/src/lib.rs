@@ -228,6 +228,9 @@ impl RtState {
         self.start_rule::<rule::architect::Architect>();
         self.start_rule::<rule::replenish_resources::ReplenishResources>();
         self.start_rule::<rule::report::ReportEvents>();
+        // bastion (HIST-1): the persistent-history sibling — same bus
+        // events as ReportEvents, the Chronicle sink.
+        self.start_rule::<rule::chronicle_events::ChronicleEvents>();
         self.start_rule::<rule::sync_npcs::SyncNpcs>();
         self.start_rule::<rule::simulate_npcs::SimulateNpcs>();
         self.start_rule::<rule::npc_ai::NpcAi>();

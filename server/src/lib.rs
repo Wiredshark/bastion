@@ -1611,6 +1611,81 @@ impl Server {
             .count()
     }
 
+    /// bastion (HIST-1, harness hook): chronicle capture vitals —
+    /// `(death_entries, last_death_actor_count, theft_entries,
+    /// theft_pos_ok, reports_len)`. Reports ride along so the sibling
+    /// sink's continued firing is assertable (the regression-free half of
+    /// the done-when).
+    pub fn bastion_hist1_probe(&self) -> (usize, usize, usize, bool, usize) {
+        let ecs = self.state.ecs();
+        let rtsim = ecs.read_resource::<crate::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        let mut death_count = 0;
+        let mut death_actors = 0;
+        let mut theft_count = 0;
+        let mut theft_ok = false;
+        for e in data.chronicle.events() {
+            match e.kind {
+                ::rtsim::data::ChronicleKind::Death => {
+                    death_count += 1;
+                    death_actors = e.actors.len();
+                },
+                ::rtsim::data::ChronicleKind::Theft => {
+                    theft_count += 1;
+                    theft_ok = e.pos.is_some();
+                },
+                _ => {},
+            }
+        }
+        (
+            death_count,
+            death_actors,
+            theft_count,
+            theft_ok,
+            data.reports.iter().count(),
+        )
+    }
+
+    /// bastion (HIST-1, harness hook): fire the REAL theft hook — the
+    /// same `hook_pickup_owned_sprite` the interaction handler calls —
+    /// with a named colonist as the thief at its own feet. Tests the
+    /// event→both-sinks binding through vanilla's own emission path.
+    pub fn bastion_emit_test_theft(&mut self, name: &str) -> bool {
+        use specs::Join;
+        let resolved = {
+            let ecs = self.state.ecs();
+            let entities = ecs.entities();
+            let colonists = ecs.read_storage::<comp::Colonist>();
+            let rtsim_entities =
+                ecs.read_storage::<common::rtsim::RtSimEntity>();
+            let positions = ecs.read_storage::<comp::Pos>();
+            (&entities, &colonists, &rtsim_entities, &positions)
+                .join()
+                .find(|(_, c, _, _)| c.0.name == name)
+                .map(|(_, _, re, pos)| {
+                    (
+                        common::rtsim::Actor::Npc(*re),
+                        pos.0.map(|e| e.floor() as i32),
+                    )
+                })
+        };
+        let Some((actor, wpos)) = resolved else {
+            return false;
+        };
+        let index = self.index.as_index_ref();
+        self.state
+            .ecs()
+            .write_resource::<crate::rtsim::RtSim>()
+            .hook_pickup_owned_sprite(
+                &self.world,
+                index,
+                common::terrain::sprite::SpriteKind::Crate,
+                wpos,
+                actor,
+            );
+        true
+    }
+
     /// bastion (49.2/B37, harness hook): board vitals for the haul-pinning
     /// scenario — `(next_id, live_reservations)`. `next_id` bumps once per
     /// job creation, so its delta counts re-emissions exactly (no racy

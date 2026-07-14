@@ -302,6 +302,13 @@ struct Args {
     #[arg(long)]
     haulpin_scenario: bool,
 
+    /// bastion (HIST-1, row 54): the Chronicle's event-bus capture — a
+    /// death and a theft each yield EXACTLY ONE persistent entry through
+    /// vanilla's own bus while the ephemeral Reports sibling keeps
+    /// firing; conservation across a settle window.
+    #[arg(long)]
+    chronicle_capture_scenario: bool,
+
     /// bastion (AUTON-2, row 50): THE DEATH-SPIRAL GATE (E1). Phase A: a
     /// RECOVERABLE shortage (stock < eaters, live pre-painted farm) —
     /// the trait-stagger splits the crew (anxious/default preempt to
@@ -461,6 +468,8 @@ fn main() -> ExitCode {
         haulpin_scenario(&args)
     } else if args.autonomy_death_spiral_scenario {
         spiral_scenario(&args)
+    } else if args.chronicle_capture_scenario {
+        hist1_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -5556,6 +5565,159 @@ fn haulpin_scenario(args: &Args) -> ExitCode {
         && stones == 2;
     println!("{}", result);
     println!("HAULPIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (HIST-1, row 54): the Chronicle's first event-bus emitters —
+/// a colonist death and a theft each produce EXACTLY ONE persistent
+/// Chronicle entry (correct kind, actors, position) through vanilla's
+/// own event bus, while the ephemeral Reports sibling KEEPS firing
+/// (regression-free: same event, two sinks). Conservation: entry count
+/// == event count — no dupes across a long settle window, no drops.
+fn hist1_scenario(args: &Args) -> ExitCode {
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-hist1-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-hist1".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-hist1-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, 500.0),
+        2,
+    );
+    tick(&mut server, 30);
+    let mut names = server.bastion_rename_colonists_unique();
+    names.sort();
+
+    // Baseline — the world may already hold vanilla deaths/thefts from
+    // worldgen-time simulation; every assert below is a DELTA.
+    let (d0, _, t0, _, r0) = server.bastion_hist1_probe();
+
+    // ONE death (the BED corpse-probe's own kill hook — the REAL death
+    // pipeline: server death event → rtsim OnDeath → both sinks).
+    let killed = server.bastion_kill_colonist(&names[0]);
+    let mut death_seen = false;
+    let mut death_actors = 0;
+    let mut reports_grew = false;
+    for _ in 0..120 {
+        tick(&mut server, 10);
+        let (d, da, _, _, r) = server.bastion_hist1_probe();
+        if d == d0 + 1 {
+            death_seen = true;
+            death_actors = da;
+        }
+        if r > r0 {
+            reports_grew = true;
+        }
+        if death_seen && reports_grew {
+            break;
+        }
+    }
+
+    // ONE theft through the REAL emission hook (the survivor thieves).
+    let theft_fired = server.bastion_emit_test_theft(&names[1]);
+    let mut theft_seen = false;
+    let mut theft_pos_ok = false;
+    for _ in 0..60 {
+        tick(&mut server, 10);
+        let (_, _, t, tok, _) = server.bastion_hist1_probe();
+        if t == t0 + 1 {
+            theft_seen = true;
+            theft_pos_ok = tok;
+            break;
+        }
+    }
+
+    // CONSERVATION: one event, one record — the counts hold across a
+    // long settle window (no re-fires, no dupes, no drops).
+    tick(&mut server, 300);
+    let (d_final, _, t_final, _, _) = server.bastion_hist1_probe();
+    let conserved = d_final == d0 + 1 && t_final == t0 + 1;
+
+    let result = serde_json::json!({
+        "hist1_colonists": names.len(),
+        "hist1_killed": killed,
+        "hist1_death_entry": death_seen,
+        "hist1_death_actors": death_actors,
+        "hist1_theft_fired": theft_fired,
+        "hist1_theft_entry": theft_seen,
+        "hist1_theft_pos_ok": theft_pos_ok,
+        "hist1_reports_still_fire": reports_grew,
+        "hist1_conserved": conserved,
+    });
+    println!(
+        "HIST1 TELEMETRY: d0={d0} t0={t0} r0={r0} death_actors={death_actors}"
+    );
+    let pass = names.len() == 2
+        && killed
+        && death_seen
+        && death_actors == 1
+        && theft_fired
+        && theft_seen
+        && theft_pos_ok
+        && reports_grew
+        && conserved;
+    println!("{}", result);
+    println!("HIST1 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);

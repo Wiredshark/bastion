@@ -1,4 +1,5 @@
 pub mod architect;
+pub mod chronicle_events;
 pub mod cleanup;
 pub mod migrate;
 pub mod npc_ai;
