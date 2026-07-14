@@ -1559,6 +1559,58 @@ impl Server {
         )
     }
 
+    /// bastion (AUTON-2, harness hook): a named colonist's rolled
+    /// temperament `(conscientious, neurotic)` — READ-ONLY off the same
+    /// rtsim data the stagger reads. The spiral scenario ASSIGNS its
+    /// designed value-spread around the seed's actual rolls and asserts
+    /// against each colonist's exact effective threshold (the first
+    /// draw's lesson: personality stacks on values, so group labels
+    /// can't predict who preempts — the computed threshold can).
+    pub fn bastion_colonist_temperament(
+        &self,
+        name: &str,
+    ) -> Option<(bool, bool)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let rtsim_entities =
+            ecs.read_storage::<common::rtsim::RtSimEntity>();
+        let rtsim = ecs.read_resource::<crate::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        (&entities, &colonists, &rtsim_entities)
+            .join()
+            .find(|(_, c, _)| c.0.name == name)
+            .and_then(|(_, _, re)| data.npcs.get(*re))
+            .map(|npc| {
+                (
+                    npc.personality.is(
+                        common::rtsim::PersonalityTrait::Conscientious,
+                    ),
+                    npc.personality
+                        .is(common::rtsim::PersonalityTrait::Neurotic),
+                )
+            })
+    }
+
+    /// bastion (AUTON-2, harness hook): live Despond self-jobs on the
+    /// board — READ-ONLY (Despond holds are ordinary board jobs, so the
+    /// past-band "keeps re-firing" assert needs no B7-3 counter). Seen
+    /// >0 in two separated windows = the breakdown staircase cycled.
+    pub fn bastion_despond_jobs(&self) -> usize {
+        let board = self
+            .state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>();
+        board
+            .jobs
+            .values()
+            .filter(|j| {
+                matches!(j.kind, common::bastion::JobKind::Despond { .. })
+            })
+            .count()
+    }
+
     /// bastion (49.2/B37, harness hook): board vitals for the haul-pinning
     /// scenario — `(next_id, live_reservations)`. `next_id` bumps once per
     /// job creation, so its delta counts re-emissions exactly (no racy

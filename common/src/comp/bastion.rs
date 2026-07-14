@@ -234,6 +234,51 @@ pub fn derive_need_weight(
     w.clamp(0.0, 2.0)
 }
 
+/// bastion (AUTON-2, row 50): the preempt-threshold SAFETY FLOOR — even
+/// the hardiest possible colonist keeps a live preempt-to-eat edge above
+/// zero (Opus's hard guard: the stagger WIDENS the recoverable band, it
+/// never disables B7-2's backstop). At hunger decay 0.0004/s a 0.05
+/// threshold still leaves ~2 sim-minutes of margin before empty.
+pub const INTERRUPT_FLOOR: f32 = 0.05;
+
+/// bastion (AUTON-2, row 50): the TRAIT-STAGGER — one colonist's
+/// EFFECTIVE preempt threshold for a need (the per-colonist form of
+/// `NeedTuning.interrupt`, the [`care_factor`] modulation pattern).
+/// Dutiful/hardy colonists (Craft/Tradition-valuing, Conscientious)
+/// tolerate a DEEPER deficit before abandoning work (lower threshold);
+/// anxious ones (Neurotic, anti-valuing) preempt EARLIER (higher). The
+/// spread is the death-spiral defense: a shortage never yanks the whole
+/// crew off the farm at once. Hardiness h ∈ [−1.5, +1.5] (values ±0.5
+/// each + Conscientious +0.5 / Neurotic −0.5); eff = base·(1 − 0.4·h),
+/// clamped to [`INTERRUPT_FLOOR`-floored, base×1.5]. The `.min(base)`
+/// on the floor keeps a base of 0.0 (recreation: never-preempts) at
+/// exactly 0.0 — the stagger cannot INVENT a preempt class — and keeps
+/// the clamp well-formed if a RON retunes base below the floor. The
+/// ceiling base×1.5 (0.3 at the 0.2 default) stays under the 0.5
+/// comfort band: nobody preempts while comfortable. PURE + RNG-free
+/// (field reads only — the determinism house invariant).
+pub fn stagger_interrupt(
+    base: f32,
+    values: &std::collections::HashMap<crate::bastion::Value, i8>,
+    conscientious: bool,
+    neurotic: bool,
+) -> f32 {
+    use crate::bastion::Value;
+    let mut h = 0.0f32;
+    for v in [Value::Craft, Value::Tradition] {
+        if let Some(w) = values.get(&v) {
+            h += f32::from(*w) / 100.0;
+        }
+    }
+    if conscientious {
+        h += 0.5;
+    }
+    if neurotic {
+        h -= 0.5;
+    }
+    (base * (1.0 - 0.4 * h)).clamp(INTERRUPT_FLOOR.min(base), base * 1.5)
+}
+
 pub fn care_factor(
     values: &std::collections::HashMap<crate::bastion::Value, i8>,
     affinities: &[(crate::bastion::Value, f32)],
@@ -260,6 +305,56 @@ pub fn care_factor(
 #[cfg(test)]
 mod bastion_b70_tests {
     use super::*;
+
+    /// AUTON-2: the trait-stagger pinned. THE OPUS FLOOR ASSERT (unit
+    /// form): the hardiest POSSIBLE colonist (both values +50,
+    /// Conscientious, not Neurotic → h = 1.5) still holds a strictly
+    /// positive threshold at/above the floor — the preempt-to-eat
+    /// backstop survives maximal hardiness. Plus: identity (no traits =
+    /// base exactly), monotonicity (hardier ⇒ never higher), the
+    /// anxious ceiling (< comfort), and recreation's 0.0 stays 0.0 (the
+    /// stagger cannot invent a preempt class).
+    #[test]
+    fn auton2_stagger_interrupt_floor_and_shape() {
+        use crate::bastion::Value;
+        use std::collections::HashMap;
+        let base = 0.2f32;
+        let mut hardiest = HashMap::new();
+        hardiest.insert(Value::Craft, 50i8);
+        hardiest.insert(Value::Tradition, 50i8);
+        let floor_case = stagger_interrupt(base, &hardiest, true, false);
+        assert!(floor_case >= INTERRUPT_FLOOR);
+        assert!(floor_case > 0.0);
+        // h = 1.5 → 0.2 × (1 − 0.6) = 0.08 exactly.
+        assert!((floor_case - 0.08).abs() < 1e-6);
+        // Identity: empty values, no traits → base bit-for-bit.
+        let none = HashMap::new();
+        assert_eq!(stagger_interrupt(base, &none, false, false), base);
+        // Monotone: each hardiness step never RAISES the threshold.
+        let mut mid = HashMap::new();
+        mid.insert(Value::Craft, 50i8);
+        let steps = [
+            stagger_interrupt(base, &none, false, true), // anxious
+            stagger_interrupt(base, &none, false, false),
+            stagger_interrupt(base, &mid, false, false),
+            stagger_interrupt(base, &hardiest, false, false),
+            stagger_interrupt(base, &hardiest, true, false),
+        ];
+        for w in steps.windows(2) {
+            assert!(w[1] <= w[0]);
+        }
+        // The anxious ceiling: h = −1.5 → 0.2×1.6 = 0.32, clamped to
+        // base×1.5 = 0.3 — still under the 0.5 comfort band.
+        let mut anti = HashMap::new();
+        anti.insert(Value::Craft, -50i8);
+        anti.insert(Value::Tradition, -50i8);
+        let anxious = stagger_interrupt(base, &anti, false, true);
+        assert!((anxious - 0.3).abs() < 1e-6);
+        assert!(anxious < 0.5);
+        // Recreation's never-preempt base survives every temperament.
+        assert_eq!(stagger_interrupt(0.0, &hardiest, true, false), 0.0);
+        assert_eq!(stagger_interrupt(0.0, &anti, false, true), 0.0);
+    }
 
     /// B7-0's formula pinned: topped-up == base exactly; the fully
     /// starved case matches the hand-computed value; decay arithmetic is

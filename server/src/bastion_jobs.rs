@@ -374,7 +374,12 @@ pub const SLEEP_MARGIN: f32 = 0.1;
 /// bastion (B7-3): what a colonist recognizes as FOOD (the eat-job's
 /// target defs) — v1 is the forage loop's own yield; extends as food
 /// economies land (DF-FARM/DF-COOK).
-pub const FOOD_DEFS: &[&str] = &["common.items.food.mushroom"];
+// AUTON-2 (row 50): wheat joins the recognized-food list — the const's
+// designed extension point ("extends as food"), and the death-spiral
+// recovery's load-bearing line: without it the farm's whole output is
+// inedible and no shortage can recover through production.
+pub const FOOD_DEFS: &[&str] =
+    &["common.items.food.mushroom", FARM_WHEAT_ITEM];
 /// bastion (B7-3): hunger restored per food item eaten.
 pub const FOOD_RESTORE: f32 = 0.5;
 
@@ -3368,6 +3373,10 @@ impl<'a> System<'a> for Sys {
             Vec::new();
         if tick.0 % ARBITRATION_INTERVAL as u64 == 13 {
             let mood_cfg = common::bastion::MoodConfig::current();
+            // AUTON-2 (row 50): personality for the trait-stagger rides
+            // the same rtsim read guard the mood pass uses (the :%15==11
+            // idiom) — zero new coupling.
+            let stagger_data = rtsim.state().data();
             for (entity, colonist, pos, uid, needs) in (
                 &entities,
                 &colonists,
@@ -3438,11 +3447,45 @@ impl<'a> System<'a> for Sys {
                 }
                 // Urgency ranking over live needs (lowest meter first —
                 // B7-3 makes it real: hunger and rest both live).
+                // AUTON-2 (row 50): the TRAIT-STAGGER — the two threshold
+                // INPUTS become per-colonist (dutiful colonists tolerate a
+                // deeper deficit, anxious ones preempt earlier; clamped
+                // with the INTERRUPT_FLOOR safety edge so the backstop
+                // never disables). The ONLY change to this Opus-cleared
+                // block: the machinery — cooldown, hysteresis wake edge,
+                // self-job authority, the Despond staircase — untouched.
+                let (consc, neur) = rtsim_entities
+                    .get(entity)
+                    .and_then(|re| stagger_data.npcs.get(*re))
+                    .map_or((false, false), |npc| {
+                        (
+                            npc.personality.is(
+                                common::rtsim::PersonalityTrait::Conscientious,
+                            ),
+                            npc.personality.is(
+                                common::rtsim::PersonalityTrait::Neurotic,
+                            ),
+                        )
+                    });
                 let mut candidates: Vec<(f32, u8)> = Vec::new();
-                if needs.rest < mood_cfg.rest.interrupt {
+                if needs.rest
+                    < comp::bastion::stagger_interrupt(
+                        mood_cfg.rest.interrupt,
+                        &colonist.0.values,
+                        consc,
+                        neur,
+                    )
+                {
                     candidates.push((needs.rest, 0));
                 }
-                if needs.hunger < mood_cfg.hunger.interrupt {
+                if needs.hunger
+                    < comp::bastion::stagger_interrupt(
+                        mood_cfg.hunger.interrupt,
+                        &colonist.0.values,
+                        consc,
+                        neur,
+                    )
+                {
                     candidates.push((needs.hunger, 1));
                 }
                 candidates.sort_by(|a, b| {
@@ -3524,6 +3567,12 @@ impl<'a> System<'a> for Sys {
                         info!(
                             colonist = %uid,
                             item = %item,
+                            // AUTON-2 diagnostics: the target's cell + the
+                            // eater's feet — the carve-ascent forensics
+                            // axis (a target ≥3 above feet routes the
+                            // EatFrom into auto-access).
+                            item_pos = ?ipos,
+                            feet = ?pos.0.map(|e| e.floor() as i32),
                             "bastion: need preempt — hunger below interrupt"
                         );
                         preempt_pending.push((

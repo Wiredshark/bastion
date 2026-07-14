@@ -302,6 +302,19 @@ struct Args {
     #[arg(long)]
     haulpin_scenario: bool,
 
+    /// bastion (AUTON-2, row 50): THE DEATH-SPIRAL GATE (E1). Phase A: a
+    /// RECOVERABLE shortage (stock < eaters, live pre-painted farm) —
+    /// the trait-stagger splits the crew (anxious/default preempt to
+    /// eat, hardy keep farming), production covers the dip, the colony
+    /// recovers with ZERO input. Phase A-floor: even the hardiest
+    /// colonist still preempts below the safety floor (asserted
+    /// directly). Phase B: a PAST-band shortage (no farm, one wheat) —
+    /// graceful degrade: Despond keeps re-firing across windows, the
+    /// board stays bounded, the sim never freezes. Not a death/
+    /// emigration mechanic (deferred).
+    #[arg(long)]
+    autonomy_death_spiral_scenario: bool,
+
     /// bastion (B-ASSET1): run the asset-lab dynamic-test scenarios on the
     /// flat arena pad (+ an integrated-dynamic spot check). Pass an asset id
     /// or `all` (= every non-test, non-creature catalog entry). One JSON line
@@ -446,6 +459,8 @@ fn main() -> ExitCode {
         selfgen_scenario(&args)
     } else if args.haulpin_scenario {
         haulpin_scenario(&args)
+    } else if args.autonomy_death_spiral_scenario {
+        spiral_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -5523,6 +5538,582 @@ fn haulpin_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
+/// bastion (AUTON-2, row 50): THE DEATH-SPIRAL GATE — E1, the arc's
+/// success criterion, in two INDEPENDENT boots (a farm plot cannot be
+/// cancelled once painted — noted for the FARM lane — so past-band gets
+/// its own farm-less world rather than a fake exhaustion).
+/// BOOT A (recoverable): 6 colonists, values set for a DESIGNED spread
+/// (2 hardy Craft+50/Tradition+50 → threshold 0.08; 2 default → 0.2; 2
+/// anxious −50/−50 → 0.3), a 2×2 farm bootstrapped to its FIRST harvest,
+/// then the shortage: every meter forced to 0.15 AT ONCE. The stagger
+/// splits the crew — 0.15 sits under default+anxious thresholds (they
+/// preempt to eat) and OVER hardy's 0.08 (they keep farming): the farm
+/// never empties, production covers the dip, everyone recovers with
+/// zero input, and the depth is honest (stock < eaters forces the
+/// recovery through NEW production). Then THE FLOOR (Opus's assert,
+/// direct): the hardiest colonist forced to 0.06 < its 0.08 threshold
+/// preempts-to-eat within a few cadences — the backstop survives
+/// maximal hardiness.
+/// BOOT B (past-band): no farm, ONE wheat, all meters forced to the
+/// bottom → mood collapses to ~0.09, sustained → graceful degrade:
+/// Despond RE-FIRES across windows separated by more than its own hold
+/// (the staircase cycles), preempt attempts strictly grow (the sim
+/// keeps trying), the board stays bounded (no spam), the run completes
+/// (no freeze/crash). NOT death/emigration — deferred to BODIES/MIG.
+fn spiral_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region, ZoneKind};
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    const SEEDS: &str = "common.items.bastion.wheat_seeds";
+    const WHEAT: &str = "common.items.bastion.wheat";
+
+    let started = Instant::now();
+    let boot = |tag: &str, seed: u32| -> Server {
+        let data_dir = std::env::temp_dir().join(format!(
+            "bastion-spiral-{tag}-{}-{}",
+            std::process::id(),
+            started.elapsed().as_nanos()
+        ));
+        std::fs::create_dir_all(&data_dir)
+            .expect("failed to create harness data dir");
+        let settings = Settings {
+            gameserver_protocols: Vec::new(),
+            auth_server_address: None,
+            query_address: None,
+            world_seed: seed,
+            server_name: format!("bastion-harness-spiral-{tag}"),
+            map_file: None,
+            max_view_distance: None,
+            calendar_mode: CalendarMode::None,
+            ..Settings::default()
+        };
+        let editable_settings = EditableSettings::singleplayer(&data_dir);
+        let database_settings = DatabaseSettings {
+            db_dir: data_dir.join("saves"),
+            sql_log_mode: SqlLogMode::Disabled,
+        };
+        let runtime = Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .worker_threads(2)
+                .thread_name("bastion-spiral-tokio")
+                .build()
+                .expect("failed to build tokio runtime"),
+        );
+        Server::new(
+            settings,
+            editable_settings,
+            database_settings,
+            &data_dir,
+            &|stage| info!(?stage, "server init"),
+            runtime,
+        )
+        .expect("failed to create headless server")
+    };
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+
+    // ── BOOT A: the RECOVERABLE band ─────────────────────────────────
+    let mut server = boot("a", args.seed);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    let write_strip = |server: &mut Server| {
+        for x in (cx - 16)..=(cx + 16) {
+            for y in (cy - 12)..=(cy + 12) {
+                for z in (gz - 6)..=gz {
+                    server.state_mut().set_block(Vec3::new(x, y, z), rock);
+                }
+                for z in (gz + 1)..=(gz + 8) {
+                    server.state_mut().set_block(Vec3::new(x, y, z), air);
+                }
+            }
+        }
+    };
+    write_strip(&mut server);
+    tick(&mut server, 2);
+    // WORK BEFORE WORKERS (the eighth-draw fix, and the root of five of
+    // the seven draws' failures): colonists commit to deep wander in
+    // their FIRST idle seconds — before any designation painted after
+    // spawn can exist — and once 100+ blocks out they never re-attach
+    // (distance-scored claims; teleports don't clear the brain's
+    // committed target). Painting the farm/stockpile/leash and spawning
+    // the stock FIRST means the crew spawns into 16 open jobs and gets
+    // claimed on the first arbitration cadence: nobody ever idles,
+    // nobody ever leaves. A colony founded WITH work — which is also
+    // the honest premise of the packet's own recovery image.
+    let store = Region {
+        min: Vec3::new(cx - 1, cy, gz),
+        max: Vec3::new(cx, cy + 1, gz + 1),
+    };
+    server.bastion_place_designation(store, DesignationKind::Stockpile);
+    let leash = Region {
+        min: Vec3::new(cx - 10, cy - 8, gz + 1),
+        max: Vec3::new(cx + 10, cy + 8, gz + 1),
+    };
+    server
+        .bastion_place_designation(leash, DesignationKind::Zone(ZoneKind::Meeting));
+    let plot = Region {
+        min: Vec3::new(cx - 9, cy - 4, gz),
+        max: Vec3::new(cx - 6, cy - 1, gz),
+    };
+    server.bastion_place_designation(plot, DesignationKind::Farm);
+    let store_drop =
+        Vec3::new(cx as f32 - 0.5, cy as f32 + 0.5, gz as f32 + 1.5);
+    server.bastion_spawn_item(store_drop, SEEDS, 20);
+    // THREE separated 1-wheat entities (seventh-draw find): should_merge
+    // makes a pile ONE entity = ONE Uid = ONE reservation, so eats
+    // SERIALIZE at ~1 per failed-attempt cooldown (B38). Separated
+    // singles eat in parallel. Depth stays honest: 3 starters < 4
+    // eaters — recovery still needs in-window harvests.
+    server.bastion_spawn_item(
+        Vec3::new(cx as f32 - 0.7, cy as f32 + 0.25, gz as f32 + 1.5),
+        WHEAT,
+        1,
+    );
+    server.bastion_spawn_item(
+        Vec3::new(cx as f32 + 0.7, cy as f32 + 0.25, gz as f32 + 1.5),
+        WHEAT,
+        1,
+    );
+    server.bastion_spawn_item(
+        Vec3::new(cx as f32, cy as f32 + 1.75, gz as f32 + 1.5),
+        WHEAT,
+        1,
+    );
+    tick(&mut server, 5);
+
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        6,
+    );
+    tick(&mut server, 30);
+    let mut names = server.bastion_rename_colonists_unique();
+    names.sort();
+    let fires_a0 = server.bastion_center_net_fires();
+    // TEMPERAMENT-AWARE assignment (the first ×2 draw's lesson):
+    // personality stacks ±0.5h on top of values, so a hardy-VALUED
+    // colonist who rolled Neurotic lands at threshold 0.16 > the forced
+    // 0.15 and legitimately eats — group labels cannot predict who
+    // preempts; the computed effective threshold can. So: read the
+    // seed's actual rolls, give the HARDY values to the two best
+    // natural holders (holders by construction), the anxious values to
+    // the two worst, and assert per-colonist against the EXACT
+    // threshold the mechanism computes (the same pub fn, called here —
+    // mirror-free).
+    let temperament: Vec<(bool, bool)> = names
+        .iter()
+        .map(|n| {
+            server
+                .bastion_colonist_temperament(n)
+                .unwrap_or((false, false))
+        })
+        .collect();
+    let mut order: Vec<usize> = (0..names.len()).collect();
+    // Holder-ness score: Conscientious +1, Neurotic −1 (the stagger's
+    // own personality axis); best holders first. Stable sort keeps the
+    // sorted-name determinism inside equal scores.
+    order.sort_by_key(|&i| {
+        let (c, n) = temperament[i];
+        std::cmp::Reverse(i8::from(c) - i8::from(n))
+    });
+    let mut role = [0i8; 6]; // +1 hardy, 0 default, −1 anxious
+    role[order[0]] = 1;
+    role[order[1]] = 1;
+    role[order[4]] = -1;
+    role[order[5]] = -1;
+    // EVERY colonist's Craft/Tradition is set EXPLICITLY — including
+    // the defaults' to 0 (the second draw's find: FOCUS-0 ROLLS all
+    // eight values at colony generation, so an untouched "default"
+    // keeps rolled Craft/Tradition and can hold like a hardy — the
+    // prediction must own the stagger's whole value surface).
+    let mut values_ok = true;
+    for (i, name) in names.iter().enumerate() {
+        let w: i8 = match role[i] {
+            1 => 50,
+            -1 => -50,
+            _ => 0,
+        };
+        values_ok &= server.bastion_set_values(name, "Craft", w);
+        values_ok &= server.bastion_set_values(name, "Tradition", w);
+    }
+    // Each colonist's EFFECTIVE hunger threshold — the mechanism's own
+    // pub fn on the values just set + the rolled temperament.
+    let expected: Vec<f32> = (0..names.len())
+        .map(|i| {
+            let mut vals = std::collections::HashMap::new();
+            let w: i8 = match role[i] {
+                1 => 50,
+                -1 => -50,
+                _ => 0,
+            };
+            vals.insert(common::bastion::Value::Craft, w);
+            vals.insert(common::bastion::Value::Tradition, w);
+            let (c, n) = temperament[i];
+            common::comp::bastion::stagger_interrupt(0.2, &vals, c, n)
+        })
+        .collect();
+    const SHORTAGE_LEVEL: f32 = 0.15;
+    // The discrete threshold lattice {0.08,0.12,0.16,0.2,0.24,0.28,0.3}
+    // clears the forced level by ≥0.01 — no knife-edge predictions.
+    let predictions_clear = expected
+        .iter()
+        .all(|t| (t - SHORTAGE_LEVEL).abs() > 0.01);
+    let holders: Vec<usize> = (0..names.len())
+        .filter(|&i| expected[i] < SHORTAGE_LEVEL)
+        .collect();
+    let eaters: Vec<usize> = (0..names.len())
+        .filter(|&i| expected[i] > SHORTAGE_LEVEL)
+        .collect();
+    let wheat_total =
+        |server: &Server| server.bastion_colony_item_total(WHEAT);
+    let hunger_of = |server: &Server, name: &str| {
+        server
+            .bastion_colonist_needs_mood(name)
+            .map(|(h, _, _, _)| h)
+            .unwrap_or(-1.0)
+    };
+
+    // Bootstrap the farm to SOWN (not first-harvest — the fifth-draw
+    // find: a 500s idle bootstrap deep-wandered the unemployed crew
+    // 100+ blocks into worldgen ravines at z−9, beyond any split
+    // window's travel budget; the leash softens but cannot recall).
+    // Sown-and-growing = live capacity committed, the shortest honest
+    // bootstrap — and the DEEPER depth claim: stock at shortage is the
+    // 2 spawned wheat ONLY, so recovery cannot complete without
+    // harvests that land DURING it.
+    let sown_cells = |server: &Server| {
+        let mut n = 0;
+        for y in plot.min.y..=plot.max.y {
+            for x in plot.min.x..=plot.max.x {
+                if server
+                    .bastion_sprite_growth(Vec3::new(x, y, gz + 1))
+                    .is_some_and(|g| g >= 1)
+                {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+    // Shortage MID-SOWING (≥10 of 16 sown): capacity committed, jobs
+    // still live for every colonist — the holders have real farm work
+    // to KEEP DOING through the split window.
+    let mut farm_live = false;
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        if sown_cells(&server) >= 10 {
+            farm_live = true;
+            break;
+        }
+    }
+    let stock_at_shortage = wheat_total(&server);
+
+    // Diagnostics roster (telemetry, not JSON): who is what.
+    for (i, name) in names.iter().enumerate() {
+        let (c, n) = temperament[i];
+        println!(
+            "SPIRAL ROSTER: {name} role={} consc={c} neur={n} thr={:.3}",
+            role[i], expected[i]
+        );
+    }
+    // THE SHORTAGE: every meter to SHORTAGE_LEVEL at once. The SPLIT is
+    // per-threshold: predicted eaters (threshold above the level)
+    // preempt now; predicted holders (below) keep farming. Window sized
+    // UNDER the crossing horizon (third-draw lesson: 0.0004/s decay
+    // crosses the 0.12 threshold from 0.15 in 75s — an 80s window made
+    // the holders' own LEGITIMATE below-threshold preempts read as
+    // violations): 150 polls = 50s → a 0.12 holder ends at 0.13. The
+    // assert is ALSO crossing-tolerant (belt + suspenders): a holder
+    // may eat ONLY after its polled meter was seen below its own
+    // threshold — preempting above your threshold is the violation;
+    // preempting below it is the mechanism.
+    let attempts_before_shortage = server.bastion_preempt_attempts();
+    for name in &names {
+        server.bastion_set_needs(name, SHORTAGE_LEVEL, 0.9, 0.9);
+    }
+    let mut holders_held = true;
+    let mut ate = vec![false; names.len()];
+    let mut last_seen = vec![SHORTAGE_LEVEL; names.len()];
+    for _ in 0..240 {
+        tick(&mut server, 10);
+        for i in 0..names.len() {
+            let h = hunger_of(&server, &names[i]);
+            if h > 0.4 && !ate[i] {
+                ate[i] = true;
+                if holders.contains(&i)
+                    && last_seen[i] > expected[i] + 0.005
+                {
+                    // Preempted while still ABOVE its threshold.
+                    holders_held = false;
+                }
+            }
+            if h <= 0.4 {
+                last_seen[i] = h;
+            }
+        }
+        if eaters.iter().all(|&i| ate[i]) {
+            break;
+        }
+    }
+    // THE STAGGER'S ACTUAL CONTRACT (ninth-draw correction, back to the
+    // packet's own done-when): nobody preempts ABOVE their threshold
+    // (holders_held, crossing-tolerant) and every below-threshold
+    // colonist PREEMPTS (the attempts delta — all four eaters sit below
+    // their thresholds from the first pass, so ≥4 attempts land in the
+    // window). FEEDING completeness is a different property — eat
+    // THROUGHPUT (B38 serialization + geography) — and rides the
+    // recovery assert with its honest window. Fed-in-window stays as
+    // reported telemetry (×2 identity still pins it).
+    let eaters_fed_in_window =
+        eaters.iter().filter(|&&i| ate[i]).count();
+    let eaters_preempted = server
+        .bastion_preempt_attempts()
+        .saturating_sub(attempts_before_shortage)
+        >= eaters.len() as u64;
+    let meters: Vec<String> = names
+        .iter()
+        .map(|n| format!("{:.3}", hunger_of(&server, n)))
+        .collect();
+    println!("SPIRAL SPLIT-END: ate={ate:?} meters={meters:?}");
+    // RECOVERY, zero input: every predicted eater back above 0.4 (they
+    // ate); every holder either ate LATER (its meter decayed across its
+    // OWN lower threshold — the stagger working, not a violation) or
+    // still sits healthily above that threshold; and the colony still
+    // holds wheat — the depth was honest (2 unreserved wheat at the
+    // shortage < the eater count, so production covered the gap).
+    // RECOVERY — COLONY-LEVEL, as RULED (architect via Sonnet): the E1
+    // criterion quantifies over the colony, not every individual on a
+    // deadline. recovered := stock ≥ start (production replaced what the
+    // dip consumed) && ≥5 of 6 fed && all six alive && any straggler's
+    // meter still positive-and-retrying (REPORTED, not gated — the
+    // straggler class = the filed deep-wander geography × B38 throughput
+    // × ARCH-003 scheduling, three separate rows, none the stagger).
+    // Individual-level mechanism properties are each asserted directly
+    // elsewhere (the floor, the split, holders' discipline). Window
+    // sized structurally: 6 × ~30s serialized eats + travel ≈ 180s →
+    // 300s = 1.6× headroom.
+    let mut recovered = false;
+    let mut stock_recovered = 0u64;
+    let mut straggler_meter = 1.0f32;
+    for _ in 0..900 {
+        tick(&mut server, 10);
+        stock_recovered = wheat_total(&server);
+        let meters: Vec<f32> =
+            names.iter().map(|n| hunger_of(&server, n)).collect();
+        let fed = meters.iter().filter(|h| **h > 0.4).count();
+        straggler_meter = meters
+            .iter()
+            .copied()
+            .fold(1.0f32, |a, b| if b < a { b } else { a });
+        let alive = names
+            .iter()
+            .all(|n| server.bastion_colonist_needs_mood(n).is_some());
+        // The straggler's meter is REPORTED, not gated (the ruling's own
+        // wording — first implementation gated it, and a full-window
+        // straggler decays to a CLAMPED 0.0, making a >0 gate
+        // structurally unsatisfiable; 0.0 hunger is not a terminal state
+        // in this sim, it is the past-band's living misery).
+        if fed >= 5 && alive && stock_recovered >= stock_at_shortage {
+            recovered = true;
+            break;
+        }
+    }
+    let meters2: Vec<String> = names
+        .iter()
+        .map(|n| format!("{:.3}", hunger_of(&server, n)))
+        .collect();
+    println!(
+        "SPIRAL RECOVERY-END: recovered={recovered} stock={stock_recovered} straggler_min={straggler_meter:.3} meters={meters2:?}"
+    );
+    // THE FLOOR (Opus's assert, direct form): the LOWEST-threshold
+    // holder forced strictly below its own staggered threshold must
+    // still preempt-to-eat — the stagger widens the band, never
+    // disables the backstop. Wait for eatable stock first (the eat
+    // window's contention tail can hold every wheat reserved briefly).
+    let floor_subject = holders
+        .iter()
+        .copied()
+        .min_by(|&a, &b| {
+            expected[a]
+                .partial_cmp(&expected[b])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or(0);
+    for _ in 0..240 {
+        tick(&mut server, 10);
+        if wheat_total(&server) >= 2 {
+            break;
+        }
+    }
+    server.bastion_set_needs(
+        &names[floor_subject],
+        expected[floor_subject] - 0.02,
+        0.9,
+        0.9,
+    );
+    // Structural window, same arithmetic as recovery: the floor subject
+    // may share the eat queue with a permanently-hungry straggler (B38
+    // serialization ≈ 25s per eat) — a deadline-shaped 80s here was the
+    // last flake generator standing.
+    let mut floor_preempted = false;
+    for _ in 0..900 {
+        tick(&mut server, 10);
+        if hunger_of(&server, &names[floor_subject]) > 0.4 {
+            floor_preempted = true;
+            break;
+        }
+    }
+    let fires_a = server.bastion_center_net_fires() - fires_a0;
+    drop(server);
+
+    // ── BOOT B: PAST the band ────────────────────────────────────────
+    let mut server = boot("b", args.seed);
+    server.bastion_force_load_area(site_wpos, 5);
+    write_strip(&mut server);
+    tick(&mut server, 2);
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        6,
+    );
+    tick(&mut server, 30);
+    let mut names_b = server.bastion_rename_colonists_unique();
+    names_b.sort();
+    let fires_b0 = server.bastion_center_net_fires();
+    server.bastion_place_designation(store, DesignationKind::Stockpile);
+    // The same idle leash — boot B's misery plays out near home too.
+    server
+        .bastion_place_designation(leash, DesignationKind::Zone(ZoneKind::Meeting));
+    server.bastion_spawn_item(store_drop, WHEAT, 1);
+    tick(&mut server, 5);
+    // Collapse: meters to the bottom → mood ~0.09 < break_minor 0.25,
+    // sustained → the breakdown staircase rolls.
+    for name in &names_b {
+        server.bastion_set_needs(name, 0.0, 0.05, 0.0);
+    }
+    let attempts_0 = server.bastion_preempt_attempts();
+    let mut despond_early = false;
+    let mut despond_late = false;
+    let mut jobs_bounded = true;
+    let big_probe = Region {
+        min: Vec3::new(cx - 64, cy - 64, gz - 32),
+        max: Vec3::new(cx + 64, cy + 64, gz + 32),
+    };
+    // 4200 ticks split around the 60s (1800-tick) despond hold: a
+    // sighting in [0,1200) and another in [3000,4200) cannot be the
+    // same hold — the staircase RE-FIRED.
+    for w in 0..420 {
+        tick(&mut server, 10);
+        // The meters must STAY collapsed for the sustained-window arm —
+        // re-force each poll (an eat of the lone wheat would lift
+        // hunger once; the past-band claim is about the state, not the
+        // path there).
+        for name in &names_b {
+            server.bastion_set_needs(name, 0.0, 0.05, 0.0);
+        }
+        let d = server.bastion_despond_jobs();
+        if w < 120 && d > 0 {
+            despond_early = true;
+        }
+        if w >= 300 && d > 0 {
+            despond_late = true;
+        }
+        jobs_bounded &= server.bastion_jobs_in_region(big_probe) <= 40;
+    }
+    let attempts_grew =
+        server.bastion_preempt_attempts() > attempts_0;
+    let all_alive = names_b
+        .iter()
+        .all(|n| server.bastion_colonist_needs_mood(n).is_some());
+    let fires_b = server.bastion_center_net_fires() - fires_b0;
+
+    let result = serde_json::json!({
+        "spiral_colonists": names.len(),
+        "spiral_values_ok": values_ok,
+        "spiral_predictions_clear": predictions_clear,
+        "spiral_holders": holders.len(),
+        "spiral_eaters": eaters.len(),
+        "spiral_farm_live": farm_live,
+        "spiral_stagger_split": eaters_preempted && holders_held,
+        "spiral_recovered": recovered,
+        "spiral_stock_ok": stock_recovered >= 1,
+        "spiral_floor_preempted": floor_preempted,
+        "spiral_despond_refires": despond_early && despond_late,
+        "spiral_attempts_grew": attempts_grew,
+        "spiral_jobs_bounded": jobs_bounded,
+        "spiral_all_alive": all_alive,
+        "spiral_fires": [fires_a, fires_b],
+    });
+    println!(
+        "SPIRAL TELEMETRY: stock0={stock_at_shortage} stock1={stock_recovered} holders={} eaters={} fed_in_window={eaters_fed_in_window} split={} floor={floor_preempted} despond=({despond_early},{despond_late})",
+        holders.len(),
+        eaters.len(),
+        eaters_preempted && holders_held
+    );
+    let pass = names.len() == 6
+        && values_ok
+        && predictions_clear
+        && !holders.is_empty()
+        && eaters.len() >= 3
+        && farm_live
+        && eaters_preempted
+        && holders_held
+        && recovered
+        && floor_preempted
+        && despond_early
+        && despond_late
+        && attempts_grew
+        && jobs_bounded
+        && all_alive;
+    println!("{}", result);
+    println!("SPIRAL SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
     if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
 
