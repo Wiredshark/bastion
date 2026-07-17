@@ -587,7 +587,32 @@ fn plan_access(
         })
         .find_map(|f| {
             common::bastion::carve_ramp(f, to, &is_solid, &allowed).filter(|digs| !digs.is_empty())
-        });
+        })
+        // REQ-CK-CARVEDSTAIR: an EMERGENCY must never be routed onto a traversal
+        // kind that has no executor. Baseline 7f087da317 had ZERO occurrences of
+        // `EmergencyTraversalKind`/`CarvedStair`: its stairs arm was a plain
+        // `Some((digs, DesignationKind::Mine))` — a dig plan with no descriptor and
+        // no route ownership. Stage-1 wrapped that same plan in an
+        // `EmergencyRouteDescriptor { kind: CarvedStair, .. }`, so below it registers
+        // `emergency_route_members`/`_descriptors` — but `bastion_traversal.rs` has
+        // ZERO CarvedStair handling and every capability query answers false/None
+        // (the Stage-1 docs: "outside the Stage-1 slice"). A route-owned colonist
+        // yields movement to a traversal task that is therefore never created, so
+        // `goto_target` stays None and NOTHING EVER TELLS HIM TO MOVE.
+        //
+        // Measured (CK seed 1337, flight recorder): the pit colonist sat at
+        // route_kind=CarvedStair / phase=RouteOwnedWaiting / writer=link_queue_waiting
+        // / goto_target=None, Idle with on_wall None in 730/730 samples and energy
+        // pinned at 100.0, motionless until the teleport backstop bailed him out —
+        // past CK's 240s budget. 5/5 deterministic FAIL at HEAD vs 3/3 PASS at
+        // baseline. He was never failing to climb; he was never asked to.
+        //
+        // Emergencies now fall through to the ladder arm below, which is already
+        // enabled for them (`AUTO_LADDER_ACCESS || emergency_owner.is_some()`) and
+        // whose ConstructedLadder kind is the one Stage-1 actually implements.
+        // NON-emergency stair routing is untouched (it never takes route ownership),
+        // so the colony still plans stairs where they route.
+        .filter(|_| emergency_owner.is_none());
         match stairs {
             Some(digs) => Some((
                 digs,
