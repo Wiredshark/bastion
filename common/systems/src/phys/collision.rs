@@ -17,6 +17,119 @@ use vek::*;
 
 use super::PhysicsRead;
 
+/// A side-effect-free report from the same terrain collision predicate used by
+/// [`box_voxel_collision`].  Route/path preflight code may use this to reject a
+/// grid-valid transition that the authoritative body collider would block.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TerrainSweepHit {
+    pub block: Vec3<i32>,
+    pub resolve_dir: Vec3<f32>,
+    pub sample: u16,
+    pub samples: u16,
+}
+
+#[inline]
+fn cylinder_aabb(pos: Vec3<f32>, radius: f32, z_range: Range<f32>) -> Aabb<f32> {
+    Aabb {
+        min: pos + Vec3::new(-radius, -radius, z_range.start),
+        max: pos + Vec3::new(radius, radius, z_range.end),
+    }
+}
+
+#[inline]
+fn move_probe_aabb(aabb: Aabb<i32>, pos: Vec3<f32>) -> Aabb<i32> {
+    Aabb {
+        min: aabb.min + pos.map(|e| e.floor() as i32),
+        max: aabb.max + pos.map(|e| e.floor() as i32),
+    }
+}
+
+fn first_collision_at<T: BaseVol<Vox = Block> + ReadVol>(
+    terrain: &T,
+    pos: Vec3<f32>,
+    near_aabb: Aabb<i32>,
+    radius: f32,
+    z_range: Range<f32>,
+    move_dir: Vec3<f32>,
+) -> Option<(Vec3<i32>, Vec3<f32>)> {
+    let body = cylinder_aabb(pos, radius, z_range);
+    let world_probe = move_probe_aabb(near_aabb, pos);
+    let mut hit: Option<(f32, Vec3<i32>, Vec3<f32>)> = None;
+    terrain.for_each_in(world_probe, |block_pos, block| {
+        if !block.is_solid() {
+            return;
+        }
+        let block_aabb = Aabb {
+            min: block_pos.map(|e| e as f32),
+            max: block_pos.map(|e| e as f32) + Vec3::new(1.0, 1.0, block.solid_height()),
+        };
+        if !body.collides_with_aabb(block_aabb)
+            || !block.valid_collision_dir(body, block_aabb, move_dir)
+        {
+            return;
+        }
+        let intrusion = body.collision_vector_with_aabb(block_aabb);
+        let min_axis = intrusion.map(|e| e.abs()).reduce_partial_min();
+        let resolve_dir = -intrusion.map(|e| {
+            if e.abs().to_bits() == min_axis.to_bits() {
+                e
+            } else {
+                0.0
+            }
+        });
+        let overlap_score = (block_aabb.center() - body.center() - Vec3::unit_z() * 0.5)
+            .map(f32::abs)
+            .sum();
+        if hit.as_ref().is_none_or(|(best_score, best_pos, _)| {
+            overlap_score < *best_score
+                || (overlap_score.to_bits() == best_score.to_bits()
+                    && (block_pos.x, block_pos.y, block_pos.z)
+                        < (best_pos.x, best_pos.y, best_pos.z))
+        }) {
+            hit = Some((overlap_score, block_pos, resolve_dir));
+        }
+    });
+    hit.map(|(_, block, resolve_dir)| (block, resolve_dir))
+}
+
+/// Sweep an authoritative collision cylinder without mutating ECS or terrain.
+/// Sampling uses the same maximum increment and minimum-step calculation as
+/// [`box_voxel_collision`], and includes the initial position so pre-existing
+/// overlap is distinguishable from a transition hit.
+pub fn cylinder_sweep_first_collision<T: BaseVol<Vox = Block> + ReadVol>(
+    terrain: &T,
+    start: Vec3<f32>,
+    end: Vec3<f32>,
+    cylinder: (f32, f32, f32),
+) -> Option<TerrainSweepHit> {
+    let (radius, z_min, z_max) = cylinder;
+    let hdist = radius.ceil() as i32;
+    let near_aabb = Aabb {
+        min: Vec3::new(
+            -hdist,
+            -hdist,
+            1 - Block::MAX_HEIGHT.ceil() as i32 + z_min.floor() as i32,
+        ),
+        max: Vec3::new(hdist, hdist, z_max.ceil() as i32),
+    };
+    let move_dir = end - start;
+    const MAX_INCREMENTS: usize = 100;
+    let min_step = (radius / 2.0).min(z_max - z_min).clamped(0.01, 0.3);
+    let samples = ((move_dir.map(|e| e.abs()).reduce_partial_max() / min_step).ceil() as usize)
+        .clamped(1, MAX_INCREMENTS);
+    (0..=samples).find_map(|sample| {
+        let pos = start + move_dir * (sample as f32 / samples as f32);
+        first_collision_at(terrain, pos, near_aabb, radius, z_min..z_max, move_dir).map(
+            |(block, resolve_dir)| TerrainSweepHit {
+                block,
+                resolve_dir,
+                sample: sample as u16,
+                samples: samples as u16,
+            },
+        )
+    })
+}
+
 #[expect(clippy::too_many_lines)]
 pub(super) fn box_voxel_collision<T: BaseVol<Vox = Block> + ReadVol>(
     cylinder: (f32, f32, f32), // effective collision cylinder
@@ -41,22 +154,6 @@ pub(super) fn box_voxel_collision<T: BaseVol<Vox = Block> + ReadVol>(
 
     //prof_span!("box_voxel_collision");
 
-    // Convience function to compute the player aabb
-    fn player_aabb(pos: Vec3<f32>, radius: f32, z_range: Range<f32>) -> Aabb<f32> {
-        Aabb {
-            min: pos + Vec3::new(-radius, -radius, z_range.start),
-            max: pos + Vec3::new(radius, radius, z_range.end),
-        }
-    }
-
-    // Convience function to translate the near_aabb into the world space
-    fn move_aabb(aabb: Aabb<i32>, pos: Vec3<f32>) -> Aabb<i32> {
-        Aabb {
-            min: aabb.min + pos.map(|e| e.floor() as i32),
-            max: aabb.max + pos.map(|e| e.floor() as i32),
-        }
-    }
-
     // Function for determining whether the player at a specific position collides
     // with blocks with the given criteria
     fn collision_with<T: BaseVol<Vox = Block> + ReadVol>(
@@ -67,28 +164,7 @@ pub(super) fn box_voxel_collision<T: BaseVol<Vox = Block> + ReadVol>(
         z_range: Range<f32>,
         move_dir: Vec3<f32>,
     ) -> bool {
-        let player_aabb = player_aabb(pos, radius, z_range);
-
-        // Calculate the world space near aabb
-        let near_aabb = move_aabb(near_aabb, pos);
-
-        let mut collision = false;
-        // TODO: could short-circuit here
-        terrain.for_each_in(near_aabb, |block_pos, block| {
-            if block.is_solid() {
-                let block_aabb = Aabb {
-                    min: block_pos.map(|e| e as f32),
-                    max: block_pos.map(|e| e as f32) + Vec3::new(1.0, 1.0, block.solid_height()),
-                };
-                if player_aabb.collides_with_aabb(block_aabb)
-                    && block.valid_collision_dir(player_aabb, block_aabb, move_dir)
-                {
-                    collision = true;
-                }
-            }
-        });
-
-        collision
+        first_collision_at(terrain, pos, near_aabb, radius, z_range, move_dir).is_some()
     }
 
     let (radius, z_min, z_max) = (Vec3::from(cylinder) * scale).into_tuple();
@@ -134,14 +210,14 @@ pub(super) fn box_voxel_collision<T: BaseVol<Vox = Block> + ReadVol>(
         let try_colliding_block = |pos: &Pos| {
             //prof_span!("most colliding check");
             // Calculate the player's AABB
-            let player_aabb = player_aabb(pos.0, radius, z_range.clone());
+            let player_aabb = cylinder_aabb(pos.0, radius, z_range.clone());
 
             // Determine the block that we are colliding with most
             // (based on minimum collision axis)
             // (if we are colliding with one)
             let mut most_colliding = None;
             // Calculate the world space near aabb
-            let near_aabb = move_aabb(near_aabb, pos.0);
+            let near_aabb = move_probe_aabb(near_aabb, pos.0);
             let player_overlap = |block_aabb: Aabb<f32>| {
                 (block_aabb.center() - player_aabb.center() - Vec3::unit_z() * 0.5)
                     .map(f32::abs)
@@ -182,7 +258,7 @@ pub(super) fn box_voxel_collision<T: BaseVol<Vox = Block> + ReadVol>(
             .flatten()
         {
             // Calculate the player's AABB
-            let player_aabb = player_aabb(pos.0, radius, z_range.clone());
+            let player_aabb = cylinder_aabb(pos.0, radius, z_range.clone());
 
             // Find the intrusion vector of the collision
             let dir = player_aabb.collision_vector_with_aabb(block_aabb);
@@ -319,9 +395,9 @@ pub(super) fn box_voxel_collision<T: BaseVol<Vox = Block> + ReadVol>(
     }
 
     // Find liquid immersion and wall collision all in one round of iteration
-    let player_aabb = player_aabb(pos.0, radius, z_range.clone());
+    let player_aabb = cylinder_aabb(pos.0, radius, z_range.clone());
     // Calculate the world space near_aabb
-    let near_aabb = move_aabb(near_aabb, pos.0);
+    let near_aabb = move_probe_aabb(near_aabb, pos.0);
 
     let dirs = [
         Vec3::unit_x(),

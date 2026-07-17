@@ -474,6 +474,19 @@ pub enum PathState {
     Path,
 }
 
+/// Read-only flight-recorder view of hidden Chaser state. This intentionally
+/// exposes no mutation and is used only by env-gated Bastion diagnostics.
+#[derive(Clone, Debug)]
+pub struct ChaserDiagnosticSnapshot {
+    pub last_search_target: Option<Vec3<f32>>,
+    pub route_target: Option<Vec3<f32>>,
+    pub route_complete: Option<bool>,
+    pub route_head: Option<Vec3<i32>>,
+    pub route_next_idx: Option<usize>,
+    pub path_state: PathState,
+    pub recent_state_count: usize,
+}
+
 /// A self-contained system that attempts to chase a moving target, only
 /// performing pathfinding if necessary
 #[derive(Default, Clone, Debug)]
@@ -839,6 +852,46 @@ impl Chaser {
     pub fn get_route(&self) -> Option<&Route> { self.route.as_ref().map(|(r, ..)| r) }
 
     pub fn last_target(&self) -> Option<Vec3<f32>> { self.last_search_tgt }
+
+    /// Start stuck detection with fresh observations after a higher-level
+    /// movement owner deliberately replaces its target.
+    ///
+    /// This does not invalidate the cached route or disable stuck recovery:
+    /// subsequent calls to [`Self::chase`] immediately begin accumulating a
+    /// new history for the replacement target. Callers should invoke it once
+    /// at the ownership/target handoff, not on every movement tick.
+    pub fn rebase_stuck_history(&mut self) { self.recent_states.clear(); }
+
+    /// Diagnostic view of the target stored with the currently cached route.
+    ///
+    /// This is intentionally read-only: Bastion's env-gated route-writer
+    /// trace uses it to distinguish a newly installed `NpcActivity::Goto`
+    /// target from a route that was computed for an earlier target.  It must
+    /// not be used to mutate or invalidate normal Chaser behavior.
+    pub fn route_target(&self) -> Option<Vec3<f32>> {
+        self.route.as_ref().map(|(_, _, target)| *target)
+    }
+
+    /// Whether the cached route reaches its stored target. Read-only
+    /// diagnostic companion to [`Self::route_target`].
+    pub fn route_is_complete(&self) -> Option<bool> {
+        self.route.as_ref().map(|(_, complete, _)| *complete)
+    }
+
+    pub fn diagnostic_snapshot(&self) -> ChaserDiagnosticSnapshot {
+        ChaserDiagnosticSnapshot {
+            last_search_target: self.last_search_tgt,
+            route_target: self.route.as_ref().map(|(_, _, target)| *target),
+            route_complete: self.route.as_ref().map(|(_, complete, _)| *complete),
+            route_head: self
+                .route
+                .as_ref()
+                .and_then(|(route, _, _)| route.get_path().nodes().get(route.next_idx()).copied()),
+            route_next_idx: self.route.as_ref().map(|(route, _, _)| route.next_idx()),
+            path_state: self.path_state,
+            recent_state_count: self.recent_states.len(),
+        }
+    }
 
     pub fn state(&self) -> (PathLength, PathState) { (self.path_length, self.path_state) }
 
@@ -1647,6 +1700,59 @@ mod bastion_vertical_tests {
             is_target_loaded: true,
             search_allowed: true,
         }
+    }
+
+    #[test]
+    fn chaser_stuck_history_rebase_requires_fresh_samples() {
+        let mut chaser = Chaser::default();
+        chaser.set_deterministic_seed(Some(21));
+        let pos = Vec3::zero();
+        let bearing = Vec3::unit_x();
+
+        assert!(!chaser.stuck_check(pos, bearing, 1.0, &Time(0.0)).2);
+        assert!(!chaser.stuck_check(pos, bearing, 1.0, &Time(0.6)).2);
+        assert!(chaser.stuck_check(pos, bearing, 1.0, &Time(1.2)).2);
+
+        chaser.rebase_stuck_history();
+        assert!(chaser.recent_states.is_empty());
+        assert!(
+            !chaser.stuck_check(pos, bearing, 1.0, &Time(1.3)).2,
+            "replacement target must accumulate fresh history before stuck recovery"
+        );
+        assert_eq!(chaser.recent_states.len(), 1);
+        assert!(!chaser.stuck_check(pos, bearing, 1.0, &Time(1.9)).2);
+        assert!(
+            chaser.stuck_check(pos, bearing, 1.0, &Time(2.5)).2,
+            "genuine no-progress must reactivate stuck recovery after fresh history"
+        );
+    }
+
+    #[test]
+    fn route_local_endpoint_tolerance_keeps_normal_done_band_pending() {
+        let vol = wall_world(false);
+        let endpoint = Vec3::new(0, 0, 1);
+        // The actor is 0.99 beyond the endpoint cell boundary: ordinary
+        // tolerance 1.5 completes, while the emergency corridor contract
+        // 0.75 must keep producing target-directed traversal.
+        let pos = Vec3::new(1.99, 0.5, 1.0);
+        let path = || Path::from_iter([endpoint]);
+
+        let mut ordinary = Route::from(path());
+        assert!(matches!(
+            ordinary.traverse(&vol, pos, Vec3::zero(), &worker_cfg()),
+            Err(TraverseStop::Done)
+        ));
+
+        let mut corridor = Route::from(path());
+        let strict = TraversalConfig {
+            node_tolerance: 0.75,
+            ..worker_cfg()
+        };
+        let Ok((bearing, _)) = corridor.traverse(&vol, pos, Vec3::zero(), &strict) else {
+            panic!("strict endpoint must remain pending in the ordinary Done band");
+        };
+        assert!(bearing.dot((Vec3::new(0.5, 0.5, 1.0) - pos).normalized()) > 0.0);
+        assert_eq!(corridor.next_idx(), 0, "strict cursor advanced above 0.75");
     }
 
     /// Poll to completion — `find_path` yields `Pending` every ~400

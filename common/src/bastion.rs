@@ -307,9 +307,7 @@ pub const ZONE_MAGNET_WEIGHT: f32 = 0.1;
 pub const ZONE_MAGNET_RANGE: f32 = 48.0;
 
 /// What a painted designation region means. B4 turns these into jobs.
-#[derive(
-    Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, strum::EnumIter,
-)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, strum::EnumIter)]
 pub enum DesignationKind {
     Mine,
     Chop,
@@ -617,9 +615,7 @@ impl ContextVerb {
 
     /// Verbs that exist on the menu but are stubbed/greyed until a later
     /// block gives them rules (B2b metering, B12 possession).
-    pub fn stubbed(&self) -> bool {
-        matches!(self, ContextVerb::Embody | ContextVerb::ForceAction)
-    }
+    pub fn stubbed(&self) -> bool { matches!(self, ContextVerb::Embody | ContextVerb::ForceAction) }
 }
 
 /// A context-action target: an entity (by Uid) or a world block.
@@ -670,9 +666,9 @@ impl DesignationKind {
             DesignationKind::Chop => WorkType::Chop,
             // B5.8: placing a ladder is construction work. B7-1: so is a
             // bed.
-            DesignationKind::Build
-            | DesignationKind::Ladder
-            | DesignationKind::Bed => WorkType::Build,
+            DesignationKind::Build | DesignationKind::Ladder | DesignationKind::Bed => {
+                WorkType::Build
+            },
             // ZONE-0: zones generate no jobs; Haul is the inert mapping
             // (same as Stockpile's pre-B6 stance — priorities stay honored
             // if a zone kind ever emits work).
@@ -774,9 +770,7 @@ impl Default for MoodConfig {
 impl crate::assets::FileAsset for MoodConfig {
     const EXTENSION: &'static str = "ron";
 
-    fn from_bytes(
-        bytes: std::borrow::Cow<[u8]>,
-    ) -> Result<Self, crate::assets::BoxedError> {
+    fn from_bytes(bytes: std::borrow::Cow<[u8]>) -> Result<Self, crate::assets::BoxedError> {
         crate::assets::load_ron(&bytes)
     }
 }
@@ -948,9 +942,7 @@ impl JobKind {
     }
 
     /// Is this a designation job of the given kind?
-    pub fn is(&self, kind: DesignationKind) -> bool {
-        self.designation() == Some(kind)
-    }
+    pub fn is(&self, kind: DesignationKind) -> bool { self.designation() == Some(kind) }
 }
 
 /// One unit of colonist work — a block-level task generated from a
@@ -1238,6 +1230,12 @@ pub struct BastionColonist {
     /// hysteresis. serde-default: absent in old rtsim saves → off.
     #[serde(default)]
     pub soft_until: f64,
+    /// REQ-0052: sub-second terrain-collider squeeze used only for an
+    /// already-validated adjacent emergency-route mount. Physics reduces the
+    /// horizontal capsule radius while preserving full height and terrain
+    /// collision; expiry restores the normal body automatically.
+    #[serde(default)]
+    pub route_squeeze_until: f64,
     /// bastion (B-LIVE3, Ben's UNIVERSAL CLIMB-OUT fail-safe): while sim
     /// `Time` < this, the climb assist lifts this colonist up ANY wall
     /// contact — no ladder, no reach cap ("climb out of anywhere, as a
@@ -1319,8 +1317,7 @@ pub struct BastionColonist {
 /// REPORTED telemetry (harness + ops visibility): with the writer-side bugs
 /// fixed it should sit at 0, and any climb marks a NEW embedding writer to
 /// hunt (never gate on it — the net firing is the invariant HOLDING).
-pub static CENTER_NET_FIRES: core::sync::atomic::AtomicU64 =
-    core::sync::atomic::AtomicU64::new(0);
+pub static CENTER_NET_FIRES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
 /// CAVE-IN v1 (FR11, reviewer R8/F-CAVE-1) + CASE-003: the nearest TRUE
 /// STANDABLE cell for relocating a colonist — air at the feet AND head with a
@@ -1346,7 +1343,11 @@ pub fn eject_dest_impl(
     // beats climbing), searching a modest vertical band around the victim.
     for r in 1..=8i32 {
         for dz_abs in 0..=4i32 {
-            let dzs: &[i32] = if dz_abs == 0 { &[0] } else { &[dz_abs, -dz_abs] };
+            let dzs: &[i32] = if dz_abs == 0 {
+                &[0]
+            } else {
+                &[dz_abs, -dz_abs]
+            };
             for &dz in dzs {
                 for dx in -r..=r {
                     for dy in -r..=r {
@@ -1403,13 +1404,31 @@ const COLONIST_FIRST_NAMES: &[&str] = &[
 ];
 
 const COLONIST_EPITHETS: &[&str] = &[
-    "the Steady", "of the Vale", "Ironhand", "the Quiet", "Longstride", "the Younger", "Ashborn",
-    "the Stout", "Brighteye", "of the Ford", "the Wary", "Oakenshield",
+    "the Steady",
+    "of the Vale",
+    "Ironhand",
+    "the Quiet",
+    "Longstride",
+    "the Younger",
+    "Ashborn",
+    "the Stout",
+    "Brighteye",
+    "of the Ford",
+    "the Wary",
+    "Oakenshield",
 ];
 
 const COLONIST_BACKSTORIES: &[&str] = &[
-    "farmhand", "quarry worker", "wandering tinker", "disgraced guard", "orchard keeper",
-    "charcoal burner", "riverboat hand", "apprentice mason", "trapper", "camp cook",
+    "farmhand",
+    "quarry worker",
+    "wandering tinker",
+    "disgraced guard",
+    "orchard keeper",
+    "charcoal burner",
+    "riverboat hand",
+    "apprentice mason",
+    "trapper",
+    "camp cook",
 ];
 
 #[cfg(test)]
@@ -1435,8 +1454,7 @@ mod tests {
             personal_needs: HashMap<Need, f32>,
         }
         // An old-shape payload (no field) -> empty default.
-        let decoded: New =
-            ron::from_str(r#"(name: "Trell")"#).expect("decode old shape");
+        let decoded: New = ron::from_str(r#"(name: "Trell")"#).expect("decode old shape");
         assert!(decoded.personal_needs.is_empty());
         // A populated map round-trips exactly.
         let mut needs = HashMap::new();
@@ -1462,8 +1480,7 @@ mod tests {
             values: HashMap<Value, i8>,
         }
         // An old-shape payload (no field) -> empty default.
-        let decoded: New =
-            ron::from_str(r#"(name: "Trell")"#).expect("decode old shape");
+        let decoded: New = ron::from_str(r#"(name: "Trell")"#).expect("decode old shape");
         assert!(decoded.values.is_empty());
         // A populated map round-trips exactly, negatives included
         // (scorned values are first-class).
@@ -1498,13 +1515,20 @@ mod tests {
         let desig = r((10, 10, 397), (15, 15, 399));
         let erase_drag = r((8, 8, 403), (20, 20, 405)); // XY-covers, z-misaligned
         // Naive (the bug): no z overlap → nothing removed.
-        assert_eq!(desig.subtract(&erase_drag), vec![desig], "reproduces the bug");
+        assert_eq!(
+            desig.subtract(&erase_drag),
+            vec![desig],
+            "reproduces the bug"
+        );
         // The fix: clip the erase to the designation's XY at the DESIGNATION's
         // z, then subtract → fully removed.
         let clipped = desig
             .clip_xy(erase_drag.min.xy(), erase_drag.max.xy())
             .expect("xy overlaps");
-        assert!(desig.subtract(&clipped).is_empty(), "full XY cover erases cleanly");
+        assert!(
+            desig.subtract(&clipped).is_empty(),
+            "full XY cover erases cleanly"
+        );
     }
 
     #[test]
@@ -1543,16 +1567,20 @@ mod tests {
         // A center hole and several offset overlaps, incl. edge/corner cuts.
         let a = r((0, 0, 0), (9, 9, 9));
         for b in [
-            r((3, 3, 3), (6, 6, 6)),   // interior hole → 6 pieces
-            r((0, 0, 0), (4, 9, 9)),   // face slab
+            r((3, 3, 3), (6, 6, 6)),    // interior hole → 6 pieces
+            r((0, 0, 0), (4, 9, 9)),    // face slab
             r((5, 5, 5), (20, 20, 20)), // corner cut
-            r((0, 4, 0), (9, 5, 9)),   // through-slab
+            r((0, 4, 0), (9, 5, 9)),    // through-slab
             r((-5, -5, -5), (0, 0, 0)), // corner nick
         ] {
             let pieces = a.subtract(&b);
             let inter_vol = a.intersection(&b).map_or(0, |i| i.volume());
             let piece_vol: i64 = pieces.iter().map(|p| p.volume()).sum();
-            assert_eq!(a.volume(), inter_vol + piece_vol, "volume not conserved vs {b:?}");
+            assert_eq!(
+                a.volume(),
+                inter_vol + piece_vol,
+                "volume not conserved vs {b:?}"
+            );
             // Pieces must be pairwise disjoint and inside `a`, outside `b`.
             for (i, p) in pieces.iter().enumerate() {
                 assert!(p.volume() > 0);
@@ -1688,18 +1716,9 @@ mod tests {
         ]);
         // Designation → purpose mapping: extraction/storage designations
         // classify; Build carries its asset's own purpose (None here).
-        assert_eq!(
-            DesignationKind::Mine.purpose(),
-            Some(Purpose::Production)
-        );
-        assert_eq!(
-            DesignationKind::Chop.purpose(),
-            Some(Purpose::Production)
-        );
-        assert_eq!(
-            DesignationKind::Stockpile.purpose(),
-            Some(Purpose::Storage)
-        );
+        assert_eq!(DesignationKind::Mine.purpose(), Some(Purpose::Production));
+        assert_eq!(DesignationKind::Chop.purpose(), Some(Purpose::Production));
+        assert_eq!(DesignationKind::Stockpile.purpose(), Some(Purpose::Storage));
         assert_eq!(DesignationKind::Build.purpose(), None);
         assert_eq!(DesignationKind::Ladder.purpose(), None);
     }
@@ -1740,8 +1759,7 @@ mod tests {
         // remaining-delta bug this test pins).
         let solid = |_: Vec3<i32>| true;
         let open = |_: Vec3<i32>| true;
-        let digs =
-            carve_ramp(Vec3::new(0, 0, 0), Vec3::new(2, 0, 5), &solid, &open).unwrap();
+        let digs = carve_ramp(Vec3::new(0, 0, 0), Vec3::new(2, 0, 5), &solid, &open).unwrap();
         let xs: Vec<i32> = digs
             .chunks(CARVE_STEP_CLEARANCE as usize)
             .map(|c| c[0].x)
@@ -1830,6 +1848,7 @@ impl BastionColonist {
             },
             work_priorities: WorkPriorities::default(),
             soft_until: 0.0,
+            route_squeeze_until: 0.0,
             climb_free_until: 0.0,
             inventory: None,
             // FOCUS-0: fresh settlers start with no tracked personal-need
@@ -1892,8 +1911,8 @@ mod eject_tests {
                 || (p.xy() == Vec2::new(0, 1) && p.z == 12)
         };
         let none = hashbrown::HashSet::new();
-        let dest = eject_dest_impl(solid, Vec3::new(0, 0, 11), &none)
-            .expect("open cells exist in ring 1");
+        let dest =
+            eject_dest_impl(solid, Vec3::new(0, 0, 11), &none).expect("open cells exist in ring 1");
         // Must not be the trunk cell nor the crack cell; must be standable.
         assert_ne!(dest.xy(), Vec2::new(1, 0), "landed inside the trunk");
         assert_ne!(dest.xy(), Vec2::new(0, 1), "landed in the 1-high crack");

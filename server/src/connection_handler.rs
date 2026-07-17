@@ -20,7 +20,7 @@ pub(crate) struct ConnectionHandler {
     /// than delaying the network thread).  So it emulates the effects of
     /// storing the network in an Arc, without us losing mutability in the
     /// network thread.
-    _network_receiver: oneshot::Receiver<Network>,
+    network_receiver: Option<oneshot::Receiver<Network>>,
     thread_handle: Option<tokio::task::JoinHandle<()>>,
     pub client_receiver: Receiver<IncomingClient>,
     pub info_requester_receiver: Receiver<Sender<ServerInfoPacket>>,
@@ -34,7 +34,7 @@ pub(crate) struct ConnectionHandler {
 impl ConnectionHandler {
     pub fn new(network: Network, runtime: &Runtime) -> Self {
         let (stop_sender, stop_receiver) = oneshot::channel();
-        let (network_sender, _network_receiver) = oneshot::channel();
+        let (network_sender, network_receiver) = oneshot::channel();
 
         let (client_sender, client_receiver) = unbounded::<IncomingClient>();
         let (info_requester_sender, info_requester_receiver) =
@@ -53,8 +53,44 @@ impl ConnectionHandler {
             client_receiver,
             info_requester_receiver,
             stop_sender: Some(stop_sender),
-            _network_receiver,
+            network_receiver: Some(network_receiver),
         }
+    }
+
+    /// Stop the connection task and return the `Network` to this synchronous
+    /// caller so its existing `Drop` shutdown can finish while `runtime` is
+    /// still alive.
+    ///
+    /// The normal `Drop` implementation remains a non-blocking fallback for
+    /// production shutdown. Headless acceptance harnesses call this explicit
+    /// path before dropping `Server`; otherwise aborting the task can make the
+    /// network itself drop from an async task, where shutdown is merely
+    /// deferred until the runtime is already being torn down.
+    pub(crate) fn shutdown_and_wait(&mut self, runtime: &Runtime) -> Result<(), String> {
+        if let Some(stop_sender) = self.stop_sender.take() {
+            // A closed receiver means the worker already finished; joining it
+            // and recovering the network below is still the correct path.
+            let _ = stop_sender.send(());
+        }
+
+        if let Some(thread_handle) = self.thread_handle.take() {
+            runtime
+                .block_on(thread_handle)
+                .map_err(|error| format!("connection handler join failed: {error}"))?;
+        }
+
+        let receiver = self
+            .network_receiver
+            .take()
+            .ok_or_else(|| "connection handler network was already recovered".to_owned())?;
+        let network = runtime
+            .block_on(receiver)
+            .map_err(|error| format!("connection handler did not return network: {error}"))?;
+
+        // Deliberately outside `runtime.block_on`: Network::drop's existing
+        // synchronous wait is the authoritative clean-shutdown path.
+        drop(network);
+        Ok(())
     }
 
     async fn work(
@@ -186,16 +222,13 @@ impl ConnectionHandler {
 
 impl Drop for ConnectionHandler {
     fn drop(&mut self) {
-        let _ = self
-            .stop_sender
-            .take()
-            .expect("`stop_sender` is private, initialized as `Some`, and only updated in Drop")
-            .send(());
-        trace!("aborting ConnectionHandler");
-        self.thread_handle
-            .take()
-            .expect("`thread_handle` is private, initialized as `Some`, and only updated in Drop")
-            .abort();
-        trace!("aborted ConnectionHandler!");
+        if let Some(stop_sender) = self.stop_sender.take() {
+            let _ = stop_sender.send(());
+        }
+        if let Some(thread_handle) = self.thread_handle.take() {
+            trace!("aborting ConnectionHandler");
+            thread_handle.abort();
+            trace!("aborted ConnectionHandler!");
+        }
     }
 }

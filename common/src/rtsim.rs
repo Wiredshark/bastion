@@ -242,6 +242,13 @@ impl Default for Personality {
 #[derive(Clone, Debug, Default)]
 pub struct RtSimController {
     pub activity: Option<NpcActivity>,
+    /// A target-bound endpoint contract for a movement request that needs
+    /// stricter path-node completion than ordinary [`NpcActivity::Goto`].
+    ///
+    /// The target is part of the contract deliberately: a stale marker cannot
+    /// affect a later ordinary Goto to a different destination. Callers that
+    /// own the scoped request must still clear it on completion/abort.
+    path_endpoint: Option<(Vec3<f32>, f32)>,
     pub actions: VecDeque<NpcAction>,
     pub personality: Personality,
     pub heading_to: Option<String>,
@@ -256,6 +263,30 @@ impl RtSimController {
             ..Default::default()
         }
     }
+
+    /// Install one atomic Goto request with a target-local path-node endpoint
+    /// tolerance. Normal Goto requests continue to use the agent's ordinary
+    /// [`crate::path::TraversalConfig`].
+    pub fn set_goto_with_endpoint(
+        &mut self,
+        target: Vec3<f32>,
+        speed_factor: f32,
+        node_tolerance: f32,
+    ) {
+        self.path_endpoint = Some((target, node_tolerance));
+        self.activity = Some(NpcActivity::Goto(target, speed_factor));
+    }
+
+    /// Return the scoped endpoint tolerance only for its exact request target.
+    pub fn path_endpoint_tolerance(&self, target: Vec3<f32>) -> Option<f32> {
+        self.path_endpoint
+            .filter(|(contract_target, _)| *contract_target == target)
+            .map(|(_, tolerance)| tolerance)
+    }
+
+    /// Release a scoped endpoint contract on completion, invalidation, or
+    /// interruption. This intentionally does not alter the activity slot.
+    pub fn clear_path_endpoint(&mut self) { self.path_endpoint = None; }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -520,5 +551,32 @@ impl Default for WorldSettings {
         Self {
             start_time: 9.0 * 3600.0, // 9am
         }
+    }
+}
+
+#[cfg(test)]
+mod endpoint_contract_tests {
+    use super::*;
+
+    #[test]
+    fn path_endpoint_contract_is_target_local_and_explicitly_cleared() {
+        let ordinary = Vec3::new(1.5, 2.5, 3.0);
+        let corridor = Vec3::new(8.5, 9.5, 4.0);
+        let mut controller = RtSimController::default();
+
+        controller.activity = Some(NpcActivity::Goto(ordinary, 0.5));
+        assert_eq!(controller.path_endpoint_tolerance(ordinary), None);
+
+        controller.set_goto_with_endpoint(corridor, 0.7, 0.75);
+        assert_eq!(controller.path_endpoint_tolerance(corridor), Some(0.75));
+        assert_eq!(controller.path_endpoint_tolerance(ordinary), None);
+
+        // A stale contract cannot affect a later ordinary target even before
+        // its owner performs the required explicit lifecycle clear.
+        controller.activity = Some(NpcActivity::Goto(ordinary, 0.5));
+        assert_eq!(controller.path_endpoint_tolerance(ordinary), None);
+
+        controller.clear_path_endpoint();
+        assert_eq!(controller.path_endpoint_tolerance(corridor), None);
     }
 }

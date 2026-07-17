@@ -34,6 +34,26 @@ use vek::*;
 mod collision;
 mod weather;
 use collision::ColliderData;
+pub use collision::{TerrainSweepHit, cylinder_sweep_first_collision};
+
+/// Return the exact cylinder dimensions the terrain resolver uses for a
+/// capsule-prism entity. Keeping route preflight on this helper prevents body
+/// scale, height clamps, or the normal/squeeze radius caps from drifting away
+/// from shipping physics.
+pub fn capsule_terrain_cylinder(
+    collider: &Collider,
+    scale: f32,
+    radius_cap: f32,
+) -> Option<(f32, f32, f32)> {
+    let Collider::CapsulePrism(CapsulePrism { z_max, .. }) = collider else {
+        return None;
+    };
+    Some((
+        collider.bounding_radius().min(radius_cap) * scale,
+        0.0,
+        z_max.clamped(1.2, 1.95) * scale,
+    ))
+}
 
 /// The density of the fluid as a function of submersion ratio in given fluid
 /// where it is assumed that any unsubmersed part is is air.
@@ -513,11 +533,7 @@ impl PhysicsData<'_> {
                                             (-2..=2).any(|dy| {
                                                 (0..=1).any(|dz| {
                                                     read.terrain
-                                                        .get(
-                                                            feet + vek::Vec3::new(
-                                                                dx, dy, dz,
-                                                            ),
-                                                        )
+                                                        .get(feet + vek::Vec3::new(dx, dy, dz))
                                                         .ok()
                                                         .and_then(|b| b.get_sprite())
                                                         == Some(SpriteKind::Ladder)
@@ -626,8 +642,7 @@ impl PhysicsData<'_> {
                                 const SOFT_PUSH_FACTOR: f32 = 0.15;
                                 if soft_pair {
                                     vel_delta = vel_delta_before_pair
-                                        + (vel_delta - vel_delta_before_pair)
-                                            * SOFT_PUSH_FACTOR;
+                                        + (vel_delta - vel_delta_before_pair) * SOFT_PUSH_FACTOR;
                                 }
                             },
                         );
@@ -1004,6 +1019,7 @@ impl PhysicsData<'_> {
                     };
 
                     let mut tgt_pos = pos.0 + pos_delta;
+                    let integrated_target = tgt_pos;
 
                     // What's going on here?
                     // Because collisions need to be resolved against multiple
@@ -1124,19 +1140,48 @@ impl PhysicsData<'_> {
                                 );
                                 tgt_pos = cpos.0;
                             },
-                            Collider::CapsulePrism(CapsulePrism {
-                                z_min: _,
-                                z_max,
-                                p0: _,
-                                p1: _,
-                                radius: _,
-                            }) => {
+                            Collider::CapsulePrism(_) => {
                                 // Scale collider
-                                let radius = collider.bounding_radius().min(0.45) * scale;
-                                let z_min = 0.0;
-                                let z_max = z_max.clamped(1.2, 1.95) * scale;
-
-                                let cylinder = (radius, z_min, z_max);
+                                let route_squeeze = read
+                                    .colonists
+                                    .get(entity)
+                                    .is_some_and(|colonist| {
+                                        colonist.0.route_squeeze_until > read.time.0
+                                    });
+                                // REQ-0052: only a server-validated adjacent
+                                // emergency-route mount may enter this
+                                // sub-second envelope. Height and all voxel
+                                // collision remain authoritative; normal
+                                // radius returns automatically on expiry.
+                                let radius_cap = if route_squeeze { 0.22 } else { 0.45 };
+                                if route_squeeze
+                                    && std::env::var_os("BASTION_EGRESS_DIAG").is_some()
+                                {
+                                    tracing::info!(
+                                        ?entity,
+                                        now = read.time.0,
+                                        until = read
+                                            .colonists
+                                            .get(entity)
+                                            .map(|colonist| colonist.0.route_squeeze_until),
+                                        radius_cap,
+                                        start = ?pos.0,
+                                        integrated_target = ?tgt_pos,
+                                        velocity = ?vel.0,
+                                        ?was_on_ground,
+                                        ?block_snap,
+                                        ?climbing,
+                                        on_ground = ?physics_state.on_ground,
+                                        on_wall = ?physics_state.on_wall,
+                                        "bastion: authoritative route squeeze active"
+                                    );
+                                }
+                                let cylinder = capsule_terrain_cylinder(
+                                    &collider,
+                                    scale,
+                                    radius_cap,
+                                )
+                                .expect("capsule branch must produce a terrain cylinder");
                                 let mut cpos = *pos;
                                 collision::box_voxel_collision(
                                     cylinder,
@@ -1157,6 +1202,18 @@ impl PhysicsData<'_> {
                                     &ori,
                                     friction_factor,
                                 );
+                                if route_squeeze
+                                    && std::env::var_os("BASTION_EGRESS_DIAG").is_some()
+                                {
+                                    tracing::info!(
+                                        ?entity,
+                                        resolved = ?cpos.0,
+                                        velocity = ?vel.0,
+                                        on_ground = ?physics_state.on_ground,
+                                        on_wall = ?physics_state.on_wall,
+                                        "bastion: authoritative route squeeze resolved"
+                                    );
+                                }
 
                                 // Sticky things shouldn't move when on a surface
                                 if physics_state.on_surface().is_some() && sticky.is_some() {
@@ -1441,6 +1498,33 @@ impl PhysicsData<'_> {
                                     }
                                 },
                             );
+                    }
+
+                    let goto_writer_diag = read.uids.get(entity).is_some_and(|uid| {
+                        std::env::var("BASTION_GOTO_WRITER_DIAG_UID")
+                            .ok()
+                            .and_then(|value| value.parse::<u64>().ok())
+                            == Some(uid.0.get())
+                    });
+                    if goto_writer_diag {
+                        tracing::info!(
+                            uid = read.uids.get(entity).map(|uid| uid.0.get()),
+                            now = read.time.0,
+                            start = ?pos.0,
+                            velocity_before_resolution = ?old_vel.0,
+                            integrated_target = ?integrated_target,
+                            resolved_target = ?tgt_pos,
+                            resolved_velocity = ?vel.0,
+                            integrated_displacement = ?(integrated_target - pos.0),
+                            resolved_displacement = ?(tgt_pos - pos.0),
+                            collision_adjusted = integrated_target != tgt_pos,
+                            orientation = ?ori.look_vec(),
+                            on_ground = ?physics_state.on_ground,
+                            on_wall = ?physics_state.on_wall,
+                            on_ceiling = physics_state.on_ceiling,
+                            writer = "physics_terrain_resolution",
+                            "bastion: goto physics displacement"
+                        );
                     }
 
                     if tgt_pos != pos.0 {
