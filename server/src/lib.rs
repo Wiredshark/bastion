@@ -14,13 +14,16 @@ pub mod bastion_arena;
 #[cfg(feature = "worldgen")]
 pub mod bastion_assets;
 // bastion (CHOP redesign, FR10): shared whole-tree detection (handler + hook).
-pub mod bastion_chop;
 pub mod bastion_actions;
+pub mod bastion_chop;
 pub mod bastion_flat_arena;
-pub mod bastion_mood;
+pub mod bastion_flight_recorder;
 pub mod bastion_jobs;
+pub mod bastion_mood;
 pub mod bastion_path;
 pub mod bastion_piles;
+pub mod bastion_traversal;
+pub mod bastion_traversal_tooling;
 mod character_creator;
 pub mod chat;
 pub mod chunk_generator;
@@ -853,10 +856,7 @@ impl Server {
 
     /// bastion (B7-0, harness hook): (hunger, rest, recreation, mood) for
     /// a named loaded colonist.
-    pub fn bastion_colonist_needs_mood(
-        &self,
-        name: &str,
-    ) -> Option<(f32, f32, f32, f32)> {
+    pub fn bastion_colonist_needs_mood(&self, name: &str) -> Option<(f32, f32, f32, f32)> {
         use specs::Join;
         let ecs = self.state.ecs();
         let entities = ecs.entities();
@@ -900,12 +900,7 @@ impl Server {
     /// slice). Colonist storage is change-tracked: find immutably, then
     /// `get_mut` (the bastion_assign_bed_owner pattern). Unknown value
     /// names return false (the vocabulary is the locked enum).
-    pub fn bastion_set_values(
-        &mut self,
-        name: &str,
-        value: &str,
-        weight: i8,
-    ) -> bool {
+    pub fn bastion_set_values(&mut self, name: &str, value: &str, weight: i8) -> bool {
         use common::bastion::Value;
         use specs::Join;
         let value = match value {
@@ -958,15 +953,11 @@ impl Server {
         let positions = ecs.read_storage::<comp::Pos>();
         let rtsim_entities = ecs.read_storage::<common::rtsim::RtSimEntity>();
         let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
-        for (_, c, p, re) in
-            (&entities, &colonists, &positions, &rtsim_entities).join()
-        {
+        for (_, c, p, re) in (&entities, &colonists, &positions, &rtsim_entities).join() {
             if c.0.name == name {
-                board.pending_thoughts.push((
-                    *re,
-                    p.0.map(|v| v.floor() as i32),
-                    kind,
-                ));
+                board
+                    .pending_thoughts
+                    .push((*re, p.0.map(|v| v.floor() as i32), kind));
                 return true;
             }
         }
@@ -999,11 +990,7 @@ impl Server {
     /// weight for a named colonist — reads their rolled values (ECS) +
     /// vanilla personality (rtsim, boolean-trait API) through the same
     /// lookup shape the mood recompute uses, then the pure derivation.
-    pub fn bastion_derived_need_weight(
-        &self,
-        name: &str,
-        need: &str,
-    ) -> Option<f32> {
+    pub fn bastion_derived_need_weight(&self, name: &str, need: &str) -> Option<f32> {
         use common::bastion::Need;
         use specs::Join;
         let need = match need {
@@ -1029,11 +1016,7 @@ impl Server {
             .find(|(c, _)| c.0.name == name)
             .and_then(|(c, re)| {
                 data.npcs.get(*re).map(|npc| {
-                    comp::bastion::derive_need_weight(
-                        need,
-                        &npc.personality,
-                        &c.0.values,
-                    )
+                    comp::bastion::derive_need_weight(need, &npc.personality, &c.0.values)
                 })
             })
     }
@@ -1041,11 +1024,7 @@ impl Server {
     /// bastion (FOCUS-0-DERIVE, harness hook): a named colonist's
     /// boolean personality trait (the vanilla public API) — the roster
     /// correlation groups by trait independently of the weight probe.
-    pub fn bastion_colonist_trait(
-        &self,
-        name: &str,
-        trait_name: &str,
-    ) -> Option<bool> {
+    pub fn bastion_colonist_trait(&self, name: &str, trait_name: &str) -> Option<bool> {
         use common::rtsim::PersonalityTrait;
         use specs::Join;
         let t = match trait_name {
@@ -1063,9 +1042,7 @@ impl Server {
         (&colonists, &rtsim_entities)
             .join()
             .find(|(c, _)| c.0.name == name)
-            .and_then(|(_, re)| {
-                data.npcs.get(*re).map(|npc| npc.personality.is(t))
-            })
+            .and_then(|(_, re)| data.npcs.get(*re).map(|npc| npc.personality.is(t)))
     }
 
     /// bastion (B-AG3 slice 1, harness hook): a named colonist's value
@@ -1092,11 +1069,7 @@ impl Server {
     /// — drives the below-flee-health signal deterministically (the
     /// scenario's Flee trigger; no synthetic drive injection, the REAL
     /// signal path).
-    pub fn bastion_set_health_fraction(
-        &mut self,
-        name: &str,
-        fraction: f32,
-    ) -> bool {
+    pub fn bastion_set_health_fraction(&mut self, name: &str, fraction: f32) -> bool {
         use specs::Join;
         let ecs = self.state.ecs();
         let entities = ecs.entities();
@@ -1157,10 +1130,7 @@ impl Server {
 
     /// bastion (RUN-0, harness hook): a colonist's (energy current, max,
     /// running) — the governor's probes.
-    pub fn bastion_colonist_energy(
-        &self,
-        name: &str,
-    ) -> Option<(f32, f32, bool)> {
+    pub fn bastion_colonist_energy(&self, name: &str) -> Option<(f32, f32, bool)> {
         use specs::Join;
         let ecs = self.state.ecs();
         let colonists = ecs.read_storage::<comp::Colonist>();
@@ -1181,9 +1151,7 @@ impl Server {
         let items = ecs.read_storage::<comp::PickupItem>();
         let ground: u64 = (&items)
             .join()
-            .filter(|pi| {
-                pi.item().item_definition_id().itemdef_id() == Some(asset_id)
-            })
+            .filter(|pi| pi.item().item_definition_id().itemdef_id() == Some(asset_id))
             .map(|pi| pi.item().amount() as u64)
             .sum();
         let colonists = ecs.read_storage::<comp::Colonist>();
@@ -1205,15 +1173,11 @@ impl Server {
     /// growth probe.
     pub fn bastion_sprite_growth(&self, pos: Vec3<i32>) -> Option<u8> {
         use common::vol::ReadVol;
-        self.state
-            .terrain()
-            .get(pos)
-            .ok()
-            .and_then(|b| {
-                b.get_attr::<common::terrain::sprite::Growth>()
-                    .ok()
-                    .map(|g| g.0)
-            })
+        self.state.terrain().get(pos).ok().and_then(|b| {
+            b.get_attr::<common::terrain::sprite::Growth>()
+                .ok()
+                .map(|g| g.0)
+        })
     }
 
     /// bastion (PATH-0, harness hook): the path scheduler's telemetry —
@@ -1315,10 +1279,7 @@ impl Server {
     /// bastion (B7-1, harness hook): a bed slot's (owner, occupant) as
     /// raw uid u64s, `None` if no bed there.
     pub fn bastion_bed_slot(&self, pos: Vec3<i32>) -> Option<(Option<u64>, Option<u64>)> {
-        let board = self
-            .state
-            .ecs()
-            .read_resource::<bastion_jobs::JobBoard>();
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
         board
             .beds
             .get(&pos)
@@ -1404,11 +1365,7 @@ impl Server {
     /// bastion (B-AG2, harness hook): the archetype table's weight for
     /// (key, activity) — probes the EXACT lookup path the brain's
     /// converted gates use (`archetype_chance`).
-    pub fn bastion_archetype_weight(
-        &self,
-        key: &str,
-        activity: &str,
-    ) -> Option<f32> {
+    pub fn bastion_archetype_weight(&self, key: &str, activity: &str) -> Option<f32> {
         ::rtsim::rule::npc_ai::archetype::archetype_chance(key, activity)
     }
 
@@ -1570,10 +1527,7 @@ impl Server {
     /// scores `(work, flee, idle)` — the post-modulation urgencies the
     /// arbiter recorded at its last scoring write. THE UI-4 read surface
     /// in probe form (the B7-0-before-B9 precedent: data before display).
-    pub fn bastion_colonist_last_scores(
-        &self,
-        name: &str,
-    ) -> Option<(f32, f32, f32)> {
+    pub fn bastion_colonist_last_scores(&self, name: &str) -> Option<(f32, f32, f32)> {
         use specs::Join;
         let ecs = self.state.ecs();
         let entities = ecs.entities();
@@ -1630,8 +1584,7 @@ impl Server {
                 (
                     npc.personality.is(PT::Adventurous),
                     npc.personality.is(PT::Worried),
-                    npc.personality.is(PT::Sociable)
-                        || npc.personality.is(PT::Extroverted),
+                    npc.personality.is(PT::Sociable) || npc.personality.is(PT::Extroverted),
                     npc.personality.is(PT::Introverted),
                 )
             })
@@ -1640,10 +1593,7 @@ impl Server {
     /// bastion (AUTON-1, harness hook): queue a BUILD PLAN — intent only,
     /// no jobs (the generator pass owns job creation). Returns the plan's
     /// frozen cell count.
-    pub fn bastion_queue_build_plan(
-        &mut self,
-        region: common::bastion::Region,
-    ) -> usize {
+    pub fn bastion_queue_build_plan(&mut self, region: common::bastion::Region) -> usize {
         let ecs = self.state.ecs();
         let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
         let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
@@ -1655,10 +1605,7 @@ impl Server {
     /// pending_mine, pending_build)`. The scenario's bound + quiescence
     /// asserts read these.
     pub fn bastion_selfgen_stats(&self) -> (u64, u64, u64, usize, usize, usize) {
-        let board = self
-            .state
-            .ecs()
-            .read_resource::<bastion_jobs::JobBoard>();
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
         let pending_mine = board
             .jobs
             .values()
@@ -1686,16 +1633,12 @@ impl Server {
     /// against each colonist's exact effective threshold (the first
     /// draw's lesson: personality stacks on values, so group labels
     /// can't predict who preempts — the computed threshold can).
-    pub fn bastion_colonist_temperament(
-        &self,
-        name: &str,
-    ) -> Option<(bool, bool)> {
+    pub fn bastion_colonist_temperament(&self, name: &str) -> Option<(bool, bool)> {
         use specs::Join;
         let ecs = self.state.ecs();
         let entities = ecs.entities();
         let colonists = ecs.read_storage::<comp::Colonist>();
-        let rtsim_entities =
-            ecs.read_storage::<common::rtsim::RtSimEntity>();
+        let rtsim_entities = ecs.read_storage::<common::rtsim::RtSimEntity>();
         let rtsim = ecs.read_resource::<crate::rtsim::RtSim>();
         let data = rtsim.state().data();
         (&entities, &colonists, &rtsim_entities)
@@ -1704,9 +1647,8 @@ impl Server {
             .and_then(|(_, _, re)| data.npcs.get(*re))
             .map(|npc| {
                 (
-                    npc.personality.is(
-                        common::rtsim::PersonalityTrait::Conscientious,
-                    ),
+                    npc.personality
+                        .is(common::rtsim::PersonalityTrait::Conscientious),
                     npc.personality
                         .is(common::rtsim::PersonalityTrait::Neurotic),
                 )
@@ -1718,16 +1660,11 @@ impl Server {
     /// past-band "keeps re-firing" assert needs no B7-3 counter). Seen
     /// >0 in two separated windows = the breakdown staircase cycled.
     pub fn bastion_despond_jobs(&self) -> usize {
-        let board = self
-            .state
-            .ecs()
-            .read_resource::<bastion_jobs::JobBoard>();
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
         board
             .jobs
             .values()
-            .filter(|j| {
-                matches!(j.kind, common::bastion::JobKind::Despond { .. })
-            })
+            .filter(|j| matches!(j.kind, common::bastion::JobKind::Despond { .. }))
             .count()
     }
 
@@ -1776,8 +1713,7 @@ impl Server {
             let ecs = self.state.ecs();
             let entities = ecs.entities();
             let colonists = ecs.read_storage::<comp::Colonist>();
-            let rtsim_entities =
-                ecs.read_storage::<common::rtsim::RtSimEntity>();
+            let rtsim_entities = ecs.read_storage::<common::rtsim::RtSimEntity>();
             let positions = ecs.read_storage::<comp::Pos>();
             (&entities, &colonists, &rtsim_entities, &positions)
                 .join()
@@ -1812,10 +1748,7 @@ impl Server {
     /// transition polling); the reservation count proves drops FREE their
     /// items (a re-emit is only possible against an unreserved item).
     pub fn bastion_board_probe(&self) -> (u64, usize) {
-        let board = self
-            .state
-            .ecs()
-            .read_resource::<bastion_jobs::JobBoard>();
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
         (board.probe_next_id(), board.probe_reservations())
     }
 
@@ -1860,9 +1793,7 @@ impl Server {
         for (_aabb, base, cells) in &trees {
             cells_total += cells.len();
             // CHOP-FELLING (row 51.6): ONE base-cut job per tree.
-            jobs += board
-                .place_chop_fell(&terrain, *base, cells)
-                .is_some() as usize;
+            jobs += board.place_chop_fell(&terrain, *base, cells).is_some() as usize;
         }
         (
             trees.len(),
@@ -1880,10 +1811,7 @@ impl Server {
     /// Returns `(fell-set size, wood count, size-scaled threshold, job
     /// created)` — the threshold is the deterministic size-scaling proof
     /// (`CHOP_WORK_PER_BLOCK × wood_count`), travel-free.
-    pub fn bastion_place_chop_tree(
-        &mut self,
-        base: vek::Vec3<i32>,
-    ) -> (usize, u32, f32, bool) {
+    pub fn bastion_place_chop_tree(&mut self, base: vek::Vec3<i32>) -> (usize, u32, f32, bool) {
         use common::vol::ReadVol;
         let ecs = self.state.ecs();
         let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
@@ -1893,8 +1821,7 @@ impl Server {
                 .map(|b| {
                     matches!(
                         b.kind(),
-                        common::terrain::BlockKind::Wood
-                            | common::terrain::BlockKind::Leaves
+                        common::terrain::BlockKind::Wood | common::terrain::BlockKind::Leaves
                     )
                 })
                 .unwrap_or(false)
@@ -1921,18 +1848,11 @@ impl Server {
     /// bastion (CHOP-FELLING, harness probe): `(stored fell-sets, trees
     /// mid-fall, cells remaining across all falls)` — read-only.
     pub fn bastion_chop_fell_stats(&self) -> (usize, usize, usize) {
-        let board = self
-            .state
-            .ecs()
-            .read_resource::<bastion_jobs::JobBoard>();
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
         (
             board.chop_fell_sets.len(),
             board.felling.len(),
-            board
-                .felling
-                .iter()
-                .map(|t| t.cells.len() - t.cursor)
-                .sum(),
+            board.felling.iter().map(|t| t.cells.len() - t.cursor).sum(),
         )
     }
 
@@ -2449,13 +2369,10 @@ impl Server {
         // includes the thought; the cavein leg's fear-persists assert
         // rides this).
         {
-            let rtsim_entities =
-                ecs.read_storage::<common::rtsim::RtSimEntity>();
+            let rtsim_entities = ecs.read_storage::<common::rtsim::RtSimEntity>();
             let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
             for e in &victims {
-                if let (Some(re), Some(p)) =
-                    (rtsim_entities.get(*e), positions.get(*e))
-                {
+                if let (Some(re), Some(p)) = (rtsim_entities.get(*e), positions.get(*e)) {
                     board.pending_thoughts.push((
                         *re,
                         p.0.map(|v| v.floor() as i32),
@@ -2504,6 +2421,153 @@ impl Server {
         )
     }
 
+    /// bastion (B5.5 deep, harness probe): full source attribution for every
+    /// ultimate fail-safe teleport observed by this server.
+    pub fn bastion_failsafe_events(&self) -> Vec<bastion_jobs::FailsafeTeleportEvent> {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .failsafe_events
+            .clone()
+    }
+
+    /// REQ-0040 harness proof that temporary humanitarian access leaves no
+    /// jobs, terrain provenance, or deferred cleanup behind.
+    pub fn bastion_emergency_access_stats(&self) -> (usize, usize, usize) {
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
+        (
+            board.emergency_access_jobs.len(),
+            board.emergency_access_cells.len(),
+            board.emergency_cleanup_pending.len()
+                + board.emergency_safe_secs.len()
+                + board.emergency_route_members.len()
+                + board.emergency_route_targets.len()
+                + board.emergency_route_mounts.len()
+                + board.emergency_route_sequences.len()
+                + board.bastion_traversal_tasks.len()
+                + board.emergency_partial_route_entries.len()
+                + board.emergency_settle_anchors.len(),
+        )
+    }
+
+    /// REQ-0041 diagnostic detail for a residual emergency route. This is
+    /// read-only harness telemetry: job id, owner uid, target, claimant,
+    /// unreachable flag, and accumulated work progress.
+    pub fn bastion_emergency_access_details(
+        &self,
+    ) -> Vec<(
+        u64,
+        u64,
+        Vec3<i32>,
+        Option<u64>,
+        bool,
+        f32,
+        Option<Vec3<f32>>,
+        Option<(u64, bool)>,
+    )> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let board = ecs.read_resource::<bastion_jobs::JobBoard>();
+        let uids = ecs.read_storage::<common::uid::Uid>();
+        let positions = ecs.read_storage::<comp::Pos>();
+        let active = ecs.read_storage::<comp::bastion::ActiveJob>();
+        let mut details: Vec<_> = board
+            .emergency_access_jobs
+            .iter()
+            .filter_map(|(id, owner)| {
+                board.jobs.get(id).map(|job| {
+                    let owner_state = (&uids, &positions, active.maybe())
+                        .join()
+                        .find(|(uid, _, _)| **uid == *owner)
+                        .map(|(_, position, active)| {
+                            (
+                                position.0,
+                                active.map(|active| {
+                                    (
+                                        active.job,
+                                        matches!(
+                                            active.state,
+                                            comp::bastion::ActiveJobState::Arrived
+                                        ),
+                                    )
+                                }),
+                            )
+                        });
+                    (
+                        *id,
+                        owner.0.get(),
+                        job.pos,
+                        job.claimed_by.map(|uid| uid.0.get()),
+                        job.unreachable,
+                        job.progress,
+                        owner_state.map(|state| state.0),
+                        owner_state.and_then(|state| state.1),
+                    )
+                })
+            })
+            .collect();
+        details.sort_by_key(|detail| detail.0);
+        details
+    }
+
+    /// REQ-0046 read-only cleanup diagnostics. The aggregate third stat mixes
+    /// three different lifetimes, so expose them separately together with
+    /// member positions and provenance-cell ownership.
+    pub fn bastion_emergency_cleanup_details(
+        &self,
+    ) -> (
+        Vec<u64>,
+        Vec<(u64, u64, Option<Vec3<f32>>, Option<Vec3<i32>>, Option<f32>)>,
+        Vec<(u64, f32)>,
+        Vec<(u64, Vec<Vec3<i32>>)>,
+    ) {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let board = ecs.read_resource::<bastion_jobs::JobBoard>();
+        let uids = ecs.read_storage::<common::uid::Uid>();
+        let positions = ecs.read_storage::<comp::Pos>();
+        let mut pending: Vec<_> = board
+            .emergency_cleanup_pending
+            .iter()
+            .map(|uid| uid.0.get())
+            .collect();
+        pending.sort_unstable();
+        let mut members: Vec<_> = board
+            .emergency_route_members
+            .iter()
+            .map(|(member, owner)| {
+                let position = (&uids, &positions)
+                    .join()
+                    .find(|(uid, _)| **uid == *member)
+                    .map(|(_, position)| position.0);
+                (
+                    member.0.get(),
+                    owner.0.get(),
+                    position,
+                    board.egress_targets.get(member).copied(),
+                    board.emergency_safe_secs.get(member).copied(),
+                )
+            })
+            .collect();
+        members.sort_by_key(|detail| detail.0);
+        let mut safe: Vec<_> = board
+            .emergency_safe_secs
+            .iter()
+            .map(|(uid, seconds)| (uid.0.get(), *seconds))
+            .collect();
+        safe.sort_by_key(|detail| detail.0);
+        let mut cells_by_owner: HashMap<u64, Vec<Vec3<i32>>> = HashMap::new();
+        for (cell, (owner, _)) in &board.emergency_access_cells {
+            cells_by_owner.entry(owner.0.get()).or_default().push(*cell);
+        }
+        for cells in cells_by_owner.values_mut() {
+            cells.sort_by_key(|cell| (cell.x, cell.y, cell.z));
+        }
+        let mut cells_by_owner: Vec<_> = cells_by_owner.into_iter().collect();
+        cells_by_owner.sort_by_key(|detail| detail.0);
+        (pending, members, safe, cells_by_owner)
+    }
+
     /// bastion (LOD-0, harness hook): force-DEMOTE a loaded colonist — flip
     /// the rtsim mode to Simulated AND delete the live entity in one step.
     /// (A bare mode flip cannot demote: the "Load in NPCs" pass runs BEFORE
@@ -2549,6 +2613,21 @@ impl Server {
     /// a position (test fixtures — e.g. seeding a stockpile with exactly one
     /// material for the reservation race test).
     pub fn bastion_spawn_item(&mut self, pos: Vec3<f32>, asset_id: &str, amount: u32) -> bool {
+        self.bastion_spawn_item_class(pos, asset_id, amount, true)
+    }
+
+    /// bastion (B5.5 deep, harness fixture): spawn a loose item in an
+    /// explicit lifetime/merge class. `persistent=true` is a Bastion pile
+    /// with no despawn timer; `false` is vanilla timed loot. This is kept a
+    /// fixture hook so the adversarial gate exercises the shipping event and
+    /// item systems rather than fabricating ECS components.
+    pub fn bastion_spawn_item_class(
+        &mut self,
+        pos: Vec3<f32>,
+        asset_id: &str,
+        amount: u32,
+        persistent: bool,
+    ) -> bool {
         let Ok(mut item) = comp::Item::new_from_asset(asset_id) else {
             return false;
         };
@@ -2564,9 +2643,154 @@ impl Server {
                 ori: comp::Ori::default(),
                 item: comp::PickupItem::new(item, program_time, true),
                 loot_owner: None,
-                persistent: true,
+                persistent,
             });
         true
+    }
+
+    /// B5.5 deep control fixture: spawn vanilla timed loot with a hard,
+    /// nonexistent owner for longer than the accelerated soak's wall time.
+    /// This keeps ambient humanoids from moving the 37-unit expiry control
+    /// into an inventory, where loose-entity lifetime components cannot be
+    /// observed, without changing shipping item expiry or merge behavior.
+    pub fn bastion_spawn_isolated_timed_item(
+        &mut self,
+        pos: Vec3<f32>,
+        asset_id: &str,
+        amount: u32,
+    ) -> bool {
+        let Ok(mut item) = comp::Item::new_from_asset(asset_id) else {
+            return false;
+        };
+        if amount > 1 && item.set_amount(amount).is_err() {
+            return false;
+        }
+        let Some(fake_uid) = std::num::NonZeroU64::new(u64::MAX) else {
+            return false;
+        };
+        let ecs = self.state.ecs();
+        let program_time = *ecs.read_resource::<common::resources::ProgramTime>();
+        ecs.read_resource::<common::event::EventBus<common::event::CreateItemDropEvent>>()
+            .emit_now(common::event::CreateItemDropEvent {
+                pos: comp::Pos(pos),
+                vel: comp::Vel(Vec3::zero()),
+                ori: comp::Ori::default(),
+                item: comp::PickupItem::new(item, program_time, true),
+                loot_owner: Some(comp::LootOwner::new(
+                    comp::loot_owner::LootOwnerKind::Player(common::uid::Uid(fake_uid)),
+                    false,
+                    600,
+                )),
+                persistent: false,
+            });
+        true
+    }
+
+    /// bastion (B5.5 deep, harness probe): item amounts/entities split by
+    /// the real `BastionPile` merge class, plus lifetime-component mismatch
+    /// counts. Tuple fields are `(persistent_amount, persistent_entities,
+    /// timed_amount, timed_entities, persistent_with_timer,
+    /// timed_without_timer)`.
+    pub fn bastion_item_class_summary_near(
+        &self,
+        pos: Vec3<f32>,
+        radius: f32,
+        asset_id: &str,
+    ) -> (u64, usize, u64, usize, usize, usize) {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let items = ecs.read_storage::<comp::PickupItem>();
+        let positions = ecs.read_storage::<comp::Pos>();
+        let piles = ecs.read_storage::<comp::bastion::BastionPile>();
+        let objects = ecs.read_storage::<comp::Object>();
+        let mut out = (0, 0, 0, 0, 0, 0);
+        for (entity, item, item_pos) in (&entities, &items, &positions).join() {
+            if item_pos.0.distance_squared(pos) > radius * radius
+                || item.item().item_definition_id().itemdef_id() != Some(asset_id)
+            {
+                continue;
+            }
+            let persistent = piles.contains(entity);
+            let timed = matches!(objects.get(entity), Some(comp::Object::DeleteAfter { .. }));
+            if persistent {
+                out.0 += item.amount() as u64;
+                out.1 += 1;
+                out.4 += usize::from(timed);
+            } else {
+                out.2 += item.amount() as u64;
+                out.3 += 1;
+                out.5 += usize::from(!timed);
+            }
+        }
+        out
+    }
+
+    /// bastion (B5.5 deep, diagnostic probe): canonical snapshots of all
+    /// persistent piles for one item definition. Entity ids let the harness
+    /// exclude its pre-existing control piles and follow the 1,000-cell
+    /// cohort through periodic merges without changing shipping components.
+    pub fn bastion_persistent_item_snapshots(&self, asset_id: &str) -> Vec<(u32, u64, Vec3<f32>)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let items = ecs.read_storage::<comp::PickupItem>();
+        let positions = ecs.read_storage::<comp::Pos>();
+        let piles = ecs.read_storage::<comp::bastion::BastionPile>();
+        let mut out: Vec<_> = (&entities, &items, &positions, &piles)
+            .join()
+            .filter(|(_, item, _, _)| {
+                item.item().item_definition_id().itemdef_id() == Some(asset_id)
+            })
+            .map(|(entity, item, pos, _)| (entity.id(), item.amount() as u64, pos.0))
+            .collect();
+        out.sort_by_key(|(entity_id, _, _)| *entity_id);
+        out
+    }
+
+    /// bastion (B5.5 deep, harness oracle): every live inventory that
+    /// contains the requested item, including non-colonist RTSim actors.
+    /// The tuple is `(entity_id, uid, debug_name, is_colonist, is_player,
+    /// is_rtsim, amount)` and is sorted by entity id for stable evidence.
+    pub fn bastion_inventory_item_snapshots(
+        &self,
+        asset_id: &str,
+    ) -> Vec<(u32, Option<u64>, String, bool, bool, bool, u64)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let inventories = ecs.read_storage::<comp::Inventory>();
+        let uids = ecs.read_storage::<common::uid::Uid>();
+        let stats = ecs.read_storage::<comp::Stats>();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let players = ecs.read_storage::<comp::Player>();
+        let rtsim_entities = ecs.read_storage::<common::rtsim::RtSimEntity>();
+        let mut out = Vec::new();
+        for (entity, inventory) in (&entities, &inventories).join() {
+            let amount = inventory
+                .slots()
+                .flatten()
+                .filter(|item| item.item_definition_id().itemdef_id() == Some(asset_id))
+                .map(|item| item.amount() as u64)
+                .sum::<u64>();
+            if amount == 0 {
+                continue;
+            }
+            out.push((
+                entity.id(),
+                uids.get(entity).map(|uid| uid.0.get()),
+                stats
+                    .get(entity)
+                    .map(|stats| format!("{:?}", stats.name))
+                    .unwrap_or_default(),
+                colonists.contains(entity),
+                players.contains(entity),
+                rtsim_entities.contains(entity),
+                amount,
+            ));
+        }
+        out.sort_by_key(|(entity_id, _, _, _, _, _, _)| *entity_id);
+        out
     }
 
     /// bastion (LOD-0, harness hook): the named colonist's LIVE bag
@@ -2583,8 +2807,7 @@ impl Server {
             .join()
             .find(|(_, c)| c.0.name == name)
             .and_then(|(e, c)| {
-                crate::rtsim::tick::colonist_record(c, inventories.get(e), None, None)
-                    .inventory
+                crate::rtsim::tick::colonist_record(c, inventories.get(e), None, None).inventory
             })
     }
 
@@ -3573,6 +3796,17 @@ impl Server {
         self.disconnect_all_clients_requested = true;
     }
 
+    /// Headless-harness finalization hook: stop the connection worker and
+    /// synchronously finish the network's existing graceful shutdown before
+    /// the server-owned Tokio runtime is dropped.
+    ///
+    /// Normal live servers keep their non-blocking `Drop` behavior. This is
+    /// intentionally narrow because deterministic harnesses must include all
+    /// teardown diagnostics in their final verdict.
+    pub fn shutdown_network_for_harness(&mut self) -> Result<(), String> {
+        self.connection_handler.shutdown_and_wait(&self.runtime)
+    }
+
     /// Sends the given client a message with their current battle mode and
     /// whether they can change it.
     ///
@@ -3766,6 +4000,7 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
+        bastion_flight_recorder::finalize();
         self.state
             .notify_players(ServerGeneral::Disconnect(DisconnectReason::Shutdown));
 

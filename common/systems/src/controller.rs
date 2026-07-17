@@ -52,6 +52,7 @@ pub struct ReadData<'a> {
     colliders: ReadStorage<'a, Collider>,
     uids: ReadStorage<'a, Uid>,
     healths: ReadStorage<'a, Health>,
+    bastion_traversal_ownerships: ReadStorage<'a, common::comp::bastion::BastionTraversalOwnership>,
 }
 
 #[derive(Default)]
@@ -72,6 +73,19 @@ impl<'a> System<'a> for Sys {
             .for_each(|(entity, uid, controller)| {
                 // Sanitize inputs to avoid clients sending bad data
                 controller.inputs.sanitize();
+
+                // Stage-1 B5.8: link-owned phases defer Controller events so
+                // interaction, mount, invite/trade, teleport and state events
+                // cannot silently preempt Climb or create a second intent
+                // owner. The queued events remain intact and resume only after
+                // Complete/Abort releases the ownership component.
+                if read_data
+                    .bastion_traversal_ownerships
+                    .get(entity)
+                    .is_some_and(|ownership| ownership.mode.owns_movement_intent())
+                {
+                    return;
+                }
 
                 // Process other controller events
                 for event in controller.events.drain(..) {

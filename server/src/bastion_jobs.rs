@@ -18,11 +18,14 @@
 //!   `CreateItemDropEvent` item-drop path — see `MineBlockEvent`'s handler in
 //!   `server/src/events/interaction.rs` for the pattern this mirrors.
 
-use crate::Tick;
+use crate::{
+    Tick,
+    bastion_traversal::{BastionTraversalPhase, BastionTraversalPurpose, BastionTraversalTask},
+};
 use common::{
     bastion::{
-        BUILD_MATERIAL_ITEM, CHOP_DROP_ITEM, DesignationKind, Job, JobAudit, JobId,
-        MINE_DROP_ITEM, Region, ZExtent,
+        BUILD_MATERIAL_ITEM, CHOP_DROP_ITEM, DesignationKind, Job, JobAudit, JobId, MINE_DROP_ITEM,
+        Region, ZExtent,
     },
     comp,
     comp::{
@@ -34,14 +37,16 @@ use common::{
     resources::{DeltaTime, ProgramTime},
     terrain::{Block, BlockKind, SpriteKind, TerrainGrid, sprite::Growth},
     uid::{IdMaps, Uid},
-    vol::ReadVol,
+    vol::{BaseVol, ReadVol},
 };
 use common_ecs::{Job as EcsJob, Origin, Phase, System};
+use common_net::sync::InterpolatableComponent;
 use common_state::BlockChange;
 use hashbrown::{HashMap, HashSet};
 use specs::{
     Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, Write, WriteExpect, WriteStorage,
 };
+use std::hash::{DefaultHasher, Hash, Hasher};
 use tracing::info;
 use vek::*;
 
@@ -146,13 +151,15 @@ fn ladder_pillar(
     designated: &[Region],
     from: Vec3<i32>,
     to_z: i32,
-) -> Option<Vec<Vec3<i32>>> {
+    approach: Option<(Vec3<f32>, (f32, f32, f32))>,
+    dismount: Vec3<i32>,
+) -> Option<(Vec<Vec3<i32>>, Vec3<i32>, Vec<Vec3<i32>>)> {
     let top = to_z + 1;
     if top <= from.z {
         return None;
     }
     let filled = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
-    let mut best: Option<(i32, Vec<Vec3<i32>>)> = None;
+    let mut best: Option<(i32, Vec<Vec3<i32>>, Vec3<i32>, Vec<Vec3<i32>>)> = None;
     for dx in -5..=5i32 {
         for dy in -5..=5i32 {
             if dx == 0 && dy == 0 {
@@ -162,8 +169,7 @@ fn ladder_pillar(
             // The column's own standing cell (floor may sit ±1 of the
             // digger's — lure holes, part-dug floors).
             let Some(stand_z) = (from.z - 1..=from.z + 2).find(|&z| {
-                !filled(Vec3::new(col.x, col.y, z))
-                    && filled(Vec3::new(col.x, col.y, z - 1))
+                !filled(Vec3::new(col.x, col.y, z)) && filled(Vec3::new(col.x, col.y, z - 1))
             }) else {
                 continue;
             };
@@ -171,12 +177,70 @@ fn ladder_pillar(
                 .map(|z| Vec3::new(col.x, col.y, z))
                 .collect();
             if cells.is_empty()
-                || !cells.iter().all(|p| {
-                    in_access_mask(designated, *p) && !filled(*p)
-                })
+                || !cells
+                    .iter()
+                    .all(|p| in_access_mask(designated, *p) && !filled(*p))
             {
                 continue;
             }
+            // REQ-0058: a ladder cell is a full-height solid sprite. The
+            // climber travels in an adjacent body lane, never through the
+            // rung voxel itself. Reject pillars that have no single
+            // reachable adjacent lane whose authoritative standing capsule
+            // can sweep from the base to the top. This is the exact smoke30
+            // mismatch: `is_filled == false` admitted the ladder column,
+            // while physics `is_solid == true` rejected its center target.
+            // `stand_z` is already the body's supported feet level. The first
+            // ladder sprite is one cell above it and is the first contact
+            // surface, not a floor to stand inside. Storing that rung z as the
+            // mount made the body settle one cell lower after the approach and
+            // invalidated every subsequent waypoint (REQ-0058 smoke35).
+            let base_z = stand_z;
+            let climb_top_z = cells.last().map_or(stand_z + 1, |cell| cell.z);
+            let ladder_overrides: HashMap<Vec3<i32>, Block> = cells
+                .iter()
+                .copied()
+                .map(|cell| (cell, Block::air(SpriteKind::Ladder)))
+                .collect();
+            let predicted = EmergencyVoxelOverrides {
+                base: terrain,
+                overrides: &ladder_overrides,
+            };
+            let mut body_lanes = [
+                Vec2::new(1, 0),
+                Vec2::new(-1, 0),
+                Vec2::new(0, 1),
+                Vec2::new(0, -1),
+            ]
+            .into_iter()
+            .filter_map(|side| {
+                let lane = col + side;
+                let base = Vec3::new(lane.x, lane.y, base_z);
+                let top = Vec3::new(lane.x, lane.y, climb_top_z);
+                (filled(base - Vec3::unit_z())
+                    && terrain.get(base).is_ok_and(|block| !block.is_solid())
+                    && terrain
+                        .get(base + Vec3::unit_z())
+                        .is_ok_and(|block| !block.is_solid())
+                    && emergency_route_base_reachable(terrain, from, base, 8)
+                    && common_systems::phys::cylinder_sweep_first_collision(
+                        &predicted,
+                        base.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0),
+                        top.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0),
+                        (0.45, 0.0, 1.95),
+                    )
+                    .is_none())
+                .then_some(base)
+            })
+            .collect::<Vec<_>>();
+            body_lanes.sort_by_key(|base| {
+                (
+                    base.xy().distance_squared(from.xy()),
+                    base.x,
+                    base.y,
+                    base.z,
+                )
+            });
             let wall_adjacent = [
                 Vec2::new(1, 0),
                 Vec2::new(-1, 0),
@@ -185,13 +249,290 @@ fn ladder_pillar(
             ]
             .into_iter()
             .any(|d| filled(Vec3::new(col.x + d.x, col.y + d.y, to_z)));
-            let score = dx.abs() + dy.abs() + if wall_adjacent { 0 } else { 100 };
-            if best.as_ref().is_none_or(|(s, _)| score < *s) {
-                best = Some((score, cells));
+            let column_score = dx.abs() + dy.abs() + if wall_adjacent { 0 } else { 100 };
+            for body_lane in body_lanes {
+                let corridor = if let Some((actual_start, cylinder)) = approach {
+                    let dismount_ready = emergency_corridor_standable(&predicted, dismount);
+                    let top = Vec3::new(body_lane.x, body_lane.y, climb_top_z);
+                    let exit_hit = dismount_ready.then(|| {
+                        common_systems::phys::cylinder_sweep_first_collision(
+                            &predicted,
+                            top.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0),
+                            dismount.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0),
+                            cylinder,
+                        )
+                    });
+                    if !dismount_ready || exit_hit.flatten().is_some() {
+                        None
+                    } else {
+                        emergency_constructed_ladder_corridor(
+                            &predicted,
+                            actual_start,
+                            cylinder,
+                            body_lane,
+                        )
+                        .0
+                    }
+                } else {
+                    Some(Vec::new())
+                };
+                let Some(corridor) = corridor else {
+                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                        info!(
+                            column = ?col,
+                            ?body_lane,
+                            ?dismount,
+                            reason = "pre_emission_no_executable_ladder_corridor",
+                            "bastion: constructed-ladder candidate rejected before emission"
+                        );
+                    }
+                    continue;
+                };
+                if best.as_ref().is_none_or(|(score, _, lane, _)| {
+                    (column_score, body_lane.x, body_lane.y, body_lane.z)
+                        < (*score, lane.x, lane.y, lane.z)
+                }) {
+                    best = Some((column_score, cells.clone(), body_lane, corridor));
+                }
             }
         }
     }
-    best.map(|(_, cells)| cells)
+    best.map(|(_, cells, body_lane, corridor)| (cells, body_lane, corridor))
+}
+
+/// Last organic planner tier for a head-blocked pocket: excavate a narrow
+/// vertical escape column when neither a stair nor an open ladder column can
+/// route. Only filled cells outside player/Bastion designations are changed;
+/// provenance restoration later returns every cell exactly.
+/// Read-only post-construction view used only for route preflight.  Planned
+/// Mine cells read as air, while every other voxel comes from the authoritative
+/// terrain.  Collision is still evaluated by the shipping cylinder sweep; this
+/// avoids inventing a second body/collision approximation for a route that does
+/// not exist yet.
+struct EmergencyPlannedClearTerrain<'a> {
+    terrain: &'a TerrainGrid,
+    cleared: &'a HashSet<Vec3<i32>>,
+    air: Block,
+}
+
+/// Read-only predicted topology used by pre-emission route proof.  Overrides
+/// are exact planned voxels; every other query delegates to the authoritative
+/// terrain, so A* and collision inspect the same future ladder geometry.
+struct EmergencyVoxelOverrides<'a, V> {
+    base: &'a V,
+    overrides: &'a HashMap<Vec3<i32>, Block>,
+}
+
+impl<V> BaseVol for EmergencyVoxelOverrides<'_, V>
+where
+    V: BaseVol<Vox = Block>,
+{
+    type Error = V::Error;
+    type Vox = Block;
+}
+
+impl<V> ReadVol for EmergencyVoxelOverrides<'_, V>
+where
+    V: BaseVol<Vox = Block> + ReadVol,
+{
+    fn get(&self, pos: Vec3<i32>) -> Result<&Self::Vox, Self::Error> {
+        self.overrides
+            .get(&pos)
+            .map_or_else(|| self.base.get(pos), Ok)
+    }
+}
+
+impl BaseVol for EmergencyPlannedClearTerrain<'_> {
+    type Error = <TerrainGrid as BaseVol>::Error;
+    type Vox = Block;
+}
+
+impl ReadVol for EmergencyPlannedClearTerrain<'_> {
+    fn get(&self, pos: Vec3<i32>) -> Result<&Self::Vox, Self::Error> {
+        if self.cleared.contains(&pos) {
+            Ok(&self.air)
+        } else {
+            self.terrain.get(pos)
+        }
+    }
+}
+
+fn emergency_escape_shaft(
+    terrain: &TerrainGrid,
+    mask: &[Region],
+    protected_jobs: &HashSet<Vec3<i32>>,
+    from: Vec3<i32>,
+    to_z: i32,
+    approach_start: Vec3<f32>,
+    cylinder: (f32, f32, f32),
+) -> Option<(Vec<Vec3<i32>>, Vec2<i32>, Vec3<i32>)> {
+    if to_z <= from.z {
+        return None;
+    }
+    let mut best: Option<(
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        i32,
+        Vec<Vec3<i32>>,
+        Vec2<i32>,
+        Vec3<i32>,
+    )> = None;
+    for radius in 0..=5i32 {
+        for dx in -radius..=radius {
+            for dy in -radius..=radius {
+                if dx.abs().max(dy.abs()) != radius {
+                    continue;
+                }
+                let column = from.xy() + Vec2::new(dx, dy);
+                let cells: Vec<Vec3<i32>> = ((from.z + 1)..=(to_z + 1))
+                    .map(|z| Vec3::new(column.x, column.y, z))
+                    .filter(|cell| {
+                        in_access_mask(mask, *cell)
+                            && !protected_jobs.contains(cell)
+                            && terrain.get(*cell).is_ok_and(|block| block.is_filled())
+                    })
+                    .collect();
+                if cells.is_empty() {
+                    continue;
+                }
+                // A candidate is valid only if every filled cell in the
+                // escape span is eligible; never tunnel through protected
+                // cohort/designation terrain by skipping it.
+                let blocked = ((from.z + 1)..=(to_z + 1)).any(|z| {
+                    let cell = Vec3::new(column.x, column.y, z);
+                    terrain.get(cell).is_ok_and(|block| block.is_filled())
+                        && (!in_access_mask(mask, cell) || protected_jobs.contains(&cell))
+                });
+                if blocked {
+                    continue;
+                }
+                // A mined air column is executable only when the existing
+                // authoritative natural-climb state can acquire a real wall
+                // along the whole ascent. Record one deterministic wall face;
+                // do not later fabricate on_wall for an open column.
+                let wall_dir = [
+                    Vec2::new(1, 0),
+                    Vec2::new(-1, 0),
+                    Vec2::new(0, 1),
+                    Vec2::new(0, -1),
+                ]
+                .into_iter()
+                .find(|side| {
+                    (from.z..=to_z).all(|z| {
+                        terrain
+                            .get(Vec3::new(column.x + side.x, column.y + side.y, z))
+                            .is_ok_and(|block| block.is_solid())
+                    })
+                });
+                let Some(wall_dir) = wall_dir else {
+                    continue;
+                };
+                let entry = Vec3::new(column.x, column.y, from.z);
+                let planned_clear: HashSet<Vec3<i32>> = cells.iter().copied().collect();
+                let predicted = EmergencyPlannedClearTerrain {
+                    terrain,
+                    cleared: &planned_clear,
+                    air: Block::empty(),
+                };
+                let entry_supported = predicted
+                    .get(entry - Vec3::unit_z())
+                    .is_ok_and(|block| block.is_solid());
+                let entry_clear = predicted.get(entry).is_ok_and(|block| !block.is_solid())
+                    && predicted
+                        .get(entry + Vec3::unit_z())
+                        .is_ok_and(|block| !block.is_solid());
+                if !entry_supported || !entry_clear {
+                    continue;
+                }
+                // A shaft entry is a two-part traversal link: ordinary Goto
+                // reaches a supported approach cell, then the route-owned
+                // mount transaction crosses the short approach->entry edge.
+                // Both segments are proven with the same authoritative sweep
+                // against the predicted post-Mine terrain.
+                let approach = [
+                    Vec2::new(1, 0),
+                    Vec2::new(-1, 0),
+                    Vec2::new(0, 1),
+                    Vec2::new(0, -1),
+                ]
+                .into_iter()
+                .filter_map(|side| {
+                    let candidate = Vec3::new(column.x + side.x, column.y + side.y, from.z);
+                    let supported = predicted
+                        .get(candidate - Vec3::unit_z())
+                        .is_ok_and(|block| block.is_solid());
+                    let clear = predicted
+                        .get(candidate)
+                        .is_ok_and(|block| !block.is_solid())
+                        && predicted
+                            .get(candidate + Vec3::unit_z())
+                            .is_ok_and(|block| !block.is_solid());
+                    let approach_target =
+                        candidate.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+                    let entry_target = entry.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+                    let approach_hit = common_systems::phys::cylinder_sweep_first_collision(
+                        &predicted,
+                        approach_start,
+                        approach_target,
+                        cylinder,
+                    );
+                    let entry_hit = common_systems::phys::cylinder_sweep_first_collision(
+                        &predicted,
+                        approach_target,
+                        entry_target,
+                        cylinder,
+                    );
+                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some()
+                        && (!supported || !clear || approach_hit.is_some() || entry_hit.is_some())
+                    {
+                        info!(
+                            ?from,
+                            ?column,
+                            ?candidate,
+                            ?entry,
+                            supported,
+                            clear,
+                            ?cylinder,
+                            ?approach_hit,
+                            ?entry_hit,
+                            ?wall_dir,
+                            reason = "natural_shaft_approach_rejected",
+                            "bastion: emergency natural-shaft approach preflight"
+                        );
+                    }
+                    (supported && clear && approach_hit.is_none() && entry_hit.is_none())
+                        .then_some(candidate)
+                })
+                .min_by_key(|candidate| {
+                    let center = candidate.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+                    (
+                        (approach_start.distance_squared(center) * 1000.0) as i64,
+                        candidate.x,
+                        candidate.y,
+                        candidate.z,
+                    )
+                });
+                let Some(approach) = approach else {
+                    continue;
+                };
+                let score = (
+                    radius, dx, dy, approach.x, approach.y, approach.z, cells, wall_dir, approach,
+                );
+                if best.as_ref().is_none_or(|current| {
+                    (score.0, score.1, score.2, score.3, score.4, score.5)
+                        < (
+                            current.0, current.1, current.2, current.3, current.4, current.5,
+                        )
+                }) {
+                    best = Some(score);
+                }
+            }
+        }
+    }
+    best.map(|(_, _, _, _, _, _, cells, wall_dir, approach)| (cells, wall_dir, approach))
 }
 
 /// bastion (B5.8/B5.8-E): plan AND emit one access route from `from` up to
@@ -208,10 +549,27 @@ fn plan_access(
     mask: &[Region],
     from: Vec3<i32>,
     to: Vec3<i32>,
+    emergency_owner: Option<Uid>,
+    emergency_approach: Option<(Vec3<f32>, (f32, f32, f32))>,
 ) -> Option<(DesignationKind, usize)> {
-    let plan: Option<(Vec<Vec3<i32>>, DesignationKind)> = {
+    let protected_designations = board.designated.clone();
+    let protected_job_cells: HashSet<Vec3<i32>> = board
+        .jobs
+        .iter()
+        .filter_map(|(id, job)| (!board.emergency_access_jobs.contains_key(id)).then_some(job.pos))
+        .collect();
+    let plan: Option<(
+        Vec<Vec3<i32>>,
+        DesignationKind,
+        Option<Vec3<i32>>,
+        EmergencyRouteDescriptor,
+        Option<Vec<Vec3<i32>>>,
+    )> = {
         let is_solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
-        let allowed = |p: Vec3<i32>| in_access_mask(mask, p);
+        let allowed = |p: Vec3<i32>| {
+            in_access_mask(mask, p)
+                && emergency_owner.is_none_or(|_| !in_access_mask(&protected_designations, p))
+        };
         // Stair bases: the digger's own cell plus its walkable neighbors —
         // the first step of a pit-escape stair must cut into a WALL column
         // (floor rule), only adjacent from the pit's edge cells.
@@ -228,11 +586,23 @@ fn plan_access(
             (d == Vec2::zero() || (!is_solid(f) && is_solid(f - Vec3::unit_z()))).then_some(f)
         })
         .find_map(|f| {
-            common::bastion::carve_ramp(f, to, &is_solid, &allowed)
-                .filter(|digs| !digs.is_empty())
+            common::bastion::carve_ramp(f, to, &is_solid, &allowed).filter(|digs| !digs.is_empty())
         });
         match stairs {
-            Some(digs) => Some((digs, DesignationKind::Mine)),
+            Some(digs) => Some((
+                digs,
+                DesignationKind::Mine,
+                None,
+                EmergencyRouteDescriptor {
+                    kind: EmergencyTraversalKind::CarvedStair,
+                    approach: from,
+                    entry: from,
+                    top_anchor: to,
+                    dismount: to,
+                    wall_dir: None,
+                },
+                None,
+            )),
             // B6-hotfix (Ben live-test): AUTO-ladder access DISABLED — the
             // single-column auto-pillar caused a queue-fight ("they all
             // fight to use it") that did more harm than good. The colony
@@ -245,12 +615,77 @@ fn plan_access(
             // DesignationKind::Ladder, and all climb-assist/magnetism code
             // STAY — the player Ladder paint tool + vertical-link
             // pathfinding still use them; only the AUTO fallback goes dark.
-            None if AUTO_LADDER_ACCESS => ladder_pillar(terrain, mask, from, to.z)
-                .map(|cells| (cells, DesignationKind::Ladder)),
+            None if AUTO_LADDER_ACCESS || emergency_owner.is_some() => {
+                ladder_pillar(terrain, mask, from, to.z, emergency_approach, to)
+                    .map(|(cells, body_lane, corridor)| {
+                        let top_z = cells.last().map_or(body_lane.z, |cell| cell.z);
+                        (
+                            cells,
+                            DesignationKind::Ladder,
+                            Some(body_lane),
+                            EmergencyRouteDescriptor {
+                                kind: EmergencyTraversalKind::ConstructedLadder,
+                                approach: body_lane,
+                                entry: body_lane,
+                                top_anchor: Vec3::new(body_lane.x, body_lane.y, top_z),
+                                dismount: to,
+                                wall_dir: None,
+                            },
+                            Some(corridor),
+                        )
+                    })
+                    .or_else(|| {
+                        emergency_owner.and_then(|_| {
+                            let (approach_start, cylinder) = emergency_approach?;
+                            emergency_escape_shaft(
+                                terrain,
+                                mask,
+                                &protected_job_cells,
+                                from,
+                                to.z,
+                                approach_start,
+                                cylinder,
+                            )
+                            .map(|(cells, wall_dir, approach)| {
+                                let column = cells.first().map_or(from.xy(), |cell| cell.xy());
+                                (
+                                    cells,
+                                    DesignationKind::Mine,
+                                    None,
+                                    EmergencyRouteDescriptor {
+                                        kind: EmergencyTraversalKind::NaturalShaft,
+                                        approach,
+                                        entry: Vec3::new(column.x, column.y, from.z),
+                                        top_anchor: Vec3::new(column.x, column.y, to.z),
+                                        dismount: to,
+                                        wall_dir: Some(wall_dir),
+                                    },
+                                    None,
+                                )
+                            })
+                        })
+                    })
+            },
             None => None,
         }
     };
-    let (cells, kind) = plan?;
+    let (cells, kind, body_lane, descriptor, approach_corridor) = plan?;
+    if let Some(owner) = emergency_owner {
+        board.emergency_route_members.insert(owner, owner);
+        // `to` is the planner's standable surface destination. Deriving a
+        // target later from the highest provenance cell is wrong for carved
+        // stairs: that cell is head clearance, two blocks above the step.
+        board.emergency_route_targets.insert(owner, to);
+        board.emergency_route_descriptors.insert(owner, descriptor);
+        if let Some(corridor) = approach_corridor {
+            board
+                .emergency_route_approach_corridors
+                .insert(owner, corridor);
+        }
+        if let Some(body_lane) = body_lane {
+            board.emergency_route_mounts.insert(owner, body_lane);
+        }
+    }
     // Register the vertical link's base for staged routing (cells are
     // emitted bottom-up; the first IS the base).
     if kind == DesignationKind::Ladder
@@ -264,6 +699,8 @@ fn plan_access(
         board.access_anchors.push(base);
     }
     let occupied: HashSet<Vec3<i32>> = board.jobs.values().map(|j| j.pos).collect();
+    let egress_diag = std::env::var_os("BASTION_EGRESS_DIAG").is_some();
+    let mut emitted_order = Vec::new();
     let mut steps = 0;
     for pos in cells {
         if occupied.contains(&pos) {
@@ -271,6 +708,15 @@ fn plan_access(
         }
         let id = board.next_id;
         board.next_id += 1;
+        if let Some(owner) = emergency_owner
+            && let Ok(original) = terrain.get(pos).copied()
+        {
+            board.emergency_access_jobs.insert(id, owner);
+            board
+                .emergency_access_cells
+                .entry(pos)
+                .or_insert((owner, original));
+        }
         board.jobs.insert(id, Job {
             kind: common::bastion::JobKind::Designated(kind),
             work: kind.work_type(),
@@ -290,10 +736,132 @@ fn plan_access(
             stuck_strikes: 0,
             depth: 0,
             reservation: None,
-            });
+        });
+        if emergency_owner.is_some() {
+            emitted_order.push((id, pos));
+        }
         steps += 1;
     }
+    if let Some(owner) = emergency_owner {
+        board
+            .emergency_route_sequences
+            .insert(owner, emitted_order.clone());
+    }
+    if egress_diag && emergency_owner.is_some() {
+        info!(
+            owner = emergency_owner.map(|uid| uid.0.get()),
+            ?kind,
+            ?from,
+            ?to,
+            ?body_lane,
+            ?descriptor,
+            ?emitted_order,
+            "bastion: emergency access plan ordered jobs"
+        );
+    }
     Some((kind, steps))
+}
+
+/// Find a live emergency route near a trapped colonist. The selected target
+/// is the route's highest provenance-marked cell; owner uid and coordinates
+/// provide deterministic tie-breaks.
+fn nearby_emergency_route(
+    board: &JobBoard,
+    terrain: &TerrainGrid,
+    from: Vec3<i32>,
+    radius: i32,
+) -> Option<(Uid, Vec3<i32>)> {
+    let mut routes: HashMap<Uid, (i32, Vec3<i32>, Vec3<i32>)> = HashMap::new();
+    for (cell, (owner, _)) in &board.emergency_access_cells {
+        if board.emergency_cleanup_pending.contains(owner) {
+            continue;
+        }
+        let horizontal = cell.xy().distance_squared(from.xy());
+        if horizontal > radius * radius {
+            continue;
+        }
+        routes
+            .entry(*owner)
+            .and_modify(|(nearest, base, target)| {
+                *nearest = (*nearest).min(horizontal);
+                if (cell.z, cell.x, cell.y) < (base.z, base.x, base.y) {
+                    *base = *cell;
+                }
+                if (cell.z, cell.x, cell.y) > (target.z, target.x, target.y) {
+                    *target = *cell;
+                }
+            })
+            .or_insert((horizontal, *cell, *cell));
+    }
+    routes
+        .into_iter()
+        .filter(|(_, (_, base, _))| emergency_route_base_reachable(terrain, from, *base, radius))
+        .min_by_key(|(owner, (nearest, _, target))| {
+            (*nearest, owner.0.get(), target.x, target.y, target.z)
+        })
+        .map(|(owner, (_, _, fallback_target))| {
+            (
+                owner,
+                board
+                    .emergency_route_targets
+                    .get(&owner)
+                    .copied()
+                    .unwrap_or(fallback_target),
+            )
+        })
+}
+
+/// Bounded body-clear flood used only to decide whether a colonist may share
+/// an existing route. Nearness alone is insufficient when a solid pocket wall
+/// separates two colonists by one block.
+fn emergency_route_base_reachable(
+    terrain: &TerrainGrid,
+    from: Vec3<i32>,
+    base: Vec3<i32>,
+    radius: i32,
+) -> bool {
+    let mut queue = std::collections::VecDeque::from([from]);
+    let mut seen: HashSet<Vec3<i32>> = HashSet::new();
+    seen.insert(from);
+    while let Some(cell) = queue.pop_front() {
+        if cell.xy().distance_squared(base.xy()) <= 2 && (cell.z - base.z).abs() <= 2 {
+            return true;
+        }
+        for delta in [
+            Vec3::new(1, 0, 0),
+            Vec3::new(-1, 0, 0),
+            Vec3::new(0, 1, 0),
+            Vec3::new(0, -1, 0),
+            Vec3::new(1, 0, 1),
+            Vec3::new(-1, 0, 1),
+            Vec3::new(0, 1, 1),
+            Vec3::new(0, -1, 1),
+            Vec3::new(1, 0, -1),
+            Vec3::new(-1, 0, -1),
+            Vec3::new(0, 1, -1),
+            Vec3::new(0, -1, -1),
+        ] {
+            let next = cell + delta;
+            if (next.x - from.x).abs() > radius
+                || (next.y - from.y).abs() > radius
+                || (next.z - from.z).abs() > radius
+                || !seen.insert(next)
+            {
+                continue;
+            }
+            let body_clear = terrain.get(next).is_ok_and(|block| !block.is_solid())
+                && terrain
+                    .get(next + Vec3::unit_z())
+                    .is_ok_and(|block| !block.is_solid());
+            let supported = terrain
+                .get(next - Vec3::unit_z())
+                .is_ok_and(|block| block.is_filled());
+            if body_clear && supported {
+                queue.push_back(next);
+            }
+        }
+    }
+    false
 }
 
 /// The per-block job predicate, shared by both placement paths. Mine =
@@ -310,9 +878,9 @@ fn job_wanted(kind: DesignationKind, block: &Block) -> bool {
         },
         // B5.8: a ladder rung, like Build, goes into currently-open space.
         // B7-1: a bed too.
-        DesignationKind::Build
-        | DesignationKind::Ladder
-        | DesignationKind::Bed => !block.is_filled(),
+        DesignationKind::Build | DesignationKind::Ladder | DesignationKind::Bed => {
+            !block.is_filled()
+        },
         DesignationKind::Stockpile | DesignationKind::Zone(_) => false,
         // GATHER (row 38): forage — one job per collectible PLANT sprite
         // (the TerrainResource food allowlist; Stones/Wood/Gem/Ore stay
@@ -374,9 +942,7 @@ pub fn coord_cell(pos: Vec3<i32>) -> Vec2<i32> {
 /// evidence.
 pub fn tightdig_enabled() -> bool {
     static TIGHTDIG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *TIGHTDIG.get_or_init(|| {
-        std::env::var("BASTION_TIGHTDIG").is_ok_and(|v| v == "1")
-    })
+    *TIGHTDIG.get_or_init(|| std::env::var("BASTION_TIGHTDIG").is_ok_and(|v| v == "1"))
 }
 
 /// bastion (FR15-TIGHTDIG): the progress WINDOW length (seconds) — the
@@ -408,8 +974,7 @@ pub const SLEEP_MARGIN: f32 = 0.1;
 // designed extension point ("extends as food"), and the death-spiral
 // recovery's load-bearing line: without it the farm's whole output is
 // inedible and no shortage can recover through production.
-pub const FOOD_DEFS: &[&str] =
-    &["common.items.food.mushroom", FARM_WHEAT_ITEM];
+pub const FOOD_DEFS: &[&str] = &["common.items.food.mushroom", FARM_WHEAT_ITEM];
 /// bastion (B7-3): hunger restored per food item eaten.
 pub const FOOD_RESTORE: f32 = 0.5;
 
@@ -665,13 +1230,11 @@ pub const FLAT_SURFACE_SCAN_MAX: i32 = 128;
 /// already at/below the floor — nothing to dig; [`ZExtent::column_range`]
 /// agrees, returning `None` for `surface < floor`).
 pub fn column_flat_surface_z(terrain: &TerrainGrid, x: i32, y: i32, floor_z: i32) -> Option<i32> {
-    (floor_z..=floor_z + FLAT_SURFACE_SCAN_MAX)
-        .rev()
-        .find(|z| {
-            terrain
-                .get(Vec3::new(x, y, *z))
-                .is_ok_and(|b| is_surface_terrain(b.kind()))
-        })
+    (floor_z..=floor_z + FLAT_SURFACE_SCAN_MAX).rev().find(|z| {
+        terrain
+            .get(Vec3::new(x, y, *z))
+            .is_ok_and(|b| is_surface_terrain(b.kind()))
+    })
 }
 
 /// THE per-column surface authority a designation resolves against — flat-floor
@@ -679,7 +1242,8 @@ pub fn column_flat_surface_z(terrain: &TerrainGrid, x: i32, y: i32, floor_z: i32
 /// ([`column_flat_surface_z`], the flatten-hill fix), relative mode uses the
 /// ±window around the paint plane ([`column_surface_z`]). ONE function so
 /// job generation, echo bounds, AND the paint-time volume gate all resolve the
-/// SAME surface (the echo-bounds invariant + an honest volume cap depend on it).
+/// SAME surface (the echo-bounds invariant + an honest volume cap depend on
+/// it).
 pub fn resolve_column_surface(
     terrain: &TerrainGrid,
     x: i32,
@@ -721,17 +1285,17 @@ fn has_standable_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<i3
         Vec2::new(0, -1),
     ];
     // 1. ON-TOP (preferred — the in-place deep-dig stance): stand ON the block,
-    //    mine underfoot (the colonist then falls; the climb/teleport floor
-    //    covers the landing). Valid iff:
+    //    mine underfoot (the colonist then falls; the climb/teleport floor covers
+    //    the landing). Valid iff:
     //    - body room above: pos+z1 (feet) AND pos+z2 (head) both open;
     //    - NOT an ISOLATED 1-wide perch (all 4 lateral sides solid-free at the
-    //      block's own level) — nothing can path ONTO an isolated floater, so
-    //      that is the clean-SKIP case (falls through to None below unless an
-    //      adjacent stance exists);
-    //    - the on-top space is NOT a 1-wide SLOT walled by higher columns (the
-    //      `+1` arrival gap the capsule WEDGES in — ≥3 of the 4 lateral sides
-    //      solid at the stance level pos+z1). A wedged block routes to its open
-    //      side instead (step 2).
+    //      block's own level) — nothing can path ONTO an isolated floater, so that
+    //      is the clean-SKIP case (falls through to None below unless an adjacent
+    //      stance exists);
+    //    - the on-top space is NOT a 1-wide SLOT walled by higher columns (the `+1`
+    //      arrival gap the capsule WEDGES in — ≥3 of the 4 lateral sides solid at
+    //      the stance level pos+z1). A wedged block routes to its open side instead
+    //      (step 2).
     let on_top_clear = open(pos + Vec3::unit_z()) && open(pos + Vec3::unit_z() * 2);
     let isolated = cardinals
         .into_iter()
@@ -744,11 +1308,11 @@ fn has_standable_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<i3
         return Some(Vec3::unit_z());
     }
     // 2. ADJACENT-GROUND fallback: a cardinal neighbor cell at the block's own
-    //    level with a solid floor below + open feet + open head — stand there
-    //    and mine sideways. This is the reachable stance a wedged `+1`-gap
-    //    block has downhill, and the way a reachable floating LEDGE is worked;
-    //    an ISOLATED floater has none (its neighbors' floors are air) → None →
-    //    clean-SKIP (no claim→unreachable churn; deferred to cave-in).
+    //    level with a solid floor below + open feet + open head — stand there and
+    //    mine sideways. This is the reachable stance a wedged `+1`-gap block has
+    //    downhill, and the way a reachable floating LEDGE is worked; an ISOLATED
+    //    floater has none (its neighbors' floors are air) → None → clean-SKIP (no
+    //    claim→unreachable churn; deferred to cave-in).
     for d in cardinals {
         let feet = Vec3::new(pos.x + d.x, pos.y + d.y, pos.z);
         if open(feet) && open(feet + Vec3::unit_z()) && solid(feet - Vec3::unit_z()) {
@@ -782,9 +1346,9 @@ const NEIGHBOURS6: [Vec3<i32>; 6] = [
 /// Each severed neighbour is flooded SEPARATELY (removing `removed_pos` may cut
 /// one mass into a grounded part and a floating part — a single merged flood
 /// would wrongly read the whole thing as grounded). PURE (terrain via
-/// `is_solid`) so it unit-tests without a `TerrainGrid` and stays deterministic.
-/// `pub` so the harness's `bastion_force_collapse_check` can drive the same
-/// support check deterministically (no colonist-mining timing).
+/// `is_solid`) so it unit-tests without a `TerrainGrid` and stays
+/// deterministic. `pub` so the harness's `bastion_force_collapse_check` can
+/// drive the same support check deterministically (no colonist-mining timing).
 pub fn floating_chunk(
     is_solid: impl Fn(Vec3<i32>) -> bool,
     removed_pos: Vec3<i32>,
@@ -869,16 +1433,8 @@ pub fn resolve_surface_bounds(
 /// loop-breaker covers their job-holding cases; jobless wide-pit detection
 /// is a noted known-limit pending a real reachability probe. Returns
 /// (has_egress, nearest rim target for an access plan).
-fn egress_scan(
-    terrain: &TerrainGrid,
-    feet: Vec3<i32>,
-    reach: i32,
-) -> (bool, Option<Vec3<i32>>) {
-    egress_scan_with(
-        |x, y| column_surface_z(terrain, x, y, feet.z),
-        feet,
-        reach,
-    )
+fn egress_scan(terrain: &TerrainGrid, feet: Vec3<i32>, reach: i32) -> (bool, Option<Vec3<i32>>) {
+    egress_scan_with(|x, y| column_surface_z(terrain, x, y, feet.z), feet, reach)
 }
 
 /// The pure core of [`egress_scan`], generic over the surface probe so the
@@ -943,7 +1499,884 @@ fn surface_teleport_dest(terrain: &TerrainGrid, feet: Vec3<i32>) -> Option<Vec3<
         |x, y| column_surface_z(terrain, x, y, feet.z + 64),
         |p| terrain.get(p).is_ok_and(|b| !b.is_filled()),
         feet,
+        0,
     )
+}
+
+/// An organic egress steer must approach a rim instead of selecting the
+/// colonist's own roofed column. The teleport backstop deliberately prefers
+/// the nearest safe landing (including r=0); movement needs horizontal intent
+/// toward a wall/edge so climb-free ascent is not stopped by solid overhead.
+fn surface_egress_dest(terrain: &TerrainGrid, feet: Vec3<i32>) -> Option<Vec3<i32>> {
+    surface_egress_dest_impl(
+        |x, y| column_surface_z(terrain, x, y, feet.z + 64),
+        |p| terrain.get(p).is_ok_and(|b| !b.is_filled()),
+        feet,
+    )
+}
+
+/// Select a deterministic standable cell clear of a temporary emergency
+/// route. Reaching the route top is not a completed rescue: restoring a rung
+/// while its user is standing in/on that provenance cell either blocks cleanup
+/// forever or removes support under the colonist. The shared route therefore
+/// remains live until the member has walked to one of these dismount cells.
+fn emergency_dismount_dest(
+    terrain: &TerrainGrid,
+    feet: Vec3<i32>,
+    route_cells: &HashSet<Vec3<i32>>,
+) -> Option<Vec3<i32>> {
+    for radius in 2..=8i32 {
+        for dx in -radius..=radius {
+            for dy in -radius..=radius {
+                if dx.abs().max(dy.abs()) != radius {
+                    continue;
+                }
+                for dz in [0, 1, -1, 2, -2] {
+                    let candidate = feet + Vec3::new(dx, dy, dz);
+                    let support = candidate - Vec3::unit_z();
+                    let head = candidate + Vec3::unit_z();
+                    if route_cells.contains(&support)
+                        || route_cells.contains(&candidate)
+                        || route_cells.contains(&head)
+                    {
+                        continue;
+                    }
+                    if terrain.get(support).is_ok_and(|block| block.is_filled())
+                        && terrain.get(candidate).is_ok_and(|block| !block.is_filled())
+                        && terrain.get(head).is_ok_and(|block| !block.is_filled())
+                    {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// REQ-0077: validate the planner/executor contract against the current
+/// authoritative terrain. Pending construction is handled by the caller; this
+/// predicate answers only whether the completed geometry has an executable
+/// traversal and a supported permanent exit.
+fn emergency_route_descriptor_ready(board: &JobBoard, terrain: &TerrainGrid, owner: Uid) -> bool {
+    let Some(descriptor) = board.emergency_route_descriptors.get(&owner).copied() else {
+        return false;
+    };
+    let dismount_ready = terrain
+        .get(descriptor.dismount - Vec3::unit_z())
+        .is_ok_and(|block| block.is_solid())
+        && terrain
+            .get(descriptor.dismount)
+            .is_ok_and(|block| !block.is_solid())
+        && terrain
+            .get(descriptor.dismount + Vec3::unit_z())
+            .is_ok_and(|block| !block.is_solid());
+    if !dismount_ready {
+        return false;
+    }
+    match descriptor.kind {
+        EmergencyTraversalKind::CarvedStair => true,
+        EmergencyTraversalKind::ConstructedLadder => {
+            let mount_ready = terrain
+                .get(descriptor.entry - Vec3::unit_z())
+                .is_ok_and(|block| block.is_solid())
+                && terrain
+                    .get(descriptor.entry)
+                    .is_ok_and(|block| !block.is_solid())
+                && terrain
+                    .get(descriptor.entry + Vec3::unit_z())
+                    .is_ok_and(|block| !block.is_solid());
+            let ladder_ready =
+                board
+                    .emergency_access_cells
+                    .iter()
+                    .any(|(cell, (route_owner, _))| {
+                        *route_owner == owner
+                            && cell.xy().distance_squared(descriptor.entry.xy()) == 1
+                            && terrain.get(*cell).ok().and_then(|block| block.get_sprite())
+                                == Some(SpriteKind::Ladder)
+                    });
+            mount_ready
+                && ladder_ready
+                && common_systems::phys::cylinder_sweep_first_collision(
+                    terrain,
+                    descriptor.entry.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0),
+                    descriptor.top_anchor.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0),
+                    (0.45, 0.0, 1.95),
+                )
+                .is_none()
+        },
+        EmergencyTraversalKind::NaturalShaft => {
+            let Some(wall_dir) = descriptor.wall_dir else {
+                return false;
+            };
+            let approach_ready = terrain
+                .get(descriptor.approach - Vec3::unit_z())
+                .is_ok_and(|block| block.is_solid())
+                && terrain
+                    .get(descriptor.approach)
+                    .is_ok_and(|block| !block.is_solid())
+                && terrain
+                    .get(descriptor.approach + Vec3::unit_z())
+                    .is_ok_and(|block| !block.is_solid());
+            let entry_ready = terrain
+                .get(descriptor.entry - Vec3::unit_z())
+                .is_ok_and(|block| block.is_solid())
+                && terrain
+                    .get(descriptor.entry)
+                    .is_ok_and(|block| !block.is_solid())
+                && terrain
+                    .get(descriptor.entry + Vec3::unit_z())
+                    .is_ok_and(|block| !block.is_solid());
+            let approach_entry_hit = common_systems::phys::cylinder_sweep_first_collision(
+                terrain,
+                descriptor.approach.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0),
+                descriptor.entry.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0),
+                (0.22, 0.0, 1.95),
+            );
+            let lane_clear = (descriptor.entry.z..=descriptor.top_anchor.z + 1).all(|z| {
+                terrain
+                    .get(Vec3::new(descriptor.entry.x, descriptor.entry.y, z))
+                    .is_ok_and(|block| !block.is_solid())
+            });
+            let wall_ready = (descriptor.entry.z..descriptor.top_anchor.z).all(|z| {
+                terrain
+                    .get(Vec3::new(
+                        descriptor.entry.x + wall_dir.x,
+                        descriptor.entry.y + wall_dir.y,
+                        z,
+                    ))
+                    .is_ok_and(|block| block.is_solid())
+            });
+            approach_ready
+                && entry_ready
+                && approach_entry_hit.is_none()
+                && lane_clear
+                && wall_ready
+                && common_systems::phys::cylinder_sweep_first_collision(
+                    terrain,
+                    descriptor.entry.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0),
+                    descriptor.top_anchor.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0),
+                    (0.45, 0.0, 1.95),
+                )
+                .is_none()
+        },
+    }
+}
+
+/// Choose the next locally reachable waypoint on a completed temporary route.
+/// A carved stair records every changed clearance cell, not just its floor;
+/// targeting the highest changed cell sends the controller into a wall. This
+/// reconstructs standable stair feet (or ladder rungs) from authoritative
+/// post-construction terrain and advances at most one horizontal/vertical step
+/// per upkeep sample. Once no route waypoint remains, control transfers to the
+/// planner-selected permanent destination.
+fn emergency_route_waypoint(
+    terrain: &TerrainGrid,
+    feet: Vec3<i32>,
+    route_cells: &HashSet<Vec3<i32>>,
+    permanent_target: Vec3<i32>,
+    mount_base: Option<Vec3<i32>>,
+) -> Option<Vec3<i32>> {
+    if let Some(mount_base) = mount_base
+        && (feet.xy() != mount_base.xy() || feet.z < mount_base.z)
+    {
+        // The final mount can be inside Chaser's arrival tolerance. Finish
+        // that local approach as deterministic orthogonal one-cell steps;
+        // the execution seam performs the actual-cylinder sweep before each
+        // move. Never cut diagonally across the solid ladder corner.
+        let mut steps = Vec::new();
+        if feet.x != mount_base.x {
+            steps.push(Vec3::new(
+                feet.x + (mount_base.x - feet.x).signum(),
+                feet.y,
+                feet.z,
+            ));
+        }
+        if feet.y != mount_base.y {
+            steps.push(Vec3::new(
+                feet.x,
+                feet.y + (mount_base.y - feet.y).signum(),
+                feet.z,
+            ));
+        }
+        return steps
+            .into_iter()
+            .filter(|step| {
+                terrain.get(*step).is_ok_and(|block| !block.is_solid())
+                    && terrain
+                        .get(*step + Vec3::unit_z())
+                        .is_ok_and(|block| !block.is_solid())
+            })
+            .min_by_key(|step| {
+                (
+                    step.xy().distance_squared(mount_base.xy()),
+                    step.x,
+                    step.y,
+                    step.z,
+                )
+            });
+    }
+    let mut candidates = HashSet::new();
+    for cell in route_cells {
+        if terrain.get(*cell).ok().and_then(|block| block.get_sprite()) == Some(SpriteKind::Ladder)
+        {
+            // A ladder sprite is a solid contact surface. The body's feet
+            // belong in one of the four adjacent clearance lanes, never in
+            // the ladder voxel (smoke30's grid/physics mismatch).
+            for side in [
+                Vec2::new(1, 0),
+                Vec2::new(-1, 0),
+                Vec2::new(0, 1),
+                Vec2::new(0, -1),
+            ] {
+                let candidate = Vec3::new(cell.x + side.x, cell.y + side.y, cell.z);
+                if mount_base.is_none_or(|mount| candidate.xy() == mount.xy())
+                    && terrain.get(candidate).is_ok_and(|block| !block.is_solid())
+                    && terrain
+                        .get(candidate + Vec3::unit_z())
+                        .is_ok_and(|block| !block.is_solid())
+                {
+                    candidates.insert(candidate);
+                }
+            }
+        }
+        for dz in -2..=0 {
+            let candidate = *cell + Vec3::unit_z() * dz;
+            let support = candidate - Vec3::unit_z();
+            let head = candidate + Vec3::unit_z();
+            if terrain.get(support).is_ok_and(|block| block.is_solid())
+                && terrain.get(candidate).is_ok_and(|block| !block.is_solid())
+                && terrain.get(head).is_ok_and(|block| !block.is_solid())
+            {
+                candidates.insert(candidate);
+            }
+        }
+    }
+    candidates
+        .into_iter()
+        .filter(|candidate| {
+            *candidate != feet
+                && (candidate.x - feet.x)
+                    .abs()
+                    .max((candidate.y - feet.y).abs())
+                    <= 1
+                && candidate.z >= feet.z - 1
+                && candidate.z <= feet.z + 1
+        })
+        .min_by_key(|candidate| {
+            let vertical_order = if candidate.z > feet.z {
+                0
+            } else if candidate.z == feet.z {
+                1
+            } else {
+                2
+            };
+            (
+                vertical_order,
+                candidate.xy().distance_squared(feet.xy()),
+                candidate.distance_squared(permanent_target),
+                candidate.x,
+                candidate.y,
+                candidate.z,
+            )
+        })
+        .or_else(|| {
+            let support = permanent_target - Vec3::unit_z();
+            let head = permanent_target + Vec3::unit_z();
+            (terrain.get(support).is_ok_and(|block| block.is_solid())
+                && terrain
+                    .get(permanent_target)
+                    .is_ok_and(|block| !block.is_solid())
+                && terrain.get(head).is_ok_and(|block| !block.is_solid()))
+            .then_some(permanent_target)
+        })
+}
+
+/// Return the physically installed, contiguous route prefix immediately before
+/// `frontier`. Sequence order is planner order, not height order. Constructed
+/// ladders require real rung sprites; natural shafts require excavated route
+/// cells plus the descriptor's continuous authoritative wall face.
+fn emergency_completed_route_prefix(
+    board: &JobBoard,
+    terrain: &TerrainGrid,
+    owner: Uid,
+    frontier: JobId,
+) -> Option<(EmergencyTraversalKind, Vec3<i32>, i32, Vec<JobId>)> {
+    let sequence = board.emergency_route_sequences.get(&owner)?;
+    let frontier_index = sequence.iter().position(|(id, _)| *id == frontier)?;
+    if frontier_index == 0 {
+        return None;
+    }
+    let prefix = &sequence[..frontier_index];
+    let descriptor = board.emergency_route_descriptors.get(&owner).copied()?;
+    let prefix_valid = match descriptor.kind {
+        EmergencyTraversalKind::ConstructedLadder => {
+            let first_rung = prefix.first().map(|(_, cell)| *cell);
+            prefix.iter().all(|(id, cell)| {
+                !board.emergency_access_jobs.contains_key(id)
+                    && terrain.get(*cell).ok().and_then(|block| block.get_sprite())
+                        == Some(SpriteKind::Ladder)
+            }) && first_rung.is_some_and(|rung| {
+                rung.xy().distance_squared(descriptor.entry.xy()) == 1
+                    && rung.z == descriptor.entry.z + 1
+                    && terrain
+                        .get(descriptor.entry - Vec3::unit_z())
+                        .is_ok_and(|block| block.is_solid())
+                    && terrain
+                        .get(descriptor.entry)
+                        .is_ok_and(|block| !block.is_solid())
+                    && terrain
+                        .get(descriptor.entry + Vec3::unit_z())
+                        .is_ok_and(|block| !block.is_solid())
+            })
+        },
+        EmergencyTraversalKind::NaturalShaft => {
+            let wall_dir = descriptor.wall_dir?;
+            prefix.iter().all(|(id, cell)| {
+                !board.emergency_access_jobs.contains_key(id)
+                    && cell.xy() == descriptor.entry.xy()
+                    && terrain.get(*cell).is_ok_and(|block| !block.is_solid())
+                    && terrain
+                        .get(Vec3::new(cell.x + wall_dir.x, cell.y + wall_dir.y, cell.z))
+                        .is_ok_and(|block| block.is_solid())
+            })
+        },
+        EmergencyTraversalKind::CarvedStair => false,
+    };
+    if !prefix_valid {
+        return None;
+    }
+    let entry = match descriptor.kind {
+        EmergencyTraversalKind::ConstructedLadder => descriptor.entry,
+        EmergencyTraversalKind::NaturalShaft => descriptor.entry,
+        EmergencyTraversalKind::CarvedStair => return None,
+    };
+    let top_z = match descriptor.kind {
+        EmergencyTraversalKind::ConstructedLadder => prefix.last()?.1.z,
+        EmergencyTraversalKind::NaturalShaft => sequence.get(frontier_index)?.1.z,
+        EmergencyTraversalKind::CarvedStair => return None,
+    };
+    Some((
+        descriptor.kind,
+        entry,
+        top_z,
+        prefix.iter().map(|(id, _)| *id).collect(),
+    ))
+}
+
+/// Reuse the authoritative capsule sweep to select a deterministic supported
+/// approach beside the installed ladder prefix.  Both the ordinary partial
+/// route handoff and the cursor's contact-reacquisition path call this helper;
+/// prediction and execution must not drift into separate collider models.
+fn emergency_initial_support_aware_sweep<V>(
+    terrain: &V,
+    start: Vec3<f32>,
+    end: Vec3<f32>,
+    cylinder: (f32, f32, f32),
+) -> Option<common_systems::phys::TerrainSweepHit>
+where
+    V: BaseVol<Vox = Block> + ReadVol,
+{
+    let first = common_systems::phys::cylinder_sweep_first_collision(terrain, start, end, cylinder);
+    let expected_support = start.map(|value| value.floor() as i32) - Vec3::unit_z();
+    let expected_ground_contact = first.is_some_and(|hit| {
+        hit.block == expected_support
+            && hit.sample <= 1
+            && hit.resolve_dir.x.abs() <= f32::EPSILON
+            && hit.resolve_dir.y.abs() <= f32::EPSILON
+            && hit.resolve_dir.z > 0.0
+            && terrain
+                .get(expected_support)
+                .is_ok_and(|block| block.is_solid())
+    });
+    if !expected_ground_contact {
+        return first;
+    }
+    let overrides = HashMap::from([(expected_support, Block::empty())]);
+    let support_overlay = EmergencyVoxelOverrides {
+        base: terrain,
+        overrides: &overrides,
+    };
+    let blocking = common_systems::phys::cylinder_sweep_first_collision(
+        &support_overlay,
+        start,
+        end,
+        cylinder,
+    );
+    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+        info!(
+            ?start,
+            ?end,
+            ?cylinder,
+            ignored_initial_support = ?first,
+            ?expected_support,
+            first_blocking_after_support = ?blocking,
+            reason = "expected_ground_support_classified",
+            "bastion: emergency route sweep classified initial support"
+        );
+    }
+    blocking
+}
+
+fn emergency_partial_route_entry(
+    terrain: &TerrainGrid,
+    position: Vec3<f32>,
+    cylinder: Option<(f32, f32, f32)>,
+    descriptor_entry: Vec3<i32>,
+) -> (
+    Option<Vec3<i32>>,
+    Option<common_systems::phys::TerrainSweepHit>,
+) {
+    let Some(cylinder) = cylinder else {
+        return (None, None);
+    };
+    let supported = terrain
+        .get(descriptor_entry - Vec3::unit_z())
+        .is_ok_and(|block| block.is_solid());
+    let clear = terrain
+        .get(descriptor_entry)
+        .is_ok_and(|block| !block.is_solid())
+        && terrain
+            .get(descriptor_entry + Vec3::unit_z())
+            .is_ok_and(|block| !block.is_solid());
+    let target = descriptor_entry.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+    let hit = emergency_initial_support_aware_sweep(terrain, position, target, cylinder);
+    (
+        (supported && clear && hit.is_none()).then_some(descriptor_entry),
+        hit,
+    )
+}
+
+fn emergency_corridor_standable<V>(terrain: &V, feet: Vec3<i32>) -> bool
+where
+    V: BaseVol<Vox = Block> + ReadVol,
+{
+    terrain
+        .get(feet - Vec3::unit_z())
+        .is_ok_and(|block| block.is_solid())
+        && terrain.get(feet).is_ok_and(|block| !block.is_solid())
+        && terrain
+            .get(feet + Vec3::unit_z())
+            .is_ok_and(|block| !block.is_solid())
+}
+
+/// Validate one shipping-A* edge with the authoritative body sweep.  A
+/// diagonal is accepted only when both orthogonal corner cells are standable;
+/// this preserves the path result while forbidding a capsule corner-cut.
+fn emergency_corridor_edge_hit<V>(
+    terrain: &V,
+    actual_start: Vec3<f32>,
+    from_cell: Vec3<i32>,
+    to_cell: Vec3<i32>,
+    cylinder: (f32, f32, f32),
+    first_edge: bool,
+) -> Option<common_systems::phys::TerrainSweepHit>
+where
+    V: BaseVol<Vox = Block> + ReadVol,
+{
+    let delta = to_cell - from_cell;
+    if delta.x.abs() > 1 || delta.y.abs() > 1 || delta.z.abs() > 1 {
+        return Some(common_systems::phys::TerrainSweepHit {
+            block: to_cell,
+            resolve_dir: Vec3::zero(),
+            sample: 0,
+            samples: 0,
+        });
+    }
+    if delta.x != 0 && delta.y != 0 {
+        let corner_x = Vec3::new(to_cell.x, from_cell.y, to_cell.z);
+        let corner_y = Vec3::new(from_cell.x, to_cell.y, to_cell.z);
+        if !emergency_corridor_standable(terrain, corner_x)
+            || !emergency_corridor_standable(terrain, corner_y)
+        {
+            return Some(common_systems::phys::TerrainSweepHit {
+                block: to_cell,
+                resolve_dir: Vec3::zero(),
+                sample: 0,
+                samples: 0,
+            });
+        }
+    }
+    let end = to_cell.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+    if first_edge {
+        emergency_initial_support_aware_sweep(terrain, actual_start, end, cylinder)
+    } else {
+        let start = from_cell.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+        common_systems::phys::cylinder_sweep_first_collision(terrain, start, end, cylinder)
+    }
+}
+
+/// Build a short approach corridor with Veloren's existing bounded A*.  The
+/// returned cells are accepted only when every destination is standable and
+/// every edge agrees with the shipping capsule sweep.
+pub(crate) fn emergency_validate_constructed_ladder_corridor<V>(
+    terrain: &V,
+    actual_start: Vec3<f32>,
+    cylinder: (f32, f32, f32),
+    entry: Vec3<i32>,
+    waypoints: &[Vec3<i32>],
+) -> Option<common_systems::phys::TerrainSweepHit>
+where
+    V: BaseVol<Vox = Block> + ReadVol,
+{
+    if waypoints.len() > 64
+        || waypoints.last().copied() != Some(entry)
+        || !emergency_corridor_standable(terrain, entry)
+    {
+        return Some(common_systems::phys::TerrainSweepHit {
+            block: entry,
+            resolve_dir: Vec3::zero(),
+            sample: 0,
+            samples: 0,
+        });
+    }
+    let mut from_cell = actual_start.map(|value| value.floor() as i32);
+    let mut edge_index = 0;
+    for cell in waypoints.iter().copied() {
+        if cell == from_cell {
+            continue;
+        }
+        if !emergency_corridor_standable(terrain, cell) {
+            return Some(common_systems::phys::TerrainSweepHit {
+                block: cell,
+                resolve_dir: Vec3::zero(),
+                sample: 0,
+                samples: 0,
+            });
+        }
+        if let Some(hit) = emergency_corridor_edge_hit(
+            terrain,
+            actual_start,
+            from_cell,
+            cell,
+            cylinder,
+            edge_index == 0,
+        ) {
+            return Some(hit);
+        }
+        from_cell = cell;
+        edge_index += 1;
+    }
+    None
+}
+
+fn emergency_constructed_ladder_corridor<V>(
+    terrain: &V,
+    actual_start: Vec3<f32>,
+    cylinder: (f32, f32, f32),
+    entry: Vec3<i32>,
+) -> (
+    Option<Vec<Vec3<i32>>>,
+    Option<common_systems::phys::TerrainSweepHit>,
+)
+where
+    V: BaseVol<Vox = Block> + ReadVol,
+{
+    if !emergency_corridor_standable(terrain, entry) {
+        return (None, None);
+    }
+    let target = entry.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+    if actual_start.xy().distance(target.xy()) <= 0.75 && (actual_start.z - target.z).abs() <= 0.8 {
+        return (Some(Vec::new()), None);
+    }
+    let cfg = common::path::TraversalConfig {
+        node_tolerance: 0.75,
+        slow_factor: 0.0,
+        on_ground: true,
+        in_liquid: false,
+        min_tgt_dist: 0.5,
+        can_climb: false,
+        scramble_reach: 0,
+        can_fly: false,
+        vectored_propulsion: false,
+        is_target_loaded: true,
+        search_allowed: true,
+    };
+    let Some(path) = common::path::bastion_full_path(terrain, actual_start, target, &cfg) else {
+        return (None, None);
+    };
+    if path.is_empty() || path.len() > 64 || path.last().copied() != Some(entry) {
+        return (None, None);
+    }
+    let start_cell = actual_start.map(|value| value.floor() as i32);
+    let waypoints = path
+        .into_iter()
+        .skip_while(|cell| *cell == start_cell)
+        .collect::<Vec<_>>();
+    let hit = emergency_validate_constructed_ladder_corridor(
+        terrain,
+        actual_start,
+        cylinder,
+        entry,
+        &waypoints,
+    );
+    if hit.is_some() {
+        (None, hit)
+    } else {
+        (Some(waypoints), None)
+    }
+}
+
+pub(crate) fn emergency_constructed_ladder_corridor_candidates<V>(
+    terrain: &V,
+    actual_start: Vec3<f32>,
+    cylinder: (f32, f32, f32),
+    descriptor: EmergencyRouteDescriptor,
+    first_rung: Vec3<i32>,
+    top_z: i32,
+) -> (
+    Option<(Vec3<i32>, Vec<Vec3<i32>>)>,
+    Vec<(Vec3<i32>, Option<common_systems::phys::TerrainSweepHit>)>,
+)
+where
+    V: BaseVol<Vox = Block> + ReadVol,
+{
+    let base_z = first_rung.z - 1;
+    let mut candidates = vec![descriptor.entry];
+    let mut alternates = [
+        Vec3::new(first_rung.x + 1, first_rung.y, base_z),
+        Vec3::new(first_rung.x - 1, first_rung.y, base_z),
+        Vec3::new(first_rung.x, first_rung.y + 1, base_z),
+        Vec3::new(first_rung.x, first_rung.y - 1, base_z),
+    ]
+    .into_iter()
+    .filter(|candidate| *candidate != descriptor.entry)
+    .collect::<Vec<_>>();
+    let actual_cell = actual_start.map(|value| value.floor() as i32);
+    alternates.sort_by_key(|candidate| {
+        (
+            candidate.xy().distance_squared(actual_cell.xy()),
+            candidate.x,
+            candidate.y,
+            candidate.z,
+        )
+    });
+    candidates.extend(alternates);
+
+    let mut rejected = Vec::new();
+    for lane in candidates {
+        let lane_top = Vec3::new(lane.x, lane.y, top_z);
+        let lane_ready = lane.xy().distance_squared(first_rung.xy()) == 1
+            && lane.z + 1 == first_rung.z
+            && emergency_corridor_standable(terrain, lane)
+            && terrain.get(lane_top).is_ok_and(|block| !block.is_solid())
+            && terrain
+                .get(lane_top + Vec3::unit_z())
+                .is_ok_and(|block| !block.is_solid())
+            && common_systems::phys::cylinder_sweep_first_collision(
+                terrain,
+                lane.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0),
+                lane_top.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0),
+                cylinder,
+            )
+            .is_none();
+        if !lane_ready {
+            rejected.push((lane, None));
+            continue;
+        }
+        let (corridor, hit) =
+            emergency_constructed_ladder_corridor(terrain, actual_start, cylinder, lane);
+        if let Some(corridor) = corridor {
+            return (Some((lane, corridor)), rejected);
+        }
+        rejected.push((lane, hit));
+    }
+    (None, rejected)
+}
+
+fn emergency_natural_shaft_entry(
+    terrain: &TerrainGrid,
+    position: Vec3<f32>,
+    cylinder: Option<(f32, f32, f32)>,
+    descriptor: EmergencyRouteDescriptor,
+) -> (
+    Option<Vec3<i32>>,
+    Option<common_systems::phys::TerrainSweepHit>,
+) {
+    let Some(cylinder) = cylinder else {
+        return (None, None);
+    };
+    let entry = descriptor.entry;
+    let supported = terrain
+        .get(entry - Vec3::unit_z())
+        .is_ok_and(|block| block.is_solid());
+    let clear = terrain.get(entry).is_ok_and(|block| !block.is_solid())
+        && terrain
+            .get(entry + Vec3::unit_z())
+            .is_ok_and(|block| !block.is_solid());
+    let wall_ready = descriptor.wall_dir.is_some_and(|wall_dir| {
+        terrain
+            .get(Vec3::new(
+                entry.x + wall_dir.x,
+                entry.y + wall_dir.y,
+                entry.z,
+            ))
+            .is_ok_and(|block| block.is_solid())
+    });
+    let target = entry.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+    let hit =
+        common_systems::phys::cylinder_sweep_first_collision(terrain, position, target, cylinder);
+    (
+        (supported && clear && wall_ready && hit.is_none()).then_some(entry),
+        hit,
+    )
+}
+
+/// REQ-0073 diagnostic: inspect the already-installed ladder prefix for an
+/// existing, physically standable rest anchor above the bottom entry.  This is
+/// deliberately read-only.  A ladder voxel is contact, not a floor: a recovery
+/// anchor must be outside route provenance, have solid support, clear body/head
+/// cells, and be reachable by the same authoritative capsule sweep used by the
+/// mount preflight.
+#[derive(Debug)]
+struct EmergencyMidPrefixAnchorSearch {
+    rung_min_z: Option<i32>,
+    rung_max_z: Option<i32>,
+    candidates_checked: usize,
+    route_overlap_rejected: usize,
+    support_rejected: usize,
+    clearance_rejected: usize,
+    sweep_rejected: usize,
+    valid_candidates: Vec<Vec3<i32>>,
+    selected: Option<Vec3<i32>>,
+    first_sweep_hit: Option<common_systems::phys::TerrainSweepHit>,
+}
+
+fn emergency_mid_prefix_anchor_search(
+    terrain: &TerrainGrid,
+    position: Vec3<f32>,
+    cylinder: Option<(f32, f32, f32)>,
+    route_cells: &HashSet<Vec3<i32>>,
+    sequence: &[(JobId, Vec3<i32>)],
+    frontier: JobId,
+) -> EmergencyMidPrefixAnchorSearch {
+    let prefix = sequence
+        .iter()
+        .position(|(job, _)| *job == frontier)
+        .map_or(&sequence[..0], |index| &sequence[..index]);
+    let rung_min_z = prefix.first().map(|(_, rung)| rung.z);
+    let rung_max_z = prefix.last().map(|(_, rung)| rung.z);
+    let mut checked = HashSet::new();
+    let mut route_overlap_rejected = 0;
+    let mut support_rejected = 0;
+    let mut clearance_rejected = 0;
+    let mut sweep_rejected = 0;
+    let mut first_sweep_hit = None;
+    let mut valid: Vec<(Vec3<i32>, f32)> = Vec::new();
+
+    // The first rung's adjacent supported cell is the existing bottom entry,
+    // not a mid-prefix recovery anchor.  Only inspect higher installed rungs.
+    for (_, rung) in prefix.iter().skip(1) {
+        for side in [
+            Vec2::new(1, 0),
+            Vec2::new(-1, 0),
+            Vec2::new(0, 1),
+            Vec2::new(0, -1),
+        ] {
+            let candidate = Vec3::new(rung.x + side.x, rung.y + side.y, rung.z - 1);
+            if !checked.insert(candidate) {
+                continue;
+            }
+            let support = candidate - Vec3::unit_z();
+            let head = candidate + Vec3::unit_z();
+            if route_cells.contains(&support)
+                || route_cells.contains(&candidate)
+                || route_cells.contains(&head)
+            {
+                route_overlap_rejected += 1;
+                continue;
+            }
+            if !terrain.get(support).is_ok_and(|block| block.is_solid()) {
+                support_rejected += 1;
+                continue;
+            }
+            if !terrain.get(candidate).is_ok_and(|block| !block.is_solid())
+                || !terrain.get(head).is_ok_and(|block| !block.is_solid())
+            {
+                clearance_rejected += 1;
+                continue;
+            }
+            let Some(cylinder) = cylinder else {
+                sweep_rejected += 1;
+                continue;
+            };
+            let target = candidate.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+            let hit = common_systems::phys::cylinder_sweep_first_collision(
+                terrain, position, target, cylinder,
+            );
+            if let Some(hit) = hit {
+                first_sweep_hit.get_or_insert(hit);
+                sweep_rejected += 1;
+                continue;
+            }
+            valid.push((candidate, position.distance_squared(target)));
+        }
+    }
+    valid.sort_by(|(a, ad), (b, bd)| {
+        ad.total_cmp(bd)
+            .then_with(|| a.z.cmp(&b.z))
+            .then_with(|| a.x.cmp(&b.x))
+            .then_with(|| a.y.cmp(&b.y))
+    });
+    let selected = valid.first().map(|(candidate, _)| *candidate);
+    EmergencyMidPrefixAnchorSearch {
+        rung_min_z,
+        rung_max_z,
+        candidates_checked: checked.len(),
+        route_overlap_rejected,
+        support_rejected,
+        clearance_rejected,
+        sweep_rejected,
+        valid_candidates: valid.into_iter().map(|(candidate, _)| candidate).collect(),
+        selected,
+        first_sweep_hit,
+    }
+}
+
+/// Select the open pocket-side column beside a safe surface rim. Steering at
+/// the rim column itself drives the body into solid terrain below the landing;
+/// steering beside it gives climb-free lift a collision-safe vertical lane.
+fn surface_egress_dest_impl(
+    surface_z: impl Fn(i32, i32) -> Option<i32>,
+    open: impl Fn(Vec3<i32>) -> bool,
+    feet: Vec3<i32>,
+) -> Option<Vec3<i32>> {
+    for r in 3..=8i32 {
+        for dx in -r..=r {
+            for dy in -r..=r {
+                if dx.abs().max(dy.abs()) != r {
+                    continue;
+                }
+                let (x, y) = (feet.x + dx, feet.y + dy);
+                let Some(surface) = surface_z(x, y) else {
+                    continue;
+                };
+                if surface + 1 <= feet.z
+                    || !open(Vec3::new(x, y, surface + 1))
+                    || !open(Vec3::new(x, y, surface + 2))
+                {
+                    continue;
+                }
+                let mut neighbors = [
+                    Vec2::new(x + 1, y),
+                    Vec2::new(x - 1, y),
+                    Vec2::new(x, y + 1),
+                    Vec2::new(x, y - 1),
+                ];
+                neighbors.sort_by_key(|candidate| {
+                    (candidate.x - feet.x).abs() + (candidate.y - feet.y).abs()
+                });
+                if let Some(column) = neighbors.into_iter().find(|candidate| {
+                    open(Vec3::new(candidate.x, candidate.y, feet.z))
+                        && open(Vec3::new(candidate.x, candidate.y, feet.z + 1))
+                }) {
+                    return Some(Vec3::new(column.x, column.y, surface + 1));
+                }
+            }
+        }
+    }
+    None
 }
 
 /// The testable core of [`surface_teleport_dest`] (`floating_chunk`'s
@@ -954,8 +2387,9 @@ fn surface_teleport_dest_impl(
     surface_z: impl Fn(i32, i32) -> Option<i32>,
     open: impl Fn(Vec3<i32>) -> bool,
     feet: Vec3<i32>,
+    min_radius: i32,
 ) -> Option<Vec3<i32>> {
-    for r in 0..=8i32 {
+    for r in min_radius.clamp(0, 8)..=8i32 {
         for dx in -r..=r {
             for dy in -r..=r {
                 if dx.abs().max(dy.abs()) != r {
@@ -1080,15 +2514,13 @@ pub fn cavein_eject_and_injure<'a, D>(
 where
     D: std::ops::Deref<Target = specs::storage::MaskedStorage<comp::Colonist>>,
 {
-    let crush_xy: HashSet<Vec2<i32>> =
-        cells.iter().map(|c| Vec2::new(c.x, c.y)).collect();
+    let crush_xy: HashSet<Vec2<i32>> = cells.iter().map(|c| Vec2::new(c.x, c.y)).collect();
     let chunk_min_z = cells.iter().map(|c| c.z).min().unwrap_or(i32::MAX);
     let victims: Vec<specs::Entity> = (&**entities, colonists, &*positions)
         .join()
         .filter_map(|(e, _c, p)| {
             let feet = p.0.map(|v| v.floor() as i32);
-            (crush_xy.contains(&Vec2::new(feet.x, feet.y)) && feet.z <= chunk_min_z)
-                .then_some(e)
+            (crush_xy.contains(&Vec2::new(feet.x, feet.y)) && feet.z <= chunk_min_z).then_some(e)
         })
         .collect();
     for &entity in &victims {
@@ -1122,9 +2554,189 @@ where
             // remains only as the sub-cadence instant reaction.
             mood.0 = (mood.0 - CAVEIN_FEAR).max(0.0);
         }
-        info!(?feet, "bastion: CAVE-IN — colonist ejected + injured (not buried)");
+        info!(
+            ?feet,
+            "bastion: CAVE-IN — colonist ejected + injured (not buried)"
+        );
     }
     victims
+}
+
+/// Diagnostic attribution for one ultimate stuck-rescue teleport.
+#[derive(Clone, Debug)]
+pub struct FailsafeTeleportEvent {
+    pub uid: u64,
+    pub name: String,
+    pub feet: Vec3<i32>,
+    pub destination: Vec3<i32>,
+    pub stuck_seconds: f32,
+    pub active_job: Option<JobId>,
+    pub active_job_state: Option<String>,
+    pub active_job_kind: Option<String>,
+    pub active_job_is_access: Option<bool>,
+    pub egress_verdicts: u64,
+    pub egress_plans_emitted: u64,
+    pub egress_no_route: u64,
+    pub climb_free_active: bool,
+    pub organic_destination: Option<Vec3<i32>>,
+    pub head_clear: bool,
+    pub on_ground: bool,
+    pub on_wall: bool,
+    pub character_state: Option<String>,
+    pub velocity: Vec3<f32>,
+    pub access_jobs_pending: usize,
+    pub terminal_cause: &'static str,
+}
+
+/// REQ-0077: the planner and executor share one typed traversal contract.
+/// Construction completion alone is not an executable route: the descriptor
+/// records which authoritative locomotion seam owns the vertical transition.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub(crate) enum EmergencyTraversalKind {
+    CarvedStair,
+    ConstructedLadder,
+    NaturalShaft,
+}
+
+#[derive(Clone, Copy, Debug, Hash)]
+pub(crate) struct EmergencyRouteDescriptor {
+    pub kind: EmergencyTraversalKind,
+    pub approach: Vec3<i32>,
+    pub entry: Vec3<i32>,
+    pub top_anchor: Vec3<i32>,
+    pub dismount: Vec3<i32>,
+    /// For a natural shaft this is the deterministic solid wall face that the
+    /// existing CharacterState::Climb must contact. Constructed ladders derive
+    /// their contact from the installed rung sprite instead.
+    pub wall_dir: Option<Vec2<i32>>,
+}
+
+/// Stage-1 route-local terrain proof. This intentionally does not claim the
+/// future PATH-1 global terrain generation: it fingerprints the exact
+/// descriptor anchors and body/head/support cells that the shipping executor
+/// revalidates. A changed proof atomically invalidates the link task.
+pub(crate) fn emergency_route_terrain_revision(
+    terrain: &TerrainGrid,
+    descriptor: EmergencyRouteDescriptor,
+) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    descriptor.hash(&mut hasher);
+    for cell in [
+        descriptor.approach - Vec3::unit_z(),
+        descriptor.approach,
+        descriptor.approach + Vec3::unit_z(),
+        descriptor.entry - Vec3::unit_z(),
+        descriptor.entry,
+        descriptor.entry + Vec3::unit_z(),
+        descriptor.top_anchor,
+        descriptor.dismount - Vec3::unit_z(),
+        descriptor.dismount,
+        descriptor.dismount + Vec3::unit_z(),
+    ] {
+        cell.hash(&mut hasher);
+        terrain.get(cell).ok().hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+/// REQ-0068: bounded pre-route state for an airborne egress owner that must
+/// first reach a real standable construction origin. This record does not
+/// move the entity: it owns only the existing `NpcActivity::Goto`/`Stand`
+/// handoff and suppresses the conflicting generic climb assist while normal
+/// physics resolves the approach.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct EmergencySettleAnchor {
+    pub anchor: Option<Vec3<i32>>,
+    pub target: Vec3<i32>,
+    pub started_tick: u64,
+    pub last_progress_tick: u64,
+    pub best_distance: f32,
+}
+
+/// REQ-0070: explicit walk-to-climb entry for a partially constructed route.
+/// Ordinary navigation owns only the sweep-clear approach to `entry`; the
+/// existing mount transaction takes over at the bounded handoff.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct EmergencyPartialRouteEntry {
+    pub owner: Uid,
+    pub frontier: JobId,
+    pub entry: Vec3<i32>,
+    pub top_z: i32,
+    pub started_tick: u64,
+}
+
+/// REQ-0081: the bounded walk portion of a constructed-ladder traversal
+/// link.  The shipping A* produces the ordered feet cells; Bastion owns only
+/// validation and the cursor until the existing ladder transaction takes
+/// over.  This is intentionally separate from the general job-travel cache so
+/// no ordinary writer can replace the route-owned corridor mid-handoff.
+#[derive(Clone, Debug)]
+pub(crate) struct EmergencyApproachCorridor {
+    pub owner: Uid,
+    pub frontier: JobId,
+    pub entry: Vec3<i32>,
+    pub waypoints: Vec<Vec3<i32>>,
+    pub next_idx: usize,
+    pub started_tick: u64,
+}
+
+/// REQ-0087: the emergency corridor's collision-validated cursor is stricter
+/// than ordinary Goto path following. This value is both the route-local
+/// Chaser node tolerance and the final post-physics cursor threshold.
+const EMERGENCY_CORRIDOR_ENDPOINT_TOLERANCE: f32 = 0.75;
+
+fn emergency_corridor_endpoint_ready(
+    xy_distance: f32,
+    z_distance: f32,
+    standable: bool,
+    edge_preflight_clear: bool,
+) -> bool {
+    xy_distance <= EMERGENCY_CORRIDOR_ENDPOINT_TOLERANCE
+        && z_distance <= 0.8
+        && standable
+        && edge_preflight_clear
+}
+
+/// Whether the bounded walk portion of an emergency traversal link owns the
+/// member's movement on this pass. Route membership alone is not sufficient:
+/// the corridor, pending frontier, and cursor must all describe the same live
+/// owner. This keeps stale/interrupted corridors from suppressing the normal
+/// route-lifecycle stop input.
+fn emergency_corridor_owns_movement(
+    corridor: Option<&EmergencyApproachCorridor>,
+    route_owner: Option<Uid>,
+    frontier_owner: Option<Uid>,
+    frontier_exists: bool,
+) -> bool {
+    corridor.is_some_and(|corridor| {
+        route_owner == Some(corridor.owner)
+            && frontier_owner == Some(corridor.owner)
+            && frontier_exists
+            && corridor.next_idx < corridor.waypoints.len()
+    })
+}
+
+/// Release the movement state owned by a completed emergency route before
+/// returning the member to ordinary RTSim job selection.
+///
+/// The safe-dismount caller has already proved the permanent endpoint for the
+/// full confirmation window.  Clearing all four pieces together prevents the
+/// old exit `Goto` (and its target-local Chaser state) from becoming the first
+/// ordinary activity after route membership is removed.  This is deliberately
+/// not a general activity reset: callers invoke it only at the verified route
+/// release seam.
+fn clear_verified_emergency_exit_movement(
+    rtsim_controller: &mut common::rtsim::RtSimController,
+    chaser: &mut common::path::Chaser,
+    controller: Option<&mut comp::Controller>,
+) {
+    rtsim_controller.activity = None;
+    rtsim_controller.clear_path_endpoint();
+    chaser.rebase_stuck_history();
+    if let Some(controller) = controller {
+        controller.inputs.move_dir = Vec2::zero();
+        controller.inputs.move_z = 0.0;
+    }
 }
 
 /// The job board resource.
@@ -1165,6 +2777,71 @@ pub struct JobBoard {
     /// (the churn detector fires from the every-tick upkeep loop); drained
     /// into the next egress pass, which owns one-plan-at-a-time gating.
     egress_pending: Vec<(Uid, Vec3<i32>, Vec3<i32>)>,
+    egress_verdicts: HashMap<Uid, u64>,
+    egress_plans_emitted: HashMap<Uid, u64>,
+    egress_no_route: HashMap<Uid, u64>,
+    /// Stable non-destructive surface target for an active jobless egress
+    /// episode. The climb assist reads this directly so horizontal intent
+    /// does not depend on the idle NPC pathfinder preserving a `Goto`.
+    pub(crate) egress_targets: HashMap<Uid, Vec3<i32>>,
+    /// Best 3-D distance reached toward the stable egress target. Only a
+    /// real improvement here may reset the universal teleport timer; random
+    /// below-grade wandering remains unable to postpone rescue.
+    egress_best_distance: HashMap<Uid, f32>,
+    egress_no_progress_secs: HashMap<Uid, f32>,
+    /// Provenance for temporary humanitarian carving. Pending job ids and
+    /// original terrain cells are kept outside `Job`/resource accounting so
+    /// ordinary B5.5 mining remains exactly conserved.
+    pub(crate) emergency_access_jobs: HashMap<JobId, Uid>,
+    pub(crate) emergency_access_cells: HashMap<Vec3<i32>, (Uid, Block)>,
+    pub(crate) emergency_cleanup_pending: HashSet<Uid>,
+    /// Colonist uid -> shared route owner. Multiple trapped colonists may
+    /// use one temporary route; terrain survives until this set is empty.
+    pub(crate) emergency_route_members: HashMap<Uid, Uid>,
+    /// Route owner -> planner-selected permanent surface destination. This is
+    /// not inferred from provenance cells because a stair's highest carved
+    /// cell is head clearance rather than a standable waypoint.
+    pub(crate) emergency_route_targets: HashMap<Uid, Vec3<i32>>,
+    /// Route owner -> planner-preflighted adjacent ladder body lane at its
+    /// base. Traversal must approach this cell before rising; recomputing a
+    /// side after construction can choose the opposite side and cut
+    /// diagonally through the solid ladder corner (smoke31b).
+    pub(crate) emergency_route_mounts: HashMap<Uid, Vec3<i32>>,
+    /// Route owner -> planner/executor contract. A route without this record is
+    /// never allowed to fall through to an arbitrary permanent-target Goto.
+    pub(crate) emergency_route_descriptors: HashMap<Uid, EmergencyRouteDescriptor>,
+    /// Route owner -> pre-emission shipping-A* proof from the settled source
+    /// to the selected constructed-ladder body lane. Runtime copies and
+    /// revalidates this exact corridor; it never invents a post-build lane.
+    pub(crate) emergency_route_approach_corridors: HashMap<Uid, Vec<Vec3<i32>>>,
+    /// Route-local emitted order. Pending jobs remain in
+    /// `emergency_access_jobs`; this immutable sequence lets REQ-0069 prove a
+    /// contiguous completed prefix without guessing from height or HashMap
+    /// iteration order.
+    pub(crate) emergency_route_sequences: HashMap<Uid, Vec<(JobId, Vec3<i32>)>>,
+    /// Traverser uid -> route-owned ladder transaction. While present this is
+    /// the sole writer for the bounded mount/climb/top-exit movement mode.
+    pub(crate) bastion_traversal_tasks: HashMap<Uid, BastionTraversalTask>,
+    pub(crate) emergency_partial_route_entries: HashMap<Uid, EmergencyPartialRouteEntry>,
+    pub(crate) emergency_approach_corridors: HashMap<Uid, EmergencyApproachCorridor>,
+    /// Last skill-adjusted climb constants observed from the authoritative
+    /// `CharacterState::Climb` for this route member. REQ-0073 uses this only
+    /// to report the real energy/time geometry behind a recovery decision; it
+    /// never changes Energy or climb behavior.
+    pub(crate) emergency_climb_profiles: HashMap<Uid, (f32, f32)>,
+    /// Traverser -> claimed next frontier whose previous rung completed after
+    /// authoritative ladder contact was lost.  While present, the existing
+    /// supported-entry/Goto/mount pipeline owns reacquisition and ordinary
+    /// distance-based emergency arrival is suppressed.
+    pub(crate) emergency_frontier_reacquire: HashMap<Uid, JobId>,
+    /// Airborne pre-route owners establishing a physically supported origin.
+    /// This state remains visible to the deep harness so a leaked/pending
+    /// settle episode can never be mistaken for clean `[0,0,0]` teardown.
+    pub(crate) emergency_settle_anchors: HashMap<Uid, EmergencySettleAnchor>,
+    /// Consecutive one-second samples at a verified stable exit. Temporary
+    /// terrain is not restored on first rim contact: doing so removed the
+    /// ladder under the climber and dropped it back into the pocket.
+    pub(crate) emergency_safe_secs: HashMap<Uid, f32>,
     /// bastion (B6, reviewer F3): consecutive seconds the access economy
     /// has been IDLE (access jobs exist, none claimed). A stale abandoned
     /// plan — e.g. a half-carved egress staircase nobody needs after the
@@ -1184,6 +2861,7 @@ pub struct JobBoard {
     pub no_progress_ticks: u64,
     pub travel_timeouts: u64,
     pub failsafe_teleports: u64,
+    pub failsafe_events: Vec<FailsafeTeleportEvent>,
     /// bastion (B-LIVE3 / reviewer F5): the UNIVERSAL stuck watchdog —
     /// seconds each colonist has been continuously BELOW GRADE without
     /// working. Feeds the VERDICT-INDEPENDENT teleport backstop: no
@@ -1353,6 +3031,27 @@ pub struct JobBoard {
 }
 
 impl JobBoard {
+    /// Stage-1 single reservation authority. A live task's reserved member is
+    /// authoritative. Before a task exists, the deterministic lowest-UID
+    /// route member is only the queue head; it is not a second reservation
+    /// record and cannot own traversal until task creation succeeds.
+    fn traversal_queue_head(&self, owner: Uid) -> Option<Uid> {
+        self.bastion_traversal_tasks
+            .values()
+            .find(|task| {
+                task.owner == owner
+                    && task.reservation_matches(task.reserved_member)
+                    && task.phase.mode().is_some()
+            })
+            .map(|task| task.reserved_member)
+            .or_else(|| {
+                self.emergency_route_members
+                    .iter()
+                    .filter_map(|(member, route_owner)| (*route_owner == owner).then_some(*member))
+                    .min_by_key(|member| member.0.get())
+            })
+    }
+
     /// Decision-order view of the otherwise lookup-optimized job map.
     ///
     /// `HashMap` iteration is deliberately unspecified. In deterministic
@@ -1461,11 +3160,7 @@ impl JobBoard {
                 }
             }
         }
-        info!(
-            ?kind,
-            jobs = created.len(),
-            "bastion: designation placed"
-        );
+        info!(?kind, jobs = created.len(), "bastion: designation placed");
         created
     }
 
@@ -1497,8 +3192,7 @@ impl JobBoard {
         let occupied: HashSet<Vec3<i32>> = self.jobs.values().map(|j| j.pos).collect();
         for y in min_xy.y..=max_xy.y {
             for x in min_xy.x..=max_xy.x {
-                let Some(surface) = resolve_column_surface(terrain, x, y, hint_z, &extent)
-                else {
+                let Some(surface) = resolve_column_surface(terrain, x, y, hint_z, &extent) else {
                     continue;
                 };
                 // B5.6b-2.1: ONE range authority (relative or flat-floor).
@@ -1614,14 +3308,15 @@ impl JobBoard {
         // one job — a re-paint over a pending base is a no-op, the FR10
         // dedupe contract).
         if kept.is_empty() || !kept.contains(&base) || occupied.contains(&base) {
-            info!(?base, "bastion: chop fell-set rejected (empty/baseless/occupied)");
+            info!(
+                ?base,
+                "bastion: chop fell-set rejected (empty/baseless/occupied)"
+            );
             return None;
         }
         // Top-down total order NOW (z DESC, then y, x): the felling pass
         // drains bands in this exact order — deterministic, base LAST.
-        kept.sort_unstable_by(|a, b| {
-            b.z.cmp(&a.z).then(a.y.cmp(&b.y)).then(a.x.cmp(&b.x))
-        });
+        kept.sort_unstable_by(|a, b| b.z.cmp(&a.z).then(a.y.cmp(&b.y)).then(a.x.cmp(&b.x)));
         let id = self.next_id;
         self.next_id += 1;
         self.jobs.insert(id, Job {
@@ -1662,11 +3357,7 @@ impl JobBoard {
     /// claim mask — queueing IS the player's paint-equivalent intent, so
     /// access carving may serve the plan like any painted designation.
     /// Returns the plan's cell count (0 = nothing queued).
-    pub fn queue_build_plan(
-        &mut self,
-        terrain: &TerrainGrid,
-        region: Region,
-    ) -> usize {
+    pub fn queue_build_plan(&mut self, terrain: &TerrainGrid, region: Region) -> usize {
         let mut cells = Vec::new();
         // Bottom-up cell order — the generator emits in this order, so
         // floors fill before the courses above them.
@@ -1706,7 +3397,8 @@ impl JobBoard {
         let before = self.stockpiles.len();
         self.stockpiles.retain(|(_, r)| !r.intersects(&region));
         // ZONE-0: activity zones erase with the same brush.
-        self.activity_zones.retain(|(_, _, r)| !r.intersects(&region));
+        self.activity_zones
+            .retain(|(_, _, r)| !r.intersects(&region));
         // AUTON-1: a plan any of whose cells the eraser touches dies whole —
         // otherwise the generator re-emits the jobs the player just erased
         // (the eraser-vs-generator fight; whole-plan removal because a
@@ -1769,7 +3461,8 @@ impl JobBoard {
         // (jobs.retain), so orphaned fell-sets are swept here — a set
         // whose base-cut job is gone must never fell (RFC-2229 disjoint
         // field capture makes the self.jobs read legal).
-        self.chop_fell_sets.retain(|id, _| self.jobs.contains_key(id));
+        self.chop_fell_sets
+            .retain(|id, _| self.jobs.contains_key(id));
         info!(released = released.len(), "bastion: designation cancelled");
         released
     }
@@ -1790,14 +3483,9 @@ impl JobBoard {
 
     /// Is this item entity already reserved by any job? (Linear scan —
     /// colonies are small; the table holds at most a few dozen entries.)
-    pub fn is_reserved(&self, item: Uid) -> bool {
-        self.reservations.values().any(|u| *u == item)
-    }
+    pub fn is_reserved(&self, item: Uid) -> bool { self.reservations.values().any(|u| *u == item) }
 
-    pub fn reserved_item(
-        &self,
-        id: common::bastion::ReservationId,
-    ) -> Option<Uid> {
+    pub fn reserved_item(&self, id: common::bastion::ReservationId) -> Option<Uid> {
         self.reservations.get(&id).copied()
     }
 
@@ -1862,12 +3550,7 @@ impl JobBoard {
     /// bastion (B7-3): insert a PRE-CLAIMED Despond job at the
     /// colonist's own feet — the breakdown state as a top-tier self-job
     /// (blocks all claims until it lifts).
-    pub fn insert_despond_job(
-        &mut self,
-        feet: Vec3<i32>,
-        uid: Uid,
-        until: f64,
-    ) -> JobId {
+    pub fn insert_despond_job(&mut self, feet: Vec3<i32>, uid: Uid, until: f64) -> JobId {
         let id = self.next_id;
         self.next_id += 1;
         self.jobs.insert(id, Job {
@@ -1923,9 +3606,7 @@ impl JobBoard {
         self.stockpiles
             .iter()
             .find(|(_, r)| {
-                r.contains_point_xy(cell)
-                    && cell.z >= r.min.z - 2
-                    && cell.z <= r.max.z + 3
+                r.contains_point_xy(cell) && cell.z >= r.min.z - 2 && cell.z <= r.max.z + 3
             })
             .map(|(id, _)| *id)
     }
@@ -2031,8 +3712,33 @@ impl<'a> System<'a> for Sys {
             WriteStorage<'a, comp::bastion::Needs>,
             // RUN-0: the stamina the run gait drains (vanilla regens it).
             WriteStorage<'a, comp::Energy>,
+            // REQ-0074: bounded server-authored proof that the active route
+            // transaction is using constructed ladder infrastructure.
+            WriteStorage<'a, comp::bastion::ConstructedLadderTraversal>,
+            // Stage-1 B5.8: one shared movement-owner discriminator consumed
+            // by Agent, RTSim and Controller. The task remains the authority;
+            // this ECS component is its exact cross-system projection.
+            WriteStorage<'a, comp::bastion::BastionTraversalOwnership>,
             // AUTON-0: the per-colonist drive arbiter.
             WriteStorage<'a, comp::bastion::Arbiter>,
+            // REQ-0058: actual body envelope used by collision-aware
+            // emergency-route transition preflight.
+            ReadStorage<'a, comp::Collider>,
+            ReadStorage<'a, comp::Scale>,
+            // REQ-0062: route-owned inputs hand the validated ladder edge to
+            // Veloren's authoritative CharacterState::Climb movement path.
+            WriteStorage<'a, comp::Controller>,
+            ReadStorage<'a, comp::Body>,
+            (
+                ReadStorage<'a, common::link::Is<common::tether::Follower>>,
+                ReadStorage<'a, common::link::Is<common::tether::Leader>>,
+                ReadStorage<'a, common::link::Is<common::mounting::Rider>>,
+                ReadStorage<'a, common::link::Is<common::mounting::VolumeRider>>,
+                ReadStorage<'a, common::link::Is<common::interaction::Interactor>>,
+                ReadStorage<'a, crate::presence::RepositionToFreeSpace>,
+                ReadStorage<'a, <comp::Pos as InterpolatableComponent>::InterpData>,
+                ReadStorage<'a, <comp::Vel as InterpolatableComponent>::InterpData>,
+            ),
         ),
     );
 
@@ -2075,7 +3781,23 @@ impl<'a> System<'a> for Sys {
                 mut activity_zones,
                 mut needs_storage,
                 mut energies,
+                mut constructed_ladder_traversals,
+                mut traversal_ownerships,
                 mut arbiters,
+                colliders,
+                scales,
+                mut controllers,
+                bodies,
+                (
+                    tether_followers,
+                    tether_leaders,
+                    mount_riders,
+                    volume_riders,
+                    interactors,
+                    repositioning,
+                    position_interpolation,
+                    velocity_interpolation,
+                ),
             ),
         ): Self::SystemData,
     ) {
@@ -2101,8 +3823,7 @@ impl<'a> System<'a> for Sys {
             // stats system owns the regen back). Colonist-only by
             // construction (the flag lives on BastionColonist).
             {
-                let mut gov_iter =
-                    (&mut colonists, &mut energies).lend_join();
+                let mut gov_iter = (&mut colonists, &mut energies).lend_join();
                 while let Some((mut colonist, mut energy)) = gov_iter.next() {
                     if colonist.0.running {
                         energy.change_by(-RUN_DRAIN_PER_SEC * dt.0);
@@ -2115,8 +3836,7 @@ impl<'a> System<'a> for Sys {
             }
             if tick.0 % ARBITRATION_INTERVAL as u64 == 11 {
                 let table = crate::bastion_mood::ThoughtTable::current();
-                let affinities =
-                    crate::bastion_mood::ValueAffinityTable::current();
+                let affinities = crate::bastion_mood::ValueAffinityTable::current();
                 let data = rtsim.state().data();
                 for (colonist, needs, mood, re) in (
                     &colonists,
@@ -2133,12 +3853,10 @@ impl<'a> System<'a> for Sys {
                             // public trait API off the SAME rtsim read
                             // guard the chronicle uses; zero new
                             // coupling). Values live on the colonist.
-                            let neurotic =
-                                data.npcs.get(*re).is_some_and(|npc| {
-                                    npc.personality.is(
-                                        common::rtsim::PersonalityTrait::Neurotic,
-                                    )
-                                });
+                            let neurotic = data.npcs.get(*re).is_some_and(|npc| {
+                                npc.personality
+                                    .is(common::rtsim::PersonalityTrait::Neurotic)
+                            });
                             crate::bastion_mood::thought_sum(
                                 &data.chronicle,
                                 &table,
@@ -2153,9 +3871,7 @@ impl<'a> System<'a> for Sys {
                             )
                         })
                         .unwrap_or(0.0);
-                    mood.0 = comp::bastion::mood_formula(
-                        &mood_cfg, needs, thought_sum,
-                    );
+                    mood.0 = comp::bastion::mood_formula(&mood_cfg, needs, thought_sum);
                 }
             }
         }
@@ -2186,15 +3902,9 @@ impl<'a> System<'a> for Sys {
         let rtsim_data = rtsim.state().data();
         let is_loaded = |entity: specs::Entity| -> bool {
             rtsim_entities.get(entity).is_none_or(|re| {
-                rtsim_data
-                    .npcs
-                    .get(*re)
-                    .is_none_or(|npc| {
-                        matches!(
-                            npc.mode,
-                            ::rtsim::data::npc::SimulationMode::Loaded
-                        )
-                    })
+                rtsim_data.npcs.get(*re).is_none_or(|npc| {
+                    matches!(npc.mode, ::rtsim::data::npc::SimulationMode::Loaded)
+                })
             })
         };
 
@@ -2221,19 +3931,153 @@ impl<'a> System<'a> for Sys {
                 &mut colonists,
                 &char_states,
                 &mut velocities,
-                (&active_jobs).maybe(),
+                (&mut active_jobs).maybe(),
                 &mut positions,
                 &physics_states,
+                &uids,
+                (&colliders).maybe(),
+                (&scales).maybe(),
+                &mut controllers,
+                &bodies,
+                (&energies).maybe(),
             )
                 .lend_join();
-            while let Some((mut colonist, cs, vel, active, pos, phys)) = climb_iter.next() {
+            while let Some((
+                mut colonist,
+                cs,
+                vel,
+                mut active,
+                pos,
+                phys,
+                uid,
+                collider,
+                scale,
+                controller,
+                body,
+                energy,
+            )) = climb_iter.next()
+            {
+                // REQ-0068: a pre-route settle episode deliberately hands
+                // horizontal intent to the ordinary Goto controller and
+                // vertical resolution to normal physics. The legacy generic
+                // climb assist is a competing writer (smoke52's Wallrun/upward
+                // loop), so it must stay silent only for this bounded owner.
+                if board.emergency_settle_anchors.contains_key(uid)
+                    || board.emergency_partial_route_entries.contains_key(uid)
+                    || board.emergency_frontier_reacquire.contains_key(uid)
+                {
+                    continue;
+                }
                 // B-LIVE3: the fail-safe climbs WITHOUT a job (a dispersing
                 // or trapped-idle colonist has none — Ben's "climb out of
                 // anywhere"). Job-driven climbs still require the target
                 // ABOVE; the fail-safe climbs unconditionally upward while
                 // its window lasts (expiry bounds it; on open ground the
                 // trapped verdict never renews it).
-                let climb_free_now = colonist.0.climb_free_until > time.0;
+                let emergency_route_owner = board.emergency_route_members.get(uid).copied();
+                let emergency_claim_owned = active.as_ref().is_some_and(|active| {
+                    board
+                        .emergency_access_jobs
+                        .get(&active.job)
+                        .is_some_and(|owner| {
+                            board.emergency_route_members.get(uid).copied() == Some(*owner)
+                        })
+                });
+                let emergency_route_construction_active =
+                    emergency_route_owner.is_some_and(|owner| {
+                        board
+                            .emergency_access_jobs
+                            .values()
+                            .any(|job_owner| *job_owner == owner)
+                    });
+                // REQ-0083: an access claim is already inside the route
+                // lifecycle. Route ownership also spans the short gap after
+                // one frontier job is removed and before the next monotonic
+                // JobId is claimed. Until a route-owned mount transaction
+                // exists, the generic climb/magnetism and RTSim activity
+                // passes must not become a second movement writer. Job upkeep
+                // below either accepts a stable supported work stance or
+                // starts the existing validated partial-route transaction.
+                if (emergency_claim_owned || emergency_route_construction_active)
+                    && !board.bastion_traversal_tasks.contains_key(uid)
+                {
+                    let corridor = board.emergency_approach_corridors.get(uid);
+                    let frontier_owner = corridor.and_then(|corridor| {
+                        board.emergency_access_jobs.get(&corridor.frontier).copied()
+                    });
+                    let frontier_exists = corridor
+                        .is_some_and(|corridor| board.jobs.contains_key(&corridor.frontier));
+                    let corridor_movement_owned = emergency_corridor_owns_movement(
+                        corridor,
+                        emergency_route_owner,
+                        frontier_owner,
+                        frontier_exists,
+                    );
+                    let corridor_frontier = corridor.map(|corridor| corridor.frontier);
+                    let corridor_next_idx = corridor.map(|corridor| corridor.next_idx);
+                    let corridor_waypoint_count = corridor.map(|corridor| corridor.waypoints.len());
+                    let controller_input_before =
+                        (controller.inputs.move_dir, controller.inputs.move_z);
+                    if let Some(entity) = id_maps.uid_entity(*uid)
+                        && let Some(agent) = agents.get_mut(entity)
+                    {
+                        agent.rtsim_controller.activity = None;
+                        if !corridor_movement_owned {
+                            agent.rtsim_controller.clear_path_endpoint();
+                        }
+                    }
+                    if !corridor_movement_owned {
+                        controller.inputs.move_dir = Vec2::zero();
+                        controller.inputs.move_z = 0.0;
+                    }
+                    let writer_diag = std::env::var("BASTION_GOTO_WRITER_DIAG_UID")
+                        .ok()
+                        .and_then(|value| value.parse::<u64>().ok())
+                        == Some(uid.0.get());
+                    if writer_diag
+                        || (std::env::var_os("BASTION_EGRESS_DIAG").is_some() && tick.0 % 30 == 0)
+                    {
+                        info!(
+                            tick = tick.0,
+                            uid = uid.0.get(),
+                            owner = emergency_route_owner.map(|owner| owner.0.get()),
+                            active_job = active.as_ref().map(|active| active.job),
+                            emergency_claim_owned,
+                            emergency_route_construction_active,
+                            corridor_movement_owned,
+                            ?corridor_frontier,
+                            ?corridor_next_idx,
+                            ?corridor_waypoint_count,
+                            ?controller_input_before,
+                            controller_input_after = ?(
+                                controller.inputs.move_dir,
+                                controller.inputs.move_z,
+                            ),
+                            agent_activity_cleared = true,
+                            zero_input_written = !corridor_movement_owned,
+                            preserved_corridor_input = corridor_movement_owned,
+                            writer = "emergency_route_lifecycle",
+                            "bastion: emergency route ownership spans frontier claim gap"
+                        );
+                    }
+                    continue;
+                }
+                let owns_route_turn = emergency_route_owner
+                    .is_none_or(|owner| board.traversal_queue_head(owner) == Some(*uid));
+                let emergency_route_complete = emergency_route_owner.is_none_or(|owner| {
+                    !board
+                        .emergency_access_jobs
+                        .values()
+                        .any(|job_owner| *job_owner == owner)
+                        && emergency_route_descriptor_ready(board, &terrain, owner)
+                });
+                // A temporary route remains the primary recovery mechanism.
+                // Its construction jobs own movement until every route step
+                // is complete; free climb assist is only the bounded handoff
+                // from the completed route to its exit.
+                let climb_free_now = colonist.0.climb_free_until > time.0
+                    && emergency_route_complete
+                    && owns_route_turn;
                 let target_above = active
                     .as_ref()
                     .and_then(|a| board.jobs.get(&a.job))
@@ -2289,19 +4133,1348 @@ impl<'a> System<'a> for Sys {
                 let climbing = matches!(cs, comp::CharacterState::Climb(_));
                 let on_wall = phys.on_wall.is_some();
                 // B-LIVE3 (Ben's UNIVERSAL CLIMB-OUT): a colonist under the
-                // trapped fail-safe climbs ANY wall — no ladder, no reach
-                // cap. Granted only by the no-egress verdict / mine-done
-                // dispersal; expiry is the hysteresis; the teleport
-                // backstop covers even this failing.
-                let climb_free = colonist.0.climb_free_until > time.0;
+                // trapped fail-safe rises without requiring a ladder, reach
+                // cap, or a transient physics `on_wall` contact. The latter
+                // is essential for a jobless colonist standing in the middle
+                // of a mined pocket: the asserted surface Goto supplies XY
+                // intent, while this tier supplies bounded vertical motion.
+                // Head-space and normal physics still own collision safety;
+                // expiry is the hysteresis and teleport remains the backstop.
+                let climb_free = climb_free_now;
+                let organic_target = board.egress_targets.get(uid).copied();
+                const MOUNT_STABLE_SAMPLES: u8 = 3;
+                const MOUNT_NO_PROGRESS_TICKS: u64 = 300;
+                const MOUNT_TOTAL_TICKS: u64 = 1_800;
+                const CLIMB_RELEASE_BUDGET_TICKS: u64 = 60;
+                const EXIT_STABLE_SAMPLES: u8 = 5;
+                const EXIT_TRAVERSAL_BUDGET_TICKS: u64 = 300;
+                if let comp::CharacterState::Climb(data) = cs {
+                    board.emergency_climb_profiles.insert(
+                        *uid,
+                        (
+                            data.static_data.energy_cost,
+                            data.static_data.movement_speed,
+                        ),
+                    );
+                }
+                let mut mount_transaction = board.bastion_traversal_tasks.get(uid).copied();
+                if mount_transaction.is_none()
+                    && emergency_route_complete
+                    && owns_route_turn
+                    && let Some(owner) = emergency_route_owner
+                    && let Some(descriptor) = board.emergency_route_descriptors.get(&owner).copied()
+                    && descriptor.kind == EmergencyTraversalKind::NaturalShaft
+                    && feet.xy() == descriptor.entry.xy()
+                    && (feet.z - descriptor.entry.z).abs() <= 1
+                    && phys.on_ground.is_some()
+                    && terrain
+                        .get(feet - Vec3::unit_z())
+                        .is_ok_and(|block| block.is_solid())
+                    && terrain.get(feet).is_ok_and(|block| !block.is_solid())
+                    && terrain
+                        .get(feet + Vec3::unit_z())
+                        .is_ok_and(|block| !block.is_solid())
+                {
+                    if let Some(entity) = id_maps.uid_entity(*uid)
+                        && let Some(agent) = agents.get_mut(entity)
+                    {
+                        agent.rtsim_controller.activity = None;
+                    }
+                    let transaction = BastionTraversalTask {
+                        link_id: owner.0.get(),
+                        terrain_revision: emergency_route_terrain_revision(&terrain, descriptor),
+                        reserved_member: *uid,
+                        entry: descriptor.entry,
+                        exit: descriptor.dismount,
+                        owner,
+                        purpose: BastionTraversalPurpose::FullExit,
+                        traversal_kind: EmergencyTraversalKind::NaturalShaft,
+                        mount: descriptor.entry,
+                        top_z: descriptor.top_anchor.z,
+                        phase: BastionTraversalPhase::Reserved,
+                        started_tick: tick.0,
+                        phase_tick: tick.0,
+                        last_progress_tick: tick.0,
+                        stable_samples: 1,
+                        best_z: pos.0.z,
+                        best_exit_distance: f32::INFINITY,
+                        exit_target: None,
+                        exit_started_tick: 0,
+                        exit_stable_samples: 0,
+                        abort_reason: None,
+                        ladder_contact: None,
+                        wall_contact: phys.on_wall,
+                        traversal_started_tick: 0,
+                        stable_window_started_tick: 0,
+                        last_stable_sample_tick: 0,
+                    };
+                    board.bastion_traversal_tasks.insert(*uid, transaction);
+                    mount_transaction = Some(transaction);
+                    info!(
+                        tick = tick.0,
+                        uid = uid.0.get(),
+                        owner = owner.0.get(),
+                        descriptor_kind = ?descriptor.kind,
+                        approach = ?descriptor.approach,
+                        entry = ?descriptor.entry,
+                        top_anchor = ?descriptor.top_anchor,
+                        dismount = ?descriptor.dismount,
+                        wall_dir = ?descriptor.wall_dir,
+                        position = ?pos.0,
+                        on_ground = phys.on_ground.is_some(),
+                        on_wall = ?phys.on_wall,
+                        writer = "emergency_natural_shaft_transaction",
+                        "bastion: executable emergency route traversal established"
+                    );
+                }
+                if let Some(mut transaction) = mount_transaction {
+                    let previous_phase = transaction.phase;
+                    let interruption = id_maps.uid_entity(*uid).and_then(|entity| {
+                        let agent = agents.get(entity);
+                        if repositioning.contains(entity) {
+                            Some(
+                                crate::bastion_traversal::BastionTraversalInterruption::ExternalRelocation,
+                            )
+                        } else if mount_riders.contains(entity) || volume_riders.contains(entity) {
+                            Some(crate::bastion_traversal::BastionTraversalInterruption::Mount)
+                        } else if tether_followers.contains(entity)
+                            || tether_leaders.contains(entity)
+                        {
+                            Some(crate::bastion_traversal::BastionTraversalInterruption::Tether)
+                        } else if position_interpolation.contains(entity)
+                            || velocity_interpolation.contains(entity)
+                        {
+                            Some(
+                                crate::bastion_traversal::BastionTraversalInterruption::Interpolation,
+                            )
+                        } else if interactors.contains(entity)
+                            || agent.is_some_and(|agent| !agent.inbox.is_empty())
+                        {
+                            Some(crate::bastion_traversal::BastionTraversalInterruption::AgentInbox)
+                        } else if agent.is_some_and(|agent| {
+                            !agent.rtsim_controller.actions.is_empty()
+                        }) {
+                            Some(crate::bastion_traversal::BastionTraversalInterruption::RtsimAction)
+                        } else if !controller.events.is_empty() {
+                            Some(
+                                crate::bastion_traversal::BastionTraversalInterruption::ControllerEvent,
+                            )
+                        } else {
+                            None
+                        }
+                    });
+                    if transaction
+                        .phase
+                        .mode()
+                        .is_some_and(|mode| mode.owns_movement_intent())
+                        && let Some(interruption) = interruption
+                    {
+                        transaction.interrupt(interruption, tick.0);
+                    }
+                    let agent_activity_before = id_maps
+                        .uid_entity(*uid)
+                        .and_then(|entity| agents.get(entity))
+                        .is_some_and(|agent| agent.rtsim_controller.activity.is_some());
+                    if transaction
+                        .phase
+                        .mode()
+                        .is_some_and(|mode| mode.owns_movement_intent())
+                        && let Some(entity) = id_maps.uid_entity(*uid)
+                        && let Some(agent) = agents.get_mut(entity)
+                    {
+                        // REQ-0061: the transaction owns the controller from
+                        // the first mount step until confirmed permanent
+                        // dismount (or a clean abort). In particular, clear a
+                        // Goto left behind before this movement mode began.
+                        agent.rtsim_controller.activity = None;
+                    }
+                    let purpose_valid = match transaction.purpose {
+                        BastionTraversalPurpose::FullExit => emergency_route_complete,
+                        BastionTraversalPurpose::ConstructionFrontier(frontier) => {
+                            let frontier_pending = !emergency_route_complete
+                                && board
+                                    .emergency_access_jobs
+                                    .get(&frontier)
+                                    .is_some_and(|owner| *owner == transaction.owner)
+                                && board.jobs.contains_key(&frontier);
+                            let completed_cursor_wait =
+                                matches!(transaction.phase, BastionTraversalPhase::FrontierWork)
+                                    && !board.jobs.contains_key(&frontier)
+                                    && board
+                                        .emergency_route_sequences
+                                        .get(&transaction.owner)
+                                        .is_some_and(|sequence| {
+                                            sequence.iter().any(|(job, _)| *job == frontier)
+                                        });
+                            frontier_pending || completed_cursor_wait
+                        },
+                    };
+                    let transaction_entry_valid = match transaction.purpose {
+                        BastionTraversalPurpose::FullExit => match transaction.traversal_kind {
+                            EmergencyTraversalKind::ConstructedLadder => board
+                                .emergency_route_mounts
+                                .get(&transaction.owner)
+                                .is_some_and(|mount| {
+                                    mount.xy() == transaction.mount.xy()
+                                        && (mount.z - transaction.mount.z).abs() <= 1
+                                }),
+                            EmergencyTraversalKind::NaturalShaft => board
+                                .emergency_route_descriptors
+                                .get(&transaction.owner)
+                                .is_some_and(|descriptor| {
+                                    descriptor.kind == EmergencyTraversalKind::NaturalShaft
+                                        && descriptor.entry == transaction.mount
+                                        && descriptor.top_anchor.z == transaction.top_z
+                                        && emergency_route_descriptor_ready(
+                                            board,
+                                            &terrain,
+                                            transaction.owner,
+                                        )
+                                }),
+                            EmergencyTraversalKind::CarvedStair => false,
+                        },
+                        BastionTraversalPurpose::ConstructionFrontier(frontier) => {
+                            match transaction.traversal_kind {
+                                EmergencyTraversalKind::ConstructedLadder => board
+                                    .emergency_access_cells
+                                    .iter()
+                                    .any(|(cell, (owner, _))| {
+                                        *owner == transaction.owner
+                                            && cell.xy().distance_squared(transaction.mount.xy())
+                                                == 1
+                                            && cell.z >= transaction.mount.z
+                                            && cell.z <= transaction.top_z + 1
+                                            && terrain
+                                                .get(*cell)
+                                                .ok()
+                                                .and_then(|block| block.get_sprite())
+                                                == Some(SpriteKind::Ladder)
+                                    }),
+                                EmergencyTraversalKind::NaturalShaft => {
+                                    emergency_completed_route_prefix(
+                                        board,
+                                        &terrain,
+                                        transaction.owner,
+                                        frontier,
+                                    )
+                                    .is_some_and(
+                                        |(kind, entry, top_z, _)| {
+                                            kind == EmergencyTraversalKind::NaturalShaft
+                                                && entry == transaction.mount
+                                                && top_z == transaction.top_z
+                                        },
+                                    )
+                                },
+                                EmergencyTraversalKind::CarvedStair => false,
+                            }
+                        },
+                    };
+                    let route_still_valid = emergency_route_owner == Some(transaction.owner)
+                        && owns_route_turn
+                        && purpose_valid
+                        && transaction_entry_valid;
+                    let transaction_timed_out = tick.0.saturating_sub(transaction.started_tick)
+                        > MOUNT_TOTAL_TICKS
+                        && !matches!(
+                            transaction.phase,
+                            BastionTraversalPhase::ConfirmingExitRelease
+                                | BastionTraversalPhase::ConfirmingExitTraversal
+                                | BastionTraversalPhase::ConfirmingExit
+                                | BastionTraversalPhase::Complete
+                        );
+                    if !route_still_valid {
+                        transaction.phase = BastionTraversalPhase::Abort;
+                        transaction.abort_reason = Some("route-invalid");
+                    } else if transaction_timed_out {
+                        transaction.phase = BastionTraversalPhase::Abort;
+                        transaction.abort_reason = Some("mount-total-timeout");
+                    } else {
+                        let support = terrain
+                            .get(feet - Vec3::unit_z())
+                            .is_ok_and(|block| block.is_solid());
+                        let body_clear = terrain.get(feet).is_ok_and(|block| !block.is_solid())
+                            && terrain
+                                .get(feet + Vec3::unit_z())
+                                .is_ok_and(|block| !block.is_solid());
+                        let ladder_provenance =
+                            board
+                                .emergency_access_cells
+                                .iter()
+                                .any(|(cell, (owner, _))| {
+                                    *owner == transaction.owner
+                                        && cell.xy().distance_squared(transaction.mount.xy()) == 1
+                                        && cell.z >= feet.z
+                                        && cell.z <= transaction.top_z + 1
+                                        && terrain
+                                            .get(*cell)
+                                            .ok()
+                                            .and_then(|block| block.get_sprite())
+                                            == Some(SpriteKind::Ladder)
+                                });
+                        let ladder_contact = board
+                            .emergency_access_cells
+                            .iter()
+                            .filter_map(|(cell, (owner, _))| {
+                                (*owner == transaction.owner
+                                    && cell.xy().distance_squared(transaction.mount.xy()) == 1
+                                    && cell.z >= feet.z
+                                    && cell.z <= transaction.top_z + 1
+                                    && terrain.get(*cell).ok().and_then(|block| block.get_sprite())
+                                        == Some(SpriteKind::Ladder))
+                                .then_some(*cell)
+                            })
+                            .min_by_key(|cell| ((cell.z - feet.z).abs(), cell.x, cell.y, cell.z));
+                        let natural_shaft_descriptor = (transaction.traversal_kind
+                            == EmergencyTraversalKind::NaturalShaft)
+                            .then(|| {
+                                board
+                                    .emergency_route_descriptors
+                                    .get(&transaction.owner)
+                                    .copied()
+                            })
+                            .flatten();
+                        let natural_shaft_provenance =
+                            natural_shaft_descriptor.is_some_and(|descriptor| {
+                                descriptor.entry.xy() == feet.xy()
+                                    && feet.z >= descriptor.entry.z
+                                    && feet.z <= descriptor.top_anchor.z
+                                    && descriptor.wall_dir.is_some_and(|wall_dir| {
+                                        terrain
+                                            .get(Vec3::new(
+                                                feet.x + wall_dir.x,
+                                                feet.y + wall_dir.y,
+                                                feet.z,
+                                            ))
+                                            .is_ok_and(|block| block.is_solid())
+                                    })
+                            });
+                        let route_contact_provenance = match transaction.traversal_kind {
+                            EmergencyTraversalKind::ConstructedLadder => ladder_provenance,
+                            EmergencyTraversalKind::NaturalShaft => natural_shaft_provenance,
+                            EmergencyTraversalKind::CarvedStair => false,
+                        };
+                        let route_climb_input = match transaction.traversal_kind {
+                            EmergencyTraversalKind::ConstructedLadder => {
+                                ladder_contact.and_then(|rung| {
+                                    let toward = rung.xy().map(|value| value as f32)
+                                        + Vec2::broadcast(0.5)
+                                        - pos.0.xy();
+                                    (toward.magnitude_squared() > f32::EPSILON)
+                                        .then(|| toward.normalized())
+                                })
+                            },
+                            EmergencyTraversalKind::NaturalShaft => natural_shaft_descriptor
+                                .and_then(|descriptor| descriptor.wall_dir)
+                                .map(|wall_dir| wall_dir.map(|value| value as f32).normalized()),
+                            EmergencyTraversalKind::CarvedStair => None,
+                        };
+                        transaction.ladder_contact = ladder_contact;
+                        transaction.wall_contact = phys.on_wall;
+                        if let Some(descriptor) = board
+                            .emergency_route_descriptors
+                            .get(&transaction.owner)
+                            .copied()
+                        {
+                            let observed_revision =
+                                emergency_route_terrain_revision(&terrain, descriptor);
+                            let _ =
+                                transaction.validate_terrain_revision(observed_revision, tick.0);
+                        } else {
+                            transaction.abort("route-descriptor-missing", tick.0);
+                        }
+                        match transaction.phase {
+                            BastionTraversalPhase::QueuedForLink => {
+                                controller.inputs.move_dir = Vec2::zero();
+                                controller.inputs.move_z = 0.0;
+                                if transaction.reserve(*uid, tick.0).is_ok() {
+                                    transaction.stable_samples = 0;
+                                } else {
+                                    transaction.abort("reservation-lost", tick.0);
+                                }
+                            },
+                            BastionTraversalPhase::LinkApproach => {
+                                colonist.0.route_squeeze_until = if transaction.traversal_kind
+                                    == EmergencyTraversalKind::ConstructedLadder
+                                {
+                                    time.0 + 0.2
+                                } else {
+                                    0.0
+                                };
+                                let center = transaction.mount.xy().map(|value| value as f32)
+                                    + Vec2::broadcast(0.5);
+                                let delta = center - pos.0.xy();
+                                if delta.magnitude_squared() > 0.01 {
+                                    if let Some(entity) = id_maps.uid_entity(*uid)
+                                        && let Some(agent) = agents.get_mut(entity)
+                                    {
+                                        agent.rtsim_controller.activity =
+                                            Some(common::rtsim::NpcActivity::Goto(
+                                                Vec3::new(
+                                                    center.x,
+                                                    center.y,
+                                                    transaction.mount.z as f32,
+                                                ),
+                                                TRAVEL_SPEED,
+                                            ));
+                                    }
+                                }
+                                if delta.magnitude_squared() <= 0.04
+                                    && phys.on_ground.is_some()
+                                    && support
+                                    && body_clear
+                                    && route_contact_provenance
+                                {
+                                    transaction.phase = BastionTraversalPhase::Reserved;
+                                    transaction.phase_tick = tick.0;
+                                    transaction.stable_samples = 1;
+                                }
+                            },
+                            BastionTraversalPhase::Reserved => {
+                                colonist.0.route_squeeze_until = if transaction.traversal_kind
+                                    == EmergencyTraversalKind::ConstructedLadder
+                                {
+                                    time.0 + 0.2
+                                } else {
+                                    0.0
+                                };
+                                controller.inputs.move_dir = Vec2::zero();
+                                controller.inputs.move_z = 0.0;
+                                if phys.on_ground.is_some()
+                                    && support
+                                    && body_clear
+                                    && route_contact_provenance
+                                {
+                                    transaction.stable_samples =
+                                        transaction.stable_samples.saturating_add(1);
+                                    if transaction.stable_samples >= MOUNT_STABLE_SAMPLES {
+                                        transaction.phase = BastionTraversalPhase::TraversingEntry;
+                                        transaction.phase_tick = tick.0;
+                                        transaction.last_progress_tick = tick.0;
+                                        transaction.best_z = pos.0.z;
+                                    }
+                                } else {
+                                    transaction.phase = BastionTraversalPhase::LinkApproach;
+                                    transaction.phase_tick = tick.0;
+                                    transaction.stable_samples = 0;
+                                }
+                            },
+                            BastionTraversalPhase::TraversingEntry => {
+                                colonist.0.route_squeeze_until = if transaction.traversal_kind
+                                    == EmergencyTraversalKind::ConstructedLadder
+                                {
+                                    time.0 + 0.2
+                                } else {
+                                    0.0
+                                };
+                                if !body.can_climb() {
+                                    transaction.phase = BastionTraversalPhase::Abort;
+                                    transaction.abort_reason = Some("body-cannot-climb");
+                                } else if !body_clear || !route_contact_provenance {
+                                    transaction.phase = BastionTraversalPhase::Abort;
+                                    transaction.abort_reason = Some("climb-contact-invalid");
+                                } else if let Some(input) = route_climb_input {
+                                    // Feed the same wall-relative input used
+                                    // by handle_climb/climb::Data. A normal
+                                    // jump establishes airborne wall contact;
+                                    // no bespoke vertical velocity is legal
+                                    // while CharacterState is not Climb.
+                                    controller.inputs.move_dir = input;
+                                    controller.inputs.move_z = 0.0;
+                                    if phys.on_ground.is_some()
+                                        && (tick.0.saturating_sub(transaction.phase_tick) <= 1
+                                            || tick.0 % 15 == 0)
+                                    {
+                                        controller.push_basic_input(comp::InputKind::Jump);
+                                    }
+                                    if climbing && phys.on_wall.is_some() {
+                                        transaction.phase = BastionTraversalPhase::TraversingLink;
+                                        transaction.phase_tick = tick.0;
+                                        transaction.last_progress_tick = tick.0;
+                                        transaction.best_z = pos.0.z;
+                                    } else if tick.0.saturating_sub(transaction.last_progress_tick)
+                                        > MOUNT_NO_PROGRESS_TICKS
+                                    {
+                                        transaction.phase = BastionTraversalPhase::Abort;
+                                        transaction.abort_reason =
+                                            Some("authoritative-climb-contact-timeout");
+                                    }
+                                } else {
+                                    transaction.phase = BastionTraversalPhase::Abort;
+                                    transaction.abort_reason = Some("route-rung-missing");
+                                }
+                            },
+                            BastionTraversalPhase::TraversingLink => {
+                                colonist.0.route_squeeze_until = if transaction.traversal_kind
+                                    == EmergencyTraversalKind::ConstructedLadder
+                                {
+                                    time.0 + 0.2
+                                } else {
+                                    0.0
+                                };
+                                if pos.0.z >= transaction.top_z as f32 - 0.05 {
+                                    transaction.phase = BastionTraversalPhase::TraversingTopExit;
+                                    transaction.phase_tick = tick.0;
+                                    transaction.last_progress_tick = tick.0;
+                                    transaction.best_exit_distance = f32::INFINITY;
+                                    controller.inputs.move_dir = Vec2::zero();
+                                } else if !body_clear || !route_contact_provenance {
+                                    transaction.phase = BastionTraversalPhase::Abort;
+                                    transaction.abort_reason = Some("climb-clearance-lost");
+                                } else if !climbing || phys.on_wall.is_none() {
+                                    transaction.interrupt(
+                                        crate::bastion_traversal::BastionTraversalInterruption::ContactLost,
+                                        tick.0,
+                                    );
+                                } else if let Some(input) = route_climb_input {
+                                    controller.inputs.move_dir = input;
+                                    controller.inputs.move_z = 0.0;
+                                    // Vertical acceleration, energy use, skill
+                                    // speed, and wall friction now come only
+                                    // from climb::Data::behavior.
+                                    if pos.0.z > transaction.best_z + 0.05 {
+                                        transaction.best_z = pos.0.z;
+                                        transaction.last_progress_tick = tick.0;
+                                    } else if tick.0.saturating_sub(transaction.last_progress_tick)
+                                        > MOUNT_NO_PROGRESS_TICKS
+                                    {
+                                        transaction.phase = BastionTraversalPhase::Abort;
+                                        transaction.abort_reason =
+                                            Some("authoritative-climb-no-progress");
+                                    }
+                                } else {
+                                    transaction.phase = BastionTraversalPhase::Abort;
+                                    transaction.abort_reason = Some("route-rung-lost");
+                                }
+                            },
+                            BastionTraversalPhase::TraversingTopExit => {
+                                colonist.0.route_squeeze_until = if transaction.traversal_kind
+                                    == EmergencyTraversalKind::ConstructedLadder
+                                {
+                                    time.0 + 0.2
+                                } else {
+                                    0.0
+                                };
+                                if let BastionTraversalPurpose::ConstructionFrontier(frontier) =
+                                    transaction.purpose
+                                {
+                                    // REQ-0071: this is a construction stance, not a
+                                    // permanent dismount.  Keep authoritative Climb/
+                                    // on_wall contact and hand the still-claimed job to
+                                    // the existing Arrived work path.  Pushing Stand
+                                    // here made the worker fall before arrival could
+                                    // observe its otherwise-valid route contact.
+                                    controller.inputs.move_dir = Vec2::zero();
+                                    controller.inputs.move_z = 0.0;
+                                    let frontier_target = board.jobs.get(&frontier).map(|job| {
+                                        job.pos.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0)
+                                    });
+                                    let frontier_arrival = frontier_target
+                                        .is_some_and(|target| pos.0.distance(target) < 6.25)
+                                        && climbing
+                                        && phys.on_wall.is_some()
+                                        && body_clear
+                                        && route_contact_provenance;
+                                    let active_matches = active
+                                        .as_ref()
+                                        .is_some_and(|active| active.job == frontier);
+                                    if frontier_arrival && active_matches {
+                                        if let Some(active) = active.as_mut() {
+                                            active.state = ActiveJobState::Arrived;
+                                            active.stuck_time = 0.0;
+                                        }
+                                        transaction.phase = BastionTraversalPhase::FrontierWork;
+                                        transaction.phase_tick = tick.0;
+                                        transaction.last_progress_tick = tick.0;
+                                    } else {
+                                        transaction.phase = BastionTraversalPhase::Abort;
+                                        transaction.abort_reason = Some(if !active_matches {
+                                            "frontier-claim-lost"
+                                        } else {
+                                            "frontier-arrival-invalid"
+                                        });
+                                    }
+                                    info!(
+                                        uid = uid.0.get(),
+                                        owner = transaction.owner.0.get(),
+                                        job = frontier,
+                                        tick = tick.0,
+                                        top_z = transaction.top_z,
+                                        position = ?pos.0,
+                                        on_ground = phys.on_ground.is_some(),
+                                        on_wall = ?phys.on_wall,
+                                        vanilla_climb = climbing,
+                                        body_clear,
+                                        route_contact_provenance,
+                                        frontier_arrival,
+                                        active_matches,
+                                        energy = energy.map(|energy| energy.current()),
+                                        writer = "emergency_mount_transaction_frontier_work",
+                                        "bastion: partial emergency route reached construction frontier"
+                                    );
+                                } else {
+                                    let route_cells: HashSet<Vec3<i32>> = board
+                                        .emergency_access_cells
+                                        .iter()
+                                        .filter_map(|(cell, (owner, _))| {
+                                            (*owner == transaction.owner).then_some(*cell)
+                                        })
+                                        .collect();
+                                    let top_anchor = Vec3::new(
+                                        transaction.mount.x,
+                                        transaction.mount.y,
+                                        transaction.top_z,
+                                    );
+                                    let candidate =
+                                        emergency_dismount_dest(&terrain, top_anchor, &route_cells);
+                                    let scale = scale.map_or(1.0, |scale| scale.0.min(10.0));
+                                    let cylinder = collider.and_then(|collider| {
+                                        common_systems::phys::capsule_terrain_cylinder(
+                                            collider, scale, 0.22,
+                                        )
+                                    });
+                                    let (exit_target, preflight_hit) = candidate.map_or(
+                                    (None, None),
+                                    |candidate| {
+                                        let target_pos = candidate.map(|value| value as f32)
+                                            + Vec3::new(0.5, 0.5, 0.0);
+                                        let horizontal =
+                                            Vec3::new(target_pos.x, target_pos.y, pos.0.z);
+                                        let vertical =
+                                            Vec3::new(pos.0.x, pos.0.y, target_pos.z);
+                                        let sweep = |start, end| {
+                                            cylinder.and_then(|cylinder| {
+                                                common_systems::phys::cylinder_sweep_first_collision(
+                                                    &*terrain,
+                                                    start,
+                                                    end,
+                                                    cylinder,
+                                                )
+                                            })
+                                        };
+                                        let horizontal_hit = sweep(pos.0, horizontal)
+                                            .or_else(|| sweep(horizontal, target_pos));
+                                        let vertical_hit = sweep(pos.0, vertical)
+                                            .or_else(|| sweep(vertical, target_pos));
+                                        if cylinder.is_some()
+                                            && (horizontal_hit.is_none() || vertical_hit.is_none())
+                                        {
+                                            (Some(candidate), None)
+                                        } else {
+                                            (None, horizontal_hit.or(vertical_hit))
+                                        }
+                                    },
+                                );
+                                    if let Some(target) = exit_target {
+                                        transaction.exit_target = Some(target);
+                                        transaction.exit_started_tick = tick.0;
+                                        transaction.traversal_started_tick = 0;
+                                        transaction.stable_window_started_tick = 0;
+                                        transaction.last_stable_sample_tick = 0;
+                                        transaction.exit_stable_samples = 0;
+                                        transaction.best_exit_distance = pos.0.distance(
+                                            target.map(|value| value as f32)
+                                                + Vec3::new(0.5, 0.5, 0.0),
+                                        );
+                                        transaction.last_progress_tick = tick.0;
+                                        transaction.phase =
+                                            BastionTraversalPhase::ConfirmingExitRelease;
+                                        transaction.phase_tick = tick.0;
+                                        controller.inputs.move_dir = Vec2::zero();
+                                        controller.inputs.move_z = 0.0;
+                                        controller.push_action(comp::ControlAction::Stand);
+                                        info!(
+                                            uid = uid.0.get(),
+                                            owner = transaction.owner.0.get(),
+                                            tick = tick.0,
+                                            ?top_anchor,
+                                            ?target,
+                                            position = ?pos.0,
+                                            ?cylinder,
+                                            "bastion: emergency mount exit target preflight clear"
+                                        );
+                                    } else {
+                                        transaction.phase = BastionTraversalPhase::Abort;
+                                        transaction.abort_reason = Some("exit-target-invalid");
+                                        info!(
+                                            uid = uid.0.get(),
+                                            owner = transaction.owner.0.get(),
+                                            tick = tick.0,
+                                            ?top_anchor,
+                                            ?candidate,
+                                            ?preflight_hit,
+                                            ?cylinder,
+                                            position = ?pos.0,
+                                            "bastion: emergency mount exit target preflight blocked"
+                                        );
+                                    }
+                                }
+                            },
+                            BastionTraversalPhase::ConfirmingExitRelease => {
+                                colonist.0.route_squeeze_until = if transaction.traversal_kind
+                                    == EmergencyTraversalKind::ConstructedLadder
+                                {
+                                    time.0 + 0.2
+                                } else {
+                                    0.0
+                                };
+                                controller.inputs.move_dir = Vec2::zero();
+                                controller.inputs.move_z = 0.0;
+                                if climbing {
+                                    controller.push_action(comp::ControlAction::Stand);
+                                    if tick.0.saturating_sub(transaction.exit_started_tick)
+                                        > CLIMB_RELEASE_BUDGET_TICKS
+                                    {
+                                        transaction.phase = BastionTraversalPhase::Abort;
+                                        transaction.abort_reason = Some("climb-release-timeout");
+                                    }
+                                } else {
+                                    transaction.phase =
+                                        BastionTraversalPhase::ConfirmingExitTraversal;
+                                    transaction.phase_tick = tick.0;
+                                    transaction.traversal_started_tick = tick.0;
+                                    transaction.last_progress_tick = tick.0;
+                                }
+                            },
+                            BastionTraversalPhase::ConfirmingExitTraversal => {
+                                colonist.0.route_squeeze_until = if transaction.traversal_kind
+                                    == EmergencyTraversalKind::ConstructedLadder
+                                {
+                                    time.0 + 0.2
+                                } else {
+                                    0.0
+                                };
+                                controller.inputs.move_dir = Vec2::zero();
+                                controller.inputs.move_z = 0.0;
+                                let route_cells: HashSet<Vec3<i32>> = board
+                                    .emergency_access_cells
+                                    .iter()
+                                    .filter_map(|(cell, (owner, _))| {
+                                        (*owner == transaction.owner).then_some(*cell)
+                                    })
+                                    .collect();
+                                if let Some(target) = transaction.exit_target {
+                                    let target_support = terrain
+                                        .get(target - Vec3::unit_z())
+                                        .is_ok_and(|block| block.is_solid());
+                                    let target_clear =
+                                        terrain.get(target).is_ok_and(|block| !block.is_solid())
+                                            && terrain
+                                                .get(target + Vec3::unit_z())
+                                                .is_ok_and(|block| !block.is_solid());
+                                    let target_non_route = !route_cells
+                                        .contains(&(target - Vec3::unit_z()))
+                                        && !route_cells.contains(&target)
+                                        && !route_cells.contains(&(target + Vec3::unit_z()));
+                                    let actual_non_route = !route_cells
+                                        .contains(&(feet - Vec3::unit_z()))
+                                        && !route_cells.contains(&feet)
+                                        && !route_cells.contains(&(feet + Vec3::unit_z()));
+                                    let target_pos =
+                                        target.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+                                    let delta = target_pos.xy() - pos.0.xy();
+                                    let distance = pos.0.distance(target_pos);
+                                    let traversal_elapsed =
+                                        tick.0.saturating_sub(transaction.traversal_started_tick);
+                                    if !target_support || !target_clear || !target_non_route {
+                                        transaction.phase = BastionTraversalPhase::Abort;
+                                        transaction.abort_reason =
+                                            Some("exit-target-became-invalid");
+                                    } else if climbing {
+                                        transaction.phase = BastionTraversalPhase::Abort;
+                                        transaction.abort_reason = Some("climb-reentered-on-exit");
+                                    } else if pos.0.z < target.z as f32 - 2.0 {
+                                        transaction.phase = BastionTraversalPhase::Abort;
+                                        transaction.abort_reason = Some("exit-fall");
+                                    } else if traversal_elapsed > EXIT_TRAVERSAL_BUDGET_TICKS {
+                                        transaction.phase = BastionTraversalPhase::Abort;
+                                        transaction.abort_reason =
+                                            Some("exit-traversal-budget-expired");
+                                    } else {
+                                        controller.inputs.move_dir =
+                                            if delta.magnitude_squared() > 0.04 {
+                                                delta.normalized()
+                                            } else {
+                                                Vec2::zero()
+                                            };
+                                        controller.inputs.move_z = 0.0;
+                                        if distance + 0.05 < transaction.best_exit_distance {
+                                            transaction.best_exit_distance = distance;
+                                            transaction.last_progress_tick = tick.0;
+                                        }
+                                        let at_target = delta.magnitude_squared() <= 0.1225
+                                            && (pos.0.z - target.z as f32).abs() <= 0.25;
+                                        let exit_stable = at_target
+                                            && phys.on_ground.is_some()
+                                            && support
+                                            && body_clear
+                                            && actual_non_route;
+                                        if exit_stable {
+                                            transaction.phase =
+                                                BastionTraversalPhase::ConfirmingExit;
+                                            transaction.phase_tick = tick.0;
+                                            transaction.stable_window_started_tick = tick.0;
+                                            transaction.last_stable_sample_tick = tick.0;
+                                            transaction.exit_stable_samples = 1;
+                                            controller.inputs.move_dir = Vec2::zero();
+                                        }
+                                    }
+                                } else {
+                                    transaction.phase = BastionTraversalPhase::Abort;
+                                    transaction.abort_reason = Some("exit-target-missing");
+                                }
+                            },
+                            BastionTraversalPhase::ConfirmingExit => {
+                                colonist.0.route_squeeze_until = if transaction.traversal_kind
+                                    == EmergencyTraversalKind::ConstructedLadder
+                                {
+                                    time.0 + 0.2
+                                } else {
+                                    0.0
+                                };
+                                controller.inputs.move_dir = Vec2::zero();
+                                controller.inputs.move_z = 0.0;
+                                let route_cells: HashSet<Vec3<i32>> = board
+                                    .emergency_access_cells
+                                    .iter()
+                                    .filter_map(|(cell, (owner, _))| {
+                                        (*owner == transaction.owner).then_some(*cell)
+                                    })
+                                    .collect();
+                                if let Some(target) = transaction.exit_target {
+                                    let target_support = terrain
+                                        .get(target - Vec3::unit_z())
+                                        .is_ok_and(|block| block.is_solid());
+                                    let target_clear =
+                                        terrain.get(target).is_ok_and(|block| !block.is_solid())
+                                            && terrain
+                                                .get(target + Vec3::unit_z())
+                                                .is_ok_and(|block| !block.is_solid());
+                                    let target_non_route = !route_cells
+                                        .contains(&(target - Vec3::unit_z()))
+                                        && !route_cells.contains(&target)
+                                        && !route_cells.contains(&(target + Vec3::unit_z()));
+                                    let actual_non_route = !route_cells
+                                        .contains(&(feet - Vec3::unit_z()))
+                                        && !route_cells.contains(&feet)
+                                        && !route_cells.contains(&(feet + Vec3::unit_z()));
+                                    let target_pos =
+                                        target.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+                                    let delta = target_pos.xy() - pos.0.xy();
+                                    let at_target = delta.magnitude_squared() <= 0.1225
+                                        && (pos.0.z - target.z as f32).abs() <= 0.25;
+                                    let exit_stable = !climbing
+                                        && at_target
+                                        && phys.on_ground.is_some()
+                                        && support
+                                        && body_clear
+                                        && actual_non_route
+                                        && target_support
+                                        && target_clear
+                                        && target_non_route;
+                                    if !exit_stable {
+                                        transaction.phase = BastionTraversalPhase::Abort;
+                                        transaction.abort_reason =
+                                            Some("stable-window-interrupted");
+                                    } else if tick
+                                        .0
+                                        .saturating_sub(transaction.last_stable_sample_tick)
+                                        >= 30
+                                    {
+                                        transaction.exit_stable_samples =
+                                            transaction.exit_stable_samples.saturating_add(1);
+                                        transaction.last_stable_sample_tick = tick.0;
+                                        if transaction.exit_stable_samples >= EXIT_STABLE_SAMPLES {
+                                            transaction.complete(tick.0);
+                                            colonist.0.route_squeeze_until = 0.0;
+                                        }
+                                    }
+                                } else {
+                                    transaction.phase = BastionTraversalPhase::Abort;
+                                    transaction.abort_reason = Some("exit-target-missing");
+                                }
+                            },
+                            BastionTraversalPhase::FrontierWork => {
+                                // Zero input is the existing Climb state's wall-hold
+                                // contract: it cancels gravity without adding upward
+                                // travel and consumes the normal minimum energy.  The
+                                // normal Arrived arm owns work/progress/completion.
+                                colonist.0.route_squeeze_until = time.0 + 0.2;
+                                controller.inputs.move_dir = Vec2::zero();
+                                controller.inputs.move_z = 0.0;
+                                let frontier = match transaction.purpose {
+                                    BastionTraversalPurpose::ConstructionFrontier(frontier) => {
+                                        Some(frontier)
+                                    },
+                                    BastionTraversalPurpose::FullExit => None,
+                                };
+                                let frontier_target = frontier.and_then(|frontier| {
+                                    board.jobs.get(&frontier).map(|job| {
+                                        job.pos.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0)
+                                    })
+                                });
+                                let active_working = frontier.is_some_and(|frontier| {
+                                    active.as_ref().is_some_and(|active| {
+                                        active.job == frontier
+                                            && matches!(active.state, ActiveJobState::Arrived)
+                                    })
+                                });
+                                let completed_cursor_wait = frontier.is_some_and(|frontier| {
+                                    !board.jobs.contains_key(&frontier)
+                                        && board
+                                            .emergency_route_sequences
+                                            .get(&transaction.owner)
+                                            .is_some_and(|sequence| {
+                                                sequence.iter().any(|(job, _)| *job == frontier)
+                                            })
+                                });
+                                let contact_valid = climbing
+                                    && phys.on_wall.is_some()
+                                    && body_clear
+                                    && ladder_provenance
+                                    && frontier_target
+                                        .is_some_and(|target| pos.0.distance(target) < 6.25);
+                                if !completed_cursor_wait && (!active_working || !contact_valid) {
+                                    if let Some(active) = active.as_mut() {
+                                        active.state = ActiveJobState::Traveling;
+                                        active.stuck_time = 0.0;
+                                    }
+                                    transaction.phase = BastionTraversalPhase::Abort;
+                                    transaction.abort_reason = Some(if !active_working {
+                                        "frontier-work-claim-lost"
+                                    } else {
+                                        "frontier-work-contact-lost"
+                                    });
+                                }
+                            },
+                            BastionTraversalPhase::Complete => {
+                                colonist.0.route_squeeze_until = 0.0;
+                                controller.inputs.move_dir = Vec2::zero();
+                                controller.inputs.move_z = 0.0;
+                            },
+                            BastionTraversalPhase::Abort => {
+                                colonist.0.route_squeeze_until = 0.0;
+                                controller.inputs.move_dir = Vec2::zero();
+                                controller.inputs.move_z = 0.0;
+                            },
+                        }
+                    }
+                    let constructed_ladder_active = route_still_valid
+                        && matches!(
+                            transaction.phase,
+                            BastionTraversalPhase::TraversingEntry
+                                | BastionTraversalPhase::TraversingLink
+                                | BastionTraversalPhase::TraversingTopExit
+                                | BastionTraversalPhase::FrontierWork
+                        )
+                        && transaction.ladder_contact.is_some_and(|rung| {
+                            terrain.get(rung).ok().and_then(|block| block.get_sprite())
+                                == Some(SpriteKind::Ladder)
+                                && rung.xy().distance_squared(feet.xy()) == 1
+                                && terrain.get(feet).is_ok_and(|block| !block.is_solid())
+                                && terrain
+                                    .get(feet + Vec3::unit_z())
+                                    .is_ok_and(|block| !block.is_solid())
+                        });
+                    if transaction.phase != previous_phase {
+                        transaction.phase_tick = tick.0;
+                        info!(
+                            uid = uid.0.get(),
+                            owner = transaction.owner.0.get(),
+                            traversal_kind = ?transaction.traversal_kind,
+                            from = ?previous_phase,
+                            to = ?transaction.phase,
+                            tick = tick.0,
+                            elapsed_ticks = tick.0.saturating_sub(transaction.started_tick),
+                            ?feet,
+                            position = ?pos.0,
+                            velocity = ?vel.0,
+                            on_ground = phys.on_ground.is_some(),
+                            on_wall = ?phys.on_wall,
+                            vanilla_climb = climbing,
+                            ladder_contact = ?transaction.ladder_contact,
+                            body_can_climb = body.can_climb(),
+                            energy = energy.map(|energy| energy.current()),
+                            climb_energy_cost = match cs {
+                                comp::CharacterState::Climb(data) => {
+                                    Some(data.static_data.energy_cost)
+                                },
+                                _ => None,
+                            },
+                            climb_movement_speed = match cs {
+                                comp::CharacterState::Climb(data) => {
+                                    Some(data.static_data.movement_speed)
+                                },
+                                _ => None,
+                            },
+                            constructed_ladder_active,
+                            ladder_energy_policy = if constructed_ladder_active {
+                                "infrastructure_no_natural_climb_charge"
+                            } else {
+                                "natural_climb_energy"
+                            },
+                            route_input = ?controller.inputs.move_dir,
+                            top_anchor = ?Vec3::new(
+                                transaction.mount.x,
+                                transaction.mount.y,
+                                transaction.top_z,
+                            ),
+                            exit_target = ?transaction.exit_target,
+                            target_distance = transaction.best_exit_distance,
+                            stable_samples = transaction.exit_stable_samples,
+                            release_action = if matches!(
+                                transaction.phase,
+                                BastionTraversalPhase::ConfirmingExitRelease
+                            ) {
+                                "stand"
+                            } else {
+                                "none"
+                            },
+                            release_duration_ticks = transaction
+                                .traversal_started_tick
+                                .checked_sub(transaction.exit_started_tick),
+                            traversal_duration_ticks = (transaction.traversal_started_tick > 0)
+                                .then(|| {
+                                    transaction
+                                        .stable_window_started_tick
+                                        .max(tick.0)
+                                        .saturating_sub(transaction.traversal_started_tick)
+                                }),
+                            stable_window_duration_ticks =
+                                (transaction.stable_window_started_tick > 0).then(|| {
+                                    tick.0.saturating_sub(
+                                        transaction.stable_window_started_tick,
+                                    )
+                                }),
+                            total_episode_ticks = tick
+                                .0
+                                .saturating_sub(transaction.started_tick),
+                            ?transaction.abort_reason,
+                            agent_activity_before,
+                            agent_activity_after = false,
+                            writer = "bastion_traversal_task",
+                            "bastion: route-owned traversal task transition"
+                        );
+                    }
+                    if let Some(entity) = id_maps.uid_entity(*uid) {
+                        if constructed_ladder_active {
+                            let rung = transaction
+                                .ladder_contact
+                                .expect("active ladder traversal has validated rung");
+                            let _ = constructed_ladder_traversals.insert(
+                                entity,
+                                comp::bastion::ConstructedLadderTraversal {
+                                    route_owner: transaction.owner,
+                                    rung,
+                                    expires_at: time.0 + 0.2,
+                                },
+                            );
+                        } else {
+                            constructed_ladder_traversals.remove(entity);
+                        }
+                    }
+                    board.bastion_traversal_tasks.insert(*uid, transaction);
+                    mount_transaction = Some(transaction);
+                } else if let Some(entity) = id_maps.uid_entity(*uid) {
+                    // A proof cannot outlive the route-owned transaction.
+                    constructed_ladder_traversals.remove(entity);
+                }
+                let transaction_owns_movement = mount_transaction.is_some_and(|transaction| {
+                    transaction
+                        .phase
+                        .mode()
+                        .is_some_and(|mode| mode.owns_movement_intent())
+                });
+                let transaction_lifecycle_owned = mount_transaction.is_some();
+                let approaching_mount = transaction_owns_movement
+                    || emergency_route_owner
+                        .and_then(|owner| board.emergency_route_mounts.get(&owner).copied())
+                        .is_some_and(|mount| feet.xy() != mount.xy() || feet.z < mount.z);
+                if transaction_owns_movement
+                    && let Some(entity) = id_maps.uid_entity(*uid)
+                    && let Some(agent) = agents.get_mut(entity)
+                {
+                    // The final two mount cells are inside Chaser's arrival
+                    // tolerance and are owned by the collision-preflighted
+                    // local stepper below. Prevent stale Goto steering from
+                    // undoing those one-cell moves between upkeep samples.
+                    agent.rtsim_controller.activity = None;
+                }
+                if climb_free
+                    && !approaching_mount
+                    && let Some(target) = organic_target
+                {
+                    let delta =
+                        target.map(|value| value as f32).xy() + Vec2::broadcast(0.5) - pos.0.xy();
+                    if delta.magnitude_squared() > 0.25 {
+                        let drive = delta.normalized() * TRAVEL_SPEED;
+                        vel.0.x = drive.x;
+                        vel.0.y = drive.y;
+                    }
+                }
+                // A completed carved stair can begin one cell sideways and
+                // one cell above a low-ceiling pocket. Normal horizontal
+                // steering cannot mount that valid step because the old
+                // column's head cell blocks vertical lift. Perform the same
+                // bounded, once-per-second route step used by the vertical
+                // rung backstop, but only into a provenance-derived adjacent
+                // waypoint whose support, feet and head are authoritative.
+                if climb_free
+                    && !transaction_lifecycle_owned
+                    && phys.on_ground.is_some()
+                    && tick.0 % 30 == 0
+                    && let Some(route_owner) = emergency_route_owner
+                    && let Some(target) = organic_target
+                {
+                    let dx = (target.x - feet.x).abs();
+                    let dy = (target.y - feet.y).abs();
+                    let mount_approach = approaching_mount && target.z == feet.z && dx + dy == 1;
+                    let ladder_mount = target.z > feet.z
+                        && target.z <= feet.z + 1
+                        && dx.max(dy) <= 1
+                        && board
+                            .emergency_access_cells
+                            .iter()
+                            .any(|(cell, (owner, _))| {
+                                *owner == route_owner
+                                    && cell.xy().distance_squared(target.xy()) == 1
+                                    && cell.z >= feet.z
+                                    && cell.z <= target.z + 1
+                                    && terrain.get(*cell).ok().and_then(|block| block.get_sprite())
+                                        == Some(SpriteKind::Ladder)
+                            });
+                    let ladder_entry = Vec3::new(target.x, target.y, feet.z);
+                    let ladder_entry_valid = terrain
+                        .get(ladder_entry)
+                        .is_ok_and(|block| !block.is_solid())
+                        && terrain
+                            .get(ladder_entry + Vec3::unit_z())
+                            .is_ok_and(|block| !block.is_solid());
+                    let route_step = target.z == feet.z + 1
+                        && dx.max(dy) == 1
+                        && board
+                            .emergency_access_cells
+                            .iter()
+                            .any(|(cell, (owner, _))| {
+                                *owner == route_owner
+                                    && cell.xy() == target.xy()
+                                    && cell.z >= target.z
+                                    && cell.z <= target.z + 2
+                            });
+                    let destination_valid = terrain
+                        .get(target - Vec3::unit_z())
+                        .is_ok_and(|block| block.is_solid())
+                        && terrain.get(target).is_ok_and(|block| !block.is_solid())
+                        && terrain
+                            .get(target + Vec3::unit_z())
+                            .is_ok_and(|block| !block.is_solid());
+                    // REQ-0058: validate the actual entity cylinder against
+                    // the same voxel predicate as shipping physics before a
+                    // route step mutates position or enables squeeze. Try the
+                    // two established character-controller step orders:
+                    // advance-then-rise and rise-then-advance. A direct
+                    // diagonal grid edge is not accepted on its own.
+                    let scale = scale.map_or(1.0, |scale| scale.0.min(10.0));
+                    let radius_cap = if mount_approach || (ladder_mount && dx.max(dy) == 1) {
+                        0.22
+                    } else {
+                        0.45
+                    };
+                    let cylinder = collider.and_then(|collider| {
+                        common_systems::phys::capsule_terrain_cylinder(collider, scale, radius_cap)
+                    });
+                    let target_pos = target.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+                    let horizontal = Vec3::new(target_pos.x, target_pos.y, pos.0.z);
+                    let vertical = Vec3::new(pos.0.x, pos.0.y, target_pos.z);
+                    let sweep = |start, end| {
+                        cylinder.and_then(|cylinder| {
+                            common_systems::phys::cylinder_sweep_first_collision(
+                                &*terrain, start, end, cylinder,
+                            )
+                        })
+                    };
+                    let horizontal_first_hit =
+                        sweep(pos.0, horizontal).or_else(|| sweep(horizontal, target_pos));
+                    let vertical_first_hit =
+                        sweep(pos.0, vertical).or_else(|| sweep(vertical, target_pos));
+                    let (preflight_clear, preflight_order, preflight_hit) = if cylinder.is_none() {
+                        (false, "missing-collider", None)
+                    } else if horizontal_first_hit.is_none() {
+                        (true, "advance-rise", None)
+                    } else if vertical_first_hit.is_none() {
+                        (true, "rise-advance", None)
+                    } else {
+                        (false, "blocked", horizontal_first_hit)
+                    };
+                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() && tick.0 % 300 == 0 {
+                        info!(
+                            uid = uid.0.get(),
+                            owner = route_owner.0.get(),
+                            ?feet,
+                            ?target,
+                            ladder_mount,
+                            mount_approach,
+                            ladder_entry_valid,
+                            route_step,
+                            destination_valid,
+                            preflight_clear,
+                            preflight_order,
+                            ?preflight_hit,
+                            ?cylinder,
+                            "bastion: emergency route transition probe"
+                        );
+                    }
+                    if mount_approach && preflight_clear {
+                        let route_top = board
+                            .emergency_access_cells
+                            .iter()
+                            .filter_map(|(cell, (owner, _))| {
+                                (*owner == route_owner).then_some(cell.z)
+                            })
+                            .max();
+                        let final_mount = match (
+                            board.emergency_route_mounts.get(&route_owner).copied(),
+                            route_top,
+                        ) {
+                            (Some(route_mount), Some(top_z))
+                                if route_mount.xy() == target.xy()
+                                    && (route_mount.z - target.z).abs() <= 1 =>
+                            {
+                                Some((route_mount, top_z))
+                            },
+                            _ => None,
+                        };
+                        if let (Some((route_mount, top_z)), Some(descriptor)) = (
+                            final_mount,
+                            board.emergency_route_descriptors.get(&route_owner).copied(),
+                        ) {
+                            // REQ-0060: preflight acceptance starts a
+                            // route-owned movement transaction. From here
+                            // through stable mount/climb/top exit, no generic
+                            // Goto or ladder magnetism may write movement.
+                            board
+                                .bastion_traversal_tasks
+                                .insert(*uid, BastionTraversalTask {
+                                    link_id: route_owner.0.get(),
+                                    terrain_revision: emergency_route_terrain_revision(
+                                        &terrain, descriptor,
+                                    ),
+                                    reserved_member: *uid,
+                                    entry: descriptor.entry,
+                                    exit: descriptor.dismount,
+                                    owner: route_owner,
+                                    purpose: BastionTraversalPurpose::FullExit,
+                                    traversal_kind: EmergencyTraversalKind::ConstructedLadder,
+                                    mount: target,
+                                    top_z,
+                                    phase: BastionTraversalPhase::QueuedForLink,
+                                    started_tick: tick.0,
+                                    phase_tick: tick.0,
+                                    last_progress_tick: tick.0,
+                                    stable_samples: 0,
+                                    best_z: pos.0.z,
+                                    best_exit_distance: f32::INFINITY,
+                                    exit_target: None,
+                                    exit_started_tick: 0,
+                                    exit_stable_samples: 0,
+                                    abort_reason: None,
+                                    ladder_contact: None,
+                                    wall_contact: None,
+                                    traversal_started_tick: 0,
+                                    stable_window_started_tick: 0,
+                                    last_stable_sample_tick: 0,
+                                });
+                            colonist.0.route_squeeze_until = time.0 + 0.2;
+                            let delta = target_pos.xy() - pos.0.xy();
+                            controller.inputs.move_dir = if delta.magnitude_squared() > 0.01 {
+                                delta.normalized()
+                            } else {
+                                Vec2::zero()
+                            };
+                            controller.inputs.move_z = 0.0;
+                            info!(
+                                uid = uid.0.get(),
+                                owner = route_owner.0.get(),
+                                tick = tick.0,
+                                mount = ?target,
+                                ?route_mount,
+                                top_z,
+                                ?preflight_order,
+                                ?cylinder,
+                                "bastion: emergency mount transaction started"
+                            );
+                        } else if board.emergency_route_mounts.contains_key(&route_owner) {
+                            // The stored mount may be several orthogonal
+                            // cells away. Preserve the existing ordered,
+                            // actual-cylinder-preflighted local approach;
+                            // only the final route-proven entry anchor starts
+                            // the authoritative mount transaction.
+                            colonist.0.route_squeeze_until = time.0 + 0.2;
+                            if let Some(entity) = id_maps.uid_entity(*uid)
+                                && let Some(agent) = agents.get_mut(entity)
+                            {
+                                agent.rtsim_controller.activity = Some(
+                                    common::rtsim::NpcActivity::Goto(target_pos, TRAVEL_SPEED),
+                                );
+                            }
+                            if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                                info!(
+                                    uid = uid.0.get(),
+                                    owner = route_owner.0.get(),
+                                    tick = tick.0,
+                                    ?feet,
+                                    ?target,
+                                    "bastion: emergency mount ordered approach step"
+                                );
+                            }
+                        }
+                    } else if ladder_mount && ladder_entry_valid && preflight_clear {
+                        if dx.max(dy) == 1 {
+                            colonist.0.route_squeeze_until = time.0 + 0.2;
+                        }
+                        if let Some(entity) = id_maps.uid_entity(*uid)
+                            && let Some(agent) = agents.get_mut(entity)
+                        {
+                            agent.rtsim_controller.activity =
+                                Some(common::rtsim::NpcActivity::Goto(target_pos, TRAVEL_SPEED));
+                        }
+                    } else if route_step && destination_valid && preflight_clear {
+                        let constructed_link = board
+                            .emergency_route_descriptors
+                            .get(&route_owner)
+                            .is_some_and(|descriptor| {
+                                descriptor.kind == EmergencyTraversalKind::ConstructedLadder
+                            });
+                        if constructed_link {
+                            if let Some(entity) = id_maps.uid_entity(*uid)
+                                && let Some(agent) = agents.get_mut(entity)
+                            {
+                                agent.rtsim_controller.activity = Some(
+                                    common::rtsim::NpcActivity::Goto(target_pos, TRAVEL_SPEED),
+                                );
+                            }
+                        } else {
+                            pos.0 = target.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+                            vel.0 = Vec3::zero();
+                        }
+                    }
+                }
                 // POSITION-DRIVEN lift (runs 3-14 lesson: every vanilla
                 // physics-TIMING dependency — jump→wall-contact→Climb-state
                 // entry — flakes run to run; velocity nudges inherit the
                 // flake. Workers on colony access move UP, period): wall
                 // contact suffices, airborne not required. Head space is
                 // checked so the lift can't push a body into a ceiling.
-                let supported = beside_ladder
-                    || ((climbing || on_wall) && (ground_within_reach || climb_free));
+                let organic_target_above =
+                    organic_target.is_some_and(|target| target.z as f32 + 0.5 > pos.0.z + 0.2);
+                // Mount approach is a horizontal, locally preflighted phase.
+                // Do not let the generic ladder lift/magnetism below race it:
+                // with the first orthogonal step complete, magnetism selected
+                // an equally-near different side of the rung and undid the
+                // approach before the second step (REQ-0058 smoke38).
+                let supported = !approaching_mount
+                    && ((climb_free && organic_target_above)
+                        || beside_ladder
+                        || ((climbing || on_wall) && (ground_within_reach || climb_free)));
                 if supported {
                     let head_clear = terrain
                         .get(feet + Vec3::unit_z() * 2)
@@ -2366,9 +5539,8 @@ impl<'a> System<'a> for Sys {
                         // open pit the climber already stands in that
                         // neighbor → no-op; in an interior shaft it pulls
                         // them off the rung into the shaft.
-                        let solid = |p: Vec3<i32>| {
-                            terrain.get(p).map(|b| b.is_solid()).unwrap_or(true)
-                        };
+                        let solid =
+                            |p: Vec3<i32>| terrain.get(p).map(|b| b.is_solid()).unwrap_or(true);
                         let climb_col = [
                             Vec2::new(1, 0),
                             Vec2::new(-1, 0),
@@ -2394,22 +5566,14 @@ impl<'a> System<'a> for Sys {
                         // failing head-clear forever. Standing inside the
                         // pillar footprint → snap to the open climb
                         // column's floor and restart the climb properly.
-                        let on_pillar = terrain
-                            .get(feet)
-                            .ok()
-                            .and_then(|b| b.get_sprite())
+                        let on_pillar = terrain.get(feet).ok().and_then(|b| b.get_sprite())
                             == Some(SpriteKind::Ladder);
                         if on_pillar && let Some(cc) = climb_col {
                             let solid_at = |p: Vec3<i32>| {
-                                terrain
-                                    .get(p)
-                                    .map(|b| b.is_solid())
-                                    .unwrap_or(false)
+                                terrain.get(p).map(|b| b.is_solid()).unwrap_or(false)
                             };
                             let mut sz = cc.z;
-                            while sz > cc.z - 8
-                                && !solid_at(Vec3::new(cc.x, cc.y, sz - 1))
-                            {
+                            while sz > cc.z - 8 && !solid_at(Vec3::new(cc.x, cc.y, sz - 1)) {
                                 sz -= 1;
                             }
                             // 31.1 (CASE-004-MAGNET, B19): the scanned
@@ -2419,16 +5583,11 @@ impl<'a> System<'a> for Sys {
                             // Blocked → hold position; the ledge/belt
                             // machinery stays the recovery path.
                             if !solid_at(Vec3::new(cc.x, cc.y, sz + 1)) {
-                                pos.0 = Vec3::new(
-                                    cc.x as f32 + 0.5,
-                                    cc.y as f32 + 0.5,
-                                    sz as f32,
-                                );
+                                pos.0 = Vec3::new(cc.x as f32 + 0.5, cc.y as f32 + 0.5, sz as f32);
                                 vel.0 = Vec3::zero();
                             }
                         } else if let Some(cc) = climb_col {
-                            let center =
-                                Vec2::new(cc.x as f32 + 0.5, cc.y as f32 + 0.5);
+                            let center = Vec2::new(cc.x as f32 + 0.5, cc.y as f32 + 0.5);
                             let d = center - pos.0.xy();
                             let dist = d.magnitude();
                             if dist > 0.05 {
@@ -2464,9 +5623,7 @@ impl<'a> System<'a> for Sys {
                 // current height. Covers the gauntlet's intermediate tier
                 // crests AND the final rim/plateau dismount (runs 15-17:
                 // drift-vs-gravity at each crest was the residual flake).
-                let solid = |p: Vec3<i32>| {
-                    terrain.get(p).map(|b| b.is_solid()).unwrap_or(false)
-                };
+                let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_solid()).unwrap_or(false);
                 if supported && !solid(feet - Vec3::unit_z()) {
                     // Candidates at CURRENT height and ONE UP: the +1 is
                     // the crest MANTLE (Ben's confirmed live bug + the
@@ -2484,19 +5641,25 @@ impl<'a> System<'a> for Sys {
                                 Vec2::new(0, -1),
                             ]
                             .into_iter()
-                            .map(move |d| {
-                                Vec3::new(feet.x + d.x, feet.y + d.y, feet.z + dz)
-                            })
+                            .map(move |d| Vec3::new(feet.x + d.x, feet.y + d.y, feet.z + dz))
                         })
                         .find(|c| {
-                            !solid(*c)
-                                && !solid(*c + Vec3::unit_z())
-                                && solid(*c - Vec3::unit_z())
+                            !solid(*c) && !solid(*c + Vec3::unit_z()) && solid(*c - Vec3::unit_z())
                         });
                     if let Some(c) = snap {
                         pos.0 = Vec3::new(c.x as f32 + 0.5, c.y as f32 + 0.5, c.z as f32);
                         vel.0 = Vec3::zero();
                     }
+                }
+                if climb_free
+                    && organic_target.is_some()
+                    && !organic_target_above
+                    && target_above != Some(true)
+                {
+                    // Do not retain upward momentum beyond the completed
+                    // route target. The next phase is a horizontal dismount
+                    // onto permanent standable terrain, not free ascent.
+                    vel.0.z = vel.0.z.min(0.0);
                 }
             }
         }
@@ -2521,8 +5684,7 @@ impl<'a> System<'a> for Sys {
         // and excluded). The 60s teleport stays the ultimate backstop.
         {
             let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_solid()).unwrap_or(false);
-            let mut dismount_iter =
-                (&active_jobs, &mut positions, &mut velocities).lend_join();
+            let mut dismount_iter = (&active_jobs, &mut positions, &mut velocities).lend_join();
             while let Some((active, pos, vel)) = dismount_iter.next() {
                 let Some(job) = board.jobs.get(&active.job) else {
                     continue;
@@ -2611,15 +5773,14 @@ impl<'a> System<'a> for Sys {
                     continue;
                 }
                 if let Some(agent) = agent.as_deref_mut() {
-                    agent.rtsim_controller.activity =
-                        Some(common::rtsim::NpcActivity::Goto(
-                            goto.target,
-                            // RUN-0 note: the harness test-goto mover is
-                            // NOT colonist job travel — it keeps the
-                            // fixed walk factor (fixtures measure at a
-                            // known gait).
-                            TRAVEL_SPEED,
-                        ));
+                    agent.rtsim_controller.activity = Some(common::rtsim::NpcActivity::Goto(
+                        goto.target,
+                        // RUN-0 note: the harness test-goto mover is
+                        // NOT colonist job travel — it keeps the
+                        // fixed walk factor (fixtures measure at a
+                        // known gait).
+                        TRAVEL_SPEED,
+                    ));
                 }
                 let dist = if tightdig_enabled() {
                     tightdig_measure(
@@ -2676,10 +5837,8 @@ impl<'a> System<'a> for Sys {
         // R3 fix-2 (WAITING): a position snapshot for the queue-order test
         // (who is closer to a staged anchor) — the upkeep lend_join can't
         // re-join positions mid-iteration.
-        let queue_snapshot: Vec<Vec3<f32>> = (&colonists, &positions)
-            .join()
-            .map(|(_, p)| p.0)
-            .collect();
+        let queue_snapshot: Vec<Vec3<f32>> =
+            (&colonists, &positions).join().map(|(_, p)| p.0).collect();
 
         // ── ZONE-0: mirror activity zones for the agent magnet ───────────
         // (Arbitration cadence; zones are few — a rewrite beats dirty
@@ -2720,16 +5879,12 @@ impl<'a> System<'a> for Sys {
                 .values()
                 .filter(|j| j.kind.is(DesignationKind::Build))
                 .count();
-            let mut build_budget = (queue_snapshot.len()
-                * BUILD_GEN_JOBS_PER_COLONIST)
-                .saturating_sub(pending_build);
+            let mut build_budget =
+                (queue_snapshot.len() * BUILD_GEN_JOBS_PER_COLONIST).saturating_sub(pending_build);
             for (zid, cells) in board.plans.iter() {
                 let mut unfilled = 0usize;
                 for pos in cells {
-                    let filled = terrain
-                        .get(*pos)
-                        .ok()
-                        .is_some_and(|b| b.is_filled());
+                    let filled = terrain.get(*pos).ok().is_some_and(|b| b.is_filled());
                     if filled {
                         continue;
                     }
@@ -2752,9 +5907,7 @@ impl<'a> System<'a> for Sys {
                 let id = board.next_id;
                 board.next_id += 1;
                 board.jobs.insert(id, Job {
-                    kind: common::bastion::JobKind::Designated(
-                        DesignationKind::Build,
-                    ),
+                    kind: common::bastion::JobKind::Designated(DesignationKind::Build),
                     work: DesignationKind::Build.work_type(),
                     pos,
                     skill_floor: 0,
@@ -2781,11 +5934,12 @@ impl<'a> System<'a> for Sys {
                     .flat_map(|(_, cells)| cells.iter().map(|c| c.xy()))
                     .collect();
                 board.built_xy.extend(built);
-                board
-                    .plans
-                    .retain(|(zid, _)| !retired.contains(zid));
+                board.plans.retain(|(zid, _)| !retired.contains(zid));
                 board.plans_completed += retired.len() as u64;
-                info!(plans = retired.len(), "bastion: build plan(s) complete (AUTON-1)");
+                info!(
+                    plans = retired.len(),
+                    "bastion: build plan(s) complete (AUTON-1)"
+                );
             }
             // MINE: dig only what the plan still owes. Supply counts every
             // stone that will eventually serve a build — loose/piled
@@ -2795,9 +5949,7 @@ impl<'a> System<'a> for Sys {
             if generator_enabled(GeneratorKind::Mine) && demand > 0 {
                 let mut supply = 0u64;
                 for pickup in (&pickup_items).join() {
-                    if pickup.item().item_definition_id().itemdef_id()
-                        == Some(MINE_DROP_ITEM)
-                    {
+                    if pickup.item().item_definition_id().itemdef_id() == Some(MINE_DROP_ITEM) {
                         supply += pickup.item().amount() as u64;
                     }
                 }
@@ -2805,10 +5957,7 @@ impl<'a> System<'a> for Sys {
                     supply += inv
                         .slots()
                         .flatten()
-                        .filter(|i| {
-                            i.item_definition_id().itemdef_id()
-                                == Some(MINE_DROP_ITEM)
-                        })
+                        .filter(|i| i.item_definition_id().itemdef_id() == Some(MINE_DROP_ITEM))
                         .map(|i| i.amount() as u64)
                         .sum::<u64>();
                 }
@@ -2827,9 +5976,7 @@ impl<'a> System<'a> for Sys {
                 // structures = no home = nowhere to dig near; skip.
                 let mut sum = Vec3::<i64>::zero();
                 let mut n = 0i64;
-                for (_, r) in
-                    board.stockpiles.iter().chain(board.farms.iter())
-                {
+                for (_, r) in board.stockpiles.iter().chain(board.farms.iter()) {
                     let c = (r.min + r.max) / 2;
                     sum += c.map(|e| e as i64);
                     n += 1;
@@ -2843,16 +5990,13 @@ impl<'a> System<'a> for Sys {
                     // Columns the colony's intent occupies are off-limits
                     // (don't dig under the blueprint, the stockpile, the
                     // plot, or a bed).
-                    let mut skip_xy: std::collections::HashSet<Vec2<i32>> =
-                        board.built_xy.clone();
+                    let mut skip_xy: std::collections::HashSet<Vec2<i32>> = board.built_xy.clone();
                     for (_, cells) in board.plans.iter() {
                         for c in cells {
                             skip_xy.insert(c.xy());
                         }
                     }
-                    for (_, r) in
-                        board.stockpiles.iter().chain(board.farms.iter())
-                    {
+                    for (_, r) in board.stockpiles.iter().chain(board.farms.iter()) {
                         for y in r.min.y..=r.max.y {
                             for x in r.min.x..=r.max.x {
                                 skip_xy.insert(Vec2::new(x, y));
@@ -2866,24 +6010,16 @@ impl<'a> System<'a> for Sys {
                     // first — reachable without access work); the cursor
                     // wraps, so a full sweep re-tries as the world and the
                     // demand evolve.
-                    let slab_z =
-                        anchor.z + MINE_GEN_Z_TOP - board.selfgen_cursor;
-                    board.selfgen_cursor =
-                        (board.selfgen_cursor + 1) % MINE_GEN_Z_SLABS;
+                    let slab_z = anchor.z + MINE_GEN_Z_TOP - board.selfgen_cursor;
+                    board.selfgen_cursor = (board.selfgen_cursor + 1) % MINE_GEN_Z_SLABS;
                     let mut emitted = 0usize;
-                    'scan: for y in (anchor.y - MINE_GEN_RADIUS)
-                        ..=(anchor.y + MINE_GEN_RADIUS)
-                    {
-                        for x in (anchor.x - MINE_GEN_RADIUS)
-                            ..=(anchor.x + MINE_GEN_RADIUS)
-                        {
+                    'scan: for y in (anchor.y - MINE_GEN_RADIUS)..=(anchor.y + MINE_GEN_RADIUS) {
+                        for x in (anchor.x - MINE_GEN_RADIUS)..=(anchor.x + MINE_GEN_RADIUS) {
                             if emitted >= quota {
                                 break 'scan;
                             }
                             let pos = Vec3::new(x, y, slab_z);
-                            if skip_xy.contains(&pos.xy())
-                                || occupied.contains(&pos)
-                            {
+                            if skip_xy.contains(&pos.xy()) || occupied.contains(&pos) {
                                 continue;
                             }
                             let Ok(block) = terrain.get(pos) else {
@@ -2892,10 +6028,7 @@ impl<'a> System<'a> for Sys {
                             // Rock-class only — the colony's mineral
                             // economy (stone), not "any filled block"
                             // (digging up grass for masonry is nonsense).
-                            if !matches!(
-                                block.kind(),
-                                BlockKind::Rock | BlockKind::WeakRock
-                            ) {
+                            if !matches!(block.kind(), BlockKind::Rock | BlockKind::WeakRock) {
                                 continue;
                             }
                             // Exposed = a face a digger can reach (any
@@ -2909,12 +6042,7 @@ impl<'a> System<'a> for Sys {
                                 -Vec3::unit_z(),
                             ]
                             .iter()
-                            .any(|d| {
-                                terrain
-                                    .get(pos + *d)
-                                    .ok()
-                                    .is_some_and(|b| !b.is_filled())
-                            });
+                            .any(|d| terrain.get(pos + *d).ok().is_some_and(|b| !b.is_filled()));
                             if !exposed {
                                 continue;
                             }
@@ -2926,14 +6054,11 @@ impl<'a> System<'a> for Sys {
                                 &common::bastion::ZExtent::default(),
                             )
                             .unwrap_or(slab_z);
-                            let depth =
-                                (surface - slab_z).clamp(0, 255) as u8;
+                            let depth = (surface - slab_z).clamp(0, 255) as u8;
                             let id = board.next_id;
                             board.next_id += 1;
                             board.jobs.insert(id, Job {
-                                kind: common::bastion::JobKind::Designated(
-                                    DesignationKind::Mine,
-                                ),
+                                kind: common::bastion::JobKind::Designated(DesignationKind::Mine),
                                 work: DesignationKind::Mine.work_type(),
                                 pos,
                                 skill_floor: 0,
@@ -2976,25 +6101,19 @@ impl<'a> System<'a> for Sys {
                 .filter(|j| matches!(j.kind, common::bastion::JobKind::Haul { .. }))
                 .count();
             if pending < cap {
-                let occupied: HashSet<Vec3<i32>> =
-                    board.jobs.values().map(|j| j.pos).collect();
-                for (pickup, ipos, iuid) in
-                    (&pickup_items, &positions, &uids).join()
-                {
+                let occupied: HashSet<Vec3<i32>> = board.jobs.values().map(|j| j.pos).collect();
+                for (pickup, ipos, iuid) in (&pickup_items, &positions, &uids).join() {
                     if pending >= cap {
                         break;
                     }
-                    let matched = match pickup.item().item_definition_id().itemdef_id()
-                    {
+                    let matched = match pickup.item().item_definition_id().itemdef_id() {
                         Some(d) if d == MINE_DROP_ITEM => Some(MINE_DROP_ITEM),
                         Some(d) if d == CHOP_DROP_ITEM => Some(CHOP_DROP_ITEM),
                         // FARM (row 46): harvest outputs are colony
                         // stock — hauling them to the stockpile is what
                         // closes the harvest->haul->fetch->re-sow cycle.
                         Some(d) if d == FARM_SEED_ITEM => Some(FARM_SEED_ITEM),
-                        Some(d) if d == FARM_WHEAT_ITEM => {
-                            Some(FARM_WHEAT_ITEM)
-                        },
+                        Some(d) if d == FARM_WHEAT_ITEM => Some(FARM_WHEAT_ITEM),
                         _ => None,
                     };
                     let Some(static_def) = matched else { continue };
@@ -3059,11 +6178,9 @@ impl<'a> System<'a> for Sys {
             // covers orderly paths; this covers death).
             for slot in board.beds.values_mut() {
                 if slot.occupant.is_some_and(|u| {
-                    id_maps.uid_entity(u).is_none_or(|e| {
-                        healths
-                            .get(e)
-                            .is_some_and(|h| h.is_dead || h.should_die())
-                    })
+                    id_maps
+                        .uid_entity(u)
+                        .is_none_or(|e| healths.get(e).is_some_and(|h| h.is_dead || h.should_die()))
                 }) {
                     slot.occupant = None;
                 }
@@ -3086,20 +6203,12 @@ impl<'a> System<'a> for Sys {
                 board.remove_job(id);
             }
             let gather_open = board.jobs.values().any(|j| {
-                j.kind.is(DesignationKind::Gather)
-                    && j.claimed_by.is_none()
-                    && !j.unreachable
+                j.kind.is(DesignationKind::Gather) && j.claimed_by.is_none() && !j.unreachable
             });
             if !gather_open && !board.stockpiles.is_empty() {
                 let mut deposit_runs: Vec<(specs::Entity, JobId)> = Vec::new();
-                for (entity, _, pos, uid, ()) in (
-                    &entities,
-                    &colonists,
-                    &positions,
-                    &uids,
-                    !&active_jobs,
-                )
-                    .join()
+                for (entity, _, pos, uid, ()) in
+                    (&entities, &colonists, &positions, &uids, !&active_jobs).join()
                 {
                     if !is_loaded(entity)
                         || !board
@@ -3116,16 +6225,17 @@ impl<'a> System<'a> for Sys {
                         .min_by_key(|(_, r)| {
                             let c = (r.min + r.max) / 2;
                             let d = c - cell;
-                            (d.x as i64).pow(2)
-                                + (d.y as i64).pow(2)
-                                + (d.z as i64).pow(2)
+                            (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64).pow(2)
                         })
                         .map(|(z, r)| {
-                            (*z, Vec3::new(
-                                (r.min.x + r.max.x) / 2,
-                                (r.min.y + r.max.y) / 2,
-                                r.max.z,
-                            ))
+                            (
+                                *z,
+                                Vec3::new(
+                                    (r.min.x + r.max.x) / 2,
+                                    (r.min.y + r.max.y) / 2,
+                                    r.max.z,
+                                ),
+                            )
                         })
                     else {
                         continue;
@@ -3133,9 +6243,7 @@ impl<'a> System<'a> for Sys {
                     let id = board.next_id;
                     board.next_id += 1;
                     board.jobs.insert(id, Job {
-                        kind: common::bastion::JobKind::DepositRun {
-                            destination: dest,
-                        },
+                        kind: common::bastion::JobKind::DepositRun { destination: dest },
                         work: common::bastion::WorkType::Haul,
                         pos: drop_cell,
                         skill_floor: 0,
@@ -3183,8 +6291,7 @@ impl<'a> System<'a> for Sys {
         // sequential + rng-free. GUARD 4: touches its OWN state
         // only — never stuck_watch.
         {
-            let select_tick =
-                tick.0 % ARBITRATION_INTERVAL as u64 == 1;
+            let select_tick = tick.0 % ARBITRATION_INTERVAL as u64 == 1;
             // Work-availability computed ONCE per selection tick —
             // any claimable non-self job on the board.
             let work_available = select_tick
@@ -3210,27 +6317,22 @@ impl<'a> System<'a> for Sys {
             // rolled five timing-family legs red at once — the AUTON-3
             // gate's own forensics). The rare flee-fire branch acquires
             // ad hoc.
-            let arb_data =
-                select_tick.then(|| rtsim.state().data());
-            let personality4_of =
-                |data: &::rtsim::data::Data, entity: specs::Entity| {
-                    rtsim_entities
-                        .get(entity)
-                        .and_then(|re| data.npcs.get(*re))
-                        .map_or((false, false, false, false), |npc| {
-                            use common::rtsim::PersonalityTrait as PT;
-                            (
-                                npc.personality.is(PT::Adventurous),
-                                npc.personality.is(PT::Worried),
-                                npc.personality.is(PT::Sociable)
-                                    || npc.personality.is(PT::Extroverted),
-                                npc.personality.is(PT::Introverted),
-                            )
-                        })
-                };
-            for (entity, colonist, _uid) in
-                (&entities, &colonists, &uids).join()
-            {
+            let arb_data = select_tick.then(|| rtsim.state().data());
+            let personality4_of = |data: &::rtsim::data::Data, entity: specs::Entity| {
+                rtsim_entities
+                    .get(entity)
+                    .and_then(|re| data.npcs.get(*re))
+                    .map_or((false, false, false, false), |npc| {
+                        use common::rtsim::PersonalityTrait as PT;
+                        (
+                            npc.personality.is(PT::Adventurous),
+                            npc.personality.is(PT::Worried),
+                            npc.personality.is(PT::Sociable) || npc.personality.is(PT::Extroverted),
+                            npc.personality.is(PT::Introverted),
+                        )
+                    })
+            };
+            for (entity, colonist, _uid) in (&entities, &colonists, &uids).join() {
                 if !is_loaded(entity) {
                     continue;
                 }
@@ -3258,8 +6360,7 @@ impl<'a> System<'a> for Sys {
                     continue;
                 }
                 if arbiters.get(entity).is_none() {
-                    let _ = arbiters
-                        .insert(entity, Default::default());
+                    let _ = arbiters.insert(entity, Default::default());
                 }
                 // The Flee signal — vanilla's OWN two trusted field
                 // reads (the Opus Flee ruling): a hostile target on
@@ -3267,17 +6368,15 @@ impl<'a> System<'a> for Sys {
                 // fraction. No spatial query, no rng.
                 let flee_sig = agents.get(entity).is_some_and(|ag| {
                     ag.target.is_some_and(|t| t.hostile)
-                        || healths.get(entity).is_some_and(|h| {
-                            h.fraction() < ag.psyche.flee_health
-                        })
+                        || healths
+                            .get(entity)
+                            .is_some_and(|h| h.fraction() < ag.psyche.flee_health)
                 });
                 let Some(arb) = arbiters.get_mut(entity) else {
                     continue;
                 };
                 // PER-TICK higher-tier preemption.
-                if flee_sig
-                    && arb.current != comp::bastion::Drive::Flee
-                {
+                if flee_sig && arb.current != comp::bastion::Drive::Flee {
                     arb.current = comp::bastion::Drive::Flee;
                     arb.committed_until = time.0 + ARB_COMMIT_SECS;
                     // AUTON-3: the recorded scores are the MODULATED
@@ -3285,10 +6384,7 @@ impl<'a> System<'a> for Sys {
                     // the preemption decision itself unchanged (Flee
                     // fired on the signal, not on the score). Ad-hoc
                     // guard acquisition — flee-fires are rare.
-                    let (adv, wor, soc, intr) = personality4_of(
-                        &rtsim.state().data(),
-                        entity,
-                    );
+                    let (adv, wor, soc, intr) = personality4_of(&rtsim.state().data(), entity);
                     arb.last_scores = comp::bastion::modulated_urgencies(
                         (0.0, URGENCY_FLEE, URGENCY_IDLE),
                         &colonist.0.values,
@@ -3308,8 +6404,7 @@ impl<'a> System<'a> for Sys {
                 }
                 // Same-tier selection at the cadence, committed.
                 if select_tick && time.0 >= arb.committed_until {
-                    let work_sig = active_jobs.contains(entity)
-                        || work_available;
+                    let work_sig = active_jobs.contains(entity) || work_available;
                     // AUTON-3: the flat consts become per-colonist
                     // MODULATED urgencies (the input-swap class — the
                     // selection/commitment/hysteresis machinery below
@@ -3319,9 +6414,7 @@ impl<'a> System<'a> for Sys {
                     // ordering safe for every roll.
                     let (adv, wor, soc, intr) = arb_data
                         .as_ref()
-                        .map_or((false, false, false, false), |d| {
-                            personality4_of(d, entity)
-                        });
+                        .map_or((false, false, false, false), |d| personality4_of(d, entity));
                     let (w, f, i) = comp::bastion::modulated_urgencies(
                         (
                             if work_sig { URGENCY_WORK } else { 0.0 },
@@ -3343,18 +6436,14 @@ impl<'a> System<'a> for Sys {
                         comp::bastion::Drive::Idle
                     };
                     if next != arb.current {
-                        let score_of = |d: comp::bastion::Drive| match d
-                        {
+                        let score_of = |d: comp::bastion::Drive| match d {
                             comp::bastion::Drive::Work => w,
                             comp::bastion::Drive::Flee => f,
                             comp::bastion::Drive::Idle => i,
                         };
-                        if score_of(next)
-                            > score_of(arb.current) + ARB_HYSTERESIS
-                        {
+                        if score_of(next) > score_of(arb.current) + ARB_HYSTERESIS {
                             arb.current = next;
-                            arb.committed_until =
-                                time.0 + ARB_COMMIT_SECS;
+                            arb.committed_until = time.0 + ARB_COMMIT_SECS;
                             switches += 1;
                         }
                     }
@@ -3380,12 +6469,10 @@ impl<'a> System<'a> for Sys {
         //   MATURE (Growth == FARM_GROWTH_MAX)      -> a HARVEST job
         // Dedupe: one live job per target cell (the paint path's own
         // free-item-exploit rule).
-        if tick.0 % ARBITRATION_INTERVAL as u64 == 3 && !board.farms.is_empty()
-        {
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 3 && !board.farms.is_empty() {
             let occupied: std::collections::HashSet<Vec3<i32>> =
                 board.jobs.values().map(|j| j.pos).collect();
-            let mut new_jobs: Vec<(Vec3<i32>, Option<&'static str>)> =
-                Vec::new();
+            let mut new_jobs: Vec<(Vec3<i32>, Option<&'static str>)> = Vec::new();
             let mut stage_ups: Vec<(Vec3<i32>, Block, u8)> = Vec::new();
             let mut evict: Vec<Vec3<i32>> = Vec::new();
             for (_, plot) in board.farms.iter() {
@@ -3408,32 +6495,21 @@ impl<'a> System<'a> for Sys {
                         // silently skipped every empty field cell).
                         match crop.get_sprite() {
                             Some(SpriteKind::WheatYellow) => {
-                                let g = crop
-                                    .get_attr::<Growth>()
-                                    .map(|g| g.0)
-                                    .unwrap_or(0);
+                                let g = crop.get_attr::<Growth>().map(|g| g.0).unwrap_or(0);
                                 if g >= FARM_GROWTH_MAX {
                                     if !occupied.contains(&cpos) {
                                         new_jobs.push((cpos, None));
                                     }
                                 } else if g >= FARM_GROWTH_SOWN {
                                     let ck = (cpos.x, cpos.y, cpos.z);
-                                    let last = board
-                                        .farm_growth
-                                        .get(&ck)
-                                        .copied()
-                                        .unwrap_or(time.0);
+                                    let last =
+                                        board.farm_growth.get(&ck).copied().unwrap_or(time.0);
                                     if time.0 - last >= FARM_STAGE_SECS {
-                                        if let Ok(nb) = crop
-                                            .with_attr(Growth(g + 1))
-                                        {
+                                        if let Ok(nb) = crop.with_attr(Growth(g + 1)) {
                                             stage_ups.push((cpos, nb, g + 1));
                                         }
                                     } else {
-                                        board
-                                            .farm_growth
-                                            .entry(ck)
-                                            .or_insert(time.0);
+                                        board.farm_growth.entry(ck).or_insert(time.0);
                                     }
                                 }
                                 // Growth 0 on a farm cell = a worldgen
@@ -3445,10 +6521,7 @@ impl<'a> System<'a> for Sys {
                                 if ground.kind() == BlockKind::Earth {
                                     // TILLED + empty -> SOW (seeds).
                                     if !occupied.contains(&cpos) {
-                                        new_jobs.push((
-                                            cpos,
-                                            Some(FARM_SEED_ITEM),
-                                        ));
+                                        new_jobs.push((cpos, Some(FARM_SEED_ITEM)));
                                     }
                                 } else if !occupied.contains(&gpos) {
                                     // RAW -> TILL (the ground block).
@@ -3458,12 +6531,8 @@ impl<'a> System<'a> for Sys {
                             Some(_) => {}, // genuinely foreign sprite
                         }
                         // A vanished sprite leaves a stale clock entry.
-                        if matches!(
-                            crop.get_sprite(),
-                            None | Some(SpriteKind::Empty)
-                        ) && board
-                            .farm_growth
-                            .contains_key(&(cpos.x, cpos.y, cpos.z))
+                        if matches!(crop.get_sprite(), None | Some(SpriteKind::Empty))
+                            && board.farm_growth.contains_key(&(cpos.x, cpos.y, cpos.z))
                         {
                             evict.push(cpos);
                         }
@@ -3475,9 +6544,7 @@ impl<'a> System<'a> for Sys {
             }
             for (cpos, nb, g) in stage_ups {
                 block_change.set(cpos, nb);
-                board
-                    .farm_growth
-                    .insert((cpos.x, cpos.y, cpos.z), time.0);
+                board.farm_growth.insert((cpos.x, cpos.y, cpos.z), time.0);
                 if g == FARM_GROWTH_MAX {
                     info!(pos = ?cpos, "bastion: crop MATURE");
                 }
@@ -3492,9 +6559,7 @@ impl<'a> System<'a> for Sys {
                     "bastion: farm job created"
                 );
                 board.jobs.insert(id, Job {
-                    kind: common::bastion::JobKind::Designated(
-                        DesignationKind::Farm,
-                    ),
+                    kind: common::bastion::JobKind::Designated(DesignationKind::Farm),
                     work: common::bastion::WorkType::Farm,
                     pos,
                     skill_floor: 0,
@@ -3533,22 +6598,15 @@ impl<'a> System<'a> for Sys {
             Eat(Uid, common::bastion::ReservationId, Vec3<i32>, &'static str),
             Despond(f64),
         }
-        let mut preempt_pending: Vec<(specs::Entity, Uid, PendingNeed)> =
-            Vec::new();
+        let mut preempt_pending: Vec<(specs::Entity, Uid, PendingNeed)> = Vec::new();
         if tick.0 % ARBITRATION_INTERVAL as u64 == 13 {
             let mood_cfg = common::bastion::MoodConfig::current();
             // AUTON-2 (row 50): personality for the trait-stagger rides
             // the same rtsim read guard the mood pass uses (the :%15==11
             // idiom) — zero new coupling.
             let stagger_data = rtsim.state().data();
-            for (entity, colonist, pos, uid, needs) in (
-                &entities,
-                &colonists,
-                &positions,
-                &uids,
-                &needs_storage,
-            )
-                .join()
+            for (entity, colonist, pos, uid, needs) in
+                (&entities, &colonists, &positions, &uids, &needs_storage).join()
             {
                 if !is_loaded(entity) {
                     continue;
@@ -3558,12 +6616,10 @@ impl<'a> System<'a> for Sys {
                 // clock in the Arrived arm lifts it).
                 use rand::RngExt;
                 if active_jobs.get(entity).is_some_and(|aj| {
-                    board.jobs.get(&aj.job).is_some_and(|j| {
-                        matches!(
-                            j.kind,
-                            common::bastion::JobKind::Despond { .. }
-                        )
-                    })
+                    board
+                        .jobs
+                        .get(&aj.job)
+                        .is_some_and(|j| matches!(j.kind, common::bastion::JobKind::Despond { .. }))
                 }) {
                     continue;
                 }
@@ -3574,10 +6630,7 @@ impl<'a> System<'a> for Sys {
                 // cooldown (one break attempt per window).
                 if let Some(mood) = moods.get(entity) {
                     if mood.0 < mood_cfg.break_minor {
-                        let since = *board
-                            .mood_below_since
-                            .entry(*uid)
-                            .or_insert(time.0);
+                        let since = *board.mood_below_since.entry(*uid).or_insert(time.0);
                         if time.0 - since >= mood_cfg.break_sustain_secs
                             && !board
                                 .preempt_cooldown
@@ -3599,9 +6652,7 @@ impl<'a> System<'a> for Sys {
                             preempt_pending.push((
                                 entity,
                                 *uid,
-                                PendingNeed::Despond(
-                                    time.0 + mood_cfg.despond_secs,
-                                ),
+                                PendingNeed::Despond(time.0 + mood_cfg.despond_secs),
                             ));
                             continue;
                         }
@@ -3623,12 +6674,10 @@ impl<'a> System<'a> for Sys {
                     .and_then(|re| stagger_data.npcs.get(*re))
                     .map_or((false, false), |npc| {
                         (
-                            npc.personality.is(
-                                common::rtsim::PersonalityTrait::Conscientious,
-                            ),
-                            npc.personality.is(
-                                common::rtsim::PersonalityTrait::Neurotic,
-                            ),
+                            npc.personality
+                                .is(common::rtsim::PersonalityTrait::Conscientious),
+                            npc.personality
+                                .is(common::rtsim::PersonalityTrait::Neurotic),
                         )
                     });
                 let mut candidates: Vec<(f32, u8)> = Vec::new();
@@ -3652,9 +6701,8 @@ impl<'a> System<'a> for Sys {
                 {
                     candidates.push((needs.hunger, 1));
                 }
-                candidates.sort_by(|a, b| {
-                    a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
-                });
+                candidates
+                    .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
                 if candidates.is_empty() {
                     continue;
                 }
@@ -3695,9 +6743,7 @@ impl<'a> System<'a> for Sys {
                         })
                         .min_by_key(|(_, ipos, _)| {
                             let c = ipos.0.map(|e| e.floor() as i32) - feet;
-                            (c.x as i64).pow(2)
-                                + (c.y as i64).pow(2)
-                                + (c.z as i64).pow(2)
+                            (c.x as i64).pow(2) + (c.y as i64).pow(2) + (c.z as i64).pow(2)
                         })
                         .map(|(pi, ipos, iuid)| {
                             // The matched def as the job's required_item —
@@ -3710,12 +6756,7 @@ impl<'a> System<'a> for Sys {
                                 .item()
                                 .item_definition_id()
                                 .itemdef_id()
-                                .and_then(|d| {
-                                    FOOD_DEFS
-                                        .iter()
-                                        .find(|f| **f == d)
-                                        .copied()
-                                })
+                                .and_then(|d| FOOD_DEFS.iter().find(|f| **f == d).copied())
                                 .unwrap_or(FOOD_DEFS[0]);
                             (*iuid, ipos.0.map(|e| e.floor() as i32), def)
                         });
@@ -3755,12 +6796,10 @@ impl<'a> System<'a> for Sys {
                 // (the need decays toward the mood floor — the honest
                 // bedless-colony ENDURE, visible via the B7-0 formula).
                 let feet = pos.0.map(|e| e.floor() as i32);
-                let own = colonist.0.owned_bed.filter(|p| {
-                    board
-                        .beds
-                        .get(p)
-                        .is_some_and(|s| s.occupant.is_none())
-                });
+                let own = colonist
+                    .0
+                    .owned_bed
+                    .filter(|p| board.beds.get(p).is_some_and(|s| s.occupant.is_none()));
                 let bed = own.or_else(|| {
                     board
                         .beds
@@ -3768,9 +6807,7 @@ impl<'a> System<'a> for Sys {
                         .filter(|(_, s)| s.occupant.is_none())
                         .min_by_key(|(p, _)| {
                             let d = **p - feet;
-                            (d.x as i64).pow(2)
-                                + (d.y as i64).pow(2)
-                                + (d.z as i64).pow(2)
+                            (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64).pow(2)
                         })
                         .map(|(p, _)| *p)
                 });
@@ -3805,7 +6842,7 @@ impl<'a> System<'a> for Sys {
             (&mut agents).maybe(),
         )
             .lend_join();
-        while let Some((entity, mut colonist, pos, active, agent)) = upkeep_iter.next() {
+        while let Some((entity, mut colonist, pos, active, mut agent)) = upkeep_iter.next() {
             // LOD-1 Loaded-gate: a demoting colonist (mode already flipped,
             // DeleteEvent pending) gets NO travel/progress/COMPLETION —
             // the rtsim tier owns it. The claim sweep releases its claim.
@@ -3823,6 +6860,37 @@ impl<'a> System<'a> for Sys {
                 to_release.push(entity);
                 continue;
             }
+            let is_emergency_access = board.emergency_access_jobs.contains_key(&active.job);
+            let emergency_route_claim_owner = board.emergency_access_jobs.get(&active.job).copied();
+            let route_owned_access = emergency_route_claim_owner.is_some_and(|owner| {
+                uids.get(entity).is_some_and(|uid| {
+                    board.emergency_route_members.get(uid).copied() == Some(owner)
+                })
+            });
+            // REQ-0069: take an immutable proof of the installed route
+            // prefix before borrowing the frontier job mutably.  The proof
+            // is valid only for the route's sole traverser and only while no
+            // other mount transaction owns this member.
+            let partial_route_prefix = is_emergency_access
+                .then(|| {
+                    let uid = uids.get(entity).copied()?;
+                    let owner = board.emergency_access_jobs.get(&active.job).copied()?;
+                    (board.emergency_route_members.get(&uid).copied() == Some(owner)
+                        && board.traversal_queue_head(owner) == Some(uid)
+                        && !board.bastion_traversal_tasks.contains_key(&uid))
+                    .then_some(())?;
+                    let (traversal_kind, route_entry, top_z, completed_jobs) =
+                        emergency_completed_route_prefix(&board, &terrain, owner, active.job)?;
+                    Some((
+                        uid,
+                        owner,
+                        traversal_kind,
+                        route_entry,
+                        top_z,
+                        completed_jobs,
+                    ))
+                })
+                .flatten();
             let Some(job) = board.jobs.get_mut(&active.job) else {
                 // Cancelled out from under the colonist → re-idle.
                 to_release.push(entity);
@@ -3833,8 +6901,15 @@ impl<'a> System<'a> for Sys {
             // `job.pos + (0.5,0.5,1.0)` on-top target exactly; an adjacent
             // stance `(±1,0,0)`/`(0,±1,0)` sends the digger BESIDE a `+1`-gap
             // block it can't stand on top of. Pinned at claim (not re-picked).
-            let target =
-                crate::bastion_actions::approach_target(job.pos, active.stance);
+            let target = if is_emergency_access {
+                // Temporary rescue steps are constructed from the installed
+                // step below. Their generic stance points one block above a
+                // still-missing rung, making a reachable three-block build
+                // appear four blocks away and stall at zero progress.
+                job.pos.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0)
+            } else {
+                crate::bastion_actions::approach_target(job.pos, active.stance)
+            };
             match active.state {
                 ActiveJobState::Traveling => {
                     // ── B6 FETCH LEG (Build material from a stockpile) ──
@@ -3851,10 +6926,9 @@ impl<'a> System<'a> for Sys {
                     {
                         let carrying = job.required_item.is_some_and(|req| {
                             inventories.get(entity).is_some_and(|inv| {
-                                inv.slots().flatten().any(|i| {
-                                    i.item_definition_id().itemdef_id()
-                                        == Some(req)
-                                })
+                                inv.slots()
+                                    .flatten()
+                                    .any(|i| i.item_definition_id().itemdef_id() == Some(req))
                             })
                         });
                         if !carrying {
@@ -3894,35 +6968,30 @@ impl<'a> System<'a> for Sys {
                     // the claimant arrives; without this the zombie job
                     // cycles claim→stuck→unreachable forever. Same predicate
                     // the completion re-validation uses.
-                    let still_wanted = terrain
-                        .get(job.pos)
-                        .ok()
-                        .is_some_and(|b| match job.kind {
-                            // FARM (row 46): job_wanted is the PAINT
-                            // predicate (deliberately false — the trigger
-                            // owns creation); a farm job's validity is
-                            // STATE-DRIVEN and the completion arm
-                            // moot-releases foreign states itself — so
-                            // mid-travel it stays wanted (run-3 find:
-                            // routing Farm through job_wanted mooted
-                            // every job mid-travel into a create/claim/
-                            // drop churn loop, 6729 creations, zero
-                            // completions).
-                            common::bastion::JobKind::Designated(
-                                DesignationKind::Farm,
-                            ) => true,
-                            common::bastion::JobKind::Designated(d) => job_wanted(d, b),
-                            // Haul validity = the ITEM still exists — owned
-                            // by the Haul arm, not the block moot-check.
-                            // DepositRun validity = the ZONE still exists —
-                            // owned by its own Arrived arm. RestAt: the
-                            // BED slot — likewise its own arm.
-                            common::bastion::JobKind::Haul { .. }
-                            | common::bastion::JobKind::DepositRun { .. }
-                            | common::bastion::JobKind::RestAt { .. }
-                            | common::bastion::JobKind::EatFrom { .. }
-                            | common::bastion::JobKind::Despond { .. } => true,
-                        });
+                    let still_wanted = terrain.get(job.pos).ok().is_some_and(|b| match job.kind {
+                        // FARM (row 46): job_wanted is the PAINT
+                        // predicate (deliberately false — the trigger
+                        // owns creation); a farm job's validity is
+                        // STATE-DRIVEN and the completion arm
+                        // moot-releases foreign states itself — so
+                        // mid-travel it stays wanted (run-3 find:
+                        // routing Farm through job_wanted mooted
+                        // every job mid-travel into a create/claim/
+                        // drop churn loop, 6729 creations, zero
+                        // completions).
+                        common::bastion::JobKind::Designated(DesignationKind::Farm) => true,
+                        common::bastion::JobKind::Designated(d) => job_wanted(d, b),
+                        // Haul validity = the ITEM still exists — owned
+                        // by the Haul arm, not the block moot-check.
+                        // DepositRun validity = the ZONE still exists —
+                        // owned by its own Arrived arm. RestAt: the
+                        // BED slot — likewise its own arm.
+                        common::bastion::JobKind::Haul { .. }
+                        | common::bastion::JobKind::DepositRun { .. }
+                        | common::bastion::JobKind::RestAt { .. }
+                        | common::bastion::JobKind::EatFrom { .. }
+                        | common::bastion::JobKind::Despond { .. } => true,
+                    });
                     if !still_wanted {
                         info!(
                             job = active.job,
@@ -3934,6 +7003,25 @@ impl<'a> System<'a> for Sys {
                         to_release.push(entity);
                         continue;
                     }
+                    if uids.get(entity).is_some_and(|uid| {
+                        board
+                            .bastion_traversal_tasks
+                            .get(uid)
+                            .is_some_and(|transaction| {
+                                transaction.purpose
+                                    == BastionTraversalPurpose::ConstructionFrontier(active.job)
+                            })
+                    }) {
+                        // The partial-route transaction is the sole movement
+                        // owner. Preserve the frontier job and claim without
+                        // feeding its travel watchdog or installing a normal
+                        // Goto until route upkeep completes the handoff.
+                        active.stuck_time = 0.0;
+                        if let Some(agent) = agent.as_deref_mut() {
+                            agent.rtsim_controller.activity = None;
+                        }
+                        continue;
+                    }
                     // 3D distance: standing on the surface above a deep job
                     // must NOT count as arrival (the watchdog handles it).
                     // B5.8-E anti-loop: repeated stuck-outs grow this job's
@@ -3941,13 +7029,887 @@ impl<'a> System<'a> for Sys {
                     // colonist eventually WORKS THE BLOCK REMOTELY
                     // (mine-from-below) instead of looping forever on a
                     // spot it can't physically stand at.
-                    let arrive =
-                        ARRIVE_DIST + (job.stuck_strikes.min(3) as f32) * 1.2;
+                    let arrive = (ARRIVE_DIST + (job.stuck_strikes.min(3) as f32) * 1.2)
+                        .max(if is_emergency_access { 6.25 } else { 0.0 });
                     let dist = pos.0.distance(target);
-                    if fetch_steer.is_none() && dist < arrive {
-                        active.state = ActiveJobState::Arrived;
-                        if let Some(agent) = agent {
+                    let actual_feet = pos.0.map(|value| value.floor() as i32);
+                    let physics = physics_states.get(entity);
+                    let body_clear = terrain
+                        .get(actual_feet)
+                        .is_ok_and(|block| !block.is_solid())
+                        && terrain
+                            .get(actual_feet + Vec3::unit_z())
+                            .is_ok_and(|block| !block.is_solid());
+                    let grounded_clear =
+                        physics.is_some_and(|state| state.on_ground.is_some()) && body_clear;
+                    let route_climb_contact = is_emergency_access
+                        && uids.get(entity).is_some_and(|uid| {
+                            let route_owner = board.emergency_access_jobs.get(&active.job).copied();
+                            route_owner.is_some()
+                                && board.emergency_route_members.get(uid).copied() == route_owner
+                                && matches!(
+                                    char_states.get(entity),
+                                    Some(comp::CharacterState::Climb(_))
+                                )
+                                && physics.is_some_and(|state| state.on_wall.is_some())
+                                && body_clear
+                        });
+                    let emergency_arrival_valid =
+                        !is_emergency_access || grounded_clear || route_climb_contact;
+                    let velocity = velocities.get(entity).map(|velocity| velocity.0);
+                    // Reuse the mount transaction's existing 0.2-unit
+                    // stability scale.  This is a stricter work precondition,
+                    // not a wider arrival tolerance: residual travel motion
+                    // must settle before an emergency route may alter terrain.
+                    let route_work_motion_stable = velocity.is_none_or(|velocity| {
+                        velocity.xy().magnitude_squared() <= 0.04 && velocity.z.abs() <= 0.2
+                    });
+                    let emergency_work_stable = !route_owned_access
+                        || route_climb_contact
+                        || (grounded_clear && route_work_motion_stable);
+                    // REQ-0069: remote construction has reached the end of
+                    // its allowance, but the installed ordered prefix is a
+                    // real ladder.  Enter the existing authoritative mount
+                    // transaction instead of releasing the frontier job or
+                    // widening its arrival tolerance.  The job remains
+                    // claimed throughout this bounded handoff.
+                    let frontier_reacquire_owned = uids.get(entity).is_some_and(|uid| {
+                        board.emergency_frontier_reacquire.get(uid) == Some(&active.job)
+                    });
+                    if fetch_steer.is_none()
+                        && (dist >= arrive || frontier_reacquire_owned)
+                        && let Some((
+                            uid,
+                            owner,
+                            traversal_kind,
+                            route_entry,
+                            top_z,
+                            ref completed_jobs,
+                        )) = partial_route_prefix
+                    {
+                        let scale = scales.get(entity).map_or(1.0, |scale| scale.0.min(10.0));
+                        let cylinder = colliders.get(entity).and_then(|collider| {
+                            common_systems::phys::capsule_terrain_cylinder(collider, scale, 0.22)
+                        });
+                        // REQ-0073 starts with evidence, not a new terrain or
+                        // movement rule. Inspect every higher installed rung
+                        // for a real standable recovery cell and report the
+                        // authoritative skill-adjusted climb profile observed
+                        // on this member's preceding Climb state.
+                        let recovery_diagnostic = std::env::var_os("BASTION_EGRESS_DIAG")
+                            .is_some()
+                            .then(|| {
+                                let route_cells: HashSet<Vec3<i32>> = board
+                                    .emergency_access_cells
+                                    .iter()
+                                    .filter_map(|(cell, (route_owner, _))| {
+                                        (*route_owner == owner).then_some(*cell)
+                                    })
+                                    .collect();
+                                board.emergency_route_sequences.get(&owner).map(|sequence| {
+                                    emergency_mid_prefix_anchor_search(
+                                        &terrain,
+                                        pos.0,
+                                        cylinder,
+                                        &route_cells,
+                                        sequence,
+                                        active.job,
+                                    )
+                                })
+                            })
+                            .flatten();
+                        if tick.0 % 30 == 0
+                            && let Some(ref search) = recovery_diagnostic
+                        {
+                            let climb_profile = board.emergency_climb_profiles.get(&uid).copied();
+                            let energy_current =
+                                energies.get(entity).map(|energy| energy.current());
+                            let energy_maximum =
+                                energies.get(entity).map(|energy| energy.maximum());
+                            let nominal_climb_seconds = climb_profile.and_then(|(cost, _)| {
+                                energy_current.map(|energy| energy / cost.max(f32::EPSILON))
+                            });
+                            let nominal_configured_vertical_capacity =
+                                climb_profile.and_then(|(_, speed)| {
+                                    nominal_climb_seconds.map(|secs| secs * speed)
+                                });
+                            let selected_remaining_vertical =
+                                search.selected.map(|anchor| (top_z - anchor.z).max(0));
+                            info!(
+                                tick = tick.0,
+                                uid = uid.0.get(),
+                                owner = owner.0.get(),
+                                frontier_job = active.job,
+                                top_z,
+                                position = ?pos.0,
+                                ?cylinder,
+                                ?climb_profile,
+                                ?energy_current,
+                                ?energy_maximum,
+                                ?nominal_climb_seconds,
+                                ?nominal_configured_vertical_capacity,
+                                ?selected_remaining_vertical,
+                                rung_min_z = ?search.rung_min_z,
+                                rung_max_z = ?search.rung_max_z,
+                                candidates_checked = search.candidates_checked,
+                                route_overlap_rejected = search.route_overlap_rejected,
+                                support_rejected = search.support_rejected,
+                                clearance_rejected = search.clearance_rejected,
+                                sweep_rejected = search.sweep_rejected,
+                                valid_candidates = ?search.valid_candidates,
+                                selected_anchor = ?search.selected,
+                                first_sweep_hit = ?search.first_sweep_hit,
+                                mode = "read_only_existing_anchor_search",
+                                "bastion: partial route mid-prefix recovery diagnostic"
+                            );
+                        }
+                        let saved_entry = board
+                            .emergency_partial_route_entries
+                            .get(&uid)
+                            .copied()
+                            .filter(|entry| {
+                                entry.owner == owner
+                                    && entry.frontier == active.job
+                                    && entry.top_z == top_z
+                            });
+                        let mut route_entry = route_entry;
+                        // REQ-0081: a constructed ladder's stored body lane
+                        // is an off-mesh-link entry, not a beeline target. Use
+                        // the existing bounded A* to commit a supported feet
+                        // corridor, then consume it one post-physics waypoint
+                        // at a time before the mount transaction begins.
+                        if traversal_kind == EmergencyTraversalKind::ConstructedLadder
+                            && saved_entry.is_none()
+                        {
+                            let corridor_matches = board
+                                .emergency_approach_corridors
+                                .get(&uid)
+                                .is_some_and(|corridor| {
+                                    corridor.owner == owner
+                                        && corridor.frontier == active.job
+                                        && corridor.entry == route_entry
+                                });
+                            if !corridor_matches {
+                                board.emergency_approach_corridors.remove(&uid);
+                                let descriptor = board
+                                    .emergency_route_descriptors
+                                    .get(&owner)
+                                    .copied()
+                                    .filter(|descriptor| {
+                                        descriptor.kind == EmergencyTraversalKind::ConstructedLadder
+                                    });
+                                let first_rung = completed_jobs.first().and_then(|first_job| {
+                                    board.emergency_route_sequences.get(&owner).and_then(
+                                        |sequence| {
+                                            sequence.iter().find_map(|(job, cell)| {
+                                                (*job == *first_job).then_some(*cell)
+                                            })
+                                        },
+                                    )
+                                });
+                                let planned_corridor = board
+                                    .emergency_route_approach_corridors
+                                    .get(&owner)
+                                    .cloned();
+                                let corridor_result = descriptor.zip(first_rung).zip(cylinder).map(
+                                    |((descriptor, first_rung), cylinder)| {
+                                        if let Some(corridor) = planned_corridor {
+                                            let hit =
+                                                emergency_validate_constructed_ladder_corridor(
+                                                    &*terrain,
+                                                    pos.0,
+                                                    cylinder,
+                                                    descriptor.entry,
+                                                    &corridor,
+                                                );
+                                            if hit.is_none() {
+                                                (Some((descriptor.entry, corridor)), Vec::new())
+                                            } else {
+                                                (None, vec![(descriptor.entry, hit)])
+                                            }
+                                        } else {
+                                            // A pre-REQ-0082 in-memory route
+                                            // has no planner proof. Keep the
+                                            // bounded runtime validator for
+                                            // compatibility only; every new
+                                            // route stores the branch above.
+                                            emergency_constructed_ladder_corridor_candidates(
+                                                &*terrain, pos.0, cylinder, descriptor, first_rung,
+                                                top_z,
+                                            )
+                                        }
+                                    },
+                                );
+                                let (selected, rejected) =
+                                    corridor_result.unwrap_or_else(|| (None, Vec::new()));
+                                if let Some((entry, waypoints)) = selected {
+                                    if entry != route_entry {
+                                        if let Some(descriptor) =
+                                            board.emergency_route_descriptors.get_mut(&owner)
+                                        {
+                                            descriptor.approach = entry;
+                                            descriptor.entry = entry;
+                                            descriptor.top_anchor.x = entry.x;
+                                            descriptor.top_anchor.y = entry.y;
+                                        }
+                                        board.emergency_route_mounts.insert(owner, entry);
+                                        route_entry = entry;
+                                    }
+                                    board.emergency_approach_corridors.insert(
+                                        uid,
+                                        EmergencyApproachCorridor {
+                                            owner,
+                                            frontier: active.job,
+                                            entry,
+                                            waypoints,
+                                            next_idx: 0,
+                                            started_tick: tick.0,
+                                        },
+                                    );
+                                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                                        let corridor = &board.emergency_approach_corridors[&uid];
+                                        info!(
+                                            tick = tick.0,
+                                            uid = uid.0.get(),
+                                            owner = owner.0.get(),
+                                            frontier_job = active.job,
+                                            entry = ?corridor.entry,
+                                            waypoints = ?corridor.waypoints,
+                                            ?rejected,
+                                            writer = "existing_bastion_full_path",
+                                            "bastion: constructed-ladder approach corridor committed"
+                                        );
+                                    }
+                                } else {
+                                    active.stuck_time = 0.0;
+                                    if let Some(agent) = agent.as_deref_mut() {
+                                        agent.rtsim_controller.activity = None;
+                                        agent.rtsim_controller.clear_path_endpoint();
+                                    }
+                                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some()
+                                        && tick.0 % 30 == 0
+                                    {
+                                        info!(
+                                            tick = tick.0,
+                                            uid = uid.0.get(),
+                                            owner = owner.0.get(),
+                                            frontier_job = active.job,
+                                            descriptor_entry = ?route_entry,
+                                            ?first_rung,
+                                            ?cylinder,
+                                            ?rejected,
+                                            position = ?pos.0,
+                                            reason = "no_reachable_body_lane",
+                                            "bastion: constructed-ladder approach corridor rejected"
+                                        );
+                                    }
+                                    continue;
+                                }
+                            }
+
+                            let corridor_step = board
+                                .emergency_approach_corridors
+                                .get_mut(&uid)
+                                .map(|corridor| {
+                                    route_entry = corridor.entry;
+                                    while corridor.next_idx < corridor.waypoints.len() {
+                                        let waypoint = corridor.waypoints[corridor.next_idx];
+                                        let target = waypoint.map(|value| value as f32)
+                                            + Vec3::new(0.5, 0.5, 0.0);
+                                        let endpoint_hit = cylinder.and_then(|cylinder| {
+                                            if corridor.next_idx == 0 {
+                                                emergency_initial_support_aware_sweep(
+                                                    &*terrain, pos.0, target, cylinder,
+                                                )
+                                            } else {
+                                                common_systems::phys::cylinder_sweep_first_collision(
+                                                    &*terrain, pos.0, target, cylinder,
+                                                )
+                                            }
+                                        });
+                                        if cylinder.is_some()
+                                            && emergency_corridor_endpoint_ready(
+                                                pos.0.xy().distance(target.xy()),
+                                                (pos.0.z - target.z).abs(),
+                                                emergency_corridor_standable(&*terrain, waypoint),
+                                                endpoint_hit.is_none(),
+                                            )
+                                        {
+                                            corridor.next_idx += 1;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                    (
+                                        corridor.entry,
+                                        corridor.next_idx,
+                                        corridor.waypoints.len(),
+                                        corridor.waypoints.get(corridor.next_idx).copied(),
+                                        corridor.started_tick,
+                                    )
+                                });
+                            if let Some((
+                                entry,
+                                next_idx,
+                                waypoint_count,
+                                Some(waypoint),
+                                started_tick,
+                            )) = corridor_step
+                            {
+                                let target =
+                                    waypoint.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+                                let runtime_hit = cylinder.and_then(|cylinder| {
+                                    if next_idx == 0 {
+                                        emergency_initial_support_aware_sweep(
+                                            &*terrain, pos.0, target, cylinder,
+                                        )
+                                    } else {
+                                        common_systems::phys::cylinder_sweep_first_collision(
+                                            &*terrain, pos.0, target, cylinder,
+                                        )
+                                    }
+                                });
+                                if cylinder.is_none()
+                                    || !emergency_corridor_standable(&*terrain, waypoint)
+                                    || runtime_hit.is_some()
+                                {
+                                    board.emergency_approach_corridors.remove(&uid);
+                                    active.stuck_time = 0.0;
+                                    if let Some(agent) = agent.as_deref_mut() {
+                                        agent.rtsim_controller.activity = None;
+                                        agent.rtsim_controller.clear_path_endpoint();
+                                    }
+                                    info!(
+                                        tick = tick.0,
+                                        uid = uid.0.get(),
+                                        owner = owner.0.get(),
+                                        frontier_job = active.job,
+                                        ?entry,
+                                        ?waypoint,
+                                        next_idx,
+                                        waypoint_count,
+                                        ?runtime_hit,
+                                        position = ?pos.0,
+                                        reason = "approach_corridor_edge_stale_or_blocked",
+                                        "bastion: constructed-ladder approach corridor invalidated"
+                                    );
+                                    continue;
+                                }
+                                let previous_corridor_waypoint =
+                                    board.egress_targets.insert(uid, waypoint);
+                                active.stuck_time = 0.0;
+                                active.best_dist = pos.0.distance(target);
+                                active.reset_dist = active.best_dist;
+                                if let Some(agent) = agent.as_deref_mut() {
+                                    // The activity slot is intentionally suppressed between
+                                    // route-owned writer passes, so it cannot identify a target
+                                    // generation. The board's corridor waypoint is the persistent
+                                    // route-owned cursor datum: it changes once when the cursor
+                                    // advances and remains stable across same-waypoint ticks.
+                                    let corridor_target_changed =
+                                        previous_corridor_waypoint != Some(waypoint);
+                                    if corridor_target_changed {
+                                        // REQ-0085: the corridor is a new route-owned movement
+                                        // target. Do not let no-progress samples collected for
+                                        // the previous activity immediately rotate this target's
+                                        // correct Chaser bearing. This clears only the stuck
+                                        // observation window; the normal Chaser route search and
+                                        // fresh-history stuck recovery remain authoritative.
+                                        agent.chaser.rebase_stuck_history();
+                                    }
+                                    let writer_diag = std::env::var("BASTION_GOTO_WRITER_DIAG_UID")
+                                        .ok()
+                                        .and_then(|value| value.parse::<u64>().ok())
+                                        == Some(uid.0.get());
+                                    if writer_diag {
+                                        let cached_route = agent.chaser.get_route();
+                                        info!(
+                                            tick = tick.0,
+                                            uid = uid.0.get(),
+                                            owner = owner.0.get(),
+                                            frontier_job = active.job,
+                                            position = ?pos.0,
+                                            previous_activity = ?agent.rtsim_controller.activity,
+                                            new_goto_target = ?target,
+                                            corridor_entry = ?entry,
+                                            corridor_waypoint = ?waypoint,
+                                            corridor_next_idx = next_idx,
+                                            corridor_waypoint_count = waypoint_count,
+                                            ?previous_corridor_waypoint,
+                                            chaser_last_target = ?agent.chaser.last_target(),
+                                            chaser_route_target = ?agent.chaser.route_target(),
+                                            chaser_route_complete = ?agent.chaser.route_is_complete(),
+                                            chaser_route_next = ?cached_route.map(|route| route.next_idx()),
+                                            chaser_route_end = ?cached_route
+                                                .and_then(|route| route.get_path().end().copied()),
+                                            chaser_route_len = ?cached_route
+                                                .map(|route| route.get_path().len()),
+                                            chaser_state = ?agent.chaser.state(),
+                                            corridor_target_changed,
+                                            stuck_history_rebased = corridor_target_changed,
+                                            writer = "bastion_jobs_corridor_handoff",
+                                            explicit_agent_to_bastion_jobs_dependency = false,
+                                            "bastion: route-owned corridor goto replacement"
+                                        );
+                                    }
+                                    agent.rtsim_controller.set_goto_with_endpoint(
+                                        target,
+                                        TRAVEL_SPEED,
+                                        EMERGENCY_CORRIDOR_ENDPOINT_TOLERANCE,
+                                    );
+                                }
+                                if std::env::var_os("BASTION_EGRESS_DIAG").is_some()
+                                    && tick.0 % 30 == 0
+                                {
+                                    info!(
+                                        tick = tick.0,
+                                        uid = uid.0.get(),
+                                        owner = owner.0.get(),
+                                        frontier_job = active.job,
+                                        ?entry,
+                                        ?waypoint,
+                                        next_idx,
+                                        waypoint_count,
+                                        started_tick,
+                                        position = ?pos.0,
+                                        writer = "route_owned_corridor_goto",
+                                        "bastion: constructed-ladder approach corridor advancing"
+                                    );
+                                }
+                                continue;
+                            }
+                            board.emergency_approach_corridors.remove(&uid);
+                            if let Some(agent) = agent.as_deref_mut() {
+                                agent.rtsim_controller.clear_path_endpoint();
+                            }
+                        }
+                        // REQ-0079: NaturalShaft is an explicit two-segment
+                        // traversal link. Ordinary Goto owns only the proven
+                        // supported approach anchor; the route transaction may
+                        // target the shaft entry only after that anchor is
+                        // reached. This prevents a direct Goto/sweep across an
+                        // obstruction that the planner never intended to mine.
+                        if traversal_kind == EmergencyTraversalKind::NaturalShaft
+                            && saved_entry.is_none()
+                        {
+                            let descriptor = board
+                                .emergency_route_descriptors
+                                .get(&owner)
+                                .copied()
+                                .filter(|descriptor| {
+                                    descriptor.kind == EmergencyTraversalKind::NaturalShaft
+                                });
+                            let approach = descriptor.map(|descriptor| descriptor.approach);
+                            let approach_target = approach.map(|approach| {
+                                approach.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0)
+                            });
+                            let approach_supported = approach.is_some_and(|approach| {
+                                terrain
+                                    .get(approach - Vec3::unit_z())
+                                    .is_ok_and(|block| block.is_solid())
+                            });
+                            let approach_clear = approach.is_some_and(|approach| {
+                                terrain.get(approach).is_ok_and(|block| !block.is_solid())
+                                    && terrain
+                                        .get(approach + Vec3::unit_z())
+                                        .is_ok_and(|block| !block.is_solid())
+                            });
+                            let approach_hit = cylinder.and_then(|cylinder| {
+                                approach_target.and_then(|target| {
+                                    common_systems::phys::cylinder_sweep_first_collision(
+                                        &*terrain, pos.0, target, cylinder,
+                                    )
+                                })
+                            });
+                            let approach_distance = approach_target
+                                .map_or(f32::INFINITY, |target| pos.0.distance(target));
+                            if descriptor.is_none()
+                                || cylinder.is_none()
+                                || !approach_supported
+                                || !approach_clear
+                                || approach_hit.is_some()
+                            {
+                                active.stuck_time = 0.0;
+                                if let Some(agent) = agent.as_deref_mut() {
+                                    agent.rtsim_controller.activity = None;
+                                }
+                                if std::env::var_os("BASTION_EGRESS_DIAG").is_some()
+                                    && tick.0 % 30 == 0
+                                {
+                                    info!(
+                                        tick = tick.0,
+                                        uid = uid.0.get(),
+                                        owner = owner.0.get(),
+                                        frontier_job = active.job,
+                                        ?approach,
+                                        approach_supported,
+                                        approach_clear,
+                                        ?cylinder,
+                                        ?approach_hit,
+                                        position = ?pos.0,
+                                        reason = "natural_shaft_approach_stale_or_blocked",
+                                        "bastion: partial natural-shaft approach rejected"
+                                    );
+                                }
+                                continue;
+                            }
+                            if approach_distance > 1.25 {
+                                let approach = approach.expect("validated above");
+                                let target = approach_target.expect("validated above");
+                                board.egress_targets.insert(uid, approach);
+                                active.stuck_time = 0.0;
+                                active.best_dist = approach_distance;
+                                active.reset_dist = approach_distance;
+                                if let Some(agent) = agent.as_deref_mut() {
+                                    agent.rtsim_controller.activity = Some(
+                                        common::rtsim::NpcActivity::Goto(target, TRAVEL_SPEED),
+                                    );
+                                }
+                                if std::env::var_os("BASTION_EGRESS_DIAG").is_some()
+                                    && tick.0 % 30 == 0
+                                {
+                                    info!(
+                                        tick = tick.0,
+                                        uid = uid.0.get(),
+                                        owner = owner.0.get(),
+                                        frontier_job = active.job,
+                                        ?approach,
+                                        approach_distance,
+                                        ?cylinder,
+                                        position = ?pos.0,
+                                        writer = "npc_activity_goto",
+                                        "bastion: partial natural-shaft approaching descriptor anchor"
+                                    );
+                                }
+                                continue;
+                            }
+                        }
+                        let (selected_entry_cell, first_entry_hit) = match traversal_kind {
+                            EmergencyTraversalKind::ConstructedLadder => {
+                                emergency_partial_route_entry(
+                                    &terrain,
+                                    pos.0,
+                                    cylinder,
+                                    route_entry,
+                                )
+                            },
+                            EmergencyTraversalKind::NaturalShaft => board
+                                .emergency_route_descriptors
+                                .get(&owner)
+                                .copied()
+                                .map_or((None, None), |descriptor| {
+                                    emergency_natural_shaft_entry(
+                                        &terrain, pos.0, cylinder, descriptor,
+                                    )
+                                }),
+                            EmergencyTraversalKind::CarvedStair => (None, None),
+                        };
+                        let selected_entry = saved_entry.or_else(|| {
+                            selected_entry_cell.map(|entry| EmergencyPartialRouteEntry {
+                                owner,
+                                frontier: active.job,
+                                entry,
+                                top_z,
+                                started_tick: tick.0,
+                            })
+                        });
+                        let Some(entry_record) = selected_entry else {
+                            active.stuck_time = 0.0;
+                            if let Some(agent) = agent.as_deref_mut() {
+                                agent.rtsim_controller.activity = None;
+                            }
+                            if std::env::var_os("BASTION_EGRESS_DIAG").is_some() && tick.0 % 30 == 0
+                            {
+                                info!(
+                                    tick = tick.0,
+                                    uid = uid.0.get(),
+                                    owner = owner.0.get(),
+                                    frontier_job = active.job,
+                                    ?completed_jobs,
+                                    traversal_kind = ?traversal_kind,
+                                    route_entry = ?route_entry,
+                                    top_z,
+                                    ?cylinder,
+                                    ?first_entry_hit,
+                                    position = ?pos.0,
+                                    reason = "partial_route_blocked",
+                                    "bastion: partial route has no validated traversal entry"
+                                );
+                            }
+                            continue;
+                        };
+                        board
+                            .emergency_partial_route_entries
+                            .insert(uid, entry_record);
+                        let entry_target =
+                            entry_record.entry.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+                        let entry_hit = cylinder.and_then(|cylinder| {
+                            common_systems::phys::cylinder_sweep_first_collision(
+                                &*terrain,
+                                pos.0,
+                                entry_target,
+                                cylinder,
+                            )
+                        });
+                        let entry_distance = pos.0.distance(entry_target);
+                        let entry_valid = cylinder.is_some()
+                            && entry_hit.is_none()
+                            && terrain
+                                .get(entry_record.entry - Vec3::unit_z())
+                                .is_ok_and(|block| block.is_solid())
+                            && terrain
+                                .get(entry_record.entry)
+                                .is_ok_and(|block| !block.is_solid())
+                            && terrain
+                                .get(entry_record.entry + Vec3::unit_z())
+                                .is_ok_and(|block| !block.is_solid());
+                        if !entry_valid {
+                            board.emergency_partial_route_entries.remove(&uid);
+                            board.emergency_approach_corridors.remove(&uid);
+                            active.stuck_time = 0.0;
+                            if let Some(agent) = agent.as_deref_mut() {
+                                agent.rtsim_controller.activity = None;
+                            }
+                            info!(
+                                tick = tick.0,
+                                uid = uid.0.get(),
+                                owner = owner.0.get(),
+                                frontier_job = active.job,
+                                entry = ?entry_record.entry,
+                                ?entry_hit,
+                                frontier_reacquire_owned,
+                                reason = "partial_route_entry_invalidated",
+                                "bastion: partial route traversal entry rejected"
+                            );
+                            continue;
+                        }
+                        if entry_distance > 1.25 {
+                            board.egress_targets.insert(uid, entry_record.entry);
+                            active.stuck_time = 0.0;
+                            active.best_dist = entry_distance;
+                            active.reset_dist = entry_distance;
+                            if let Some(agent) = agent.as_deref_mut() {
+                                agent.rtsim_controller.activity = Some(
+                                    common::rtsim::NpcActivity::Goto(entry_target, TRAVEL_SPEED),
+                                );
+                            }
+                            if std::env::var_os("BASTION_EGRESS_DIAG").is_some() && tick.0 % 30 == 0
+                            {
+                                info!(
+                                    tick = tick.0,
+                                    uid = uid.0.get(),
+                                    owner = owner.0.get(),
+                                    frontier_job = active.job,
+                                    ?completed_jobs,
+                                    entry = ?entry_record.entry,
+                                    entry_distance,
+                                    ?cylinder,
+                                    position = ?pos.0,
+                                    writer = "npc_activity_goto",
+                                    "bastion: partial route approaching validated traversal entry"
+                                );
+                            }
+                            continue;
+                        }
+                        let route_energy_ready = energies.get(entity).is_none_or(|energy| {
+                            // REQ-0071: after a contact/energy abort, recover at
+                            // the real supported entry instead of immediately
+                            // consuming the remainder in another climb attempt.
+                            // Full is an existing component invariant, not a new
+                            // gameplay energy threshold.
+                            energy.current() >= energy.maximum()
+                        });
+                        if grounded_clear
+                            && route_energy_ready
+                            && let Some(descriptor) =
+                                board.emergency_route_descriptors.get(&owner).copied()
+                        {
+                            board
+                                .bastion_traversal_tasks
+                                .insert(uid, BastionTraversalTask {
+                                    link_id: owner.0.get(),
+                                    terrain_revision: emergency_route_terrain_revision(
+                                        &terrain, descriptor,
+                                    ),
+                                    reserved_member: uid,
+                                    entry: descriptor.entry,
+                                    exit: descriptor.dismount,
+                                    owner,
+                                    purpose: BastionTraversalPurpose::ConstructionFrontier(
+                                        active.job,
+                                    ),
+                                    traversal_kind,
+                                    mount: entry_record.entry,
+                                    top_z,
+                                    phase: if traversal_kind
+                                        == EmergencyTraversalKind::ConstructedLadder
+                                    {
+                                        BastionTraversalPhase::QueuedForLink
+                                    } else {
+                                        BastionTraversalPhase::LinkApproach
+                                    },
+                                    started_tick: tick.0,
+                                    phase_tick: tick.0,
+                                    last_progress_tick: tick.0,
+                                    stable_samples: 0,
+                                    best_z: pos.0.z,
+                                    best_exit_distance: f32::INFINITY,
+                                    exit_target: None,
+                                    exit_started_tick: 0,
+                                    exit_stable_samples: 0,
+                                    abort_reason: None,
+                                    ladder_contact: None,
+                                    wall_contact: None,
+                                    traversal_started_tick: 0,
+                                    stable_window_started_tick: 0,
+                                    last_stable_sample_tick: 0,
+                                });
+                            active.stuck_time = 0.0;
+                            active.best_dist = dist;
+                            active.reset_dist = dist;
+                            board.emergency_partial_route_entries.remove(&uid);
+                            board.emergency_approach_corridors.remove(&uid);
+                            board.emergency_frontier_reacquire.remove(&uid);
+                            board.egress_targets.remove(&uid);
+                            if let Some(agent) = agent.as_deref_mut() {
+                                agent.rtsim_controller.activity = None;
+                            }
+                            info!(
+                                tick = tick.0,
+                                uid = uid.0.get(),
+                                owner = owner.0.get(),
+                                frontier_job = active.job,
+                                ?completed_jobs,
+                                entry = ?entry_record.entry,
+                                entry_distance,
+                                top_z,
+                                ?cylinder,
+                                position = ?pos.0,
+                                distance = dist,
+                                selected_phase = "Approach",
+                                ordinary_arrival_suppressed = frontier_reacquire_owned,
+                                "bastion: partial emergency route traversal started"
+                            );
+                            continue;
+                        }
+                        active.stuck_time = 0.0;
+                        if let Some(agent) = agent.as_deref_mut() {
                             agent.rtsim_controller.activity = None;
+                        }
+                        if grounded_clear
+                            && !route_energy_ready
+                            && std::env::var_os("BASTION_EGRESS_DIAG").is_some()
+                            && tick.0 % 30 == 0
+                        {
+                            info!(
+                                tick = tick.0,
+                                uid = uid.0.get(),
+                                owner = owner.0.get(),
+                                frontier_job = active.job,
+                                entry = ?entry_record.entry,
+                                energy = energies.get(entity).map(|energy| energy.current()),
+                                energy_max = energies.get(entity).map(|energy| energy.maximum()),
+                                reason = "partial_route_energy_recovery",
+                                writer = "authoritative_idle_energy_regen",
+                                "bastion: partial route waiting for existing energy recovery"
+                            );
+                        }
+                        continue;
+                    }
+                    if route_owned_access
+                        && fetch_steer.is_none()
+                        && dist < arrive
+                        && (!emergency_arrival_valid || !emergency_work_stable)
+                    {
+                        // Clearing Agent activity only after declaring
+                        // Arrived is too late when the prior Goto still has
+                        // locomotion in flight. Keep the existing claim,
+                        // release that intent, and let normal physics/Stand
+                        // settle the body before terrain work begins.
+                        if let Some(agent) = agent.as_deref_mut() {
+                            agent.rtsim_controller.activity = None;
+                        }
+                        if let Some(controller) = controllers.get_mut(entity) {
+                            controller.inputs.move_dir = Vec2::zero();
+                            controller.inputs.move_z = 0.0;
+                            if !route_climb_contact {
+                                controller.push_action(comp::ControlAction::Stand);
+                            }
+                        }
+                        active.stuck_time = 0.0;
+                        if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                            info!(
+                                tick = tick.0,
+                                uid = uids.get(entity).map(|uid| uid.0.get()),
+                                owner = emergency_route_claim_owner.map(|owner| owner.0.get()),
+                                job = active.job,
+                                job_pos = ?job.pos,
+                                actual_pos = ?pos.0,
+                                ?velocity,
+                                dist,
+                                grounded_clear,
+                                route_climb_contact,
+                                route_work_motion_stable,
+                                writer_before = "ordinary_job_travel",
+                                writer_after = "route_owned_stand_settle",
+                                activity_cleared = true,
+                                ordinary_arrival_suppressed = true,
+                                reason = if emergency_arrival_valid {
+                                    "residual_motion"
+                                } else {
+                                    "unsupported_or_contact_lost"
+                                },
+                                "bastion: emergency access arrival waiting for stable route ownership"
+                            );
+                        }
+                        continue;
+                    }
+                    if fetch_steer.is_none()
+                        && dist < arrive
+                        && emergency_arrival_valid
+                        && emergency_work_stable
+                    {
+                        if is_emergency_access && std::env::var_os("BASTION_EGRESS_DIAG").is_some()
+                        {
+                            let velocity = velocities.get(entity).map(|vel| vel.0);
+                            info!(
+                                tick = tick.0,
+                                uid = uids.get(entity).map(|uid| uid.0.get()),
+                                job = active.job,
+                                job_pos = ?job.pos,
+                                actual_pos = ?pos.0,
+                                ?target,
+                                dist,
+                                arrive,
+                                feet = ?actual_feet,
+                                on_ground = physics.is_some_and(|state| state.on_ground.is_some()),
+                                on_wall = ?physics.and_then(|state| state.on_wall),
+                                grounded_clear,
+                                route_climb_contact,
+                                ?velocity,
+                                support_filled = terrain
+                                    .get(actual_feet - Vec3::unit_z())
+                                    .is_ok_and(|block| block.is_filled()),
+                                body_filled = terrain
+                                    .get(actual_feet)
+                                    .is_ok_and(|block| block.is_filled()),
+                                head_filled = terrain
+                                    .get(actual_feet + Vec3::unit_z())
+                                    .is_ok_and(|block| block.is_filled()),
+                                "bastion: emergency access job accepted remote arrival"
+                            );
+                        }
+                        active.state = ActiveJobState::Arrived;
+                        if let Some(agent) = agent.as_deref_mut() {
+                            agent.rtsim_controller.activity = None;
+                        }
+                        if route_owned_access
+                            && grounded_clear
+                            && let Some(controller) = controllers.get_mut(entity)
+                        {
+                            controller.inputs.move_dir = Vec2::zero();
+                            controller.inputs.move_z = 0.0;
+                            controller.push_action(comp::ControlAction::Stand);
                         }
                         info!(
                             job = active.job,
@@ -3955,7 +7917,69 @@ impl<'a> System<'a> for Sys {
                             "bastion: colonist arrived at job site, working (B5)"
                         );
                     } else {
+                        if is_emergency_access
+                            && fetch_steer.is_none()
+                            && dist < arrive
+                            && !emergency_arrival_valid
+                            && std::env::var_os("BASTION_EGRESS_DIAG").is_some()
+                        {
+                            info!(
+                                tick = tick.0,
+                                uid = uids.get(entity).map(|uid| uid.0.get()),
+                                job = active.job,
+                                job_pos = ?job.pos,
+                                actual_pos = ?pos.0,
+                                feet = ?actual_feet,
+                                dist,
+                                arrive,
+                                on_ground = physics.is_some_and(|state| state.on_ground.is_some()),
+                                on_wall = ?physics.and_then(|state| state.on_wall),
+                                grounded_clear,
+                                route_climb_contact,
+                                reason = "unsupported_airborne",
+                                "bastion: emergency access job arrival deferred"
+                            );
+                        }
                         // B5.8: STAGED ROUTING through access anchors — an
+                        if route_owned_access {
+                            // A route-owned access claim cannot fall through
+                            // to ordinary job Goto/anchor/magnetism. The
+                            // validated prefix transaction above owns ascent;
+                            // otherwise retain the claim and wait for an
+                            // authoritative supported/contact handoff.
+                            if let Some(agent) = agent.as_deref_mut() {
+                                agent.rtsim_controller.activity = None;
+                            }
+                            if let Some(controller) = controllers.get_mut(entity) {
+                                controller.inputs.move_dir = Vec2::zero();
+                                controller.inputs.move_z = 0.0;
+                                if !route_climb_contact {
+                                    controller.push_action(comp::ControlAction::Stand);
+                                }
+                            }
+                            active.stuck_time = 0.0;
+                            if std::env::var_os("BASTION_EGRESS_DIAG").is_some() && tick.0 % 30 == 0
+                            {
+                                info!(
+                                    tick = tick.0,
+                                    uid = uids.get(entity).map(|uid| uid.0.get()),
+                                    owner = emergency_route_claim_owner
+                                        .map(|owner| owner.0.get()),
+                                    job = active.job,
+                                    job_pos = ?job.pos,
+                                    actual_pos = ?pos.0,
+                                    ?velocity,
+                                    dist,
+                                    grounded_clear,
+                                    route_climb_contact,
+                                    activity_cleared = true,
+                                    ordinary_goto_suppressed = true,
+                                    reason = "route_owned_waiting_for_valid_handoff",
+                                    "bastion: emergency access ordinary travel suppressed"
+                                );
+                            }
+                            continue;
+                        }
                         // ascent beyond this colonist's reach steers to the
                         // nearest registered vertical link (ladder base)
                         // first; the climb assist does the vertical leg.
@@ -3966,8 +7990,7 @@ impl<'a> System<'a> for Sys {
                         // cause; the graph itself is proven by the
                         // bastion_vertical_tests).
                         let feet = pos.0.map(|e| e.floor() as i32);
-                        let reach =
-                            2 + colonist.0.skills.climbing.level.min(1) as i32;
+                        let reach = 2 + colonist.0.skills.climbing.level.min(1) as i32;
                         let over_reach = job.pos.z - feet.z > reach;
                         // FR15: the anchor lookup is HOISTED so the
                         // no-anchor case can fall through to the committed
@@ -3981,10 +8004,7 @@ impl<'a> System<'a> for Sys {
                                 .filter(|a| {
                                     a.z >= feet.z - 2
                                         && a.z <= job.pos.z + 2
-                                        && a.xy()
-                                            .map(|e| e as f32)
-                                            .distance(pos.0.xy())
-                                            < 24.0
+                                        && a.xy().map(|e| e as f32).distance(pos.0.xy()) < 24.0
                                 })
                                 .min_by(|a, b| {
                                     let da = a.xy().map(|e| e as f32).distance(pos.0.xy());
@@ -4046,11 +8066,10 @@ impl<'a> System<'a> for Sys {
                             // (bastion_full_path, inert since the revert),
                             // waypoint-by-waypoint; None/exhausted → the
                             // plain beeline target (pre-block behavior).
-                            let stale = board.path_cache.get(&u).is_none_or(
-                                |(_, _, for_t)| {
-                                    for_t.distance_squared(target) > 1.0
-                                },
-                            );
+                            let stale = board
+                                .path_cache
+                                .get(&u)
+                                .is_none_or(|(_, _, for_t)| for_t.distance_squared(target) > 1.0);
                             if stale {
                                 let cfg = common::path::TraversalConfig {
                                     node_tolerance: 1.5,
@@ -4074,15 +8093,10 @@ impl<'a> System<'a> for Sys {
                                     search_allowed: true,
                                 };
                                 match common::path::bastion_full_path(
-                                    &*terrain,
-                                    pos.0,
-                                    target,
-                                    &cfg,
+                                    &*terrain, pos.0, target, &cfg,
                                 ) {
                                     Some(wps) if !wps.is_empty() => {
-                                        board
-                                            .path_cache
-                                            .insert(u, (wps, 0, target));
+                                        board.path_cache.insert(u, (wps, 0, target));
                                     },
                                     _ => {
                                         board.path_cache.remove(&u);
@@ -4091,12 +8105,9 @@ impl<'a> System<'a> for Sys {
                             }
                             let mut steer = target;
                             let mut exhausted = false;
-                            if let Some((wps, idx, _)) =
-                                board.path_cache.get_mut(&u)
-                            {
+                            if let Some((wps, idx, _)) = board.path_cache.get_mut(&u) {
                                 while *idx < wps.len() {
-                                    let wp = wps[*idx].map(|e| e as f32)
-                                        + Vec3::new(0.5, 0.5, 0.0);
+                                    let wp = wps[*idx].map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
                                     if pos.0.xy().distance(wp.xy()) < 1.2
                                         && (pos.0.z - wp.z).abs() < 2.0
                                     {
@@ -4106,8 +8117,7 @@ impl<'a> System<'a> for Sys {
                                     }
                                 }
                                 if *idx < wps.len() {
-                                    steer = wps[*idx].map(|e| e as f32)
-                                        + Vec3::new(0.5, 0.5, 0.0);
+                                    steer = wps[*idx].map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
                                 } else {
                                     // Path walked out — beeline the last
                                     // leg (arrive owns the rest).
@@ -4163,7 +8173,7 @@ impl<'a> System<'a> for Sys {
                                 })
                             {
                                 active.state = ActiveJobState::Waiting;
-                                if let Some(agent) = agent {
+                                if let Some(agent) = agent.as_deref_mut() {
                                     agent.rtsim_controller.activity = None;
                                 }
                                 continue;
@@ -4185,16 +8195,18 @@ impl<'a> System<'a> for Sys {
                                 | common::bastion::JobKind::Despond { .. }
                         ) || arbiters
                             .get(entity)
-                            .is_none_or(|a| {
-                                a.current == comp::bastion::Drive::Work
-                            });
-                        if let Some(agent) = agent
+                            .is_none_or(|a| a.current == comp::bastion::Drive::Work);
+                        if let Some(agent) = agent.as_deref_mut()
                             && auton_travel_ok
                         {
                             agent.rtsim_controller.activity =
                                 Some(common::rtsim::NpcActivity::Goto(
                                     steer,
-                                    if colonist.0.running { RUN_SPEED } else { TRAVEL_SPEED },
+                                    if colonist.0.running {
+                                        RUN_SPEED
+                                    } else {
+                                        TRAVEL_SPEED
+                                    },
                                 ));
                         }
                         // Watchdog: distance to the CURRENT steer target
@@ -4215,8 +8227,7 @@ impl<'a> System<'a> for Sys {
                             let committed_active = anchor_steer.is_none()
                                 && fetch_steer.is_none()
                                 && board.path_cache.contains_key(&u);
-                            let path_idx =
-                                board.path_cache.get(&u).map(|(_, i, _)| *i);
+                            let path_idx = board.path_cache.get(&u).map(|(_, i, _)| *i);
                             tightdig_measure(
                                 &mut board.progress_watch,
                                 &mut board.last_steer,
@@ -4306,8 +8317,7 @@ impl<'a> System<'a> for Sys {
                                 if !active.soft_granted && blocker_near {
                                     active.soft_granted = true;
                                     active.stuck_time = 0.0;
-                                    colonist.0.soft_until =
-                                        time.0 + SOFT_GRACE_SECS;
+                                    colonist.0.soft_until = time.0 + SOFT_GRACE_SECS;
                                     continue;
                                 }
                                 // B6 SOFT-0 QUEUE RELEASE (second+ timeout,
@@ -4334,13 +8344,46 @@ impl<'a> System<'a> for Sys {
                                 // pre-fix behavior for direct steers).
                                 if staged_at_anchor {
                                     let feet = pos.0.map(|e| e.floor() as i32);
-                                    let reach = 2
-                                        + colonist.0.skills.climbing.level.min(1)
-                                            as i32;
+                                    let reach = 2 + colonist.0.skills.climbing.level.min(1) as i32;
                                     churn_events.push((entity, pos.0, feet, reach));
                                     job.claimed_by = None;
                                     to_release.push(entity);
                                     continue;
+                                }
+                                if is_emergency_access
+                                    && std::env::var_os("BASTION_EGRESS_DIAG").is_some()
+                                {
+                                    let physics = physics_states.get(entity);
+                                    let velocity = velocities.get(entity).map(|vel| vel.0);
+                                    let route_owner = board
+                                        .emergency_access_jobs
+                                        .get(&active.job)
+                                        .map(|owner| owner.0.get());
+                                    let mut remaining: Vec<_> = board
+                                        .emergency_access_jobs
+                                        .iter()
+                                        .filter_map(|(id, owner)| {
+                                            (Some(owner.0.get()) == route_owner).then_some(*id)
+                                        })
+                                        .collect();
+                                    remaining.sort_unstable();
+                                    info!(
+                                        tick = tick.0,
+                                        uid = uids.get(entity).map(|uid| uid.0.get()),
+                                        ?route_owner,
+                                        job = active.job,
+                                        job_pos = ?job.pos,
+                                        actual_pos = ?pos.0,
+                                        ?target,
+                                        sdist,
+                                        stuck_time = active.stuck_time,
+                                        on_ground = physics
+                                            .is_some_and(|state| state.on_ground.is_some()),
+                                        on_wall = ?physics.and_then(|state| state.on_wall),
+                                        ?velocity,
+                                        ?remaining,
+                                        "bastion: emergency access job travel timeout"
+                                    );
                                 }
                                 job.claimed_by = None;
                                 // B5.8-E: strike — grows the remote-work
@@ -4356,8 +8399,7 @@ impl<'a> System<'a> for Sys {
                                 // exact-conservation invariants from stray
                                 // spoil).
                                 let feet = pos.0.map(|e| e.floor() as i32);
-                                let reach =
-                                    2 + colonist.0.skills.climbing.level.min(1) as i32;
+                                let reach = 2 + colonist.0.skills.climbing.level.min(1) as i32;
                                 // The attempt flag is burned at PLAN time
                                 // (post-loop), not here — a request skipped
                                 // because another plan is pending must keep
@@ -4367,10 +8409,8 @@ impl<'a> System<'a> for Sys {
                                     && job.pos.z - feet.z > reach
                                 {
                                     carve_requests.push((feet, job.pos, active.job));
-                                } else if matches!(
-                                    job.kind,
-                                    common::bastion::JobKind::Haul { .. }
-                                ) && job.stuck_strikes >= HAUL_DROP_STRIKES
+                                } else if matches!(job.kind, common::bastion::JobKind::Haul { .. })
+                                    && job.stuck_strikes >= HAUL_DROP_STRIKES
                                 {
                                     // 49.2/B37: a HAUL that keeps striking
                                     // out is DROPPED, not eternally churned —
@@ -4409,12 +8449,7 @@ impl<'a> System<'a> for Sys {
                                     // the humanitarian bubble (~10s of
                                     // bounces) — employed or not.
                                     job.unreachable = true;
-                                    churn_events.push((
-                                        entity,
-                                        pos.0,
-                                        feet,
-                                        reach,
-                                    ));
+                                    churn_events.push((entity, pos.0, feet, reach));
                                     info!(
                                         job = active.job,
                                         pos = ?job.pos,
@@ -4442,6 +8477,75 @@ impl<'a> System<'a> for Sys {
                     }
                 },
                 ActiveJobState::Arrived => {
+                    if route_owned_access {
+                        let actual_feet = pos.0.map(|value| value.floor() as i32);
+                        let physics = physics_states.get(entity);
+                        let body_clear = terrain
+                            .get(actual_feet)
+                            .is_ok_and(|block| !block.is_solid())
+                            && terrain
+                                .get(actual_feet + Vec3::unit_z())
+                                .is_ok_and(|block| !block.is_solid());
+                        let grounded_clear =
+                            physics.is_some_and(|state| state.on_ground.is_some()) && body_clear;
+                        let route_climb_contact =
+                            emergency_route_claim_owner.is_some_and(|owner| {
+                                uids.get(entity).is_some_and(|uid| {
+                                    board.emergency_route_members.get(uid).copied() == Some(owner)
+                                }) && matches!(
+                                    char_states.get(entity),
+                                    Some(comp::CharacterState::Climb(_))
+                                ) && physics.is_some_and(|state| state.on_wall.is_some())
+                                    && body_clear
+                            });
+                        let velocity = velocities.get(entity).map(|velocity| velocity.0);
+                        let motion_stable = velocity.is_none_or(|velocity| {
+                            velocity.xy().magnitude_squared() <= 0.04 && velocity.z.abs() <= 0.2
+                        });
+                        let work_stable = route_climb_contact || (grounded_clear && motion_stable);
+                        if let Some(agent) = agent.as_deref_mut() {
+                            agent.rtsim_controller.activity = None;
+                        }
+                        if let Some(controller) = controllers.get_mut(entity) {
+                            controller.inputs.move_dir = Vec2::zero();
+                            controller.inputs.move_z = 0.0;
+                            if !route_climb_contact {
+                                controller.push_action(comp::ControlAction::Stand);
+                            }
+                        }
+                        if std::env::var_os("BASTION_EGRESS_DIAG").is_some()
+                            && (tick.0 % 30 == 0 || !work_stable)
+                        {
+                            info!(
+                                tick = tick.0,
+                                uid = uids.get(entity).map(|uid| uid.0.get()),
+                                owner = emergency_route_claim_owner.map(|owner| owner.0.get()),
+                                job = active.job,
+                                job_pos = ?job.pos,
+                                actual_pos = ?pos.0,
+                                ?velocity,
+                                ?actual_feet,
+                                grounded_clear,
+                                route_climb_contact,
+                                motion_stable,
+                                work_stable,
+                                activity_cleared = true,
+                                generic_writers_suppressed = true,
+                                writer = "route_owned_arrived_work",
+                                "bastion: emergency access arrived ownership check"
+                            );
+                        }
+                        if !work_stable {
+                            // Never progress terrain work from an unsupported
+                            // or still-moving body. Returning to Traveling
+                            // preserves the claim; the route-owned stable
+                            // arrival or existing prefix transaction will
+                            // reacquire from the actual post-physics pose.
+                            active.state = ActiveJobState::Traveling;
+                            active.stuck_time = 0.0;
+                            continue;
+                        }
+                    }
                     // ── B7-1: SLEEP — occupy the bed's slot (capacity-1),
                     // restore `rest` per tick scaled by bed quality, and
                     // complete at the comfort band with a sleep-quality
@@ -4450,9 +8554,7 @@ impl<'a> System<'a> for Sys {
                     // mood-delta the design wants). An occupied/vanished
                     // bed is a clean moot release (B7-2's assigner
                     // re-routes later; nothing wedges).
-                    if let common::bastion::JobKind::RestAt { bed_pos } =
-                        job.kind
-                    {
+                    if let common::bastion::JobKind::RestAt { bed_pos } = job.kind {
                         let Some(u) = uids.get(entity).copied() else {
                             board.remove_job(active.job);
                             to_release.push(entity);
@@ -4463,42 +8565,30 @@ impl<'a> System<'a> for Sys {
                             .get(&bed_pos)
                             .map(|s| (s.occupant, s.owner, s.kind));
                         match slot_state {
-                            Some((occ, owner, kind))
-                                if occ.is_none() || occ == Some(u) =>
-                            {
-                                if let Some(slot) = board.beds.get_mut(&bed_pos)
-                                {
+                            Some((occ, owner, kind)) if occ.is_none() || occ == Some(u) => {
+                                if let Some(slot) = board.beds.get_mut(&bed_pos) {
                                     slot.occupant = Some(u);
                                 }
                                 let mut slept = false;
-                                if let Some(needs) =
-                                    needs_storage.get_mut(entity)
-                                {
-                                    let cfg =
-                                        common::bastion::MoodConfig::current();
+                                if let Some(needs) = needs_storage.get_mut(entity) {
+                                    let cfg = common::bastion::MoodConfig::current();
                                     needs.rest = (needs.rest
-                                        + BED_REST_RECOVERY_PER_SEC
-                                            * kind.quality()
-                                            * dt.0)
+                                        + BED_REST_RECOVERY_PER_SEC * kind.quality() * dt.0)
                                         .min(1.0);
                                     // Sleep to comfort + margin: completing
                                     // AT the band means decay re-crosses it
                                     // within seconds (rested, not barely).
-                                    slept = needs.rest
-                                        >= cfg.rest.comfort + SLEEP_MARGIN;
+                                    slept = needs.rest >= cfg.rest.comfort + SLEEP_MARGIN;
                                 }
                                 if slept {
-                                    if let Some(slot) =
-                                        board.beds.get_mut(&bed_pos)
-                                    {
+                                    if let Some(slot) = board.beds.get_mut(&bed_pos) {
                                         slot.occupant = None;
                                     }
                                     // Owned-bed sleep deposits the better
                                     // thought; communal sleep none (the
                                     // delta the design asserts).
                                     if owner == Some(u)
-                                        && let Some(re) =
-                                            rtsim_entities.get(entity)
+                                        && let Some(re) = rtsim_entities.get(entity)
                                     {
                                         board.pending_thoughts.push((
                                             *re,
@@ -4542,9 +8632,7 @@ impl<'a> System<'a> for Sys {
                     // = a clean moot release (the preempt cooldown holds
                     // re-fire; the next pass re-targets). One-shot either
                     // way — still-hungry re-fires via the need-check.
-                    if let common::bastion::JobKind::EatFrom { item } =
-                        job.kind
-                    {
+                    if let common::bastion::JobKind::EatFrom { item } = job.kind {
                         if id_maps.uid_entity(item).is_some() {
                             crate::bastion_actions::emit_pickup(
                                 &mut inv_manip_emitter,
@@ -4558,55 +8646,31 @@ impl<'a> System<'a> for Sys {
                         // too; none aboard = moot. The decrement is the
                         // Build-material pattern (stack -1 in place, lone
                         // item removed — never the whole stack).
-                        let ate = inventories
-                            .get_mut(entity)
-                            .and_then(|mut inv| {
-                                let slot = inv.slots_with_id().find_map(
-                                    |(slot, it)| {
-                                        it.as_ref()
-                                            .is_some_and(|i| {
-                                                i.item_definition_id()
-                                                    .itemdef_id()
-                                                    .is_some_and(|d| {
-                                                        FOOD_DEFS
-                                                            .contains(&d)
-                                                    })
-                                            })
-                                            .then_some(slot)
-                                    },
-                                );
-                                slot.and_then(|slot| {
-                                    match inv.slot_mut(slot) {
-                                        Some(Some(it))
-                                            if it.amount() > 1 =>
-                                        {
-                                            it.decrease_amount(1)
-                                                .ok()
-                                                .map(|_| ())
-                                        },
-                                        Some(Some(_)) => {
-                                            inv.remove(slot).map(|_| ())
-                                        },
-                                        _ => None,
-                                    }
-                                })
+                        let ate = inventories.get_mut(entity).and_then(|mut inv| {
+                            let slot = inv.slots_with_id().find_map(|(slot, it)| {
+                                it.as_ref()
+                                    .is_some_and(|i| {
+                                        i.item_definition_id()
+                                            .itemdef_id()
+                                            .is_some_and(|d| FOOD_DEFS.contains(&d))
+                                    })
+                                    .then_some(slot)
                             });
+                            slot.and_then(|slot| match inv.slot_mut(slot) {
+                                Some(Some(it)) if it.amount() > 1 => {
+                                    it.decrease_amount(1).ok().map(|_| ())
+                                },
+                                Some(Some(_)) => inv.remove(slot).map(|_| ()),
+                                _ => None,
+                            })
+                        });
                         if ate.is_some() {
-                            if let Some(needs) =
-                                needs_storage.get_mut(entity)
-                            {
-                                needs.hunger =
-                                    (needs.hunger + FOOD_RESTORE).min(1.0);
+                            if let Some(needs) = needs_storage.get_mut(entity) {
+                                needs.hunger = (needs.hunger + FOOD_RESTORE).min(1.0);
                             }
-                            info!(
-                                job = active.job,
-                                "bastion: ate — hunger restored"
-                            );
+                            info!(job = active.job, "bastion: ate — hunger restored");
                         } else {
-                            info!(
-                                job = active.job,
-                                "bastion: food sniped — eat moot"
-                            );
+                            info!(job = active.job, "bastion: food sniped — eat moot");
                         }
                         // remove_job releases the food reservation (B6
                         // machinery — THE removal path).
@@ -4619,14 +8683,9 @@ impl<'a> System<'a> for Sys {
                     // the ActiveJob itself blocks all claims and the
                     // need-check's despond-hold skips preemption — until
                     // the clock passes `until`, then release back to life.
-                    if let common::bastion::JobKind::Despond { until } =
-                        job.kind
-                    {
+                    if let common::bastion::JobKind::Despond { until } = job.kind {
                         if time.0 >= until {
-                            info!(
-                                job = active.job,
-                                "bastion: despond lifted — resuming"
-                            );
+                            info!(job = active.job, "bastion: despond lifted — resuming");
                             board.remove_job(active.job);
                             to_release.push(entity);
                         }
@@ -4639,22 +8698,12 @@ impl<'a> System<'a> for Sys {
                     // colony stock either way); a zone erased mid-trip drops
                     // the job but KEEPS the recorded defs, so the next
                     // trigger pass retries against a surviving stockpile.
-                    if let common::bastion::JobKind::DepositRun { destination } =
-                        job.kind
-                    {
-                        if board
-                            .stockpiles
-                            .iter()
-                            .any(|(z, _)| *z == destination)
-                        {
+                    if let common::bastion::JobKind::DepositRun { destination } = job.kind {
+                        if board.stockpiles.iter().any(|(z, _)| *z == destination) {
                             if let Some(u) = uids.get(entity).copied() {
-                                let defs = board
-                                    .gathered_defs
-                                    .remove(&u)
-                                    .unwrap_or_default();
+                                let defs = board.gathered_defs.remove(&u).unwrap_or_default();
                                 let mut total = 0u32;
-                                if let Some(mut inv) = inventories.get_mut(entity)
-                                {
+                                if let Some(mut inv) = inventories.get_mut(entity) {
                                     for def in &defs {
                                         total += crate::bastion_actions::deposit_all_of(
                                             &mut inv,
@@ -4683,15 +8732,12 @@ impl<'a> System<'a> for Sys {
                     // progress accumulation, no moot/tool machinery).
                     // progress encodes the leg: <0.5 = at the ITEM (leg 1),
                     // >=0.5 = at the ZONE (leg 2).
-                    if let common::bastion::JobKind::Haul { item, destination } =
-                        job.kind
-                    {
+                    if let common::bastion::JobKind::Haul { item, destination } = job.kind {
                         let carrying = job.required_item.is_some_and(|req| {
                             inventories.get(entity).is_some_and(|inv| {
-                                inv.slots().flatten().any(|i| {
-                                    i.item_definition_id().itemdef_id()
-                                        == Some(req)
-                                })
+                                inv.slots()
+                                    .flatten()
+                                    .any(|i| i.item_definition_id().itemdef_id() == Some(req))
                             })
                         });
                         if job.progress < 0.5 {
@@ -4711,10 +8757,8 @@ impl<'a> System<'a> for Sys {
                             if carrying {
                                 // Cargo aboard — LEG 2: retarget the zone's
                                 // drop cell (center column, painted top).
-                                if let Some((_, r)) = board
-                                    .stockpiles
-                                    .iter()
-                                    .find(|(z, _)| *z == destination)
+                                if let Some((_, r)) =
+                                    board.stockpiles.iter().find(|(z, _)| *z == destination)
                                 {
                                     job.pos = Vec3::new(
                                         (r.min.x + r.max.x) / 2,
@@ -4787,18 +8831,12 @@ impl<'a> System<'a> for Sys {
                     let tool = inventories.get(entity).and_then(|inv| {
                         inv.equipped(comp::slot::EquipSlot::ActiveMainhand)
                             .and_then(|item| match &*item.kind() {
-                                comp::item::ItemKind::Tool(t) => {
-                                    Some((t.kind, item.quality()))
-                                },
+                                comp::item::ItemKind::Tool(t) => Some((t.kind, item.quality())),
                                 _ => None,
                             })
                     });
-                    job.progress += crate::bastion_actions::work_progress(
-                        dt.0,
-                        skill_level,
-                        job.work,
-                        tool,
-                    );
+                    job.progress +=
+                        crate::bastion_actions::work_progress(dt.0, skill_level, job.work, tool);
                     // CHOP-FELLING (row 51.6): a base-cut completes at its
                     // SIZE-SCALED bar (CHOP_WORK_PER_BLOCK × Wood count,
                     // frozen at placement — bigger trees take longer, Ben's
@@ -4818,8 +8856,7 @@ impl<'a> System<'a> for Sys {
                     // reads as PROGRESSING; the to_release drain clears it so
                     // it never lingers stale between jobs.
                     if let Some(arb) = arbiters.get_mut(entity) {
-                        arb.activity =
-                            Some((job.work, (job.progress / threshold).clamp(0.0, 1.0)));
+                        arb.activity = Some((job.work, (job.progress / threshold).clamp(0.0, 1.0)));
                     }
                     if job.progress < threshold {
                         continue;
@@ -4846,21 +8883,14 @@ impl<'a> System<'a> for Sys {
                     // foreign state is a clean moot release).
                     if job.kind.is(DesignationKind::Farm) {
                         let here = terrain.get(job.pos).ok().copied();
-                        let below =
-                            terrain.get(job.pos - Vec3::unit_z()).ok().copied();
+                        let below = terrain.get(job.pos - Vec3::unit_z()).ok().copied();
                         let mut acted = false;
                         match here {
                             // TILL: the job sits ON the raw ground block.
-                            Some(g)
-                                if g.is_filled()
-                                    && g.kind() != BlockKind::Earth =>
-                            {
+                            Some(g) if g.is_filled() && g.kind() != BlockKind::Earth => {
                                 block_change.set(
                                     job.pos,
-                                    Block::new(
-                                        BlockKind::Earth,
-                                        vek::Rgb::new(105, 75, 50),
-                                    ),
+                                    Block::new(BlockKind::Earth, vek::Rgb::new(105, 75, 50)),
                                 );
                                 acted = true;
                                 info!(pos = ?job.pos, "bastion: tilled");
@@ -4870,88 +8900,57 @@ impl<'a> System<'a> for Sys {
                             // Build-material decrement; missing = the
                             // stall path, B6's haul machinery feeds it).
                             Some(c)
-                                if matches!(
-                                    c.get_sprite(),
-                                    None | Some(SpriteKind::Empty)
-                                ) && !c.is_filled()
-                                    && below.is_some_and(|g| {
-                                        g.kind() == BlockKind::Earth
-                                    }) =>
+                                if matches!(c.get_sprite(), None | Some(SpriteKind::Empty))
+                                    && !c.is_filled()
+                                    && below.is_some_and(|g| g.kind() == BlockKind::Earth) =>
                             {
-                                let taken = inventories
-                                    .get_mut(entity)
-                                    .and_then(|mut inv| {
-                                        let slot = inv
-                                            .slots_with_id()
-                                            .find_map(|(slot, it)| {
-                                                it.as_ref()
-                                                    .is_some_and(|i| {
-                                                        i.item_definition_id()
-                                                            .itemdef_id()
-                                                            == Some(
-                                                                FARM_SEED_ITEM,
-                                                            )
-                                                    })
-                                                    .then_some(slot)
-                                            });
-                                        slot.and_then(|slot| {
-                                            match inv.slot_mut(slot) {
-                                                Some(Some(it))
-                                                    if it.amount() > 1 =>
-                                                {
-                                                    it.decrease_amount(1)
-                                                        .ok()
-                                                        .map(|_| ())
-                                                },
-                                                Some(Some(_)) => inv
-                                                    .remove(slot)
-                                                    .map(|_| ()),
-                                                _ => None,
-                                            }
-                                        })
+                                let taken = inventories.get_mut(entity).and_then(|mut inv| {
+                                    let slot = inv.slots_with_id().find_map(|(slot, it)| {
+                                        it.as_ref()
+                                            .is_some_and(|i| {
+                                                i.item_definition_id().itemdef_id()
+                                                    == Some(FARM_SEED_ITEM)
+                                            })
+                                            .then_some(slot)
                                     });
+                                    slot.and_then(|slot| match inv.slot_mut(slot) {
+                                        Some(Some(it)) if it.amount() > 1 => {
+                                            it.decrease_amount(1).ok().map(|_| ())
+                                        },
+                                        Some(Some(_)) => inv.remove(slot).map(|_| ()),
+                                        _ => None,
+                                    })
+                                });
                                 if taken.is_none() {
                                     job.progress = 0.0;
                                     job.needs_materials = true;
                                     to_release.push(entity);
                                     continue;
                                 }
-                                if let Ok(nb) = Block::air(
-                                    SpriteKind::WheatYellow,
-                                )
-                                .with_attr(Growth(FARM_GROWTH_SOWN))
+                                if let Ok(nb) = Block::air(SpriteKind::WheatYellow)
+                                    .with_attr(Growth(FARM_GROWTH_SOWN))
                                 {
                                     block_change.set(job.pos, nb);
-                                    board.farm_growth.insert(
-                                        (job.pos.x, job.pos.y, job.pos.z),
-                                        time.0,
-                                    );
+                                    board
+                                        .farm_growth
+                                        .insert((job.pos.x, job.pos.y, job.pos.z), time.0);
                                     acted = true;
                                     info!(pos = ?job.pos, "bastion: sown");
                                 }
                             },
                             // HARVEST: the mature crop cell.
                             Some(c)
-                                if c.get_sprite()
-                                    == Some(SpriteKind::WheatYellow)
-                                    && c.get_attr::<Growth>()
-                                        .map(|g| g.0)
-                                        .unwrap_or(0)
+                                if c.get_sprite() == Some(SpriteKind::WheatYellow)
+                                    && c.get_attr::<Growth>().map(|g| g.0).unwrap_or(0)
                                         >= FARM_GROWTH_MAX =>
                             {
                                 block_change.set(job.pos, Block::empty());
-                                board.farm_growth.remove(&(
-                                    job.pos.x,
-                                    job.pos.y,
-                                    job.pos.z,
-                                ));
+                                board.farm_growth.remove(&(job.pos.x, job.pos.y, job.pos.z));
                                 for _ in 0..FARM_WHEAT_YIELD {
                                     crate::bastion_actions::emit_drop(
                                         &mut item_drop_emitter,
                                         job.pos,
-                                        Item::new_from_asset_expect(
-                                            FARM_WHEAT_ITEM,
-                                        ),
+                                        Item::new_from_asset_expect(FARM_WHEAT_ITEM),
                                         *program_time,
                                         &mut rng,
                                     );
@@ -4960,9 +8959,7 @@ impl<'a> System<'a> for Sys {
                                     crate::bastion_actions::emit_drop(
                                         &mut item_drop_emitter,
                                         job.pos,
-                                        Item::new_from_asset_expect(
-                                            FARM_SEED_ITEM,
-                                        ),
+                                        Item::new_from_asset_expect(FARM_SEED_ITEM),
                                         *program_time,
                                         &mut rng,
                                     );
@@ -4987,8 +8984,7 @@ impl<'a> System<'a> for Sys {
                     }
                     if job.kind.is(DesignationKind::Gather) {
                         let block = terrain.get(job.pos).ok().copied();
-                        let collectible =
-                            block.is_some_and(|b| b.is_directly_collectible());
+                        let collectible = block.is_some_and(|b| b.is_directly_collectible());
                         if collectible {
                             // Deposit ruling: record what this collect will
                             // put in the bag — same reclaim source the
@@ -5002,13 +8998,9 @@ impl<'a> System<'a> for Sys {
                                     )
                                 })
                             {
-                                let bag =
-                                    board.gathered_defs.entry(*u).or_default();
+                                let bag = board.gathered_defs.entry(*u).or_default();
                                 for (_, item) in &items {
-                                    if let Some(def) = item
-                                        .item_definition_id()
-                                        .itemdef_id()
-                                    {
+                                    if let Some(def) = item.item_definition_id().itemdef_id() {
                                         bag.insert(def.to_string());
                                     }
                                 }
@@ -5057,8 +9049,7 @@ impl<'a> System<'a> for Sys {
                             | DesignationKind::Bed => {
                                 terrain.get(job.pos).ok().is_some_and(|b| !b.is_filled())
                             },
-                            DesignationKind::Stockpile
-                            | DesignationKind::Zone(_) => false,
+                            DesignationKind::Stockpile | DesignationKind::Zone(_) => false,
                             // Gather completes in its own arm above (the
                             // Haul pattern) — defensive.
                             DesignationKind::Gather => false,
@@ -5129,14 +9120,13 @@ impl<'a> System<'a> for Sys {
                     // time, per Wood cell in place (DF's logs, raining down
                     // with the stagger).
                     if job.kind.is(DesignationKind::Chop)
-                        && let Some(fell) =
-                            board.chop_fell_sets.remove(&active.job)
+                        && let Some(fell) = board.chop_fell_sets.remove(&active.job)
                     {
                         let done_pos = job.pos;
-                        colonist.0.skills.grant_xp(
-                            job.work,
-                            COMPLETION_XP * fell.wood_count as f32,
-                        );
+                        colonist
+                            .0
+                            .skills
+                            .grant_xp(job.work, COMPLETION_XP * fell.wood_count as f32);
                         info!(
                             job = active.job,
                             base = ?done_pos,
@@ -5155,10 +9145,10 @@ impl<'a> System<'a> for Sys {
                         // starts to fall.
                         for region in board.designated.iter() {
                             if region.contains_point(done_pos)
-                                && !board.jobs.values().any(|j| {
-                                    !j.is_access
-                                        && region.contains_point(j.pos)
-                                })
+                                && !board
+                                    .jobs
+                                    .values()
+                                    .any(|j| !j.is_access && region.contains_point(j.pos))
                             {
                                 done_regions.push(*region);
                             }
@@ -5213,9 +9203,7 @@ impl<'a> System<'a> for Sys {
                     // B-AG5-CORE: THE completion edit lives in
                     // bastion_actions (None = no terrain edit for this
                     // kind — same continue semantics as before).
-                    let Some(new_block) =
-                        crate::bastion_actions::completion_block(job.kind)
-                    else {
+                    let Some(new_block) = crate::bastion_actions::completion_block(job.kind) else {
                         continue;
                     };
                     block_change.set(job.pos, new_block);
@@ -5244,18 +9232,20 @@ impl<'a> System<'a> for Sys {
                         info!(pos = ?job.pos, "bastion: bed registered (built)");
                     }
 
-                    if let Some(item_id) = match job.kind.designation() {
-                        Some(DesignationKind::Mine) => Some(MINE_DROP_ITEM),
-                        // CHOP redesign (FR10): only WOOD yields — leaves
-                        // clear with no drop (yield scales with trunk size by
-                        // construction: one drop per Wood block).
-                        Some(DesignationKind::Chop)
-                            if completed_kind == Some(BlockKind::Wood) =>
-                        {
-                            Some(CHOP_DROP_ITEM)
-                        },
-                        _ => None,
-                    } {
+                    if !is_emergency_access
+                        && let Some(item_id) = match job.kind.designation() {
+                            Some(DesignationKind::Mine) => Some(MINE_DROP_ITEM),
+                            // CHOP redesign (FR10): only WOOD yields — leaves
+                            // clear with no drop (yield scales with trunk size by
+                            // construction: one drop per Wood block).
+                            Some(DesignationKind::Chop)
+                                if completed_kind == Some(BlockKind::Wood) =>
+                            {
+                                Some(CHOP_DROP_ITEM)
+                            },
+                            _ => None,
+                        }
+                    {
                         // B5.5: colonist output is a player resource —
                         // persistent (no despawn timer) and mergeable
                         // (`should_merge: true`), so burst mining aggregates
@@ -5272,13 +9262,35 @@ impl<'a> System<'a> for Sys {
                         );
                     }
 
-                    colonist.0.skills.grant_xp(job.work, COMPLETION_XP);
+                    if !is_emergency_access {
+                        colonist.0.skills.grant_xp(job.work, COMPLETION_XP);
+                    }
                     info!(
                         job = active.job,
                         kind = ?job.kind,
                         pos = ?job.pos,
                         "bastion: job completed"
                     );
+                    if is_emergency_access && std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                        let physics = physics_states.get(entity);
+                        let velocity = velocities.get(entity).map(|vel| vel.0);
+                        let route_owner = board
+                            .emergency_access_jobs
+                            .get(&active.job)
+                            .map(|owner| owner.0.get());
+                        info!(
+                            tick = tick.0,
+                            uid = uids.get(entity).map(|uid| uid.0.get()),
+                            ?route_owner,
+                            job = active.job,
+                            job_pos = ?job.pos,
+                            actual_pos = ?pos.0,
+                            on_ground = physics.is_some_and(|state| state.on_ground.is_some()),
+                            on_wall = ?physics.and_then(|state| state.on_wall),
+                            ?velocity,
+                            "bastion: emergency access job completed diagnostic"
+                        );
+                    }
                     let done_pos = job.pos;
                     // CAVE-IN v1 (FR11 Q2/Q3): removing this block may sever a
                     // bounded chunk from the ground mass — check AT COMPLETION
@@ -5292,18 +9304,15 @@ impl<'a> System<'a> for Sys {
                     // don't sever rock). A collapse cell that also had its own
                     // Mine job is handled by that job's moot re-check (the block
                     // is already air → dropped, no double-yield).
-                    if job.kind.is(DesignationKind::Mine) {
+                    if !is_emergency_access && job.kind.is(DesignationKind::Mine) {
                         let is_filled =
                             |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
-                        if let Some(cells) =
-                            floating_chunk(is_filled, done_pos, CAVEIN_SUPPORT_CAP)
+                        if let Some(cells) = floating_chunk(is_filled, done_pos, CAVEIN_SUPPORT_CAP)
                         {
                             for &cell in &cells {
                                 block_change.set(cell, Block::empty());
                                 item_drop_emitter.emit(CreateItemDropEvent {
-                                    pos: comp::Pos(
-                                        cell.map(|e| e as f32) + Vec3::broadcast(0.5),
-                                    ),
+                                    pos: comp::Pos(cell.map(|e| e as f32) + Vec3::broadcast(0.5)),
                                     vel: comp::Vel(Vec3::zero()),
                                     ori: comp::Ori::default(),
                                     item: PickupItem::new(
@@ -5324,6 +9333,7 @@ impl<'a> System<'a> for Sys {
                             collapses.push(cells);
                         }
                     }
+                    board.emergency_access_jobs.remove(&active.job);
                     board.remove_job(active.job);
                     // reviewer F5 / b58-(d) fix: completing a job is the
                     // ground-truth "making progress" signal — reset the
@@ -5342,9 +9352,10 @@ impl<'a> System<'a> for Sys {
                     // mid-borrow).
                     for region in board.designated.iter() {
                         if region.contains_point(done_pos)
-                            && !board.jobs.values().any(|j| {
-                                !j.is_access && region.contains_point(j.pos)
-                            })
+                            && !board
+                                .jobs
+                                .values()
+                                .any(|j| !j.is_access && region.contains_point(j.pos))
                         {
                             done_regions.push(*region);
                         }
@@ -5381,6 +9392,9 @@ impl<'a> System<'a> for Sys {
                 board.progress_watch.remove(u);
                 board.path_cache.remove(u);
                 board.last_steer.remove(u);
+                board.emergency_partial_route_entries.remove(u);
+                board.emergency_approach_corridors.remove(u);
+                board.emergency_frontier_reacquire.remove(u);
                 for slot in board.beds.values_mut() {
                     if slot.occupant == Some(*u) {
                         slot.occupant = None;
@@ -5442,9 +9456,7 @@ impl<'a> System<'a> for Sys {
         // (same tick: release-then-create, coherent by ordering).
         for (entity, uid, pending) in preempt_pending.drain(..) {
             let id = match pending {
-                PendingNeed::Rest(bed_pos) => {
-                    board.insert_rest_job(bed_pos, uid)
-                },
+                PendingNeed::Rest(bed_pos) => board.insert_rest_job(bed_pos, uid),
                 PendingNeed::Eat(item, rid, ipos, def) => {
                     board.insert_eat_job(item, ipos, uid, rid, def)
                 },
@@ -5478,8 +9490,7 @@ impl<'a> System<'a> for Sys {
         for region in done_regions {
             board.done_count += 1;
             info!(?region, "bastion: MINE DONE — dispersing");
-            let mut disp_iter =
-                (&mut colonists, &positions, (&mut agents).maybe()).lend_join();
+            let mut disp_iter = (&mut colonists, &positions, (&mut agents).maybe()).lend_join();
             while let Some((mut colonist, pos, agent)) = disp_iter.next() {
                 let p = pos.0.map(|e| e.floor() as i32);
                 if region.contains_point_xy(p) && p.z < region.max.z {
@@ -5532,9 +9543,7 @@ impl<'a> System<'a> for Sys {
             // for the LOD gate) — a one-tick deferral on a two-game-day
             // thought.
             for e in &victims {
-                if let (Some(re), Some(p)) =
-                    (rtsim_entities.get(*e), positions.get(*e))
-                {
+                if let (Some(re), Some(p)) = (rtsim_entities.get(*e), positions.get(*e)) {
                     board.pending_thoughts.push((
                         *re,
                         p.0.map(|v| v.floor() as i32),
@@ -5561,35 +9570,23 @@ impl<'a> System<'a> for Sys {
         // positions, sequential, deterministic. CENTER_NET_FIRES stays the
         // REPORTED telemetry (0 expected; any climb = a real wedge writer).
         {
-            let mut embed_iter =
-                (&colonists, &mut positions, &mut velocities, &uids).lend_join();
+            let mut embed_iter = (&colonists, &mut positions, &mut velocities, &uids).lend_join();
             while let Some((_, mut pos, mut vel, uid)) = embed_iter.next() {
-                let core_solid = [
-                    (-0.2f32, -0.2f32),
-                    (-0.2, 0.2),
-                    (0.2, -0.2),
-                    (0.2, 0.2),
-                ]
-                .into_iter()
-                .all(|(dx, dy)| {
-                    let corner =
-                        Vec3::new(pos.0.x + dx, pos.0.y + dy, pos.0.z)
+                let core_solid = [(-0.2f32, -0.2f32), (-0.2, 0.2), (0.2, -0.2), (0.2, 0.2)]
+                    .into_iter()
+                    .all(|(dx, dy)| {
+                        let corner = Vec3::new(pos.0.x + dx, pos.0.y + dy, pos.0.z)
                             .map(|e| e.floor() as i32)
                             + Vec3::unit_z();
-                    terrain
-                        .get(corner)
-                        .map(|b| b.is_filled())
-                        .unwrap_or(false)
-                });
+                        terrain.get(corner).map(|b| b.is_filled()).unwrap_or(false)
+                    });
                 if core_solid {
                     let n = board.embed_watch.entry(*uid).or_insert(0);
                     *n += 1;
                     if *n >= EMBED_PERSIST_TICKS {
                         *n = 0;
                         let feet = pos.0.map(|e| e.floor() as i32);
-                        if let Some(d) =
-                            eject_dest(&terrain, feet, &HashSet::new())
-                        {
+                        if let Some(d) = eject_dest(&terrain, feet, &HashSet::new()) {
                             tracing::warn!(
                                 embedded_at = ?pos.0,
                                 relocated_to = ?d,
@@ -5597,13 +9594,10 @@ impl<'a> System<'a> for Sys {
                                  terrain (persisted a full second) — \
                                  relocated; hunt the writer"
                             );
-                            pos.0 = d.map(|e| e as f32)
-                                + Vec3::new(0.5, 0.5, 0.0);
+                            pos.0 = d.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
                             vel.0 = Vec3::zero();
-                            common::bastion::CENTER_NET_FIRES.fetch_add(
-                                1,
-                                core::sync::atomic::Ordering::Relaxed,
-                            );
+                            common::bastion::CENTER_NET_FIRES
+                                .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                         }
                     }
                 } else {
@@ -5684,14 +9678,13 @@ impl<'a> System<'a> for Sys {
         // ── B5.8: AUTONOMOUS ACCESS (self-rescue) ────────────────────────
         // A stuck ascent inside colony claims gets access that FITS THE
         // GEOMETRY (Ben's directive — autonomous access is the default):
-        // 1. STAIRS where the claim has room — the SHARED `carve_ramp`
-        //    decomposition (one lib, DF-DIG-VERBS' player verb is the other
-        //    caller), switchbacking inside the access mask, refusing
-        //    floorless routes.
-        // 2. LADDER where it's tight or hollow — a material-free rung
-        //    pillar (built from spoil) up an adjacent open column.
-        // 3. Neither fits → unreachable, as before. Never touches terrain
-        //    outside the claim mask (the never-chase-a-deer rule).
+        // 1. STAIRS where the claim has room — the SHARED `carve_ramp` decomposition
+        //    (one lib, DF-DIG-VERBS' player verb is the other caller), switchbacking
+        //    inside the access mask, refusing floorless routes.
+        // 2. LADDER where it's tight or hollow — a material-free rung pillar (built
+        //    from spoil) up an adjacent open column.
+        // 3. Neither fits → unreachable, as before. Never touches terrain outside the
+        //    claim mask (the never-chase-a-deer rule).
         // Emitted steps/rungs are ordinary jobs: arbitration assigns them
         // (nearest wins — usually the stuck colonist; the exposure gate
         // sequences stair digs bottom-up naturally).
@@ -5701,14 +9694,16 @@ impl<'a> System<'a> for Sys {
         // plan time). Concurrent plans overlap and dig each other's step
         // floors out (run-7's gallery of chaos); one stair serves everyone.
         let access_pending = board.jobs.values().any(|j| j.is_access);
-        for (from, to, parent) in carve_requests.into_iter().take(
-            if access_pending { 0 } else { 1 },
-        ) {
+        for (from, to, parent) in
+            carve_requests
+                .into_iter()
+                .take(if access_pending { 0 } else { 1 })
+        {
             if let Some(job) = board.jobs.get_mut(&parent) {
                 job.carve_attempted = true;
             }
             let mask = board.designated.clone();
-            match plan_access(board, &terrain, &mask, from, to) {
+            match plan_access(board, &terrain, &mask, from, to, None, None) {
                 Some((kind, steps)) => {
                     info!(
                         parent,
@@ -5734,10 +9729,8 @@ impl<'a> System<'a> for Sys {
         // small radius → soft-collision before the pile-up deadlocks.
         // O(n²) over loaded colonists (colonies are small); ~1s cadence.
         if tick.0 % 30 == 11 {
-            let snapshot: Vec<Vec3<f32>> = (&colonists, &positions)
-                .join()
-                .map(|(_, p)| p.0)
-                .collect();
+            let snapshot: Vec<Vec3<f32>> =
+                (&colonists, &positions).join().map(|(_, p)| p.0).collect();
             let mut dense_iter = (&mut colonists, &positions).lend_join();
             while let Some((mut colonist, pos)) = dense_iter.next() {
                 let nearby = snapshot
@@ -5746,8 +9739,7 @@ impl<'a> System<'a> for Sys {
                         let d = **p - pos.0;
                         // Excludes self (distance 0 counts once — subtract
                         // below).
-                        d.xy().magnitude_squared()
-                            < SOFT_DENSITY_R * SOFT_DENSITY_R
+                        d.xy().magnitude_squared() < SOFT_DENSITY_R * SOFT_DENSITY_R
                             && d.z.abs() < 2.0
                     })
                     .count()
@@ -5756,9 +9748,7 @@ impl<'a> System<'a> for Sys {
                 // pass — `Colonist` is change-tracked/synced, and a
                 // no-op refresh every second would re-sync the comp.
                 // (The read goes through Deref, not DerefMut — unflagged.)
-                if nearby >= SOFT_DENSITY_N
-                    && colonist.0.soft_until < time.0 + 1.5
-                {
+                if nearby >= SOFT_DENSITY_N && colonist.0.soft_until < time.0 + 1.5 {
                     colonist.0.soft_until = time.0 + SOFT_GRACE_SECS;
                 }
             }
@@ -5794,6 +9784,16 @@ impl<'a> System<'a> for Sys {
             for (_, uid, active) in (&colonists, &uids, &active_jobs).join() {
                 if matches!(active.state, ActiveJobState::Arrived) {
                     board.egress_watch.remove(uid);
+                    // Finishing a temporary route step is not finishing the
+                    // rescue. Shared-route members still need this target for
+                    // the climb and verified dismount phases; clearing it on
+                    // the final Arrived sample stranded them below a fully
+                    // built route with zero jobs left to reacquire it.
+                    if !board.emergency_route_members.contains_key(uid) {
+                        board.egress_targets.remove(uid);
+                        board.egress_best_distance.remove(uid);
+                        board.egress_no_progress_secs.remove(uid);
+                    }
                 }
             }
             let mut egress_requests: Vec<(Uid, Vec3<i32>, Vec3<i32>)> = Vec::new();
@@ -5805,6 +9805,7 @@ impl<'a> System<'a> for Sys {
             let churn_fire = board.egress_pending.pop();
             board.egress_pending.clear();
             if let Some((uid, from, to)) = churn_fire {
+                *board.egress_verdicts.entry(uid).or_insert(0) += 1;
                 if let Some(entity) = id_maps.uid_entity(uid) {
                     if let Some(active) = active_jobs.get(entity) {
                         if let Some(job) = board.jobs.get_mut(&active.job) {
@@ -5820,13 +9821,36 @@ impl<'a> System<'a> for Sys {
                     egress_requests.push((uid, from, to));
                 }
             }
-            let mut still_iter =
-                (&mut colonists, &positions, &uids, !&active_jobs).lend_join();
+            let mut still_iter = (&mut colonists, &positions, &uids, !&active_jobs).lend_join();
             while let Some((mut colonist, pos, uid, ())) = still_iter.next() {
+                let feet = pos.0.map(|e| e.floor() as i32);
+                let surface_dest = surface_teleport_dest(&terrain, feet);
+                let organic_dest = board
+                    .egress_targets
+                    .get(uid)
+                    .copied()
+                    .or_else(|| surface_egress_dest(&terrain, feet))
+                    .or(surface_dest);
+                let below_grade = surface_dest.is_some_and(|destination| {
+                    destination.map(|e| e as f32).xy().distance(pos.0.xy()) >= 3.0
+                        || (destination.z as f32 - pos.0.z) >= 3.0
+                });
                 let watch = board
                     .egress_watch
                     .entry(*uid)
                     .or_insert((pos.0, 0.0, false));
+                if !below_grade {
+                    // Reaching a real surface completes this organic-egress
+                    // episode. A later entrapment must start from a clean
+                    // timer and attempt bit.
+                    *watch = (pos.0, 0.0, false);
+                    if !board.emergency_route_members.contains_key(uid) {
+                        board.egress_targets.remove(uid);
+                        board.egress_best_distance.remove(uid);
+                        board.egress_no_progress_secs.remove(uid);
+                    }
+                    continue;
+                }
                 // CONFINEMENT radius 6, not stillness radius 3 (chokepoint
                 // ck-2 straggler): a jobless colonist PACING inside a 5-wide
                 // chamber kept resetting the 3-block anchor and the trapped
@@ -5835,28 +9859,154 @@ impl<'a> System<'a> for Sys {
                 // and reset regardless), so the position leash only needs
                 // to distinguish "roaming free" from "circling a cell".
                 if pos.0.distance_squared(watch.0) > 36.0 {
-                    *watch = (pos.0, 0.0, false);
-                    continue;
+                    watch.0 = pos.0;
                 }
                 watch.1 += 1.0; // this pass runs ~once per second
-                if watch.2 || watch.1 < EGRESS_STILL_SECS {
+                if watch.2 {
+                    if let Some(target) = organic_dest {
+                        let target_pos =
+                            target.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+                        let horizontal = pos.0.xy().distance(target_pos.xy());
+                        if horizontal < 1.5 && pos.0.z >= target_pos.z - 0.5 {
+                            // Reaching the open column at rim height is an
+                            // organic escape even if the broad surface probe
+                            // can still see taller terrain nearby.
+                            *watch = (pos.0, 0.0, false);
+                            let shared_route = board.emergency_route_members.contains_key(uid);
+                            colonist.0.climb_free_until =
+                                if shared_route { time.0 + 45.0 } else { time.0 };
+                            if !shared_route {
+                                board.egress_targets.remove(uid);
+                                board.egress_best_distance.remove(uid);
+                                board.egress_no_progress_secs.remove(uid);
+                            }
+                            board.stuck_watch.remove(uid);
+                            continue;
+                        }
+                        let distance = pos.0.distance(target_pos);
+                        let improved = {
+                            let best = board
+                                .egress_best_distance
+                                .entry(*uid)
+                                .or_insert(f32::INFINITY);
+                            if distance + 0.5 < *best {
+                                *best = distance;
+                                true
+                            } else {
+                                false
+                            }
+                        };
+                        let no_progress = board.egress_no_progress_secs.entry(*uid).or_insert(0.0);
+                        if improved {
+                            *no_progress = 0.0;
+                            // Verified target progress, unlike arbitrary
+                            // roaming, earns a fresh 60-second backstop.
+                            board.stuck_watch.remove(uid);
+                        } else {
+                            *no_progress += 1.0;
+                        }
+                        let head_blocked = terrain
+                            .get(feet + Vec3::unit_z() * 2)
+                            .map(|block| block.is_solid())
+                            .unwrap_or(false);
+                        let emergency_exists = board
+                            .emergency_access_jobs
+                            .values()
+                            .any(|owner| owner == uid)
+                            || board
+                                .emergency_access_cells
+                                .values()
+                                .any(|(owner, _)| owner == uid)
+                            || board.emergency_cleanup_pending.contains(uid);
+                        if (head_blocked || *no_progress >= 10.0) && !emergency_exists {
+                            egress_requests.push((*uid, feet, target));
+                        }
+                    }
+                    // Permission alone does not make an idle colonist choose
+                    // an exit. Keep the surface intent asserted until the
+                    // reset above proves it actually escaped; the independent
+                    // 60-second teleport backstop still catches a true route
+                    // failure.
+                    colonist.0.climb_free_until = time.0 + 45.0;
+                    if let Some(destination) = organic_dest
+                        && let Some(entity) = id_maps.uid_entity(*uid)
+                        && let Some(agent) = agents.get_mut(entity)
+                    {
+                        agent.rtsim_controller.activity = Some(common::rtsim::NpcActivity::Goto(
+                            destination.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0),
+                            TRAVEL_SPEED,
+                        ));
+                    }
                     continue;
                 }
-                let feet = pos.0.map(|e| e.floor() as i32);
+                if watch.1 < EGRESS_STILL_SECS {
+                    continue;
+                }
                 let reach = 2 + colonist.0.skills.climbing.level.min(1) as i32;
                 let (has_egress, rim) = egress_scan(&terrain, feet, reach);
                 if has_egress {
                     // Walkable/climbable ground within the annulus — not
                     // walled in.
-                    *watch = (pos.0, 0.0, false);
+                    if below_grade {
+                        watch.2 = true;
+                        *board.egress_verdicts.entry(*uid).or_insert(0) += 1;
+                        if let Some(target) = organic_dest {
+                            board.egress_targets.insert(*uid, target);
+                            board
+                                .egress_best_distance
+                                .insert(*uid, pos.0.distance(target.map(|value| value as f32)));
+                        }
+                        colonist.0.climb_free_until = time.0 + 45.0;
+                        if let Some(destination) = organic_dest
+                            && let Some(entity) = id_maps.uid_entity(*uid)
+                            && let Some(agent) = agents.get_mut(entity)
+                        {
+                            agent.rtsim_controller.activity =
+                                Some(common::rtsim::NpcActivity::Goto(
+                                    destination.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0),
+                                    TRAVEL_SPEED,
+                                ));
+                        }
+                    } else {
+                        *watch = (pos.0, 0.0, false);
+                    }
                     continue;
                 }
                 let Some(target) = rim else {
                     // Open/flat ground — just idling, not trapped.
-                    *watch = (pos.0, 0.0, false);
+                    if below_grade {
+                        watch.2 = true;
+                        *board.egress_verdicts.entry(*uid).or_insert(0) += 1;
+                        if let Some(target) = organic_dest {
+                            board.egress_targets.insert(*uid, target);
+                            board
+                                .egress_best_distance
+                                .insert(*uid, pos.0.distance(target.map(|value| value as f32)));
+                        }
+                        colonist.0.climb_free_until = time.0 + 45.0;
+                        if let Some(destination) = organic_dest
+                            && let Some(entity) = id_maps.uid_entity(*uid)
+                            && let Some(agent) = agents.get_mut(entity)
+                        {
+                            agent.rtsim_controller.activity =
+                                Some(common::rtsim::NpcActivity::Goto(
+                                    destination.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0),
+                                    TRAVEL_SPEED,
+                                ));
+                        }
+                    } else {
+                        *watch = (pos.0, 0.0, false);
+                    }
                     continue;
                 };
                 watch.2 = true;
+                *board.egress_verdicts.entry(*uid).or_insert(0) += 1;
+                if let Some(target) = organic_dest {
+                    board.egress_targets.insert(*uid, target);
+                    board
+                        .egress_best_distance
+                        .insert(*uid, pos.0.distance(target.map(|value| value as f32)));
+                }
                 // B-LIVE3: the climb-free fail-safe is granted at the
                 // VERDICT, per-colonist — NOT in the plan-emission loop,
                 // whose one-plan-at-a-time take(0) swallowed it whenever
@@ -5864,6 +10014,15 @@ impl<'a> System<'a> for Sys {
                 // regression sat trapped 240s because of exactly that).
                 // The teleport backstop keys off this window.
                 colonist.0.climb_free_until = time.0 + 45.0;
+                if let Some(destination) = organic_dest
+                    && let Some(entity) = id_maps.uid_entity(*uid)
+                    && let Some(agent) = agents.get_mut(entity)
+                {
+                    agent.rtsim_controller.activity = Some(common::rtsim::NpcActivity::Goto(
+                        destination.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0),
+                        TRAVEL_SPEED,
+                    ));
+                }
                 egress_requests.push((*uid, feet, target));
             }
             // ── B6 (reviewer F3): STALE ACCESS-PLAN PRUNING ──────────────
@@ -5876,13 +10035,28 @@ impl<'a> System<'a> for Sys {
             // real structure); the plan can re-emit fresh if still needed.
             const ACCESS_STALE_SECS: f32 = 20.0;
             let access_jobs_exist = board.jobs.values().any(|j| j.is_access);
-            let access_claimed =
-                board.jobs.values().any(|j| j.is_access && j.claimed_by.is_some());
+            let access_claimed = board
+                .jobs
+                .values()
+                .any(|j| j.is_access && j.claimed_by.is_some());
             if access_jobs_exist && !access_claimed {
                 board.access_idle_secs += 1.0; // this pass ≈ once per second
                 if board.access_idle_secs >= ACCESS_STALE_SECS {
                     let before = board.jobs.len();
-                    board.jobs.retain(|_, j| !j.is_access);
+                    let stale: Vec<JobId> = board
+                        .jobs
+                        .iter()
+                        .filter_map(|(id, job)| {
+                            (job.is_access && !board.emergency_access_jobs.contains_key(id))
+                                .then_some(*id)
+                        })
+                        .collect();
+                    for id in stale {
+                        board.jobs.remove(&id);
+                        if let Some(owner) = board.emergency_access_jobs.remove(&id) {
+                            board.emergency_cleanup_pending.insert(owner);
+                        }
+                    }
                     info!(
                         pruned = before - board.jobs.len(),
                         "bastion: stale access plan abandoned (F3 pruner)"
@@ -5893,11 +10067,224 @@ impl<'a> System<'a> for Sys {
                 board.access_idle_secs = 0.0;
             }
 
-            let egress_pending = board.jobs.values().any(|j| j.is_access);
-            for (uid, from, to) in egress_requests
-                .into_iter()
-                .take(if egress_pending { 0 } else { 1 })
-            {
+            if execution_mode.is_deterministic() {
+                egress_requests.sort_by_key(|(uid, from, to)| {
+                    (uid.0.get(), from.x, from.y, from.z, to.x, to.y, to.z)
+                });
+            }
+            for (uid, requested_from, to) in egress_requests {
+                let entity = id_maps.uid_entity(uid);
+                let actual_pos = entity
+                    .and_then(|entity| positions.get(entity))
+                    .map(|position| position.0);
+                let from = actual_pos
+                    .map(|position| position.map(|value| value.floor() as i32))
+                    .unwrap_or(requested_from);
+                if let Some((route_owner, route_target)) =
+                    nearby_emergency_route(board, &terrain, from, EGRESS_BUBBLE_R)
+                {
+                    board.emergency_settle_anchors.remove(&uid);
+                    if let Some(entity) = entity
+                        && let Some(agent) = agents.get_mut(entity)
+                    {
+                        agent.rtsim_controller.activity = None;
+                    }
+                    board.emergency_route_members.insert(uid, route_owner);
+                    board.egress_targets.insert(uid, route_target);
+                    board.emergency_safe_secs.remove(&uid);
+                    continue;
+                }
+                // Different pockets may not emit overlapping terrain plans.
+                // Requests that cannot share the live route remain armed and
+                // retry deterministically after that route is cleaned up.
+                if board.jobs.values().any(|job| job.is_access) {
+                    continue;
+                }
+                let physics = entity.and_then(|entity| physics_states.get(entity));
+                let source_body_clear = terrain.get(from).is_ok_and(|block| !block.is_solid())
+                    && terrain
+                        .get(from + Vec3::unit_z())
+                        .is_ok_and(|block| !block.is_solid());
+                let source_grounded =
+                    physics.is_some_and(|state| state.on_ground.is_some()) && source_body_clear;
+                let source_route_climb = entity.is_some_and(|entity| {
+                    board.emergency_route_members.contains_key(&uid)
+                        && matches!(
+                            char_states.get(entity),
+                            Some(comp::CharacterState::Climb(_))
+                        )
+                        && physics.is_some_and(|state| state.on_wall.is_some())
+                        && source_body_clear
+                });
+                if source_grounded || source_route_climb {
+                    if let Some(settle) = board.emergency_settle_anchors.remove(&uid) {
+                        if let Some(entity) = entity
+                            && let Some(agent) = agents.get_mut(entity)
+                        {
+                            agent.rtsim_controller.activity = None;
+                        }
+                        if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                            info!(
+                                tick = tick.0,
+                                owner = uid.0.get(),
+                                ?from,
+                                anchor = ?settle.anchor,
+                                elapsed_ticks = tick.0.saturating_sub(settle.started_tick),
+                                source_grounded,
+                                source_route_climb,
+                                reason = "anchor_established",
+                                "bastion: emergency settle completed"
+                            );
+                        }
+                    }
+                }
+                if !source_grounded && !source_route_climb {
+                    // REQ-0068: do not merely wait while the generic climb
+                    // writer keeps an unsupported owner pinned in Wallrun.
+                    // Reuse the deterministic standable-cell selector, the
+                    // entity's authoritative collision cylinder, normal Goto,
+                    // and Stand. No position/velocity write is made here.
+                    board.egress_pending.push((uid, from, to));
+                    const SETTLE_NO_PROGRESS_TICKS: u64 = (STUCK_TIMEOUT * 30.0) as u64;
+                    let previous = board.emergency_settle_anchors.get(&uid).copied();
+                    let route_cell = |candidate: Vec3<i32>| {
+                        board.emergency_access_cells.contains_key(&candidate)
+                            || board
+                                .emergency_access_cells
+                                .contains_key(&(candidate - Vec3::unit_z()))
+                            || board
+                                .emergency_access_cells
+                                .contains_key(&(candidate + Vec3::unit_z()))
+                    };
+                    let standable = |candidate: Vec3<i32>| {
+                        !route_cell(candidate)
+                            && terrain
+                                .get(candidate - Vec3::unit_z())
+                                .is_ok_and(|block| block.is_solid())
+                            && terrain.get(candidate).is_ok_and(|block| !block.is_solid())
+                            && terrain
+                                .get(candidate + Vec3::unit_z())
+                                .is_ok_and(|block| !block.is_solid())
+                    };
+                    let candidate = previous
+                        .and_then(|settle| settle.anchor)
+                        .filter(|candidate| standable(*candidate))
+                        .or_else(|| common::bastion::eject_dest_free(&terrain, from))
+                        .filter(|candidate| standable(*candidate));
+                    let scale = entity
+                        .and_then(|entity| scales.get(entity))
+                        .map_or(1.0, |scale| scale.0.min(10.0));
+                    let cylinder =
+                        entity
+                            .and_then(|entity| colliders.get(entity))
+                            .and_then(|collider| {
+                                common_systems::phys::capsule_terrain_cylinder(
+                                    collider, scale, 0.45,
+                                )
+                            });
+                    let anchor_pos = candidate
+                        .map(|anchor| anchor.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0));
+                    let sweep_hit = actual_pos.and_then(|start| {
+                        anchor_pos.and_then(|end| {
+                            cylinder.and_then(|cylinder| {
+                                common_systems::phys::cylinder_sweep_first_collision(
+                                    &*terrain, start, end, cylinder,
+                                )
+                            })
+                        })
+                    });
+                    let anchor_clear = candidate.is_some()
+                        && actual_pos.is_some()
+                        && cylinder.is_some()
+                        && sweep_hit.is_none();
+                    let distance = actual_pos
+                        .zip(anchor_pos)
+                        .map_or(f32::INFINITY, |(position, anchor)| {
+                            position.distance(anchor)
+                        });
+                    let mut settle = previous.unwrap_or(EmergencySettleAnchor {
+                        anchor: candidate,
+                        target: to,
+                        started_tick: tick.0,
+                        last_progress_tick: tick.0,
+                        best_distance: distance,
+                    });
+                    if settle.target != to || settle.anchor != candidate {
+                        settle.target = to;
+                        settle.anchor = candidate;
+                        settle.last_progress_tick = tick.0;
+                        settle.best_distance = distance;
+                    } else if distance + 0.1 < settle.best_distance {
+                        settle.best_distance = distance;
+                        settle.last_progress_tick = tick.0;
+                    }
+                    let no_progress = tick.0.saturating_sub(settle.last_progress_tick)
+                        >= SETTLE_NO_PROGRESS_TICKS;
+                    let reason = if candidate.is_none() {
+                        "anchor_unavailable"
+                    } else if !anchor_clear {
+                        "anchor_blocked"
+                    } else if no_progress {
+                        "anchor_no_progress"
+                    } else {
+                        "settling"
+                    };
+                    if no_progress {
+                        // End this bounded attempt, but leave the original
+                        // egress request and universal 60-second watchdog
+                        // armed. The next sample may select a newly valid
+                        // anchor after ordinary physics/terrain changes.
+                        settle.anchor = None;
+                        settle.last_progress_tick = tick.0;
+                        settle.best_distance = f32::INFINITY;
+                    }
+                    board.emergency_settle_anchors.insert(uid, settle);
+                    if let Some(entity) = entity {
+                        if let Some(agent) = agents.get_mut(entity) {
+                            agent.rtsim_controller.activity = if anchor_clear && !no_progress {
+                                anchor_pos.map(|anchor| {
+                                    common::rtsim::NpcActivity::Goto(anchor, TRAVEL_SPEED)
+                                })
+                            } else {
+                                None
+                            };
+                        }
+                        if let Some(controller) = controllers.get_mut(entity) {
+                            controller.push_action(comp::ControlAction::Stand);
+                        }
+                    }
+                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                        info!(
+                            tick = tick.0,
+                            owner = uid.0.get(),
+                            ?requested_from,
+                            ?from,
+                            ?to,
+                            ?actual_pos,
+                            on_ground = physics.is_some_and(|state| state.on_ground.is_some()),
+                            on_wall = ?physics.and_then(|state| state.on_wall),
+                            source_body_clear,
+                            source_grounded,
+                            source_route_climb,
+                            ?candidate,
+                            ?anchor_pos,
+                            ?cylinder,
+                            ?sweep_hit,
+                            distance,
+                            best_distance = settle.best_distance,
+                            elapsed_ticks = tick.0.saturating_sub(settle.started_tick),
+                            no_progress_ticks = tick.0.saturating_sub(settle.last_progress_tick),
+                            writer = if anchor_clear && !no_progress {
+                                "npc-goto+stand"
+                            } else {
+                                "stand-only"
+                            },
+                            reason,
+                            "bastion: emergency settle deferred route emission"
+                        );
+                    }
+                    continue;
+                }
                 let bubble = [Region {
                     min: Vec3::new(
                         from.x - EGRESS_BUBBLE_R,
@@ -5910,8 +10297,62 @@ impl<'a> System<'a> for Sys {
                         from.z + 64,
                     ),
                 }];
-                match plan_access(board, &terrain, &bubble, from, to) {
+                let approach_context = entity.and_then(|entity| {
+                    let scale = scales.get(entity).map_or(1.0, |scale| scale.0.min(10.0));
+                    actual_pos.zip(colliders.get(entity).and_then(|collider| {
+                        common_systems::phys::capsule_terrain_cylinder(collider, scale, 0.22)
+                    }))
+                });
+                match plan_access(
+                    board,
+                    &terrain,
+                    &bubble,
+                    from,
+                    to,
+                    Some(uid),
+                    approach_context,
+                ) {
                     Some((kind, steps)) => {
+                        if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                            let entity = id_maps.uid_entity(uid);
+                            let actual_pos = entity
+                                .and_then(|entity| positions.get(entity))
+                                .map(|position| position.0);
+                            let velocity = entity
+                                .and_then(|entity| velocities.get(entity))
+                                .map(|velocity| velocity.0);
+                            let physics = entity.and_then(|entity| physics_states.get(entity));
+                            info!(
+                                tick = tick.0,
+                                owner = uid.0.get(),
+                                ?from,
+                                ?to,
+                                ?kind,
+                                steps,
+                                ?actual_pos,
+                                ?velocity,
+                                on_ground = physics
+                                    .is_some_and(|state| state.on_ground.is_some()),
+                                on_wall = ?physics.and_then(|state| state.on_wall),
+                                from_support_filled = terrain
+                                    .get(from - Vec3::unit_z())
+                                    .is_ok_and(|block| block.is_filled()),
+                                from_body_filled = terrain
+                                    .get(from)
+                                    .is_ok_and(|block| block.is_filled()),
+                                from_head_filled = terrain
+                                    .get(from + Vec3::unit_z())
+                                    .is_ok_and(|block| block.is_filled()),
+                                "bastion: emergency access plan source diagnostic"
+                            );
+                        }
+                        if let Some((route_owner, route_target)) =
+                            nearby_emergency_route(board, &terrain, from, EGRESS_BUBBLE_R)
+                        {
+                            board.emergency_route_members.insert(uid, route_owner);
+                            board.egress_targets.insert(uid, route_target);
+                        }
+                        *board.egress_plans_emitted.entry(uid).or_insert(0) += 1;
                         info!(
                             ?kind,
                             steps,
@@ -5920,6 +10361,7 @@ impl<'a> System<'a> for Sys {
                         );
                     },
                     None => {
+                        *board.egress_no_route.entry(uid).or_insert(0) += 1;
                         // Retry shortly rather than burning the attempt —
                         // terrain may open up (or another colonist digs).
                         if let Some(w) = board.egress_watch.get_mut(&uid) {
@@ -5963,6 +10405,831 @@ impl<'a> System<'a> for Sys {
             // completion-reset keeps the deep dig safe (the earlier 60s
             // deep-dig regression PREDATED the completion-reset). Bounds
             // entombment tightly.
+            // REQ-0040: emergency terrain is transactional. Once the owner
+            // reaches the exit (or a stale plan is abandoned), cancel every
+            // remaining provenance-marked job, wait until no colonist body
+            // occupies a changed cell, then restore the exact original
+            // blocks through the authoritative BlockChange path.
+            let provenance_owners: HashSet<Uid> = board
+                .emergency_access_cells
+                .values()
+                .map(|(owner, _)| *owner)
+                .collect();
+            const EMERGENCY_SAFE_SECS: f32 = 5.0;
+            let mut route_owners: Vec<Uid> = provenance_owners.into_iter().collect();
+            route_owners.sort_by_key(|owner| owner.0.get());
+            for route_owner in route_owners {
+                let route_cells: HashSet<Vec3<i32>> = board
+                    .emergency_access_cells
+                    .iter()
+                    .filter_map(|(cell, (owner, _))| (*owner == route_owner).then_some(*cell))
+                    .collect();
+                let route_top = board
+                    .emergency_access_cells
+                    .iter()
+                    .filter_map(|(cell, (owner, _))| (*owner == route_owner).then_some(cell.z))
+                    .max();
+                let mut members: Vec<Uid> = board
+                    .emergency_route_members
+                    .iter()
+                    .filter_map(|(member, owner)| (*owner == route_owner).then_some(*member))
+                    .collect();
+                members.sort_by_key(|member| member.0.get());
+                let traverser = board
+                    .traversal_queue_head(route_owner)
+                    .filter(|current| members.contains(current))
+                    .or_else(|| members.first().copied());
+                if let Some(traverser) = traverser {
+                    for waiting in members
+                        .iter()
+                        .copied()
+                        .filter(|member| *member != traverser)
+                    {
+                        if let Some(entity) = id_maps.uid_entity(waiting)
+                            && let Some(agent) = agents.get_mut(entity)
+                        {
+                            agent.rtsim_controller.activity = None;
+                        }
+                        board.stuck_watch.remove(&waiting);
+                    }
+                }
+                let mut safely_dismounted = Vec::new();
+                let mut lost_members = Vec::new();
+                let construction_complete = !board
+                    .emergency_access_jobs
+                    .values()
+                    .any(|owner| *owner == route_owner);
+                let route_descriptor_ready = construction_complete
+                    && emergency_route_descriptor_ready(board, &terrain, route_owner);
+                let route_complete = construction_complete && route_descriptor_ready;
+                for member in members {
+                    let mount_transaction = board.bastion_traversal_tasks.get(&member).copied();
+                    if let Some(transaction) = mount_transaction
+                        && let BastionTraversalPurpose::ConstructionFrontier(frontier) =
+                            transaction.purpose
+                    {
+                        match transaction.phase {
+                            BastionTraversalPhase::FrontierWork => {
+                                let frontier_pending = board
+                                    .emergency_access_jobs
+                                    .get(&frontier)
+                                    .is_some_and(|owner| *owner == route_owner)
+                                    && board.jobs.contains_key(&frontier);
+                                if frontier_pending {
+                                    // Work remains in the existing Arrived arm;
+                                    // keep transaction/contact ownership intact.
+                                    continue;
+                                }
+
+                                // The rung completed this tick. Advance the
+                                // route-local cursor directly to the next
+                                // monotonic pending JobId and retain the actual
+                                // post-physics frontier position/contact. This
+                                // avoids a false reset to the bottom entry.
+                                let next_frontier = board
+                                    .emergency_route_sequences
+                                    .get(&route_owner)
+                                    .and_then(|sequence| {
+                                        let completed_index = sequence
+                                            .iter()
+                                            .position(|(job, _)| *job == frontier)?;
+                                        sequence
+                                            .iter()
+                                            .skip(completed_index + 1)
+                                            .find(|(job, _)| {
+                                                board
+                                                    .emergency_access_jobs
+                                                    .get(job)
+                                                    .is_some_and(|owner| *owner == route_owner)
+                                                    && board.jobs.contains_key(job)
+                                            })
+                                            .copied()
+                                    });
+                                if let Some((next_job, completed_top)) = next_frontier
+                                    && let Some(entity) = id_maps.uid_entity(member)
+                                    && board.jobs.get(&next_job).is_some_and(|job| {
+                                        job.claimed_by.is_none() || job.claimed_by == Some(member)
+                                    })
+                                {
+                                    if let Some(job) = board.jobs.get_mut(&next_job) {
+                                        job.claimed_by = Some(member);
+                                    }
+                                    let _ = active_jobs.insert(entity, ActiveJob {
+                                        job: next_job,
+                                        state: ActiveJobState::Traveling,
+                                        best_dist: f32::INFINITY,
+                                        stuck_time: 0.0,
+                                        reset_dist: f32::INFINITY,
+                                        soft_granted: false,
+                                        stance: Vec3::unit_z(),
+                                    });
+                                    let next_top_z = match transaction.traversal_kind {
+                                        EmergencyTraversalKind::NaturalShaft => completed_top.z,
+                                        EmergencyTraversalKind::ConstructedLadder
+                                        | EmergencyTraversalKind::CarvedStair => {
+                                            completed_top.z - 1
+                                        },
+                                    };
+                                    let actual_position = positions.get(entity).map(|pos| pos.0);
+                                    let actual_feet = actual_position
+                                        .map(|position| position.map(|value| value.floor() as i32));
+                                    let physics = physics_states.get(entity);
+                                    let climbing = matches!(
+                                        char_states.get(entity),
+                                        Some(comp::CharacterState::Climb(_))
+                                    );
+                                    let body_clear = actual_feet.is_some_and(|feet| {
+                                        terrain.get(feet).is_ok_and(|block| !block.is_solid())
+                                            && terrain
+                                                .get(feet + Vec3::unit_z())
+                                                .is_ok_and(|block| !block.is_solid())
+                                    });
+                                    let support = actual_feet.is_some_and(|feet| {
+                                        terrain
+                                            .get(feet - Vec3::unit_z())
+                                            .is_ok_and(|block| block.is_solid())
+                                    });
+                                    let ladder_provenance = actual_feet.is_some_and(|feet| {
+                                        route_cells.iter().any(|cell| {
+                                            cell.xy().distance_squared(feet.xy()) == 1
+                                                && cell.z >= feet.z.saturating_sub(1)
+                                                && cell.z <= next_top_z + 1
+                                                && terrain
+                                                    .get(*cell)
+                                                    .ok()
+                                                    .and_then(|block| block.get_sprite())
+                                                    == Some(SpriteKind::Ladder)
+                                        })
+                                    });
+                                    let natural_shaft_provenance =
+                                        actual_feet.is_some_and(|feet| {
+                                            board
+                                                .emergency_route_descriptors
+                                                .get(&route_owner)
+                                                .is_some_and(|descriptor| {
+                                                    descriptor.kind
+                                                        == EmergencyTraversalKind::NaturalShaft
+                                                        && feet.xy() == descriptor.entry.xy()
+                                                        && descriptor.wall_dir.is_some_and(
+                                                            |wall_dir| {
+                                                                terrain
+                                                                    .get(Vec3::new(
+                                                                        feet.x + wall_dir.x,
+                                                                        feet.y + wall_dir.y,
+                                                                        feet.z,
+                                                                    ))
+                                                                    .is_ok_and(|block| {
+                                                                        block.is_solid()
+                                                                    })
+                                                            },
+                                                        )
+                                                        && emergency_completed_route_prefix(
+                                                            board,
+                                                            &terrain,
+                                                            route_owner,
+                                                            next_job,
+                                                        )
+                                                        .is_some()
+                                                })
+                                        });
+                                    let contact_provenance = match transaction.traversal_kind {
+                                        EmergencyTraversalKind::ConstructedLadder => {
+                                            ladder_provenance
+                                        },
+                                        EmergencyTraversalKind::NaturalShaft => {
+                                            natural_shaft_provenance
+                                        },
+                                        EmergencyTraversalKind::CarvedStair => false,
+                                    };
+                                    let contact_valid = climbing
+                                        && physics.is_some_and(|state| state.on_wall.is_some())
+                                        && body_clear
+                                        && contact_provenance;
+                                    board.emergency_partial_route_entries.remove(&member);
+                                    board.emergency_approach_corridors.remove(&member);
+                                    board.egress_targets.remove(&member);
+                                    if let Some(agent) = agents.get_mut(entity) {
+                                        agent.rtsim_controller.activity = None;
+                                    }
+                                    if contact_valid {
+                                        let mut next_transaction = transaction;
+                                        next_transaction.purpose =
+                                            BastionTraversalPurpose::ConstructionFrontier(next_job);
+                                        next_transaction.top_z = next_top_z;
+                                        next_transaction.phase =
+                                            BastionTraversalPhase::TraversingLink;
+                                        next_transaction.started_tick = tick.0;
+                                        next_transaction.phase_tick = tick.0;
+                                        next_transaction.last_progress_tick = tick.0;
+                                        next_transaction.best_z = actual_position
+                                            .map_or(completed_top.z as f32 - 1.0, |pos| pos.z);
+                                        next_transaction.abort_reason = None;
+                                        if let Some(descriptor) = board
+                                            .emergency_route_descriptors
+                                            .get(&route_owner)
+                                            .copied()
+                                        {
+                                            next_transaction.terrain_revision =
+                                                emergency_route_terrain_revision(
+                                                    &terrain, descriptor,
+                                                );
+                                            next_transaction.entry = descriptor.entry;
+                                            next_transaction.exit = descriptor.dismount;
+                                        }
+                                        board
+                                            .bastion_traversal_tasks
+                                            .insert(member, next_transaction);
+                                        board.emergency_frontier_reacquire.remove(&member);
+                                        info!(
+                                            owner = route_owner.0.get(),
+                                            uid = member.0.get(),
+                                            completed_job = frontier,
+                                            next_job,
+                                            next_top_z,
+                                            ?actual_position,
+                                            velocity = ?velocities.get(entity).map(|velocity| velocity.0),
+                                            character_state = ?char_states.get(entity),
+                                            on_ground = physics.is_some_and(|state| state.on_ground.is_some()),
+                                            on_wall = ?physics.and_then(|state| state.on_wall),
+                                            support,
+                                            body_clear,
+                                            ladder_provenance,
+                                            natural_shaft_provenance,
+                                            contact_provenance,
+                                            selected_phase = "ContinueClimb",
+                                            ordinary_arrival_suppressed = true,
+                                            tick = tick.0,
+                                            writer = "emergency_route_cursor",
+                                            "bastion: partial emergency route advanced construction cursor"
+                                        );
+                                    } else {
+                                        // REQ-0072: the cursor may reserve the
+                                        // next monotonic frontier, but it may
+                                        // not manufacture a Climbing state
+                                        // after post-physics contact was lost.
+                                        // Keep the claim route-owned and let
+                                        // the existing supported-entry/Goto/
+                                        // mount pipeline reacquire contact.
+                                        let mut aborted = transaction;
+                                        aborted.purpose =
+                                            BastionTraversalPurpose::ConstructionFrontier(next_job);
+                                        aborted.abort("frontier-contact-lost", tick.0);
+                                        board.bastion_traversal_tasks.insert(member, aborted);
+                                        info!(
+                                            owner = route_owner.0.get(),
+                                            uid = member.0.get(),
+                                            completed_job = frontier,
+                                            next_job,
+                                            next_top_z,
+                                            ?actual_position,
+                                            velocity = ?velocities.get(entity).map(|velocity| velocity.0),
+                                            character_state = ?char_states.get(entity),
+                                            on_ground = physics.is_some_and(|state| state.on_ground.is_some()),
+                                            on_wall = ?physics.and_then(|state| state.on_wall),
+                                            support,
+                                            body_clear,
+                                            ladder_provenance,
+                                            selected_phase = "ReacquireFrontierContact",
+                                            ordinary_arrival_suppressed = true,
+                                            tick = tick.0,
+                                            writer = "emergency_route_cursor",
+                                            "bastion: partial emergency route queued contact reacquisition"
+                                        );
+                                    }
+                                    continue;
+                                }
+
+                                board.bastion_traversal_tasks.remove(&member);
+                                board.emergency_partial_route_entries.remove(&member);
+                                board.emergency_approach_corridors.remove(&member);
+                                board.emergency_frontier_reacquire.remove(&member);
+                                board.egress_targets.remove(&member);
+                                info!(
+                                    owner = route_owner.0.get(),
+                                    uid = member.0.get(),
+                                    completed_job = frontier,
+                                    tick = tick.0,
+                                    "bastion: partial emergency route frontier work completed; \
+                                     cursor released"
+                                );
+                                continue;
+                            },
+                            BastionTraversalPhase::Abort => {
+                                board.bastion_traversal_tasks.remove(&member);
+                                board.emergency_partial_route_entries.remove(&member);
+                                board.emergency_approach_corridors.remove(&member);
+                                board.egress_targets.remove(&member);
+                                board.emergency_frontier_reacquire.insert(member, frontier);
+                                if let Some(entity) = id_maps.uid_entity(member) {
+                                    if let Some(active) = active_jobs.get_mut(entity)
+                                        && active.job == frontier
+                                    {
+                                        active.state = ActiveJobState::Traveling;
+                                        active.stuck_time = 0.0;
+                                    }
+                                    if let Some(agent) = agents.get_mut(entity) {
+                                        agent.rtsim_controller.activity = None;
+                                    }
+                                }
+                                info!(
+                                    owner = route_owner.0.get(),
+                                    uid = member.0.get(),
+                                    job = frontier,
+                                    tick = tick.0,
+                                    reason = ?transaction.abort_reason,
+                                    "bastion: partial emergency route traversal aborted; frontier preserved"
+                                );
+                                continue;
+                            },
+                            _ => {
+                                // Approach/climb is owned by the existing
+                                // authoritative transaction. Full-route exit
+                                // bookkeeping must not interpret this member
+                                // as lost or safely dismounted.
+                                continue;
+                            },
+                        }
+                    }
+                    if board
+                        .bastion_traversal_tasks
+                        .get(&member)
+                        .is_some_and(|transaction| {
+                            transaction.phase == BastionTraversalPhase::Abort
+                        })
+                    {
+                        lost_members.push(member);
+                        continue;
+                    }
+                    if mount_transaction.is_some_and(|transaction| {
+                        transaction.phase == BastionTraversalPhase::Complete
+                    }) {
+                        safely_dismounted.push(member);
+                        continue;
+                    }
+                    if route_complete
+                        && mount_transaction.is_none()
+                        && let Some(permanent_target) =
+                            board.emergency_route_targets.get(&route_owner).copied()
+                        && let Some(position) = id_maps
+                            .uid_entity(member)
+                            .and_then(|entity| positions.get(entity))
+                    {
+                        let feet = position.0.map(|value| value.floor() as i32);
+                        if let Some(waypoint) = emergency_route_waypoint(
+                            &terrain,
+                            feet,
+                            &route_cells,
+                            permanent_target,
+                            board.emergency_route_mounts.get(&route_owner).copied(),
+                        ) {
+                            board.egress_targets.insert(member, waypoint);
+                            if let Some(entity) = id_maps.uid_entity(member)
+                                && let Some(agent) = agents.get_mut(entity)
+                            {
+                                // The final orthogonal mount approach is
+                                // executed by the preflighted local stepper.
+                                // A normal Goto written here survives until
+                                // the next system pass and steers the body
+                                // back out of the one-wide lane before that
+                                // stepper can advance (REQ-0058 smoke36c).
+                                let local_mount_owned =
+                                    board.bastion_traversal_tasks.contains_key(&member);
+                                agent.rtsim_controller.activity = (!local_mount_owned).then_some(
+                                    common::rtsim::NpcActivity::Goto(
+                                        waypoint.map(|value| value as f32)
+                                            + Vec3::new(0.5, 0.5, 0.0),
+                                        TRAVEL_SPEED,
+                                    ),
+                                );
+                            }
+                            if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                                info!(
+                                    tick = tick.0,
+                                    owner = route_owner.0.get(),
+                                    uid = member.0.get(),
+                                    ?feet,
+                                    ?waypoint,
+                                    ?permanent_target,
+                                    route_mount = ?board.emergency_route_mounts.get(&route_owner),
+                                    route_descriptor = ?board.emergency_route_descriptors.get(&route_owner),
+                                    route_descriptor_ready,
+                                    route_top,
+                                    jobs_remaining = board
+                                        .emergency_access_jobs
+                                        .values()
+                                        .filter(|owner| **owner == route_owner)
+                                        .count(),
+                                    cells_remaining = route_cells.len(),
+                                    cleanup_pending = board
+                                        .emergency_cleanup_pending
+                                        .contains(&route_owner),
+                                    writer = "emergency_route_cleanup_waypoint",
+                                    "bastion: emergency cleanup lifecycle selected exit waypoint"
+                                );
+                            }
+                        } else {
+                            board.egress_targets.remove(&member);
+                            if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                                info!(
+                                    uid = member.0.get(),
+                                    owner = route_owner.0.get(),
+                                    ?feet,
+                                    ?permanent_target,
+                                    "bastion: emergency route has no collision-valid waypoint"
+                                );
+                            }
+                        }
+                    }
+                    if board.bastion_traversal_tasks.contains_key(&member) {
+                        // REQ-0061: broad route upkeep must not install a
+                        // Goto, count a ladder-top sample as safe dismount, or
+                        // otherwise compete with an active exit transaction.
+                        continue;
+                    }
+                    let (stable_exit, dismount_target) = id_maps
+                        .uid_entity(member)
+                        .and_then(|entity| positions.get(entity))
+                        .map_or((true, None), |position| {
+                            let feet = position.0.map(|value| value.floor() as i32);
+                            let below_grade =
+                                surface_teleport_dest(&terrain, feet).is_some_and(|destination| {
+                                    destination
+                                        .map(|value| value as f32)
+                                        .xy()
+                                        .distance(position.0.xy())
+                                        >= 3.0
+                                        || (destination.z as f32 - position.0.z) >= 3.0
+                                });
+                            let at_route_exit =
+                                route_top.is_some_and(|top| position.0.z >= top as f32 - 1.0);
+                            let supported = terrain
+                                .get(feet - Vec3::unit_z())
+                                .is_ok_and(|block| block.is_filled());
+                            let body_clear =
+                                terrain.get(feet).is_ok_and(|block| !block.is_filled())
+                                    && terrain
+                                        .get(feet + Vec3::unit_z())
+                                        .is_ok_and(|block| !block.is_filled());
+                            let occupies_route = route_cells.contains(&(feet - Vec3::unit_z()))
+                                || route_cells.contains(&feet)
+                                || route_cells.contains(&(feet + Vec3::unit_z()));
+                            let at_verified_exit =
+                                !below_grade || (at_route_exit && supported && body_clear);
+                            let dismount = (at_verified_exit && occupies_route)
+                                .then(|| emergency_dismount_dest(&terrain, feet, &route_cells))
+                                .flatten();
+                            (at_verified_exit && !occupies_route, dismount)
+                        });
+                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                        let member_state = id_maps.uid_entity(member).and_then(|entity| {
+                            let position = positions.get(entity)?.0;
+                            let feet = position.map(|value| value.floor() as i32);
+                            let activity = agents
+                                .get(entity)
+                                .and_then(|agent| agent.rtsim_controller.activity.as_ref())
+                                .map(|activity| format!("{activity:?}"));
+                            Some((position, feet, activity))
+                        });
+                        info!(
+                            tick = tick.0,
+                            owner = route_owner.0.get(),
+                            uid = member.0.get(),
+                            route_complete,
+                            ?member_state,
+                            ?route_top,
+                            route_target = ?board.emergency_route_targets.get(&route_owner),
+                            route_mount = ?board.emergency_route_mounts.get(&route_owner),
+                            route_descriptor = ?board.emergency_route_descriptors.get(&route_owner),
+                            construction_complete,
+                            route_descriptor_ready,
+                            route_cells = route_cells.len(),
+                            stable_exit,
+                            ?dismount_target,
+                            safe_secs = board.emergency_safe_secs.get(&member).copied(),
+                            cleanup_pending = board.emergency_cleanup_pending.contains(&route_owner),
+                            transaction = ?board.bastion_traversal_tasks.get(&member),
+                            writer = "emergency_route_cleanup_lifecycle",
+                            "bastion: emergency cleanup lifecycle decision"
+                        );
+                    }
+                    if let Some(target) = dismount_target {
+                        board.egress_targets.insert(member, target);
+                        board.egress_best_distance.remove(&member);
+                        board.egress_no_progress_secs.remove(&member);
+                    }
+                    if stable_exit {
+                        let safe_secs = board.emergency_safe_secs.entry(member).or_insert(0.0);
+                        *safe_secs += 1.0;
+                        if *safe_secs >= EMERGENCY_SAFE_SECS {
+                            safely_dismounted.push(member);
+                        }
+                    } else {
+                        board.emergency_safe_secs.remove(&member);
+                        let route_distance = id_maps
+                            .uid_entity(member)
+                            .and_then(|entity| positions.get(entity))
+                            .and_then(|position| {
+                                board
+                                    .emergency_access_cells
+                                    .iter()
+                                    .filter_map(|(cell, (owner, _))| {
+                                        (*owner == route_owner).then_some(
+                                            cell.xy()
+                                                .map(|value| value as f32)
+                                                .distance_squared(position.0.xy()),
+                                        )
+                                    })
+                                    .reduce(f32::min)
+                            });
+                        if route_distance.is_some_and(|distance| {
+                            distance > (EGRESS_BUBBLE_R * EGRESS_BUBBLE_R * 4) as f32
+                        }) {
+                            lost_members.push(member);
+                        }
+                    }
+                }
+                for member in safely_dismounted {
+                    // REQ-0090: route completion is also an activity-ownership
+                    // boundary.  The old cleanup/exit Goto used to survive
+                    // removal from `emergency_route_members`, so ordinary AI
+                    // resumed by following that stale target back below the
+                    // verified surface exit.  Invalidate the route-owned
+                    // activity, endpoint contract, Chaser history, and current
+                    // input while membership/provenance still identify this as
+                    // an emergency release.  A later ordinary job may install
+                    // a fresh activity on a subsequent pass.
+                    let transaction_before = board.bastion_traversal_tasks.get(&member).copied();
+                    let exit_target = transaction_before.and_then(|transaction| {
+                        (transaction.owner == route_owner
+                            && transaction.phase == BastionTraversalPhase::Complete)
+                            .then_some(transaction.exit_target)
+                            .flatten()
+                    });
+                    let member_position = id_maps
+                        .uid_entity(member)
+                        .and_then(|entity| positions.get(entity))
+                        .map(|position| position.0);
+                    let mut activity_before = None;
+                    let mut activity_after = None;
+                    let mut endpoint_before = None;
+                    let mut controller_input_before = None;
+                    let mut controller_input_after = None;
+                    if let Some(entity) = id_maps.uid_entity(member)
+                        && let Some(agent) = agents.get_mut(entity)
+                    {
+                        activity_before = agent.rtsim_controller.activity;
+                        endpoint_before = activity_before.and_then(|activity| match activity {
+                            common::rtsim::NpcActivity::Goto(target, _) => agent
+                                .rtsim_controller
+                                .path_endpoint_tolerance(target)
+                                .map(|tolerance| (target, tolerance)),
+                            _ => None,
+                        });
+                        controller_input_before = controllers.get(entity).map(|controller| {
+                            (controller.inputs.move_dir, controller.inputs.move_z)
+                        });
+                        clear_verified_emergency_exit_movement(
+                            &mut agent.rtsim_controller,
+                            &mut agent.chaser,
+                            controllers.get_mut(entity),
+                        );
+                        activity_after = agent.rtsim_controller.activity;
+                        controller_input_after = controllers.get(entity).map(|controller| {
+                            (controller.inputs.move_dir, controller.inputs.move_z)
+                        });
+                    }
+                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                        let below_exit_plane = member_position
+                            .zip(route_top)
+                            .is_some_and(|(position, top)| position.z < top as f32 - 1.0);
+                        info!(
+                            tick = tick.0,
+                            owner = route_owner.0.get(),
+                            uid = member.0.get(),
+                            ?member_position,
+                            ?route_top,
+                            ?exit_target,
+                            ?activity_before,
+                            ?endpoint_before,
+                            ?activity_after,
+                            ?controller_input_before,
+                            ?controller_input_after,
+                            below_exit_plane,
+                            stable_confirmation_complete = true,
+                            route_membership_present = board
+                                .emergency_route_members
+                                .get(&member)
+                                .is_some_and(|owner| *owner == route_owner),
+                            writer = "verified_emergency_exit_release",
+                            "bastion: cleared stale egress movement at verified surface exit"
+                        );
+                    }
+                    board.bastion_traversal_tasks.remove(&member);
+                    board.emergency_frontier_reacquire.remove(&member);
+                    board.emergency_climb_profiles.remove(&member);
+                    if let Some(entity) = id_maps.uid_entity(member) {
+                        constructed_ladder_traversals.remove(entity);
+                    }
+                    board.emergency_route_members.remove(&member);
+                    board.emergency_approach_corridors.remove(&member);
+                    board.emergency_safe_secs.remove(&member);
+                    board.egress_targets.remove(&member);
+                    board.egress_best_distance.remove(&member);
+                    board.egress_no_progress_secs.remove(&member);
+                    board.stuck_watch.remove(&member);
+                }
+                for member in lost_members {
+                    board.bastion_traversal_tasks.remove(&member);
+                    board.emergency_frontier_reacquire.remove(&member);
+                    board.emergency_climb_profiles.remove(&member);
+                    if let Some(entity) = id_maps.uid_entity(member) {
+                        constructed_ladder_traversals.remove(entity);
+                    }
+                    if let Some(entity) = id_maps.uid_entity(member)
+                        && let Some(active) = active_jobs.get(entity).copied()
+                        && board
+                            .emergency_access_jobs
+                            .get(&active.job)
+                            .is_some_and(|owner| *owner == route_owner)
+                    {
+                        if let Some(job) = board.jobs.get_mut(&active.job) {
+                            job.claimed_by = None;
+                        }
+                        active_jobs.remove(entity);
+                    }
+                    // A member can leave the route bubble after its last
+                    // emergency job has already disappeared.  That was the
+                    // smoke78 UID3 seam: the route was released/restored, but
+                    // the old egress Goto survived because the conditional
+                    // block above had no ActiveJob to release.  Route
+                    // membership still proves ownership here, so invalidate
+                    // the same route movement state before removing it.  This
+                    // does not classify the member as a verified surface exit;
+                    // it only prevents a stale route command from surviving
+                    // an interrupted/lost-member cleanup release.
+                    let member_position = id_maps
+                        .uid_entity(member)
+                        .and_then(|entity| positions.get(entity))
+                        .map(|position| position.0);
+                    let mut activity_before = None;
+                    let mut activity_after = None;
+                    let mut controller_input_before = None;
+                    let mut controller_input_after = None;
+                    if let Some(entity) = id_maps.uid_entity(member)
+                        && let Some(agent) = agents.get_mut(entity)
+                    {
+                        activity_before = agent.rtsim_controller.activity;
+                        controller_input_before = controllers.get(entity).map(|controller| {
+                            (controller.inputs.move_dir, controller.inputs.move_z)
+                        });
+                        clear_verified_emergency_exit_movement(
+                            &mut agent.rtsim_controller,
+                            &mut agent.chaser,
+                            controllers.get_mut(entity),
+                        );
+                        activity_after = agent.rtsim_controller.activity;
+                        controller_input_after = controllers.get(entity).map(|controller| {
+                            (controller.inputs.move_dir, controller.inputs.move_z)
+                        });
+                    }
+                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                        info!(
+                            tick = tick.0,
+                            owner = route_owner.0.get(),
+                            uid = member.0.get(),
+                            ?member_position,
+                            ?route_top,
+                            ?activity_before,
+                            ?activity_after,
+                            ?controller_input_before,
+                            ?controller_input_after,
+                            stable_confirmation_complete = false,
+                            release_reason = "lost-member-route-bubble",
+                            route_membership_present = board
+                                .emergency_route_members
+                                .get(&member)
+                                .is_some_and(|owner| *owner == route_owner),
+                            writer = "emergency_route_lost_member_release",
+                            "bastion: cleared stale egress movement at interrupted route release"
+                        );
+                    }
+                    board.emergency_route_members.remove(&member);
+                    board.emergency_approach_corridors.remove(&member);
+                    board.emergency_safe_secs.remove(&member);
+                    board.egress_targets.remove(&member);
+                    board.egress_best_distance.remove(&member);
+                    board.egress_no_progress_secs.remove(&member);
+                    if let Some(watch) = board.egress_watch.get_mut(&member) {
+                        watch.2 = false;
+                        watch.1 = EGRESS_STILL_SECS - 10.0;
+                    }
+                }
+                if !board
+                    .emergency_route_members
+                    .values()
+                    .any(|owner| *owner == route_owner)
+                {
+                    board.emergency_cleanup_pending.insert(route_owner);
+                }
+            }
+            let cleanup_owners: Vec<Uid> =
+                board.emergency_cleanup_pending.iter().copied().collect();
+            for owner in cleanup_owners {
+                if board
+                    .emergency_route_members
+                    .values()
+                    .any(|route_owner| *route_owner == owner)
+                {
+                    continue;
+                }
+                let owned_jobs: HashSet<JobId> = board
+                    .emergency_access_jobs
+                    .iter()
+                    .filter_map(|(id, job_owner)| (*job_owner == owner).then_some(*id))
+                    .collect();
+                if !owned_jobs.is_empty() {
+                    let releases: Vec<specs::Entity> = (&entities, &active_jobs)
+                        .join()
+                        .filter_map(|(entity, active)| {
+                            owned_jobs.contains(&active.job).then_some(entity)
+                        })
+                        .collect();
+                    for entity in releases {
+                        active_jobs.remove(entity);
+                        if let Some(agent) = agents.get_mut(entity) {
+                            agent.rtsim_controller.activity = None;
+                        }
+                    }
+                    for id in &owned_jobs {
+                        board.jobs.remove(id);
+                        board.emergency_access_jobs.remove(id);
+                    }
+                }
+                let cells: Vec<(Vec3<i32>, Block)> = board
+                    .emergency_access_cells
+                    .iter()
+                    .filter_map(|(cell, (cell_owner, original))| {
+                        (*cell_owner == owner).then_some((*cell, *original))
+                    })
+                    .collect();
+                let occupied = cells.iter().any(|(cell, _)| {
+                    queue_snapshot.iter().any(|position| {
+                        let feet = position.map(|value| value.floor() as i32);
+                        feet - Vec3::unit_z() == *cell
+                            || feet == *cell
+                            || feet + Vec3::unit_z() == *cell
+                    })
+                });
+                if occupied
+                    || cells
+                        .iter()
+                        .any(|(cell, _)| !block_change.can_set_block(*cell))
+                {
+                    continue;
+                }
+                for (cell, original) in &cells {
+                    block_change.set(*cell, *original);
+                }
+                let restored: HashSet<Vec3<i32>> = cells.iter().map(|(cell, _)| *cell).collect();
+                board
+                    .access_anchors
+                    .retain(|anchor| !restored.contains(anchor));
+                board
+                    .emergency_access_cells
+                    .retain(|_, (cell_owner, _)| *cell_owner != owner);
+                board.emergency_route_targets.remove(&owner);
+                board.emergency_route_mounts.remove(&owner);
+                board.emergency_route_descriptors.remove(&owner);
+                board.emergency_route_approach_corridors.remove(&owner);
+                board
+                    .emergency_approach_corridors
+                    .retain(|_, corridor| corridor.owner != owner);
+                let restored_route_jobs: HashSet<JobId> = board
+                    .emergency_route_sequences
+                    .get(&owner)
+                    .into_iter()
+                    .flatten()
+                    .map(|(job, _)| *job)
+                    .collect();
+                board
+                    .emergency_frontier_reacquire
+                    .retain(|_, job| !restored_route_jobs.contains(job));
+                board.emergency_route_sequences.remove(&owner);
+                board
+                    .emergency_partial_route_entries
+                    .retain(|_, entry| entry.owner != owner);
+                board
+                    .bastion_traversal_tasks
+                    .retain(|_, transaction| transaction.owner != owner);
+                board.emergency_cleanup_pending.remove(&owner);
+                board.emergency_safe_secs.remove(&owner);
+                info!(
+                    owner = owner.0.get(),
+                    cells = cells.len(),
+                    "bastion: emergency access restored (REQ-0040)"
+                );
+            }
+
             const STUCK_TELEPORT_SECS: f32 = 60.0;
             // Working colonists are legitimately stationary — reset.
             for (_, uid, active) in (&colonists, &uids, &active_jobs).join() {
@@ -5970,11 +11237,14 @@ impl<'a> System<'a> for Sys {
                     board.stuck_watch.remove(uid);
                 }
             }
-            let mut tp_iter =
-                (&colonists, &uids, &mut positions, &mut velocities).lend_join();
-            while let Some((_colonist, uid, pos, vel)) = tp_iter.next() {
-                let is_working = id_maps.uid_entity(*uid).and_then(|e| active_jobs.get(e))
-                    .is_some_and(|a| matches!(a.state, ActiveJobState::Arrived));
+            let mut tp_iter = (&colonists, &uids, &mut positions, &mut velocities).lend_join();
+            while let Some((colonist, uid, pos, vel)) = tp_iter.next() {
+                let active = id_maps
+                    .uid_entity(*uid)
+                    .and_then(|e| active_jobs.get(e))
+                    .copied();
+                let is_working =
+                    active.is_some_and(|active| matches!(active.state, ActiveJobState::Arrived));
                 if is_working {
                     board.stuck_watch.remove(uid);
                     continue;
@@ -5994,12 +11264,8 @@ impl<'a> System<'a> for Sys {
                 // straggler sits in the pre-carved chamber (no designation)
                 // → teleports regardless. A digger's OWN job existing on
                 // the board is the real "it's working here" signal.
-                let is_real_digger = id_maps
-                    .uid_entity(*uid)
-                    .and_then(|e| active_jobs.get(e))
-                    .is_some_and(|a| board.jobs.contains_key(&a.job))
-                    && board.designated.iter().any(|r| r.contains_point(feet));
-                if is_real_digger {
+                let has_live_job = active.is_some_and(|job| board.jobs.contains_key(&job.job));
+                if has_live_job {
                     board.stuck_watch.remove(uid);
                     continue;
                 }
@@ -6017,22 +11283,130 @@ impl<'a> System<'a> for Sys {
                     board.stuck_watch.remove(uid);
                     continue;
                 }
+                let rescue_pending = board.egress_targets.contains_key(uid)
+                    && board.jobs.values().any(|job| job.is_access);
+                if rescue_pending {
+                    board.stuck_watch.remove(uid);
+                    continue;
+                }
                 let secs = board.stuck_watch.entry(*uid).or_insert(0.0);
                 *secs += 1.0; // this pass runs ~once per second
                 if *secs < STUCK_TELEPORT_SECS {
                     continue;
                 }
+                let stuck_seconds = *secs;
                 if let Some(d) = dest {
+                    let active_job = active.map(|active| active.job);
+                    let active_job_state = active.map(|active| format!("{:?}", active.state));
+                    let active_job_kind = active
+                        .and_then(|active| board.jobs.get(&active.job))
+                        .map(|job| format!("{:?}", job.kind));
+                    let active_job_is_access = active
+                        .and_then(|active| board.jobs.get(&active.job))
+                        .map(|job| job.is_access);
+                    let egress_verdicts = board.egress_verdicts.get(uid).copied().unwrap_or(0);
+                    let egress_plans_emitted =
+                        board.egress_plans_emitted.get(uid).copied().unwrap_or(0);
+                    let egress_no_route = board.egress_no_route.get(uid).copied().unwrap_or(0);
+                    let climb_free_active = colonist.0.climb_free_until > time.0;
+                    let entity = id_maps.uid_entity(*uid);
+                    let organic_destination = board
+                        .egress_targets
+                        .get(uid)
+                        .copied()
+                        .or_else(|| surface_egress_dest(&terrain, feet));
+                    let head_clear = terrain
+                        .get(feet + Vec3::unit_z() * 2)
+                        .map(|block| !block.is_solid())
+                        .unwrap_or(true);
+                    let on_ground = entity
+                        .and_then(|entity| physics_states.get(entity))
+                        .is_some_and(|physics| physics.on_ground.is_some());
+                    let on_wall = entity
+                        .and_then(|entity| physics_states.get(entity))
+                        .is_some_and(|physics| physics.on_wall.is_some());
+                    let character_state = entity
+                        .and_then(|entity| char_states.get(entity))
+                        .map(|state| format!("{state:?}"));
+                    let velocity = vel.0;
+                    let access_jobs_pending =
+                        board.jobs.values().filter(|job| job.is_access).count();
+                    let terminal_cause = if egress_verdicts == 0 {
+                        "below_grade_watch_without_egress_verdict"
+                    } else if egress_plans_emitted == 0 && egress_no_route > 0 {
+                        "egress_no_route_then_climb_free_expired"
+                    } else {
+                        "egress_plan_or_climb_free_failed"
+                    };
                     tracing::warn!(
+                        uid = uid.0.get(),
+                        name = colonist.0.name,
                         ?feet,
                         ?d,
-                        secs = *secs,
-                        "bastion: ULTIMATE FAIL-SAFE — teleporting stuck \
-                         colonist to ground (organic egress tiers failed)"
+                        secs = stuck_seconds,
+                        ?active_job,
+                        ?active_job_state,
+                        ?active_job_kind,
+                        ?active_job_is_access,
+                        egress_verdicts,
+                        egress_plans_emitted,
+                        egress_no_route,
+                        climb_free_active,
+                        ?organic_destination,
+                        head_clear,
+                        on_ground,
+                        on_wall,
+                        ?character_state,
+                        ?velocity,
+                        access_jobs_pending,
+                        terminal_cause,
+                        "bastion: ULTIMATE FAIL-SAFE — teleporting stuck colonist to ground \
+                         (organic egress tiers failed)"
                     );
+                    board.failsafe_events.push(FailsafeTeleportEvent {
+                        uid: uid.0.get(),
+                        name: colonist.0.name.clone(),
+                        feet,
+                        destination: d,
+                        stuck_seconds,
+                        active_job,
+                        active_job_state,
+                        active_job_kind,
+                        active_job_is_access,
+                        egress_verdicts,
+                        egress_plans_emitted,
+                        egress_no_route,
+                        climb_free_active,
+                        organic_destination,
+                        head_clear,
+                        on_ground,
+                        on_wall,
+                        character_state,
+                        velocity,
+                        access_jobs_pending,
+                        terminal_cause,
+                    });
                     pos.0 = d.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
                     vel.0 = Vec3::zero();
                     board.stuck_watch.remove(uid);
+                    board.bastion_traversal_tasks.remove(uid);
+                    board.emergency_partial_route_entries.remove(uid);
+                    board.emergency_approach_corridors.remove(uid);
+                    board.emergency_frontier_reacquire.remove(uid);
+                    board.emergency_settle_anchors.remove(uid);
+                    if let Some(route_owner) = board.emergency_route_members.remove(uid) {
+                        board.emergency_safe_secs.remove(uid);
+                        if !board
+                            .emergency_route_members
+                            .values()
+                            .any(|owner| *owner == route_owner)
+                        {
+                            board.emergency_cleanup_pending.insert(route_owner);
+                        }
+                    }
+                    board.egress_targets.remove(uid);
+                    board.egress_best_distance.remove(uid);
+                    board.egress_no_progress_secs.remove(uid);
                     // FR15 instrumentation: fix-2's success measure is this
                     // reverting to a RARE backstop (reported baseline).
                     board.failsafe_teleports += 1;
@@ -6064,6 +11438,200 @@ impl<'a> System<'a> for Sys {
         // a permanent life sentence, or a solid volume can never fully clear.
         // Retried periodically rather than every cycle: still costs an
         // arbitration attempt + a fresh watchdog timeout if truly stuck.
+        // REQ-0092/0094: one read-only post-bastion snapshot per colonist.
+        // The recorder is disabled by default; this branch performs no I/O or
+        // allocation unless BASTION_FLIGHT_RECORDER_DIR is explicitly set.
+        // Stage-1: publish the final task state once, after every route phase,
+        // cleanup and interruption decision in this system pass. Complete and
+        // Abort return `None` and release the shared discriminator exactly
+        // once; stale components are removed before live tasks are projected.
+        let stale_ownership_entities: Vec<_> = (&entities, &uids, &traversal_ownerships)
+            .join()
+            .filter_map(|(entity, uid, _)| {
+                (!board.bastion_traversal_tasks.contains_key(uid)).then_some(entity)
+            })
+            .collect();
+        for entity in stale_ownership_entities {
+            traversal_ownerships.remove(entity);
+        }
+        for (member, task) in &board.bastion_traversal_tasks {
+            if let Some(entity) = id_maps.uid_entity(*member) {
+                if let Some(ownership) = task.ownership() {
+                    let _ = traversal_ownerships.insert(entity, ownership);
+                } else {
+                    traversal_ownerships.remove(entity);
+                }
+            }
+        }
+
+        if crate::bastion_flight_recorder::enabled() {
+            for (entity, _, pos, uid, vel, physics, char_state, agent) in (
+                &entities,
+                &colonists,
+                &positions,
+                &uids,
+                &velocities,
+                &physics_states,
+                &char_states,
+                &agents,
+            )
+                .join()
+            {
+                let route_owner = board.emergency_route_members.get(uid).copied();
+                let descriptor =
+                    route_owner.and_then(|owner| board.emergency_route_descriptors.get(&owner));
+                let transaction = board.bastion_traversal_tasks.get(uid);
+                let traversal_ownership = traversal_ownerships.get(entity);
+                let corridor = board.emergency_approach_corridors.get(uid);
+                let frontier_job = transaction
+                    .and_then(|transaction| match transaction.purpose {
+                        BastionTraversalPurpose::ConstructionFrontier(job) => Some(job),
+                        BastionTraversalPurpose::FullExit => None,
+                    })
+                    .or_else(|| corridor.map(|corridor| corridor.frontier))
+                    .or_else(|| board.emergency_frontier_reacquire.get(uid).copied());
+                let phase = if let Some(transaction) = transaction {
+                    format!("{:?}", transaction.phase)
+                } else if corridor.is_some() {
+                    "LinkApproach".into()
+                } else if board.emergency_frontier_reacquire.contains_key(uid) {
+                    "ReacquireFrontierContact".into()
+                } else if route_owner.is_some() {
+                    "RouteOwnedWaiting".into()
+                } else {
+                    "NormalWalk".into()
+                };
+                let movement_writer = if transaction.is_some() {
+                    "bastion_traversal_task"
+                } else if corridor.is_some() {
+                    "agent_chaser_link_approach"
+                } else if route_owner.is_some() {
+                    "link_queue_waiting"
+                } else if matches!(
+                    agent.rtsim_controller.activity,
+                    Some(common::rtsim::NpcActivity::Goto(..))
+                ) {
+                    "agent_chaser_normal_walk"
+                } else {
+                    "none"
+                };
+                let goto_target = match agent.rtsim_controller.activity {
+                    Some(common::rtsim::NpcActivity::Goto(target, _)) => {
+                        Some([target.x, target.y, target.z])
+                    },
+                    _ => None,
+                };
+                let chaser = agent.chaser.diagnostic_snapshot();
+                let controller = controllers.get(entity);
+                let feet = pos.0.map(|value| value.floor() as i32);
+                let supported = terrain
+                    .get(feet - Vec3::unit_z())
+                    .is_ok_and(|block| block.is_solid());
+                let body_clear = terrain.get(feet).is_ok_and(|block| !block.is_solid());
+                let head_clear = terrain
+                    .get(feet + Vec3::unit_z())
+                    .is_ok_and(|block| !block.is_solid());
+                let endpoint_distance = goto_target
+                    .map(|target| pos.0.distance(Vec3::new(target[0], target[1], target[2])));
+                let active = active_jobs.get(entity);
+                let waypoint = corridor.and_then(|corridor| {
+                    corridor
+                        .waypoints
+                        .get(corridor.next_idx)
+                        .map(|waypoint| [waypoint.x, waypoint.y, waypoint.z])
+                });
+                let move_dir = controller
+                    .map(|controller| [controller.inputs.move_dir.x, controller.inputs.move_dir.y])
+                    .unwrap_or([0.0; 2]);
+                let move_z = controller
+                    .map(|controller| controller.inputs.move_z)
+                    .unwrap_or(0.0);
+
+                crate::bastion_flight_recorder::record_writer(
+                    crate::bastion_flight_recorder::WriterEvent {
+                        schema: "bastion.flight-recorder.event/v1".into(),
+                        tick: tick.0,
+                        uid: uid.0.get(),
+                        observation_sequence: 300,
+                        snapshot_stage: "bastion-jobs-post-lifecycle-snapshot".into(),
+                        dispatcher_dependency_proven: true,
+                        writer: "bastion_jobs_post_lifecycle".into(),
+                        move_dir,
+                        move_z,
+                        target: goto_target,
+                        note: format!(
+                            "phase={phase}; mode={:?}; link_id={:?}; route_owner={:?}; \
+                             frontier={frontier_job:?}",
+                            traversal_ownership.map(|ownership| ownership.mode),
+                            traversal_ownership.map(|ownership| ownership.link_id),
+                            route_owner.map(|owner| owner.0.get()),
+                        ),
+                    },
+                );
+                crate::bastion_flight_recorder::record_sample(
+                    crate::bastion_flight_recorder::FlightSample {
+                        schema: "bastion.flight-recorder.sample/v1".into(),
+                        tick: tick.0,
+                        simulated_seconds: time.0,
+                        wall_unix_millis: crate::bastion_flight_recorder::wall_unix_millis(),
+                        uid: uid.0.get(),
+                        entity: entity.id(),
+                        episode: 0,
+                        position: [pos.0.x, pos.0.y, pos.0.z],
+                        velocity: [vel.0.x, vel.0.y, vel.0.z],
+                        character_state: format!("{char_state:?}"),
+                        phase,
+                        on_ground: physics.on_ground.is_some(),
+                        on_wall: physics.on_wall.map(|wall| [wall.x, wall.y, wall.z]),
+                        support_clear: supported,
+                        body_clear,
+                        head_clear,
+                        active_job: active.map(|active| active.job),
+                        active_job_state: active.map(|active| format!("{:?}", active.state)),
+                        route_kind: descriptor.map(|descriptor| format!("{:?}", descriptor.kind)),
+                        route_owner: route_owner.map(|owner| owner.0.get()),
+                        link_id: transaction
+                            .map(|task| task.link_id.to_string())
+                            .or_else(|| {
+                                route_owner.map(|owner| {
+                                    format!(
+                                        "{}:{}",
+                                        owner.0.get(),
+                                        frontier_job.unwrap_or_default()
+                                    )
+                                })
+                            }),
+                        frontier_job,
+                        corridor_cursor: corridor.map(|corridor| corridor.next_idx),
+                        corridor_waypoint: waypoint,
+                        goto_target,
+                        chaser_last_target: chaser
+                            .last_search_target
+                            .map(|target| [target.x, target.y, target.z]),
+                        chaser_route_target: chaser
+                            .route_target
+                            .map(|target| [target.x, target.y, target.z]),
+                        chaser_route_head: chaser
+                            .route_head
+                            .map(|target| [target.x, target.y, target.z]),
+                        chaser_next_idx: chaser.route_next_idx,
+                        chaser_path_state: format!("{:?}", chaser.path_state),
+                        chaser_recent_states: chaser.recent_state_count,
+                        controller_move_dir: move_dir,
+                        controller_move_z: move_z,
+                        movement_writer: movement_writer.into(),
+                        energy: energies.get(entity).map(comp::Energy::current),
+                        // Stage-1 route-local descriptor/anchor fingerprint;
+                        // this does not claim PATH-1's future global terrain
+                        // generation.
+                        terrain_revision: transaction.map(|task| task.terrain_revision),
+                        exit_plane_z: descriptor.map(|descriptor| descriptor.top_anchor.z as f32),
+                        endpoint_distance,
+                    },
+                );
+            }
+        }
+
         if tick.0 % (ARBITRATION_INTERVAL * 4) == 0 {
             for job in board.jobs.values_mut() {
                 job.unreachable = false;
@@ -6083,7 +11651,10 @@ impl<'a> System<'a> for Sys {
         // deterministic (FR13-REV Q2). Read at claim time only (a commitment
         // point) — never continuously (the Q3/B14 anti-bob split: the field
         // steers ALLOCATION; job completion is the monotonic re-flow trigger).
-        board.saturation.values_mut().for_each(|v| *v *= COORD_DECAY);
+        board
+            .saturation
+            .values_mut()
+            .for_each(|v| *v *= COORD_DECAY);
         board.saturation.retain(|_, v| *v > 0.05);
         for (_colonist, active) in (&colonists, &active_jobs).join() {
             if matches!(active.state, ActiveJobState::Arrived)
@@ -6132,13 +11703,12 @@ impl<'a> System<'a> for Sys {
         // (entity, job, committed work-STANCE offset) — B15/FR12.
         let mut assignments: Vec<(specs::Entity, JobId, Vec3<i32>)> = Vec::new();
         // B5.8 (DF-style dig behavior, Ben's live-test requirement):
-        // 1. REACHABILITY GATE — a Mine job is claimable only when EXPOSED
-        //    (≥1 of its 6 neighbors non-filled): a digger can stand next to
-        //    it. Interior cells unlock as the shell clears; a fresh deep
-        //    dig therefore proceeds TOP-DOWN from the surface layer instead
-        //    of everyone rushing (and stalling on) the deepest corner. Side
-        //    effect: carve-stair steps self-sequence (only the next step is
-        //    exposed). Computed once per cycle, not per colonist.
+        // 1. REACHABILITY GATE — a Mine job is claimable only when EXPOSED (≥1 of its 6
+        //    neighbors non-filled): a digger can stand next to it. Interior cells
+        //    unlock as the shell clears; a fresh deep dig therefore proceeds TOP-DOWN
+        //    from the surface layer instead of everyone rushing (and stalling on) the
+        //    deepest corner. Side effect: carve-stair steps self-sequence (only the
+        //    next step is exposed). Computed once per cycle, not per colonist.
         let mut exposed: HashSet<JobId> = HashSet::new();
         // B15 / reviewer FR12: the STANDABLE set — an exposed Mine cell is only
         // CLAIMABLE if a colonist can actually STAND to work it (terrain-only,
@@ -6231,7 +11801,7 @@ impl<'a> System<'a> for Sys {
             let from = jpos + Vec3::unit_z();
             let to = Vec3::new(jpos.x, jpos.y, jpos.z + jdepth as i32);
             let mask = board.designated.clone();
-            if let Some((kind, steps)) = plan_access(board, &terrain, &mask, from, to) {
+            if let Some((kind, steps)) = plan_access(board, &terrain, &mask, from, to, None, None) {
                 info!(
                     job = jid,
                     ?kind,
@@ -6262,35 +11832,75 @@ impl<'a> System<'a> for Sys {
             // next cycle (the frontier keeps digging its SAFE layers, the
             // ladder plan leads the descent).
         }
-        // 3. DISPERSION — claims (standing + taken this pass) repel new
-        //    claims within 2 XY blocks, spreading a work crew across the
-        //    frontier instead of stacking on one cell.
+        // 3. DISPERSION — claims (standing + taken this pass) repel new claims within 2
+        //    XY blocks, spreading a work crew across the frontier instead of stacking
+        //    on one cell.
         let mut claimed_pos: Vec<Vec3<i32>> = board
             .jobs
             .values()
             .filter(|j| j.claimed_by.is_some())
             .map(|j| j.pos)
             .collect();
-        for (entity, colonist, pos, uid, ()) in (
-            &entities,
-            &colonists,
-            &positions,
-            &uids,
-            !&active_jobs,
-        )
-            .join()
+        for (entity, colonist, pos, uid, ()) in
+            (&entities, &colonists, &positions, &uids, !&active_jobs).join()
         {
             // LOD-1 Loaded-gate: never CLAIM for a demoting colonist.
             if !is_loaded(entity) {
                 continue;
             }
+            let emergency_route_owner = board.emergency_route_members.get(uid).copied();
+            let route_has_claimed_step = emergency_route_owner.is_some_and(|route_owner| {
+                board.emergency_access_jobs.iter().any(|(id, owner)| {
+                    *owner == route_owner
+                        && board
+                            .jobs
+                            .get(id)
+                            .is_some_and(|job| job.claimed_by.is_some())
+                })
+            });
+            let emergency_next_job = emergency_route_owner.and_then(|route_owner| {
+                (!route_has_claimed_step)
+                    .then(|| {
+                        board
+                            .emergency_access_jobs
+                            .iter()
+                            .filter_map(|(id, owner)| {
+                                (*owner == route_owner)
+                                    .then(|| board.jobs.get(id).map(|job| (*id, job)))
+                                    .flatten()
+                            })
+                            // REQ-0067: `carve_ramp` emits bottom-up,
+                            // column-by-column and `plan_access` assigns
+                            // monotonic IDs in that exact route-local order.
+                            // Re-sorting by z interleaves a later column before
+                            // the current column's clearance is complete.
+                            .min_by_key(|(id, _)| *id)
+                            // The earliest unfinished route cell owns the
+                            // sequence even while temporarily unreachable.
+                            // The normal amnesty makes it claimable again;
+                            // later cells may not leapfrog it meanwhile.
+                            .filter(|(_, job)| job.claimed_by.is_none() && !job.unreachable)
+                            .map(|(id, _)| id)
+                    })
+                    .flatten()
+            });
+            // Any shared-route member may build the next rescue step, even
+            // when its ordinary drive is not Work. Exactly one bottom-up
+            // step is claimable at a time for the whole route.
+            let owns_emergency_access = emergency_next_job.is_some();
             // AUTON-0 GUARD 1: the claim loop is the Work drive's SOLE
             // entry — a non-Work colonist claims nothing (permissive
             // for colonists the arbiter has not seen yet).
             if arbiters
                 .get(entity)
                 .is_some_and(|a| a.current != comp::bastion::Drive::Work)
+                && !owns_emergency_access
             {
+                continue;
+            }
+            if emergency_route_owner.is_some() && emergency_next_job.is_none() {
+                // Keep route members available to climb or take the next
+                // step; they must not wander off into unrelated work.
                 continue;
             }
             // FARM (row 46) generalization: the colonist's carried-def
@@ -6315,6 +11925,15 @@ impl<'a> System<'a> for Sys {
             for id in board.decision_job_ids(execution_mode.is_deterministic()) {
                 let job = &board.jobs[&id];
                 if job.claimed_by.is_some() || job.unreachable {
+                    continue;
+                }
+                let emergency_owner = board.emergency_access_jobs.get(&id).copied();
+                if let Some(route_owner) = emergency_route_owner {
+                    if emergency_owner != Some(route_owner) || emergency_next_job != Some(id) {
+                        continue;
+                    }
+                } else if emergency_owner.is_some() {
+                    // Other colonists must not reserve rescue-critical steps.
                     continue;
                 }
                 // GATHER deposit ruling: a DepositRun empties ONE specific
@@ -6351,15 +11970,15 @@ impl<'a> System<'a> for Sys {
                 if let Some(req) = job.required_item
                     && !carried_defs.contains(req)
                     && !matches!(job.kind, common::bastion::JobKind::Haul { .. })
-                    && !(&pickup_items, &positions, &uids).join().any(
-                        |(pi, ipos, iuid)| {
+                    && !(&pickup_items, &positions, &uids)
+                        .join()
+                        .any(|(pi, ipos, iuid)| {
                             pi.item().item_definition_id().itemdef_id() == Some(req)
                                 && board
                                     .stockpile_at(ipos.0.map(|e| e.floor() as i32))
                                     .is_some()
                                 && !board.is_reserved(*iuid)
-                        },
-                    )
+                        })
                 {
                     continue;
                 }
@@ -6389,14 +12008,12 @@ impl<'a> System<'a> for Sys {
                 } else {
                     priority
                 };
-                // 2. TOP-DOWN — one level of height outweighs any plausible
-                //    in-dig travel distance AND the dispersion penalty, so
-                //    the shallowest frontier clears first (DF-style layer-
-                //    by-layer). RELATIVE to the colonist and CLAMPED: an
-                //    absolute-z term made any Mine job crush every Build/
-                //    Ladder job in cross-kind comparison (run-12: the rung
-                //    starvation root). MINE DIGS ONLY: construction goes
-                //    bottom-up by nearest-first — a top-weighted rung claim
+                // 2. TOP-DOWN — one level of height outweighs any plausible in-dig travel
+                //    distance AND the dispersion penalty, so the shallowest frontier clears
+                //    first (DF-style layer- by-layer). RELATIVE to the colonist and CLAMPED: an
+                //    absolute-z term made any Mine job crush every Build/ Ladder job in
+                //    cross-kind comparison (run-12: the rung starvation root). MINE DIGS ONLY:
+                //    construction goes bottom-up by nearest-first — a top-weighted rung claim
                 //    is unreachable until the rungs below it exist.
                 let feet_z = pos.0.z.floor() as i32;
                 // B5.8-E3: access steps are EXCLUDED even though they're
@@ -6406,15 +12023,15 @@ impl<'a> System<'a> for Sys {
                 // digger chased the highest shaft-face step it couldn't
                 // reach instead of the adjacent bottom one (the tool0-gate
                 // (e) bounce carousel).
-                let depth_score =
-                    if job.kind.is(DesignationKind::Mine) && !job.is_access {
-                        -((job.pos.z - feet_z).clamp(-4, 4) as f32) * 8.0
-                    } else {
-                        0.0
-                    };
-                let clump_penalty = if claimed_pos.iter().any(|c| {
-                    (c.x - job.pos.x).abs() < 2 && (c.y - job.pos.y).abs() < 2
-                }) {
+                let depth_score = if job.kind.is(DesignationKind::Mine) && !job.is_access {
+                    -((job.pos.z - feet_z).clamp(-4, 4) as f32) * 8.0
+                } else {
+                    0.0
+                };
+                let clump_penalty = if claimed_pos
+                    .iter()
+                    .any(|c| (c.x - job.pos.x).abs() < 2 && (c.y - job.pos.y).abs() < 2)
+                {
                     12.0
                 } else {
                     0.0
@@ -6468,18 +12085,13 @@ impl<'a> System<'a> for Sys {
                             )
                     });
                     if needs_fetch {
-                        let req = board
-                            .jobs
-                            .get(&job_id)
-                            .and_then(|j| j.required_item);
+                        let req = board.jobs.get(&job_id).and_then(|j| j.required_item);
                         let cand = (&pickup_items, &positions, &uids)
                             .join()
                             .find(|(pi, ipos, iuid)| {
                                 pi.item().item_definition_id().itemdef_id() == req
                                     && board
-                                        .stockpile_at(
-                                            ipos.0.map(|e| e.floor() as i32),
-                                        )
+                                        .stockpile_at(ipos.0.map(|e| e.floor() as i32))
                                         .is_some()
                                     && !board.is_reserved(**iuid)
                             })
@@ -6500,6 +12112,31 @@ impl<'a> System<'a> for Sys {
                     // for the mine-oscillation claims-per-job telemetry.
                     board.total_claims += 1;
                 }
+                if emergency_route_owner.is_some()
+                    && std::env::var_os("BASTION_EGRESS_DIAG").is_some()
+                {
+                    let mut ordered: Vec<_> = board
+                        .emergency_access_jobs
+                        .iter()
+                        .filter_map(|(id, owner)| {
+                            (*owner == emergency_route_owner.unwrap())
+                                .then(|| board.jobs.get(id).map(|job| (*id, job.pos)))
+                                .flatten()
+                        })
+                        .collect();
+                    ordered.sort_by_key(|(id, _)| *id);
+                    info!(
+                        tick = tick.0,
+                        uid = uid.0.get(),
+                        owner = emergency_route_owner.map(|owner| owner.0.get()),
+                        ?emergency_next_job,
+                        claimed_job = job_id,
+                        claimed_pos = ?board.jobs.get(&job_id).map(|job| job.pos),
+                        actual_pos = ?pos.0,
+                        ?ordered,
+                        "bastion: emergency access job selected diagnostic"
+                    );
+                }
                 // COORDINATION-stigmergic-v1 (FR13-REV Q4): narrate a REAL
                 // flow — the colonist leaves a markedly more saturated spot
                 // for an under-served one. Own per-colonist cooldown
@@ -6510,8 +12147,7 @@ impl<'a> System<'a> for Sys {
                         .get(&coord_cell(pos.0.map(|e| e.floor() as i32)))
                         .copied()
                         .unwrap_or(0.0);
-                    let there =
-                        board.saturation.get(&new_cell).copied().unwrap_or(0.0);
+                    let there = board.saturation.get(&new_cell).copied().unwrap_or(0.0);
                     let barked = board.last_bark.get(uid).copied().unwrap_or(f64::MIN);
                     if here >= there + COORD_BARK_MIN_DIFF
                         && time.0 - barked > COORD_BARK_COOLDOWN_SECS
@@ -6521,9 +12157,7 @@ impl<'a> System<'a> for Sys {
                             msg: comp::UnresolvedChatMsg::npc_say(
                                 *uid,
                                 common::comp::Content::Plain(
-                                    "Crowded here — I'll work where they're \
-                                     short-handed."
-                                        .into(),
+                                    "Crowded here — I'll work where they're short-handed.".into(),
                                 ),
                             ),
                             from_client: false,
@@ -6555,6 +12189,101 @@ impl<'a> System<'a> for Sys {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::num::NonZeroU64;
+
+    #[test]
+    fn corridor_movement_ownership_requires_live_matching_frontier() {
+        let owner = Uid(NonZeroU64::new(1).unwrap());
+        let other = Uid(NonZeroU64::new(2).unwrap());
+        let mut corridor = EmergencyApproachCorridor {
+            owner,
+            frontier: 42,
+            entry: Vec3::zero(),
+            waypoints: vec![Vec3::zero(), Vec3::unit_x()],
+            next_idx: 0,
+            started_tick: 7,
+        };
+
+        assert!(emergency_corridor_owns_movement(
+            Some(&corridor),
+            Some(owner),
+            Some(owner),
+            true,
+        ));
+        assert!(!emergency_corridor_owns_movement(
+            Some(&corridor),
+            Some(other),
+            Some(owner),
+            true,
+        ));
+        assert!(!emergency_corridor_owns_movement(
+            Some(&corridor),
+            Some(owner),
+            Some(other),
+            true,
+        ));
+        assert!(!emergency_corridor_owns_movement(
+            Some(&corridor),
+            Some(owner),
+            Some(owner),
+            false,
+        ));
+
+        corridor.next_idx = corridor.waypoints.len();
+        assert!(!emergency_corridor_owns_movement(
+            Some(&corridor),
+            Some(owner),
+            Some(owner),
+            true,
+        ));
+        assert!(!emergency_corridor_owns_movement(
+            None,
+            Some(owner),
+            Some(owner),
+            true,
+        ));
+    }
+
+    #[test]
+    fn corridor_endpoint_requires_strict_distance_and_authoritative_preflight() {
+        assert!(!emergency_corridor_endpoint_ready(0.99, 0.0, true, true));
+        assert!(emergency_corridor_endpoint_ready(0.75, 0.8, true, true));
+        assert!(!emergency_corridor_endpoint_ready(0.74, 0.0, false, true));
+        assert!(!emergency_corridor_endpoint_ready(0.74, 0.0, true, false));
+        assert!(!emergency_corridor_endpoint_ready(0.74, 0.81, true, true));
+    }
+
+    #[test]
+    fn verified_emergency_exit_clears_only_the_released_route_movement() {
+        let stale_target = Vec3::new(12.5, 8.5, 4.0);
+        let fresh_target = Vec3::new(20.5, 18.5, 4.0);
+        let mut rtsim_controller = common::rtsim::RtSimController::default();
+        rtsim_controller.set_goto_with_endpoint(stale_target, 1.0, 0.75);
+        let mut chaser = common::path::Chaser::default();
+        let mut controller = comp::Controller::default();
+        controller.inputs.move_dir = Vec2::new(0.75, -0.5);
+        controller.inputs.move_z = 1.0;
+
+        clear_verified_emergency_exit_movement(
+            &mut rtsim_controller,
+            &mut chaser,
+            Some(&mut controller),
+        );
+
+        assert!(rtsim_controller.activity.is_none());
+        assert_eq!(rtsim_controller.path_endpoint_tolerance(stale_target), None);
+        assert_eq!(controller.inputs.move_dir, Vec2::zero());
+        assert_eq!(controller.inputs.move_z, 0.0);
+
+        // Cleanup is an ownership boundary, not a permanent movement lock:
+        // the next normal AI pass can install an unrelated fresh activity.
+        rtsim_controller.activity = Some(common::rtsim::NpcActivity::Goto(fresh_target, 0.5));
+        assert!(matches!(
+            rtsim_controller.activity,
+            Some(common::rtsim::NpcActivity::Goto(target, 0.5)) if target == fresh_target
+        ));
+        assert_eq!(rtsim_controller.path_endpoint_tolerance(fresh_target), None);
+    }
 
     /// CASE-003 pin: the fail-safe picker must SKIP a column whose surface
     /// is occupied by a non-surface solid (a tree trunk standing on the
@@ -6565,10 +12294,9 @@ mod tests {
     fn surface_teleport_skips_occupied_column() {
         // Every column's surface is z=10; a trunk occupies (0,0,11)+(0,0,12).
         let surface_z = |_x: i32, _y: i32| Some(10);
-        let open = |p: Vec3<i32>| {
-            p.z > 10 && !(p.xy() == Vec2::new(0, 0) && (p.z == 11 || p.z == 12))
-        };
-        let dest = surface_teleport_dest_impl(surface_z, open, Vec3::new(0, 0, 5))
+        let open =
+            |p: Vec3<i32>| p.z > 10 && !(p.xy() == Vec2::new(0, 0) && (p.z == 11 || p.z == 12));
+        let dest = surface_teleport_dest_impl(surface_z, open, Vec3::new(0, 0, 5), 0)
             .expect("clear columns exist in the spiral");
         assert_ne!(dest.xy(), Vec2::new(0, 0), "teleported into the trunk");
         assert_eq!(dest.z, 11);
@@ -6580,13 +12308,21 @@ mod tests {
     #[test]
     fn surface_teleport_requires_above_grade() {
         let surface_z = |x: i32, y: i32| if (x, y) == (0, 0) { Some(4) } else { Some(10) };
-        let open = |p: Vec3<i32>| {
-            p.z > if p.xy() == Vec2::new(0, 0) { 4 } else { 10 }
-        };
-        let dest =
-            surface_teleport_dest_impl(surface_z, open, Vec3::new(0, 0, 5)).unwrap();
+        let open = |p: Vec3<i32>| p.z > if p.xy() == Vec2::new(0, 0) { 4 } else { 10 };
+        let dest = surface_teleport_dest_impl(surface_z, open, Vec3::new(0, 0, 5), 0).unwrap();
         assert_ne!(dest.xy(), Vec2::new(0, 0), "teleported to own pit floor");
         assert_eq!(dest.z, 11);
+    }
+
+    /// Organic egress needs horizontal intent toward a rim. Unlike the
+    /// teleport backstop, it must not select the colonist's own roof column.
+    #[test]
+    fn surface_egress_starts_beside_rim() {
+        let surface_z = |x: i32, y: i32| (x == 3 && y == 0).then_some(10);
+        let open = |_p: Vec3<i32>| true;
+        let feet = Vec3::new(0, 0, 5);
+        let dest = surface_egress_dest_impl(surface_z, open, feet).unwrap();
+        assert_eq!(dest, Vec3::new(2, 0, 11));
     }
 
     /// Reviewer F1 — THE ±1 BOUNDARY PIN. "Standable" means the rise to
@@ -6711,7 +12447,10 @@ mod tests {
         // The CELL CAP clips (never fells past it): an infinite Wood plane
         // yields exactly cap cells.
         let plane = |p: Vec3<i32>| p.z == 10;
-        assert_eq!(tree_fell_set(plane, Vec3::new(0, 0, 10), 16, 40, 64).len(), 16);
+        assert_eq!(
+            tree_fell_set(plane, Vec3::new(0, 0, 10), 16, 40, 64).len(),
+            16
+        );
         // The XY RADIUS is the per-tree boundary (forest canopies CONNECT —
         // without it one seed floods the whole forest to the cap): an
         // infinite plane with radius 2 yields exactly the 5×5 column window.

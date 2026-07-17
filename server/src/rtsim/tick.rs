@@ -462,20 +462,19 @@ pub(crate) fn colonist_record(
     // the bag below).
     rec.needs = needs.map(|n| (n.hunger, n.rest, n.recreation));
     rec.mood = mood.map(|m| m.0);
-    rec.inventory = inv
-        .map(|inv| {
-            let mut items: Vec<(String, u32)> = Vec::new();
-            for item in inv.slots().flatten() {
-                if let Some(id) = item.item_definition_id().itemdef_id() {
-                    match items.iter_mut().find(|(i, _)| i == id) {
-                        Some((_, n)) => *n += item.amount(),
-                        None => items.push((id.to_string(), item.amount())),
-                    }
+    rec.inventory = inv.map(|inv| {
+        let mut items: Vec<(String, u32)> = Vec::new();
+        for item in inv.slots().flatten() {
+            if let Some(id) = item.item_definition_id().itemdef_id() {
+                match items.iter_mut().find(|(i, _)| i == id) {
+                    Some((_, n)) => *n += item.amount(),
+                    None => items.push((id.to_string(), item.amount())),
                 }
             }
-            items.sort();
-            items
-        });
+        }
+        items.sort();
+        items
+    });
     rec
 }
 
@@ -517,6 +516,9 @@ impl<'a> System<'a> for Sys {
             ReadStorage<'a, comp::bastion::ActiveJob>,
             // bastion (B-ASSET1): test-goto fixtures own their activity too.
             ReadStorage<'a, comp::bastion::BastionTestGoto>,
+            // Stage-1 B5.8: RTSim activity and action queues defer while the
+            // route-owned off-mesh link has exclusive intent ownership.
+            ReadStorage<'a, comp::bastion::BastionTraversalOwnership>,
             // bastion (B7-0): the cave-in fear queue lives on the board —
             // this system drains it into the chronicle (it owns the rtsim
             // data mutably; bastion_jobs holds a long-lived read guard).
@@ -562,6 +564,7 @@ impl<'a> System<'a> for Sys {
                 mut stats_storage,
                 bastion_active_jobs,
                 bastion_test_gotos,
+                bastion_traversal_ownerships,
                 mut job_board,
             ),
         ): Self::SystemData,
@@ -640,8 +643,7 @@ impl<'a> System<'a> for Sys {
         // recompute reads (a direct Mood write would be overwritten
         // within a cadence). Stamped on the chronicle's own clock.
         // Emitters: cave-in fear, sleep quality.
-        for (re, pos, kind) in std::mem::take(&mut job_board.pending_thoughts)
-        {
+        for (re, pos, kind) in std::mem::take(&mut job_board.pending_thoughts) {
             let now = data.time_of_day;
             data.chronicle.record(
                 now,
@@ -783,8 +785,7 @@ impl<'a> System<'a> for Sys {
                         if let Some(colonist) = &npc.bastion_colonist
                             && !colonists.contains(entity)
                         {
-                            let _ = colonists
-                                .insert(entity, comp::Colonist(colonist.clone()));
+                            let _ = colonists.insert(entity, comp::Colonist(colonist.clone()));
                             let _ = player_colony.insert(entity, comp::PlayerColony);
                             let _ = bastion_needs.insert(
                                 entity,
@@ -793,12 +794,10 @@ impl<'a> System<'a> for Sys {
                                 // a genuine first promote keeps defaults).
                                 colonist.needs.map_or_else(
                                     comp::bastion::Needs::default,
-                                    |(hunger, rest, recreation)| {
-                                        comp::bastion::Needs {
-                                            hunger,
-                                            rest,
-                                            recreation,
-                                        }
+                                    |(hunger, rest, recreation)| comp::bastion::Needs {
+                                        hunger,
+                                        rest,
+                                        recreation,
                                     },
                                 ),
                             );
@@ -844,9 +843,8 @@ impl<'a> System<'a> for Sys {
                                         Err(e) => tracing::warn!(
                                             id = id.as_str(),
                                             ?e,
-                                            "bastion LOD-0: persisted item id \
-                                             no longer resolves — dropped on \
-                                             promote"
+                                            "bastion LOD-0: persisted item id no longer resolves \
+                                             — dropped on promote"
                                         ),
                                     }
                                 }
@@ -883,15 +881,21 @@ impl<'a> System<'a> for Sys {
                             // job system owns its activity — the rtsim brain
                             // must not clobber the travel intent. (B-ASSET1):
                             // same for test-goto fixture orders.
-                            if !bastion_active_jobs.contains(entity)
+                            let link_owned = bastion_traversal_ownerships
+                                .get(entity)
+                                .is_some_and(|ownership| ownership.mode.owns_movement_intent());
+                            if !link_owned
+                                && !bastion_active_jobs.contains(entity)
                                 && !bastion_test_gotos.contains(entity)
                             {
                                 agent.rtsim_controller.activity = npc.controller.activity;
                             }
-                            agent
-                                .rtsim_controller
-                                .actions
-                                .extend(std::mem::take(&mut npc.controller.actions));
+                            if !link_owned {
+                                agent
+                                    .rtsim_controller
+                                    .actions
+                                    .extend(std::mem::take(&mut npc.controller.actions));
+                            }
                             if let Some(rtsim_outbox) = &mut agent.rtsim_outbox {
                                 npc.inbox.append(rtsim_outbox);
                             }

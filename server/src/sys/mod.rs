@@ -40,8 +40,13 @@ pub fn add_server_systems(dispatch_builder: &mut DispatcherBuilder) {
     // latency; the packet's enqueue/consume-last-result shape in pull
     // form).
     dispatch::<crate::bastion_path::Sys>(dispatch_builder, &[&agent::Sys::sys_name()]);
-    // bastion (B4): job arbitration + travel intents for colonists.
-    dispatch::<crate::bastion_jobs::Sys>(dispatch_builder, &[]);
+    // Stage-1 B5.8: make the Agent -> PATH-0 -> Bastion handoff explicit.
+    // Agent alone writes normal approach intent; Bastion may acquire the link
+    // owner only after that pass and projects the exclusion used next tick.
+    dispatch::<crate::bastion_jobs::Sys>(dispatch_builder, &[
+        &agent::Sys::sys_name(),
+        &crate::bastion_path::Sys::sys_name(),
+    ]);
     dispatch::<crate::bastion_piles::Sys>(dispatch_builder, &[]);
     dispatch::<terrain::Sys>(dispatch_builder, &[&msg::terrain::Sys::sys_name()]);
     dispatch::<waypoint::Sys>(dispatch_builder, &[]);

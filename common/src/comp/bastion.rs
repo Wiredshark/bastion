@@ -34,6 +34,85 @@ impl Component for PlayerColony {
     type Storage = NullStorage<Self>;
 }
 
+/// REQ-0074: short-lived server-authored proof that a colonist is traversing
+/// a constructed, route-owned ladder rather than naturally climbing rock.
+///
+/// The normal `CharacterState::Climb` still owns movement, contact, collision,
+/// skill-adjusted speed, interruption, and exit behavior. This token only
+/// distinguishes the ladder energy contract and expires unless the validated
+/// route transaction refreshes it every tick.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ConstructedLadderTraversal {
+    pub route_owner: crate::uid::Uid,
+    pub rung: vek::Vec3<i32>,
+    pub expires_at: f64,
+}
+
+impl Component for ConstructedLadderTraversal {
+    type Storage = specs::DenseVecStorage<Self>;
+}
+
+/// Stage-1 B5.8: the single shared movement-owner discriminator for a
+/// route-owned off-mesh traversal.
+///
+/// This component carries no locomotion implementation. Agent/Chaser may own
+/// only [`LinkApproach`](BastionTraversalMode::LinkApproach); every later live
+/// mode excludes ordinary AI intent until the traversal task atomically
+/// completes or aborts. Character behavior and physics remain authoritative
+/// subordinate executors of Controller actions/contact.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BastionTraversalMode {
+    LinkApproach,
+    QueuedForLink,
+    Reserved,
+    TraversingLink,
+    FrontierWork,
+    ConfirmingExit,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BastionMovementWriter {
+    AgentChaser,
+    BastionTraversalTask,
+    Orca,
+    GenericGoto,
+    GenericSoftSteering,
+}
+
+impl BastionTraversalMode {
+    pub fn allows_agent_pathing(self) -> bool { matches!(self, Self::LinkApproach) }
+
+    pub fn owns_movement_intent(self) -> bool { !self.allows_agent_pathing() }
+
+    pub fn allows_writer(self, writer: BastionMovementWriter) -> bool {
+        match self {
+            Self::LinkApproach => matches!(writer, BastionMovementWriter::AgentChaser),
+            Self::QueuedForLink
+            | Self::Reserved
+            | Self::TraversingLink
+            | Self::FrontierWork
+            | Self::ConfirmingExit => {
+                matches!(writer, BastionMovementWriter::BastionTraversalTask)
+            },
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BastionTraversalOwnership {
+    pub link_id: u64,
+    pub route_owner: crate::uid::Uid,
+    pub reserved_member: crate::uid::Uid,
+    pub mode: BastionTraversalMode,
+    /// Route-local terrain proof/fingerprint. PATH-1's eventual global terrain
+    /// generation is not claimed by this Stage-1 adapter.
+    pub terrain_revision: u64,
+}
+
+impl Component for BastionTraversalOwnership {
+    type Storage = specs::DenseVecStorage<Self>;
+}
+
 /// Need clocks, 1.0 = fully satisfied, 0.0 = starved/exhausted/miserable.
 /// Attached in B3; decay + satisfaction behavior land in B7.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -123,16 +202,13 @@ impl Component for Mood {
 pub fn decay_needs(needs: &mut Needs, dt: f32, cfg: &crate::bastion::MoodConfig) {
     needs.hunger = (needs.hunger - cfg.hunger.decay_per_sec * dt).max(0.0);
     needs.rest = (needs.rest - cfg.rest.decay_per_sec * dt).max(0.0);
-    needs.recreation =
-        (needs.recreation - cfg.recreation.decay_per_sec * dt).max(0.0);
+    needs.recreation = (needs.recreation - cfg.recreation.decay_per_sec * dt).max(0.0);
 }
 
 /// bastion (B7-0): a need's penalty basis — nonzero only BELOW the
 /// comfort band, so a topped-up colonist is unperturbed and a starving
 /// one is heavily penalized. Continuous (mood tracks pressure smoothly).
-pub fn shortfall(value: f32, comfort: f32) -> f32 {
-    (comfort - value).max(0.0)
-}
+pub fn shortfall(value: f32, comfort: f32) -> f32 { (comfort - value).max(0.0) }
 
 /// bastion (B7-0): a thought's decayed contribution — linear to zero
 /// over its lifetime, a PURE function of `(deposit_time, now)` (no
@@ -156,16 +232,11 @@ pub fn thought_decay(magnitude: f32, deposit: f64, now: f64, lifetime: f64) -> f
 /// thought term arrives summed (the server owns the chronicle query —
 /// the kind table keys on rtsim's `ChronicleKind`, which common cannot
 /// see; the formula is layering-agnostic by taking the sum).
-pub fn mood_formula(
-    cfg: &crate::bastion::MoodConfig,
-    needs: &Needs,
-    thought_sum: f32,
-) -> f32 {
+pub fn mood_formula(cfg: &crate::bastion::MoodConfig, needs: &Needs, thought_sum: f32) -> f32 {
     (cfg.mood_base
         + cfg.hunger.weight * shortfall(needs.hunger, cfg.hunger.comfort)
         + cfg.rest.weight * shortfall(needs.rest, cfg.rest.comfort)
-        + cfg.recreation.weight
-            * shortfall(needs.recreation, cfg.recreation.comfort)
+        + cfg.recreation.weight * shortfall(needs.recreation, cfg.recreation.comfort)
         + thought_sum)
         .clamp(0.0, 1.0)
 }
@@ -194,11 +265,11 @@ pub const NEUROTIC_NEGATIVE_AMP: f32 = 1.5;
 /// slice's whole point).
 /// bastion (FOCUS-0-DERIVE, row 43.1): the derived per-colonist NEED
 /// WEIGHT — how much THIS colonist's mind makes them care about each
-/// personal [`crate::bastion::Need`], from their rolled [`crate::bastion::Value`]
-/// weights + vanilla Big-Five traits. Baseline 1.0; a value-mapped need
-/// scales 1 + weight/50 (so ±50 spans 0..2); `Socialize` reads the
-/// boolean trait API at 3 levels (Extroverted/Sociable 1.5, Introverted
-/// 0.5, else 1.0 — the architect's no-vanilla-getter ruling);
+/// personal [`crate::bastion::Need`], from their rolled
+/// [`crate::bastion::Value`] weights + vanilla Big-Five traits. Baseline 1.0; a
+/// value-mapped need scales 1 + weight/50 (so ±50 spans 0..2); `Socialize`
+/// reads the boolean trait API at 3 levels (Extroverted/Sociable 1.5,
+/// Introverted 0.5, else 1.0 — the architect's no-vanilla-getter ruling);
 /// `Drink`/`AdmireArt`/`Learn` have no clean correlate and STAY 1.0
 /// (the design's degrade-gracefully law — no forced weak mapping, no
 /// invented Value). Clamped 0..=2. PURE — a FOCUS-1 scorer eventually
@@ -208,11 +279,12 @@ pub fn derive_need_weight(
     personality: &crate::rtsim::Personality,
     values: &std::collections::HashMap<crate::bastion::Value, i8>,
 ) -> f32 {
-    use crate::bastion::{Need, Value};
-    use crate::rtsim::PersonalityTrait;
-    let from_value = |v: Value| -> f32 {
-        1.0 + values.get(&v).copied().map_or(0.0, |w| f32::from(w) / 50.0)
+    use crate::{
+        bastion::{Need, Value},
+        rtsim::PersonalityTrait,
     };
+    let from_value =
+        |v: Value| -> f32 { 1.0 + values.get(&v).copied().map_or(0.0, |w| f32::from(w) / 50.0) };
     let w = match need {
         // The near-1:1 vocabulary correspondences (the mapping is the
         // enums' own design — Pray↔Piety, Family↔Kin, Craft↔Craft,
@@ -327,16 +399,16 @@ pub const FLEE_URGENCY_FLOOR: f32 = 0.8;
 /// threshold-stagger (when a need becomes urgent); this shapes which
 /// drive WINS the arbiter's pick. One value + one personality pair per
 /// axis, mirror-simple (the spec's own examples):
-/// - WORK  × (1 + 0.4·g), g = Wealth/100 ∈ [−0.5, 0.5] → [0.4, 0.6]
-///   (the greedy work harder; ceiling 0.6 < the Flee floor).
-/// - FLEE  × (1 − 0.2·b), b = Glory/100 + 0.25·Adventurous −
-///   0.25·Worried ∈ [−0.75, 0.75] → [0.85, 1.15], then `.max(floor)`
-///   (glory-seekers stand their ground longer — but NEVER below the
-///   order guard; bravest possible = 0.85 > 0.8 floor > 0.6 ceiling).
+/// - WORK  × (1 + 0.4·g), g = Wealth/100 ∈ [−0.5, 0.5] → [0.4, 0.6] (the greedy
+///   work harder; ceiling 0.6 < the Flee floor).
+/// - FLEE  × (1 − 0.2·b), b = Glory/100 + 0.25·Adventurous − 0.25·Worried ∈
+///   [−0.75, 0.75] → [0.85, 1.15], then `.max(floor)` (glory-seekers stand
+///   their ground longer — but NEVER below the order guard; bravest possible =
+///   0.85 > 0.8 floor > 0.6 ceiling).
 /// - IDLE  × (1 + 0.4·s), s = Kin/100 + 0.25·(Sociable∨Extroverted) −
-///   0.25·Introverted ∈ [−0.75, 0.75] → [0.07, 0.13] (the social idle
-///   richer; ceiling 0.13 < Work's floor 0.4 — work-when-available
-///   still always wins, the AUTON-0 liveness contract).
+///   0.25·Introverted ∈ [−0.75, 0.75] → [0.07, 0.13] (the social idle richer;
+///   ceiling 0.13 < Work's floor 0.4 — work-when-available still always wins,
+///   the AUTON-0 liveness contract).
 /// Returns (work, flee, idle) — the `Arbiter.last_scores` order. PURE +
 /// RNG-free (field reads only — the determinism house invariant).
 #[expect(clippy::too_many_arguments)]
@@ -350,15 +422,16 @@ pub fn modulated_urgencies(
 ) -> (f32, f32, f32) {
     use crate::bastion::Value;
     let vw = |v: Value| -> f32 {
-        values.get(&v).copied().map_or(0.0, |w| f32::from(w) / 100.0)
+        values
+            .get(&v)
+            .copied()
+            .map_or(0.0, |w| f32::from(w) / 100.0)
     };
     let g = vw(Value::Wealth);
-    let b = vw(Value::Glory)
-        + if adventurous { 0.25 } else { 0.0 }
-        - if worried { 0.25 } else { 0.0 };
-    let s = vw(Value::Kin)
-        + if sociable { 0.25 } else { 0.0 }
-        - if introverted { 0.25 } else { 0.0 };
+    let b =
+        vw(Value::Glory) + if adventurous { 0.25 } else { 0.0 } - if worried { 0.25 } else { 0.0 };
+    let s =
+        vw(Value::Kin) + if sociable { 0.25 } else { 0.0 } - if introverted { 0.25 } else { 0.0 };
     (
         base.0 * (1.0 + 0.4 * g),
         (base.1 * (1.0 - 0.2 * b)).max(FLEE_URGENCY_FLOOR.min(base.1)),
@@ -418,12 +491,10 @@ mod bastion_b70_tests {
         // Bravest Flee vs greediest Work — the order guard, exact.
         let mut brave = HashMap::new();
         brave.insert(Value::Glory, 50i8);
-        let (_, flee_min, _) =
-            modulated_urgencies(base, &brave, true, false, false, false);
+        let (_, flee_min, _) = modulated_urgencies(base, &brave, true, false, false, false);
         let mut greedy = HashMap::new();
         greedy.insert(Value::Wealth, 50i8);
-        let (work_max, _, _) =
-            modulated_urgencies(base, &greedy, false, false, false, false);
+        let (work_max, _, _) = modulated_urgencies(base, &greedy, false, false, false, false);
         assert!((flee_min - 0.85).abs() < 1e-6);
         assert!((work_max - 0.6).abs() < 1e-6);
         assert!(flee_min > work_max);
@@ -432,25 +503,15 @@ mod bastion_b70_tests {
         // for the most fearful roll (modulation cannot INVENT a flee).
         let mut fearful = HashMap::new();
         fearful.insert(Value::Glory, -50i8);
-        let (_, f0, _) = modulated_urgencies(
-            (0.5, 0.0, 0.1),
-            &fearful,
-            false,
-            true,
-            false,
-            false,
-        );
+        let (_, f0, _) = modulated_urgencies((0.5, 0.0, 0.1), &fearful, false, true, false, false);
         assert_eq!(f0, 0.0);
         // Idle ceiling < Work floor: the liveness contract.
         let mut social = HashMap::new();
         social.insert(Value::Kin, 50i8);
-        let (_, _, idle_max) =
-            modulated_urgencies(base, &social, false, false, true, false);
+        let (_, _, idle_max) = modulated_urgencies(base, &social, false, false, true, false);
         let mut lazy_poor = HashMap::new();
         lazy_poor.insert(Value::Wealth, -50i8);
-        let (work_min, _, _) = modulated_urgencies(
-            base, &lazy_poor, false, false, false, false,
-        );
+        let (work_min, _, _) = modulated_urgencies(base, &lazy_poor, false, false, false, false);
         assert!((idle_max - 0.13).abs() < 1e-6);
         assert!((work_min - 0.4).abs() < 1e-6);
         assert!(idle_max < work_min);
@@ -575,11 +636,7 @@ mod bastion_b70_tests {
         let neg_row = [(Value::Kin, -5.0f32)];
         assert_eq!(care_factor(&kin, &neg_row, false, -0.15), CARE_MIN);
         // Neurotic: ×1.5 on NEGATIVE thoughts only, applied post-clamp.
-        assert!(
-            (care_factor(&kin, &row, true, -0.15) - 1.6 * NEUROTIC_NEGATIVE_AMP)
-                .abs()
-                < 1e-6
-        );
+        assert!((care_factor(&kin, &row, true, -0.15) - 1.6 * NEUROTIC_NEGATIVE_AMP).abs() < 1e-6);
         assert!((care_factor(&kin, &row, true, 0.15) - 1.6).abs() < 1e-6);
         assert_eq!(
             care_factor(&kin, &big_row, true, -0.15),
@@ -594,8 +651,10 @@ mod bastion_b70_tests {
     /// personality sample, and both extremes occur in the sample.
     #[test]
     fn bastion_derive_need_weight_exact() {
-        use crate::bastion::{Need, Value};
-        use crate::rtsim::{Personality, PersonalityTrait};
+        use crate::{
+            bastion::{Need, Value},
+            rtsim::{Personality, PersonalityTrait},
+        };
         use rand::SeedableRng;
         use std::collections::HashMap;
         let mut rng = rand::rngs::StdRng::seed_from_u64(0xF0C0_5D34);
@@ -620,8 +679,7 @@ mod bastion_b70_tests {
         for _ in 0..400 {
             let p = Personality::random(&mut rng);
             let w = derive_need_weight(Need::Socialize, &p, &empty);
-            let expect = if p.is(PersonalityTrait::Extroverted)
-                || p.is(PersonalityTrait::Sociable)
+            let expect = if p.is(PersonalityTrait::Extroverted) || p.is(PersonalityTrait::Sociable)
             {
                 1.5
             } else if p.is(PersonalityTrait::Introverted) {
@@ -667,13 +725,14 @@ pub struct ActiveJob {
     /// bastion (B15 / reviewer FR12): the committed work-STANCE — the feet-cell
     /// OFFSET from `job.pos` where the colonist stands to work the block.
     /// (0,0,1) = ON-TOP (stand on the block; the default, = the pre-B15
-    /// `job.pos + (0.5,0.5,1.0)` arrive-target). A cardinal `(±1,0,0)`/`(0,±1,0)`
-    /// = an ADJACENT-ground stance (stand beside + mine sideways — the fix for
-    /// hillside `+1`-arrival-gap cells whose on-top stance is a 1-wide slot the
-    /// capsule can't occupy). PINNED at claim by the once-per-cycle
-    /// standability pass, NOT re-picked each tick (avoids re-introducing the R3
-    /// steer oscillation). Server-only; the serde default is inert (never
-    /// deserialized — every insert sets it explicitly).
+    /// `job.pos + (0.5,0.5,1.0)` arrive-target). A cardinal
+    /// `(±1,0,0)`/`(0,±1,0)` = an ADJACENT-ground stance (stand beside +
+    /// mine sideways — the fix for hillside `+1`-arrival-gap cells whose
+    /// on-top stance is a 1-wide slot the capsule can't occupy). PINNED at
+    /// claim by the once-per-cycle standability pass, NOT re-picked each
+    /// tick (avoids re-introducing the R3 steer oscillation). Server-only;
+    /// the serde default is inert (never deserialized — every insert sets
+    /// it explicitly).
     #[serde(default)]
     pub stance: vek::Vec3<i32>,
 }

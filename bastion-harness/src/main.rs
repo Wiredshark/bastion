@@ -26,9 +26,14 @@ use server::{
 };
 use specs::{Join, WorldExt};
 use std::{
+    cell::Cell,
+    io::{self, Write},
     path::PathBuf,
     process::{Command, ExitCode},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 use tracing::{info, warn};
@@ -88,6 +93,19 @@ struct Args {
     #[arg(long)]
     b55_scenario: bool,
 
+    /// bastion (B5.5 deep): adversarial catalog coverage beyond the legacy
+    /// composite — overlapping erase geometry, erase/repaint and completion
+    /// races, persistent/timed merge-class separation, multi-wave pile
+    /// consolidation, and a 1,000-drop persistence soak past 300 seconds.
+    #[arg(long)]
+    b55_deep_scenario: bool,
+
+    /// REQ-0064 negative fixture: emit a forbidden diagnostic after a labeled
+    /// provisional functional result and prove the final hygiene gate rejects
+    /// it. Hidden because this is acceptance tooling, not gameplay.
+    #[arg(long, hide = true)]
+    b55_hygiene_sentinel: bool,
+
     /// bastion (B5.8): run the vertical-mobility scenario — (a) a scramble
     /// gauntlet (1-step + 2-up + 3-up faces traversed with NO carve), (b)
     /// the pit self-rescue (trapped digger auto-carves its own stair out),
@@ -95,6 +113,41 @@ struct Args {
     /// result line; exit code reflects pass/fail.
     #[arg(long)]
     b58_scenario: bool,
+
+    /// REQ-0094A: run the deterministic traversal state/ownership contract
+    /// model. This is not a production-geometry reproduction.
+    #[arg(long, hide = true)]
+    b58_traversal_contract_model: bool,
+
+    /// REQ-0094A: run the normalized smoke80 stencil through shipping
+    /// body-lane, A*, standability, and cylinder-sweep predicates.
+    #[arg(long, hide = true)]
+    b58_production_geometry_fixture: bool,
+
+    /// Stage-1: run production geometry plus the extracted production task,
+    /// reservation, ownership and interruption contract. No physics is
+    /// simulated and no gameplay state is mutated.
+    #[arg(long, hide = true)]
+    b58_stage1_traversal_owner_fixture: bool,
+
+    /// REQ-0094A: emit a local schema-only recorder fixture. This does not
+    /// prove public recorder lifecycle or Specs scheduling order.
+    #[arg(long, value_name = "DIR", hide = true)]
+    b58_flight_recorder_local_schema: Option<PathBuf>,
+
+    /// REQ-0094A: process-isolated disabled public-recorder lifecycle probe.
+    #[arg(long, value_name = "DIR", hide = true)]
+    b58_recorder_disabled_probe: Option<PathBuf>,
+
+    /// REQ-0094A: enabled public-recorder lifecycle probe. The caller must set
+    /// BASTION_FLIGHT_RECORDER_DIR to this same directory.
+    #[arg(long, value_name = "DIR", hide = true)]
+    b58_recorder_enabled_probe: Option<PathBuf>,
+
+    /// REQ-0094A: boot a focused server and capture real Agent pre/post and
+    /// Bastion post snapshots for one colonist across three ticks.
+    #[arg(long, value_name = "DIR", hide = true)]
+    b58_recorder_wiring_probe: Option<PathBuf>,
 
     /// bastion (B6 SOFT-0): the chokepoint gate — a whole crew funnels
     /// through ONE 1-wide ladder shaft; soft-collision must squeeze them
@@ -392,6 +445,49 @@ pub const BUILD_STAMP: &str = concat!(
     env!("BASTION_BUILD_TIME")
 );
 
+/// REQ-0064: tracing still writes to stderr, but this tee also records
+/// forbidden runtime/teardown diagnostics so the final structured verdict is
+/// based on the complete process lifecycle rather than the pre-drop state.
+static FORBIDDEN_HYGIENE_DIAGNOSTIC_SEEN: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Copy)]
+struct HygieneMakeWriter;
+
+struct HygieneWriter;
+
+impl Write for HygieneWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let line = String::from_utf8_lossy(buffer).to_ascii_lowercase();
+        if line.contains("scheduler is closed, but nobody other should be able to close it")
+            || line.contains("network::drop stopped after a timeout")
+            || line.contains("timeout waiting for shutdown")
+            || line.contains("runtime seems to be dropped already")
+            || line.contains("server tick failed")
+            || line.contains("server tick error")
+            || line.contains("panicked at")
+        {
+            FORBIDDEN_HYGIENE_DIAGNOSTIC_SEEN.store(true, Ordering::SeqCst);
+        }
+        let mut stderr = io::stderr().lock();
+        stderr.write_all(buffer)?;
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> { io::stderr().lock().flush() }
+}
+
+impl<'writer> tracing_subscriber::fmt::MakeWriter<'writer> for HygieneMakeWriter {
+    type Writer = HygieneWriter;
+
+    fn make_writer(&'writer self) -> Self::Writer { HygieneWriter }
+}
+
+fn reset_hygiene_diagnostics() { FORBIDDEN_HYGIENE_DIAGNOSTIC_SEEN.store(false, Ordering::SeqCst); }
+
+fn post_teardown_hygiene_clean() -> bool {
+    !FORBIDDEN_HYGIENE_DIAGNOSTIC_SEEN.load(Ordering::SeqCst)
+}
+
 fn main() -> ExitCode {
     // Stderr, not stdout: JSON-line consumers stay untouched. BEFORE
     // Args::parse so even a --help/parse-error run identifies its exe.
@@ -419,7 +515,7 @@ fn main() -> ExitCode {
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
-        .with_writer(std::io::stderr)
+        .with_writer(HygieneMakeWriter)
         .init();
 
     if let Some(target) = &args.asset_test {
@@ -435,8 +531,76 @@ fn main() -> ExitCode {
         b5_scenario(&args)
     } else if args.b55_scenario {
         b55_scenario(&args)
+    } else if args.b55_hygiene_sentinel {
+        b55_hygiene_sentinel()
+    } else if args.b55_deep_scenario {
+        b55_deep_scenario(&args)
     } else if args.b58_scenario {
         b58_scenario(&args)
+    } else if args.b58_stage1_traversal_owner_fixture {
+        let report = server::bastion_traversal_tooling::run_stage1_constructed_ladder_fixture();
+        server::bastion_flight_recorder::finalize();
+        println!("{}", serde_json::to_string(&report).unwrap());
+        if report.deterministic
+            && report.production_geometry_exercised
+            && !report.gameplay_mutated
+            && report.cases.iter().all(|case| case.passed)
+        {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        }
+    } else if args.b58_traversal_contract_model {
+        let report = server::bastion_traversal_tooling::run_smoke80_contract_model();
+        println!("{}", serde_json::to_string(&report).unwrap());
+        if report.legacy_divergence_reproduced
+            && report.deterministic
+            && report.negative_cases.iter().all(|case| case.rejected)
+        {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        }
+    } else if args.b58_production_geometry_fixture {
+        let report = server::bastion_traversal_tooling::run_smoke80_production_geometry_fixture();
+        let blocked = report
+            .cases
+            .iter()
+            .find(|case| case.name == "preserved_solid_entry");
+        let clear = report
+            .cases
+            .iter()
+            .find(|case| case.name == "cleared_supported_entry");
+        let negatives = report
+            .cases
+            .iter()
+            .filter(|case| case.name != "cleared_supported_entry");
+        let passed = report.deterministic
+            && report.production_geometry_exercised
+            && !report.gameplay_mutated
+            && blocked.is_some_and(|case| case.rejected && case.selected.is_none())
+            && clear.is_some_and(|case| !case.rejected && case.selected.is_some())
+            && negatives.into_iter().all(|case| case.rejected);
+        println!("{}", serde_json::to_string(&report).unwrap());
+        if passed {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        }
+    } else if let Some(output_dir) = &args.b58_flight_recorder_local_schema {
+        match server::bastion_flight_recorder::write_local_schema_fixture(output_dir) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("REQ-0094A local recorder schema fixture failed: {error}");
+                ExitCode::FAILURE
+            },
+        }
+    } else if let Some(output_dir) = &args.b58_recorder_disabled_probe {
+        b58_recorder_disabled_probe(output_dir)
+    } else if let Some(output_dir) = &args.b58_recorder_enabled_probe {
+        b58_recorder_enabled_probe(output_dir)
+    } else if let Some(output_dir) = &args.b58_recorder_wiring_probe {
+        b58_recorder_wiring_probe(&args, output_dir)
     } else if args.chokepoint_scenario {
         chokepoint_scenario(&args)
     } else if args.cavein_scenario {
@@ -519,6 +683,303 @@ fn main() -> ExitCode {
             );
         }
         ExitCode::SUCCESS
+    }
+}
+
+fn recorder_probe_sample(
+    tick: u64,
+    uid: u64,
+    stage: &str,
+) -> server::bastion_flight_recorder::FlightSample {
+    server::bastion_flight_recorder::FlightSample {
+        schema: "bastion.flight-recorder.sample/v1".into(),
+        tick,
+        simulated_seconds: tick as f64 / 30.0,
+        wall_unix_millis: None,
+        uid,
+        entity: 1,
+        episode: 0,
+        position: [tick as f32, 0.0, 1.0],
+        velocity: [1.0, 0.0, 0.0],
+        character_state: "Idle".into(),
+        phase: stage.into(),
+        on_ground: true,
+        on_wall: None,
+        support_clear: true,
+        body_clear: true,
+        head_clear: true,
+        active_job: None,
+        active_job_state: None,
+        route_kind: None,
+        route_owner: None,
+        link_id: None,
+        frontier_job: None,
+        corridor_cursor: None,
+        corridor_waypoint: None,
+        goto_target: Some([4.0, 0.0, 1.0]),
+        chaser_last_target: None,
+        chaser_route_target: None,
+        chaser_route_head: None,
+        chaser_next_idx: None,
+        chaser_path_state: "None".into(),
+        chaser_recent_states: 0,
+        controller_move_dir: [1.0, 0.0],
+        controller_move_z: 0.0,
+        movement_writer: "public-recorder-probe".into(),
+        energy: Some(100.0),
+        terrain_revision: None,
+        exit_plane_z: None,
+        endpoint_distance: Some((4.0 - tick as f32).abs()),
+    }
+}
+
+fn recorder_probe_writer(tick: u64, uid: u64) -> server::bastion_flight_recorder::WriterEvent {
+    server::bastion_flight_recorder::WriterEvent {
+        schema: "bastion.flight-recorder.event/v1".into(),
+        tick,
+        uid,
+        observation_sequence: 1,
+        snapshot_stage: "public-recorder-probe".into(),
+        dispatcher_dependency_proven: false,
+        writer: "public-recorder-probe".into(),
+        move_dir: [1.0, 0.0],
+        move_z: 0.0,
+        target: Some([4.0, 0.0, 1.0]),
+        note: "public API lifecycle probe; not a scheduler-order claim".into(),
+    }
+}
+
+fn b58_recorder_disabled_probe(output_dir: &std::path::Path) -> ExitCode {
+    let env_absent = std::env::var_os("BASTION_FLIGHT_RECORDER_DIR").is_none();
+    let initialized_before = server::bastion_flight_recorder::global_slot_initialized();
+    server::bastion_flight_recorder::record_sample(recorder_probe_sample(1, 7, "Disabled"));
+    server::bastion_flight_recorder::record_writer(recorder_probe_writer(1, 7));
+    server::bastion_flight_recorder::finalize();
+    let initialized_after = server::bastion_flight_recorder::global_slot_initialized();
+    let output_exists = output_dir.exists();
+    let passed = env_absent && !initialized_before && !initialized_after && !output_exists;
+    println!(
+        "{}",
+        serde_json::json!({
+            "schema": "bastion.flight-recorder.disabled-public-probe/v1",
+            "env_absent": env_absent,
+            "global_initialized_before": initialized_before,
+            "global_initialized_after": initialized_after,
+            "output_exists": output_exists,
+            "claim": "public calls do not initialize recorder or create output when env is absent",
+            "passed": passed,
+        })
+    );
+    if passed {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+fn b58_recorder_enabled_probe(output_dir: &std::path::Path) -> ExitCode {
+    let configured = std::env::var_os("BASTION_FLIGHT_RECORDER_DIR")
+        .is_some_and(|value| PathBuf::from(value) == output_dir);
+    let initialized_before = server::bastion_flight_recorder::global_slot_initialized();
+    for tick in 1..=3 {
+        server::bastion_flight_recorder::record_sample(recorder_probe_sample(
+            tick,
+            7,
+            "EnabledPublicLifecycle",
+        ));
+        server::bastion_flight_recorder::record_writer(recorder_probe_writer(tick, 7));
+    }
+    server::bastion_flight_recorder::finalize();
+    let initialized_after = server::bastion_flight_recorder::global_slot_initialized();
+    let summary = std::fs::read(output_dir.join("summary.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+    let samples = summary
+        .as_ref()
+        .and_then(|value| value["samples_written"].as_u64());
+    let events = summary
+        .as_ref()
+        .and_then(|value| value["events_written"].as_u64());
+    let files_complete = [
+        "metadata.json",
+        "trajectory.jsonl",
+        "trajectory.csv",
+        "events.jsonl",
+        "summary.json",
+    ]
+    .iter()
+    .all(|name| output_dir.join(name).is_file());
+    let passed = configured
+        && !initialized_before
+        && initialized_after
+        && files_complete
+        && samples == Some(3)
+        && events.is_some_and(|count| count >= 3);
+    println!(
+        "{}",
+        serde_json::json!({
+            "schema": "bastion.flight-recorder.enabled-public-probe/v1",
+            "configured_dir_matches": configured,
+            "global_initialized_before": initialized_before,
+            "global_initialized_after": initialized_after,
+            "files_complete": files_complete,
+            "samples_written": samples,
+            "events_written": events,
+            "passed": passed,
+        })
+    );
+    if passed {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+fn b58_recorder_wiring_probe(args: &Args, output_dir: &std::path::Path) -> ExitCode {
+    use common::vol::ReadVol;
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-recorder-wiring-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create recorder wiring data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-recorder-wiring".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-recorder-wiring-tokio")
+            .build()
+            .expect("failed to build recorder wiring runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "recorder wiring server init"),
+        runtime,
+    )
+    .expect("failed to create recorder wiring server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, count: u64| {
+        for _ in 0..count {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        rtsim
+            .state()
+            .data()
+            .sites
+            .sites
+            .values()
+            .next()
+            .map(|site| site.wpos.map(|value| value as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 3);
+    let terrain = server.state().terrain();
+    let ground_z = (0..2048).rev().find(|z| {
+        terrain
+            .get(Vec3::new(site_wpos.x as i32, site_wpos.y as i32, *z))
+            .is_ok_and(|block| block.is_filled())
+    });
+    drop(terrain);
+    let Some(ground_z) = ground_z else {
+        eprintln!("REQ-0094A recorder wiring probe found no surface ground");
+        return ExitCode::FAILURE;
+    };
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, ground_z as f32 + 2.0),
+        1,
+    );
+    tick(&mut server, 60);
+    let Some((uid, _, _, _)) = server.bastion_colonist_states_full().into_iter().next() else {
+        eprintln!("REQ-0094A recorder wiring probe spawned no loaded colonist");
+        return ExitCode::FAILURE;
+    };
+    if let Err(error) =
+        server::bastion_flight_recorder::start_probe_session(output_dir, Some(uid), 1, 16, 64)
+    {
+        eprintln!("REQ-0094A recorder wiring probe failed to start: {error}");
+        return ExitCode::FAILURE;
+    }
+    tick(&mut server, 3);
+    server::bastion_flight_recorder::finalize();
+
+    let events = std::fs::read_to_string(output_dir.join("events.jsonl")).unwrap_or_default();
+    let parsed = events
+        .lines()
+        .filter_map(|line| {
+            serde_json::from_str::<server::bastion_flight_recorder::WriterEvent>(line).ok()
+        })
+        .collect::<Vec<_>>();
+    let stages = parsed
+        .iter()
+        .filter(|event| event.uid == uid)
+        .map(|event| event.snapshot_stage.clone())
+        .collect::<Vec<_>>();
+    let ticks = parsed
+        .iter()
+        .filter(|event| event.uid == uid)
+        .map(|event| event.tick)
+        .collect::<std::collections::BTreeSet<_>>();
+    let required = [
+        "agent-system-pre-behavior-snapshot",
+        "agent-system-post-behavior-snapshot",
+        "bastion-jobs-post-lifecycle-snapshot",
+    ];
+    let required_present = required
+        .iter()
+        .all(|required| stages.iter().any(|stage| stage == required));
+    let no_false_dependency_claim = parsed
+        .iter()
+        .filter(|event| event.uid == uid)
+        .all(|event| !event.dispatcher_dependency_proven);
+    let passed = required_present && no_false_dependency_claim && ticks.len() == 3;
+    println!(
+        "{}",
+        serde_json::json!({
+            "schema": "bastion.flight-recorder.production-wiring-probe/v1",
+            "uid": uid,
+            "ticks": ticks,
+            "snapshot_stages": stages,
+            "required_snapshots_present": required_present,
+            "dispatcher_dependency_claimed": !no_false_dependency_claim,
+            "claim": "production Agent/Bastion snapshots in file observation order; no declared Specs dependency inferred",
+            "passed": passed,
+        })
+    );
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if passed {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
     }
 }
 
@@ -720,7 +1181,9 @@ fn b4_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -757,10 +1220,8 @@ fn b4_scenario(args: &Args) -> ExitCode {
     let cz = ground_z(&server, cx, cy).expect("no ground at site center");
 
     // 3. Spawn the band on the surface.
-    let names = server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0),
-        5,
-    );
+    let names =
+        server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0), 5);
     tick(&mut server, 60);
     let states = server.bastion_colonist_states();
     let colonists_loaded = states.len();
@@ -783,7 +1244,13 @@ fn b4_scenario(args: &Args) -> ExitCode {
         Vec3::new(anchor.x as i32, anchor.y as i32, anchor.z as i32 - 8)
     };
     let deep_jobs = server
-        .bastion_place_designation(Region { min: deep, max: deep }, DesignationKind::Mine)
+        .bastion_place_designation(
+            Region {
+                min: deep,
+                max: deep,
+            },
+            DesignationKind::Mine,
+        )
         .len();
     let mut placed = 0;
     // 32 ring jobs (was 20): TOOL-0 makes a colonist with a matching
@@ -907,7 +1374,11 @@ fn b4_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (B5): the work-execution acceptance scenario (design doc §B5
@@ -917,8 +1388,8 @@ fn b4_scenario(args: &Args) -> ExitCode {
 fn b5_scenario(args: &Args) -> ExitCode {
     use common::{
         bastion::{
-            BUILD_MATERIAL_ITEM, CHOP_DROP_ITEM, DesignationKind, MINE_DROP_ITEM, Region,
-            WorkType, ZExtent,
+            BUILD_MATERIAL_ITEM, CHOP_DROP_ITEM, DesignationKind, MINE_DROP_ITEM, Region, WorkType,
+            ZExtent,
         },
         terrain::{Block, BlockKind},
         vol::ReadVol,
@@ -970,7 +1441,9 @@ fn b5_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -1023,7 +1496,8 @@ fn b5_scenario(args: &Args) -> ExitCode {
     let cz = ground_z(&server, cx, cy).expect("no ground at site center");
 
     // 2. Spawn the band.
-    let names = server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0), 3);
+    let names =
+        server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0), 3);
     tick(&mut server, 60);
 
     // 3. MINE: a 3×3×3 quarry pit dug *down* from a guaranteed-flat, forced
@@ -1044,8 +1518,8 @@ fn b5_scenario(args: &Args) -> ExitCode {
     let mine_max = mine_min + Vec3::new(2, 2, 2); // z: mine_gz-2 ..= mine_gz (top layer = current surface)
     for x in (mine_min.x - 1)..=(mine_max.x + 1) {
         for y in (mine_min.y - 1)..=(mine_max.y + 1) {
-            let inside_dig = (mine_min.x..=mine_max.x).contains(&x)
-                && (mine_min.y..=mine_max.y).contains(&y);
+            let inside_dig =
+                (mine_min.x..=mine_max.x).contains(&x) && (mine_min.y..=mine_max.y).contains(&y);
             if !inside_dig {
                 server.state_mut().set_block(
                     Vec3::new(x, y, mine_gz),
@@ -1060,9 +1534,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
     for z in mine_min.z..=mine_max.z {
         for y in mine_min.y..=mine_max.y {
             for x in mine_min.x..=mine_max.x {
-                server
-                    .state_mut()
-                    .set_block(Vec3::new(x, y, z), Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)));
+                server.state_mut().set_block(
+                    Vec3::new(x, y, z),
+                    Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
+                );
             }
         }
     }
@@ -1074,7 +1549,13 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // colonist pacing the pit floor again, the scramble mechanism regressed.
     tick(&mut server, 2);
     let mine_jobs = server
-        .bastion_place_designation(Region { min: mine_min, max: mine_max }, DesignationKind::Mine)
+        .bastion_place_designation(
+            Region {
+                min: mine_min,
+                max: mine_max,
+            },
+            DesignationKind::Mine,
+        )
         .len();
 
     // 4. CHOP: a single wood block at *this* column's local ground height.
@@ -1122,7 +1603,13 @@ fn b5_scenario(args: &Args) -> ExitCode {
         .set_block(chop_base, Block::new(BlockKind::Wood, Rgb::new(90, 60, 30)));
     tick(&mut server, 2);
     let chop_jobs = server
-        .bastion_place_designation(Region { min: chop_base, max: chop_base }, DesignationKind::Chop)
+        .bastion_place_designation(
+            Region {
+                min: chop_base,
+                max: chop_base,
+            },
+            DesignationKind::Chop,
+        )
         .len();
 
     // 5. BUILD (phase A): one colonist carries the *only* unit of material
@@ -1138,7 +1625,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
     let build_ok_pos = Vec3::new(cx, cy + 20, build_ok_gz + 1);
     let build_ok_jobs = server
         .bastion_place_designation(
-            Region { min: build_ok_pos, max: build_ok_pos },
+            Region {
+                min: build_ok_pos,
+                max: build_ok_pos,
+            },
             DesignationKind::Build,
         )
         .len();
@@ -1177,8 +1667,7 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // conservation assertion is the amount SUM (entity counts undercount by
     // design). Radius 16 comfortably covers the gentle-toss scatter while
     // staying local enough that unrelated world drops can't pollute it.
-    let stone_sum =
-        server.bastion_sum_items_near(mine_min.map(|e| e as f32), 16.0, MINE_DROP_ITEM);
+    let stone_sum = server.bastion_sum_items_near(mine_min.map(|e| e as f32), 16.0, MINE_DROP_ITEM);
     // DETRNG (gate the INVARIANT, report the MECHANISM — the b58
     // d_all_cleared precedent, registry B8/P6): completion-within-window is
     // THROUGHPUT (async scheduling under full-suite load occasionally leaves
@@ -1212,7 +1701,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
     let build_stall_pos = Vec3::new(cx, cy - 20, build_stall_gz + 1);
     let build_stall_jobs = server
         .bastion_place_designation(
-            Region { min: build_stall_pos, max: build_stall_pos },
+            Region {
+                min: build_stall_pos,
+                max: build_stall_pos,
+            },
             DesignationKind::Build,
         )
         .len();
@@ -1262,7 +1754,9 @@ fn b5_scenario(args: &Args) -> ExitCode {
                 );
             }
             for z in (s + 1)..=(sl_hint + 49) {
-                server.state_mut().set_block(Vec3::new(x, y, z), Block::empty());
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
             }
         }
     }
@@ -1294,7 +1788,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
             });
             if s != expect_s || col_jobs != 3 {
                 sl_columns_ok = false;
-                info!(x, y, s, expect_s, col_jobs, "b5: slope column coverage FAIL");
+                info!(
+                    x,
+                    y, s, expect_s, col_jobs, "b5: slope column coverage FAIL"
+                );
             }
         }
     }
@@ -1404,7 +1901,9 @@ fn b5_scenario(args: &Args) -> ExitCode {
                 );
             }
             for z in (hh_gz + HILL_CREST + 1)..=(hh_gz + HILL_CREST + 8) {
-                server.state_mut().set_block(Vec3::new(x, y, z), Block::empty());
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
             }
         }
     }
@@ -1455,14 +1954,18 @@ fn b5_scenario(args: &Args) -> ExitCode {
                 server.state_mut().set_block(Vec3::new(x, y, z), b15_rock);
             }
             for z in (cz + 1)..=(cz + 12) {
-                server.state_mut().set_block(Vec3::new(x, y, z), Block::empty());
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
             }
         }
     }
     // (b) rock CAP over B (blocks on-top) + carve B's east neighbor to an open
     //     ground cell (the adjacent stance).
     let b_pos = Vec3::new(bpx, bpy, cz);
-    server.state_mut().set_block(b_pos + Vec3::unit_z(), b15_rock);
+    server
+        .state_mut()
+        .set_block(b_pos + Vec3::unit_z(), b15_rock);
     server
         .state_mut()
         .set_block(Vec3::new(bpx + 1, bpy, cz), Block::empty());
@@ -1477,12 +1980,19 @@ fn b5_scenario(args: &Args) -> ExitCode {
     for (i, nm) in names.iter().enumerate() {
         server.bastion_teleport_colonist(
             nm,
-            Vec3::new((bpx - 2 + i as i32) as f32 + 0.5, (bpy - 2) as f32 + 0.5, cz as f32 + 1.0),
+            Vec3::new(
+                (bpx - 2 + i as i32) as f32 + 0.5,
+                (bpy - 2) as f32 + 0.5,
+                cz as f32 + 1.0,
+            ),
         );
     }
     tick(&mut server, 5);
     let claimed_has = |server: &Server, p: Vec3<i32>| {
-        server.bastion_claimed_job_positions().iter().any(|c| *c == p)
+        server
+            .bastion_claimed_job_positions()
+            .iter()
+            .any(|c| *c == p)
     };
     // Probe each cell in isolation (place → let arbitration settle → assert →
     // cancel), so "claimed" is unambiguous and one probe can't starve another.
@@ -1594,16 +2104,14 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // (we SET the mainhand; no timing, no travel). The bare-hands floor +
     // the full curve are unit-pinned in common::bastion::tests.
     let tool_name = names.first().cloned().unwrap_or_default();
-    let tl_equip_stone =
-        server.bastion_equip_tool(&tool_name, "common.items.tool.pickaxe_stone");
+    let tl_equip_stone = server.bastion_equip_tool(&tool_name, "common.items.tool.pickaxe_stone");
     let tl_stone = server
         .bastion_colonist_tool_factor(&tool_name, WorkType::Mine)
         .unwrap_or(0.0);
     let tl_stone_chop = server
         .bastion_colonist_tool_factor(&tool_name, WorkType::Chop)
         .unwrap_or(0.0);
-    let tl_equip_steel =
-        server.bastion_equip_tool(&tool_name, "common.items.tool.pickaxe_steel");
+    let tl_equip_steel = server.bastion_equip_tool(&tool_name, "common.items.tool.pickaxe_steel");
     let tl_steel = server
         .bastion_colonist_tool_factor(&tool_name, WorkType::Mine)
         .unwrap_or(0.0);
@@ -1612,7 +2120,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
         && (tl_stone - 1.5).abs() < 0.001   // stone pick: the crude relief
         && (tl_steel - 2.0).abs() < 0.001   // steel pick: measurably faster
         && (tl_stone_chop - 1.0).abs() < 0.001; // wrong verb: the slow base
-    info!(tl_stone, tl_steel, tl_stone_chop, tl_ok, "b5: TOOL-0 factors");
+    info!(
+        tl_stone,
+        tl_steel, tl_stone_chop, tl_ok, "b5: TOOL-0 factors"
+    );
 
     // 8. Zero-input soak.
     let soak_ticks: u64 = 600;
@@ -1747,7 +2258,11 @@ fn b5_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (B5.5): zone deletion + pile aggregation gate. Part 1: painted
@@ -1807,7 +2322,9 @@ fn b55_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -1874,11 +2391,20 @@ fn b55_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
     let p1_jobs = server
-        .bastion_place_designation(Region { min: p1_min, max: p1_max }, DesignationKind::Mine)
+        .bastion_place_designation(
+            Region {
+                min: p1_min,
+                max: p1_max,
+            },
+            DesignationKind::Mine,
+        )
         .len();
 
     // Let claims form (a couple of arbitration cycles).
-    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL * 2 + 2);
+    tick(
+        &mut server,
+        server::bastion_jobs::ARBITRATION_INTERVAL * 2 + 2,
+    );
     let claims_before_erase = server.bastion_job_audit().claimed;
 
     // Erase the +x half mid-work.
@@ -1955,7 +2481,13 @@ fn b55_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
     let p2_jobs = server
-        .bastion_place_designation(Region { min: p2_min, max: p2_max }, DesignationKind::Mine)
+        .bastion_place_designation(
+            Region {
+                min: p2_min,
+                max: p2_max,
+            },
+            DesignationKind::Mine,
+        )
         .len();
 
     // Mine it out (cap generous: 200 jobs / 4 colonists at ~1 s work each +
@@ -2020,7 +2552,1199 @@ fn b55_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// REQ-0064 negative fixture. The first record is deliberately provisional;
+/// the forbidden warning comes afterward and therefore must be reflected by
+/// the only final record and the process exit code.
+fn b55_hygiene_sentinel() -> ExitCode {
+    reset_hygiene_diagnostics();
+    println!(
+        "{}",
+        serde_json::json!({
+            "b55_hygiene_phase": "provisional",
+            "b55_hygiene_functional_pass": true,
+            "b55_hygiene_final": false,
+        })
+    );
+    warn!(
+        "REQ-0064 sentinel: Network::drop stopped after a timeout and didn't wait for our shutdown"
+    );
+    let hygiene_clean = post_teardown_hygiene_clean();
+    let pass = hygiene_clean;
+    println!(
+        "{}",
+        serde_json::json!({
+            "b55_hygiene_phase": "final",
+            "b55_hygiene_functional_pass": true,
+            "b55_hygiene_post_result_clean": hygiene_clean,
+            "b55_hygiene_pass": pass,
+        })
+    );
+    println!(
+        "B5.5 HYGIENE SENTINEL: {}",
+        if pass { "PASS" } else { "FAIL" }
+    );
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// bastion (B5.5 deep): the catalog-complete adversarial companion to the
+/// legacy `--b55-scenario`. The legacy scenario is intentionally unchanged;
+/// this gate adds observability for the cases it cannot prove.
+fn b55_deep_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, MINE_DROP_ITEM, Region, WorkType},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    reset_hygiene_diagnostics();
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-b55-deep-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-b55-deep".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-b55-deep-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    // REQ-0075: exact harness-side scenario clock for deadline attribution.
+    // This observes the fixed acceptance timeline; it does not change server
+    // time, tick cadence, or the 301.066-second deadline.
+    let scenario_tick = Cell::new(0u64);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+            scenario_tick.set(scenario_tick.get() + 1);
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    let loaded = server.bastion_force_load_area(site_wpos, 10);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::GlowingRock
+                        | BlockKind::GlowingWeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::ArtSnow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                        | BlockKind::Ice
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let cz = ground_z(&server, cx, cy).expect("no ground at site center");
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0), 8);
+    tick(&mut server, 60);
+    let names = server.bastion_rename_colonists_unique();
+    for name in &names {
+        server.bastion_set_colonist_skill(name, WorkType::Mine, 10);
+    }
+
+    // Gate 1: erase through several overlapping 3-D regions. Each source's
+    // remainder must be pairwise disjoint and conserve exact voxel volume.
+    let erase = Region {
+        min: Vec3::new(4, 3, 1),
+        max: Vec3::new(8, 8, 3),
+    };
+    let overlap_sources = [
+        Region {
+            min: Vec3::new(0, 0, 0),
+            max: Vec3::new(11, 9, 4),
+        },
+        Region {
+            min: Vec3::new(3, 2, 1),
+            max: Vec3::new(14, 11, 5),
+        },
+        Region {
+            min: Vec3::new(6, -2, 0),
+            max: Vec3::new(10, 13, 2),
+        },
+    ];
+    let mut overlap_volume_exact = true;
+    let mut overlap_pieces_disjoint = true;
+    let mut overlap_piece_count = 0usize;
+    let mut overlap_source_volume = 0i64;
+    let mut overlap_erased_volume = 0i64;
+    let mut overlap_remainder_volume = 0i64;
+    for source in overlap_sources {
+        let pieces = source.subtract(&erase);
+        let erased_volume = source.intersection(&erase).map_or(0, |r| r.volume());
+        let remainder_volume: i64 = pieces.iter().map(Region::volume).sum();
+        overlap_volume_exact &= source.volume() == erased_volume + remainder_volume;
+        for (i, piece) in pieces.iter().enumerate() {
+            overlap_pieces_disjoint &= piece.volume() > 0
+                && source.intersection(piece) == Some(*piece)
+                && !piece.intersects(&erase);
+            for other in &pieces[i + 1..] {
+                overlap_pieces_disjoint &= !piece.intersects(other);
+            }
+        }
+        overlap_piece_count += pieces.len();
+        overlap_source_volume += source.volume();
+        overlap_erased_volume += erased_volume;
+        overlap_remainder_volume += remainder_volume;
+    }
+
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let solid_cells = |server: &Server, region: Region| -> usize {
+        let mut count = 0usize;
+        for z in region.min.z..=region.max.z {
+            for y in region.min.y..=region.max.y {
+                for x in region.min.x..=region.max.x {
+                    if server
+                        .bastion_block_kind(Vec3::new(x, y, z))
+                        .is_some_and(|kind| kind.is_filled())
+                    {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        count
+    };
+
+    // Gates 2/3: repeated erase/repaint while claims and completion are live.
+    let cycle_gz = ground_z(&server, cx + 36, cy).unwrap_or(cz);
+    let cycle_region = Region {
+        min: Vec3::new(cx + 32, cy - 4, cycle_gz),
+        max: Vec3::new(cx + 43, cy + 3, cycle_gz),
+    };
+    for y in (cycle_region.min.y - 1)..=(cycle_region.max.y + 1) {
+        for x in (cycle_region.min.x - 1)..=(cycle_region.max.x + 1) {
+            for z in (cycle_gz - 2)..=cycle_gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (cycle_gz + 1)..=(cycle_gz + 3) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    tick(&mut server, 2);
+    for (i, name) in names.iter().enumerate() {
+        server.bastion_set_colonist_skill(name, WorkType::Mine, 1);
+        server.bastion_teleport_colonist(
+            name,
+            Vec3::new(
+                (cycle_region.min.x + 1 + i as i32) as f32 + 0.5,
+                (cycle_region.min.y - 1) as f32 + 0.5,
+                cycle_gz as f32 + 2.0,
+            ),
+        );
+    }
+    tick(&mut server, 5);
+    let cycle_initial_jobs = server
+        .bastion_place_designation(cycle_region, DesignationKind::Mine)
+        .len();
+    tick(
+        &mut server,
+        server::bastion_jobs::ARBITRATION_INTERVAL * 2 + 2,
+    );
+    let cycle_claims_observed = server.bastion_job_audit().claimed > 0;
+    let cycle_solid_before = solid_cells(&server, cycle_region);
+    let mut cycle_exact = cycle_initial_jobs == 96;
+    let mut cycle_zero_orphans = true;
+    let mut cycle_repaint_created = 0usize;
+    let mut cycle_count = 0usize;
+    for cycle in 0..6i32 {
+        let x0 = cycle_region.min.x + cycle;
+        let stripe_cancel = Region {
+            min: Vec3::new(x0, cycle_region.min.y, cycle_gz - 1),
+            max: Vec3::new(x0 + 1, cycle_region.max.y, cycle_gz + 1),
+        };
+        let stripe_work = Region {
+            min: Vec3::new(x0, cycle_region.min.y, cycle_gz),
+            max: Vec3::new(x0 + 1, cycle_region.max.y, cycle_gz),
+        };
+        server.bastion_cancel_designation(stripe_cancel);
+        tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+        cycle_exact &= server.bastion_jobs_in_region(stripe_cancel) == 0;
+        cycle_zero_orphans &= server.bastion_orphaned_claims() == 0;
+        let solid_in_stripe = solid_cells(&server, stripe_work);
+        let created = server
+            .bastion_place_designation(stripe_work, DesignationKind::Mine)
+            .len();
+        cycle_repaint_created += created;
+        cycle_exact &= created == solid_in_stripe;
+        cycle_exact &=
+            server.bastion_jobs_in_region(cycle_region) <= solid_cells(&server, cycle_region);
+        tick(&mut server, 20);
+        cycle_count += 1;
+    }
+    let cycle_solid_after = solid_cells(&server, cycle_region);
+    let cycle_work_progressed = cycle_solid_after < cycle_solid_before;
+    server.bastion_cancel_designation(Region {
+        min: cycle_region.min - Vec3::new(0, 0, 2),
+        max: cycle_region.max + Vec3::new(0, 0, 2),
+    });
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 60);
+    let cycle_board_clear =
+        server.bastion_jobs_in_region(cycle_region) == 0 && server.bastion_orphaned_claims() == 0;
+    for name in &names {
+        server.bastion_set_colonist_skill(name, WorkType::Mine, 10);
+    }
+
+    // Gate 4: exercise both sides of the completion/cancel boundary. A
+    // pre-completion cancel must create nothing; a post-completion cancel
+    // must not duplicate the one coherent completion/drop.
+    let race_gz = ground_z(&server, cx + 60, cy).unwrap_or(cz);
+    let race_pre = Vec3::new(cx + 58, cy, race_gz);
+    let race_post = Vec3::new(cx + 62, cy, race_gz);
+    for y in (cy - 3)..=(cy + 3) {
+        for x in (race_pre.x - 4)..=(race_post.x + 4) {
+            for z in (race_gz - 2)..=race_gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (race_gz + 1)..=(race_gz + 4) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    tick(&mut server, 2);
+    for (i, name) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            name,
+            Vec3::new(
+                race_pre.x as f32 - 2.0 - i as f32 * 0.2,
+                race_pre.y as f32,
+                race_gz as f32 + 2.0,
+            ),
+        );
+    }
+    tick(&mut server, 5);
+    let race_pre_region = Region {
+        min: race_pre,
+        max: race_pre,
+    };
+    let race_pre_sum0 =
+        server.bastion_sum_items_near(race_pre.map(|v| v as f32), 3.0, MINE_DROP_ITEM);
+    let race_pre_done0 = server.bastion_done_designations();
+    server.bastion_place_designation(race_pre_region, DesignationKind::Mine);
+    let mut race_pre_progress = 0.0f32;
+    for _ in 0..600 {
+        tick(&mut server, 1);
+        race_pre_progress = names
+            .iter()
+            .filter_map(|name| server.bastion_colonist_activity(name))
+            .filter(|(work, _)| *work == WorkType::Mine)
+            .map(|(_, progress)| progress)
+            .fold(0.0f32, f32::max);
+        if race_pre_progress >= 0.75 {
+            break;
+        }
+    }
+    server.bastion_cancel_designation(race_pre_region);
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+    let race_pre_sum1 =
+        server.bastion_sum_items_near(race_pre.map(|v| v as f32), 3.0, MINE_DROP_ITEM);
+    let race_pre_done1 = server.bastion_done_designations();
+    let race_pre_coherent = race_pre_progress >= 0.75
+        && server
+            .bastion_block_kind(race_pre)
+            .is_some_and(|kind| kind.is_filled())
+        && race_pre_sum1 == race_pre_sum0
+        && race_pre_done1 == race_pre_done0
+        && server.bastion_jobs_in_region(race_pre_region) == 0
+        && server.bastion_orphaned_claims() == 0;
+
+    let race_post_region = Region {
+        min: race_post,
+        max: race_post,
+    };
+    for (i, name) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            name,
+            Vec3::new(
+                race_post.x as f32 - 2.0 - i as f32 * 0.2,
+                race_post.y as f32,
+                race_gz as f32 + 2.0,
+            ),
+        );
+    }
+    tick(&mut server, 5);
+    let race_post_sum0 =
+        server.bastion_sum_items_near(race_post.map(|v| v as f32), 3.0, MINE_DROP_ITEM);
+    let race_post_done0 = server.bastion_done_designations();
+    server.bastion_place_designation(race_post_region, DesignationKind::Mine);
+    let mut race_post_completed = false;
+    for _ in 0..1200 {
+        tick(&mut server, 1);
+        if server
+            .bastion_block_kind(race_post)
+            .is_none_or(|kind| !kind.is_filled())
+        {
+            race_post_completed = true;
+            break;
+        }
+    }
+    server.bastion_cancel_designation(race_post_region);
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+    let race_post_sum1 =
+        server.bastion_sum_items_near(race_post.map(|v| v as f32), 3.0, MINE_DROP_ITEM);
+    let race_post_done1 = server.bastion_done_designations();
+    let race_post_coherent = race_post_completed
+        && race_post_sum1 == race_post_sum0 + 1
+        && race_post_done1 == race_post_done0 + 1
+        && server.bastion_jobs_in_region(race_post_region) == 0
+        && server.bastion_orphaned_claims() == 0;
+
+    // Gate 5: repeated multi-sided spawn-time and periodic consolidation.
+    // Exact amount must survive every source-entity deletion.
+    let merge_x = cx;
+    let merge_y = cy + 64;
+    let merge_gz = ground_z(&server, merge_x, merge_y).unwrap_or(cz);
+    for y in (merge_y - 4)..=(merge_y + 4) {
+        for x in (merge_x - 4)..=(merge_x + 4) {
+            for z in (merge_gz - 2)..=merge_gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (merge_gz + 1)..=(merge_gz + 5) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    tick(&mut server, 2);
+    let merge_center = Vec3::new(
+        merge_x as f32 + 0.5,
+        merge_y as f32 + 0.5,
+        merge_gz as f32 + 2.0,
+    );
+    let merge_offsets = [
+        Vec2::new(-0.8, 0.0),
+        Vec2::new(0.8, 0.0),
+        Vec2::new(0.0, -0.8),
+        Vec2::new(0.0, 0.8),
+        Vec2::new(-0.55, -0.55),
+        Vec2::new(0.55, -0.55),
+        Vec2::new(-0.55, 0.55),
+        Vec2::new(0.55, 0.55),
+    ];
+    let mut merge_exact = true;
+    let mut merge_expected = 0u64;
+    let mut merge_peak_entities = 0usize;
+    let mut merge_final_entities = 0usize;
+    for wave in 0..8u32 {
+        for offset in merge_offsets {
+            let amount = wave + 1;
+            merge_expected += amount as u64;
+            merge_exact &= server.bastion_spawn_item_class(
+                merge_center + Vec3::new(offset.x, offset.y, 0.0),
+                MINE_DROP_ITEM,
+                amount,
+                true,
+            );
+        }
+        tick(&mut server, 120);
+        let (
+            persistent_amount,
+            persistent_entities,
+            timed_amount,
+            timed_entities,
+            persistent_with_timer,
+            timed_without_timer,
+        ) = server.bastion_item_class_summary_near(merge_center, 8.0, MINE_DROP_ITEM);
+        merge_exact &= persistent_amount == merge_expected
+            && timed_amount == 0
+            && timed_entities == 0
+            && persistent_with_timer == 0
+            && timed_without_timer == 0;
+        merge_peak_entities = merge_peak_entities.max(persistent_entities);
+        merge_final_entities = persistent_entities;
+    }
+    let merge_bounded = merge_final_entities <= 8 && merge_peak_entities <= 16;
+
+    // Gates 6/7: mine 1,000 real cells, add same-definition timed loot in
+    // the pile field, then soak beyond its 300-second lifetime. Persistent
+    // amount must remain exact and bounded while timed loot disappears.
+    let bag_stone = |server: &Server| -> u64 {
+        server
+            .bastion_colony_roster()
+            .into_iter()
+            .filter_map(|colonist| colonist.inventory)
+            .flatten()
+            .filter(|(asset_id, _)| asset_id == MINE_DROP_ITEM)
+            .map(|(_, amount)| amount as u64)
+            .sum()
+    };
+    #[derive(Default)]
+    struct InventoryStoneSummary {
+        total: u64,
+        colonist: u64,
+        player: u64,
+        ambient: u64,
+        other: u64,
+        by_entity: std::collections::HashMap<u32, u64>,
+        ambient_ids: Vec<u32>,
+        ambient_uids: Vec<u64>,
+        ambient_identities: Vec<String>,
+        ambient_by_entity: std::collections::HashMap<u32, (Option<u64>, String, u64)>,
+    }
+    let inventory_stone = |server: &Server| -> InventoryStoneSummary {
+        let mut out = InventoryStoneSummary::default();
+        for (entity_id, uid, name, is_colonist, is_player, is_rtsim, amount) in
+            server.bastion_inventory_item_snapshots(MINE_DROP_ITEM)
+        {
+            out.total += amount;
+            out.by_entity.insert(entity_id, amount);
+            if is_colonist {
+                out.colonist += amount;
+            } else if is_player {
+                out.player += amount;
+            } else if is_rtsim {
+                out.ambient += amount;
+                out.ambient_ids.push(entity_id);
+                if let Some(uid) = uid {
+                    out.ambient_uids.push(uid);
+                }
+                out.ambient_identities.push(name.clone());
+                out.ambient_by_entity.insert(entity_id, (uid, name, amount));
+            } else {
+                out.other += amount;
+            }
+        }
+        out
+    };
+    let global_before_mine =
+        server.bastion_item_class_summary_near(Vec3::zero(), f32::INFINITY, MINE_DROP_ITEM);
+    let inventory_before_mine = inventory_stone(&server);
+    let pre_mine_item_ids: std::collections::HashSet<u32> = server
+        .bastion_persistent_item_snapshots(MINE_DROP_ITEM)
+        .into_iter()
+        .map(|(entity_id, _, _)| entity_id)
+        .collect();
+    let bags_before_mine = bag_stone(&server);
+    let mine_gz = ground_z(&server, cx - 72, cy).unwrap_or(cz);
+    let mine_region = Region {
+        min: Vec3::new(cx - 91, cy - 12, mine_gz),
+        max: Vec3::new(cx - 52, cy + 12, mine_gz),
+    }; // 40 x 25 = 1,000 cells
+    for y in (mine_region.min.y - 1)..=(mine_region.max.y + 1) {
+        for x in (mine_region.min.x - 1)..=(mine_region.max.x + 1) {
+            for z in (mine_gz - 3)..=mine_gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (mine_gz + 1)..=(mine_gz + 4) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    tick(&mut server, 2);
+    for (i, name) in names.iter().enumerate() {
+        server.bastion_teleport_colonist(
+            name,
+            Vec3::new(
+                (mine_region.min.x + 2 + (i as i32 % 4) * 10) as f32 + 0.5,
+                (mine_region.min.y - 1) as f32 + 0.5,
+                mine_gz as f32 + 2.0,
+            ),
+        );
+    }
+    tick(&mut server, 5);
+    let mine_jobs = server
+        .bastion_place_designation(mine_region, DesignationKind::Mine)
+        .len();
+    let mut mine_cleared = false;
+    for _ in 0..2500 {
+        tick(&mut server, 30);
+        if server.bastion_jobs_in_region(mine_region) == 0 {
+            mine_cleared = true;
+            break;
+        }
+    }
+    let mine_center = ((mine_region.min + mine_region.max).map(|v| v as f32)) / 2.0;
+    let before_timed = server.bastion_item_class_summary_near(mine_center, 64.0, MINE_DROP_ITEM);
+    let global_before_timed =
+        server.bastion_item_class_summary_near(Vec3::zero(), f32::INFINITY, MINE_DROP_ITEM);
+    let inventory_before_timed = inventory_stone(&server);
+    let bags_before_timed = bag_stone(&server);
+    let conserved_baseline = global_before_mine.0 + bags_before_mine;
+    let timed_spawned = server.bastion_spawn_isolated_timed_item(
+        mine_center + Vec3::unit_z() * 3.0,
+        MINE_DROP_ITEM,
+        37,
+    );
+    tick(&mut server, 120);
+    let class_before_soak =
+        server.bastion_item_class_summary_near(mine_center, 64.0, MINE_DROP_ITEM);
+    let recovery_before_soak = server.bastion_locomotion_stats();
+    let failsafe_events_before_soak = server.bastion_failsafe_events().len();
+    let soak_ticks = (args.tps * 301.0).ceil() as u64 + 2;
+    let soak_start_tick = scenario_tick.get();
+    let acceptance_deadline_tick = soak_start_tick + soak_ticks;
+
+    // REQ-0075: route timing is an acceptance-deadline observation, separate
+    // from any later characterization. The harness samples only existing
+    // read-only route/job/cleanup probes and never drives route behavior.
+    #[derive(Default, Serialize)]
+    struct RouteDeadlineObservation {
+        owner_uid: u64,
+        episode_index: u32,
+        first_seen_scenario_tick: u64,
+        first_seen_soak_tick: u64,
+        first_seen_sim_seconds: f64,
+        present_at_soak_start: bool,
+        emitted_after_deadline: bool,
+        first_route_member_tick: Option<u64>,
+        first_traversal_tick: Option<u64>,
+        first_frontier_progress_tick: Option<u64>,
+        construction_complete_tick: Option<u64>,
+        cleanup_complete_tick: Option<u64>,
+        active_at_deadline: bool,
+        jobs_at_deadline: usize,
+        cells_at_deadline: usize,
+        members_at_deadline: usize,
+        cleanup_pending_at_deadline: bool,
+        max_frontier_progress: f32,
+        #[serde(skip)]
+        first_member_position: Option<[f32; 3]>,
+        #[serde(skip)]
+        last_jobs: usize,
+    }
+
+    let mut route_deadline_observations = Vec::<RouteDeadlineObservation>::new();
+    let mut active_route_observation_by_owner = std::collections::HashMap::<u64, usize>::new();
+    let mut route_episode_count_by_owner = std::collections::HashMap::<u64, u32>::new();
+    let mut observe_routes = |server: &Server, sample_tick: u64, at_deadline: bool| {
+        let mut jobs = std::collections::HashMap::<u64, (usize, f32, bool)>::new();
+        for (_job, owner, _pos, _claimant, _unreachable, progress, _owner_pos, active) in
+            server.bastion_emergency_access_details()
+        {
+            let entry = jobs.entry(owner).or_insert((0, 0.0, false));
+            entry.0 += 1;
+            entry.1 = entry.1.max(progress);
+            entry.2 |= active.is_some_and(|(_, arrived)| arrived);
+        }
+        let (pending, members, _, cells) = server.bastion_emergency_cleanup_details();
+        let mut member_positions = std::collections::HashMap::<u64, Vec<[f32; 3]>>::new();
+        for (_, owner, position, _, _) in members {
+            if let Some(position) = position {
+                member_positions
+                    .entry(owner)
+                    .or_default()
+                    .push([position.x, position.y, position.z]);
+            }
+        }
+        let cell_counts: std::collections::HashMap<u64, usize> = cells
+            .into_iter()
+            .map(|(owner, cells)| (owner, cells.len()))
+            .collect();
+        let pending: std::collections::HashSet<u64> = pending.into_iter().collect();
+        let mut owners = std::collections::BTreeSet::new();
+        owners.extend(jobs.keys().copied());
+        owners.extend(member_positions.keys().copied());
+        owners.extend(cell_counts.keys().copied());
+        owners.extend(pending.iter().copied());
+        owners.extend(active_route_observation_by_owner.keys().copied());
+
+        for owner in owners {
+            let (job_count, progress, arrived) = jobs.get(&owner).copied().unwrap_or_default();
+            let cell_count = cell_counts.get(&owner).copied().unwrap_or(0);
+            let positions = member_positions
+                .get(&owner)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            let member_count = positions.len();
+            let cleanup_pending = pending.contains(&owner);
+            let any_state = job_count > 0 || cell_count > 0 || member_count > 0 || cleanup_pending;
+            if !any_state {
+                if let Some(index) = active_route_observation_by_owner.remove(&owner) {
+                    let observation = &mut route_deadline_observations[index];
+                    if observation.cleanup_complete_tick.is_none() {
+                        observation.cleanup_complete_tick = Some(sample_tick);
+                    }
+                }
+                continue;
+            }
+
+            let index = *active_route_observation_by_owner
+                .entry(owner)
+                .or_insert_with(|| {
+                    let episode_index = route_episode_count_by_owner.entry(owner).or_default();
+                    *episode_index += 1;
+                    route_deadline_observations.push(RouteDeadlineObservation {
+                        owner_uid: owner,
+                        episode_index: *episode_index,
+                        first_seen_scenario_tick: sample_tick,
+                        first_seen_soak_tick: sample_tick.saturating_sub(soak_start_tick),
+                        first_seen_sim_seconds: sample_tick as f64 / args.tps,
+                        present_at_soak_start: sample_tick <= soak_start_tick,
+                        emitted_after_deadline: sample_tick > acceptance_deadline_tick,
+                        ..RouteDeadlineObservation::default()
+                    });
+                    route_deadline_observations.len() - 1
+                });
+            let observation = &mut route_deadline_observations[index];
+            observation.emitted_after_deadline |=
+                observation.first_seen_scenario_tick > acceptance_deadline_tick;
+            if member_count > 0 && observation.first_route_member_tick.is_none() {
+                observation.first_route_member_tick = Some(sample_tick);
+            }
+            if let Some(position) = positions.first().copied() {
+                if let Some(first) = observation.first_member_position {
+                    let dx = position[0] - first[0];
+                    let dy = position[1] - first[1];
+                    let dz = position[2] - first[2];
+                    if observation.first_traversal_tick.is_none()
+                        && dx * dx + dy * dy + dz * dz >= 0.25 * 0.25
+                    {
+                        observation.first_traversal_tick = Some(sample_tick);
+                    }
+                } else {
+                    observation.first_member_position = Some(position);
+                }
+            }
+            if observation.first_frontier_progress_tick.is_none() && (arrived || progress > 0.0) {
+                observation.first_frontier_progress_tick = Some(sample_tick);
+            }
+            observation.max_frontier_progress = observation.max_frontier_progress.max(progress);
+            if observation.last_jobs > 0
+                && job_count == 0
+                && observation.construction_complete_tick.is_none()
+            {
+                observation.construction_complete_tick = Some(sample_tick);
+            }
+            observation.last_jobs = job_count;
+            if at_deadline {
+                observation.active_at_deadline = any_state;
+                observation.jobs_at_deadline = job_count;
+                observation.cells_at_deadline = cell_count;
+                observation.members_at_deadline = member_count;
+                observation.cleanup_pending_at_deadline = cleanup_pending;
+            }
+        }
+    };
+    observe_routes(&server, soak_start_tick, false);
+    let soak_started = Instant::now();
+    let mut soak_elapsed_ticks = 0u64;
+    let mut first_loss_tick = 0u64;
+    let mut first_loss_total = 1000u64;
+    let mut first_loss_cohort_amount = 1000u64;
+    let mut cohort_min_z_seen = f32::INFINITY;
+    let mut cohort_max_horizontal_distance_seen = 0.0f32;
+    let mut cohort_peak_entities = 0usize;
+    while soak_elapsed_ticks < soak_ticks {
+        let step = 10.min(soak_ticks - soak_elapsed_ticks);
+        tick(&mut server, step);
+        soak_elapsed_ticks += step;
+        observe_routes(&server, scenario_tick.get(), false);
+        let snapshots = server.bastion_persistent_item_snapshots(MINE_DROP_ITEM);
+        let mut cohort_amount = 0u64;
+        let mut cohort_entities = 0usize;
+        for (entity_id, amount, pos) in snapshots {
+            if pre_mine_item_ids.contains(&entity_id) {
+                continue;
+            }
+            cohort_amount += amount;
+            cohort_entities += 1;
+            if pos.x.is_finite() && pos.y.is_finite() && pos.z.is_finite() {
+                cohort_min_z_seen = cohort_min_z_seen.min(pos.z);
+                cohort_max_horizontal_distance_seen =
+                    cohort_max_horizontal_distance_seen.max(pos.xy().distance(mine_center.xy()));
+            }
+        }
+        cohort_peak_entities = cohort_peak_entities.max(cohort_entities);
+        if first_loss_tick == 0 {
+            let global_now =
+                server.bastion_item_class_summary_near(Vec3::zero(), f32::INFINITY, MINE_DROP_ITEM);
+            let inventory_now = inventory_stone(&server);
+            let total_now = global_now.0.saturating_sub(global_before_mine.0)
+                + inventory_now
+                    .total
+                    .saturating_sub(inventory_before_mine.total);
+            if total_now < 1000 {
+                first_loss_tick = soak_elapsed_ticks;
+                first_loss_total = total_now;
+                first_loss_cohort_amount = cohort_amount;
+            }
+        }
+    }
+    observe_routes(&server, acceptance_deadline_tick, true);
+    drop(observe_routes);
+    let soak_elapsed = soak_started.elapsed();
+    let class_after_soak =
+        server.bastion_item_class_summary_near(mine_center, 64.0, MINE_DROP_ITEM);
+    let global_after_soak =
+        server.bastion_item_class_summary_near(Vec3::zero(), f32::INFINITY, MINE_DROP_ITEM);
+    let inventory_after_soak = inventory_stone(&server);
+    let bags_after_soak = bag_stone(&server);
+    let recovery_after_soak = server.bastion_locomotion_stats();
+    let emergency_access_after_soak = server.bastion_emergency_access_stats();
+    let emergency_access_details_after_soak = server.bastion_emergency_access_details();
+    let emergency_cleanup_details_after_soak = server.bastion_emergency_cleanup_details();
+    let failsafe_teleports_during_soak =
+        recovery_after_soak.2.saturating_sub(recovery_before_soak.2);
+    let failsafe_hygiene_clean = failsafe_teleports_during_soak == 0;
+    let failsafe_events: Vec<_> = server
+        .bastion_failsafe_events()
+        .into_iter()
+        .skip(failsafe_events_before_soak)
+        .map(|event| {
+            serde_json::json!({
+                "uid": event.uid,
+                "name": event.name,
+                "feet": [event.feet.x, event.feet.y, event.feet.z],
+                "destination": [
+                    event.destination.x,
+                    event.destination.y,
+                    event.destination.z,
+                ],
+                "stuck_seconds": event.stuck_seconds,
+                "active_job": event.active_job,
+                "active_job_state": event.active_job_state,
+                "active_job_kind": event.active_job_kind,
+                "active_job_is_access": event.active_job_is_access,
+                "egress_verdicts": event.egress_verdicts,
+                "egress_plans_emitted": event.egress_plans_emitted,
+                "egress_no_route": event.egress_no_route,
+                "climb_free_active": event.climb_free_active,
+                "organic_destination": event.organic_destination.map(|destination| [
+                    destination.x,
+                    destination.y,
+                    destination.z,
+                ]),
+                "head_clear": event.head_clear,
+                "on_ground": event.on_ground,
+                "on_wall": event.on_wall,
+                "character_state": event.character_state,
+                "velocity": [event.velocity.x, event.velocity.y, event.velocity.z],
+                "access_jobs_pending": event.access_jobs_pending,
+                "terminal_cause": event.terminal_cause,
+            })
+        })
+        .collect();
+    let global_mined_amount_before_soak =
+        (global_before_timed.0 + bags_before_timed).saturating_sub(conserved_baseline);
+    let global_mined_amount_after_soak =
+        (global_after_soak.0 + bags_after_soak).saturating_sub(conserved_baseline);
+    let all_inventory_mined_before_soak = inventory_before_timed
+        .total
+        .saturating_sub(inventory_before_mine.total);
+    let all_inventory_mined_after_soak = inventory_after_soak
+        .total
+        .saturating_sub(inventory_before_mine.total);
+    let authoritative_mined_before_soak =
+        global_before_timed.0.saturating_sub(global_before_mine.0)
+            + all_inventory_mined_before_soak;
+    let authoritative_mined_after_soak =
+        global_after_soak.0.saturating_sub(global_before_mine.0) + all_inventory_mined_after_soak;
+    let ambient_pickup_amount = inventory_after_soak
+        .ambient
+        .saturating_sub(inventory_before_mine.ambient);
+    let player_pickup_amount = inventory_after_soak
+        .player
+        .saturating_sub(inventory_before_mine.player);
+    let colonist_live_pickup_amount = inventory_after_soak
+        .colonist
+        .saturating_sub(inventory_before_mine.colonist);
+    let other_pickup_amount = inventory_after_soak
+        .other
+        .saturating_sub(inventory_before_mine.other);
+    let inventory_pickup_amount = all_inventory_mined_after_soak;
+    let ground_removal_amount =
+        1000u64.saturating_sub(global_after_soak.0.saturating_sub(global_before_mine.0));
+    let unattributed_removal_amount = ground_removal_amount.saturating_sub(inventory_pickup_amount);
+    let ambient_picker_ids: Vec<_> = inventory_after_soak
+        .ambient_ids
+        .iter()
+        .copied()
+        .filter(|entity_id| {
+            inventory_after_soak
+                .by_entity
+                .get(entity_id)
+                .copied()
+                .unwrap_or(0)
+                > inventory_before_mine
+                    .by_entity
+                    .get(entity_id)
+                    .copied()
+                    .unwrap_or(0)
+        })
+        .collect();
+    let ambient_picker_records: Vec<_> = ambient_picker_ids
+        .iter()
+        .filter_map(|entity_id| {
+            inventory_after_soak.ambient_by_entity.get(entity_id).map(
+                |(uid, identity, amount_after)| {
+                    let amount_before = inventory_before_mine
+                        .ambient_by_entity
+                        .get(entity_id)
+                        .map(|(_, _, amount)| *amount)
+                        .unwrap_or(0);
+                    serde_json::json!({
+                        "entity_id": entity_id,
+                        "uid": uid,
+                        "identity": identity,
+                        "source": "rtsim_ambient_inventory",
+                        "amount_before": amount_before,
+                        "amount_after": amount_after,
+                        "picked_up_amount": amount_after.saturating_sub(amount_before),
+                    })
+                },
+            )
+        })
+        .collect();
+    let ambient_accounting_classification = if authoritative_mined_after_soak == 1000
+        && unattributed_removal_amount == 0
+        && ambient_pickup_amount > 0
+    {
+        "ground_reduction_fully_attributed_to_ambient_inventory"
+    } else if authoritative_mined_after_soak == 1000 && unattributed_removal_amount == 0 {
+        "authoritative_total_conserved_without_ambient_pickup"
+    } else {
+        "authoritative_conservation_failure"
+    };
+    let global_mined_entities_after_soak = global_after_soak.1.saturating_sub(global_before_mine.1);
+    let mine_conserved = mine_jobs == 1000
+        && mine_cleared
+        && before_timed.0 == 1000
+        && before_timed.2 == 0
+        && authoritative_mined_before_soak == 1000
+        && timed_spawned
+        && class_before_soak.0 == 1000
+        && class_before_soak.2 == 37
+        && class_before_soak.4 == 0
+        && class_before_soak.5 == 0
+        && authoritative_mined_after_soak == 1000
+        && unattributed_removal_amount == 0
+        && class_after_soak.2 == 0
+        && class_after_soak.4 == 0
+        && class_after_soak.5 == 0;
+    let mine_entities_bounded = class_before_soak.1 <= 160
+        && class_after_soak.1 <= 160
+        && global_mined_entities_after_soak <= 160;
+    let class_separated = class_before_soak.1 > 0
+        && class_before_soak.3 > 0
+        && class_after_soak.1 > 0
+        && class_after_soak.3 == 0;
+
+    let final_orphans = server.bastion_orphaned_claims();
+    let final_board = server.bastion_job_audit().total;
+    let route_deadline_records: Vec<_> = route_deadline_observations
+        .iter()
+        .map(|observation| {
+            let deadline_status = if observation.active_at_deadline {
+                if observation.jobs_at_deadline == 0
+                    && observation.construction_complete_tick.is_some()
+                {
+                    "construction_complete_cleanup_active_at_deadline"
+                } else if observation.first_frontier_progress_tick.is_none() {
+                    "active_without_frontier_progress_at_deadline"
+                } else if observation.present_at_soak_start {
+                    "preexisting_route_with_progress_active_at_deadline"
+                } else {
+                    "emitted_during_soak_with_progress_active_at_deadline"
+                }
+            } else if observation.cleanup_complete_tick.is_some() {
+                "cleanup_complete_before_deadline"
+            } else if observation.construction_complete_tick.is_some() {
+                "construction_complete_before_deadline"
+            } else {
+                "inactive_before_deadline"
+            };
+            let seconds = |tick: Option<u64>| tick.map(|tick| tick as f64 / args.tps);
+            let soak_seconds = |tick: Option<u64>| {
+                tick.map(|tick| tick.saturating_sub(soak_start_tick) as f64 / args.tps)
+            };
+            serde_json::json!({
+                "owner_uid": observation.owner_uid,
+                "episode_index": observation.episode_index,
+                "route_emission_observed_tick": observation.first_seen_scenario_tick,
+                "route_emission_observed_sim_seconds": observation.first_seen_sim_seconds,
+                "route_emission_observed_soak_seconds": observation.first_seen_soak_tick as f64 / args.tps,
+                "route_seconds_available_before_deadline": acceptance_deadline_tick
+                    .saturating_sub(observation.first_seen_scenario_tick) as f64 / args.tps,
+                "route_active_seconds_at_deadline": if observation.active_at_deadline {
+                    Some(acceptance_deadline_tick
+                        .saturating_sub(observation.first_seen_scenario_tick) as f64 / args.tps)
+                } else {
+                    None
+                },
+                "cleanup_active_seconds_at_deadline": if observation.active_at_deadline {
+                    observation.construction_complete_tick.map(|tick| {
+                        acceptance_deadline_tick.saturating_sub(tick) as f64 / args.tps
+                    })
+                } else {
+                    None
+                },
+                "route_emission_observation": if observation.present_at_soak_start {
+                    "present_at_soak_start_actual_emission_precedes_sampling"
+                } else {
+                    "first_observed_during_soak"
+                },
+                "first_route_member_tick": observation.first_route_member_tick,
+                "first_route_member_sim_seconds": seconds(observation.first_route_member_tick),
+                "first_route_member_soak_seconds": soak_seconds(observation.first_route_member_tick),
+                "first_traversal_tick": observation.first_traversal_tick,
+                "first_traversal_sim_seconds": seconds(observation.first_traversal_tick),
+                "first_traversal_soak_seconds": soak_seconds(observation.first_traversal_tick),
+                "first_traversal_basis": "route_member_position_changed_at_least_0.25",
+                "first_frontier_progress_tick": observation.first_frontier_progress_tick,
+                "first_frontier_progress_sim_seconds": seconds(observation.first_frontier_progress_tick),
+                "first_frontier_progress_soak_seconds": soak_seconds(observation.first_frontier_progress_tick),
+                "construction_complete_tick": observation.construction_complete_tick,
+                "construction_complete_sim_seconds": seconds(observation.construction_complete_tick),
+                "construction_complete_soak_seconds": soak_seconds(observation.construction_complete_tick),
+                "cleanup_complete_tick": observation.cleanup_complete_tick,
+                "cleanup_complete_sim_seconds": seconds(observation.cleanup_complete_tick),
+                "cleanup_complete_soak_seconds": soak_seconds(observation.cleanup_complete_tick),
+                "emitted_after_deadline": observation.emitted_after_deadline,
+                "active_at_deadline": observation.active_at_deadline,
+                "jobs_at_deadline": observation.jobs_at_deadline,
+                "cells_at_deadline": observation.cells_at_deadline,
+                "members_at_deadline": observation.members_at_deadline,
+                "cleanup_pending_at_deadline": observation.cleanup_pending_at_deadline,
+                "max_frontier_progress": observation.max_frontier_progress,
+                "deadline_status": deadline_status,
+            })
+        })
+        .collect();
+    let active_route_owners_at_deadline = route_deadline_observations
+        .iter()
+        .filter(|observation| observation.active_at_deadline)
+        .count();
+    let emitted_after_deadline_count = route_deadline_observations
+        .iter()
+        .filter(|observation| observation.emitted_after_deadline)
+        .count();
+    let deadline_classification =
+        if emergency_access_after_soak == (0, 0, 0) && final_board == 0 && final_orphans == 0 {
+            "clear_at_fixed_acceptance_deadline"
+        } else if active_route_owners_at_deadline > 0 {
+            "active_route_at_fixed_acceptance_deadline"
+        } else {
+            "non_route_residue_at_fixed_acceptance_deadline"
+        };
+    let mut result = serde_json::json!({
+        "b55_deep_loaded_chunks": loaded,
+        "b55_deep_overlap_piece_count": overlap_piece_count,
+        "b55_deep_overlap_source_volume": overlap_source_volume,
+        "b55_deep_overlap_erased_volume": overlap_erased_volume,
+        "b55_deep_overlap_remainder_volume": overlap_remainder_volume,
+        "b55_deep_overlap_volume_exact": overlap_volume_exact,
+        "b55_deep_overlap_pieces_disjoint": overlap_pieces_disjoint,
+        "b55_deep_cycle_count": cycle_count,
+        "b55_deep_cycle_initial_jobs": cycle_initial_jobs,
+        "b55_deep_cycle_solid_before": cycle_solid_before,
+        "b55_deep_cycle_solid_after": cycle_solid_after,
+        "b55_deep_cycle_repaint_created": cycle_repaint_created,
+        "b55_deep_cycle_claims_observed": cycle_claims_observed,
+        "b55_deep_cycle_work_progressed": cycle_work_progressed,
+        "b55_deep_cycle_exact": cycle_exact,
+        "b55_deep_cycle_zero_orphans": cycle_zero_orphans,
+        "b55_deep_cycle_board_clear": cycle_board_clear,
+        "b55_deep_race_pre_progress": race_pre_progress,
+        "b55_deep_race_pre_coherent": race_pre_coherent,
+        "b55_deep_race_post_completed": race_post_completed,
+        "b55_deep_race_post_coherent": race_post_coherent,
+        "b55_deep_merge_expected": merge_expected,
+        "b55_deep_merge_exact": merge_exact,
+        "b55_deep_merge_peak_entities": merge_peak_entities,
+        "b55_deep_merge_final_entities": merge_final_entities,
+        "b55_deep_merge_bounded": merge_bounded,
+        "b55_deep_mine_jobs": mine_jobs,
+        "b55_deep_mine_cleared": mine_cleared,
+        "b55_deep_persistent_before_timed": before_timed.0,
+        "b55_deep_persistent_before_soak": class_before_soak.0,
+        "b55_deep_timed_before_soak": class_before_soak.2,
+        "b55_deep_persistent_entities_before_soak": class_before_soak.1,
+        "b55_deep_timed_entities_before_soak": class_before_soak.3,
+        "b55_deep_persistent_after_soak": class_after_soak.0,
+        "b55_deep_timed_after_soak": class_after_soak.2,
+        "b55_deep_persistent_entities_after_soak": class_after_soak.1,
+        "b55_deep_timed_entities_after_soak": class_after_soak.3,
+        "b55_deep_global_persistent_baseline": global_before_mine.0,
+        "b55_deep_bag_stone_baseline": bags_before_mine,
+        "b55_deep_bag_stone_before_soak": bags_before_timed,
+        "b55_deep_bag_stone_after_soak": bags_after_soak,
+        "b55_deep_global_mined_before_soak": global_mined_amount_before_soak,
+        "b55_deep_global_mined_after_soak": global_mined_amount_after_soak,
+        "b55_deep_all_inventory_total_before": inventory_before_mine.total,
+        "b55_deep_all_inventory_total_before_soak": inventory_before_timed.total,
+        "b55_deep_all_inventory_total_after": inventory_after_soak.total,
+        "b55_deep_all_inventory_mined_before_soak": all_inventory_mined_before_soak,
+        "b55_deep_all_inventory_mined_after_soak": all_inventory_mined_after_soak,
+        "b55_deep_authoritative_mined_before_soak": authoritative_mined_before_soak,
+        "b55_deep_authoritative_mined_after_soak": authoritative_mined_after_soak,
+        "b55_deep_colonist_live_inventory_amount": colonist_live_pickup_amount,
+        "b55_deep_colonist_roster_inventory_amount": bags_after_soak.saturating_sub(bags_before_mine),
+        "b55_deep_player_inventory_amount": player_pickup_amount,
+        "b55_deep_ambient_pickup_amount": ambient_pickup_amount,
+        "b55_deep_other_inventory_amount": other_pickup_amount,
+        "b55_deep_ambient_picker_ids": ambient_picker_ids,
+        "b55_deep_ambient_picker_uids": inventory_after_soak.ambient_uids,
+        "b55_deep_ambient_picker_identities": inventory_after_soak.ambient_identities,
+        "b55_deep_removal_class_merge_loss_amount": 0,
+        "b55_deep_removal_class_inventory_pickup_amount": inventory_pickup_amount,
+        "b55_deep_removal_class_delete_after_persistent_amount": 0,
+        "b55_deep_removal_class_unattributed_amount": unattributed_removal_amount,
+        "b55_deep_failsafe_teleports_before_soak": recovery_before_soak.2,
+        "b55_deep_failsafe_teleports_after_soak": recovery_after_soak.2,
+        "b55_deep_failsafe_teleports_during_soak": failsafe_teleports_during_soak,
+        "b55_deep_failsafe_hygiene_clean": failsafe_hygiene_clean,
+        "b55_deep_emergency_access_after_soak": [
+            emergency_access_after_soak.0,
+            emergency_access_after_soak.1,
+            emergency_access_after_soak.2,
+        ],
+        "b55_deep_failsafe_events": failsafe_events,
+        "b55_deep_global_mined_entities_after_soak": global_mined_entities_after_soak,
+        "b55_deep_soak_ticks": soak_ticks,
+        "b55_deep_soak_sim_seconds": soak_ticks as f64 / args.tps,
+        "b55_deep_soak_wall_seconds": soak_elapsed.as_secs_f64(),
+        "b55_deep_first_loss_tick": first_loss_tick,
+        "b55_deep_first_loss_sim_seconds": first_loss_tick as f64 / args.tps,
+        "b55_deep_first_loss_total": first_loss_total,
+        "b55_deep_first_loss_cohort_amount": first_loss_cohort_amount,
+        "b55_deep_cohort_min_z_seen": cohort_min_z_seen,
+        "b55_deep_cohort_max_horizontal_distance_seen": cohort_max_horizontal_distance_seen,
+        "b55_deep_cohort_peak_entities": cohort_peak_entities,
+        "b55_deep_mine_conserved": mine_conserved,
+        "b55_deep_mine_entities_bounded": mine_entities_bounded,
+        "b55_deep_class_separated": class_separated,
+        "b55_deep_final_orphans": final_orphans,
+        "b55_deep_final_board": final_board,
+    });
+    result["b55_deep_ambient_picker_records"] = serde_json::json!(ambient_picker_records);
+    result["b55_deep_ambient_accounting_classification"] =
+        serde_json::json!(ambient_accounting_classification);
+    result["b55_deep_ground_only_mined_after_soak"] =
+        serde_json::json!(global_after_soak.0.saturating_sub(global_before_mine.0));
+    result["b55_deep_soak_start_tick"] = serde_json::json!(soak_start_tick);
+    result["b55_deep_acceptance_deadline_tick"] = serde_json::json!(acceptance_deadline_tick);
+    result["b55_deep_acceptance_deadline_sim_seconds"] =
+        serde_json::json!(acceptance_deadline_tick as f64 / args.tps);
+    result["b55_deep_deadline_classification"] = serde_json::json!(deadline_classification);
+    result["b55_deep_active_route_owners_at_deadline"] =
+        serde_json::json!(active_route_owners_at_deadline);
+    result["b55_deep_emitted_after_deadline_count"] =
+        serde_json::json!(emitted_after_deadline_count);
+    result["b55_deep_route_deadline_records"] = serde_json::json!(route_deadline_records);
+    result["b55_deep_emergency_access_details_after_soak"] =
+        serde_json::to_value(emergency_access_details_after_soak)
+            .expect("emergency access diagnostics serialize");
+    result["b55_deep_emergency_cleanup_details_after_soak"] =
+        serde_json::to_value(emergency_cleanup_details_after_soak)
+            .expect("emergency cleanup diagnostics serialize");
+    let functional_pass = overlap_volume_exact
+        && overlap_pieces_disjoint
+        && cycle_claims_observed
+        && cycle_work_progressed
+        && cycle_exact
+        && cycle_zero_orphans
+        && cycle_board_clear
+        && race_pre_coherent
+        && race_post_coherent
+        && merge_exact
+        && merge_bounded
+        && mine_conserved
+        && mine_entities_bounded
+        && class_separated
+        && failsafe_hygiene_clean
+        && emergency_access_after_soak == (0, 0, 0)
+        && final_orphans == 0
+        && final_board == 0;
+
+    // REQ-0064: finish the authoritative network shutdown while the runtime is
+    // alive, then drop the remaining server state. No final result is emitted
+    // before this lifecycle is complete.
+    let shutdown_error = server.shutdown_network_for_harness().err();
+    if let Some(error) = &shutdown_error {
+        warn!(%error, "B5.5 deep explicit network shutdown failed");
+    }
+    drop(server);
+    let post_result_hygiene_clean = post_teardown_hygiene_clean();
+    let network_shutdown_clean = shutdown_error.is_none();
+    let runtime_hygiene_clean =
+        failsafe_hygiene_clean && network_shutdown_clean && post_result_hygiene_clean;
+    let pass = functional_pass && runtime_hygiene_clean;
+    result["b55_deep_functional_pass"] = serde_json::json!(functional_pass);
+    result["b55_deep_network_shutdown_clean"] = serde_json::json!(network_shutdown_clean);
+    result["b55_deep_network_shutdown_error"] = serde_json::json!(shutdown_error);
+    result["b55_deep_post_result_hygiene_clean"] = serde_json::json!(post_result_hygiene_clean);
+    result["b55_deep_runtime_hygiene_clean"] = serde_json::json!(runtime_hygiene_clean);
+    result["b55_deep_final_pass"] = serde_json::json!(pass);
+
+    let _ = std::fs::remove_dir_all(&data_dir);
+    println!("{}", result);
+    println!("B5.5 DEEP SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (B5.8): the vertical-mobility gate — the 4×-bitten trap's fix,
@@ -2085,7 +3809,9 @@ fn b58_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -2193,7 +3919,10 @@ fn b58_scenario(args: &Args) -> ExitCode {
     tick(&mut server, 5);
     let a_job_pos = Vec3::new(cx + 24, cy, a_gz + 6);
     server.bastion_place_designation(
-        Region { min: a_job_pos, max: a_job_pos },
+        Region {
+            min: a_job_pos,
+            max: a_job_pos,
+        },
         DesignationKind::Mine,
     );
     let mut a_cleared = false;
@@ -2219,7 +3948,10 @@ fn b58_scenario(args: &Args) -> ExitCode {
         .iter()
         .filter_map(|n| server.bastion_colonist_climbing(n))
         .any(|s| s.xp > 0.0 || s.level > 1);
-    info!(a_cleared, a_no_carve, a_climb_xp, "b58: part (a) scramble gauntlet done");
+    info!(
+        a_cleared,
+        a_no_carve, a_climb_xp, "b58: part (a) scramble gauntlet done"
+    );
     // Part boundary: clear any leftovers (a spurious carve's stray jobs
     // must not bleed into the next part's board counts).
     server.bastion_cancel_designation(Region {
@@ -2282,7 +4014,10 @@ fn b58_scenario(args: &Args) -> ExitCode {
     // Job 1: one pit-floor block (also seeds the claim mask down there).
     let b_floor_job = Vec3::new(px, py, b_gz - 5);
     server.bastion_place_designation(
-        Region { min: b_floor_job, max: b_floor_job },
+        Region {
+            min: b_floor_job,
+            max: b_floor_job,
+        },
         DesignationKind::Mine,
     );
     let mut b_lured = false;
@@ -2294,8 +4029,7 @@ fn b58_scenario(args: &Args) -> ExitCode {
             .bastion_colonist_states()
             .iter()
             .find(|(_, p, _)| {
-                p.z < (b_gz - 2) as f32
-                    && p.xy().distance(Vec2::new(px as f32, py as f32)) < 4.0
+                p.z < (b_gz - 2) as f32 && p.xy().distance(Vec2::new(px as f32, py as f32)) < 4.0
             })
             .map(|(n, _, _)| n.clone());
         b_lured = server
@@ -2330,7 +4064,10 @@ fn b58_scenario(args: &Args) -> ExitCode {
     // the carve branch fires.
     let b_out_job = Vec3::new(px + 5, py, b_gz);
     server.bastion_place_designation(
-        Region { min: b_out_job, max: b_out_job },
+        Region {
+            min: b_out_job,
+            max: b_out_job,
+        },
         DesignationKind::Mine,
     );
     let mut b_max_total = 0usize;
@@ -2438,7 +4175,10 @@ fn b58_scenario(args: &Args) -> ExitCode {
     tick(&mut server, 5);
     let q_floor_job = Vec3::new(qx, qy, q_gz - 5);
     server.bastion_place_designation(
-        Region { min: q_floor_job, max: q_floor_job },
+        Region {
+            min: q_floor_job,
+            max: q_floor_job,
+        },
         DesignationKind::Mine,
     );
     let mut q_lured = false;
@@ -2452,8 +4192,7 @@ fn b58_scenario(args: &Args) -> ExitCode {
             .bastion_colonist_states()
             .iter()
             .find(|(_, p, _)| {
-                p.z < (q_gz - 2) as f32
-                    && p.xy().distance(Vec2::new(qx as f32, qy as f32)) < 4.0
+                p.z < (q_gz - 2) as f32 && p.xy().distance(Vec2::new(qx as f32, qy as f32)) < 4.0
             })
             .map(|(n, _, _)| n.clone());
         if q_lured && q_pit_colonist.is_some() {
@@ -2473,7 +4212,10 @@ fn b58_scenario(args: &Args) -> ExitCode {
     tick(&mut server, 5);
     let q_out_job = Vec3::new(qx + 6, qy, q_gz);
     server.bastion_place_designation(
-        Region { min: q_out_job, max: q_out_job },
+        Region {
+            min: q_out_job,
+            max: q_out_job,
+        },
         DesignationKind::Mine,
     );
     let mut q_max_total = 0usize;
@@ -2586,8 +4328,7 @@ fn b58_scenario(args: &Args) -> ExitCode {
         c_rungs_placed = rung_zs
             .iter()
             .filter(|z| {
-                server.bastion_block_sprite(Vec3::new(wx - 1, wy, **z))
-                    == Some(SpriteKind::Ladder)
+                server.bastion_block_sprite(Vec3::new(wx - 1, wy, **z)) == Some(SpriteKind::Ladder)
             })
             .count();
         if c_rungs_placed == rung_zs.len() {
@@ -2597,7 +4338,10 @@ fn b58_scenario(args: &Args) -> ExitCode {
     // The climb: a job on the plateau, reachable only up the ladder.
     let c_top_job = Vec3::new(wx + 2, wy, c_gz + 4);
     server.bastion_place_designation(
-        Region { min: c_top_job, max: c_top_job },
+        Region {
+            min: c_top_job,
+            max: c_top_job,
+        },
         DesignationKind::Mine,
     );
     let mut c_top_cleared = false;
@@ -2747,9 +4491,9 @@ fn b58_scenario(args: &Args) -> ExitCode {
     // an upper still fails) while accepting the near-simultaneous finish.
     const TOP_DOWN_TOL: usize = 2;
     let d_top_down = d_all_cleared
-        && layer_clear.windows(2).all(|w| {
-            w[0].unwrap_or(usize::MAX) + TOP_DOWN_TOL >= w[1].unwrap_or(usize::MAX)
-        });
+        && layer_clear
+            .windows(2)
+            .all(|w| w[0].unwrap_or(usize::MAX) + TOP_DOWN_TOL >= w[1].unwrap_or(usize::MAX));
     let d_dispersed_frac = if multi_samples > 0 {
         dispersed_samples as f64 / multi_samples as f64
     } else {
@@ -2764,10 +4508,7 @@ fn b58_scenario(args: &Args) -> ExitCode {
         Vec3::new(dx + 6, dy - 3, d_gz),
     ];
     for p in d_out_jobs {
-        server.bastion_place_designation(
-            Region { min: p, max: p },
-            DesignationKind::Mine,
-        );
+        server.bastion_place_designation(Region { min: p, max: p }, DesignationKind::Mine);
     }
     let mut d_rescue_cleared = false;
     // EVER-OUT, cumulative (the B4 ever-arrived pattern): the invariant is
@@ -2776,15 +4517,12 @@ fn b58_scenario(args: &Args) -> ExitCode {
     // down into the (now open, fall-edge-reachable) quarry — that's
     // freedom, not entombment (run-19: all rescue jobs cleared, one
     // wanderer below at the final sample).
-    let mut d_ever_out: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut d_ever_out: std::collections::HashSet<String> = std::collections::HashSet::new();
     for i in 0..250 {
         tick(&mut server, 30);
-        d_rescue_cleared = d_out_jobs.iter().all(|p| {
-            server
-                .bastion_block_kind(*p)
-                .is_none_or(|k| !k.is_filled())
-        });
+        d_rescue_cleared = d_out_jobs
+            .iter()
+            .all(|p| server.bastion_block_kind(*p).is_none_or(|k| !k.is_filled()));
         for (n, p, _) in server.bastion_colonist_states() {
             if p.z >= d_gz as f32 + 0.5 {
                 d_ever_out.insert(n);
@@ -2795,10 +4533,7 @@ fn b58_scenario(args: &Args) -> ExitCode {
                 info!(sample = i, name = %n, pos = ?p, job = ?j, rim = d_gz + 1, "b58 d TRACE");
             }
         }
-        if d_rescue_cleared
-            && d_ever_out.len() == names.len()
-            && total_jobs(&server) == 0
-        {
+        if d_rescue_cleared && d_ever_out.len() == names.len() && total_jobs(&server) == 0 {
             break;
         }
     }
@@ -2866,7 +4601,10 @@ fn b58_scenario(args: &Args) -> ExitCode {
     tick(&mut server, 5);
     let e_floor_job = Vec3::new(ex, ey, e_gz - 5);
     server.bastion_place_designation(
-        Region { min: e_floor_job, max: e_floor_job },
+        Region {
+            min: e_floor_job,
+            max: e_floor_job,
+        },
         DesignationKind::Mine,
     );
     let mut e_lured = false;
@@ -2880,8 +4618,7 @@ fn b58_scenario(args: &Args) -> ExitCode {
             .bastion_colonist_states()
             .iter()
             .find(|(_, p, _)| {
-                p.z < (e_gz - 2) as f32
-                    && p.xy().distance(Vec2::new(ex as f32, ey as f32)) < 4.0
+                p.z < (e_gz - 2) as f32 && p.xy().distance(Vec2::new(ex as f32, ey as f32)) < 4.0
             })
             .map(|(n, _, _)| n.clone());
         if e_lured && e_pit_colonist.is_some() {
@@ -2981,7 +4718,10 @@ fn b58_scenario(args: &Args) -> ExitCode {
     // trapped colonist's feet — out of physical reach, out of plan scope.
     let f_job = Vec3::new(fx + 1, fy, f_gz);
     server.bastion_place_designation(
-        Region { min: f_job, max: f_job },
+        Region {
+            min: f_job,
+            max: f_job,
+        },
         DesignationKind::Mine,
     );
     let mut f_cleared = false;
@@ -3138,7 +4878,11 @@ fn b58_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (COORDINATION-stigmergic-v1, FR13-REV): the anti-mad-scramble. Two
@@ -3198,7 +4942,9 @@ fn coord_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -3250,7 +4996,11 @@ fn coord_scenario(args: &Args) -> ExitCode {
     for (i, n) in names.iter().enumerate() {
         server.bastion_teleport_colonist(
             n,
-            Vec3::new(cx as f32 + 1.5, (cy - 2 + i as i32) as f32 + 0.5, (gz + 1) as f32),
+            Vec3::new(
+                cx as f32 + 1.5,
+                (cy - 2 + i as i32) as f32 + 0.5,
+                (gz + 1) as f32,
+            ),
         );
     }
     tick(&mut server, 5);
@@ -3262,8 +5012,12 @@ fn coord_scenario(args: &Args) -> ExitCode {
         min: Vec3::new(cx + 24, cy - 3, gz - 1),
         max: Vec3::new(cx + 30, cy + 3, gz),
     };
-    let jobs_a = server.bastion_place_designation(site_a, DesignationKind::Mine).len();
-    let jobs_b = server.bastion_place_designation(site_b, DesignationKind::Mine).len();
+    let jobs_a = server
+        .bastion_place_designation(site_a, DesignationKind::Mine)
+        .len();
+    let jobs_b = server
+        .bastion_place_designation(site_b, DesignationKind::Mine)
+        .len();
 
     let in_region = |p: &Vec3<i32>, r: &Region| {
         p.x >= r.min.x
@@ -3307,7 +5061,11 @@ fn coord_scenario(args: &Args) -> ExitCode {
     println!("COORD SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (CAVE-IN v1, FR11): the mining-remnant collapse + the ENTOMBMENT
@@ -3368,7 +5126,9 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -3427,10 +5187,16 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     // STATIONARY colonist at completion (no wandering to fight — the classic
     // "miner pulls the last support and the ceiling comes down on them").
     for dx in 0..=2 {
-        server.state_mut().set_block(Vec3::new(fx + dx, fy, gz + 3), rock);
+        server
+            .state_mut()
+            .set_block(Vec3::new(fx + dx, fy, gz + 3), rock);
     }
-    server.state_mut().set_block(Vec3::new(fx, fy, gz + 1), rock);
-    server.state_mut().set_block(Vec3::new(fx, fy, gz + 2), rock);
+    server
+        .state_mut()
+        .set_block(Vec3::new(fx, fy, gz + 1), rock);
+    server
+        .state_mut()
+        .set_block(Vec3::new(fx, fy, gz + 2), rock);
     tick(&mut server, 2);
 
     server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 1);
@@ -3453,7 +5219,13 @@ fn cavein_scenario(args: &Args) -> ExitCode {
         .into_iter()
         .find(|(n, _, _)| *n == victim)
         .map(|(_, p, _)| p);
-    info!(?victim, tp_ok, ?pre_pos, ?victim_cell, "cavein: victim placed (pre-hook)");
+    info!(
+        ?victim,
+        tp_ok,
+        ?pre_pos,
+        ?victim_cell,
+        "cavein: victim placed (pre-hook)"
+    );
     // Mining the pillar BASE severs the {arm + pillar-top} chunk → the SAME
     // collapse + eject-and-injure the live mine-completion path runs.
     let base = Vec3::new(fx, fy, gz + 1);
@@ -3475,7 +5247,9 @@ fn cavein_scenario(args: &Args) -> ExitCode {
         .find(|(n, _, _)| *n == victim)
         .map(|(_, p, _)| p.map(|e| e.floor() as i32));
     // EJECTED: no longer in the crush column (fx+1, fy) — shoved to safety.
-    let ejected = v_feet.map(|f| !(f.x == fx + 1 && f.y == fy)).unwrap_or(false);
+    let ejected = v_feet
+        .map(|f| !(f.x == fx + 1 && f.y == fy))
+        .unwrap_or(false);
     // NOT BURIED: the victim's body is NOT EMBEDDED in rock (feet + head cells
     // open — the actual buried test) AND ground is within a short settle drop
     // (≤3 below — the eject lands feet-on-ground, but the post-eject settle
@@ -3487,7 +5261,12 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     let standable = v_feet
         .map(|f| {
             let solid = |p: Vec3<i32>| {
-                server.state().terrain().get(p).map(|b| b.is_filled()).unwrap_or(false)
+                server
+                    .state()
+                    .terrain()
+                    .get(p)
+                    .map(|b| b.is_filled())
+                    .unwrap_or(false)
             };
             !solid(f)
                 && !solid(f + Vec3::unit_z())
@@ -3519,10 +5298,14 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     }
     // The same arm-on-a-pillar: base cz0, pillar-top cz0+1, 3-cell arm cz0+2.
     for dx in 0..=2 {
-        server.state_mut().set_block(Vec3::new(dxc + dx, dyc, cz0 + 2), rock);
+        server
+            .state_mut()
+            .set_block(Vec3::new(dxc + dx, dyc, cz0 + 2), rock);
     }
     server.state_mut().set_block(Vec3::new(dxc, dyc, cz0), rock);
-    server.state_mut().set_block(Vec3::new(dxc, dyc, cz0 + 1), rock);
+    server
+        .state_mut()
+        .set_block(Vec3::new(dxc, dyc, cz0 + 1), rock);
     tick(&mut server, 2);
     server.bastion_teleport_colonist(
         &victim,
@@ -3531,22 +5314,30 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     let deep_mood_before = server.bastion_colonist_mood(&victim).unwrap_or(0.6);
     let deep_victims = server.bastion_force_collapse_check(Vec3::new(dxc, dyc, cz0));
     tick(&mut server, 2);
-    let deep_feared = server.bastion_colonist_mood(&victim).unwrap_or(deep_mood_before)
+    let deep_feared = server
+        .bastion_colonist_mood(&victim)
+        .unwrap_or(deep_mood_before)
         < deep_mood_before - 1e-4;
     let d_feet = server
         .bastion_colonist_states()
         .into_iter()
         .find(|(n, _, _)| *n == victim)
         .map(|(_, p, _)| p.map(|e| e.floor() as i32));
-    let deep_ejected =
-        d_feet.map(|f| !(f.x == dxc + 1 && f.y == dyc)).unwrap_or(false);
+    let deep_ejected = d_feet
+        .map(|f| !(f.x == dxc + 1 && f.y == dyc))
+        .unwrap_or(false);
     // The R8 kill-shot assert: the deep victim is NOT EMBEDDED (feet + head
     // open) and on/near chamber ground — the old eject put it inside solid
     // rock ~110 above; any embedding fails here.
     let deep_standable = d_feet
         .map(|f| {
             let solid = |p: Vec3<i32>| {
-                server.state().terrain().get(p).map(|b| b.is_filled()).unwrap_or(false)
+                server
+                    .state()
+                    .terrain()
+                    .get(p)
+                    .map(|b| b.is_filled())
+                    .unwrap_or(false)
             };
             !solid(f)
                 && !solid(f + Vec3::unit_z())
@@ -3601,7 +5392,11 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (B7-2, row 44, OPUS-gated): NEED PREEMPTION in vivo — (1) a
@@ -3616,9 +5411,11 @@ fn cavein_scenario(args: &Args) -> ExitCode {
 /// decaying — no livelock, no thrash, zero embeds (the no-entombment
 /// counters stay silent). Deterministic per seed.
 fn preempt_scenario(args: &Args) -> ExitCode {
-    use common::bastion::{DesignationKind, Region};
-    use common::terrain::{Block, BlockKind};
-    use common::vol::ReadVol;
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
     use vek::{Rgb, Vec2, Vec3};
 
     let started = Instant::now();
@@ -3664,7 +5461,9 @@ fn preempt_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -3720,10 +5519,7 @@ fn preempt_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        1,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 1);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
     let a = names.first().cloned().unwrap_or_default();
@@ -3758,8 +5554,7 @@ fn preempt_scenario(args: &Args) -> ExitCode {
         .len();
     // Let A claim and dig a little.
     tick(&mut server, 90);
-    let dug_before_preempt =
-        mine_jobs - server.bastion_jobs_in_region(mine);
+    let dug_before_preempt = mine_jobs - server.bastion_jobs_in_region(mine);
 
     // PREEMPT: rest below the interrupt — the need-check drops the mine
     // claim and self-assigns RestAt; A sleeps to the satisfied band.
@@ -3800,9 +5595,7 @@ fn preempt_scenario(args: &Args) -> ExitCode {
     // the travel watchdog releases, the cooldown holds, and A mines
     // REACHABLE work while the meter keeps decaying.
     let sky_bed = Vec3::new(cx, cy + 9, gz + 6);
-    server
-        .state_mut()
-        .set_block(sky_bed - Vec3::unit_z(), rock);
+    server.state_mut().set_block(sky_bed - Vec3::unit_z(), rock);
     server.bastion_register_bed(sky_bed);
     let own2 = server.bastion_assign_bed_owner(&a, sky_bed);
     let mine2 = Region {
@@ -3835,8 +5628,7 @@ fn preempt_scenario(args: &Args) -> ExitCode {
     // unreachable RestAt in ~10-20s, so without the 60s cooldown the
     // 120s window would fire ~6-8 attempts; the rate bound proves the
     // guard: at most 3 (t≈0, 60, 120).
-    let attempts_endure =
-        server.bastion_preempt_attempts() - attempts_before;
+    let attempts_endure = server.bastion_preempt_attempts() - attempts_before;
     let thrash_bounded = (1..=3).contains(&attempts_endure);
     // HYSTERESIS HOVER (the other would-thrash construction): rest just
     // ABOVE the colonist's OWN effective interrupt never fires an
@@ -3846,8 +5638,7 @@ fn preempt_scenario(args: &Args) -> ExitCode {
     let attempts_hover0 = server.bastion_preempt_attempts();
     server.bastion_set_needs(&a, 1.0, eff_rest + 0.01, 1.0);
     tick(&mut server, 600);
-    let hover_silent =
-        server.bastion_preempt_attempts() == attempts_hover0;
+    let hover_silent = server.bastion_preempt_attempts() == attempts_hover0;
 
     // MID-TRAVEL WEDGE (architect assert #2): preempt a colonist that is
     // BELOW GRADE (in a pit, mid-work) — the RestAt swaps out its
@@ -3856,14 +5647,10 @@ fn preempt_scenario(args: &Args) -> ExitCode {
     // OUT. Zero embeds throughout.
     let pit = Vec3::new(cx - 10, cy + 8, gz);
     for dz in 0..3 {
-        server
-            .state_mut()
-            .set_block(pit - Vec3::unit_z() * dz, air);
+        server.state_mut().set_block(pit - Vec3::unit_z() * dz, air);
     }
-    let tp_ok = server.bastion_teleport_colonist(
-        &a,
-        pit.map(|e| e as f32) + Vec3::new(0.5, 0.5, -2.0),
-    );
+    let tp_ok =
+        server.bastion_teleport_colonist(&a, pit.map(|e| e as f32) + Vec3::new(0.5, 0.5, -2.0));
     server.bastion_set_needs(&a, 1.0, 0.1, 1.0);
     // The cooldown from the hover phase may still hold — wait it out,
     // then give the preempt + wedge + teleport time to play out.
@@ -3875,8 +5662,7 @@ fn preempt_scenario(args: &Args) -> ExitCode {
             .into_iter()
             .find(|(n, _, _)| *n == a)
         {
-            if p.z >= gz as f32 && p.xy().distance(pit.map(|e| e as f32).xy()) > 2.0
-            {
+            if p.z >= gz as f32 && p.xy().distance(pit.map(|e| e as f32).xy()) > 2.0 {
                 out_of_pit = true;
                 break;
             }
@@ -3919,7 +5705,11 @@ fn preempt_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (B7-3, row 44): the survival loop's LAST verb + the breakdown
@@ -3939,9 +5729,11 @@ fn preempt_scenario(args: &Args) -> ExitCode {
 /// and the attempts counter shows EXACTLY one break (recovery cleared
 /// the staircase; the shared cooldown + top-tier hold allow no second).
 fn b73_scenario(args: &Args) -> ExitCode {
-    use common::bastion::{DesignationKind, Region};
-    use common::terrain::{Block, BlockKind};
-    use common::vol::ReadVol;
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
     use vek::{Rgb, Vec2, Vec3};
 
     const MUSHROOM: &str = "common.items.food.mushroom";
@@ -3989,7 +5781,9 @@ fn b73_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -4047,10 +5841,7 @@ fn b73_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        1,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 1);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
     let a = names.first().cloned().unwrap_or_default();
@@ -4066,12 +5857,10 @@ fn b73_scenario(args: &Args) -> ExitCode {
         .bastion_place_designation(mine, DesignationKind::Mine)
         .len();
     tick(&mut server, 90);
-    let food_pos =
-        Vec3::new(cx as f32 - 6.5, cy as f32 + 0.5, gz as f32 + 1.5);
+    let food_pos = Vec3::new(cx as f32 - 6.5, cy as f32 + 0.5, gz as f32 + 1.5);
     server.bastion_spawn_item(food_pos, MUSHROOM, 1);
     tick(&mut server, 5);
-    let ground_before =
-        server.bastion_sum_items_near(center, f32::INFINITY, MUSHROOM);
+    let ground_before = server.bastion_sum_items_near(center, f32::INFINITY, MUSHROOM);
     server.bastion_set_needs(&a, 0.15, 1.0, 1.0);
     let mut ate = false;
     let mut jobs_at_eat = 0usize;
@@ -4089,8 +5878,7 @@ fn b73_scenario(args: &Args) -> ExitCode {
             break;
         }
     }
-    let ground_after =
-        server.bastion_sum_items_near(center, f32::INFINITY, MUSHROOM);
+    let ground_after = server.bastion_sum_items_near(center, f32::INFINITY, MUSHROOM);
     let eat_conserved = ground_before == 1 && ground_after == 0;
     let paused = jobs_at_eat > 0;
     let mut resumed = false;
@@ -4160,8 +5948,7 @@ fn b73_scenario(args: &Args) -> ExitCode {
     }
     // HOLD: 30 game-seconds inside the 60s despond — zero digging.
     tick(&mut server, 900);
-    let held = broke
-        && server.bastion_jobs_in_region(mine2) == jobs_frozen_at;
+    let held = broke && server.bastion_jobs_in_region(mine2) == jobs_frozen_at;
     // RECOVER: restore needs (mood recomputes ≥ break_minor at the next
     // %11, BEFORE the next %13 pass — cycle order makes the clear
     // race-free); the despond lifts on its own clock and work resumes.
@@ -4174,8 +5961,7 @@ fn b73_scenario(args: &Args) -> ExitCode {
             break;
         }
     }
-    let single_break =
-        server.bastion_preempt_attempts() - attempts0 == 1;
+    let single_break = server.bastion_preempt_attempts() - attempts0 == 1;
     let fires_after = server.bastion_center_net_fires();
     let no_embeds = fires_after == fires_before;
 
@@ -4222,7 +6008,11 @@ fn b73_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (B-AG3 slice 1, row 41): "two NPCs experience the same event
@@ -4238,8 +6028,10 @@ fn b73_scenario(args: &Args) -> ExitCode {
 /// get hook). Outcome JSON is bools only; mood floats print on the
 /// non-diffed telemetry line (the B73 entropy lesson).
 fn values_scenario(args: &Args) -> ExitCode {
-    use common::terrain::{Block, BlockKind};
-    use common::vol::ReadVol;
+    use common::{
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
     use vek::{Rgb, Vec2, Vec3};
 
     let started = Instant::now();
@@ -4285,7 +6077,9 @@ fn values_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -4342,10 +6136,7 @@ fn values_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        2,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 2);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
     let a = names.first().cloned().unwrap_or_default();
@@ -4361,10 +6152,8 @@ fn values_scenario(args: &Args) -> ExitCode {
         && server.bastion_set_values(&a, "Kin", 50)
         && server.bastion_set_values(&b, "Glory", 50);
     let values_roundtrip = set_ok
-        && server.bastion_colonist_values(&a)
-            == vec![("Kin".to_string(), 50i8)]
-        && server.bastion_colonist_values(&b)
-            == vec![("Glory".to_string(), 50i8)];
+        && server.bastion_colonist_values(&a) == vec![("Kin".to_string(), 50i8)]
+        && server.bastion_colonist_values(&b) == vec![("Glory".to_string(), 50i8)];
     // Needs topped: the shortfall terms are zero for BOTH, so mood is
     // base + thoughts only — the cleanest divergence read.
     server.bastion_set_needs(&a, 1.0, 1.0, 1.0);
@@ -4398,8 +6187,8 @@ fn values_scenario(args: &Args) -> ExitCode {
         "values_colonists": names.len(),
     });
     println!(
-        "VALUES TELEMETRY: a0={mood_a0:.4} b0={mood_b0:.4} a1={mood_a1:.4} \
-         b1={mood_b1:.4} da={delta_a:.4} db={delta_b:.4}"
+        "VALUES TELEMETRY: a0={mood_a0:.4} b0={mood_b0:.4} a1={mood_a1:.4} b1={mood_b1:.4} \
+         da={delta_a:.4} db={delta_b:.4}"
     );
     let pass = values_roundtrip
         && dep_ok
@@ -4412,7 +6201,11 @@ fn values_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (FOCUS-0-DERIVE, row 43.1): the correlation over REAL
@@ -4428,8 +6221,10 @@ fn values_scenario(args: &Args) -> ExitCode {
 /// round-trip byte-for-byte (the record-mirror persistence). Outcome
 /// JSON bools only; distributions on the telemetry line.
 fn derive_scenario(args: &Args) -> ExitCode {
-    use common::terrain::{Block, BlockKind};
-    use common::vol::ReadVol;
+    use common::{
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
     use vek::{Rgb, Vec2, Vec3};
 
     let started = Instant::now();
@@ -4475,7 +6270,9 @@ fn derive_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -4530,10 +6327,7 @@ fn derive_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        12,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 12);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
 
@@ -4555,9 +6349,10 @@ fn derive_scenario(args: &Args) -> ExitCode {
             .map(|(_, w)| *w)
             .unwrap_or(0);
         pieties.push((n.clone(), piety));
-        let pray = server.bastion_derived_need_weight(n, "Pray").unwrap_or(-1.0);
-        pray_exact &=
-            (pray - (1.0 + f32::from(piety) / 50.0)).abs() < 1e-5;
+        let pray = server
+            .bastion_derived_need_weight(n, "Pray")
+            .unwrap_or(-1.0);
+        pray_exact &= (pray - (1.0 + f32::from(piety) / 50.0)).abs() < 1e-5;
         let soc = server
             .bastion_derived_need_weight(n, "Socialize")
             .unwrap_or(-1.0);
@@ -4574,8 +6369,9 @@ fn derive_scenario(args: &Args) -> ExitCode {
         social_consistent &= soc == expect;
         hi_traits += usize::from(extro);
         lo_traits += usize::from(intro);
-        let drink =
-            server.bastion_derived_need_weight(n, "Drink").unwrap_or(-1.0);
+        let drink = server
+            .bastion_derived_need_weight(n, "Drink")
+            .unwrap_or(-1.0);
         drink_baseline &= drink == 1.0;
     }
     // The roster must exhibit real spread and the directional check must
@@ -4585,8 +6381,10 @@ fn derive_scenario(args: &Args) -> ExitCode {
         .first()
         .zip(pieties.last())
         .is_some_and(|((_, lo), (_, hi))| hi > lo);
-    let ordered = pieties.first().zip(pieties.last()).is_some_and(
-        |((lo_n, _), (hi_n, _))| {
+    let ordered = pieties
+        .first()
+        .zip(pieties.last())
+        .is_some_and(|((lo_n, _), (hi_n, _))| {
             let lo_w = server
                 .bastion_derived_need_weight(lo_n, "Pray")
                 .unwrap_or(2.0);
@@ -4594,8 +6392,7 @@ fn derive_scenario(args: &Args) -> ExitCode {
                 .bastion_derived_need_weight(hi_n, "Pray")
                 .unwrap_or(-1.0);
             hi_w > lo_w
-        },
-    );
+        });
 
     // ROUND-TRIP: the max-Piety colonist's whole rolled map survives
     // demote -> promote (the colonist_record whole-struct mirror). POLL
@@ -4616,9 +6413,7 @@ fn derive_scenario(args: &Args) -> ExitCode {
         tick(&mut server, 15);
         let vals_after = server.bastion_colonist_values(&rt_name);
         if !vals_after.is_empty() {
-            roundtrip = demoted
-                && !vals_before.is_empty()
-                && vals_before == vals_after;
+            roundtrip = demoted && !vals_before.is_empty() && vals_before == vals_after;
             break;
         }
     }
@@ -4651,7 +6446,11 @@ fn derive_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (PATH-0, row 45): the budget + no-starvation proof under
@@ -4668,9 +6467,11 @@ fn derive_scenario(args: &Args) -> ExitCode {
 /// (movement resolves under the budget — staggered, never stalled),
 /// and zero embeds. Two runs must produce identical outcome bools.
 fn path_scenario(args: &Args) -> ExitCode {
-    use common::bastion::{DesignationKind, Region};
-    use common::terrain::{Block, BlockKind};
-    use common::vol::ReadVol;
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
     use vek::{Rgb, Vec2, Vec3};
 
     let started = Instant::now();
@@ -4716,7 +6517,9 @@ fn path_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -4773,10 +6576,7 @@ fn path_scenario(args: &Args) -> ExitCode {
 
     // SYNTHETIC N: 18 colonists (the re-scoped premise — spawn what
     // nothing yet grows).
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        18,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 18);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
     let fires_before = server.bastion_center_net_fires();
@@ -4804,8 +6604,7 @@ fn path_scenario(args: &Args) -> ExitCode {
     // The scheduler served real load; the cap held every tick; the
     // worst deferral stayed inside the rotation bound; work completed.
     let scheduler_active = grants > names.len() as u64;
-    let cap_held = peak_iters > 0
-        && peak_iters <= server::bastion_path::PATH_TICK_ITER_CAP;
+    let cap_held = peak_iters > 0 && peak_iters <= server::bastion_path::PATH_TICK_ITER_CAP;
     let no_starvation = peak_wait <= 7;
     let no_embeds = fires_after == fires_before;
 
@@ -4819,8 +6618,7 @@ fn path_scenario(args: &Args) -> ExitCode {
         "path_no_embeds": no_embeds,
     });
     println!(
-        "PATH TELEMETRY: grants={grants} peak_tick_iters={peak_iters} \
-         peak_wait={peak_wait} cap={}",
+        "PATH TELEMETRY: grants={grants} peak_tick_iters={peak_iters} peak_wait={peak_wait} cap={}",
         server::bastion_path::PATH_TICK_ITER_CAP
     );
     let pass = names.len() == 18
@@ -4835,7 +6633,11 @@ fn path_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (FARM/PROD-2, row 46): the renewable food loop in vivo. A
@@ -4851,9 +6653,11 @@ fn path_scenario(args: &Args) -> ExitCode {
 /// live job per target cell — no flooding). Outcome bools only; counts
 /// on the telemetry line.
 fn farm_scenario(args: &Args) -> ExitCode {
-    use common::bastion::{DesignationKind, Region};
-    use common::terrain::{Block, BlockKind};
-    use common::vol::ReadVol;
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
     use vek::{Rgb, Vec2, Vec3};
 
     const SEEDS: &str = "common.items.bastion.wheat_seeds";
@@ -4902,7 +6706,9 @@ fn farm_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -4957,10 +6763,7 @@ fn farm_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        3,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 3);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
     let center = Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0);
@@ -4991,9 +6794,8 @@ fn farm_scenario(args: &Args) -> ExitCode {
     );
     tick(&mut server, 5);
 
-    let cell_kind = |server: &Server, x: i32, y: i32| {
-        server.bastion_block_kind(Vec3::new(x, y, gz))
-    };
+    let cell_kind =
+        |server: &Server, x: i32, y: i32| server.bastion_block_kind(Vec3::new(x, y, gz));
     let tilled_count = |server: &Server| {
         let mut n = 0;
         for y in plot.min.y..=plot.max.y {
@@ -5074,8 +6876,7 @@ fn farm_scenario(args: &Args) -> ExitCode {
     // either an ITEM somewhere (ground + bags) or a GROWING crop; a
     // harvest nets +1 (consumed 1 at sow, yields 2). With 14 spawned
     // and >= 1 harvest, total + growing >= 15 proves strict positivity.
-    let seeds_total = server.bastion_colony_item_total(SEEDS)
-        + grown_cells(&server, 1) as u64;
+    let seeds_total = server.bastion_colony_item_total(SEEDS) + grown_cells(&server, 1) as u64;
     let seed_positive = harvested && seeds_total >= 15;
     // (5) THE CYCLE: the harvested cell gets RE-SOWN (harvest returned it
     // to tilled; the yield seeds ride haul->stockpile->fetch->sow or a
@@ -5086,9 +6887,7 @@ fn farm_scenario(args: &Args) -> ExitCode {
         jobs_bounded &= server.bastion_jobs_in_region(plot_probe) <= 18;
         // fresh young growth anywhere = a second sowing happened after
         // the first harvest (mature cells are 15; young are 1..=9).
-        let young = (1..=9).contains(
-            &server.bastion_sprite_growth(probe_cell).unwrap_or(99),
-        );
+        let young = (1..=9).contains(&server.bastion_sprite_growth(probe_cell).unwrap_or(99));
         if young || grown_cells(&server, 1) > grown_cells(&server, 10) {
             cycled = true;
             break;
@@ -5129,7 +6928,11 @@ fn farm_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (AUTON-1, row 49): the self-designation loop, end to end on an
@@ -5141,9 +6944,11 @@ fn farm_scenario(args: &Args) -> ExitCode {
 /// freeze structurally, not by tuning). Bounds hold at every poll;
 /// aggregate-identical across runs (the runner's ×2 diff).
 fn selfgen_scenario(args: &Args) -> ExitCode {
-    use common::bastion::{DesignationKind, Region};
-    use common::terrain::{Block, BlockKind};
-    use common::vol::ReadVol;
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
     use vek::{Rgb, Vec2, Vec3};
 
     const STONE: &str = "common.items.crafting_ing.stones";
@@ -5191,7 +6996,9 @@ fn selfgen_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -5248,10 +7055,7 @@ fn selfgen_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        3,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 3);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
     let fires_before = server.bastion_center_net_fires();
@@ -5286,8 +7090,7 @@ fn selfgen_scenario(args: &Args) -> ExitCode {
     // the intent is placed — every job that ever appears is generated.
     let zero_paint = server.bastion_jobs_in_region(big_probe) == 0;
 
-    let store_center =
-        Vec3::new(cx as f32, cy as f32 + 1.0, gz as f32 + 1.0);
+    let store_center = Vec3::new(cx as f32, cy as f32 + 1.0, gz as f32 + 1.0);
     let plan_built = |server: &Server| -> usize {
         let mut n = 0;
         for y in plan.min.y..=plan.max.y {
@@ -5316,8 +7119,7 @@ fn selfgen_scenario(args: &Args) -> ExitCode {
         let (gm, _gb, _pc, _open, pm, pb) = server.bastion_selfgen_stats();
         bounded &= pm <= cap_mine && pb <= cap_build;
         generated |= gm > 0;
-        hauled |=
-            server.bastion_sum_items_near(store_center, 4.0, STONE) >= 1;
+        hauled |= server.bastion_sum_items_near(store_center, 4.0, STONE) >= 1;
         if plan_built(&server) == 4 {
             built = true;
             break;
@@ -5350,8 +7152,7 @@ fn selfgen_scenario(args: &Args) -> ExitCode {
             break;
         }
     }
-    let (gm_final, gb_final, pc_final, open_final, _, _) =
-        server.bastion_selfgen_stats();
+    let (gm_final, gb_final, pc_final, open_final, _, _) = server.bastion_selfgen_stats();
     let net_fires_delta = server.bastion_center_net_fires() - fires_before;
 
     let result = serde_json::json!({
@@ -5372,7 +7173,8 @@ fn selfgen_scenario(args: &Args) -> ExitCode {
         "selfgen_net_fires_delta": net_fires_delta,
     });
     println!(
-        "SELFGEN TELEMETRY: mine={gm_final} build={gb_final} plans_done={pc_final} fires={net_fires_delta}"
+        "SELFGEN TELEMETRY: mine={gm_final} build={gb_final} plans_done={pc_final} \
+         fires={net_fires_delta}"
     );
     let pass = names.len() == 3
         && zero_paint
@@ -5391,7 +7193,11 @@ fn selfgen_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (49.2/B37): the haul-pinning fix — an item sealed in a void the
@@ -5404,9 +7210,11 @@ fn selfgen_scenario(args: &Args) -> ExitCode {
 /// repeats (next_id delta counts emissions exactly), reservations never
 /// exceed the one live job, jobs stay bounded, and the item conserves.
 fn haulpin_scenario(args: &Args) -> ExitCode {
-    use common::bastion::{DesignationKind, Region};
-    use common::terrain::{Block, BlockKind};
-    use common::vol::ReadVol;
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
     use vek::{Rgb, Vec2, Vec3};
 
     const STONE: &str = "common.items.crafting_ing.stones";
@@ -5454,7 +7262,9 @@ fn haulpin_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -5521,10 +7331,7 @@ fn haulpin_scenario(args: &Args) -> ExitCode {
     server.state_mut().set_block(pit + Vec3::unit_z(), air);
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        3,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 3);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
     let fires_before = server.bastion_center_net_fires();
@@ -5592,7 +7399,8 @@ fn haulpin_scenario(args: &Args) -> ExitCode {
         "haulpin_net_fires_delta": net_fires_delta,
     });
     println!(
-        "HAULPIN TELEMETRY: emissions={emissions} max_res={max_res} final_res={res_final} stones={stones} fires={net_fires_delta}"
+        "HAULPIN TELEMETRY: emissions={emissions} max_res={max_res} final_res={res_final} \
+         stones={stones} fires={net_fires_delta}"
     );
     let pass = names.len() == 3
         && seen_job
@@ -5606,7 +7414,11 @@ fn haulpin_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (AUTON-3, row 51): trait-modulated drive urgencies + the
@@ -5664,7 +7476,9 @@ fn auton3_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -5681,10 +7495,7 @@ fn auton3_scenario(args: &Args) -> ExitCode {
             .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
     };
     server.bastion_force_load_area(site_wpos, 5);
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, 500.0),
-        2,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, 500.0), 2);
     tick(&mut server, 30);
     let mut names = server.bastion_rename_colonists_unique();
     names.sort();
@@ -5725,14 +7536,7 @@ fn auton3_scenario(args: &Args) -> ExitCode {
         vals.insert(common::bastion::Value::Wealth, wealth);
         vals.insert(common::bastion::Value::Kin, kin);
         let (adv, wor, soc, intr) = p4(server, n);
-        common::comp::bastion::modulated_urgencies(
-            (0.5, 0.0, 0.1),
-            &vals,
-            adv,
-            wor,
-            soc,
-            intr,
-        )
+        common::comp::bastion::modulated_urgencies((0.5, 0.0, 0.1), &vals, adv, wor, soc, intr)
     };
     let pred_a = predict(&server, &a, 50, 50, -50);
     let pred_b = predict(&server, &b, -50, -50, 50);
@@ -5744,8 +7548,7 @@ fn auton3_scenario(args: &Args) -> ExitCode {
     let differ = pred_a.0 > pred_b.0 && pred_a.2 < pred_b.2;
     // Zero-preservation LIVE: no threat exists, so both recorded flee
     // scores are exactly 0.0 — modulation invented nothing.
-    let no_invented_flee =
-        got_a.is_some_and(|s| s.1 == 0.0) && got_b.is_some_and(|s| s.1 == 0.0);
+    let no_invented_flee = got_a.is_some_and(|s| s.1 == 0.0) && got_b.is_some_and(|s| s.1 == 0.0);
     // The drive-order guard sampled on the LIVE brave roll: A's flee
     // with a real signal base would sit at/above the floor and above
     // any possible work score (the unit test pins the absolute
@@ -5763,9 +7566,8 @@ fn auton3_scenario(args: &Args) -> ExitCode {
         soc,
         intr,
     );
-    let guard_holds = a_signaled.1
-        >= common::comp::bastion::FLEE_URGENCY_FLOOR
-        && a_signaled.1 > 0.6 + 1e-6;
+    let guard_holds =
+        a_signaled.1 >= common::comp::bastion::FLEE_URGENCY_FLOOR && a_signaled.1 > 0.6 + 1e-6;
 
     let result = serde_json::json!({
         "auton3_colonists": names.len(),
@@ -5777,9 +7579,7 @@ fn auton3_scenario(args: &Args) -> ExitCode {
         "auton3_no_invented_flee": no_invented_flee,
         "auton3_guard_holds": guard_holds,
     });
-    println!(
-        "AUTON3 TELEMETRY: a={got_a:?} b={got_b:?} pred_a={pred_a:?} pred_b={pred_b:?}"
-    );
+    println!("AUTON3 TELEMETRY: a={got_a:?} b={got_b:?} pred_a={pred_a:?} pred_b={pred_b:?}");
     let pass = names.len() == 2
         && values_ok
         && jobs > 0
@@ -5792,7 +7592,11 @@ fn auton3_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (FLAT-TEST-ARENA, row 50.5): the runtime flat playtest arena.
@@ -5805,9 +7609,11 @@ fn auton3_scenario(args: &Args) -> ExitCode {
 /// a colony spawns on it and completes real mine work; the slab surface
 /// survives the work session intact.
 fn arena_scenario(args: &Args) -> ExitCode {
-    use common::bastion::{DesignationKind, Region};
-    use common::terrain::{Block, BlockKind, TerrainChunkSize};
-    use common::vol::{ReadVol, RectVolSize};
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind, TerrainChunkSize},
+        vol::{ReadVol, RectVolSize},
+    };
     use server::bastion_flat_arena::{FLAT_ARENA_RADIUS_CHUNKS, FLAT_ARENA_Z};
     use vek::{Rgb, Vec2, Vec3};
 
@@ -5860,7 +7666,9 @@ fn arena_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -5872,11 +7680,7 @@ fn arena_scenario(args: &Args) -> ExitCode {
 
     // (1) SPAWN OWNERSHIP: the resource the join path hands every new
     // player — dead center, first air cell above the slab.
-    let spawn = server
-        .state()
-        .ecs()
-        .read_resource::<server::SpawnPoint>()
-        .0;
+    let spawn = server.state().ecs().read_resource::<server::SpawnPoint>().0;
     let spawn_on_slab = (spawn.x - (cx as f32 + 0.5)).abs() < 1.0
         && (spawn.y - (cy as f32 + 0.5)).abs() < 1.0
         && (spawn.z - (FLAT_ARENA_Z as f32 + 1.0)).abs() < 2.0;
@@ -5911,8 +7715,7 @@ fn arena_scenario(args: &Args) -> ExitCode {
     // FLAT_ARENA_Z solid, so the surface solid is Z-1), in grass; the
     // rim chunk itself is still slab.
     let z0 = FLAT_ARENA_Z - 1;
-    let in_samples: [(i32, i32); 5] =
-        [(0, 0), (240, 180), (-240, -180), (200, -240), (-160, 240)];
+    let in_samples: [(i32, i32); 5] = [(0, 0), (240, 180), (-240, -180), (200, -240), (-160, 240)];
     let inside_flat = in_samples
         .iter()
         .all(|(dx, dy)| ground_z(&server, cx + dx, cy + dy) == Some(z0));
@@ -6008,7 +7811,11 @@ fn arena_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (CHOP-FELLING, row 51.6): the work-model refactor proven end
@@ -6077,7 +7884,9 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -6144,21 +7953,24 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
     // of the gated asserts anyway).
     let small_base = Vec3::new(cx - 8, cy, gz + 1);
     for dz in 0..3 {
-        server.state_mut().set_block(small_base + Vec3::unit_z() * dz, wood);
+        server
+            .state_mut()
+            .set_block(small_base + Vec3::unit_z() * dz, wood);
     }
     for dx in -1..=1 {
         for dy in -1..=1 {
             for dz in 3..5 {
-                server.state_mut().set_block(
-                    Vec3::new(cx - 8 + dx, cy + dy, gz + 1 + dz),
-                    leaves,
-                );
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(cx - 8 + dx, cy + dy, gz + 1 + dz), leaves);
             }
         }
     }
     let big_base = Vec3::new(cx + 8, cy, gz + 1);
     for dz in 0..6 {
-        server.state_mut().set_block(big_base + Vec3::unit_z() * dz, wood);
+        server
+            .state_mut()
+            .set_block(big_base + Vec3::unit_z() * dz, wood);
     }
     for dx in 1..=3 {
         server
@@ -6168,18 +7980,14 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
     for dx in -1..=1 {
         for dy in -1..=1 {
             for dz in 6..8 {
-                server.state_mut().set_block(
-                    Vec3::new(cx + 8 + dx, cy + dy, gz + 1 + dz),
-                    leaves,
-                );
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(cx + 8 + dx, cy + dy, gz + 1 + dz), leaves);
             }
         }
     }
     tick(&mut server, 2);
-    let names = server.bastion_spawn_colony(
-        Vec3::new(cx as f32, cy as f32, gz as f32 + 2.0),
-        1,
-    );
+    let names = server.bastion_spawn_colony(Vec3::new(cx as f32, cy as f32, gz as f32 + 2.0), 1);
     tick(&mut server, 30);
 
     // The whole-tree cell lists (for the present-set invariants).
@@ -6208,9 +8016,9 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
         cells
             .iter()
             .filter(|c| {
-                server.bastion_block_kind(**c).is_some_and(|k| {
-                    matches!(k, BlockKind::Wood | BlockKind::Leaves)
-                })
+                server
+                    .bastion_block_kind(**c)
+                    .is_some_and(|k| matches!(k, BlockKind::Wood | BlockKind::Leaves))
             })
             .map(|c| c.z)
             .max()
@@ -6223,8 +8031,7 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
                          base: Vec3<i32>,
                          all: &[Vec3<i32>]|
      -> (usize, u32, f32, bool, bool, bool, bool, u64, u32, f32) {
-        let (cells, wood_n, threshold, created) =
-            server.bastion_place_chop_tree(base);
+        let (cells, wood_n, threshold, created) = server.bastion_place_chop_tree(base);
         tick(server, 1);
         let probe = common::bastion::Region {
             min: base - Vec3::new(5, 5, 1),
@@ -6279,27 +8086,27 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
             }
         }
         tick(server, 60); // settle drops/merges
-        let drops = server.bastion_sum_items_near(
-            base.map(|e| e as f32),
-            8.0,
-            CHOP_DROP_ITEM,
-        );
+        let drops = server.bastion_sum_items_near(base.map(|e| e as f32), 8.0, CHOP_DROP_ITEM);
         (
-            cells, wood_n, threshold, one_job, felled, topdown_ok, no_orphan,
-            drops, cut_polls, activity_max,
+            cells,
+            wood_n,
+            threshold,
+            one_job,
+            felled,
+            topdown_ok,
+            no_orphan,
+            drops,
+            cut_polls,
+            activity_max,
         )
     };
 
     let small_all = tree_cells(cx - 8);
     let big_all = tree_cells(cx + 8);
-    let (
-        s_cells, s_wood, s_thresh, s_one, s_felled, s_td, s_orphan, s_drops,
-        s_cut, s_activity,
-    ) = fell_tree(&mut server, small_base, &small_all);
-    let (
-        b_cells, b_wood, b_thresh, b_one, b_felled, b_td, b_orphan, b_drops,
-        b_cut, b_activity,
-    ) = fell_tree(&mut server, big_base, &big_all);
+    let (s_cells, s_wood, s_thresh, s_one, s_felled, s_td, s_orphan, s_drops, s_cut, s_activity) =
+        fell_tree(&mut server, small_base, &small_all);
+    let (b_cells, b_wood, b_thresh, b_one, b_felled, b_td, b_orphan, b_drops, b_cut, b_activity) =
+        fell_tree(&mut server, big_base, &big_all);
 
     // Size-scaling: the DETERMINISTIC, travel-free proof — the frozen
     // thresholds are exactly Wood-proportional (9:3 = 3.0). Cut times are
@@ -6333,8 +8140,8 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
         "chopfell_big_activity": b_activity,
     });
     println!(
-        "CHOPFELL TELEMETRY: small(wood={s_wood} thr={s_thresh} cut_polls={s_cut} drops={s_drops}) \
-         big(wood={b_wood} thr={b_thresh} cut_polls={b_cut} drops={b_drops})"
+        "CHOPFELL TELEMETRY: small(wood={s_wood} thr={s_thresh} cut_polls={s_cut} \
+         drops={s_drops}) big(wood={b_wood} thr={b_thresh} cut_polls={b_cut} drops={b_drops})"
     );
     let pass = s_one
         && b_one
@@ -6358,7 +8165,11 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (HIST-1, row 54): the Chronicle's first event-bus emitters —
@@ -6413,7 +8224,9 @@ fn hist1_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -6430,10 +8243,7 @@ fn hist1_scenario(args: &Args) -> ExitCode {
             .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
     };
     server.bastion_force_load_area(site_wpos, 5);
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, 500.0),
-        2,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, 500.0), 2);
     tick(&mut server, 30);
     let mut names = server.bastion_rename_colonists_unique();
     names.sort();
@@ -6494,9 +8304,7 @@ fn hist1_scenario(args: &Args) -> ExitCode {
         "hist1_reports_still_fire": reports_grew,
         "hist1_conserved": conserved,
     });
-    println!(
-        "HIST1 TELEMETRY: d0={d0} t0={t0} r0={r0} death_actors={death_actors}"
-    );
+    println!("HIST1 TELEMETRY: d0={d0} t0={t0} r0={r0} death_actors={death_actors}");
     let pass = names.len() == 2
         && killed
         && death_seen
@@ -6511,7 +8319,11 @@ fn hist1_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (AUTON-2, row 50): THE DEATH-SPIRAL GATE — E1, the arc's
@@ -6537,9 +8349,11 @@ fn hist1_scenario(args: &Args) -> ExitCode {
 /// keeps trying), the board stays bounded (no spam), the run completes
 /// (no freeze/crash). NOT death/emigration — deferred to BODIES/MIG.
 fn spiral_scenario(args: &Args) -> ExitCode {
-    use common::bastion::{DesignationKind, Region, ZoneKind};
-    use common::terrain::{Block, BlockKind};
-    use common::vol::ReadVol;
+    use common::{
+        bastion::{DesignationKind, Region, ZoneKind},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
     use vek::{Rgb, Vec2, Vec3};
 
     const SEEDS: &str = "common.items.bastion.wheat_seeds";
@@ -6552,8 +8366,7 @@ fn spiral_scenario(args: &Args) -> ExitCode {
             std::process::id(),
             started.elapsed().as_nanos()
         ));
-        std::fs::create_dir_all(&data_dir)
-            .expect("failed to create harness data dir");
+        std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
         let settings = Settings {
             gameserver_protocols: Vec::new(),
             auth_server_address: None,
@@ -6594,7 +8407,9 @@ fn spiral_scenario(args: &Args) -> ExitCode {
     let mut server = boot("a", args.seed);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -6669,15 +8484,13 @@ fn spiral_scenario(args: &Args) -> ExitCode {
         min: Vec3::new(cx - 10, cy - 8, gz + 1),
         max: Vec3::new(cx + 10, cy + 8, gz + 1),
     };
-    server
-        .bastion_place_designation(leash, DesignationKind::Zone(ZoneKind::Meeting));
+    server.bastion_place_designation(leash, DesignationKind::Zone(ZoneKind::Meeting));
     let plot = Region {
         min: Vec3::new(cx - 9, cy - 4, gz),
         max: Vec3::new(cx - 6, cy - 1, gz),
     };
     server.bastion_place_designation(plot, DesignationKind::Farm);
-    let store_drop =
-        Vec3::new(cx as f32 - 0.5, cy as f32 + 0.5, gz as f32 + 1.5);
+    let store_drop = Vec3::new(cx as f32 - 0.5, cy as f32 + 0.5, gz as f32 + 1.5);
     server.bastion_spawn_item(store_drop, SEEDS, 20);
     // THREE separated 1-wheat entities (seventh-draw find): should_merge
     // makes a pile ONE entity = ONE Uid = ONE reservation, so eats
@@ -6701,10 +8514,7 @@ fn spiral_scenario(args: &Args) -> ExitCode {
     );
     tick(&mut server, 5);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        6,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 6);
     tick(&mut server, 30);
     let mut names = server.bastion_rename_colonists_unique();
     names.sort();
@@ -6774,17 +8584,14 @@ fn spiral_scenario(args: &Args) -> ExitCode {
     const SHORTAGE_LEVEL: f32 = 0.15;
     // The discrete threshold lattice {0.08,0.12,0.16,0.2,0.24,0.28,0.3}
     // clears the forced level by ≥0.01 — no knife-edge predictions.
-    let predictions_clear = expected
-        .iter()
-        .all(|t| (t - SHORTAGE_LEVEL).abs() > 0.01);
+    let predictions_clear = expected.iter().all(|t| (t - SHORTAGE_LEVEL).abs() > 0.01);
     let holders: Vec<usize> = (0..names.len())
         .filter(|&i| expected[i] < SHORTAGE_LEVEL)
         .collect();
     let eaters: Vec<usize> = (0..names.len())
         .filter(|&i| expected[i] > SHORTAGE_LEVEL)
         .collect();
-    let wheat_total =
-        |server: &Server| server.bastion_colony_item_total(WHEAT);
+    let wheat_total = |server: &Server| server.bastion_colony_item_total(WHEAT);
     let hunger_of = |server: &Server, name: &str| {
         server
             .bastion_colonist_needs_mood(name)
@@ -6859,9 +8666,7 @@ fn spiral_scenario(args: &Args) -> ExitCode {
             let h = hunger_of(&server, &names[i]);
             if h > 0.4 && !ate[i] {
                 ate[i] = true;
-                if holders.contains(&i)
-                    && last_seen[i] > expected[i] + 0.005
-                {
+                if holders.contains(&i) && last_seen[i] > expected[i] + 0.005 {
                     // Preempted while still ABOVE its threshold.
                     holders_held = false;
                 }
@@ -6883,8 +8688,7 @@ fn spiral_scenario(args: &Args) -> ExitCode {
     // THROUGHPUT (B38 serialization + geography) — and rides the
     // recovery assert with its honest window. Fed-in-window stays as
     // reported telemetry (×2 identity still pins it).
-    let eaters_fed_in_window =
-        eaters.iter().filter(|&&i| ate[i]).count();
+    let eaters_fed_in_window = eaters.iter().filter(|&&i| ate[i]).count();
     let eaters_preempted = server
         .bastion_preempt_attempts()
         .saturating_sub(attempts_before_shortage)
@@ -6917,8 +8721,7 @@ fn spiral_scenario(args: &Args) -> ExitCode {
     for _ in 0..900 {
         tick(&mut server, 10);
         stock_recovered = wheat_total(&server);
-        let meters: Vec<f32> =
-            names.iter().map(|n| hunger_of(&server, n)).collect();
+        let meters: Vec<f32> = names.iter().map(|n| hunger_of(&server, n)).collect();
         let fed = meters.iter().filter(|h| **h > 0.4).count();
         straggler_meter = meters
             .iter()
@@ -6942,7 +8745,8 @@ fn spiral_scenario(args: &Args) -> ExitCode {
         .map(|n| format!("{:.3}", hunger_of(&server, n)))
         .collect();
     println!(
-        "SPIRAL RECOVERY-END: recovered={recovered} stock={stock_recovered} straggler_min={straggler_meter:.3} meters={meters2:?}"
+        "SPIRAL RECOVERY-END: recovered={recovered} stock={stock_recovered} \
+         straggler_min={straggler_meter:.3} meters={meters2:?}"
     );
     // THE FLOOR (Opus's assert, direct form): the LOWEST-threshold
     // holder forced strictly below its own staggered threshold must
@@ -6990,18 +8794,14 @@ fn spiral_scenario(args: &Args) -> ExitCode {
     server.bastion_force_load_area(site_wpos, 5);
     write_strip(&mut server);
     tick(&mut server, 2);
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        6,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 6);
     tick(&mut server, 30);
     let mut names_b = server.bastion_rename_colonists_unique();
     names_b.sort();
     let fires_b0 = server.bastion_center_net_fires();
     server.bastion_place_designation(store, DesignationKind::Stockpile);
     // The same idle leash — boot B's misery plays out near home too.
-    server
-        .bastion_place_designation(leash, DesignationKind::Zone(ZoneKind::Meeting));
+    server.bastion_place_designation(leash, DesignationKind::Zone(ZoneKind::Meeting));
     server.bastion_spawn_item(store_drop, WHEAT, 1);
     tick(&mut server, 5);
     // Collapse: meters to the bottom → mood ~0.09 < break_minor 0.25,
@@ -7038,8 +8838,7 @@ fn spiral_scenario(args: &Args) -> ExitCode {
         }
         jobs_bounded &= server.bastion_jobs_in_region(big_probe) <= 40;
     }
-    let attempts_grew =
-        server.bastion_preempt_attempts() > attempts_0;
+    let attempts_grew = server.bastion_preempt_attempts() > attempts_0;
     let all_alive = names_b
         .iter()
         .all(|n| server.bastion_colonist_needs_mood(n).is_some());
@@ -7063,7 +8862,9 @@ fn spiral_scenario(args: &Args) -> ExitCode {
         "spiral_fires": [fires_a, fires_b],
     });
     println!(
-        "SPIRAL TELEMETRY: stock0={stock_at_shortage} stock1={stock_recovered} holders={} eaters={} fed_in_window={eaters_fed_in_window} split={} floor={floor_preempted} despond=({despond_early},{despond_late})",
+        "SPIRAL TELEMETRY: stock0={stock_at_shortage} stock1={stock_recovered} holders={} \
+         eaters={} fed_in_window={eaters_fed_in_window} split={} floor={floor_preempted} \
+         despond=({despond_early},{despond_late})",
         holders.len(),
         eaters.len(),
         eaters_preempted && holders_held
@@ -7087,7 +8888,11 @@ fn spiral_scenario(args: &Args) -> ExitCode {
     println!("SPIRAL SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (RUN-0, row 47): walk vs run measured as DISPLACEMENT RATE on
@@ -7098,9 +8903,11 @@ fn spiral_scenario(args: &Args) -> ExitCode {
 /// regenerates energy back afterward. Colonist-only by construction (the
 /// flag lives on BastionColonist).
 fn run_scenario(args: &Args) -> ExitCode {
-    use common::bastion::{DesignationKind, Region};
-    use common::terrain::{Block, BlockKind};
-    use common::vol::ReadVol;
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
     use vek::{Rgb, Vec2, Vec3};
 
     let started = Instant::now();
@@ -7146,7 +8953,9 @@ fn run_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -7201,10 +9010,7 @@ fn run_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        1,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 1);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
     let a = names.first().cloned().unwrap_or_default();
@@ -7243,8 +9049,9 @@ fn run_scenario(args: &Args) -> ExitCode {
     tick(&mut server, 600);
 
     // (B) RUN: flag up, the same trip shape one row over.
-    let (e_full, _, _) =
-        server.bastion_colonist_energy(&a).unwrap_or((0.0, 0.0, false));
+    let (e_full, _, _) = server
+        .bastion_colonist_energy(&a)
+        .unwrap_or((0.0, 0.0, false));
     let set_ok = server.bastion_set_running(&a, true);
     server.bastion_teleport_colonist(&a, east);
     server.bastion_place_designation(
@@ -7257,8 +9064,7 @@ fn run_scenario(args: &Args) -> ExitCode {
     let start2 = pos_of(&server).unwrap_or(east);
     for _ in 0..60 {
         tick(&mut server, 5);
-        if pos_of(&server).is_some_and(|p| p.xy().distance(start2.xy()) > 2.0)
-        {
+        if pos_of(&server).is_some_and(|p| p.xy().distance(start2.xy()) > 2.0) {
             break;
         }
     }
@@ -7270,8 +9076,9 @@ fn run_scenario(args: &Args) -> ExitCode {
 
     // (C) DRAIN while flagged + the governor's forced revert at the
     // floor (the hook never turns it off — only the governor can).
-    let (e_mid, _, running_mid) =
-        server.bastion_colonist_energy(&a).unwrap_or((0.0, 0.0, false));
+    let (e_mid, _, running_mid) = server
+        .bastion_colonist_energy(&a)
+        .unwrap_or((0.0, 0.0, false));
     let drained = e_mid < e_full - 5.0;
     let mut reverted = false;
     let mut e_floor = 0.0;
@@ -7287,8 +9094,9 @@ fn run_scenario(args: &Args) -> ExitCode {
     }
     // (D) REGEN: vanilla stats regens it back while walking/idle.
     tick(&mut server, 300);
-    let (e_after, _, _) =
-        server.bastion_colonist_energy(&a).unwrap_or((0.0, 0.0, false));
+    let (e_after, _, _) = server
+        .bastion_colonist_energy(&a)
+        .unwrap_or((0.0, 0.0, false));
     let regened = e_after > e_floor + 2.0;
     let no_embeds = server.bastion_center_net_fires() == fires_before;
 
@@ -7304,7 +9112,8 @@ fn run_scenario(args: &Args) -> ExitCode {
         "run_no_embeds": no_embeds,
     });
     println!(
-        "RUN TELEMETRY: walk={walk_rate:.3} run={run_rate:.3} e_full={e_full:.1} e_mid={e_mid:.1} e_floor={e_floor:.1} e_after={e_after:.1}"
+        "RUN TELEMETRY: walk={walk_rate:.3} run={run_rate:.3} e_full={e_full:.1} e_mid={e_mid:.1} \
+         e_floor={e_floor:.1} e_after={e_after:.1}"
     );
     let pass = names.len() == 1
         && set_ok
@@ -7320,7 +9129,11 @@ fn run_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (AUTON-0, row 48): the arbiter in vivo. Three colonists, two
@@ -7338,9 +9151,11 @@ fn run_scenario(args: &Args) -> ExitCode {
 /// machinery untouched by drive-switching). (f) GUARD 5: PATH-0 keeps
 /// granting after the storm. Outcome bools only.
 fn auton_scenario(args: &Args) -> ExitCode {
-    use common::bastion::{DesignationKind, Region};
-    use common::terrain::{Block, BlockKind};
-    use common::vol::ReadVol;
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
     use vek::{Rgb, Vec2, Vec3};
 
     let started = Instant::now();
@@ -7386,7 +9201,9 @@ fn auton_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -7441,10 +9258,7 @@ fn auton_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        3,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 3);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
     let fires_before = server.bastion_center_net_fires();
@@ -7462,9 +9276,9 @@ fn auton_scenario(args: &Args) -> ExitCode {
     for _ in 0..600 {
         tick(&mut server, 10);
         if !worked
-            && names.iter().any(|n| {
-                server.bastion_colonist_drive(n).as_deref() == Some("Work")
-            })
+            && names
+                .iter()
+                .any(|n| server.bastion_colonist_drive(n).as_deref() == Some("Work"))
         {
             worked = true;
         }
@@ -7492,9 +9306,10 @@ fn auton_scenario(args: &Args) -> ExitCode {
     let mut subject = None;
     for _ in 0..300 {
         tick(&mut server, 5);
-        if let Some(n) = names.iter().find(|n| {
-            server.bastion_colonist_drive(n).as_deref() == Some("Work")
-        }) {
+        if let Some(n) = names
+            .iter()
+            .find(|n| server.bastion_colonist_drive(n).as_deref() == Some("Work"))
+        {
             subject = Some(n.clone());
             break;
         }
@@ -7509,8 +9324,7 @@ fn auton_scenario(args: &Args) -> ExitCode {
     let (_, _, storm_teleports_before) = server.bastion_locomotion_stats();
     server.bastion_set_health_fraction(&subject, 0.1);
     tick(&mut server, 2);
-    let flee_fast = server.bastion_colonist_drive(&subject).as_deref()
-        == Some("Flee");
+    let flee_fast = server.bastion_colonist_drive(&subject).as_deref() == Some("Flee");
     // All three low -> full stop: claims suppressed under non-Work.
     for n in &names {
         server.bastion_set_health_fraction(n, 0.1);
@@ -7534,8 +9348,7 @@ fn auton_scenario(args: &Args) -> ExitCode {
             server.bastion_set_health_fraction(n, 0.1);
         }
     }
-    let frozen = server.bastion_jobs_in_region(mine2) == frozen_at
-        && frozen_at > 0;
+    let frozen = server.bastion_jobs_in_region(mine2) == frozen_at && frozen_at > 0;
 
     // GUARD 4(b): measured across the storm window exactly.
     let (_, _, storm_teleports_after) = server.bastion_locomotion_stats();
@@ -7558,8 +9371,7 @@ fn auton_scenario(args: &Args) -> ExitCode {
     // (e) GUARD 4: no false trips WITHIN the storm window (post-storm
     // idle wanderers earning genuine rescues are the fail-safe's job,
     // not a drive-switching artifact).
-    let no_false_teleports =
-        storm_teleports_after == storm_teleports_before;
+    let no_false_teleports = storm_teleports_after == storm_teleports_before;
     let no_embeds = server.bastion_center_net_fires() == fires_before;
     // (f) GUARD 5: PATH-0 alive after the storm (recovery travel was
     // scheduler-served; waits pruned).
@@ -7581,7 +9393,8 @@ fn auton_scenario(args: &Args) -> ExitCode {
         "auton_path_alive": path_alive,
     });
     println!(
-        "AUTON TELEMETRY: switches={switches} frozen_at={frozen_at} grants={grants} peak_wait={peak_wait}"
+        "AUTON TELEMETRY: switches={switches} frozen_at={frozen_at} grants={grants} \
+         peak_wait={peak_wait}"
     );
     let pass = names.len() == 3
         && m1 == 20
@@ -7600,7 +9413,11 @@ fn auton_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (B7-1, row 44): the bed + the CLOSED REST LOOP in vivo — a
@@ -7613,9 +9430,11 @@ fn auton_scenario(args: &Args) -> ExitCode {
 /// demote/promote round-trip on the colonist record; and killing a
 /// sleeper releases its occupancy (the orphan sweep).
 fn bed_scenario(args: &Args) -> ExitCode {
-    use common::bastion::{DesignationKind, Region};
-    use common::terrain::{Block, BlockKind};
-    use common::vol::ReadVol;
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
     use vek::{Rgb, Vec2, Vec3};
 
     let started = Instant::now();
@@ -7661,7 +9480,9 @@ fn bed_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -7704,9 +9525,7 @@ fn bed_scenario(args: &Args) -> ExitCode {
     // surroundings, wanderers stay routable, nothing to hug.
     let gz = (-16..=16)
         .step_by(8)
-        .flat_map(|dx| {
-            (-12..=12).step_by(8).map(move |dy| (dx, dy))
-        })
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
         .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
         .max()
         .expect("no ground around site center");
@@ -7724,10 +9543,7 @@ fn bed_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        3,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 3);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
     let (a, bn, c) = (
@@ -7757,17 +9573,12 @@ fn bed_scenario(args: &Args) -> ExitCode {
     let bed1 = Vec3::new(cx + 4, cy - 3, gz + 1);
     let bed2 = Vec3::new(cx + 4, cy + 3, gz + 1);
     for bed in [bed1, bed2] {
-        server.bastion_place_designation(
-            Region { min: bed, max: bed },
-            DesignationKind::Bed,
-        );
+        server.bastion_place_designation(Region { min: bed, max: bed }, DesignationKind::Bed);
     }
     let mut beds_built = false;
     for _ in 0..600 {
         tick(&mut server, 10);
-        if server.bastion_bed_slot(bed1).is_some()
-            && server.bastion_bed_slot(bed2).is_some()
-        {
+        if server.bastion_bed_slot(bed1).is_some() && server.bastion_bed_slot(bed2).is_some() {
             beds_built = true;
             break;
         }
@@ -7793,10 +9604,7 @@ fn bed_scenario(args: &Args) -> ExitCode {
         // COMPLETION-aware: rest crosses the band mid-sleep (the margin
         // sleeps past it) — wait for the occupancies to clear too, so
         // the mood probe reads post-thought.
-        if done
-            && ra.is_some_and(|r| r >= 0.5)
-            && rb.is_some_and(|r| r >= 0.5)
-        {
+        if done && ra.is_some_and(|r| r >= 0.5) && rb.is_some_and(|r| r >= 0.5) {
             slept = true;
             break;
         }
@@ -7953,7 +9761,11 @@ fn bed_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (B7-0, row 44): needs/mood in vivo — decay is EXACT arithmetic
@@ -8009,7 +9821,9 @@ fn needs_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -8026,10 +9840,7 @@ fn needs_scenario(args: &Args) -> ExitCode {
             .unwrap_or_else(|| vek::Vec2::new(16384.0, 16384.0))
     };
     server.bastion_force_load_area(site_wpos, 5);
-    server.bastion_spawn_colony(
-        vek::Vec3::new(site_wpos.x, site_wpos.y, 2048.0),
-        2,
-    );
+    server.bastion_spawn_colony(vek::Vec3::new(site_wpos.x, site_wpos.y, 2048.0), 2);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
     let subject = names.first().cloned().unwrap_or_default();
@@ -8076,9 +9887,8 @@ fn needs_scenario(args: &Args) -> ExitCode {
     }
     // Needs stay near zero (decay only moves them down; the mood
     // recompute keeps ≈0.09) — generous tolerance for the re-promote gap.
-    let persist_ok = roundtrip.is_some_and(|(h, r, c, m)| {
-        h < 0.05 && r < 0.05 && c < 0.05 && (m - 0.09).abs() < 5e-2
-    });
+    let persist_ok = roundtrip
+        .is_some_and(|(h, r, c, m)| h < 0.05 && r < 0.05 && c < 0.05 && (m - 0.09).abs() < 5e-2);
 
     let result = serde_json::json!({
         "needs_before": before,
@@ -8107,7 +9917,11 @@ fn needs_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (FR15-TIGHTDIG Part 1): the paired A/B — the FULL b58 scenario
@@ -8167,13 +9981,8 @@ fn b58_paired(args: &Args) -> ExitCode {
                     delta.insert(format!("d_{k}"), serde_json::json!(c - a));
                 },
                 _ => {
-                    if let (Some(a), Some(c)) =
-                        (bv.as_bool(), v.get(k).and_then(|x| x.as_bool()))
-                    {
-                        delta.insert(
-                            format!("agree_{k}"),
-                            serde_json::json!(a == c),
-                        );
+                    if let (Some(a), Some(c)) = (bv.as_bool(), v.get(k).and_then(|x| x.as_bool())) {
+                        delta.insert(format!("agree_{k}"), serde_json::json!(a == c));
                     }
                 },
             }
@@ -8189,7 +9998,11 @@ fn b58_paired(args: &Args) -> ExitCode {
     let pass = base_pass && variant_pass;
     println!("{}", result);
     println!("B58PAIRED: {}", if pass { "PASS" } else { "FAIL" });
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (SEASON-1, row 42): the day-of-year schedule in vivo — the
@@ -8243,7 +10056,9 @@ fn season1_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -8266,8 +10081,7 @@ fn season1_scenario(args: &Args) -> ExitCode {
     // ordinal 90 via SEASON-0, and that ordinal fires the event — the
     // two blocks compose (day-of-year IS the schedule's key), and day 90
     // is an AUTUMN day (index 2) as the done-when phrases it.
-    let (season_idx, _, doy, days_in_year) =
-        server.bastion_season_probe(60.0 * 60.0 * 24.0 * 90.5);
+    let (season_idx, _, doy, days_in_year) = server.bastion_season_probe(60.0 * 60.0 * 24.0 * 90.5);
     let compose_ok = days_in_year == 160.0
         && doy == 90
         && season_idx == 2
@@ -8286,7 +10100,11 @@ fn season1_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (SEASON-0, row 42): the in-game year derives PURELY from the
@@ -8340,7 +10158,9 @@ fn season_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -8392,7 +10212,11 @@ fn season_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (B-AG2, row 40): archetype-keyed decision data over ONE shared
@@ -8450,7 +10274,9 @@ fn archetype_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -8479,11 +10305,15 @@ fn archetype_scenario(args: &Args) -> ExitCode {
 
     // GRACEFUL: unconverted/unknown keys yield nothing (the old
     // non-matching-profession behavior), never a panic.
-    let graceful = server.bastion_archetype_weight("farmer", "gather_forest").is_none()
+    let graceful = server
+        .bastion_archetype_weight("farmer", "gather_forest")
+        .is_none()
         && server
             .bastion_archetype_weight("no_such_archetype", "anything")
             .is_none()
-        && server.bastion_archetype_allowed("no_such_archetype").is_empty();
+        && server
+            .bastion_archetype_allowed("no_such_archetype")
+            .is_empty();
 
     // REPORTED: the generated population the table applies to, and that
     // the world ticks on with the converted gates live (no panic).
@@ -8507,7 +10337,11 @@ fn archetype_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (HIST-0, row 39): the Chronicle store + `record()` capture
@@ -8562,7 +10396,9 @@ fn chronicle_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -8604,7 +10440,11 @@ fn chronicle_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (GATHER, row 38): the FOOD-LOOP forage verb, end to end — a
@@ -8619,8 +10459,8 @@ fn chronicle_scenario(args: &Args) -> ExitCode {
 /// vanished-target case): its job must complete moot — no wedged
 /// claimant, the board still drains to zero.
 fn gather_scenario(args: &Args) -> ExitCode {
-    use common::bastion::{DesignationKind, Region};
     use common::{
+        bastion::{DesignationKind, Region},
         terrain::{Block, BlockKind, SpriteKind},
         vol::ReadVol,
     };
@@ -8669,7 +10509,9 @@ fn gather_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -8719,17 +10561,10 @@ fn gather_scenario(args: &Args) -> ExitCode {
         }
     }
     // PLANT: six mushrooms, spread so claims disperse.
-    let sprite_cells: Vec<Vec3<i32>> = [
-        (-8, -4),
-        (-8, 4),
-        (0, -6),
-        (0, 6),
-        (8, -4),
-        (8, 4),
-    ]
-    .into_iter()
-    .map(|(dx, dy)| Vec3::new(cx + dx, cy + dy, gz + 1))
-    .collect();
+    let sprite_cells: Vec<Vec3<i32>> = [(-8, -4), (-8, 4), (0, -6), (0, 6), (8, -4), (8, 4)]
+        .into_iter()
+        .map(|(dx, dy)| Vec3::new(cx + dx, cy + dy, gz + 1))
+        .collect();
     for c in &sprite_cells {
         server
             .state_mut()
@@ -8737,10 +10572,7 @@ fn gather_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        2,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 2);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
 
@@ -8798,8 +10630,7 @@ fn gather_scenario(args: &Args) -> ExitCode {
     let gathered = count_all(&server).saturating_sub(baseline);
     // The hand-vacated sprite yields nothing — every other cell must have
     // yielded exactly one mushroom (plain 1:1 item sprite, no loot roll).
-    let expected =
-        (sprite_cells.len() - usize::from(vacated_by_hand.is_some())) as u64;
+    let expected = (sprite_cells.len() - usize::from(vacated_by_hand.is_some())) as u64;
 
     // ── DEPOSIT (the ruling's ONE trigger): paint a stockpile now that no
     // claimable Gather target remains — the trigger pass creates one
@@ -8852,7 +10683,11 @@ fn gather_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (31.1 CASE-004-MAGNET): the ladder-magnet write-gates — a climb
@@ -8863,8 +10698,8 @@ fn gather_scenario(args: &Args) -> ExitCode {
 /// backstop again), and the climb itself must still succeed (the job on
 /// top completes — no regression to ordinary climbing).
 fn magnet_scenario(args: &Args) -> ExitCode {
-    use common::bastion::{DesignationKind, Region};
     use common::{
+        bastion::{DesignationKind, Region},
         terrain::{Block, BlockKind, SpriteKind},
         vol::ReadVol,
     };
@@ -8913,7 +10748,9 @@ fn magnet_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -8974,9 +10811,15 @@ fn magnet_scenario(args: &Args) -> ExitCode {
         server.state_mut().set_block(Vec3::new(px - 1, py, z), rock); // wall
     }
     // Lips pinching the flanks at staggered heights.
-    server.state_mut().set_block(Vec3::new(px + 1, py, gz + 3), rock);
-    server.state_mut().set_block(Vec3::new(px, py + 1, gz + 4), rock);
-    server.state_mut().set_block(Vec3::new(px, py - 1, gz + 2), rock);
+    server
+        .state_mut()
+        .set_block(Vec3::new(px + 1, py, gz + 3), rock);
+    server
+        .state_mut()
+        .set_block(Vec3::new(px, py + 1, gz + 4), rock);
+    server
+        .state_mut()
+        .set_block(Vec3::new(px, py - 1, gz + 2), rock);
     // A work platform on top with one Mine job (the reason to climb).
     for x in (px - 1)..=(px + 1) {
         for y in (py - 1)..=(py + 1) {
@@ -8985,10 +10828,7 @@ fn magnet_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new((cx - 2) as f32, cy as f32, gz as f32 + 2.0),
-        1,
-    );
+    server.bastion_spawn_colony(Vec3::new((cx - 2) as f32, cy as f32, gz as f32 + 2.0), 1);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
     let subject = names.first().cloned().unwrap_or_default();
@@ -8997,7 +10837,10 @@ fn magnet_scenario(args: &Args) -> ExitCode {
     let job_cell = Vec3::new(px, py, gz + 7);
     let jobs = server
         .bastion_place_designation(
-            Region { min: job_cell, max: job_cell },
+            Region {
+                min: job_cell,
+                max: job_cell,
+            },
             DesignationKind::Mine,
         )
         .len();
@@ -9018,8 +10861,7 @@ fn magnet_scenario(args: &Args) -> ExitCode {
             let all_solid = [(-0.2f32, -0.2f32), (-0.2, 0.2), (0.2, -0.2), (0.2, 0.2)]
                 .into_iter()
                 .all(|(dx, dy)| {
-                    let corner = Vec3::new(p.x + dx, p.y + dy, p.z)
-                        .map(|e| e.floor() as i32)
+                    let corner = Vec3::new(p.x + dx, p.y + dy, p.z).map(|e| e.floor() as i32)
                         + Vec3::unit_z();
                     server
                         .bastion_block_kind(corner)
@@ -9045,16 +10887,17 @@ fn magnet_scenario(args: &Args) -> ExitCode {
         "magnet_net_fires": fires_after - fires_before,
         "magnet_completed": completed,
     });
-    let pass = jobs == 1
-        && core_solid_ticks == 0
-        && fires_after == fires_before
-        && completed;
+    let pass = jobs == 1 && core_solid_ticks == 0 && fires_after == fires_before && completed;
     println!("{}", result);
     println!("MAGNET SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (ZONE-0, row 37): the activity-zone SOFT MAGNET — idle colonists
@@ -9066,8 +10909,8 @@ fn magnet_scenario(args: &Args) -> ExitCode {
 /// session-state today — flagged to the Opus pass as an inherited
 /// infrastructure gap, not silently dropped.
 fn zone_scenario(args: &Args) -> ExitCode {
-    use common::bastion::{DesignationKind, Region, ZoneKind};
     use common::{
+        bastion::{DesignationKind, Region, ZoneKind},
         terrain::{Block, BlockKind},
         vol::ReadVol,
     };
@@ -9116,7 +10959,9 @@ fn zone_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -9167,10 +11012,7 @@ fn zone_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        4,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 4);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
 
@@ -9212,7 +11054,10 @@ fn zone_scenario(args: &Args) -> ExitCode {
     let job_cell = Vec3::new(cx - 10, cy, gz);
     let jobs = server
         .bastion_place_designation(
-            Region { min: job_cell, max: job_cell },
+            Region {
+                min: job_cell,
+                max: job_cell,
+            },
             DesignationKind::Mine,
         )
         .len();
@@ -9241,7 +11086,11 @@ fn zone_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (B-AG1, row 35): the promote-time rtsim-intent handoff,
@@ -9296,7 +11145,9 @@ fn bag1_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -9400,9 +11251,9 @@ fn bag1_scenario(args: &Args) -> ExitCode {
         let mut other = 0;
         for (_, n) in data.npcs.npcs.iter() {
             match n.role {
-                common::rtsim::Role::Civilised(Some(
-                    common::rtsim::Profession::Captain,
-                )) => captains += 1,
+                common::rtsim::Role::Civilised(Some(common::rtsim::Profession::Captain)) => {
+                    captains += 1
+                },
                 common::rtsim::Role::Civilised(Some(_)) => civ += 1,
                 common::rtsim::Role::Wild => wild += 1,
                 _ => other += 1,
@@ -9432,7 +11283,14 @@ fn bag1_scenario(args: &Args) -> ExitCode {
             })
             .count();
         let sites = data.sites.sites.len();
-        info!(total, near, near_loaded, sites, ?site_wpos, "bag1: population probe");
+        info!(
+            total,
+            near,
+            near_loaded,
+            sites,
+            ?site_wpos,
+            "bag1: population probe"
+        );
     }
     let before = snapshot(&server);
     let promoted = before.len();
@@ -9451,9 +11309,7 @@ fn bag1_scenario(args: &Args) -> ExitCode {
         for (e, _, epos) in (&entities, &rtsim_ents, &positions).join() {
             if epos.0.xy().distance(site_wpos) < 200.0 {
                 embodied += 1;
-                if let Some(act) =
-                    agents.get(e).and_then(|a| a.rtsim_controller.activity)
-                {
+                if let Some(act) = agents.get(e).and_then(|a| a.rtsim_controller.activity) {
                     acting += 1;
                     info!(?act, "bag1: activity");
                 }
@@ -9490,7 +11346,11 @@ fn bag1_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (B6-HAUL+JOB-CORE, row 34): (B) the RESERVATION RACE — two Build
@@ -9550,7 +11410,9 @@ fn b6haul_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -9600,10 +11462,7 @@ fn b6haul_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        2,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 2);
     tick(&mut server, 30);
     let _names = server.bastion_rename_colonists_unique();
 
@@ -9616,7 +11475,11 @@ fn b6haul_scenario(args: &Args) -> ExitCode {
     };
     server.bastion_place_designation(zb, DesignationKind::Stockpile);
     let spawned = server.bastion_spawn_item(
-        Vec3::new((cx - 5) as f32 + 0.5, (cy - 5) as f32 + 0.5, (gz + 2) as f32),
+        Vec3::new(
+            (cx - 5) as f32 + 0.5,
+            (cy - 5) as f32 + 0.5,
+            (gz + 2) as f32,
+        ),
         BUILD_MATERIAL_ITEM,
         1,
     );
@@ -9642,7 +11505,9 @@ fn b6haul_scenario(args: &Args) -> ExitCode {
         built = [b1, b2]
             .iter()
             .filter(|p| {
-                server.bastion_block_kind(**p).is_some_and(|k| k.is_filled())
+                server
+                    .bastion_block_kind(**p)
+                    .is_some_and(|k| k.is_filled())
             })
             .count();
         if built >= 1 {
@@ -9749,7 +11614,11 @@ fn b6haul_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (31.3 BELT-EXERCISE, Opus R11 follow-up): force-inject a colonist
@@ -9809,7 +11678,9 @@ fn belt_exercise_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -9878,10 +11749,7 @@ fn belt_exercise_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new((cx - 3) as f32, cy as f32, gz as f32 + 2.0),
-        1,
-    );
+    server.bastion_spawn_colony(Vec3::new((cx - 3) as f32, cy as f32, gz as f32 + 2.0), 1);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
     let subject = names.first().cloned().unwrap_or_default();
@@ -9900,9 +11768,8 @@ fn belt_exercise_scenario(args: &Args) -> ExitCode {
         .into_iter()
         .find(|(n, _, _)| *n == subject)
         .map(|(_, p, _)| p);
-    let persisted = mid_pos.is_some_and(|p| {
-        p.xy().distance(Vec2::new(px as f32 + 0.5, py as f32 + 0.5)) < 1.0
-    });
+    let persisted =
+        mid_pos.is_some_and(|p| p.xy().distance(Vec2::new(px as f32 + 0.5, py as f32 + 0.5)) < 1.0);
 
     // THE TRIP: past EMBED_PERSIST_TICKS the watch must relocate.
     tick(&mut server, 40);
@@ -9915,9 +11782,7 @@ fn belt_exercise_scenario(args: &Args) -> ExitCode {
     // Relocated = the FEET CELL left the pocket interior. (A radius test
     // mis-graded the legitimate nearest destination: eject_dest's ring-1 at
     // dz+2 is ATOP the pocket wall — same xy column, entirely free.)
-    let relocated = end_pos.is_some_and(|p| {
-        p.map(|e| e.floor() as i32) != Vec3::new(px, py, pz)
-    });
+    let relocated = end_pos.is_some_and(|p| p.map(|e| e.floor() as i32) != Vec3::new(px, py, pz));
     // The colonist ends FREE: center cell clear (the invariant itself) and
     // still on the pad (not flung). Instant standability of the SAMPLED pos
     // is over-strict — an idle wander hop puts z mid-arc (first run: z
@@ -9941,17 +11806,17 @@ fn belt_exercise_scenario(args: &Args) -> ExitCode {
         "belt_mid_pos": format!("{:?}", mid_pos),
         "belt_end_pos": format!("{:?}", end_pos),
     });
-    let pass = injected
-        && persisted
-        && relocated
-        && dest_ok
-        && fires_after > fires_before;
+    let pass = injected && persisted && relocated && dest_ok && fires_after > fires_before;
     println!("{}", result);
     println!("BELT SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (LOD-1, the tier dupe guard): demote a colonist WHILE it is
@@ -10010,7 +11875,9 @@ fn lod1_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -10060,10 +11927,7 @@ fn lod1_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        2,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 2);
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
 
@@ -10078,7 +11942,10 @@ fn lod1_scenario(args: &Args) -> ExitCode {
         let cell = Vec3::new(cx - 2 + round * 2, cy + 3, gz);
         let jobs = server
             .bastion_place_designation(
-                Region { min: cell, max: cell },
+                Region {
+                    min: cell,
+                    max: cell,
+                },
                 DesignationKind::Mine,
             )
             .len();
@@ -10169,7 +12036,11 @@ fn lod1_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (LOD-0, the save-back acceptance): XP gained through REAL work +
@@ -10227,7 +12098,9 @@ fn lod0_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -10279,10 +12152,7 @@ fn lod0_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 2);
 
-    server.bastion_spawn_colony(
-        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        2,
-    );
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 2);
     // Colonist comps land on a tick (rtsim promote) — tick BEFORE renaming.
     tick(&mut server, 30);
     let names = server.bastion_rename_colonists_unique();
@@ -10323,8 +12193,8 @@ fn lod0_scenario(args: &Args) -> ExitCode {
     // (whatever it holds) must survive the cycle.
     let subject_has_state = skill_before.is_some() && inv_before.is_some();
 
-    // 3. THE CYCLE: force-demote (the real unload path) — the roster must
-    //    LOSE the subject (entity deleted) then REGAIN it (re-promote).
+    // 3. THE CYCLE: force-demote (the real unload path) — the roster must LOSE the
+    //    subject (entity deleted) then REGAIN it (re-promote).
     let demoted = server.bastion_force_demote(&subject);
     let mut gone = false;
     let mut back = false;
@@ -10347,9 +12217,9 @@ fn lod0_scenario(args: &Args) -> ExitCode {
     }
     tick(&mut server, 10);
 
-    // 4. EXACT-STATE asserts: skills AND inventory identical across the
-    //    cycle — no loss (nothing forgotten), no dupe (canonical-form
-    //    equality catches doubled stacks exactly).
+    // 4. EXACT-STATE asserts: skills AND inventory identical across the cycle — no
+    //    loss (nothing forgotten), no dupe (canonical-form equality catches doubled
+    //    stacks exactly).
     let skill_after = server.bastion_colonist_skill(&subject, WorkType::Mine);
     let inv_after = server.bastion_colonist_inventory(&subject);
     let skills_survived = subject_has_state && skill_after == skill_before;
@@ -10382,7 +12252,11 @@ fn lod0_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// bastion (B6 SOFT-0): the chokepoint gate — a whole crew funnels through
@@ -10446,7 +12320,9 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
     let dt = Duration::from_secs_f64(1.0 / args.tps);
     let tick = |server: &mut Server, n: u64| {
         for _ in 0..n {
-            server.tick(Input::default(), dt).expect("server tick failed");
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
             server.cleanup();
         }
     };
@@ -10626,16 +12502,10 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
             // CASE-003 fine probe (every tick): center-in-terrain +
             // the pair signature at the moment of the trip.
             let roster = server.bastion_colonist_states_full();
-            let mut tripped_now: std::collections::HashSet<u64> =
-                std::collections::HashSet::new();
+            let mut tripped_now: std::collections::HashSet<u64> = std::collections::HashSet::new();
             for (u, n, p, _) in &roster {
                 let bp = p.map(|e| e.floor() as i32) + Vec3::unit_z();
-                let bkind = server
-                    .state()
-                    .terrain()
-                    .get(bp)
-                    .ok()
-                    .map(|b| b.kind());
+                let bkind = server.state().terrain().get(bp).ok().map(|b| b.kind());
                 if bkind.is_some_and(|k| k.is_filled()) {
                     ck_in_terrain_ticks += 1;
                     tripped_now.insert(*u);
@@ -10714,11 +12584,9 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
                 ck_in_terrain += 1;
             }
         }
-        ck_cleared = job_spots.iter().all(|p| {
-            server
-                .bastion_block_kind(*p)
-                .is_none_or(|k| !k.is_filled())
-        });
+        ck_cleared = job_spots
+            .iter()
+            .all(|p| server.bastion_block_kind(*p).is_none_or(|k| !k.is_filled()));
         if i % 10 == 0 {
             for (n, p, j) in server.bastion_colonist_states() {
                 info!(sample = i, name = %n, pos = ?p, job = ?j, "ck TRACE");
@@ -10743,10 +12611,7 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
         {
             ck_refreshes += 1;
             let p = Vec3::new(kx - 6 + ck_refreshes * 2, ky + 6, k_gz);
-            server.bastion_place_designation(
-                Region { min: p, max: p },
-                DesignationKind::Mine,
-            );
+            server.bastion_place_designation(Region { min: p, max: p }, DesignationKind::Mine);
         }
     }
     let ck_all_out = ever_out.len() == names.len();
@@ -10779,11 +12644,9 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
     for _ in 0..45 {
         tick(&mut server, 30);
         ck_unreachable_final = server.bastion_job_audit().unreachable;
-        ck_cleared = job_spots.iter().all(|p| {
-            server
-                .bastion_block_kind(*p)
-                .is_none_or(|k| !k.is_filled())
-        });
+        ck_cleared = job_spots
+            .iter()
+            .all(|p| server.bastion_block_kind(*p).is_none_or(|k| !k.is_filled()));
         if ck_cleared && ck_unreachable_final == 0 {
             break;
         }
@@ -10925,11 +12788,18 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
         && fs_out
         && ml_done;
     println!("{}", result);
-    println!("CHOKEPOINT SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    println!(
+        "CHOKEPOINT SCENARIO: {}",
+        if pass { "PASS" } else { "FAIL" }
+    );
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
-    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 /// Run the same configuration twice in isolated child processes and diff the

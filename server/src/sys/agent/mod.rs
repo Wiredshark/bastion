@@ -19,9 +19,12 @@ use common::{
 };
 use common_base::prof_span;
 use common_ecs::{Job, Origin, ParMode, Phase, System};
-use rand::{RngExt, SeedableRng, rng, rngs::{SmallRng, StdRng}};
+use rand::{
+    RngExt, SeedableRng, rng,
+    rngs::{SmallRng, StdRng},
+};
 use rayon::iter::ParallelIterator;
-use specs::{LendJoin, ParJoin, Read, ReadExpect, WriteStorage};
+use specs::{LendJoin, ParJoin, Read, ReadExpect, ReadStorage, WriteStorage};
 use std::cell::RefCell;
 
 fn deterministic_agent_seed(world_seed: u32, tick: u64, uid: common::uid::Uid) -> u64 {
@@ -95,6 +98,7 @@ impl<'a> System<'a> for Sys {
         AgentEvents<'a>,
         WriteStorage<'a, Agent>,
         WriteStorage<'a, Controller>,
+        ReadStorage<'a, common::comp::bastion::BastionTraversalOwnership>,
         ReadExpect<'a, common_state::ExecutionMode>,
         Read<'a, Tick>,
         ReadExpect<'a, Settings>,
@@ -111,6 +115,7 @@ impl<'a> System<'a> for Sys {
             events,
             mut agents,
             mut controllers,
+            traversal_ownerships,
             execution_mode,
             tick,
             settings,
@@ -149,6 +154,7 @@ impl<'a> System<'a> for Sys {
                 read_data.is_riders.maybe(),
                 read_data.is_volume_riders.maybe(),
             ),
+            traversal_ownerships.maybe(),
         )
             .par_join()
             .for_each_init(
@@ -172,6 +178,7 @@ impl<'a> System<'a> for Sys {
                     group,
                     rtsim_entity,
                     (_, is_rider, is_volume_rider),
+                    traversal_ownership,
                 )| {
                     let mut emitters = events.get_emitters();
                     let deterministic_seed = execution_mode
@@ -226,6 +233,93 @@ impl<'a> System<'a> for Sys {
                         .physics_states
                         .get(moving_entity)
                         .unwrap_or(physics_state);
+                    let goto_writer_diag = std::env::var("BASTION_GOTO_WRITER_DIAG_UID")
+                        .ok()
+                        .and_then(|value| value.parse::<u64>().ok())
+                        == Some(uid.0.get());
+
+                    if crate::bastion_flight_recorder::enabled() {
+                        let target = match agent.rtsim_controller.activity {
+                            Some(common::rtsim::NpcActivity::Goto(target, _)) => {
+                                Some([target.x, target.y, target.z])
+                            },
+                            _ => None,
+                        };
+                        crate::bastion_flight_recorder::record_writer(
+                            crate::bastion_flight_recorder::WriterEvent {
+                                schema: "bastion.flight-recorder.event/v1".into(),
+                                tick: tick.0,
+                                uid: uid.0.get(),
+                                observation_sequence: 100,
+                                snapshot_stage: "agent-system-pre-behavior-snapshot".into(),
+                                dispatcher_dependency_proven: false,
+                                writer: "agent_system_before_reset".into(),
+                                move_dir: [
+                                    controller.inputs.move_dir.x,
+                                    controller.inputs.move_dir.y,
+                                ],
+                                move_z: controller.inputs.move_z,
+                                target,
+                                note: "controller input entering authoritative Agent behavior"
+                                    .into(),
+                            },
+                        );
+                    }
+
+                    if goto_writer_diag {
+                        tracing::info!(
+                            tick = tick.0,
+                            uid = uid.0.get(),
+                            position = ?pos.0,
+                            velocity = ?vel.0,
+                            activity = ?agent.rtsim_controller.activity,
+                            controller_move_dir = ?controller.inputs.move_dir,
+                            controller_move_z = controller.inputs.move_z,
+                            chaser_last_target = ?agent.chaser.last_target(),
+                            chaser_route_target = ?agent.chaser.route_target(),
+                            chaser_route_complete = ?agent.chaser.route_is_complete(),
+                            chaser_state = ?agent.chaser.state(),
+                            writer = "agent_system_before_reset",
+                            explicit_agent_to_bastion_jobs_dependency = false,
+                            "bastion: agent system writer snapshot"
+                        );
+                    }
+
+                    // Stage-1 B5.8: after the validated approach, the route
+                    // task is the only movement-intent owner. Do not reset or
+                    // run the behavior tree here: both are Controller writes
+                    // that would compete with the link task. Character
+                    // behavior and physics still consume the task's existing
+                    // Controller intent later in the authoritative stack.
+                    if traversal_ownership
+                        .is_some_and(|ownership| ownership.mode.owns_movement_intent())
+                    {
+                        if crate::bastion_flight_recorder::enabled() {
+                            crate::bastion_flight_recorder::record_writer(
+                                crate::bastion_flight_recorder::WriterEvent {
+                                    schema: "bastion.flight-recorder.event/v1".into(),
+                                    tick: tick.0,
+                                    uid: uid.0.get(),
+                                    observation_sequence: 105,
+                                    snapshot_stage: "agent-link-owner-exclusion".into(),
+                                    dispatcher_dependency_proven: false,
+                                    writer: "bastion_traversal_task".into(),
+                                    move_dir: [
+                                        controller.inputs.move_dir.x,
+                                        controller.inputs.move_dir.y,
+                                    ],
+                                    move_z: controller.inputs.move_z,
+                                    target: None,
+                                    note: format!(
+                                        "agent deferred to link_id={} mode={:?}",
+                                        traversal_ownership.unwrap().link_id,
+                                        traversal_ownership.unwrap().mode
+                                    ),
+                                },
+                            );
+                        }
+                        return;
+                    }
 
                     // Hack, replace with better system when groups are more sophisticated
                     // Override alignment if in a group unless entity is owned already
@@ -323,9 +417,10 @@ impl<'a> System<'a> for Sys {
                         msm: &read_data.msm,
                         poise: read_data.poises.get(entity),
                         stance: read_data.stances.get(entity),
-                        helper_rng: RefCell::new(deterministic_seed.map(|seed| {
-                            SmallRng::seed_from_u64(seed ^ 0x51A7_C0DE_55AA_7711)
-                        })),
+                        helper_rng: RefCell::new(
+                            deterministic_seed
+                                .map(|seed| SmallRng::seed_from_u64(seed ^ 0x51A7_C0DE_55AA_7711)),
+                        ),
                     };
 
                     ///////////////////////////////////////////////////////////
@@ -356,6 +451,53 @@ impl<'a> System<'a> for Sys {
                     };
 
                     BehaviorTree::root().run(&mut behavior_data);
+
+                    if crate::bastion_flight_recorder::enabled() {
+                        let target = match behavior_data.agent.rtsim_controller.activity {
+                            Some(common::rtsim::NpcActivity::Goto(target, _)) => {
+                                Some([target.x, target.y, target.z])
+                            },
+                            _ => None,
+                        };
+                        crate::bastion_flight_recorder::record_writer(
+                            crate::bastion_flight_recorder::WriterEvent {
+                                schema: "bastion.flight-recorder.event/v1".into(),
+                                tick: tick.0,
+                                uid: uid.0.get(),
+                                observation_sequence: 110,
+                                snapshot_stage: "agent-system-post-behavior-snapshot".into(),
+                                dispatcher_dependency_proven: false,
+                                writer: "agent_system_after_behavior_tree".into(),
+                                move_dir: [
+                                    behavior_data.controller.inputs.move_dir.x,
+                                    behavior_data.controller.inputs.move_dir.y,
+                                ],
+                                move_z: behavior_data.controller.inputs.move_z,
+                                target,
+                                note: "authoritative Agent/Chaser output before later systems"
+                                    .into(),
+                            },
+                        );
+                    }
+
+                    if goto_writer_diag {
+                        tracing::info!(
+                            tick = tick.0,
+                            uid = uid.0.get(),
+                            position = ?behavior_data.agent_data.pos.0,
+                            velocity = ?behavior_data.agent_data.vel.0,
+                            activity = ?behavior_data.agent.rtsim_controller.activity,
+                            controller_move_dir = ?behavior_data.controller.inputs.move_dir,
+                            controller_move_z = behavior_data.controller.inputs.move_z,
+                            chaser_last_target = ?behavior_data.agent.chaser.last_target(),
+                            chaser_route_target = ?behavior_data.agent.chaser.route_target(),
+                            chaser_route_complete = ?behavior_data.agent.chaser.route_is_complete(),
+                            chaser_state = ?behavior_data.agent.chaser.state(),
+                            writer = "agent_system_after_behavior_tree",
+                            explicit_agent_to_bastion_jobs_dependency = false,
+                            "bastion: agent system writer snapshot"
+                        );
+                    }
 
                     debug_assert!(controller.inputs.move_dir.map(|e| !e.is_nan()).reduce_and());
                     debug_assert!(controller.inputs.look_dir.map(|e| !e.is_nan()).reduce_and());
