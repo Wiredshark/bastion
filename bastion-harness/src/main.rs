@@ -391,6 +391,15 @@ struct Args {
     #[arg(long)]
     inspect_scenario: bool,
 
+    /// bastion (B5.8 ladder-fixture GEOMETRY PROBE): the architect's 2-part
+    /// pre-build proof. Several candidate sealed shafts (varying width/depth);
+    /// per shaft, reports the live emergency route kind (must be
+    /// ConstructedLadder — NOT CarvedStair/walkable-stair, NOT NaturalShaft) +
+    /// a direct carve_ramp cross-check. Finds the narrow geometry that forces
+    /// ladder_pillar so the real fixture exercises the constructed-ladder climb.
+    #[arg(long)]
+    b58_geom_probe: bool,
+
     /// bastion (STUCKJOB, the has_live_job watchdog falsifier — architect-ruled
     /// (α)): a colonist trapped in a sealed pit who CLAIMS emergency stair-dig
     /// jobs he can never complete (sole colonist: nobody else can dig, and the
@@ -689,6 +698,8 @@ fn main() -> ExitCode {
         inspect_scenario(&args)
     } else if args.stuckjob_scenario {
         stuckjob_scenario(&args)
+    } else if args.b58_geom_probe {
+        b58_geom_probe(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -7857,6 +7868,275 @@ fn arena_scenario(args: &Args) -> ExitCode {
 ///     remainder ever;
 /// (4) drops conserved EXACTLY: one CHOP_DROP per Wood cell, none for
 ///     leaves, no dupes (small=3, big=9).
+fn b58_geom_probe(args: &Args) -> ExitCode {
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-b58geom-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-b58geom".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-b58geom-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 6);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = ground_z(&server, cx, cy).expect("no ground at site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    // One big deep solid pad spanning all shafts (5 x 30-block spacing), honest walls.
+    for x in (cx - 64)..=(cx + 64) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 12)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 12) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    // Candidate sealed pits: (label, footprint wx, wy, x-offset). Depth fixed
+    // at 6 (> scramble reach 3, so a stair or ladder is required). 30-block
+    // separation >> ladder_pillar's radius-5 search, so no cross-shaft
+    // borrowing. 3x3 is the POSITIVE CONTROL — it MUST emit CarvedStair
+    // (carve_ramp switchbacks in 9 columns; proven by STUCKJOB rev-1's 26s
+    // organic stair escape). If the narrow shafts emit ConstructedLadder while
+    // 3x3 emits CarvedStair, that PROVES stairs were genuinely unavailable
+    // (leg 1) AND ladder_pillar won before NaturalShaft (leg 2) — both of the
+    // architect's legs, via the authoritative live planner, not a guess.
+    // The architect's bounded sweep in one pass: control + narrow + asymmetric.
+    // rev-3 (mechanism-driven): the FOOTPRINT sweep is answered — every
+    // footprint stair-escaped in 22-24s because carve_ramp DIGS THROUGH SOLID
+    // WALLS (the footprint constrains where the colonist stands, not where a
+    // stair can be carved). The remaining production lever: carve_ramp cannot
+    // dig cells inside PAINTED DESIGNATIONS (protected_designations), while
+    // ladder_pillar's rung cells are licensed by the emergency BUBBLE
+    // (from±EGRESS_BUBBLE_R, z from-2..+64) — no paint needed for rungs.
+    // Three-way: control (stairs win where diggable), open twin (contrast),
+    // protected twin (the candidate: Stockpile shell blocks the stair).
+    let depth = 8i32; // FABLE-002 band 7-8: depth 7 measured PREMISE-VIOLATION (rested skill-0 free-climbs on energy, with stalls — recorder-proven); 8 = ~120 energy > rested ~100+regen
+    let candidates = [
+        ("3x3_control", 3, 3, -30i32),
+        ("2x2_open", 2, 2, 0),
+        ("2x2_prot", 2, 2, 30),
+    ];
+    let names = server.bastion_spawn_colony(
+        Vec3::new(cx as f32, cy as f32, gz as f32 + 2.0),
+        candidates.len() as u8,
+    );
+    tick(&mut server, 20);
+    let names = server.bastion_rename_colonists_unique();
+    // SKILL 0 (architect-ruled probe premise): default climbing skill — the
+    // colonist CANNOT free-climb (handle_climb's entry gate is
+    // `constructed_ladder || energy>1.0`; skill only tunes post-entry
+    // speed/cost). CK's skill-0 colonist proved 7-deep unclimbable even with
+    // climb_free active. This is the condition under which a ladder is the
+    // ONLY climb path — the true B5.8 target.
+
+    // Carve each pit + drop one colonist to its floor.
+    for (i, (_label, wx, wy, dx)) in candidates.iter().enumerate() {
+        let sx = cx + dx;
+        let sy = cy;
+        for x in sx..(sx + wx) {
+            for y in sy..(sy + wy) {
+                for z in (gz - depth + 1)..=gz {
+                    server.state_mut().set_block(Vec3::new(x, y, z), air);
+                }
+            }
+        }
+        if let Some(name) = names.get(i) {
+            server.bastion_teleport_colonist(
+                name,
+                Vec3::new(sx as f32 + 0.5, sy as f32 + 0.5, (gz - depth + 1) as f32 + 0.1),
+            );
+        }
+    }
+    // DRAINED STAGING (Ben's ruling, FABLE-003 ≤0.1): a trapped miner is
+    // mid-shift, not rested. Below handle_climb's `energy > 1.0` entry floor
+    // the ladder token is the ONLY climb entry; regen re-entry exists but each
+    // ascent tick re-drains, so a ladder-less climb-out needs far longer than
+    // the trapped→plan→build window — the planner finally gets to run.
+    // Drained on ALL THREE (the control doubles as proof draining doesn't
+    // break ordinary STAIR rescue — digging costs no climb energy).
+    for n in &names {
+        server.bastion_set_colonist_energy(n, 0.1);
+    }
+
+    // 2x2_prot's protection shell: ONE Stockpile paint over the whole
+    // neighborhood (walls + shaft — carve-blocking is what matters; rung
+    // placement is not carving). Zero jobs (Stockpile registers a zone only).
+    {
+        let (_l, wx, wy, dx) = candidates[2];
+        let sx = cx + dx;
+        let sy = cy;
+        server.bastion_place_designation(
+            common::bastion::Region {
+                min: Vec3::new(sx - 6, sy - 6, gz - depth - 1),
+                max: Vec3::new(sx + wx + 5, sy + wy + 5, gz + 2),
+            },
+            common::bastion::DesignationKind::Stockpile,
+        );
+        tick(&mut server, 2);
+    }
+
+    // Trapped-detection + planning need real sim time (~25s before the first
+    // plan in the STUCKJOB rev-1 trace), and a route descriptor is REMOVED on
+    // Complete/Abort — so LATCH the first non-null kind per colonist while
+    // sampling every second, and record first-out times. Post-Phase-1 a STAIR
+    // plan registers NO descriptor at all (walkable — that is the Phase-1
+    // change itself), so the 3x3 control proves "stairs win where possible"
+    // by its ORGANIC ESCAPE (rev-1 precedent: out in 26s), not by a kind read.
+    let mut latched: Vec<Option<String>> = vec![None; candidates.len()];
+    let mut out_secs: Vec<f32> = vec![-1.0; candidates.len()];
+    let mut out_xy: Vec<Option<(f32, f32)>> = vec![None; candidates.len()];
+    for sec in 0..150u32 {
+        tick(&mut server, 30);
+        let states = server.bastion_colonist_states();
+        for (i, name) in names.iter().enumerate() {
+            if latched[i].is_none()
+                && let Some(kind) = server.bastion_colonist_route_kind(name)
+            {
+                latched[i] = Some(kind);
+            }
+            if out_secs[i] < 0.0
+                && let Some((_, pos, _)) = states
+                    .iter()
+                    .find(|(n, p, _)| n == name && p.z >= gz as f32 + 0.5)
+            {
+                out_secs[i] = (sec + 1) as f32;
+                // IDLE-HOME-LEASH discriminator: a REAL escape surfaces at
+                // his own shaft; a leash SNAPBACK lands near the site anchor
+                // (cx,cy). Record where he actually surfaced.
+                out_xy[i] = Some((pos.x, pos.y));
+            }
+        }
+        if out_secs.iter().all(|s| *s > 0.0) {
+            break;
+        }
+    }
+
+    let mut results = Vec::new();
+    for (i, (label, wx, wy, _dx)) in candidates.iter().enumerate() {
+        let (sx, sy) = (cx + candidates[i].3, cy);
+        let dist_to_own_shaft = out_xy[i]
+            .map(|(x, y)| ((x - sx as f32).powi(2) + (y - sy as f32).powi(2)).sqrt());
+        let dist_to_anchor = out_xy[i]
+            .map(|(x, y)| ((x - cx as f32).powi(2) + (y - cy as f32).powi(2)).sqrt());
+        results.push(serde_json::json!({
+            "shaft": label,
+            "footprint": format!("{}x{}x{}", wx, wy, depth),
+            "route_kind": latched[i],
+            "out_secs": out_secs[i],
+            "out_dist_own_shaft": dist_to_own_shaft,
+            "out_dist_anchor": dist_to_anchor,
+        }));
+    }
+    // Control PASS = organic stair escape well before the 60s backstop AND no
+    // route descriptor ever latched (stairs are unowned by design). A ladder
+    // winner = latched ConstructedLadder (leg 2), with the control proving the
+    // planner prefers stairs wherever they fit (leg 1: this candidate's
+    // narrowness — not planner mood — is what excluded the stair).
+    let control_stair = out_secs[0] > 0.0 && out_secs[0] <= 45.0 && latched[0].is_none();
+    let winner_idx = (1..candidates.len())
+        .find(|&i| latched[i].as_deref() == Some("ConstructedLadder"));
+    let winner = if control_stair {
+        winner_idx.map_or("NONE", |i| candidates[i].0)
+    } else {
+        "CONTROL-FAILED"
+    };
+
+    let result = serde_json::json!({
+        "candidates": results,
+        "control_organic_stair_escape": control_stair,
+        "b58_geom_winner": winner,
+    });
+    println!("{result}");
+    println!(
+        "B58-GEOM-PROBE: {}",
+        match winner {
+            "NONE" => "NO-WINNER — candidate band may be EMPTY (architect contingency): no swept shaft latched ConstructedLadder".to_string(),
+            "CONTROL-FAILED" => "CONTROL-FAILED — 3x3 did not stair-escape; probe invalid, diagnose before trusting any candidate".to_string(),
+            w => format!("WINNER={w} (control stair-escaped organically; {w} latched ConstructedLadder — both legs proven)"),
+        }
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
 fn stuckjob_scenario(args: &Args) -> ExitCode {
     use common::terrain::{Block, BlockKind};
     use common::vol::ReadVol;

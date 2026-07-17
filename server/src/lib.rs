@@ -1141,6 +1141,52 @@ impl Server {
             .map(|(c, e)| (e.current(), e.maximum(), c.0.running))
     }
 
+    /// bastion (B5.8 fixture, FABLE-003-blessed SETUP-ONLY staging hook —
+    /// permitted-touch item 4): set a named colonist's energy to an absolute
+    /// `target` (drained-miner staging, Ben's ruling: a trapped miner is
+    /// mid-shift, not rested; FABLE-003 caps staging at target ≤ 0.1).
+    /// Constraints (all four, hers): Energy-component-ONLY (no other comp is
+    /// touched); SETUP-ONLY — calling after the episode marker is the
+    /// INV-HARNESS-ENERGY falsifier (`energy-stage-after-episode-start`,
+    /// FAIL-by-construction, same family as teleport/goto_clear); every call
+    /// emits a recorder staging event when the recorder is enabled; the
+    /// INV-HARNESS-ENERGY writer-inventory row is the fixture's evidence-side
+    /// obligation. Mutation via the comp's own `Energy::change_by`.
+    pub fn bastion_set_colonist_energy(&mut self, name: &str, target: f32) -> bool {
+        use specs::LendJoin;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let uids = ecs.read_storage::<common::uid::Uid>();
+        let mut energies = ecs.write_storage::<comp::Energy>();
+        let mut done = false;
+        let mut iter = (&colonists, &uids, &mut energies).lend_join();
+        while let Some((c, u, mut e)) = iter.next() {
+            if c.0.name == name {
+                let delta = target - e.current();
+                e.change_by(delta);
+                if crate::bastion_flight_recorder::enabled() {
+                    crate::bastion_flight_recorder::record_writer(
+                        crate::bastion_flight_recorder::WriterEvent {
+                            schema: "bastion.flight-recorder.writer/v1".into(),
+                            tick: 0,
+                            uid: u.0.get(),
+                            observation_sequence: 0,
+                            snapshot_stage: "harness-setup".into(),
+                            dispatcher_dependency_proven: false,
+                            writer: "harness-energy-stage".into(),
+                            move_dir: [0.0, 0.0],
+                            move_z: 0.0,
+                            target: None,
+                            note: format!("set_colonist_energy target={target}"),
+                        },
+                    );
+                }
+                done = true;
+            }
+        }
+        done
+    }
+
     /// bastion (FARM/PROD-2, harness hook): the COLONY-TOTAL count of an
     /// item def — loose ground items PLUS every colonist's bag (the
     /// seed-conservation invariant counts both: a fetched stack lives in
@@ -2084,6 +2130,26 @@ impl Server {
                 )
             })
             .collect()
+    }
+
+    /// bastion (B5.8 ladder-fixture geometry PROBE, harness read): the emitted
+    /// emergency `EmergencyTraversalKind` for a colonist by name — "CarvedStair"
+    /// (walkable, Phase-1), "ConstructedLadder" (ladder_pillar — the fixture's
+    /// target), or "NaturalShaft" (wrong climb kind). Read from the live route
+    /// descriptor board. This is the read leg of the architect's 2-part pre-build
+    /// proof that a candidate narrow shaft lands on ConstructedLadder, not a
+    /// stair and not NaturalShaft. `None` = no emergency route owned yet.
+    pub fn bastion_colonist_route_kind(&self, name: &str) -> Option<String> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let uids = ecs.read_storage::<common::uid::Uid>();
+        let board = ecs.read_resource::<crate::bastion_jobs::JobBoard>();
+        (&colonists, &uids)
+            .join()
+            .find(|(c, _)| c.0.name == name)
+            .and_then(|(_, u)| board.emergency_route_descriptors.get(u))
+            .map(|d| format!("{:?}", d.kind))
     }
 
     /// bastion (B4, harness hook): set a work priority on a colonist by
