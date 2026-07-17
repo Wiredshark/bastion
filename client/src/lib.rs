@@ -373,13 +373,13 @@ pub struct Client {
         Option<common::bastion::ZExtent>,
     )>,
     bastion_designations_rev: u64,
-    /// bastion (UI-4, row 62): the latest inspector reply — (target,
-    /// payload). `payload: None` = the target is not an inspectable
-    /// colonist (the panel renders nothing). Overwritten per reply; the
+    /// bastion (UI-4 row 62 → UI-5 row 62.2): the latest inspector reply —
+    /// (target, payload). `payload: None` = nothing Bastion-tracked sits at
+    /// the target (the panel renders nothing). Overwritten per reply; the
     /// HUD polls at ~1Hz while a panel is open.
     bastion_inspect: Option<(
-        common::uid::Uid,
-        Option<comp::bastion::BastionInspectPayload>,
+        comp::bastion::BastionInspectTarget,
+        Option<comp::bastion::BastionInspectKind>,
     )>,
     target_time_of_day: Option<TimeOfDay>,
     dt_adjustment: f64,
@@ -2046,19 +2046,20 @@ impl Client {
     /// when this moves — index-based incremental sync can't express removal.
     pub fn bastion_designations_rev(&self) -> u64 { self.bastion_designations_rev }
 
-    /// bastion (UI-4, row 62): request one colonist's inspector payload
-    /// (the HUD sends on selection + ~1Hz while its panel is open).
-    pub fn bastion_inspect_request(&mut self, target: common::uid::Uid) {
+    /// bastion (UI-4 row 62 → UI-5 row 62.2): request one object's inspector
+    /// payload — a colonist entity or a world cell (the HUD sends on selection
+    /// + ~1Hz while its panel is open).
+    pub fn bastion_inspect_request(&mut self, target: comp::bastion::BastionInspectTarget) {
         self.send_msg(ClientGeneral::BastionInspect { target });
     }
 
-    /// bastion (UI-4): the latest inspector reply — `(target, payload)`;
-    /// `payload: None` = not an inspectable colonist.
+    /// bastion (UI-4 → UI-5): the latest inspector reply — `(target, payload)`;
+    /// `payload: None` = nothing Bastion-tracked sits at the target.
     pub fn bastion_inspect(
         &self,
     ) -> Option<&(
-        common::uid::Uid,
-        Option<comp::bastion::BastionInspectPayload>,
+        comp::bastion::BastionInspectTarget,
+        Option<comp::bastion::BastionInspectKind>,
     )> {
         self.bastion_inspect.as_ref()
     }

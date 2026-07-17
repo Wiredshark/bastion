@@ -98,10 +98,11 @@ impl Sys {
             Option<common::bastion::ZExtent>,
             Option<(Vec3<i32>, Vec<Vec3<i32>>)>,
         )>,
-        // bastion (UI-4): inspector requests — target uids gathered here,
-        // resolved + answered in the post-join drain (the bastion_spawn
-        // deferral pattern; the payload sources can't be read in-join).
-        bastion_inspects: &mut Vec<common::uid::Uid>,
+        // bastion (UI-4 → UI-5): inspector requests — targets (an entity uid
+        // OR a world cell) gathered here, resolved + answered in the post-join
+        // drain (the bastion_spawn deferral pattern; the payload sources —
+        // JobBoard, item entities, terrain — can't be read in-join).
+        bastion_inspects: &mut Vec<common::comp::bastion::BastionInspectTarget>,
         world: &Arc<World>,
         index: &IndexOwned,
         controller: Option<&mut Controller>,
@@ -613,6 +614,121 @@ impl Sys {
     }
 }
 
+/// bastion (UI-5, row 62.2): resolve a world CELL to whatever Bastion-tracked
+/// object sits there, for the Universal Debug Inspector. Priority: an active
+/// job at the exact cell (most actionable) → a stockpile zone (with contents,
+/// the 51.64 legibility fix) → a farm plot (with crop growth) → a registered
+/// fell-set → nothing. READ-ONLY; runs in the post-join drain at request
+/// cadence (~1Hz per open panel), so the O(items) contents sum is affordable.
+#[allow(clippy::too_many_arguments)]
+fn resolve_cell_inspect(
+    cell: Vec3<i32>,
+    board: &crate::bastion_jobs::JobBoard,
+    terrain: &TerrainGrid,
+    pickup_items: &ReadStorage<'_, common::comp::PickupItem>,
+    positions: &WriteStorage<'_, common::comp::Pos>,
+    id_maps: &IdMaps,
+    colonists: &ReadStorage<'_, common::comp::Colonist>,
+) -> Option<common::comp::bastion::BastionInspectKind> {
+    use common::{
+        comp::bastion::{
+            BastionFarmInspect, BastionFellSetInspect, BastionInspectKind, BastionJobInspect,
+            BastionStockpileInspect,
+        },
+        vol::ReadVol,
+    };
+    use specs::Join;
+
+    // 1. An active job in the clicked XY column — the most actionable target.
+    // Matched by XY (a top-down overseer click) with the nearest z inside a
+    // generous window, so click-projection z-imprecision still lands the job.
+    if let Some(job) = board
+        .jobs
+        .values()
+        .filter(|j| j.pos.x == cell.x && j.pos.y == cell.y && (j.pos.z - cell.z).abs() <= 6)
+        .min_by_key(|j| (j.pos.z - cell.z).abs())
+    {
+        let claimant = job.claimed_by.and_then(|uid| {
+            id_maps
+                .uid_entity(uid)
+                .and_then(|e| colonists.get(e))
+                .map(|c| c.0.name.clone())
+        });
+        return Some(BastionInspectKind::Job(BastionJobInspect {
+            work: job.work,
+            pos: job.pos,
+            progress: job.progress,
+            claimant,
+            unreachable: job.unreachable,
+            needs_materials: job.needs_materials,
+            is_access: job.is_access,
+            stuck_strikes: job.stuck_strikes,
+        }));
+    }
+
+    // 2. A stockpile zone → its contents (the 51.64 legibility fix: a painted
+    // stockpile finally shows WHAT it holds, grouped by item, most first).
+    if let Some(zid) = board.stockpile_at(cell)
+        && let Some((_, region)) = board.stockpiles.iter().find(|(id, _)| *id == zid)
+    {
+        let mut tally: Vec<(String, u32)> = Vec::new();
+        let mut total = 0u32;
+        for (item, pos) in (pickup_items, positions).join() {
+            let ip = pos.0.map(|e| e.floor() as i32);
+            if !region.contains_point_xy(ip) {
+                continue;
+            }
+            let amount = item.amount() as u32;
+            total += amount;
+            let def = item
+                .item()
+                .item_definition_id()
+                .itemdef_id()
+                .unwrap_or("?")
+                .to_string();
+            if let Some(slot) = tally.iter_mut().find(|(d, _)| *d == def) {
+                slot.1 += amount;
+            } else {
+                tally.push((def, amount));
+            }
+        }
+        tally.sort_by(|a, b| b.1.cmp(&a.1));
+        return Some(BastionInspectKind::Stockpile(BastionStockpileInspect {
+            contents: tally,
+            total,
+        }));
+    }
+
+    // 3. A farm plot → the sampled cell's crop growth stage (flat plot: XY area).
+    if let Some((_, region)) = board.farms.iter().find(|(_, r)| r.contains_point_xy(cell)) {
+        let growth = terrain.get(cell).ok().and_then(|b| {
+            b.get_attr::<common::terrain::sprite::Growth>()
+                .ok()
+                .map(|g| g.0)
+        });
+        let cells = ((region.max.x - region.min.x + 1).max(0)
+            * (region.max.y - region.min.y + 1).max(0)) as u32;
+        return Some(BastionInspectKind::Farm(BastionFarmInspect {
+            growth,
+            cells,
+        }));
+    }
+
+    // 4. A registered fell-set (a tree queued / mid-timber).
+    if let Some(fell) = board
+        .chop_fell_sets
+        .values()
+        .find(|cf| cf.cells.iter().any(|c| c.x == cell.x && c.y == cell.y))
+    {
+        return Some(BastionInspectKind::FellSet(BastionFellSetInspect {
+            remaining: fell.cells.len() as u32,
+            total: fell.wood_count,
+        }));
+    }
+
+    None
+}
+
 /// This system will handle new messages from clients
 #[derive(Default)]
 pub struct Sys;
@@ -670,6 +786,9 @@ impl<'a> System<'a> for Sys {
             ReadStorage<'a, common::comp::bastion::Mood>,
             ReadStorage<'a, common::comp::bastion::Arbiter>,
             ReadStorage<'a, common::rtsim::RtSimEntity>,
+            // UI-5 (row 62.2): dropped-item entities — a stockpile cell's
+            // contents are summed from these in the same post-join drain.
+            ReadStorage<'a, common::comp::PickupItem>,
         ),
     );
 
@@ -716,6 +835,7 @@ impl<'a> System<'a> for Sys {
                 insp_moods,
                 insp_arbiters,
                 insp_rtsim_entities,
+                insp_pickup_items,
             ),
         ): Self::SystemData,
     ) {
@@ -1056,57 +1176,77 @@ impl<'a> System<'a> for Sys {
                 if let Some((requester, targets)) = bastion_inspects_update {
                     if let Some(client) = clients.get(*requester) {
                         for target in targets.drain(..) {
-                            let payload =
-                                id_maps.uid_entity(target).and_then(|e| {
-                                    let colonist = insp_colonists.get(e)?;
-                                    let needs = insp_needs.get(e)?;
-                                    let (p4, consc, neur) = insp_rtsim_entities
-                                        .get(e)
-                                        .and_then(|re| {
-                                            let data = rtsim.state().data();
-                                            data.npcs.get(*re).map(|npc| {
-                                                use common::rtsim::PersonalityTrait as PT;
-                                                (
+                            use common::comp::bastion::{BastionInspectKind, BastionInspectTarget};
+                            let payload = match target {
+                                // UI-5: a world cell → whatever Bastion object
+                                // sits there (job / stockpile / farm / fell-set).
+                                BastionInspectTarget::Cell(cell) => resolve_cell_inspect(
+                                    cell,
+                                    &job_board,
+                                    &terrain,
+                                    &insp_pickup_items,
+                                    &positions,
+                                    &id_maps,
+                                    &insp_colonists,
+                                ),
+                                // UI-4: an entity → the colonist inner state.
+                                BastionInspectTarget::Entity(uid) => id_maps
+                                    .uid_entity(uid)
+                                    .and_then(|e| {
+                                        let colonist = insp_colonists.get(e)?;
+                                        let needs = insp_needs.get(e)?;
+                                        let (p4, consc, neur) = insp_rtsim_entities
+                                            .get(e)
+                                            .and_then(|re| {
+                                                let data = rtsim.state().data();
+                                                data.npcs.get(*re).map(|npc| {
+                                                    use common::rtsim::PersonalityTrait as PT;
                                                     (
-                                                        npc.personality.is(PT::Adventurous),
-                                                        npc.personality.is(PT::Worried),
-                                                        npc.personality.is(PT::Sociable)
-                                                            || npc.personality
-                                                                .is(PT::Extroverted),
-                                                        npc.personality.is(PT::Introverted),
-                                                    ),
-                                                    npc.personality.is(PT::Conscientious),
-                                                    npc.personality.is(PT::Neurotic),
-                                                )
+                                                        (
+                                                            npc.personality.is(PT::Adventurous),
+                                                            npc.personality.is(PT::Worried),
+                                                            npc.personality.is(PT::Sociable)
+                                                                || npc
+                                                                    .personality
+                                                                    .is(PT::Extroverted),
+                                                            npc.personality.is(PT::Introverted),
+                                                        ),
+                                                        npc.personality.is(PT::Conscientious),
+                                                        npc.personality.is(PT::Neurotic),
+                                                    )
+                                                })
                                             })
+                                            .unwrap_or((
+                                                (false, false, false, false),
+                                                false,
+                                                false,
+                                            ));
+                                        let arb = insp_arbiters.get(e);
+                                        Some(common::comp::bastion::BastionInspectPayload {
+                                            name: colonist.0.name.clone(),
+                                            hunger: needs.hunger,
+                                            rest: needs.rest,
+                                            recreation: needs.recreation,
+                                            mood: insp_moods.get(e).map_or(0.0, |m| m.0),
+                                            personality4: p4,
+                                            conscientious: consc,
+                                            neurotic: neur,
+                                            drive: arb
+                                                .map_or(common::comp::bastion::Drive::Idle, |a| {
+                                                    a.current
+                                                }),
+                                            last_scores: arb
+                                                .map_or((0.0, 0.0, 0.0), |a| a.last_scores),
+                                            // CHOP-PROGRESS-INDICATOR (row 51.61):
+                                            // current work job + progress, ridden
+                                            // to the inspector from the Arbiter.
+                                            activity: arb.and_then(|a| a.activity),
                                         })
-                                        .unwrap_or(((false, false, false, false), false, false));
-                                    let arb = insp_arbiters.get(e);
-                                    Some(common::comp::bastion::BastionInspectPayload {
-                                        name: colonist.0.name.clone(),
-                                        hunger: needs.hunger,
-                                        rest: needs.rest,
-                                        recreation: needs.recreation,
-                                        mood: insp_moods.get(e).map_or(0.0, |m| m.0),
-                                        personality4: p4,
-                                        conscientious: consc,
-                                        neurotic: neur,
-                                        drive: arb.map_or(
-                                            common::comp::bastion::Drive::Idle,
-                                            |a| a.current,
-                                        ),
-                                        last_scores: arb
-                                            .map_or((0.0, 0.0, 0.0), |a| a.last_scores),
-                                        // CHOP-PROGRESS-INDICATOR (row 51.61):
-                                        // current work job + progress, ridden
-                                        // to the inspector from the Arbiter.
-                                        activity: arb.and_then(|a| a.activity),
                                     })
-                                });
-                            let _ = client.send(ServerGeneral::BastionInspectInfo {
-                                target,
-                                payload,
-                            });
+                                    .map(BastionInspectKind::Colonist),
+                            };
+                            let _ =
+                                client.send(ServerGeneral::BastionInspectInfo { target, payload });
                         }
                     }
                 }

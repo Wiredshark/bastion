@@ -383,6 +383,14 @@ struct Args {
     #[arg(long)]
     chopfell_scenario: bool,
 
+    /// bastion (UI-5, row 62.2): the Universal Debug Inspector's
+    /// cell-resolution (data-before-display). Place a stockpile+items, a
+    /// Mine job, and a farm; inspecting each cell returns the RIGHT payload
+    /// variant (stockpile shows its contents, the 51.64 legibility fix),
+    /// and an empty cell returns None.
+    #[arg(long)]
+    inspect_scenario: bool,
+
     /// bastion (AUTON-2, row 50): THE DEATH-SPIRAL GATE (E1). Phase A: a
     /// RECOVERABLE shortage (stock < eaters, live pre-painted farm) —
     /// the trait-stagger splits the crew (anxious/default preempt to
@@ -667,6 +675,8 @@ fn main() -> ExitCode {
         arena_scenario(&args)
     } else if args.chopfell_scenario {
         chopfell_scenario(&args)
+    } else if args.inspect_scenario {
+        inspect_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -7835,10 +7845,201 @@ fn arena_scenario(args: &Args) -> ExitCode {
 ///     remainder ever;
 /// (4) drops conserved EXACTLY: one CHOP_DROP per Wood cell, none for
 ///     leaves, no dupes (small=3, big=9).
+fn inspect_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{BUILD_MATERIAL_ITEM, DesignationKind, Region},
+        comp::bastion::BastionInspectKind,
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-inspect-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-inspect".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-inspect-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = ground_z(&server, cx, cy).expect("no ground at site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 10)..=(cx + 10) {
+        for y in (cy - 10)..=(cy + 10) {
+            for z in (gz - 2)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 10) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 1);
+    tick(&mut server, 20);
+
+    // ── STOCKPILE with contents (the 51.64 legibility fix). ──
+    let sp = Region {
+        min: Vec3::new(cx - 6, cy - 6, gz + 1),
+        max: Vec3::new(cx - 4, cy - 4, gz + 1),
+    };
+    server.bastion_place_designation(sp, DesignationKind::Stockpile);
+    let sp_center = Vec3::new(cx - 5, cy - 5, gz + 1);
+    for _ in 0..3 {
+        server.bastion_spawn_item(
+            Vec3::new(
+                sp_center.x as f32 + 0.5,
+                sp_center.y as f32 + 0.5,
+                (gz + 2) as f32,
+            ),
+            BUILD_MATERIAL_ITEM,
+            1,
+        );
+    }
+    tick(&mut server, 20); // drops land + settle inside the zone
+
+    // ── MINE job (a designation-in-progress) on the rock slab. ──
+    let mine_cell = Vec3::new(cx + 5, cy + 5, gz);
+    server.bastion_place_designation(
+        Region {
+            min: mine_cell,
+            max: mine_cell,
+        },
+        DesignationKind::Mine,
+    );
+    tick(&mut server, 5);
+
+    // ── FARM plot (a cell may carry an active till JOB — job-first is fine). ──
+    let farm = Region {
+        min: Vec3::new(cx + 3, cy - 6, gz + 1),
+        max: Vec3::new(cx + 5, cy - 4, gz + 1),
+    };
+    server.bastion_place_designation(farm, DesignationKind::Farm);
+    let farm_cell = Vec3::new(cx + 4, cy - 5, gz + 1);
+    tick(&mut server, 5);
+
+    // ── PROBE each cell → the right payload variant (data before display). ──
+    let (sp_hit, sp_total) = match server.bastion_inspect_cell(sp_center) {
+        Some(BastionInspectKind::Stockpile(s)) => (true, s.total),
+        _ => (false, 0),
+    };
+    let mine_hit = matches!(
+        server.bastion_inspect_cell(mine_cell),
+        Some(BastionInspectKind::Job(ref j)) if j.work == common::bastion::WorkType::Mine
+    );
+    // A farm cell resolves to the plot OR its active till job — both are valid
+    // inspectables; record which and accept either.
+    let farm_kind = match server.bastion_inspect_cell(farm_cell) {
+        Some(BastionInspectKind::Farm(_)) => "farm",
+        Some(BastionInspectKind::Job(_)) => "job",
+        Some(_) => "other",
+        None => "none",
+    };
+    let farm_hit = farm_kind == "farm" || farm_kind == "job";
+    // An empty cell far from anything → None (no false hit, no crash).
+    let empty_cell = Vec3::new(cx + 40, cy + 40, gz + 1);
+    let empty_none = server.bastion_inspect_cell(empty_cell).is_none();
+
+    let result = serde_json::json!({
+        "inspect_stockpile_hit": sp_hit,
+        "inspect_stockpile_total": sp_total,
+        "inspect_mine_job_hit": mine_hit,
+        "inspect_farm_kind": farm_kind,
+        "inspect_farm_hit": farm_hit,
+        "inspect_empty_none": empty_none,
+    });
+    let pass = sp_hit && sp_total >= 3 && mine_hit && farm_hit && empty_none;
+    println!("{result}");
+    println!("INSPECT SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
 fn chopfell_scenario(args: &Args) -> ExitCode {
-    use common::bastion::CHOP_DROP_ITEM;
-    use common::terrain::{Block, BlockKind};
-    use common::vol::ReadVol;
+    use common::{
+        bastion::CHOP_DROP_ITEM,
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
     use vek::{Rgb, Vec2, Vec3};
 
     let started = Instant::now();

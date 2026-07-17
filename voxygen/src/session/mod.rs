@@ -162,10 +162,18 @@ pub struct SessionState {
     /// Last-seen `Client::bastion_designations_rev` (B5.5: rebuild-on-rev).
     bastion_designation_synced: u64,
     bastion_designation_shapes: Vec<DebugShapeId>,
-    /// bastion (UI-4, row 62): the inspector request throttle — the last
-    /// (target, send time); re-sends immediately on target change, else
-    /// at ~1Hz while a single colonist stays selected.
-    bastion_inspect_sent: Option<(common::uid::Uid, std::time::Instant)>,
+    /// bastion (UI-4 row 62 → UI-5 row 62.2): the inspector request throttle —
+    /// the last (target, send time); re-sends immediately on target change,
+    /// else at ~1Hz while the same object stays inspected.
+    bastion_inspect_sent: Option<(
+        common::comp::bastion::BastionInspectTarget,
+        std::time::Instant,
+    )>,
+    /// bastion (UI-5, row 62.2): the world CELL the overseer clicked to inspect
+    /// a non-colonist object (a job / stockpile / farm / fell-set). Set by an
+    /// empty-handed left-click that hits no colonist; cleared when a colonist
+    /// is selected or the click hits nothing Bastion-tracked.
+    bastion_inspect_cell: Option<vek::Vec3<i32>>,
     /// bastion (B5.6a): the Z-slice height the draped overlay was built
     /// against — a slice toggle re-clamps the draped surface, so the overlay
     /// rebuilds when this changes even if the rev didn't.
@@ -307,6 +315,7 @@ impl SessionState {
             bastion_designation_synced: 0,
             bastion_designation_shapes: Vec::new(),
             bastion_inspect_sent: None,
+            bastion_inspect_cell: None,
             bastion_designation_slice: None,
             bastion_visuals: crate::bastion::tools::VisualsMode::default(),
             bastion_designation_dirty: false,
@@ -490,6 +499,9 @@ impl SessionState {
     /// `BastionSelected` ECS markers (which also feed the B1.6 cutaway
     /// targets), the HUD info line, and a chat line for durable feedback.
     fn bastion_select_set(&mut self, targets: Vec<specs::Entity>) {
+        // UI-5: any explicit selection supersedes a cell-inspect (the caller
+        // re-sets it after, for the empty-click path).
+        self.bastion_inspect_cell = None;
         let info = {
             let client = self.client.borrow();
             let ecs = client.state().ecs();
@@ -581,8 +593,18 @@ impl SessionState {
         let max: Vec2<f32> = Vec2::partial_max(sel.anchor.xy(), sel.current.xy());
         // A tiny drag is a click: fall back to single-entity pick.
         if (max - min).magnitude_squared() < 2.0f32.powi(2) {
-            let picked = self.bastion_pick_entity(global_state);
-            self.bastion_select_set(picked.into_iter().collect());
+            // UI-5 (row 62.2): a colonist under the cursor selects it (UI-4);
+            // an empty-handed click inspects whatever Bastion object sits in
+            // that world column (a job / stockpile / farm / fell-set) — the
+            // "click → show" pattern widened past colonists.
+            let cell = sel.current.map(|e| e.floor() as i32);
+            match self.bastion_pick_entity(global_state) {
+                Some(e) => self.bastion_select_set(vec![e]),
+                None => {
+                    self.bastion_select_set(Vec::new());
+                    self.bastion_inspect_cell = Some(cell);
+                },
+            }
             return;
         }
         let targets: Vec<specs::Entity> = {
@@ -1140,82 +1162,146 @@ impl SessionState {
     /// else (no selection, multi-select, non-colonist reply) clears it.
     /// READ-ONLY end to end — the panel writes no sim state.
     fn bastion_sync_inspector(&mut self) {
+        use common::comp::bastion::{BastionInspectKind as Kind, BastionInspectTarget as Tgt};
+        // Prefer a single selected colonist (the UI-4 path); else a clicked
+        // world cell (UI-5 — a job / stockpile / farm / fell-set). Multi-select,
+        // or nothing at all, clears the panel.
         let target = if self.bastion_selected.len() == 1 {
             let client = self.client.borrow();
-            let ecs = client.state().ecs();
-            ecs.read_storage::<common::uid::Uid>()
+            client
+                .state()
+                .ecs()
+                .read_storage::<common::uid::Uid>()
                 .get(self.bastion_selected[0])
                 .copied()
+                .map(Tgt::Entity)
+        } else if self.bastion_selected.is_empty() {
+            self.bastion_inspect_cell.map(Tgt::Cell)
         } else {
             None
         };
-        let Some(uid) = target else {
+        let Some(target) = target else {
             self.bastion_inspect_sent = None;
             self.hud.bastion_set_inspect(Vec::new());
             return;
         };
         let stale = self
             .bastion_inspect_sent
-            .is_none_or(|(u, t)| u != uid || t.elapsed().as_secs_f32() > 1.0);
+            .is_none_or(|(t, at)| t != target || at.elapsed().as_secs_f32() > 1.0);
         if stale {
-            self.client.borrow_mut().bastion_inspect_request(uid);
-            self.bastion_inspect_sent = Some((uid, std::time::Instant::now()));
+            self.client.borrow_mut().bastion_inspect_request(target);
+            self.bastion_inspect_sent = Some((target, std::time::Instant::now()));
         }
         let lines = {
             let client = self.client.borrow();
             match client.bastion_inspect() {
-                Some((t, Some(p))) if *t == uid => {
-                    let mut traits: Vec<&str> = Vec::new();
-                    if p.personality4.0 {
-                        traits.push("Adventurous");
-                    }
-                    if p.personality4.1 {
-                        traits.push("Worried");
-                    }
-                    if p.personality4.2 {
-                        traits.push("Sociable");
-                    }
-                    if p.personality4.3 {
-                        traits.push("Introverted");
-                    }
-                    if p.conscientious {
-                        traits.push("Conscientious");
-                    }
-                    if p.neurotic {
-                        traits.push("Neurotic");
-                    }
-                    vec![
-                        format!("- {} -", p.name),
-                        format!(
-                            "Drive: {:?}  (W {:.2} / F {:.2} / I {:.2})",
-                            p.drive,
-                            p.last_scores.0,
-                            p.last_scores.1,
-                            p.last_scores.2
-                        ),
-                        // CHOP-PROGRESS-INDICATOR (row 51.61): the current
-                        // work job + its % — a base-cut (or any work) reads
-                        // as PROGRESSING here before it completes.
-                        match p.activity {
-                            Some((wt, frac)) => {
-                                format!("Doing: {:?} {:.0}%", wt, frac * 100.0)
+                Some((t, Some(kind))) if *t == target => match kind {
+                    Kind::Colonist(p) => {
+                        let mut traits: Vec<&str> = Vec::new();
+                        if p.personality4.0 {
+                            traits.push("Adventurous");
+                        }
+                        if p.personality4.1 {
+                            traits.push("Worried");
+                        }
+                        if p.personality4.2 {
+                            traits.push("Sociable");
+                        }
+                        if p.personality4.3 {
+                            traits.push("Introverted");
+                        }
+                        if p.conscientious {
+                            traits.push("Conscientious");
+                        }
+                        if p.neurotic {
+                            traits.push("Neurotic");
+                        }
+                        vec![
+                            format!("- {} -", p.name),
+                            format!(
+                                "Drive: {:?}  (W {:.2} / F {:.2} / I {:.2})",
+                                p.drive, p.last_scores.0, p.last_scores.1, p.last_scores.2
+                            ),
+                            // CHOP-PROGRESS-INDICATOR (row 51.61): the current
+                            // work job + its % — a base-cut (or any work) reads
+                            // as PROGRESSING here before it completes.
+                            match p.activity {
+                                Some((wt, frac)) => {
+                                    format!("Doing: {:?} {:.0}%", wt, frac * 100.0)
+                                },
+                                None => "Doing: (idle)".to_string(),
                             },
-                            None => "Doing: (idle)".to_string(),
+                            format!(
+                                "Hunger {:.2}  Rest {:.2}  Rec {:.2}",
+                                p.hunger, p.rest, p.recreation
+                            ),
+                            format!("Mood {:.2}", p.mood),
+                            if traits.is_empty() {
+                                "Traits: (none)".to_string()
+                            } else {
+                                format!("Traits: {}", traits.join(", "))
+                            },
+                        ]
+                    },
+                    Kind::Job(j) => vec![
+                        format!("- Job: {:?} -", j.work),
+                        format!("Progress {:.0}%", j.progress * 100.0),
+                        match &j.claimant {
+                            Some(name) => format!("Worker: {name}"),
+                            None => "Worker: (unclaimed)".to_string(),
                         },
-                        format!(
-                            "Hunger {:.2}  Rest {:.2}  Rec {:.2}",
-                            p.hunger, p.rest, p.recreation
-                        ),
-                        format!("Mood {:.2}", p.mood),
-                        if traits.is_empty() {
-                            "Traits: (none)".to_string()
+                        format!("at {}, {}, {}", j.pos.x, j.pos.y, j.pos.z),
+                        {
+                            let mut flags: Vec<&str> = Vec::new();
+                            if j.unreachable {
+                                flags.push("unreachable");
+                            }
+                            if j.needs_materials {
+                                flags.push("needs materials");
+                            }
+                            if j.is_access {
+                                flags.push("access");
+                            }
+                            if j.stuck_strikes > 0 {
+                                flags.push("stuck");
+                            }
+                            if flags.is_empty() {
+                                "Status: ok".to_string()
+                            } else {
+                                format!("Status: {}", flags.join(", "))
+                            }
+                        },
+                    ],
+                    Kind::Stockpile(s) => {
+                        let mut lines = vec![
+                            "- Stockpile -".to_string(),
+                            format!("{} item(s) total", s.total),
+                        ];
+                        if s.contents.is_empty() {
+                            lines.push("(empty — waiting for hauls)".to_string());
                         } else {
-                            format!("Traits: {}", traits.join(", "))
+                            for (def, n) in s.contents.iter().take(6) {
+                                let short = def.rsplit('.').next().unwrap_or(def);
+                                lines.push(format!("  {short} x{n}"));
+                            }
+                        }
+                        lines
+                    },
+                    Kind::Farm(f) => vec![
+                        "- Farm plot -".to_string(),
+                        format!("{} cell(s)", f.cells),
+                        match f.growth {
+                            Some(g) => format!("Crop growth: {g}"),
+                            None => "Untilled / no crop here".to_string(),
                         },
-                    ]
+                    ],
+                    Kind::FellSet(fs) => vec![
+                        "- Tree (marked to fell) -".to_string(),
+                        format!("{} / {} cells standing", fs.remaining, fs.total),
+                    ],
                 },
-                // Reply pending, stale, or a non-colonist target
-                // (payload: None) — show nothing, never crash.
+                // Reply pending, stale, or an empty target (payload: None) —
+                // show nothing, never crash.
                 _ => Vec::new(),
             }
         };

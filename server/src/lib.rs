@@ -1559,20 +1559,128 @@ impl Server {
             .and_then(|(_, _, a)| a.activity)
     }
 
+    /// bastion (UI-5, row 62.2): the CELL-inspect resolution as a probe — the
+    /// harness's "data before display" read for the Universal Debug Inspector.
+    /// Resolves a world cell to the Bastion object in its XY column (job →
+    /// stockpile+contents → farm → fell-set → None), exactly as the live wire
+    /// path (`sys::msg::in_game::resolve_cell_inspect`) does; keep the two in
+    /// lockstep. READ-ONLY.
+    pub fn bastion_inspect_cell(
+        &self,
+        cell: Vec3<i32>,
+    ) -> Option<common::comp::bastion::BastionInspectKind> {
+        use common::{
+            comp::bastion::{
+                BastionFarmInspect, BastionFellSetInspect, BastionInspectKind, BastionJobInspect,
+                BastionStockpileInspect,
+            },
+            vol::ReadVol,
+        };
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let board = ecs.read_resource::<crate::bastion_jobs::JobBoard>();
+        let id_maps = ecs.read_resource::<common::uid::IdMaps>();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+
+        // 1. An active job in the clicked XY column (nearest z in a window).
+        if let Some(job) = board
+            .jobs
+            .values()
+            .filter(|j| j.pos.x == cell.x && j.pos.y == cell.y && (j.pos.z - cell.z).abs() <= 6)
+            .min_by_key(|j| (j.pos.z - cell.z).abs())
+        {
+            let claimant = job.claimed_by.and_then(|uid| {
+                id_maps
+                    .uid_entity(uid)
+                    .and_then(|e| colonists.get(e))
+                    .map(|c| c.0.name.clone())
+            });
+            return Some(BastionInspectKind::Job(BastionJobInspect {
+                work: job.work,
+                pos: job.pos,
+                progress: job.progress,
+                claimant,
+                unreachable: job.unreachable,
+                needs_materials: job.needs_materials,
+                is_access: job.is_access,
+                stuck_strikes: job.stuck_strikes,
+            }));
+        }
+
+        // 2. A stockpile zone → its contents (grouped by item, most first).
+        if let Some(zid) = board.stockpile_at(cell)
+            && let Some((_, region)) = board.stockpiles.iter().find(|(id, _)| *id == zid)
+        {
+            let items = ecs.read_storage::<comp::PickupItem>();
+            let positions = ecs.read_storage::<comp::Pos>();
+            let mut tally: Vec<(String, u32)> = Vec::new();
+            let mut total = 0u32;
+            for (item, pos) in (&items, &positions).join() {
+                let ip = pos.0.map(|e| e.floor() as i32);
+                if !region.contains_point_xy(ip) {
+                    continue;
+                }
+                let amount = item.amount() as u32;
+                total += amount;
+                let def = item
+                    .item()
+                    .item_definition_id()
+                    .itemdef_id()
+                    .unwrap_or("?")
+                    .to_string();
+                if let Some(slot) = tally.iter_mut().find(|(d, _)| *d == def) {
+                    slot.1 += amount;
+                } else {
+                    tally.push((def, amount));
+                }
+            }
+            tally.sort_by(|a, b| b.1.cmp(&a.1));
+            return Some(BastionInspectKind::Stockpile(BastionStockpileInspect {
+                contents: tally,
+                total,
+            }));
+        }
+
+        // 3. A farm plot → the sampled cell's crop growth stage.
+        if let Some((_, region)) = board.farms.iter().find(|(_, r)| r.contains_point_xy(cell)) {
+            let growth = self.state.terrain().get(cell).ok().and_then(|b| {
+                b.get_attr::<common::terrain::sprite::Growth>()
+                    .ok()
+                    .map(|g| g.0)
+            });
+            let cells = ((region.max.x - region.min.x + 1).max(0)
+                * (region.max.y - region.min.y + 1).max(0)) as u32;
+            return Some(BastionInspectKind::Farm(BastionFarmInspect {
+                growth,
+                cells,
+            }));
+        }
+
+        // 4. A registered fell-set (a tree queued / mid-timber).
+        if let Some(fell) = board
+            .chop_fell_sets
+            .values()
+            .find(|cf| cf.cells.iter().any(|c| c.x == cell.x && c.y == cell.y))
+        {
+            return Some(BastionInspectKind::FellSet(BastionFellSetInspect {
+                remaining: fell.cells.len() as u32,
+                total: fell.wood_count,
+            }));
+        }
+
+        None
+    }
+
     /// bastion (AUTON-3, harness hook): the urgency-modulation
     /// personality axes for a named colonist — `(adventurous, worried,
     /// sociable_or_extroverted, introverted)`; the scenario predicts
     /// scores with the mechanism's own pub fn from these (mirror-free).
-    pub fn bastion_colonist_personality4(
-        &self,
-        name: &str,
-    ) -> Option<(bool, bool, bool, bool)> {
+    pub fn bastion_colonist_personality4(&self, name: &str) -> Option<(bool, bool, bool, bool)> {
         use specs::Join;
         let ecs = self.state.ecs();
         let entities = ecs.entities();
         let colonists = ecs.read_storage::<comp::Colonist>();
-        let rtsim_entities =
-            ecs.read_storage::<common::rtsim::RtSimEntity>();
+        let rtsim_entities = ecs.read_storage::<common::rtsim::RtSimEntity>();
         let rtsim = ecs.read_resource::<crate::rtsim::RtSim>();
         let data = rtsim.state().data();
         (&entities, &colonists, &rtsim_entities)

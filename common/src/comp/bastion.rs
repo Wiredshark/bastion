@@ -386,6 +386,76 @@ pub struct BastionInspectPayload {
     pub activity: Option<(crate::bastion::WorkType, f32)>,
 }
 
+/// bastion (UI-5, row 62.2): the Universal Debug Inspector's TARGET — the
+/// generalization of UI-4's colonist-only `Uid`. Either a loaded entity
+/// (a colonist, picked under the cursor) or a world CELL (a job /
+/// designation / stockpile / farm plot / crop the player clicked). A cell
+/// is the most general client-knowable handle: jobs carry server-internal
+/// ids the client can't name, so the client sends WHERE it clicked and the
+/// server resolves whatever Bastion-tracked object sits there.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum BastionInspectTarget {
+    Entity(crate::uid::Uid),
+    Cell(vek::Vec3<i32>),
+}
+
+/// bastion (UI-5, row 62.2): one inspected object's full internal state —
+/// the reply payload, dispatched per target kind. The `Colonist` arm reuses
+/// UI-4's [`BastionInspectPayload`] verbatim (zero churn to that path); the
+/// rest are new debug views. READ-ONLY by construction (the panel writes
+/// nothing back to the sim).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum BastionInspectKind {
+    Colonist(BastionInspectPayload),
+    Job(BastionJobInspect),
+    Stockpile(BastionStockpileInspect),
+    Farm(BastionFarmInspect),
+    FellSet(BastionFellSetInspect),
+}
+
+/// bastion (UI-5): a job / designation-in-progress debug view. The claimant
+/// is resolved to a NAME server-side so the client needn't map a `Uid`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BastionJobInspect {
+    pub work: crate::bastion::WorkType,
+    pub pos: vek::Vec3<i32>,
+    /// 0.0..=1.0 toward completion.
+    pub progress: f32,
+    pub claimant: Option<String>,
+    pub unreachable: bool,
+    pub needs_materials: bool,
+    /// True for a self-carved stair/ladder access job.
+    pub is_access: bool,
+    pub stuck_strikes: u8,
+}
+
+/// bastion (UI-5): a stockpile's contents — the 51.64 legibility fix (a
+/// painted stockpile finally shows WHAT it holds). Item def id → count,
+/// summed over the zone.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BastionStockpileInspect {
+    pub contents: Vec<(String, u32)>,
+    pub total: u32,
+}
+
+/// bastion (UI-5): a farm plot's cultivation state at the sampled cell.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BastionFarmInspect {
+    /// Growth stage of the sampled cell's crop sprite, if any (`None` =
+    /// tilled/unsown; higher = maturing).
+    pub growth: Option<u8>,
+    /// Cells in the plot region.
+    pub cells: u32,
+}
+
+/// bastion (UI-5): a tree fell-set mid-timber — how much of the crown is
+/// still standing.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BastionFellSetInspect {
+    pub remaining: u32,
+    pub total: u32,
+}
+
 /// bastion (AUTON-3, row 51): the DRIVE-ORDER guard — Flee's modulated
 /// urgency can never sink below this, and the floor sits strictly above
 /// Work's modulated CEILING (0.6), so the AUTON-0 safety ordering

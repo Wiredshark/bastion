@@ -248,12 +248,14 @@ pub enum ServerGeneral {
     BastionDesignationRemoved {
         region: common::bastion::Region,
     },
-    /// bastion (UI-4, row 62): one colonist's inspector payload, the
-    /// reply to `ClientGeneral::BastionInspect` (request/response on
-    /// selection — a single-target on-demand query, not comp-sync).
+    /// bastion (UI-4 row 62 → UI-5 row 62.2): one inspected object's
+    /// payload, the reply to `ClientGeneral::BastionInspect` (request/response
+    /// on selection — a single-target on-demand query, not comp-sync). The
+    /// echoed `target` lets the client match the reply to its live selection;
+    /// `payload` is `None` when nothing Bastion-tracked sits at the target.
     BastionInspectInfo {
-        target: Uid,
-        payload: Option<comp::bastion::BastionInspectPayload>,
+        target: comp::bastion::BastionInspectTarget,
+        payload: Option<comp::bastion::BastionInspectKind>,
     },
 }
 

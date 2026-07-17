@@ -147,14 +147,22 @@ pub enum ClientGeneral {
     /// bastion (B3): found the player colony — spawn the starting band near
     /// `pos`. Server validates (god mode active, count 1..=16) and spawns
     /// rtsim colonists.
-    BastionSpawnColony { pos: Vec3<f32>, count: u8 },
+    BastionSpawnColony {
+        pos: Vec3<f32>,
+        count: u8,
+    },
     /// bastion (B4): cancel designations — removes all jobs inside the
     /// region and releases their claims.
-    BastionCancelDesignation { region: common::bastion::Region },
-    /// bastion (UI-4, row 62): request one colonist's inspector payload
-    /// (sent on single-colonist selection + ~1Hz while the panel is
-    /// open). Server replies `ServerGeneral::BastionInspectInfo`.
-    BastionInspect { target: common::uid::Uid },
+    BastionCancelDesignation {
+        region: common::bastion::Region,
+    },
+    /// bastion (UI-4 row 62 → UI-5 row 62.2): request one object's inspector
+    /// payload — either a colonist entity or a world cell (a job /
+    /// designation / stockpile / farm / crop). Sent on selection + ~1Hz while
+    /// the panel is open. Server replies `ServerGeneral::BastionInspectInfo`.
+    BastionInspect {
+        target: common::comp::bastion::BastionInspectTarget,
+    },
 
     //Only in Game, via terrain stream
     TerrainChunkRequest {
