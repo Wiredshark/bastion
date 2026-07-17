@@ -558,11 +558,17 @@ fn plan_access(
         .iter()
         .filter_map(|(id, job)| (!board.emergency_access_jobs.contains_key(id)).then_some(job.pos))
         .collect();
+    // STAIR-LADDER Phase 1 (Ben's ruling): the descriptor is OPTIONAL — a plan
+    // with `None` is a WALKABLE plan (carved stairs): plain Mine digs the
+    // colonist walks out of, exactly baseline 7f087da317's shape. No route
+    // ownership, no traversal task, no terrain restoration (stairs are
+    // permanent infrastructure). Only climb-based plans (`Some`: ladder,
+    // shaft) take route ownership.
     let plan: Option<(
         Vec<Vec3<i32>>,
         DesignationKind,
         Option<Vec3<i32>>,
-        EmergencyRouteDescriptor,
+        Option<EmergencyRouteDescriptor>,
         Option<Vec<Vec3<i32>>>,
     )> = {
         let is_solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
@@ -587,47 +593,26 @@ fn plan_access(
         })
         .find_map(|f| {
             common::bastion::carve_ramp(f, to, &is_solid, &allowed).filter(|digs| !digs.is_empty())
-        })
-        // REQ-CK-CARVEDSTAIR: an EMERGENCY must never be routed onto a traversal
-        // kind that has no executor. Baseline 7f087da317 had ZERO occurrences of
-        // `EmergencyTraversalKind`/`CarvedStair`: its stairs arm was a plain
-        // `Some((digs, DesignationKind::Mine))` — a dig plan with no descriptor and
-        // no route ownership. Stage-1 wrapped that same plan in an
-        // `EmergencyRouteDescriptor { kind: CarvedStair, .. }`, so below it registers
-        // `emergency_route_members`/`_descriptors` — but `bastion_traversal.rs` has
-        // ZERO CarvedStair handling and every capability query answers false/None
-        // (the Stage-1 docs: "outside the Stage-1 slice"). A route-owned colonist
-        // yields movement to a traversal task that is therefore never created, so
-        // `goto_target` stays None and NOTHING EVER TELLS HIM TO MOVE.
-        //
-        // Measured (CK seed 1337, flight recorder): the pit colonist sat at
-        // route_kind=CarvedStair / phase=RouteOwnedWaiting / writer=link_queue_waiting
-        // / goto_target=None, Idle with on_wall None in 730/730 samples and energy
-        // pinned at 100.0, motionless until the teleport backstop bailed him out —
-        // past CK's 240s budget. 5/5 deterministic FAIL at HEAD vs 3/3 PASS at
-        // baseline. He was never failing to climb; he was never asked to.
-        //
-        // Emergencies now fall through to the ladder arm below, which is already
-        // enabled for them (`AUTO_LADDER_ACCESS || emergency_owner.is_some()`) and
-        // whose ConstructedLadder kind is the one Stage-1 actually implements.
-        // NON-emergency stair routing is untouched (it never takes route ownership),
-        // so the colony still plans stairs where they route.
-        .filter(|_| emergency_owner.is_none());
+        });
         match stairs {
-            Some(digs) => Some((
-                digs,
-                DesignationKind::Mine,
-                None,
-                EmergencyRouteDescriptor {
-                    kind: EmergencyTraversalKind::CarvedStair,
-                    approach: from,
-                    entry: from,
-                    top_anchor: to,
-                    dismount: to,
-                    wall_dir: None,
-                },
-                None,
-            )),
+            // STAIR-LADDER Phase 1 (REQ-CK-CARVEDSTAIR, Ben's ruling): a carved
+            // stair is WALKABLE — plain Mine digs the colonist walks out of, so
+            // it must NOT take route ownership. Descriptor `None` = the caller
+            // skips emergency_route_members/_descriptors AND the temp-terrain
+            // provenance (stairs are permanent infrastructure). This restores
+            // baseline 7f087da317's exact shape (`Some((digs, Mine))`, no route
+            // machinery), which Stage-1 broke by wrapping the same plan in a
+            // CarvedStair descriptor — a kind bastion_traversal.rs never
+            // implemented ("outside the Stage-1 slice"), so the route-owned
+            // colonist yielded movement to a task that was never created and
+            // NOTHING EVER TOLD HIM TO MOVE (recorder: RouteOwnedWaiting /
+            // goto_target=None / motionless 730/730 samples until the teleport
+            // backstop overran CK's budget — 5/5 FAIL vs baseline 3/3 PASS).
+            // Stairs walk; ladders climb (route-owned, ConstructedLadder — the
+            // kind Stage-1 DOES implement). Phase 2 (depth-based stair/ladder
+            // selection, readme/STAIR-LADDER-MINE-ACCESS-DESIGN.md) builds on
+            // exactly this split.
+            Some(digs) => Some((digs, DesignationKind::Mine, None, None, None)),
             // B6-hotfix (Ben live-test): AUTO-ladder access DISABLED — the
             // single-column auto-pillar caused a queue-fight ("they all
             // fight to use it") that did more harm than good. The colony
@@ -648,14 +633,14 @@ fn plan_access(
                             cells,
                             DesignationKind::Ladder,
                             Some(body_lane),
-                            EmergencyRouteDescriptor {
+                            Some(EmergencyRouteDescriptor {
                                 kind: EmergencyTraversalKind::ConstructedLadder,
                                 approach: body_lane,
                                 entry: body_lane,
                                 top_anchor: Vec3::new(body_lane.x, body_lane.y, top_z),
                                 dismount: to,
                                 wall_dir: None,
-                            },
+                            }),
                             Some(corridor),
                         )
                     })
@@ -677,14 +662,14 @@ fn plan_access(
                                     cells,
                                     DesignationKind::Mine,
                                     None,
-                                    EmergencyRouteDescriptor {
+                                    Some(EmergencyRouteDescriptor {
                                         kind: EmergencyTraversalKind::NaturalShaft,
                                         approach,
                                         entry: Vec3::new(column.x, column.y, from.z),
                                         top_anchor: Vec3::new(column.x, column.y, to.z),
                                         dismount: to,
                                         wall_dir: Some(wall_dir),
-                                    },
+                                    }),
                                     None,
                                 )
                             })
@@ -695,11 +680,20 @@ fn plan_access(
         }
     };
     let (cells, kind, body_lane, descriptor, approach_corridor) = plan?;
-    if let Some(owner) = emergency_owner {
+    // STAIR-LADDER Phase 1: only CLIMB-based plans (descriptor `Some`) take
+    // route ownership. A walkable stair plan registers NOTHING here — no
+    // members, no target, no descriptor — matching baseline 7f087da317, whose
+    // emergency stairs were plain digs with zero route machinery (and whose
+    // CK/conservation gates were green). Route-owning a kind with no executor
+    // is the exact CK entombment regression this split fixes.
+    let route_owned = descriptor.is_some();
+    if let Some(owner) = emergency_owner
+        && let Some(descriptor) = descriptor
+    {
         board.emergency_route_members.insert(owner, owner);
         // `to` is the planner's standable surface destination. Deriving a
-        // target later from the highest provenance cell is wrong for carved
-        // stairs: that cell is head clearance, two blocks above the step.
+        // target later from the highest provenance cell is wrong: that cell
+        // can be head clearance, two blocks above the step.
         board.emergency_route_targets.insert(owner, to);
         board.emergency_route_descriptors.insert(owner, descriptor);
         if let Some(corridor) = approach_corridor {
@@ -733,7 +727,12 @@ fn plan_access(
         }
         let id = board.next_id;
         board.next_id += 1;
-        if let Some(owner) = emergency_owner
+        // STAIR-LADDER Phase 1: temp-terrain provenance (restoration) only for
+        // ROUTE-OWNED plans (ladder/shaft). Walkable stairs are PERMANENT
+        // infrastructure — baseline behavior, and restoring steps out from
+        // under a walking colonist would re-entomb him.
+        if route_owned
+            && let Some(owner) = emergency_owner
             && let Ok(original) = terrain.get(pos).copied()
         {
             board.emergency_access_jobs.insert(id, owner);
