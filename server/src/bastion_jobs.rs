@@ -2912,6 +2912,16 @@ pub struct JobBoard {
     /// carries its own cadence.
     last_bark: HashMap<Uid, f64>,
     stuck_watch: HashMap<Uid, f32>,
+    /// bastion ((α) STUCKJOB fix, architect-ruled): last observed
+    /// `(job, progress)` per colonist — the stuck-watch teleport suppression
+    /// must be EARNED by verified job progress, never by claim-HOLDING alone.
+    /// Same-job progress increase since the last watchdog pass = earned reset;
+    /// a claim SWITCH only re-baselines (claim-churn cycling through
+    /// unreachable jobs must never suppress — the reopened-F5 hole the
+    /// STUCKJOB falsifier pins: 200s+ sealed-vault suppression vs the 60s
+    /// designed backstop). Stale entries are harmless (overwritten on the
+    /// next held-job pass; bounded by colonist count).
+    stuck_job_progress: HashMap<Uid, (common::bastion::JobId, f32)>,
     /// bastion (FR15-TIGHTDIG, flag-gated): per-colonist PROGRESS WINDOW —
     /// (window anchor position, window start time, committed-path index at
     /// window start). The drive-owned displacement signal: progressing =
@@ -11286,12 +11296,45 @@ impl<'a> System<'a> for Sys {
                 // (even inside a designation), so a churn-demoted or
                 // zone-orphaned colonist IS rescued. The chokepoint
                 // straggler sits in the pre-carved chamber (no designation)
-                // → teleports regardless. A digger's OWN job existing on
-                // the board is the real "it's working here" signal.
-                let has_live_job = active.is_some_and(|job| board.jobs.contains_key(&job.job));
-                if has_live_job {
-                    board.stuck_watch.remove(uid);
-                    continue;
+                // → teleports regardless. (A job merely EXISTING on the
+                // board turned out NOT to be a working signal — see the (α)
+                // correction below: it must be a job making PROGRESS.)
+                // (α) STUCKJOB fix (architect-ruled): HOLDING is not WORKING.
+                // The bare `has_live_job → wipe` form of this gate suppressed
+                // the teleport backstop for any claim-HOLDER regardless of
+                // progress — CK's pit colonist cycled claims (46→1→52) while
+                // wallrun-thrashing, backstop suppressed past the 240s budget,
+                // and the sealed-vault STUCKJOB falsifier pins the reopened-F5
+                // hole deterministically (claims on unreachable bait jobs →
+                // 200s+ suppression vs the 60s design; an uncompletable job
+                // was an INFINITE suppression). Now suppression must be
+                // EARNED: same-job progress increase since the last watchdog
+                // pass resets; a claim switch only re-baselines (churn never
+                // earns); a held claim with NO progress falls through and the
+                // stuck clock keeps accumulating toward the teleport. The
+                // legitimate protections stand: Arrived workers reset above,
+                // and a genuinely-digging colonist's job.progress advances
+                // every work tick, earning continuously (job-completion
+                // progress per the FR15 lesson — no beeline metric anywhere).
+                let held = active
+                    .and_then(|a| board.jobs.get(&a.job).map(|j| (a.job, j.progress)));
+                match held {
+                    Some((job_id, progress)) => {
+                        let earned = board
+                            .stuck_job_progress
+                            .get(uid)
+                            .is_some_and(|&(last_id, last_p)| {
+                                last_id == job_id && progress > last_p
+                            });
+                        board.stuck_job_progress.insert(*uid, (job_id, progress));
+                        if earned {
+                            board.stuck_watch.remove(uid);
+                            continue;
+                        }
+                    },
+                    None => {
+                        board.stuck_job_progress.remove(uid);
+                    },
                 }
                 let dest = surface_teleport_dest(&terrain, feet);
                 // BELOW GRADE = a real surface exists ABOVE, meaningfully

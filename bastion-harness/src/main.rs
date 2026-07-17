@@ -391,6 +391,16 @@ struct Args {
     #[arg(long)]
     inspect_scenario: bool,
 
+    /// bastion (STUCKJOB, the has_live_job watchdog falsifier — architect-ruled
+    /// (α)): a colonist trapped in a sealed pit who CLAIMS emergency stair-dig
+    /// jobs he can never complete (sole colonist: nobody else can dig, and the
+    /// pit floor can't work the stair cells) must STILL hit the teleport
+    /// backstop within budget. RED under the bare `has_live_job` stuck-watch
+    /// wipe (claim-holding suppresses the backstop forever — the reopened F5
+    /// hole); GREEN once suppression must be EARNED by verified job progress.
+    #[arg(long)]
+    stuckjob_scenario: bool,
+
     /// bastion (AUTON-2, row 50): THE DEATH-SPIRAL GATE (E1). Phase A: a
     /// RECOVERABLE shortage (stock < eaters, live pre-painted farm) —
     /// the trait-stagger splits the crew (anxious/default preempt to
@@ -677,6 +687,8 @@ fn main() -> ExitCode {
         chopfell_scenario(&args)
     } else if args.inspect_scenario {
         inspect_scenario(&args)
+    } else if args.stuckjob_scenario {
+        stuckjob_scenario(&args)
     } else if args.verify {
         verify(&args)
     } else {
@@ -7845,6 +7857,207 @@ fn arena_scenario(args: &Args) -> ExitCode {
 ///     remainder ever;
 /// (4) drops conserved EXACTLY: one CHOP_DROP per Wood cell, none for
 ///     leaves, no dupes (small=3, big=9).
+fn stuckjob_scenario(args: &Args) -> ExitCode {
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-stuckjob-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-stuckjob".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-stuckjob-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server.tick(Input::default(), dt).expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = ground_z(&server, cx, cy).expect("no ground at site center");
+    // A deep solid rock pad (the b6haul idiom, thickened so a 7-deep pit has
+    // honest solid walls all the way down).
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 10)..=(cx + 10) {
+        for y in (cy - 10)..=(cy + 10) {
+            for z in (gz - 9)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 10) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+    // EXACTLY ONE colonist: nobody exists to dig the emergency stair cells
+    // from outside, so the planned rescue can never complete — the pure
+    // claim-holding-without-progress state the falsifier needs.
+    let names = server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        1,
+    );
+    tick(&mut server, 30);
+
+    // A SEALED VAULT — not an open pit. A first rev used CK's open 3x3x7 pit
+    // and DISPROVED itself: in a clean 1-colonist world the emergency stair
+    // machinery worked perfectly (plan → claim → arrive → dig → ascend, out
+    // organically in 26s — Phase-1's walkable stairs behaving exactly as
+    // designed), so the suppression path never engaged. The gate bug needs
+    // what CK's trace actually showed: claims on jobs the colonist can NEVER
+    // reach or progress. Hence: a fully ROOFED vault (no stair plan, no
+    // organic exit of any kind — "emergency egress found no route") + remote
+    // BAIT Mine jobs on the surface he will claim and churn against forever.
+    let (nx, ny) = (cx, cy - 4);
+    for x in (nx - 1)..=(nx + 1) {
+        for y in (ny - 1)..=(ny + 1) {
+            // Interior air gz-7..=gz-2; the pad's rock at gz-1..=gz stays = a
+            // 2-thick roof. Floor rock at gz-8.
+            for z in (gz - 7)..=(gz - 2) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    // BAIT: two 3x3 Mine clusters on the far pad surface — claimable (they're
+    // live board jobs), permanently unreachable from inside the vault. Enough
+    // jobs that claim-churn (claim → path-fail → strike → next) spans the
+    // whole window, as CK's trace showed (claims cycling 46→1→52 for 240s+).
+    for (bx, by) in [(cx + 7, cy + 7), (cx - 7, cy + 7)] {
+        server.bastion_place_designation(
+            common::bastion::Region {
+                min: Vec3::new(bx - 1, by - 1, gz),
+                max: Vec3::new(bx + 1, by + 1, gz),
+            },
+            common::bastion::DesignationKind::Mine,
+        );
+    }
+    tick(&mut server, 2);
+    let trapped = names.first().cloned().unwrap_or_default();
+    server.bastion_teleport_colonist(
+        &trapped,
+        Vec3::new(nx as f32 + 0.5, ny as f32 + 0.5, (gz - 7) as f32),
+    );
+
+    // Budget: 200 sim-seconds. The teleport backstop is designed at
+    // STUCK_TELEPORT_SECS=60; the PASS bar is out WITHIN 150s (2.5x the
+    // design, far under CK's demonstrated 240s+ suppression). Claims are
+    // sampled EVERY TICK (a dig-claim can live <1s — the 1/s sampler of rev-1
+    // missed all of them); claims_seen is the falsifier's own precondition
+    // (no claims = the suppression path never engaged, run proves nothing).
+    let mut out_secs = -1.0f32;
+    let mut claim_samples = 0u32;
+    let mut samples = 0u32;
+    for i in 0..200u32 {
+        for _ in 0..30 {
+            tick(&mut server, 1);
+            if !server.bastion_claimed_job_positions().is_empty() {
+                claim_samples += 1;
+            }
+        }
+        samples += 1;
+        let out = server
+            .bastion_colonist_states()
+            .iter()
+            .any(|(n, p, _)| n == &trapped && p.z >= gz as f32 + 0.5);
+        if out && out_secs < 0.0 {
+            out_secs = (i + 1) as f32;
+            break;
+        }
+    }
+    let alive = server
+        .bastion_colonist_states()
+        .iter()
+        .any(|(n, _, _)| n == &trapped);
+    let out_within_budget = out_secs > 0.0 && out_secs <= 150.0;
+    let claims_seen = claim_samples > 0;
+
+    let result = serde_json::json!({
+        "stuckjob_out_secs": out_secs,
+        "stuckjob_out_within_budget": out_within_budget,
+        "stuckjob_claim_samples": claim_samples,
+        "stuckjob_samples": samples,
+        "stuckjob_claims_seen": claims_seen,
+        "stuckjob_alive": alive,
+    });
+    let pass = out_within_budget && alive && claims_seen;
+    println!("{result}");
+    println!("STUCKJOB SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
 fn inspect_scenario(args: &Args) -> ExitCode {
     use common::{
         bastion::{BUILD_MATERIAL_ITEM, DesignationKind, Region},
