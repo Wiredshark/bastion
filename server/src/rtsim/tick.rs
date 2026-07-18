@@ -22,6 +22,7 @@ use common::{
 };
 use common_ecs::{Job, Origin, Phase, System};
 use rand::RngExt;
+use rand_chacha::ChaCha8Rng;
 use rtsim::{
     ai::NpcSystemData,
     data::{
@@ -43,8 +44,8 @@ pub fn trader_loadout(
     permitted: impl FnMut(Good) -> bool,
     mut permitted_quality: impl FnMut(Quality) -> bool,
     coin_range: Range<f32>,
+    rng: &mut ChaCha8Rng,
 ) -> LoadoutBuilder {
-    let rng = &mut rand::rng();
     let mut backpack = Item::new_from_asset_expect("common.items.armor.misc.back.backpack");
     let mut bag1 = Item::new_from_asset_expect("common.items.armor.misc.bag.sturdy_red_backpack");
     let mut bag2 = Item::new_from_asset_expect("common.items.armor.misc.bag.sturdy_red_backpack");
@@ -120,11 +121,18 @@ pub fn trader_loadout(
         })
     };
 
-    let mut wares: Vec<Item> =
-        TradePricing::random_items(&mut stockmap, slots as u32, true, true, 16, permitted)
-            .into_iter()
-            .filter_map(|(n, a)| allow_item(n, &a))
-            .collect();
+    let mut wares: Vec<Item> = TradePricing::random_items_with_rng(
+        &mut stockmap,
+        slots as u32,
+        true,
+        true,
+        16,
+        permitted,
+        rng,
+    )
+    .into_iter()
+    .filter_map(|(n, a)| allow_item(n, &a))
+    .collect();
     sort_wares(&mut wares);
     transfer(&mut wares, &mut backpack);
     transfer(&mut wares, &mut bag1);
@@ -170,6 +178,64 @@ fn transfer(wares: &mut Vec<Item>, bag: &mut Item) {
     }
 }
 
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct Class7ItemObservation {
+    pub slot: u32,
+    pub definition_id: ItemDefinitionIdOwned,
+    pub item_hash: u64,
+    pub amount: u32,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct Class7ItemFixtureResult {
+    pub schema: &'static str,
+    pub npc_seed: u32,
+    pub lazy_loadout_seed: u64,
+    pub inventory: Vec<Class7ItemObservation>,
+    pub selected_use_item: Option<Class7ItemObservation>,
+}
+
+/// Millisecond-scale production-seam fixture for registry class 7. This runs
+/// the actual lazy farmer loadout, `SpawnEntityData` inventory construction,
+/// and production healing-slot selector without starting the server loop.
+pub fn bastion_class7_item_fixture(npc_seed: u32) -> Class7ItemFixtureResult {
+    let lazy_loadout_seed = npc_seed.wrapping_add(Npc::PERM_LAZY_LOADOUT) as u64;
+    let body = Body::Humanoid(
+        comp::humanoid::Body::iter()
+            .next()
+            .expect("humanoid body corpus is non-empty"),
+    );
+    let info = EntityInfo::at(Vec3::zero())
+        .with_body(body)
+        .with_lazy_loadout(farmer_loadout, lazy_loadout_seed);
+    let SpawnEntityData::Npc(data) = SpawnEntityData::from_entity_info(info) else {
+        unreachable!("ordinary EntityInfo creates an NPC")
+    };
+    let observe =
+        |slot: common::comp::inventory::slot::InvSlotId, item: &Item| Class7ItemObservation {
+            slot: slot.idx(),
+            definition_id: item.item_definition_id().to_owned(),
+            item_hash: item.item_hash(),
+            amount: item.amount(),
+        };
+    let mut inventory = data
+        .inventory
+        .slots_with_id()
+        .filter_map(|(slot, item)| item.as_ref().map(|item| observe(slot, item)))
+        .collect::<Vec<_>>();
+    inventory.sort_by_key(|item| item.slot);
+    let selected_use_item =
+        crate::sys::agent::action_nodes::select_healing_item(&data.inventory, true, 1.0)
+            .and_then(|slot| data.inventory.get(slot).map(|item| observe(slot, item)));
+    Class7ItemFixtureResult {
+        schema: "bastion.class7-item-identity/v1",
+        npc_seed,
+        lazy_loadout_seed,
+        inventory,
+        selected_use_item,
+    }
+}
+
 fn humanoid_config(profession: &Profession) -> &'static str {
     match profession {
         Profession::Farmer => "common.entity.village.farmer",
@@ -206,6 +272,7 @@ fn loadout_default(
     loadout: LoadoutBuilder,
     _economy: Option<&SiteInformation>,
     _time: Option<&(TimeOfDay, Calendar)>,
+    _rng: &mut ChaCha8Rng,
 ) -> LoadoutBuilder {
     loadout
 }
@@ -214,6 +281,7 @@ fn merchant_loadout(
     loadout_builder: LoadoutBuilder,
     economy: Option<&SiteInformation>,
     _time: Option<&(TimeOfDay, Calendar)>,
+    rng: &mut ChaCha8Rng,
 ) -> LoadoutBuilder {
     trader_loadout(
         loadout_builder,
@@ -226,6 +294,7 @@ fn merchant_loadout(
         },
         |quality| matches!(quality, Quality::Low | Quality::Common | Quality::Moderate),
         1000.0..3000.0,
+        rng,
     )
 }
 
@@ -233,6 +302,7 @@ fn farmer_loadout(
     loadout_builder: LoadoutBuilder,
     economy: Option<&SiteInformation>,
     _time: Option<&(TimeOfDay, Calendar)>,
+    rng: &mut ChaCha8Rng,
 ) -> LoadoutBuilder {
     trader_loadout(
         loadout_builder,
@@ -240,6 +310,7 @@ fn farmer_loadout(
         |good| matches!(good, Good::Food | Good::Coin),
         |quality| matches!(quality, Quality::Low | Quality::Common | Quality::Moderate),
         500.0..1400.0,
+        rng,
     )
 }
 
@@ -247,6 +318,7 @@ fn herbalist_loadout(
     loadout_builder: LoadoutBuilder,
     economy: Option<&SiteInformation>,
     _time: Option<&(TimeOfDay, Calendar)>,
+    rng: &mut ChaCha8Rng,
 ) -> LoadoutBuilder {
     trader_loadout(
         loadout_builder,
@@ -259,6 +331,7 @@ fn herbalist_loadout(
         },
         |quality| matches!(quality, Quality::Low | Quality::Common | Quality::Moderate),
         500.0..1400.0,
+        rng,
     )
 }
 
@@ -266,6 +339,7 @@ fn chef_loadout(
     loadout_builder: LoadoutBuilder,
     economy: Option<&SiteInformation>,
     _time: Option<&(TimeOfDay, Calendar)>,
+    rng: &mut ChaCha8Rng,
 ) -> LoadoutBuilder {
     trader_loadout(
         loadout_builder,
@@ -273,6 +347,7 @@ fn chef_loadout(
         |good| matches!(good, Good::Food | Good::Coin),
         |quality| matches!(quality, Quality::Low | Quality::Common | Quality::Moderate),
         500.0..1400.0,
+        rng,
     )
 }
 
@@ -280,6 +355,7 @@ fn blacksmith_loadout(
     loadout_builder: LoadoutBuilder,
     economy: Option<&SiteInformation>,
     _time: Option<&(TimeOfDay, Calendar)>,
+    rng: &mut ChaCha8Rng,
 ) -> LoadoutBuilder {
     trader_loadout(
         loadout_builder,
@@ -287,6 +363,7 @@ fn blacksmith_loadout(
         |good| matches!(good, Good::Armor | Good::Coin),
         |quality| matches!(quality, Quality::Low | Quality::Common | Quality::Moderate),
         500.0..1400.0,
+        rng,
     )
 }
 
@@ -294,6 +371,7 @@ fn hunter_loadout(
     loadout_builder: LoadoutBuilder,
     economy: Option<&SiteInformation>,
     _time: Option<&(TimeOfDay, Calendar)>,
+    rng: &mut ChaCha8Rng,
 ) -> LoadoutBuilder {
     trader_loadout(
         loadout_builder,
@@ -301,6 +379,7 @@ fn hunter_loadout(
         |good| matches!(good, Good::Tools | Good::Coin),
         |quality| matches!(quality, Quality::Low | Quality::Common | Quality::Moderate),
         500.0..1400.0,
+        rng,
     )
 }
 
@@ -308,6 +387,7 @@ fn alchemist_loadout(
     loadout_builder: LoadoutBuilder,
     economy: Option<&SiteInformation>,
     _time: Option<&(TimeOfDay, Calendar)>,
+    rng: &mut ChaCha8Rng,
 ) -> LoadoutBuilder {
     trader_loadout(
         loadout_builder,
@@ -320,16 +400,13 @@ fn alchemist_loadout(
         },
         |quality| matches!(quality, Quality::Low | Quality::Common | Quality::Moderate),
         500.0..1400.0,
+        rng,
     )
 }
 
 fn profession_extra_loadout(
     profession: Option<&Profession>,
-) -> fn(
-    LoadoutBuilder,
-    Option<&SiteInformation>,
-    time: Option<&(TimeOfDay, Calendar)>,
-) -> LoadoutBuilder {
+) -> common::generation::LazyLoadoutCreator {
     match profession {
         Some(Profession::Merchant) => merchant_loadout,
         Some(Profession::Farmer) => farmer_loadout,
@@ -387,7 +464,10 @@ fn get_npc_entity_info(
                 },
             )
             .with_economy(economy.as_ref())
-            .with_lazy_loadout(profession_extra_loadout(Some(&profession)))
+            .with_lazy_loadout(
+                profession_extra_loadout(Some(&profession)),
+                npc.seed.wrapping_add(Npc::PERM_LAZY_LOADOUT) as u64,
+            )
             .with_alias(npc.get_name())
             .with_agent_mark(profession_agent_mark(Some(&profession)))
     } else {

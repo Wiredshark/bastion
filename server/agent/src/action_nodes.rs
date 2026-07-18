@@ -48,6 +48,91 @@ use vek::*;
 #[cfg(feature = "use-dyn-lib")]
 use {crate::LIB, std::ffi::CStr};
 
+fn effect_healing_value(effect: &Effect) -> (f32, f32) {
+    let mut value = 0.0;
+    let mut heal_reduction = 0.0;
+    match effect {
+        Effect::Health(HealthChange { amount, .. }) => value += *amount,
+        Effect::Buff(BuffEffect { kind, data, .. }) => {
+            if let Some(duration) = data.duration {
+                for effect in kind.effects(data, None) {
+                    match effect {
+                        comp::BuffEffect::HealthChangeOverTime { rate, kind, .. } => {
+                            value += match kind {
+                                comp::ModifierKind::Additive => rate * duration.0 as f32,
+                                comp::ModifierKind::Multiplicative => {
+                                    (1.0 + rate).powf(duration.0 as f32)
+                                },
+                            };
+                        },
+                        comp::BuffEffect::ItemEffectReduction(amount) => {
+                            heal_reduction = heal_reduction + amount - heal_reduction * amount;
+                        },
+                        _ => {},
+                    }
+                }
+                value += data.strength * data.duration.map_or(0.0, |d| d.0 as f32);
+            }
+        },
+        _ => {},
+    }
+    (value, heal_reduction)
+}
+
+fn healing_value(item: &Item, relaxed: bool, heal_multiplier: f32) -> i32 {
+    let mut value = 0.0;
+    let mut heal_multiplier_value = 1.0;
+    if let ItemKind::Consumable { kind, effects, .. } = &*item.kind()
+        && (matches!(kind, ConsumableKind::Drink)
+            || (relaxed && matches!(kind, ConsumableKind::Food)))
+    {
+        match effects {
+            Effects::Any(effects) => {
+                for effect in effects.iter() {
+                    let (add, red) = effect_healing_value(effect);
+                    value += add / effects.len() as f32;
+                    heal_multiplier_value *= 1.0 - red / effects.len() as f32;
+                }
+            },
+            Effects::All(_) | Effects::One(_) => {
+                for effect in effects.effects() {
+                    let (add, red) = effect_healing_value(effect);
+                    value += add;
+                    heal_multiplier_value *= 1.0 - red;
+                }
+            },
+        }
+    }
+    if heal_multiplier_value < 1.0 && (heal_multiplier < 1.0 || relaxed) {
+        value *= 0.1;
+    }
+    value as i32
+}
+
+/// Return the exact inventory slot selected by the production healing rule.
+/// Exposed so deterministic fixtures can assert the behavioral choice rather
+/// than inferring it from a later trajectory split.
+pub fn select_healing_item(
+    inventory: &comp::Inventory,
+    relaxed: bool,
+    heal_multiplier: f32,
+) -> Option<comp::inventory::slot::InvSlotId> {
+    inventory
+        .slots_with_id()
+        .filter_map(|(id, slot)| match slot {
+            Some(item) if healing_value(item, relaxed, heal_multiplier) > 0 => Some((id, item)),
+            _ => None,
+        })
+        .max_by_key(|(_, item)| {
+            if relaxed {
+                -healing_value(item, relaxed, heal_multiplier)
+            } else {
+                healing_value(item, relaxed, heal_multiplier)
+            }
+        })
+        .map(|(id, _)| id)
+}
+
 impl AgentData<'_> {
     ////////////////////////////////////////
     // Action Nodes
@@ -965,96 +1050,7 @@ impl AgentData<'_> {
         if heal_multiplier < 0.5 {
             return false;
         }
-        // (healing_value, heal_reduction)
-        let effect_healing_value = |effect: &Effect| -> (f32, f32) {
-            let mut value = 0.0;
-            let mut heal_reduction = 0.0;
-            match effect {
-                Effect::Health(HealthChange { amount, .. }) => {
-                    value += *amount;
-                },
-                Effect::Buff(BuffEffect { kind, data, .. }) => {
-                    if let Some(duration) = data.duration {
-                        // We don't care about seeing the optional combat requirements that can be
-                        // tacked onto buff effects, so we'll just pass in None to this
-                        for effect in kind.effects(data, None) {
-                            match effect {
-                                comp::BuffEffect::HealthChangeOverTime { rate, kind, .. } => {
-                                    let amount = match kind {
-                                        comp::ModifierKind::Additive => rate * duration.0 as f32,
-                                        comp::ModifierKind::Multiplicative => {
-                                            (1.0 + rate).powf(duration.0 as f32)
-                                        },
-                                    };
-
-                                    value += amount;
-                                },
-                                comp::BuffEffect::ItemEffectReduction(amount) => {
-                                    heal_reduction =
-                                        heal_reduction + amount - heal_reduction * amount;
-                                },
-                                _ => {},
-                            }
-                        }
-                        value += data.strength * data.duration.map_or(0.0, |d| d.0 as f32);
-                    }
-                },
-
-                _ => {},
-            }
-
-            (value, heal_reduction)
-        };
-        let healing_value = |item: &Item| {
-            let mut value = 0.0;
-            let mut heal_multiplier_value = 1.0;
-
-            if let ItemKind::Consumable { kind, effects, .. } = &*item.kind()
-                && (matches!(kind, ConsumableKind::Drink)
-                    || (relaxed && matches!(kind, ConsumableKind::Food)))
-            {
-                match effects {
-                    Effects::Any(effects) => {
-                        // Add the average of all effects.
-                        for effect in effects.iter() {
-                            let (add, red) = effect_healing_value(effect);
-                            value += add / effects.len() as f32;
-                            heal_multiplier_value *= 1.0 - red / effects.len() as f32;
-                        }
-                    },
-                    Effects::All(_) | Effects::One(_) => {
-                        for effect in effects.effects() {
-                            let (add, red) = effect_healing_value(effect);
-                            value += add;
-                            heal_multiplier_value *= 1.0 - red;
-                        }
-                    },
-                }
-            }
-            // Prefer non-potion sources of healing when under at least one stack of potion
-            // sickness, or when incurring potion sickness is unnecessary
-            if heal_multiplier_value < 1.0 && (heal_multiplier < 1.0 || relaxed) {
-                value *= 0.1;
-            }
-            value as i32
-        };
-
-        let item = self
-            .inventory
-            .slots_with_id()
-            .filter_map(|(id, slot)| match slot {
-                Some(item) if healing_value(item) > 0 => Some((id, item)),
-                _ => None,
-            })
-            .max_by_key(|(_, item)| {
-                if relaxed {
-                    -healing_value(item)
-                } else {
-                    healing_value(item)
-                }
-            });
-
-        if let Some((id, _)) = item {
+        if let Some(id) = select_healing_item(self.inventory, relaxed, heal_multiplier) {
             use comp::inventory::slot::Slot;
             controller.push_action(ControlAction::InventoryAction(InventoryAction::Use(
                 Slot::Inventory(id),

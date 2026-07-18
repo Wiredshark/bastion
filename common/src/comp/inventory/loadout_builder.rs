@@ -1197,15 +1197,12 @@ impl LoadoutBuilder {
     #[must_use = "Method consumes builder and returns updated builder."]
     pub fn with_creator(
         mut self,
-        creator: fn(
-            LoadoutBuilder,
-            Option<&SiteInformation>,
-            time: Option<&(TimeOfDay, Calendar)>,
-        ) -> LoadoutBuilder,
+        creator: crate::generation::LazyLoadoutCreator,
         economy: Option<&SiteInformation>,
         time: Option<&(TimeOfDay, Calendar)>,
+        rng: &mut rand_chacha::ChaCha8Rng,
     ) -> LoadoutBuilder {
-        self = creator(self, economy, time);
+        self = creator(self, economy, time, rng);
 
         self
     }

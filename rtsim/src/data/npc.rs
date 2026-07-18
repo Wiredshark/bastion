@@ -375,6 +375,10 @@ impl Clone for Npc {
 
 impl Npc {
     pub const PERM_ENTITY_CONFIG: u32 = 1;
+    /// Stable, independent stream for loadouts evaluated when an RTSim NPC is
+    /// promoted into the ECS. Kept separate so adding lazy loadout draws never
+    /// shifts body/config generation.
+    pub const PERM_LAZY_LOADOUT: u32 = 3;
     const PERM_NAME: u32 = 0;
     const PERM_TIME: u32 = 2;
 

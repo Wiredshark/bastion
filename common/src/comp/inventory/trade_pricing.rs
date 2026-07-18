@@ -17,6 +17,7 @@ use crate::{
 };
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
+use rand::RngExt;
 use serde::Deserialize;
 use std::{borrow::Cow, cmp::Ordering};
 use tracing::{error, info, warn};
@@ -940,7 +941,7 @@ impl TradePricing {
     }
 
     // TODO: optimize repeated use
-    fn random_items_impl(
+    fn random_items_impl<R: RngExt + ?Sized>(
         &self,
         stockmap: &mut HashMap<Good, f32>,
         mut number: u32,
@@ -948,6 +949,7 @@ impl TradePricing {
         always_coin: bool,
         limit: u32,
         mut permitted: impl FnMut(Good) -> bool,
+        rng: &mut R,
     ) -> Vec<(ItemDefinitionIdOwned, u32)> {
         // 1. Pre-filter from all possible items to keep ones we want.
         // * Sellable
@@ -969,6 +971,9 @@ impl TradePricing {
                         || i.name != ItemDefinitionIdOwned::Simple(Self::COIN_ITEM.into()))
             })
             .collect();
+        // `PriceEntries` is backed by hash-based storage. Sampling by index is
+        // deterministic only after imposing a stable content order.
+        candidates.sort_by(|a, b| a.name.as_ref().cmp(&b.name.as_ref()));
         // 2. Start putting items
         let mut result = Vec::new();
         // 3. Put the coin stack
@@ -998,7 +1003,7 @@ impl TradePricing {
             if candidates.is_empty() {
                 break;
             }
-            let index = (rand::random::<f32>() * candidates.len() as f32).floor() as usize;
+            let index = (rng.random::<f32>() * candidates.len() as f32).floor() as usize;
             let result2 = candidates[index];
             let amount: u32 = if result2.stackable {
                 let max_amount = result2
@@ -1012,7 +1017,7 @@ impl TradePricing {
                     })
                     .fold(f32::INFINITY, f32::min)
                     .min(limit as f32);
-                (rand::random::<f32>() * (max_amount - 1.0)).floor() as u32 + 1
+                (rng.random::<f32>() * (max_amount - 1.0)).floor() as u32 + 1
             } else {
                 1
             };
@@ -1039,7 +1044,30 @@ impl TradePricing {
         limit: u32,
         permitted: impl FnMut(Good) -> bool,
     ) -> Vec<(ItemDefinitionIdOwned, u32)> {
-        TRADE_PRICING.random_items_impl(stock, number, selling, always_coin, limit, permitted)
+        let mut rng = rand::rng();
+        TRADE_PRICING.random_items_impl(
+            stock,
+            number,
+            selling,
+            always_coin,
+            limit,
+            permitted,
+            &mut rng,
+        )
+    }
+
+    /// Deterministic variant for callers that own a stable RNG stream.
+    #[must_use]
+    pub fn random_items_with_rng<R: RngExt + ?Sized>(
+        stock: &mut HashMap<Good, f32>,
+        number: u32,
+        selling: bool,
+        always_coin: bool,
+        limit: u32,
+        permitted: impl FnMut(Good) -> bool,
+        rng: &mut R,
+    ) -> Vec<(ItemDefinitionIdOwned, u32)> {
+        TRADE_PRICING.random_items_impl(stock, number, selling, always_coin, limit, permitted, rng)
     }
 
     #[must_use]
@@ -1157,6 +1185,7 @@ pub fn expand_loot_table(loot_table: &str) -> Vec<(f32, ItemDefinitionIdOwned, f
 // cd common && cargo test trade_pricing -- --nocapture
 #[cfg(test)]
 mod tests {
+    use super::{EqualitySet, PriceEntries, PriceEntry};
     use crate::{
         assets,
         assets::AssetExt,
@@ -1172,6 +1201,8 @@ mod tests {
         terrain::SpriteKind,
         trade::Good,
     };
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
     use tracing::{Level, info};
     use tracing_subscriber::{FmtSubscriber, filter::EnvFilter};
 
@@ -1181,6 +1212,34 @@ mod tests {
             .with_env_filter(EnvFilter::from_default_env())
             .try_init()
             .unwrap_or(());
+    }
+
+    #[test]
+    fn seeded_sampling_is_independent_of_candidate_storage_order() {
+        let entries = ["zeta", "alpha", "middle"];
+        let pricing = |order: &[&str]| TradePricing {
+            items: PriceEntries(
+                order
+                    .iter()
+                    .map(|name| PriceEntry {
+                        name: ItemDefinitionIdOwned::Simple((*name).to_owned()),
+                        price: MaterialUse(vec![(1.0, Good::Food)]),
+                        sell: true,
+                        stackable: false,
+                    })
+                    .collect(),
+            ),
+            equality_set: EqualitySet::default(),
+        };
+        let run = |pricing: &TradePricing| {
+            let mut stock = hashbrown::HashMap::from([(Good::Food, 100.0)]);
+            let mut rng = ChaCha8Rng::seed_from_u64(17);
+            pricing.random_items_impl(&mut stock, 3, true, false, 16, |_| true, &mut rng)
+        };
+        assert_eq!(
+            run(&pricing(&entries)),
+            run(&pricing(&["middle", "zeta", "alpha"]))
+        );
     }
 
     #[cfg(test)]
