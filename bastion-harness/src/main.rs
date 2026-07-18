@@ -4212,6 +4212,29 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
             server.bastion_set_colonist_energy(&member, 0.1);
             mutated = true;
         }
+        // N1C (sustained, 1/s, ARMED AT FIRST TASK): re-seal the ENTIRE rim
+        // ring at the standing z — no dismount can validate ever again, so
+        // the bounded outcome cycles (aborts / exhausted-replans, one shared
+        // counter) must terminate into the net. ARMING at task-present, not
+        // tick 0: a from-birth seal prevents any route from PLANNING at all
+        // and the bound machinery never engages (the 4th stimulus-window aim
+        // error — caught by the verifier's own premise witness). The member
+        // below stays personally unentombed; the net's dest search finds
+        // ground outside the ring.
+        if episode == "N1C" {
+            if !mutated && phase != "-" {
+                mutated = true;
+            }
+            if mutated && tick_i % 30 == 0 {
+                for dx in -2..=2 {
+                    for dy in -2..=2 {
+                        server
+                            .state_mut()
+                            .set_block(Vec3::new(sx + dx, sy + dy, gz + 1), rock);
+                    }
+                }
+            }
+        }
         // PREMISE-CHECK v2 (v1 note): the out-of-phase-Climb hard gate is
         // evaluated TAPE-SIDE by the wrapper (trajectory.jsonl carries
         // character_state per tick); the in-process flag stays false here.
@@ -4299,20 +4322,42 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         // spec-literal head-cell block (alive/unentombed REPORTED — an
         // entombment there is a genuine finding); N1B is the survivable
         // intent-faithful variant, where alive+unentombed ARE gated.
-        "N1" | "N1B" => {
-            let abort_semantics = mutated
+        "N1" => {
+            mutated
                 && !owned_climb_before_abort
                 && matches!(
                     abort_reason.as_deref(),
                     Some("route-invalid") | Some("stale-terrain-revision")
                 )
                 && teleports == 0
-                && post_abort_reservations <= 5;
-            if episode == "N1B" {
-                abort_semantics && alive && unentombed
-            } else {
-                abort_semantics
-            }
+                && post_abort_reservations <= 5
+        },
+        // N1B acceptance per the architect's clarity ruling: an ADVERSARIAL
+        // sealed-exit pit's legitimate floor is the tiered net (MT-07). PASS
+        // = clean classified abort on the mutated reservation, then EITHER
+        // the deliberate re-plan digs around the seal organically OR the
+        // bounded re-plans terminate into the net — alive, unentombed, out
+        // either way. The organic-required zero-teleport bar belongs to the
+        // real corpus seeds, not a deliberately-sealed pit.
+        "N1B" => {
+            mutated
+                && !owned_climb_before_abort
+                && matches!(
+                    abort_reason.as_deref(),
+                    Some("route-invalid") | Some("stale-terrain-revision")
+                )
+                && alive
+                && unentombed
+                && out_at.is_some()
+        },
+        // N1C (architect safety proof 2): the TRULY-PERMANENT seal — the
+        // sustained mutator re-seals the entire rim ring every tick, so no
+        // dig-around dismount can ever validate. PASS = the bounded re-plan
+        // releases terminate into the net: net fired, alive, unentombed,
+        // delivered. The verifier additionally requires the exhausted=true
+        // release line (the bound's own witness) in stdout.
+        "N1C" => {
+            mutated && alive && unentombed && teleports >= 1 && out_at.is_some()
         },
         // N3: wholesale rung removal makes route validity outrank physics
         // contact-loss — both are correct bounded production classifications
