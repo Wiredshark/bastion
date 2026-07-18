@@ -4039,6 +4039,10 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
     // RESERVATION TRANSITIONS after the first abort; a loop over a 300s
     // budget produces dozens, a bounded re-plan a couple.
     let mut post_abort_reservations = 0u32;
+    // N7B (class-12 falsifier): count task CYCLES (Reserved entries) — the
+    // cycling premise demands >= 3; each entry also triggers the per-cycle
+    // drain so every cycle carries an energy wait.
+    let mut n7b_cycles = 0u32;
     // Per-TICK sampling (calibration round 1: Reserved lasts 3 ticks — a 1s
     // poller never sees it, so N1/N4's phase-triggered mutators never fired
     // and N3's abort reason vanished with the task between polls).
@@ -4053,6 +4057,14 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         if phase != last_phase {
             if phase == "Reserved" && abort_reason.is_some() {
                 post_abort_reservations += 1;
+            }
+            if phase == "Reserved" && episode == "N7B" {
+                n7b_cycles += 1;
+                // Per-cycle drain: every cycle must traverse the energy-wait
+                // state, exercising the counter's CYCLING path (class 12 —
+                // N7 proved the single continuous wait; the corpus C-leg
+                // broke through the reset-on-cycle path this recreates).
+                server.bastion_set_colonist_energy(&member, 0.6);
             }
             phase_seen.push((phase.clone(), sec));
             last_phase = phase.clone();
@@ -4212,6 +4224,24 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
             server.bastion_set_colonist_energy(&member, 0.1);
             mutated = true;
         }
+        // N7B shares N1C's armed rim-ring seal (every task cycle aborts
+        // stale-terrain-revision) — combined with the per-cycle drain above,
+        // each cycle is abort → reacquire → ENERGY WAIT → task, the exact
+        // shape that stranded the corpus C-leg.
+        if episode == "N7B" {
+            if !mutated && phase != "-" {
+                mutated = true;
+            }
+            if mutated && tick_i % 30 == 0 {
+                for dx in -2..=2 {
+                    for dy in -2..=2 {
+                        server
+                            .state_mut()
+                            .set_block(Vec3::new(sx + dx, sy + dy, gz + 1), rock);
+                    }
+                }
+            }
+        }
         // N1C (sustained, 1/s, ARMED AT FIRST TASK): re-seal the ENTIRE rim
         // ring at the standing z — no dismount can validate ever again, so
         // the bounded outcome cycles (aborts / exhausted-replans, one shared
@@ -4277,6 +4307,7 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         "m2_owned_climb_before_abort": owned_climb_before_abort,
         "m2_post_abort_link": post_abort_link,
         "m2_post_abort_reservations": post_abort_reservations,
+        "m2_n7b_cycles": n7b_cycles,
         "m2_alive": alive,
         "m2_unentombed": unentombed,
         "m2_climb_out_of_phase": climb_out_of_phase,
@@ -4358,6 +4389,19 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         // release line (the bound's own witness) in stdout.
         "N1C" => {
             mutated && alive && unentombed && teleports >= 1 && out_at.is_some()
+        },
+        // N7B (class-12): the CYCLING energy-wait case must still terminate
+        // into the net. cycles >= 3 is the falsifier's own premise (no
+        // cycling = the mechanism under test never engaged).
+        "N7B" => {
+            staged_ok
+                && position_ok
+                && mutated
+                && n7b_cycles >= 3
+                && teleports >= 1
+                && alive
+                && unentombed
+                && out_at.is_some()
         },
         // N3: wholesale rung removal makes route validity outrank physics
         // contact-loss — both are correct bounded production classifications

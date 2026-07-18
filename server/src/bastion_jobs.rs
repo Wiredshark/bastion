@@ -821,6 +821,14 @@ fn plan_access(
     // CK/conservation gates were green). Route-owning a kind with no executor
     // is the exact CK entombment regression this split fixes.
     let route_owned = descriptor.is_some();
+    // BACKSTOP-OPT (B): sticky exhaustion — no new plan for a member the
+    // re-engage bound already released; the watch runs and the net delivers
+    // (cleared only at delivery / verified dismount).
+    if let Some(owner) = emergency_owner
+        && board.emergency_reengage_exhausted.contains(&owner)
+    {
+        return None;
+    }
     if let Some(owner) = emergency_owner
         && let Some(descriptor) = descriptor
     {
@@ -3011,6 +3019,19 @@ pub struct JobBoard {
     /// (The old broken release path was masking this wait from the watch by
     /// accident — N1B regression under the (A) fix.)
     pub(crate) emergency_energy_wait_ticks: HashMap<Uid, u32>,
+    /// BACKSTOP-OPT (B): STICKY exhaustion — a member the re-engage bound
+    /// released is barred from ALL new route ownership/membership until
+    /// DELIVERED (failsafe fire or verified dismount clears it). Without
+    /// this, re-emission started a fresh engagement with fresh counters and
+    /// the outer loop was unbounded (corpus C-leg: stranded the full budget).
+    pub(crate) emergency_reengage_exhausted: HashSet<Uid>,
+    /// BACKSTOP-OPT (C): members whose LAST abort had no escape progress
+    /// since the previous abort (no frontier completion, no TopExit reach).
+    /// In-set = the energy-wait hold is DENIED (a hopeless cycler's watch
+    /// must accrue so the net delivers under the bar); absent = benefit of
+    /// the doubt (first engagements and productive cycles keep the hold).
+    /// Cleared at every real-progress site and at delivery.
+    pub(crate) emergency_no_progress: HashSet<Uid>,
     /// Airborne pre-route owners establishing a physically supported origin.
     /// This state remains visible to the deep harness so a leaked/pending
     /// settle episode can never be mistaken for clean `[0,0,0]` teardown.
@@ -5040,6 +5061,9 @@ impl<'a> System<'a> for Sys {
                                         transaction.phase = BastionTraversalPhase::FrontierWork;
                                         transaction.phase_tick = tick.0;
                                         transaction.last_progress_tick = tick.0;
+                                        // (C): reaching the frontier IS
+                                        // escape progress — re-earn the hold.
+                                        board.emergency_no_progress.remove(uid);
                                     } else {
                                         transaction.phase = BastionTraversalPhase::Abort;
                                         transaction.abort_reason = Some(if !active_matches {
@@ -8149,8 +8173,18 @@ impl<'a> System<'a> for Sys {
                             && let Some(descriptor) =
                                 board.emergency_route_descriptors.get(&owner).copied()
                         {
-                            // The energy wait (if any) ended in recovery.
-                            board.emergency_energy_wait_ticks.remove(&uid);
+                            // BACKSTOP-OPT clear-site fix (architect-ruled;
+                            // registry class 12): the energy-wait counter
+                            // does NOT clear here — task creation is a CYCLE
+                            // boundary, not progress. Clearing per-creation
+                            // reset the 120s bound every abort→reacquire→wait
+                            // cycle and held a hopeless member's watch flat
+                            // forever (corpus C-leg, s7/s20: stranded the
+                            // full budget, energy-gate-wait wipes ×122). The
+                            // counter now clears ONLY at real progress —
+                            // frontier completion / verified dismount /
+                            // teardown — the same sites as the reengage
+                            // counter (the inconsistency was the hole).
                             board
                                 .bastion_traversal_tasks
                                 .insert(uid, BastionTraversalTask {
@@ -8240,7 +8274,14 @@ impl<'a> System<'a> for Sys {
                                 .entry(uid)
                                 .or_insert(0);
                             *waited += 1;
-                            if *waited <= ENERGY_WAIT_HOLD_TICKS {
+                            // (C): the hold requires escape progress since
+                            // the last abort (absent = first engagement =
+                            // benefit of the doubt). A hopeless cycler's
+                            // watch accrues so the net delivers UNDER the
+                            // scenario bar instead of after five slow cycles.
+                            if *waited <= ENERGY_WAIT_HOLD_TICKS
+                                && !board.emergency_no_progress.contains(&uid)
+                            {
                                 watch_wipe(&mut board.stuck_watch, &uid, "energy-gate-wait");
                             }
                         }
@@ -10557,6 +10598,7 @@ impl<'a> System<'a> for Sys {
                     .unwrap_or(requested_from);
                 if let Some((route_owner, route_target)) =
                     nearby_emergency_route(board, &terrain, from, EGRESS_BUBBLE_R)
+                    && !board.emergency_reengage_exhausted.contains(&uid)
                 {
                     board.emergency_settle_anchors.remove(&uid);
                     if let Some(entity) = entity
@@ -10833,6 +10875,7 @@ impl<'a> System<'a> for Sys {
                         }
                         if let Some((route_owner, route_target)) =
                             nearby_emergency_route(board, &terrain, from, EGRESS_BUBBLE_R)
+                            && !board.emergency_reengage_exhausted.contains(&uid)
                         {
                             board.emergency_route_members.insert(uid, route_owner);
                             board.egress_targets.insert(uid, route_target);
@@ -11189,8 +11232,11 @@ impl<'a> System<'a> for Sys {
                                 board.emergency_approach_corridors.remove(&member);
                                 board.emergency_frontier_reacquire.remove(&member);
                                 board.egress_targets.remove(&member);
-                                // Real progress: the consecutive-abort bound resets.
+                                // Real progress: both per-episode bounds reset
+                                // and the (C) progress flag is re-earned.
                                 board.emergency_reengage_aborts.remove(&member);
+                                board.emergency_energy_wait_ticks.remove(&member);
+                                board.emergency_no_progress.remove(&member);
                                 info!(
                                     owner = route_owner.0.get(),
                                     uid = member.0.get(),
@@ -11206,6 +11252,11 @@ impl<'a> System<'a> for Sys {
                                 board.emergency_partial_route_entries.remove(&member);
                                 board.emergency_approach_corridors.remove(&member);
                                 board.egress_targets.remove(&member);
+                                // (C): an abort clears the progress flag —
+                                // the NEXT cycle's energy-wait hold requires
+                                // fresh progress (frontier completion or
+                                // TopExit reach) to re-earn it.
+                                board.emergency_no_progress.insert(member);
                                 // BACKSTOP-OPT (B): bounded re-engage. Each
                                 // fruitless abort counts; the counter clears
                                 // on real progress (frontier completion /
@@ -11220,7 +11271,14 @@ impl<'a> System<'a> for Sys {
                                 *aborts += 1;
                                 if *aborts > EMERGENCY_REENGAGE_BOUND {
                                     board.emergency_reengage_aborts.remove(&member);
-                                    board.emergency_energy_wait_ticks.remove(&member);
+                                    // The energy-wait counter deliberately
+                                    // SURVIVES exhaustion (class 12): it is
+                                    // per-colonist-episode, cleared only at
+                                    // real progress or delivery — a re-emitted
+                                    // route must not restart the hold budget.
+                                    // (B) STICKY: barred from re-emission
+                                    // until delivered.
+                                    board.emergency_reengage_exhausted.insert(member);
                                     board.emergency_route_members.remove(&member);
                                     board.emergency_frontier_reacquire.remove(&member);
                                     watch_wipe(
@@ -11617,6 +11675,8 @@ impl<'a> System<'a> for Sys {
                     board.egress_no_progress_secs.remove(&member);
                     board.emergency_reengage_aborts.remove(&member);
                     board.emergency_energy_wait_ticks.remove(&member);
+                    board.emergency_reengage_exhausted.remove(&member);
+                    board.emergency_no_progress.remove(&member);
                     watch_wipe(&mut board.stuck_watch, &member, "route-cleanup");
                 }
                 for member in lost_members {
@@ -12062,6 +12122,13 @@ impl<'a> System<'a> for Sys {
                     board.emergency_partial_route_entries.remove(uid);
                     board.emergency_approach_corridors.remove(uid);
                     board.emergency_frontier_reacquire.remove(uid);
+                    // DELIVERY clears the per-episode bounds (class 12): the
+                    // colonist is safe on the surface; a stale counter would
+                    // wrongly deny the hold to a future legitimate recovery.
+                    board.emergency_reengage_aborts.remove(uid);
+                    board.emergency_energy_wait_ticks.remove(uid);
+                    board.emergency_reengage_exhausted.remove(uid);
+                    board.emergency_no_progress.remove(uid);
                     board.emergency_settle_anchors.remove(uid);
                     if let Some(route_owner) = board.emergency_route_members.remove(uid) {
                         board.emergency_safe_secs.remove(uid);
