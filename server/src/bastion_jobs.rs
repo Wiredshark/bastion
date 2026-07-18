@@ -2831,6 +2831,12 @@ pub(crate) struct EmergencyApproachCorridor {
     pub waypoints: Vec<Vec3<i32>>,
     pub next_idx: usize,
     pub started_tick: u64,
+    /// Commit-time member position: the stable anchor for the FIRST leg's
+    /// runtime re-validation sweep. Runtime sweeps validate PLANNED SEGMENTS
+    /// (origin→wp0, wp[i-1]→wp[i]), never live-position→waypoint — a moving
+    /// member's off-center transit clipped the route's OWN rung cell and
+    /// self-destructed the corridor (M2 layer 2; registry class 10 kin).
+    pub origin: Vec3<f32>,
 }
 
 /// REQ-0087: the emergency corridor's collision-validated cursor is stricter
@@ -7683,6 +7689,7 @@ impl<'a> System<'a> for Sys {
                                             waypoints,
                                             next_idx: 0,
                                             started_tick: tick.0,
+                                            origin: pos.0,
                                         },
                                     );
                                     if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
@@ -7759,12 +7766,29 @@ impl<'a> System<'a> for Sys {
                                             break;
                                         }
                                     }
+                                    // (ii) PLANNED-SEGMENT anchoring (architect-ruled, M2
+                                    // layer 2): the runtime re-validation sweeps the PLANNED
+                                    // segment — commit origin→wp0, then wp[i-1]→wp[i] — never
+                                    // live-position→waypoint. A moving member's off-center
+                                    // transit swept through the route's OWN first-rung cell
+                                    // and self-destructed the corridor (4 commit/invalidate
+                                    // cycles → creation reject → backstop). The sweep's job
+                                    // is terrain-CHANGE detection under the plan; transit
+                                    // safety is physics', arrival is endpoint_ready's.
+                                    let segment_origin = if corridor.next_idx == 0 {
+                                        corridor.origin
+                                    } else {
+                                        corridor.waypoints[corridor.next_idx - 1]
+                                            .map(|value| value as f32)
+                                            + Vec3::new(0.5, 0.5, 0.0)
+                                    };
                                     (
                                         corridor.entry,
                                         corridor.next_idx,
                                         corridor.waypoints.len(),
                                         corridor.waypoints.get(corridor.next_idx).copied(),
                                         corridor.started_tick,
+                                        segment_origin,
                                     )
                                 });
                             if let Some((
@@ -7773,6 +7797,7 @@ impl<'a> System<'a> for Sys {
                                 waypoint_count,
                                 Some(waypoint),
                                 started_tick,
+                                segment_origin,
                             )) = corridor_step
                             {
                                 let target =
@@ -7780,11 +7805,11 @@ impl<'a> System<'a> for Sys {
                                 let runtime_hit = cylinder.and_then(|cylinder| {
                                     if next_idx == 0 {
                                         emergency_initial_support_aware_sweep(
-                                            &*terrain, pos.0, target, cylinder,
+                                            &*terrain, segment_origin, target, cylinder,
                                         )
                                     } else {
                                         common_systems::phys::cylinder_sweep_first_collision(
-                                            &*terrain, pos.0, target, cylinder,
+                                            &*terrain, segment_origin, target, cylinder,
                                         )
                                     }
                                 });
@@ -7814,68 +7839,31 @@ impl<'a> System<'a> for Sys {
                                     );
                                     continue;
                                 }
-                                let previous_corridor_waypoint =
-                                    board.egress_targets.insert(uid, waypoint);
+                                board.egress_targets.insert(uid, waypoint);
                                 active.stuck_time = 0.0;
                                 active.best_dist = pos.0.distance(target);
                                 active.reset_dist = active.best_dist;
-                                if let Some(agent) = agent.as_deref_mut() {
-                                    // The activity slot is intentionally suppressed between
-                                    // route-owned writer passes, so it cannot identify a target
-                                    // generation. The board's corridor waypoint is the persistent
-                                    // route-owned cursor datum: it changes once when the cursor
-                                    // advances and remains stable across same-waypoint ticks.
-                                    let corridor_target_changed =
-                                        previous_corridor_waypoint != Some(waypoint);
-                                    if corridor_target_changed {
-                                        // REQ-0085: the corridor is a new route-owned movement
-                                        // target. Do not let no-progress samples collected for
-                                        // the previous activity immediately rotate this target's
-                                        // correct Chaser bearing. This clears only the stuck
-                                        // observation window; the normal Chaser route search and
-                                        // fresh-history stuck recovery remain authoritative.
-                                        agent.chaser.rebase_stuck_history();
-                                    }
-                                    let writer_diag = std::env::var("BASTION_GOTO_WRITER_DIAG_UID")
-                                        .ok()
-                                        .and_then(|value| value.parse::<u64>().ok())
-                                        == Some(uid.0.get());
-                                    if writer_diag {
-                                        let cached_route = agent.chaser.get_route();
-                                        info!(
-                                            tick = tick.0,
-                                            uid = uid.0.get(),
-                                            owner = owner.0.get(),
-                                            frontier_job = active.job,
-                                            position = ?pos.0,
-                                            previous_activity = ?agent.rtsim_controller.activity,
-                                            new_goto_target = ?target,
-                                            corridor_entry = ?entry,
-                                            corridor_waypoint = ?waypoint,
-                                            corridor_next_idx = next_idx,
-                                            corridor_waypoint_count = waypoint_count,
-                                            ?previous_corridor_waypoint,
-                                            chaser_last_target = ?agent.chaser.last_target(),
-                                            chaser_route_target = ?agent.chaser.route_target(),
-                                            chaser_route_complete = ?agent.chaser.route_is_complete(),
-                                            chaser_route_next = ?cached_route.map(|route| route.next_idx()),
-                                            chaser_route_end = ?cached_route
-                                                .and_then(|route| route.get_path().end().copied()),
-                                            chaser_route_len = ?cached_route
-                                                .map(|route| route.get_path().len()),
-                                            chaser_state = ?agent.chaser.state(),
-                                            corridor_target_changed,
-                                            stuck_history_rebased = corridor_target_changed,
-                                            writer = "bastion_jobs_corridor_handoff",
-                                            explicit_agent_to_bastion_jobs_dependency = false,
-                                            "bastion: route-owned corridor goto replacement"
-                                        );
-                                    }
-                                    agent.rtsim_controller.set_goto_with_endpoint(
-                                        target,
-                                        TRAVEL_SPEED,
-                                        EMERGENCY_CORRIDOR_ENDPOINT_TOLERANCE,
-                                    );
+                                // M2 CORRIDOR-MOVEMENT FIX (architect-ruled option b): drive
+                                // the member through the OWNED CONTROLLER — the same
+                                // single-writer path every task phase uses — instead of the
+                                // rtsim Goto slot. The Goto handoff DEADLOCKED by tolerance
+                                // inversion (writer-diag proven, 1822 handoffs): the generic
+                                // Chaser declares arrival at its ~1.5-block radius and emits
+                                // ZERO movement while this corridor's REQ-0087 cursor demands
+                                // 0.75 — the member freezes 1.05 blocks from the waypoint
+                                // forever (v4 corpus: B backstopped 6/6). The suppressor keeps
+                                // nulling agent/rtsim activity every pass, which now BLOCKS
+                                // competing writers instead of killing the mover: single-owner
+                                // by construction.
+                                let planar = target.xy() - pos.0.xy();
+                                if let Some(controller) = controllers.get_mut(entity) {
+                                    controller.inputs.move_dir =
+                                        if planar.magnitude_squared() > 0.01 {
+                                            planar.normalized()
+                                        } else {
+                                            Vec2::zero()
+                                        };
+                                    controller.inputs.move_z = 0.0;
                                 }
                                 if std::env::var_os("BASTION_EGRESS_DIAG").is_some()
                                     && tick.0 % 30 == 0
@@ -12749,6 +12737,7 @@ mod tests {
             waypoints: vec![Vec3::zero(), Vec3::unit_x()],
             next_idx: 0,
             started_tick: 7,
+            origin: Vec3::zero(),
         };
 
         assert!(emergency_corridor_owns_movement(
