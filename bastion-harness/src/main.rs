@@ -43,9 +43,12 @@ use tracing::{info, warn};
 #[command(name = "bastion-harness", about)]
 struct Args {
     /// Run a named scenario twice in isolated child processes and compare the
-    /// authoritative flight-recorder tapes. Supported values: b55-deep,
-    /// b58-ladder-integration-fixture, class7-item-identity, and
-    /// class7-agent-roundtrip.
+    /// authoritative flight-recorder tapes or structured production result.
+    /// Supported values: b55-deep, b58-ladder-integration-fixture,
+    /// world-summary, lod0-promotion,
+    /// archetype-entity-gen, needs-agent-state, bag1-agent-decision,
+    /// rtsim-dialogue-action,
+    /// class7-item-identity, and class7-agent-roundtrip.
     #[arg(long, value_name = "SCENARIO")]
     determinism_regression: Option<String>,
 
@@ -173,6 +176,16 @@ struct Args {
     /// demote/re-promote paths.
     #[arg(long, hide = true)]
     class7_agent_roundtrip_fixture: bool,
+
+    /// ARCH-003: emit the production world/entity aggregate as an
+    /// authoritative observation for the paired regression parent.
+    #[arg(long, hide = true)]
+    world_summary_determinism_fixture: bool,
+
+    /// ARCH-003: exercise production RTSim dialogue action identity under the
+    /// paired regression parent.
+    #[arg(long, hide = true)]
+    rtsim_dialogue_action_determinism_fixture: bool,
 
     /// M2: restrict the ladder fixture to a single episode (P0, N1..N6).
     #[arg(long, value_name = "EPISODE", hide = true)]
@@ -626,6 +639,10 @@ fn main() -> ExitCode {
         b58_scenario(&args)
     } else if args.b58_ladder_integration_fixture {
         b58_ladder_integration_fixture(&args)
+    } else if args.world_summary_determinism_fixture {
+        world_summary_determinism_fixture(&args)
+    } else if args.rtsim_dialogue_action_determinism_fixture {
+        rtsim_dialogue_action_determinism_fixture(args.seed)
     } else if args.class7_item_determinism_fixture {
         class7_item_determinism_fixture(args.seed)
     } else if args.class7_agent_roundtrip_fixture {
@@ -806,6 +823,69 @@ fn class7_item_determinism_fixture(seed: u32) -> ExitCode {
     let pass = envelope["result"]["selected_use_item"].is_object();
     println!(
         "CLASS7 ITEM DETERMINISM FIXTURE: {}",
+        if pass { "PASS" } else { "FAIL" }
+    );
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+fn write_determinism_observation(result: &serde_json::Value) {
+    let Some(path) = std::env::var_os("BASTION_DETERMINISM_OBSERVATION_PATH") else {
+        return;
+    };
+    let envelope = serde_json::json!({
+        "schema": "bastion.determinism-observation/v1",
+        "artifact_sha256": std::env::var("BASTION_FLIGHT_RECORDER_ARTIFACT_SHA256").ok(),
+        "seed": std::env::var("BASTION_FLIGHT_RECORDER_SEED").ok(),
+        "result": result,
+    });
+    let path = PathBuf::from(path);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create determinism evidence directory");
+    }
+    let mut file = std::fs::File::create(path).expect("create determinism observation");
+    serde_json::to_writer(&mut file, &envelope).expect("write determinism observation");
+    writeln!(file).expect("terminate determinism observation");
+}
+
+fn world_summary_determinism_fixture(args: &Args) -> ExitCode {
+    let (summary, _) = run_once(args);
+    let result = serde_json::to_value(summary).expect("serialize world summary observation");
+    write_determinism_observation(&result);
+    println!("{result}");
+    println!("WORLD SUMMARY DETERMINISM FIXTURE: PASS");
+    ExitCode::SUCCESS
+}
+
+fn rtsim_dialogue_action_determinism_fixture(seed: u32) -> ExitCode {
+    use common::{character::CharacterId, rtsim::Actor};
+
+    let mut controller = ::rtsim::data::npc::Controller::default();
+    let npc_seed = 0xBA57_10A6;
+    let mut dialogue_rng = ::rtsim::tick_rng(
+        seed,
+        0,
+        npc_seed ^ ::rtsim::data::npc::Controller::DIALOGUE_ID_RNG_SALT,
+    );
+    let target = Actor::Character(CharacterId(i64::from(seed)));
+    let first = controller.dialogue_start(target, &mut dialogue_rng);
+    let second = controller.dialogue_start(target, &mut dialogue_rng);
+    let result = serde_json::json!({
+        "tick": 0,
+        "writer": "rtsim::data::npc::Controller::dialogue_start",
+        "npc_seed": npc_seed,
+        "first_dialogue_id": first.id.0,
+        "second_dialogue_id": second.id.0,
+        "queued_actions": controller.actions.len(),
+    });
+    write_determinism_observation(&result);
+    println!("{result}");
+    let pass = first.id != second.id && controller.actions.len() == 2;
+    println!(
+        "RTSIM DIALOGUE ACTION DETERMINISM FIXTURE: {}",
         if pass { "PASS" } else { "FAIL" }
     );
     if pass {
@@ -11832,6 +11912,7 @@ fn needs_scenario(args: &Args) -> ExitCode {
         && demoted
         && persist_ok
         && names.len() == 2;
+    write_determinism_observation(&result);
     println!("{}", result);
     println!("NEEDS SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
@@ -12252,6 +12333,7 @@ fn archetype_scenario(args: &Args) -> ExitCode {
         "ag2_census_guard": census.2,
     });
     let pass = weights_ok && contrast && graceful;
+    write_determinism_observation(&result);
     println!("{}", result);
     println!("ARCHETYPE SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
@@ -13261,6 +13343,7 @@ fn bag1_scenario(args: &Args) -> ExitCode {
     // intents (Sit/Talk/Dance) are legitimate, so the bar is existential,
     // not universal. The run completing = no arm froze or panicked.
     let pass = promoted > 0 && movers_5 >= 1;
+    write_determinism_observation(&result);
     println!("{}", result);
     println!("BAG1 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
@@ -14167,6 +14250,7 @@ fn lod0_scenario(args: &Args) -> ExitCode {
         && back
         && skills_survived
         && inventory_survived;
+    write_determinism_observation(&result);
     println!("{}", result);
     println!("LOD0 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 

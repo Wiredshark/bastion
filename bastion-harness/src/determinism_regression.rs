@@ -120,6 +120,12 @@ struct Verdict {
 enum Scenario {
     B55Deep,
     B58LadderIntegration,
+    WorldSummary,
+    Lod0Promotion,
+    ArchetypeEntityGen,
+    NeedsAgentState,
+    Bag1AgentDecision,
+    RtsimDialogueAction,
     Class7ItemIdentity,
     Class7AgentRoundtrip,
 }
@@ -129,11 +135,19 @@ impl Scenario {
         match value {
             "b55-deep" => Ok(Self::B55Deep),
             "b58-ladder-integration-fixture" => Ok(Self::B58LadderIntegration),
+            "world-summary" => Ok(Self::WorldSummary),
+            "lod0-promotion" => Ok(Self::Lod0Promotion),
+            "archetype-entity-gen" => Ok(Self::ArchetypeEntityGen),
+            "needs-agent-state" => Ok(Self::NeedsAgentState),
+            "bag1-agent-decision" => Ok(Self::Bag1AgentDecision),
+            "rtsim-dialogue-action" => Ok(Self::RtsimDialogueAction),
             "class7-item-identity" => Ok(Self::Class7ItemIdentity),
             "class7-agent-roundtrip" => Ok(Self::Class7AgentRoundtrip),
             _ => Err(format!(
-                "unknown determinism scenario {value:?}; expected b55-deep or \
-                 b58-ladder-integration-fixture or class7-item-identity or class7-agent-roundtrip"
+                "unknown determinism scenario {value:?}; expected b55-deep, \
+                 b58-ladder-integration-fixture, world-summary, lod0-promotion, \
+                 archetype-entity-gen, needs-agent-state, bag1-agent-decision, \
+                 rtsim-dialogue-action, class7-item-identity, or class7-agent-roundtrip"
             )),
         }
     }
@@ -159,6 +173,14 @@ impl Scenario {
                     episode.into(),
                 ]);
             },
+            Self::WorldSummary => args.push("--world-summary-determinism-fixture".into()),
+            Self::Lod0Promotion => args.push("--lod0-scenario".into()),
+            Self::ArchetypeEntityGen => args.push("--archetype-scenario".into()),
+            Self::NeedsAgentState => args.push("--needs-scenario".into()),
+            Self::Bag1AgentDecision => args.push("--bag1-scenario".into()),
+            Self::RtsimDialogueAction => {
+                args.push("--rtsim-dialogue-action-determinism-fixture".into())
+            },
             Self::Class7ItemIdentity => args.push("--class7-item-determinism-fixture".into()),
             Self::Class7AgentRoundtrip => args.push("--class7-agent-roundtrip-fixture".into()),
         }
@@ -180,6 +202,25 @@ impl Scenario {
                     format!("M2-LADDER-EPISODE {episode}: FAIL"),
                 ))
             },
+            Self::WorldSummary => Ok((
+                "WORLD SUMMARY DETERMINISM FIXTURE: PASS".into(),
+                "WORLD SUMMARY DETERMINISM FIXTURE: FAIL".into(),
+            )),
+            Self::Lod0Promotion => Ok(("LOD0 SCENARIO: PASS".into(), "LOD0 SCENARIO: FAIL".into())),
+            Self::ArchetypeEntityGen => Ok((
+                "ARCHETYPE SCENARIO: PASS".into(),
+                "ARCHETYPE SCENARIO: FAIL".into(),
+            )),
+            Self::NeedsAgentState => {
+                Ok(("NEEDS SCENARIO: PASS".into(), "NEEDS SCENARIO: FAIL".into()))
+            },
+            Self::Bag1AgentDecision => {
+                Ok(("BAG1 SCENARIO: PASS".into(), "BAG1 SCENARIO: FAIL".into()))
+            },
+            Self::RtsimDialogueAction => Ok((
+                "RTSIM DIALOGUE ACTION DETERMINISM FIXTURE: PASS".into(),
+                "RTSIM DIALOGUE ACTION DETERMINISM FIXTURE: FAIL".into(),
+            )),
             Self::Class7ItemIdentity => Ok((
                 "CLASS7 ITEM DETERMINISM FIXTURE: PASS".into(),
                 "CLASS7 ITEM DETERMINISM FIXTURE: FAIL".into(),
@@ -191,12 +232,17 @@ impl Scenario {
         }
     }
 
-    fn uses_recorder(self) -> bool { self != Self::Class7ItemIdentity }
+    fn uses_recorder(self) -> bool {
+        matches!(
+            self,
+            Self::B55Deep | Self::B58LadderIntegration | Self::Class7AgentRoundtrip
+        )
+    }
 
     fn delayed_recorder(self) -> bool { self == Self::B58LadderIntegration }
 
     fn uses_authoritative_observation(self) -> bool {
-        matches!(self, Self::Class7ItemIdentity | Self::Class7AgentRoundtrip)
+        !matches!(self, Self::B55Deep | Self::B58LadderIntegration)
     }
 
     fn comparison_scope(self) -> &'static str {
@@ -206,7 +252,7 @@ impl Scenario {
                  observation"
             },
             (true, false) => "flight-recorder trajectory and writer-event streams",
-            (false, true) => "authoritative class-7 inventory and UseItem selection observation",
+            (false, true) => "authoritative structured production-scenario observation",
             (false, false) => "no authoritative comparison stream",
         }
     }
@@ -423,6 +469,9 @@ fn child_invalid_reasons(label: &str, evidence: &ChildEvidence, scenario: Scenar
     for (kind, tape) in required_tapes {
         if tape.path.is_empty() {
             reasons.push(format!("{label}: missing {kind} tape"));
+        }
+        if tape.records == 0 {
+            reasons.push(format!("{label}: {kind} tape contains zero records"));
         }
         if tape.truncated {
             reasons.push(format!("{label}: {kind} tape truncated"));
@@ -841,7 +890,10 @@ fn divergence(
     FirstDivergence {
         record_kind: kind.into(),
         record_index: index,
-        tick: source.get("tick").and_then(Value::as_u64),
+        tick: source
+            .get("tick")
+            .or_else(|| source.pointer("/result/tick"))
+            .and_then(Value::as_u64),
         uid: source.get("uid").and_then(Value::as_u64),
         entity: source.get("entity").and_then(Value::as_u64),
         episode: source.get("episode").and_then(Value::as_u64),
@@ -857,6 +909,14 @@ fn divergence(
 }
 
 fn populate_writer_observation(result: &mut FirstDivergence, a: &Value, b: &Value) {
+    if result.record_kind == "authoritative-observation" {
+        let a_writer = a.pointer("/result/writer").and_then(Value::as_str);
+        let b_writer = b.pointer("/result/writer").and_then(Value::as_str);
+        if a_writer.is_some() && a_writer == b_writer {
+            result.observed_writer = a_writer.unwrap_or("unknown").to_owned();
+        }
+        return;
+    }
     if result.record_kind != "writer-event" {
         return;
     }
@@ -1363,6 +1423,50 @@ mod tests {
     }
 
     #[test]
+    fn matching_zero_record_children_are_invalid() {
+        let zero_record_tape = TapeEvidence {
+            path: "present-but-empty".into(),
+            raw_sha256: "empty-raw".into(),
+            normalized_sha256: "empty-normalized".into(),
+            records: 0,
+            truncated: false,
+        };
+        let child = |label: &str| ChildEvidence {
+            label: label.into(),
+            command: Vec::new(),
+            exit_code: Some(0),
+            functional_pass: Some(true),
+            functional_outcome_verified: true,
+            timed_out: false,
+            stdout: String::new(),
+            stderr: String::new(),
+            input_data_tree_sha256: None,
+            recorder_metadata: String::new(),
+            artifact_verified: true,
+            seed_verified: true,
+            trajectory: zero_record_tape.clone(),
+            events: zero_record_tape.clone(),
+            authoritative_observation: TapeEvidence::default(),
+        };
+
+        let reasons = [child("run-a"), child("run-b")]
+            .iter()
+            .flat_map(|evidence| {
+                child_invalid_reasons(&evidence.label, evidence, Scenario::B55Deep)
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            reasons
+                .iter()
+                .filter(|reason| reason.contains("tape contains zero records"))
+                .count(),
+            4,
+            "both trajectory and event tapes from both children must be invalid"
+        );
+    }
+
+    #[test]
     fn agent_roundtrip_requires_recorder_and_authoritative_observation() {
         let full = TapeEvidence {
             path: "present".into(),
@@ -1389,7 +1493,7 @@ mod tests {
             authoritative_observation: TapeEvidence::default(),
         };
         let reasons = child_invalid_reasons("run-a", &evidence, Scenario::Class7AgentRoundtrip);
-        assert_eq!(reasons.len(), 2);
+        assert_eq!(reasons.len(), 3);
         assert!(
             reasons
                 .iter()
@@ -1398,6 +1502,11 @@ mod tests {
         assert!(reasons.iter().any(|reason| {
             reason.contains("authoritative observation must contain exactly one record")
         }));
+        assert!(
+            reasons
+                .iter()
+                .any(|reason| reason.contains("tape contains zero records"))
+        );
     }
 
     #[test]

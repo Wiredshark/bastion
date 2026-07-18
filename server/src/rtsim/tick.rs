@@ -918,6 +918,7 @@ impl<'a> System<'a> for Sys {
                             if let Some(persisted) = &colonist.inventory
                                 && let Some(mut inv) = inventories.get_mut(entity)
                             {
+                                // InvSlotId is ECS-lifetime only; never retain it across demotion.
                                 inv.drain().for_each(drop);
                                 for (id, amount) in persisted {
                                     match comp::Item::new_from_asset(id) {
