@@ -42,6 +42,7 @@ Run the fast closure gate:
 target\debug\bastion-harness.exe `
   --determinism-regression class7-item-identity `
   --seed 21 `
+  --determinism-normalize wall-unix-millis `
   --determinism-output E:\evidence\class7-seed21
 ```
 
@@ -57,10 +58,22 @@ normalization policy, and known limits.
 
 ## Proof boundary
 
-The class-7 fixture proves the earliest behavioral item-selection seam. It is
-not a substitute for a full later colony trajectory or save/reload integration
-run. Those remain separate recorder-backed gates. No behavioral field is
-normalized.
+Run the bounded production integration proof with:
+
+```powershell
+target\debug\bastion-harness.exe `
+  --determinism-regression class7-agent-roundtrip `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\class7-agent-roundtrip-seed21
+```
+
+That fixture uses a naturally generated Farmer inventory, real Agent healing
+selection, `CharacterState::UseItem`, server physics, per-tick flight-recorder
+samples, and the existing RTSim demote/re-promote path. It proves canonical
+inventory conservation and records the reconstructed slot layout and next
+selected item. It does not claim a disk save/reload because it does not consume
+a saved world file. No behavioral field is normalized.
 
 ## Highest-value missing tools
 

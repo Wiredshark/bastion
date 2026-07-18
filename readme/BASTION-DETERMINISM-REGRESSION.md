@@ -12,18 +12,28 @@ divergence.
 target\debug\bastion-harness.exe `
   --determinism-regression class7-item-identity `
   --seed 21 `
+  --determinism-normalize wall-unix-millis `
   --determinism-output E:\evidence\class7-seed21
+
+# Short real Agent/UseItem/physics + RTSim demote/re-promote proof
+target\debug\bastion-harness.exe `
+  --determinism-regression class7-agent-roundtrip `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\class7-agent-roundtrip-seed21
 
 # Existing flight-recorder scenarios
 target\debug\bastion-harness.exe `
   --determinism-regression b55-deep `
   --seed 21 `
+  --determinism-normalize wall-unix-millis `
   --determinism-output E:\evidence\b55-seed21
 
 target\debug\bastion-harness.exe `
   --determinism-regression b58-ladder-integration-fixture `
   --ladder-episode P0G `
   --seed 21 `
+  --determinism-normalize wall-unix-millis `
   --determinism-output E:\evidence\b58-p0g-seed21
 ```
 
@@ -98,10 +108,22 @@ gating are unchanged.
 
 The fast class-7 mapping closes the earliest measured behavioral split: both
 processes must construct the same ordered inventory and issue the same concrete
-`UseItem` slot/hash. It intentionally does not claim that a later full colony
-trajectory has been exercised. Use `b55-deep` or another recorder-backed named
-mapping when a full integration trajectory is required; that longer run is a
-separate gate, not something normalized or inferred by this fixture.
+`UseItem` slot/hash.
+
+`class7-agent-roundtrip` is the bounded production integration mapping. It
+spawns the normal index-0 Farmer without injecting food, damages the live
+colonist, observes the real Agent queueing `InventoryAction::Use`, runs the
+authoritative `CharacterState::UseItem` and physics stack, and records every
+tick with the existing flight recorder. After consumption it uses the existing
+RTSim force-demote/re-promote seam, proves canonical inventory has neither loss
+nor duplication, and records reconstructed slots plus the next production
+healing choice. Any Bastion job or emergency route activation fails the
+fixture. The paired gate compares both the recorder streams and one bounded
+authoritative observation record.
+
+This is intentionally shorter than a full B5.5 soak. A bounded existing B5.8
+ladder episode is the next named recorder mapping; B5.5 remains a separate long
+integration gate and is not inferred from either class-7 fixture.
 
 ## Follow-up test-tool proposals
 

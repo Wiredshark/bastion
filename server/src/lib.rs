@@ -3171,6 +3171,45 @@ impl Server {
             })
     }
 
+    /// Registry class 7 fixture read: observe the named colonist's live bag
+    /// with the same item identity and slot fields used by the focused lazy
+    /// loadout fixture. This is read-only and does not alter inventory order.
+    pub fn bastion_colonist_item_observations(
+        &self,
+        name: &str,
+    ) -> Option<Vec<crate::rtsim::tick::Class7ItemObservation>> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let inventories = ecs.read_storage::<comp::Inventory>();
+        (&entities, &colonists)
+            .join()
+            .find(|(_, colonist)| colonist.0.name == name)
+            .and_then(|(entity, _)| inventories.get(entity))
+            .map(crate::rtsim::tick::class7_inventory_observations)
+    }
+
+    /// Registry class 7 fixture read: expose the exact slot the production
+    /// Agent healing rule would choose for this live colonist.
+    pub fn bastion_colonist_selected_healing_item(
+        &self,
+        name: &str,
+    ) -> Option<crate::rtsim::tick::Class7ItemObservation> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let inventories = ecs.read_storage::<comp::Inventory>();
+        let inventory = (&entities, &colonists)
+            .join()
+            .find(|(_, colonist)| colonist.0.name == name)
+            .and_then(|(entity, _)| inventories.get(entity))?;
+        let slot = crate::sys::agent::action_nodes::select_healing_item(inventory, true, 1.0)?;
+        let item = inventory.get(slot)?;
+        Some(crate::rtsim::tick::class7_item_observation(slot, item))
+    }
+
     /// bastion (COORDINATION-stigmergic-v1, harness hook): the saturation
     /// field at a position's coarse cell.
     pub fn bastion_saturation_at(&self, pos: Vec3<i32>) -> f32 {

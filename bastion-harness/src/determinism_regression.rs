@@ -121,6 +121,7 @@ enum Scenario {
     B55Deep,
     B58LadderIntegration,
     Class7ItemIdentity,
+    Class7AgentRoundtrip,
 }
 
 impl Scenario {
@@ -129,9 +130,10 @@ impl Scenario {
             "b55-deep" => Ok(Self::B55Deep),
             "b58-ladder-integration-fixture" => Ok(Self::B58LadderIntegration),
             "class7-item-identity" => Ok(Self::Class7ItemIdentity),
+            "class7-agent-roundtrip" => Ok(Self::Class7AgentRoundtrip),
             _ => Err(format!(
                 "unknown determinism scenario {value:?}; expected b55-deep or \
-                 b58-ladder-integration-fixture or class7-item-identity"
+                 b58-ladder-integration-fixture or class7-item-identity or class7-agent-roundtrip"
             )),
         }
     }
@@ -158,6 +160,7 @@ impl Scenario {
                 ]);
             },
             Self::Class7ItemIdentity => args.push("--class7-item-determinism-fixture".into()),
+            Self::Class7AgentRoundtrip => args.push("--class7-agent-roundtrip-fixture".into()),
         }
         Ok(args)
     }
@@ -181,6 +184,10 @@ impl Scenario {
                 "CLASS7 ITEM DETERMINISM FIXTURE: PASS".into(),
                 "CLASS7 ITEM DETERMINISM FIXTURE: FAIL".into(),
             )),
+            Self::Class7AgentRoundtrip => Ok((
+                "CLASS7 AGENT ROUNDTRIP FIXTURE: PASS".into(),
+                "CLASS7 AGENT ROUNDTRIP FIXTURE: FAIL".into(),
+            )),
         }
     }
 
@@ -188,7 +195,21 @@ impl Scenario {
 
     fn delayed_recorder(self) -> bool { self == Self::B58LadderIntegration }
 
-    fn uses_authoritative_observation(self) -> bool { self == Self::Class7ItemIdentity }
+    fn uses_authoritative_observation(self) -> bool {
+        matches!(self, Self::Class7ItemIdentity | Self::Class7AgentRoundtrip)
+    }
+
+    fn comparison_scope(self) -> &'static str {
+        match (self.uses_recorder(), self.uses_authoritative_observation()) {
+            (true, true) => {
+                "flight-recorder trajectory/writer events plus authoritative class-7 round-trip \
+                 observation"
+            },
+            (true, false) => "flight-recorder trajectory and writer-event streams",
+            (false, true) => "authoritative class-7 inventory and UseItem selection observation",
+            (false, false) => "no authoritative comparison stream",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -352,11 +373,7 @@ fn run_inner(config: Config) -> Result<(Verdict, PathBuf), String> {
             seed: config.seed,
             input_save_tree_sha256,
             artifact_sha256,
-            comparison_scope: if scenario.uses_recorder() {
-                "flight-recorder trajectory and writer-event streams"
-            } else {
-                "authoritative class-7 inventory and UseItem selection observation"
-            },
+            comparison_scope: scenario.comparison_scope(),
             normalizations: normalizations.records,
             children,
             functional_outcomes_match,
@@ -390,17 +407,19 @@ fn child_invalid_reasons(label: &str, evidence: &ChildEvidence, scenario: Scenar
     if !evidence.seed_verified {
         reasons.push(format!("{label}: seed metadata mismatch"));
     }
-    let required_tapes = if scenario.uses_recorder() {
-        vec![
+    let mut required_tapes = Vec::new();
+    if scenario.uses_recorder() {
+        required_tapes.extend([
             ("trajectory", &evidence.trajectory),
             ("events", &evidence.events),
-        ]
-    } else {
-        vec![(
+        ]);
+    }
+    if scenario.uses_authoritative_observation() {
+        required_tapes.push((
             "authoritative-observation",
             &evidence.authoritative_observation,
-        )]
-    };
+        ));
+    }
     for (kind, tape) in required_tapes {
         if tape.path.is_empty() {
             reasons.push(format!("{label}: missing {kind} tape"));
@@ -408,7 +427,7 @@ fn child_invalid_reasons(label: &str, evidence: &ChildEvidence, scenario: Scenar
         if tape.truncated {
             reasons.push(format!("{label}: {kind} tape truncated"));
         }
-        if scenario.uses_authoritative_observation() && tape.records != 1 {
+        if kind == "authoritative-observation" && tape.records != 1 {
             reasons.push(format!(
                 "{label}: authoritative observation must contain exactly one record, got {}",
                 tape.records
@@ -509,15 +528,26 @@ fn run_child(
             normalizations,
         )?;
         let metadata_path = recorder_dir.join("metadata.json");
-        let (artifact_verified, seed_verified) =
+        let (recorder_artifact_verified, recorder_seed_verified) =
             verify_metadata(&metadata_path, executable, artifact_sha256, seed)?;
+        let observation = if scenario.uses_authoritative_observation() {
+            inspect_jsonl(&observation_path, normalizations)?
+        } else {
+            TapeEvidence::default()
+        };
+        let (observation_artifact_verified, observation_seed_verified) =
+            if scenario.uses_authoritative_observation() {
+                verify_observation(&observation_path, artifact_sha256, seed)?
+            } else {
+                (true, true)
+            };
         (
             trajectory,
             events,
-            TapeEvidence::default(),
+            observation,
             metadata_path,
-            artifact_verified,
-            seed_verified,
+            recorder_artifact_verified && observation_artifact_verified,
+            recorder_seed_verified && observation_seed_verified,
         )
     } else {
         let observation = inspect_jsonl(&observation_path, normalizations)?;
@@ -710,18 +740,20 @@ fn compare_child_tapes(
     scenario: Scenario,
 ) -> Result<Option<FirstDivergence>, String> {
     let mut candidates = Vec::new();
-    let streams = if scenario.uses_authoritative_observation() {
-        vec![(
+    let mut streams = Vec::new();
+    if scenario.uses_recorder() {
+        streams.extend([
+            ("sample", "trajectory.jsonl", true),
+            ("writer-event", "events.jsonl", true),
+        ]);
+    }
+    if scenario.uses_authoritative_observation() {
+        streams.push((
             "authoritative-observation",
             "authoritative-observation.jsonl",
             false,
-        )]
-    } else {
-        vec![
-            ("sample", "trajectory.jsonl", true),
-            ("writer-event", "events.jsonl", true),
-        ]
-    };
+        ));
+    }
     for (kind, file, recorder) in streams {
         let a_path = if recorder {
             output_dir.join("run-a/recorder").join(file)
@@ -1328,6 +1360,44 @@ mod tests {
                 .iter()
                 .any(|reason| reason.contains("missing events tape"))
         );
+    }
+
+    #[test]
+    fn agent_roundtrip_requires_recorder_and_authoritative_observation() {
+        let full = TapeEvidence {
+            path: "present".into(),
+            raw_sha256: "raw".into(),
+            normalized_sha256: "normalized".into(),
+            records: 1,
+            truncated: false,
+        };
+        let evidence = ChildEvidence {
+            label: "run-a".into(),
+            command: Vec::new(),
+            exit_code: Some(0),
+            functional_pass: Some(true),
+            functional_outcome_verified: true,
+            timed_out: false,
+            stdout: String::new(),
+            stderr: String::new(),
+            input_data_tree_sha256: None,
+            recorder_metadata: String::new(),
+            artifact_verified: true,
+            seed_verified: true,
+            trajectory: full.clone(),
+            events: full,
+            authoritative_observation: TapeEvidence::default(),
+        };
+        let reasons = child_invalid_reasons("run-a", &evidence, Scenario::Class7AgentRoundtrip);
+        assert_eq!(reasons.len(), 2);
+        assert!(
+            reasons
+                .iter()
+                .any(|reason| reason.contains("missing authoritative-observation tape"))
+        );
+        assert!(reasons.iter().any(|reason| {
+            reason.contains("authoritative observation must contain exactly one record")
+        }));
     }
 
     #[test]

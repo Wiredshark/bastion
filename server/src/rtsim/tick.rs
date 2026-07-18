@@ -195,6 +195,29 @@ pub struct Class7ItemFixtureResult {
     pub selected_use_item: Option<Class7ItemObservation>,
 }
 
+pub fn class7_item_observation(
+    slot: common::comp::inventory::slot::InvSlotId,
+    item: &Item,
+) -> Class7ItemObservation {
+    Class7ItemObservation {
+        slot: slot.idx(),
+        definition_id: item.item_definition_id().to_owned(),
+        item_hash: item.item_hash(),
+        amount: item.amount(),
+    }
+}
+
+pub fn class7_inventory_observations(
+    inventory: &comp::Inventory,
+) -> Vec<Class7ItemObservation> {
+    let mut observations = inventory
+        .slots_with_id()
+        .filter_map(|(slot, item)| item.as_ref().map(|item| class7_item_observation(slot, item)))
+        .collect::<Vec<_>>();
+    observations.sort_by_key(|item| item.slot);
+    observations
+}
+
 /// Millisecond-scale production-seam fixture for registry class 7. This runs
 /// the actual lazy farmer loadout, `SpawnEntityData` inventory construction,
 /// and production healing-slot selector without starting the server loop.
@@ -211,22 +234,14 @@ pub fn bastion_class7_item_fixture(npc_seed: u32) -> Class7ItemFixtureResult {
     let SpawnEntityData::Npc(data) = SpawnEntityData::from_entity_info(info) else {
         unreachable!("ordinary EntityInfo creates an NPC")
     };
-    let observe =
-        |slot: common::comp::inventory::slot::InvSlotId, item: &Item| Class7ItemObservation {
-            slot: slot.idx(),
-            definition_id: item.item_definition_id().to_owned(),
-            item_hash: item.item_hash(),
-            amount: item.amount(),
-        };
-    let mut inventory = data
-        .inventory
-        .slots_with_id()
-        .filter_map(|(slot, item)| item.as_ref().map(|item| observe(slot, item)))
-        .collect::<Vec<_>>();
-    inventory.sort_by_key(|item| item.slot);
+    let inventory = class7_inventory_observations(&data.inventory);
     let selected_use_item =
         crate::sys::agent::action_nodes::select_healing_item(&data.inventory, true, 1.0)
-            .and_then(|slot| data.inventory.get(slot).map(|item| observe(slot, item)));
+            .and_then(|slot| {
+                data.inventory
+                    .get(slot)
+                    .map(|item| class7_item_observation(slot, item))
+            });
     Class7ItemFixtureResult {
         schema: "bastion.class7-item-identity/v1",
         npc_seed,
