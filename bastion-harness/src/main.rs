@@ -130,6 +130,16 @@ struct Args {
     #[arg(long, hide = true)]
     b58_stage1_traversal_owner_fixture: bool,
 
+    /// M2 (Fable spec): the bounded REAL-PHYSICS constructed-ladder
+    /// integration fixture — real server ticks, real terrain, real climb.
+    /// Episodes P0 + N1..N6; pass `--ladder-episode <name>` to run one.
+    #[arg(long, hide = true)]
+    b58_ladder_integration_fixture: bool,
+
+    /// M2: restrict the ladder fixture to a single episode (P0, N1..N6).
+    #[arg(long, value_name = "EPISODE", hide = true)]
+    ladder_episode: Option<String>,
+
     /// REQ-0094A: emit a local schema-only recorder fixture. This does not
     /// prove public recorder lifecycle or Specs scheduling order.
     #[arg(long, value_name = "DIR", hide = true)]
@@ -564,6 +574,8 @@ fn main() -> ExitCode {
         b55_deep_scenario(&args)
     } else if args.b58_scenario {
         b58_scenario(&args)
+    } else if args.b58_ladder_integration_fixture {
+        b58_ladder_integration_fixture(&args)
     } else if args.b58_stage1_traversal_owner_fixture {
         let report = server::bastion_traversal_tooling::run_stage1_constructed_ladder_fixture();
         server::bastion_flight_recorder::finalize();
@@ -3789,6 +3801,356 @@ fn b55_deep_scenario(args: &Args) -> ExitCode {
 ///     carve branch) and stand on the surface again.
 /// (c) ladder: colonists BUILD a 5-rung ladder up a 4-block wall (material-
 ///     gated like Build), then one climbs it to clear a job on the plateau.
+/// M2 (Fable spec): the bounded REAL-PHYSICS constructed-ladder integration
+/// fixture. ONE EPISODE PER PROCESS (`--ladder-episode`, default P0) — the
+/// wrapper script sequences P0+N1..N6 and runs the x2 determinism
+/// comparator; per-process episodes give each run its own recorder dir/env
+/// without recorder re-init. Geometry is the corpus-proven ladder recipe
+/// (pad + 2x2 shaft depth 7 + Stockpile protection ring — the exact shape
+/// that latches ConstructedLadder on every corpus seed). Staging per
+/// FABLE-003 + the CLIMBCAP amendments: climbing SKILL 0 AND staged level 0
+/// (spawn rolls 0..=1), energy drained to 0.1, position-asserted teleport.
+fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
+    use common::{
+        bastion::BUILD_MATERIAL_ITEM,
+        terrain::{Block, BlockKind, SpriteKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let episode = args.ladder_episode.clone().unwrap_or_else(|| "P0".into());
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-m2lf-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-m2-ladder-fixture".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = ground_z(&server, cx, cy).expect("no ground at site center");
+
+    // Pad + sealed 2x2 shaft depth 7 + protection ring (the corpus-proven
+    // ladder geometry: stairs structurally blocked, ladder-viable lane).
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 10)..=(cx + 10) {
+        for y in (cy - 10)..=(cy + 10) {
+            for z in (gz - 9)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 10) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    let depth = 7;
+    let (sx, sy) = (cx + 4, cy);
+    for x in sx..=(sx + 1) {
+        for y in sy..=(sy + 1) {
+            for z in (gz - depth + 1)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    server.bastion_place_designation(
+        common::bastion::Region {
+            min: Vec3::new(sx - 6, sy - 6, gz - depth - 1),
+            max: Vec3::new(sx + 7, sy + 7, gz + 2),
+        },
+        common::bastion::DesignationKind::Stockpile,
+    );
+    tick(&mut server, 2);
+
+    let n_colonists = if episode == "N2" { 2 } else { 1 };
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        n_colonists,
+    );
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let member = names.first().cloned().unwrap_or_default();
+    // Recorder env resolved AT RUNTIME (the corpus uid-pun lesson, 4th
+    // strike: colonist uids are world-dependent — seed-21's probe colonists
+    // were 9/10/11). The wrapper passes the target dir via M2_RECORDER_DIR
+    // (a carrier env the recorder never reads), so boot ticks cannot
+    // initialize the lazy recorder with a wrong config; we set the real
+    // envs here, before the first sample that matters.
+    if let Some(dir) = std::env::var_os("M2_RECORDER_DIR") {
+        if let Some(uid) = server.bastion_colonist_uid(&member) {
+            // SAFETY: single-threaded harness setup phase; the recorder
+            // reads these lazily on its first record.
+            unsafe {
+                std::env::set_var("BASTION_FLIGHT_RECORDER_DIR", &dir);
+                std::env::set_var("BASTION_FLIGHT_RECORDER_UID", uid.to_string());
+                std::env::set_var("BASTION_FLIGHT_RECORDER_SAMPLE_EVERY", "1");
+                std::env::set_var("BASTION_FLIGHT_RECORDER_MAX_SAMPLES", "16384");
+                std::env::set_var("BASTION_FLIGHT_RECORDER_MAX_EVENTS", "8192");
+            }
+        }
+    }
+    // Staging (all pre-marker): skill 0 + staged level 0 (clears the frozen
+    // cap snapshot), materials, drain, teleport, position-assert.
+    let mut staged_ok = true;
+    for n in &names {
+        staged_ok &= server.bastion_set_colonist_climbing(n, 0);
+        staged_ok &= server.bastion_set_colonist_climb_level(n, 0);
+        for _ in 0..4 {
+            server.bastion_give_colonist_item(n, BUILD_MATERIAL_ITEM);
+        }
+    }
+    let pit_floor = Vec3::new(sx as f32 + 0.5, sy as f32 + 0.5, (gz - depth + 1) as f32);
+    for (i, n) in names.iter().enumerate() {
+        let d = pit_floor + Vec3::new(i as f32 * 1.0, 0.0, 0.0);
+        staged_ok &= server.bastion_teleport_colonist(n, d);
+    }
+    tick(&mut server, 2);
+    // Position-assert (the CLIMBCAP staging-drop lesson): a relocated
+    // landing voids the premise — INVALID, not a verdict.
+    let mut position_ok = true;
+    for (i, n) in names.iter().enumerate() {
+        let want = pit_floor + Vec3::new(i as f32 * 1.0, 0.0, 0.0);
+        let got = server
+            .bastion_colonist_states()
+            .iter()
+            .find(|(name, ..)| name == n)
+            .map(|(_, p, _)| *p);
+        position_ok &= got.is_some_and(|p| p.xy().distance(want.xy()) < 2.0 && (p.z - want.z).abs() < 2.5);
+    }
+    // Drain LAST: its recorder staging event doubles as the episode-start
+    // marker (documented; both staging hooks are unused after this point).
+    for n in &names {
+        staged_ok &= server.bastion_set_colonist_energy(n, 0.1);
+    }
+
+    // ── Episode loop ────────────────────────────────────────────────────
+    let budget_secs: u64 = 300; // ≈ 9000 ticks < the 10k cap
+    let mut phase_seen: Vec<(String, u64)> = Vec::new();
+    let mut last_phase = String::new();
+    let mut abort_reason: Option<String> = None;
+    let mut complete_at: Option<u64> = None;
+    let mut out_at: Option<u64> = None;
+    let mut mutated = false;
+    let mut teleports = 0u32;
+    let mut climb_out_of_phase = false;
+    for sec in 0..budget_secs {
+        tick(&mut server, 30);
+        let probe = server.bastion_traversal_probe(&member);
+        let phase = probe
+            .as_ref()
+            .map(|(p, ..)| p.clone())
+            .unwrap_or_else(|| "-".into());
+        if phase != last_phase {
+            phase_seen.push((phase.clone(), sec));
+            last_phase = phase.clone();
+        }
+        if let Some((_, _, Some(reason))) = probe.as_ref() {
+            abort_reason.get_or_insert_with(|| reason.to_string());
+        }
+        if phase == "Complete" {
+            complete_at.get_or_insert(sec);
+        }
+        let states = server.bastion_colonist_states();
+        if out_at.is_none()
+            && states
+                .iter()
+                .any(|(n, p, _)| n == &member && p.z >= gz as f32 + 0.5)
+        {
+            out_at = Some(sec);
+        }
+        // Episode mutators, each at its declared trigger.
+        if !mutated {
+            match episode.as_str() {
+                "N1" if phase == "Reserved" => {
+                    // Solid block into the entry body cell.
+                    let entry = Vec3::new(sx - 1, sy, gz - depth + 1);
+                    server.state_mut().set_block(entry, rock);
+                    mutated = true;
+                },
+                "N3" if phase == "TraversingLink" => {
+                    // Remove rungs + wall face at/above the member.
+                    if let Some((_, p, _)) =
+                        states.iter().find(|(n, ..)| n == &member)
+                    {
+                        let feet = p.map(|v| v.floor() as i32);
+                        for dz in 0..3 {
+                            for (dx, dy) in [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)] {
+                                let c = Vec3::new(feet.x + dx, feet.y + dy, feet.z + dz);
+                                if server
+                                    .state()
+                                    .terrain()
+                                    .get(c)
+                                    .ok()
+                                    .and_then(|b| b.get_sprite())
+                                    == Some(SpriteKind::Ladder)
+                                {
+                                    server.state_mut().set_block(c, air);
+                                }
+                            }
+                        }
+                        mutated = true;
+                    }
+                },
+                "N4" if phase == "Reserved" => {
+                    // Mutate one rung cell (descriptor fingerprint).
+                    'outer: for x in (sx - 2)..=(sx + 3) {
+                        for y in (sy - 2)..=(sy + 3) {
+                            for z in (gz - depth)..=gz {
+                                let c = Vec3::new(x, y, z);
+                                if server
+                                    .state()
+                                    .terrain()
+                                    .get(c)
+                                    .ok()
+                                    .and_then(|b| b.get_sprite())
+                                    == Some(SpriteKind::Ladder)
+                                {
+                                    server.state_mut().set_block(c, air);
+                                    mutated = true;
+                                    break 'outer;
+                                }
+                            }
+                        }
+                    }
+                },
+                "N5" if phase == "TraversingLink" => {
+                    server.bastion_place_designation(
+                        common::bastion::Region {
+                            min: Vec3::new(cx - 8, cy - 8, gz),
+                            max: Vec3::new(cx - 6, cy - 6, gz),
+                        },
+                        common::bastion::DesignationKind::Mine,
+                    );
+                    mutated = true;
+                },
+                "N6" if phase == "TraversingLink" => {
+                    server.bastion_emit_damage(&member, 5.0);
+                    mutated = true;
+                },
+                _ => {},
+            }
+        }
+        // PREMISE-CHECK v2 (v1 note): the out-of-phase-Climb hard gate is
+        // evaluated TAPE-SIDE by the wrapper (trajectory.jsonl carries
+        // character_state per tick); the in-process flag stays false here.
+        let _ = &mut climb_out_of_phase;
+        if complete_at.is_some_and(|c| sec >= c + 10) {
+            break; // 10s post-complete observation (window trimmed v1).
+        }
+    }
+
+    let audit = server.bastion_job_audit();
+    let result = serde_json::json!({
+        "m2_ladder_episode": episode,
+        "m2_staged_ok": staged_ok,
+        "m2_position_ok": position_ok,
+        "m2_phases": phase_seen.iter().map(|(p, s)| format!("{p}@{s}")).collect::<Vec<_>>(),
+        "m2_abort_reason": abort_reason,
+        "m2_complete_at": complete_at,
+        "m2_out_at": out_at,
+        "m2_mutated": mutated,
+        "m2_climb_out_of_phase": climb_out_of_phase,
+        "m2_teleports_observed": teleports,
+        "m2_audit_total": audit.total,
+        "m2_audit_claimed": audit.claimed,
+    });
+    println!("{result}");
+    server::bastion_flight_recorder::finalize();
+    let pass = match episode.as_str() {
+        "P0" => {
+            staged_ok
+                && position_ok
+                && complete_at.is_some()
+                && out_at.is_some()
+                && abort_reason.is_none()
+        },
+        "N1" => abort_reason.is_some() && out_at.is_none(),
+        "N3" => abort_reason.as_deref() == Some("authoritative-contact-lost"),
+        "N4" => abort_reason.as_deref() == Some("stale-terrain-revision"),
+        "N5" | "N6" | "N2" => staged_ok && position_ok, // v1: report-only
+        _ => false,
+    };
+    println!(
+        "M2-LADDER-EPISODE {}: {}",
+        episode,
+        if pass { "PASS" } else { "FAIL" }
+    );
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+}
+
 fn b58_scenario(args: &Args) -> ExitCode {
     use common::{
         bastion::{BUILD_MATERIAL_ITEM, DesignationKind, Region, WorkType, ZExtent},

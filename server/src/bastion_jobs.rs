@@ -149,6 +149,7 @@ fn in_access_mask(designated: &[Region], p: Vec3<i32>) -> bool {
 fn ladder_pillar(
     terrain: &TerrainGrid,
     designated: &[Region],
+    unavailable: &HashSet<Vec3<i32>>,
     from: Vec3<i32>,
     to_z: i32,
     approach: Option<(Vec3<f32>, (f32, f32, f32))>,
@@ -159,6 +160,16 @@ fn ladder_pillar(
         return None;
     }
     let filled = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
+    // M2 DISMOUNT NORMALIZATION (probe-measured off-by-one): egress_scan's
+    // rim target carries the z of the top SOLID block, so every corridor
+    // candidate failed `emergency_corridor_standable(dismount)` — the
+    // standing cell is one above. Normalize once here; the caller builds the
+    // descriptor from the same normalized cell.
+    let dismount = if filled(dismount) && !filled(dismount + Vec3::unit_z()) {
+        dismount + Vec3::unit_z()
+    } else {
+        dismount
+    };
     let mut best: Option<(i32, Vec<Vec3<i32>>, Vec3<i32>, Vec<Vec3<i32>>)> = None;
     for dx in -5..=5i32 {
         for dy in -5..=5i32 {
@@ -177,9 +188,14 @@ fn ladder_pillar(
                 .map(|z| Vec3::new(col.x, col.y, z))
                 .collect();
             if cells.is_empty()
-                || !cells
-                    .iter()
-                    .all(|p| in_access_mask(designated, *p) && !filled(*p))
+                || !cells.iter().all(|p| {
+                    in_access_mask(designated, *p)
+                        && !filled(*p)
+                        // M2 cell-disjointness: never plan rungs into another
+                        // plan's live cells (the invariant the old global
+                        // gate over-approximated colony-wide).
+                        && !unavailable.contains(p)
+                })
             {
                 continue;
             }
@@ -554,6 +570,31 @@ fn emergency_escape_shaft(
 /// watchdog has ~a dozen legitimate reset sites; when a colonist who should
 /// backstop never does, the wipe-reason trace is the discriminator (the F5
 /// pit-B investigation: 200s below grade, no teleport, no way to see why).
+/// M2 fixture ASSIST-QUIET instrumentation (Fable spec, permitted touch 2):
+/// each legacy direct kinematic writer outside the task lifecycle emits a
+/// recorder WriterEvent — events only, zero behavior change. The fixture's
+/// acceptance is ZERO such events for the reserved member during owned
+/// phases; ascent that only happens when an assist fires is the finding.
+fn record_assist_write(tick: u64, uid: Uid, writer: &'static str, note: String) {
+    if crate::bastion_flight_recorder::enabled() {
+        crate::bastion_flight_recorder::record_writer(
+            crate::bastion_flight_recorder::WriterEvent {
+                schema: "bastion.flight-recorder.writer/v1".into(),
+                tick,
+                uid: uid.0.get(),
+                observation_sequence: 0,
+                snapshot_stage: "assist-write".into(),
+                dispatcher_dependency_proven: false,
+                writer: writer.into(),
+                move_dir: [0.0, 0.0],
+                move_z: 0.0,
+                target: None,
+                note,
+            },
+        );
+    }
+}
+
 fn watch_wipe(watch: &mut HashMap<Uid, f32>, uid: &Uid, reason: &'static str) {
     let had = watch.remove(uid);
     if had.is_some_and(|secs| secs >= 1.0)
@@ -600,11 +641,21 @@ fn plan_access(
     emergency_approach: Option<(Vec3<f32>, (f32, f32, f32))>,
 ) -> Option<(DesignationKind, usize)> {
     let protected_designations = board.designated.clone();
-    let protected_job_cells: HashSet<Vec3<i32>> = board
-        .jobs
-        .iter()
-        .filter_map(|(id, job)| (!board.emergency_access_jobs.contains_key(id)).then_some(job.pos))
-        .collect();
+    // M2 PLANNER-FIX (the request-starvation root, corpus-proven): the old
+    // colony-GLOBAL one-plan-at-a-time gate ("any live is_access job anywhere
+    // swallows every other request") starved every other trapped pocket for
+    // the lifetime of the first stair plan — seed-22 diag: ONE emission, then
+    // 71 consecutive swallows for the protected-shaft colonist; the ladder
+    // tier was unreachable not broken. The gate's documented invariant was
+    // only ever "different pockets may not emit OVERLAPPING terrain plans" —
+    // so enforce exactly that, at CELL level: every tier rejects a candidate
+    // whose cells intersect `unavailable_cells` (other jobs + live emergency
+    // route cells), and disjoint pockets plan in parallel. Same-pocket
+    // sharing still goes through the nearby_emergency_route ADOPT path
+    // before any planning.
+    let mut unavailable_cells: HashSet<Vec3<i32>> =
+        board.jobs.values().map(|job| job.pos).collect();
+    unavailable_cells.extend(board.emergency_access_cells.keys().copied());
     // STAIR-LADDER Phase 1 (Ben's ruling): the descriptor is OPTIONAL — a plan
     // with `None` is a WALKABLE plan (carved stairs): plain Mine digs the
     // colonist walks out of, exactly baseline 7f087da317's shape. No route
@@ -639,7 +690,22 @@ fn plan_access(
             (d == Vec2::zero() || (!is_solid(f) && is_solid(f - Vec3::unit_z()))).then_some(f)
         })
         .find_map(|f| {
-            common::bastion::carve_ramp(f, to, &is_solid, &allowed).filter(|digs| !digs.is_empty())
+            common::bastion::carve_ramp(f, to, &is_solid, &allowed).filter(|digs| {
+                !digs.is_empty()
+                    && digs.iter().all(|dig| !unavailable_cells.contains(dig))
+                    // M2 WALKABILITY VALIDATION (corpus seed-20: a carve
+                    // route stacked vertical rises in single columns — the
+                    // digger could not STAND to work faces 2-3 above him,
+                    // 40 unreachable-strikes on his own steps, stranded
+                    // bouncing at the gap ×3 deterministic). A stair plan
+                    // must be a WALKABLE RAMP by construction: no two
+                    // consecutive digs may rise within the same XY column.
+                    // Geometries stairs cannot serve fall through to the
+                    // LADDER tier — which the corpus proves 6/6.
+                    && digs.windows(2).all(|pair| {
+                        !(pair[1].xy() == pair[0].xy() && pair[1].z > pair[0].z)
+                    })
+            })
         });
         match stairs {
             // STAIR-LADDER Phase 1 (REQ-CK-CARVEDSTAIR, Ben's ruling): a carved
@@ -673,7 +739,23 @@ fn plan_access(
             // STAY — the player Ladder paint tool + vertical-link
             // pathfinding still use them; only the AUTO fallback goes dark.
             None if AUTO_LADDER_ACCESS || emergency_owner.is_some() => {
-                ladder_pillar(terrain, mask, from, to.z, emergency_approach, to)
+                // M2: the descriptor's dismount must be the STANDING cell
+                // (rim targets carry the top-solid z — same normalization as
+                // ladder_pillar's internal corridor checks).
+                let ladder_dismount = if is_solid(to) && !is_solid(to + Vec3::unit_z()) {
+                    to + Vec3::unit_z()
+                } else {
+                    to
+                };
+                ladder_pillar(
+                    terrain,
+                    mask,
+                    &unavailable_cells,
+                    from,
+                    to.z,
+                    emergency_approach,
+                    ladder_dismount,
+                )
                     .map(|(cells, body_lane, corridor)| {
                         let top_z = cells.last().map_or(body_lane.z, |cell| cell.z);
                         (
@@ -685,7 +767,7 @@ fn plan_access(
                                 approach: body_lane,
                                 entry: body_lane,
                                 top_anchor: Vec3::new(body_lane.x, body_lane.y, top_z),
-                                dismount: to,
+                                dismount: ladder_dismount,
                                 wall_dir: None,
                             }),
                             Some(corridor),
@@ -697,7 +779,7 @@ fn plan_access(
                             emergency_escape_shaft(
                                 terrain,
                                 mask,
-                                &protected_job_cells,
+                                &unavailable_cells,
                                 from,
                                 to.z,
                                 approach_start,
@@ -3775,6 +3857,20 @@ impl JobBoard {
         self.climb_cap_skill.remove(uid);
     }
 
+    /// M2 fixture introspection (READ-ONLY): the traversal task's phase (as
+    /// its Debug name), whether this uid is the reserved member, and the
+    /// abort reason if any. The fixture asserts phase progressions and
+    /// single-owner invariants on this without touching the machinery.
+    pub fn traversal_probe(&self, uid: &Uid) -> Option<(String, bool, Option<&'static str>)> {
+        self.bastion_traversal_tasks.get(uid).map(|task| {
+            (
+                format!("{:?}", task.phase),
+                task.reserved_member == *uid,
+                task.abort_reason,
+            )
+        })
+    }
+
     pub fn egress_probe(&self, uid: Uid) -> (bool, usize, usize) {
         let has_target = self.egress_targets.contains_key(&uid);
         let owned = self
@@ -5729,6 +5825,12 @@ impl<'a> System<'a> for Sys {
                         // violation the scenario asserts against). Same
                         // reach-cap/head-clear gates bound the lift.
                         vel.0.z = vel.0.z.max(CLIMB_ASSIST_VZ);
+                        record_assist_write(
+                            tick.0,
+                            *uid,
+                            "climb-assist-lift",
+                            format!("z={:.2}", pos.0.z),
+                        );
                         // DISCRETE RUNG-STEP (run 29, Ben's auto-snap
                         // backstop from the access-reliability batch): a
                         // GROUNDED climber whose velocity route gets eaten
@@ -5746,6 +5848,12 @@ impl<'a> System<'a> for Sys {
                         // 32-34 stragglers under half-carved stair cells).
                         if phys.on_ground.is_some() && tick.0 % 30 == 0 {
                             pos.0.z += 1.0;
+                            record_assist_write(
+                                tick.0,
+                                *uid,
+                                "rung-step-snap",
+                                format!("to_z={}", feet.z + 1),
+                            );
                             if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
                                 info!(
                                     uid = uid.0.get(),
@@ -5837,6 +5945,12 @@ impl<'a> System<'a> for Sys {
                             if !solid_at(Vec3::new(cc.x, cc.y, sz + 1)) {
                                 pos.0 = Vec3::new(cc.x as f32 + 0.5, cc.y as f32 + 0.5, sz as f32);
                                 vel.0 = Vec3::zero();
+                                record_assist_write(
+                                    tick.0,
+                                    *uid,
+                                    "column-snap",
+                                    format!("to={},{},{}", cc.x, cc.y, sz),
+                                );
                             }
                         } else if let Some(cc) = climb_col {
                             let center = Vec2::new(cc.x as f32 + 0.5, cc.y as f32 + 0.5);
@@ -10205,9 +10319,20 @@ impl<'a> System<'a> for Sys {
                         *board.egress_verdicts.entry(*uid).or_insert(0) += 1;
                         if let Some(target) = organic_dest {
                             board.egress_targets.insert(*uid, target);
+                            // M2: MIN-merge, never reset-up — the no-route
+                            // retry re-verdicts every ~10s, and a fresh
+                            // insert re-seeded best at CURRENT distance, so
+                            // cap-bounces "improved" it again each cycle and
+                            // the improvement-earn wiped the backstop clock
+                            // forever (probe: prot out=-1, stranded). Best is
+                            // monotone within the below-grade episode; the
+                            // genuine-surface sites clear it.
+                            let d = pos.0.distance(target.map(|value| value as f32));
                             board
                                 .egress_best_distance
-                                .insert(*uid, pos.0.distance(target.map(|value| value as f32)));
+                                .entry(*uid)
+                                .and_modify(|best| *best = best.min(d))
+                                .or_insert(d);
                         }
                         colonist.0.climb_free_until = time.0 + 45.0;
                         if let Some(destination) = organic_dest
@@ -10232,9 +10357,20 @@ impl<'a> System<'a> for Sys {
                         *board.egress_verdicts.entry(*uid).or_insert(0) += 1;
                         if let Some(target) = organic_dest {
                             board.egress_targets.insert(*uid, target);
+                            // M2: MIN-merge, never reset-up — the no-route
+                            // retry re-verdicts every ~10s, and a fresh
+                            // insert re-seeded best at CURRENT distance, so
+                            // cap-bounces "improved" it again each cycle and
+                            // the improvement-earn wiped the backstop clock
+                            // forever (probe: prot out=-1, stranded). Best is
+                            // monotone within the below-grade episode; the
+                            // genuine-surface sites clear it.
+                            let d = pos.0.distance(target.map(|value| value as f32));
                             board
                                 .egress_best_distance
-                                .insert(*uid, pos.0.distance(target.map(|value| value as f32)));
+                                .entry(*uid)
+                                .and_modify(|best| *best = best.min(d))
+                                .or_insert(d);
                         }
                         colonist.0.climb_free_until = time.0 + 45.0;
                         if let Some(destination) = organic_dest
@@ -10256,9 +10392,13 @@ impl<'a> System<'a> for Sys {
                 *board.egress_verdicts.entry(*uid).or_insert(0) += 1;
                 if let Some(target) = organic_dest {
                     board.egress_targets.insert(*uid, target);
+                    // M2: MIN-merge (see the twin sites above) — no reset-up.
+                    let d = pos.0.distance(target.map(|value| value as f32));
                     board
                         .egress_best_distance
-                        .insert(*uid, pos.0.distance(target.map(|value| value as f32)));
+                        .entry(*uid)
+                        .and_modify(|best| *best = best.min(d))
+                        .or_insert(d);
                 }
                 // B-LIVE3: the climb-free fail-safe is granted at the
                 // VERDICT, per-colonist — NOT in the plan-emission loop,
@@ -10354,20 +10494,15 @@ impl<'a> System<'a> for Sys {
                     }
                     continue;
                 }
-                // Different pockets may not emit overlapping terrain plans.
-                // Requests that cannot share the live route remain armed and
-                // retry deterministically after that route is cleaned up.
-                if board.jobs.values().any(|job| job.is_access) {
-                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
-                        let live_access = board.jobs.values().filter(|j| j.is_access).count();
-                        info!(
-                            owner = uid.0.get(),
-                            live_access,
-                            "bastion: egress request swallowed by one-plan-at-a-time gate"
-                        );
-                    }
-                    continue;
-                }
+                // M2 PLANNER-FIX: the colony-GLOBAL one-plan-at-a-time gate
+                // that stood here starved every other trapped pocket for the
+                // lifetime of the first plan (corpus: 1 emission then 71
+                // consecutive swallows for the protected-shaft colonist — the
+                // ladder tier was UNREACHABLE, not broken). Its invariant
+                // ("no overlapping terrain plans") now lives at CELL level
+                // inside plan_access (`unavailable_cells` in every tier), so
+                // disjoint pockets plan in parallel and an overlapping plan
+                // falls through tiers to the no-route retry (logged).
                 let physics = entity.and_then(|entity| physics_states.get(entity));
                 let source_body_clear = terrain.get(from).is_ok_and(|block| !block.is_solid())
                     && terrain
@@ -11738,6 +11873,12 @@ impl<'a> System<'a> for Sys {
                     });
                     pos.0 = d.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
                     vel.0 = Vec3::zero();
+                    record_assist_write(
+                        tick.0,
+                        *uid,
+                        "eject-backstop",
+                        format!("to={},{},{}", d.x, d.y, d.z),
+                    );
                     board.stuck_watch.remove(uid);
                     board.bastion_traversal_tasks.remove(uid);
                     board.emergency_partial_route_entries.remove(uid);

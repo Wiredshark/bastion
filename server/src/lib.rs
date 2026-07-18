@@ -1397,6 +1397,63 @@ impl Server {
             .map(|(_, u)| u.0.get())
     }
 
+    /// bastion (M2 fixture, harness hook, READ-ONLY): traversal-task
+    /// introspection — (phase_name, reserved_is_self, abort_reason). The
+    /// ladder fixture asserts phase progressions on this; no writers.
+    pub fn bastion_traversal_probe(
+        &self,
+        name: &str,
+    ) -> Option<(String, bool, Option<&'static str>)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let uid = {
+            let colonists = ecs.read_storage::<comp::Colonist>();
+            let uids = ecs.read_storage::<common::uid::Uid>();
+            (&colonists, &uids)
+                .join()
+                .find(|(c, _)| c.0.name == name)
+                .map(|(_, u)| *u)?
+        };
+        let board = ecs.read_resource::<bastion_jobs::JobBoard>();
+        board.traversal_probe(&uid)
+    }
+
+    /// bastion (M2 fixture, PERMITTED TOUCH 3): emit real damage through the
+    /// PRODUCTION event bus so the Apply-phase handler produces
+    /// `AgentEvent::Hurt` (INV-INBOX-HURT). Writing `agent.inbox`, `Health`,
+    /// or any component directly is prohibited — that would fake the
+    /// interruption path. Event-emission only.
+    pub fn bastion_emit_damage(&mut self, name: &str, amount: f32) -> bool {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let (entity, time) = {
+            let colonists = ecs.read_storage::<comp::Colonist>();
+            let entities = ecs.entities();
+            let time = *ecs.read_resource::<common::resources::Time>();
+            let Some(entity) = (&entities, &colonists)
+                .join()
+                .find(|(_, c)| c.0.name == name)
+                .map(|(e, _)| e)
+            else {
+                return false;
+            };
+            (entity, time)
+        };
+        ecs.read_resource::<common::event::EventBus<common::event::HealthChangeEvent>>()
+            .emit_now(common::event::HealthChangeEvent {
+                entity,
+                change: comp::HealthChange {
+                    amount: -amount.abs(),
+                    by: None,
+                    cause: Some(common::DamageSource::Falling),
+                    time,
+                    precise: false,
+                    instance: rand::random(),
+                },
+            });
+        true
+    }
+
     /// bastion (F5 falsifier, harness hook, READ-ONLY): egress introspection
     /// for one colonist — (has_egress_target, owned_live_access_jobs,
     /// live_access_jobs_total). The redesigned stuckjob leg asserts its own
