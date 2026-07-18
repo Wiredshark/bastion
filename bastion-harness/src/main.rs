@@ -16,6 +16,7 @@
 #![recursion_limit = "256"]
 
 mod asset_test;
+mod determinism_regression;
 
 use clap::Parser;
 use common::resources::Time;
@@ -41,6 +42,31 @@ use tracing::{info, warn};
 #[derive(Parser)]
 #[command(name = "bastion-harness", about)]
 struct Args {
+    /// Run a named scenario twice in isolated child processes and compare the
+    /// authoritative flight-recorder tapes. Supported values: b55-deep,
+    /// b58-ladder-integration-fixture, and class7-item-identity.
+    #[arg(long, value_name = "SCENARIO")]
+    determinism_regression: Option<String>,
+
+    /// Fresh output directory for --determinism-regression. The directory
+    /// must not already exist, preventing evidence overwrite.
+    #[arg(long, value_name = "DIR")]
+    determinism_output: Option<PathBuf>,
+
+    /// Reserved save/data input. Current named scenarios own their fixture
+    /// directories and reject this option rather than claiming a false replay.
+    #[arg(long, value_name = "DIR")]
+    determinism_save_tree: Option<PathBuf>,
+
+    /// Named orthogonal tape normalization. The only accepted value is
+    /// wall-unix-millis; behavioral fields can never be normalized.
+    #[arg(long, value_name = "NAME")]
+    determinism_normalize: Vec<String>,
+
+    /// Per-child wall timeout for --determinism-regression.
+    #[arg(long, default_value_t = 600)]
+    determinism_timeout_seconds: u64,
+
     /// World seed (`server::Settings::world_seed`); also seeds rtsim data
     /// generation.
     #[arg(long, default_value_t = 1337)]
@@ -135,6 +161,11 @@ struct Args {
     /// Episodes P0 + N1..N6; pass `--ladder-episode <name>` to run one.
     #[arg(long, hide = true)]
     b58_ladder_integration_fixture: bool,
+
+    /// Registry class 7: run the production lazy-loadout + inventory +
+    /// healing-slot observation without a server soak.
+    #[arg(long, hide = true)]
+    class7_item_determinism_fixture: bool,
 
     /// M2: restrict the ladder fixture to a single episode (P0, N1..N6).
     #[arg(long, value_name = "EPISODE", hide = true)]
@@ -555,7 +586,19 @@ fn main() -> ExitCode {
         .with_writer(HygieneMakeWriter)
         .init();
 
-    if let Some(target) = &args.asset_test {
+    if let Some(scenario) = &args.determinism_regression {
+        determinism_regression::run(determinism_regression::Config {
+            scenario: scenario.clone(),
+            seed: args.seed,
+            ticks: args.ticks,
+            tps: args.tps,
+            ladder_episode: args.ladder_episode.clone(),
+            output_dir: args.determinism_output.clone(),
+            save_tree: args.determinism_save_tree.clone(),
+            normalizations: args.determinism_normalize.clone(),
+            timeout: Duration::from_secs(args.determinism_timeout_seconds),
+        })
+    } else if let Some(target) = &args.asset_test {
         asset_test::run(&asset_test::AssetTestConfig {
             seed: args.seed,
             tps: args.tps,
@@ -576,6 +619,8 @@ fn main() -> ExitCode {
         b58_scenario(&args)
     } else if args.b58_ladder_integration_fixture {
         b58_ladder_integration_fixture(&args)
+    } else if args.class7_item_determinism_fixture {
+        class7_item_determinism_fixture(args.seed)
     } else if args.b58_stage1_traversal_owner_fixture {
         let report = server::bastion_traversal_tooling::run_stage1_constructed_ladder_fixture();
         server::bastion_flight_recorder::finalize();
@@ -728,6 +773,36 @@ fn main() -> ExitCode {
             );
         }
         ExitCode::SUCCESS
+    }
+}
+
+fn class7_item_determinism_fixture(seed: u32) -> ExitCode {
+    let result = server::rtsim::tick::bastion_class7_item_fixture(seed);
+    let envelope = serde_json::json!({
+        "schema": "bastion.determinism-observation/v1",
+        "artifact_sha256": std::env::var("BASTION_FLIGHT_RECORDER_ARTIFACT_SHA256").ok(),
+        "seed": std::env::var("BASTION_FLIGHT_RECORDER_SEED").ok(),
+        "result": result,
+    });
+    if let Some(path) = std::env::var_os("BASTION_DETERMINISM_OBSERVATION_PATH") {
+        let path = PathBuf::from(path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create class-7 evidence directory");
+        }
+        let mut file = std::fs::File::create(path).expect("create class-7 observation");
+        serde_json::to_writer(&mut file, &envelope).expect("write class-7 observation");
+        writeln!(file).expect("terminate class-7 observation");
+    }
+    println!("{envelope}");
+    let pass = envelope["result"]["selected_use_item"].is_object();
+    println!(
+        "CLASS7 ITEM DETERMINISM FIXTURE: {}",
+        if pass { "PASS" } else { "FAIL" }
+    );
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
     }
 }
 

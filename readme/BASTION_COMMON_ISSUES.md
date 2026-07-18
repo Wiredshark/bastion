@@ -298,6 +298,19 @@ ISOLATE it by staging (canonicalize inventories to one asset-deterministic item 
 `bastion_canonicalize_colonist_food`). Raises the engine-fix priority: item identity
 nondeterminism = colony-simulation nondeterminism, not a cosmetic hash.*
 
+*Class-7 root correction — 2026-07-18: `Item::item_hash` is a deterministic
+hash of the item definition/content; differing hashes proved that different
+items were generated, not that an instance pointer or hash table address leaked
+into identity. The measured entropy was upstream: RTSim's stable NPC entity RNG
+was dropped at lazy profession-loadout evaluation, `trader_loadout` used
+`rand::rng()`, and `TradePricing::random_items_impl` used `rand::random()` to
+index candidates sourced from hash-based storage. That changed definitions,
+bag slots, the concrete healing `UseItem`, and finally trajectories. The engine
+fix is a separate stable per-NPC lazy-loadout RNG plus full-definition candidate
+ordering; it intentionally does not redesign ItemId/item_hash, persisted slot
+schemas, or global inventory order. `item_hash` and `inv_slot` remain forbidden
+normalizations because they expose the behavioral split.*
+
 *Builder append — 2026-07-18 (architect-endorsed, class 8): STALE-BINARY FALSE GREEN — a
 build+run chained with ';' lets a FAILED build silently run the previous exe, and the old
 binary's results read as the new code's (M2 round-6: E0596 build failure + ';' chain + old exe
