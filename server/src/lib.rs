@@ -1418,6 +1418,44 @@ impl Server {
         board.traversal_probe(&uid)
     }
 
+    /// bastion (M2 fixture STAGING): replace a colonist's consumables with
+    /// ONE asset-deterministic food item. Registry class 7 (nondeterministic
+    /// item identity — hash AND slot) otherwise injects real behavioral
+    /// divergence through the post-damage eat: byte-identical runs draw food
+    /// from different slots and their downstream trajectories fork (N6 x2
+    /// comparator, 6990/9002 divergent samples). Staging-only, called before
+    /// the episode's start marker; the fixture asserts the result as its own
+    /// precondition. Returns the number of consumables replaced.
+    pub fn bastion_canonicalize_colonist_food(&mut self, name: &str) -> Option<usize> {
+        use common::comp::item::{Item, ItemKind};
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entity = {
+            let colonists = ecs.read_storage::<comp::Colonist>();
+            let entities = ecs.entities();
+            (&entities, &colonists)
+                .join()
+                .find(|(_, c)| c.0.name == name)
+                .map(|(e, _)| e)?
+        };
+        let mut inventories = ecs.write_storage::<comp::Inventory>();
+        let mut inventory = inventories.get_mut(entity)?;
+        let ids: Vec<_> = inventory
+            .slots_with_id()
+            .filter(|(_, slot)| {
+                slot.as_ref()
+                    .is_some_and(|item| matches!(&*item.kind(), ItemKind::Consumable { .. }))
+            })
+            .map(|(id, _)| id)
+            .collect();
+        let removed = ids.len();
+        for id in ids {
+            let _ = inventory.remove(id);
+        }
+        let _ = inventory.push(Item::new_from_asset_expect("common.items.food.cheese"));
+        Some(removed)
+    }
+
     /// bastion (M2 fixture N1B, harness read): dismount anchor of the named
     /// colonist's live traversal route (None when no task/descriptor).
     pub fn bastion_route_dismount(&self, name: &str) -> Option<Vec3<i32>> {
