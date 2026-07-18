@@ -22,30 +22,60 @@ target\debug\bastion-harness.exe `
   --determinism-normalize wall-unix-millis `
   --determinism-output E:\evidence\class7-agent-roundtrip-seed21
 
-# Existing flight-recorder scenarios
+# Existing B5.5 flight-recorder scenario
 target\debug\bastion-harness.exe `
   --determinism-regression b55-deep `
   --seed 21 `
   --determinism-normalize wall-unix-millis `
   --determinism-output E:\evidence\b55-seed21
 
+# Fast production observations beyond class 7
 target\debug\bastion-harness.exe `
-  --determinism-regression b58-ladder-integration-fixture `
-  --ladder-episode P0G `
+  --determinism-regression world-summary `
   --seed 21 `
   --determinism-normalize wall-unix-millis `
-  --determinism-output E:\evidence\b58-p0g-seed21
+  --determinism-output E:\evidence\world-summary-seed21
+
+target\debug\bastion-harness.exe `
+  --determinism-regression lod0-promotion `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\lod0-seed21
+
+target\debug\bastion-harness.exe `
+  --determinism-regression archetype-entity-gen `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\archetype-seed21
+
+target\debug\bastion-harness.exe `
+  --determinism-regression needs-agent-state `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\needs-seed21
+
+target\debug\bastion-harness.exe `
+  --determinism-regression bag1-agent-decision `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\bag1-seed21
+
+target\debug\bastion-harness.exe `
+  --determinism-regression rtsim-dialogue-action `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\rtsim-dialogue-seed21
 ```
 
 The parent creates `run-a` and `run-b`, never overwrites an existing output
 directory, hashes its executable before and after both children, and checks
-the recorder/observation artifact and seed metadata. B5.8 uses the fixture's
-existing delayed `M2_RECORDER_DIR` carrier. Recorder sampling is lossless
-(`sample_every=1`) within explicit bounds; any timeout, missing finalization,
-missing stream, truncation, signal-style exit, metadata mismatch, or changing
-artifact makes the verdict invalid.
+the recorder/observation artifact and seed metadata. Recorder sampling is
+lossless (`sample_every=1`) within explicit bounds; any timeout, missing
+finalization, missing stream, zero-record required stream, truncation,
+signal-style exit, metadata mismatch, or changing artifact makes the verdict
+invalid. Two matching empty children can never produce a deterministic green.
 
-The current B5.5 and B5.8 scenario implementations own internal temporary data
+The current named scenario implementations own internal temporary data
 directories. `--determinism-save-tree` is therefore rejected for these named
 mappings; it is not silently advertised as an input that the child ignores.
 
@@ -121,9 +151,10 @@ healing choice. Any Bastion job or emergency route activation fails the
 fixture. The paired gate compares both the recorder streams and one bounded
 authoritative observation record.
 
-This is intentionally shorter than a full B5.5 soak. A bounded existing B5.8
-ladder episode is the next named recorder mapping; B5.5 remains a separate long
-integration gate and is not inferred from either class-7 fixture.
+This is intentionally shorter than a full B5.5 soak. B5.5 remains a separate
+long integration gate and is not inferred from either class-7 fixture. Earlier
+B5.8 recorder-mapping observations are preserved as out-of-scope evidence and
+are not pursued by this determinism task.
 
 ## Follow-up test-tool proposals
 

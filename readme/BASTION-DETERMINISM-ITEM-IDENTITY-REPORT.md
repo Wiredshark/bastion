@@ -34,6 +34,16 @@ This does not change the sampling distribution or healing policy. It does not
 change `ItemId`, `item_hash`, persisted inventory schemas, global inventory
 ordering, or `DETERMINISTIC_RTSIM`/ARCH-003 gating.
 
+## Slot compaction boundary
+
+Promotion reconstructs the persistent item sequence into a fresh ECS
+inventory and may compact slot addresses (for example, persisted slot
+`589830` can become live slot `4`). This is a bounded accept when paired runs
+compact identically and item definition/content, `item_hash`, amount, and the
+resulting gameplay selection remain stable. An `InvSlotId` is therefore an
+ECS-lifetime address, not persistent item identity; downstream systems must
+not assume an absolute slot number survives demotion and promotion.
+
 ## Standing harness
 
 Run the fast closure gate:
