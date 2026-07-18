@@ -3307,3 +3307,541 @@ surfaced: `DesignationKind::Bed` also has no `ToolMode::Designate` entry —
 confirmed a real bug (not intentional auto-placement) by checking the code
 directly, ruled to be fixed as part of the same exhaustiveness pass rather
 than a separate decision.
+
+## bastion-block-ARCH003 — ARCH-003-INTEGRATE, Grok Phase-1+2 test-infra merge — TAGGED 2026-07-14 (tag `9dfff6ec7e`)
+
+Row 50.6. Architect-directed integration (not a standard builder packet):
+rebased the Bug-Tester's Opus-CLEARED clean tree (8 fixes, `codex/arch003`)
+onto fleet HEAD, resolving the known PATH-0 conflict flagged back at row 45's
+own tag entry, plus the Grok Phase-1+2 test-infra bundle merge point. A
+fleet-wide priority halt was declared ahead of this merge — all builder/
+Play-Tester feature work paused, 7+ Ben live-test findings from the delivered
+ARENA/Farm-palette/UI-4.1 exe were banked as master-list rows (51.61-51.65,
+62.2, plus the progress-bar/z-level-scope items) without building anything,
+respecting the freeze.
+
+**Pre-merge tree cleanup (Sonnet, per architect's explicit request):** the
+shared checkout carried 2 categories of uncommitted state blocking the
+merge — (a) Sonnet's own accumulated bookkeeping edits across the B7-2..
+UI-4.1 session arc (run log, restore ledger, master-list flips, common-issues
+B26-B43+D19/D20, plus organic fleet-wide readme growth from the design/asset
+agents sharing the same tree) landed as one commit (`84f269b0c9`, 17 files,
++8002/-192, scanned for secret-shaped patterns first — clean, only game-
+design vocabulary hits); (b) the builder's 2 paused EXHAUSTIVENESS-ASSERTS/
+Bed-fix source files (`common/src/bastion.rs`, `voxygen/src/bastion/tools.rs`)
+discarded via `git checkout --`, pre-verified patch-recoverable
+(`git apply --reverse --check exhaustiveness-bed.patch` passed before
+discarding) — HEAD confirmed unchanged at `f6ac4c8bc7` (bastion/block-B6HAUL)
+through the discard, zero cargo/build activity during the hold per the
+standing no-cargo-during-own-gate discipline.
+
+**Merge verification (architect, on the actual merged tree):** clean release
+build; 3x seed-21 aggregate runs byte-identical (only the known benign
+wall-clock field differs); seed-22 sanity run PASS.
+
+**FREEZE LIFTED.** Builder + Play-Tester resume normal work. Next in
+sequence: EXHAUSTIVENESS-ASSERTS/TOOLBAR-ICONS/Bed-fix (row 51.52, already
+CURRENT), then the 8 banked Ben findings (51.61 CHOP-PROGRESS-INDICATOR,
+51.62 Z-LEVEL-CONTROLS-SCOPE, 51.63 ★CHOP-FELLING-VISUAL-CHECK, 51.64
+STOCKPILE-INVESTIGATE, 51.65 GATHER-FLORA-INVESTIGATE, plus UI-5/row 62.2)
+per existing priority sequencing. Bug-Tester starts the full functional test
+catalog separately now that the merged tree is the stable base it needed —
+its own workstream, not gated on the builder's queue above.
+
+**Coordination-shape churn note (Sonnet, 2026-07-14):** immediately after the
+merge, the architect proposed 3 different shapes for how Bug-Tester's
+test-catalog findings should reach the builder in a single sitting — (1) a
+fix-and-verify-in-loop routed straight Bug-Tester→builder, taking priority
+over the polish queue; (2) a Sonnet-serialized one-at-a-time queue (Sonnet
+holds/releases each fix to prevent builder/Bug-Tester file collisions); (3)
+the settled final shape — Bug-Tester owns test-catalog testing AND fixing
+autonomously end-to-end in its OWN ISOLATED WORKTREE, surfacing only if
+blocked, with the builder fully freed to work its polish queue with zero
+collision concern. Each shape was relayed to the builder/Bug-Tester promptly
+as it changed; no coordination machinery was over-built for the
+intermediate shapes (a task-tracking queue created for shape (2) was
+deleted once shape (3) landed rather than kept around unused).
+
+## bastion-block-EXHAUST — EXHAUSTIVENESS-ASSERTS + BED-TOOL fix (row 51.52) — TAGGED 2026-07-14 (tag `92ec5eabf1`, on the merged ARCH-003 tree)
+
+Root-cause fix for the bug CLASS that dropped Farm (`23087dbd68`, row 50.51)
+and then Bed from the client toolbar: `ToolMode::ALL` was a hand-mirrored
+literal array that silently bypasses Rust's own exhaustiveness checker
+(which only engages on a `match`/derive, not a literal), while
+`DesignationKind`'s label/footprint/worktype/color all force updates via
+real exhaustive matches on a new variant — so a new paintable kind could
+vanish from the palette with zero compile signal.
+
+**Guard shipped:** `DesignationKind::is_tool_paintable()` — a real
+exhaustive `match`, no wildcard arm, so a future new `DesignationKind`
+variant now FAILS TO COMPILE until explicitly categorized (genuine
+prevention, not just a count check) — plus a bidirectional voxygen parity
+test asserting every paintable kind has a palette button and every palette
+button maps to a paintable kind. Both checks would have caught Farm AND Bed
+at compile/test time instead of silently at runtime.
+
+**Bed folded in per the architect's ruling** (the 3rd instance of this
+exact class, found by this work itself mid-pass): `is_tool_paintable(Bed)`
+now returns `true` and a real `ToolMode::Designate(DesignationKind::Bed)`
+button ships (palette 10→11) — all of Bed's supporting infra (label, color,
+footprint, `WorkType`) already existed from B7-1, only the toolbar wiring
+was missing.
+
+**Verification-scope disclosure (builder's own tag-review call, honestly
+flagged rather than assumed):** this pass is SIM-INERT — the common-side
+additions (`is_tool_paintable`, `EnumIter`, `ZoneKind` `Default`) are purely
+additive and touched by NO sim code path; the only behavioral change at all
+is the new client Bed button. Verified via common UNIT (31/31), the new
+voxygen parity test (1/1), harness BUILD, and VOXCHECK — all green on the
+merged ARCH-003 tree — but the full 37-scenario gate was deliberately NOT
+re-run, reasoning the scenarios test sim behavior this change cannot touch,
+while the Bug-Tester's isolated-worktree catalog run is separately
+validating the full suite under ARCH-003 in parallel. Same precedent as the
+Farm-tool and UI-4.1 client-only tags. Sonnet reviewed and accepted this
+scoping rather than requesting a redundant full gate.
+
+Builder proceeds to TOOLBAR-ICONS (row 51.5) next, own lane, known-
+readability caveat logged in the commit as previously specified; palette is
+now 11 tools (Farm + Bed both included in the icon wire-up).
+
+## bastion-block-ICONS — TOOLBAR-ICONS (row 51.5) — TAGGED 2026-07-14 (tag `4f3fe6aa10`)
+
+Voxygen-only UI polish, own lane, no sim/server touch. The overseer palette's
+`ToolMode` buttons now render as 34×34 `Button::image` icon widgets (active
+tool = bright, others = dimmed) in place of the old `.label()` text calls;
+the God/Free toggle stays text (it needs to show which mode is active, not
+just a static icon). 11 pre-delivered asset-lab icons (`tool_{pan,inspect,
+mine,chop,gather,farm,build,stockpile,ladder,erase,god}.png`) copied into
+`assets/voxygen/element/ui/bastion/`, declared in `img_ids.rs`, palette loop
+rewired to the new widget kind. VOXCHECK green — all 11 specifiers confirmed
+resolving to real committed files (not just declared).
+
+**Known issue, shipped anyway (per the standing placeholder-first / asset-
+lane-stood-down rule):** the Asset Integration tester's partial pre-
+screen (pre-stand-down) had already found readability problems on this exact
+icon set — mine reads as mattock/T not pickaxe, chop reads as hook/scythe
+not axe, pan reads crown/comb-ish, and gather/farm are a visual look-alike
+collision. Icons integrated AS-IS (still strictly better than text labels);
+a readability re-pass is explicitly deferred to whenever the asset lane
+resumes, not blocking this tag.
+
+**New gap surfaced by this pass itself:** Bed has no icon at all — the
+11-icon set predates EXHAUSTIVENESS-ASSERTS adding Bed to the palette, so
+Bed currently renders a transparent image + text-label fallback rather than
+a real icon. `tool_bed.png` is logged as a new 12th-icon asset-lane backlog
+item in `ASSET_REQUESTS.md`, for whenever that lane resumes — not a blocker
+to this tag, just an honest known-gap disclosure.
+
+VISUAL-UNVERIFIED until Ben eyeballs it — VOXCHECK proves compile +
+specifier-resolution only, not that the icons render/read correctly or
+that nothing crashes, per B41's standing lesson applied consistently.
+Ben-checklist item routed via the architect for the next real-client pass.
+
+Session tag count so far: ARENA (provisional) → CHOPFELL → UI41 → EXHAUST →
+ICONS. Builder proceeds to the 8 banked Ben findings next, starting with
+51.63 ★CHOP-FELLING-VISUAL-CHECK — doing the code-path/timing investigation
+itself since the actual live eyeball-confirmation still needs Ben.
+
+**51.63/51.65 investigation findings (builder, 2026-07-14, no tag — no code
+changed, characterization only):**
+
+**51.63 CHOP-FELLING-VISUAL-CHECK:** the felling render path is code-sound —
+identical mechanism to mining, which renders correctly for Ben. The felling
+pass (`bastion_jobs.rs:5386`, intact post-ARCH-003-merge) does
+`block_change.set(cell, Block::empty())` per band + an `emit_drop` per Wood;
+those flow `block_change` → `TerrainChanges.modified_blocks` → `sys/
+terrain_sync.rs:110-115` (compress + send) → client render — the same path
+mining already proves live. No code-level reason it wouldn't render;
+`can_set_block` only defers a band one tick, never drops it. Caveat: ARCH-003
+touched `bastion_jobs.rs` (37 lines, determinism fixes) so this behavior
+wasn't covered by the pre-merge 37/37 gate — the Bug-Tester's isolated
+catalog run on the merged tree is the check for a determinism-fix
+interaction (the render path itself is untouched by ARCH-003). Left OPEN
+pending Ben's actual eyeball — "code sound, unverified" is the honest state,
+not a dismissal. (Sonnet follow-up: asked the builder to also confirm
+SERVER-SIDE execution directly via the chop-fell harness scenario + UI-4
+inspector, not just code-read, per the architect's new-tooling standard —
+pending that re-check.)
+
+**51.65 GATHER-FLORA-INVESTIGATE:** verdict = UX-CONSISTENCY GAP, not a bug.
+Client-side Chop and Gather are handled IDENTICALLY (`FootprintMode::Area2D`,
+`session/mod.rs:1086`) — the asymmetry is server-side. Chop's `detect_trees`
+(the World tree oracle) snaps to the whole rooted tree object near the
+painted region — forgiving, click NEAR a tree fells it. Gather's
+`job_wanted(Gather)` requires `block.is_directly_collectible()` on the exact
+painted CELL (`bastion_jobs.rs:327`) — precise, a plant is one sprite, no
+nearest-object snap, must paint directly ON it. Both work as designed; Gather
+is simply fiddlier than Chop's tree-select, which is almost certainly what
+Ben felt as "doesn't work." Fix direction if parity is wanted: a
+click-tolerance/nearest-collectible snap for Gather mirroring `detect_trees`'
+forgiveness — a UX-parity fill, not a bug fix, scoped only if Ben confirms
+he wants it. No code changed.
+
+**Builder at a clean stop pending:** Sonnet's steer on 51.61 (build now,
+CHEAP tier, self-verify+tag, no full packet needed — reuses UI-4's transport
+pattern for the server→client progress feed, exact mechanism left to the
+builder's judgment) and on whether to hold 51.62 Z-LEVEL-CONTROLS-SCOPE /
+51.64 STOCKPILE-INVESTIGATE for Ben's live symptom vs. investigate now via
+code-read + existing harness/catalog scenarios + UI-4 inspector (Sonnet's
+answer: don't hold — same standard as 51.63/51.65, characterize what's
+checkable via the new tooling now, only true render/feel questions wait
+on Ben).
+
+*(A fleet-wide Ben-directed stand-down and resume happened here — see the
+master-list/no separate run-log entry needed, no code touched during the
+hold.)*
+
+## bastion-block-PROGRESS — CHOP-PROGRESS-INDICATOR (row 51.61) — TAGGED 2026-07-14 (tag `7f087da317`)
+
+Sim-inert display field `Arbiter.activity: Option<(WorkType,f32)>` (`None`
+default) — NEVER read by scoring/selection/hysteresis, written only at the
+existing job-progress path and cleared at the two existing `to_release`/
+`last_scores` sites (no new borrow introduced). Re-packaged into the
+existing `BastionInspectPayload` (tail-appended field, no new wire message —
+the B30 wire discipline held). Panel shows "Doing: Chop 74%" / "(idle)",
+reusing UI-4's fetch cache as-is. New read-only probe:
+`bastion_colonist_activity`. Files touched: `common/comp/bastion.rs`,
+`server/{bastion_jobs,lib,sys/msg/in_game}.rs`, `voxygen/session/mod.rs`,
+`bastion-harness/main.rs` (+97/−8).
+
+**Verified via the testing tools per the architect's standing directive**
+(harness scenario run, not code-read alone): chopfell scenario ×2
+byte-identical — the new activity field populates and climbs to ~99.9% on
+both a small tree (0.9985) and a big tree (0.9989) right before felling; all
+pre-existing felled/topdown/no_orphan/drops asserts stayed UNCHANGED across
+both runs, confirming the sim-inert claim directly rather than assuming it.
+UNIT 31/31, VOXCHECK green, BUILD green (harness compile pulls server+
+common transitively).
+
+## 51.62/51.63/51.64 investigation findings (builder, 2026-07-14 — all characterized via harness scenarios + UI-4 inspector per the architect's tooling directive, not code-read alone; no code changed, no tags)
+
+**51.62 Z-LEVEL-CONTROLS-SCOPE — VERDICT: NOT A BUG.** Two distinct
+z-controls exist, both already correctly scoped: (1) the designation depth
+stepper (`hud/mod.rs:4929`) is gated on `footprint_mode()==Volume` → only
+shows for Mine/Build/Stockpile/Ladder/Bed, correctly hidden for the Area2D
+tools (Chop/Gather/Farm) and non-designate tools; (2) the camera z-slice
+PgUp/PgDn (`session/mod.rs:2093`) is gated on `bastion_overseer_active()` →
+works regardless of tool, by design (it's a camera control, not a
+designation control). Neither is literally `ToolMode::Mine`-gated, but
+Ben's intuition is already ~honored where it actually matters (the per-
+designation depth stepper). Only real gap: the PgUp/PgDn slice control has
+no on-screen affordance — pure discoverability, an optional follow-up, not
+a bug.
+
+**51.63 CHOP-FELLING-VISUAL-CHECK — VERDICT: felling mechanism CODE-SOUND +
+SERVER-SIDE EXECUTION CONFIRMED (not just code-read); likely real-play cause
+= duration+legibility, addressed by 51.61; Ben's live eyeball still owed to
+fully close.** Felling removes blocks via
+`block_change.set(cell, Block::empty())` at `bastion_jobs.rs:5420/5430` —
+the IDENTICAL client-synced path mining already uses (`block_change` →
+`TerrainChanges` → `terrain_sync` → client mesh), no raw-terrain bypass;
+`tree_fell_set` keys on `BlockKind::Wood|Leaves`, exactly what live worldgen
+trees are made of. Chopfell scenario ×2 confirms top-down removal +
+no-orphan + timber-drop all PASS. Likely real culprit measured directly:
+base-cut duration (`cut_polls` ≈13.6s small tree / ≈31s big tree of real
+work at 30tps) with zero feedback prior to 51.61 — reads as "not felling"
+when it's actually just still cutting. 51.61's progress indicator is the
+direct legibility fix. Per the standing B41 gate-must-test-live-path lesson,
+a genuine live eyeball (designate Chop on a real worldgen tree, watch it
+fell top-down after the cut completes) is still required to fully close
+this row — Ben-checklist item recommended.
+
+**51.64 STOCKPILE-INVESTIGATE — VERDICT: mechanic WORKS; likely real-play
+cause = live-path/legibility, not broken.** b6haul scenario re-run on the
+current (post-ARCH-003/EXHAUST/ICONS) tree: `b6_zonea_sum=5,
+b6_pad_total=5, b6_conserved=true, b6_delivered=true` — 5 mined stones
+auto-haul to a painted Stockpile as 5 REAL item entities
+(`bastion_sum_items_near` counts actual entities, confirming hauled items
+are physically present/visible, not an abstract counter). Stockpile
+designation is a pure destination marker with zero jobs of its own. Likely
+"never works" root, reasoned from the mechanism's actual preconditions: a
+stockpile is INERT until loose items on the ground + a painted destination
++ a free hauler ALL exist simultaneously — paint one with nothing nearby to
+haul and correctly nothing moves, which reads as broken to a player. Fix
+direction: row 62.2 UI-5 (click a stockpile → contents panel) plus
+optionally a "waiting for N items" affordance. Ben-checklist item
+recommended to pin down which failure mode he actually hit.
+
+**51.65 GATHER-FLORA-INVESTIGATE** — already characterized the prior
+session (UX-consistency gap: Chop's `detect_trees` is forgiving, Gather's
+`job_wanted` needs the exact cell; not a bug). Builder re-confirmed the
+finding still stands, unchanged.
+
+**All four investigations resolve to no-immediate-code-fix** (not-a-bug /
+needs-Ben's-eyeball / fix-direction-is-UI-5). Builder's next scheduled build
+is row 62.2 UI-5 (Universal Debug Inspector) — reuse-heavy, generalizes
+UI-4's `BastionInspect`/`BastionInspectInfo` wire to accept a job/designation
+id as target in addition to a colonist `Uid`; 51.64's stockpile-contents
+legibility fix folds naturally into UI-5's stockpile target-kind scope.
+
+**Ben-checklist candidates banked for the next Play-Tester client build:**
+(a) inspect a colonist cutting a tree → "Doing: Chop N%" advances then
+resets to "(idle)"; (b) designate Chop on a real worldgen tree → after the
+cut, the tree fells top-down and timber drops; (c) mine a few blocks, paint
+a Stockpile nearby → the loose stones get hauled into it.
+
+## bastion-block-UI5 — UI-5 UNIVERSAL DEBUG INSPECTOR (row 62.2) — TAGGED (tag `b5e4755336`)
+
+Self-crafted by the builder in the UI-4 pattern, per Sonnet's green-light —
+Sonnet-routine tier confirmed correct in hindsight: no new dynamic
+mechanism, this widens WHAT a target can be, not how targeting works.
+
+`BastionInspect`'s wire generalized: `target:
+BastionInspectTarget::{Entity(Uid)|Cell(Vec3<i32>)}`, `payload:
+Option<BastionInspectKind>` with variants `Colonist` (UI-4's original
+payload, verbatim, zero churn), `Job`, `Stockpile` (contents — directly
+closes 51.64's stockpile-contents legibility gap flagged in that
+investigation), `Farm`, `FellSet`. Server resolves a clicked empty cell
+XY-column-first through job → stockpile → farm → fell-set → `None`, in the
+same post-join drain UI-4 already established; an empty-handed click now
+inspects the cell, a colonist click still selects exactly as before (UI-4's
+original behavior fully preserved). Read-only end to end, matching UI-4's
+own invariant.
+
+New `--inspect-scenario` harness leg, now leg 38 of the ladder. Gate: full
+38-leg ladder at HEAD `42f7c464a0` = 37/38 — all PASS including the new
+INSPECT leg and CK; the one BED red field-classified as the already-
+registered CASE-003 `bed_occupied_mid` signature (architect-accepted, not a
+new regression). Earlier block-level verification during development:
+`inspect` scenario ×2 bit-identical, server/voxygen checks rc=0.
+
+**Commit-hygiene note (builder's own disclosure):** staged as exactly the
+builder's own 19 hunks out of a shared dirty tree — detail lives in the
+commit body and the architect's B5.8 provenance thread, not duplicated
+here.
+
+**Context, no row action taken:** two more commits sit above UI-5 on the
+branch at time of this report — `871a9157d9` (B5.8 Stage-1,
+external-effort-originated, tracked on the architect's own provenance
+lane, not a fleet master-list row) and `42f7c464a0` (a CK CarvedStair fix
+shape that Ben's stair-ladder ruling overruled — intentionally left
+UNTAGGED, superseded by a Phase-1 walkable-stairs commit currently in
+verification that will carry the real CK-fix tag when it lands). Per the
+builder's explicit instruction, no master-list row was flipped for either
+commit; the Phase-1 tag notice will arrive separately.
+
+## bastion-block-CKSTAIR — STAIR-LADDER Phase 1 (CK fix) + STUCKJOB (α) watchdog fix — TAGGED (tag `9ad9d97808`, branch `bastion/block-B6HAUL`)
+
+Closes the CK/chokepoint red that had blocked the full ladder ever since
+ARCH-003. Tracked as its own design-doc line
+(`readme/STAIR-LADDER-MINE-ACCESS-DESIGN.md`, Phasing §Phase 1), not a
+numbered master-list row — same provenance-lane pattern as B5.8. Two real
+commits under this tag, plus two untagged intermediates kept for the
+record:
+
+**`177c12094f` — STAIR-LADDER Phase 1 (Ben's ruling).** Emergency stairs
+are WALKABLE plain Mine digs — no route ownership, no traversal task, no
+temp-terrain restoration (permanent infrastructure, matching the design
+doc's recommendation); only ladder/shaft plans stay route-owned (the plan
+tuple descriptor became `Option`). Root cause this corrects: Stage-1 had
+wrapped a walkable stair plan in an `EmergencyRouteDescriptor{kind:
+CarvedStair}` and registered route ownership for it, then never wrote a
+`CarvedStair` executor — the colonist sat in `RouteOwnedWaiting`/
+`link_queue_waiting` waiting on a traversal task that could never exist,
+until the teleport backstop bailed him out at the deadline (recorder trace:
+uid 1, seed 1337, `route_kind=CarvedStair`, `on_wall=None` in 730/730
+samples, energy pinned at 100.0). Foundation for
+`STAIR-LADDER-MINE-ACCESS-DESIGN.md`'s Phase 2 (the three access
+geometries, architect drafting).
+
+**`9ad9d97808` — STUCKJOB (α) watchdog fix + falsifier [carries the tag].**
+Fixes a SECOND, independently-latent Stage-1 watchdog defect found via this
+same forensics work (`has_live_job`, 0 occurrences at baseline — a genuinely
+separate bug from the CarvedStair one, not a duplicate): stuck-watch
+teleport suppression must be EARNED by verified job progress — a
+per-colonist `(job, progress)` baseline — not just claim-holding/churn,
+which could suppress the rescue backstop indefinitely without real
+progress. New `--stuckjob-scenario` harness leg (ladder leg 39, suite now
+39 legs total), proven properly RED→GREEN: unfixed = colonist never
+rescued within 200s against a 60s design target; fixed = rescued at 59.0s.
+CK 5/5 PASS + flight-recorder evidence + full ladder 38/39 (BED = the
+already-registered CASE-003 `bed_occupied_mid` field-class, third identical
+draw, not a new regression). Corrects the misfiled B22 `ck_failsafe_out`
+entry — an invariant violation, not a flake.
+
+**Positive capability note (not just a bug fix):** the STUCKJOB falsifier's
+rev-1 produced the first end-to-end proof of ORGANIC stair self-rescue —
+plan→claim→dig→ascend→out, 26 seconds, no teleport backstop needed at all.
+Worth surfacing to Ben directly as a capability win, not just a fix.
+
+**Commit-hygiene note (builder's own disclosure):** staged as exactly the
+builder's own hunks out of a shared dirty tree — same discipline as UI-5,
+detail in the commit bodies + the architect's B5.8 provenance thread.
+
+**Untagged intermediates on the branch, no row/doc-line action taken (per
+the builder's explicit instruction, consistent with the UI-5 tag notice):**
+`42f7c464a0` (the overruled CK fix shape (b), superseded by this Phase 1)
+and `871a9157d9` (B5.8 Stage-1, architect's own provenance lane).
+
+**Next from the builder:** task #58, the Grok/Codex testing-framework
+integration (architect/Ben-queued), starting on a NEW clean branch off
+`9ad9d97808`. Long-running — tag/branch notices will arrive as pieces land.
+The `bastion/block-B6HAUL` branch itself is left at this stable green point
+for anyone who needs it.
+
+## ff2874b4b6 — STAGE-1 SCOPE COMPLETION (external-effort provenance lane, no master-list row, `bastion/block-B6HAUL`)
+
+Closes the 12-vs-24-file gap in Stage-1's own declared dependency set: the
+6 files Stage-1's original 12-file list omitted — `common/systems/src/phys/
+{mod,collision}.rs`, `common/src/{bastion,rtsim,path}.rs`,
+`server/src/connection_handler.rs` (+500/−124). **Restores TAG
+REPRODUCIBILITY for every tag since Stage-1** (`871a9157d9` through
+`bastion-block-CKSTAIR` — all of these were clean-checkout-unbuildable
+without these 6 files). Discovered when the grok-integration worktree hit
+`cylinder_sweep_first_collision` missing from committed phys. Important
+distinction stated in the commit body itself: these files were LIVE in the
+working tree through every gate since Stage-1 landed — every test result
+this week ran against this code for real. What was broken was that git
+history could not REPRODUCE it from a clean checkout — a provenance gap,
+not a correctness gap (the architect's own clarification, now moot since
+this closes it).
+
+**Opus review (the physics-safety piece):** `capsule_terrain_cylinder`
+confirmed an EXACT behavior-preserving extraction of the old inline sweep
+(verified at `radius_cap=0.45`); `route_squeeze_until`'s gating confirmed
+robust across all 15 write sites (server-only, emergency-route-only, 200ms
+auto-expiry, teleport backstop covers edge cases) — this is the same
+mechanism [REQ-0052-ROUTE-SQUEEZE-DESIGN.md](../readme/REQ-0052-ROUTE-SQUEEZE-DESIGN.md)
+now documents as a contract. Two minor non-blocking items match that doc's
+own open items exactly: `FrontierWork`'s write site not gated identically
+to `LinkApproach` (open item #1), and the `rescue_pending` co-interaction
+not deep-traced (open item #2) — both already tracked there, not
+duplicated here.
+
+External-effort provenance, same shape as Stage-1's own original commit:
+this code originates from the B5.8 external-effort delivery; the builder is
+the committer completing its declared scope on the architect's ruling, not
+the author.
+
+## 611b0f4c51 — integration/grok-testfw reconcile-merge (task #58, NOT `bastion/block-B6HAUL`, no master-list row)
+
+Foundation-merge for the Grok/Codex testing-framework integration, tracked
+on its own `integration/grok-testfw` branch, separate from the fleet's
+catalog-block history. `grok-testfw` merge (`21275efe6b`, 53 Grok commits /
+722 files) + a reconcile-merge bringing `ff2874b4b6` (STAGE-1 SCOPE
+COMPLETION, above) into the integration branch — replacing disclosed draft
+copies with the real committed content, no duplicate versions left behind.
+
+**Verified:** fleet spot-checks 3/3 (stuckjob/CK/inspect all survived the
+merge); Grok's own legs — metamorphic PASS, perf PASS@seed21, save-fuzz
+6/7 (the 1 FAIL is drift finding #4, reclassified as a test-expectation-
+vs-contract mismatch, minor, already architect-routed, not a regression).
+4 drift findings total, all disclosed directly in the commit body rather
+than left implicit.
+
+No master-list row flip needed — this is a foundation-merge for ongoing
+integration work, not a catalog block. Builder will flag when the architect
+routes the integration follow-ups (golden regen, etc.).
+
+## bastion-block-CLIMBCAP — FREE-CLIMB DEPTH CAP + A2 RESCUE-PROGRESS GATE + BELOW-GRADE BOUNDARY FIX (STAIR-LADDER Phase-2 mechanic pulled forward) — TAGGED (tag `7483439958`, `bastion/block-B6HAUL`)
+
+Ben-ruled, Opus-cleared design + a CLEAR-TO-BUILD re-review. 5 files:
+`server/src/{bastion_jobs,lib}.rs`, `bastion-harness/src/main.rs`,
+`readme/{BASTION_COMMON_ISSUES,B5.8-WRITER-INVENTORY-REQ0094A}.md`.
+
+**Why:** a six-layer probe campaign found the emergency ladder tier was
+UNREACHABLE-IN-PRACTICE under every tested condition (rested/drained ×
+skill 0/1 × depth 6/7/8 × open/protected × five footprints) — free-climb
+self-rescue always won, because only ascent drains energy, `Climb`-hold is
+~free, and Idle regen re-arms `handle_climb`'s entry (`>1.0`) faster than
+the trapped→plan pipeline. `plan_access` never once reached
+`ladder_pillar`. Ben's ruling: cap free-climb FIRST, then prove the
+ladder.
+
+**The cap (server-side only, players untouched by construction — zero
+common/physics changes):** pure core `cap_for_skill(level) = 3·(level+1)`
+(3/6/9, Ben-tunable); `climb_cap_allows` never caps descent/hold (no
+stranding) and is fully exempted by a real ladder token (parallel to the
+existing energy exemption); `climb_free` is structurally absent from the
+signature (Opus R2: nothing to pass, nothing to forget). Per-colonist
+`climb_anchor` = the z of the last genuine foothold, never reset while
+on-wall/climbing (Opus R3). **Single-source gate (Opus R1):** every
+natural-ascent consumer (velocity lift, rung-step, the `climb_free`
+fail-safe) hangs off one shared `supported` condition — one choke point,
+not three independently-gated sites. `U8` exhaustiveness-on-writers
+self-test pins the ascent-writer counts and asserts the single gate holds.
+
+**Seed-corpus leak → two root causes + the frozen cap-skill fix (caught
+only by the many-seeds discipline — seed 1337 alone was green by
+spawn-lottery luck):** (1) SPAWN VARIANCE — colonists roll climbing 0..=1
+at spawn; a level-1 roll legitimately exits deeper, the cap held exactly
+as designed for the level actually rolled, the falsifier's premise was the
+bug. (2) XP SELF-LICENSING — arithmetically real for level-0 spawns
+(1.5xp/s supported × a flat 20xp curve = level 1 in 13.3s, cap 3→6
+mid-escape). Ben's fix: climb XP stays on free wall-climbing only (grant
+inverted to `!beside_ladder` — the assisted ladder path teaches nothing);
+the farm is closed by a FROZEN CAP-SKILL snapshot (`climb_cap_skill`,
+lazy `or_insert` at cap-consult, cleared only at genuine-surface sites) —
+a mid-escape level-up banks for the NEXT climb, progression intact, farm
+dead. Both findings registered as new classes — see B44/B45 in
+`BASTION_COMMON_ISSUES.md` (Sonnet-curated from the builder's raw
+append-notes into the house table format, numbered in sequence after
+B43).
+
+**A2 co-requisite (ships with the cap because the cap makes the backstop
+load-bearing):** `rescue_pending` → PROGRESS-EARNED, mirroring
+STUCKJOB-α. The old gate ("any egress_target + ANY is_access job
+anywhere") was an F5-class hole — a stale target or someone else's rescue
+could suppress THIS colonist's teleport forever, masked pre-cap by
+self-rescue. Suppression is now earned per-colonist (his own distance
+improving, or one of HIS OWN jobs leaving the board) — never strands.
+
+**Below-grade boundary fix:** a colonist stalled in the last 3 blocks of
+his exit sat inside the `!below_grade` predicate and wiped his own
+backstop clock on approach (measured: a 52s clock wiped at the boundary,
+13 oscillations, 200s never rescued). Fixed: near-surface wipes only when
+GROUNDED; airborne near-surface now FREEZES (no accrual, no wipe).
+
+**Observability (permanent, diag-gated):** `watch_wipe()` now shims all 11
+`stuck_watch` reset sites with a reason tag under `BASTION_EGRESS_DIAG`
+(the F5 investigation previously had no way to see which of ~a dozen
+wipers was firing); read-only `bastion_egress_probe()` harness hook added.
+
+**F5 rev-2 (the falsifier rewritten after its own postmortem — rev-1 was
+vacuous three ways):** three colonists — A (sealed vault, unchanged), B
+(reach-disjoint open pit, the genuine-rescue guard), C (protected vault,
+holds a target but no plan/jobs — the PURE A2 discriminator: old gate
+suppressed him forever, progress-earned teleports him ≤150s). Four
+preconditions self-asserted in-scenario; PRECONDITION-FAILED prints
+distinctly from FAIL.
+
+**Falsifiers, measured as a seed corpus (Ben's standing verify-mode: 6
+seeds × 3 reps × 2 scenarios, every seed byte-deterministic across reps):**
+GEOMETRY PROBE 6/6 (pre-cap RED at 22-26s route-null → post-fix backstops
+82-110s route-null on every seed; `ConstructedLadder` still never latched
+— the residual fork is planner-side, architect-routed, B5.8's ladder
+fixture stays parked); STUCKJOB+F5-rev-2.1 6/6×3 (C teleports 85-104s on
+every seed despite 65-84s of live-decoy overlap); ESCAPE-TIME baseline
+ORGANIC 6/35 (17%) vs BACKSTOP 29/35; U1-U5+U8 pins green; full 39-leg
+ladder 38/39 (BED = the registered CASE-003 flake, field-matched, boundary
+fix didn't change its signature).
+
+**One residual, reported not self-cleared (architect-ruled tag
+condition):** on seed 8, colonist A breached his sealed vault at 116s with
+NO teleport/cave-in/belt-eject writer events — a horizontal through-wall +
+≤3-z-hop move. The cap and A2 are BOTH proven independent of this anomaly
+(every anomaly sample is itself cap-compliant; A2's discriminator is
+colonist C, untouched by A's breach). Identified as the already-registered
+CLASS-6/arrive-through-walls collision seam (now B46 in
+`BASTION_COMMON_ISSUES.md`) — a separate issue from this tag's own scope.
+Committed follow-up: pin the exact breach cell (xy is currently
+unresolved, the tape logs z only) and confirm the class-6 hypothesis; any
+result implicating the cap, A2, or a worse writer RETROACTIVELY REOPENS
+this tag.
+
+**Sonnet curation note:** the builder's 3 raw append-notes in
+`BASTION_COMMON_ISSUES.md` (skill-cap self-licensing, the spawn-variance
+correction superseding half of it, and arrived-by-radius) were reviewed
+and formalized into the table as **B44** (skill-cap self-licensing), **B45**
+(spawn-lottery falsifier premises — supersedes B44's farming theory as the
+dominant root cause), and **B46** (arrived-by-radius-through-walls) — numbered
+in sequence after B43, raw notes removed to avoid duplication.
+
+No master-list row — tracked as its own tag, STAIR-LADDER Phase-2's
+prerequisite mechanic pulled forward ahead of the geometry work in
+`STAIR-LADDER-MINE-ACCESS-DESIGN.md`. Builder is not idle-pinging for a
+next block; the architect signals the Bug-Tester machine handback next,
+and the builder's queue resumes from there.
+
+## bastion-block-M2LADDER — M2 OWNED CONSTRUCTED-LADDER EGRESS — TAGGED 2026-07-18 (tag `cd69f61111`, branch `bastion/block-B6HAUL`; no master-list row — mine-complexity-ladder M2 tier, Ben-greenlit via architect; architect inline Opus-depth review GREEN, tag disposition = Ben fork #16)
+CERTIFIES: live game plans+builds correct connected ladders; the owned single-owner traversal contract governs normal-play egress with the deterministic mount-snap (kills the ~50% jump-flake); Ben's 4 observed failure classes gone ON THE OWNED PATH (fixture 9/10 ×2 det incl P0G general-position); SEED-20's stranded-forever class CLOSED (organic owned exit 55s, full phase-walk, ×3 det); organic escape 52% best-ever (17% pre-M2); never-stranded 18/18; one-binary evidence (6 seeds × 3 reps corpus + 10-episode fixture, binary 07:58:27). The arc's spine: planner fixes (cell-disjointness starvation / dismount off-by-one / walkability class) → mount-snap + at-entry unlock → the v4 GATE-HOLD corpus catch (owned contract fixture-green but NOT load-bearing in normal op) → the two-layer approach-corridor productionization (tolerance inversion [Chaser 1.5 vs cursor 0.75, writer-diag 1822 handoffs] + planned-segment sweep anchoring [the sweep ate the route's own first rung]) → corpus flip (GATE-HOLD 18/18→0). NAMED-OPEN: s1337/s22 owned-engaged-but-backstop (escape-time optimization frontier, next block); vanilla ladder-token leak (fork #15); AgentInbox interruption dead-on-live-path (engine finding, downstream bounded); class-7 item-identity nondeterminism (behavioral fork, chipped). Registry classes 7-10 filed; 4 chips; commits a2f3c3869a..22834d4152 (Stage-1 plumbing committer-not-author). Evidence + full diagnosis trail: builder scratchpad m2-tag-package.md / m2-fixture-findings.md.
