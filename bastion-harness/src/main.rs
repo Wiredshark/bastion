@@ -3971,8 +3971,23 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         }
     }
     let pit_floor = Vec3::new(sx as f32 + 0.5, sy as f32 + 0.5, (gz - depth + 1) as f32);
+    // P0G (general-position variant, the v4 gate-hold fixture gap): park the
+    // MEMBER 2 cells off the entry column so a REAL approach corridor must
+    // drive him. The at-entry short-circuit yields an EMPTY corridor, so the
+    // default P0 geometry structurally cannot exercise approach movement —
+    // exactly where the corridor-suppressor freeze hid (corpus caught it,
+    // the fixture could not). Other colonists stage as in P0.
+    // Slot SWAP (member <-> colonist 2), not a raw offset: every stage cell
+    // stays on the P0-proven floor row. N5G shares the general-position
+    // geometry (its attractor must compete with a REAL approach).
+    let general_position = episode == "P0G" || episode == "N5G";
+    let member_stage_offset = |i: usize| match (general_position, i) {
+        (true, 0) => Vec3::new(2.0, 0.0, 0.0),
+        (true, 2) => Vec3::new(-2.0, 0.0, 0.0),
+        _ => Vec3::zero(),
+    };
     for (i, n) in names.iter().enumerate() {
-        let d = pit_floor + Vec3::new(i as f32 * 1.0, 0.0, 0.0);
+        let d = pit_floor + Vec3::new(i as f32 * 1.0, 0.0, 0.0) + member_stage_offset(i);
         staged_ok &= server.bastion_teleport_colonist(n, d);
     }
     tick(&mut server, 2);
@@ -3980,13 +3995,19 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
     // landing voids the premise — INVALID, not a verdict.
     let mut position_ok = true;
     for (i, n) in names.iter().enumerate() {
-        let want = pit_floor + Vec3::new(i as f32 * 1.0, 0.0, 0.0);
+        let want = pit_floor + Vec3::new(i as f32 * 1.0, 0.0, 0.0) + member_stage_offset(i);
         let got = server
             .bastion_colonist_states()
             .iter()
             .find(|(name, ..)| name == n)
             .map(|(_, p, _)| *p);
         position_ok &= got.is_some_and(|p| p.xy().distance(want.xy()) < 2.0 && (p.z - want.z).abs() < 2.5);
+    }
+    // Food canonicalization (class-7 isolation): one deterministic food per
+    // colonist, so nondeterministic item identity cannot fork the tapes
+    // through a post-damage eat. Precondition-asserted like all staging.
+    for n in &names {
+        staged_ok &= server.bastion_canonicalize_colonist_food(n).is_some();
     }
     // Drain LAST: its recorder staging event doubles as the episode-start
     // marker (documented; both staging hooks are unused after this point).
@@ -4144,12 +4165,37 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
                     );
                     mutated = true;
                 },
-                "N6" if phase == "TraversingLink" => {
-                    server.bastion_emit_damage(&member, 5.0);
+                // N5G (architect gate condition 1, corridor-fix rerun): the
+                // competing attractor is live from tick 0 — through the ENTIRE
+                // approach-corridor window, not just the climb. The corridor
+                // fix moves the member during approach for the first time;
+                // single-owner there is gated, not assumed. Pass bar = the
+                // FULL owned exit (P0G conditions): any divert fails it.
+                "N5G" if tick_i == 0 => {
+                    server.bastion_place_designation(
+                        common::bastion::Region {
+                            min: Vec3::new(cx - 8, cy - 8, gz),
+                            max: Vec3::new(cx - 6, cy - 6, gz),
+                        },
+                        common::bastion::DesignationKind::Mine,
+                    );
                     mutated = true;
                 },
                 _ => {},
             }
+        }
+        // N6 SUSTAINED stimulus (round-8 re-aim): a single Hurt emission
+        // races the agent system's per-tick inbox drain — bastion_jobs's
+        // `!agent.inbox.is_empty()` check (the AgentInbox interruption
+        // trigger) can observe an empty inbox every tick and the climb
+        // completes uninterrupted (round 7: no abort in 60 link ticks).
+        // Emitting every TraversingLink tick guarantees a non-empty inbox
+        // whenever the check runs relative to the drain. Which reason fires
+        // (or none) is REPORTED; the interruption liveness question is the
+        // finding, not something to stage around.
+        if episode == "N6" && phase == "TraversingLink" {
+            server.bastion_emit_damage(&member, 0.5);
+            mutated = true;
         }
         // PREMISE-CHECK v2 (v1 note): the out-of-phase-Climb hard gate is
         // evaluated TAPE-SIDE by the wrapper (trajectory.jsonl carries
@@ -4210,9 +4256,23 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         p.starts_with("Traversing") || p == "FrontierWork" || p == "Reserved" || p == "Complete"
     });
     let pass = match episode.as_str() {
-        "P0" => {
+        // P0G = P0 from general position: the member must be DRIVEN to the
+        // entry by a real approach corridor before the owned climb — the
+        // corridor-movement path the at-entry geometry cannot exercise.
+        // N5G = P0G with a competing attractor live from tick 0 (approach-
+        // window single-owner gate): same full-exit bar, plus the mutation
+        // precondition.
+        "P0" | "P0G" => {
             staged_ok
                 && position_ok
+                && owned_seen
+                && out_at.is_some()
+                && abort_reason.is_none()
+        },
+        "N5G" => {
+            staged_ok
+                && position_ok
+                && mutated
                 && owned_seen
                 && out_at.is_some()
                 && abort_reason.is_none()
@@ -4254,14 +4314,15 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         "N5" | "N6" | "N2" => staged_ok && position_ok, // v1: report-only
         _ => false,
     };
-    // Ruling-1 seal-integrity rider: with a permanent block sealing the only
-    // route (free-climb capped), a fresh SUCCESSFUL exit should be
-    // impossible — observing one means the block did not actually seal the
-    // route (or an alternate access got built). Reported + escalated, never
-    // silently passed.
-    if matches!(episode.as_str(), "N1" | "N1B") && out_at.is_some() {
+    // Seal-integrity rider, post-ruling scope: N1 ONLY. The architect ruled
+    // N1B's post-abort exit BENIGN (bounded owned re-plan cycles REBUILDING
+    // the blocked dismount = the contract's designed rebuild resilience).
+    // N1's taskless exit rides the pre-existing ungoverned vanilla
+    // ladder-token path — certified-known-open, named in the tag package,
+    // next-arc scope. The flag stays as the tripwire for any NEW mechanism.
+    if episode == "N1" && out_at.is_some() {
         println!(
-            "M2-N1-RED-FLAG: successful exit despite permanent seal (out_at={out_at:?}) — seal-integrity escalation required"
+            "M2-N1-RED-FLAG: successful exit despite permanent seal (out_at={out_at:?}) — known-open vanilla-leak path; verify mechanism unchanged"
         );
     }
     println!(
@@ -8944,14 +9005,47 @@ fn stuckjob_scenario(args: &Args) -> ExitCode {
     let mut c_out_secs = -1.0f32;
     let mut claim_samples = 0u32;
     let mut samples = 0u32;
+    // OWNED-vs-VANILLA exit classification (M2 tag condition): per-TICK
+    // traversal-probe latch per colonist (Reserved lasts 3 ticks — a 1s
+    // sampler misses it), latched only BEFORE that colonist's own exit.
+    // Expectation to read against: A's deep-ladder exit is the owned-contract
+    // case; C's designed exit is the teleport backstop (legitimately
+    // taskless); B walks his own stairs. REPORT, the architect rules.
+    let mut owned_phases: [Vec<String>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    // B's route KIND (gate condition 2 scope): the owned-phase-walk demand
+    // applies to LADDER-TIER exits only — a stair-plan seed walks out and
+    // never needs the traversal task. Last-seen non-None wins (walkability
+    // rejection upgrades stairs -> ladder mid-plan; the final kind is the
+    // executed one).
+    let mut b_route_kind: Option<String> = None;
     for i in 0..220u32 {
         for _ in 0..30 {
             tick(&mut server, 1);
             if !server.bastion_claimed_job_positions().is_empty() {
                 claim_samples += 1;
             }
+            for (idx, (name, out_flag)) in [
+                (trapped.as_str(), out_secs),
+                (decoy.as_str(), decoy_out_secs),
+                (cee.as_str(), c_out_secs),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                if out_flag < 0.0
+                    && let Some((p, ..)) = server.bastion_traversal_probe(name)
+                    && !owned_phases[idx].contains(&p)
+                {
+                    owned_phases[idx].push(p);
+                }
+            }
         }
         samples += 1;
+        if decoy_out_secs < 0.0
+            && let Some(kind) = server.bastion_colonist_route_kind(&decoy)
+        {
+            b_route_kind = Some(kind);
+        }
         let states = server.bastion_colonist_states();
         let out_of = |name: &String| {
             states
@@ -9017,6 +9111,10 @@ fn stuckjob_scenario(args: &Args) -> ExitCode {
             server.bastion_colonist_uid(&decoy),
             server.bastion_colonist_uid(&cee),
         ],
+        // Pre-exit traversal phases per colonist [A, B, C]; empty = the exit
+        // never carried a BastionTraversalTask (taskless-vanilla signature).
+        "stuckjob_owned_phases": owned_phases,
+        "stuckjob_b_route_kind": b_route_kind,
         "stuckjob_out_secs": out_secs,
         "stuckjob_out_within_budget": out_within_budget,
         "stuckjob_claim_samples": claim_samples,
