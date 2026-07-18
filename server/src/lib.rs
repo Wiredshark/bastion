@@ -1418,6 +1418,23 @@ impl Server {
         board.traversal_probe(&uid)
     }
 
+    /// bastion (M2 fixture N1B, harness read): dismount anchor of the named
+    /// colonist's live traversal route (None when no task/descriptor).
+    pub fn bastion_route_dismount(&self, name: &str) -> Option<Vec3<i32>> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let uid = {
+            let colonists = ecs.read_storage::<comp::Colonist>();
+            let uids = ecs.read_storage::<common::uid::Uid>();
+            (&colonists, &uids)
+                .join()
+                .find(|(c, _)| c.0.name == name)
+                .map(|(_, u)| *u)?
+        };
+        let board = ecs.read_resource::<bastion_jobs::JobBoard>();
+        board.route_dismount(&uid)
+    }
+
     /// bastion (M2 fixture, PERMITTED TOUCH 3): emit real damage through the
     /// PRODUCTION event bus so the Apply-phase handler produces
     /// `AgentEvent::Hurt` (INV-INBOX-HURT). Writing `agent.inbox`, `Health`,
@@ -1448,7 +1465,9 @@ impl Server {
                     cause: Some(common::DamageSource::Falling),
                     time,
                     precise: false,
-                    instance: rand::random(),
+                    // Fixed instance: rand::random() made N6 nondeterministic
+                    // across identical runs (the x2 comparator caught it).
+                    instance: 0xBA57_10D4,
                 },
             });
         true

@@ -3871,6 +3871,16 @@ impl JobBoard {
         })
     }
 
+    /// bastion (M2 fixture N1B, harness read): the member's route descriptor
+    /// dismount anchor — a fingerprint cell ahead of the ascent, so the
+    /// intent-faithful blocked-entry variant can aim a survivable mutation.
+    pub fn route_dismount(&self, member: &Uid) -> Option<Vec3<i32>> {
+        let task = self.bastion_traversal_tasks.get(member)?;
+        self.emergency_route_descriptors
+            .get(&task.owner)
+            .map(|descriptor| descriptor.dismount)
+    }
+
     pub fn egress_probe(&self, uid: Uid) -> (bool, usize, usize) {
         let has_target = self.egress_targets.contains_key(&uid);
         let owned = self
@@ -7538,6 +7548,23 @@ impl<'a> System<'a> for Sys {
                                     && entry.frontier == active.job
                                     && entry.top_z == top_z
                             });
+                        // M2 A/B flow marker: the P0 tape showed the recovery
+                        // diagnostic looping with ALL downstream exits silent
+                        // — this names which branch actually runs each tick.
+                        if std::env::var_os("BASTION_EGRESS_DIAG").is_some() && tick.0 % 30 == 0 {
+                            info!(
+                                tick = tick.0,
+                                uid = uid.0.get(),
+                                saved_entry = saved_entry.is_some(),
+                                corridor_present = board
+                                    .emergency_approach_corridors
+                                    .contains_key(&uid),
+                                completed = completed_jobs.len(),
+                                ?traversal_kind,
+                                frontier_job = active.job,
+                                "bastion: M2 frontier flow marker"
+                            );
+                        }
                         let mut route_entry = route_entry;
                         // REQ-0081: a constructed ladder's stored body lane
                         // is an off-mesh-link entry, not a beeline target. Use
@@ -7579,7 +7606,33 @@ impl<'a> System<'a> for Sys {
                                     .cloned();
                                 let corridor_result = descriptor.zip(first_rung).zip(cylinder).map(
                                     |((descriptor, first_rung), cylinder)| {
-                                        if let Some(corridor) = planned_corridor {
+                                        // ★ M2 ALREADY-AT-ENTRY (the owned-
+                                        // contract unlock, P0 tape-pinned): a
+                                        // member STANDING IN the entry cell
+                                        // needs no approach — but the
+                                        // validation sweep from his position
+                                        // to the entry degenerately SELF-HIT
+                                        // the cell he occupies (resolve_dir
+                                        // zero, sample 0/0), rejecting the
+                                        // corridor forever and starving the
+                                        // ConstructionFrontier task creation
+                                        // downstream. At-entry = trivially
+                                        // valid, EMPTY corridor; the zero-
+                                        // waypoint corridor_step completes
+                                        // immediately into the entry record.
+                                        let entry_center = descriptor
+                                            .entry
+                                            .map(|value| value as f32)
+                                            + Vec3::new(0.5, 0.5, 0.0);
+                                        let at_entry = pos
+                                            .0
+                                            .xy()
+                                            .distance_squared(entry_center.xy())
+                                            < 0.36
+                                            && (pos.0.z - descriptor.entry.z as f32).abs() < 1.2;
+                                        if at_entry {
+                                            (Some((descriptor.entry, Vec::new())), Vec::new())
+                                        } else if let Some(corridor) = planned_corridor {
                                             let hit =
                                                 emergency_validate_constructed_ladder_corridor(
                                                     &*terrain,
