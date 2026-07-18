@@ -2993,6 +2993,11 @@ pub struct JobBoard {
     /// supported-entry/Goto/mount pipeline owns reacquisition and ordinary
     /// distance-based emergency arrival is suppressed.
     pub(crate) emergency_frontier_reacquire: HashMap<Uid, JobId>,
+    /// BACKSTOP-OPT (B): consecutive fruitless traversal aborts per member.
+    /// Cleared on frontier completion or verified dismount; on exceeding the
+    /// bound the member is released to the independent failsafe tier instead
+    /// of re-engaging forever (a genuinely-impossible route must not loop).
+    pub(crate) emergency_reengage_aborts: HashMap<Uid, u32>,
     /// Airborne pre-route owners establishing a physically supported origin.
     /// This state remains visible to the deep harness so a leaked/pending
     /// settle episode can never be mistaken for clean `[0,0,0]` teardown.
@@ -11148,6 +11153,8 @@ impl<'a> System<'a> for Sys {
                                 board.emergency_approach_corridors.remove(&member);
                                 board.emergency_frontier_reacquire.remove(&member);
                                 board.egress_targets.remove(&member);
+                                // Real progress: the consecutive-abort bound resets.
+                                board.emergency_reengage_aborts.remove(&member);
                                 info!(
                                     owner = route_owner.0.get(),
                                     uid = member.0.get(),
@@ -11163,6 +11170,38 @@ impl<'a> System<'a> for Sys {
                                 board.emergency_partial_route_entries.remove(&member);
                                 board.emergency_approach_corridors.remove(&member);
                                 board.egress_targets.remove(&member);
+                                // BACKSTOP-OPT (B): bounded re-engage. Each
+                                // fruitless abort counts; the counter clears
+                                // on real progress (frontier completion /
+                                // verified dismount). Exhaustion releases the
+                                // member to the independent failsafe tier —
+                                // never-stranded holds via the net, and the
+                                // route cannot hold a member hostage forever.
+                                const EMERGENCY_REENGAGE_BOUND: u32 = 5;
+                                let aborts = board
+                                    .emergency_reengage_aborts
+                                    .entry(member)
+                                    .or_insert(0);
+                                *aborts += 1;
+                                if *aborts > EMERGENCY_REENGAGE_BOUND {
+                                    board.emergency_reengage_aborts.remove(&member);
+                                    board.emergency_route_members.remove(&member);
+                                    board.emergency_frontier_reacquire.remove(&member);
+                                    watch_wipe(
+                                        &mut board.stuck_watch,
+                                        &member,
+                                        "reengage-bound-exhausted",
+                                    );
+                                    info!(
+                                        owner = route_owner.0.get(),
+                                        uid = member.0.get(),
+                                        job = frontier,
+                                        tick = tick.0,
+                                        reason = ?transaction.abort_reason,
+                                        "bastion: emergency re-engage bound exhausted; member released to failsafe tier"
+                                    );
+                                    continue;
+                                }
                                 board.emergency_frontier_reacquire.insert(member, frontier);
                                 if let Some(entity) = id_maps.uid_entity(member) {
                                     if let Some(active) = active_jobs.get_mut(entity)
@@ -11295,17 +11334,37 @@ impl<'a> System<'a> for Sys {
                         .and_then(|entity| positions.get(entity))
                         .map_or((true, None), |position| {
                             let feet = position.0.map(|value| value.floor() as i32);
-                            let below_grade =
-                                surface_teleport_dest(&terrain, feet).is_some_and(|destination| {
-                                    destination
-                                        .map(|value| value as f32)
-                                        .xy()
-                                        .distance(position.0.xy())
-                                        >= 3.0
-                                        || (destination.z as f32 - position.0.z) >= 3.0
-                                });
+                            // BACKSTOP-OPT (A), architect-ruled: the old
+                            // `!below_grade` short-circuit released members
+                            // WITHOUT support/clearance checks whenever the
+                            // surface teleport destination was <3 blocks away
+                            // — corpus-v5 tape: s1337 released while HANGING
+                            // ON THE WALL 2.4 below route_top, s22 released
+                            // mid-climb 0.72 below the top with a COMPLETE
+                            // ladder; both then dropped to ordinary pathing,
+                            // wedged at the cap, and rode the failsafe out.
+                            // The stable-dismount bar now applies to BOTH
+                            // legs: supported + body-clear ALWAYS, and the
+                            // position must be AT the route top or standing
+                            // essentially AT surface height (dz < 1.0 — the
+                            // 3.0 threshold let in-shaft ledges count as
+                            // surface). safe_secs stays as the stability
+                            // window on top of this.
+                            let surface_delta = surface_teleport_dest(&terrain, feet).map(
+                                |destination| {
+                                    (
+                                        destination.z as f32 - position.0.z,
+                                        destination
+                                            .map(|value| value as f32)
+                                            .xy()
+                                            .distance(position.0.xy()),
+                                    )
+                                },
+                            );
+                            let at_surface = surface_delta
+                                .is_none_or(|(dz, dxy)| dz < 1.0 && dxy < 3.0);
                             let at_route_exit =
-                                route_top.is_some_and(|top| position.0.z >= top as f32 - 1.0);
+                                route_top.is_some_and(|top| position.0.z >= top as f32 - 0.5);
                             let supported = terrain
                                 .get(feet - Vec3::unit_z())
                                 .is_ok_and(|block| block.is_filled());
@@ -11318,7 +11377,7 @@ impl<'a> System<'a> for Sys {
                                 || route_cells.contains(&feet)
                                 || route_cells.contains(&(feet + Vec3::unit_z()));
                             let at_verified_exit =
-                                !below_grade || (at_route_exit && supported && body_clear);
+                                (at_surface || at_route_exit) && supported && body_clear;
                             let dismount = (at_verified_exit && occupies_route)
                                 .then(|| emergency_dismount_dest(&terrain, feet, &route_cells))
                                 .flatten();
@@ -11480,6 +11539,7 @@ impl<'a> System<'a> for Sys {
                     board.egress_targets.remove(&member);
                     board.egress_best_distance.remove(&member);
                     board.egress_no_progress_secs.remove(&member);
+                    board.emergency_reengage_aborts.remove(&member);
                     watch_wipe(&mut board.stuck_watch, &member, "route-cleanup");
                 }
                 for member in lost_members {
