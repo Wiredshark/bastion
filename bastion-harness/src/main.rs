@@ -8033,6 +8033,16 @@ fn b58_geom_probe(args: &Args) -> ExitCode {
     for n in &names {
         server.bastion_set_colonist_energy(n, 0.1);
     }
+    // STAGE climbing to level 0 (corpus finding: spawns roll 0..=1, and a
+    // level-1 roll legitimately exits depth 8 via cap 6 + scramble 3 — the
+    // falsifier premise must be structural, not lottery). With free-climb XP
+    // restored, the trapped colonist genuinely EARNS level 1 in-shaft
+    // (~13.3s supported) — containment therefore proves the FROZEN CAP-SKILL
+    // snapshot held for the whole episode.
+    let mut staged_level0 = true;
+    for n in &names {
+        staged_level0 &= server.bastion_set_colonist_climb_level(n, 0);
+    }
 
     // 2x2_prot's protection shell: ONE Stockpile paint over the whole
     // neighborhood (walls + shaft — carve-blocking is what matters; rung
@@ -8061,7 +8071,14 @@ fn b58_geom_probe(args: &Args) -> ExitCode {
     let mut latched: Vec<Option<String>> = vec![None; candidates.len()];
     let mut out_secs: Vec<f32> = vec![-1.0; candidates.len()];
     let mut out_xy: Vec<Option<(f32, f32)>> = vec![None; candidates.len()];
-    for sec in 0..150u32 {
+    // Window override for EXIT-PROOF runs only (the s21-open architect gate:
+    // a >150s organic carve must be PROVEN out, not assumed). Default stays
+    // 150 — corpus reproducibility untouched.
+    let window: u32 = std::env::var("BASTION_PROBE_WINDOW_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(150);
+    for sec in 0..window {
         tick(&mut server, 30);
         let states = server.bastion_colonist_states();
         for (i, name) in names.iter().enumerate() {
@@ -8120,6 +8137,7 @@ fn b58_geom_probe(args: &Args) -> ExitCode {
     let result = serde_json::json!({
         "candidates": results,
         "control_organic_stair_escape": control_stair,
+        "b58_geom_staged_level0": staged_level0,
         "b58_geom_winner": winner,
     });
     println!("{result}");
@@ -8225,8 +8243,8 @@ fn stuckjob_scenario(args: &Args) -> ExitCode {
     // honest solid walls all the way down).
     let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
     let air = Block::empty();
-    for x in (cx - 10)..=(cx + 10) {
-        for y in (cy - 10)..=(cy + 10) {
+    for x in (cx - 12)..=(cx + 12) {
+        for y in (cy - 24)..=(cy + 10) {
             for z in (gz - 9)..=gz {
                 server.state_mut().set_block(Vec3::new(x, y, z), rock);
             }
@@ -8236,14 +8254,26 @@ fn stuckjob_scenario(args: &Args) -> ExitCode {
         }
     }
     tick(&mut server, 2);
-    // EXACTLY ONE colonist: nobody exists to dig the emergency stair cells
-    // from outside, so the planned rescue can never complete — the pure
-    // claim-holding-without-progress state the falsifier needs.
-    let names = server.bastion_spawn_colony(
+    // THREE colonists (F5 rev-2, per the rev-1 postmortem): A = the sealed
+    // vault α leg (claims on unreachable bait, no possible rescue — teleport
+    // ≤150s); B = an OPEN pit whose emergency stairs get planned, the decoy
+    // is_access factory AND the genuine-rescue proof; C = a PROTECTED vault
+    // (Stockpile paint refuses carving) holding an egress target with no plan
+    // and no owned jobs — the pure A2 discriminator: under the old coarse
+    // rescue_pending gate ("any egress target + ANY is_access job"), C's
+    // target + B's live decoys suppress C's backstop forever (RED by
+    // inspection); under PROGRESS-EARNED, C earns nothing and teleports
+    // within budget.
+    server.bastion_spawn_colony(
         Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
-        1,
+        3,
     );
     tick(&mut server, 30);
+    // Unique deterministic names (the probe scenarios' standard): every
+    // staging/probe/teleport call below is NAME-KEYED, and spawn names
+    // collide (~1/24 per pair) — a collision silently corrupts staging and
+    // reads a_no_target from the wrong colonist.
+    let names = server.bastion_rename_colonists_unique();
 
     // A SEALED VAULT — not an open pit. A first rev used CK's open 3x3x7 pit
     // and DISPROVED itself: in a clean 1-colonist world the emergency stair
@@ -8264,36 +8294,172 @@ fn stuckjob_scenario(args: &Args) -> ExitCode {
             }
         }
     }
-    // BAIT: two 3x3 Mine clusters on the far pad surface — claimable (they're
-    // live board jobs), permanently unreachable from inside the vault. Enough
-    // jobs that claim-churn (claim → path-fail → strike → next) spans the
-    // whole window, as CK's trace showed (claims cycling 46→1→52 for 240s+).
-    for (bx, by) in [(cx + 7, cy + 7), (cx - 7, cy + 7)] {
+    // ★ F5 rev-2 SEQUENCING (the rev-1 postmortem, f5-redesign.md): decoys
+    // require a VERDICT, and verdicts require a JOBLESS still-window — so B
+    // and C enter their geometry at t=0 with ZERO claimable jobs anywhere,
+    // verdict together at ~20s (the still-loop runs before plan emission
+    // within a pass, so C's target lands before B's decoys exist), and only
+    // THEN does the bait get painted + A dropped. rev-1 painted bait first:
+    // B churn-claimed it (claims are global), never verdicted, the decoys
+    // never existed, and no precondition assert noticed — the leg vacuously
+    // tested α twice while claiming to test A2.
+    let trapped = names.first().cloned().unwrap_or_default();
+    let decoy = names.get(1).cloned().unwrap_or_default();
+    let cee = names.get(2).cloned().unwrap_or_default();
+    // STAGE climbing to level 0 for all three (the spawn 0..=1 roll): B's
+    // depth-6 pit is FREE-CLIMBABLE by a level-1 roll (cap 6 ≥ 6 — no
+    // verdict, no decoys, the rev-1 vacuity by another door), and A/C's α/A2
+    // legs assume no organic self-rescue reach.
+    let mut staged_level0 = true;
+    for n in [&trapped, &decoy, &cee] {
+        staged_level0 &= server.bastion_set_colonist_climb_level(n, 0);
+    }
+    // A parks far from B/C geometry until his drop (deterministic, not
+    // wander-luck; he may claim B's decoys from the surface meanwhile —
+    // harmless, the teleport strike-clears any held claim).
+    server.bastion_teleport_colonist(
+        &trapped,
+        Vec3::new(cx as f32 + 0.5, (cy + 3) as f32 + 0.5, (gz + 1) as f32),
+    );
+    // B: OPEN 3x3 depth-6 pit, reach-disjoint from every designation — his
+    // verdict plans REAL emergency stairs (the decoy is_access jobs) and he
+    // digs himself out through them: progress-earned's completion clause
+    // exercised end-to-end, plus the genuine-rescue guard.
+    let (bx, by) = (cx - 6, cy - 16);
+    for x in (bx - 1)..=(bx + 1) {
+        for y in (by - 1)..=(by + 1) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    // C: a SEALED vault like A's but PROTECTED (the b58_geom_probe trick — a
+    // Stockpile paint refuses carving, registers a zone, zero jobs), so C
+    // verdicts and holds an egress target with NO plan and NO owned jobs.
+    let (px, py) = (cx + 6, cy - 16);
+    for x in (px - 1)..=(px + 1) {
+        for y in (py - 1)..=(py + 1) {
+            for z in (gz - 7)..=(gz - 2) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    // ★ SHELL PROTECTION, walls-only (corpus-v2 seed-8 finding): a FULL-BOX
+    // Stockpile paint protects carving but its interior AIR cells are live
+    // haul DROPOFFS — B's dig spoils generated haul jobs targeting the zone,
+    // and the vaulted colonist ARRIVED at them repeatedly, wiping a nearly-
+    // fired backstop clock three times (55s/52s/27s arrived-head wipes).
+    // Every shell cell sits INSIDE SOLID ROCK: carve-protection intact
+    // (protection is kind-agnostic — any designated region refuses carve),
+    // zero standable dropoff cells, zero Arrived surface. Interior excluded.
+    let mut protect_shell = |vx: i32, vy: i32| {
+        let slabs = [
+            // roof + floor (solid pad rock above/below the interior)
+            (vx - 5, vx + 5, vy - 5, vy + 5, gz - 1, gz),
+            (vx - 5, vx + 5, vy - 5, vy + 5, gz - 9, gz - 8),
+            // four side walls spanning the interior's z, interior excluded
+            (vx - 5, vx - 2, vy - 5, vy + 5, gz - 8, gz - 1),
+            (vx + 2, vx + 5, vy - 5, vy + 5, gz - 8, gz - 1),
+            (vx - 1, vx + 1, vy - 5, vy - 2, gz - 8, gz - 1),
+            (vx - 1, vx + 1, vy + 2, vy + 5, gz - 8, gz - 1),
+        ];
+        for (x0, x1, y0, y1, z0, z1) in slabs {
+            server.bastion_place_designation(
+                common::bastion::Region {
+                    min: Vec3::new(x0, y0, z0),
+                    max: Vec3::new(x1, y1, z1),
+                },
+                common::bastion::DesignationKind::Stockpile,
+            );
+        }
+    };
+    protect_shell(px, py);
+    // A's vault gets the SAME protection (corpus seed-8 v1 finding):
+    // unprotected, the α premise "no organic rescue possible" held only by
+    // churn-luck — on a light-churn seed A verdicted and plan_access started
+    // legitimately carving him out. Protection makes every seed's α path
+    // terminate in the backstop.
+    protect_shell(nx, ny);
+    tick(&mut server, 2);
+    server.bastion_teleport_colonist(
+        &decoy,
+        Vec3::new(bx as f32 + 0.5, by as f32 + 0.5, (gz - 6) as f32),
+    );
+    server.bastion_teleport_colonist(
+        &cee,
+        Vec3::new(px as f32 + 0.5, py as f32 + 0.5, (gz - 7) as f32),
+    );
+    // SOLO PHASE (40s): both verdict ~20s (EGRESS_STILL_SECS=20); B's stair
+    // plan emits right after. PRECONDITIONS measured here — a run whose
+    // decoys never exist is INVALID, not merely failing (the rev-1 lesson:
+    // falsifiers assert their own preconditions). overlap_secs counts the
+    // A2 premise itself: decoys alive while C sits below grade unsuppressed.
+    let mut c_target_by_30 = false;
+    let mut decoys_by_40 = false;
+    let mut overlap_secs = 0u32;
+    for i in 0..40u32 {
+        tick(&mut server, 30);
+        // α-PURITY RE-PARK (corpus seed-22 finding): left free, A claims B's
+        // decoy stairs, walks DOWN the carved steps into the pit, goes still
+        // below grade, and VERDICTS — arriving at his drop with an egress
+        // target, which collapses his leg into C's semantics. A verdict needs
+        // 20s of below-grade stillness; re-parking him to the surface every
+        // 5s makes that structurally impossible while leaving B's dig alone.
+        if i % 5 == 4 {
+            server.bastion_teleport_colonist(
+                &trapped,
+                Vec3::new(cx as f32 + 0.5, (cy + 3) as f32 + 0.5, (gz + 1) as f32),
+            );
+        }
+        if i < 30
+            && server
+                .bastion_egress_probe(&cee)
+                .is_some_and(|(has_target, _, _)| has_target)
+        {
+            c_target_by_30 = true;
+        }
+        if server
+            .bastion_egress_probe(&decoy)
+            .is_some_and(|(_, _, total)| total > 0)
+        {
+            decoys_by_40 = true;
+            overlap_secs += 1;
+        }
+    }
+    // t=40: bait lands (two 3x3 Mine clusters on the far pad surface —
+    // claimable live board jobs, permanently unreachable from inside A's
+    // vault; enough that claim-churn spans the whole window, per CK's trace)
+    // + A drops into HIS vault — the α leg begins.
+    for (mx, my) in [(cx + 7, cy + 7), (cx - 7, cy + 7)] {
         server.bastion_place_designation(
             common::bastion::Region {
-                min: Vec3::new(bx - 1, by - 1, gz),
-                max: Vec3::new(bx + 1, by + 1, gz),
+                min: Vec3::new(mx - 1, my - 1, gz),
+                max: Vec3::new(mx + 1, my + 1, gz),
             },
             common::bastion::DesignationKind::Mine,
         );
     }
     tick(&mut server, 2);
-    let trapped = names.first().cloned().unwrap_or_default();
+    let a_no_target_at_drop = server
+        .bastion_egress_probe(&trapped)
+        .is_some_and(|(has_target, _, _)| !has_target);
     server.bastion_teleport_colonist(
         &trapped,
         Vec3::new(nx as f32 + 0.5, ny as f32 + 0.5, (gz - 7) as f32),
     );
 
-    // Budget: 200 sim-seconds. The teleport backstop is designed at
-    // STUCK_TELEPORT_SECS=60; the PASS bar is out WITHIN 150s (2.5x the
-    // design, far under CK's demonstrated 240s+ suppression). Claims are
+    // Budget: 220 sim-seconds post-bait. The teleport backstop is designed at
+    // STUCK_TELEPORT_SECS=60; every leg's PASS bar is out WITHIN 150s of its
+    // OWN start (A from his t=40 drop; B and C absolute from t=0). Claims are
     // sampled EVERY TICK (a dig-claim can live <1s — the 1/s sampler of rev-1
-    // missed all of them); claims_seen is the falsifier's own precondition
+    // missed all of them); claims_seen is the α leg's own precondition
     // (no claims = the suppression path never engaged, run proves nothing).
     let mut out_secs = -1.0f32;
+    let mut decoy_out_secs = -1.0f32;
+    let mut c_out_secs = -1.0f32;
     let mut claim_samples = 0u32;
     let mut samples = 0u32;
-    for i in 0..200u32 {
+    for i in 0..220u32 {
         for _ in 0..30 {
             tick(&mut server, 1);
             if !server.bastion_claimed_job_positions().is_empty() {
@@ -8301,12 +8467,31 @@ fn stuckjob_scenario(args: &Args) -> ExitCode {
             }
         }
         samples += 1;
-        let out = server
-            .bastion_colonist_states()
-            .iter()
-            .any(|(n, p, _)| n == &trapped && p.z >= gz as f32 + 0.5);
-        if out && out_secs < 0.0 {
+        let states = server.bastion_colonist_states();
+        let out_of = |name: &String| {
+            states
+                .iter()
+                .any(|(n, p, _)| n == name && p.z >= gz as f32 + 0.5)
+        };
+        if out_secs < 0.0 && out_of(&trapped) {
             out_secs = (i + 1) as f32;
+        }
+        if decoy_out_secs < 0.0 && out_of(&decoy) {
+            decoy_out_secs = 40.0 + (i + 1) as f32;
+        }
+        if c_out_secs < 0.0 && out_of(&cee) {
+            c_out_secs = 40.0 + (i + 1) as f32;
+        }
+        // The A2 discrimination premise keeps accruing post-bait: decoys
+        // alive while C still sits below grade.
+        if c_out_secs < 0.0
+            && server
+                .bastion_egress_probe(&cee)
+                .is_some_and(|(_, _, total)| total > 0)
+        {
+            overlap_secs += 1;
+        }
+        if out_secs > 0.0 && decoy_out_secs > 0.0 && c_out_secs > 0.0 {
             break;
         }
     }
@@ -8316,16 +8501,57 @@ fn stuckjob_scenario(args: &Args) -> ExitCode {
         .any(|(n, _, _)| n == &trapped);
     let out_within_budget = out_secs > 0.0 && out_secs <= 150.0;
     let claims_seen = claim_samples > 0;
+    // F5 rev-2 verdicts: A escapes (α backstop) despite live decoys; B gets
+    // GENUINELY rescued through his own planned stairs (progress-earned's
+    // completion clause didn't break real rescue); C — target + no plan + no
+    // owned jobs — teleports within budget DESPITE B's live decoys (the pure
+    // A2 discriminator: the old coarse gate suppressed exactly this forever).
+    // B's invariant is NEVER-STRANDED — out within the window by ANY tier
+    // (his own dig or his own backstop; both prove no wrongful suppression).
+    // A 150s dig-speed bar failed on terrain-luck (corpus seed 7: genuine
+    // dig stall, correct backstop at 193s) and passed 1337 by 0.0s margin —
+    // speed is seed-lottery, the safety property is the assert. A/C keep
+    // 150s: theirs derive from the 60s teleport design, not dig speed.
+    let f5_decoy_rescued = decoy_out_secs > 0.0;
+    let f5_c_teleported = c_out_secs > 0.0 && c_out_secs <= 150.0;
+    let preconditions =
+        c_target_by_30 && decoys_by_40 && a_no_target_at_drop && overlap_secs >= 15;
+    if !preconditions {
+        println!(
+            "STUCKJOB PRECONDITION-FAILED: c_target_by_30={c_target_by_30} \
+             decoys_by_40={decoys_by_40} a_no_target_at_drop={a_no_target_at_drop} \
+             overlap_secs={overlap_secs}"
+        );
+    }
 
     let result = serde_json::json!({
+        // uid map (corpus seed-8 lesson: colonist uids are NOT 1/2/3 on every
+        // seed — log-forensics on FAIL-SAFE lines needs this to avoid the pun).
+        "stuckjob_uids": [
+            server.bastion_colonist_uid(&trapped),
+            server.bastion_colonist_uid(&decoy),
+            server.bastion_colonist_uid(&cee),
+        ],
         "stuckjob_out_secs": out_secs,
         "stuckjob_out_within_budget": out_within_budget,
         "stuckjob_claim_samples": claim_samples,
         "stuckjob_samples": samples,
         "stuckjob_claims_seen": claims_seen,
         "stuckjob_alive": alive,
+        "stuckjob_f5_decoy_out_secs": decoy_out_secs,
+        "stuckjob_f5_decoy_rescued": f5_decoy_rescued,
+        "stuckjob_f5_c_out_secs": c_out_secs,
+        "stuckjob_f5_c_teleported": f5_c_teleported,
+        "stuckjob_f5_overlap_secs": overlap_secs,
+        "stuckjob_f5_preconditions": preconditions,
+        "stuckjob_staged_level0": staged_level0,
     });
-    let pass = out_within_budget && alive && claims_seen;
+    let pass = out_within_budget
+        && alive
+        && claims_seen
+        && f5_decoy_rescued
+        && f5_c_teleported
+        && preconditions;
     println!("{result}");
     println!("STUCKJOB SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 

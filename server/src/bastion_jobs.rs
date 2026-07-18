@@ -543,6 +543,53 @@ fn emergency_escape_shaft(
 /// humanitarian bubble for emergency egress (which must work with ZERO
 /// active zones — Ben's delete-the-zone entombment). Returns the plan kind
 /// + job count, or `None` when no route fits the mask.
+/// FREE-CLIMB CAP pure core (Ben-ruled, Opus-cleared): the skill-scaled
+/// spatial reach a colonist may free-climb above his last genuine foothold.
+/// Ben's "logical reach" — a DISTANCE, not a resource: regen-cycling gains
+/// nothing because the binding constraint is position (the measured exploit:
+/// only ascent drains energy, Climb-hold is ~free, Idle regen re-arms entry
+/// in seconds — a spatial cap ends that class instead of re-tuning it).
+/// Observability shim over `stuck_watch` wipes: every reset site names its
+/// reason, and wiping a NONZERO clock traces under BASTION_EGRESS_DIAG. The
+/// watchdog has ~a dozen legitimate reset sites; when a colonist who should
+/// backstop never does, the wipe-reason trace is the discriminator (the F5
+/// pit-B investigation: 200s below grade, no teleport, no way to see why).
+fn watch_wipe(watch: &mut HashMap<Uid, f32>, uid: &Uid, reason: &'static str) {
+    let had = watch.remove(uid);
+    if had.is_some_and(|secs| secs >= 1.0)
+        && std::env::var_os("BASTION_EGRESS_DIAG").is_some()
+    {
+        info!(
+            uid = uid.0.get(),
+            secs = had.unwrap_or(0.0),
+            reason,
+            "bastion: stuck_watch wiped"
+        );
+    }
+}
+
+pub(crate) fn cap_for_skill(climbing_level: u16) -> i32 {
+    3 * (i32::from(climbing_level) + 1)
+}
+
+/// FREE-CLIMB CAP decision (pure; unit-pinned U1-U5). `true` = the ascent is
+/// allowed. NOTE the deliberate ABSENCE of any climb_free parameter — the
+/// trapped-machinery grant exempts ENERGY only, never the cap; keeping it out
+/// of the signature makes the non-exemption STRUCTURAL (Opus R2). The ladder
+/// token exempts fully (the whole point: a deep pit is climbable only BECAUSE
+/// a real ladder exists).
+pub(crate) fn climb_cap_allows(
+    feet_z: i32,
+    anchor_z: i32,
+    cap_blocks: i32,
+    has_ladder_token: bool,
+    wants_up: bool,
+) -> bool {
+    !wants_up // descent/hold never capped (no stranding)
+        || has_ladder_token
+        || (feet_z - anchor_z) <= cap_blocks
+}
+
 fn plan_access(
     board: &mut JobBoard,
     terrain: &TerrainGrid,
@@ -2922,6 +2969,29 @@ pub struct JobBoard {
     /// designed backstop). Stale entries are harmless (overwritten on the
     /// next held-job pass; bounded by colonist count).
     stuck_job_progress: HashMap<Uid, (common::bastion::JobId, f32)>,
+    /// bastion (FREE-CLIMB CAP, Ben-ruled + Opus-cleared): per-colonist z of
+    /// the last GENUINE FOOTHOLD (terrain solid directly below feet / physics
+    /// on_ground) — the anchor for the spatial climb cap. Explicitly NEVER
+    /// reset on on_wall/climbing (Opus R3: the lift's `supported` includes
+    /// wall contact and would re-anchor a sheer-wall climber every tick =
+    /// indefinite stage-climbing). stuck_watch map pattern; stale entries
+    /// harmless (overwritten at the next foothold).
+    climb_anchor: HashMap<Uid, i32>,
+    /// FROZEN CAP-SKILL (Ben's steer): the climbing level SNAPSHOTTED at the
+    /// start of a below-grade episode, held for the WHOLE episode. Free
+    /// wall-climbing earns XP live, but a mid-escape level-up cannot grow the
+    /// cap on the CURRENT escape (the seed-corpus bounce-farm); the leveled
+    /// skill benefits the NEXT climb. Written lazily (entry.or_insert at cap
+    /// consult — vacant-only, so foothold bounces structurally cannot
+    /// re-read a leveled skill); cleared ONLY at genuine-surface sites.
+    climb_cap_skill: HashMap<Uid, u16>,
+    /// bastion (A2 co-requisite, Opus-cleared): per-colonist rescue-progress
+    /// baseline for the PROGRESS-EARNED rescue_pending gate (mirrors
+    /// STUCKJOB-α): (his best egress distance at last watchdog pass, count of
+    /// access jobs serving his route at last pass). Suppression of the
+    /// teleport backstop must be EARNED by verified per-colonist progress —
+    /// a stale egress_target + someone else's access job never suppresses.
+    rescue_progress: HashMap<Uid, (f32, usize)>,
     /// bastion (FR15-TIGHTDIG, flag-gated): per-colonist PROGRESS WINDOW —
     /// (window anchor position, window start time, committed-path index at
     /// window start). The drive-owned displacement signal: progressing =
@@ -3690,6 +3760,31 @@ impl JobBoard {
             claims_distinct: distinct,
         }
     }
+
+    /// F5 falsifier introspection (READ-ONLY): does `uid` hold a live egress
+    /// target, how many live access jobs does he own, and how many live
+    /// access jobs exist colony-wide. The redesigned stuckjob leg asserts
+    /// its own preconditions on these (the rev-1 leg asserted none and its
+    /// decoys silently never existed).
+    /// Staging support (INV-HARNESS-CLIMB-LEVEL): a level stage must also
+    /// clear any live episode snapshot — the lazy or_insert can capture the
+    /// PRE-staging spawn roll during setup ticks, and the stale entry then
+    /// runs the whole episode at the unstaged cap (the frozen-verify tape:
+    /// level=0, cap_blocks=6).
+    pub(crate) fn staging_clear_climb_snapshot(&mut self, uid: &Uid) {
+        self.climb_cap_skill.remove(uid);
+    }
+
+    pub fn egress_probe(&self, uid: Uid) -> (bool, usize, usize) {
+        let has_target = self.egress_targets.contains_key(&uid);
+        let owned = self
+            .emergency_access_jobs
+            .iter()
+            .filter(|(id, owner)| **owner == uid && self.jobs.contains_key(*id))
+            .count();
+        let total = self.jobs.values().filter(|job| job.is_access).count();
+        (has_target, owned, total)
+    }
 }
 
 /// The arbitration + travel + work-execution system.
@@ -3960,6 +4055,12 @@ impl<'a> System<'a> for Sys {
         // graph and the climbing skill. Players and vanilla NPCs untouched.
         const CLIMB_XP_RATE: f32 = 1.5; // xp per second while lifted
         const CLIMB_ASSIST_VZ: f32 = 2.5; // ascent rate, blocks/s
+        // FREE-CLIMB CAP (Ben-ruled, Opus-cleared, wiring B): natural climb
+        // ascent is bounded by a skill-scaled SPATIAL reach above the last
+        // genuine foothold — see climb_cap_allows/cap_for_skill (pure core,
+        // unit-pinned) and the per-colonist `climb_capped` local computed at
+        // this loop's head and consulted at EVERY height-production site
+        // (U8 grep-assert enforces future sites).
         {
             let mut climb_iter = (
                 &mut colonists,
@@ -4001,6 +4102,96 @@ impl<'a> System<'a> for Sys {
                     || board.emergency_frontier_reacquire.contains_key(uid)
                 {
                     continue;
+                }
+                // ── FREE-CLIMB CAP (Ben-ruled, Opus-cleared, wiring B) ────
+                // Anchor update (Opus R3): GENUINE FOOTHOLD ONLY — physics
+                // on_ground or terrain solid directly below feet; explicitly
+                // NEVER on_wall/climbing (the lift's `supported` includes
+                // wall contact and would re-anchor a sheer-wall climber
+                // every tick = indefinite stage-climbing).
+                let cap_feet = pos.0.map(|e| e.floor() as i32);
+                let solid_below = terrain
+                    .get(cap_feet - Vec3::unit_z())
+                    .is_ok_and(|b| b.is_solid());
+                let footed = phys.on_ground.is_some() || solid_below;
+                if footed {
+                    let prev = board.climb_anchor.insert(*uid, cap_feet.z);
+                    if prev.is_some_and(|p| cap_feet.z > p)
+                        && std::env::var_os("BASTION_EGRESS_DIAG").is_some()
+                    {
+                        info!(
+                            uid = uid.0.get(),
+                            from = prev.unwrap_or(0),
+                            to = cap_feet.z,
+                            on_ground = phys.on_ground.is_some(),
+                            solid_below,
+                            "bastion: climb anchor ROSE"
+                        );
+                    }
+                }
+                // Ladder-token adjacency — the SOLE cap exemption (route-
+                // provenance and player-painted rungs alike): a Ladder
+                // sprite in the body column or a 4-neighbor at feet/head.
+                let ladder_token = [
+                    Vec2::new(0, 0),
+                    Vec2::new(1, 0),
+                    Vec2::new(-1, 0),
+                    Vec2::new(0, 1),
+                    Vec2::new(0, -1),
+                ]
+                .into_iter()
+                .any(|d| {
+                    (0..2).any(|dz| {
+                        terrain
+                            .get(Vec3::new(
+                                cap_feet.x + d.x,
+                                cap_feet.y + d.y,
+                                cap_feet.z + dz,
+                            ))
+                            .is_ok_and(|b| b.get_sprite() == Some(SpriteKind::Ladder))
+                    })
+                });
+                let cap_level = *board
+                    .climb_cap_skill
+                    .entry(*uid)
+                    .or_insert(colonist.0.skills.climbing.level);
+                let cap_blocks = cap_for_skill(cap_level);
+                let cap_anchor = board.climb_anchor.get(uid).copied().unwrap_or(cap_feet.z);
+                // true = natural ASCENT DENIED at every height-production
+                // site below (U8 grep-assert enforces coverage). Descent and
+                // hold never consult this — the no-stranding rule. climb_free
+                // is deliberately not consulted (energy-only exemption).
+                let climb_capped =
+                    !climb_cap_allows(cap_feet.z, cap_anchor, cap_blocks, ladder_token, true);
+                if climb_capped {
+                    // ★ WIRING-B UP-INPUT CLAMP (the staged seed-22 finding:
+                    // an escape invariant across level/XP/freeze = a riser
+                    // that never consults the cap). The agent's path-follow
+                    // writes move_z = bearing.z (action_nodes/behavior_tree
+                    // — OTHER files, outside U8's include_str scope), and
+                    // vanilla Climb consumes it in common — both bypass the
+                    // `supported` gate entirely. This is the one server→
+                    // common hand-off we own (bastion_jobs runs post-agent,
+                    // pre-phys — the writer-inventory dispatcher proof), so
+                    // deny the UP-input here; descent/hold stay free
+                    // (min(0.0) — the no-stranding rule). Players untouched:
+                    // their inputs never pass through this system.
+                    controller.inputs.move_z = controller.inputs.move_z.min(0.0);
+                }
+                if tick.0 % 30 == 0 && std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                    info!(
+                        uid = uid.0.get(),
+                        z = pos.0.z,
+                        anchor = cap_anchor,
+                        level = colonist.0.skills.climbing.level,
+                        cap_blocks,
+                        capped = climb_capped,
+                        on_ground = phys.on_ground.is_some(),
+                        solid_below,
+                        on_wall = phys.on_wall.is_some(),
+                        vz = vel.0.z,
+                        "bastion: cap tape"
+                    );
                 }
                 // B-LIVE3: the fail-safe climbs WITHOUT a job (a dispersing
                 // or trapped-idle colonist has none — Ben's "climb out of
@@ -5505,7 +5696,16 @@ impl<'a> System<'a> for Sys {
                 // with the first orthogonal step complete, magnetism selected
                 // an equally-near different side of the rung and undid the
                 // approach before the second step (REQ-0058 smoke38).
-                let supported = !approaching_mount
+                // FREE-CLIMB CAP gate (Opus R1+R2, single-source): every
+                // ascent consumer below (the velocity lift AND the discrete
+                // rung-step) hangs off this one condition, and climb_free is
+                // among its enabling paths — so gating here caps the lift,
+                // the rung-step, AND the climb_free fail-safe in one place.
+                // beside_ladder lifts survive: the token already makes
+                // climb_capped false. Descent is not driven by this
+                // machinery (ascent-only), so no stranding surface.
+                let supported = !climb_capped
+                    && !approaching_mount
                     && ((climb_free && organic_target_above)
                         || beside_ladder
                         || ((climbing || on_wall) && (ground_within_reach || climb_free)));
@@ -5546,8 +5746,26 @@ impl<'a> System<'a> for Sys {
                         // 32-34 stragglers under half-carved stair cells).
                         if phys.on_ground.is_some() && tick.0 % 30 == 0 {
                             pos.0.z += 1.0;
+                            if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                                info!(
+                                    uid = uid.0.get(),
+                                    to_z = feet.z + 1,
+                                    anchor = ?board.climb_anchor.get(uid),
+                                    "bastion: rung-step fired"
+                                );
+                            }
                         }
-                        colonist.0.skills.climbing.add_xp(CLIMB_XP_RATE * dt.0);
+                        // XP from FREE WALL-CLIMBING, not ladders (Ben's
+                        // steer: you get better at climbing by climbing; the
+                        // ladder is the easy assisted path and teaches
+                        // nothing). The bounce-farm this once enabled (level
+                        // 1 in 13.3s at 1.5 xp/s, cap 3→6 mid-escape) is
+                        // closed by the FROZEN CAP-SKILL snapshot instead —
+                        // the XP still accrues, the cap just reads the
+                        // episode-start level.
+                        if !beside_ladder {
+                            colonist.0.skills.climbing.add_xp(CLIMB_XP_RATE * dt.0);
+                        }
                     }
                     // B6 SOFT-0 finding — LADDER MAGNETISM: the grab
                     // window is ±2 XY (the Chaser stop band, runs 13/18),
@@ -9010,7 +9228,7 @@ impl<'a> System<'a> for Sys {
                             colonist.0.skills.grant_xp(job.work, COMPLETION_XP);
                         }
                         if let Some(u) = uids.get(entity) {
-                            board.stuck_watch.remove(u);
+                            watch_wipe(&mut board.stuck_watch, u, "job-completed");
                         }
                         board.remove_job(active.job);
                         to_release.push(entity);
@@ -9377,7 +9595,7 @@ impl<'a> System<'a> for Sys {
                     // safe; only a colonist that completes NOTHING for the
                     // full window is teleported.
                     if let Some(u) = uids.get(entity) {
-                        board.stuck_watch.remove(u);
+                        watch_wipe(&mut board.stuck_watch, u, "work-progress");
                     }
                     // B-LIVE3 (Ben's MINE LIFECYCLE): the designation this
                     // job belonged to may just have finished — collect for
@@ -9914,7 +10132,8 @@ impl<'a> System<'a> for Sys {
                                 board.egress_best_distance.remove(uid);
                                 board.egress_no_progress_secs.remove(uid);
                             }
-                            board.stuck_watch.remove(uid);
+                            watch_wipe(&mut board.stuck_watch, uid, "rim-reached");
+                            board.climb_cap_skill.remove(uid);
                             continue;
                         }
                         let distance = pos.0.distance(target_pos);
@@ -9935,7 +10154,7 @@ impl<'a> System<'a> for Sys {
                             *no_progress = 0.0;
                             // Verified target progress, unlike arbitrary
                             // roaming, earns a fresh 60-second backstop.
-                            board.stuck_watch.remove(uid);
+                            watch_wipe(&mut board.stuck_watch, uid, "egress-improved");
                         } else {
                             *no_progress += 1.0;
                         }
@@ -10126,12 +10345,27 @@ impl<'a> System<'a> for Sys {
                     board.emergency_route_members.insert(uid, route_owner);
                     board.egress_targets.insert(uid, route_target);
                     board.emergency_safe_secs.remove(&uid);
+                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                        info!(
+                            owner = uid.0.get(),
+                            route_owner = route_owner.0.get(),
+                            "bastion: egress request adopted nearby route"
+                        );
+                    }
                     continue;
                 }
                 // Different pockets may not emit overlapping terrain plans.
                 // Requests that cannot share the live route remain armed and
                 // retry deterministically after that route is cleaned up.
                 if board.jobs.values().any(|job| job.is_access) {
+                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                        let live_access = board.jobs.values().filter(|j| j.is_access).count();
+                        info!(
+                            owner = uid.0.get(),
+                            live_access,
+                            "bastion: egress request swallowed by one-plan-at-a-time gate"
+                        );
+                    }
                     continue;
                 }
                 let physics = entity.and_then(|entity| physics_states.get(entity));
@@ -10484,7 +10718,7 @@ impl<'a> System<'a> for Sys {
                         {
                             agent.rtsim_controller.activity = None;
                         }
-                        board.stuck_watch.remove(&waiting);
+                        watch_wipe(&mut board.stuck_watch, &waiting, "route-waiting");
                     }
                 }
                 let mut safely_dismounted = Vec::new();
@@ -11070,7 +11304,7 @@ impl<'a> System<'a> for Sys {
                     board.egress_targets.remove(&member);
                     board.egress_best_distance.remove(&member);
                     board.egress_no_progress_secs.remove(&member);
-                    board.stuck_watch.remove(&member);
+                    watch_wipe(&mut board.stuck_watch, &member, "route-cleanup");
                 }
                 for member in lost_members {
                     board.bastion_traversal_tasks.remove(&member);
@@ -11268,7 +11502,7 @@ impl<'a> System<'a> for Sys {
             // Working colonists are legitimately stationary — reset.
             for (_, uid, active) in (&colonists, &uids, &active_jobs).join() {
                 if matches!(active.state, ActiveJobState::Arrived) {
-                    board.stuck_watch.remove(uid);
+                    watch_wipe(&mut board.stuck_watch, uid, "arrived-head");
                 }
             }
             let mut tp_iter = (&colonists, &uids, &mut positions, &mut velocities).lend_join();
@@ -11280,7 +11514,7 @@ impl<'a> System<'a> for Sys {
                 let is_working =
                     active.is_some_and(|active| matches!(active.state, ActiveJobState::Arrived));
                 if is_working {
-                    board.stuck_watch.remove(uid);
+                    watch_wipe(&mut board.stuck_watch, uid, "arrived-working");
                     continue;
                 }
                 let feet = pos.0.map(|e| e.floor() as i32);
@@ -11328,7 +11562,7 @@ impl<'a> System<'a> for Sys {
                             });
                         board.stuck_job_progress.insert(*uid, (job_id, progress));
                         if earned {
-                            board.stuck_watch.remove(uid);
+                            watch_wipe(&mut board.stuck_watch, uid, "alpha-earned");
                             continue;
                         }
                     },
@@ -11347,14 +11581,63 @@ impl<'a> System<'a> for Sys {
                 });
                 if !below_grade {
                     // On/at a surface — not stuck (B7 feeds idle colonists).
-                    board.stuck_watch.remove(uid);
+                    // But ONLY when grounded: a colonist HOVERING inside the
+                    // last 3 blocks of a shaft (cap-denied climber, half-dug
+                    // exit) is NOT out, and wiping here re-armed his backstop
+                    // forever — diag3 measured a 52-SECOND clock wiped at
+                    // this boundary, 13 oscillations, 200s never rescued.
+                    // Airborne near-surface = freeze (no accrual, no wipe);
+                    // the E2/churn discipline at a spatial boundary.
+                    let grounded = id_maps
+                        .uid_entity(*uid)
+                        .and_then(|entity| physics_states.get(entity))
+                        .is_some_and(|state| state.on_ground.is_some());
+                    if grounded {
+                        watch_wipe(&mut board.stuck_watch, uid, "surface");
+                        // Genuine surface: the below-grade episode is over —
+                        // the NEXT climb snapshots the (possibly leveled)
+                        // skill fresh. Airborne near-surface keeps the
+                        // episode (and its frozen cap) alive.
+                        board.climb_cap_skill.remove(uid);
+                    }
                     continue;
                 }
-                let rescue_pending = board.egress_targets.contains_key(uid)
-                    && board.jobs.values().any(|job| job.is_access);
-                if rescue_pending {
-                    board.stuck_watch.remove(uid);
-                    continue;
+                // A2 CO-REQUISITE (Opus-cleared): rescue_pending -> PROGRESS-
+                // EARNED, mirroring STUCKJOB-α. The old gate ("any egress
+                // target + ANY is_access job anywhere") was the F5 hole: a
+                // stale target + someone else's access job suppressed THIS
+                // colonist's backstop forever — masked pre-cap by free-climb
+                // self-rescue; post-cap the backstop is load-bearing.
+                // Suppression is now EARNED only by verified PER-COLONIST
+                // rescue progress: his best egress distance improving, or one
+                // of HIS OWN access jobs completing. Baseline changes re-arm
+                // without earning (the α discipline); a stale target with no
+                // progress accrues to the ~60s teleport — never strands.
+                if board.egress_targets.contains_key(uid) {
+                    let best = board
+                        .egress_best_distance
+                        .get(uid)
+                        .copied()
+                        .unwrap_or(f32::INFINITY);
+                    let his_access = board
+                        .emergency_access_jobs
+                        .iter()
+                        .filter(|(id, owner)| **owner == *uid && board.jobs.contains_key(*id))
+                        .count();
+                    let earned = match board.rescue_progress.get(uid) {
+                        Some(&(last_best, last_count)) => {
+                            best + 0.5 < last_best
+                                || (his_access < last_count && last_count > 0)
+                        },
+                        None => false,
+                    };
+                    board.rescue_progress.insert(*uid, (best, his_access));
+                    if earned {
+                        watch_wipe(&mut board.stuck_watch, uid, "a2-earned");
+                        continue;
+                    }
+                } else {
+                    board.rescue_progress.remove(uid);
                 }
                 let secs = board.stuck_watch.entry(*uid).or_insert(0.0);
                 *secs += 1.0; // this pass runs ~once per second
@@ -11474,6 +11757,9 @@ impl<'a> System<'a> for Sys {
                     board.egress_targets.remove(uid);
                     board.egress_best_distance.remove(uid);
                     board.egress_no_progress_secs.remove(uid);
+                    // Rescue completes the below-grade episode — fresh cap
+                    // snapshot on the next climb (frozen cap-skill reset 3/3).
+                    board.climb_cap_skill.remove(uid);
                     // FR15 instrumentation: fix-2's success measure is this
                     // reverting to a RARE backstop (reported baseline).
                     board.failsafe_teleports += 1;
@@ -12494,6 +12780,82 @@ mod tests {
     /// CHOP redesign (FR10): the bounded whole-tree flood — connected
     /// component from the base, clipped by the cell cap (the D15 guard) and
     /// the height band.
+    #[test]
+    fn u1_u5_climb_cap_pure_core() {
+        // U1 cap table, pinned exact (Ben tunes later; tests move with him).
+        assert_eq!(cap_for_skill(0), 3);
+        assert_eq!(cap_for_skill(1), 6);
+        assert_eq!(cap_for_skill(2), 9);
+        // U2 boundary: at-cap allowed, cap+1 denied (skill 0).
+        assert!(climb_cap_allows(10, 7, 3, false, true));
+        assert!(!climb_cap_allows(11, 7, 3, false, true));
+        // U3 descent/hold never capped at ANY height (no stranding).
+        assert!(climb_cap_allows(50, 0, 3, false, false));
+        // U4 the ladder token exempts at any height.
+        assert!(climb_cap_allows(50, 0, 3, true, true));
+        // U5 climb_free non-exemption is STRUCTURAL: no such parameter
+        // exists on climb_cap_allows — nothing to pass, nothing to forget.
+    }
+
+    #[test]
+    fn u8_climb_cap_covers_every_ascent_writer() {
+        // The EXHAUSTIVENESS pattern on WRITER SITES (Opus R1 + fold-in):
+        // every natural-ascent height writer in this file must sit under the
+        // single `supported = !climb_capped` gate. A new writer trips a pin
+        // here and forces the author to gate it + update the count.
+        let src = include_str!("bastion_jobs.rs");
+        // Every pattern is built with concat! so THIS test's own source never
+        // contains the contiguous pattern it counts (include_str! sees the
+        // whole file, tests included — a plain literal here counts itself,
+        // and worse, makes the `contains` gate-assert below vacuously true).
+        // velocity-lift ascent writers (the one shared raise, gated):
+        assert_eq!(
+            src.matches(concat!("vel.0.z = vel.0.z", ".max(")).count(),
+            1,
+            "new vel.z ascent writer appeared: gate it with climb_capped and update this pin"
+        );
+        // position-pop ascent writers (Opus fold-in: pos-increment class):
+        // exactly ONE exists — the discrete rung-step, which sits inside the
+        // same `supported` block as the velocity lift (gated by construction).
+        assert_eq!(
+            src.matches(concat!(".0.z ", "+= ")).count(),
+            1,
+            "a position-pop ascent writer appeared: gate it with climb_capped and update this pin"
+        );
+        // the single-source gate itself must remain in place:
+        assert!(
+            src.contains(concat!("let supported = ", "!climb_capped")),
+            "the ascent machinery's single climb_capped gate was removed/renamed"
+        );
+        // natural move_z up-inputs: only the unit-test fixture below uses
+        // a literal production form (this file); route_climb_input is the
+        // token-exempt owned path.
+        assert_eq!(
+            src.matches(concat!("inputs.move_z ", "= 1.0")).count(),
+            1,
+            "a production move_z=1.0 up-input appeared: gate it with climb_capped and update this pin"
+        );
+        // FROZEN CAP-SKILL exhaustiveness (Opus fold-in, the U8 pattern on
+        // the RESET sites): exactly 3 genuine-surface resets (grounded
+        // surface wipe, rim-reached, post-fail-safe-teleport landing) and 5
+        // total touches (field decl + the one lazy or_insert snapshot + the
+        // 3 resets). A missed reset is SAFE (over-restriction only — skill
+        // is monotone, so a stale snapshot under-caps, never over-caps) but
+        // silently costs progression; a NEW touch site must be reviewed
+        // against the episode semantics.
+        assert_eq!(
+            src.matches(concat!("climb_", "cap_skill", ".remove(")).count(),
+            4,
+            "a frozen cap-skill RESET site changed: verify episode semantics and update this pin \
+             (3 genuine-surface sites + the staging-clear board method)"
+        );
+        assert_eq!(
+            src.matches(concat!("climb_", "cap_skill")).count(),
+            6,
+            "a new frozen cap-skill touch site appeared: review against the episode lifecycle and update this pin"
+        );
+    }
+
     #[test]
     fn tree_fell_set_bounds() {
         // A 3-block trunk (z 10..12) + a 3-block canopy arm at z 12.

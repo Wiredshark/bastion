@@ -1187,6 +1187,59 @@ impl Server {
         done
     }
 
+    /// bastion (FABLE-003 pattern, harness STAGING hook, setup-only): pin a
+    /// colonist's climbing level. Falsifier preconditions must be STRUCTURAL,
+    /// not spawn-lottery — colonists roll climbing 0..=1 at spawn, and the
+    /// seed corpus proved a level-1 roll (cap 6 + scramble 3) legitimately
+    /// exits the probe's depth-8 shaft. Constraints (INV-HARNESS-CLIMB-LEVEL):
+    /// climbing skill only; scenario SETUP only (never mid-window); recorder
+    /// staging event per call; the calling scenario carries a staged flag in
+    /// its JSON.
+    pub fn bastion_set_colonist_climb_level(&mut self, name: &str, level: u16) -> bool {
+        use specs::LendJoin;
+        let ecs = self.state.ecs();
+        let mut staged_uid = None;
+        let mut colonists = ecs.write_storage::<comp::Colonist>();
+        let uids = ecs.read_storage::<common::uid::Uid>();
+        let mut done = false;
+        let mut iter = (&mut colonists, &uids).lend_join();
+        while let Some((mut c, u)) = iter.next() {
+            if c.0.name == name {
+                c.0.skills.climbing = common::bastion::SkillLevel { level, xp: 0.0 };
+                staged_uid = Some(*u);
+                if crate::bastion_flight_recorder::enabled() {
+                    crate::bastion_flight_recorder::record_writer(
+                        crate::bastion_flight_recorder::WriterEvent {
+                            schema: "bastion.flight-recorder.writer/v1".into(),
+                            tick: 0,
+                            uid: u.0.get(),
+                            observation_sequence: 0,
+                            snapshot_stage: "harness-setup".into(),
+                            dispatcher_dependency_proven: false,
+                            writer: "harness-climb-level-stage".into(),
+                            move_dir: [0.0, 0.0],
+                            move_z: 0.0,
+                            target: None,
+                            note: format!("set_colonist_climb_level level={level}"),
+                        },
+                    );
+                }
+                done = true;
+            }
+        }
+        drop(iter);
+        drop(colonists);
+        drop(uids);
+        // A stage must also clear any live episode snapshot — setup ticks can
+        // have or_insert'ed the PRE-staging spawn roll (frozen-verify tape:
+        // level=0 yet cap_blocks=6 for the whole episode).
+        if let Some(uid) = staged_uid {
+            ecs.write_resource::<bastion_jobs::JobBoard>()
+                .staging_clear_climb_snapshot(&uid);
+        }
+        done
+    }
+
     /// bastion (FARM/PROD-2, harness hook): the COLONY-TOTAL count of an
     /// item def — loose ground items PLUS every colonist's bag (the
     /// seed-conservation invariant counts both: a fetched stack lives in
@@ -1342,6 +1395,25 @@ impl Server {
             .join()
             .find(|(c, _)| c.0.name == name)
             .map(|(_, u)| u.0.get())
+    }
+
+    /// bastion (F5 falsifier, harness hook, READ-ONLY): egress introspection
+    /// for one colonist — (has_egress_target, owned_live_access_jobs,
+    /// live_access_jobs_total). The redesigned stuckjob leg asserts its own
+    /// preconditions on these; no writers.
+    pub fn bastion_egress_probe(&self, name: &str) -> Option<(bool, usize, usize)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let uid = {
+            let colonists = ecs.read_storage::<comp::Colonist>();
+            let uids = ecs.read_storage::<common::uid::Uid>();
+            (&colonists, &uids)
+                .join()
+                .find(|(c, _)| c.0.name == name)
+                .map(|(_, u)| *u)?
+        };
+        let board = ecs.read_resource::<bastion_jobs::JobBoard>();
+        Some(board.egress_probe(uid))
     }
 
     /// bastion (B7-1, harness hook): the persistent owned-bed key on the
