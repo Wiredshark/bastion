@@ -288,3 +288,40 @@ not just the hash: the same x2 comparator also caught `inv_slot` differing (slot
 tick, same Consumable(Food)) — the colonist draws the food from a DIFFERENT inventory slot across
 byte-identical runs. One root (inventory ordering), two visible fields; comparators must
 normalize both (item_hash + inv_slot) or gate on item KIND.*
+
+*Builder second widening on class 7 — 2026-07-18 round-5: the hole PROPAGATES INTO BEHAVIOR.
+After byte-identical runs eat food from different slots (same tick, same kind), their
+trajectories FORK — 6990/9002 recorder samples diverge downstream (one run walks its move
+target, the other stands: a real behavioral split, not an identity field). Comparator
+normalization is therefore INSUFFICIENT for class 7; determinism-sensitive fixtures must
+ISOLATE it by staging (canonicalize inventories to one asset-deterministic item —
+`bastion_canonicalize_colonist_food`). Raises the engine-fix priority: item identity
+nondeterminism = colony-simulation nondeterminism, not a cosmetic hash.*
+
+*Builder append — 2026-07-18 (architect-endorsed, class 8): STALE-BINARY FALSE GREEN — a
+build+run chained with ';' lets a FAILED build silently run the previous exe, and the old
+binary's results read as the new code's (M2 round-6: E0596 build failure + ';' chain + old exe
++ a same-slot lottery = a false det=True that the changed code never produced). Same family as
+no-cargo-during-gate. Rule: any evidence pipeline VERIFIES build success AND exe mtime before
+trusting a single result line; '&&' not ';' between build and run.*
+
+*Builder append — 2026-07-18 (architect-endorsed, class 9): DEGENERATE FIXTURE GEOMETRY MASKS A
+GENERAL CLASS — the M2 fixture's member stood IN the route entry, so the at-entry short-circuit
+produced an EMPTY approach corridor and the fixture structurally could not exercise approach
+movement; the corridor-movement deadlock (class instance: generic Chaser arrival tolerance
+~1.5 > corridor cursor tolerance 0.75 → Goto declares arrival, cursor never advances, member
+frozen → backstop 6/6 corpus-wide) stayed invisible through SEVEN green fixture rounds and was
+caught only by the corpus. Rule: for every positional/geometric precondition a fixture stages,
+include a GENERAL-POSITION variant (nonzero approach, nonzero path, non-adjacent start); a
+degenerate case (at-target, zero-length, empty-set) exercises only the short-circuit, not the
+mechanism. Kin to class 8 and gate-must-test-live-path.*
+
+*Builder append — 2026-07-18 (architect-directed, class 10): TOLERANCE INVERSION — when the
+MOVER's arrival radius is looser than the CURSOR's advance threshold, the system deadlocks
+silently in the gap: the mover declares done and emits nothing, the cursor never advances, no
+error fires anywhere (M2 instance: generic Chaser arrival ~1.5 blocks vs corridor REQ-0087
+cursor 0.75 → member frozen 1.05 blocks out, forever, across 6/6 seeds). The class: ANY
+producer/consumer pair where progress is measured by two different thresholds needs
+threshold-ordering asserted (consumer's bar ≤ producer's bar) or a single shared constant.
+Found only via a purpose-built live writer-diag — unit tests constructed the states directly
+and structurally could not see the live-path gap (gate-must-test-live-path, kin to class 9).*
