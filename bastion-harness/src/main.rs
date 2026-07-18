@@ -4390,18 +4390,25 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         "N1C" => {
             mutated && alive && unentombed && teleports >= 1 && out_at.is_some()
         },
-        // N7B (class-12): the CYCLING energy-wait case must still terminate
-        // into the net. cycles >= 3 is the falsifier's own premise (no
-        // cycling = the mechanism under test never engaged).
+        // N7B (class-12): the zero-progress cycling case must terminate into
+        // the net UNDER THE BAR. The >=3-cycle premise was calibrated to the
+        // PRE-FIX cadence — with the (C) progress flag the hold is denied
+        // after the FIRST no-progress abort, the watch accrues, and the net
+        // wins at ~126s before a third cycle can exist (the corpus C-mode
+        // signature exactly: one abort + denied wait + fast net). Premise =
+        // the mode engaged (>=1 abort cycle); assertion = net delivery in
+        // the C-mode window (later than ~90s proves the first wait was
+        // held/normal; sooner than ~180s proves the denial worked — the
+        // pre-fix stranded case never delivered at all).
         "N7B" => {
             staged_ok
                 && position_ok
                 && mutated
-                && n7b_cycles >= 3
+                && n7b_cycles >= 1
                 && teleports >= 1
                 && alive
                 && unentombed
-                && out_at.is_some()
+                && out_at.is_some_and(|sec| (90..=180).contains(&sec))
         },
         // N3: wholesale rung removal makes route validity outrank physics
         // contact-loss — both are correct bounded production classifications
