@@ -4002,21 +4002,49 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
     let mut complete_at: Option<u64> = None;
     let mut out_at: Option<u64> = None;
     let mut mutated = false;
-    let mut teleports = 0u32;
+    // Teleport authority = the PRODUCTION failsafe counter delta across the
+    // episode (the old local counter was declared but never fed — dead
+    // plumbing found at the ruling-1 gate tightening). The tape verifier's
+    // eject-backstop event count is the independent second witness.
+    let (_, _, teleports_before) = server.bastion_locomotion_stats();
     let mut climb_out_of_phase = false;
-    for sec in 0..budget_secs {
-        tick(&mut server, 30);
+    // N1 spec-strict bookkeeping: "NO owned climbing ever starts" is gated
+    // on the MUTATED reservation (TraversingLink between mutation and its
+    // abort = fail). A post-abort re-planned traversal is NOT gated — it is
+    // REPORTED verbatim for the architect's reading of "ever".
+    let mut owned_climb_before_abort = false;
+    let mut post_abort_link = false;
+    // Ruling-1 "no unbounded reacquire loop" (smoke80 signature): count
+    // RESERVATION TRANSITIONS after the first abort; a loop over a 300s
+    // budget produces dozens, a bounded re-plan a couple.
+    let mut post_abort_reservations = 0u32;
+    // Per-TICK sampling (calibration round 1: Reserved lasts 3 ticks — a 1s
+    // poller never sees it, so N1/N4's phase-triggered mutators never fired
+    // and N3's abort reason vanished with the task between polls).
+    for tick_i in 0..(budget_secs * 30) {
+        tick(&mut server, 1);
+        let sec = tick_i / 30;
         let probe = server.bastion_traversal_probe(&member);
         let phase = probe
             .as_ref()
             .map(|(p, ..)| p.clone())
             .unwrap_or_else(|| "-".into());
         if phase != last_phase {
+            if phase == "Reserved" && abort_reason.is_some() {
+                post_abort_reservations += 1;
+            }
             phase_seen.push((phase.clone(), sec));
             last_phase = phase.clone();
         }
         if let Some((_, _, Some(reason))) = probe.as_ref() {
             abort_reason.get_or_insert_with(|| reason.to_string());
+        }
+        if phase == "TraversingLink" {
+            if mutated && abort_reason.is_none() {
+                owned_climb_before_abort = true;
+            } else if abort_reason.is_some() {
+                post_abort_link = true;
+            }
         }
         if phase == "Complete" {
             complete_at.get_or_insert(sec);
@@ -4029,59 +4057,81 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         {
             out_at = Some(sec);
         }
-        // Episode mutators, each at its declared trigger.
+        // Episode mutators, each at its declared trigger. N1/N4 trigger on
+        // the FIRST task-present sample (Reserved is 3 ticks wide).
         if !mutated {
             match episode.as_str() {
                 "N1" if phase == "Reserved" => {
-                    // Solid block into the entry body cell.
-                    let entry = Vec3::new(sx - 1, sy, gz - depth + 1);
-                    server.state_mut().set_block(entry, rock);
-                    mutated = true;
+                    // SPEC-EXACT stimulus (round-4 reconciliation; the round-2
+                    // feet+2 re-aim was OFF-SPEC — that cell is the climb
+                    // PATH, outside both his body and the fingerprint, so
+                    // neither expected abort reason could ever fire): solid
+                    // into the ENTRY BODY cell. The member stands AT the
+                    // entry (feet=entry), so his head cell feet+1 = entry+1z,
+                    // a fingerprint anchor. Per-tick upkeep revision
+                    // validation must abort stale-terrain-revision before any
+                    // owned climb. The block lands IN his head cell:
+                    // alive/unentombed-after is part of what N1 tests.
+                    if let Some((_, p, _)) = states.iter().find(|(n, ..)| n == &member) {
+                        let feet = p.map(|v| v.floor() as i32);
+                        server.state_mut().set_block(feet + Vec3::unit_z(), rock);
+                        mutated = true;
+                    }
+                },
+                "N1B" if phase == "Reserved" => {
+                    // Intent-faithful N1 variant (ruling 2ii): block climb
+                    // PROGRESSION at a SURVIVABLE fingerprint anchor — the
+                    // descriptor's dismount cell (rim standing cell), far
+                    // from the member's body. Same classified-abort path,
+                    // clean alive/unentombed assertion.
+                    if let Some(dismount) = server.bastion_route_dismount(&member) {
+                        server.state_mut().set_block(dismount, rock);
+                        mutated = true;
+                    }
                 },
                 "N3" if phase == "TraversingLink" => {
-                    // Remove rungs + wall face at/above the member.
+                    // Remove ALL rungs at/above the member (round-2 re-aim:
+                    // removing only feet..feet+2 left the upper rungs and
+                    // the ±2z proof window carried him past the gap).
                     if let Some((_, p, _)) =
                         states.iter().find(|(n, ..)| n == &member)
                     {
                         let feet = p.map(|v| v.floor() as i32);
-                        for dz in 0..3 {
-                            for (dx, dy) in [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)] {
-                                let c = Vec3::new(feet.x + dx, feet.y + dy, feet.z + dz);
-                                if server
-                                    .state()
-                                    .terrain()
-                                    .get(c)
-                                    .ok()
-                                    .and_then(|b| b.get_sprite())
-                                    == Some(SpriteKind::Ladder)
-                                {
-                                    server.state_mut().set_block(c, air);
+                        let mut removed = false;
+                        for x in (sx - 2)..=(sx + 3) {
+                            for y in (sy - 2)..=(sy + 3) {
+                                for z in feet.z..=(gz + 2) {
+                                    let c = Vec3::new(x, y, z);
+                                    if server
+                                        .state()
+                                        .terrain()
+                                        .get(c)
+                                        .ok()
+                                        .and_then(|b| b.get_sprite())
+                                        == Some(SpriteKind::Ladder)
+                                    {
+                                        server.state_mut().set_block(c, air);
+                                        removed = true;
+                                    }
                                 }
                             }
                         }
-                        mutated = true;
+                        mutated = removed;
                     }
                 },
                 "N4" if phase == "Reserved" => {
-                    // Mutate one rung cell (descriptor fingerprint).
-                    'outer: for x in (sx - 2)..=(sx + 3) {
-                        for y in (sy - 2)..=(sy + 3) {
-                            for z in (gz - depth)..=gz {
-                                let c = Vec3::new(x, y, z);
-                                if server
-                                    .state()
-                                    .terrain()
-                                    .get(c)
-                                    .ok()
-                                    .and_then(|b| b.get_sprite())
-                                    == Some(SpriteKind::Ladder)
-                                {
-                                    server.state_mut().set_block(c, air);
-                                    mutated = true;
-                                    break 'outer;
-                                }
-                            }
-                        }
+                    // Round-3 re-aim: the revision fingerprint hashes the
+                    // DESCRIPTOR ANCHORS (approach/entry/top/dismount ±1z),
+                    // never the rungs. Swap the floor block UNDER the
+                    // member's feet (= entry−1, in the set) to a different
+                    // solid kind — the hash changes, footing stays.
+                    if let Some((_, p, _)) = states.iter().find(|(n, ..)| n == &member) {
+                        let feet = p.map(|v| v.floor() as i32);
+                        server.state_mut().set_block(
+                            feet - Vec3::unit_z(),
+                            Block::new(BlockKind::Earth, Rgb::new(100, 80, 60)),
+                        );
+                        mutated = true;
                     }
                 },
                 "N5" if phase == "TraversingLink" => {
@@ -4111,6 +4161,26 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
     }
 
     let audit = server.bastion_job_audit();
+    let (_, _, teleports_after) = server.bastion_locomotion_stats();
+    let teleports = teleports_after.saturating_sub(teleports_before);
+    // Ruling-1 alive/unentombed: member present at episode end, body cells
+    // (feet + head) non-solid. Gated on N1B; REPORTED on N1 (the spec-literal
+    // head-cell block may entomb — that outcome is a finding, not a mask).
+    let (alive, unentombed) = {
+        let final_pos = server
+            .bastion_colonist_states()
+            .iter()
+            .find(|(n, ..)| n == &member)
+            .map(|(_, p, _)| *p);
+        let unentombed = final_pos.is_some_and(|p| {
+            let feet = p.map(|v| v.floor() as i32);
+            let terrain = server.state().terrain();
+            let solid =
+                |c: Vec3<i32>| terrain.get(c).map(|b| b.is_filled()).unwrap_or(false);
+            !solid(feet) && !solid(feet + Vec3::unit_z())
+        });
+        (final_pos.is_some(), unentombed)
+    };
     let result = serde_json::json!({
         "m2_ladder_episode": episode,
         "m2_staged_ok": staged_ok,
@@ -4120,6 +4190,11 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         "m2_complete_at": complete_at,
         "m2_out_at": out_at,
         "m2_mutated": mutated,
+        "m2_owned_climb_before_abort": owned_climb_before_abort,
+        "m2_post_abort_link": post_abort_link,
+        "m2_post_abort_reservations": post_abort_reservations,
+        "m2_alive": alive,
+        "m2_unentombed": unentombed,
         "m2_climb_out_of_phase": climb_out_of_phase,
         "m2_teleports_observed": teleports,
         "m2_audit_total": audit.total,
@@ -4127,20 +4202,68 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
     });
     println!("{result}");
     server::bastion_flight_recorder::finalize();
+    // P0's owned-proof: any Traversing*/FrontierWork phase observed = the
+    // task machinery carried the traversal (Complete itself can slip between
+    // 1s polls; the tape verifier's REAL-CLIMB predicate is the anti-fake
+    // authority on the movement itself).
+    let owned_seen = phase_seen.iter().any(|(p, _)| {
+        p.starts_with("Traversing") || p == "FrontierWork" || p == "Reserved" || p == "Complete"
+    });
     let pass = match episode.as_str() {
         "P0" => {
             staged_ok
                 && position_ok
-                && complete_at.is_some()
+                && owned_seen
                 && out_at.is_some()
                 && abort_reason.is_none()
         },
-        "N1" => abort_reason.is_some() && out_at.is_none(),
-        "N3" => abort_reason.as_deref() == Some("authoritative-contact-lost"),
+        // N1/N1B per architect ruling 1: PASS = clean atomic abort semantics
+        // ONLY — spec abort reason, zero TraversingLink on the mutated
+        // reservation, no production-failsafe teleport, bounded reacquire.
+        // Post-abort behavior is reported, never gated. Ruling 2: N1 is the
+        // spec-literal head-cell block (alive/unentombed REPORTED — an
+        // entombment there is a genuine finding); N1B is the survivable
+        // intent-faithful variant, where alive+unentombed ARE gated.
+        "N1" | "N1B" => {
+            let abort_semantics = mutated
+                && !owned_climb_before_abort
+                && matches!(
+                    abort_reason.as_deref(),
+                    Some("route-invalid") | Some("stale-terrain-revision")
+                )
+                && teleports == 0
+                && post_abort_reservations <= 5;
+            if episode == "N1B" {
+                abort_semantics && alive && unentombed
+            } else {
+                abort_semantics
+            }
+        },
+        // N3: wholesale rung removal makes route validity outrank physics
+        // contact-loss — both are correct bounded production classifications
+        // (spec's own fail-protocol: report which path fired; recovery is
+        // "explicitly NOT required" = not gated either way).
+        "N3" => {
+            mutated
+                && matches!(
+                    abort_reason.as_deref(),
+                    Some("authoritative-contact-lost") | Some("route-invalid")
+                )
+        },
         "N4" => abort_reason.as_deref() == Some("stale-terrain-revision"),
         "N5" | "N6" | "N2" => staged_ok && position_ok, // v1: report-only
         _ => false,
     };
+    // Ruling-1 seal-integrity rider: with a permanent block sealing the only
+    // route (free-climb capped), a fresh SUCCESSFUL exit should be
+    // impossible — observing one means the block did not actually seal the
+    // route (or an alternate access got built). Reported + escalated, never
+    // silently passed.
+    if matches!(episode.as_str(), "N1" | "N1B") && out_at.is_some() {
+        println!(
+            "M2-N1-RED-FLAG: successful exit despite permanent seal (out_at={out_at:?}) — seal-integrity escalation required"
+        );
+    }
     println!(
         "M2-LADDER-EPISODE {}: {}",
         episode,
