@@ -171,6 +171,7 @@ pub struct JoinData<'a> {
     pub alignments: &'a ReadStorage<'a, Alignment>,
     pub prev_phys_caches: &'a ReadStorage<'a, PreviousPhysCache>,
     pub bodies: &'a ReadStorage<'a, Body>,
+    pub constructed_ladder_traversal: Option<&'a comp::bastion::ConstructedLadderTraversal>,
 }
 
 pub struct JoinStruct<'a> {
@@ -206,6 +207,7 @@ pub struct JoinStruct<'a> {
     pub alignments: &'a ReadStorage<'a, Alignment>,
     pub prev_phys_caches: &'a ReadStorage<'a, PreviousPhysCache>,
     pub bodies: &'a ReadStorage<'a, Body>,
+    pub constructed_ladder_traversal: Option<&'a comp::bastion::ConstructedLadderTraversal>,
 }
 
 impl<'a> JoinData<'a> {
@@ -255,6 +257,7 @@ impl<'a> JoinData<'a> {
             alignments: j.alignments,
             prev_phys_caches: j.prev_phys_caches,
             bodies: j.bodies,
+            constructed_ladder_traversal: j.constructed_ladder_traversal,
         }
     }
 }

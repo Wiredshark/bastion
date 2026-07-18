@@ -55,6 +55,7 @@ pub struct ReadData<'a> {
     inventories: ReadStorage<'a, Inventory>,
     stances: ReadStorage<'a, Stance>,
     prev_phys_caches: ReadStorage<'a, PreviousPhysCache>,
+    constructed_ladder_traversals: ReadStorage<'a, comp::bastion::ConstructedLadderTraversal>,
 }
 
 /// ## Character Behavior System
@@ -130,6 +131,7 @@ impl<'a> System<'a> for Sys {
                 &read_data.skill_sets,
                 read_data.active_abilities.maybe(),
                 read_data.is_riders.maybe(),
+                read_data.constructed_ladder_traversals.maybe(),
             ),
             read_data.combos.maybe(),
         )
@@ -150,7 +152,16 @@ impl<'a> System<'a> for Sys {
                 controller,
                 health,
                 heads,
-                (body, physics, scale, stat, skill_set, active_abilities, is_rider),
+                (
+                    body,
+                    physics,
+                    scale,
+                    stat,
+                    skill_set,
+                    active_abilities,
+                    is_rider,
+                    constructed_ladder_traversal,
+                ),
                 combo,
             ) = comps;
             // Being dead overrides all other states
@@ -229,6 +240,7 @@ impl<'a> System<'a> for Sys {
                 alignments: &read_data.alignments,
                 prev_phys_caches: &read_data.prev_phys_caches,
                 bodies: &read_data.bodies,
+                constructed_ladder_traversal,
             };
 
             for action in actions {
