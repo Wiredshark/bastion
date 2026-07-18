@@ -27,7 +27,7 @@ use crate::{
     mounting::Volume,
     outcome::Outcome,
     states::{behavior::JoinData, utils::CharacterState::Idle, *},
-    terrain::{Block, TerrainGrid, UnlockKind},
+    terrain::{Block, SpriteKind, TerrainGrid, UnlockKind},
     uid::Uid,
     util::Dir,
     vol::ReadVol,
@@ -1014,13 +1014,45 @@ pub fn attempt_sneak(data: &JoinData<'_>, update: &mut StateUpdate) {
     }
 }
 
-/// Checks that player can `Climb` and updates `CharacterState` if so
-pub fn handle_climb(data: &JoinData<'_>, update: &mut StateUpdate) -> bool {
-    let Some(wall_dir) = data.physics.on_wall else {
-        return false;
-    };
+/// M2 deterministic mount (prior-art: annotated-anchor snap): the validated
+/// route rung the member may deterministically grab — token alive, body
+/// clear, rung adjacent (XY dist² == 1, z within [-1, +2]) and terrain-true
+/// (`SpriteKind::Ladder`). Deliberately does NOT require physics `on_wall`:
+/// infrastructure contact is proven by route provenance, not negotiated with
+/// emergent physics — requiring wall contact here was half of the historical
+/// ~50% mount flake (entry needed a lucky jump that pressed the wall while
+/// airborne on the same tick). Players never carry the proof component, so
+/// every token-scoped branch is unreachable for them by construction.
+pub fn constructed_ladder_rung(data: &JoinData<'_>) -> Option<Vec3<i32>> {
+    let proof = data.constructed_ladder_traversal?;
+    if proof.expires_at < data.time.0 {
+        return None;
+    }
+    let feet = data.pos.0.map(|value| value.floor() as i32);
+    let body_clear = data.terrain.get(feet).is_ok_and(|block| !block.is_solid())
+        && data
+            .terrain
+            .get(feet + Vec3::unit_z())
+            .is_ok_and(|block| !block.is_solid());
+    (body_clear
+        && proof.rung.xy().distance_squared(feet.xy()) == 1
+        && proof.rung.z >= feet.z.saturating_sub(1)
+        && proof.rung.z <= feet.z.saturating_add(2)
+        && data
+            .terrain
+            .get(proof.rung)
+            .ok()
+            .and_then(|block| block.get_sprite())
+            == Some(SpriteKind::Ladder))
+    .then_some(proof.rung)
+}
 
-    let towards_wall = data.inputs.move_dir.dot(wall_dir.xy()) > 0.0;
+/// Bool view of [`constructed_ladder_rung`] (the energy-exemption callers).
+pub fn constructed_ladder_traversal_active(data: &JoinData<'_>) -> bool {
+    constructed_ladder_rung(data).is_some()
+}
+
+pub fn handle_climb(data: &JoinData<'_>, update: &mut StateUpdate) -> bool {
     // Only allow climbing if we are near the surface
     let underwater = data
         .physics
@@ -1028,6 +1060,28 @@ pub fn handle_climb(data: &JoinData<'_>, update: &mut StateUpdate) -> bool {
         .map(|depth| depth > 2.0)
         .unwrap_or(false);
     let can_climb = data.body.can_climb() || data.physics.in_liquid().is_some();
+    // ★ M2 DETERMINISTIC MOUNT (token-scoped; unreachable for players): at a
+    // validated route rung, entry is deterministic — no emergent on_wall /
+    // in_air negotiation (the historical ~50% flake: entry needed a jump
+    // that pressed the wall while airborne on the same tick). Intent is
+    // still required: input toward the rung column.
+    if let Some(rung) = constructed_ladder_rung(data) {
+        let to_rung =
+            (rung.xy().map(|value| value as f32) + Vec2::broadcast(0.5)) - data.pos.0.xy();
+        let towards_rung = data.inputs.move_dir.dot(to_rung) > 0.0;
+        if towards_rung && !underwater && can_climb {
+            update.character = CharacterState::Climb(
+                climb::Data::create_adjusted_by_skills(data)
+                    .with_wielded(data.character.is_wield() || data.character.was_wielded()),
+            );
+            return true;
+        }
+    }
+    // Vanilla emergent entry (players, un-tokened NPCs) — unchanged.
+    let Some(wall_dir) = data.physics.on_wall else {
+        return false;
+    };
+    let towards_wall = data.inputs.move_dir.dot(wall_dir.xy()) > 0.0;
     let in_air = data.physics.on_ground.is_none();
     if towards_wall && in_air && !underwater && can_climb && update.energy.current() > 1.0 {
         update.character = CharacterState::Climb(

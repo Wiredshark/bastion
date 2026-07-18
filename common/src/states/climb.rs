@@ -77,13 +77,36 @@ impl CharacterBehavior for Data {
     fn behavior(&self, data: &JoinData, _output_events: &mut OutputEvents) -> StateUpdate {
         let mut update = StateUpdate::from(data);
 
-        let Some(wall_dir) = data.physics.on_wall else {
-            self.update_state_on_leaving(&mut update);
-            return update;
+        // ★ M2 DETERMINISTIC MOUNT, sustain half (token-scoped — players
+        // never carry the proof, so both overrides are unreachable for
+        // them): along a VALIDATED route rung, (a) wall_dir falls back to
+        // the rung-column direction when emergent contact hasn't latched
+        // yet (the mount tick from the pit floor), and (b) ground contact
+        // does not bounce the state (mounting FROM the ground / rung-step
+        // ground grazes — the other half of the historical ~50% flake).
+        // The proof's rung-adjacency window self-terminates at the ladder's
+        // end, so the rim dismount reverts to the vanilla grounded-exit
+        // deterministically — no explicit token lifecycle needed.
+        let route_rung = constructed_ladder_rung(data);
+        let wall_dir = match data.physics.on_wall {
+            Some(wall_dir) => wall_dir,
+            None => match route_rung {
+                Some(rung) => {
+                    let to_rung = (rung.xy().map(|value| value as f32)
+                        + Vec2::broadcast(0.5))
+                        - data.pos.0.xy();
+                    // Proof guarantees XY dist² == 1 — never degenerate.
+                    to_rung.normalized().with_z(0.0)
+                },
+                None => {
+                    self.update_state_on_leaving(&mut update);
+                    return update;
+                },
+            },
         };
 
-        // Exit climb if ground below
-        if data.physics.on_ground.is_some() {
+        // Exit climb if ground below — unless still on the validated route.
+        if data.physics.on_ground.is_some() && route_rung.is_none() {
             self.update_state_on_leaving(&mut update);
             return update;
         }
@@ -110,11 +133,16 @@ impl CharacterBehavior for Data {
             .magnitude()
             .max(1.0);
 
-        // Update energy and exit climbing state if not enough
-        if update
-            .energy
-            .try_change_by(-energy_use * data.dt.0)
-            .is_err()
+        // A constructed, route-proven ladder is infrastructure, not natural
+        // wall climbing. REQ-0074 keeps this state's authoritative movement,
+        // contact, friction, speed, interruption, and exit contract while the
+        // short-lived server proof exempts only the natural stamina charge.
+        // Without that validated proof this is the original energy path.
+        if !constructed_ladder_traversal_active(data)
+            && update
+                .energy
+                .try_change_by(-energy_use * data.dt.0)
+                .is_err()
         {
             self.update_state_on_leaving(&mut update);
         }
