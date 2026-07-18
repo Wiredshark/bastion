@@ -4197,6 +4197,21 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
             server.bastion_emit_damage(&member, 0.5);
             mutated = true;
         }
+        // N7 (BACKSTOP-OPT livelock-bound falsifier, architect gate
+        // condition): SUSTAINED energy drain every tick — route_energy_ready
+        // can never pass, so the member enters the energy-gate-wait state
+        // and NEVER leaves it organically. PASS = the timing signature of
+        // hold→bound→net: no failsafe before ~190s (the 120s hold worked on
+        // top of the ~60s build+wait lead-in; without the hold it fires
+        // ~120-130s) AND failsafe by ~295s (the bound expired, the watch
+        // resumed, the INDEPENDENT net caught him — without the bound,
+        // never). Sustained per-tick stimulus per the N6 lesson; the
+        // verifier additionally asserts the 'energy-gate-wait' wipe reason
+        // appeared (stimulus-window precondition, the class-fix discipline).
+        if episode == "N7" {
+            server.bastion_set_colonist_energy(&member, 0.1);
+            mutated = true;
+        }
         // PREMISE-CHECK v2 (v1 note): the out-of-phase-Climb hard gate is
         // evaluated TAPE-SIDE by the wrapper (trajectory.jsonl carries
         // character_state per tick); the in-process flag stays false here.
@@ -4269,14 +4284,14 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
                 && out_at.is_some()
                 && abort_reason.is_none()
         },
-        "N5G" => {
-            staged_ok
-                && position_ok
-                && mutated
-                && owned_seen
-                && out_at.is_some()
-                && abort_reason.is_none()
-        },
+        // N5G: RECLASSIFIED report-only (architect disposition-1 at the M2
+        // tag): the tick-0 attractor wins the PRE-ROUTE race — a window where
+        // diversion is legitimate — so the episode structurally cannot test
+        // during-approach single-owner (that property is corpus-proven on
+        // leg B with live designations, all seeds). Kept as the pre-route
+        // attractor-race probe; its rescue-priority finding is filed as a
+        // stuck-economy design item.
+        "N5G" => staged_ok && position_ok && mutated,
         // N1/N1B per architect ruling 1: PASS = clean atomic abort semantics
         // ONLY — spec abort reason, zero TraversingLink on the mutated
         // reservation, no production-failsafe teleport, bounded reacquire.
@@ -4312,6 +4327,15 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         },
         "N4" => abort_reason.as_deref() == Some("stale-terrain-revision"),
         "N5" | "N6" | "N2" => staged_ok && position_ok, // v1: report-only
+        // N7: the failsafe MUST fire, but only in the hold→bound→net window.
+        "N7" => {
+            staged_ok
+                && position_ok
+                && mutated
+                && alive
+                && teleports >= 1
+                && out_at.is_some_and(|sec| (190..=295).contains(&sec))
+        },
         _ => false,
     };
     // Seal-integrity rider, post-ruling scope: N1 ONLY. The architect ruled

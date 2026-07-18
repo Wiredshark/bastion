@@ -609,6 +609,11 @@ fn watch_wipe(watch: &mut HashMap<Uid, f32>, uid: &Uid, reason: &'static str) {
     }
 }
 
+/// BACKSTOP-OPT (B): consecutive fruitless route outcomes (aborts or
+/// exhausted-replan releases) a member may accumulate before being released
+/// to the independent failsafe tier. Cleared on real progress.
+const EMERGENCY_REENGAGE_BOUND: u32 = 5;
+
 pub(crate) fn cap_for_skill(climbing_level: u16) -> i32 {
     3 * (i32::from(climbing_level) + 1)
 }
@@ -2998,6 +3003,14 @@ pub struct JobBoard {
     /// bound the member is released to the independent failsafe tier instead
     /// of re-engaging forever (a genuinely-impossible route must not loop).
     pub(crate) emergency_reengage_aborts: HashMap<Uid, u32>,
+    /// BACKSTOP-OPT: ticks spent in the REQ-0071 energy-recovery wait per
+    /// member. The wait is a DESIGNED bounded non-progress state (idle energy
+    /// strictly regenerates, the gate WILL pass) — the stuck-watch holds
+    /// during it, but only up to a cumulative bound so a pathological
+    /// never-recovering wait still reaches the independent failsafe net.
+    /// (The old broken release path was masking this wait from the watch by
+    /// accident — N1B regression under the (A) fix.)
+    pub(crate) emergency_energy_wait_ticks: HashMap<Uid, u32>,
     /// Airborne pre-route owners establishing a physically supported origin.
     /// This state remains visible to the deep harness so a leaked/pending
     /// settle episode can never be mistaken for clean `[0,0,0]` teardown.
@@ -8136,6 +8149,8 @@ impl<'a> System<'a> for Sys {
                             && let Some(descriptor) =
                                 board.emergency_route_descriptors.get(&owner).copied()
                         {
+                            // The energy wait (if any) ended in recovery.
+                            board.emergency_energy_wait_ticks.remove(&uid);
                             board
                                 .bastion_traversal_tasks
                                 .insert(uid, BastionTraversalTask {
@@ -8207,6 +8222,27 @@ impl<'a> System<'a> for Sys {
                         active.stuck_time = 0.0;
                         if let Some(agent) = agent.as_deref_mut() {
                             agent.rtsim_controller.activity = None;
+                        }
+                        // BACKSTOP-OPT: hold the failsafe stuck-watch through
+                        // the DESIGNED energy-recovery wait (reason-tagged,
+                        // cumulative-bounded). Without this, a motionless
+                        // member legitimately waiting ~90s for the REQ-0071
+                        // full-energy gate outlives the 60s watch and gets
+                        // teleported mid-recovery (N1B under the release-path
+                        // fix; the corpus seeds only escaped by position
+                        // jitter). Past the bound the watch runs again and
+                        // the independent net still catches a wait that never
+                        // recovers.
+                        if grounded_clear && !route_energy_ready {
+                            const ENERGY_WAIT_HOLD_TICKS: u32 = 120 * 30;
+                            let waited = board
+                                .emergency_energy_wait_ticks
+                                .entry(uid)
+                                .or_insert(0);
+                            *waited += 1;
+                            if *waited <= ENERGY_WAIT_HOLD_TICKS {
+                                watch_wipe(&mut board.stuck_watch, &uid, "energy-gate-wait");
+                            }
                         }
                         if grounded_clear
                             && !route_energy_ready
@@ -11177,7 +11213,6 @@ impl<'a> System<'a> for Sys {
                                 // member to the independent failsafe tier —
                                 // never-stranded holds via the net, and the
                                 // route cannot hold a member hostage forever.
-                                const EMERGENCY_REENGAGE_BOUND: u32 = 5;
                                 let aborts = board
                                     .emergency_reengage_aborts
                                     .entry(member)
@@ -11185,6 +11220,7 @@ impl<'a> System<'a> for Sys {
                                 *aborts += 1;
                                 if *aborts > EMERGENCY_REENGAGE_BOUND {
                                     board.emergency_reengage_aborts.remove(&member);
+                                    board.emergency_energy_wait_ticks.remove(&member);
                                     board.emergency_route_members.remove(&member);
                                     board.emergency_frontier_reacquire.remove(&member);
                                     watch_wipe(
@@ -11327,6 +11363,46 @@ impl<'a> System<'a> for Sys {
                         // REQ-0061: broad route upkeep must not install a
                         // Goto, count a ladder-top sample as safe dismount, or
                         // otherwise compete with an active exit transaction.
+                        continue;
+                    }
+                    // BACKSTOP-OPT (ii), the release path's THIRD named
+                    // outcome: ROUTE EXHAUSTED, EXIT INVALID. Every route job
+                    // is complete but the descriptor no longer validates
+                    // (e.g. the dismount was sealed after planning) — no task
+                    // can create, no exit can verify, the member has NO
+                    // driver (N1B tape: 62 samples of a dead Goto from a
+                    // wall-cling, then the net). Release for a FRESH re-plan
+                    // — the dig-around-the-seal capability the old broken
+                    // release provided by ACCIDENT, now a decision — bounded
+                    // by the same counter so permanently-impossible geometry
+                    // still reaches the independent net.
+                    if construction_complete && !route_descriptor_ready {
+                        let outcomes = board
+                            .emergency_reengage_aborts
+                            .entry(member)
+                            .or_insert(0);
+                        *outcomes += 1;
+                        let exhausted = *outcomes > EMERGENCY_REENGAGE_BOUND;
+                        if !exhausted {
+                            // Fresh clock for the imminent re-plan (the lost
+                            // path primes egress re-emission in ~10s). On
+                            // exhaustion the watch keeps its accrual and the
+                            // net fires within its window.
+                            watch_wipe(
+                                &mut board.stuck_watch,
+                                &member,
+                                "route-exhausted-replan",
+                            );
+                        }
+                        info!(
+                            owner = route_owner.0.get(),
+                            uid = member.0.get(),
+                            tick = tick.0,
+                            outcomes = *outcomes,
+                            exhausted,
+                            "bastion: emergency route exhausted with invalid exit; member released for re-plan"
+                        );
+                        lost_members.push(member);
                         continue;
                     }
                     let (stable_exit, dismount_target) = id_maps
@@ -11540,6 +11616,7 @@ impl<'a> System<'a> for Sys {
                     board.egress_best_distance.remove(&member);
                     board.egress_no_progress_secs.remove(&member);
                     board.emergency_reengage_aborts.remove(&member);
+                    board.emergency_energy_wait_ticks.remove(&member);
                     watch_wipe(&mut board.stuck_watch, &member, "route-cleanup");
                 }
                 for member in lost_members {
