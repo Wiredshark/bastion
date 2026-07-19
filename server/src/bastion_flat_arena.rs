@@ -25,8 +25,7 @@ use common::{
 };
 use std::sync::OnceLock;
 use vek::*;
-#[cfg(feature = "worldgen")]
-use world::World;
+#[cfg(feature = "worldgen")] use world::World;
 
 /// Arena half-width in CHUNKS (32-block chunks → 16 ⇒ a 1056×1056-block
 /// flat square). Sized against observed colony dynamics: generator scan
@@ -46,9 +45,7 @@ pub const FLAT_ARENA_Z: i32 = 400;
 /// arena for this server's lifetime.
 pub fn enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| {
-        std::env::var("BASTION_FLAT_ARENA").is_ok_and(|v| v != "0")
-    })
+    *ON.get_or_init(|| std::env::var("BASTION_FLAT_ARENA").is_ok_and(|v| v != "0"))
 }
 
 /// The arena anchor: the map-center wpos (the default spawn area), from
@@ -91,11 +88,8 @@ pub fn override_chunk(
     if !enabled() {
         return None;
     }
-    let center_key = center_wpos
-        .map2(TerrainChunkSize::RECT_SIZE, |e, sz| e as i32 / sz as i32);
-    if (key - center_key).map(|e| e.abs()).reduce_max()
-        > FLAT_ARENA_RADIUS_CHUNKS
-    {
+    let center_key = center_wpos.map2(TerrainChunkSize::RECT_SIZE, |e, sz| e as i32 / sz as i32);
+    if (key - center_key).map(|e| e.abs()).reduce_max() > FLAT_ARENA_RADIUS_CHUNKS {
         return None;
     }
     Some((

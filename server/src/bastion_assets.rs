@@ -258,14 +258,25 @@ impl AssetLabCatalog {
                         }
                     }
                     entries.sort_by(|a, b| a.id.cmp(&b.id));
-                    info!(count = entries.len(), ?vox_dir, "bastion asset-lab catalog scanned (legacy)");
+                    info!(
+                        count = entries.len(),
+                        ?vox_dir,
+                        "bastion asset-lab catalog scanned (legacy)"
+                    );
                 },
                 Err(e) => {
-                    warn!(?vox_dir, ?e, "bastion asset-lab root not readable — empty catalog")
+                    warn!(
+                        ?vox_dir,
+                        ?e,
+                        "bastion asset-lab root not readable — empty catalog"
+                    )
                 },
             }
         }
-        Self { root: root.to_path_buf(), entries }
+        Self {
+            root: root.to_path_buf(),
+            entries,
+        }
     }
 
     pub fn get(&self, id: &str) -> Option<&AssetLabEntry> {
@@ -441,7 +452,11 @@ pub fn load_asset(entry: &AssetLabEntry, open_variant: bool) -> Result<LoadedAss
         checks.push(MarkerCheck {
             byte,
             count,
-            expected: if expected.is_empty() { "world-band default".into() } else { expected },
+            expected: if expected.is_empty() {
+                "world-band default".into()
+            } else {
+                expected
+            },
             resolved: resolved_name,
             ok,
         });
@@ -543,7 +558,10 @@ pub fn place_structure(
     let sampler = world.sample_columns();
     let bounds = loaded.structure.get_bounds();
     let mut report = PlacementReport {
-        bounds: Aabb { min: origin + bounds.min, max: origin + bounds.max },
+        bounds: Aabb {
+            min: origin + bounds.min,
+            max: origin + bounds.max,
+        },
         ..Default::default()
     };
 
@@ -555,7 +573,9 @@ pub fn place_structure(
             };
             for z in bounds.min.z..bounds.max.z {
                 let spos = Vec3::new(x, y, z);
-                let Ok(sblock) = loaded.structure.get(spos) else { continue };
+                let Ok(sblock) = loaded.structure.get(spos) else {
+                    continue;
+                };
                 if matches!(sblock, StructureBlock::None) {
                     continue;
                 }
@@ -644,7 +664,14 @@ pub fn ground_z(state: &State, x: i32, y: i32) -> Option<i32> {
 /// Guaranteed-flat rock slab + clear air above, centered on (cx, cy) at
 /// `pad_z`. Writes are buffered `BlockChange`s (applied at tick end).
 /// Returns the write count.
-pub fn flatten_pad(state: &mut State, cx: i32, cy: i32, pad_z: i32, half: i32, clear_h: i32) -> usize {
+pub fn flatten_pad(
+    state: &mut State,
+    cx: i32,
+    cy: i32,
+    pad_z: i32,
+    half: i32,
+    clear_h: i32,
+) -> usize {
     use common::terrain::BlockKind;
     let mut writes = 0usize;
     for x in (cx - half)..=(cx + half) {
@@ -707,7 +734,10 @@ pub fn pick_flat_anchor(world: &World, around: Vec2<f32>) -> Vec2<f32> {
         }
     }
     let (range, cand) = best.unwrap_or((f32::INFINITY, around));
-    info!(?cand, range, "bastion arena anchor picked (flattest dry candidate)");
+    info!(
+        ?cand,
+        range, "bastion arena anchor picked (flattest dry candidate)"
+    );
     cand
 }
 

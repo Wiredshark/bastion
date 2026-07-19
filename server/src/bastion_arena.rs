@@ -81,9 +81,11 @@ impl Server {
         };
         let pad_z = min_gz;
         let clear = (max_gz - min_gz + 8).clamp(PAD_CLEAR, 64);
-        let writes =
-            bastion_assets::flatten_pad(&mut self.state, cx, cy, pad_z, PAD_HALF, clear);
-        info!(writes, cx, cy, pad_z, clear, "asset-arena: pad flattened (buffered)");
+        let writes = bastion_assets::flatten_pad(&mut self.state, cx, cy, pad_z, PAD_HALF, clear);
+        info!(
+            writes,
+            cx, cy, pad_z, clear, "asset-arena: pad flattened (buffered)"
+        );
 
         let origin = Vec3::new(cx, cy, pad_z);
         let staging = Vec3::new(cx as f32 + 0.5, (cy - 30) as f32 + 0.5, (pad_z + 2) as f32);
@@ -94,7 +96,10 @@ impl Server {
                 fidelity_ok = loaded.fidelity_ok,
                 "asset-arena: initial asset placed"
             ),
-            Err(e) => warn!(asset = entries[idx].id, e, "asset-arena: initial placement failed"),
+            Err(e) => warn!(
+                asset = entries[idx].id,
+                e, "asset-arena: initial placement failed"
+            ),
         }
 
         // Spawn the player on the pad edge, facing the asset.
@@ -129,9 +134,7 @@ impl Server {
                 max: arena.origin + Vec3::new(24, 24, PAD_CLEAR),
             };
             let target = bastion_assets::interior_target(&self.state, bounds, arena.pad_z)
-                .unwrap_or_else(|| {
-                    arena.origin.map(|e| e as f32) + Vec3::new(0.5, 0.5, 1.0)
-                });
+                .unwrap_or_else(|| arena.origin.map(|e| e as f32) + Vec3::new(0.5, 0.5, 1.0));
             // bastion_goto only succeeds once the colonist has promoted.
             if self.bastion_goto(&name, target) {
                 info!(name, ?target, "asset-arena: fixture walking in");
@@ -167,7 +170,11 @@ impl Server {
                         arena.entries.len(),
                         entry.id,
                         report.blocks_placed,
-                        if loaded.fidelity_ok { "OK" } else { "MISMATCH (see log)" },
+                        if loaded.fidelity_ok {
+                            "OK"
+                        } else {
+                            "MISMATCH (see log)"
+                        },
                         if report.sprite_cfgs_dropped > 0 {
                             format!(", {} sprite cfgs dropped", report.sprite_cfgs_dropped)
                         } else {
@@ -184,7 +191,9 @@ impl Server {
                 }
                 arena.fixture_goto_pending = true;
                 match &arena.fixture {
-                    Some(name) => format!("Fixture {name} ordered in — watch it path to the interior."),
+                    Some(name) => {
+                        format!("Fixture {name} ordered in — watch it path to the interior.")
+                    },
                     None => "Fixture spawn failed (see server log).".into(),
                 }
             },

@@ -193,7 +193,11 @@ impl Structure {
             return Err("vox file contains no models".to_string());
         };
         let center = center.unwrap_or_else(|| {
-            Vec3::new(first_model.size.x as i32 / 2, first_model.size.y as i32 / 2, 0)
+            Vec3::new(
+                first_model.size.x as i32 / 2,
+                first_model.size.y as i32 / 2,
+                0,
+            )
         });
         let mut census = BastionVoxCensus::default();
         if let Some(model) = data.models.first() {

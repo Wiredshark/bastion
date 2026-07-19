@@ -268,8 +268,8 @@ mod exhaustiveness_tests {
                 in_palette,
                 "DesignationKind::{k:?}: is_tool_paintable()={} but present in \
                  ToolMode::ALL={in_palette} — they must AGREE. If paintable, add a \
-                 ToolMode::Designate({k:?}) entry to ALL (the Farm/Bed fix shape); if not, \
-                 remove it or fix is_tool_paintable. This is the Farm-palette-bug guard.",
+                 ToolMode::Designate({k:?}) entry to ALL (the Farm/Bed fix shape); if not, remove \
+                 it or fix is_tool_paintable. This is the Farm-palette-bug guard.",
                 k.is_tool_paintable(),
             );
         }

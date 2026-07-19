@@ -208,10 +208,8 @@ impl SingleplayerState {
             error!("run_bastion_arena called, but singleplayer is already running");
             return;
         }
-        let server_data_dir = std::env::temp_dir().join(format!(
-            "bastion-asset-arena-{}",
-            std::process::id()
-        ));
+        let server_data_dir =
+            std::env::temp_dir().join(format!("bastion-asset-arena-{}", std::process::id()));
         if let Err(e) = std::fs::create_dir_all(&server_data_dir) {
             error!(?e, "could not create arena data dir");
             return;
@@ -227,7 +225,9 @@ impl SingleplayerState {
             std::env::set_var("BASTION_ASSET_ARENA", asset_id);
             std::env::set_var(
                 "BASTION_ASSET_LAB_DIR",
-                asset_lab_dir.canonicalize().unwrap_or_else(|_| asset_lab_dir.to_path_buf()),
+                asset_lab_dir
+                    .canonicalize()
+                    .unwrap_or_else(|_| asset_lab_dir.to_path_buf()),
             );
         }
 

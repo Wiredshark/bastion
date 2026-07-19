@@ -41,9 +41,7 @@ pub struct ArchetypeConfigs {
 impl FileAsset for ArchetypeConfigs {
     const EXTENSION: &'static str = "ron";
 
-    fn from_bytes(bytes: Cow<[u8]>) -> Result<Self, BoxedError> {
-        load_ron(&bytes)
-    }
+    fn from_bytes(bytes: Cow<[u8]>) -> Result<Self, BoxedError> { load_ron(&bytes) }
 }
 
 /// The archetype KEY for an NPC — professions map to keys this block
@@ -52,9 +50,7 @@ impl FileAsset for ArchetypeConfigs {
 /// `None` = no archetype data applies → every converted gate stays
 /// closed, exactly like a non-matching profession under the old
 /// hardcoded `matches!` (the graceful default the invariants require).
-pub fn archetype_key(
-    profession: Option<common::rtsim::Profession>,
-) -> Option<&'static str> {
+pub fn archetype_key(profession: Option<common::rtsim::Profession>) -> Option<&'static str> {
     use common::rtsim::Profession;
     match profession? {
         Profession::Herbalist => Some("herbalist"),
@@ -82,11 +78,7 @@ pub fn archetype_chance(key: &str, activity: &str) -> Option<f32> {
 
 /// The pure core of [`archetype_chance`] — separated so tests and the
 /// harness contrast probe exercise EXACTLY the code path the brain uses.
-pub fn lookup(
-    configs: &ArchetypeConfigs,
-    key: &str,
-    activity: &str,
-) -> Option<f32> {
+pub fn lookup(configs: &ArchetypeConfigs, key: &str, activity: &str) -> Option<f32> {
     configs
         .archetypes
         .get(key)?
@@ -105,12 +97,7 @@ pub fn allowed_set(key: &str) -> Vec<(String, f32)> {
     let mut set: Vec<(String, f32)> = configs
         .archetypes
         .get(key)
-        .map(|c| {
-            c.activities
-                .iter()
-                .map(|(a, w)| (a.clone(), *w))
-                .collect()
-        })
+        .map(|c| c.activities.iter().map(|(a, w)| (a.clone(), *w)).collect())
         .unwrap_or_default();
     set.sort_by(|a, b| a.0.cmp(&b.0));
     set
@@ -152,7 +139,10 @@ mod tests {
     #[test]
     fn key_derivation_matches_converted_set() {
         use common::rtsim::Profession;
-        assert_eq!(archetype_key(Some(Profession::Herbalist)), Some("herbalist"));
+        assert_eq!(
+            archetype_key(Some(Profession::Herbalist)),
+            Some("herbalist")
+        );
         assert_eq!(archetype_key(Some(Profession::Hunter)), Some("hunter"));
         assert_eq!(archetype_key(Some(Profession::Guard)), Some("guard"));
         assert_eq!(archetype_key(Some(Profession::Farmer)), None);

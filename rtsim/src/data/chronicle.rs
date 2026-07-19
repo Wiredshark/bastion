@@ -246,9 +246,7 @@ impl Chronicle {
     /// shape): expire pruning-band entries past their window. `Legendary`
     /// is NEVER touched — by construction, not by tuning.
     pub fn cleanup(&mut self, now: TimeOfDay) {
-        let live = |window: f64| {
-            move |e: &ChronicleEvent| (now.0 - e.at_tod.0).max(0.0) < window
-        };
+        let live = |window: f64| move |e: &ChronicleEvent| (now.0 - e.at_tod.0).max(0.0) < window;
         self.routine.retain(live(ROUTINE_WINDOW));
         self.notable.retain(live(NOTABLE_WINDOW));
     }
@@ -319,7 +317,11 @@ mod tests {
             "caps must hold under soak"
         );
         // Cap-eviction is oldest-first: the survivors are the newest.
-        assert!(c.routine.iter().all(|e| e.at_tod.0 >= (ROUTINE_CAP * 3) as f64));
+        assert!(
+            c.routine
+                .iter()
+                .all(|e| e.at_tod.0 >= (ROUTINE_CAP * 3) as f64)
+        );
         // A cleanup at the end of time expires every windowed entry —
         // and not one Legendary.
         c.cleanup(TimeOfDay(f64::MAX / 2.0));
@@ -353,8 +355,7 @@ mod tests {
         }
         let mut bytes = Vec::new();
         rmp_serde::encode::write_named(&mut bytes, &c).expect("encode");
-        let c2: Chronicle =
-            rmp_serde::decode::from_read(bytes.as_slice()).expect("decode");
+        let c2: Chronicle = rmp_serde::decode::from_read(bytes.as_slice()).expect("decode");
         let mut bytes2 = Vec::new();
         rmp_serde::encode::write_named(&mut bytes2, &c2).expect("re-encode");
         assert_eq!(bytes, bytes2, "byte-for-byte across the round-trip");

@@ -30,8 +30,8 @@ use common::{
     uid::{IdMaps, Uid},
 };
 use common_base::dev_panic;
-use std::cell::RefCell;
 use specs::{Entities, Entity as EcsEntity, Read, ReadExpect, ReadStorage, SystemData, shred};
+use std::cell::RefCell;
 
 event_emitters! {
     pub struct AgentEvents[AgentEmitters] {

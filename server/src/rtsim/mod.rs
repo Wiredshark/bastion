@@ -453,8 +453,7 @@ impl RtSim {
     pub fn bastion_chronicle_roundtrip(&mut self) -> bool {
         let data = self.state.get_data_mut();
         let legendary_before = data.chronicle.counts().2;
-        let end_of_time =
-            common::resources::TimeOfDay(data.time_of_day.0 + 1.0e12);
+        let end_of_time = common::resources::TimeOfDay(data.time_of_day.0 + 1.0e12);
         data.chronicle.cleanup(end_of_time);
         if data.chronicle.counts().2 != legendary_before {
             return false;
@@ -463,16 +462,15 @@ impl RtSim {
         if data.write_to(&mut bytes).is_err() {
             return false;
         }
-        let decoded = match ::rtsim::data::Data::from_reader(bytes.as_slice())
-        {
+        let decoded = match ::rtsim::data::Data::from_reader(bytes.as_slice()) {
             Ok(d) => d,
             Err(_) => return false,
         };
-        match (data.chronicle.fingerprint(), decoded.chronicle.fingerprint())
-        {
-            (Some(a), Some(b)) => {
-                a == b && data.chronicle.counts() == decoded.chronicle.counts()
-            },
+        match (
+            data.chronicle.fingerprint(),
+            decoded.chronicle.fingerprint(),
+        ) {
+            (Some(a), Some(b)) => a == b && data.chronicle.counts() == decoded.chronicle.counts(),
             _ => false,
         }
     }

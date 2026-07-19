@@ -26,9 +26,7 @@ pub struct ThoughtTable {
 impl FileAsset for ThoughtTable {
     const EXTENSION: &'static str = "ron";
 
-    fn from_bytes(bytes: Cow<[u8]>) -> Result<Self, BoxedError> {
-        load_ron(&bytes)
-    }
+    fn from_bytes(bytes: Cow<[u8]>) -> Result<Self, BoxedError> { load_ron(&bytes) }
 }
 
 impl ThoughtTable {
@@ -51,16 +49,13 @@ impl ThoughtTable {
 /// emitters land, the math never reshapes.
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct ValueAffinityTable {
-    pub affinities:
-        HashMap<rtsim::data::ChronicleKind, Vec<(common::bastion::Value, f32)>>,
+    pub affinities: HashMap<rtsim::data::ChronicleKind, Vec<(common::bastion::Value, f32)>>,
 }
 
 impl FileAsset for ValueAffinityTable {
     const EXTENSION: &'static str = "ron";
 
-    fn from_bytes(bytes: Cow<[u8]>) -> Result<Self, BoxedError> {
-        load_ron(&bytes)
-    }
+    fn from_bytes(bytes: Cow<[u8]>) -> Result<Self, BoxedError> { load_ron(&bytes) }
 }
 
 impl ValueAffinityTable {
@@ -106,9 +101,7 @@ pub fn thought_sum(
                     neurotic,
                     *mag,
                 );
-                care * common::comp::bastion::thought_decay(
-                    *mag, e.at_tod.0, now, *life,
-                )
+                care * common::comp::bastion::thought_decay(*mag, e.at_tod.0, now, *life)
             })
         })
         .sum()

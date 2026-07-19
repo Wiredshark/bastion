@@ -6293,7 +6293,11 @@ fn handle_bastion_arena(
     args: Vec<String>,
     _action: &ServerChatCommand,
 ) -> CmdResult<()> {
-    let action = args.first().map(String::as_str).unwrap_or("info").to_string();
+    let action = args
+        .first()
+        .map(String::as_str)
+        .unwrap_or("info")
+        .to_string();
     #[cfg(feature = "worldgen")]
     let feedback = server.bastion_arena_command(&action);
     #[cfg(not(feature = "worldgen"))]
@@ -6303,10 +6307,7 @@ fn handle_bastion_arena(
     };
     server.notify_client(
         client,
-        ServerGeneral::server_msg(
-            comp::ChatType::CommandInfo,
-            Content::Plain(feedback),
-        ),
+        ServerGeneral::server_msg(comp::ChatType::CommandInfo, Content::Plain(feedback)),
     );
     Ok(())
 }

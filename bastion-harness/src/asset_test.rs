@@ -5,15 +5,15 @@
 //!
 //! Cast per category:
 //! - Structure / TestFixture: reachability + traversal + arrival + egress +
-//!   multi-occupancy + interior function point (geometric-interior target,
-//!   ≥ 3 blocks from the bounds edge so ARRIVE_DIST 2.5 can't false-arrive
-//!   through a wall).
+//!   multi-occupancy + interior function point (geometric-interior target, ≥ 3
+//!   blocks from the bounds edge so ARRIVE_DIST 2.5 can't false-arrive through
+//!   a wall).
 //! - Defense (the palisade wall+gate line): blocked/unblocked matrix — the
 //!   closed gate must never admit the outside colonist (watchdog fires); the
-//!   open variant must (poses = two marker mappings of the same vox). The
-//!   other three yard sides are harness-built rock fixture walls (the asset
-//!   under test is the wall+gate line; rotation of the line itself is a
-//!   documented follow-up).
+//!   open variant must (poses = two marker mappings of the same vox). The other
+//!   three yard sides are harness-built rock fixture walls (the asset under
+//!   test is the wall+gate line; rotation of the line itself is a documented
+//!   follow-up).
 //! - Flora: world-scale path-around (the prop assertion at 1 vox = 1 block).
 //! - Prop/Item (figure-layer, 11 vox/block — handcart/gloomcap/maul/armor):
 //!   load + marker-fidelity ONLY; their world integration is a
@@ -30,12 +30,12 @@
 //! contract header the asset session reads back).
 
 use serde::Serialize;
-use specs::WorldExt;
 use server::{
     CalendarMode, EditableSettings, Input, Server, Settings,
     bastion_assets::{self, AssetCategory, AssetLabCatalog, LoadedAsset, PlacementReport},
     persistence::{DatabaseSettings, SqlLogMode},
 };
+use specs::WorldExt;
 use std::{
     io::Write as _,
     path::PathBuf,
@@ -234,7 +234,12 @@ pub fn run(cfg: &AssetTestConfig) -> std::process::ExitCode {
         .expect("no ground across arena footprint");
     let pad_z = min_gz;
     let pad_clear = (max_gz - min_gz + 8).clamp(16, 64);
-    info!(pad_z, pad_clear, spread = max_gz - min_gz, "asset-test: pad sized from survey");
+    info!(
+        pad_z,
+        pad_clear,
+        spread = max_gz - min_gz,
+        "asset-test: pad sized from survey"
+    );
 
     // ── Fixtures: pad + 3 colonists, verified once on the bare plane ─────
     let pad_writes = flatten_pad(&mut server, ax, ay, pad_z, 44, pad_clear);
@@ -245,7 +250,10 @@ pub fn run(cfg: &AssetTestConfig) -> std::process::ExitCode {
     let names = server.bastion_spawn_colony(staging, 3);
     tick(&mut server, dt, 60);
     let loaded_fixtures = server.bastion_colonist_states().len();
-    info!(?names, loaded_fixtures, "asset-test: fixture colonists spawned");
+    info!(
+        ?names,
+        loaded_fixtures, "asset-test: fixture colonists spawned"
+    );
     if loaded_fixtures < 3 {
         eprintln!("ASSET-TEST: only {loaded_fixtures}/3 fixture colonists loaded — aborting");
         return std::process::ExitCode::FAILURE;
@@ -260,7 +268,8 @@ pub fn run(cfg: &AssetTestConfig) -> std::process::ExitCode {
     };
     if !sanity.arrived() || !sanity_back.arrived() {
         eprintln!(
-            "ASSET-TEST: bare-pad fixture sanity failed (out: {} / back: {}) — environment, not asset",
+            "ASSET-TEST: bare-pad fixture sanity failed (out: {} / back: {}) — environment, not \
+             asset",
             sanity.describe(),
             sanity_back.describe()
         );
@@ -314,7 +323,9 @@ pub fn run(cfg: &AssetTestConfig) -> std::process::ExitCode {
 
 fn tick(server: &mut Server, dt: Duration, n: u64) {
     for _ in 0..n {
-        server.tick(Input::default(), dt).expect("server tick failed");
+        server
+            .tick(Input::default(), dt)
+            .expect("server tick failed");
         server.cleanup();
     }
 }
@@ -326,7 +337,14 @@ fn ground_z(server: &Server, x: i32, y: i32) -> Option<i32> {
 
 /// Guaranteed-flat rock slab + clear air above (shared impl). Buffered
 /// writes, applied next tick.
-fn flatten_pad(server: &mut Server, ax: i32, ay: i32, pad_z: i32, half: i32, clear_h: i32) -> usize {
+fn flatten_pad(
+    server: &mut Server,
+    ax: i32,
+    ay: i32,
+    pad_z: i32,
+    half: i32,
+    clear_h: i32,
+) -> usize {
     server::bastion_assets::flatten_pad(server.state_mut(), ax, ay, pad_z, half, clear_h)
 }
 
@@ -403,9 +421,16 @@ fn goto_all_and_wait(
             return (false, msg);
         }
         if states.iter().any(|s| s.3 > budget) {
-            let unarrived: Vec<_> = states.iter().filter(|s| !s.4).map(|s| s.0.clone()).collect();
+            let unarrived: Vec<_> = states
+                .iter()
+                .filter(|s| !s.4)
+                .map(|s| s.0.clone())
+                .collect();
             server.bastion_goto_clear(None);
-            return (false, format!("budget {budget:.0}s expired; not arrived: {unarrived:?}"));
+            return (
+                false,
+                format!("budget {budget:.0}s expired; not arrived: {unarrived:?}"),
+            );
         }
     }
 }
@@ -452,7 +477,11 @@ fn run_one_asset(
     let mut assertions: Vec<Assertion> = Vec::new();
     let mut push = |assertions: &mut Vec<Assertion>, name: &str, pass: bool, detail: String| {
         info!(asset = entry.id, name, pass, detail, "asset-test assertion");
-        assertions.push(Assertion { name: name.into(), pass, detail });
+        assertions.push(Assertion {
+            name: name.into(),
+            pass,
+            detail,
+        });
     };
 
     if matches!(entry.category, AssetCategory::Creature) {
@@ -480,10 +509,15 @@ fn run_one_asset(
         entry.category,
         AssetCategory::Prop | AssetCategory::Item | AssetCategory::Other
     );
-    let cast_target = entry.cast.as_ref().map(|c| c.target.clone()).unwrap_or_default();
+    let cast_target = entry
+        .cast
+        .as_ref()
+        .map(|c| c.target.clone())
+        .unwrap_or_default();
     let mode_string = if load_only && !cast_target.is_empty() {
         format!(
-            "load-only (figure-scale dims {:?}; declared cast '{cast_target}' deferred — world-scale version or sprite-manifest rung needed)",
+            "load-only (figure-scale dims {:?}; declared cast '{cast_target}' deferred — \
+             world-scale version or sprite-manifest rung needed)",
             entry.dims.map(|d| (d.x, d.y, d.z))
         )
     } else if load_only {
@@ -505,7 +539,12 @@ fn run_one_asset(
     let (loaded, report) = match placed {
         Ok(v) => v,
         Err(e) => {
-            push(&mut assertions, "load", false, format!("malformed/unreadable: {e}"));
+            push(
+                &mut assertions,
+                "load",
+                false,
+                format!("malformed/unreadable: {e}"),
+            );
             return AssetResult {
                 id: entry.id.clone(),
                 category: format!("{:?}", entry.category),
@@ -561,19 +600,19 @@ fn run_one_asset(
             let terrain = server.state().terrain();
             let lit = cells
                 .iter()
-                .filter(|c| {
-                    terrain
-                        .get(**c)
-                        .ok()
-                        .and_then(|b| b.get_glow())
-                        .is_some()
-                })
+                .filter(|c| terrain.get(**c).ok().and_then(|b| b.get_glow()).is_some())
                 .count();
             // Diagnostic: what actually sits at the first cell (kind + sprite).
             let probe = cells
                 .first()
                 .and_then(|c| terrain.get(*c).ok().copied())
-                .map(|b| format!("first cell: kind={:?} sprite={:?}", b.kind(), b.get_sprite()))
+                .map(|b| {
+                    format!(
+                        "first cell: kind={:?} sprite={:?}",
+                        b.kind(),
+                        b.get_sprite()
+                    )
+                })
                 .unwrap_or_default();
             drop(terrain);
             push(
@@ -603,11 +642,15 @@ fn run_one_asset(
                         .and_then(|cells| cells.first().copied());
                     match work_cell {
                         Some(cell) => {
-                            let target =
-                                cell.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+                            let target = cell.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
                             let leg =
                                 goto_and_wait(server, dt, &names[0], target, ARRIVAL_BUDGET_S);
-                            push(&mut assertions, "reach-work-marker", leg.arrived(), leg.describe());
+                            push(
+                                &mut assertions,
+                                "reach-work-marker",
+                                leg.arrived(),
+                                leg.describe(),
+                            );
                             if leg.arrived() {
                                 let out =
                                     goto_and_wait(server, dt, &names[0], staging, ARRIVAL_BUDGET_S);
@@ -641,10 +684,16 @@ fn run_one_asset(
                     Some(interior) => {
                         // Reachability + traversal + arrival.
                         let leg = goto_and_wait(server, dt, &names[0], interior, ARRIVAL_BUDGET_S);
-                        push(&mut assertions, "reach-interior", leg.arrived(), leg.describe());
+                        push(
+                            &mut assertions,
+                            "reach-interior",
+                            leg.arrived(),
+                            leg.describe(),
+                        );
                         // Egress (only meaningful if we got in).
                         if leg.arrived() {
-                            let out = goto_and_wait(server, dt, &names[0], staging, ARRIVAL_BUDGET_S);
+                            let out =
+                                goto_and_wait(server, dt, &names[0], staging, ARRIVAL_BUDGET_S);
                             push(&mut assertions, "egress", out.arrived(), out.describe());
                             // Multi-occupancy: 3 in, 3 out, same door.
                             let (in_ok, in_detail) = goto_all_and_wait(
@@ -678,7 +727,14 @@ fn run_one_asset(
                 // for the flagship interior structure to bound wall time.
                 if entry.id == "structure_housing_human_cottage" {
                     run_integrated_spot_check(
-                        server, dt, cfg, entry, names, site_wpos, staging, &mut assertions,
+                        server,
+                        dt,
+                        cfg,
+                        entry,
+                        names,
+                        site_wpos,
+                        staging,
+                        &mut assertions,
                         &mut push,
                     );
                 }
@@ -704,7 +760,12 @@ fn run_one_asset(
                 // yard footprint during the open-variant rebuild and got
                 // walled in (bit the first v2 sweep).
                 if !server.bastion_teleport_colonist(&names[0], outside) {
-                    push(&mut assertions, "defense-staging", false, "teleport-stage failed".into());
+                    push(
+                        &mut assertions,
+                        "defense-staging",
+                        false,
+                        "teleport-stage failed".into(),
+                    );
                 } else {
                     tick(server, dt, 15);
                     // CLOSED: must NOT get in (watchdog stuck or timeout = pass).
@@ -764,7 +825,12 @@ fn run_one_asset(
                             }
                         },
                         Err(e) => {
-                            push(&mut assertions, "gate-open-admits", false, format!("re-place failed: {e}"));
+                            push(
+                                &mut assertions,
+                                "gate-open-admits",
+                                false,
+                                format!("re-place failed: {e}"),
+                            );
                         },
                     }
                 }
@@ -777,10 +843,20 @@ fn run_one_asset(
                     (pad_z + 1) as f32,
                 );
                 let out = goto_and_wait(server, dt, &names[0], beyond, ARRIVAL_BUDGET_S);
-                push(&mut assertions, "path-around", out.arrived(), out.describe());
+                push(
+                    &mut assertions,
+                    "path-around",
+                    out.arrived(),
+                    out.describe(),
+                );
                 if out.arrived() {
                     let home = goto_and_wait(server, dt, &names[0], staging, ARRIVAL_BUDGET_S);
-                    push(&mut assertions, "path-back", home.arrived(), home.describe());
+                    push(
+                        &mut assertions,
+                        "path-back",
+                        home.arrived(),
+                        home.describe(),
+                    );
                 }
             },
             _ => {},
@@ -822,7 +898,12 @@ fn run_integrated_spot_check(
     let sx = spot.x as i32;
     let sy = spot.y as i32;
     let Some(gz) = ground_z(server, sx, sy) else {
-        push(assertions, "integrated-reach", false, "no ground at integrated spot".into());
+        push(
+            assertions,
+            "integrated-reach",
+            false,
+            "no ground at integrated spot".into(),
+        );
         return;
     };
     // Slope across the footprint (for the log; natural terrain, unflattened).
@@ -863,7 +944,12 @@ fn run_integrated_spot_check(
                     );
                     if leg.arrived() {
                         let out = goto_and_wait(server, dt, &names[0], approach, ARRIVAL_BUDGET_S);
-                        push(assertions, "integrated-egress", out.arrived(), out.describe());
+                        push(
+                            assertions,
+                            "integrated-egress",
+                            out.arrived(),
+                            out.describe(),
+                        );
                     }
                 },
                 None => push(
@@ -877,7 +963,12 @@ fn run_integrated_spot_check(
             let _ = server.bastion_teleport_colonist(&names[0], pad_staging);
             tick(server, dt, 15);
         },
-        Err(e) => push(assertions, "integrated-reach", false, format!("place failed: {e}")),
+        Err(e) => push(
+            assertions,
+            "integrated-reach",
+            false,
+            format!("place failed: {e}"),
+        ),
     }
 }
 
@@ -895,25 +986,21 @@ fn append_integration_log(results: &[AssetResult], cfg: &AssetTestConfig) {
     let mut body = String::new();
     if !log_path.exists() {
         body.push_str(
-            "# ASSET INTEGRATION LOG (game-side, append-only)\n\
-             \n\
-             Written by `bastion-harness --asset-test` (B-ASSET1). The asset session reads\n\
-             this back to promote READY-pending-dynamic → READY-INTEGRATED. One dated block\n\
-             per run; one JSON line per asset (schema: AssetResult in\n\
-             `bastion-harness/src/asset_test.rs`).\n\
-             \n\
-             FORMAT CONTRACT (engine side — see docs/BASTION_BASSET1_FINDINGS.md):\n\
-             - Input: flattened `.vox` under `asset-lab/vox/` (compose.py output). Sidecar\n\
-             metadata optional; category inferred from id prefix.\n\
-             - Byte bands (ASSET_LESSONS L3): 1–16 world-reserved (engine defaults),\n\
-             32–199 literals, 200–255 gameplay markers via the engine marker registry:\n\
-             200 = gate KeyholeBars (closed) / carved air (open variant),\n\
-             206/207/208/209 = pressure-plate/desk/bench/bed → carved air, cells recorded\n\
-             as function points. UNKNOWN 200-255 bytes fail marker fidelity — extend\n\
-             `server/src/bastion_assets.rs::marker_registry` first.\n\
-             - Figure-layer assets (props/items at 11 vox/block, creatures) are load-only /\n\
-             SKIP here; their world integration is manifest work (a later block).\n\
-             - `test_*` fixtures run only when named explicitly (deliberate-FAIL demos).\n\n",
+            "# ASSET INTEGRATION LOG (game-side, append-only)\n\nWritten by `bastion-harness \
+             --asset-test` (B-ASSET1). The asset session reads\nthis back to promote \
+             READY-pending-dynamic → READY-INTEGRATED. One dated block\nper run; one JSON line \
+             per asset (schema: AssetResult in\n`bastion-harness/src/asset_test.rs`).\n\nFORMAT \
+             CONTRACT (engine side — see docs/BASTION_BASSET1_FINDINGS.md):\n- Input: flattened \
+             `.vox` under `asset-lab/vox/` (compose.py output). Sidecar\nmetadata optional; \
+             category inferred from id prefix.\n- Byte bands (ASSET_LESSONS L3): 1–16 \
+             world-reserved (engine defaults),\n32–199 literals, 200–255 gameplay markers via the \
+             engine marker registry:\n200 = gate KeyholeBars (closed) / carved air (open \
+             variant),\n206/207/208/209 = pressure-plate/desk/bench/bed → carved air, cells \
+             recorded\nas function points. UNKNOWN 200-255 bytes fail marker fidelity — \
+             extend\n`server/src/bastion_assets.rs::marker_registry` first.\n- Figure-layer \
+             assets (props/items at 11 vox/block, creatures) are load-only /\nSKIP here; their \
+             world integration is manifest work (a later block).\n- `test_*` fixtures run only \
+             when named explicitly (deliberate-FAIL demos).\n\n",
         );
     }
     body.push_str(&format!(

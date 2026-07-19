@@ -33,7 +33,12 @@ fn main() {
     // went 10 commits stale that way). The reflog appends on EVERY commit,
     // so track logs/HEAD (worktree-safe via --git-path).
     if let Some(log) = Command::new("git")
-        .args(["rev-parse", "--path-format=absolute", "--git-path", "logs/HEAD"])
+        .args([
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            "logs/HEAD",
+        ])
         .output()
         .ok()
         .filter(|o| o.status.success())

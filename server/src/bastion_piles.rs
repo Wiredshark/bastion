@@ -51,10 +51,7 @@ impl<'a> System<'a> for Sys {
     const ORIGIN: Origin = Origin::Server;
     const PHASE: Phase = Phase::Create;
 
-    fn run(
-        _job: &mut EcsJob<Self>,
-        (entities, tick, piles, items, mut scales): Self::SystemData,
-    ) {
+    fn run(_job: &mut EcsJob<Self>, (entities, tick, piles, items, mut scales): Self::SystemData) {
         if tick.0 % PILE_SCALE_INTERVAL != 0 {
             return;
         }

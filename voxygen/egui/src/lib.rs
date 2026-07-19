@@ -4,8 +4,8 @@
 compile_error!("Can't use both \"be-dyn-lib\" and \"use-dyn-lib\" features at once");
 
 mod admin;
-mod character_states;
 mod bastion_occlusion;
+mod character_states;
 mod experimental_shaders;
 
 pub use bastion_occlusion::BastionOcclusionEguiState;

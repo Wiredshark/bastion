@@ -43,6 +43,7 @@ pub use settings_window::ScaleChange;
 pub use subtitles::Subtitle;
 
 use bag::Bag;
+use bastion_minimap::{BastionMiniMap, BastionMinimapTiles};
 use buffs::BuffsBar;
 use buttons::Buttons;
 use change_notification::{ChangeNotification, NotificationReason};
@@ -55,7 +56,6 @@ use group::Group;
 use img_ids::Imgs;
 use item_imgs::ItemImgs;
 use loot_scroller::LootScroller;
-use bastion_minimap::{BastionMiniMap, BastionMinimapTiles};
 use map::Map;
 use minimap::{MiniMap, VoxelMinimap};
 use popup::Popup;
@@ -4974,7 +4974,11 @@ impl Hud {
                     } else {
                         btn_color
                     })
-                    .label(if self.bastion.flat_floor { "Flat" } else { "Slope" })
+                    .label(if self.bastion.flat_floor {
+                        "Flat"
+                    } else {
+                        "Slope"
+                    })
                     .label_font_size(12)
                     .label_color(label_color)
                     .label_font_id(self.fonts.cyri.conrod_id)
@@ -5069,8 +5073,7 @@ impl Hud {
                         .ecs()
                         .read_resource::<common::resources::TimeOfDay>()
                         .0;
-                    let days_in_year =
-                        common::time::SeasonConfig::current().days_in_year;
+                    let days_in_year = common::time::SeasonConfig::current().days_in_year;
                     let season_text = format!(
                         "{:?} · Day {}",
                         common::time::season(tod, days_in_year),
@@ -5125,9 +5128,10 @@ impl Hud {
             // nametags do); hidden in SUBTLE/OFF because the session feeds an
             // empty list there.
             if self.ids.bastion_zone_labels.len() < self.bastion.zone_labels.len() {
-                self.ids
-                    .bastion_zone_labels
-                    .resize(self.bastion.zone_labels.len(), &mut ui_widgets.widget_id_generator());
+                self.ids.bastion_zone_labels.resize(
+                    self.bastion.zone_labels.len(),
+                    &mut ui_widgets.widget_id_generator(),
+                );
             }
             for (i, (wpos, text, col)) in self.bastion.zone_labels.iter().enumerate() {
                 widget::Text::new(text)
@@ -5189,7 +5193,11 @@ impl Hud {
                         .actions
                         .iter()
                         .enumerate()
-                        .take(if overflow { pie_max } else { radial.actions.len() })
+                        .take(if overflow {
+                            pie_max
+                        } else {
+                            radial.actions.len()
+                        })
                         .map(|(i, a)| (i, a.label(), a.stubbed()))
                         .collect()
                 };

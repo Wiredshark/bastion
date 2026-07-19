@@ -67,8 +67,8 @@ pub fn detect_trees(
             // felled/ungenerated tree yields nothing (the chunk must be
             // loaded for its blocks to exist).
             let base_z = col.alt as i32;
-            let Some(seed_z) = (base_z - 2..=base_z + 8)
-                .find(|&z| is_tree(Vec3::new(attr.pos.x, attr.pos.y, z)))
+            let Some(seed_z) =
+                (base_z - 2..=base_z + 8).find(|&z| is_tree(Vec3::new(attr.pos.x, attr.pos.y, z)))
             else {
                 continue;
             };

@@ -606,9 +606,14 @@ pub fn handle_create_special_entity(server: &mut Server, ev: CreateSpecialEntity
 }
 
 pub fn handle_create_item_drop(server: &mut Server, ev: CreateItemDropEvent) {
-    server
-        .state
-        .create_item_drop(ev.pos, ev.ori, ev.vel, ev.item, ev.loot_owner, ev.persistent);
+    server.state.create_item_drop(
+        ev.pos,
+        ev.ori,
+        ev.vel,
+        ev.item,
+        ev.loot_owner,
+        ev.persistent,
+    );
 }
 
 pub fn handle_create_object(

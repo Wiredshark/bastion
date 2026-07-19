@@ -57,9 +57,7 @@ pub fn completion_block(kind: JobKind) -> Option<Block> {
     match kind {
         JobKind::Designated(d) => match d {
             DesignationKind::Mine | DesignationKind::Chop => Some(Block::empty()),
-            DesignationKind::Build => {
-                Some(Block::new(BlockKind::Rock, Rgb::new(150, 150, 150)))
-            },
+            DesignationKind::Build => Some(Block::new(BlockKind::Rock, Rgb::new(150, 150, 150))),
             // B5.8: the native climbable ladder sprite — the vertical link
             // pathfinding knows about.
             DesignationKind::Ladder => Some(Block::air(SpriteKind::Ladder)),
@@ -101,9 +99,7 @@ pub fn emit_drop(
     emitter.emit(CreateItemDropEvent {
         pos: comp::Pos(pos.map(|e| e as f32) + Vec3::broadcast(0.5)),
         vel: comp::Vel(
-            (Vec2::unit_x()
-                .rotated_z(rng.random::<f32>() * std::f32::consts::TAU)
-                * 0.5)
+            (Vec2::unit_x().rotated_z(rng.random::<f32>() * std::f32::consts::TAU) * 0.5)
                 .with_z(rng.random_range(2.0..4.0)),
         ),
         ori: comp::Ori::default(),
@@ -142,10 +138,13 @@ pub fn emit_collect(
     collector: Entity,
     sprite_pos: Vec3<i32>,
 ) {
-    emitter.emit(InventoryManipEvent(collector, comp::InventoryManip::Collect {
-        sprite_pos,
-        required_item: None,
-    }));
+    emitter.emit(InventoryManipEvent(
+        collector,
+        comp::InventoryManip::Collect {
+            sprite_pos,
+            required_item: None,
+        },
+    ));
 }
 
 /// DEPOSIT: drain every bag stack of `def` from the inventory and drop it
@@ -182,4 +181,3 @@ pub fn deposit_all_of(
     }
     deposited
 }
-

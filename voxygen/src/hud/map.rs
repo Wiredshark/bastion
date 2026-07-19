@@ -483,11 +483,7 @@ impl Widget for Map<'_> {
         // bastion (B-MAP1): right-click = fly the god camera to that world
         // point (the marker stays on its own binding — middle-click default).
         if is_bastion {
-            for click in ui
-                .widget_input(state.ids.map_layers[0])
-                .clicks()
-                .right()
-            {
+            for click in ui.widget_input(state.ids.map_layers[0]).clicks().right() {
                 let tmp: Vec2<f64> = Vec2::<f64>::from(click.xy) / zoom - drag;
                 let wpos = tmp.as_::<f32>().cpos_to_wpos() + player_pos.xy();
                 events.push(Event::BastionFlyTo(wpos));
@@ -544,14 +540,11 @@ impl Widget for Map<'_> {
             let chunk_side = TerrainChunkSize::RECT_SIZE.x as f64;
             let px_per_block = zoom / chunk_side;
             // View-center world pos: ClickPos at (0,0) inverts to this.
-            let center_w: Vec2<f64> =
-                player_pos.xy().map(|e| e as f64) - drag * chunk_side;
-            let wpos_to_px = |w: Vec2<f32>| -> Vec2<f64> {
-                (w.map(|e| e as f64) - center_w) * px_per_block
-            };
+            let center_w: Vec2<f64> = player_pos.xy().map(|e| e as f64) - drag * chunk_side;
+            let wpos_to_px =
+                |w: Vec2<f32>| -> Vec2<f64> { (w.map(|e| e as f64) - center_w) * px_per_block };
             let half = map_size / 2.0;
-            let inside =
-                |p: Vec2<f64>, m: f64| p.x.abs() <= half.x - m && p.y.abs() <= half.y - m;
+            let inside = |p: Vec2<f64>, m: f64| p.x.abs() <= half.x - m && p.y.abs() <= half.y - m;
 
             // Rendered tile layer (fades in as the view narrows toward the
             // tile window, exactly like the minimap's far-tier crossfade).
@@ -561,10 +554,7 @@ impl Widget for Map<'_> {
             if tiles.is_anchored() && tile_alpha > 0.0 {
                 let origin = tiles.anchor_wpos().map(|e| e as f64);
                 let tiles_src = position::Rect::from_xy_dim(
-                    [
-                        center_w.x - origin.x,
-                        win - (center_w.y - origin.y),
-                    ],
+                    [center_w.x - origin.x, win - (center_w.y - origin.y)],
                     [map_size.x / px_per_block, map_size.y / px_per_block],
                 );
                 Image::new(tiles.image_id())
@@ -589,8 +579,7 @@ impl Widget for Map<'_> {
                 }
                 for (i, (region, kind, _)) in designations.iter().enumerate() {
                     let [r, g, b] = crate::bastion::tools::zone_rgb(*kind);
-                    let lo =
-                        wpos_to_px(Vec2::new(region.min.x as f32, region.min.y as f32));
+                    let lo = wpos_to_px(Vec2::new(region.min.x as f32, region.min.y as f32));
                     let hi = wpos_to_px(Vec2::new(
                         region.max.x as f32 + 1.0,
                         region.max.y as f32 + 1.0,
@@ -711,10 +700,10 @@ impl Widget for Map<'_> {
                         if let (Some(a), Some(b)) = (ground[i], ground[(i + 1) % 4])
                             && let Some((ca, cb)) = bastion_minimap::clip_seg(a, b, half)
                         {
-                            Line::abs(
-                                [center[0] + ca.x, center[1] + ca.y],
-                                [center[0] + cb.x, center[1] + cb.y],
-                            )
+                            Line::abs([center[0] + ca.x, center[1] + ca.y], [
+                                center[0] + cb.x,
+                                center[1] + cb.y,
+                            ])
                             .color(Color::Rgba(1.0, 1.0, 1.0, 0.7))
                             .thickness(1.5)
                             .parent(state.ids.map_layers[0])

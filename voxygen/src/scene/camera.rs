@@ -611,8 +611,7 @@ impl Camera {
         }
         // bastion: overseer ortho zoom with its own clamp
         if self.mode == CameraMode::Overseer {
-            self.tgt_dist =
-                (self.tgt_dist + delta).clamp(OVERSEER_ZOOM_MIN, OVERSEER_ZOOM_MAX);
+            self.tgt_dist = (self.tgt_dist + delta).clamp(OVERSEER_ZOOM_MIN, OVERSEER_ZOOM_MAX);
         }
 
         if let Some(cap) = cap {

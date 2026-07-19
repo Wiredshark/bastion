@@ -79,9 +79,7 @@ impl Default for SeasonConfig {
 impl crate::assets::FileAsset for SeasonConfig {
     const EXTENSION: &'static str = "ron";
 
-    fn from_bytes(
-        bytes: std::borrow::Cow<[u8]>,
-    ) -> Result<Self, crate::assets::BoxedError> {
+    fn from_bytes(bytes: std::borrow::Cow<[u8]>) -> Result<Self, crate::assets::BoxedError> {
         crate::assets::load_ron(&bytes)
     }
 }
@@ -97,9 +95,7 @@ impl SeasonConfig {
             .unwrap_or_default()
     }
 
-    pub fn year_length_secs(&self) -> f64 {
-        crate::resources::DAY * self.days_in_year
-    }
+    pub fn year_length_secs(&self) -> f64 { crate::resources::DAY * self.days_in_year }
 }
 
 /// bastion (SEASON-0): the year phase in `0.0..1.0` — [`MoonPeriod`]'s
@@ -220,9 +216,7 @@ pub struct SeasonalSchedule {
 impl crate::assets::FileAsset for SeasonalSchedule {
     const EXTENSION: &'static str = "ron";
 
-    fn from_bytes(
-        bytes: std::borrow::Cow<[u8]>,
-    ) -> Result<Self, crate::assets::BoxedError> {
+    fn from_bytes(bytes: std::borrow::Cow<[u8]>) -> Result<Self, crate::assets::BoxedError> {
         crate::assets::load_ron(&bytes)
     }
 }

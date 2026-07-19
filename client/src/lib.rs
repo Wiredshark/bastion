@@ -2018,8 +2018,8 @@ impl Client {
         let changed = match (self.bastion_terrain_anchor, anchor) {
             (None, None) => false,
             (Some(a), Some(b)) => {
-                let vd_blocks = self.view_distance.unwrap_or(10) as f32
-                    * TerrainChunkSize::RECT_SIZE.x as f32;
+                let vd_blocks =
+                    self.view_distance.unwrap_or(10) as f32 * TerrainChunkSize::RECT_SIZE.x as f32;
                 a.xy().distance_squared(b.xy()) > (vd_blocks * 0.35).powi(2)
             },
             _ => true,

@@ -4,24 +4,24 @@
 //! - **Tile pyramid, near tier:** the world is rendered top-down into cached
 //!   per-chunk tiles (32×32 texels, 1 texel/block) from the *actual loaded
 //!   voxels* — buildings, trees and dig sites appear as themselves. Tiles are
-//!   built off-thread ([`KeyedJobs`] on the `IMAGE_PROCESSING` slowjob pool,
-//!   so re-renders trickle and never hitch the frame), hillshaded from a
-//!   per-texel height field so relief reads like a rendered capture, and
-//!   composited into a chunk-grid-anchored window texture.
+//!   built off-thread ([`KeyedJobs`] on the `IMAGE_PROCESSING` slowjob pool, so
+//!   re-renders trickle and never hitch the frame), hillshaded from a per-texel
+//!   height field so relief reads like a rendered capture, and composited into
+//!   a chunk-grid-anchored window texture.
 //! - **Invalidation:** a chunk tile is re-rendered ONLY when a terrain edit
 //!   lands under it (`TerrainChanges::modified_blocks` — the same client-side
-//!   edit stream B5 work execution produces) or when the overseer Z-slice
-//!   moves (tiles mirror the B1.6 slice: below-ground slices show that level,
-//!   which is what the mining framework will want).
-//! - **Far tier:** the worldgen map (1 texel/chunk) is always drawn beneath
-//!   the tile layer; the tile layer alpha-fades out as the view widens past
-//!   the tile window, leaving a seamless-enough handoff to worldgen scale.
+//!   edit stream B5 work execution produces) or when the overseer Z-slice moves
+//!   (tiles mirror the B1.6 slice: below-ground slices show that level, which
+//!   is what the mining framework will want).
+//! - **Far tier:** the worldgen map (1 texel/chunk) is always drawn beneath the
+//!   tile layer; the tile layer alpha-fades out as the view widens past the
+//!   tile window, leaving a seamless-enough handoff to worldgen scale.
 //! - **Overlays:** pin/layer providers draw on top (colonists, zones, piles,
-//!   camera frustum, alerts) — see [`MinimapLayer`]/[`MinimapPin`]. This is
-//!   the §3s map-overlay foundation (territory, trade routes, dominion later
-//!   ride the same API).
-//! - **Navigation:** click jumps the god camera, drag pans it, scroll steps
-//!   the zoom pyramid (colony → district → region → world).
+//!   camera frustum, alerts) — see [`MinimapLayer`]/[`MinimapPin`]. This is the
+//!   §3s map-overlay foundation (territory, trade routes, dominion later ride
+//!   the same API).
+//! - **Navigation:** click jumps the god camera, drag pans it, scroll steps the
+//!   zoom pyramid (colony → district → region → world).
 //!
 //! Vanilla is untouched: this widget replaces the vanilla `MiniMap` only
 //! while the overseer HUD is active (`--bastion-overseer` + F9); a flagless
@@ -110,11 +110,7 @@ fn build_tile(chunk: &TerrainChunk, slice_z: Option<i32>) -> Tile {
             let idx = (y * size.x + x) as usize;
             let mut z = top;
             while z >= bottom {
-                if let Some(c) = chunk
-                    .get(Vec3::new(x, y, z))
-                    .ok()
-                    .and_then(block_color)
-                {
+                if let Some(c) = chunk.get(Vec3::new(x, y, z)).ok().and_then(block_color) {
                     colors[idx] = c;
                     heights[idx] = z.clamp(i16::MIN as i32 + 1, i16::MAX as i32) as i16;
                     break;
@@ -326,11 +322,9 @@ impl BastionMinimapTiles {
         // Anchor the window to the chunk grid around the camera focus;
         // re-anchor (full recomposite from cache — rare) only when the focus
         // chunk drifts outside the central deadzone.
-        let fchunk: Vec2<i32> = focus
-            .xy()
-            .map2(TerrainChunkSize::RECT_SIZE, |e, sz| {
-                (e.floor() as i32).div_euclid(sz as i32)
-            });
+        let fchunk: Vec2<i32> = focus.xy().map2(TerrainChunkSize::RECT_SIZE, |e, sz| {
+            (e.floor() as i32).div_euclid(sz as i32)
+        });
         let rel = fchunk - self.anchor;
         let dead_lo = WINDOW_CHUNKS / 4;
         let dead_hi = WINDOW_CHUNKS - WINDOW_CHUNKS / 4;
@@ -359,12 +353,10 @@ impl BastionMinimapTiles {
                 let Some(chunk) = terrain.get_key_arc(key) else {
                     continue;
                 };
-                if let Some((_, tile)) =
-                    self.keyed_jobs.spawn(Some(&pool), (key, srev), || {
-                        let chunk = Arc::clone(chunk);
-                        move |_| build_tile(&chunk, skey)
-                    })
-                {
+                if let Some((_, tile)) = self.keyed_jobs.spawn(Some(&pool), (key, srev), || {
+                    let chunk = Arc::clone(chunk);
+                    move |_| build_tile(&chunk, skey)
+                }) {
                     self.tiles.insert(key, tile);
                     self.stale.remove(&key);
                     self.blit_chunk(key);
@@ -602,18 +594,12 @@ pub fn frustum_ground_quad(camera: &Camera, plane_z: f32) -> [Option<Vec2<f32>>;
         Vec2::new(1.0, 1.0),
         Vec2::new(0.0, 1.0),
     ]
-    .map(|c| {
-        crate::bastion::unproject_to_world_plane(camera, c, res, plane_z).map(|w| w.xy())
-    })
+    .map(|c| crate::bastion::unproject_to_world_plane(camera, c, res, plane_z).map(|w| w.xy()))
 }
 
 /// Liang–Barsky segment clip against the centered rect [-hx,hx]×[-hy,hy].
 /// Pub: the big map clips frustum edges the same way.
-pub fn clip_seg(
-    a: Vec2<f64>,
-    b: Vec2<f64>,
-    half: Vec2<f64>,
-) -> Option<(Vec2<f64>, Vec2<f64>)> {
+pub fn clip_seg(a: Vec2<f64>, b: Vec2<f64>, half: Vec2<f64>) -> Option<(Vec2<f64>, Vec2<f64>)> {
     let d = b - a;
     let (mut t0, mut t1) = (0.0f64, 1.0f64);
     for (p, q) in [
@@ -722,19 +708,18 @@ impl Widget for BastionMiniMap<'_> {
         let worldsize = self.world_map.1;
         let chunk_px = TerrainChunkSize::RECT_SIZE.x as f64;
         // Zoom limits: whole world fits .. ZOOM_MAX px/block.
-        let zoom_min = (map_size.x
-            / (worldsize.reduce_partial_max() as f64 * chunk_px))
-            .min(ZOOM_MAX);
+        let zoom_min =
+            (map_size.x / (worldsize.reduce_partial_max() as f64 * chunk_px)).min(ZOOM_MAX);
         // Visible width in blocks decides the pyramid level + tile fade.
         let view_blocks = map_size.x / zoom;
 
         // ---- Worldgen underlay (far tier, always beneath) --------------
         let focus_c = focus.xy().map(|e| e as f64) / chunk_px;
         let src_chunks = Vec2::new(map_size.x, map_size.y) / (zoom * chunk_px);
-        let world_src = position::Rect::from_xy_dim(
-            [focus_c.x, worldsize.y as f64 - focus_c.y],
-            [src_chunks.x, src_chunks.y],
-        );
+        let world_src = position::Rect::from_xy_dim([focus_c.x, worldsize.y as f64 - focus_c.y], [
+            src_chunks.x,
+            src_chunks.y,
+        ]);
         Image::new(self.world_map.0[0].none)
             .middle_of(state.ids.map_bg)
             .w_h(map_size.x, map_size.y)
@@ -751,14 +736,9 @@ impl Widget for BastionMiniMap<'_> {
         let tile_alpha = (1.0 - (view_blocks - win) / win).clamp(0.0, 1.0) as f32;
         if self.tiles.is_anchored() && tile_alpha > 0.0 {
             let origin = self.tiles.anchor_wpos().map(|e| e as f64);
-            let tex = Vec2::new(
-                focus.x as f64 - origin.x,
-                win - (focus.y as f64 - origin.y),
-            );
-            let tiles_src = position::Rect::from_xy_dim(
-                [tex.x, tex.y],
-                [map_size.x / zoom, map_size.y / zoom],
-            );
+            let tex = Vec2::new(focus.x as f64 - origin.x, win - (focus.y as f64 - origin.y));
+            let tiles_src =
+                position::Rect::from_xy_dim([tex.x, tex.y], [map_size.x / zoom, map_size.y / zoom]);
             Image::new(self.tiles.image_id())
                 .middle_of(state.ids.map_bg)
                 .w_h(map_size.x, map_size.y)
@@ -774,10 +754,7 @@ impl Widget for BastionMiniMap<'_> {
         // World XY -> map px relative to map center (north-up: no rotation,
         // conrod +y is up, world +y is north).
         let wpos_to_px = |w: Vec2<f32>| -> Vec2<f64> {
-            Vec2::new(
-                (w.x - focus.x) as f64 * zoom,
-                (w.y - focus.y) as f64 * zoom,
-            )
+            Vec2::new((w.x - focus.x) as f64 * zoom, (w.y - focus.y) as f64 * zoom)
         };
         let inside = |p: Vec2<f64>, m: f64| p.x.abs() <= half.x - m && p.y.abs() <= half.y - m;
 
@@ -807,18 +784,15 @@ impl Widget for BastionMiniMap<'_> {
                 }
                 let dim = c_hi - c_lo;
                 let center = (c_lo + c_hi) / 2.0;
-                Rectangle::fill_with(
-                    [dim.x, dim.y],
-                    Color::Rgba(r, g, b, 0.32),
-                )
-                .x_y_position_relative_to(
-                    state.ids.map_bg,
-                    position::Relative::Scalar(center.x),
-                    position::Relative::Scalar(center.y),
-                )
-                .parent(state.ids.map_bg)
-                .graphics_for(state.ids.map_bg)
-                .set(state.ids.zone_rects[i], ui);
+                Rectangle::fill_with([dim.x, dim.y], Color::Rgba(r, g, b, 0.32))
+                    .x_y_position_relative_to(
+                        state.ids.map_bg,
+                        position::Relative::Scalar(center.x),
+                        position::Relative::Scalar(center.y),
+                    )
+                    .parent(state.ids.map_bg)
+                    .graphics_for(state.ids.map_bg)
+                    .set(state.ids.zone_rects[i], ui);
             }
         }
 
@@ -927,18 +901,15 @@ impl Widget for BastionMiniMap<'_> {
                     .graphics_for(state.ids.map_bg)
                     .set(state.ids.extra_halos[i], ui);
                 }
-                Rectangle::fill_with(
-                    [pin.size as f64, pin.size as f64],
-                    Color::Rgba(r, g, b, a),
-                )
-                .x_y_position_relative_to(
-                    state.ids.map_bg,
-                    position::Relative::Scalar(p.x),
-                    position::Relative::Scalar(p.y),
-                )
-                .parent(state.ids.map_bg)
-                .graphics_for(state.ids.map_bg)
-                .set(state.ids.extra_dots[i], ui);
+                Rectangle::fill_with([pin.size as f64, pin.size as f64], Color::Rgba(r, g, b, a))
+                    .x_y_position_relative_to(
+                        state.ids.map_bg,
+                        position::Relative::Scalar(p.x),
+                        position::Relative::Scalar(p.y),
+                    )
+                    .parent(state.ids.map_bg)
+                    .graphics_for(state.ids.map_bg)
+                    .set(state.ids.extra_dots[i], ui);
             }
         }
 
@@ -949,11 +920,7 @@ impl Widget for BastionMiniMap<'_> {
                 .map(|c| c.map(wpos_to_px))
                 .collect();
             if state.ids.frustum_lines.len() < 4 {
-                state.update(|s| {
-                    s.ids
-                        .frustum_lines
-                        .resize(4, &mut ui.widget_id_generator())
-                });
+                state.update(|s| s.ids.frustum_lines.resize(4, &mut ui.widget_id_generator()));
             }
             let map_abs = ui.rect_of(state.ids.map_bg).map(|r| r.xy());
             if let Some(center) = map_abs {
@@ -961,10 +928,10 @@ impl Widget for BastionMiniMap<'_> {
                     if let (Some(a), Some(b)) = (ground[i], ground[(i + 1) % 4])
                         && let Some((ca, cb)) = clip_seg(a, b, half)
                     {
-                        Line::abs(
-                            [center[0] + ca.x, center[1] + ca.y],
-                            [center[0] + cb.x, center[1] + cb.y],
-                        )
+                        Line::abs([center[0] + ca.x, center[1] + ca.y], [
+                            center[0] + cb.x,
+                            center[1] + cb.y,
+                        ])
                         .color(Color::Rgba(1.0, 1.0, 1.0, 0.7))
                         .thickness(1.5)
                         .parent(state.ids.map_bg)

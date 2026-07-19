@@ -1,5 +1,5 @@
 use crate::{
-    scene::{DebugShape, DebugShapeId, Scene},
+    scene::{DebugShape, DebugShapeId, Scene, camera::CameraMode},
     session::settings_change::{Graphics, SettingsChange},
     settings::Settings,
     window::Window,
@@ -7,7 +7,6 @@ use crate::{
 use client::Client;
 use egui::{Context, ViewportId};
 use egui_winit::State as WinitState;
-use crate::scene::camera::CameraMode;
 use voxygen_egui::{
     BastionOcclusionEguiState, EguiAction, EguiDebugInfo, EguiDebugShapeAction, EguiInnerState,
 };
