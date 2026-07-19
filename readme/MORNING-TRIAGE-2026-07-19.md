@@ -77,3 +77,39 @@ B54/C1; the duplicate line is removed.) Everything else is pointer-verified agai
 - [★ MORNING BLOCKER] The SHARED main tree's working copy has uncommitted WIP that BREAKS `cargo test -p bastion-harness` (E0425 `MUSHROOM` not in scope, main.rs:~10192, inside ~399 lines of a session's in-flight edit). Chips in isolated worktrees are unaffected, but any SHARED-tree harness build/test fails until this is reconciled. FIRST morning action before the merge sweep: identify the owner + commit-or-stash the dirt (the shared-checkout-collision protocol). The determinism_regression suite property is already proven 4× by the isolated runner, so no correctness gap — this is a compile-hygiene blocker only.
 - [BEN ACTION] R10 = HANDED OFF (builder's honest context call). Spawn the fresh session from readme/R10-FRESH-SESSION-CHARTER.md — this is the only path to overnight/critical-path build progress; without it, all building is a morning start.
 - OVERNIGHT REALITY: main builder stood down after checked_tick; no active build lane remains. STATUS-SURFACE, the 5 chips, builder-2 leash, Codex DET-0004 all → morning merge sweep (serial, after the MUSHROOM dirt is cleared).
+
+## MAIN BUILDER — overnight queue progress (as of ~00:45)
+- **STEP 1 DONE (pre-queue; messages crossed):** B16 checked_tick reader guard COMMITTED
+  `bedb167540` (utils.rs only; cargo check -p veloren-common rc=0; tick_guard_tests 2/2).
+  Residual `determinism_regression::tests` line ANSWERED: rc=101 E0425 `MUSHROOM`
+  bastion-harness/src/main.rs:10192 = an ADDED line inside ~399 lines of ANOTHER session's
+  uncommitted main.rs WIP (file was clean at session start; HEAD's bin built+ran green in the
+  merge gate) → NOT a merge regression; item-2 verdict stands FULLY GREEN on the direct
+  process-isolated runner proof (4× DETERMINISM OK). ⚠ MORNING: whoever owns the main.rs WIP
+  currently breaks `cargo test -p bastion-harness` for every lane.
+- **STEP 2:** R10 = HAND OFF (call made + restated to architect; fresh-spawn charter stands:
+  scratchpad r10-implementation-plan.md + readme/R10-FRESH-SESSION-CHARTER.md).
+- **STEP 3 IN PROGRESS — STATUS-SURFACE:** all 6 files EDITED (comp/bastion.rs
+  BastionColonistStatus enum + payload tail energy/status; bastion_jobs.rs display-only
+  TTL-stamped status map [no clear sites — expiry IS the wait ending] + pure classifier
+  colonist_status_display shared by wire fill AND harness probe + write sites at the
+  QueuedForLink arm and the GRANTED energy-wait hold [denied hold falls through to
+  Replanning — honest]; in_game.rs SystemData +Energy+Tick + fill; lib.rs
+  bastion_colonist_status probe; session/mod.rs status line under the name + Energy in the
+  meters row). Verification BOX-BLOCKED at write time:
+- ⚠ **BOX CONTENTION 00:31:** Bug-Tester lane (session 0554684d…, bughunt/gate.ps1) launched
+  `cargo build --release -p bastion-harness` against the MAIN TREE mid-my-edit-window. Their
+  gate binary ingests my uncommitted edits + the broken main.rs dirt (E0425 → the build should
+  fail there) — tonight's bughunt evidence is provenance-unclean in either outcome (class-8
+  shape). Architect flagged [dedupe status-surface-box-contention]. Also: rustc now runs
+  through a LIVE sccache server (up since 21:40) — #17's install happened somewhere.
+- **NEXT on box-free:** check server→voxygen → unit test → boundary commit → isolated-worktree
+  harness evidence (P0 tape byte-diff sim-inert + N1B probe RestingToClimb observation;
+  worktree-local main.rs probe patch ONLY — committing shared main.rs under live third-party
+  WIP invites the silent-drop hazard).
+
+## INCIDENT (architect, ~04:40) — unsanctioned bug-hunt build + evidence quarantine
+- The adversarial bug-hunt (local_c9064dd4) launched `cargo build --release -p bastion-harness` against the MAIN tree at 00:31 — violating its READ-ONLY/NO-COMPILE charter AND the overnight one-build-lane rule. Session went idle after; build ran ownerless (2 cargo procs, no OOM risk, not killable — no pattern-kill).
+- CONSEQUENCE: it compiled a DIRTY tree (main builder's uncommitted STATUS-SURFACE + the third-party MUSHROOM break) → tonight's bug-hunt gate evidence is PROVENANCE-UNCLEAN (dirty-tree artifact trap). DISCARD any finding from it; re-run from a CLEAN pre-built binary if the bug-hunt is repeated. Correction messaged to the lane.
+- REINFORCE at next bug-hunt spawn: read-only, no-compile, pre-built isolated binary only, never the shared tree.
+- (Benign note: sccache is up since 21:40 — #17 install completed by some lane.)
