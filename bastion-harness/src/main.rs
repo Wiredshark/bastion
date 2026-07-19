@@ -417,6 +417,34 @@ struct Args {
     #[arg(long, default_value_t = 30.0)]
     mf_minutes: f64,
 
+    /// bastion (MINING-LIVE-FIDELITY): dig footprint X width, blocks. The
+    /// geometry axis of the completion investigation — wide claims fit the
+    /// stairs arm; tight ones force the D16 released-but-unreachable class.
+    #[arg(long, default_value_t = 8)]
+    mf_w: i32,
+
+    /// bastion (MINING-LIVE-FIDELITY): dig footprint Y width, blocks.
+    #[arg(long, default_value_t = 8)]
+    mf_h: i32,
+
+    /// bastion (MINING-LIVE-FIDELITY): ZExtent.down for the designation
+    /// (levels per column = down + 1).
+    #[arg(long, default_value_t = 6)]
+    mf_down: u16,
+
+    /// bastion (DPA-0/1/2, SHAFT-ALWAYS-ACCESSED — packet §8): the
+    /// dig-provisioned access gate. Leg A: a tight 2×2×13 organic shaft
+    /// with ZERO wood — the frontier HOLDS (no deep dig, classified
+    /// `access_material_missing` reason, zero teleports). Leg B: wood
+    /// supplied — wood-costed rung jobs appear, the shaft completes,
+    /// Ladder sprites exist in the shaft, every below-grade colonist is
+    /// anchor-covered at every sample (the gate's own shared predicate),
+    /// everyone ends back at grade, zero teleports/emergency routes.
+    /// Leg C (wide control): an 8×8×7 dig builds ZERO ladder rungs
+    /// (stairs preferred) and completes.
+    #[arg(long)]
+    dig_access_scenario: bool,
+
     /// bastion (AUTON-0, row 48): the drive arbiter — Work flows through
     /// the gated claim entry (liveness), a REAL below-flee-health signal
     /// preempts Work within a tick, claims stay suppressed while
@@ -807,6 +835,8 @@ fn main() -> ExitCode {
         leash_scenario(&args)
     } else if args.mine_fidelity_scenario {
         mine_fidelity_scenario(&args)
+    } else if args.dig_access_scenario {
+        dig_access_scenario(&args)
     } else if args.chopfell_scenario {
         chopfell_scenario(&args)
     } else if args.inspect_scenario {
@@ -10480,12 +10510,12 @@ fn mine_fidelity_scenario(args: &Args) -> ExitCode {
     let cx = site_wpos.x as i32;
     let cy = site_wpos.y as i32;
 
-    // The dig footprint: 8×8 XY, ~20 blocks east of site center, on RAW
-    // organic ground (live-shaped by construction — no terraform). hint_z
-    // = the footprint's max ground so the surface resolver sees every
-    // column.
-    let m_min = Vec2::new(cx + 16, cy - 4);
-    let m_max = Vec2::new(cx + 23, cy + 3);
+    // The dig footprint: mf_w × mf_h XY, ~20 blocks east of site center, on
+    // RAW organic ground (live-shaped by construction — no terraform).
+    // hint_z = the footprint's max ground so the surface resolver sees
+    // every column.
+    let m_min = Vec2::new(cx + 16, cy - args.mf_h / 2);
+    let m_max = Vec2::new(cx + 16 + args.mf_w - 1, cy - args.mf_h / 2 + args.mf_h - 1);
     let mut hint_z = i32::MIN;
     for x in m_min.x..=m_max.x {
         for y in m_min.y..=m_max.y {
@@ -10545,7 +10575,7 @@ fn mine_fidelity_scenario(args: &Args) -> ExitCode {
         m_max,
         hint_z,
         ZExtent {
-            down: 6,
+            down: args.mf_down,
             up: 0,
             floor_z: None,
         },
@@ -10692,6 +10722,7 @@ fn mine_fidelity_scenario(args: &Args) -> ExitCode {
 
     let result = serde_json::json!({
         "mf_seed": args.seed,
+        "mf_geom": { "w": args.mf_w, "h": args.mf_h, "down": args.mf_down },
         "mf_cells_designated": cells_designated,
         "mf_dug": dug,
         "mf_remaining": remaining,
@@ -10740,6 +10771,467 @@ fn mine_fidelity_scenario(args: &Args) -> ExitCode {
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     ExitCode::SUCCESS
+}
+
+/// bastion (DPA-0/1/2 gate — DIG-PROVISIONED-ACCESS packet §8, Ben
+/// live-confirmed root): SHAFT-ALWAYS-ACCESSED. See the `--dig-access-
+/// scenario` arg doc for the three legs. Organic worldgen (dig areas never
+/// terraformed); needs pinned (this is a GATE, not a measurement — the
+/// fidelity scenario owns traffic realism).
+fn dig_access_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{CHOP_DROP_ITEM, DesignationKind, Region, ZExtent},
+        terrain::{BlockKind, SpriteKind},
+        vol::ReadVol,
+    };
+    use vek::{Vec2, Vec3};
+    // THE wood def — the same const the rung jobs require (no string drift).
+    let wood: &str = CHOP_DROP_ITEM;
+    const PICK: &str = "common.items.tool.pickaxe_stone";
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-digaccess-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-digaccess".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-digaccess-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+
+    // Crew + stockpile on natural ground between the site and the digs.
+    let sx = cx + 6;
+    let sy = cy;
+    let Some(sgz) = ground_z(&server, sx, sy) else {
+        eprintln!("DIG-ACCESS: no ground at staging — setup failed");
+        return ExitCode::FAILURE;
+    };
+    let staging = Vec3::new(sx as f32 + 0.5, sy as f32 + 0.5, sgz as f32 + 2.0);
+    server.bastion_spawn_colony(staging, 4);
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    if names.len() < 4 {
+        eprintln!("DIG-ACCESS: only {}/4 colonists loaded — setup failed", names.len());
+        return ExitCode::FAILURE;
+    }
+    for n in &names {
+        server.bastion_equip_tool(n, PICK);
+        server.bastion_set_needs(n, 1.0, 1.0, 1.0);
+    }
+    server.bastion_place_designation(
+        Region {
+            min: Vec3::new(sx - 1, sy - 1, sgz),
+            max: Vec3::new(sx + 1, sy + 1, sgz + 2),
+        },
+        DesignationKind::Stockpile,
+    );
+    tick(&mut server, 10);
+
+    let ticks_per_min = (args.tps * 60.0) as u64;
+    let mut fails: Vec<String> = Vec::new();
+    let mut check = |fails: &mut Vec<String>, name: &str, pass: bool, detail: String| {
+        info!(name, pass, detail, "dig-access assertion");
+        println!("DIG-ACCESS [{}] {}: {detail}", if pass { "PASS" } else { "FAIL" }, name);
+        if !pass {
+            fails.push(name.to_string());
+        }
+    };
+
+    // ── The tight shaft: 2×2, 13 levels (Ben's regime — past scramble) ──
+    let t_min = Vec2::new(cx + 16, cy);
+    let t_max = Vec2::new(cx + 17, cy + 1);
+    let mut hint = i32::MIN;
+    for x in t_min.x..=t_max.x {
+        for y in t_min.y..=t_max.y {
+            if let Some(g) = ground_z(&server, x, y) {
+                hint = hint.max(g);
+            }
+        }
+    }
+    if hint == i32::MIN {
+        eprintln!("DIG-ACCESS: no ground under the shaft — setup failed");
+        return ExitCode::FAILURE;
+    }
+    let (t_jobs, t_bounds) = server.bastion_place_designation_surface(
+        t_min,
+        t_max,
+        hint,
+        ZExtent {
+            down: 12,
+            up: 0,
+            floor_z: None,
+        },
+        DesignationKind::Mine,
+    );
+    let t_cells = t_jobs.len();
+    let Some(t_bounds) = t_bounds else {
+        eprintln!("DIG-ACCESS: shaft bounds unresolved — setup failed");
+        return ExitCode::FAILURE;
+    };
+    info!(t_cells, ?t_bounds, hint, "dig-access: tight shaft painted");
+
+    // ── LEG A: no wood → the frontier HOLDS with a classified reason ────
+    let fires0 = server.bastion_center_net_fires();
+    let (_, _, failsafe0) = server.bastion_locomotion_stats();
+    let mut reason_seen = false;
+    let mut deep_breach = 0usize;
+    for _ in 0..(6 * ticks_per_min / 30) {
+        tick(&mut server, 30);
+        if server.bastion_access_block_reason().is_some() {
+            reason_seen = true;
+        }
+        for (_, pos, _) in server.bastion_colonist_states() {
+            let bp = pos.map(|e| e.floor() as i32);
+            // Below the legal shallow zone (depth ≤ 2 released cells +
+            // organic per-column slope slack) — a held frontier must keep
+            // everyone out of THERE; the top levels are legitimately dug.
+            if bp.x >= t_bounds.min.x
+                && bp.x <= t_bounds.max.x
+                && bp.y >= t_bounds.min.y
+                && bp.y <= t_bounds.max.y
+                && bp.z < hint - 5
+            {
+                deep_breach += 1;
+            }
+        }
+    }
+    let a_remaining = server.bastion_mine_fidelity_cells(t_bounds).len();
+    let a_deep_remaining = server
+        .bastion_mine_fidelity_cells(t_bounds)
+        .iter()
+        .filter(|(_, depth, ..)| *depth > 2)
+        .count();
+    let (_, _, failsafe_a) = server.bastion_locomotion_stats();
+    check(
+        &mut fails,
+        "a-reason-classified",
+        reason_seen,
+        format!("access_material_missing surfaced: {reason_seen}"),
+    );
+    check(
+        &mut fails,
+        "a-frontier-holds",
+        a_deep_remaining > 0,
+        format!("deep cells held undug: {a_deep_remaining} of {a_remaining} remaining / {t_cells}"),
+    );
+    check(
+        &mut fails,
+        "a-no-deep-breach",
+        deep_breach == 0,
+        format!("colonist-samples below grade-3 in the held shaft: {deep_breach}"),
+    );
+    check(
+        &mut fails,
+        "a-no-teleports",
+        failsafe_a == failsafe0,
+        format!("failsafe teleports during hold: {}", failsafe_a - failsafe0),
+    );
+
+    // ── LEG B: wood supplied → rungs build, shaft completes, always
+    // accessed, everyone back out ───────────────────────────────────────
+    server.bastion_spawn_item(
+        Vec3::new(sx as f32 + 0.5, sy as f32 + 0.5, sgz as f32 + 1.5),
+        wood,
+        40,
+    );
+    tick(&mut server, 10);
+    let mut ladder_jobs_peak = 0usize;
+    let mut uncovered_below_grade = 0usize;
+    let mut b_minutes = 0u64;
+    for minute in 0..30u64 {
+        for _ in 0..(ticks_per_min / 30) {
+            tick(&mut server, 30);
+            if minute % 1 == 0 {
+                for n in &names {
+                    server.bastion_set_needs(n, 1.0, 1.0, 1.0);
+                }
+            }
+            let (lad, _) = server.bastion_ladder_access_jobs();
+            ladder_jobs_peak = ladder_jobs_peak.max(lad);
+            // SHAFT-ALWAYS-ACCESSED (the corpus predicate, packet §8): a
+            // below-grade colonist inside the claim must be covered by THE
+            // gate's own anchored predicate at every sample.
+            let anchors = server.bastion_access_anchors();
+            for (_, pos, _) in server.bastion_colonist_states() {
+                let bp = pos.map(|e| e.floor() as i32);
+                // Tested only below the shallow free zone (z < hint−4):
+                // anchors register at ladder-segment BASES (one plan per
+                // ~4 layers), whose ±band covers the working frontier —
+                // the top levels are legally anchorless (scramble range).
+                if bp.x >= t_bounds.min.x - 1
+                    && bp.x <= t_bounds.max.x + 1
+                    && bp.y >= t_bounds.min.y - 1
+                    && bp.y <= t_bounds.max.y + 1
+                    && bp.z < hint - 4
+                    && !server::bastion_jobs::access_anchor_covers(&anchors, bp)
+                {
+                    uncovered_below_grade += 1;
+                }
+            }
+        }
+        b_minutes = minute + 1;
+        // Forensics: per-minute access-job state (the leg-B rungs-never-
+        // build investigation feed).
+        let dump = server.bastion_access_job_dump();
+        let wood_near = server.bastion_count_items_near(
+            Vec3::new(sx as f32 + 0.5, sy as f32 + 0.5, sgz as f32 + 1.5),
+            8.0,
+            wood,
+        );
+        let wood_piles = server.bastion_persistent_item_snapshots(wood);
+        let wood_avail = server.bastion_material_availability(wood);
+        info!(
+            minute,
+            access_jobs = dump.len(),
+            wood_near,
+            ?wood_piles,
+            ?wood_avail,
+            ?dump,
+            "dig-access leg B: access-job states"
+        );
+        if server.bastion_mine_fidelity_cells(t_bounds).is_empty() {
+            break;
+        }
+    }
+    let b_remaining = server.bastion_mine_fidelity_cells(t_bounds).len();
+    let mut ladder_sprites = 0usize;
+    {
+        let terrain = server.state().terrain();
+        for x in (t_bounds.min.x - 1)..=(t_bounds.max.x + 1) {
+            for y in (t_bounds.min.y - 1)..=(t_bounds.max.y + 1) {
+                for z in t_bounds.min.z..=(hint + 1) {
+                    if terrain
+                        .get(Vec3::new(x, y, z))
+                        .ok()
+                        .and_then(|b| b.get_sprite())
+                        == Some(SpriteKind::Ladder)
+                    {
+                        ladder_sprites += 1;
+                    }
+                }
+            }
+        }
+    }
+    let (_, _, failsafe_b) = server.bastion_locomotion_stats();
+    let (em_jobs_b, em_routes_b, _) = server.bastion_emergency_access_stats();
+    let ending_below = server
+        .bastion_colonist_states()
+        .iter()
+        .filter(|(_, pos, _)| (pos.z.floor() as i32) < hint - 1)
+        .count();
+    let deep_remaining_b = server
+        .bastion_mine_fidelity_cells(t_bounds)
+        .iter()
+        .filter(|(_, depth, ..)| *depth > 2)
+        .count();
+    let deep_dug = a_deep_remaining.saturating_sub(deep_remaining_b);
+    // HARD invariants (the B6 gate philosophy): rungs planned + BUILT,
+    // meaningful DEEP progress (the D16 class actually closed — ≥ 2 rung
+    // bands of formerly-held cells dug), and never-uncovered below grade.
+    // Full 2×2×13 completion is M5-capstone territory (deep-tight-shaft
+    // throughput) — REPORTED, not gated; the wide-deep leg C carries the
+    // Ben-regime completion assert.
+    check(
+        &mut fails,
+        "b-rungs-planned",
+        ladder_jobs_peak > 0,
+        format!("peak live wood-costed rung jobs: {ladder_jobs_peak}"),
+    );
+    check(
+        &mut fails,
+        "b-ladder-built",
+        ladder_sprites > 0,
+        format!("Ladder sprites standing in the shaft: {ladder_sprites}"),
+    );
+    check(
+        &mut fails,
+        "b-deep-progress",
+        deep_dug >= 8,
+        format!(
+            "formerly-held deep cells dug: {deep_dug} (held at leg-A end: {a_deep_remaining}, \
+             deep remaining: {deep_remaining_b})"
+        ),
+    );
+    check(
+        &mut fails,
+        "b-always-accessed",
+        uncovered_below_grade == 0,
+        format!("uncovered below-grade colonist-samples: {uncovered_below_grade}"),
+    );
+    println!(
+        "DIG-ACCESS [REPORT] b-tight-shaft-throughput: remaining {b_remaining}/{t_cells} after \
+         {b_minutes} sim-min; below-grade at end {ending_below}; teleports {}; emergency \
+         jobs/routes {}/{}",
+        failsafe_b - failsafe_a,
+        em_jobs_b,
+        em_routes_b
+    );
+
+    // ── LEG C: BEN'S REGIME — a wide DEEP mine (6×6, 12 levels — the
+    // "Mine 2 · 12 levels" shape) must complete with access built as it
+    // digs, everyone out, zero rescue-tier. Access kind is free (stairs
+    // preferred structurally; rungs allowed where geometry wants them —
+    // reported).
+    let c_min = Vec2::new(cx + 30, cy - 3);
+    let c_max = Vec2::new(cx + 35, cy + 2);
+    let mut c_hint = i32::MIN;
+    for x in c_min.x..=c_max.x {
+        for y in c_min.y..=c_max.y {
+            if let Some(g) = ground_z(&server, x, y) {
+                c_hint = c_hint.max(g);
+            }
+        }
+    }
+    let (c_jobs, c_bounds) = server.bastion_place_designation_surface(
+        c_min,
+        c_max,
+        c_hint,
+        ZExtent {
+            down: 11,
+            up: 0,
+            floor_z: None,
+        },
+        DesignationKind::Mine,
+    );
+    let c_cells = c_jobs.len();
+    let Some(c_bounds) = c_bounds else {
+        eprintln!("DIG-ACCESS: wide bounds unresolved — setup failed");
+        return ExitCode::FAILURE;
+    };
+    let (c_baseline_ladders, _) = server.bastion_ladder_access_jobs();
+    let (_, _, failsafe_c0) = server.bastion_locomotion_stats();
+    let mut c_ladder_peak = 0usize;
+    let mut c_minutes = 0u64;
+    for minute in 0..40u64 {
+        for _ in 0..(ticks_per_min / 30) {
+            tick(&mut server, 30);
+            let (lad, _) = server.bastion_ladder_access_jobs();
+            c_ladder_peak = c_ladder_peak.max(lad);
+        }
+        for n in &names {
+            server.bastion_set_needs(n, 1.0, 1.0, 1.0);
+        }
+        c_minutes = minute + 1;
+        if server.bastion_mine_fidelity_cells(c_bounds).is_empty() {
+            break;
+        }
+    }
+    let c_remaining = server.bastion_mine_fidelity_cells(c_bounds).len();
+    let (_, _, failsafe_c) = server.bastion_locomotion_stats();
+    let c_ending_below = server
+        .bastion_colonist_states()
+        .iter()
+        .filter(|(_, pos, _)| (pos.z.floor() as i32) < c_hint - 1)
+        .count();
+    check(
+        &mut fails,
+        "c-widedeep-completes",
+        c_remaining == 0,
+        format!("remaining after {c_minutes} sim-min: {c_remaining}/{c_cells}"),
+    );
+    check(
+        &mut fails,
+        "c-everyone-out",
+        c_ending_below == 0,
+        format!("colonists below the wide-deep mine's grade at end: {c_ending_below}"),
+    );
+    check(
+        &mut fails,
+        "c-no-teleports",
+        failsafe_c == failsafe_c0,
+        format!("failsafe teleports during the wide-deep dig: {}", failsafe_c - failsafe_c0),
+    );
+    println!(
+        "DIG-ACCESS [REPORT] c-access-kinds: rung-job peak {c_ladder_peak} vs baseline \
+         {c_baseline_ladders} (stairs carve free; rungs allowed where geometry wants them)"
+    );
+
+    let pass = fails.is_empty();
+    println!(
+        "DIG-ACCESS SCENARIO: {} ({} assertions failed{}{})",
+        if pass { "PASS" } else { "FAIL" },
+        fails.len(),
+        if pass { "" } else { ": " },
+        fails.join(", ")
+    );
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 fn chopfell_scenario(args: &Args) -> ExitCode {

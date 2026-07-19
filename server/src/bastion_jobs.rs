@@ -81,6 +81,26 @@ pub fn access_anchor_covers(anchors: &[Vec3<i32>], pos: Vec3<i32>) -> bool {
 /// a one-line revert (all ladder code stays live for the player paint
 /// tool). Re-enable once SOFT-1 ORCA makes the 1-wide queue orderly.
 const AUTO_LADDER_ACCESS: bool = false;
+/// bastion (DPA-1, DIG-PROVISIONED-ACCESS Part A — Ben live-confirmed
+/// 2026-07-19: deep mines dig clean but build ZERO descent access, crew
+/// strands at the rim): Part-A-scoped re-enable of the ladder fallback at
+/// the PROACTIVE descent-gate `plan_access` site ONLY (the `dig_provisioned`
+/// call flag). Deliberately independent of the global [`AUTO_LADDER_ACCESS`]
+/// (which stays dark pending SOFT-1/ORCA — its D16 queue-fight was
+/// commuter-traffic scale; a forming dig's frontier concurrency is small and
+/// the Waiting-state single-file queue covers it). Stairs remain the
+/// preferred first tier wherever the claim is wide enough to switchback —
+/// this flag only lights the ladder tier for tight shafts. Architect ruling
+/// 2026-07-19 (packet §11.2): scoped const APPROVED; SOFT-1 must land
+/// before Part B's ML-1, not before this.
+const DIG_PROVISIONED_LADDER_ACCESS: bool = true;
+/// bastion (DPA-0, ruled default COSTED): dig-provisioned auto-rungs consume
+/// wood ([`CHOP_DROP_ITEM`] — pit props are timber; ties mining to
+/// CHOP/forestry). Scope: LADDER rungs only — carved stairs stay free
+/// (permanent carved infrastructure), and EMERGENCY rescue plans stay free
+/// unconditionally (a trapped colonist must never be material-gated).
+/// Flip to `false` for free "infrastructure from spoil" rungs — one line.
+const DIG_PROVISIONED_RUNGS_COST_MATERIAL: bool = true;
 /// bastion (B6 SOFT-0): how long a granted soft-collision pass lasts (the
 /// watchdog grace window and the density relief both use it). Long enough
 /// to physically squeeze past a blocker at walk speed; short enough that
@@ -773,6 +793,11 @@ fn plan_access(
     mask: &[Region],
     from: Vec3<i32>,
     to: Vec3<i32>,
+    // DPA-1: true ONLY from the proactive descent-gate call site — lights
+    // the ladder tier there under [`DIG_PROVISIONED_LADDER_ACCESS`] and
+    // makes its rungs wood-costed (DPA-0), without touching the emergency
+    // path or the dormant global flag.
+    dig_provisioned: bool,
     emergency_owner: Option<Uid>,
     emergency_approach: Option<(Vec3<f32>, (f32, f32, f32))>,
 ) -> Option<(DesignationKind, usize)> {
@@ -874,7 +899,14 @@ fn plan_access(
             // DesignationKind::Ladder, and all climb-assist/magnetism code
             // STAY — the player Ladder paint tool + vertical-link
             // pathfinding still use them; only the AUTO fallback goes dark.
-            None if AUTO_LADDER_ACCESS || emergency_owner.is_some() => {
+            // DPA-1: the ladder tier also lights for the PROACTIVE
+            // dig-provisioned site (Part-A-scoped const), so a tight shaft
+            // gets rungs AS IT DIGS instead of the D16 release — the Ben
+            // live-confirmed "digs clean, zero descent access, crew strands
+            // at the rim" class.
+            None if AUTO_LADDER_ACCESS
+                || emergency_owner.is_some()
+                || (dig_provisioned && DIG_PROVISIONED_LADDER_ACCESS) => {
                 // M2: the descriptor's dismount must be the STANDING cell
                 // (rim targets carry the top-solid z — same normalization as
                 // ladder_pillar's internal corridor checks).
@@ -1022,9 +1054,17 @@ fn plan_access(
             claimed_by: None,
             unreachable: false,
             progress: 0.0,
-            // Auto-access is material-free (infrastructure from spoil);
-            // PLAYER-placed ladders still cost material.
-            required_item: None,
+            // DPA-0 (ruled default COSTED): dig-provisioned LADDER rungs
+            // consume wood — the same fetch contract as any material job
+            // (any colonist may supply; the digger keeps digging). Carved
+            // stairs stay free (permanent carved infrastructure), and
+            // EMERGENCY plans stay free unconditionally — a trapped
+            // colonist must never be material-gated out of rescue.
+            required_item: (kind == DesignationKind::Ladder
+                && dig_provisioned
+                && emergency_owner.is_none()
+                && DIG_PROVISIONED_RUNGS_COST_MATERIAL)
+                .then_some(CHOP_DROP_ITEM),
             needs_materials: false,
             carve_attempted: true,
             // The plan marker: no cascades, and no NEW plan while these
@@ -3198,6 +3238,21 @@ pub struct JobBoard {
     /// (playbook: instrument failure/progress first), compared after.
     pub no_progress_ticks: u64,
     pub travel_timeouts: u64,
+    /// bastion (DPA-2 §5): the classified access-block reason — `Some(def)`
+    /// while the descent frontier is HELD because dig-provisioned rung jobs
+    /// need `def` (wood) and the colony has none reservable; `None`
+    /// otherwise. Recomputed every gate pass (self-clearing — no stale-slot
+    /// risk). Read by the inspector + the harness probe; never read by sim
+    /// logic outside the gate pass that writes it.
+    pub access_material_missing: Option<&'static str>,
+    /// bastion (DPA-2, the prune-gap flicker guard): anchor COLUMNS whose
+    /// rung plans went material-starved — DURABLE across the F3 prune →
+    /// re-emit gap (deriving the hold from live rung jobs alone left a ~2s
+    /// window each cycle where the starved anchor read as release-grade and
+    /// deep cells could slip out — the seed-777 leg-A teleport). Extended
+    /// while wood is missing; cleared WHOLESALE the moment wood is
+    /// reservable again (the gate pass is the single writer).
+    pub starved_anchor_columns: HashSet<Vec2<i32>>,
     pub failsafe_teleports: u64,
     pub failsafe_events: Vec<FailsafeTeleportEvent>,
     /// bastion (B-LIVE3 / reviewer F5): the UNIVERSAL stuck watchdog —
@@ -3510,13 +3565,17 @@ impl JobBoard {
                             claimed_by: None,
                             unreachable: false,
                             progress: 0.0,
-                            required_item: matches!(
-                                kind,
-                                DesignationKind::Build
-                                    | DesignationKind::Ladder
-                                    | DesignationKind::Bed
-                            )
-                            .then_some(BUILD_MATERIAL_ITEM),
+                            // DPA-0 wood correction (ruled, LADDER only):
+                            // rungs are timber (CHOP_DROP_ITEM) — pit props
+                            // are wood, and it ties mining to CHOP/forestry.
+                            // Build/Bed keep stone; stairs stay carved/free.
+                            required_item: match kind {
+                                DesignationKind::Build | DesignationKind::Bed => {
+                                    Some(BUILD_MATERIAL_ITEM)
+                                },
+                                DesignationKind::Ladder => Some(CHOP_DROP_ITEM),
+                                _ => None,
+                            },
                             needs_materials: false,
                             carve_attempted: false,
                             is_access: false,
@@ -3591,13 +3650,17 @@ impl JobBoard {
                             claimed_by: None,
                             unreachable: false,
                             progress: 0.0,
-                            required_item: matches!(
-                                kind,
-                                DesignationKind::Build
-                                    | DesignationKind::Ladder
-                                    | DesignationKind::Bed
-                            )
-                            .then_some(BUILD_MATERIAL_ITEM),
+                            // DPA-0 wood correction (ruled, LADDER only):
+                            // rungs are timber (CHOP_DROP_ITEM) — pit props
+                            // are wood, and it ties mining to CHOP/forestry.
+                            // Build/Bed keep stone; stairs stay carved/free.
+                            required_item: match kind {
+                                DesignationKind::Build | DesignationKind::Bed => {
+                                    Some(BUILD_MATERIAL_ITEM)
+                                },
+                                DesignationKind::Ladder => Some(CHOP_DROP_ITEM),
+                                _ => None,
+                            },
                             needs_materials: false,
                             carve_attempted: false,
                             is_access: false,
@@ -10344,7 +10407,7 @@ impl<'a> System<'a> for Sys {
                 job.carve_attempted = true;
             }
             let mask = board.designated.clone();
-            match plan_access(board, &terrain, &mask, from, to, None, None) {
+            match plan_access(board, &terrain, &mask, from, to, false, None, None) {
                 Some((kind, steps)) => {
                     info!(
                         parent,
@@ -10720,7 +10783,12 @@ impl<'a> System<'a> for Sys {
                         })
                         .collect();
                     for id in stale {
-                        board.jobs.remove(&id);
+                        // DPA sweep fix (B17): route through remove_job —
+                        // the ONE removal path — so a pruned rung can
+                        // never leak its reservation (the raw jobs.remove
+                        // here left any stale reservation poisoning the
+                        // material pile for every future fetch-claim).
+                        board.remove_job(id);
                         if let Some(owner) = board.emergency_access_jobs.remove(&id) {
                             board.emergency_cleanup_pending.insert(owner);
                         }
@@ -10988,6 +11056,7 @@ impl<'a> System<'a> for Sys {
                     &bubble,
                     from,
                     to,
+                    false,
                     Some(uid),
                     approach_context,
                 ) {
@@ -12663,6 +12732,63 @@ impl<'a> System<'a> for Sys {
         // downward as the dig deepens, one plan per ~4 layers).
         let mut descent_gated: HashSet<JobId> = HashSet::new();
         let mut descent_plan: Option<(JobId, Vec3<i32>, u8)> = None;
+        // DPA-2 (the material-hold, replacing the D16 silent release for
+        // the material-blocked case): with costed rungs (DPA-0), a ladder
+        // plan registers its access ANCHOR at emission time — before any
+        // rung is built. If the colony has NO reservable wood, those rungs
+        // are unclaimable, so releasing deep cells against that anchor
+        // would send diggers below grade with an unbuildable way out (the
+        // D16 hole reopened through the material gate). An anchor whose
+        // column still carries unclaimed wood-gated rung jobs while the
+        // colony has no wood is therefore NOT release-grade — its column
+        // is excluded from the anchored check, and the frontier HOLDS with
+        // a classified reason instead of silently stalling. Availability =
+        // the claim gate's own read (stockpiled + unreserved), colony-wide;
+        // the per-job claim check stays the precise arbiter.
+        let wood_available = (&pickup_items, &positions, &uids).join().any(|(pi, ipos, iuid)| {
+            pi.item().item_definition_id().itemdef_id() == Some(CHOP_DROP_ITEM)
+                && board
+                    .stockpile_at(ipos.0.map(|e| e.floor() as i32))
+                    .is_some()
+                && !board.is_reserved(*iuid)
+        });
+        if wood_available {
+            board.starved_anchor_columns.clear();
+        } else {
+            let live_starved: Vec<Vec2<i32>> = board
+                .jobs
+                .values()
+                .filter(|j| {
+                    j.is_access
+                        && j.kind.is(DesignationKind::Ladder)
+                        && j.required_item.is_some()
+                        && j.claimed_by.is_none()
+                })
+                .map(|j| j.pos.xy())
+                .collect();
+            board.starved_anchor_columns.extend(live_starved);
+        }
+        let usable_anchors: Vec<Vec3<i32>> = if board.starved_anchor_columns.is_empty() {
+            board.access_anchors.clone()
+        } else {
+            board
+                .access_anchors
+                .iter()
+                .copied()
+                .filter(|a| !board.starved_anchor_columns.contains(&a.xy()))
+                .collect()
+        };
+        // The classified block reason (DPA-2 §5): surfaced to the
+        // inspector/probes; cleared the moment wood exists again.
+        board.access_material_missing = (!board.starved_anchor_columns.is_empty())
+            .then_some(CHOP_DROP_ITEM);
+        // Live access-job columns: the pocket-scoping read (see below).
+        let access_columns: Vec<Vec2<i32>> = board
+            .jobs
+            .values()
+            .filter(|j| j.is_access)
+            .map(|j| j.pos.xy())
+            .collect();
         for id in board.decision_job_ids(execution_mode.is_deterministic()) {
             let job = &board.jobs[&id];
             if !job.kind.is(DesignationKind::Mine)
@@ -12672,35 +12798,69 @@ impl<'a> System<'a> for Sys {
             {
                 continue;
             }
-            let anchored = access_anchor_covers(&board.access_anchors, job.pos);
+            let anchored = access_anchor_covers(&usable_anchors, job.pos);
             if anchored {
                 continue;
             }
             descent_gated.insert(id);
-            if descent_plan
-                .as_ref()
-                .is_none_or(|(_, p, _)| job.pos.z > p.z)
+            // DPA pocket-scoping (gate-v3 evidence: two simultaneous digs
+            // starved each other — the tight shaft's live rung jobs held
+            // the colony-global one-plan bar while the wide mine got ZERO
+            // access plans, 324/432 undug). The M2 PLANNER-FIX precedent
+            // applies verbatim: overlap safety lives CELL-level inside
+            // plan_access (unavailable_cells) — the global bar's only real
+            // job was same-pocket dedupe. So: a cell whose pocket already
+            // has live access jobs nearby is gated but NOT a plan candidate
+            // (its access is already coming / blocked-classified); disjoint
+            // pockets each get plans, one new plan per pass, shallowest-
+            // first. RADIUS = 8, THE anchored-check's own radius (gate-v4
+            // lesson: a 24 radius spanned the 12-14-block gap between two
+            // real digs and re-excluded the starved pocket — the "pocket"
+            // definition must match the anchor-coverage geometry it feeds,
+            // not exceed it).
+            let pocket_covered = access_columns
+                .iter()
+                .any(|c| (c.x - job.pos.x).abs().max((c.y - job.pos.y).abs()) <= 8);
+            if !pocket_covered
+                && descent_plan
+                    .as_ref()
+                    .is_none_or(|(_, p, _)| job.pos.z > p.z)
             {
                 descent_plan = Some((id, job.pos, job.depth));
             }
         }
-        // The proactive access plan for the shallowest gated layer (one
-        // plan at a time, as everywhere): from the open floor ABOVE the
-        // gated cell up to its column's own surface.
-        if let Some((jid, jpos, jdepth)) = descent_plan
-            && !board.jobs.values().any(|j| j.is_access)
-        {
+        // The proactive access plan for the shallowest gated layer of an
+        // UNCOVERED pocket (selection above already skips pockets with
+        // live access jobs — the M2-precedent pocket scoping; the old
+        // colony-global `!any(is_access)` bar starved every second dig).
+        // One NEW plan per pass; plan_access's unavailable_cells rejects
+        // any cell-level overlap.
+        if let Some((jid, jpos, jdepth)) = descent_plan {
             let from = jpos + Vec3::unit_z();
             let to = Vec3::new(jpos.x, jpos.y, jpos.z + jdepth as i32);
             let mask = board.designated.clone();
-            if let Some((kind, steps)) = plan_access(board, &terrain, &mask, from, to, None, None) {
+            // DPA-1: dig_provisioned=true — THE Part-A wiring. Stairs still
+            // plan first; tight shafts now fall to wood-costed rungs
+            // instead of the D16 release.
+            if let Some((kind, steps)) =
+                plan_access(board, &terrain, &mask, from, to, true, None, None)
+            {
                 info!(
                     job = jid,
                     ?kind,
                     steps,
-                    "bastion: proactive descent access emitted (B5.8-E)"
+                    "bastion: proactive descent access emitted (B5.8-E/DPA-1)"
                 );
-            } else if !AUTO_LADDER_ACCESS {
+            } else if board.access_material_missing.is_none() {
+                // DPA re-calibration (gate evidence, 2-seed): plan_access
+                // None with BOTH tiers live = a transient planner failure
+                // (mid-dig geometry, cell overlap), NOT a permanent
+                // can't-build — HOLDING here regressed wide-dig completion
+                // 100%→~50% (the D16 release was load-bearing for exactly
+                // these transients). RELEASE stays the policy for the
+                // non-material None; the MATERIAL case (the D16 hole) is
+                // held durably by starved_anchor_columns above and never
+                // reaches this branch's clear.
                 // B6-hotfix (Ben live-test, deep-dig throughput — registry
                 // D16): the descent gate holds a deep cell until access LEADS
                 // the descent. With the auto-ladder fallback disabled,

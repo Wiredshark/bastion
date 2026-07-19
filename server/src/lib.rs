@@ -3297,6 +3297,101 @@ impl Server {
             .collect()
     }
 
+    /// bastion (DPA fixture, harness hook): the live access-anchor list —
+    /// the SHAFT-ALWAYS-ACCESSED predicate samples colonist positions
+    /// against these via [`bastion_jobs::access_anchor_covers`]. Read-only.
+    pub fn bastion_access_anchors(&self) -> Vec<Vec3<i32>> {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .access_anchors
+            .clone()
+    }
+
+    /// bastion (DPA fixture, harness hook): count of live dig-provisioned /
+    /// auto-access LADDER rung jobs (`is_access && Ladder`), + how many of
+    /// them are material-gated. Leg 3's stairs-preferred assert reads the
+    /// first; leg 2's material-hold assert reads both. Read-only.
+    pub fn bastion_ladder_access_jobs(&self) -> (usize, usize) {
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
+        let mut total = 0usize;
+        let mut gated = 0usize;
+        for j in board.jobs.values() {
+            if j.is_access && j.kind.is(common::bastion::DesignationKind::Ladder) {
+                total += 1;
+                if j.required_item.is_some() {
+                    gated += 1;
+                }
+            }
+        }
+        (total, gated)
+    }
+
+    /// bastion (DPA diag, harness hook): full state of every live ACCESS
+    /// job — (pos, kind-label, claimed, unreachable, needs_materials,
+    /// required_item) — the leg-B "rungs never build" forensics feed.
+    /// Read-only.
+    pub fn bastion_access_job_dump(
+        &self,
+    ) -> Vec<(Vec3<i32>, String, bool, bool, bool, Option<&'static str>)> {
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
+        board
+            .jobs
+            .values()
+            .filter(|j| j.is_access)
+            .map(|j| {
+                (
+                    j.pos,
+                    format!("{:?}", j.kind),
+                    j.claimed_by.is_some(),
+                    j.unreachable,
+                    j.needs_materials,
+                    j.required_item,
+                )
+            })
+            .collect()
+    }
+
+    /// bastion (DPA diag, harness hook): the claim gate's material-
+    /// availability predicate, decomposed per wood item — for each loose
+    /// item of `def`: (pos, in_stockpile, reserved). The rung-fetch
+    /// forensics feed: shows exactly which leg of the availability check
+    /// fails. Read-only.
+    pub fn bastion_material_availability(
+        &self,
+        def: &str,
+    ) -> Vec<(Vec3<f32>, bool, bool)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let board = ecs.read_resource::<bastion_jobs::JobBoard>();
+        let items = ecs.read_storage::<comp::PickupItem>();
+        let positions = ecs.read_storage::<comp::Pos>();
+        let uids = ecs.read_storage::<Uid>();
+        (&items, &positions, &uids)
+            .join()
+            .filter(|(pi, _, _)| pi.item().item_definition_id().itemdef_id() == Some(def))
+            .map(|(_, ipos, iuid)| {
+                (
+                    ipos.0,
+                    board
+                        .stockpile_at(ipos.0.map(|e| e.floor() as i32))
+                        .is_some(),
+                    board.is_reserved(*iuid),
+                )
+            })
+            .collect()
+    }
+
+    /// bastion (DPA-2, harness hook): the classified access-block reason —
+    /// `Some(item_def)` while the descent frontier holds on missing rung
+    /// material. Read-only.
+    pub fn bastion_access_block_reason(&self) -> Option<&'static str> {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .access_material_missing
+    }
+
     /// bastion (B6 SOFT-0, harness hook): register an access anchor, as a
     /// player-designated or auto-built ladder would (scenarios that place
     /// ladder SPRITES directly bypass the designation path that normally
