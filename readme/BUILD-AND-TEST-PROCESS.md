@@ -39,12 +39,14 @@ Decide WHERE a test runs by TWO questions:
 Linux-only). Local serialization = cargo's own target-dir lock + one-build-at-a-time discipline:
 `cargo build --profile verify -p bastion-harness && ./target/verify/bastion-harness --<scenario>`
 
-**VM** (committed + heavy), one line — NOTE the `source` (non-interactive SSH doesn't load cargo's env); `flock`
-guards the Linux box:
-`ssh benshumeyko@34.9.50.247 'source $HOME/.cargo/env; cd ~/bastion && git pull -q && flock /tmp/bastion-build.lock cargo build --profile verify -p bastion-harness -q && ./target/verify/bastion-harness --<scenario>'`
+**VM** (committed + heavy) — use the **ON-DEMAND WRAPPER** (auto-starts the stopped VM, pulls latest, builds,
+runs the scenario, streams results back; the VM self-stops ~15 min after):
+`bash /e/veloren-master/vm-run.sh --<scenario> [args]`
+The VM stays STOPPED when idle (idle-watcher saves credits); the wrapper starts it on demand (~30s boot). Do
+NOT SSH the VM directly for tests — always go through the wrapper so start/stop + pull + build are handled. (§11.)
 
-- `flock` = the OOM guard on the **VM (Linux) only**; locally cargo's target-dir lock + one-build-at-a-time
-  discipline serializes. One heavy build per machine at a time either way.
+- `flock` = the OOM guard on the **VM (Linux) only** (the wrapper applies it); locally cargo's target-dir lock +
+  one-build-at-a-time discipline serializes. One heavy build per machine at a time either way.
 - Multi-seed gates: run seeds CONCURRENTLY where the harness supports it (parallel-seeds task queued); until
   then they run serially — a known slow spot.
 
@@ -108,3 +110,15 @@ Front-loaded because they make everything after them faster.
   determinism guard — snapshot-load tapes must byte-match fresh-gen).
 - **Parallel seed execution** → run gate seeds concurrently (halves 2-seed gates; ~8× on corpora).
 When they land, amend §1/§3 to make them the default.
+
+## 11. Remote VM on-demand ops (the box manages its own uptime — 2026-07-19)
+- **Instance** `instance-20260719-131242` · zone `us-central1-a` · static IP `34.9.50.247` · project
+  `project-850d63d4-bf88-46df-8cb`. SSH key is METADATA-managed (survives restarts — do NOT rely on manual
+  `~/.ssh/authorized_keys`, the guest agent rewrites it on boot).
+- **Auto-STOP:** `/etc/cron.d/vm-idle-stop` powers the VM off after ~15 min with no cargo/rustc/bastion-harness
+  process and no SSH session. Stops on IDLENESS, not a clock — so it never interrupts the 24/7 op's overnight runs.
+- **Auto-START:** `vm-run.sh` (repo root, local-only tool) starts the VM if stopped before running. Uses
+  `gcloud` at `C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd` — **space-containing
+  args (ssh-keys, --command) must be called from PowerShell**; plain calls (start/stop/describe) work from Git Bash.
+- **Billing:** ~$0.36/hr RUNNING only; stopped ≈ $0 compute + ~$3.6/mo (disk + reserved static IP). On-demand
+  keeps idle cost near-zero. Manual override: `gcloud compute instances start|stop instance-20260719-131242 --zone=us-central1-a`.
