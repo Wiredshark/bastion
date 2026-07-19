@@ -11424,6 +11424,16 @@ fn dig_access_scenario(args: &Args) -> ExitCode {
             server.bastion_set_needs(n, 1.0, 1.0, 1.0);
         }
         c_minutes = minute + 1;
+        // LEG-C PATH TELEMETRY (Sonnet-requested discriminator for the
+        // stall): PATH-0 scheduler vitals per minute — bounded peak_wait
+        // while stalls persist falsifies scheduler starvation (iii) and
+        // points at the Chaser search itself (ii).
+        let (pg, ppi, pw) = server.bastion_path_stats();
+        println!(
+            "DIG-ACCESS [PATHSTATS] legC min={c_minutes}: grants_total={pg} \
+             peak_tick_iters={ppi} peak_wait={pw} remaining={}",
+            server.bastion_mine_fidelity_cells(c_bounds).len()
+        );
         if server.bastion_mine_fidelity_cells(c_bounds).is_empty() {
             break;
         }

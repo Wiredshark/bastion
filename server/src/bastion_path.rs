@@ -60,6 +60,12 @@ pub struct PathScheduler {
     pub grants_total: u64,
     pub peak_tick_iters: u64,
     pub peak_wait: u32,
+    /// LEG-C DIAG (env-gated, Sonnet's tgt-stability test): last observed
+    /// Goto target per requester — drift² > 2.0 between consecutive
+    /// observations is EXACTLY the Chaser's astar-reset trigger
+    /// (path.rs `last_search_tgt` wipe), logged as a TGT-DRIFT event.
+    /// Never touched with the env unset (empty map, zero cost).
+    pub diag_last_tgt: std::collections::BTreeMap<u64, Vec3<f32>>,
 }
 
 #[derive(Default)]
@@ -115,6 +121,27 @@ impl<'a> System<'a> for Sys {
                     },
                 )
                 .collect();
+        // LEG-C DIAG (Sonnet's tgt-stability test): a drift² > 2.0 between
+        // consecutive candidate observations for the same uid is the exact
+        // condition that wipes the Chaser's partial A* — event-logged so a
+        // restart storm is directly countable against grant volume.
+        if std::env::var_os("BASTION_LEGC_DIAG").is_some() {
+            for (uid64, _, tgt, _) in &cands {
+                if let Some(prev) = sched.diag_last_tgt.get(uid64) {
+                    let d2 = tgt.distance_squared(*prev);
+                    if d2 > 2.0 {
+                        tracing::info!(
+                            uid = uid64,
+                            d2,
+                            from = ?prev,
+                            to = ?tgt,
+                            "bastion LEGC-DIAG: TGT-DRIFT (astar-reset trigger)"
+                        );
+                    }
+                }
+                sched.diag_last_tgt.insert(*uid64, *tgt);
+            }
+        }
         // Sweep waits for needs that disappeared (arrived/reassigned) —
         // only live requesters accrue deferral.
         sched
