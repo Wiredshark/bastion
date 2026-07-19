@@ -48,6 +48,13 @@ use vek::*;
 #[cfg(feature = "use-dyn-lib")]
 use {crate::LIB, std::ffi::CStr};
 
+fn bastion_goto_writer_diag(uid: u64) -> bool {
+    std::env::var("BASTION_GOTO_WRITER_DIAG_UID")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        == Some(uid)
+}
+
 impl AgentData<'_> {
     ////////////////////////////////////////
     // Action Nodes
@@ -149,22 +156,105 @@ impl AgentData<'_> {
         // then reroute if needed.
         let is_target_loaded = in_loaded_chunk(pathing_pos);
 
-        if let Some((bearing, speed, stuck)) = agent.chaser.chase(
+        let writer_diag = bastion_goto_writer_diag(self.uid.0.get());
+        let route_before = writer_diag.then(|| {
+            let route = agent.chaser.get_route();
+            (
+                agent.chaser.last_target(),
+                agent.chaser.route_target(),
+                agent.chaser.route_is_complete(),
+                route.map(|route| route.next_idx()),
+                route.and_then(|route| route.get_path().end().copied()),
+                route.map(|route| route.get_path().len()),
+                agent.chaser.state(),
+            )
+        });
+        let controller_before =
+            writer_diag.then_some((controller.inputs.move_dir, controller.inputs.move_z));
+        let ordinary_node_tolerance = self.traversal_config.node_tolerance;
+        let route_endpoint_tolerance = agent.rtsim_controller.path_endpoint_tolerance(pathing_pos);
+        let configured_node_tolerance = route_endpoint_tolerance
+            .map_or(ordinary_node_tolerance, |tolerance| {
+                ordinary_node_tolerance.min(tolerance)
+            });
+        let chase_result = agent.chaser.chase(
             &*read_data.terrain,
             self.pos.0,
             self.vel.0,
             pathing_pos,
             TraversalConfig {
+                node_tolerance: configured_node_tolerance,
                 min_tgt_dist: 0.25,
                 is_target_loaded,
                 ..self.traversal_config
             },
             &read_data.time,
-        ) {
+        );
+        if writer_diag {
+            let route = agent.chaser.get_route();
+            let target_delta = pathing_pos - self.pos.0;
+            tracing::info!(
+                uid = self.uid.0.get(),
+                now = read_data.time.0,
+                position = ?self.pos.0,
+                velocity = ?self.vel.0,
+                orientation = ?self.ori.look_vec(),
+                requested_target = ?tgt_pos,
+                pathing_target = ?pathing_pos,
+                target_delta = ?target_delta,
+                ordinary_node_tolerance,
+                ?route_endpoint_tolerance,
+                configured_node_tolerance,
+                ?route_before,
+                controller_before = ?controller_before,
+                chase_result = ?chase_result,
+                target_bearing_dot = chase_result
+                    .as_ref()
+                    .map(|(bearing, _, _)| bearing.dot(target_delta)),
+                chaser_last_target_after = ?agent.chaser.last_target(),
+                chaser_route_target_after = ?agent.chaser.route_target(),
+                chaser_route_complete_after = ?agent.chaser.route_is_complete(),
+                chaser_route_next_after = ?route.map(|route| route.next_idx()),
+                chaser_route_end_after = ?route.and_then(|route| route.get_path().end().copied()),
+                chaser_route_len_after = ?route.map(|route| route.get_path().len()),
+                chaser_state_after = ?agent.chaser.state(),
+                writer = "agent_chaser",
+                explicit_agent_to_bastion_jobs_dependency = false,
+                "bastion: goto chaser writer result"
+            );
+        }
+        if let Some((bearing, speed, stuck)) = chase_result {
             self.unstuck_if(stuck, controller);
             self.traverse(controller, bearing, speed * speed_multiplier);
+            if writer_diag {
+                tracing::info!(
+                    uid = self.uid.0.get(),
+                    now = read_data.time.0,
+                    position = ?self.pos.0,
+                    requested_target = ?tgt_pos,
+                    ?bearing,
+                    speed,
+                    stuck,
+                    controller_move_dir = ?controller.inputs.move_dir,
+                    controller_move_z = controller.inputs.move_z,
+                    writer = "agent_traverse",
+                    "bastion: goto controller write"
+                );
+            }
             Some(bearing)
         } else {
+            if writer_diag {
+                tracing::info!(
+                    uid = self.uid.0.get(),
+                    now = read_data.time.0,
+                    position = ?self.pos.0,
+                    requested_target = ?tgt_pos,
+                    controller_move_dir = ?controller.inputs.move_dir,
+                    controller_move_z = controller.inputs.move_z,
+                    writer = "agent_chaser_none",
+                    "bastion: goto produced no controller write"
+                );
+            }
             None
         }
     }

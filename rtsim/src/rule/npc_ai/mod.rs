@@ -23,12 +23,12 @@
 //! passed to the Veloren server's agent system which attempts to act in
 //! accordance with it.
 
-/// bastion (B-AG2): archetype-keyed decision data — one shared brain,
-/// many configs (see the converted gates in `villager`).
-pub mod archetype;
 mod airship_ai;
 #[cfg(feature = "airship_log")]
 mod airship_logger;
+/// bastion (B-AG2): archetype-keyed decision data — one shared brain,
+/// many configs (see the converted gates in `villager`).
+pub mod archetype;
 pub mod dialogue;
 pub mod movement;
 pub mod quest;
