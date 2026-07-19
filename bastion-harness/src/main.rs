@@ -451,6 +451,13 @@ struct Args {
     #[arg(long, default_value_t = 0)]
     corpus_jobs: usize,
 
+    /// bastion (M3-CORPUS PREP 2, the wedged-child guard): minutes before
+    /// a corpus child is killed and marked TIMEOUT — a hung child (the
+    /// observed 0-CPU spawn-wedge, cause unattributed) must never stall
+    /// the whole corpus again.
+    #[arg(long, default_value_t = 50)]
+    corpus_child_timeout_mins: u64,
+
     /// bastion (DPA-0/1/2, SHAFT-ALWAYS-ACCESSED — packet §8): the
     /// dig-provisioned access gate. Leg A: a tight 2×2×13 organic shaft
     /// with ZERO wood — the frontier HOLDS (no deep dig, classified
@@ -710,8 +717,32 @@ fn corpus_runner(args: &Args) -> ExitCode {
                 Err(e) => results.push((*seed, false, format!("spawn failed: {e}"))),
             }
         }
-        for (seed, child) in children {
+        // Wedged-child guard: a shared absolute deadline; a child that
+        // neither exits nor gets killed by it can no longer stall the
+        // corpus (the observed 0-CPU spawn-wedge class).
+        let deadline = std::time::Instant::now()
+            + std::time::Duration::from_secs(args.corpus_child_timeout_mins * 60);
+        for (seed, mut child) in children {
+            let timed_out = loop {
+                match child.try_wait() {
+                    Ok(Some(_)) => break false,
+                    Ok(None) if std::time::Instant::now() >= deadline => {
+                        let _ = child.kill();
+                        eprintln!(
+                            "CORPUS: seed {seed} TIMED OUT at {}min — killed (wedged-child guard)",
+                            args.corpus_child_timeout_mins
+                        );
+                        break true;
+                    },
+                    Ok(None) => std::thread::sleep(std::time::Duration::from_millis(500)),
+                    Err(_) => break false,
+                }
+            };
             let out = child.wait_with_output();
+            if timed_out {
+                results.push((seed, false, "TIMEOUT (killed by the wedged-child guard)".into()));
+                continue;
+            }
             match out {
                 Ok(out) => {
                     let stdout = String::from_utf8_lossy(&out.stdout);
