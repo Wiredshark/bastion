@@ -141,3 +141,29 @@ Investigation (architect, code-read): server logic CORRECT + harness-green; live
 - TASKED (Play-Tester, box-aware, after builder's verify frees the box): fresh voxygen build → boot `--bastion-flat-arena` → read the bool → R5-6 arena-spawn rubric confirm → hand Ben a confirmed exe COPY + exact launch command, OR capture a concrete repro (boot-log + screenshot) if still broken.
 - LAUNCH COMMAND for Ben: `veloren-voxygen.exe --bastion-flat-arena` (or set env BASTION_FLAT_ARENA=1 then launch).
 - FOLLOW-ON (row 50.9 FLAT-ARENA-TOGGLE): in-game checkbox so it's a button, not a launch flag — the real "usable" fix. Queue after the live-confirm.
+
+## MAIN BUILDER — RETIREMENT STATE (stand-down received ~03:5x; PC-crash lean restart)
+STATUS-SURFACE terminal state for the fresh builder:
+- **COMMITTED + VERIFIED:** 0bf8d6fb56 (5 files; server+voxygen checks rc=0; precedence/TTL
+  unit table 1/1). NOT TAGGED — evidence was 1 item short at stand-down (see below). The code
+  is live-safe: sim-inert is PROVEN, all sim behavior byte-identical.
+- **SIM-INERT PROOF (complete):** worktree-built baseline d93eb2af34 vs candidate 0bf8d6fb56,
+  P0 seed-21, candidate probing EVERY tick: events/summary/trajectory.csv RAW byte-identical;
+  trajectory.jsonl byte-identical after the standard wall_unix_millis normalization (9002
+  lines); metadata.json differs only in exe-path + compiled_git_hash (provenance fields).
+  Evidence: scratchpad ss-evidence/ (session d3469ddb…; exes ss-baseline/ss-candidate,
+  p0-baseline/, p0-candidate/, n1b-candidate/, n7b-candidate/ + build logs).
+- **LIVE-FIRE (graded):** WaitingForLadder LIVE (P0+N1B, correct 1-2-tick queued blips);
+  Replanning LIVE (N1B post-abort, sticky clears at progress). N7B PASS showed the
+  DESIGNED denied-hold behavior: 80s drained-energy window (0.01→1.00) displayed
+  Replanning (no_progress cycler — the honest read), NOT RestingToClimb. RestingToClimb
+  needs a PRODUCTIVE drained-route member: the drain-engagement run (env-gated worktree
+  staging, SS_DRAIN_AT_1300) FAILED UNEXAMINED exit-4 — the machine crashed in that
+  window; likely died with the box. RescueImminent not live-fired (needs a C-leg
+  exhaustion scenario); its read is one contains() on the corpus-proven sticky set.
+- **WORKTREE:** E:\veloren-wt-ss (detached, 0bf8d6fb56) holds the UNCOMMITTED evidence-only
+  probe+stage patch in bastion-harness/src/main.rs (STATUS-SURFACE-PROBE + SS_DRAIN_AT_1300
+  block). Never committed anywhere by design (shared main.rs was under third-party WIP).
+  Safe to delete wholesale, or reuse: one drain-engagement P0 run + optional C-leg run =
+  tag-grade evidence. Recommendation: tag-worthy either after that one run, or now on
+  sim-inert + 2-state live-fire + unit table, with the Play-Tester live visual as the closer.
