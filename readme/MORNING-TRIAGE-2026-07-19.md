@@ -134,3 +134,10 @@ Compile is already tuned (sccache + rust-lld + incremental + `bastion-check` sco
 3. [MED, structural] Move the MAIN BUILDER into its own worktree + own target/ (chips already have theirs) → no more torn-tree collisions with peer lanes (tonight's whole incident class), and it stops waiting on the shared tree. RAM still serializes one heavy build at a time, but the COLLISION class dies.
 4. [MED, token-specific] Builder BACKGROUNDS long builds and ENDS its turn (re-woken on completion) instead of holding context in-memory watching cargo — that idle-hold is the literal token waste Ben named.
 DO NOT touch build files while a verify is in flight (torn-tree). Owner: build-lane, first thing AM.
+
+## ★★ PRIORITY (Ben-directed, ~05:15) — FLAT-TEST-ARENA "never worked": confirm live + ship a working exe
+Investigation (architect, code-read): server logic CORRECT + harness-green; live-path env bug (singleplayer server thread not seeing BASTION_FLAT_ARENA) was DIAGNOSED + FIXED + COMMITTED (1d693b6b2b — env re-assert in voxygen main() + `--bastion-flat-arena` flag). Server spawns as a THREAD (same process → env is process-global; mechanism sound). Uncommitted singleplayer/mod.rs = cosmetic asset-arena temp-path, NOT flat-arena (red herring). ROOT of "never worked" = never live-confirmed post-fix (green-gate-vs-live gap) AND/OR launched without the flag (no in-game toggle yet).
+- DECISIVE DIAGNOSTIC: server boot log `flat_arena_enabled=<bool>` (lib.rs:541). true=env reached server; false=transport still broken.
+- TASKED (Play-Tester, box-aware, after builder's verify frees the box): fresh voxygen build → boot `--bastion-flat-arena` → read the bool → R5-6 arena-spawn rubric confirm → hand Ben a confirmed exe COPY + exact launch command, OR capture a concrete repro (boot-log + screenshot) if still broken.
+- LAUNCH COMMAND for Ben: `veloren-voxygen.exe --bastion-flat-arena` (or set env BASTION_FLAT_ARENA=1 then launch).
+- FOLLOW-ON (row 50.9 FLAT-ARENA-TOGGLE): in-game checkbox so it's a button, not a launch flag — the real "usable" fix. Queue after the live-confirm.
