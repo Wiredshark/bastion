@@ -68,3 +68,4 @@ B54/C1; the duplicate line is removed.) Everything else is pointer-verified agai
 - [C] server/src/lib.rs:3208 — class7 healing hook hardcodes (true, 1.0) context vs its "production-exact" doc claim — align the doc or thread the real params. Small chip.
 - [low] bastion-model efficiency nits ×2 — Fable queues its own follow-up commit (bastion-model/** only).
 - NOTE: the REAL cloud swarm = `claude ultrareview` run from a TERMINAL (not inside a session) — available to Ben any time; both local max-effort passes are done and the delta HOLDS.
+- [fidelity-audit addendum, author-disclosed]: 3rd focus item for the bastion-model audit — the model counts EVERY classified abort into the shared reengage counter; verify that matches the ENGINE's counter-sharing exactly (not just the route-exhausted-replan leg). (Plus the watchdog abstraction + the two honest gaps, per FABLE's stand-down note.)
