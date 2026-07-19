@@ -22,9 +22,12 @@ tangles again.
 Make the test loop fast — this is why a build hung 2 hours. (Detail: MORNING-TRIAGE-2026-07-19.md build-speed task.)
 1. Add a test profile with `lto = false` (root Cargo.toml) so verification builds skip the LTO link tax.
    (Scheduled change — it busts warm caches = one full rebuild; do it deliberately.)
-2. Confirm the FLAT WORLD works LIVE: fresh voxygen build → launch `veloren-voxygen --bastion-flat-arena` →
-   check the server boot log for `flat_arena_enabled=true` (server/src/lib.rs) → confirm spawn on a flat grass
-   slab. The fix is committed (`1d693b6b2b`) but was NEVER live-confirmed. This gives a seconds-boot testbed.
+2. Confirm the FLAT WORLD works LIVE: fresh voxygen build → check the server boot log for
+   `flat_arena_enabled=true` (server/src/lib.rs:541) → confirm spawn on a flat grass slab. The fix is committed
+   (`1d693b6b2b`) but was NEVER live-confirmed. This gives a seconds-boot testbed.
+   ★ HEADLESS decisive test (from the retired Play-Tester, PLAYTEST_REPORTS.md): boot
+   `--asset-arena --bastion-flat-arena` — asset-arena AUTO-ENTERS a world so the server thread spawns and the
+   lib.rs:541 diag fires with NO menu clicking. That's the automatable check; the bool settles it either way.
 Result: every later build is fast, and there's a real fast testbed to verify in.
 
 ## STEP 2 — FEATURES (on the now-fast loop; order + detail in DAY-PLAN-2026-07-19.md)
