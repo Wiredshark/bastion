@@ -205,3 +205,19 @@ sit foreground-waiting on one. At every moment the builder is CODING; tests run 
 - **A slow/stuck test never blocks progress** — the burn-guard + watchdog kill it; you move on and re-dispatch.
 - A test result arriving is an INTERRUPT to triage, not a thing to wait for. This supersedes any
   "build → wait for the gate → then continue" habit. Waiting on a test is the one thing we no longer do.
+
+## 17. MAX-TESTING — run BIG corpora, fill the 96 cores, fan analysis to Sonnet (Ben-directed 2026-07-19)
+Single-seed checks waste the hardware. Every verification/validation run goes WIDE by default.
+- **The ceiling is ~96 tests in parallel** (1 core each during sim; 96 vCPU cap). FILL it — don't run 2
+  seeds when you can run 50.
+- **Sizing (efficient max):** fewer MEDIUM VMs each running MANY seeds — e.g. `vm-pool-safe.sh 16
+  e2-standard-6 6 <seed> "<scenario>" <$> <min>` = 16×6 = ~96 concurrent tests. Or c2-standard-60 (one
+  big VM). NOT 1-core VMs (the ~65s boot wants several cores → slow) and NOT 96 separate VMs (96 redundant
+  builds). Seeds-per-VM is what fills the cores; more VMs only adds build overhead (+ fault isolation).
+- **Broaden everything:** a fix's confirmation = a 30-50 seed corpus, not a 2-seed sample; scenario
+  verification = a matrix across seeds; the post-M3 FULL VALIDATION = the whole catalog × canonical+corpus
+  seeds, sized to fill 96 cores.
+- **★ ANALYSIS FAN-OUT:** at max scale the bottleneck is RESULT-READING, not compute. When a corpus
+  produces more than you can triage, ROUTE THE RESULTS TO SONNET (local_5f3f9b01) to classify reds
+  (real / seed-premise / flake) + spot patterns in parallel. Offload the reading so it's never the ceiling
+  on how wide we test.
