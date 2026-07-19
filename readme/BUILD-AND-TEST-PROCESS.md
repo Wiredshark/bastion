@@ -218,10 +218,11 @@ sit foreground-waiting on one. At every moment the builder is CODING; tests run 
 Single-seed checks waste the hardware. Every verification/validation run goes WIDE by default.
 - **The ceiling is ~96 tests in parallel** (1 core each during sim; 96 vCPU cap). FILL it — don't run 2
   seeds when you can run 50.
-- **Sizing (efficient max):** fewer MEDIUM VMs each running MANY seeds — e.g. `vm-pool-safe.sh 16
-  e2-standard-6 6 <seed> "<scenario>" <$> <min>` = 16×6 = ~96 concurrent tests. Or c2-standard-60 (one
-  big VM). NOT 1-core VMs (the ~65s boot wants several cores → slow) and NOT 96 separate VMs (96 redundant
-  builds). Seeds-per-VM is what fills the cores; more VMs only adds build overhead (+ fault isolation).
+- **Sizing (efficient max):** fewer MEDIUM VMs each running MANY seeds — e.g. `vm-pool-safe.sh 12
+  e2-standard-8 8 <seed> "<scenario>" <$> <min>` = 12×8 = ~96 concurrent tests. (★ VALID e2 sizes are
+  2/4/8/16/32 ONLY — NO e2-standard-6; an invalid type 8/8-fails the whole pool, now visible via the
+  CREATE_FAIL error capture.) Or c2-standard-60 (one big VM, once verified). NOT 1-core VMs (the ~65s boot
+  wants several cores → slow) and NOT 96 separate VMs (96 redundant builds). Seeds-per-VM fills the cores.
 - **Broaden everything:** a fix's confirmation = a 30-50 seed corpus, not a 2-seed sample; scenario
   verification = a matrix across seeds; the post-M3 FULL VALIDATION = the whole catalog × canonical+corpus
   seeds, sized to fill 96 cores.
