@@ -6321,6 +6321,19 @@ impl<'a> System<'a> for Sys {
                             preflight_order,
                             ?preflight_hit,
                             ?cylinder,
+                            // M3 diag: the final_mount let-chain inputs — the
+                            // task-creation gate the M3A chamber run failed in.
+                            route_mount = ?board.emergency_route_mounts.get(&route_owner),
+                            route_top = ?board
+                                .emergency_access_cells
+                                .iter()
+                                .filter_map(|(cell, (owner, _))| {
+                                    (*owner == route_owner).then_some(cell.z)
+                                })
+                                .max(),
+                            descriptor_present = board
+                                .emergency_route_descriptors
+                                .contains_key(&route_owner),
                             "bastion: emergency route transition probe"
                         );
                     }
@@ -6412,14 +6425,37 @@ impl<'a> System<'a> for Sys {
                             // actual-cylinder-preflighted local approach;
                             // only the final route-proven entry anchor starts
                             // the authoritative mount transaction.
+                            //
+                            // M3 CHAMBER FIX (the 1-cell approach deadlock):
+                            // this arm previously wrote a Goto — but the
+                            // waypoint here is ONE cell away by construction
+                            // (mount_approach: dx+dy==1), and "the final two
+                            // mount cells are inside Chaser's arrival
+                            // tolerance" (the block's own note above) — the
+                            // Chaser reads a 1-cell Goto as ARRIVED and emits
+                            // zero movement. 175 consecutive no-op Gotos in
+                            // the M3A diag tape; the member never crossed the
+                            // cell, the waypoint never advanced to the mount,
+                            // the transaction never formed. N2 never saw it:
+                            // its member STARTS at the mount. Drive the step
+                            // DIRECTLY (the final_mount arm's own input
+                            // form, one screen up); the preflight already
+                            // cleared the cylinder for exactly this step.
                             colonist.0.route_squeeze_until = time.0 + 0.2;
                             if let Some(entity) = id_maps.uid_entity(*uid)
                                 && let Some(agent) = agents.get_mut(entity)
                             {
-                                agent.rtsim_controller.activity = Some(
-                                    common::rtsim::NpcActivity::Goto(target_pos, TRAVEL_SPEED),
-                                );
+                                // The brain's idle arm would re-stomp the
+                                // controller from a stale activity below.
+                                agent.rtsim_controller.activity = None;
                             }
+                            let delta = target_pos.xy() - pos.0.xy();
+                            controller.inputs.move_dir = if delta.magnitude_squared() > 0.01 {
+                                delta.normalized()
+                            } else {
+                                Vec2::zero()
+                            };
+                            controller.inputs.move_z = 0.0;
                             if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
                                 info!(
                                     uid = uid.0.get(),

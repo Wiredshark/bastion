@@ -1491,9 +1491,12 @@ fn recorder_probe_sample(
         terrain_revision: None,
         exit_plane_z: None,
         endpoint_distance: Some((4.0 - tick as f32).abs()),
-        // R10 v2 fields: absent in the lifecycle probe (v1-shaped fixture).
+        // R10/M3 v2 fields: absent in the lifecycle probe (v1-shaped fixture).
         ownership_epoch: None,
         climb_token_witness: None,
+        queue_position: None,
+        queue_enqueue_tick: None,
+        reservation_generation: None,
     }
 }
 
@@ -4560,6 +4563,13 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
     use vek::{Rgb, Vec2, Vec3};
 
     let episode = args.ladder_episode.clone().unwrap_or_else(|| "P0".into());
+    // M3-D (shrunken-budget arm): 30s queue-wait budget so the past-budget
+    // net-delivery arm fits the episode window. Before Server::new — the
+    // hold reads it once, lazily, during ticking.
+    if episode == "M3D" {
+        // SAFETY: single-threaded harness setup phase.
+        unsafe { std::env::set_var("BASTION_M3_QUEUE_WAIT_BUDGET_TICKS", "900") };
+    }
     let started = Instant::now();
     let data_dir = std::env::temp_dir().join(format!(
         "bastion-m2lf-{}-{}",
@@ -4665,6 +4675,21 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
             }
         }
     }
+    // M3 contention geometry: a 5x3 bottom CHAMBER (3 high) under the same
+    // 2x2 shaft — the chokepoint funnel. The chamber gives 3-5 waiting
+    // members standable staging room OFF the shaft footprint (the N2 pit
+    // floor is the 2x2 shaft itself and cannot hold a crew); the single
+    // shaft ladder stays the only way out.
+    let m3 = episode.starts_with("M3");
+    if m3 {
+        for x in (sx - 1)..=(sx + 3) {
+            for y in (sy - 1)..=(sy + 1) {
+                for z in (gz - depth + 1)..=(gz - depth + 3) {
+                    server.state_mut().set_block(Vec3::new(x, y, z), air);
+                }
+            }
+        }
+    }
     server.bastion_place_designation(
         common::bastion::Region {
             min: Vec3::new(sx - 6, sy - 6, gz - depth - 1),
@@ -4674,7 +4699,15 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
     );
     tick(&mut server, 2);
 
-    let n_colonists = if episode == "N2" { 2 } else { 1 };
+    let n_colonists = match episode.as_str() {
+        "N2" => 2,
+        // M3 contention family: 3-body fair queue (A), 5-body chokepoint
+        // (B), 3-body with a mid-traversal owner abort (C), 3-body
+        // never-stranded both-arms (D).
+        "M3A" | "M3C" | "M3D" => 3,
+        "M3B" => 5,
+        _ => 1,
+    };
     server.bastion_spawn_colony(
         Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
         n_colonists,
@@ -4727,16 +4760,32 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         (true, 2) => Vec3::new(-2.0, 0.0, 0.0),
         _ => Vec3::zero(),
     };
+    // M3: deterministic chamber-floor spread, every cell OFF the 2x2 shaft
+    // footprint (the shaft is the funnel; the chamber is the waiting room).
+    let m3_stage: [vek::Vec2<i32>; 5] = [
+        vek::Vec2::new(sx - 1, sy - 1),
+        vek::Vec2::new(sx + 3, sy + 1),
+        vek::Vec2::new(sx - 1, sy + 1),
+        vek::Vec2::new(sx + 3, sy - 1),
+        vek::Vec2::new(sx + 2, sy),
+    ];
+    let stage_cell = |i: usize| -> Vec3<f32> {
+        if m3 {
+            let c = m3_stage[i];
+            Vec3::new(c.x as f32 + 0.5, c.y as f32 + 0.5, pit_floor.z)
+        } else {
+            pit_floor + Vec3::new(i as f32 * 1.0, 0.0, 0.0) + member_stage_offset(i)
+        }
+    };
     for (i, n) in names.iter().enumerate() {
-        let d = pit_floor + Vec3::new(i as f32 * 1.0, 0.0, 0.0) + member_stage_offset(i);
-        staged_ok &= server.bastion_teleport_colonist(n, d);
+        staged_ok &= server.bastion_teleport_colonist(n, stage_cell(i));
     }
     tick(&mut server, 2);
     // Position-assert (the CLIMBCAP staging-drop lesson): a relocated
     // landing voids the premise — INVALID, not a verdict.
     let mut position_ok = true;
     for (i, n) in names.iter().enumerate() {
-        let want = pit_floor + Vec3::new(i as f32 * 1.0, 0.0, 0.0) + member_stage_offset(i);
+        let want = stage_cell(i);
         let got = server
             .bastion_colonist_states()
             .iter()
@@ -4752,8 +4801,16 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
     }
     // Drain LAST: its recorder staging event doubles as the episode-start
     // marker (documented; both staging hooks are unused after this point).
+    // M3: 0.6 not 0.1 — the deep 0.1 drain is the CLIMBCAP single-member
+    // staging convention; with a CREW splitting construction, a 0.1-drained
+    // head SITS to rest mid-build, goes 60s stationary, and the universal
+    // net delivers it before the ladder is even finished (M3A iteration-1
+    // finding: C-0 netted at ~60 sim-sec, character_state=Sit). The queue
+    // predicates need working colonists, not exhaustion staging; the
+    // staging event still fires as the episode-start marker.
+    let stage_energy = if m3 { 0.6 } else { 0.1 };
     for n in &names {
-        staged_ok &= server.bastion_set_colonist_energy(n, 0.1);
+        staged_ok &= server.bastion_set_colonist_energy(n, stage_energy);
     }
 
     // ── Episode loop ────────────────────────────────────────────────────
@@ -4795,6 +4852,23 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
     let mut nfence_fresh_seen_tick: Option<u64> = None;
     let mut nfence_freeze_pos: Option<vek::Vec3<f32>> = None;
     let mut nfence_handoff_ticks: Option<u64> = None;
+    // M3 contention bookkeeping (all report+gate, per-member).
+    let mut m3_out_at: Vec<Option<u64>> = vec![None; names.len()];
+    let mut m3_exit_order: Vec<String> = Vec::new();
+    // Ticks with >1 member simultaneously in an owned-mode phase — the
+    // single-owner-per-link predicate (one link exists in this fixture).
+    let mut m3_owned_conflicts: u64 = 0;
+    // Ticks a task-less QUEUED member stood inside the 2x2 shaft footprint
+    // while another member was mid-traversal (SOFT-0 lane exclusion,
+    // shaft-footprint superset form) — or touched a Ladder sprite.
+    let mut m3_lane_violations: u64 = 0;
+    // First observation of the FULL queue (len == n): fair-order reference.
+    let mut m3_queue_names: Option<Vec<String>> = None;
+    let mut m3_generation_seen: u64 = 0;
+    let mut m3_first_owner: Option<String> = None;
+    // M3C: the injected-abort member + the generation at injection.
+    let mut m3c_injected: Option<String> = None;
+    let mut m3c_generation_at_injection: u64 = 0;
     // Per-TICK sampling (calibration round 1: Reserved lasts 3 ticks — a 1s
     // poller never sees it, so N1/N4's phase-triggered mutators never fired
     // and N3's abort reason vanished with the task between polls).
@@ -4841,6 +4915,129 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
                 .any(|(n, p, _)| n == &member && p.z >= gz as f32 + 0.5)
         {
             out_at = Some(sec);
+        }
+        if m3 {
+            // Per-member phases (one probe per member per tick — headless
+            // cost is trivial; the tape verifier stays the movement
+            // authority).
+            let phases: Vec<String> = names
+                .iter()
+                .map(|n| {
+                    server
+                        .bastion_traversal_probe(n)
+                        .map(|(p, ..)| p)
+                        .unwrap_or_else(|| "-".into())
+                })
+                .collect();
+            let owned = |p: &str| {
+                p.starts_with("Traversing")
+                    || p.starts_with("ConfirmingExit")
+                    || p == "Reserved"
+                    || p == "FrontierWork"
+            };
+            let owned_count = phases.iter().filter(|p| owned(p)).count();
+            if owned_count > 1 {
+                m3_owned_conflicts += 1;
+            }
+            if m3_first_owner.is_none()
+                && let Some(i) = phases.iter().position(|p| owned(p))
+            {
+                m3_first_owner = Some(names[i].clone());
+            }
+            // Queue snapshot (any member resolves the shared link).
+            if let Some((queue, generation)) = names
+                .iter()
+                .find_map(|n| server.bastion_traversal_queue(n))
+            {
+                m3_generation_seen = m3_generation_seen.max(generation);
+                if m3_queue_names.is_none() && queue.len() == names.len() {
+                    let by_uid: Vec<(String, u64)> = names
+                        .iter()
+                        .filter_map(|n| {
+                            server.bastion_colonist_uid(n).map(|u| (n.clone(), u))
+                        })
+                        .collect();
+                    m3_queue_names = Some(
+                        queue
+                            .iter()
+                            .filter_map(|(uid, _)| {
+                                by_uid
+                                    .iter()
+                                    .find(|(_, u)| u == uid)
+                                    .map(|(n, _)| n.clone())
+                            })
+                            .collect(),
+                    );
+                }
+            }
+            // Exits, in order.
+            for (i, n) in names.iter().enumerate() {
+                if m3_out_at[i].is_none()
+                    && states.iter().any(|(sn, p, _)| sn == n && p.z >= gz as f32 + 0.5)
+                {
+                    m3_out_at[i] = Some(sec);
+                    m3_exit_order.push(n.clone());
+                }
+            }
+            // SOFT-0 lane exclusion: while any member is mid-traversal, a
+            // DIFFERENT task-less member standing in the shaft footprint
+            // (or touching a Ladder sprite anywhere) is a violation tick.
+            let traversing_any = phases.iter().any(|p| p.starts_with("Traversing"));
+            for (i, n) in names.iter().enumerate() {
+                if phases[i] != "-" || m3_out_at[i].is_some() {
+                    continue;
+                }
+                if let Some((_, p, _)) = states.iter().find(|(sn, ..)| sn == n) {
+                    let feet = p.map(|v| v.floor() as i32);
+                    let in_shaft = traversing_any
+                        && (sx..=sx + 1).contains(&feet.x)
+                        && (sy..=sy + 1).contains(&feet.y);
+                    let terrain = server.state().terrain();
+                    let on_rungs = [feet, feet + Vec3::unit_z()].iter().any(|c| {
+                        terrain.get(*c).ok().and_then(|b| b.get_sprite())
+                            == Some(SpriteKind::Ladder)
+                    });
+                    if in_shaft || on_rungs {
+                        m3_lane_violations += 1;
+                    }
+                }
+            }
+            // M3C injection: at the FIRST observed mid-traversal owner,
+            // relocate the owner to the surface pad (the production
+            // ExternalRelocation interrupt aborts its task) — the queue
+            // must re-elect cleanly by the fair key.
+            if episode == "M3C"
+                && !mutated
+                && let Some(i) = phases.iter().position(|p| p == "TraversingLink")
+            {
+                m3c_generation_at_injection = m3_generation_seen;
+                m3c_injected = Some(names[i].clone());
+                server.bastion_teleport_colonist(
+                    &names[i],
+                    Vec3::new(cx as f32 - 3.5, cy as f32 - 3.5, gz as f32 + 1.5),
+                );
+                mutated = true;
+            }
+        }
+        // M3D: N1C's armed sustained rim-ring seal — nobody exits
+        // organically; the shrunken queue-wait budget (env, 30s) expires
+        // for the waiters, their watch resumes, and the INDEPENDENT net
+        // must deliver them (the past-budget arm; within-budget exemption
+        // is gated by M3A's zero-teleport bar). Armed at ANY member's
+        // first task (m3_first_owner), the N1C stimulus-window rule.
+        if episode == "M3D" {
+            if !mutated && m3_first_owner.is_some() {
+                mutated = true;
+            }
+            if mutated && tick_i % 30 == 0 {
+                for dx in -2..=2 {
+                    for dy in -2..=2 {
+                        server
+                            .state_mut()
+                            .set_block(Vec3::new(sx + dx, sy + dy, gz + 1), rock);
+                    }
+                }
+            }
         }
         // Episode mutators, each at its declared trigger. N1/N4 trigger on
         // the FIRST task-present sample (Reserved is 3 ticks wide).
@@ -5080,7 +5277,20 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         // evaluated TAPE-SIDE by the wrapper (trajectory.jsonl carries
         // character_state per tick); the in-process flag stays false here.
         let _ = &mut climb_out_of_phase;
-        if complete_at.is_some_and(|c| sec >= c + 10) {
+        if m3 {
+            // Multi-member: run until EVERY member is out (+10s window) —
+            // the single-member complete_at break would cut the queue off
+            // mid-service.
+            if m3_out_at.iter().all(|o| o.is_some())
+                && m3_out_at
+                    .iter()
+                    .filter_map(|o| *o)
+                    .max()
+                    .is_some_and(|last| sec >= last + 10)
+            {
+                break;
+            }
+        } else if complete_at.is_some_and(|c| sec >= c + 10) {
             break; // 10s post-complete observation (window trimmed v1).
         }
     }
@@ -5129,6 +5339,15 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         "m2_nfence_stale": nfence_stale.map(|(accepted, changed)| format!("accepted={accepted} inputs_changed={changed}")),
         "m2_nfence_fresh": nfence_fresh.map(|(accepted, changed)| format!("accepted={accepted} inputs_changed={changed}")),
         "m2_nfence_handoff_ticks": nfence_handoff_ticks,
+        "m3_out_at": m3_out_at,
+        "m3_exit_order": m3_exit_order,
+        "m3_queue_order": m3_queue_names,
+        "m3_owned_conflicts": m3_owned_conflicts,
+        "m3_lane_violations": m3_lane_violations,
+        "m3_generation_seen": m3_generation_seen,
+        "m3_first_owner": m3_first_owner,
+        "m3c_injected": m3c_injected,
+        "m3c_generation_at_injection": m3c_generation_at_injection,
     });
     println!("{result}");
     server::bastion_flight_recorder::finalize();
@@ -5152,6 +5371,58 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
                 && owned_seen
                 && out_at.is_some()
                 && abort_reason.is_none()
+        },
+        // M3-A/B (fair-queue contention, N=3 / N=5): every member exits;
+        // exit order == the fair queue order (the un-fakeable ordering
+        // predicate — with capacity 1 and one link, service order IS queue
+        // order); zero ticks with two owned-mode members; zero SOFT-0
+        // lane/rung violations by waiters; zero production-failsafe
+        // teleports (the M3-D within-budget arm: legitimately-waiting
+        // members are progress-exempt and never netted).
+        "M3A" | "M3B" => {
+            staged_ok
+                && position_ok
+                && m3_out_at.iter().all(|o| o.is_some())
+                && m3_queue_names.as_ref().is_some_and(|q| *q == m3_exit_order)
+                && m3_owned_conflicts == 0
+                && m3_lane_violations == 0
+                && teleports == 0
+        },
+        // M3-C (mid-traversal owner abort): the relocated owner's task
+        // aborts; the queue RE-ELECTS by the fair key (generation strictly
+        // advanced past the injection point), every member still exits
+        // (the injected one via its relocation), no double-ownership, no
+        // production teleport.
+        "M3C" => {
+            staged_ok
+                && position_ok
+                && mutated
+                && m3_out_at.iter().all(|o| o.is_some())
+                && m3_generation_seen > m3c_generation_at_injection
+                && m3_owned_conflicts == 0
+                && teleports == 0
+        },
+        // M3-D (never-stranded PAST-budget arm; the within-budget arm is
+        // M3A's zero-teleport bar — the N7/N7B pairing): under a permanent
+        // rim seal nobody exits organically; the 30s override budget
+        // expires, the waiters' watch resumes, and the net delivers
+        // EVERYONE — alive, unentombed, out. The waiters' delivery time
+        // carries the exemption proof: hold-dead ≈ watch-only ≈ 60-70s;
+        // hold-alive = budget(30s) + watch(60s) ≥ ~85s.
+        "M3D" => {
+            let waiter_deliveries_past_budget = names
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| m3_first_owner.as_deref() != Some(n.as_str()))
+                .all(|(i, _)| m3_out_at[i].is_some_and(|s| s >= 85));
+            staged_ok
+                && position_ok
+                && mutated
+                && m3_out_at.iter().all(|o| o.is_some())
+                && waiter_deliveries_past_budget
+                && teleports > 0
+                && alive
+                && unentombed
         },
         // R10 N-FENCE: the un-fakeable fencing proof — a mid-climb tuple
         // captured, the abort forced, the STALE tuple REJECTED as a no-op
@@ -11022,6 +11293,10 @@ fn mine_fidelity_scenario(args: &Args) -> ExitCode {
             "jobs": em_jobs as i64 - em_jobs0 as i64,
             "routes": em_routes as i64 - em_routes0 as i64,
         },
+        // DPA ordering fix legibility: the classified material-hold state
+        // at run end (Some = held-for-material, the DESIGNED no-wood
+        // outcome; the old outcome was an emit→prune livelock instead).
+        "mf_access_material_missing": server.bastion_access_block_reason(),
         "mf_net_fires": net_fires,
         "mf_path": { "grants": path_grants, "peak_iters": path_peak_iters, "peak_wait": path_peak_wait },
         "mf_audit": { "total": audit.total, "claimed": audit.claimed, "unreachable": audit.unreachable, "claims_distinct": audit.claims_distinct },
