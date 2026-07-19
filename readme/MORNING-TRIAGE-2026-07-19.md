@@ -61,3 +61,10 @@ B54/C1; the duplicate line is removed.) Everything else is pointer-verified agai
 - [C++] B16 TIER-3: recon COMPLETE (all 4 sites read; projectile new_lifetime sign-provenance ANSWERED = no range check, neg/NaN/inf reachable → guard confirmed needed; no shared duration helper exists → create one on Secs in veloren-common). Full resume packet: BUILD_REVIEW_LOG.md §B16-TIER3 RESUME NOTE. Re-fire next window.
 - [D++] Architect ultra-review findings (2, committed in this file's history): bastion_jobs.rs:11506 missing-position⇒verified-exit default (PLAUSIBLE latent, fail-closed follow-on chip + corpus re-proof); action_nodes.rs:51 per-tick env read (LOW, LazyLock one-liner, rides with the B55-family cleanup).
 - Ultra-review NET for the branch: 2 findings total across two independent max-effort passes over the full delta — the night's work stands.
+
+## FABLE-005 findings (final wrap, ~00:40 — none tag-blocking; full record BUILD_REVIEW_LOG §FABLE-005)
+- [C-PRIORITY] common/src/rtsim.rs:283 — stored path endpoint matched by EXACT float equality: any transformed goto target silently disables the M2 endpoint-tolerance min-clamp → reverts to WIDE tolerance, zero diagnostic (the smoke-77 inversion class, one transform away from re-opening). CHIP with fixture/corpus verification (tolerance-adjacent — not a blind one-liner). Fix property: epsilon match OR an unmatched-endpoint diag.
+- [C] trade_pricing.rs:1047 — legacy thread-RNG random_items: AUDIT all callers (no deterministic path may call it) → deprecate/rename. Fold into Codex DET-0005 as an audit item.
+- [C] server/src/lib.rs:3208 — class7 healing hook hardcodes (true, 1.0) context vs its "production-exact" doc claim — align the doc or thread the real params. Small chip.
+- [low] bastion-model efficiency nits ×2 — Fable queues its own follow-up commit (bastion-model/** only).
+- NOTE: the REAL cloud swarm = `claude ultrareview` run from a TERMINAL (not inside a session) — available to Ben any time; both local max-effort passes are done and the delta HOLDS.
