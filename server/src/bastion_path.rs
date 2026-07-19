@@ -30,12 +30,7 @@
 //! — ambient rng in shared pathing code — persists sequentially and is
 //! owned elsewhere); this scheduler is determinism-FRIENDLY plumbing.
 
-use common::{
-    comp,
-    rtsim::NpcActivity,
-    terrain::TerrainGrid,
-    uid::Uid,
-};
+use common::{comp, rtsim::NpcActivity, terrain::TerrainGrid, uid::Uid};
 use common_ecs::{Job as EcsJob, Origin, Phase, System};
 use specs::{Entities, Join, ReadExpect, ReadStorage, Write, WriteStorage};
 use vek::Vec3;
@@ -105,24 +100,21 @@ impl<'a> System<'a> for Sys {
         // Candidates: colonists whose agent is mid-Goto with a routeless
         // chaser — the request IS this visible state (pull model: no
         // queue mutation from the parallel tick, nothing to desync).
-        let mut cands: Vec<(u64, specs::Entity, Vec3<f32>)> = (
-            &entities,
-            &uids,
-            &colonists,
-            &agents,
-        )
-            .join()
-            .filter_map(|(entity, uid, _, agent)| {
-                match agent.rtsim_controller.activity {
-                    Some(NpcActivity::Goto(tgt, _))
-                        if agent.chaser.needs_search() =>
-                    {
-                        Some((uid.0.get(), entity, tgt))
+        let mut cands: Vec<(u64, specs::Entity, Vec3<f32>, Option<f32>)> =
+            (&entities, &uids, &colonists, &agents)
+                .join()
+                .filter_map(
+                    |(entity, uid, _, agent)| match agent.rtsim_controller.activity {
+                        Some(NpcActivity::Goto(tgt, _)) if agent.chaser.needs_search() => Some((
+                            uid.0.get(),
+                            entity,
+                            tgt,
+                            agent.rtsim_controller.path_endpoint_tolerance(tgt),
+                        )),
+                        _ => None,
                     },
-                    _ => None,
-                }
-            })
-            .collect();
+                )
+                .collect();
         // Sweep waits for needs that disappeared (arrived/reassigned) —
         // only live requesters accrue deferral.
         sched
@@ -139,7 +131,7 @@ impl<'a> System<'a> for Sys {
             .unwrap_or(0);
         let mut used: u64 = 0;
         for i in 0..cands.len() {
-            let (uid64, entity, tgt) = cands[(start + i) % cands.len()];
+            let (uid64, entity, tgt, endpoint_tolerance) = cands[(start + i) % cands.len()];
             let planned = agents
                 .get(entity)
                 .map(|a| a.chaser.planned_iters())
@@ -152,12 +144,11 @@ impl<'a> System<'a> for Sys {
                 sched.peak_wait = sched.peak_wait.max(w);
                 continue;
             }
-            let (Some(pos), Some(phys)) =
-                (positions.get(entity), physics_states.get(entity))
+            let (Some(pos), Some(phys)) = (positions.get(entity), physics_states.get(entity))
             else {
                 continue;
             };
-            let cfg = crate::sys::agent::traversal_config_for(
+            let mut cfg = crate::sys::agent::traversal_config_for(
                 scales.get(entity).map_or(1.0, |s| s.0),
                 bodies.get(entity),
                 phys,
@@ -166,6 +157,9 @@ impl<'a> System<'a> for Sys {
                 // gates inline chase searches.
                 false,
             );
+            if let Some(endpoint_tolerance) = endpoint_tolerance {
+                cfg.node_tolerance = cfg.node_tolerance.min(endpoint_tolerance);
+            }
             if let Some(agent) = agents.get_mut(entity) {
                 agent.chaser.search_step(&*terrain, pos.0, tgt, &cfg);
             }
