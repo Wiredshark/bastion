@@ -23,9 +23,8 @@ Priority: P1 = fire first / blocking something, P2 = same-day, P3 = slot when co
 ## C. Chips to SPAWN in the morning (not yet spawned)
 | # | Item | Lane | Pri | Pointer |
 |---|---|---|---|---|
-| C1 | **B54 metrics wall-clock chip** — `server/src/metrics.rs:404-406` `.expect("Time went backwards")` → fall back instead of panic (the `bastion_flight_recorder.rs:637-640` `.ok()` idiom). LOW/vanilla/startup-only. | chip | P3 | `BASTION_COMMON_ISSUES.md` row B54 (CASE-009 sweep) |
+| C1 | **B54 metrics wall-clock chip** — `server/src/metrics.rs:404-406` `.expect("Time went backwards")` → fall back instead of panic (the `bastion_flight_recorder.rs:637-640` `.ok()` idiom). LOW/vanilla/startup-only. *(Resolved: "the metrics nit" in the architect's sprint list was THIS same item, listed twice by error — one entry, not two.)* | chip | P3 | `BASTION_COMMON_ISSUES.md` row B54 (CASE-009 sweep) |
 | C2 | **F2/F3 fixture-hardening chips** (stimulus-window family) — Fable's capstone-review dispositions, ruled chips by the architect. | chips | P3 | `readme/BUILD_REVIEW_LOG.md` §FABLE-004 (dispositions ¶) |
-| C3 | **The metrics nit** — flagged tonight alongside the chip list; compile-time pointer uncertain (distinct from C1 per the architect's own listing). Confirm with architect what it names, then chip or drop. | architect confirm → chip | P3 | (no doc pointer at compile time — HONEST-PARTIAL) |
 
 ## D. Bookkeeping / curation (Sonnet lane, morning first-pass)
 | # | Item | Lane | Pri | Pointer |
@@ -48,6 +47,6 @@ Priority: P1 = fire first / blocking something, P2 = same-day, P3 = slot when co
   agents' uncommitted source edits in the shared tree (see the gitStatus snapshot; the 5 chip sessions ran in
   their own worktrees, but the main tree carries in-flight edits from the B16 sweep + others).
 
-*HONEST-PARTIAL disclosures: C3 (the "metrics nit") could not be resolved to a pointer before the cutoff;
-A2's ultra-review had not returned by compile time. Everything else is pointer-verified against the docs/code
-as of ~23:50.*
+*HONEST-PARTIAL disclosure: A2's ultra-review had not returned by compile time. (The original second
+honest-partial — "the metrics nit" — was resolved post-delivery as the architect's own accidental duplicate of
+B54/C1; the duplicate line is removed.) Everything else is pointer-verified against the docs/code as of ~23:50.*
