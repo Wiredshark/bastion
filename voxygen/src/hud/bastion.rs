@@ -109,6 +109,14 @@ pub struct BastionHudState {
     /// bastion (B5.6b-2.1): flat-floor mode active (mirrored; drives the
     /// stepper's mode-toggle button state).
     pub flat_floor: bool,
+    /// bastion (TOOLBAR-TEXT, Ben legibility request 2026-07-19): render the
+    /// tool palette as PLAIN-TEXT name buttons instead of icons (the
+    /// bastion-block-ICONS set reads poorly; the Bed button's text-fallback
+    /// pattern, applied palette-wide). HUD-owned (deliberately NOT synced by
+    /// `bastion_sync` — it is a pure display preference), toggled by the
+    /// "Aa" button at the toolbar's end. Session-scoped; settings-file
+    /// persistence is the flagged follow-up if Ben wants it sticky.
+    pub text_labels: bool,
     /// bastion (TIME-CONTROLS): sim paused (mirrored each frame from the
     /// singleplayer pause state — the TRUTH, not a local echo, so a pause
     /// from any path lights the button).

@@ -250,6 +250,7 @@ widget_ids! {
         // bastion (B2a): overseer interaction surface
         bastion_palette_btns[],
         bastion_godmode_btn,
+        bastion_textmode_btn,
         bastion_selected_text,
         bastion_inspect_text,
         bastion_zone_labels[],
@@ -4856,9 +4857,16 @@ impl Hud {
             }
             let icon_active = Color::Rgba(1.0, 1.0, 1.0, 1.0);
             let icon_normal = Color::Rgba(0.62, 0.64, 0.62, 0.9);
+            // TOOLBAR-TEXT (Ben legibility request): plain-text mode renders
+            // every palette button as its tool NAME (the Bed text-fallback
+            // pattern, palette-wide). Text buttons are wider, so the row
+            // geometry is parameterized on the mode.
+            let text_mode = self.bastion.text_labels;
+            let (btn_w, btn_cell) = if text_mode { (58.0, 62.0) } else { (34.0, 38.0) };
             for (i, tool) in tools.iter().enumerate() {
                 let is_active = *tool == self.bastion.tool;
                 let icon = match tool {
+                    _ if text_mode => self.imgs.nothing,
                     ToolMode::Pan => self.imgs.bastion_tool_pan,
                     ToolMode::Inspect => self.imgs.bastion_tool_inspect,
                     ToolMode::Designate(DesignationKind::Mine) => self.imgs.bastion_tool_mine,
@@ -4875,10 +4883,11 @@ impl Hud {
                     _ => self.imgs.nothing,
                 };
                 let mut btn = widget::Button::image(icon)
-                    .w_h(34.0, 34.0)
+                    .w_h(btn_w, 34.0)
                     .image_color(if is_active { icon_active } else { icon_normal });
-                // Text fallback for the icon-less Bed button.
-                if matches!(tool, ToolMode::Designate(DesignationKind::Bed)) {
+                // Text label: the whole palette in text mode; always for the
+                // icon-less Bed button.
+                if text_mode || matches!(tool, ToolMode::Designate(DesignationKind::Bed)) {
                     btn = btn
                         .label(tool.label())
                         .label_font_size(9)
@@ -4889,7 +4898,7 @@ impl Hud {
                     btn.top_left_with_margins_on(
                         ui_widgets.window,
                         6.0,
-                        ui_widgets.win_w / 2.0 - (tools.len() as f64 + 1.0) * 38.0 / 2.0,
+                        ui_widgets.win_w / 2.0 - (tools.len() as f64 + 1.0) * btn_cell / 2.0,
                     )
                 } else {
                     btn.right_from(self.ids.bastion_palette_btns[i - 1], 4.0)
@@ -4915,6 +4924,22 @@ impl Hud {
                 .was_clicked()
             {
                 events.push(Event::BastionToggleGodMode);
+            }
+            // TOOLBAR-TEXT toggle: "Aa" flips the palette between icon and
+            // plain-text-name buttons (Ben legibility request; pure HUD
+            // display state, no session/sim involvement).
+            if widget::Button::new()
+                .w_h(30.0, 34.0)
+                .color(if text_mode { btn_active } else { btn_color })
+                .label("Aa")
+                .label_font_size(11)
+                .label_color(label_color)
+                .label_font_id(self.fonts.cyri.conrod_id)
+                .right_from(self.ids.bastion_godmode_btn, 6.0)
+                .set(self.ids.bastion_textmode_btn, ui_widgets)
+                .was_clicked()
+            {
+                self.bastion.text_labels = !self.bastion.text_labels;
             }
 
             // --- B5.6b-2: precision depth stepper (designate tools only) ---
