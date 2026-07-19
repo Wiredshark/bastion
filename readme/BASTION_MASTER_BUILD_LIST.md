@@ -228,3 +228,5 @@ its designer pass completes and the architect schedules it. Until then it stays 
   Founding/Embark (B11) — complements it. High value: the cleanest way to eyeball autonomy behavior + doubles as a
   determinism-backed scale testbed (50-agent digs, etc.). Slot as a small near-term block post-AUTON. Distinct
   from B11 (full in-game site-selection, downstream).
+
+| 51.7 | REENGAGE-BOUND-UNIT | Follow-on from BACKSTOP-OPT (architect-ruled at the N1C race finding): extract the emergency-route RELEASE DECISION (three outcomes: verified-exit / exhausted-replan / keep-driving, bastion_jobs.rs) + the EMERGENCY_REENGAGE_BOUND counter into a pure testable function and UNIT-TEST the exhaustion leg (5 consecutive exhausted-replans → net-bound release) — the leg is live on tape (counter=1) but race-dominated in sims (three independent net terminators, fastest wins; the positional watch always beats outcome-cycling). Behavior-preserving refactor AFTER the BACKSTOP-OPT tag (don't churn the just-green path); verify with fixture N1B/N1C/N7 + stuckjob corpus before/after. Chip spawned. | TODO | CHEAP | (BACKSTOP-OPT follow-on; standing pin-bounded-logic-as-unit-test rule) |

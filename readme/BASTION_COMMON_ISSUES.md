@@ -325,3 +325,37 @@ producer/consumer pair where progress is measured by two different thresholds ne
 threshold-ordering asserted (consumer's bar ≤ producer's bar) or a single shared constant.
 Found only via a purpose-built live writer-diag — unit tests constructed the states directly
 and structurally could not see the live-path gap (gate-must-test-live-path, kin to class 9).*
+
+*Builder CORRECTION on the M2 named-open item (3) — 2026-07-18, BACKSTOP-OPT measurement: the
+'AgentInbox interruption DEAD ON THE LIVE PATH' finding is WRONG AS FILED. corpus-v5 s1337
+tape: a mid-climb owned traversal aborted with reason=agent-inbox-interruption at tick 1832 —
+the mechanism FIRES LIVE on real inbox events. What was dead was the N6 FIXTURE STIMULUS
+(sustained 0.5/tick bastion_emit_damage never produced an observed inbox event — emission
+path or threshold; a third instance of the stimulus-aim-error class, folds into the
+stimulus-window precondition-assert chip). The tag's named-open wording should read: 'the N6
+fixture stimulus never engaged the live-proven interruption mechanism' — the mechanism itself
+is vindicated by tape.*
+
+*Builder append — 2026-07-18 (BACKSTOP-OPT, class 11): A BUG'S SIDE EFFECT MASKS A SECOND BUG —
+fixing the first unmasks the second as a "regression." Instance: the broken 'verified surface
+exit' release (class instance of premature-release) was ALSO accidentally wiping the stuck-watch
+for members in the legitimate REQ-0071 energy-recovery wait; fixing the release correctly
+(stable-dismount bar) exposed that NOTHING ELSE holds the watch through the ~90s designed wait
+→ the failsafe teleported a member mid-recovery (N1B regression, deterministic). The class
+rule: when a fix produces a regression in an ADJACENT behavior, ask what side effect the old
+bug was providing before assuming the fix is wrong — the regression may be a SECOND latent
+bug that was never separately handled. Fix the second bug on its own terms (here: a
+reason-tagged, cumulative-bounded watch hold for the named designed-wait state), never by
+restoring the first.*
+
+*Builder append — 2026-07-18 (architect-directed, class 12): A BOUNDED-SAFETY PROOF MUST TEST
+THE COUNTER-RESET/CYCLING CASE, not just a single engagement. Instance: N7 proved the
+energy-wait hold's 120s bound on ONE CONTINUOUS wait and passed — while the corpus C-leg
+cycled abort→reacquire→energy-wait with the counter CLEARING ON EACH TASK CREATION, so the
+bound never accumulated and a colonist stranded forever (the reset bug slipped straight
+through the single-wait proof). Same family as the stimulus-window aim errors (classes 9's
+kin): the proof did not engage the mechanism's worst-case FORM. Rule: every bound over a
+resettable counter needs its falsifier to exercise the RESET path (cycling/repetition), and
+the clear-sites of sibling counters guarding the same episode should be aligned (the reengage
+counter cleared on real progress; the energy-wait counter cleared on task creation — the
+inconsistency was the hole).*
