@@ -82,15 +82,24 @@ guards the Linux box:
 - Commit at every boundary; own worktree + own target; no drive-by edits outside the current change.
 
 ## 9. GRIND LIMIT — escalate a stuck problem, don't tunnel (Ben-directed, STANDING RULE)
-Do NOT grind on one problem indefinitely (the 8-hour BACKSTOP / multi-hour mining-fix failure mode).
-**TRIGGER (whichever comes first):** ~**3 failed gate iterations** on the same problem, OR ~**45 minutes**
-grinding without convergence.
-**ACTION:** STOP iterating. Package ALL the data — every failing gate result, each attempt + why it failed,
-the tapes, the current hypotheses — and **ESCALATE to the reviewer** (Sonnet first-line; Opus if
-hard/safety-critical) for a **fresh-eyes root-cause + a proposed better approach.** A builder deep in a problem
-has tunnel vision; the reviewer sees all the data at once and proposes the path. **Reviewers and fresh sessions
-are the loop-breakers — more grinding is not.** Resume once the reviewer proposes a direction (or confirms the
-current one). This is the standing "escalate out of a loop" rule.
+Do NOT grind on one problem indefinitely (the 8-hour BACKSTOP failure mode). The real discriminator isn't raw
+count — it's **CONVERGING vs LOOPING** (mining-fix insight, 2026-07-19):
+- **CONVERGING** = each iteration lands a DISTINCT verified fix with NEW evidence, closing toward done (not
+  retrying variations of one idea).
+- **LOOPING** = retrying the same idea, no new information, not closing — THE failure mode.
+
+**CHECKPOINT (whichever first): ~3 iterations on the same problem OR ~45 min.** At the checkpoint, STOP and
+assess honestly:
+- Genuinely CONVERGING → you MAY continue, but state WHY (the evidence of distinct progress); checkpoint re-arms.
+- LOOPING → ESCALATE IMMEDIATELY (even before the count).
+**HARD CEILING (no exceptions): ~6 iterations OR ~90 min → ESCALATE regardless of self-assessed convergence** —
+"I'm converging" can be wishful; the ceiling is the honest backstop.
+
+**ESCALATION:** STOP, package ALL the data — every gate result, each attempt + why it failed, the tapes, current
+hypotheses — and hand it to the **reviewer** (Sonnet first-line; Opus if hard/safety-critical) for a FRESH-EYES
+root-cause + a proposed better approach. A builder deep in a problem has tunnel vision; the reviewer sees all
+the data at once. **Reviewers and fresh sessions are the loop-breakers — grinding is not.** Resume once the
+reviewer proposes a direction (or confirms the current one).
 
 ## 10. Queued speedups — do them RIGHT AFTER the current task, BEFORE resuming testing (Ben-directed)
 Sequence: **finish (or escalate) the current mining fix → implement BOTH speedups → then back to testing.**
