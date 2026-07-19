@@ -73,3 +73,10 @@ diagnostic instruments outside R10 scope).
   to the fixture.
 - Live-fire expectation: zero `stale-write-rejected` events in all regression tapes (the no-op
   property). Any nonzero count in a NON-fixture tape = a real caught race = exactly what R10 is for.
+
+## x2 VERDICT (the Opus-gate condition — CLOSED)
+X2-VERDICT: IDENTICAL. Two P0 runs, seed 1337, one quiet ephemeral VM (fresh from bastion-golden,
+trap-deleted after). Every artifact byte-identical post wall_unix_millis normalization:
+events.jsonl, summary.json, trajectory.csv, trajectory.jsonl. Both runs rc=0.
+ATTEST: RAN_COMMIT=911746f4. Instrument: x2-pair.sh (committed alongside).
+ARCHITECT CLEARANCE: M3 GO (held for a fresh builder per the session-cycle ruling).
