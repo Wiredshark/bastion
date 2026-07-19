@@ -1740,11 +1740,36 @@ pub fn input_is_pressed(data: &JoinData<'_>, input: InputKind) -> bool {
     data.controller.queued_inputs.contains_key(&input)
 }
 
+/// B16 tier-2 (reader guard, pure for the unit pin): the scaled tick as a
+/// `Duration`, rejecting negative/NaN/non-finite products. A buff-multiplied
+/// speed modifier has NO floor at aggregation (`buff.rs` `*speed` `*=` sites)
+/// — one negative or NaN factor and `Duration::from_secs_f32` PANICS across
+/// every character state that ticks. The guard lives at the ONE reader where
+/// the invariant actually holds (a tick cannot be negative); emitter-side
+/// floors would miss future emitters — the aura-fix class-close logic.
+/// Zero = the state simply does not advance this frame.
+fn safe_tick_dt(dt: f32, modifier: f32) -> Duration {
+    let scaled = dt * modifier;
+    Duration::try_from_secs_f32(scaled).unwrap_or_else(|_| {
+        // Once-latched at warn: a persistent bad modifier hits this ~30/s per
+        // affected entity for its whole duration — the first fire is the
+        // signal, the rest would be log flood (review finding).
+        static REJECTED_ONCE: std::sync::atomic::AtomicBool =
+            std::sync::atomic::AtomicBool::new(false);
+        if !REJECTED_ONCE.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            warn!(scaled, "checked_tick: non-finite/negative tick rejected");
+        } else {
+            tracing::debug!(scaled, "checked_tick: non-finite/negative tick rejected");
+        }
+        Duration::ZERO
+    })
+}
+
 /// Checked `Duration` addition. Computes `timer` + `dt`, only applying
 /// the explicitly given modifier and returning None if overflow
 /// occurred.
 fn checked_tick(data: &JoinData<'_>, timer: Duration, modifier: Option<f32>) -> Option<Duration> {
-    timer.checked_add(Duration::from_secs_f32(data.dt.0 * modifier.unwrap_or(1.0)))
+    timer.checked_add(safe_tick_dt(data.dt.0, modifier.unwrap_or(1.0)))
 }
 
 /// Ticks `timer` by `dt`, only applying the explicitly given modifier.
@@ -2078,6 +2103,33 @@ impl ProjectileSpread {
         match self {
             // TODO: Check if we want these to return something different
             Self::Increasing(spread) | Self::Horizontal(spread) => *spread,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tick_guard_tests {
+    use super::safe_tick_dt;
+    use std::time::Duration;
+
+    #[test]
+    fn negative_and_nan_modifiers_do_not_panic() {
+        // The B16 panic vector: a negative buff product reaching
+        // from_secs_f32. The guard yields ZERO (no advance this frame).
+        assert_eq!(safe_tick_dt(1.0 / 30.0, -0.5), Duration::ZERO);
+        assert_eq!(safe_tick_dt(1.0 / 30.0, f32::NAN), Duration::ZERO);
+        assert_eq!(safe_tick_dt(1.0 / 30.0, f32::NEG_INFINITY), Duration::ZERO);
+        assert_eq!(safe_tick_dt(1.0 / 30.0, f32::INFINITY), Duration::ZERO);
+    }
+
+    #[test]
+    fn valid_modifiers_are_byte_identical() {
+        // The guard must not perturb the healthy path.
+        for (dt, modifier) in [(1.0f32 / 30.0, 1.0f32), (0.016, 1.7), (0.033, 0.25), (0.05, 0.0)] {
+            assert_eq!(
+                safe_tick_dt(dt, modifier),
+                Duration::from_secs_f32(dt * modifier),
+            );
         }
     }
 }
