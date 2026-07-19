@@ -1,0 +1,13 @@
+[package]
+name = "bastion-model"
+version = "0.1.0"
+edition = "2021"
+
+# Standalone crate (bastion-bot precedent): NOT a member of the root workspace.
+# Compiles alone in seconds; zero dependencies beyond std.
+[workspace]
+
+[dependencies]
+
+[profile.dev]
+opt-level = 1
