@@ -229,6 +229,15 @@ Single-seed checks waste the hardware. Every verification/validation run goes WI
   the fewest creates: **3 × e2-standard-32** (3 creates) or c2-60 + e2-32 — NOT 12+ small VMs. The pool
   wrappers now STAGGER creates ~10s (STAGGER env) so pools still work, but the big-VM (mode 3, one create)
   DODGES the limit entirely — it's now the REQUIRED default for wide runs, not just the efficient one.
+- **IMAGE-COPY POOL — BANKED (Ben 2026-07-19), trigger-gated:** few-big-VMs (packing many seeds per VM)
+  beats many-VMs on every axis WHILE tests can be PACKED multiple-per-VM (each ~1 core, independent). The
+  ONE case that flips this: a test that CANNOT be packed — **exclusive / whole-machine / one-per-VM** (e.g.
+  GPU/client/voxygen render tests, perf/stress tests that bind all cores, networked multi-client tests with
+  port conflicts). Then N parallel such tests REQUIRE N VMs → N rapid creates → the per-image rate limit
+  bites. ★ MONITOR for this test class. When it appears, BUILD the image-copy pool: N copies of the golden
+  spread the per-image create rate (scoped ~20 min — differently-named copies so vm-cleanup's golden-prune
+  skips them, round-robin creates in the wrappers, refresh-all in vm-golden-autorefresh). Until then: don't
+  build it; few-big-VMs is strictly better.
 - **Broaden everything:** a fix's confirmation = a 30-50 seed corpus, not a 2-seed sample; scenario
   verification = a matrix across seeds; the post-M3 FULL VALIDATION = the whole catalog × canonical+corpus
   seeds, sized to fill 96 cores.
