@@ -45,16 +45,16 @@ run_one() {
 
 # --- live burn-guard: prints cost every 90s, cuts the whole run off at the ceiling ---
 guard() {
-  gstart="$1"
+  gstart="$1"; acc=0; echo 0 > "$OUT/COST"
   while :; do
     sleep 90
-    el_s=$(( $(date +%s) - gstart )); el_m=$(( el_s / 60 ))
-    est=$(awk "BEGIN{printf \"%.2f\", $TOTAL_VCPU*($el_s/3600.0)*$RATE}")
     up=$("$GCLOUD" compute instances list --filter="name~^bastion-pool" --format="value(name)" 2>/dev/null | wc -l)
-    echo "[guard] ${el_m}m elapsed | ~\$$est burned | $up VMs up | ceiling \$$MAX_USD / ${MAX_MIN}m"
-    over_usd=$(awk "BEGIN{print ($est>=$MAX_USD)?1:0}")
-    if [ "$el_m" -ge "$MAX_MIN" ] || [ "$over_usd" = "1" ]; then
-      echo "[guard] *** CEILING HIT (${el_m}m / ~\$$est) — CUTTING OFF THE RUN ***"
+    acc=$(awk "BEGIN{printf \"%.3f\", $acc + $up*$VCPU_PER*(90/3600.0)*$RATE}")  # true VM-time, not TOTAL_VCPU-whole-run
+    echo "$acc" > "$OUT/COST"
+    el_m=$(( ($(date +%s) - gstart) / 60 ))
+    echo "[guard] ${el_m}m | ~\$$acc (actual VM-time) | $up VMs up | ceiling \$$MAX_USD / ${MAX_MIN}m"
+    if [ "$el_m" -ge "$MAX_MIN" ] || [ "$(awk "BEGIN{print ($acc>=$MAX_USD)?1:0}")" = 1 ]; then
+      echo "[guard] *** CEILING HIT (${el_m}m / ~\$$acc) — CUTTING OFF THE RUN ***"
       : > "$OUT/TRIPPED"; cleanup; return
     fi
   done
@@ -63,16 +63,16 @@ guard() {
 echo "[pool] $N x $MACHINE ($TOTAL_VCPU vCPU), $SPV seeds each = $((N*SPV)) total. Ceiling \$$MAX_USD / ${MAX_MIN}m. Launching..."
 start=$(date +%s)
 guard "$start" & GUARD_PID=$!
-k=0; while [ "$k" -lt "$N" ]; do run_one "$k" > "$OUT/bastion-pool-$k.log" 2>&1 & k=$((k+1)); done
-wait $(jobs -p | grep -v "$GUARD_PID" 2>/dev/null) 2>/dev/null || wait
-kill "$GUARD_PID" 2>/dev/null || true
+k=0; PIDS=""; while [ "$k" -lt "$N" ]; do run_one "$k" > "$OUT/bastion-pool-$k.log" 2>&1 & PIDS="$PIDS $!"; k=$((k + 1)); done
+for p in $PIDS; do wait "$p" 2>/dev/null; done   # wait ONLY the run_one workers, never the guard
+kill "$GUARD_PID" 2>/dev/null; wait "$GUARD_PID" 2>/dev/null || true
 end=$(date +%s)
 total=$(grep -h '^DONE=' "$OUT"/*.log 2>/dev/null | sed 's/DONE=//' | awk '{s+=$1} END{print s+0}')
-fails=$(grep -lc 'CREATE_FAIL' "$OUT"/*.log 2>/dev/null | wc -l)
-final_est=$(awk "BEGIN{printf \"%.2f\", $TOTAL_VCPU*(($end-$start)/3600.0)*$RATE}")
+fails=$(grep -h 'CREATE_FAIL' "$OUT"/*.log 2>/dev/null | wc -l)
+cost=$(cat "$OUT/COST" 2>/dev/null || echo 0)
 if [ -f "$OUT/TRIPPED" ]; then
-  echo "=== POOL CUT OFF at ceiling after $((end-start))s (~\$$final_est). Rerun smaller. ==="
+  echo "=== POOL CUT OFF at ceiling after $((end-start))s (~\$$cost actual). Rerun smaller. ==="
   exit 42
 fi
-echo "=== POOL DONE in $((end-start))s | ~\$$final_est burned | $total/$((N*SPV)) seeds across $N VMs ($fails create-fails) ==="
+echo "=== POOL DONE in $((end-start))s | ~\$$cost burned (actual VM-time) | $total/$((N*SPV)) seeds across $N VMs ($fails create-fails) ==="
 grep -H 'DONE=\|CREATE_FAIL\|COMMIT=' "$OUT"/*.log 2>/dev/null | head -40 || true

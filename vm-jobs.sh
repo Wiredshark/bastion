@@ -46,14 +46,15 @@ run_job() {
 }
 
 guard() {
-  gstart="$1"
+  gstart="$1"; acc=0; echo 0 > "$OUT/COST"
   while :; do
     sleep 90
-    el_s=$(( $(date +%s) - gstart )); el_m=$(( el_s / 60 ))
-    est=$(awk "BEGIN{printf \"%.2f\", $TOTAL_VCPU*($el_s/3600.0)*$RATE}")
     up=$("$GCLOUD" compute instances list --filter="name~^bastion-job" --format="value(name)" 2>/dev/null | wc -l)
-    echo "[guard] ${el_m}m | ~\$$est | $up VMs up | ceiling \$$MAX_USD/${MAX_MIN}m"
-    if [ "$el_m" -ge "$MAX_MIN" ] || [ "$(awk "BEGIN{print ($est>=$MAX_USD)?1:0}")" = "1" ]; then
+    acc=$(awk "BEGIN{printf \"%.3f\", $acc + $up*$VCPU_PER*(90/3600.0)*$RATE}")  # true VM-time
+    echo "$acc" > "$OUT/COST"
+    el_m=$(( ($(date +%s) - gstart) / 60 ))
+    echo "[guard] ${el_m}m | ~\$$acc (actual VM-time) | $up VMs up | ceiling \$$MAX_USD/${MAX_MIN}m"
+    if [ "$el_m" -ge "$MAX_MIN" ] || [ "$(awk "BEGIN{print ($acc>=$MAX_USD)?1:0}")" = "1" ]; then
       echo "[guard] *** CEILING HIT — CUTTING OFF ***"; : > "$OUT/TRIPPED"; cleanup; return
     fi
   done
@@ -61,15 +62,15 @@ guard() {
 
 echo "[jobs] $N different jobs x $MACHINE ($TOTAL_VCPU vCPU). Ceiling \$$MAX_USD/${MAX_MIN}m. Launching in parallel..."
 start=$(date +%s); guard "$start" & GUARD_PID=$!
-k=0
+k=0; PIDS=""
 while IFS= read -r line; do
   case "$(echo "$line" | tr -d '[:space:]')" in ""|\#*) continue ;; esac
-  run_job "$k" "$line" & k=$((k + 1))
+  run_job "$k" "$line" & PIDS="$PIDS $!"; k=$((k + 1))
 done < "$JOBS_FILE"
-wait $(jobs -p | grep -v "$GUARD_PID" 2>/dev/null) 2>/dev/null || wait
-kill "$GUARD_PID" 2>/dev/null || true
+for p in $PIDS; do wait "$p" 2>/dev/null; done   # wait ONLY the run_job workers, never the guard
+kill "$GUARD_PID" 2>/dev/null; wait "$GUARD_PID" 2>/dev/null || true
 end=$(date +%s)
-final_est=$(awk "BEGIN{printf \"%.2f\", $TOTAL_VCPU*(($end-$start)/3600.0)*$RATE}")
-[ -f "$OUT/TRIPPED" ] && { echo "=== JOBS CUT OFF at ceiling after $((end-start))s (~\$$final_est) ==="; exit 42; }
-echo "=== ALL $N JOBS DONE in $((end-start))s | ~\$$final_est burned ==="
+cost=$(cat "$OUT/COST" 2>/dev/null || echo 0)
+[ -f "$OUT/TRIPPED" ] && { echo "=== JOBS CUT OFF at ceiling after $((end-start))s (~\$$cost actual) ==="; exit 42; }
+echo "=== ALL $N JOBS DONE in $((end-start))s | ~\$$cost burned (actual VM-time) ==="
 for f in "$OUT"/job-*.out; do echo "--- $f ---"; head -1 "$f"; tail -3 "$f"; done
