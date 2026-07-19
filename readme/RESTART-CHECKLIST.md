@@ -31,12 +31,23 @@ Make the test loop fast — this is why a build hung 2 hours. (Detail: MORNING-T
 Result: every later build is fast, and there's a real fast testbed to verify in.
 
 ## STEP 2 — FEATURES (on the now-fast loop; order + detail in DAY-PLAN-2026-07-19.md)
+GUIDING RULE (Ben-directed): test the REALISTIC case at scale before perfecting edge cases of the toy. The
+last builder burned 8h hardening adversarial SINGLE-colonist pit scenarios (BACKSTOP-OPT) instead of advancing
+to the realistic CROWD case — backwards. Run the bigger, realer test; fix what it actually breaks.
 1. ★ MINING-LIVE-FIDELITY — Ben's live bug: a dig completes only ~50/50 + colonists run back-and-forth.
    PRE-DIAGNOSED (DAY-PLAN amendment 2): completion-half = the dormant descent-gate ladder arm (pull
    DIG-PROVISIONED-ACCESS forward — the re-enable IS the fix); movement-half = commit the mining stance to
    block completion (RimWorld stand-and-mine, DESIGNER-SUGGESTIONS §16). MEASURE first, then fix.
-2. MERGED-PILE-EAT (row 50.7) — mass-hunger death-spiral fix.
-3. FOREST-ECONOMY — the first big new feature (DAY-PLAN Phase 3).
+2. ★ M3 CONTENTION (pulled forward, Ben-directed) — the DELIBERATE crowd test: many colonists, ONE ladder
+   (packet: M3-BUILDER-PACKET-FINAL.md; "the M2 climb test but bigger"). Build the fair-queue + capacity-one
+   core (R9-based — does NOT need R10 first), RUN IT under realistic load, see what actually breaks.
+   ★ R10 IS NO LONGER A PREREQUISITE: R10 is the fencing-token HARDENING against a stale-write race. Don't
+   build it before the crowd test — let M3 reveal whether that race actually bites in practice. If it does →
+   R10 next; if M3 runs clean → R10 drops in priority. (The formal model says R10 is needed in theory; the
+   live crowd test says whether it's needed in fact — trust the realistic test, per the BACKSTOP-OPT lesson.)
+   If reading the packet shows a HARD code dependency on R10's helper, flag the architect — don't silently block.
+3. MERGED-PILE-EAT (row 50.7) — mass-hunger death-spiral fix.
+4. FOREST-ECONOMY — the first big new feature (DAY-PLAN Phase 3).
 
 ## OPERATING RULES (the lean discipline)
 - Own worktree + own target dir. BACKGROUND long builds and keep writing — never sit watching cargo.
