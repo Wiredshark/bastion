@@ -162,9 +162,10 @@ processes on one machine (most efficient — fewest builds). **MANY VMs** = one 
 but scales past one machine + isolates faults + runs heterogeneous work. Pick deliberately every time.
 ```
  quick / single check              -> LOCAL (§2) or  vm-run.sh --<scenario>   (1 small VM; no cores needed)
- SAME scenario, many seeds,        -> BIG VM:  vm-scale.sh c2-standard-60 <N_seeds> <first-seed> "<args>" [$][m]
-   fits one VM (<=60 cores)             ONE build, up to 60 parallel seeds. The EFFICIENT default for a
-                                        homogeneous corpus (fewest builds).
+ SAME scenario, many seeds,        -> BIG VM:  vm-scale.sh e2-standard-32 <N_seeds> ...   (PROVEN, <=~32 seeds,
+   fits one VM                          ONE build). For >32 up to 60: c2-standard-60 — ★UNVERIFIED from the
+                                        e2-sourced golden (verify a single c2 create boots before relying;
+                                        if it fails, use the pool). BIG-VM = fewest builds = most efficient.
  Want the FULL 96 cores (>60,      -> MANY VMs: vm-pool-safe.sh <N> <machine> <seeds/VM> <first-seed> "<args>" [$][m]
    can't fit one VM) OR fault-         96 can't fit in one VM; also for fault isolation across machines.
    isolation
