@@ -77,6 +77,32 @@ pub(crate) fn fenced_movement_write(
             current_member = current_member.map(|m| m.0.get()),
             "bastion R10: stale-authority movement write REJECTED (no-op)"
         );
+        // R10 (recorder v2): the rejection event — both tuples on tape (the
+        // forensics field R10 promises). The recorder is env-gated and this
+        // arm never fires in the non-race case, so this costs nothing live.
+        crate::bastion_flight_recorder::record_writer(
+            crate::bastion_flight_recorder::WriterEvent {
+                schema: "bastion.flight-recorder.event/v2".into(),
+                tick: 0,
+                uid: authority.member.0.get(),
+                observation_sequence: 310,
+                snapshot_stage: "r10-fence-rejection".into(),
+                dispatcher_dependency_proven: false,
+                writer: "r10_fence".into(),
+                move_dir: [move_dir.x, move_dir.y],
+                move_z,
+                target: None,
+                note: format!(
+                    "stale-write-rejected: presented=(link {}, epoch {}, member {}) vs \
+                     current=(epoch {}, member {:?})",
+                    authority.link_id,
+                    authority.epoch,
+                    authority.member.0.get(),
+                    current_epoch,
+                    current_member.map(|m| m.0.get()),
+                ),
+            },
+        );
         false
     }
 }

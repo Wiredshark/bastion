@@ -60,6 +60,20 @@ pub struct FlightSample {
     pub terrain_revision: Option<u64>,
     pub exit_plane_z: Option<f32>,
     pub endpoint_distance: Option<f32>,
+    /// R10 (schema v2, additive): the owned-traversal fencing epoch this
+    /// sample was driven under (`None` = no live task). Absent from v1
+    /// tapes (`serde(default)` reads them fine); v1↔v1 comparator hashes
+    /// untouched by construction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ownership_epoch: Option<u64>,
+    /// FABLE-004 F1 (schema v2, additive): the climb TOKEN WITNESS —
+    /// `Some(true)` = this sample's climb is driven by the OWNED ladder
+    /// token (live task in a Traversing* phase with ladder contact);
+    /// `Some(false)` = the character is climbing WITHOUT an owned task
+    /// (the named vanilla-leak inside an owned window — fork #15's
+    /// evidence substrate); `None` = not climbing and no owned task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub climb_token_witness: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -782,6 +796,9 @@ fn focused_sample(
         terrain_revision: Some(4),
         exit_plane_z: Some(10.0),
         endpoint_distance: Some(endpoint_distance),
+        // R10 v2 fields: absent in the focused probe (v1-shaped fixture).
+        ownership_epoch: None,
+        climb_token_witness: None,
     }
 }
 

@@ -12724,9 +12724,27 @@ impl<'a> System<'a> for Sys {
                         ),
                     },
                 );
+                // R10 (v2): the token witness — owned-token-driven climb vs
+                // the vanilla-leak climb inside an owned window (FABLE-004
+                // F1); None when neither climbing nor owned.
+                let owned_token_climb = transaction.is_some_and(|task| {
+                    matches!(
+                        task.phase,
+                        BastionTraversalPhase::TraversingEntry
+                            | BastionTraversalPhase::TraversingLink
+                            | BastionTraversalPhase::TraversingTopExit
+                            | BastionTraversalPhase::FrontierWork
+                    ) && task.ladder_contact.is_some()
+                });
+                let is_climb_state = matches!(char_state, comp::CharacterState::Climb(_));
+                let climb_token_witness = if owned_token_climb || is_climb_state {
+                    Some(owned_token_climb)
+                } else {
+                    None
+                };
                 crate::bastion_flight_recorder::record_sample(
                     crate::bastion_flight_recorder::FlightSample {
-                        schema: "bastion.flight-recorder.sample/v1".into(),
+                        schema: "bastion.flight-recorder.sample/v2".into(),
                         tick: tick.0,
                         simulated_seconds: time.0,
                         wall_unix_millis: crate::bastion_flight_recorder::wall_unix_millis(),
@@ -12783,6 +12801,8 @@ impl<'a> System<'a> for Sys {
                         terrain_revision: transaction.map(|task| task.terrain_revision),
                         exit_plane_z: descriptor.map(|descriptor| descriptor.top_anchor.z as f32),
                         endpoint_distance,
+                        ownership_epoch: transaction.map(|task| task.epoch),
+                        climb_token_witness,
                     },
                 );
             }
@@ -13780,6 +13800,38 @@ mod tests {
         assert!(climb_cap_allows(50, 0, 3, true, true));
         // U5 climb_free non-exemption is STRUCTURAL: no such parameter
         // exists on climb_cap_allows — nothing to pass, nothing to forget.
+    }
+
+    #[test]
+    fn r10_retirement_is_sole_removal_and_fence_covers_owned_writers() {
+        // R10 REC-2 (the exhaustiveness assert, U8's pattern): the epoch
+        // advance is anchored to task RETIREMENT, so removal must stay a
+        // single path — a raw `.remove` on the task map is a release the
+        // fence never hears about (the F3-pruner reservation-leak class,
+        // replayed for epochs). concat! keeps this test's own source out
+        // of the counts.
+        let src = include_str!("bastion_jobs.rs");
+        assert_eq!(
+            src.matches(concat!("bastion_traversal_tasks", ".remove(")).count(),
+            1,
+            "a raw bastion_traversal_tasks.remove appeared: route it through \
+             retire_traversal_task (the epoch-advancing removal path) and update this pin"
+        );
+        assert_eq!(
+            src.matches(concat!("self.advance_epoch", "(")).count(),
+            1,
+            "a new advance_epoch call-site appeared: verify it is a genuine release-class \
+             event (M3 queue re-election is the expected next one) and update this pin"
+        );
+        // Owned movement-writer coverage: every phase-machine write
+        // presents authority through the fence (13 sites; Complete/Abort
+        // terminal zeros are DELIBERATELY raw — the safe state).
+        assert_eq!(
+            src.matches(concat!("fenced_movement_write", "(")).count(),
+            13,
+            "owned movement-write site count changed: fence the new site (or account for \
+             a removal) and update this pin"
+        );
     }
 
     #[test]
