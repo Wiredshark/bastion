@@ -614,6 +614,64 @@ fn watch_wipe(watch: &mut HashMap<Uid, f32>, uid: &Uid, reason: &'static str) {
 /// to the independent failsafe tier. Cleared on real progress.
 const EMERGENCY_REENGAGE_BOUND: u32 = 5;
 
+/// The emergency-route release decision (row 51.7 extraction): BACKSTOP-OPT's
+/// three outcomes at one decision point, pure so the branching is
+/// unit-pinnable. Side effects (counters, wipes, releases, logs) stay at the
+/// call site.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReleaseDecision {
+    /// (i) verified stable exit: the caller accrues EMERGENCY_SAFE_SECS.
+    StableExitCandidate,
+    /// (ii) route exhausted + exit invalid: deliberate re-plan release,
+    /// bounded by the shared counter (`reengage_exhausted` at the call site).
+    ExhaustedReplan,
+    /// (iii) keep driving (task machinery / corridor / exit waypoint).
+    KeepDriving,
+}
+
+pub(crate) fn release_decision(
+    has_task: bool,
+    construction_complete: bool,
+    route_descriptor_ready: bool,
+    at_verified_exit: bool,
+    occupies_route: bool,
+) -> ReleaseDecision {
+    if has_task {
+        // REQ-0061: an active transaction owns the member.
+        return ReleaseDecision::KeepDriving;
+    }
+    if construction_complete && !route_descriptor_ready {
+        return ReleaseDecision::ExhaustedReplan;
+    }
+    if at_verified_exit && !occupies_route {
+        return ReleaseDecision::StableExitCandidate;
+    }
+    ReleaseDecision::KeepDriving
+}
+
+/// The (B) bound, pure (registry class 12: the exhaustion leg is
+/// race-dominated in sims — three net terminators, fastest wins — so this is
+/// its honest pin). The count is AFTER the call site's increment.
+pub(crate) fn reengage_exhausted(count_after_increment: u32) -> bool {
+    count_after_increment > EMERGENCY_REENGAGE_BOUND
+}
+
+/// The (i) exit-verification predicate, pure (the BACKSTOP-OPT (A) form:
+/// support + clearance ALWAYS; position essentially AT surface height
+/// [dz<1.0, dxy<3.0] or at route_top−0.5; the old `!below_grade`
+/// short-circuit that released mid-wall hangs is gone).
+pub(crate) fn exit_verified(
+    surface_delta: Option<(f32, f32)>,
+    route_top: Option<i32>,
+    position_z: f32,
+    supported: bool,
+    body_clear: bool,
+) -> bool {
+    let at_surface = surface_delta.is_none_or(|(dz, dxy)| dz < 1.0 && dxy < 3.0);
+    let at_route_exit = route_top.is_some_and(|top| position_z >= top as f32 - 0.5);
+    (at_surface || at_route_exit) && supported && body_clear
+}
+
 pub(crate) fn cap_for_skill(climbing_level: u16) -> i32 {
     3 * (i32::from(climbing_level) + 1)
 }
@@ -11434,13 +11492,68 @@ impl<'a> System<'a> for Sys {
                     // release provided by ACCIDENT, now a decision — bounded
                     // by the same counter so permanently-impossible geometry
                     // still reaches the independent net.
-                    if construction_complete && !route_descriptor_ready {
+                    // Row-51.7 extraction: the predicates are computed once
+                    // (pure terrain/position reads — hoisting them above the
+                    // exhausted-replan branch is behavior-neutral), then ONE
+                    // pure release_decision call branches; every side effect
+                    // stays here at the call site. The BACKSTOP-OPT (A)
+                    // rationale lives on `exit_verified`'s doc; the missing-
+                    // position default (verified=true, occupies=false)
+                    // preserves the original map_or(true) release behavior.
+                    let (verified, occupies_route, dismount) = id_maps
+                        .uid_entity(member)
+                        .and_then(|entity| positions.get(entity))
+                        .map_or((true, false, None), |position| {
+                            let feet = position.0.map(|value| value.floor() as i32);
+                            let surface_delta = surface_teleport_dest(&terrain, feet).map(
+                                |destination| {
+                                    (
+                                        destination.z as f32 - position.0.z,
+                                        destination
+                                            .map(|value| value as f32)
+                                            .xy()
+                                            .distance(position.0.xy()),
+                                    )
+                                },
+                            );
+                            let supported = terrain
+                                .get(feet - Vec3::unit_z())
+                                .is_ok_and(|block| block.is_filled());
+                            let body_clear =
+                                terrain.get(feet).is_ok_and(|block| !block.is_filled())
+                                    && terrain
+                                        .get(feet + Vec3::unit_z())
+                                        .is_ok_and(|block| !block.is_filled());
+                            let verified = exit_verified(
+                                surface_delta,
+                                route_top,
+                                position.0.z,
+                                supported,
+                                body_clear,
+                            );
+                            let occupies = route_cells.contains(&(feet - Vec3::unit_z()))
+                                || route_cells.contains(&feet)
+                                || route_cells.contains(&(feet + Vec3::unit_z()));
+                            let dismount = (verified && occupies)
+                                .then(|| emergency_dismount_dest(&terrain, feet, &route_cells))
+                                .flatten();
+                            (verified, occupies, dismount)
+                        });
+                    let decision = release_decision(
+                        // The task-holder skip above guarantees no task here.
+                        false,
+                        construction_complete,
+                        route_descriptor_ready,
+                        verified,
+                        occupies_route,
+                    );
+                    if decision == ReleaseDecision::ExhaustedReplan {
                         let outcomes = board
                             .emergency_reengage_aborts
                             .entry(member)
                             .or_insert(0);
                         *outcomes += 1;
-                        let exhausted = *outcomes > EMERGENCY_REENGAGE_BOUND;
+                        let exhausted = reengage_exhausted(*outcomes);
                         if !exhausted {
                             // Fresh clock for the imminent re-plan (the lost
                             // path primes egress re-emission in ~10s). On
@@ -11463,60 +11576,10 @@ impl<'a> System<'a> for Sys {
                         lost_members.push(member);
                         continue;
                     }
-                    let (stable_exit, dismount_target) = id_maps
-                        .uid_entity(member)
-                        .and_then(|entity| positions.get(entity))
-                        .map_or((true, None), |position| {
-                            let feet = position.0.map(|value| value.floor() as i32);
-                            // BACKSTOP-OPT (A), architect-ruled: the old
-                            // `!below_grade` short-circuit released members
-                            // WITHOUT support/clearance checks whenever the
-                            // surface teleport destination was <3 blocks away
-                            // — corpus-v5 tape: s1337 released while HANGING
-                            // ON THE WALL 2.4 below route_top, s22 released
-                            // mid-climb 0.72 below the top with a COMPLETE
-                            // ladder; both then dropped to ordinary pathing,
-                            // wedged at the cap, and rode the failsafe out.
-                            // The stable-dismount bar now applies to BOTH
-                            // legs: supported + body-clear ALWAYS, and the
-                            // position must be AT the route top or standing
-                            // essentially AT surface height (dz < 1.0 — the
-                            // 3.0 threshold let in-shaft ledges count as
-                            // surface). safe_secs stays as the stability
-                            // window on top of this.
-                            let surface_delta = surface_teleport_dest(&terrain, feet).map(
-                                |destination| {
-                                    (
-                                        destination.z as f32 - position.0.z,
-                                        destination
-                                            .map(|value| value as f32)
-                                            .xy()
-                                            .distance(position.0.xy()),
-                                    )
-                                },
-                            );
-                            let at_surface = surface_delta
-                                .is_none_or(|(dz, dxy)| dz < 1.0 && dxy < 3.0);
-                            let at_route_exit =
-                                route_top.is_some_and(|top| position.0.z >= top as f32 - 0.5);
-                            let supported = terrain
-                                .get(feet - Vec3::unit_z())
-                                .is_ok_and(|block| block.is_filled());
-                            let body_clear =
-                                terrain.get(feet).is_ok_and(|block| !block.is_filled())
-                                    && terrain
-                                        .get(feet + Vec3::unit_z())
-                                        .is_ok_and(|block| !block.is_filled());
-                            let occupies_route = route_cells.contains(&(feet - Vec3::unit_z()))
-                                || route_cells.contains(&feet)
-                                || route_cells.contains(&(feet + Vec3::unit_z()));
-                            let at_verified_exit =
-                                (at_surface || at_route_exit) && supported && body_clear;
-                            let dismount = (at_verified_exit && occupies_route)
-                                .then(|| emergency_dismount_dest(&terrain, feet, &route_cells))
-                                .flatten();
-                            (at_verified_exit && !occupies_route, dismount)
-                        });
+                    let (stable_exit, dismount_target) = (
+                        decision == ReleaseDecision::StableExitCandidate,
+                        dismount,
+                    );
                     if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
                         let member_state = id_maps.uid_entity(member).and_then(|entity| {
                             let position = positions.get(entity)?.0;
@@ -12929,6 +12992,57 @@ impl<'a> System<'a> for Sys {
 mod tests {
     use super::*;
     use std::num::NonZeroU64;
+
+    // Row-51.7 (registry class 12): the (B) exhaustion leg's honest pin — the
+    // leg is race-dominated in sims (three net terminators, fastest wins), so
+    // the bound is proven here, fast and deterministic.
+    #[test]
+    fn reengage_bound_five_exhausted_replans_then_net() {
+        for count in 1..=EMERGENCY_REENGAGE_BOUND {
+            assert!(
+                !reengage_exhausted(count),
+                "outcome {count} must still be a bounded re-plan"
+            );
+        }
+        assert!(
+            reengage_exhausted(EMERGENCY_REENGAGE_BOUND + 1),
+            "the sixth consecutive fruitless outcome must release to the net"
+        );
+    }
+
+    #[test]
+    fn release_decision_branch_table() {
+        use ReleaseDecision::*;
+        // REQ-0061: an active transaction always keeps driving.
+        assert_eq!(release_decision(true, true, false, true, false), KeepDriving);
+        // (ii) route exhausted + exit invalid outranks the exit legs.
+        assert_eq!(release_decision(false, true, false, true, false), ExhaustedReplan);
+        // (i) verified and off the route: stable-exit candidate.
+        assert_eq!(release_decision(false, false, false, true, false), StableExitCandidate);
+        // Verified but still ON route cells: keep driving (dismount pending).
+        assert_eq!(release_decision(false, false, false, true, true), KeepDriving);
+        // Nothing met: keep driving.
+        assert_eq!(release_decision(false, true, true, false, false), KeepDriving);
+    }
+
+    #[test]
+    fn exit_verified_truth_table() {
+        // The corpus-caught hole: an UNSUPPORTED mid-wall hang 2.4 below
+        // route_top with the surface dest 2.4 above — the old !below_grade
+        // short-circuit (<3.0) released it; the (A) form refuses.
+        assert!(!exit_verified(Some((2.4, 0.5)), Some(398), 395.6, false, true));
+        // Standing ON the rim at route_top: released.
+        assert!(exit_verified(Some((0.0, 0.4)), Some(398), 398.2, true, true));
+        // Teleported to the surface far from the route (no route_top match,
+        // at surface height): released — no membership leak.
+        assert!(exit_verified(Some((0.3, 1.0)), Some(500), 462.0, true, true));
+        // A SUPPORTED in-shaft ledge 2.4 below the surface: the old 3.0
+        // threshold called it surface; the dz<1.0 form refuses.
+        assert!(!exit_verified(Some((2.4, 0.5)), None, 455.0, true, true));
+        // No surface dest at all (is_none_or leg) + supported + clear:
+        // released (the map_or-true shape's pure analogue).
+        assert!(exit_verified(None, None, 400.0, true, true));
+    }
 
     #[test]
     fn corridor_movement_ownership_requires_live_matching_frontier() {
