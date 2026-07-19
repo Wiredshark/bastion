@@ -11439,6 +11439,37 @@ fn dig_access_scenario(args: &Args) -> ExitCode {
         }
     }
     let c_remaining = server.bastion_mine_fidelity_cells(c_bounds).len();
+    // LEG-C END-STATE DISCRIMINATOR (Sonnet GO): gate-held (DPA-layer, (c))
+    // vs released-but-undug ((a)/(b) pathfinding layer) — decides which fix
+    // is even the right bug.
+    {
+        let cells = server.bastion_mine_fidelity_cells(c_bounds);
+        let mut gate_held = 0usize;
+        let mut unreach_flagged = 0usize;
+        let mut claimed_end = 0usize;
+        let mut deep_anchored_idle = 0usize;
+        let mut shallow_idle = 0usize;
+        for (_pos, depth, claimed, unr, anchored) in &cells {
+            if *unr {
+                unreach_flagged += 1;
+            } else if *claimed {
+                claimed_end += 1;
+            } else if *depth > 2 && !*anchored {
+                gate_held += 1;
+            } else if *depth > 2 {
+                deep_anchored_idle += 1;
+            } else {
+                shallow_idle += 1;
+            }
+        }
+        println!(
+            "DIG-ACCESS [CLASSIFY] legC end-state of {} remaining: gate_held={gate_held} \
+             unreachable_flagged={unreach_flagged} claimed={claimed_end} \
+             deep_anchored_idle={deep_anchored_idle} shallow_idle={shallow_idle} \
+             (released-but-undug = deep_anchored_idle + shallow_idle + unreachable_flagged)",
+            cells.len()
+        );
+    }
     let (_, _, failsafe_c) = server.bastion_locomotion_stats();
     let c_ending_below = server
         .bastion_colonist_states()

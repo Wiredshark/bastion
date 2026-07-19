@@ -101,6 +101,21 @@ const DIG_PROVISIONED_LADDER_ACCESS: bool = true;
 /// unconditionally (a trapped colonist must never be material-gated).
 /// Flip to `false` for free "infrastructure from spoil" rungs — one line.
 const DIG_PROVISIONED_RUNGS_COST_MATERIAL: bool = true;
+/// bastion (LEG-C amnesty fix, Sonnet-ruled — the 49.2 strike-cap house
+/// pattern): consecutive FRUITLESS amnesty cycles (unreachable re-set with
+/// an UNCHANGED neighbor fingerprint) before a job goes DORMANT — flag
+/// held, no claim churn, no per-cycle A*-Pending burn. The leg-C corpus
+/// measured 350+ churn cycles against terrain that could never change the
+/// answer (392/425 cells honestly unreachable; the unconditional amnesty
+/// re-tested them forever).
+const AMNESTY_STRIKE_CAP: u8 = 3;
+/// bastion (LEG-C amnesty fix): dormant cycles before the catch-all
+/// re-test (covers neighborhood-mask-invisible changes, e.g. a distant
+/// route opening). Dormancy also ends EARLY the moment any face-neighbor's
+/// solidity changes (the fingerprint re-arm — job digs, cave-ins and
+/// player edits alike), which is the amnesty's one legitimate purpose
+/// made event-driven.
+const AMNESTY_DORMANT_CYCLES: u8 = 40;
 /// bastion (B6 SOFT-0): how long a granted soft-collision pass lasts (the
 /// watchdog grace window and the density relief both use it). Long enough
 /// to physically squeeze past a blocker at walk speed; short enough that
@@ -3245,6 +3260,16 @@ pub struct JobBoard {
     /// risk). Read by the inspector + the harness probe; never read by sim
     /// logic outside the gate pass that writes it.
     pub access_material_missing: Option<&'static str>,
+    /// bastion (LEG-C amnesty fix): per-job amnesty bookkeeping —
+    /// `(consecutive fruitless strikes, face-neighbor solidity fingerprint
+    /// at last sweep)`. Entries live only while a job is unreachable
+    /// (removed the sweep it clears); keyed access only, never iterated
+    /// (no hash-order determinism surface).
+    pub amnesty_dormancy: HashMap<JobId, (u8, u8)>,
+    /// bastion (LEG-C amnesty fix, form (C)): consecutive sweeps in which
+    /// the tracked unreachable set saw ZERO fingerprint change — the
+    /// set-level quiet counter that grants/withholds the amnesty.
+    pub amnesty_set_quiet: u8,
     /// bastion (DPA-2, the prune-gap flicker guard): anchor COLUMNS whose
     /// rung plans went material-starved — DURABLE across the F3 prune →
     /// re-emit gap (deriving the hold from live rung jobs alone left a ~2s
@@ -12830,8 +12855,83 @@ impl<'a> System<'a> for Sys {
         }
 
         if tick.0 % (ARBITRATION_INTERVAL * 4) == 0 {
-            for job in board.jobs.values_mut() {
-                job.unreachable = false;
+            // LEG-C AMNESTY FIX, form (C) (Sonnet-ruled, third-iteration
+            // final): SET-LEVEL dormancy. The evidence for "re-testing is
+            // futile" is colony-level — one unchanged world — so dormancy
+            // is granted at the set level, bounded in SWEEPS not in
+            // |set|×CAP/colonists (the per-cell form's failure at leg-C
+            // scale). Mechanics per sweep over the tracked unreachable set:
+            // - any EXISTING member whose 6-face solidity fingerprint
+            //   changed ⇒ the world evolved next to the set ⇒ quiet=0 and
+            //   EVERY flag clears (the old amnesty's optimism, now
+            //   evidence-gated; the per-cell fast path, preserved).
+            // - NEW members join WITHOUT resetting quiet (new evidence OF
+            //   unreachability, not of change — otherwise first-pass
+            //   flagging starves convergence forever).
+            // - no change: quiet+1. quiet ≤ CAP ⇒ ordinary amnesty (the
+            //   honest re-tests); past CAP ⇒ the WHOLE set holds its flags
+            //   (dormant — churn and A*-Pending burn end). At
+            //   CAP+DORMANT_CYCLES the catch-all grants one fresh round
+            //   (distant enablement / skill-ups — fingerprint-invisible).
+            // Size-1 set ≡ per-cell CAP=N (subsumes the (A) form). All
+            // writes uniform/per-job-independent — order-free.
+            let solid =
+                |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
+            let mask_of = |pos: Vec3<i32>| -> u8 {
+                [
+                    Vec3::unit_x(),
+                    -Vec3::unit_x(),
+                    Vec3::unit_y(),
+                    -Vec3::unit_y(),
+                    Vec3::unit_z(),
+                    -Vec3::unit_z(),
+                ]
+                .iter()
+                .enumerate()
+                .fold(0u8, |m, (i, d)| m | ((solid(pos + *d) as u8) << i))
+            };
+            let mut masks = std::mem::take(&mut board.amnesty_dormancy);
+            let mut world_changed = false;
+            for (id, job) in board.jobs.iter() {
+                if !job.unreachable {
+                    masks.remove(id);
+                    continue;
+                }
+                let mask = mask_of(job.pos);
+                match masks.get(id) {
+                    Some((_, stored)) if *stored != mask => {
+                        world_changed = true;
+                        masks.insert(*id, (0, mask));
+                    },
+                    Some(_) => {},
+                    None => {
+                        // New member: track, do NOT reset quiet.
+                        masks.insert(*id, (0, mask));
+                    },
+                }
+            }
+            board.amnesty_dormancy = masks;
+            if world_changed {
+                board.amnesty_set_quiet = 0;
+            } else {
+                board.amnesty_set_quiet = board.amnesty_set_quiet.saturating_add(1);
+            }
+            let grant_amnesty = if world_changed {
+                true
+            } else if board.amnesty_set_quiet <= AMNESTY_STRIKE_CAP {
+                true
+            } else if board.amnesty_set_quiet
+                >= AMNESTY_STRIKE_CAP.saturating_add(AMNESTY_DORMANT_CYCLES)
+            {
+                board.amnesty_set_quiet = 0; // catch-all: one fresh round.
+                true
+            } else {
+                false // the whole set dormant — flags hold.
+            };
+            if grant_amnesty {
+                for job in board.jobs.values_mut() {
+                    job.unreachable = false;
+                }
             }
         }
 
