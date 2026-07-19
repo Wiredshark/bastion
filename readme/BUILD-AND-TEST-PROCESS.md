@@ -122,3 +122,20 @@ When they land, amend §1/§3 to make them the default.
   args (ssh-keys, --command) must be called from PowerShell**; plain calls (start/stop/describe) work from Git Bash.
 - **Billing:** ~$0.36/hr RUNNING only; stopped ≈ $0 compute + ~$3.6/mo (disk + reserved static IP). On-demand
   keeps idle cost near-zero. Manual override: `gcloud compute instances start|stop instance-20260719-131242 --zone=us-central1-a`.
+
+## 12. Elastic VM POOL — spin up many, run a corpus, delete them (heavy testing only)
+For a big parallel corpus (M3 crowd, broad regression) — the "many servers for a burst, on one trial" pattern.
+GCP quota here is **200 vCPUs** (not the 8 the research claimed), so up to ~24 × e2-highmem-8 concurrently;
+the real limit is the $300 credit budget, and bursts are cheap (~20 VMs × 15 min ≈ $2).
+- **Golden image** `bastion-golden` = a snapshot of the box (toolchain + repo + warm build) so a clone boots
+  ready-to-run in ~30s instead of a 15-min setup.
+- **Run a corpus:** `bash /e/veloren-master/vm-pool.sh <N> <first-seed> "<harness-args, no --seed>"` — creates N
+  clones, runs one seed each IN PARALLEL, collects `/tmp/pool-results/*.json`, then DELETES every clone. Pay
+  only for the burst minutes.
+- **★ ALWAYS UP TO DATE:** every clone (and the on-demand box) **git-pulls latest on boot before running**, so
+  it ALWAYS runs current code no matter how old the image is. The image is just the expensive baseline.
+- **Keep the baseline fresh (speed only):** `bash /e/veloren-master/vm-refresh-image.sh` rebuilds `bastion-golden`
+  from the current HEAD. Run it **after significant merges** (or nightly). Skipping it never breaks correctness —
+  it just makes the boot-time pull bigger. So a stale image = still-correct, slightly slower.
+- Scaling past GCP: crowd/behavioral corpora don't need bit-exact determinism, so the pool can extend to Azure /
+  Oracle free tiers too (each its own trial) for even more parallelism — build per-provider spawners when needed.
