@@ -35,13 +35,16 @@ Decide WHERE a test runs by TWO questions:
 > to the VM (overhead > the test). Never block the local machine on a multi-minute soak that could go remote.
 
 ## 3. Running tests
-**Local** (uncommitted or quick), from the builder's worktree:
-`flock /tmp/bastion-build.lock cargo build --profile verify -p bastion-harness && ./target/verify/bastion-harness --<scenario>`
+**Local** (uncommitted or quick), from the builder's worktree — NO `flock` (Windows/PowerShell; `flock` is
+Linux-only). Local serialization = cargo's own target-dir lock + one-build-at-a-time discipline:
+`cargo build --profile verify -p bastion-harness && ./target/verify/bastion-harness --<scenario>`
 
-**VM** (committed + heavy), one line — NOTE the `source` (non-interactive SSH doesn't load cargo's env):
+**VM** (committed + heavy), one line — NOTE the `source` (non-interactive SSH doesn't load cargo's env); `flock`
+guards the Linux box:
 `ssh benshumeyko@34.9.50.247 'source $HOME/.cargo/env; cd ~/bastion && git pull -q && flock /tmp/bastion-build.lock cargo build --profile verify -p bastion-harness -q && ./target/verify/bastion-harness --<scenario>'`
 
-- `flock` on BOTH = the OOM guard; one heavy build per machine at a time.
+- `flock` = the OOM guard on the **VM (Linux) only**; locally cargo's target-dir lock + one-build-at-a-time
+  discipline serializes. One heavy build per machine at a time either way.
 - Multi-seed gates: run seeds CONCURRENTLY where the harness supports it (parallel-seeds task queued); until
   then they run serially — a known slow spot.
 
