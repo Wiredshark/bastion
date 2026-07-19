@@ -39,7 +39,8 @@ run_one() {
     for s in \$(seq $base $((base + SPV - 1))); do
       ./target/verify/bastion-harness $ARGS --seed \$s --data-dir /tmp/mf-\$s >/tmp/mf-\$s.json 2>/dev/null &
     done; wait
-    echo DONE=\$(ls /tmp/mf-*.json 2>/dev/null | wc -l)"
+    echo DONE=\$(ls /tmp/mf-*.json 2>/dev/null | wc -l)
+    for s in \$(seq $base $((base + SPV - 1))); do echo \"@@@SEED \$s@@@\"; cat /tmp/mf-\$s.json 2>/dev/null; done"  # stream results back — they die with the VM otherwise
   "$GCLOUD" compute instances delete "$name" --zone="$ZONE" -q >/dev/null 2>&1
 }
 
@@ -63,7 +64,9 @@ guard() {
 echo "[pool] $N x $MACHINE ($TOTAL_VCPU vCPU), $SPV seeds each = $((N*SPV)) total. Ceiling \$$MAX_USD / ${MAX_MIN}m. Launching..."
 start=$(date +%s)
 guard "$start" & GUARD_PID=$!
-k=0; PIDS=""; while [ "$k" -lt "$N" ]; do run_one "$k" > "$OUT/bastion-pool-$k.log" 2>&1 & PIDS="$PIDS $!"; k=$((k + 1)); done
+# STAGGER creates — GCP rate-limits parallel instantiations from ONE machine-image ("too frequent
+# operations from the source resource"); firing N creates at once bounces most. ~10s spacing rides it.
+k=0; PIDS=""; while [ "$k" -lt "$N" ]; do run_one "$k" > "$OUT/bastion-pool-$k.log" 2>&1 & PIDS="$PIDS $!"; k=$((k + 1)); sleep "${STAGGER:-10}"; done
 for p in $PIDS; do wait "$p" 2>/dev/null; done   # wait ONLY the run_one workers, never the guard
 kill "$GUARD_PID" 2>/dev/null; wait "$GUARD_PID" 2>/dev/null || true
 end=$(date +%s)

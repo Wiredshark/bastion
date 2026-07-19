@@ -223,6 +223,12 @@ Single-seed checks waste the hardware. Every verification/validation run goes WI
   2/4/8/16/32 ONLY — NO e2-standard-6; an invalid type 8/8-fails the whole pool, now visible via the
   CREATE_FAIL error capture.) Or c2-standard-60 (one big VM, once verified). NOT 1-core VMs (the ~65s boot
   wants several cores → slow) and NOT 96 separate VMs (96 redundant builds). Seeds-per-VM fills the cores.
+- **★ CREATE-RATE LIMIT (found 2026-07-19):** GCP rate-limits PARALLEL instantiations from ONE machine-image
+  ("too frequent operations from the source resource") — firing N creates at once bounces most (a 6-VM pool
+  lost 5/6). So FEWER CREATES wins TWICE (build overhead + rate limit): prefer FEW BIG VMs. To fill 96 with
+  the fewest creates: **3 × e2-standard-32** (3 creates) or c2-60 + e2-32 — NOT 12+ small VMs. The pool
+  wrappers now STAGGER creates ~10s (STAGGER env) so pools still work, but the big-VM (mode 3, one create)
+  DODGES the limit entirely — it's now the REQUIRED default for wide runs, not just the efficient one.
 - **Broaden everything:** a fix's confirmation = a 30-50 seed corpus, not a 2-seed sample; scenario
   verification = a matrix across seeds; the post-M3 FULL VALIDATION = the whole catalog × canonical+corpus
   seeds, sized to fill 96 cores.

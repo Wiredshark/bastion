@@ -67,6 +67,7 @@ k=0; PIDS=""
 while IFS= read -r line; do
   case "$(echo "$line" | tr -d '[:space:]')" in ""|\#*) continue ;; esac
   run_job "$k" "$line" & PIDS="$PIDS $!"; k=$((k + 1))
+  sleep "${STAGGER:-10}"  # GCP rate-limits parallel creates from one machine-image — space them out
 done < "$JOBS_FILE"
 for p in $PIDS; do wait "$p" 2>/dev/null; done   # wait ONLY the run_job workers, never the guard
 kill "$GUARD_PID" 2>/dev/null; wait "$GUARD_PID" 2>/dev/null || true
