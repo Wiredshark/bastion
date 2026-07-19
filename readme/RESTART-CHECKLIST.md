@@ -42,5 +42,10 @@ Result: every later build is fast, and there's a real fast testbed to verify in.
 - Own worktree + own target dir. BACKGROUND long builds and keep writing — never sit watching cargo.
 - Commit at every boundary. CYCLE your session per block — don't run one session 16 hours (context rots →
   the fat-fingered-IDs / transcription-slip failure mode that ended the last builder).
-- Reviewer-check the genuinely risky changes; skip the review-of-reviews ceremony and the 350-task churn.
-- No sub-agents. No fleet. One builder, one reviewer, Ben tests. Fewer lanes = no shared-tree collisions.
+- REVIEW ESCALATION LADDER (KEPT — Ben-directed): Sonnet = first-line on every real change; escalate
+  genuinely HARD / safety-critical / gate work up to Opus, and apex / capstone / adversarial to Fable —
+  routed VIA the architect, tier by tier (Sonnet→Opus→Fable). What we CUT is the REDUNDANCY (three reviewers
+  on the same solid work, review-of-reviews, bookkeeping/350-task churn), NOT the ladder. Routine solid work =
+  Sonnet's lean single pass, done. Higher tiers engage ONLY when something is routed up.
+- No sub-agents, no fleet SPRAWL. One builder + the Sonnet→Opus→Fable review ladder + Ben testing. Cycle the
+  builder per block; fewer concurrent BUILD lanes = no shared-tree collisions.
