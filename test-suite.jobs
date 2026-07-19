@@ -1,0 +1,16 @@
+# test-suite.jobs — one harness command per line = one VM = one test, all run in PARALLEL.
+# Blank lines and #comments are ignored. Run:  bash vm-jobs.sh test-suite.jobs e2-standard-4 15 25
+# Fill in / adjust to the exact scenario flags (bastion-harness --help for the full list).
+# This is the "full validation pass" fanned out: every test at once, results in the time of the slowest.
+#
+# ★ VALIDATION SEEDS: pin the CANONICAL GATE SEED per scenario (the seed the last-green gate used,
+#   e.g. b4 -> 1337) — NOT arbitrary seeds. A red must mean "real regression", not "seed rolled bad
+#   terrain" (see the b4@seed-1 seed-premise gap). Throughput/corpus runs can vary seeds; validation
+#   must not.
+--mine-fidelity-scenario --mf-minutes 10 --seed 1337
+--dig-access-scenario --seed 1337
+--b4-scenario --seed 1337
+# add the rest of the regression catalog, one per line, e.g.:
+# --mine-fidelity-scenario --mf-minutes 10 --seed 4242
+# --wood-cutting-scenario
+# --farm-scenario

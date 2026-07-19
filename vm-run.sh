@@ -1,35 +1,34 @@
 #!/bin/sh
-# vm-run.sh — run a bastion-harness scenario ON the GCP remote box, ON-DEMAND.
-# Auto-starts the VM if it's stopped, waits for sshd, pulls latest, builds (incremental),
-# runs the scenario, streams the result back. The VM self-stops ~15 min after this finishes
-# (idle watcher: /etc/cron.d/vm-idle-stop). See readme/BUILD-AND-TEST-PROCESS.md §3.
+# vm-run.sh — EPHEMERAL single-run. Creates a FRESH VM from the golden image, pulls latest,
+# builds (incremental — the image ships a warm target+sccache), runs the scenario, streams the
+# result back, then DELETES the VM. Nothing persists; nothing idles; zero standing compute cost.
+# The trap guarantees deletion even on error/Ctrl-C. See readme/BUILD-AND-TEST-PROCESS.md §3/§11.
 #
 # Usage (from the builder's session):
 #   bash /e/veloren-master/vm-run.sh --mine-fidelity-scenario --mf-minutes 10
 #   bash /e/veloren-master/vm-run.sh --dig-access-scenario
 set -e
 GCLOUD="/c/Program Files (x86)/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
-INSTANCE=instance-20260719-131242
-ZONE=us-central1-a
-HOST=benshumeyko@34.9.50.247
-KEY="$HOME/.ssh/id_ed25519"
+ZONE=us-central1-a; IMAGE=bastion-golden; MACHINE=e2-highmem-8
+KEY="$HOME/.ssh/id_ed25519"; SSHKEYS_FILE="C:/Users/q/.ssh/bastion-sshkeys.txt"
+BRANCH=bastion/builder   # the builder's push branch — the VM lands EXACTLY on its remote tip
+NAME="bastion-run-$$"
+trap '"$GCLOUD" compute instances delete "$NAME" --zone="$ZONE" -q >/dev/null 2>&1 || true' EXIT INT TERM
 
-status=$("$GCLOUD" compute instances describe "$INSTANCE" --zone="$ZONE" --format="value(status)" 2>/dev/null || echo UNKNOWN)
-if [ "$status" != "RUNNING" ]; then
-  echo "[vm-run] VM is $status — starting it..."
-  "$GCLOUD" compute instances start "$INSTANCE" --zone="$ZONE" >/dev/null 2>&1
-fi
+echo "[vm-run] creating ephemeral $MACHINE from $IMAGE ..."
+"$GCLOUD" compute instances create "$NAME" --zone="$ZONE" --source-machine-image="$IMAGE" --machine-type="$MACHINE" --metadata-from-file=ssh-keys="$SSHKEYS_FILE" >/dev/null 2>&1
+IP=$("$GCLOUD" compute instances describe "$NAME" --zone="$ZONE" --format="value(networkInterfaces[0].accessConfigs[0].natIP)")
+echo "[vm-run] $NAME @ $IP — waiting for sshd..."
+i=0; while [ "$i" -lt 40 ]; do ssh -i "$KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=5 "benshumeyko@$IP" true 2>/dev/null && break; i=$((i + 1)); sleep 4; done
 
-echo "[vm-run] waiting for sshd..."
-i=0
-while [ "$i" -lt 25 ]; do
-  if ssh -i "$KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=5 "$HOST" true 2>/dev/null; then break; fi
-  i=$((i + 1)); sleep 4
-done
-
-echo "[vm-run] running on VM: $*"
-ssh -i "$KEY" -o StrictHostKeyChecking=no "$HOST" \
-  "source \$HOME/.cargo/env; cd ~/bastion && git pull -q && flock /tmp/bastion-build.lock cargo build --profile verify -p bastion-harness -q && ./target/verify/bastion-harness $*"
-echo "[vm-run] scenario done — STOPPING VM now (no idle burn)..."
-"$GCLOUD" compute instances stop "$INSTANCE" --zone="$ZONE" >/dev/null 2>&1 || true
-echo "[vm-run] VM stopped. (the idle-cron is the backstop if a run is ever interrupted before this line.)"
+echo "[vm-run] sync to latest origin/$BRANCH + build + run: $*"
+ssh -i "$KEY" -o StrictHostKeyChecking=no "benshumeyko@$IP" \
+  "source \$HOME/.cargo/env; cd ~/bastion \
+   && git fetch -q origin && git reset --hard -q origin/$BRANCH \
+   && H=\$(git rev-parse --short HEAD); R=\$(git rev-parse --short origin/$BRANCH) \
+   && [ \"\$H\" = \"\$R\" ] && echo \"RAN_COMMIT=\$H  (== latest origin/$BRANCH — validated)\" || { echo \"STALE: HEAD \$H != origin \$R\"; exit 3; } \
+   && cargo build --profile verify -p bastion-harness -q \
+   && ./target/verify/bastion-harness $*"
+echo "[vm-run] done — deleting VM (trap also guarantees this)..."
+"$GCLOUD" compute instances delete "$NAME" --zone="$ZONE" -q >/dev/null 2>&1 || true
+echo "[vm-run] VM gone. Zero standing cost."

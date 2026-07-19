@@ -116,71 +116,64 @@ Front-loaded because they make everything after them faster.
 - **Parallel seed execution** → run gate seeds concurrently (halves 2-seed gates; ~8× on corpora).
 When they land, amend §1/§3 to make them the default.
 
-## 11. Remote VM on-demand ops (the box manages its own uptime — 2026-07-19)
-- **Instance** `instance-20260719-131242` · zone `us-central1-a` · static IP `34.9.50.247` · project
-  `project-850d63d4-bf88-46df-8cb`. SSH key is METADATA-managed (survives restarts — do NOT rely on manual
-  `~/.ssh/authorized_keys`, the guest agent rewrites it on boot).
-- **Auto-STOP:** `/etc/cron.d/vm-idle-stop` powers the VM off after ~15 min with no cargo/rustc/bastion-harness
-  process and no SSH session. Stops on IDLENESS, not a clock — so it never interrupts the 24/7 op's overnight runs.
-- **Auto-START:** `vm-run.sh` (repo root, local-only tool) starts the VM if stopped before running. Uses
-  `gcloud` at `C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd` — **space-containing
-  args (ssh-keys, --command) must be called from PowerShell**; plain calls (start/stop/describe) work from Git Bash.
-- **Billing:** ~$0.36/hr RUNNING only; stopped ≈ $0 compute + ~$3.6/mo (disk + reserved static IP). On-demand
-  keeps idle cost near-zero. Manual override: `gcloud compute instances start|stop instance-20260719-131242 --zone=us-central1-a`.
+## 11. Remote test-offload — FULLY EPHEMERAL (2026-07-19)
+No persistent box. Every run CREATES a VM from the golden image, VALIDATES it's on the latest commit, builds,
+runs, and DELETES itself. Idle cost ≈ $0 (only the ~4.5 GB `bastion-golden` image).
+- **Project** `project-850d63d4-bf88-46df-8cb` · zone `us-central1-a` · SSH `benshumeyko@` with
+  `~/.ssh/id_ed25519`; each VM gets the key via `--metadata-from-file=ssh-keys=C:/Users/q/.ssh/bastion-sshkeys.txt`
+  (the guest agent rewrites `~/.ssh/authorized_keys` from metadata on boot — metadata is the source of truth).
+- **gcloud** at `C:\Program Files (x86)\...\gcloud.cmd` — space-containing args must run from PowerShell; plain
+  calls work from Git Bash. The wrappers use `--metadata-from-file` to sidestep the space-arg issue.
+- **Golden image** `bastion-golden` = 30 GB Debian-13, rustup stable+nightly, sccache+mold, repo cloned at
+  `bastion/builder` with a warm `--profile verify -p bastion-harness` build. Rebuild after big merges:
+  `bash vm-build-image.sh` (cold build ~4 min on 32 cores; deletes the old image only after the new verifies).
+- **★ RUNS-LATEST, PROVEN:** every VM does `git fetch + reset --hard origin/bastion/builder` and ASSERTS the SHA
+  (fail-loud exit 3) before building — each result is stamped with its commit; a stale checkout can't slip through.
 
-## 12. Elastic VM POOL — spin up many, run a corpus, delete them (heavy testing only)
-For a big parallel corpus (M3 crowd, broad regression) — the "many servers for a burst, on one trial" pattern.
-GCP quota here is **200 vCPUs** (not the 8 the research claimed), so up to ~24 × e2-highmem-8 concurrently;
-the real limit is the $300 credit budget, and bursts are cheap (~20 VMs × 15 min ≈ $2).
-- **Golden image** `bastion-golden` = a snapshot of the box (toolchain + repo + warm build) so a clone boots
-  ready-to-run in ~30s instead of a 15-min setup.
-- **Run a corpus:** `bash /e/veloren-master/vm-pool.sh <N> <first-seed> "<harness-args, no --seed>"` — creates N
-  clones, runs one seed each IN PARALLEL, collects `/tmp/pool-results/*.json`, then DELETES every clone. Pay
-  only for the burst minutes.
-- **★ ALWAYS UP TO DATE:** every clone (and the on-demand box) **git-pulls latest on boot before running**, so
-  it ALWAYS runs current code no matter how old the image is. The image is just the expensive baseline.
-- **Keep the baseline fresh (speed only):** `bash /e/veloren-master/vm-refresh-image.sh` rebuilds `bastion-golden`
-  from the current HEAD. Run it **after significant merges** (or nightly). Skipping it never breaks correctness —
-  it just makes the boot-time pull bigger. So a stale image = still-correct, slightly slower.
-- Scaling past GCP: crowd/behavioral corpora don't need bit-exact determinism, so the pool can extend to Azure /
-  Oracle free tiers too (each its own trial) for even more parallelism — build per-provider spawners when needed.
+## 12. QUOTAS — the real ceilings (know these before sizing a run)
+- `CPUS_ALL_REGIONS` = **32 vCPU GLOBAL** — total across ALL running VMs. THE binding limit. (Bump to 128
+  requested 2026-07-19 after Ben upgraded off trial; pending.) **NEVER schedule to the exact cap** — creates
+  bounce (8×4=32 lost 2 VMs). Leave headroom.
+- `SSD_TOTAL_GB` = **500 GB/region** — with 30 GB VMs, ~16 concurrent. (Bump to 2000 pending.)
+- At a FIXED vCPU budget, **scale-UP (one big VM) beats the clone pool** — the pool pays per-VM build + boot
+  overhead. Measured: 24 seeds = 142 s on one 32-core VM vs 367 s on 8×4-core. The pool only wins once you need
+  MORE cores than one VM can hold (i.e., after the quota bump).
 
-## 13. WHICH heavy-test approach — the decision the builder applies (scale-up vs. pool vs. local)
-Ask, in order — the FIRST match wins:
+## 13. THE RUN MODES — which to use
 ```
-1. Uncommitted edits OR a quick single check?
-      -> LOCAL (18s loop, §2). The VM only sees committed code; local is faster for small/uncommitted.
-2. One long single soak (multi-minute, one seed)?
-      -> ON-DEMAND VM:  bash /e/veloren-master/vm-run.sh --<scenario>   (§3)
-3. A CORPUS (many independent seeds/configs)?
-   3a. Does the parallelism fit ONE provider (<= ~200 vCPU here)?   [almost always yes]
-         -> SCALE UP (default):  bash /e/veloren-master/vm-scale.sh <machine-type> "<parallel-seeds corpus cmd>"
-            ONE build, N seed-processes on N cores. Efficient (no redundant builds) + simple (one machine).
-   3b. Need MORE than one provider gives (> ~200 vCPU), or fault isolation across machines?
-         -> CLONE POOL (multi-provider overflow):  bash /e/veloren-master/vm-pool.sh <N> <first-seed> "<args>"
-            + per-provider spawners (Azure/Oracle). Redundant per-clone builds — only worth it past one provider.
+1. Uncommitted / quick single check?          -> LOCAL (18s loop, §2). The VM only sees committed code.
+2. One test, one VM (single scenario/soak)?   -> bash vm-run.sh --<scenario>
+3. One test, MANY seeds (corpus/throughput)?  -> bash vm-scale.sh <machine> <N_seeds> <first-seed> "<args>" [$max] [min]
+                                                 DEFAULT: one big VM, N cores, one build (§12: beats the pool).
+   3b. Need MORE cores than one VM holds?      -> bash vm-pool-safe.sh <N> <machine> <seeds/VM> <first-seed> "<args>" [$max] [min]
+                                                 (auto-halves if the live burn-guard trips)
+4. MANY DIFFERENT tests at once (breadth /     -> bash vm-jobs.sh <jobs_file> <machine> [$max] [min]
+   general data / full validation)?              one VM per job line, all parallel; template test-suite.jobs
 ```
-**Rule of thumb: corpus → scale UP first; reach for the clone pool ONLY when one provider isn't enough.** Both
-tools exist; the flowchart picks. The builder chooses per this tree and states which and why when it runs heavy tests.
+All modes are ephemeral, SHA-validated, and burn-guarded. Keep (#VMs × vCPU) under the CPU quota with headroom.
+For a fixed core budget prefer scale-up (mode 3 → one machine); reach for breadth (mode 4) when the tests DIFFER.
 
-## 14. COST DISCIPLINE — always shut off, never leave strays (protect the $300)
-**Every wrapper cleans up after itself** — this is not optional:
-- `vm-run.sh` STOPS the VM immediately after the scenario (no idle burn).
-- `vm-scale.sh` resizes back to the default + STOPS after the corpus.
-- `vm-pool.sh` DELETES every clone after its run (proven: zero orphans).
-- The idle-cron (`/etc/cron.d/vm-idle-stop`) is the BACKSTOP — stops any VM left running by an interrupted run.
-- **`vm-refresh-image.sh` REPLACES `bastion-golden`** (delete-old → create-new) — never accumulate image copies.
+## 14. COST DISCIPLINE — ephemeral + guarded (protect the credit)
+- **Idle cost ≈ $0** — no persistent VM/disk/IP; only the ~$0.02/mo image. Nothing bills unless a run is live.
+- **Per-run burn-guard** (in vm-pool/jobs): meters cost LIVE (`vCPU × time × $0.035`), CUTS THE RUN OFF at
+  `$MAX_USD`/`$MAX_MIN`; `vm-pool-safe.sh` then retries smaller. A wide/heavy run can't run away.
+- **10-min watchdog** `vm-watchdog.sh` — deletes any `bastion-*` VM older than the age cap (forgotten/hung run).
+  Schedule every 10 min (Windows Task Scheduler) for durable protection.
+- **Panic button** `vm-cleanup.sh` — kills every stray VM + prunes images/snapshots.
+- **Hard cutoff** `gcp-billing-setup.sh` — a budget that DISABLES billing when spend hits your credit amount
+  (the "credits exhausted → stop everything" backstop; GCP has no real-time credit API, so this is the clean way).
+- Every wrapper self-deletes its VM on exit (trap), on success OR failure. Behavioral metrics are cross-machine
+  safe (VM Linux ≡ local Windows); only bit-exact certs stay pinned-arch.
 
-**Hygiene / panic button:** `bash /e/veloren-master/vm-cleanup.sh` — stops the VM, deletes stray `bastion-pool-*`
-clones, prunes duplicate images + snapshots. Run it whenever you want to be SURE nothing is billing.
-
-**Cost model:**
-- **Compute** (the big cost): ~$0.36/hr *only while a VM is RUNNING*; $0 stopped/deleted. Stop-after-use +
-  delete-clones keep this near-zero when idle. Corpus bursts are cheap (~20 VMs × 15 min ≈ $2).
-- **Idle floor** ≈ ~$25/mo — the persistent VM's 200 GB disk (~$20) + reserved IP (~$3.6) + image (~$1),
-  billed even when stopped. The $300 trial covers ~months at this floor.
-- **Optimize for SPEED within budget:** map-cache (skip the 74s boot) + parallel-seeds + scale-up make runs
-  fast; stop-after-use + delete-clones + one-image keep the bill at the idle floor.
-- **Further saving (optional):** go fully-ephemeral — DELETE the on-demand VM when idle and recreate it from
-  `bastion-golden` on demand (like the pool clones). Eliminates the ~$20/mo idle disk; costs ~30s extra per
-  cold start. Worth it only if the idle floor matters — flag the architect to switch the model.
+## 15. CHEAP-TEST POSTURE — test heavier, test EARLIER (Ben-directed, 2026-07-19)
+Heavy tests are now pennies and return in minutes, so testing is an INPUT to planning, not just a gate at the end:
+- **Test-informed planning (BEFORE coding):** for any non-trivial feature/change, first run a CHARACTERIZATION
+  sweep — a scenario/parameter matrix across many seeds (via vm-jobs) — to see how the current system ACTUALLY
+  behaves, find the edge cases, and get baseline numbers. Design against data, not assumption.
+- **Corpus-by-DEFAULT:** a single-seed gate is a lottery (the b4@seed-1 trap). Every gate runs an N-seed sweep;
+  green means green across the distribution. Validation uses the CANONICAL gate seed per scenario (not arbitrary)
+  so a red = real regression, not a bad-terrain roll.
+- **Standing regression matrix:** the full scenario catalog × canonical seeds via vm-jobs (test-suite.jobs), run
+  on every meaningful commit — regressions surface immediately, not at a milestone.
+- Sequence unchanged (build → gate → tag), but the DESIGN step is now test-backed and VALIDATION is a fanned-out
+  matrix, not a single run. (Corpus-first + assert-the-precondition are the standing anti-flake disciplines.)
