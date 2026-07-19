@@ -22,8 +22,12 @@ trap 'cleanup' EXIT INT TERM
 
 run_one() {
   k="$1"; name="bastion-pool-$k"; base=$((FIRST + k*SPV))
-  "$GCLOUD" compute instances create "$name" --zone="$ZONE" --source-machine-image="$IMAGE" \
-     --machine-type="$MACHINE" --metadata-from-file=ssh-keys="$SSHKEYS_FILE" >/dev/null 2>&1 || { echo "CREATE_FAIL"; return; }
+  tries=0  # retry w/ backoff — transient quota bounces from racing a prior batch's teardown
+  until "$GCLOUD" compute instances create "$name" --zone="$ZONE" --source-machine-image="$IMAGE" \
+        --machine-type="$MACHINE" --metadata-from-file=ssh-keys="$SSHKEYS_FILE" >/dev/null 2>&1; do
+    tries=$((tries + 1)); [ "$tries" -ge 4 ] && { echo "CREATE_FAIL"; return; }
+    sleep $((tries * 15))
+  done
   ip=$("$GCLOUD" compute instances describe "$name" --zone="$ZONE" --format="value(networkInterfaces[0].accessConfigs[0].natIP)")
   i=0; while [ "$i" -lt 45 ]; do ssh -i "$KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=5 "benshumeyko@$ip" true 2>/dev/null && break; i=$((i+1)); sleep 4; done
   ssh -i "$KEY" -o StrictHostKeyChecking=no "benshumeyko@$ip" "

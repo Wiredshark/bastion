@@ -26,8 +26,12 @@ trap cleanup EXIT INT TERM
 
 run_job() {
   k="$1"; cmd="$2"; name="bastion-job-$k"
-  "$GCLOUD" compute instances create "$name" --zone="$ZONE" --source-machine-image="$IMAGE" \
-     --machine-type="$MACHINE" --metadata-from-file=ssh-keys="$SSHKEYS_FILE" >/dev/null 2>&1 || { echo "CREATE_FAIL: $cmd" > "$OUT/job-$k.out"; return; }
+  tries=0  # retry w/ backoff — transient quota bounces from racing a prior batch's teardown
+  until "$GCLOUD" compute instances create "$name" --zone="$ZONE" --source-machine-image="$IMAGE" \
+        --machine-type="$MACHINE" --metadata-from-file=ssh-keys="$SSHKEYS_FILE" >/dev/null 2>&1; do
+    tries=$((tries + 1)); [ "$tries" -ge 4 ] && { echo "CREATE_FAIL: $cmd" > "$OUT/job-$k.out"; return; }
+    sleep $((tries * 15))
+  done
   ip=$("$GCLOUD" compute instances describe "$name" --zone="$ZONE" --format="value(networkInterfaces[0].accessConfigs[0].natIP)")
   i=0; while [ "$i" -lt 45 ]; do ssh -i "$KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=5 "benshumeyko@$ip" true 2>/dev/null && break; i=$((i+1)); sleep 4; done
   ssh -i "$KEY" -o StrictHostKeyChecking=no "benshumeyko@$ip" "

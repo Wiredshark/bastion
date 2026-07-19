@@ -135,10 +135,12 @@ runs, and DELETES itself. Idle cost ≈ $0 (only the ~4.5 GB `bastion-golden` im
   (fail-loud exit 3) before building — each result is stamped with its commit; a stale checkout can't slip through.
 
 ## 12. QUOTAS — the real ceilings (know these before sizing a run)
-- `CPUS_ALL_REGIONS` = **32 vCPU GLOBAL** — total across ALL running VMs. THE binding limit. (Bump to 128
-  requested 2026-07-19 after Ben upgraded off trial; pending.) **NEVER schedule to the exact cap** — creates
-  bounce (8×4=32 lost 2 VMs). Leave headroom.
-- `SSD_TOTAL_GB` = **500 GB/region** — with 30 GB VMs, ~16 concurrent. (Bump to 2000 pending.)
+- `CPUS_ALL_REGIONS` = **96 vCPU GLOBAL** (granted 2026-07-19 in steps 32→64→96; 128 still denied on account
+  age) — total across ALL running VMs. THE binding limit, and now the SOLE one. **NEVER schedule to the exact
+  cap** — creates bounce (and racing a prior batch's teardown re-bounces; wrappers now create-retry w/ backoff).
+  Leave headroom. Max ≈ 22 × 4-core, or ~46 × 2-core VMs.
+- `SSD_TOTAL_GB` (us-central1) = **effectively UNLIMITED** (granted 2026-07-19; was 500 GB) — disk is no
+  longer a constraint; size the run by vCPU alone.
 - At a FIXED vCPU budget, **scale-UP (one big VM) beats the clone pool** — the pool pays per-VM build + boot
   overhead. Measured: 24 seeds = 142 s on one 32-core VM vs 367 s on 8×4-core. The pool only wins once you need
   MORE cores than one VM can hold (i.e., after the quota bump).
