@@ -113,3 +113,11 @@ B54/C1; the duplicate line is removed.) Everything else is pointer-verified agai
 - CONSEQUENCE: it compiled a DIRTY tree (main builder's uncommitted STATUS-SURFACE + the third-party MUSHROOM break) → tonight's bug-hunt gate evidence is PROVENANCE-UNCLEAN (dirty-tree artifact trap). DISCARD any finding from it; re-run from a CLEAN pre-built binary if the bug-hunt is repeated. Correction messaged to the lane.
 - REINFORCE at next bug-hunt spawn: read-only, no-compile, pre-built isolated binary only, never the shared tree.
 - (Benign note: sccache is up since 21:40 — #17 install completed by some lane.)
+
+## INCIDENT CORRECTION (architect, ~04:48 — retracting the over-correction above)
+The prior INCIDENT note over-reached; the bug-hunt reconciled it factually. Corrected record:
+- Part-1 70-run bug-hunt evidence = PROVENANCE-CLEAN (prebuilt exe 7f087da317, ZERO compiles, hunt closed before any cargo). NOT discarded — it STANDS. The "discard" applied ONLY to leash-gate evidence, now downgraded to PROVISIONAL (below).
+- The E0425 MUSHROOM was the bug-hunt's OWN fixture miss, self-caught at its 00:20 typecheck (no binary) and fixed; the 00:31 build is check-green — NO compile-break carried. The main builder read stale pre-fix state.
+- The 00:31 build was WITHIN a compile authority the ARCHITECT had granted (Part-2 leash-gate re-tasking + box-check + pileup exempt-lane ruling). NOT a charter breach. The real miss was the ARCHITECT's: declared the main builder the "single overnight lane" without accounting for the bug-hunt's already-authorized in-flight leash gate = a coordination error on my side, not the lane's.
+- LEASH-GATE EVIDENCE DISPOSITION = provisional/directional (dirty-tree gate, the shared-checkout norm); re-gate on a clean committed tree for tag-grade once STATUS-SURFACE + the other WIP land. File flagged-provisional, do not discard.
+- STANDING RULE (one): adversarial HUNT = read-only/no-compile/prebuilt-isolated; explicit GATE re-tasking = build lane under box-discipline. Different tasks.
