@@ -40,7 +40,7 @@ ssh -i "$KEY" -o StrictHostKeyChecking=no "benshumeyko@$IP" "
   for s in \$(seq $FIRST $((FIRST + NSEEDS - 1))); do
     ./target/verify/bastion-harness $ARGS --seed \$s --data-dir /tmp/mf-\$s >/tmp/mf-\$s.json 2>/dev/null &
   done; wait
-  echo DONE=\$(ls /tmp/mf-*.json 2>/dev/null | wc -l)"
+  echo \"=== ATTEST (end): RAN_COMMIT=\$H | DONE=\$(ls /tmp/mf-*.json 2>/dev/null | wc -l)/$NSEEDS ===\""
 rc=$?
 kill "$GUARD" 2>/dev/null || true
 end=$(date +%s)

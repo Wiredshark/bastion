@@ -60,9 +60,13 @@ NOT SSH the VM directly for tests — always go through the wrapper so start/sto
 ## 5. Determinism rules (do NOT get this wrong)
 - **Canonical reproducibility certification = consistent architecture.** Bit-exact tape comparisons stay on the
   same arch/target as the baseline.
-- **Behavioral metrics** (completion %, throughput, jam counts, timelines) are cross-machine-safe — the VM's
-  Linux-x86 fidelity timeline matched local EXACTLY (verified 2026-07-19), so **VM behavioral numbers are
-  directly comparable to local** with no fudge factor.
+- **Behavioral metrics** (completion %, throughput, jam counts, timelines) are cross-machine-comparable
+  **ONLY PER-SCENARIO — proven, not assumed.** Mine-fidelity's timeline matched VM ≡ local EXACTLY
+  (verified 2026-07-19) → its VM numbers compare directly. BUT dig-access leg C DIVERGED (VM 425/432 vs
+  local 324/432, same seed+code, 2026-07-19) — churn amplifies scheduling variance across machine classes.
+  **RULE:** before comparing a VM result to a LOCAL baseline, confirm that scenario is cross-machine-stable;
+  otherwise establish the baseline on the SAME machine class it'll be judged on (VM baseline for VM runs).
+  Churn-heavy scenarios are the risk. Same-machine comparisons (VM-vs-VM, corpus seed sweeps) are always fine.
 - **Crowd/M3 corpora** measure behavior → fine on ANY box (even ARM free tiers). Only bit-exact determinism
   gates need the pinned arch.
 
@@ -177,3 +181,14 @@ Heavy tests are now pennies and return in minutes, so testing is an INPUT to pla
   on every meaningful commit — regressions surface immediately, not at a milestone.
 - Sequence unchanged (build → gate → tag), but the DESIGN step is now test-backed and VALIDATION is a fanned-out
   matrix, not a single run. (Corpus-first + assert-the-precondition are the standing anti-flake disciplines.)
+
+## 16. ASYNC TESTING — the builder NEVER blocks on a VM test (throughput, Ben-directed 2026-07-19)
+VM tests are fire-and-forget: the wrapper creates its own VM, runs, self-deletes. So the builder must NEVER
+sit foreground-waiting on one. At every moment the builder is CODING; tests run BESIDE it.
+- **Dispatch async:** `bash /e/veloren-master/vm-run.sh --<scenario> > /tmp/r.log 2>&1 &` (or vm-scale / vm-jobs
+  backgrounded), then IMMEDIATELY continue to the next code block. Collect the result when it lands — don't watch.
+- **Local 18s loop** stays for tight iteration (foreground OK — it's fast). VMs carry the heavy/validation runs,
+  always backgrounded.
+- **A slow/stuck test never blocks progress** — the burn-guard + watchdog kill it; you move on and re-dispatch.
+- A test result arriving is an INTERRUPT to triage, not a thing to wait for. This supersedes any
+  "build → wait for the gate → then continue" habit. Waiting on a test is the one thing we no longer do.

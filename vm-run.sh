@@ -22,13 +22,16 @@ echo "[vm-run] $NAME @ $IP — waiting for sshd..."
 i=0; while [ "$i" -lt 40 ]; do ssh -i "$KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=5 "benshumeyko@$IP" true 2>/dev/null && break; i=$((i + 1)); sleep 4; done
 
 echo "[vm-run] sync to latest origin/$BRANCH + build + run: $*"
-ssh -i "$KEY" -o StrictHostKeyChecking=no "benshumeyko@$IP" \
-  "source \$HOME/.cargo/env; cd ~/bastion \
-   && git fetch -q origin && git reset --hard -q origin/$BRANCH \
-   && H=\$(git rev-parse --short HEAD); R=\$(git rev-parse --short origin/$BRANCH) \
-   && [ \"\$H\" = \"\$R\" ] && echo \"RAN_COMMIT=\$H  (== latest origin/$BRANCH — validated)\" || { echo \"STALE: HEAD \$H != origin \$R\"; exit 3; } \
-   && cargo build --profile verify -p bastion-harness -q \
-   && ./target/verify/bastion-harness $*"
+ssh -i "$KEY" -o StrictHostKeyChecking=no "benshumeyko@$IP" "
+  source \$HOME/.cargo/env; cd ~/bastion
+  git fetch -q origin && git reset --hard -q origin/$BRANCH
+  H=\$(git rev-parse --short HEAD); R=\$(git rev-parse --short origin/$BRANCH)
+  [ \"\$H\" = \"\$R\" ] || { echo \"STALE: HEAD \$H != origin \$R\"; exit 3; }
+  echo \"RAN_COMMIT=\$H  (== latest origin/$BRANCH — validated)\"
+  cargo build --profile verify -p bastion-harness -q || { echo BUILD_FAIL; exit 4; }
+  ./target/verify/bastion-harness $*; rc=\$?
+  echo \"=== ATTEST (end): RAN_COMMIT=\$H (== origin/$BRANCH \$R) | scenario rc=\$rc ===\"
+  exit \$rc"
 echo "[vm-run] done — deleting VM (trap also guarantees this)..."
 "$GCLOUD" compute instances delete "$NAME" --zone="$ZONE" -q >/dev/null 2>&1 || true
 echo "[vm-run] VM gone. Zero standing cost."
