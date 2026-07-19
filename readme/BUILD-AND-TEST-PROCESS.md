@@ -162,3 +162,25 @@ Ask, in order — the FIRST match wins:
 ```
 **Rule of thumb: corpus → scale UP first; reach for the clone pool ONLY when one provider isn't enough.** Both
 tools exist; the flowchart picks. The builder chooses per this tree and states which and why when it runs heavy tests.
+
+## 14. COST DISCIPLINE — always shut off, never leave strays (protect the $300)
+**Every wrapper cleans up after itself** — this is not optional:
+- `vm-run.sh` STOPS the VM immediately after the scenario (no idle burn).
+- `vm-scale.sh` resizes back to the default + STOPS after the corpus.
+- `vm-pool.sh` DELETES every clone after its run (proven: zero orphans).
+- The idle-cron (`/etc/cron.d/vm-idle-stop`) is the BACKSTOP — stops any VM left running by an interrupted run.
+- **`vm-refresh-image.sh` REPLACES `bastion-golden`** (delete-old → create-new) — never accumulate image copies.
+
+**Hygiene / panic button:** `bash /e/veloren-master/vm-cleanup.sh` — stops the VM, deletes stray `bastion-pool-*`
+clones, prunes duplicate images + snapshots. Run it whenever you want to be SURE nothing is billing.
+
+**Cost model:**
+- **Compute** (the big cost): ~$0.36/hr *only while a VM is RUNNING*; $0 stopped/deleted. Stop-after-use +
+  delete-clones keep this near-zero when idle. Corpus bursts are cheap (~20 VMs × 15 min ≈ $2).
+- **Idle floor** ≈ ~$25/mo — the persistent VM's 200 GB disk (~$20) + reserved IP (~$3.6) + image (~$1),
+  billed even when stopped. The $300 trial covers ~months at this floor.
+- **Optimize for SPEED within budget:** map-cache (skip the 74s boot) + parallel-seeds + scale-up make runs
+  fast; stop-after-use + delete-clones + one-image keep the bill at the idle floor.
+- **Further saving (optional):** go fully-ephemeral — DELETE the on-demand VM when idle and recreate it from
+  `bastion-golden` on demand (like the pool clones). Eliminates the ~$20/mo idle disk; costs ~30s extra per
+  cold start. Worth it only if the idle floor matters — flag the architect to switch the model.

@@ -30,4 +30,6 @@ done
 echo "[vm-run] running on VM: $*"
 ssh -i "$KEY" -o StrictHostKeyChecking=no "$HOST" \
   "source \$HOME/.cargo/env; cd ~/bastion && git pull -q && flock /tmp/bastion-build.lock cargo build --profile verify -p bastion-harness -q && ./target/verify/bastion-harness $*"
-echo "[vm-run] done — VM self-stops after ~15 min idle."
+echo "[vm-run] scenario done — STOPPING VM now (no idle burn)..."
+"$GCLOUD" compute instances stop "$INSTANCE" --zone="$ZONE" >/dev/null 2>&1 || true
+echo "[vm-run] VM stopped. (the idle-cron is the backstop if a run is ever interrupted before this line.)"
