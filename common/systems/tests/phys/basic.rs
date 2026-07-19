@@ -1,10 +1,66 @@
 use crate::utils;
 use approx::assert_relative_eq;
-use common::{comp::Controller, resources::Time, shared_server_config::ServerConstants};
+use common::{
+    comp::Controller,
+    resources::Time,
+    shared_server_config::ServerConstants,
+    terrain::{Block, BlockKind, SpriteKind},
+    vol::WriteVol,
+};
 use specs::WorldExt;
 use std::error::Error;
 use utils::{DT, DT_F64, EPSILON};
 use vek::{Vec2, Vec3, approx};
+
+#[test]
+fn terrain_cylinder_preflight_uses_sprite_solidity() {
+    let state = utils::setup(veloren_common_systems::add_local_systems);
+    let start = Vec3::new(16.5, 16.5, 270.0);
+    let end = Vec3::new(17.5, 16.5, 270.0);
+    let cylinder = (0.22, 0.0, 1.95);
+    let terrain = state.ecs().read_resource::<common::terrain::TerrainGrid>();
+    assert!(
+        veloren_common_systems::phys::cylinder_sweep_first_collision(
+            &*terrain, start, end, cylinder
+        )
+        .is_none()
+    );
+    drop(terrain);
+
+    // Ladder is an air-kind sprite, but authoritative physics gives it a
+    // full-height solid collision shape. A grid `is_filled` probe would miss
+    // this exact B5.5 mount blocker.
+    state
+        .terrain_mut()
+        .set(Vec3::new(17, 16, 270), Block::air(SpriteKind::Ladder))
+        .expect("fixture ladder write");
+    let terrain = state.ecs().read_resource::<common::terrain::TerrainGrid>();
+    let hit = veloren_common_systems::phys::cylinder_sweep_first_collision(
+        &*terrain, start, end, cylinder,
+    )
+    .expect("ladder sprite must block the authoritative cylinder");
+    assert_eq!(hit.block, Vec3::new(17, 16, 270));
+    drop(terrain);
+
+    state
+        .terrain_mut()
+        .set(Vec3::new(17, 16, 270), Block::empty())
+        .expect("fixture ladder clear");
+    state
+        .terrain_mut()
+        .set(
+            Vec3::new(16, 16, 271),
+            Block::new(BlockKind::Rock, vek::Rgb::new(120, 120, 120)),
+        )
+        .expect("fixture head-block write");
+    let terrain = state.ecs().read_resource::<common::terrain::TerrainGrid>();
+    let hit = veloren_common_systems::phys::cylinder_sweep_first_collision(
+        &*terrain, start, start, cylinder,
+    )
+    .expect("solid head block must be reported at the initial sample");
+    assert_eq!(hit.block, Vec3::new(16, 16, 271));
+    assert_eq!(hit.sample, 0);
+}
 
 #[test]
 fn simple_run() {
