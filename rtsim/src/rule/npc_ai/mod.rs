@@ -187,6 +187,12 @@ impl Rule for NpcAi {
                                 ctx.event.tick,
                                 npc.seed,
                             ),
+                            dialogue_rng: crate::tick_rng(
+                                ctx.index.seed,
+                                ctx.event.tick,
+                                npc.seed
+                                    ^ crate::data::npc::Controller::DIALOGUE_ID_RNG_SALT,
+                            ),
                             gizmos: gizmos.as_mut(),
                             system_data: &*ctx.system_data,
                             current_action_priority: 0,

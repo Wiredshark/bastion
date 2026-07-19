@@ -208,6 +208,19 @@ pub enum SpecialEntity {
     },
 }
 
+pub type LazyLoadoutCreator = fn(
+    LoadoutBuilder,
+    Option<&SiteInformation>,
+    time: Option<&(TimeOfDay, Calendar)>,
+    rng: &mut rand_chacha::ChaCha8Rng,
+) -> LoadoutBuilder;
+
+#[derive(Clone, Copy, Debug)]
+pub struct LazyLoadout {
+    pub creator: LazyLoadoutCreator,
+    pub seed: u64,
+}
+
 #[derive(Clone)]
 pub struct EntityInfo {
     pub pos: Vec3<f32>,
@@ -227,13 +240,7 @@ pub struct EntityInfo {
     // Loadout
     pub inventory: Vec<(u32, Item)>,
     pub loadout: LoadoutBuilder,
-    pub make_loadout: Option<
-        fn(
-            LoadoutBuilder,
-            Option<&SiteInformation>,
-            time: Option<&(TimeOfDay, Calendar)>,
-        ) -> LoadoutBuilder,
-    >,
+    pub make_loadout: Option<LazyLoadout>,
     // Skills
     pub skillset_asset: Option<String>,
     pub death_effects: Option<DeathEffects>,
@@ -532,15 +539,8 @@ impl EntityInfo {
     }
 
     #[must_use]
-    pub fn with_lazy_loadout(
-        mut self,
-        creator: fn(
-            LoadoutBuilder,
-            Option<&SiteInformation>,
-            time: Option<&(TimeOfDay, Calendar)>,
-        ) -> LoadoutBuilder,
-    ) -> Self {
-        self.make_loadout = Some(creator);
+    pub fn with_lazy_loadout(mut self, creator: LazyLoadoutCreator, seed: u64) -> Self {
+        self.make_loadout = Some(LazyLoadout { creator, seed });
         self
     }
 

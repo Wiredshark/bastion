@@ -16,6 +16,7 @@
 #![recursion_limit = "256"]
 
 mod asset_test;
+mod determinism_regression;
 
 use clap::Parser;
 use common::resources::Time;
@@ -41,6 +42,35 @@ use tracing::{info, warn};
 #[derive(Parser)]
 #[command(name = "bastion-harness", about)]
 struct Args {
+    /// Run a named scenario twice in isolated child processes and compare the
+    /// authoritative flight-recorder tapes or structured production result.
+    /// Supported values: b55-deep, b58-ladder-integration-fixture,
+    /// world-summary, lod0-promotion,
+    /// archetype-entity-gen, needs-agent-state, bag1-agent-decision,
+    /// rtsim-dialogue-action,
+    /// class7-item-identity, and class7-agent-roundtrip.
+    #[arg(long, value_name = "SCENARIO")]
+    determinism_regression: Option<String>,
+
+    /// Fresh output directory for --determinism-regression. The directory
+    /// must not already exist, preventing evidence overwrite.
+    #[arg(long, value_name = "DIR")]
+    determinism_output: Option<PathBuf>,
+
+    /// Reserved save/data input. Current named scenarios own their fixture
+    /// directories and reject this option rather than claiming a false replay.
+    #[arg(long, value_name = "DIR")]
+    determinism_save_tree: Option<PathBuf>,
+
+    /// Named orthogonal tape normalization. The only accepted value is
+    /// wall-unix-millis; behavioral fields can never be normalized.
+    #[arg(long, value_name = "NAME")]
+    determinism_normalize: Vec<String>,
+
+    /// Per-child wall timeout for --determinism-regression.
+    #[arg(long, default_value_t = 600)]
+    determinism_timeout_seconds: u64,
+
     /// World seed (`server::Settings::world_seed`); also seeds rtsim data
     /// generation.
     #[arg(long, default_value_t = 1337)]
@@ -135,6 +165,27 @@ struct Args {
     /// Episodes P0 + N1..N6; pass `--ladder-episode <name>` to run one.
     #[arg(long, hide = true)]
     b58_ladder_integration_fixture: bool,
+
+    /// Registry class 7: run the production lazy-loadout + inventory +
+    /// healing-slot observation without a server soak.
+    #[arg(long, hide = true)]
+    class7_item_determinism_fixture: bool,
+
+    /// Registry class 7: exercise one natural Farmer through the production
+    /// Agent UseItem, character-state, physics, recorder, and RTSim
+    /// demote/re-promote paths.
+    #[arg(long, hide = true)]
+    class7_agent_roundtrip_fixture: bool,
+
+    /// ARCH-003: emit the production world/entity aggregate as an
+    /// authoritative observation for the paired regression parent.
+    #[arg(long, hide = true)]
+    world_summary_determinism_fixture: bool,
+
+    /// ARCH-003: exercise production RTSim dialogue action identity under the
+    /// paired regression parent.
+    #[arg(long, hide = true)]
+    rtsim_dialogue_action_determinism_fixture: bool,
 
     /// M2: restrict the ladder fixture to a single episode (P0, N1..N6).
     #[arg(long, value_name = "EPISODE", hide = true)]
@@ -555,7 +606,19 @@ fn main() -> ExitCode {
         .with_writer(HygieneMakeWriter)
         .init();
 
-    if let Some(target) = &args.asset_test {
+    if let Some(scenario) = &args.determinism_regression {
+        determinism_regression::run(determinism_regression::Config {
+            scenario: scenario.clone(),
+            seed: args.seed,
+            ticks: args.ticks,
+            tps: args.tps,
+            ladder_episode: args.ladder_episode.clone(),
+            output_dir: args.determinism_output.clone(),
+            save_tree: args.determinism_save_tree.clone(),
+            normalizations: args.determinism_normalize.clone(),
+            timeout: Duration::from_secs(args.determinism_timeout_seconds),
+        })
+    } else if let Some(target) = &args.asset_test {
         asset_test::run(&asset_test::AssetTestConfig {
             seed: args.seed,
             tps: args.tps,
@@ -576,6 +639,14 @@ fn main() -> ExitCode {
         b58_scenario(&args)
     } else if args.b58_ladder_integration_fixture {
         b58_ladder_integration_fixture(&args)
+    } else if args.world_summary_determinism_fixture {
+        world_summary_determinism_fixture(&args)
+    } else if args.rtsim_dialogue_action_determinism_fixture {
+        rtsim_dialogue_action_determinism_fixture(args.seed)
+    } else if args.class7_item_determinism_fixture {
+        class7_item_determinism_fixture(args.seed)
+    } else if args.class7_agent_roundtrip_fixture {
+        class7_agent_roundtrip_fixture(&args)
     } else if args.b58_stage1_traversal_owner_fixture {
         let report = server::bastion_traversal_tooling::run_stage1_constructed_ladder_fixture();
         server::bastion_flight_recorder::finalize();
@@ -728,6 +799,432 @@ fn main() -> ExitCode {
             );
         }
         ExitCode::SUCCESS
+    }
+}
+
+fn class7_item_determinism_fixture(seed: u32) -> ExitCode {
+    let result = server::rtsim::tick::bastion_class7_item_fixture(seed);
+    let envelope = serde_json::json!({
+        "schema": "bastion.determinism-observation/v1",
+        "artifact_sha256": std::env::var("BASTION_FLIGHT_RECORDER_ARTIFACT_SHA256").ok(),
+        "seed": std::env::var("BASTION_FLIGHT_RECORDER_SEED").ok(),
+        "result": result,
+    });
+    if let Some(path) = std::env::var_os("BASTION_DETERMINISM_OBSERVATION_PATH") {
+        let path = PathBuf::from(path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create class-7 evidence directory");
+        }
+        let mut file = std::fs::File::create(path).expect("create class-7 observation");
+        serde_json::to_writer(&mut file, &envelope).expect("write class-7 observation");
+        writeln!(file).expect("terminate class-7 observation");
+    }
+    println!("{envelope}");
+    let pass = envelope["result"]["selected_use_item"].is_object();
+    println!(
+        "CLASS7 ITEM DETERMINISM FIXTURE: {}",
+        if pass { "PASS" } else { "FAIL" }
+    );
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+fn write_determinism_observation(result: &serde_json::Value) {
+    let Some(path) = std::env::var_os("BASTION_DETERMINISM_OBSERVATION_PATH") else {
+        return;
+    };
+    let envelope = serde_json::json!({
+        "schema": "bastion.determinism-observation/v1",
+        "artifact_sha256": std::env::var("BASTION_FLIGHT_RECORDER_ARTIFACT_SHA256").ok(),
+        "seed": std::env::var("BASTION_FLIGHT_RECORDER_SEED").ok(),
+        "result": result,
+    });
+    let path = PathBuf::from(path);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create determinism evidence directory");
+    }
+    let mut file = std::fs::File::create(path).expect("create determinism observation");
+    serde_json::to_writer(&mut file, &envelope).expect("write determinism observation");
+    writeln!(file).expect("terminate determinism observation");
+}
+
+fn world_summary_determinism_fixture(args: &Args) -> ExitCode {
+    let (summary, _) = run_once(args);
+    let result = serde_json::to_value(summary).expect("serialize world summary observation");
+    write_determinism_observation(&result);
+    println!("{result}");
+    println!("WORLD SUMMARY DETERMINISM FIXTURE: PASS");
+    ExitCode::SUCCESS
+}
+
+fn rtsim_dialogue_action_determinism_fixture(seed: u32) -> ExitCode {
+    use common::{character::CharacterId, rtsim::Actor};
+
+    let mut controller = ::rtsim::data::npc::Controller::default();
+    let npc_seed = 0xBA57_10A6;
+    let mut dialogue_rng = ::rtsim::tick_rng(
+        seed,
+        0,
+        npc_seed ^ ::rtsim::data::npc::Controller::DIALOGUE_ID_RNG_SALT,
+    );
+    let target = Actor::Character(CharacterId(i64::from(seed)));
+    let first = controller.dialogue_start(target, &mut dialogue_rng);
+    let second = controller.dialogue_start(target, &mut dialogue_rng);
+    let result = serde_json::json!({
+        "tick": 0,
+        "writer": "rtsim::data::npc::Controller::dialogue_start",
+        "npc_seed": npc_seed,
+        "first_dialogue_id": first.id.0,
+        "second_dialogue_id": second.id.0,
+        "queued_actions": controller.actions.len(),
+    });
+    write_determinism_observation(&result);
+    println!("{result}");
+    let pass = first.id != second.id && controller.actions.len() == 2;
+    println!(
+        "RTSIM DIALOGUE ACTION DETERMINISM FIXTURE: {}",
+        if pass { "PASS" } else { "FAIL" }
+    );
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+fn class7_agent_roundtrip_fixture(args: &Args) -> ExitCode {
+    use common::{
+        comp::{CharacterState, PhysicsState, Pos, Vel},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-class7-agent-roundtrip-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("create class-7 roundtrip data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-class7-agent-roundtrip".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-class7-roundtrip-tokio")
+            .build()
+            .expect("build class-7 runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("create class-7 headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let mut fixture_tick = 0_u64;
+    let tick_once = |server: &mut Server, fixture_tick: &mut u64| {
+        server
+            .tick(Input::default(), dt)
+            .expect("class-7 server tick failed");
+        server.cleanup();
+        *fixture_tick += 1;
+    };
+    let live_state = |server: &Server, name: &str| -> Option<serde_json::Value> {
+        let ecs = server.state().ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<common::comp::Colonist>();
+        let positions = ecs.read_storage::<Pos>();
+        let velocities = ecs.read_storage::<Vel>();
+        let states = ecs.read_storage::<CharacterState>();
+        let physics = ecs.read_storage::<PhysicsState>();
+        (
+            &entities,
+            &colonists,
+            &positions,
+            &velocities,
+            &states,
+            &physics,
+        )
+            .join()
+            .find(|(_, colonist, _, _, _, _)| colonist.0.name == name)
+            .map(|(_, _, position, velocity, state, physics)| {
+                let state_debug = format!("{state:?}");
+                let state_kind = state_debug
+                    .split_once('(')
+                    .map_or(state_debug.as_str(), |(kind, _)| kind)
+                    .to_owned();
+                serde_json::json!({
+                    "position": [position.0.x, position.0.y, position.0.z],
+                    "velocity": [velocity.0.x, velocity.0.y, velocity.0.z],
+                    "character_state": state_debug,
+                    "character_state_kind": state_kind,
+                    "use_item": matches!(state, CharacterState::UseItem(_)),
+                    "on_ground": physics.on_ground.is_some(),
+                    "on_wall": physics.on_wall.map(|normal| [normal.x, normal.y, normal.z]),
+                })
+            })
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        rtsim
+            .state()
+            .data()
+            .sites
+            .sites
+            .values()
+            .next()
+            .map(|site| site.wpos.map(|value| value as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let ground_z = {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(cx, cy, *z)).is_ok_and(|block| {
+                matches!(
+                    block.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    }
+    .expect("class-7 fixture site has ground");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    for x in (cx - 6)..=(cx + 6) {
+        for y in (cy - 6)..=(cy + 6) {
+            for z in (ground_z - 2)..=ground_z {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (ground_z + 1)..=(ground_z + 10) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    for _ in 0..2 {
+        tick_once(&mut server, &mut fixture_tick);
+    }
+
+    // A one-member spawn is the production Farmer entry in
+    // `RtSim::bastion_spawn_colony`; no item is injected or reordered.
+    let roster = server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, ground_z as f32 + 2.0),
+        1,
+    );
+    let subject = roster.first().cloned().unwrap_or_default();
+    let mut promoted = false;
+    for _ in 0..120 {
+        tick_once(&mut server, &mut fixture_tick);
+        if live_state(&server, &subject).is_some() {
+            promoted = true;
+            break;
+        }
+    }
+
+    let inventory_before_heal = server.bastion_colonist_inventory(&subject);
+    let detailed_before_heal = server.bastion_colonist_item_observations(&subject);
+    let selected_before_heal = server.bastion_colonist_selected_healing_item(&subject);
+    let health_before_damage = server.bastion_colonist_health(&subject);
+    let initial_state = live_state(&server, &subject);
+    let natural_food_available = selected_before_heal.is_some();
+    let damaged = natural_food_available && server.bastion_set_health_fraction(&subject, 0.5);
+
+    let mut saw_use_item = false;
+    let mut use_item_tick = None;
+    let mut consumption_tick = None;
+    let mut state_transitions = Vec::new();
+    let mut last_state = initial_state
+        .as_ref()
+        .and_then(|state| state["character_state_kind"].as_str())
+        .unwrap_or_default()
+        .to_owned();
+    let mut route_ever_active = false;
+    let mut bastion_job_ever_active = false;
+    for _ in 0..360 {
+        tick_once(&mut server, &mut fixture_tick);
+        route_ever_active |= server.bastion_colonist_route_kind(&subject).is_some();
+        bastion_job_ever_active |= server.bastion_job_audit().total != 0;
+        let state = live_state(&server, &subject);
+        if let Some(state) = &state {
+            let state_name = state["character_state_kind"].as_str().unwrap_or_default();
+            if state_name != last_state {
+                state_transitions.push(serde_json::json!({
+                    "fixture_tick": fixture_tick,
+                    "state": state,
+                }));
+                last_state = state_name.to_owned();
+            }
+            if state["use_item"].as_bool() == Some(true) {
+                saw_use_item = true;
+                use_item_tick.get_or_insert(fixture_tick);
+            }
+        }
+        let inventory = server.bastion_colonist_inventory(&subject);
+        if inventory_before_heal.is_some() && inventory != inventory_before_heal {
+            consumption_tick.get_or_insert(fixture_tick);
+        }
+        if saw_use_item
+            && consumption_tick.is_some()
+            && state
+                .as_ref()
+                .is_some_and(|state| state["use_item"].as_bool() == Some(false))
+        {
+            break;
+        }
+    }
+    // Stop the production idle-heal loop from immediately queuing a second
+    // item. The first consumption is already measured; the round-trip phase
+    // isolates inventory reconstruction and next-choice determinism.
+    let restored_health_before_roundtrip = server.bastion_set_health_fraction(&subject, 1.0);
+    for _ in 0..30 {
+        tick_once(&mut server, &mut fixture_tick);
+    }
+
+    let health_after_heal = server.bastion_colonist_health(&subject);
+    let inventory_before_roundtrip = server.bastion_colonist_inventory(&subject);
+    let detailed_before_roundtrip = server.bastion_colonist_item_observations(&subject);
+    let selected_before_roundtrip = server.bastion_colonist_selected_healing_item(&subject);
+    let state_before_roundtrip = live_state(&server, &subject);
+    let demoted = server.bastion_force_demote(&subject);
+    let mut gone = false;
+    let mut back = false;
+    for _ in 0..600 {
+        tick_once(&mut server, &mut fixture_tick);
+        let present = live_state(&server, &subject).is_some();
+        gone |= !present;
+        if gone && present {
+            back = true;
+            break;
+        }
+    }
+    for _ in 0..20 {
+        tick_once(&mut server, &mut fixture_tick);
+    }
+    let inventory_after_roundtrip = server.bastion_colonist_inventory(&subject);
+    let detailed_after_roundtrip = server.bastion_colonist_item_observations(&subject);
+    let selected_after_roundtrip = server.bastion_colonist_selected_healing_item(&subject);
+    let state_after_roundtrip = live_state(&server, &subject);
+    route_ever_active |= server.bastion_colonist_route_kind(&subject).is_some();
+    bastion_job_ever_active |= server.bastion_job_audit().total != 0;
+
+    let canonical_inventory_preserved = inventory_before_roundtrip.is_some()
+        && inventory_after_roundtrip == inventory_before_roundtrip;
+    let next_item_content_preserved = selected_before_roundtrip
+        .as_ref()
+        .zip(selected_after_roundtrip.as_ref())
+        .is_some_and(|(before, after)| {
+            before.definition_id == after.definition_id
+                && before.item_hash == after.item_hash
+                && before.amount == after.amount
+        });
+    let result = serde_json::json!({
+        "schema": "bastion.class7-agent-roundtrip/v1",
+        "seed": args.seed,
+        "spawn_contract": "single-member colony index 0 = Farmer",
+        "subject": subject,
+        "promoted": promoted,
+        "fixture_ticks": fixture_tick,
+        "natural_food_available": natural_food_available,
+        "damaged": damaged,
+        "health_before_damage": health_before_damage,
+        "health_after_heal": health_after_heal,
+        "inventory_before_heal": inventory_before_heal,
+        "detailed_before_heal": detailed_before_heal,
+        "selected_before_heal": selected_before_heal,
+        "saw_use_item": saw_use_item,
+        "use_item_tick": use_item_tick,
+        "consumption_tick": consumption_tick,
+        "state_transitions": state_transitions,
+        "state_before_roundtrip": state_before_roundtrip,
+        "inventory_before_roundtrip": inventory_before_roundtrip,
+        "detailed_before_roundtrip": detailed_before_roundtrip,
+        "selected_before_roundtrip": selected_before_roundtrip,
+        "restored_health_before_roundtrip": restored_health_before_roundtrip,
+        "demoted": demoted,
+        "gone": gone,
+        "back": back,
+        "state_after_roundtrip": state_after_roundtrip,
+        "inventory_after_roundtrip": inventory_after_roundtrip,
+        "detailed_after_roundtrip": detailed_after_roundtrip,
+        "selected_after_roundtrip": selected_after_roundtrip,
+        "canonical_inventory_preserved": canonical_inventory_preserved,
+        "next_item_content_preserved": next_item_content_preserved,
+        "route_ever_active": route_ever_active,
+        "bastion_job_ever_active": bastion_job_ever_active,
+    });
+    let envelope = serde_json::json!({
+        "schema": "bastion.determinism-observation/v1",
+        "artifact_sha256": std::env::var("BASTION_FLIGHT_RECORDER_ARTIFACT_SHA256").ok(),
+        "seed": std::env::var("BASTION_FLIGHT_RECORDER_SEED").ok(),
+        "result": result,
+    });
+    if let Some(path) = std::env::var_os("BASTION_DETERMINISM_OBSERVATION_PATH") {
+        let path = PathBuf::from(path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create class-7 roundtrip evidence directory");
+        }
+        let mut file = std::fs::File::create(path).expect("create class-7 roundtrip observation");
+        serde_json::to_writer(&mut file, &envelope).expect("write class-7 roundtrip observation");
+        writeln!(file).expect("terminate class-7 roundtrip observation");
+    }
+    server::bastion_flight_recorder::finalize();
+    let pass = promoted
+        && natural_food_available
+        && damaged
+        && saw_use_item
+        && consumption_tick.is_some()
+        && restored_health_before_roundtrip
+        && demoted
+        && gone
+        && back
+        && canonical_inventory_preserved
+        && next_item_content_preserved
+        && !route_ever_active
+        && !bastion_job_ever_active;
+    println!("{envelope}");
+    println!(
+        "CLASS7 AGENT ROUNDTRIP FIXTURE: {}",
+        if pass { "PASS" } else { "FAIL" }
+    );
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
     }
 }
 
@@ -11535,6 +12032,7 @@ fn needs_scenario(args: &Args) -> ExitCode {
         && demoted
         && persist_ok
         && names.len() == 2;
+    write_determinism_observation(&result);
     println!("{}", result);
     println!("NEEDS SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
@@ -11955,6 +12453,7 @@ fn archetype_scenario(args: &Args) -> ExitCode {
         "ag2_census_guard": census.2,
     });
     let pass = weights_ok && contrast && graceful;
+    write_determinism_observation(&result);
     println!("{}", result);
     println!("ARCHETYPE SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
@@ -12964,6 +13463,7 @@ fn bag1_scenario(args: &Args) -> ExitCode {
     // intents (Sit/Talk/Dance) are legitimate, so the bar is existential,
     // not universal. The run completing = no arm froze or panicked.
     let pass = promoted > 0 && movers_5 >= 1;
+    write_determinism_observation(&result);
     println!("{}", result);
     println!("BAG1 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
@@ -13870,6 +14370,7 @@ fn lod0_scenario(args: &Args) -> ExitCode {
         && back
         && skills_survived
         && inventory_survived;
+    write_determinism_observation(&result);
     println!("{}", result);
     println!("LOD0 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 

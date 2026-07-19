@@ -83,6 +83,10 @@ pub struct Controller {
 }
 
 impl Controller {
+    /// Independent RNG salt for dialogue-session identity. Keeping this stream
+    /// separate prevents identity draws from shifting ordinary NPC decisions.
+    pub const DIALOGUE_ID_RNG_SALT: u32 = 0xD1A1_06E0;
+
     /// Reset the controller to a neutral state before the start of the next
     /// brain tick.
     pub fn reset(&mut self, npc: &Npc) {
@@ -164,12 +168,16 @@ impl Controller {
     }
 
     /// Start a new dialogue.
-    pub fn dialogue_start(&mut self, target: impl Into<Actor>) -> DialogueSession {
+    pub fn dialogue_start(
+        &mut self,
+        target: impl Into<Actor>,
+        rng: &mut impl Rng,
+    ) -> DialogueSession {
         let target = target.into();
 
         let session = DialogueSession {
             target,
-            id: DialogueId(rand::rng().random()),
+            id: DialogueId(rng.random()),
         };
 
         self.actions.push(NpcAction::Dialogue(target, Dialogue {
@@ -375,6 +383,10 @@ impl Clone for Npc {
 
 impl Npc {
     pub const PERM_ENTITY_CONFIG: u32 = 1;
+    /// Stable, independent stream for loadouts evaluated when an RTSim NPC is
+    /// promoted into the ECS. Kept separate so adding lazy loadout draws never
+    /// shifts body/config generation.
+    pub const PERM_LAZY_LOADOUT: u32 = 3;
     const PERM_NAME: u32 = 0;
     const PERM_TIME: u32 = 2;
 
@@ -796,4 +808,28 @@ impl Deref for Npcs {
 
 impl DerefMut for Npcs {
     fn deref_mut(&mut self) -> &mut Self::Target { &mut self.npcs }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand_chacha::ChaChaRng;
+
+    #[test]
+    fn dialogue_identity_uses_the_supplied_independent_stream() {
+        let target = Actor::Character(CharacterId(7));
+        let observe = || {
+            let mut controller = Controller::default();
+            let mut rng = ChaChaRng::seed_from_u64(0xD1A1_06E0);
+            [
+                controller.dialogue_start(target, &mut rng).id,
+                controller.dialogue_start(target, &mut rng).id,
+            ]
+        };
+
+        let a = observe();
+        let b = observe();
+        assert_eq!(a, b);
+        assert_ne!(a[0], a[1]);
+    }
 }

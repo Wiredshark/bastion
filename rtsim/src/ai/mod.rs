@@ -77,6 +77,9 @@ pub struct NpcCtx<'a, 'd> {
     /// The delta time since this npcs ai was last ran.
     pub dt: f32,
     pub rng: ChaChaRng,
+    /// Separate session-identity stream; dialogue draws must not perturb the
+    /// normal decision stream above.
+    pub dialogue_rng: ChaChaRng,
     pub system_data: &'a NpcSystemData<'d>,
 
     /// Used to determine the current action priority. Lower priority actions

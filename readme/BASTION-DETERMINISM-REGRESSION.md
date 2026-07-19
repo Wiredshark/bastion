@@ -1,0 +1,170 @@
+# Bastion determinism regression gate
+
+`bastion-harness --determinism-regression` is the standing process-isolated
+determinism gate. It launches the exact current harness executable twice,
+records artifact and input provenance, and reports the earliest observed
+divergence.
+
+## Usage
+
+```powershell
+# Fast registry-class-7 inventory/UseItem proof
+target\debug\bastion-harness.exe `
+  --determinism-regression class7-item-identity `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\class7-seed21
+
+# Short real Agent/UseItem/physics + RTSim demote/re-promote proof
+target\debug\bastion-harness.exe `
+  --determinism-regression class7-agent-roundtrip `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\class7-agent-roundtrip-seed21
+
+# Existing B5.5 flight-recorder scenario
+target\debug\bastion-harness.exe `
+  --determinism-regression b55-deep `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\b55-seed21
+
+# Fast production observations beyond class 7
+target\debug\bastion-harness.exe `
+  --determinism-regression world-summary `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\world-summary-seed21
+
+target\debug\bastion-harness.exe `
+  --determinism-regression lod0-promotion `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\lod0-seed21
+
+target\debug\bastion-harness.exe `
+  --determinism-regression archetype-entity-gen `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\archetype-seed21
+
+target\debug\bastion-harness.exe `
+  --determinism-regression needs-agent-state `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\needs-seed21
+
+target\debug\bastion-harness.exe `
+  --determinism-regression bag1-agent-decision `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\bag1-seed21
+
+target\debug\bastion-harness.exe `
+  --determinism-regression rtsim-dialogue-action `
+  --seed 21 `
+  --determinism-normalize wall-unix-millis `
+  --determinism-output E:\evidence\rtsim-dialogue-seed21
+```
+
+The parent creates `run-a` and `run-b`, never overwrites an existing output
+directory, hashes its executable before and after both children, and checks
+the recorder/observation artifact and seed metadata. Recorder sampling is
+lossless (`sample_every=1`) within explicit bounds; any timeout, missing
+finalization, missing stream, zero-record required stream, truncation,
+signal-style exit, metadata mismatch, or changing artifact makes the verdict
+invalid. Two matching empty children can never produce a deterministic green.
+
+The current named scenario implementations own internal temporary data
+directories. `--determinism-save-tree` is therefore rejected for these named
+mappings; it is not silently advertised as an input that the child ignores.
+
+## Outputs and exit status
+
+- `verdict.json`: machine-readable `bastion.determinism-regression.verdict/v1`.
+- `summary.txt`: concise human result and exact first divergent values.
+- Per child: command, numeric exit, stdout/stderr, recorder or authoritative
+  observation, hashes, counts, and truncation/provenance checks.
+
+Exit codes are:
+
+- `0`: deterministic and both functional scenario assertions passed.
+- `1`: a behavioral/tape/outcome divergence was measured.
+- `2`: invalid evidence or infrastructure failure.
+- `3`: deterministic evidence, but both children reported a structured
+  functional scenario failure. This is never presented as an overall green.
+
+Complete tapes from an explicit structured scenario `FAIL` remain comparable,
+which is required to inspect a pre-fix failure. A panic is not comparable: a
+nonzero child is accepted only when its exact scenario `...: FAIL` marker and
+complete evidence are present.
+
+Trajectory and writer-event streams have no shared total ordering. If both
+first diverge at the same tick, the verdict reports all same-tick candidates
+and sets `cross_stream_order_proven=false`. A writer is named as observed only
+when both records identify the same writer and both carry proven dispatcher
+ordering; this is evidence, not automatic causal attribution.
+
+## Normalization policy
+
+No normalization is enabled by default. The sole allow-listed normalization is:
+
+```text
+--determinism-normalize wall-unix-millis
+```
+
+It applies only to the exact top-level `$.wall_unix_millis` field. Position,
+velocity, state, item definition, item hash, inventory slot, amount, target,
+writer, and all nested fields are behavioral and cannot be normalized.
+
+## Registry class 7
+
+`class7-item-identity` uses authoritative state rather than a long trajectory:
+the production lazy farmer loadout, `SpawnEntityData` inventory construction,
+and the exact production healing-item selector. Each child emits the complete
+ordered `(slot, definition_id, item_hash, amount)` inventory and selected
+UseItem slot/hash. Task 1 compares that record byte-semantically across fresh
+processes.
+
+The measured root was not an unstable `Item::item_hash`: that hash is derived
+from item definition/content. RTSim created a stable per-NPC RNG for entity
+configuration, but lazy profession loadouts discarded it; `trader_loadout`
+used `rand::rng()`, while `TradePricing` used `rand::random()` and sampled an
+unordered candidate vector by index. The fix preserves laziness and gameplay
+distribution while giving it a separate stable per-NPC RNG stream and sorting
+candidates by full item-definition identity before sampling. Item hashes,
+ItemIds, persistence, global inventory ordering, and ARCH-003 deterministic-mode
+gating are unchanged.
+
+The fast class-7 mapping closes the earliest measured behavioral split: both
+processes must construct the same ordered inventory and issue the same concrete
+`UseItem` slot/hash.
+
+`class7-agent-roundtrip` is the bounded production integration mapping. It
+spawns the normal index-0 Farmer without injecting food, damages the live
+colonist, observes the real Agent queueing `InventoryAction::Use`, runs the
+authoritative `CharacterState::UseItem` and physics stack, and records every
+tick with the existing flight recorder. After consumption it uses the existing
+RTSim force-demote/re-promote seam, proves canonical inventory has neither loss
+nor duplication, and records reconstructed slots plus the next production
+healing choice. Any Bastion job or emergency route activation fails the
+fixture. The paired gate compares both the recorder streams and one bounded
+authoritative observation record.
+
+This is intentionally shorter than a full B5.5 soak. B5.5 remains a separate
+long integration gate and is not inferred from either class-7 fixture. Earlier
+B5.8 recorder-mapping observations are preserved as out-of-scope evidence and
+are not pursued by this determinism task.
+
+## Follow-up test-tool proposals
+
+Highest-value next additions, kept out of this bounded change:
+
+1. Save/reload fuzz corpus that feeds identical snapshots through repeated
+   promote/demote/save cycles and compares the same determinism verdict.
+2. Coverage-guided scenario mutation over seed, timing, and job interleavings,
+   minimizing any first-divergence tape into a small fixture.
+3. Metamorphic invariants for conservation, permutation-independent candidate
+   storage, and observer/non-observer equivalence.
+4. Headless client-render receipt checks for camera/session provenance, to
+   replace human-eye-only rendering gates without claiming pixel equivalence.

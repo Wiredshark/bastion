@@ -493,8 +493,14 @@ impl SpawnEntityData {
         let inventory = {
             // Evaluate lazy function for loadout creation
             if let Some(make_loadout) = make_loadout {
-                loadout_builder =
-                    loadout_builder.with_creator(make_loadout, economy.as_ref(), None);
+                use rand::SeedableRng;
+                let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(make_loadout.seed);
+                loadout_builder = loadout_builder.with_creator(
+                    make_loadout.creator,
+                    economy.as_ref(),
+                    None,
+                    &mut rng,
+                );
             }
             let loadout = loadout_builder.build();
             let mut inventory = comp::inventory::Inventory::with_loadout(loadout, body);

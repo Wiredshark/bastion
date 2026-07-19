@@ -45,7 +45,7 @@ pub fn do_dialogue<S: State, T: Default + Clone + Send + Sync + 'static, A: Acti
     f: impl Fn(DialogueSession) -> A + Clone + Send + Sync + 'static,
 ) -> impl Action<S, T> {
     now(move |ctx, _| {
-        let session = ctx.controller.dialogue_start(tgt);
+        let session = ctx.controller.dialogue_start(tgt, &mut ctx.dialogue_rng);
         f(session)
             // If an end dialogue message is received, stop the dialogue
             .stop_if(move |ctx: &mut NpcCtx| {

@@ -612,8 +612,10 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
+ "hex",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "specs",
  "tokio",
  "tracing",
@@ -8964,6 +8966,7 @@ dependencies = [
  "prometheus",
  "quinn",
  "rand 0.10.1",
+ "rand_chacha 0.10.0",
  "rayon",
  "refinery",
  "ron",
