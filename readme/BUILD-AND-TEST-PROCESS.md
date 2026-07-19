@@ -156,17 +156,24 @@ runs, and DELETES itself. Idle cost ≈ $0 (only the ~4.5 GB `bastion-golden` im
   overhead. Measured: 24 seeds = 142 s on one 32-core VM vs 367 s on 8×4-core. The pool only wins once you need
   MORE cores than one VM can hold (i.e., after the quota bump).
 
-## 13. THE RUN MODES — which to use
+## 13. ★ BEFORE EACH HEAVY RUN — ASK: BIG VM or MANY VMs? (state the choice + why — Ben, MANDATORY)
+This is a CONSCIOUS decision per run, NOT a default. The tradeoff: a **BIG VM** = ONE build, N parallel
+processes on one machine (most efficient — fewest builds). **MANY VMs** = one build EACH (more overhead)
+but scales past one machine + isolates faults + runs heterogeneous work. Pick deliberately every time.
 ```
-1. Uncommitted / quick single check?          -> LOCAL (18s loop, §2). The VM only sees committed code.
-2. One test, one VM (single scenario/soak)?   -> bash vm-run.sh --<scenario>
-3. One test, MANY seeds (corpus/throughput)?  -> bash vm-scale.sh <machine> <N_seeds> <first-seed> "<args>" [$max] [min]
-                                                 DEFAULT: one big VM, N cores, one build (§12: beats the pool).
-   3b. Need MORE cores than one VM holds?      -> bash vm-pool-safe.sh <N> <machine> <seeds/VM> <first-seed> "<args>" [$max] [min]
-                                                 (auto-halves if the live burn-guard trips)
-4. MANY DIFFERENT tests at once (breadth /     -> bash vm-jobs.sh <jobs_file> <machine> [$max] [min]
-   general data / full validation)?              one VM per job line, all parallel; template test-suite.jobs
+ quick / single check              -> LOCAL (§2) or  vm-run.sh --<scenario>   (1 small VM; no cores needed)
+ SAME scenario, many seeds,        -> BIG VM:  vm-scale.sh c2-standard-60 <N_seeds> <first-seed> "<args>" [$][m]
+   fits one VM (<=60 cores)             ONE build, up to 60 parallel seeds. The EFFICIENT default for a
+                                        homogeneous corpus (fewest builds).
+ Want the FULL 96 cores (>60,      -> MANY VMs: vm-pool-safe.sh <N> <machine> <seeds/VM> <first-seed> "<args>" [$][m]
+   can't fit one VM) OR fault-         96 can't fit in one VM; also for fault isolation across machines.
+   isolation
+ DIFFERENT scenarios at once       -> MANY VMs: vm-jobs.sh <jobs_file> <machine> [$][m]
+   (a suite / the FULL validation)     one VM per job line, heterogeneous; template test-suite.jobs
 ```
+**RULE:** BIG-VM when the work is homogeneous + fits one machine (fewest builds = most efficient);
+MANY-VMs when you need >60 cores, fault isolation, or different tests at once. The builder STATES which +
+why before every heavy run — this is the pre-run question, asked deliberately, not a habit.
 All modes are ephemeral, SHA-validated, and burn-guarded. Keep (#VMs × vCPU) under the CPU quota with headroom.
 For a fixed core budget prefer scale-up (mode 3 → one machine); reach for breadth (mode 4) when the tests DIFFER.
 
