@@ -144,3 +144,21 @@ the real limit is the $300 credit budget, and bursts are cheap (~20 VMs × 15 mi
   it just makes the boot-time pull bigger. So a stale image = still-correct, slightly slower.
 - Scaling past GCP: crowd/behavioral corpora don't need bit-exact determinism, so the pool can extend to Azure /
   Oracle free tiers too (each its own trial) for even more parallelism — build per-provider spawners when needed.
+
+## 13. WHICH heavy-test approach — the decision the builder applies (scale-up vs. pool vs. local)
+Ask, in order — the FIRST match wins:
+```
+1. Uncommitted edits OR a quick single check?
+      -> LOCAL (18s loop, §2). The VM only sees committed code; local is faster for small/uncommitted.
+2. One long single soak (multi-minute, one seed)?
+      -> ON-DEMAND VM:  bash /e/veloren-master/vm-run.sh --<scenario>   (§3)
+3. A CORPUS (many independent seeds/configs)?
+   3a. Does the parallelism fit ONE provider (<= ~200 vCPU here)?   [almost always yes]
+         -> SCALE UP (default):  bash /e/veloren-master/vm-scale.sh <machine-type> "<parallel-seeds corpus cmd>"
+            ONE build, N seed-processes on N cores. Efficient (no redundant builds) + simple (one machine).
+   3b. Need MORE than one provider gives (> ~200 vCPU), or fault isolation across machines?
+         -> CLONE POOL (multi-provider overflow):  bash /e/veloren-master/vm-pool.sh <N> <first-seed> "<args>"
+            + per-provider spawners (Azure/Oracle). Redundant per-clone builds — only worth it past one provider.
+```
+**Rule of thumb: corpus → scale UP first; reach for the clone pool ONLY when one provider isn't enough.** Both
+tools exist; the flowchart picks. The builder chooses per this tree and states which and why when it runs heavy tests.
