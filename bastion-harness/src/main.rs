@@ -432,6 +432,25 @@ struct Args {
     #[arg(long, default_value_t = 6)]
     mf_down: u16,
 
+    /// bastion (M3-CORPUS PREP 2, parallel seeds): corpus mode — run the
+    /// named scenario flag (e.g. `dig-access-scenario`, no leading dashes)
+    /// across `--corpus-seeds` as CONCURRENT child processes of this same
+    /// exe (each seed already fully process/data-dir isolated, so
+    /// parallelism cannot perturb per-seed determinism; verified against
+    /// serial at introduction). Prints one line per seed + an aggregate;
+    /// exit success iff every seed passed.
+    #[arg(long, value_name = "SCENARIO_FLAG")]
+    corpus: Option<String>,
+
+    /// bastion (M3-CORPUS PREP 2): the corpus seed list.
+    #[arg(long, value_delimiter = ',', default_value = "1337,777,21")]
+    corpus_seeds: Vec<u64>,
+
+    /// bastion (M3-CORPUS PREP 2): max concurrent seed-children (0 = all
+    /// at once; each child uses ~2-3 cores — 3-4 fits the VM's 8).
+    #[arg(long, default_value_t = 0)]
+    corpus_jobs: usize,
+
     /// bastion (DPA-0/1/2, SHAFT-ALWAYS-ACCESSED — packet §8): the
     /// dig-provisioned access gate. Leg A: a tight 2×2×13 organic shaft
     /// with ZERO wood — the frontier HOLDS (no deep dig, classified
@@ -632,6 +651,109 @@ fn post_teardown_hygiene_clean() -> bool {
     !FORBIDDEN_HYGIENE_DIAGNOSTIC_SEEN.load(Ordering::SeqCst)
 }
 
+/// bastion (M3-CORPUS PREP 1): the per-seed world-map cache opts — ONE
+/// definition every scenario's `Settings` uses (see the `--map-cache` arg
+/// doc for semantics + the stale-cache caveat).
+// bastion (M3-CORPUS PREP 1 — REJECTED BY ITS OWN GUARD, 2026-07-19, kept
+// as a warning): a `FileOpts::LoadOrGenerate` per-seed world-map cache was
+// wired here and FAILED the mandatory determinism pair three ways:
+// (1) `map_file: None` never generated a map at all — it loads the bundled
+// DEFAULT map asset, so the cache silently swapped the WORLD under every
+// existing baseline/fixture; (2) real map generation costs ~980s while
+// loading saves only ~15s of the ~65s boot (the cost lives in civsim/rtsim/
+// spawn-chunk gen, which FileOpts cannot cache); (3) generate-then-save vs
+// load produced DIFFERENT scenario results (prime≠load — the load path is
+// not even internally deterministic here). Any future boot-cache must
+// target civsim/rtsim/chunk state, not the map file, and must pass the
+// same fresh-vs-load byte-identical pair before adoption.
+
+/// bastion (M3-CORPUS PREP 2): the parallel corpus runner — see the
+/// `--corpus` arg doc. Children are this same exe (the `b58_paired` /
+/// `verify` spawn pattern); per-seed isolation is by process + own
+/// data-dir, so concurrency cannot perturb per-seed determinism.
+fn corpus_runner(args: &Args) -> ExitCode {
+    let scenario = args.corpus.as_deref().unwrap_or_default();
+    if scenario.is_empty() || scenario.starts_with('-') {
+        eprintln!("CORPUS: pass the scenario flag NAME without dashes, e.g. --corpus dig-access-scenario");
+        return ExitCode::FAILURE;
+    }
+    let exe = std::env::current_exe().expect("own exe path");
+    let mut seeds = args.corpus_seeds.clone();
+    seeds.dedup();
+    if seeds.is_empty() {
+        eprintln!("CORPUS: empty seed list");
+        return ExitCode::FAILURE;
+    }
+    let jobs = if args.corpus_jobs == 0 {
+        seeds.len()
+    } else {
+        args.corpus_jobs.max(1)
+    };
+    let flag = format!("--{scenario}");
+    let mut results: Vec<(u64, bool, String)> = Vec::new();
+    for batch in seeds.chunks(jobs) {
+        let mut children: Vec<(u64, std::process::Child)> = Vec::new();
+        for seed in batch {
+            let child = std::process::Command::new(&exe)
+                .args([
+                    flag.as_str(),
+                    "--seed",
+                    &seed.to_string(),
+                    "--tps",
+                    &args.tps.to_string(),
+                ])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+            match child {
+                Ok(c) => children.push((*seed, c)),
+                Err(e) => results.push((*seed, false, format!("spawn failed: {e}"))),
+            }
+        }
+        for (seed, child) in children {
+            let out = child.wait_with_output();
+            match out {
+                Ok(out) => {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    // The scenario's LAST non-JSON line is its verdict line;
+                    // keep the last JSON line too when present.
+                    let verdict = stdout
+                        .lines()
+                        .rev()
+                        .find(|l| !l.trim_start().starts_with('{') && !l.trim().is_empty())
+                        .unwrap_or("")
+                        .to_string();
+                    results.push((seed, out.status.success(), verdict));
+                    for line in stdout.lines().filter(|l| l.trim_start().starts_with('{')) {
+                        println!("CORPUS-JSON seed={seed}: {line}");
+                    }
+                },
+                Err(e) => results.push((seed, false, format!("wait failed: {e}"))),
+            }
+        }
+    }
+    results.sort_by_key(|(s, ..)| *s);
+    let mut passed = 0usize;
+    for (seed, ok, verdict) in &results {
+        println!(
+            "CORPUS seed={seed}: {} — {verdict}",
+            if *ok { "PASS" } else { "FAIL" }
+        );
+        if *ok {
+            passed += 1;
+        }
+    }
+    println!(
+        "CORPUS: {passed}/{} PASS ({scenario}, jobs={jobs})",
+        results.len()
+    );
+    if passed == results.len() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
 fn main() -> ExitCode {
     // Stderr, not stdout: JSON-line consumers stay untouched. BEFORE
     // Args::parse so even a --help/parse-error run identifies its exe.
@@ -662,7 +784,9 @@ fn main() -> ExitCode {
         .with_writer(HygieneMakeWriter)
         .init();
 
-    if let Some(scenario) = &args.determinism_regression {
+    if args.corpus.is_some() {
+        corpus_runner(&args)
+    } else if let Some(scenario) = &args.determinism_regression {
         determinism_regression::run(determinism_regression::Config {
             scenario: scenario.clone(),
             seed: args.seed,

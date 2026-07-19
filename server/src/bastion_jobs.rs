@@ -13042,12 +13042,18 @@ impl<'a> System<'a> for Sys {
                     continue;
                 }
                 let dist = pos.0.distance(job.pos.map(|e| e as f32));
-                // B5.8: ACCESS jobs (rescue rungs/steps) are built by whoever
-                // is ON SITE — a distant claimant holding a rescue-critical
-                // rung starves the trapped colonist (run-12 deadlock: parked
-                // bystanders claimed the pillar, the trapped digger hogged
-                // the out-job, nobody moved).
-                if job.is_access && dist > 16.0 {
+                // B5.8: RESCUE access jobs are built by whoever is ON SITE —
+                // a distant claimant holding a rescue-critical rung starves
+                // the trapped colonist (run-12 deadlock: parked bystanders
+                // claimed the pillar, the trapped digger hogged the out-job,
+                // nobody moved). SCOPE (Sonnet leg-C verdict, DPA): the cap
+                // applies ONLY to real emergencies (emergency_access_jobs
+                // membership — the same discriminator F3 uses). A PROACTIVE
+                // dig-provisioned rung is ordinary construction any colonist
+                // may walk to; the blanket cap starved every rung in a wide
+                // dig (>16 from all workers) → nobody-eligible → F3 prune →
+                // re-emit churn, the leg-C 108/432 stall.
+                if job.is_access && emergency_owner.is_some() && dist > 16.0 {
                     continue;
                 }
                 // …and vertical-access construction outranks ordinary work
