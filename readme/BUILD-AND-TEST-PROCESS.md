@@ -102,6 +102,11 @@ hypotheses — and hand it to the **reviewer** (Sonnet first-line; Opus if hard/
 root-cause + a proposed better approach. A builder deep in a problem has tunnel vision; the reviewer sees all
 the data at once. **Reviewers and fresh sessions are the loop-breakers — grinding is not.** Resume once the
 reviewer proposes a direction (or confirms the current one).
+- **A reviewer-directed fix does NOT count against the ceiling.** Implementing the reviewer's proposed
+  root-cause/approach after an escalation is a FRESH, evidence-backed direction — not continued grinding. The
+  iteration counter resets on escalation. (Validated on the 2026-07-19 mining fix: Sonnet found leg C's real
+  root — a rescue-rung claim cap wrongly catching proactive rungs — in ONE pass, after the builder's 3 plan-side
+  iterations couldn't; that fix is v6 but doesn't re-arm the grind limit.)
 
 ## 10. Queued speedups — do them RIGHT AFTER the current task, BEFORE resuming testing (Ben-directed)
 Sequence: **finish (or escalate) the current mining fix → implement BOTH speedups → then back to testing.**
