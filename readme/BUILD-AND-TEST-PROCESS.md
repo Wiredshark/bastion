@@ -147,6 +147,11 @@ runs, and DELETES itself. Idle cost ≈ $0 (only the ~4.5 GB `bastion-golden` im
   ~$0 (self-delete); a burst is pennies. The ONLY guardrails: keep the burn-guard $/time ceilings on,
   don't schedule to the exact cap (~8 vCPU headroom for teardown races), let the wrappers self-delete.
   Bias: more VM / bigger VM / done sooner.
+- **BIG single VM:** e2 caps at 32 vCPU/VM. For one big machine, use **c2-standard-60** (60 cores, C2
+  quota=200, under the 96 global cap) — one build, no per-VM overhead vs a multi-e2 pool. n2/n2d = quota 0
+  (unavailable). `vm-scale.sh c2-standard-60 ...` works as-is.
+- **Golden image auto-refresh:** `vm-golden-autorefresh.sh` (schedule nightly) keeps the image at the
+  latest tip incrementally + idle-guarded, so each run's catch-up build stays small.
 - At a FIXED vCPU budget, **scale-UP (one big VM) beats the clone pool** — the pool pays per-VM build + boot
   overhead. Measured: 24 seeds = 142 s on one 32-core VM vs 367 s on 8×4-core. The pool only wins once you need
   MORE cores than one VM can hold (i.e., after the quota bump).

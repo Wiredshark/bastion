@@ -6,6 +6,9 @@
 #
 # Usage: bash vm-scale.sh <machine_type> <N_seeds> <first_seed> "<scenario args>" [MAX_USD] [MAX_MIN]
 #   e.g. bash vm-scale.sh e2-standard-32 24 1000 "--mine-fidelity-scenario --mf-minutes 5" 5 20
+# BIG single-VM option: c2-standard-60 (60 cores in ONE VM — more cores/one build than e2's 32-max; C2
+#   quota=200, under the 96 global cap). n2/n2d are quota=0 (unavailable). One 60-core VM beats 2x e2-32
+#   (one build, no per-VM overhead). Accepted as-is — the vCPU parse handles c2-standard-60.
 set -u
 GCLOUD="/c/Program Files (x86)/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
 ZONE=us-central1-a; IMAGE=bastion-golden; KEY="$HOME/.ssh/id_ed25519"; SSHKEYS_FILE="C:/Users/q/.ssh/bastion-sshkeys.txt"
