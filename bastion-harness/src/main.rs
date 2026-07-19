@@ -16,6 +16,7 @@
 #![recursion_limit = "256"]
 
 mod asset_test;
+mod boot_cache;
 mod determinism_regression;
 
 use clap::Parser;
@@ -39,9 +40,29 @@ use std::{
 };
 use tracing::{info, warn};
 
-#[derive(Parser)]
+#[derive(Clone, Parser)]
 #[command(name = "bastion-harness", about)]
 struct Args {
+    /// Enable the exact-key process-resident world boot cache. This can only
+    /// accelerate multiple Server boots made by this one harness process;
+    /// ordinary single-scenario and separate-process runs remain fresh.
+    #[arg(long)]
+    boot_cache: bool,
+
+    /// Opt-in fresh-vs-restored world boot-cache proof. The output directory
+    /// must be new; normal harness/server boot remains uncached.
+    #[arg(long, value_name = "DIR")]
+    boot_cache_proof: Option<PathBuf>,
+
+    /// Seeds used by --boot-cache-proof. The first seed is paired twice; all
+    /// remaining seeds receive one fresh/restored corpus pair.
+    #[arg(long, value_delimiter = ',', default_value = "21,22")]
+    boot_cache_proof_seeds: Vec<u32>,
+
+    /// Simulation ticks captured per fresh/restored boot-cache proof leg.
+    #[arg(long, default_value_t = 90)]
+    boot_cache_proof_ticks: u64,
+
     /// Run a named scenario twice in isolated child processes and compare the
     /// authoritative flight-recorder tapes or structured production result.
     /// Supported values: b55-deep, b58-ladder-integration-fixture,
@@ -817,7 +838,30 @@ fn main() -> ExitCode {
         .with_writer(HygieneMakeWriter)
         .init();
 
-    if args.corpus.is_some() {
+    if args.boot_cache && args.boot_cache_proof.is_none() {
+        let executable = match std::env::current_exe() {
+            Ok(executable) => executable,
+            Err(error) => {
+                eprintln!("BOOT CACHE: cannot locate harness executable: {error}");
+                return ExitCode::from(2);
+            },
+        };
+        let executable_sha256 = match server::bastion_boot_cache::executable_sha256(&executable) {
+            Ok(digest) => digest,
+            Err(error) => {
+                eprintln!("BOOT CACHE: cannot hash harness executable: {error}");
+                return ExitCode::from(2);
+            },
+        };
+        if let Err(error) = server::bastion_boot_cache::enable(executable_sha256) {
+            eprintln!("BOOT CACHE: opt-in refused: {error}");
+            return ExitCode::from(2);
+        }
+    }
+
+    if let Some(output_dir) = &args.boot_cache_proof {
+        boot_cache::run(&args, output_dir)
+    } else if args.corpus.is_some() {
         corpus_runner(&args)
     } else if let Some(scenario) = &args.determinism_regression {
         determinism_regression::run(determinism_regression::Config {
@@ -1494,6 +1538,9 @@ fn recorder_probe_sample(
         // R10 v2 fields: absent in the lifecycle probe (v1-shaped fixture).
         ownership_epoch: None,
         climb_token_witness: None,
+        queue_position: None,
+        queue_enqueue_tick: None,
+        reservation_generation: None,
     }
 }
 

@@ -62,6 +62,8 @@ lazy_static = { workspace = true }
 ron = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 hashbrown = { workspace = true }

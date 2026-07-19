@@ -1,0 +1,90 @@
+{
+  "schema": "bastion.boot-cache-proof/v1",
+  "executable_sha256": "481bccd8913090e675725663c7e39ff514e3372b334692b45b8d5b2419f7cd36",
+  "source_head": "96bbf1d2bb+dirty",
+  "target_arch": "x86_64",
+  "target_os": "windows",
+  "normalized_fields": ["wall_unix_millis"],
+  "pairs": [
+    {
+      "name": "seed-21-x1",
+      "seed": 21,
+      "deterministic": false,
+      "fresh_origin_valid": true,
+      "restored_origin_valid": true,
+      "outcome_equal": false,
+      "trajectory_equal": true,
+      "nonempty_trajectory": true,
+      "first_divergence": {
+        "source": "outcome",
+        "record": 30,
+        "path": "$.rtsim_data_sha256",
+        "fresh": "32d682d8fd4723a284607b2d5ac33cf98d8b1b45aee06bee8b53d4bf668dd507",
+        "restored": "532ccab1abbf8285301af4ef15419540292ca6e4a2b497928fc0ae21d3c93c70"
+      },
+      "fresh": {
+        "status": {
+          "origin": "fresh",
+          "key_sha256": "ef67c5c509848260cd856d296b2d585a02aed064c2205660676e14c24f2d3feb",
+          "refusal": null
+        },
+        "boot_wall_millis": 33019,
+        "force_load_wall_millis": 208,
+        "tape_samples": 31,
+        "cached_chunk_copy_on_write_clean": true
+      },
+      "restored": {
+        "status": {
+          "origin": "restored",
+          "key_sha256": "ef67c5c509848260cd856d296b2d585a02aed064c2205660676e14c24f2d3feb",
+          "refusal": null
+        },
+        "boot_wall_millis": 500,
+        "force_load_wall_millis": 0,
+        "tape_samples": 31,
+        "cached_chunk_copy_on_write_clean": true
+      }
+    },
+    {
+      "name": "seed-21-x2",
+      "seed": 21,
+      "deterministic": false,
+      "fresh_origin_valid": true,
+      "restored_origin_valid": true,
+      "outcome_equal": false,
+      "trajectory_equal": true,
+      "nonempty_trajectory": true,
+      "first_divergence": {
+        "source": "outcome",
+        "record": 30,
+        "path": "$.rtsim_data_sha256",
+        "fresh": "51b0636fb40c35abfcab1d725730e8fb676c045d9c6f0e1b4d091b427d962880",
+        "restored": "b036a0313b7e1a51ec3cbcb0e7c7f14e92717e15c28626e203f8af022f6de2d2"
+      },
+      "fresh": {
+        "status": {
+          "origin": "fresh",
+          "key_sha256": "ef67c5c509848260cd856d296b2d585a02aed064c2205660676e14c24f2d3feb",
+          "refusal": null
+        },
+        "boot_wall_millis": 33812,
+        "force_load_wall_millis": 209,
+        "tape_samples": 31,
+        "cached_chunk_copy_on_write_clean": true
+      },
+      "restored": {
+        "status": {
+          "origin": "restored",
+          "key_sha256": "ef67c5c509848260cd856d296b2d585a02aed064c2205660676e14c24f2d3feb",
+          "refusal": null
+        },
+        "boot_wall_millis": 564,
+        "force_load_wall_millis": 0,
+        "tape_samples": 31,
+        "cached_chunk_copy_on_write_clean": true
+      }
+    }
+  ],
+  "deterministic": false,
+  "gate_pass": false
+}

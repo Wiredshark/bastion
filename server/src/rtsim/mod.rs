@@ -57,10 +57,26 @@ impl RtSim {
         world: &World,
         data_dir: PathBuf,
     ) -> Result<Self, ron::Error> {
+        Self::new_with_boot_data(settings, world_seed, index, world, data_dir, None)
+            .map(|(rtsim, _)| rtsim)
+    }
+
+    pub(crate) fn new_with_boot_data(
+        settings: &WorldSettings,
+        world_seed: u32,
+        index: IndexRef,
+        world: &World,
+        data_dir: PathBuf,
+        boot_data: Option<Data>,
+    ) -> Result<(Self, Data), ron::Error> {
         let file_path = Self::get_file_path(data_dir);
 
-        info!("Looking for rtsim data at {}...", file_path.display());
-        let data = 'load: {
+        let data = if let Some(data) = boot_data {
+            info!("Using exact-key Bastion boot-template RTSim data");
+            data
+        } else {
+            info!("Looking for rtsim data at {}...", file_path.display());
+            'load: {
             if std::env::var("RTSIM_NOLOAD").map_or(true, |v| v != "1") {
                 match File::open(&file_path) {
                     Ok(file) => {
@@ -131,7 +147,11 @@ impl RtSim {
             let data = Data::generate(settings, world, index);
             info!("Rtsim data generated.");
             data
+            }
         };
+        // Preserve pre-RtState/pre-OnSetup data. Restores clone this value and
+        // replay the normal setup path instead of cloning rule/process state.
+        let pristine_boot_data = data.clone();
 
         let mut this = Self {
             last_saved: None,
@@ -148,7 +168,7 @@ impl RtSim {
 
         this.state.emit(OnSetup, &mut (), world, index);
 
-        Ok(this)
+        Ok((this, pristine_boot_data))
     }
 
     fn get_file_path(mut data_dir: PathBuf) -> PathBuf {

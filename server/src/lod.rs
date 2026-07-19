@@ -10,7 +10,7 @@ static EMPTY_ZONE: lod::Zone = lod::Zone {
     objects: Vec::new(),
 };
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Lod {
     pub zones: HashMap<Vec2<i32>, lod::Zone>,
 }

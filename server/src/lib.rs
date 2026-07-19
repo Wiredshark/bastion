@@ -13,6 +13,8 @@ pub mod bastion_arena;
 // bastion (B-ASSET1): asset-lab runtime loader + placement (worldgen types).
 #[cfg(feature = "worldgen")]
 pub mod bastion_assets;
+#[cfg(feature = "worldgen")]
+pub mod bastion_boot_cache;
 // bastion (CHOP redesign, FR10): shared whole-tree detection (handler + hook).
 pub mod bastion_actions;
 pub mod bastion_chop;
@@ -270,6 +272,11 @@ pub struct Server {
 
     event_dispatcher: SendDispatcher<'static>,
     execution_mode: ExecutionMode,
+
+    #[cfg(feature = "worldgen")]
+    boot_cache_request: Option<bastion_boot_cache::Request>,
+    #[cfg(feature = "worldgen")]
+    boot_cache_status: bastion_boot_cache::Status,
 }
 
 impl Server {
@@ -327,34 +334,75 @@ impl Server {
             );
         }
 
+        #[cfg(feature = "worldgen")]
+        let (boot_cache_request, mut boot_cache_status) =
+            match bastion_boot_cache::request(&settings, data_dir, execution_mode) {
+                Ok(Some(request)) => (
+                    Some(request),
+                    bastion_boot_cache::Status::disabled("exact-key cache miss pending"),
+                ),
+                Ok(None) => (
+                    None,
+                    bastion_boot_cache::Status::disabled("boot cache not enabled"),
+                ),
+                Err(status) => {
+                    warn!(reason = ?status.refusal, "Bastion boot cache refused; using full boot");
+                    (None, status)
+                },
+            };
+
         // Load plugins before generating the world.
         #[cfg(feature = "plugins")]
         let plugin_mgr = PluginMgr::from_asset_or_default();
 
-        debug!("Generating world, seed: {}", settings.world_seed);
         #[cfg(feature = "worldgen")]
-        let (world, index) = World::generate(
-            settings.world_seed,
-            WorldOpts {
-                seed_elements: true,
-                world_file: if let Some(ref opts) = settings.map_file {
-                    opts.clone()
-                } else {
-                    // Load default map from assets.
-                    FileOpts::LoadAsset(DEFAULT_WORLD_MAP.into())
-                },
-                calendar: Some(settings.calendar_mode.calendar_now()),
-            },
-            &pools,
-            &|stage| {
-                report_stage(ServerInitStage::WorldGen(stage));
-            },
-        );
+        let cached_boot_template = boot_cache_request
+            .as_ref()
+            .and_then(bastion_boot_cache::lookup);
+        #[cfg(feature = "worldgen")]
+        let cache_hit = cached_boot_template.is_some();
+        #[cfg(feature = "worldgen")]
+        let (world, index, map, lod, cached_rtsim_data) =
+            if let Some((template, status)) = cached_boot_template {
+                boot_cache_status = status;
+                info!(
+                    key = ?boot_cache_status.key_sha256,
+                    "Bastion exact-key boot template restored"
+                );
+                (
+                    template.world,
+                    template.index,
+                    template.map,
+                    template.lod,
+                    Some(template.rtsim_data),
+                )
+            } else {
+                debug!("Generating world, seed: {}", settings.world_seed);
+                let (world, index) = World::generate(
+                    settings.world_seed,
+                    WorldOpts {
+                        seed_elements: true,
+                        world_file: if let Some(ref opts) = settings.map_file {
+                            opts.clone()
+                        } else {
+                            // Load default map from assets.
+                            FileOpts::LoadAsset(DEFAULT_WORLD_MAP.into())
+                        },
+                        calendar: Some(settings.calendar_mode.calendar_now()),
+                    },
+                    &pools,
+                    &|stage| {
+                        report_stage(ServerInitStage::WorldGen(stage));
+                    },
+                );
+                let world = Arc::new(world);
+                let map = world.get_map_data(index.as_index_ref(), &pools);
+                let lod = lod::Lod::from_world(&world, index.as_index_ref(), &pools);
+                (world, index, map, lod, None)
+            };
         #[cfg(not(feature = "worldgen"))]
         let (world, index) = World::generate(settings.world_seed);
 
-        #[cfg(feature = "worldgen")]
-        let map = world.get_map_data(index.as_index_ref(), &pools);
         #[cfg(not(feature = "worldgen"))]
         let map = common_net::msg::WorldMapMsg {
             dimensions_lg: Vec2::zero(),
@@ -373,7 +421,18 @@ impl Server {
         #[cfg(not(feature = "worldgen"))]
         let map_size_lg = world.map_size_lg();
 
+        #[cfg(not(feature = "worldgen"))]
         let lod = lod::Lod::from_world(&world, index.as_index_ref(), &pools);
+
+        #[cfg(feature = "worldgen")]
+        let pending_boot_template = (!cache_hit).then(|| {
+            (
+                Arc::clone(&world),
+                index.clone(),
+                map.clone(),
+                lod.clone(),
+            )
+        });
 
         report_stage(ServerInitStage::StartingSystems);
 
@@ -600,6 +659,7 @@ impl Server {
         }
 
         // Insert the world into the ECS (todo: Maybe not an Arc?)
+        #[cfg(not(feature = "worldgen"))]
         let world = Arc::new(world);
         state.ecs_mut().insert(Arc::clone(&world));
         state.ecs_mut().insert(lod);
@@ -731,16 +791,35 @@ impl Server {
         // Init rtsim, loading it from disk if possible
         #[cfg(feature = "worldgen")]
         {
-            match rtsim::RtSim::new(
+            match rtsim::RtSim::new_with_boot_data(
                 &settings.world,
                 settings.world_seed,
                 index.as_index_ref(),
                 &world,
                 data_dir.to_owned(),
+                cached_rtsim_data,
             ) {
-                Ok(rtsim) => {
+                Ok((rtsim, pristine_rtsim_data)) => {
                     state.ecs_mut().insert(rtsim.state().data().time_of_day);
                     state.ecs_mut().insert(rtsim);
+                    if let (Some(request), Some((world, index, map, lod))) =
+                        (boot_cache_request.as_ref(), pending_boot_template)
+                    {
+                        boot_cache_status = bastion_boot_cache::publish(
+                            request,
+                            bastion_boot_cache::Template {
+                                world,
+                                index,
+                                map,
+                                lod,
+                                rtsim_data: pristine_rtsim_data,
+                            },
+                        );
+                        info!(
+                            key = ?boot_cache_status.key_sha256,
+                            "Bastion exact-key boot template published"
+                        );
+                    }
                 },
                 Err(err) => {
                     error!("Failed to load rtsim: {}", err);
@@ -764,6 +843,11 @@ impl Server {
 
             event_dispatcher: Self::create_event_dispatcher(pools),
             execution_mode,
+
+            #[cfg(feature = "worldgen")]
+            boot_cache_request,
+            #[cfg(feature = "worldgen")]
+            boot_cache_status,
         };
 
         // bastion (B-ASSET1): the --asset-arena test chamber. Inert unless
@@ -822,6 +906,12 @@ impl Server {
 
     /// Get a reference to the server's world.
     pub fn world(&self) -> &World { &self.world }
+
+    /// Harness-visible origin for the current opt-in boot-template run.
+    #[cfg(feature = "worldgen")]
+    pub fn bastion_boot_cache_status(&self) -> &bastion_boot_cache::Status {
+        &self.boot_cache_status
+    }
 
     /// bastion (B3): spawn the player-colony starting band near `wpos` (used
     /// by the headless harness; in-game the client message drives it).
@@ -1704,27 +1794,45 @@ impl Server {
                 // live chunk generator applies — the harness force-load
                 // path honors the arena too (the ARENA leg tests through
                 // here).
-                let gen_result = crate::bastion_flat_arena::override_chunk(
-                    crate::bastion_flat_arena::world_center_wpos(&self.world),
-                    key,
-                )
-                .ok_or(())
-                .or_else(|()| {
-                    self.world.generate_chunk(
-                        self.index.as_index_ref(),
+                let cached_chunk = self
+                    .boot_cache_request
+                    .as_ref()
+                    .and_then(|request| bastion_boot_cache::lookup_chunk(request, key));
+                let (chunk, rtsim_max_resources) = if let Some(cached) = cached_chunk {
+                    cached
+                } else {
+                    let gen_result = crate::bastion_flat_arena::override_chunk(
+                        crate::bastion_flat_arena::world_center_wpos(&self.world),
                         key,
-                        None,
-                        // NOTE: despite the name, this closure means
-                        // "cancel?" (see chunk_generator.rs's
-                        // `cancel.load(..)`).
-                        || false,
-                        None,
                     )
-                });
-                let Ok((chunk, supplement)) = gen_result else {
-                    continue;
+                    .ok_or(())
+                    .or_else(|()| {
+                        self.world.generate_chunk(
+                            self.index.as_index_ref(),
+                            key,
+                            None,
+                            // NOTE: despite the name, this closure means
+                            // "cancel?" (see chunk_generator.rs's
+                            // `cancel.load(..)`).
+                            || false,
+                            None,
+                        )
+                    });
+                    let Ok((chunk, supplement)) = gen_result else {
+                        continue;
+                    };
+                    let chunk = Arc::new(chunk);
+                    let resources = supplement.rtsim_max_resources;
+                    if let Some(request) = self.boot_cache_request.as_ref() {
+                        bastion_boot_cache::publish_chunk(
+                            request,
+                            key,
+                            Arc::clone(&chunk),
+                            resources,
+                        );
+                    }
+                    (chunk, resources)
                 };
-                let chunk = std::sync::Arc::new(chunk);
                 let ecs = self.state.ecs();
                 let mut terrain = ecs.write_resource::<common::terrain::TerrainGrid>();
                 let mut changes = ecs.write_resource::<common_state::TerrainChanges>();
@@ -1732,7 +1840,7 @@ impl Server {
                     changes.new_chunks.insert(key);
                     ecs.write_resource::<rtsim::RtSim>().hook_load_chunk(
                         key,
-                        supplement.rtsim_max_resources,
+                        rtsim_max_resources,
                         &self.world,
                     );
                 }
