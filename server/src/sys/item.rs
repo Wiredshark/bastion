@@ -43,6 +43,7 @@ impl<'a> System<'a> for Sys {
             delete_bus,
         ): Self::SystemData,
     ) {
+        let trace_b55_merges = std::env::var_os("BASTION_B55_TRACE_MERGES").is_some();
         // Contains items that have been checked for merge, or that were merged into
         // another one
         let mut merged = HashMap::new();
@@ -73,7 +74,14 @@ impl<'a> System<'a> for Sys {
                 pos,
                 loot_owner,
                 bastion_piles.contains(entity),
-                (&entities, &items, &positions, &loot_owners, &bastion_piles, &spatial_grid),
+                (
+                    &entities,
+                    &items,
+                    &positions,
+                    &loot_owners,
+                    &bastion_piles,
+                    &spatial_grid,
+                ),
             ) {
                 // Prevent merging an item multiple times, we cannot
                 // do this in the above filter since we mutate `merged` below
@@ -89,12 +97,19 @@ impl<'a> System<'a> for Sys {
         }
 
         for (source, target) in merges {
+            let source_persistent = bastion_piles.contains(source);
+            let target_persistent = bastion_piles.contains(target);
+            let source_pos = positions.get(source).map(|pos| pos.0);
+            let target_pos = positions.get(target).map(|pos| pos.0);
             let source_item = items
                 .remove(source)
                 .expect("We know this entity must have an item.");
+            let source_amount = source_item.amount();
+            let source_created = source_item.created().0;
             let mut target_item = items
                 .get_mut(target)
                 .expect("We know this entity must have an item.");
+            let target_before = target_item.amount();
 
             if let Err(item) = target_item.try_merge(source_item) {
                 // We re-insert the item, should be unreachable since we already checked whether
@@ -103,6 +118,25 @@ impl<'a> System<'a> for Sys {
                     .insert(source, item)
                     .expect("PickupItem was removed from this entity earlier");
             } else {
+                let target_after = target_item.amount();
+                if trace_b55_merges && (source_persistent || target_persistent) {
+                    tracing::warn!(
+                        source = source.id(),
+                        target = target.id(),
+                        source_amount,
+                        target_before,
+                        target_after,
+                        conserved =
+                            target_after as u64 == source_amount as u64 + target_before as u64,
+                        source_persistent,
+                        target_persistent,
+                        source_created,
+                        now = program_time.0,
+                        ?source_pos,
+                        ?target_pos,
+                        "B5.5 persistent pile deletion attributed to item merge"
+                    );
+                }
                 // If the merging was successfull, we remove the old item entity from the ECS
                 delete_emitter.emit(DeleteEvent(source));
             }

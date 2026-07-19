@@ -306,7 +306,14 @@ impl StateExt for State {
                 &pos,
                 loot_owner.as_ref(),
                 persistent,
-                (&entities, &items, &positions, &loot_owners, &piles, &spatial_grid),
+                (
+                    &entities,
+                    &items,
+                    &positions,
+                    &loot_owners,
+                    &piles,
+                    &spatial_grid,
+                ),
             );
 
             // Merge the nearest item if possible, skip to creating a drop otherwise
@@ -1403,6 +1410,24 @@ pub(crate) fn delete_entity_common(
     sync_me: bool,
 ) -> Result<(), specs::error::WrongGeneration> {
     let maybe_pos = state.read_component_copied::<comp::Pos>(entity);
+    if std::env::var_os("BASTION_B55_TRACE_DELETES").is_some() {
+        let ecs = state.ecs();
+        let piles = ecs.read_storage::<comp::bastion::BastionPile>();
+        if piles.contains(entity) {
+            let items = ecs.read_storage::<comp::PickupItem>();
+            let objects = ecs.read_storage::<comp::Object>();
+            let item = items.get(entity);
+            warn!(
+                entity = entity.id(),
+                item_amount = item.map(comp::PickupItem::amount),
+                item_created = item.map(|item| item.created().0),
+                ?maybe_pos,
+                has_delete_after =
+                    matches!(objects.get(entity), Some(comp::Object::DeleteAfter { .. })),
+                "B5.5 persistent pile reached central entity deletion"
+            );
+        }
+    }
 
     // Delete entity
     let result = state.ecs_mut().delete_entity(entity);

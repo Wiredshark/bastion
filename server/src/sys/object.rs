@@ -1,7 +1,7 @@
 use common::{
     CachedSpatialGrid, Damage, DamageKind, GroupTarget,
     combat::{Attack, AttackDamage},
-    comp::{Body, Object, Pos, Teleporting, Vel, beam, object},
+    comp::{Body, Object, PickupItem, Pos, Teleporting, Vel, bastion::BastionPile, beam, object},
     consts::TELEPORTER_RADIUS,
     event::{ChangeBodyEvent, DeleteEvent, EmitExt, EventBus},
     event_emitters,
@@ -38,6 +38,8 @@ impl<'a> System<'a> for Sys {
         ReadStorage<'a, Body>,
         ReadStorage<'a, Teleporting>,
         ReadStorage<'a, beam::Beam>,
+        ReadStorage<'a, PickupItem>,
+        ReadStorage<'a, BastionPile>,
         Read<'a, LazyUpdate>,
     );
 
@@ -60,6 +62,8 @@ impl<'a> System<'a> for Sys {
             bodies,
             teleporting,
             beams,
+            items,
+            bastion_piles,
             updater,
         ): Self::SystemData,
     ) {
@@ -81,6 +85,20 @@ impl<'a> System<'a> for Sys {
                     timeout,
                 } => {
                     if (time.0 - spawned_at.0).max(0.0) > timeout.as_secs_f64() {
+                        if std::env::var_os("BASTION_B55_TRACE_DELETES").is_some()
+                            && (bastion_piles.contains(entity) || items.contains(entity))
+                        {
+                            tracing::warn!(
+                                entity = entity.id(),
+                                item_amount = items.get(entity).map(PickupItem::amount),
+                                persistent = bastion_piles.contains(entity),
+                                ?pos,
+                                spawned_at = spawned_at.0,
+                                now = time.0,
+                                timeout_seconds = timeout.as_secs_f64(),
+                                "B5.5 item deletion attributed to Object::DeleteAfter"
+                            );
+                        }
                         emitters.emit(DeleteEvent(entity));
                     }
                 },
