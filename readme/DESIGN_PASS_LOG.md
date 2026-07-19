@@ -3013,3 +3013,70 @@ ToolMode::ALL missing DesignationKind::Farm (9 of 10).
 - Doc status banner updated: REVISION note added (2026-07-12, same day) — the Phase-1 HOLD still stands; this is
   new evidence-driven content, not an un-hold.
 → architect + Sonnet reviewer (routing origin) notified.
+
+## 2026-07-19 — DONE DIG-PROVISIONED ACCESS build packet (MINE-LOGISTICS Part A) · `readme/DIG-PROVISIONED-ACCESS-PACKET.md` [GENERAL DESIGNER]
+Architect-directed (Ben's destination), implementation-level, read-only code survey (bastion_jobs.rs dig/mine
+execution), prior-art-first.
+- **★ HEADLINE FINDING:** Part A is NOT new — it's re-enabling + re-scoping the EXISTING proactive descent-gate
+  (B5.8-E, ACCESS-BEFORE-DESCENT, `descent_gated`/`plan_access` :12563-12636) that already reuses the emergency
+  ladder/stairs machinery, currently dormant behind ONE flag (AUTO_LADDER_ACCESS=false, a D16 hotfix for an
+  UNRELATED multi-colonist queue-fight, not a Part-A concern). Net-new is small: material cost, a classified
+  block reason, a scoped re-enable, one wood-item correction.
+- **PRIOR ART (real search):** real shaft-sinking's documented work cycle — "one shift drilling+blasting, three
+  mucking, ONE placing a SET of timbers" (Argonaut mine) — validates the per-LEVEL rung-batch cadence directly,
+  not per-block.
+- **Insertion point cited exactly:** the descent-gate's `plan_access(...,None,None)` call IS the place-rung step;
+  it already tries stairs first (:743-791) and falls to `ladder_pillar` (:149-235) — but the proactive site passes
+  `emergency_owner: None`, and `ladder_pillar` only engages on `AUTO_LADDER_ACCESS || emergency_owner.is_some()`
+  (:804) — so with the flag off, the proactive gate CAN build stairs but NEVER a ladder; on stairs-can't-route it
+  currently just `descent_gated.clear()`s (D16) — the exact gap Part A closes.
+- **Material fork resolved as a literal one-line flip** (Ben's exact ask): `required_item: None` (free,
+  "infrastructure from spoil") ALREADY EXISTS in code (:952-954) as the free path; the costed path is
+  `Some(CHOP_DROP_ITEM)` — same struct field, one const gates which. ★ Flagged divergence: current player-Ladder
+  ALREADY costs material but charges STONE (BUILD_MATERIAL_ITEM) not wood — recommended correcting to
+  CHOP_DROP_ITEM to match Ben's stated wood/forestry intent + real pit-prop practice.
+- **Stairs×walkability:** `in_access_mask` (the claim shape) is what makes a 1×1 shaft "tight" (no switchback
+  room) vs a wide claim routing stairs freely — the geometry fork "already falls out of the claim shape," no new
+  designer choice needed; `has_standable_stance` is the independent per-cell validator every Mine cell (stairs or
+  not) already passes through.
+- **★ THE QUEUE-FIGHT RISK, resolved:** verified SOFT-1 (ORCA-under-queue) is APPROVED/COMMITTED per
+  CROWD-PATHING-METHODS-SURVEY.md but grep confirms ZERO ORCA implementation in the tree — designed, not built.
+  Recommended a NEW Part-A-scoped const (not the global flag) since the original queue-fight was Part-B-scale
+  commuter traffic; Part A's concurrency is low + stairs-preferred narrows ladder use to genuinely tight shafts,
+  where the existing Waiting-state single-file queue is the (imperfect, pre-SOFT-1) mitigation. Flagged: SOFT-1
+  should land before Part B's ML-1, not before Part A.
+- **Edge cases:** dig-UP correctly ungated (climb_cap_allows: ascent never capped, no stranding); lateral galleries
+  = a REAL gap flagged (job.depth is z-relative to box-top, so a gallery beyond the anchor's XY-8 radius re-triggers
+  a wasteful fresh vertical plan) — named, NOT fixed in this packet (DPA-3, deferred to Part-B/M5 scope);
+  player-painted vs AUTON digs = already unified by construction (the gate scans board.jobs directly, no
+  origin-specific code); pre-existing shafts = already handled (access_anchors populated by both paint + every
+  plan_access emission).
+- **Fixture (SHAFT-ALWAYS-ACCESSED):** 3-leg `--dig-access_scenario` — tight shaft (ladder+material, per-tick
+  access-chain assert + zero emergency engagements), no-wood case (frontier HOLDS + classified reason surfaces,
+  not D16's silent release), wide-claim control (zero ladder jobs, stairs-only). Deterministic, rides the existing
+  harness model.
+- Sequenced DPA-0 (material cost + wood correction) → DPA-1 (scoped ladder re-enable, the core) → DPA-2 (classified
+  block reason) → DPA-3 (lateral fix, flagged not built). Zero asset requests (SpriteKind::Ladder + carved-stairs
+  geometry + the honest-inert inspector pattern all reused verbatim). 4 open Qs → architect.
+
+## 2026-07-19 — DIG-PROVISIONED-ACCESS packet ACCEPTED + all 4 Qs RULED (architect) · rulings folded [GENERAL DESIGNER]
+Packet accepted; queues for the build lane after M3 (or earlier as a Ben-pulled fill). Rulings folded into §11:
+(1) wood-item correction IN DPA-0, LADDER material only (rungs=CHOP_DROP_ITEM; stairs stay carved/free, other
+builds keep stone); default ships COSTED, Ben can flip the const. (2) Separate Part-A-scoped const APPROVED;
+★ PLAN OF RECORD: SOFT-1/ORCA must land before Part B's ML-1 (the sequencing flag is now binding). (3) DPA-3
+deferred as scoped + landed as a known-class note in BASTION_COMMON_ISSUES.md (lateral-gallery re-gating — done
+this pass, reviewer to curate/number). (4) Fixture = existing harness model, --dig-access-scenario alongside the
+ladder fixture family, no new binary. Standing down clean.
+
+## 2026-07-19 — DONE M4+M5 mine-ladder packets (25-min micro-sprint, Ben budget-burn) · M4-DYNAMIC-PACKET.md + M5-ENCLOSED-PACKET.md [GENERAL DESIGNER]
+Both complete (not partial), M3-packet shape. M4-DYNAMIC: one hard thing = RE-PLAN UNDER MUTATION (aborts reused
+from N3/N4, never rebuilt); un-fakeable predicates: zero stale-route ticks (bounded abort latency vs mutation
+tick), atomic-abort-under-external-edit, re-plan converges w/ churn cap, cave-in x escape COMPOSITION proof, and an
+M4-E no-false-churn arm (precondition-asserted per falsifier rule). START-HERE: factor route_still_live() from
+the EXISTING validators (:2237/:1894/rung-liveness checks — B17 one-impl); prior art D*Lite/LPA* (discipline not
+algorithm), Recast dynamic tiles, the engine's own still_valid precedent. M5-ENCLOSED: one hard thing = GEOMETRY
+C at mine scale (enclosure predicate = terrain-diff-derived surface-breach count == entrance only; walk-purity
+zero-climb-ticks by skill-0; minimal-excavation ratio; carve_ramp's open-space refusal held → classified block on
+cave intersection, never silent breach). START-HERE: factor carve_ramp's core into a plan generator driven by the
+DPA stairs arm flight-by-flight; ONE floor-rule impl everywhere. Sequencing: M4 after M3 (M4-D needs the queue);
+M5 after M4 + DPA (the bore IS the DPA stairs arm); SOFT-1/ORCA not a gate for M5-A/B/D. → architect.
