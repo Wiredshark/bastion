@@ -40,6 +40,8 @@ run_job() {
     H=\$(git rev-parse --short HEAD); R=\$(git rev-parse --short origin/$BRANCH)
     [ \"\$H\" = \"\$R\" ] || { echo STALE=\$H/\$R; exit 3; }
     cargo build --profile verify -p bastion-harness -q || { echo BUILD_FAIL@\$H; exit 4; }  # NEVER fall through to a stale binary
+    GH=\$(./target/verify/bastion-harness --print-git-hash 2>/dev/null); RH=\$(git rev-parse --short=10 HEAD)
+    [ -z \"\$GH\" ] || [ \"\$GH\" = \"\$RH\" ] || { echo \"BINARY_STALE: built \$GH != checkout \$RH\"; exit 5; }
     echo \"### JOB $k @ \$H : $cmd\"
     ./target/verify/bastion-harness $cmd; rc=\$?
     echo \"=== ATTEST (end): RAN_COMMIT=\$H | job=$k | rc=\$rc ===\"" > "$OUT/job-$k.out" 2>"$OUT/job-$k.log"

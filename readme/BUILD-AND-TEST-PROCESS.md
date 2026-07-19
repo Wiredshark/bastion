@@ -147,9 +147,10 @@ runs, and DELETES itself. Idle cost ≈ $0 (only the ~4.5 GB `bastion-golden` im
   ~$0 (self-delete); a burst is pennies. The ONLY guardrails: keep the burn-guard $/time ceilings on,
   don't schedule to the exact cap (~8 vCPU headroom for teardown races), let the wrappers self-delete.
   Bias: more VM / bigger VM / done sooner.
-- **BIG single VM:** e2 caps at 32 vCPU/VM. For one big machine, use **c2-standard-60** (60 cores, C2
-  quota=200, under the 96 global cap) — one build, no per-VM overhead vs a multi-e2 pool. n2/n2d = quota 0
-  (unavailable). `vm-scale.sh c2-standard-60 ...` works as-is.
+- **BIG single VM:** e2 caps at 32 vCPU/VM. **e2-standard-32 is THE big-VM** (32 cores, one build). c2-60 is
+  BLOCKED — the c2 FAMILY has its own quota, `C2_CPUS = 8` in us-central1 (a live c2-60 create failed
+  "C2_CPUS exceeded. Limit: 8.0"; my earlier regions-describe 200 read was the wrong metric). n2/n2d = 0.
+  To exceed 32 cores in ONE VM, request a C2_CPUS family bump (same flow as the 96 bump; account-age may bite).
 - **Golden image auto-refresh:** `vm-golden-autorefresh.sh` (schedule nightly) keeps the image at the
   latest tip incrementally + idle-guarded, so each run's catch-up build stays small.
 - At a FIXED vCPU budget, **scale-UP (one big VM) beats the clone pool** — the pool pays per-VM build + boot
@@ -162,10 +163,10 @@ processes on one machine (most efficient — fewest builds). **MANY VMs** = one 
 but scales past one machine + isolates faults + runs heterogeneous work. Pick deliberately every time.
 ```
  quick / single check              -> LOCAL (§2) or  vm-run.sh --<scenario>   (1 small VM; no cores needed)
- SAME scenario, many seeds,        -> BIG VM:  vm-scale.sh e2-standard-32 <N_seeds> ...   (PROVEN, <=~32 seeds,
-   fits one VM                          ONE build). For >32 up to 60: c2-standard-60 — ★UNVERIFIED from the
-                                        e2-sourced golden (verify a single c2 create boots before relying;
-                                        if it fails, use the pool). BIG-VM = fewest builds = most efficient.
+ SAME scenario, many seeds,        -> BIG VM:  vm-scale.sh e2-standard-32 <N_seeds> ...   (32 seeds, ONE build,
+   (<=32 seeds fit ONE VM)              ONE create — dodges the rate limit). e2-32 is THE big-VM. c2-standard-60
+                                        is BLOCKED (C2_CPUS quota = 8, needs a family bump). BIG = fewest builds.
+ SAME scenario, >32 seeds           -> 3 × e2-standard-32 via vm-pool-safe (staggered) = 96 cores, 3 creates.
  Want the FULL 96 cores (>60,      -> MANY VMs: vm-pool-safe.sh <N> <machine> <seeds/VM> <first-seed> "<args>" [$][m]
    can't fit one VM) OR fault-         96 can't fit in one VM; also for fault isolation across machines.
    isolation
@@ -221,12 +222,13 @@ Single-seed checks waste the hardware. Every verification/validation run goes WI
 - **Sizing (efficient max):** fewer MEDIUM VMs each running MANY seeds — e.g. `vm-pool-safe.sh 12
   e2-standard-8 8 <seed> "<scenario>" <$> <min>` = 12×8 = ~96 concurrent tests. (★ VALID e2 sizes are
   2/4/8/16/32 ONLY — NO e2-standard-6; an invalid type 8/8-fails the whole pool, now visible via the
-  CREATE_FAIL error capture.) Or c2-standard-60 (one big VM, once verified). NOT 1-core VMs (the ~65s boot
-  wants several cores → slow) and NOT 96 separate VMs (96 redundant builds). Seeds-per-VM fills the cores.
+  CREATE_FAIL error capture.) e2-standard-32 is THE big-VM (c2-60 is C2_CPUS-quota-blocked at 8). NOT 1-core
+  VMs (the ~65s boot wants several cores → slow) and NOT many separate VMs (redundant builds + rate limit).
+  Seeds-per-VM fills the cores.
 - **★ CREATE-RATE LIMIT (found 2026-07-19):** GCP rate-limits PARALLEL instantiations from ONE machine-image
   ("too frequent operations from the source resource") — firing N creates at once bounces most (a 6-VM pool
   lost 5/6). So FEWER CREATES wins TWICE (build overhead + rate limit): prefer FEW BIG VMs. To fill 96 with
-  the fewest creates: **3 × e2-standard-32** (3 creates) or c2-60 + e2-32 — NOT 12+ small VMs. The pool
+  the fewest creates: **3 × e2-standard-32** (3 creates, staggered) — NOT 12+ small VMs. The pool
   wrappers now STAGGER creates ~10s (STAGGER env) so pools still work, but the big-VM (mode 3, one create)
   DODGES the limit entirely — it's now the REQUIRED default for wide runs, not just the efficient one.
 - **IMAGE-COPY POOL — BANKED (Ben 2026-07-19), trigger-gated:** few-big-VMs (packing many seeds per VM)

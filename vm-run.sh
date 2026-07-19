@@ -29,6 +29,8 @@ ssh -i "$KEY" -o StrictHostKeyChecking=no "benshumeyko@$IP" "
   [ \"\$H\" = \"\$R\" ] || { echo \"STALE: HEAD \$H != origin \$R\"; exit 3; }
   echo \"RAN_COMMIT=\$H  (== latest origin/$BRANCH — validated)\"
   cargo build --profile verify -p bastion-harness -q || { echo BUILD_FAIL; exit 4; }
+  GH=\$(./target/verify/bastion-harness --print-git-hash 2>/dev/null); RH=\$(git rev-parse --short=10 HEAD)
+  [ -z \"\$GH\" ] || [ \"\$GH\" = \"\$RH\" ] || { echo \"BINARY_STALE: built \$GH != checkout \$RH\"; exit 5; }  # definitive: the RUNNING binary's compiled stamp
   ./target/verify/bastion-harness $*; rc=\$?
   echo \"=== ATTEST (end): RAN_COMMIT=\$H (== origin/$BRANCH \$R) | scenario rc=\$rc ===\"
   exit \$rc"
