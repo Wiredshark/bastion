@@ -393,7 +393,11 @@ impl SessionState {
         plane_z: f32,
     ) -> Option<Vec3<f32>> {
         let cursor = global_state.window.cursor_position();
-        let res = global_state.window.renderer().resolution().map(|e| e as f32);
+        let res = global_state
+            .window
+            .renderer()
+            .resolution()
+            .map(|e| e as f32);
         crate::bastion::unproject_to_world_plane(
             self.scene.camera(),
             Vec2::new(cursor.x as f32, cursor.y as f32),
@@ -442,7 +446,11 @@ impl SessionState {
     /// against entity positions; radius from body size).
     fn bastion_pick_entity(&self, global_state: &GlobalState) -> Option<specs::Entity> {
         let cursor = global_state.window.cursor_position();
-        let res = global_state.window.renderer().resolution().map(|e| e as f32);
+        let res = global_state
+            .window
+            .renderer()
+            .resolution()
+            .map(|e| e as f32);
         let (origin, dir) = bastion::cursor_ray(
             self.scene.camera(),
             Vec2::new(cursor.x as f32, cursor.y as f32),
@@ -657,10 +665,13 @@ impl SessionState {
             let id = match self.bastion_colonist_markers.get(&e) {
                 Some(id) => *id,
                 None => {
-                    let id = self.scene.debug.add_shape(crate::scene::DebugShape::Cylinder {
-                        radius: 0.35,
-                        height: 0.4,
-                    });
+                    let id = self
+                        .scene
+                        .debug
+                        .add_shape(crate::scene::DebugShape::Cylinder {
+                            radius: 0.35,
+                            height: 0.4,
+                        });
                     self.bastion_colonist_markers.insert(e, id);
                     id
                 },
@@ -715,12 +726,13 @@ impl SessionState {
             let id = match self.bastion_selection_rings.get(&e) {
                 Some(id) => *id,
                 None => {
-                    let id = self.scene.debug.add_shape(
-                        crate::scene::DebugShape::Cylinder {
+                    let id = self
+                        .scene
+                        .debug
+                        .add_shape(crate::scene::DebugShape::Cylinder {
                             radius: 0.7,
                             height: 0.05,
-                        },
-                    );
+                        });
                     self.bastion_selection_rings.insert(e, id);
                     id
                 },
@@ -1063,10 +1075,7 @@ impl SessionState {
 
     /// Finish the paint drag: `Some(kind)` places a designation, `None`
     /// (B5.5, the erase tool) cancels designations in the region.
-    fn bastion_paint_finish(
-        &mut self,
-        kind: Option<common::bastion::DesignationKind>,
-    ) {
+    fn bastion_paint_finish(&mut self, kind: Option<common::bastion::DesignationKind>) {
         let Some(paint) = self.bastion_paint.take() else {
             return;
         };
@@ -1216,7 +1225,7 @@ impl SessionState {
                         if p.neurotic {
                             traits.push("Neurotic");
                         }
-                        vec![
+                        let mut lines = vec![
                             format!("- {} -", p.name),
                             format!(
                                 "Drive: {:?}  (W {:.2} / F {:.2} / I {:.2})",
@@ -1231,9 +1240,11 @@ impl SessionState {
                                 },
                                 None => "Doing: (idle)".to_string(),
                             },
+                            // STATUS-SURFACE: energy joins the meters — it
+                            // gates climbing now.
                             format!(
-                                "Hunger {:.2}  Rest {:.2}  Rec {:.2}",
-                                p.hunger, p.rest, p.recreation
+                                "Hunger {:.2}  Rest {:.2}  Rec {:.2}  Energy {:.2}",
+                                p.hunger, p.rest, p.recreation, p.energy
                             ),
                             format!("Mood {:.2}", p.mood),
                             if traits.is_empty() {
@@ -1241,7 +1252,30 @@ impl SessionState {
                             } else {
                                 format!("Traits: {}", traits.join(", "))
                             },
-                        ]
+                        ];
+                        // STATUS-SURFACE: the designed-wait/rescue status,
+                        // right under the name — "sits there, looks broken"
+                        // now reads as its actual state; NO line means
+                        // nothing designed is holding them.
+                        if let Some(status) = p.status {
+                            use common::comp::bastion::BastionColonistStatus as S;
+                            lines.insert(1, match status {
+                                S::RestingToClimb => format!(
+                                    "Status: Resting to climb (energy {:.0}%)",
+                                    p.energy * 100.0
+                                ),
+                                S::WaitingForLadder => {
+                                    "Status: Waiting for ladder (queued)".to_string()
+                                },
+                                S::RescueImminent => {
+                                    "Status: Rescue imminent".to_string()
+                                },
+                                S::Replanning => {
+                                    "Status: Replanning route".to_string()
+                                },
+                            });
+                        }
+                        lines
                     },
                     Kind::Job(j) => vec![
                         format!("- Job: {:?} -", j.work),
@@ -1406,13 +1440,7 @@ impl SessionState {
                     let a = if z == region.min.z { 0.8 } else { 0.3 };
                     for i in 0..4 {
                         let (c0, c1) = (corners[i], corners[(i + 1) % 4]);
-                        lines.push((
-                            [
-                                Vec3::new(c0.x, c0.y, zf),
-                                Vec3::new(c1.x, c1.y, zf),
-                            ],
-                            a,
-                        ));
+                        lines.push(([Vec3::new(c0.x, c0.y, zf), Vec3::new(c1.x, c1.y, zf)], a));
                     }
                 }
                 // Corner posts: floor to top face (subtle walls, v1),
@@ -1431,12 +1459,9 @@ impl SessionState {
                         .scene
                         .debug
                         .add_shape(crate::scene::DebugShape::Line(seg, 0.1));
-                    self.scene.debug.set_context(
-                        id,
-                        [0.0; 4],
-                        [r, g, b, a * alpha],
-                        [0.0, 0.0, 0.0, 1.0],
-                    );
+                    self.scene
+                        .debug
+                        .set_context(id, [0.0; 4], [r, g, b, a * alpha], [0.0, 0.0, 0.0, 1.0]);
                     self.bastion_designation_shapes.push(id);
                 }
             }
@@ -1496,10 +1521,8 @@ impl SessionState {
     /// cursor (B&W2 style) instead of the screen center.
     fn bastion_zoom_to_cursor(&mut self, global_state: &GlobalState, delta: f32) {
         let old_dist = self.scene.camera().get_tgt_dist();
-        let picked = self.bastion_point_under_cursor(
-            global_state,
-            self.scene.camera().get_tgt_focus().z,
-        );
+        let picked =
+            self.bastion_point_under_cursor(global_state, self.scene.camera().get_tgt_focus().z);
         let camera = self.scene.camera_mut();
         // Multiplicative dolly, clamped inside zoom_by by the overseer zoom
         // limits. NOTE the wheel arrives pre-scaled ~±15 per notch (see the
@@ -2247,8 +2270,7 @@ impl PlayState for SessionState {
                             {
                                 // B2a: God/Free ruleset toggle (stub — teeth
                                 // in B2b when the colony + favor exist).
-                                self.bastion_tools.god_mode =
-                                    self.bastion_tools.god_mode.toggled();
+                                self.bastion_tools.god_mode = self.bastion_tools.god_mode.toggled();
                                 let label = self.bastion_tools.god_mode.label();
                                 self.hud.new_message(ChatType::CommandInfo.into_plain_msg(
                                     format!("Overseer ruleset: {label} (enforced from B2b)"),
@@ -2934,10 +2956,8 @@ impl PlayState for SessionState {
                         let camera = self.scene.camera_mut();
                         let ori = camera.get_tgt_orientation();
                         let yaw = ori.x - delta.x * BASTION_ORBIT_SENS;
-                        let pitch = (ori.y + delta.y * BASTION_ORBIT_SENS * invert_y).clamp(
-                            camera::OVERSEER_PITCH_MIN,
-                            camera::OVERSEER_PITCH_MAX,
-                        );
+                        let pitch = (ori.y + delta.y * BASTION_ORBIT_SENS * invert_y)
+                            .clamp(camera::OVERSEER_PITCH_MIN, camera::OVERSEER_PITCH_MAX);
                         camera.set_orientation(Vec3::new(yaw, pitch, 0.0));
                     },
                     Event::Zoom(delta) if self.bastion_overseer_active() => {

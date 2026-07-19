@@ -338,9 +338,7 @@ impl Sys {
                         for y in region.min.y..=region.max.y {
                             for x in region.min.x..=region.max.x {
                                 if let Some(s) =
-                                    crate::bastion_jobs::column_flat_surface_z(
-                                        terrain, x, y, floor,
-                                    )
+                                    crate::bastion_jobs::column_flat_surface_z(terrain, x, y, floor)
                                 {
                                     m = m.max(s);
                                 }
@@ -392,8 +390,7 @@ impl Sys {
                                     y,
                                     region.max.z,
                                 ) {
-                                    max_surface =
-                                        Some(max_surface.map_or(s, |m: i32| m.max(s)));
+                                    max_surface = Some(max_surface.map_or(s, |m: i32| m.max(s)));
                                 }
                             }
                         }
@@ -404,8 +401,7 @@ impl Sys {
                                 // True-crest volume (as above) — the clamped
                                 // floor now sits under the surfaces, so the
                                 // dig reaches each column's real top.
-                                let nominal = ((max_crest_for(clamped) - clamped)
-                                    .max(0) as i64
+                                let nominal = ((max_crest_for(clamped) - clamped).max(0) as i64
                                     + 1)
                                     + extent.up as i64
                                     + 8;
@@ -413,14 +409,13 @@ impl Sys {
                                     && footprint * nominal
                                         <= common::bastion::MAX_DESIGNATION_VOLUME
                                 {
-                                    resolved =
-                                        crate::bastion_jobs::resolve_surface_bounds(
-                                            terrain,
-                                            region.min.xy(),
-                                            region.max.xy(),
-                                            region.max.z,
-                                            extent,
-                                        );
+                                    resolved = crate::bastion_jobs::resolve_surface_bounds(
+                                        terrain,
+                                        region.min.xy(),
+                                        region.max.xy(),
+                                        region.max.z,
+                                        extent,
+                                    );
                                 }
                             }
                         }
@@ -436,8 +431,8 @@ impl Sys {
                         client.send(ServerGeneral::server_msg(
                             common::comp::ChatType::CommandError,
                             common::comp::Content::Plain(format!(
-                                "Designation rejected: volume {} outside 1..={} or no \
-                                 terrain surface under the footprint",
+                                "Designation rejected: volume {} outside 1..={} or no terrain \
+                                 surface under the footprint",
                                 volume,
                                 common::bastion::MAX_DESIGNATION_VOLUME
                             )),
@@ -489,8 +484,12 @@ impl Sys {
                                 kind,
                                 z_extent: None,
                             })?;
-                            bastion_designations
-                                .push((aabb, Some(kind), None, Some((base, cells))));
+                            bastion_designations.push((
+                                aabb,
+                                Some(kind),
+                                None,
+                                Some((base, cells)),
+                            ));
                         }
                     }
                 } else {
@@ -789,6 +788,9 @@ impl<'a> System<'a> for Sys {
             // UI-5 (row 62.2): dropped-item entities — a stockpile cell's
             // contents are summed from these in the same post-join drain.
             ReadStorage<'a, common::comp::PickupItem>,
+            // STATUS-SURFACE: energy meter + the tick for status-stamp TTL.
+            ReadStorage<'a, common::comp::Energy>,
+            specs::Read<'a, crate::Tick>,
         ),
     );
 
@@ -836,6 +838,8 @@ impl<'a> System<'a> for Sys {
                 insp_arbiters,
                 insp_rtsim_entities,
                 insp_pickup_items,
+                insp_energies,
+                insp_tick,
             ),
         ): Self::SystemData,
     ) {
@@ -1241,6 +1245,18 @@ impl<'a> System<'a> for Sys {
                                             // current work job + progress, ridden
                                             // to the inspector from the Arbiter.
                                             activity: arb.and_then(|a| a.activity),
+                                            // STATUS-SURFACE: energy meter +
+                                            // status via the ONE read-only
+                                            // accessor (same fn as the
+                                            // harness probe — cannot drift).
+                                            energy: insp_energies
+                                                .get(e)
+                                                .map_or(0.0, |en| en.fraction()),
+                                            status: crate::bastion_jobs::colonist_status(
+                                                &job_board,
+                                                uid,
+                                                insp_tick.0,
+                                            ),
                                         })
                                     })
                                     .map(BastionInspectKind::Colonist),
@@ -1255,9 +1271,7 @@ impl<'a> System<'a> for Sys {
                 // per-column surfaces the handler's echo bounds came from
                 // (terrain can't change between the two — block edits land
                 // post-tick), so the echoed rect bounds every job created.
-                for (region, op, extent, chop_cells) in
-                    bastion_designation_updates.drain(..)
-                {
+                for (region, op, extent, chop_cells) in bastion_designation_updates.drain(..) {
                     match (op, extent, chop_cells) {
                         (Some(kind), Some(extent), _) => {
                             job_board.place_designation_surface(
@@ -1304,10 +1318,7 @@ impl<'a> System<'a> for Sys {
                                                 && b.get_sprite() == Some(SpriteKind::Ladder)
                                             {
                                                 let vacant = b.into_vacant();
-                                                if guard
-                                                    .block_changes
-                                                    .try_set(p, vacant)
-                                                    .is_some()
+                                                if guard.block_changes.try_set(p, vacant).is_some()
                                                 {
                                                     removed_any = true;
                                                 }

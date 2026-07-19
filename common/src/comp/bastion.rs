@@ -384,6 +384,32 @@ pub struct BastionInspectPayload {
     /// work job. The inspector renders "Chopping 45%" so a base-cut (or any
     /// work) reads as PROGRESSING before it completes.
     pub activity: Option<(crate::bastion::WorkType, f32)>,
+    /// bastion (STATUS-SURFACE): energy fraction (0..1). Energy now gates
+    /// climbing (free-climb cap + the REQ-0071 recovery wait), so it is core
+    /// meter state alongside hunger/rest/recreation.
+    pub energy: f32,
+    /// bastion (STATUS-SURFACE): the designed-wait/rescue status, or `None`
+    /// when nothing designed is holding the colonist — a MOTIONLESS colonist
+    /// with `None` here is the genuine-bug tell the four indistinguishable
+    /// pit states needed. Tail-appended per the wire discipline.
+    pub status: Option<BastionColonistStatus>,
+}
+
+/// bastion (STATUS-SURFACE): the inspector's colonist status line — the
+/// BACKSTOP-OPT designed-wait classifications, surfaced so working-as-designed
+/// is distinguishable from broken. An enum (not a string) so the client owns
+/// wording/i18n. Display-only by charter: no sim logic ever reads it.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BastionColonistStatus {
+    /// The REQ-0071 energy-recovery wait (designed, bounded — climbs when
+    /// the gate passes).
+    RestingToClimb,
+    /// Queued/reserved on a single-owner route link (the M2 ladder gate).
+    WaitingForLadder,
+    /// Re-engage bound exhausted; the independent failsafe net delivers.
+    RescueImminent,
+    /// Zero-progress cycle detected; the route is being re-planned.
+    Replanning,
 }
 
 /// bastion (UI-5, row 62.2): the Universal Debug Inspector's TARGET — the

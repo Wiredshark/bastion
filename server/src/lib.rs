@@ -869,6 +869,33 @@ impl Server {
             .map(|(_, _, n, m)| (n.hunger, n.rest, n.recreation, m.0))
     }
 
+    /// STATUS-SURFACE: harness probe for the inspector's status line + energy
+    /// fraction — routed through the SAME pure classifier as the live wire
+    /// fill (`bastion_jobs::colonist_status_display`), so probe and wire
+    /// cannot drift. READ-ONLY.
+    pub fn bastion_colonist_status(
+        &self,
+        name: &str,
+    ) -> Option<(Option<common::comp::bastion::BastionColonistStatus>, f32)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let uids = ecs.read_storage::<common::uid::Uid>();
+        let energies = ecs.read_storage::<comp::Energy>();
+        let board = ecs.read_resource::<crate::bastion_jobs::JobBoard>();
+        let tick = ecs.read_resource::<Tick>();
+        (&entities, &colonists, &uids)
+            .join()
+            .find(|(_, c, _)| c.0.name == name)
+            .map(|(e, _, uid)| {
+                (
+                    crate::bastion_jobs::colonist_status(&board, *uid, tick.0),
+                    energies.get(e).map_or(0.0, |en| en.fraction()),
+                )
+            })
+    }
+
     /// bastion (B7-0, harness hook): TEST setter for a named colonist's
     /// meters — drives the starved-case formula assert (the next mood
     /// cadence recomputes from these).

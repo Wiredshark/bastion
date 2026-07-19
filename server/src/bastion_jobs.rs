@@ -672,6 +672,68 @@ pub(crate) fn exit_verified(
     (at_surface || at_route_exit) && supported && body_clear
 }
 
+/// STATUS-SURFACE: ticks a live-wait status stamp stays valid (2s at 30tps).
+/// The wait branches re-stamp every tick they hold, so an expired stamp means
+/// the wait genuinely ended — no clear sites to forget.
+pub(crate) const STATUS_DISPLAY_TTL_TICKS: u64 = 60;
+
+/// STATUS-SURFACE: the pure status classifier. Precedence: sticky exhaustion
+/// (the net WILL deliver) > queued-on-a-link (durable transaction phase) >
+/// live-stamped designed wait > sticky zero-progress > nothing (and `None`
+/// on a motionless colonist is the genuine-bug tell). Unit-pinned below;
+/// call through [`colonist_status`], not directly.
+pub(crate) fn colonist_status_display(
+    reengage_exhausted: bool,
+    queued_for_link: bool,
+    live_stamp: Option<(common::comp::bastion::BastionColonistStatus, u64)>,
+    no_progress: bool,
+    now_tick: u64,
+) -> Option<common::comp::bastion::BastionColonistStatus> {
+    use common::comp::bastion::BastionColonistStatus as S;
+    if reengage_exhausted {
+        return Some(S::RescueImminent);
+    }
+    if queued_for_link {
+        return Some(S::WaitingForLadder);
+    }
+    if let Some((status, stamp)) = live_stamp
+        && now_tick.saturating_sub(stamp) <= STATUS_DISPLAY_TTL_TICKS
+    {
+        return Some(status);
+    }
+    if no_progress {
+        return Some(S::Replanning);
+    }
+    None
+}
+
+/// STATUS-SURFACE: the ONE read-only display accessor over the BACKSTOP-OPT
+/// reason fields — the single entry point for both the live inspector fill
+/// (`sys::msg::in_game`) and the harness probe
+/// (`Server::bastion_colonist_status`), so wire and probe cannot drift.
+/// Localized here BY DESIGN (architect seam ruling): display READS live in
+/// this block, textually apart from the release/advance machinery where R10
+/// wires its epoch fences. Queued-for-link derives from the durable
+/// transaction phase (no write site in the traversal arms); the only stamp
+/// writer is the energy-wait hold (watch bookkeeping, not an owned-write
+/// site).
+pub(crate) fn colonist_status(
+    board: &JobBoard,
+    uid: Uid,
+    now_tick: u64,
+) -> Option<common::comp::bastion::BastionColonistStatus> {
+    colonist_status_display(
+        board.emergency_reengage_exhausted.contains(&uid),
+        board
+            .bastion_traversal_tasks
+            .get(&uid)
+            .is_some_and(|task| task.phase == BastionTraversalPhase::QueuedForLink),
+        board.status_display.get(&uid).copied(),
+        board.emergency_no_progress.contains(&uid),
+        now_tick,
+    )
+}
+
 pub(crate) fn cap_for_skill(climbing_level: u16) -> i32 {
     3 * (i32::from(climbing_level) + 1)
 }
@@ -3090,6 +3152,15 @@ pub struct JobBoard {
     /// the doubt (first engagements and productive cycles keep the hold).
     /// Cleared at every real-progress site and at delivery.
     pub(crate) emergency_no_progress: HashSet<Uid>,
+    /// STATUS-SURFACE: display-only per-member status, tick-stamped by its
+    /// ONE writer — the granted energy-wait hold (re-stamped every tick the
+    /// wait is real; queued-for-link is instead DERIVED from durable
+    /// transaction phase at read time). Readers expire entries older than
+    /// [`STATUS_DISPLAY_TTL_TICKS`], so no clear sites exist or are needed —
+    /// expiry IS the wait ending. NEVER read by sim logic (the CHOP-PROGRESS
+    /// sim-inert discipline).
+    pub(crate) status_display:
+        HashMap<Uid, (common::comp::bastion::BastionColonistStatus, u64)>,
     /// Airborne pre-route owners establishing a physically supported origin.
     /// This state remains visible to the deep harness so a leaked/pending
     /// settle episode can never be mistaken for clean `[0,0,0]` teardown.
@@ -8341,6 +8412,18 @@ impl<'a> System<'a> for Sys {
                                 && !board.emergency_no_progress.contains(&uid)
                             {
                                 watch_wipe(&mut board.stuck_watch, &uid, "energy-gate-wait");
+                                // STATUS-SURFACE: display-only stamp, GRANTED
+                                // holds only — a denied hold (no_progress
+                                // cycler) falls through to `Replanning` in
+                                // the classifier instead, which is the honest
+                                // read of that state.
+                                board.status_display.insert(
+                                    uid,
+                                    (
+                                        common::comp::bastion::BastionColonistStatus::RestingToClimb,
+                                        tick.0,
+                                    ),
+                                );
                             }
                         }
                         if grounded_clear
@@ -13042,6 +13125,43 @@ mod tests {
         // No surface dest at all (is_none_or leg) + supported + clear:
         // released (the map_or-true shape's pure analogue).
         assert!(exit_verified(None, None, 400.0, true, true));
+    }
+
+    #[test]
+    fn colonist_status_precedence_and_ttl_table() {
+        use common::comp::bastion::BastionColonistStatus as S;
+        let live = Some((S::RestingToClimb, 100));
+        // Sticky exhaustion outranks everything — the net WILL deliver.
+        assert_eq!(
+            colonist_status_display(true, true, live, true, 100),
+            Some(S::RescueImminent)
+        );
+        // Durable queued-on-link outranks the stamp (current state wins).
+        assert_eq!(
+            colonist_status_display(false, true, live, true, 100),
+            Some(S::WaitingForLadder)
+        );
+        // A live stamp holds exactly through the TTL boundary…
+        assert_eq!(
+            colonist_status_display(false, false, live, false, 100 + STATUS_DISPLAY_TTL_TICKS),
+            Some(S::RestingToClimb)
+        );
+        // …and one tick past it falls through: to sticky zero-progress…
+        assert_eq!(
+            colonist_status_display(false, false, live, true, 101 + STATUS_DISPLAY_TTL_TICKS),
+            Some(S::Replanning)
+        );
+        // …or to nothing (the genuine-bug tell on a motionless colonist).
+        assert_eq!(
+            colonist_status_display(false, false, live, false, 101 + STATUS_DISPLAY_TTL_TICKS),
+            None
+        );
+        // No stamp at all: no_progress shows honest re-planning; clean is None.
+        assert_eq!(
+            colonist_status_display(false, false, None, true, 0),
+            Some(S::Replanning)
+        );
+        assert_eq!(colonist_status_display(false, false, None, false, 0), None);
     }
 
     #[test]
