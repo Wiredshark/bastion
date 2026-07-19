@@ -1010,6 +1010,13 @@ fn plan_access(
     if let Some(owner) = emergency_owner
         && let Some(descriptor) = descriptor
     {
+        // M3: founding an own route while still a member of another link
+        // must leave that link first (single-leave discipline — no ghost
+        // ticket). The queue ticket itself is issued at the egress call
+        // site, where the tick is in scope.
+        if board.emergency_route_members.get(&owner) != Some(&owner) {
+            board.leave_route(owner);
+        }
         board.emergency_route_members.insert(owner, owner);
         // `to` is the planner's standable surface destination. Deriving a
         // target later from the highest provenance cell is wrong: that cell
@@ -3428,6 +3435,23 @@ pub struct JobBoard {
     /// persistent links land (epoch semantics unchanged by that
     /// migration — per-link monotone counter).
     link_epochs: HashMap<u64, u64>,
+    /// bastion (M3): persistent traversal links — `link_id → TraversalLink`
+    /// (the fair queue + generation + capacity). Keyed by the owner-derived
+    /// link id (same key as `link_epochs`). Membership stays in
+    /// `emergency_route_members`; the link adds ORDER (`(enqueue_tick, uid)`
+    /// tickets). Maintained in lockstep with membership: every insert site
+    /// pairs a `traversal_enqueue`, and `leave_route` is THE removal path
+    /// (source-pinned) — so the queue can never disagree with membership.
+    /// An empty link is pruned (the monotone fencing epoch lives in
+    /// `link_epochs`, never here).
+    traversal_links: HashMap<u64, crate::bastion_traversal::TraversalLink>,
+    /// bastion (M3): per-member queue-wait bookkeeping —
+    /// `(last observed queue position, ticks waited without the queue
+    /// moving)`. The counter RE-ARMS when position decreases (the queue
+    /// moving IS progress) and is dropped by `leave_route`. Read by the
+    /// queue-wait hold (the energy-wait shape) against a position-scaled
+    /// budget; never read by sim decisions.
+    traversal_queue_wait: HashMap<Uid, (usize, u32)>,
     /// bastion (GATHER deposit ruling): per-colonist set of item defs its
     /// forage collects put in its bag — recorded at emit from the SAME
     /// reclaim source the authoritative handler consumes (a loot-TABLE
@@ -3493,9 +3517,11 @@ pub struct JobBoard {
 
 impl JobBoard {
     /// Stage-1 single reservation authority. A live task's reserved member is
-    /// authoritative. Before a task exists, the deterministic lowest-UID
-    /// route member is only the queue head; it is not a second reservation
-    /// record and cannot own traversal until task creation succeeds.
+    /// authoritative. Before a task exists, the head of the link's FAIR
+    /// queue (`(enqueue_tick, uid)` — M3, replacing the R9-named
+    /// lowest-UID-alone anti-pattern) is only the queue head; it is not a
+    /// second reservation record and cannot own traversal until task
+    /// creation succeeds.
     fn traversal_queue_head(&self, owner: Uid) -> Option<Uid> {
         self.bastion_traversal_tasks
             .values()
@@ -3506,11 +3532,56 @@ impl JobBoard {
             })
             .map(|task| task.reserved_member)
             .or_else(|| {
-                self.emergency_route_members
-                    .iter()
-                    .filter_map(|(member, route_owner)| (*route_owner == owner).then_some(*member))
-                    .min_by_key(|member| member.0.get())
+                self.traversal_links
+                    .get(&owner.0.get())
+                    .and_then(|link| link.head())
             })
+    }
+
+    /// bastion (M3): enqueue a member on the owner's traversal link.
+    /// Idempotent — an already-queued member keeps its ORIGINAL ticket;
+    /// fair re-enqueue-at-the-back comes from `leave_route` running first
+    /// on any cancel/reacquire. Every `emergency_route_members.insert`
+    /// site pairs with a call to this (source-pinned).
+    pub(crate) fn traversal_enqueue(&mut self, owner: Uid, member: Uid, tick: u64) {
+        let link = self.traversal_links.entry(owner.0.get()).or_default();
+        let head_before = link.head();
+        link.enqueue(member, tick);
+        if head_before != link.head() {
+            // First election on an empty queue is a handover too (no
+            // epoch advance: no prior holder means no stale tuple exists).
+            link.reservation_generation = link.reservation_generation.wrapping_add(1);
+        }
+    }
+
+    /// bastion (M3): THE route-membership removal path (the B17/
+    /// `retire_traversal_task` discipline applied to the queue): one place
+    /// removes membership AND the queue ticket. When the departing member
+    /// was the queue HEAD, this is a queue RE-ELECTION — a release-class
+    /// event: the generation bumps and the link's fencing epoch advances so
+    /// the next head acquires under a fresh epoch. A same-block task
+    /// retirement may advance the epoch again; double-advance is safe by
+    /// the fence's equality algebra (any advance orphans every outstanding
+    /// tuple; new tasks adopt the current value), and both events are real.
+    pub(crate) fn leave_route(&mut self, member: Uid) -> Option<Uid> {
+        let owner = self.emergency_route_members.remove(&member)?;
+        self.traversal_queue_wait.remove(&member);
+        let link_id = owner.0.get();
+        if let Some(link) = self.traversal_links.get_mut(&link_id) {
+            let was_head = link.head() == Some(member);
+            if link.dequeue(member) && was_head {
+                link.reservation_generation = link.reservation_generation.wrapping_add(1);
+                self.advance_epoch(link_id);
+            }
+            if self
+                .traversal_links
+                .get(&link_id)
+                .is_some_and(|link| link.is_empty())
+            {
+                self.traversal_links.remove(&link_id);
+            }
+        }
+        Some(owner)
     }
 
     /// Decision-order view of the otherwise lookup-optimized job map.
@@ -3953,6 +4024,22 @@ impl JobBoard {
     /// bastion (R10): the link's current fencing epoch (absent = 0).
     pub fn current_epoch(&self, link: u64) -> u64 {
         self.link_epochs.get(&link).copied().unwrap_or(0)
+    }
+
+    /// bastion (M3, read-only probe): the link's fair queue in order —
+    /// `(member uid, enqueue_tick)` pairs — plus the link's reservation
+    /// generation. `None` = no live link container.
+    pub fn bastion_traversal_queue_probe(&self, link: u64) -> Option<(Vec<(u64, u64)>, u64)> {
+        self.traversal_links
+            .get(&link)
+            .map(|l| (l.snapshot(), l.reservation_generation))
+    }
+
+    /// bastion (M3, read-only probe): the named member's route owner uid.
+    pub fn bastion_route_owner_probe(&self, member: Uid) -> Option<u64> {
+        self.emergency_route_members
+            .get(&member)
+            .map(|owner| owner.0.get())
     }
 
     /// bastion (R10 N-FENCE probe): the member's live task as
@@ -4751,6 +4838,133 @@ impl<'a> System<'a> for Sys {
                         .any(|job_owner| *job_owner == owner)
                         && emergency_route_descriptor_ready(board, &terrain, owner)
                 });
+                // ── M3 QUEUE-WAIT (the packet's ★ key interaction) ────────
+                // A member legitimately waiting its fair-queue turn makes NO
+                // positional progress — an unexempted progress watch would
+                // read that as hopeless and teleport a correctly-waiting
+                // colonist. The wait is therefore a NAMED, BOUNDED,
+                // progress-exempt hold (the energy-wait shape): watch-wiped
+                // per tick while inside a position-scaled budget, DENIED to
+                // a no-progress cycler (the (C) rule — abort inserts the
+                // flag, only real progress clears it), and past the budget
+                // the watch runs again: the net stays the inviolable floor.
+                // Movement is OWNED here (SOFT-0): activity cleared, inputs
+                // written, and `continue` keeps the member out of every
+                // mount/magnetism arm below — a queued member can never be
+                // pulled onto the rungs or into the body lane.
+                if let Some(owner) = emergency_route_owner
+                    && emergency_route_complete
+                    && !owns_route_turn
+                    && !board.bastion_traversal_tasks.contains_key(uid)
+                    && let Some(position) = board
+                        .traversal_links
+                        .get(&owner.0.get())
+                        .and_then(|link| link.position(*uid))
+                {
+                    const QUEUE_WAIT_BASE_TICKS: u32 = 120 * 30;
+                    const QUEUE_WAIT_PER_TURN_TICKS: u32 = 90 * 30;
+                    // TEST-ONLY budget override (the M3-D shrunken-budget
+                    // arm; never set by live binaries). Read ONCE — the
+                    // B55 per-tick env-read lesson.
+                    static QUEUE_WAIT_BUDGET_OVERRIDE: std::sync::LazyLock<Option<u32>> =
+                        std::sync::LazyLock::new(|| {
+                            std::env::var("BASTION_M3_QUEUE_WAIT_BUDGET_TICKS")
+                                .ok()
+                                .and_then(|v| v.parse().ok())
+                        });
+                    let budget = QUEUE_WAIT_BUDGET_OVERRIDE.unwrap_or(
+                        QUEUE_WAIT_BASE_TICKS.saturating_add(
+                            QUEUE_WAIT_PER_TURN_TICKS.saturating_mul(position.min(8) as u32),
+                        ),
+                    );
+                    let wait = board
+                        .traversal_queue_wait
+                        .entry(*uid)
+                        .or_insert((position, 0));
+                    if position < wait.0 {
+                        // The queue MOVED — real progress; the budget re-arms.
+                        *wait = (position, 0);
+                    } else {
+                        wait.0 = position;
+                        wait.1 = wait.1.saturating_add(1);
+                    }
+                    let within_budget = wait.1 <= budget;
+                    if within_budget && !board.emergency_no_progress.contains(uid) {
+                        watch_wipe(&mut board.stuck_watch, uid, "queue-wait");
+                        board.status_display.insert(
+                            *uid,
+                            (
+                                common::comp::bastion::BastionColonistStatus::WaitingForLadder,
+                                tick.0,
+                            ),
+                        );
+                    }
+                    if let Some(entity) = id_maps.uid_entity(*uid)
+                        && let Some(agent) = agents.get_mut(entity)
+                    {
+                        agent.rtsim_controller.activity = None;
+                        agent.rtsim_controller.clear_path_endpoint();
+                    }
+                    let feet = pos.0.map(|e| e.floor() as i32);
+                    let lane_xy = board
+                        .emergency_route_mounts
+                        .get(&owner)
+                        .map(|lane| lane.xy());
+                    let entry_xy = board
+                        .emergency_route_descriptors
+                        .get(&owner)
+                        .map(|descriptor| descriptor.entry.xy());
+                    let in_lane_column = lane_xy.is_some_and(|lane| feet.xy() == lane)
+                        || entry_xy.is_some_and(|entry| feet.xy() == entry);
+                    if in_lane_column {
+                        // Step OUT of the body lane: steer toward the first
+                        // standable off-lane neighbor in a deterministic
+                        // scan order (staging cell; no new pathing).
+                        let staging = [
+                            Vec2::new(1, 0),
+                            Vec2::new(-1, 0),
+                            Vec2::new(0, 1),
+                            Vec2::new(0, -1),
+                            Vec2::new(1, 1),
+                            Vec2::new(-1, -1),
+                            Vec2::new(1, -1),
+                            Vec2::new(-1, 1),
+                        ]
+                        .into_iter()
+                        .map(|d| feet + Vec3::new(d.x, d.y, 0))
+                        .find(|c| {
+                            lane_xy != Some(c.xy())
+                                && entry_xy != Some(c.xy())
+                                && terrain
+                                    .get(*c - Vec3::unit_z())
+                                    .is_ok_and(|b| b.is_filled())
+                                && terrain.get(*c).is_ok_and(|b| !b.is_solid())
+                                && terrain
+                                    .get(*c + Vec3::unit_z())
+                                    .is_ok_and(|b| !b.is_solid())
+                        });
+                        if let Some(cell) = staging {
+                            let delta = (cell.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0))
+                                .xy()
+                                - pos.0.xy();
+                            controller.inputs.move_dir = if delta.magnitude_squared() > 0.01 {
+                                delta.normalized()
+                            } else {
+                                Vec2::zero()
+                            };
+                        } else {
+                            controller.inputs.move_dir = Vec2::zero();
+                        }
+                        controller.inputs.move_z = 0.0;
+                    } else {
+                        // Safely staged: stand still — zero churn, zero lane
+                        // pressure. (A climb-state member releases grip and
+                        // settles; the fixture asserts the safe outcome.)
+                        controller.inputs.move_dir = Vec2::zero();
+                        controller.inputs.move_z = 0.0;
+                    }
+                    continue;
+                }
                 // A temporary route remains the primary recovery mechanism.
                 // Its construction jobs own movement until every route step
                 // is complete; free climb assist is only the bounded handoff
@@ -11063,7 +11277,14 @@ impl<'a> System<'a> for Sys {
                     {
                         agent.rtsim_controller.activity = None;
                     }
+                    // M3: an owner CHANGE must leave the old link first —
+                    // a raw overwrite would strand this member's ticket on
+                    // the old queue (a ghost head starves that link).
+                    if board.emergency_route_members.get(&uid) != Some(&route_owner) {
+                        board.leave_route(uid);
+                    }
                     board.emergency_route_members.insert(uid, route_owner);
+                    board.traversal_enqueue(route_owner, uid, tick.0);
                     board.egress_targets.insert(uid, route_target);
                     board.emergency_safe_secs.remove(&uid);
                     if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
@@ -11335,8 +11556,22 @@ impl<'a> System<'a> for Sys {
                             nearby_emergency_route(board, &terrain, from, EGRESS_BUBBLE_R)
                             && !board.emergency_reengage_exhausted.contains(&uid)
                         {
+                            // M3: owner change leaves the old link first
+                            // (no ghost ticket on the old queue).
+                            if board.emergency_route_members.get(&uid) != Some(&route_owner) {
+                                board.leave_route(uid);
+                            }
                             board.emergency_route_members.insert(uid, route_owner);
+                            board.traversal_enqueue(route_owner, uid, tick.0);
                             board.egress_targets.insert(uid, route_target);
+                        }
+                        // M3: the plan's own route-owner membership (the
+                        // descriptor-holding self-insert inside
+                        // `plan_access`) gets its queue ticket HERE, where
+                        // the tick is in scope. Idempotent if the adopt
+                        // path above already ticketed this member.
+                        if let Some(&route_owner) = board.emergency_route_members.get(&uid) {
+                            board.traversal_enqueue(route_owner, uid, tick.0);
                         }
                         *board.egress_plans_emitted.entry(uid).or_insert(0) += 1;
                         info!(
@@ -11737,7 +11972,7 @@ impl<'a> System<'a> for Sys {
                                     // (B) STICKY: barred from re-emission
                                     // until delivered.
                                     board.emergency_reengage_exhausted.insert(member);
-                                    board.emergency_route_members.remove(&member);
+                                    board.leave_route(member);
                                     board.emergency_frontier_reacquire.remove(&member);
                                     watch_wipe(
                                         &mut board.stuck_watch,
@@ -12130,7 +12365,7 @@ impl<'a> System<'a> for Sys {
                     if let Some(entity) = id_maps.uid_entity(member) {
                         constructed_ladder_traversals.remove(entity);
                     }
-                    board.emergency_route_members.remove(&member);
+                    board.leave_route(member);
                     board.emergency_approach_corridors.remove(&member);
                     board.emergency_safe_secs.remove(&member);
                     board.egress_targets.remove(&member);
@@ -12217,7 +12452,7 @@ impl<'a> System<'a> for Sys {
                             "bastion: cleared stale egress movement at interrupted route release"
                         );
                     }
-                    board.emergency_route_members.remove(&member);
+                    board.leave_route(member);
                     board.emergency_approach_corridors.remove(&member);
                     board.emergency_safe_secs.remove(&member);
                     board.egress_targets.remove(&member);
@@ -12593,7 +12828,7 @@ impl<'a> System<'a> for Sys {
                     board.emergency_reengage_exhausted.remove(uid);
                     board.emergency_no_progress.remove(uid);
                     board.emergency_settle_anchors.remove(uid);
-                    if let Some(route_owner) = board.emergency_route_members.remove(uid) {
+                    if let Some(route_owner) = board.leave_route(*uid) {
                         board.emergency_safe_secs.remove(uid);
                         if !board
                             .emergency_route_members
@@ -12658,7 +12893,18 @@ impl<'a> System<'a> for Sys {
         }
         for (member, task) in &board.bastion_traversal_tasks {
             if let Some(entity) = id_maps.uid_entity(*member) {
-                if let Some(ownership) = task.ownership() {
+                if let Some(mut ownership) = task.ownership() {
+                    // M3: enrich the read-only queue fields from the link
+                    // (the task itself doesn't know the queue).
+                    if let Some(link) = board.traversal_links.get(&task.link_id) {
+                        ownership.reservation_generation = link.reservation_generation;
+                        ownership.queue_len = link.len() as u32;
+                        if let Some(position) = link.position(*member) {
+                            ownership.queue_position = Some(position as u32);
+                            ownership.queue_enqueue_tick =
+                                link.ticket(*member).map(|t| t.enqueue_tick);
+                        }
+                    }
                     let _ = traversal_ownerships.insert(entity, ownership);
                 } else {
                     traversal_ownerships.remove(entity);
@@ -12849,6 +13095,23 @@ impl<'a> System<'a> for Sys {
                         endpoint_distance,
                         ownership_epoch: transaction.map(|task| task.epoch),
                         climb_token_witness,
+                        queue_position: board
+                            .emergency_route_members
+                            .get(uid)
+                            .and_then(|owner| board.traversal_links.get(&owner.0.get()))
+                            .and_then(|link| link.position(*uid))
+                            .map(|position| position as u32),
+                        queue_enqueue_tick: board
+                            .emergency_route_members
+                            .get(uid)
+                            .and_then(|owner| board.traversal_links.get(&owner.0.get()))
+                            .and_then(|link| link.ticket(*uid))
+                            .map(|ticket| ticket.enqueue_tick),
+                        reservation_generation: board
+                            .emergency_route_members
+                            .get(uid)
+                            .and_then(|owner| board.traversal_links.get(&owner.0.get()))
+                            .map(|link| link.reservation_generation),
                     },
                 );
             }
@@ -13956,9 +14219,32 @@ mod tests {
         );
         assert_eq!(
             src.matches(concat!("self.advance_epoch", "(")).count(),
-            1,
+            2,
             "a new advance_epoch call-site appeared: verify it is a genuine release-class \
-             event (M3 queue re-election is the expected next one) and update this pin"
+             event and update this pin. The two current sites: task retirement \
+             (retire_traversal_task) and M3 queue re-election (leave_route on the head — \
+             the packet-expected addition; a same-block retire may double-advance, which \
+             the fence's equality algebra makes safe)"
+        );
+        // M3: route-membership single-leave discipline. The fair queue is
+        // maintained in lockstep with membership, so membership removal
+        // must stay ONE path (`leave_route` — which also dequeues and
+        // re-elects/advances the epoch when the head departs), and every
+        // insert site pairs a `traversal_enqueue` (the settle-point call
+        // covers plan_access's owner self-insert). A raw remove strands a
+        // ghost ticket; a raw unpaired insert starves the member.
+        assert_eq!(
+            src.matches(concat!("emergency_route_members", ".remove(")).count(),
+            1,
+            "a raw emergency_route_members.remove appeared: route it through leave_route \
+             (the dequeue + re-election path) and update this pin"
+        );
+        assert_eq!(
+            src.matches(concat!("emergency_route_members", ".insert(")).count(),
+            3,
+            "an emergency_route_members.insert site appeared: pair it with a \
+             traversal_enqueue (and an owner-change leave_route pre-clear) and update \
+             this pin"
         );
         // Owned movement-writer coverage: every phase-machine write
         // presents authority through the fence (13 sites; Complete/Abort

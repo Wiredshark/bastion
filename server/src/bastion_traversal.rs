@@ -307,6 +307,13 @@ impl BastionTraversalTask {
             reserved_member: self.reserved_member,
             mode,
             terrain_revision: self.terrain_revision,
+            // M3 queue fields default empty here — the task doesn't know
+            // the queue; the ONE live attach site enriches them from the
+            // board's `TraversalLink` (tooling snapshots read them raw).
+            queue_position: None,
+            queue_enqueue_tick: None,
+            reservation_generation: 0,
+            queue_len: 0,
         })
     }
 
@@ -327,6 +334,174 @@ impl BastionTraversalTask {
             epoch: self.epoch,
             member: self.reserved_member,
         }
+    }
+}
+
+/// bastion (M3): one queue ticket. The fair-order key is
+/// `(enqueue_tick, uid)` — UID is the TIEBREAK only. This is R9's direct
+/// fix for the lowest-UID-alone head selection: with UID-alone, a low-uid
+/// member that cancels and reacquires jumps back to the FRONT and starves
+/// everyone behind it; with the tick-first key, a re-enqueue (which goes
+/// through the leave path first) gets a NEW tick and the back of the line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TraversalQueueTicket {
+    pub member: Uid,
+    pub enqueue_tick: u64,
+}
+
+impl TraversalQueueTicket {
+    fn key(self) -> (u64, u64) {
+        (self.enqueue_tick, self.member.0.get())
+    }
+}
+
+/// bastion (M3): the persistent traversal link — link identity that
+/// OUTLIVES any one task, so a queue can exist before any task does
+/// (today's task-carried `link_id` dies with its task). Capacity stays 1
+/// for M3 (ML-2/3 raises it later without a type change). Entry / exit /
+/// terrain-revision deliberately live on the route DESCRIPTOR (same
+/// owner key) — one source of truth, no duplicate to drift. The MONOTONE
+/// fencing epoch lives in the JobBoard's `link_epochs` store (R10), not
+/// here: an empty link container may be pruned, the epoch never resets.
+#[derive(Clone, Debug)]
+pub(crate) struct TraversalLink {
+    /// Simultaneous same-direction traversers allowed. M3: always 1.
+    pub capacity: u8,
+    /// Bumps on every HEAD identity change (election/handover) —
+    /// inspection/recorder metadata, complementary to R10's fencing
+    /// `epoch` (which advances only on release-class events and is the
+    /// safety-bearing counter).
+    pub reservation_generation: u64,
+    /// Kept sorted by the fair key; insert is `partition_point` so equal
+    /// ticks resolve by uid deterministically.
+    queue: Vec<TraversalQueueTicket>,
+}
+
+impl Default for TraversalLink {
+    fn default() -> Self {
+        Self {
+            capacity: 1,
+            reservation_generation: 0,
+            queue: Vec::new(),
+        }
+    }
+}
+
+impl TraversalLink {
+    /// Idempotent: a member already queued keeps its ORIGINAL ticket
+    /// (returns false). Fair re-enqueue semantics come from the caller
+    /// dequeuing first (the single leave path), never from re-keying here.
+    pub(crate) fn enqueue(&mut self, member: Uid, tick: u64) -> bool {
+        if self.queue.iter().any(|t| t.member == member) {
+            return false;
+        }
+        let ticket = TraversalQueueTicket {
+            member,
+            enqueue_tick: tick,
+        };
+        let at = self.queue.partition_point(|t| t.key() <= ticket.key());
+        self.queue.insert(at, ticket);
+        true
+    }
+
+    pub(crate) fn dequeue(&mut self, member: Uid) -> bool {
+        match self.queue.iter().position(|t| t.member == member) {
+            Some(at) => {
+                self.queue.remove(at);
+                true
+            },
+            None => false,
+        }
+    }
+
+    pub(crate) fn head(&self) -> Option<Uid> {
+        self.queue.first().map(|t| t.member)
+    }
+
+    /// 0 = head. `None` = not queued.
+    pub(crate) fn position(&self, member: Uid) -> Option<usize> {
+        self.queue.iter().position(|t| t.member == member)
+    }
+
+    pub(crate) fn ticket(&self, member: Uid) -> Option<TraversalQueueTicket> {
+        self.queue.iter().copied().find(|t| t.member == member)
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.queue.is_empty()
+    }
+
+    /// Probe-shaped copy of the queue: `(member uid, enqueue_tick)` in
+    /// fair order.
+    pub(crate) fn snapshot(&self) -> Vec<(u64, u64)> {
+        self.queue
+            .iter()
+            .map(|t| (t.member.0.get(), t.enqueue_tick))
+            .collect()
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.queue.len()
+    }
+}
+
+#[cfg(test)]
+mod m3_queue_tests {
+    use super::*;
+
+    fn uid(n: u64) -> Uid {
+        Uid(std::num::NonZeroU64::new(n).unwrap())
+    }
+
+    #[test]
+    fn fair_order_is_tick_first_uid_tiebreak() {
+        let mut link = TraversalLink::default();
+        // Higher uid enqueued EARLIER goes first (tick beats uid — the
+        // R9 fix; min-UID would have elected 3).
+        assert!(link.enqueue(uid(9), 100));
+        assert!(link.enqueue(uid(3), 200));
+        assert_eq!(link.head(), Some(uid(9)));
+        // Same tick: uid is the tiebreak.
+        assert!(link.enqueue(uid(5), 200));
+        assert_eq!(link.position(uid(3)), Some(1));
+        assert_eq!(link.position(uid(5)), Some(2));
+        assert_eq!(link.len(), 3);
+    }
+
+    #[test]
+    fn reenqueue_after_leave_goes_to_the_back() {
+        let mut link = TraversalLink::default();
+        link.enqueue(uid(1), 10); // low uid, front
+        link.enqueue(uid(7), 20);
+        assert_eq!(link.head(), Some(uid(1)));
+        // Cancel/reacquire: uid 1 leaves, re-enqueues LATER — it must NOT
+        // return to the front (the exact starvation UID-alone permits).
+        assert!(link.dequeue(uid(1)));
+        assert_eq!(link.head(), Some(uid(7)));
+        assert!(link.enqueue(uid(1), 30));
+        assert_eq!(link.head(), Some(uid(7)));
+        assert_eq!(link.position(uid(1)), Some(1));
+        assert_eq!(link.ticket(uid(1)).unwrap().enqueue_tick, 30);
+    }
+
+    #[test]
+    fn enqueue_is_idempotent_keeping_the_original_ticket() {
+        let mut link = TraversalLink::default();
+        assert!(link.enqueue(uid(4), 50));
+        // A repeat enqueue (same member, later tick) is a no-op — the
+        // original ticket stands; only a real leave re-keys.
+        assert!(!link.enqueue(uid(4), 999));
+        assert_eq!(link.ticket(uid(4)).unwrap().enqueue_tick, 50);
+        assert_eq!(link.len(), 1);
+        assert!(link.dequeue(uid(4)));
+        assert!(!link.dequeue(uid(4)));
+        assert!(link.is_empty());
+    }
+
+    #[test]
+    fn capacity_defaults_to_one_for_m3() {
+        // ML-2/3 raises this; M3 must not sneak capacity-N.
+        assert_eq!(TraversalLink::default().capacity, 1);
     }
 }
 

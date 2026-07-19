@@ -180,6 +180,9 @@ fn record_stage1_task_snapshot(task: BastionTraversalTask, tick: u64, marker: &s
         // no climb witness (no physics in this probe).
         ownership_epoch: Some(task.epoch),
         climb_token_witness: None,
+        queue_position: None,
+        queue_enqueue_tick: None,
+        reservation_generation: None,
     });
 }
 

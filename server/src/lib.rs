@@ -3404,6 +3404,18 @@ impl Server {
         Some((task.0, task.1, uid))
     }
 
+    /// bastion (M3, read-only): the fair queue of the named colonist's
+    /// route link — ordered `(member_uid, enqueue_tick)` pairs plus the
+    /// link's reservation generation. `None` = not a route member or no
+    /// live link container.
+    pub fn bastion_traversal_queue(&self, name: &str) -> Option<(Vec<(u64, u64)>, u64)> {
+        let uid = self.bastion_colonist_uid(name)?;
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
+        let owner =
+            board.bastion_route_owner_probe(common::uid::Uid(std::num::NonZeroU64::new(uid)?))?;
+        board.bastion_traversal_queue_probe(owner)
+    }
+
     /// bastion (R10 N-FENCE, harness hook — PERMITTED TOUCH): attempt a
     /// movement write against the named colonist's controller presenting an
     /// ARBITRARY authority tuple, through THE production fence

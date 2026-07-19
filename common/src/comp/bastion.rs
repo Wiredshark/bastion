@@ -107,6 +107,18 @@ pub struct BastionTraversalOwnership {
     /// Route-local terrain proof/fingerprint. PATH-1's eventual global terrain
     /// generation is not claimed by this Stage-1 adapter.
     pub terrain_revision: u64,
+    /// bastion (M3, read-only inspection): fair-queue position at
+    /// observation — 0 = head. `None` = not queued (a live task's reserved
+    /// member has left the queue behind).
+    pub queue_position: Option<u32>,
+    /// bastion (M3): the member's fair-order ticket tick (the
+    /// `(enqueue_tick, uid)` key's first half). `None` = not queued.
+    pub queue_enqueue_tick: Option<u64>,
+    /// bastion (M3): the link's reservation generation (head handover
+    /// count) at observation.
+    pub reservation_generation: u64,
+    /// bastion (M3): total members queued on the link at observation.
+    pub queue_len: u32,
 }
 
 impl Component for BastionTraversalOwnership {

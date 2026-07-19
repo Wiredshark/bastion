@@ -74,6 +74,18 @@ pub struct FlightSample {
     /// evidence substrate); `None` = not climbing and no owned task.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub climb_token_witness: Option<bool>,
+    /// M3 (schema v2, additive): fair-queue position on the member's link
+    /// at sample time — 0 = head. `None` = not queued on any link.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue_position: Option<u32>,
+    /// M3 (schema v2, additive): the member's fair-order ticket tick
+    /// (`(enqueue_tick, uid)` — the queue-ticket field the packet names).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue_enqueue_tick: Option<u64>,
+    /// M3 (schema v2, additive): the link's reservation generation (head
+    /// handover count) at sample time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reservation_generation: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -796,9 +808,12 @@ fn focused_sample(
         terrain_revision: Some(4),
         exit_plane_z: Some(10.0),
         endpoint_distance: Some(endpoint_distance),
-        // R10 v2 fields: absent in the focused probe (v1-shaped fixture).
+        // R10/M3 v2 fields: absent in the focused probe (v1-shaped fixture).
         ownership_epoch: None,
         climb_token_witness: None,
+        queue_position: None,
+        queue_enqueue_tick: None,
+        reservation_generation: None,
     }
 }
 
