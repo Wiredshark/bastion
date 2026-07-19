@@ -61,6 +61,17 @@ use vek::*;
 // plumbing is cheap when the design clears feasibility). At the B-LIVE2
 // 10-minute overseer day, 6 real-seconds ≈ 14.4 game-minutes per block.
 const WORK_DURATION_BASE: f32 = 6.0;
+/// bastion (MINING-LIVE-FIDELITY measure pass / B5.8-E): THE anchored
+/// predicate — a dig cell counts as access-covered iff an anchor sits
+/// within XY-Chebyshev 8 and z ∈ [pos.z-1, pos.z+4]. ONE definition
+/// shared by the descent gate and the fidelity measurement probe
+/// (`Server::bastion_mine_fidelity_cells`), so the probe can never drift
+/// from the gate it audits.
+pub fn access_anchor_covers(anchors: &[Vec3<i32>], pos: Vec3<i32>) -> bool {
+    anchors.iter().any(|a| {
+        (a.x - pos.x).abs().max((a.y - pos.y).abs()) <= 8 && a.z >= pos.z - 1 && a.z <= pos.z + 4
+    })
+}
 /// bastion (B6-hotfix, Ben live-test): master switch for the AUTO-BUILT
 /// ladder-pillar access fallback (`plan_access`). `false` = the colony
 /// carves STAIRS where geometry allows and builds no auto vertical link
@@ -12661,11 +12672,7 @@ impl<'a> System<'a> for Sys {
             {
                 continue;
             }
-            let anchored = board.access_anchors.iter().any(|a| {
-                (a.x - job.pos.x).abs().max((a.y - job.pos.y).abs()) <= 8
-                    && a.z >= job.pos.z - 1
-                    && a.z <= job.pos.z + 4
-            });
+            let anchored = access_anchor_covers(&board.access_anchors, job.pos);
             if anchored {
                 continue;
             }

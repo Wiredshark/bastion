@@ -3257,6 +3257,46 @@ impl Server {
             .total_claims
     }
 
+    /// bastion (MINING-LIVE-FIDELITY, measure-first harness hook): per-cell
+    /// audit of the REMAINING (undug) Mine jobs inside `region` —
+    /// `(pos, depth, claimed, unreachable, anchored)` — so the fidelity
+    /// scenario can classify WHY undug cells sit at end-of-run:
+    /// descent-gate-held = deep (depth>2) + !anchored + !claimed;
+    /// unreachable = enclosed-flagged; claimed = someone is (or believes
+    /// they are) on it. `anchored` uses THE gate's own shared predicate
+    /// ([`bastion_jobs::access_anchor_covers`]) so probe and gate cannot
+    /// drift. Read-only; access-scaffolding cells excluded (they are not
+    /// designated payload).
+    pub fn bastion_mine_fidelity_cells(
+        &self,
+        region: common::bastion::Region,
+    ) -> Vec<(Vec3<i32>, u8, bool, bool, bool)> {
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
+        board
+            .jobs
+            .values()
+            .filter(|j| {
+                j.kind.is(common::bastion::DesignationKind::Mine)
+                    && !j.is_access
+                    && j.pos.x >= region.min.x
+                    && j.pos.x <= region.max.x
+                    && j.pos.y >= region.min.y
+                    && j.pos.y <= region.max.y
+                    && j.pos.z >= region.min.z
+                    && j.pos.z <= region.max.z
+            })
+            .map(|j| {
+                (
+                    j.pos,
+                    j.depth,
+                    j.claimed_by.is_some(),
+                    j.unreachable,
+                    bastion_jobs::access_anchor_covers(&board.access_anchors, j.pos),
+                )
+            })
+            .collect()
+    }
+
     /// bastion (B6 SOFT-0, harness hook): register an access anchor, as a
     /// player-designated or auto-built ladder would (scenarios that place
     /// ladder SPRITES directly bypass the designation path that normally

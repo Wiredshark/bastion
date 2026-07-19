@@ -400,6 +400,23 @@ struct Args {
     #[arg(long)]
     leash_scenario: bool,
 
+    /// bastion (MINING-LIVE-FIDELITY, measure-first): the live-shaped mining
+    /// measurement run — a LARGE mine designation on ORGANIC worldgen
+    /// terrain (no terraform of the dig area), a 6-colonist crew with picks,
+    /// real hunger against a staged food stockpile — measuring COMPLETION
+    /// (cells dug / designated + per-cell end-state classification via the
+    /// gate's own anchored predicate) and MOVEMENT EFFICIENCY (distance per
+    /// dig, claims, teleport/emergency engagements). Reports JSON; always
+    /// exits success unless setup itself fails — this run MEASURES, it does
+    /// not gate (DAY-PLAN 2026-07-19 amendment 1/2).
+    #[arg(long)]
+    mine_fidelity_scenario: bool,
+
+    /// bastion (MINING-LIVE-FIDELITY): sim-minute budget for the fidelity
+    /// soak (early-exit on completion or a 6-minute full stall).
+    #[arg(long, default_value_t = 30.0)]
+    mf_minutes: f64,
+
     /// bastion (AUTON-0, row 48): the drive arbiter — Work flows through
     /// the gated claim entry (liveness), a REAL below-flee-health signal
     /// preempts Work within a tick, claims stay suppressed while
@@ -788,6 +805,8 @@ fn main() -> ExitCode {
         arena_scenario(&args)
     } else if args.leash_scenario {
         leash_scenario(&args)
+    } else if args.mine_fidelity_scenario {
+        mine_fidelity_scenario(&args)
     } else if args.chopfell_scenario {
         chopfell_scenario(&args)
     } else if args.inspect_scenario {
@@ -10350,6 +10369,377 @@ fn leash_scenario(args: &Args) -> ExitCode {
     } else {
         ExitCode::FAILURE
     }
+}
+
+/// bastion (MINING-LIVE-FIDELITY, measure-first — DAY-PLAN 2026-07-19
+/// amendments 1/2): the live-shaped mining MEASUREMENT run. Ben's live
+/// report: a big dig completes ~50/50 and colonists run back-and-forth
+/// excessively; harness mine gates are green — the classic green-gate-vs-
+/// live gap, so this scenario reproduces the LIVE shape headlessly:
+/// ORGANIC worldgen terrain (the dig area is NEVER terraformed), a big
+/// multi-level designation painted through the real surface path, a
+/// 6-colonist crew with picks, REAL hunger against a staged food
+/// stockpile (eat trips are part of the traffic being measured; rest/
+/// social are pinned and DISCLOSED in the report so a bedless world
+/// doesn't dominate the signal). It MEASURES and classifies — it does
+/// not gate: completion %, a per-minute progress timeline, end-state
+/// per-cell classification (descent-gate-held via the gate's OWN shared
+/// anchored predicate / unreachable / claimed / idle), walking distance
+/// per dig (teleport jumps split out), claim totals, fail-safe and
+/// emergency engagements. Exit is FAILURE only when SETUP itself fails
+/// (colony didn't load, zero cells designated) — a 12% completion with a
+/// clean report is a successful MEASUREMENT.
+fn mine_fidelity_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, Region, ZExtent},
+        terrain::BlockKind,
+        vol::ReadVol,
+    };
+    use vek::{Vec2, Vec3};
+    const MUSHROOM: &str = "common.items.food.mushroom";
+    const PICK: &str = "common.items.tool.pickaxe_stone";
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-minefid-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-minefid".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-minefid-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+
+    // The dig footprint: 8×8 XY, ~20 blocks east of site center, on RAW
+    // organic ground (live-shaped by construction — no terraform). hint_z
+    // = the footprint's max ground so the surface resolver sees every
+    // column.
+    let m_min = Vec2::new(cx + 16, cy - 4);
+    let m_max = Vec2::new(cx + 23, cy + 3);
+    let mut hint_z = i32::MIN;
+    for x in m_min.x..=m_max.x {
+        for y in m_min.y..=m_max.y {
+            if let Some(g) = ground_z(&server, x, y) {
+                hint_z = hint_z.max(g);
+            }
+        }
+    }
+    if hint_z == i32::MIN {
+        eprintln!("MINE-FIDELITY: no ground under the dig footprint — setup failed");
+        return ExitCode::FAILURE;
+    }
+
+    // Crew staging + food: natural ground west of the dig (between site
+    // center and the pit — a plausible live colony layout).
+    let sx = cx + 6;
+    let sy = cy;
+    let Some(sgz) = ground_z(&server, sx, sy) else {
+        eprintln!("MINE-FIDELITY: no ground at staging — setup failed");
+        return ExitCode::FAILURE;
+    };
+    let staging = Vec3::new(sx as f32 + 0.5, sy as f32 + 0.5, sgz as f32 + 2.0);
+    server.bastion_spawn_colony(staging, 6);
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let crew = names.len();
+    if crew < 6 {
+        eprintln!("MINE-FIDELITY: only {crew}/6 colonists loaded — setup failed");
+        return ExitCode::FAILURE;
+    }
+    for n in &names {
+        server.bastion_equip_tool(n, PICK);
+        server.bastion_set_needs(n, 1.0, 1.0, 1.0);
+    }
+    // Food stockpile: painted zone + a real mushroom pile — hunger stays
+    // REAL for the whole run; eat trips are measured traffic.
+    server.bastion_place_designation(
+        Region {
+            min: Vec3::new(sx - 1, sy - 1, sgz),
+            max: Vec3::new(sx + 1, sy + 1, sgz + 2),
+        },
+        DesignationKind::Stockpile,
+    );
+    server.bastion_spawn_item(
+        Vec3::new(sx as f32 + 0.5, sy as f32 + 0.5, sgz as f32 + 1.5),
+        MUSHROOM,
+        40,
+    );
+    tick(&mut server, 30);
+
+    // The designation — through the REAL per-column surface path (the
+    // live paint pipeline), 7 blocks deep per column: depths 3..=7 are
+    // descent-gate territory (gate trips at depth > 2), exactly the D16
+    // release class under measurement.
+    let (created, bounds) = server.bastion_place_designation_surface(
+        m_min,
+        m_max,
+        hint_z,
+        ZExtent {
+            down: 6,
+            up: 0,
+            floor_z: None,
+        },
+        DesignationKind::Mine,
+    );
+    let cells_designated = created.len();
+    let Some(bounds) = bounds else {
+        eprintln!("MINE-FIDELITY: designation resolved no bounds — setup failed");
+        return ExitCode::FAILURE;
+    };
+    if cells_designated == 0 {
+        eprintln!("MINE-FIDELITY: zero cells designated — setup failed");
+        return ExitCode::FAILURE;
+    }
+    info!(
+        cells_designated,
+        ?bounds,
+        hint_z,
+        "mine-fidelity: designation placed on organic ground"
+    );
+
+    // Baselines.
+    let claims0 = server.bastion_total_claims();
+    let done0 = server.bastion_done_designations();
+    let fires0 = server.bastion_center_net_fires();
+    let failsafe0 = server.bastion_failsafe_events().len();
+    let (em_jobs0, em_routes0, _) = server.bastion_emergency_access_stats();
+
+    // ── The soak ────────────────────────────────────────────────────────
+    let ticks_per_min = (args.tps * 60.0) as u64;
+    let budget_ticks = (args.mf_minutes * 60.0 * args.tps) as u64;
+    let mut walked: std::collections::HashMap<String, (Vec3<f32>, f64)> =
+        std::collections::HashMap::new();
+    let mut teleport_jump_blocks = 0.0f64;
+    let mut min_hunger = f32::INFINITY;
+    let mut timeline: Vec<serde_json::Value> = Vec::new();
+    let mut elapsed: u64 = 0;
+    let mut last_remaining = cells_designated;
+    let mut stalled_minutes = 0u32;
+    let mut stalled = false;
+    while elapsed < budget_ticks {
+        tick(&mut server, 30);
+        elapsed += 30;
+        for (name, pos, _job) in server.bastion_colonist_states() {
+            let entry = walked.entry(name).or_insert((pos, 0.0));
+            let step = entry.0.distance(pos) as f64;
+            // A >20-block move inside one 30-tick sample at walk speed is a
+            // teleport (fail-safe/rescue), not walking — split it out so
+            // movement efficiency stays honest.
+            if step > 20.0 {
+                teleport_jump_blocks += step;
+            } else {
+                entry.1 += step;
+            }
+            entry.0 = pos;
+        }
+        // Rest/social pinned (B36 hold — DISCLOSED in the report); hunger
+        // real. ~Every 30 sim-s.
+        if elapsed % 900 == 0 {
+            for n in &names {
+                if let Some((hunger, _, _, _)) = server.bastion_colonist_needs_mood(n) {
+                    min_hunger = min_hunger.min(hunger);
+                    server.bastion_set_needs(n, hunger, 1.0, 1.0);
+                }
+            }
+        }
+        // Per-minute timeline + stall detection.
+        if elapsed % ticks_per_min == 0 {
+            let remaining = server
+                .bastion_mine_fidelity_cells(bounds)
+                .len();
+            let dist_total: f64 = walked.values().map(|(_, d)| d).sum();
+            timeline.push(serde_json::json!({
+                "min": elapsed / ticks_per_min,
+                "remaining": remaining,
+                "claims": server.bastion_total_claims() - claims0,
+                "walked": dist_total,
+            }));
+            if remaining == 0 {
+                break;
+            }
+            if remaining == last_remaining {
+                stalled_minutes += 1;
+                if stalled_minutes >= 6 {
+                    stalled = true;
+                    break;
+                }
+            } else {
+                stalled_minutes = 0;
+            }
+            last_remaining = remaining;
+        }
+    }
+
+    // ── End-state classification ────────────────────────────────────────
+    let cells = server.bastion_mine_fidelity_cells(bounds);
+    let remaining = cells.len();
+    let dug = cells_designated.saturating_sub(remaining);
+    let completion = dug as f64 / cells_designated as f64;
+    let mut gate_held = 0usize;
+    let mut unreachable = 0usize;
+    let mut claimed_end = 0usize;
+    let mut deep_anchored_idle = 0usize;
+    let mut shallow_idle = 0usize;
+    for (_pos, depth, claimed, unr, anchored) in &cells {
+        if *unr {
+            unreachable += 1;
+        } else if *claimed {
+            claimed_end += 1;
+        } else if *depth > 2 && !*anchored {
+            gate_held += 1;
+        } else if *depth > 2 {
+            deep_anchored_idle += 1;
+        } else {
+            shallow_idle += 1;
+        }
+    }
+    let audit = server.bastion_job_audit();
+    let claims_delta = server.bastion_total_claims() - claims0;
+    let done_delta = server.bastion_done_designations() - done0;
+    let failsafe_events = server.bastion_failsafe_events();
+    let failsafe_delta = failsafe_events.len() - failsafe0;
+    let (em_jobs, em_routes, _) = server.bastion_emergency_access_stats();
+    let net_fires = server.bastion_center_net_fires() - fires0;
+    let (no_progress_ticks, travel_timeouts, failsafe_teleports) =
+        server.bastion_locomotion_stats();
+    let (path_grants, path_peak_iters, path_peak_wait) = server.bastion_path_stats();
+    let alive = server.bastion_colonist_states().len();
+    let dist_total: f64 = walked.values().map(|(_, d)| d).sum();
+    let dist_per_dig = if dug > 0 {
+        dist_total / dug as f64
+    } else {
+        -1.0
+    };
+    let claims_per_dig = if dug > 0 {
+        claims_delta as f64 / dug as f64
+    } else {
+        -1.0
+    };
+    let per_colonist: Vec<serde_json::Value> = walked
+        .iter()
+        .map(|(n, (_, d))| serde_json::json!({ "name": n, "walked": d }))
+        .collect();
+
+    let result = serde_json::json!({
+        "mf_seed": args.seed,
+        "mf_cells_designated": cells_designated,
+        "mf_dug": dug,
+        "mf_remaining": remaining,
+        "mf_completion": completion,
+        "mf_stalled": stalled,
+        "mf_sim_minutes_run": elapsed / ticks_per_min,
+        "mf_end_gate_held": gate_held,
+        "mf_end_unreachable": unreachable,
+        "mf_end_claimed": claimed_end,
+        "mf_end_deep_anchored_idle": deep_anchored_idle,
+        "mf_end_shallow_idle": shallow_idle,
+        "mf_claims": claims_delta,
+        "mf_claims_per_dig": claims_per_dig,
+        "mf_done_designations": done_delta,
+        "mf_walked_total": dist_total,
+        "mf_walked_per_dig": dist_per_dig,
+        "mf_teleport_jump_blocks": teleport_jump_blocks,
+        "mf_failsafe_teleport_events": failsafe_delta,
+        "mf_locomotion": {
+            "no_progress_ticks": no_progress_ticks,
+            "travel_timeouts": travel_timeouts,
+            "failsafe_teleports": failsafe_teleports,
+        },
+        "mf_emergency_access": {
+            "jobs": em_jobs as i64 - em_jobs0 as i64,
+            "routes": em_routes as i64 - em_routes0 as i64,
+        },
+        "mf_net_fires": net_fires,
+        "mf_path": { "grants": path_grants, "peak_iters": path_peak_iters, "peak_wait": path_peak_wait },
+        "mf_audit": { "total": audit.total, "claimed": audit.claimed, "unreachable": audit.unreachable, "claims_distinct": audit.claims_distinct },
+        "mf_alive": alive,
+        "mf_min_hunger_seen": if min_hunger.is_finite() { min_hunger } else { -1.0 },
+        "mf_rest_social_pinned": true,
+        "mf_per_colonist": per_colonist,
+        "mf_timeline": timeline,
+    });
+    println!("{}", result);
+    println!(
+        "MINE FIDELITY: MEASURED — completion {:.1}% ({dug}/{cells_designated}), stalled={stalled}, \
+         gate_held={gate_held}, unreachable={unreachable}, claimed={claimed_end}, \
+         walked/dig={dist_per_dig:.1}, claims/dig={claims_per_dig:.2}, \
+         teleports={failsafe_delta}",
+        completion * 100.0
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
 }
 
 fn chopfell_scenario(args: &Args) -> ExitCode {
