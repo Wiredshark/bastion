@@ -50,3 +50,8 @@ Priority: P1 = fire first / blocking something, P2 = same-day, P3 = slot when co
 *HONEST-PARTIAL disclosure: A2's ultra-review had not returned by compile time. (The original second
 honest-partial — "the metrics nit" — was resolved post-delivery as the architect's own accidental duplicate of
 B54/C1; the duplicate line is removed.) Everything else is pointer-verified against the docs/code as of ~23:50.*
+
+## Post-compile additions (architect, ~00:05)
+- [C+] B16 TIER-3 guards NOT YET WRITTEN — Opus's sprint was interrupted pre-edit (tree clean of it). Re-fire readme/OPUS-B16-TIER3-PROMPT.md next window (any capable session). Priority: HIGH (open crash class).
+- [D+] LOW/efficiency (Opus ultra-review, verified): BASTION_B55_TRACE_DELETES env::var_os re-read per entity-deletion in state_ext.rs delete_entity_common (:1413) + sys/object.rs (:85) + inventory_manip.rs (:229) — hot path; sys/item.rs (:46) already shows the hoist pattern. Fix = LazyLock cache one-liner, or rides until B55 traces are removed. Owner: Bug-Tester's B55 instrumentation lane.
+- [A+] Opus ultra-review CLEAN BILL on builder-2's uncommitted leash selector (determinism/stranding/vanilla-identical all verified) — credit as pre-review at the leash merge gate.
