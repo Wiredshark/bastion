@@ -690,6 +690,25 @@ impl<'a> System<'a> for Sys {
                         .push((*character, wpos.0));
                 }
             }
+
+            // bastion (IDLE-HOME-LEASH): resolve the colony's idle-orbit
+            // anchor for the brain's colonist idle selector — a painted
+            // Meeting zone overrides (explicit beats implicit), else the
+            // FIRST stockpile's centroid, else None (leash inactive).
+            // Recomputed from live designation state every tick, so an
+            // erased zone/stockpile drops out on the next compute (no
+            // stale-slot risk, registry B25 class) and the field never
+            // needs persisting.
+            data.bastion_home_anchor = job_board
+                .activity_zones
+                .iter()
+                .find(|(_, kind, _)| matches!(kind, common::bastion::ZoneKind::Meeting))
+                .map(|(_, _, region)| region)
+                .or_else(|| job_board.stockpiles.first().map(|(_, region)| region))
+                .map(|region| {
+                    (region.min.map(|e| e as f32) + region.max.map(|e| e as f32)) * 0.5
+                        + vek::Vec3::broadcast(0.5)
+                });
         }
 
         // Tick rtsim

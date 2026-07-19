@@ -744,6 +744,103 @@ fn choose_plaza(ctx: &mut NpcCtx, site: SiteId) -> Option<Vec2<f32>> {
 
 const WALKING_SPEED: f32 = 0.35;
 
+/// bastion (IDLE-HOME-LEASH, design §2): free-wander radius around the
+/// colony anchor — inside it, idle wandering is fully unchanged (loose
+/// orbit, not a huddle).
+const IDLE_LEASH_RADIUS: f32 = 24.0;
+/// bastion (IDLE-HOME-LEASH, design §2): the hard cap — an idle colonist
+/// beyond this gets its NEXT wander target aimed back into the leash disc
+/// (always an ordinary walk; never a teleport, never a forced state).
+const IDLE_LEASH_MAX: f32 = 48.0;
+/// bastion (IDLE-HOME-LEASH): wander-leg length band, blocks.
+const IDLE_WANDER_LEG_MIN: f32 = 8.0;
+const IDLE_WANDER_LEG_MAX: f32 = 16.0;
+
+/// bastion (IDLE-HOME-LEASH): a uniform-ish random unit direction off the
+/// NPC's own rng stream (the codebase's non-trig idiom; the slight corner
+/// bias of the square sample is irrelevant at leash scale).
+fn leash_rand_dir(rng: &mut impl rand::Rng) -> Vec2<f32> {
+    Vec2::new(rng.random_range(-1.0..1.0), rng.random_range(-1.0..1.0))
+        .try_normalized()
+        .unwrap_or_else(Vec2::unit_x)
+}
+
+/// bastion (IDLE-HOME-LEASH): a player-colony colonist's idle routine —
+/// orbit the colony's home anchor instead of running [`villager`] at the
+/// vanilla home SITE. A colonist's `npc.home` is the nearest worldgen TOWN
+/// (set at colony spawn), so the vanilla brain walks idle colonists to that
+/// town's houses/plazas — the AUTON-2 idle-drift that stranded colonists
+/// 80+ blocks out, starving unreachable-from-food when the eat preempt
+/// finally fired. This selector gates ONLY the next wander-leg TARGET:
+/// movement remains the ordinary Goto/chaser pipeline (no new movement
+/// writer), and jobs/hauling/needs/flee preemption drive the loaded agent
+/// exactly as before regardless of this brain intent.
+fn colonist_idle(anchor: Option<Vec3<f32>>) -> impl Action<DefaultState> {
+    now(move |ctx, _| {
+        let Some(anchor) = anchor else {
+            // No stockpile and no Meeting zone yet (pre-bootstrap): leash
+            // inactive — idle in place rather than town-walk (strictly
+            // safer than the drift; the anchor appears with the first
+            // painted stockpile and this arm re-evaluates).
+            return idle()
+                .repeat()
+                .stop_if(timeout(5.0))
+                .map(|_, _| ())
+                .l();
+        };
+        let anchor = anchor.xy();
+        let wpos = ctx.npc.wpos.xy();
+        let dist = wpos.distance(anchor);
+        // The next wander leg's target, leash-gated (design §2).
+        let target = if dist > IDLE_LEASH_MAX {
+            // Beyond the hard cap: re-aim INTO the leash disc around the
+            // anchor (drift home over ordinary walk legs).
+            let r = ctx.rng.random_range(0.0..IDLE_LEASH_RADIUS * 0.5);
+            anchor + leash_rand_dir(&mut ctx.rng) * r
+        } else if dist > IDLE_LEASH_RADIUS {
+            // Soft band: two candidate legs, keep the anchor-ward one —
+            // colonists drift back over a few legs, no beeline, no wall.
+            let a = wpos
+                + leash_rand_dir(&mut ctx.rng)
+                    * ctx.rng.random_range(IDLE_WANDER_LEG_MIN..IDLE_WANDER_LEG_MAX);
+            let b = wpos
+                + leash_rand_dir(&mut ctx.rng)
+                    * ctx.rng.random_range(IDLE_WANDER_LEG_MIN..IDLE_WANDER_LEG_MAX);
+            if a.distance(anchor) <= b.distance(anchor) { a } else { b }
+        } else {
+            // Inside the leash: unchanged free wander (full local freedom —
+            // the orbit look, not a huddle).
+            wpos + leash_rand_dir(&mut ctx.rng)
+                * ctx.rng.random_range(IDLE_WANDER_LEG_MIN..IDLE_WANDER_LEG_MAX)
+        };
+        // Selector invariant: NO emitted target lies outside the leash disc —
+        // a leg from near the boundary is pulled radially inward, so any
+        // position past IDLE_LEASH_MAX on tape is pathing wobble (small
+        // slack), never the selector's doing.
+        let target = {
+            let off = target - anchor;
+            let d = off.magnitude();
+            if d > IDLE_LEASH_MAX {
+                anchor + off / d * (IDLE_LEASH_RADIUS * 1.5)
+            } else {
+                target
+            }
+        };
+        let wait = ctx.rng.random_range(4.0..12.0);
+        travel_to_point(target, WALKING_SPEED)
+            .debug(|| "colonist idle wander (home leash)")
+            .then(
+                socialize()
+                    .repeat()
+                    .map_state(|state: &mut DefaultState| &mut state.socialize_timer)
+                    .stop_if(timeout(wait)),
+            )
+            .map(|_, _| ())
+            .r()
+    })
+    .debug(|| "colonist idle (home leash)")
+}
+
 /// bastion (B-AG2): THE shared archetype gate — replaces the brain's
 /// scattered `matches!(profession, X) && ctx.rng.random_bool(HARDCODED)`
 /// pattern at converted sites with one lookup against the RON table
@@ -1563,11 +1660,22 @@ fn humanoid() -> impl Action<DefaultState> {
             };
         } else {
             let action = match ctx.npc.profession() {
-                Some(Profession::Adventurer(_) | Profession::Merchant) => adventure().l().l(),
-                Some(Profession::Pirate(is_leader)) => pirate(is_leader).l().r(),
+                Some(Profession::Adventurer(_) | Profession::Merchant) => {
+                    adventure().l().l().l()
+                },
+                Some(Profession::Pirate(is_leader)) => pirate(is_leader).r().l().l(),
                 _ => {
-                    if let Some(home) = ctx.npc.home {
-                        villager(home).r().l()
+                    // bastion (IDLE-HOME-LEASH): colonists NEVER run the
+                    // villager routine — their vanilla `home` is the nearest
+                    // worldgen TOWN (a colony-spawn artifact), so "going
+                    // home" walks them off-colony: the AUTON-2 idle drift.
+                    // They orbit the colony anchor instead (painted Meeting
+                    // zone beats first-stockpile centroid; no anchor yet →
+                    // idle in place).
+                    if ctx.npc.bastion_colonist.is_some() {
+                        colonist_idle(ctx.data.bastion_home_anchor).r().l()
+                    } else if let Some(home) = ctx.npc.home {
+                        villager(home).l().r()
                     } else {
                         idle().r().r() // Homeless
                     }

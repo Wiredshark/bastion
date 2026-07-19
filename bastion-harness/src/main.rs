@@ -389,6 +389,17 @@ struct Args {
     #[arg(long)]
     run_scenario: bool,
 
+    /// bastion (IDLE-HOME-LEASH): the idle-orbit leash gate — (a) an idle
+    /// 3-colonist soak stays ≤ leash-max (+ pathing slack) from the FIRST
+    /// stockpile's centroid at every sample while still orbiting (stddev >
+    /// 0, not a huddle); (b) the AUTON-2 bug-class re-staged WITHOUT the
+    /// painted magnet: the hungry idler is preempted NEAR home and the eat
+    /// completes (fed, not starved); (c) a painted Meeting zone far from
+    /// the stockpile takes over as the orbit center (explicit beats
+    /// implicit).
+    #[arg(long)]
+    leash_scenario: bool,
+
     /// bastion (AUTON-0, row 48): the drive arbiter — Work flows through
     /// the gated claim entry (liveness), a REAL below-flee-health signal
     /// preempts Work within a tick, claims stay suppressed while
@@ -775,6 +786,8 @@ fn main() -> ExitCode {
         auton3_scenario(&args)
     } else if args.arena_scenario {
         arena_scenario(&args)
+    } else if args.leash_scenario {
+        leash_scenario(&args)
     } else if args.chopfell_scenario {
         chopfell_scenario(&args)
     } else if args.inspect_scenario {
@@ -9943,6 +9956,392 @@ fn inspect_scenario(args: &Args) -> ExitCode {
     let pass = sp_hit && sp_total >= 3 && mine_hit && farm_hit && empty_none;
     println!("{result}");
     println!("INSPECT SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// bastion (IDLE-HOME-LEASH): the leash acceptance gate. (a) LEASH-BOUND —
+/// an idle 3-colonist soak stays within the leash of the FIRST stockpile's
+/// centroid at EVERY sample (max ≤ 48 + pathing slack) while positional
+/// stddev stays > 0 (orbit, not huddle; a restart-per-tick selector bug
+/// would read as a huddle and fail here). Needs are RE-TOPPED during the
+/// soak (registry B36: hold a simulated condition, never set-once) so the
+/// soak stays idle-classified. (b) BUG-CLASS — the AUTON-2 idle-drift death
+/// re-staged WITHOUT the painted Meeting magnet: hunger dropped low on one
+/// idler; the eat preempt must fire NEAR home and complete (fed, not
+/// starved amid plenty). (c) OVERRIDE — a Meeting zone painted 40 blocks
+/// out becomes the orbit center (mean dist-to-zone < mean dist-to-old
+/// anchor in the final window, and the final window is zone-leashed).
+/// Net-fires must stay zero throughout (the leash is a selector, never a
+/// teleport — an emergency relocation firing would betray a stranding).
+fn leash_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, Region, ZoneKind},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+    const MUSHROOM: &str = "common.items.food.mushroom";
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-leash-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-leash".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        // Night leg: a 2-real-minute game day (coefficient 720) so the soak
+        // arithmetically spans multiple full day/night cycles without
+        // stretching wall time.
+        day_length: 2.0,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-leash-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+
+    // WIDE flat pad: the whole leash disc (48) + wobble margin must be
+    // plainly walkable so distance measures selector behavior, not
+    // terrain accidents (the flattened-fixture rule is inverted here on
+    // purpose: the leash claim is about DISTANCE, not geometry).
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 56)..=(cx + 56) {
+        for y in (cy - 56)..=(cy + 56) {
+            for z in (gz - 3)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(Vec3::new(cx as f32, cy as f32, gz as f32 + 2.0), 3);
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let colonist_count = names.len();
+    let fires_before = server.bastion_center_net_fires();
+
+    // The anchor source: the FIRST painted stockpile (no other designation
+    // of any kind exists — the colonists are pure idlers).
+    let sp = Region {
+        min: Vec3::new(cx - 2, cy - 2, gz + 1),
+        max: Vec3::new(cx + 1, cy + 1, gz + 1),
+    };
+    server.bastion_place_designation(sp, DesignationKind::Stockpile);
+    let anchor = Vec2::new(
+        (sp.min.x + sp.max.x) as f32 * 0.5 + 0.5,
+        (sp.min.y + sp.max.y) as f32 * 0.5 + 0.5,
+    );
+    tick(&mut server, 30);
+
+    // Night-leg prerequisite (architect's added acceptance leg): ONE bed
+    // near the stockpile, built through the REAL pipeline (stones stocked →
+    // claim → fetch → place → the completion arm registers the slot). Built
+    // BEFORE the idle soak so the build job is done and the crew returns to
+    // pure idling.
+    for i in 0..3 {
+        server.bastion_spawn_item(
+            Vec3::new((cx - 1) as f32, (cy - 1 + i) as f32, gz as f32 + 1.5),
+            "common.items.crafting_ing.stones",
+            1,
+        );
+    }
+    let bed = Vec3::new(cx + 4, cy - 4, gz + 1);
+    server.bastion_place_designation(Region { min: bed, max: bed }, DesignationKind::Bed);
+    let mut bed_built = false;
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        if server.bastion_bed_slot(bed).is_some() {
+            bed_built = true;
+            break;
+        }
+    }
+    for n in &names {
+        server.bastion_set_needs(n, 1.0, 1.0, 1.0);
+    }
+
+    // ── (a) LEASH-BOUND soak: 300 sampled legs × 30 ticks = 9000 ticks
+    // (300 sim-s at 30tps). Distance gate = IDLE_LEASH_MAX(48) + 6 slack
+    // (the selector clamps every TARGET inside the disc; positions past it
+    // are pathing wobble only).
+    let mut max_dist = 0.0f32;
+    let mut track: std::collections::HashMap<String, Vec<Vec2<f32>>> =
+        std::collections::HashMap::new();
+    for sample in 0..300u32 {
+        tick(&mut server, 30);
+        // B36: HOLD the topped-needs condition (~every 30 sim-s) so decay
+        // never reclassifies the soak away from idle.
+        if sample % 30 == 0 {
+            for n in &names {
+                server.bastion_set_needs(n, 1.0, 1.0, 1.0);
+            }
+        }
+        for (name, pos, _job) in server.bastion_colonist_states() {
+            let d = pos.xy().distance(anchor);
+            max_dist = max_dist.max(d);
+            track.entry(name).or_default().push(pos.xy());
+        }
+    }
+    let leash_bound = max_dist <= 54.0;
+    // Orbit-not-huddle: average per-colonist positional stddev.
+    let orbit_stddev = {
+        let mut acc = 0.0f32;
+        let mut cnt = 0usize;
+        for pts in track.values() {
+            if pts.is_empty() {
+                continue;
+            }
+            let mean =
+                pts.iter().fold(Vec2::zero(), |acc, p| acc + *p) / pts.len() as f32;
+            let var =
+                pts.iter().map(|p| p.distance_squared(mean)).sum::<f32>() / pts.len() as f32;
+            acc += var.sqrt();
+            cnt += 1;
+        }
+        if cnt > 0 { acc / cnt as f32 } else { 0.0 }
+    };
+    let orbit_ok = orbit_stddev > 2.0;
+
+    // ── (b) BUG-CLASS: AUTON-2 re-staged BARE (no painted magnet). Food
+    // sits in the stockpile; one idler goes hungry; the preempt must fire
+    // near home and feed them.
+    server.bastion_spawn_item(
+        Vec3::new(cx as f32, cy as f32, gz as f32 + 1.5),
+        MUSHROOM,
+        2,
+    );
+    tick(&mut server, 5);
+    let a = names.first().cloned().unwrap_or_default();
+    server.bastion_set_needs(&a, 0.15, 1.0, 1.0);
+    let mut ate = false;
+    let mut eat_dist = f32::INFINITY;
+    for _ in 0..360 {
+        tick(&mut server, 10);
+        let hunger = server
+            .bastion_colonist_needs_mood(&a)
+            .map(|v| v.0)
+            .unwrap_or(0.0);
+        if hunger >= 0.55 {
+            ate = true;
+            eat_dist = server
+                .bastion_colonist_states()
+                .into_iter()
+                .find(|(n, _, _)| *n == a)
+                .map(|(_, p, _)| p.xy().distance(anchor))
+                .unwrap_or(f32::INFINITY);
+            break;
+        }
+    }
+    let fed_near_home = ate && eat_dist <= 54.0;
+
+    // ── (c) OVERRIDE: a Meeting zone 40 blocks east — explicit beats
+    // implicit; the orbit must migrate. Window sized ≥2.5× the expected
+    // migration time (registry B40 headroom rule).
+    let mz = Region {
+        min: Vec3::new(cx + 38, cy - 2, gz + 1),
+        max: Vec3::new(cx + 41, cy + 1, gz + 1),
+    };
+    server.bastion_place_designation(mz, DesignationKind::Zone(ZoneKind::Meeting));
+    let zanchor = Vec2::new(
+        (mz.min.x + mz.max.x) as f32 * 0.5 + 0.5,
+        (mz.min.y + mz.max.y) as f32 * 0.5 + 0.5,
+    );
+    // Migration phase (not asserted): 9000 ticks = 300 sim-s.
+    for sample in 0..300u32 {
+        tick(&mut server, 30);
+        if sample % 30 == 0 {
+            for n in &names {
+                server.bastion_set_needs(n, 1.0, 1.0, 1.0);
+            }
+        }
+    }
+    // Final asserted window: 60 samples (60 sim-s).
+    let mut zone_max = 0.0f32;
+    let mut zone_dist_acc = 0.0f32;
+    let mut old_dist_acc = 0.0f32;
+    let mut window_samples = 0usize;
+    for sample in 0..60u32 {
+        tick(&mut server, 30);
+        if sample % 30 == 0 {
+            for n in &names {
+                server.bastion_set_needs(n, 1.0, 1.0, 1.0);
+            }
+        }
+        for (_, pos, _) in server.bastion_colonist_states() {
+            let dz = pos.xy().distance(zanchor);
+            zone_max = zone_max.max(dz);
+            zone_dist_acc += dz;
+            old_dist_acc += pos.xy().distance(anchor);
+            window_samples += 1;
+        }
+    }
+    let zone_mean = zone_dist_acc / (window_samples.max(1) as f32);
+    let old_mean = old_dist_acc / (window_samples.max(1) as f32);
+    let override_bound = zone_max <= 54.0;
+    let override_ok = override_bound && zone_mean < old_mean;
+
+    // ── (d) NIGHT/SLEEP (architect's added leg): colonists never reach
+    // villager()'s houses-at-night anymore — bastion's OWN need-preempt
+    // must own colonist sleep. One orbiter goes restless AT THE ZONE, ~40
+    // blocks from the bed: the rest preempt must walk them back and the
+    // sleep must complete end-to-end — which ALSO proves need-preemption
+    // overrides the leash (non-idle colonists exempt, design §2). With
+    // day_length=2.0 the run's fixed sim windows span multiple full
+    // day/night cycles by construction (soak alone = 300 sim-s × coeff
+    // 720 = 2.5 game-days).
+    let c = names.get(2).cloned().unwrap_or_default();
+    server.bastion_set_needs(&c, 1.0, 0.12, 1.0);
+    let mut slept = false;
+    let mut bed_occupied_seen = false;
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        if server
+            .bastion_bed_slot(bed)
+            .is_some_and(|(_, occ)| occ.is_some())
+        {
+            bed_occupied_seen = true;
+        }
+        let rest = server
+            .bastion_colonist_needs_mood(&c)
+            .map(|v| v.1)
+            .unwrap_or(0.0);
+        // Completion-aware (the B7-1 idiom): occupancy seen, then cleared,
+        // with rest restored past the band = the sleep ran end-to-end.
+        if bed_occupied_seen
+            && rest >= 0.55
+            && server
+                .bastion_bed_slot(bed)
+                .is_some_and(|(_, occ)| occ.is_none())
+        {
+            slept = true;
+            break;
+        }
+    }
+
+    let alive = server.bastion_colonist_states().len() == colonist_count && colonist_count == 3;
+    let net_fires = server.bastion_center_net_fires() - fires_before;
+
+    let result = serde_json::json!({
+        "leash_colonists": colonist_count,
+        "leash_anchor": [anchor.x, anchor.y],
+        "leash_max_dist": max_dist,
+        "leash_bound": leash_bound,
+        "leash_orbit_stddev": orbit_stddev,
+        "leash_orbit_ok": orbit_ok,
+        "leash_ate": ate,
+        "leash_eat_dist": if eat_dist.is_finite() { eat_dist } else { -1.0 },
+        "leash_fed_near_home": fed_near_home,
+        "leash_zone_anchor": [zanchor.x, zanchor.y],
+        "leash_override_zone_max": zone_max,
+        "leash_override_zone_mean": zone_mean,
+        "leash_override_old_mean": old_mean,
+        "leash_override_bound": override_bound,
+        "leash_override_ok": override_ok,
+        "leash_alive": alive,
+        "leash_net_fires": net_fires,
+        "leash_bed_built": bed_built,
+        "leash_bed_occupied_seen": bed_occupied_seen,
+        "leash_slept": slept,
+    });
+    println!(
+        "LEASH TELEMETRY: max_dist={max_dist:.1} stddev={orbit_stddev:.1} eat_dist={eat_dist:.1} \
+         zone(max={zone_max:.1} mean={zone_mean:.1}) old_mean={old_mean:.1} fires={net_fires} \
+         bed(built={bed_built} occupied={bed_occupied_seen} slept={slept})"
+    );
+    let pass = leash_bound
+        && orbit_ok
+        && ate
+        && fed_near_home
+        && override_ok
+        && alive
+        && net_fires == 0
+        && bed_built
+        && slept;
+    println!("{}", result);
+    println!("LEASH SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);

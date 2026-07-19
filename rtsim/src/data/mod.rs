@@ -10,10 +10,7 @@ pub mod sentiment;
 pub mod site;
 
 pub use self::{
-    chronicle::{
-        Attribution, Chronicle, ChronicleEvent, ChronicleKind, Importance,
-        Scope,
-    },
+    chronicle::{Attribution, Chronicle, ChronicleEvent, ChronicleKind, Importance, Scope},
     faction::{Faction, FactionId, Factions},
     nature::Nature,
     npc::{Npc, NpcId, Npcs},
@@ -65,6 +62,15 @@ pub struct Data {
     /// pattern: `#[serde(default)]`, no version bump.
     #[serde(default)]
     pub chronicle: Chronicle,
+
+    /// bastion (IDLE-HOME-LEASH): the colony's idle-orbit anchor — the first
+    /// stockpile's centroid, overridden by a painted Meeting zone (explicit
+    /// beats implicit). EPHEMERAL: recomputed every server tick by the rtsim
+    /// bridge from live designations; `#[serde(skip)]` = never persisted,
+    /// `None` on load / when no stockpile or Meeting zone exists (leash
+    /// inactive).
+    #[serde(skip)]
+    pub bastion_home_anchor: Option<vek::Vec3<f32>>,
 
     #[serde(default)]
     pub tick: u64,

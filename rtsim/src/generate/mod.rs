@@ -101,6 +101,8 @@ impl Data {
             quests: Default::default(),
             // bastion (HIST-0): a fresh world's memory starts empty.
             chronicle: Default::default(),
+            // bastion (IDLE-HOME-LEASH): ephemeral; the bridge writes it.
+            bastion_home_anchor: None,
 
             tick: 0,
             time_of_day: TimeOfDay(settings.start_time),
