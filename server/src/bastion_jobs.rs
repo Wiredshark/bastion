@@ -3930,6 +3930,27 @@ impl JobBoard {
         self.link_epochs.get(&link).copied().unwrap_or(0)
     }
 
+    /// bastion (R10 N-FENCE probe): the member's live task as
+    /// `(link_id, epoch)`. Read-only.
+    pub fn bastion_traversal_tasks_probe(&self, member: Uid) -> Option<(u64, u64)> {
+        self.bastion_traversal_tasks
+            .get(&member)
+            .map(|t| (t.link_id, t.epoch))
+    }
+
+    /// bastion (R10): the link's CURRENT reserved member — the fence's
+    /// `current_member` input (`None` when no live non-Abort task holds
+    /// the link; `reservation_matches` semantics).
+    pub fn bastion_traversal_current_member(&self, link: u64) -> Option<Uid> {
+        self.bastion_traversal_tasks
+            .values()
+            .find(|t| {
+                t.link_id == link
+                    && t.phase != crate::bastion_traversal::BastionTraversalPhase::Abort
+            })
+            .map(|t| t.reserved_member)
+    }
+
     /// bastion (R10): advance the link's epoch — call ONLY from a release-
     /// class event (the enumerated advance-sites; the exhaustiveness assert
     /// pins the set). Returns the NEW epoch. Monotone by construction;

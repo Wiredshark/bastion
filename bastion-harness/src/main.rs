@@ -1460,6 +1460,9 @@ fn recorder_probe_sample(
         terrain_revision: None,
         exit_plane_z: None,
         endpoint_distance: Some((4.0 - tick as f32).abs()),
+        // R10 v2 fields: absent in the lifecycle probe (v1-shaped fixture).
+        ownership_epoch: None,
+        climb_token_witness: None,
     }
 }
 
@@ -4750,6 +4753,17 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
     // cycling premise demands >= 3; each entry also triggers the per-cycle
     // drain so every cycle carries an energy wait.
     let mut n7b_cycles = 0u32;
+    // NFENCE (R10): the fencing-token proof bookkeeping. Captured mid-climb
+    // tuple → post-abort stale presentation (must be a rejected no-op) →
+    // fresh-tuple presentation after re-engagement (must accept) → the
+    // REC-3 bounded post-handoff drive (fresh task must MOVE the member
+    // within the bound; a 1-tick coast is fine, a freeze is the fail).
+    let mut nfence_captured: Option<(u64, u64, u64)> = None;
+    let mut nfence_stale: Option<(bool, bool)> = None;
+    let mut nfence_fresh: Option<(bool, bool)> = None;
+    let mut nfence_fresh_seen_tick: Option<u64> = None;
+    let mut nfence_freeze_pos: Option<vek::Vec3<f32>> = None;
+    let mut nfence_handoff_ticks: Option<u64> = None;
     // Per-TICK sampling (calibration round 1: Reserved lasts 3 ticks — a 1s
     // poller never sees it, so N1/N4's phase-triggered mutators never fired
     // and N3's abort reason vanished with the task between polls).
@@ -4827,6 +4841,19 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
                     if let Some(dismount) = server.bastion_route_dismount(&member) {
                         server.state_mut().set_block(dismount, rock);
                         mutated = true;
+                    }
+                },
+                "NFENCE" if phase == "TraversingLink" => {
+                    // R10 N-FENCE: capture the LIVE authority tuple mid-
+                    // climb, then force the N1B-shaped abort (dismount rock
+                    // → classified stale-terrain abort) — the captured
+                    // tuple is now one release behind the store.
+                    if let Some(auth) = server.bastion_traversal_authority(&member) {
+                        nfence_captured = Some(auth);
+                        if let Some(dismount) = server.bastion_route_dismount(&member) {
+                            server.state_mut().set_block(dismount, rock);
+                            mutated = true;
+                        }
                     }
                 },
                 "N3" if phase == "TraversingLink" => {
@@ -4972,6 +4999,52 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
                 }
             }
         }
+        // NFENCE (R10) probe sequence, each step once:
+        if episode == "NFENCE" {
+            // 1. The abort observed with a captured tuple in hand → present
+            //    the STALE tuple through the PRODUCTION fence.
+            if let Some((link, epoch, member_uid)) = nfence_captured
+                && abort_reason.is_some()
+                && nfence_stale.is_none()
+            {
+                nfence_stale = server.bastion_r10_stale_write_probe(
+                    &member, link, epoch, member_uid,
+                );
+                info!(?nfence_stale, "NFENCE: stale-tuple probe result");
+            }
+            // 2. Re-engagement (a fresh task after the abort) → present the
+            //    FRESH tuple (must accept), and arm the REC-3 drive bound.
+            if nfence_stale.is_some()
+                && nfence_fresh.is_none()
+                && phase != "-"
+                && phase != "Abort"
+                && let Some((link, epoch, member_uid)) =
+                    server.bastion_traversal_authority(&member)
+            {
+                nfence_fresh = server.bastion_r10_stale_write_probe(
+                    &member, link, epoch, member_uid,
+                );
+                nfence_fresh_seen_tick = Some(tick_i);
+                nfence_freeze_pos = server
+                    .bastion_colonist_states()
+                    .iter()
+                    .find(|(n, ..)| n == &member)
+                    .map(|(_, p, _)| *p);
+                info!(?nfence_fresh, "NFENCE: fresh-tuple probe result");
+            }
+            // 3. REC-3: from fresh-task-seen, the member must MOVE (≥0.5)
+            //    within the bound — a persistent freeze is the fail.
+            if let (Some(seen), Some(freeze), None) =
+                (nfence_fresh_seen_tick, nfence_freeze_pos, nfence_handoff_ticks)
+                && let Some((_, p, _)) = server
+                    .bastion_colonist_states()
+                    .into_iter()
+                    .find(|(n, ..)| *n == member)
+                && p.distance(freeze) >= 0.5
+            {
+                nfence_handoff_ticks = Some(tick_i.saturating_sub(seen));
+            }
+        }
         // PREMISE-CHECK v2 (v1 note): the out-of-phase-Climb hard gate is
         // evaluated TAPE-SIDE by the wrapper (trajectory.jsonl carries
         // character_state per tick); the in-process flag stays false here.
@@ -5021,6 +5094,10 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         "m2_teleports_observed": teleports,
         "m2_audit_total": audit.total,
         "m2_audit_claimed": audit.claimed,
+        "m2_nfence_captured": nfence_captured.map(|(l, e, u)| format!("link={l} epoch={e} member={u}")),
+        "m2_nfence_stale": nfence_stale.map(|(accepted, changed)| format!("accepted={accepted} inputs_changed={changed}")),
+        "m2_nfence_fresh": nfence_fresh.map(|(accepted, changed)| format!("accepted={accepted} inputs_changed={changed}")),
+        "m2_nfence_handoff_ticks": nfence_handoff_ticks,
     });
     println!("{result}");
     server::bastion_flight_recorder::finalize();
@@ -5044,6 +5121,22 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
                 && owned_seen
                 && out_at.is_some()
                 && abort_reason.is_none()
+        },
+        // R10 N-FENCE: the un-fakeable fencing proof — a mid-climb tuple
+        // captured, the abort forced, the STALE tuple REJECTED as a no-op
+        // (controller inputs untouched), the FRESH tuple accepted, and the
+        // REC-3 bounded post-handoff drive (re-engaged member moves within
+        // 300 ticks — 1-tick coast fine, freeze fails). Alive+unentombed
+        // ride as always.
+        "NFENCE" => {
+            staged_ok
+                && mutated
+                && nfence_captured.is_some()
+                && nfence_stale == Some((false, false))
+                && nfence_fresh.is_some_and(|(accepted, _)| accepted)
+                && nfence_handoff_ticks.is_some_and(|t| t <= 300)
+                && alive
+                && unentombed
         },
         // N5G: RECLASSIFIED report-only (architect disposition-1 at the M2
         // tag): the tick-0 attractor wins the PRE-ROUTE race — a window where

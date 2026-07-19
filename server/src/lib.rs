@@ -3392,6 +3392,69 @@ impl Server {
             .access_material_missing
     }
 
+    /// bastion (R10 N-FENCE, harness hook): the named colonist's LIVE
+    /// traversal authority tuple `(link_id, epoch, member_uid)` — the
+    /// fixture captures this mid-climb, forces an abort, then presents the
+    /// CAPTURED (now stale) tuple through the stale-write probe. Read-only.
+    pub fn bastion_traversal_authority(&self, name: &str) -> Option<(u64, u64, u64)> {
+        let uid = self.bastion_colonist_uid(name)?;
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
+        let task = board
+            .bastion_traversal_tasks_probe(common::uid::Uid(std::num::NonZeroU64::new(uid)?))?;
+        Some((task.0, task.1, uid))
+    }
+
+    /// bastion (R10 N-FENCE, harness hook — PERMITTED TOUCH): attempt a
+    /// movement write against the named colonist's controller presenting an
+    /// ARBITRARY authority tuple, through THE production fence
+    /// ([`bastion_traversal::fenced_movement_write`] — the tested path IS
+    /// the shipping path, B17). Writes a sentinel input on acceptance.
+    /// Returns `(accepted, inputs_changed_from_before)`.
+    pub fn bastion_r10_stale_write_probe(
+        &mut self,
+        name: &str,
+        link_id: u64,
+        epoch: u64,
+        member_uid: u64,
+    ) -> Option<(bool, bool)> {
+        use specs::Join;
+        let member = common::uid::Uid(std::num::NonZeroU64::new(member_uid)?);
+        let authority = bastion_traversal::TraversalAuthority {
+            link_id,
+            epoch,
+            member,
+        };
+        let ecs = self.state.ecs();
+        let board = ecs.read_resource::<bastion_jobs::JobBoard>();
+        let current_epoch = board.current_epoch(link_id);
+        let current_member = board.bastion_traversal_current_member(link_id);
+        drop(board);
+        let entity = {
+            let uids = ecs.read_storage::<common::uid::Uid>();
+            let colonists = ecs.read_storage::<comp::Colonist>();
+            let entities = ecs.entities();
+            (&entities, &uids, &colonists)
+                .join()
+                .find(|(_, _, c)| c.0.name == name)
+                .map(|(e, ..)| e)
+        }?;
+        let mut controllers = ecs.write_storage::<comp::Controller>();
+        let controller = controllers.get_mut(entity)?;
+        let before = (controller.inputs.move_dir, controller.inputs.move_z);
+        // Sentinel input: distinct from any live value so acceptance is
+        // observable; rejection must leave inputs byte-identical.
+        let accepted = bastion_traversal::fenced_movement_write(
+            current_epoch,
+            current_member,
+            &authority,
+            controller,
+            vek::Vec2::new(0.707, -0.707),
+            0.5,
+        );
+        let after = (controller.inputs.move_dir, controller.inputs.move_z);
+        Some((accepted, before != after))
+    }
+
     /// bastion (B6 SOFT-0, harness hook): register an access anchor, as a
     /// player-designated or auto-built ladder would (scenarios that place
     /// ladder SPRITES directly bypass the designation path that normally
