@@ -12941,6 +12941,22 @@ impl<'a> System<'a> for Sys {
         // hole is never created. The gate tracks the SHALLOWEST held cell;
         // a proactive plan fires for it below (and the ladder extends
         // downward as the dig deepens, one plan per ~4 layers).
+        // R10 REC-1 (the despawn advance-site — audit finding: lost_members
+        // covers Abort/exhausted/out-of-bubble but a member with NO entity
+        // matches none of them, so its task lingered and its link's epoch
+        // never advanced): a task whose member no longer resolves to a
+        // loaded entity can neither drive nor release itself — retire it
+        // (epoch advances), freeing the link for re-election and orphaning
+        // any tuple the dead session adopted.
+        let despawned: Vec<Uid> = board
+            .bastion_traversal_tasks
+            .keys()
+            .filter(|uid| id_maps.uid_entity(**uid).is_none())
+            .copied()
+            .collect();
+        for uid in despawned {
+            board.retire_traversal_task(uid, "member-despawned");
+        }
         let mut descent_gated: HashSet<JobId> = HashSet::new();
         let mut descent_plan: Option<(JobId, Vec3<i32>, u8)> = None;
         // DPA-2 (the material-hold, replacing the D16 silent release for
