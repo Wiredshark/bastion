@@ -14,6 +14,7 @@ done
 
 echo "=== prune DUPLICATE golden images (keep only 'bastion-golden') ==="
 for img in $("$GCLOUD" compute machine-images list --filter="name~^bastion-golden-" --format="value(name)" 2>/dev/null); do
+  [ "$img" = "bastion-golden" ] && continue  # NEVER delete THE golden — only bastion-golden-* duplicates
   echo "  deleting duplicate image $img"; "$GCLOUD" compute machine-images delete "$img" -q >/dev/null 2>&1 || true
 done
 
