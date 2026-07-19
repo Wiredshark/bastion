@@ -3393,6 +3393,16 @@ pub struct JobBoard {
     /// this table only prevents two jobs spending one item.
     reservations: HashMap<common::bastion::ReservationId, Uid>,
     next_reservation: common::bastion::ReservationId,
+    /// bastion (R10): the authoritative per-link fencing-epoch store —
+    /// `link_id → current epoch` (absent = 0). Advanced ONLY at release-
+    /// class events (release/abort/reacquire/re-election/teardown/despawn
+    /// — the enumerated advance-sites, exhaustiveness-asserted); a NEW
+    /// task ADOPTS the current value. Writers present their adopted epoch
+    /// through [`crate::bastion_traversal::fenced_movement_write`]; stale
+    /// = logged no-op. Keyed by owner-derived link id until R9/M3's
+    /// persistent links land (epoch semantics unchanged by that
+    /// migration — per-link monotone counter).
+    link_epochs: HashMap<u64, u64>,
     /// bastion (GATHER deposit ruling): per-colonist set of item defs its
     /// forage collects put in its bag — recorded at emit from the SAME
     /// reclaim source the authoritative handler consumes (a loot-TABLE
@@ -3913,6 +3923,51 @@ impl JobBoard {
 
     pub fn release_reservation(&mut self, id: common::bastion::ReservationId) {
         self.reservations.remove(&id);
+    }
+
+    /// bastion (R10): the link's current fencing epoch (absent = 0).
+    pub fn current_epoch(&self, link: u64) -> u64 {
+        self.link_epochs.get(&link).copied().unwrap_or(0)
+    }
+
+    /// bastion (R10): advance the link's epoch — call ONLY from a release-
+    /// class event (the enumerated advance-sites; the exhaustiveness assert
+    /// pins the set). Returns the NEW epoch. Monotone by construction;
+    /// never called on acquire (adopt-on-acquire is the locked semantic —
+    /// advancing there would fence the acquirer's own writes).
+    pub fn advance_epoch(&mut self, link: u64) -> u64 {
+        let e = self.link_epochs.entry(link).or_insert(0);
+        *e += 1;
+        tracing::debug!(link, epoch = *e, "bastion R10: link epoch advanced");
+        *e
+    }
+
+    /// bastion (R10): THE traversal-task retirement path — every task
+    /// removal goes through here (the `remove_job` B17 one-removal-path
+    /// discipline, which just caught the F3 reservation leak; the
+    /// source-scan test pins that no raw remove exists elsewhere).
+    /// Retirement IS a release-class event: the link's epoch advances,
+    /// orphaning every authority tuple adopted under it — a delayed writer
+    /// still holding the dead task's tuple is fenced by construction.
+    /// Per-site sibling-table cleanup stays at the call sites (their
+    /// semantics differ by exit path and are not R10's concern).
+    pub(crate) fn retire_traversal_task(
+        &mut self,
+        member: Uid,
+        reason: &'static str,
+    ) -> Option<crate::bastion_traversal::BastionTraversalTask> {
+        let task = self.bastion_traversal_tasks.remove(&member);
+        if let Some(t) = &task {
+            let epoch = self.advance_epoch(t.link_id);
+            tracing::debug!(
+                member = member.0.get(),
+                link = t.link_id,
+                epoch,
+                reason,
+                "bastion R10: traversal task retired — epoch advanced"
+            );
+        }
+        task
     }
 
     /// Is this item entity already reserved by any job? (Linear scan —
@@ -4761,6 +4816,8 @@ impl<'a> System<'a> for Sys {
                     }
                     let transaction = BastionTraversalTask {
                         link_id: owner.0.get(),
+                        // R10: adopt-on-acquire (never advance here).
+                        epoch: board.current_epoch(owner.0.get()),
                         terrain_revision: emergency_route_terrain_revision(&terrain, descriptor),
                         reserved_member: *uid,
                         entry: descriptor.entry,
@@ -5061,10 +5118,30 @@ impl<'a> System<'a> for Sys {
                         } else {
                             transaction.abort("route-descriptor-missing", tick.0);
                         }
+                        // R10: the fence locals — derived ONCE per owned
+                        // pass. current_member follows reservation_matches
+                        // semantics (Abort ⇒ None ⇒ every write fenced
+                        // instantly, before retirement even runs); the
+                        // authority tuple is the task's adopted epoch. In
+                        // the non-race case this validates trivially (the
+                        // no-op property the regression net proves); a
+                        // delayed/stale writer holding a dead task's tuple
+                        // is rejected at this choke point.
+                        let r10_epoch = board.current_epoch(transaction.link_id);
+                        let r10_member = (transaction.phase
+                            != BastionTraversalPhase::Abort)
+                            .then_some(transaction.reserved_member);
+                        let r10_auth = transaction.authority();
                         match transaction.phase {
                             BastionTraversalPhase::QueuedForLink => {
-                                controller.inputs.move_dir = Vec2::zero();
-                                controller.inputs.move_z = 0.0;
+                                let _ = crate::bastion_traversal::fenced_movement_write(
+                                    r10_epoch,
+                                    r10_member,
+                                    &r10_auth,
+                                    controller,
+                                    Vec2::zero(),
+                                    0.0,
+                                );
                                 if transaction.reserve(*uid, tick.0).is_ok() {
                                     transaction.stable_samples = 0;
                                 } else {
@@ -5116,8 +5193,14 @@ impl<'a> System<'a> for Sys {
                                 } else {
                                     0.0
                                 };
-                                controller.inputs.move_dir = Vec2::zero();
-                                controller.inputs.move_z = 0.0;
+                                let _ = crate::bastion_traversal::fenced_movement_write(
+                                    r10_epoch,
+                                    r10_member,
+                                    &r10_auth,
+                                    controller,
+                                    Vec2::zero(),
+                                    0.0,
+                                );
                                 if phys.on_ground.is_some()
                                     && support
                                     && body_clear
@@ -5157,8 +5240,14 @@ impl<'a> System<'a> for Sys {
                                     // jump establishes airborne wall contact;
                                     // no bespoke vertical velocity is legal
                                     // while CharacterState is not Climb.
-                                    controller.inputs.move_dir = input;
-                                    controller.inputs.move_z = 0.0;
+                                    let _ = crate::bastion_traversal::fenced_movement_write(
+                                        r10_epoch,
+                                        r10_member,
+                                        &r10_auth,
+                                        controller,
+                                        input,
+                                        0.0,
+                                    );
                                     if phys.on_ground.is_some()
                                         && (tick.0.saturating_sub(transaction.phase_tick) <= 1
                                             || tick.0 % 15 == 0)
@@ -5195,7 +5284,15 @@ impl<'a> System<'a> for Sys {
                                     transaction.phase_tick = tick.0;
                                     transaction.last_progress_tick = tick.0;
                                     transaction.best_exit_distance = f32::INFINITY;
-                                    controller.inputs.move_dir = Vec2::zero();
+                                    let keep_z = controller.inputs.move_z;
+                                    let _ = crate::bastion_traversal::fenced_movement_write(
+                                        r10_epoch,
+                                        r10_member,
+                                        &r10_auth,
+                                        controller,
+                                        Vec2::zero(),
+                                        keep_z,
+                                    );
                                 } else if !body_clear || !route_contact_provenance {
                                     transaction.phase = BastionTraversalPhase::Abort;
                                     transaction.abort_reason = Some("climb-clearance-lost");
@@ -5205,8 +5302,14 @@ impl<'a> System<'a> for Sys {
                                         tick.0,
                                     );
                                 } else if let Some(input) = route_climb_input {
-                                    controller.inputs.move_dir = input;
-                                    controller.inputs.move_z = 0.0;
+                                    let _ = crate::bastion_traversal::fenced_movement_write(
+                                        r10_epoch,
+                                        r10_member,
+                                        &r10_auth,
+                                        controller,
+                                        input,
+                                        0.0,
+                                    );
                                     // Vertical acceleration, energy use, skill
                                     // speed, and wall friction now come only
                                     // from climb::Data::behavior.
@@ -5242,8 +5345,14 @@ impl<'a> System<'a> for Sys {
                                     // the existing Arrived work path.  Pushing Stand
                                     // here made the worker fall before arrival could
                                     // observe its otherwise-valid route contact.
-                                    controller.inputs.move_dir = Vec2::zero();
-                                    controller.inputs.move_z = 0.0;
+                                    let _ = crate::bastion_traversal::fenced_movement_write(
+                                        r10_epoch,
+                                        r10_member,
+                                        &r10_auth,
+                                        controller,
+                                        Vec2::zero(),
+                                        0.0,
+                                    );
                                     let frontier_target = board.jobs.get(&frontier).map(|job| {
                                         job.pos.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0)
                                     });
@@ -5361,8 +5470,14 @@ impl<'a> System<'a> for Sys {
                                         transaction.phase =
                                             BastionTraversalPhase::ConfirmingExitRelease;
                                         transaction.phase_tick = tick.0;
-                                        controller.inputs.move_dir = Vec2::zero();
-                                        controller.inputs.move_z = 0.0;
+                                        let _ = crate::bastion_traversal::fenced_movement_write(
+                                            r10_epoch,
+                                            r10_member,
+                                            &r10_auth,
+                                            controller,
+                                            Vec2::zero(),
+                                            0.0,
+                                        );
                                         controller.push_action(comp::ControlAction::Stand);
                                         info!(
                                             uid = uid.0.get(),
@@ -5399,8 +5514,14 @@ impl<'a> System<'a> for Sys {
                                 } else {
                                     0.0
                                 };
-                                controller.inputs.move_dir = Vec2::zero();
-                                controller.inputs.move_z = 0.0;
+                                let _ = crate::bastion_traversal::fenced_movement_write(
+                                    r10_epoch,
+                                    r10_member,
+                                    &r10_auth,
+                                    controller,
+                                    Vec2::zero(),
+                                    0.0,
+                                );
                                 if climbing {
                                     controller.push_action(comp::ControlAction::Stand);
                                     if tick.0.saturating_sub(transaction.exit_started_tick)
@@ -5425,8 +5546,14 @@ impl<'a> System<'a> for Sys {
                                 } else {
                                     0.0
                                 };
-                                controller.inputs.move_dir = Vec2::zero();
-                                controller.inputs.move_z = 0.0;
+                                let _ = crate::bastion_traversal::fenced_movement_write(
+                                    r10_epoch,
+                                    r10_member,
+                                    &r10_auth,
+                                    controller,
+                                    Vec2::zero(),
+                                    0.0,
+                                );
                                 let route_cells: HashSet<Vec3<i32>> = board
                                     .emergency_access_cells
                                     .iter()
@@ -5472,13 +5599,19 @@ impl<'a> System<'a> for Sys {
                                         transaction.abort_reason =
                                             Some("exit-traversal-budget-expired");
                                     } else {
-                                        controller.inputs.move_dir =
-                                            if delta.magnitude_squared() > 0.04 {
-                                                delta.normalized()
-                                            } else {
-                                                Vec2::zero()
-                                            };
-                                        controller.inputs.move_z = 0.0;
+                                        let exit_dir = if delta.magnitude_squared() > 0.04 {
+                                            delta.normalized()
+                                        } else {
+                                            Vec2::zero()
+                                        };
+                                        let _ = crate::bastion_traversal::fenced_movement_write(
+                                            r10_epoch,
+                                            r10_member,
+                                            &r10_auth,
+                                            controller,
+                                            exit_dir,
+                                            0.0,
+                                        );
                                         if distance + 0.05 < transaction.best_exit_distance {
                                             transaction.best_exit_distance = distance;
                                             transaction.last_progress_tick = tick.0;
@@ -5497,7 +5630,16 @@ impl<'a> System<'a> for Sys {
                                             transaction.stable_window_started_tick = tick.0;
                                             transaction.last_stable_sample_tick = tick.0;
                                             transaction.exit_stable_samples = 1;
-                                            controller.inputs.move_dir = Vec2::zero();
+                                            let keep_z = controller.inputs.move_z;
+                                            let _ =
+                                                crate::bastion_traversal::fenced_movement_write(
+                                                    r10_epoch,
+                                                    r10_member,
+                                                    &r10_auth,
+                                                    controller,
+                                                    Vec2::zero(),
+                                                    keep_z,
+                                                );
                                         }
                                     }
                                 } else {
@@ -5513,8 +5655,14 @@ impl<'a> System<'a> for Sys {
                                 } else {
                                     0.0
                                 };
-                                controller.inputs.move_dir = Vec2::zero();
-                                controller.inputs.move_z = 0.0;
+                                let _ = crate::bastion_traversal::fenced_movement_write(
+                                    r10_epoch,
+                                    r10_member,
+                                    &r10_auth,
+                                    controller,
+                                    Vec2::zero(),
+                                    0.0,
+                                );
                                 let route_cells: HashSet<Vec3<i32>> = board
                                     .emergency_access_cells
                                     .iter()
@@ -5581,8 +5729,14 @@ impl<'a> System<'a> for Sys {
                                 // travel and consumes the normal minimum energy.  The
                                 // normal Arrived arm owns work/progress/completion.
                                 colonist.0.route_squeeze_until = time.0 + 0.2;
-                                controller.inputs.move_dir = Vec2::zero();
-                                controller.inputs.move_z = 0.0;
+                                let _ = crate::bastion_traversal::fenced_movement_write(
+                                    r10_epoch,
+                                    r10_member,
+                                    &r10_auth,
+                                    controller,
+                                    Vec2::zero(),
+                                    0.0,
+                                );
                                 let frontier = match transaction.purpose {
                                     BastionTraversalPurpose::ConstructionFrontier(frontier) => {
                                         Some(frontier)
@@ -5630,6 +5784,11 @@ impl<'a> System<'a> for Sys {
                             },
                             BastionTraversalPhase::Complete => {
                                 colonist.0.route_squeeze_until = 0.0;
+                                // R10: terminal zeroing writes are DELIBERATELY
+                                // unfenced — this IS the safe state a dead task
+                                // must leave behind; fencing it would keep the
+                                // last driven input live (the inverse of the
+                                // fence's purpose). Same for Abort below.
                                 controller.inputs.move_dir = Vec2::zero();
                                 controller.inputs.move_z = 0.0;
                             },
@@ -5933,10 +6092,13 @@ impl<'a> System<'a> for Sys {
                             // route-owned movement transaction. From here
                             // through stable mount/climb/top exit, no generic
                             // Goto or ladder magnetism may write movement.
+                            let adopted_epoch = board.current_epoch(route_owner.0.get());
                             board
                                 .bastion_traversal_tasks
                                 .insert(*uid, BastionTraversalTask {
                                     link_id: route_owner.0.get(),
+                                    // R10: adopt-on-acquire.
+                                    epoch: adopted_epoch,
                                     terrain_revision: emergency_route_terrain_revision(
                                         &terrain, descriptor,
                                     ),
@@ -8388,10 +8550,13 @@ impl<'a> System<'a> for Sys {
                             // frontier completion / verified dismount /
                             // teardown — the same sites as the reengage
                             // counter (the inconsistency was the hole).
+                            let adopted_epoch = board.current_epoch(owner.0.get());
                             board
                                 .bastion_traversal_tasks
                                 .insert(uid, BastionTraversalTask {
                                     link_id: owner.0.get(),
+                                    // R10: adopt-on-acquire.
+                                    epoch: adopted_epoch,
                                     terrain_revision: emergency_route_terrain_revision(
                                         &terrain, descriptor,
                                     ),
@@ -9087,6 +9252,32 @@ impl<'a> System<'a> for Sys {
                                         ?velocity,
                                         ?remaining,
                                         "bastion: emergency access job travel timeout"
+                                    );
+                                }
+                                // LEG-C DIAG (Sonnet-requested, env-gated):
+                                // the decisive line at timeout firing —
+                                // disambiguates (a) Drive-gated no-Goto vs
+                                // (b) path-degraded beeline for the parked-
+                                // claimant churn signature.
+                                if std::env::var_os("BASTION_LEGC_DIAG").is_some() {
+                                    info!(
+                                        tick = tick.0,
+                                        uid = uids.get(entity).map(|u| u.0.get()),
+                                        job = active.job,
+                                        job_pos = ?job.pos,
+                                        actual_pos = ?pos.0,
+                                        ?steer,
+                                        ?target,
+                                        sdist,
+                                        stuck_time = active.stuck_time,
+                                        drive = ?arbiters.get(entity).map(|a| a.current),
+                                        auton_travel_ok,
+                                        has_agent = agent.is_some(),
+                                        tightdig = tightdig_enabled(),
+                                        path_cached = uids
+                                            .get(entity)
+                                            .is_some_and(|u| board.path_cache.contains_key(u)),
+                                        "bastion LEGC-DIAG: travel timeout firing"
                                     );
                                 }
                                 job.claimed_by = None;
@@ -11448,7 +11639,7 @@ impl<'a> System<'a> for Sys {
                                     continue;
                                 }
 
-                                board.bastion_traversal_tasks.remove(&member);
+                                board.retire_traversal_task(member, "frontier-complete");
                                 board.emergency_partial_route_entries.remove(&member);
                                 board.emergency_approach_corridors.remove(&member);
                                 board.emergency_frontier_reacquire.remove(&member);
@@ -11469,7 +11660,7 @@ impl<'a> System<'a> for Sys {
                                 continue;
                             },
                             BastionTraversalPhase::Abort => {
-                                board.bastion_traversal_tasks.remove(&member);
+                                board.retire_traversal_task(member, "abort-teardown");
                                 board.emergency_partial_route_entries.remove(&member);
                                 board.emergency_approach_corridors.remove(&member);
                                 board.egress_targets.remove(&member);
@@ -11887,7 +12078,7 @@ impl<'a> System<'a> for Sys {
                             "bastion: cleared stale egress movement at verified surface exit"
                         );
                     }
-                    board.bastion_traversal_tasks.remove(&member);
+                    board.retire_traversal_task(member, "verified-dismount");
                     board.emergency_frontier_reacquire.remove(&member);
                     board.emergency_climb_profiles.remove(&member);
                     if let Some(entity) = id_maps.uid_entity(member) {
@@ -11906,7 +12097,7 @@ impl<'a> System<'a> for Sys {
                     watch_wipe(&mut board.stuck_watch, &member, "route-cleanup");
                 }
                 for member in lost_members {
-                    board.bastion_traversal_tasks.remove(&member);
+                    board.retire_traversal_task(member, "lost-member");
                     board.emergency_frontier_reacquire.remove(&member);
                     board.emergency_climb_profiles.remove(&member);
                     if let Some(entity) = id_maps.uid_entity(member) {
@@ -12344,7 +12535,7 @@ impl<'a> System<'a> for Sys {
                         format!("to={},{},{}", d.x, d.y, d.z),
                     );
                     board.stuck_watch.remove(uid);
-                    board.bastion_traversal_tasks.remove(uid);
+                    board.retire_traversal_task(*uid, "failsafe-delivery");
                     board.emergency_partial_route_entries.remove(uid);
                     board.emergency_approach_corridors.remove(uid);
                     board.emergency_frontier_reacquire.remove(uid);

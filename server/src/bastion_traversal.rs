@@ -21,6 +21,66 @@ pub(crate) enum BastionTraversalReject {
     InvalidPhase,
 }
 
+/// bastion (R10): the fencing-token authority tuple a movement writer must
+/// present — distributed-lock fencing-token prior art. Captured at task
+/// creation (ADOPTING the link's current epoch — never advancing it, which
+/// would fence the acquirer's own writes); the epoch store advances only on
+/// release-class events, so any writer holding a tuple from BEFORE a
+/// release/abort/reacquire/re-election presents a stale epoch and its write
+/// becomes a logged no-op by construction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TraversalAuthority {
+    pub link_id: u64,
+    pub epoch: u64,
+    pub member: Uid,
+}
+
+/// bastion (R10): THE validity predicate — pure (unit-pinned truth table
+/// below; the release-decision extraction's discipline). A write is valid
+/// iff the presented epoch equals the link's CURRENT epoch AND the
+/// presenter is the currently-reserved member (`None` = no live
+/// reservation → nothing may write).
+pub(crate) fn authority_valid(
+    current_epoch: u64,
+    current_member: Option<Uid>,
+    a: &TraversalAuthority,
+) -> bool {
+    a.epoch == current_epoch && current_member == Some(a.member)
+}
+
+/// bastion (R10): the fenced movement write — THE one choke point every
+/// owned traversal movement-writer calls (the amended seam: the owned
+/// writers bypass sys/agent, so the fence lives here at the bastion write
+/// sites; vanilla writes stay suppressed by the existing suppressor).
+/// Validate-then-write: a stale tuple is a LOGGED NO-OP (`false`, both
+/// tuples in the log line) — never a panic, never blocking the current
+/// owner's valid write. Current state is passed by VALUE (the caller reads
+/// the board) so this stays borrow-clean and pure-testable.
+pub(crate) fn fenced_movement_write(
+    current_epoch: u64,
+    current_member: Option<Uid>,
+    authority: &TraversalAuthority,
+    controller: &mut common::comp::Controller,
+    move_dir: vek::Vec2<f32>,
+    move_z: f32,
+) -> bool {
+    if authority_valid(current_epoch, current_member, authority) {
+        controller.inputs.move_dir = move_dir;
+        controller.inputs.move_z = move_z;
+        true
+    } else {
+        tracing::info!(
+            presented_link = authority.link_id,
+            presented_epoch = authority.epoch,
+            presented_member = authority.member.0.get(),
+            current_epoch,
+            current_member = current_member.map(|m| m.0.get()),
+            "bastion R10: stale-authority movement write REJECTED (no-op)"
+        );
+        false
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum BastionTraversalInterruption {
     ContactLost,
@@ -91,6 +151,11 @@ pub(crate) enum BastionTraversalPurpose {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct BastionTraversalTask {
     pub link_id: u64,
+    /// bastion (R10): the epoch this task was created under (adopt-on-
+    /// acquire from the JobBoard's `link_epochs`). The task's writers
+    /// present `TraversalAuthority { link_id, epoch, member }`; a release-
+    /// class event advances the store and orphans this value by design.
+    pub epoch: u64,
     pub terrain_revision: u64,
     pub reserved_member: Uid,
     pub entry: Vec3<i32>,
@@ -227,5 +292,46 @@ impl BastionTraversalTask {
 
     pub(crate) fn reservation_matches(self, member: Uid) -> bool {
         self.reserved_member == member && self.phase != BastionTraversalPhase::Abort
+    }
+
+    /// bastion (R10): the authority tuple this task's writers present.
+    pub(crate) fn authority(&self) -> TraversalAuthority {
+        TraversalAuthority {
+            link_id: self.link_id,
+            epoch: self.epoch,
+            member: self.reserved_member,
+        }
+    }
+}
+
+#[cfg(test)]
+mod r10_tests {
+    use super::*;
+
+    /// R10: the pure predicate's full truth table — epoch match × member
+    /// match × live-reservation presence (the N-FENCE fixture drives the
+    /// same predicate through the live helper; this pins the logic).
+    #[test]
+    fn authority_valid_truth_table() {
+        let m1 = Uid(std::num::NonZeroU64::new(11).unwrap());
+        let m2 = Uid(std::num::NonZeroU64::new(22).unwrap());
+        let a = TraversalAuthority {
+            link_id: 7,
+            epoch: 3,
+            member: m1,
+        };
+        // Valid: epoch current + member reserved.
+        assert!(authority_valid(3, Some(m1), &a));
+        // Stale epoch (a release advanced the store).
+        assert!(!authority_valid(4, Some(m1), &a));
+        // Right epoch, wrong member (re-election handed the link over).
+        assert!(!authority_valid(3, Some(m2), &a));
+        // No live reservation at all — nothing may write.
+        assert!(!authority_valid(3, None, &a));
+        // Both stale: still just false (no panic path exists).
+        assert!(!authority_valid(9, Some(m2), &a));
+        // Epoch from the FUTURE (store reset bug shape) is equally invalid:
+        // equality, not ordering — a fencing token is exact.
+        assert!(!authority_valid(2, Some(m1), &a));
     }
 }

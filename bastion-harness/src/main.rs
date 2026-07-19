@@ -715,8 +715,13 @@ fn corpus_runner(args: &Args) -> ExitCode {
             match out {
                 Ok(out) => {
                     let stdout = String::from_utf8_lossy(&out.stdout);
-                    // The scenario's LAST non-JSON line is its verdict line;
-                    // keep the last JSON line too when present.
+                    // ECHO the child's ENTIRE stdout, seed-prefixed (v6
+                    // lesson: filtering to JSON-only swallowed the per-
+                    // assert detail lines the triage needed) — the verdict
+                    // line is the last non-JSON, non-empty line.
+                    for line in stdout.lines().filter(|l| !l.trim().is_empty()) {
+                        println!("[seed={seed}] {line}");
+                    }
                     let verdict = stdout
                         .lines()
                         .rev()
@@ -724,9 +729,6 @@ fn corpus_runner(args: &Args) -> ExitCode {
                         .unwrap_or("")
                         .to_string();
                     results.push((seed, out.status.success(), verdict));
-                    for line in stdout.lines().filter(|l| l.trim_start().starts_with('{')) {
-                        println!("CORPUS-JSON seed={seed}: {line}");
-                    }
                 },
                 Err(e) => results.push((seed, false, format!("wait failed: {e}"))),
             }
@@ -2078,6 +2080,8 @@ fn b4_scenario(args: &Args) -> ExitCode {
         "b4_cancel_cleared_jobs": audit_after_cancel.total == 0,
         "b4_all_idle_after_cancel": all_idle_after_cancel,
         "b4_soak_avg_tick_ms": avg_tick_ms,
+        "b4_total_claims": server.bastion_total_claims(),
+        "b4_precondition_claims_met": server.bastion_total_claims() > 0,
     });
     // >= 1 (the mechanic invariant; was >=2, before that >=3, before that
     // "all 4"): this test pins the travel/arrival MECHANIC — colonists path
@@ -2088,6 +2092,16 @@ fn b4_scenario(args: &Args) -> ExitCode {
     // REPORTED per the d_all_cleared precedent (B8/P6, architect
     // pre-approved this exact treatment). N-way crew fairness is pinned by
     // B6's crew asserts, not here.
+    // SPAWN-PREMISE GATE (seed-1 lesson, 2026-07-19 — the falsifier must
+    // assert its own precondition): at a pathological seed the site's
+    // ring-job terrain leaves nothing claim-reachable, and arrived=0 then
+    // reads as a MECHANISM red when the run never engaged the mechanism.
+    // Zero claim events across the whole window = the premise (claimable,
+    // walkable ring jobs) never held → verdict INVALID, not FAIL. Canonical
+    // gate seed for b4 = 1337 (green); seed 1 is the known-pathological
+    // repro of this gate firing.
+    let total_claims = server.bastion_total_claims();
+    let precondition_met = total_claims > 0;
     let pass = colonists_loaded == 5
         && placed >= 18
         && claims_always_distinct
@@ -2098,7 +2112,17 @@ fn b4_scenario(args: &Args) -> ExitCode {
         && all_idle_after_cancel
         && avg_tick_ms < 100.0;
     println!("{}", result);
-    println!("B4 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    println!(
+        "B4 SCENARIO: {}",
+        if !precondition_met {
+            "INVALID (precondition unmet: zero claim events — pathological seed terrain, \
+             not a mechanism verdict; rerun at the canonical gate seed 1337)"
+        } else if pass {
+            "PASS"
+        } else {
+            "FAIL"
+        }
+    );
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);

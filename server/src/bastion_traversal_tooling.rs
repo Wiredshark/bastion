@@ -56,6 +56,8 @@ fn stage1_task() -> BastionTraversalTask {
     let member = stage1_uid(2);
     BastionTraversalTask {
         link_id: 0xB5_8001,
+        // R10: fixture task adopts epoch 0 (a fresh link's current value).
+        epoch: 0,
         terrain_revision: SMOKE80_TERRAIN_REVISION,
         reserved_member: member,
         entry: NORMAL_ENTRY,
