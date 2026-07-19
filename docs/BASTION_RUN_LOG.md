@@ -3848,3 +3848,90 @@ CERTIFIES: live game plans+builds correct connected ladders; the owned single-ow
 
 ## bastion-block-BACKSTOPOPT — 2/6-BACKSTOP OPTIMIZATION: 6/6 ORGANIC OWNED ESCAPE + THE RELEASE-DECISION STATE MACHINE — TAGGED 2026-07-19 (tag `2880f341d6`, branch bastion/block-B6HAUL; Ben fork #16 step 1, greenlit via architect; architect inline Opus safety gate GREEN, all five gates met, terminal boundary never approached)
 CERTIFIES: single-colonist organic owned ladder escape on ALL SIX corpus seeds (B: s7/s8=51s s21=53s s20=55s s22=133s s1337=187s, zero B backstops, full phase-walks, ×3 det) — Ben's 6/6-organic zero-teleport directive ACHIEVED; the protected-vault C-leg delivered INSIDE the 150s bar on all seeds via the DESIGNED net (s22=60 s8=85 s21=92 s1337=97 s20=125 s7=133); never-stranded 36/36; no productive member wrongly teleported at corpus scale; organic 23/36 = 63% WITH EVERYONE DELIVERED (beats the prior 67%-of-survivors whose denominator excluded two stranded colonists — the honest comparison, per the architect's ledger ruling). THE MECHANISM: the release decision rebuilt as a complete three-outcome state machine (verified-stable-exit w/ support+surface/route-top bars · route-exhausted-replan w/ shared bounded counter · keep-driving) + the ENERGY-GATE-WAIT hold (per-episode cumulative 120s, progress-flag-gated) + STICKY exhaustion (barred from re-emission until delivered) + PROGRESS-DISCRIMINATION (set at abort, re-earned at frontier-arrival/completion/delivery) — the general root explaining every round: hopeless zero-progress cyclers net FAST, productive cyclers keep protection. Safety proofs BOTH arms: N7 (single wait held, net@225 ∈[190,295]) + N7B (zero-progress denied, net ∈[90,180], watch-accrual on tape: abort@47s → zero hold-wipes → failsafe secs=60.0). The block's own corpus CAUGHT AND FIXED two intermediate never-stranded regressions in its own new code (registry classes 11+12 born from them). 13-episode fixture matrix ×2 det; one binary 18:43:12; commits 32eeb1a5f7 → a0d44d63dd → 40aa5e0686 → 4827d548ed → 37b474f367. NAMED-OPEN: extraction+bound-unit-test (chip task_72990360, row 51.7, PREPARED PATCH in the builder scratchpad — first post-tag task, prelude to R10); organic-rate headroom (s1337's 187s tail); T1 mine-egress teleport now in armed-but-never-fires observation (R11 generalizes the watchdog next). R10 plan of record carries the accepted seam correction (fence at the bastion owned-write sites, not sys/agent). Full trail: builder scratchpad m2-fixture-findings.md.
+
+## Adversarial bug-hunt (builder-2, session local_c9064dd4) — 70-execution sweep, all 40 scenario surfaces — 2026-07-18/19, read-only
+
+Full report: builder-2's scratchpad `bughunt/BUGHUNT-REPORT.md` (+ `results.csv`).
+**Headline: ZERO game-runtime bugs found.** CHOP came back clean under every
+attack available headlessly (Ben's flagged suspect) — 4 seeds, tps 60,
+determinism pair, conservation exact, real-tree oracle path exercised
+(13/7 trees), leaf-no-drop, dedupe, cancel-clean all held. No crash,
+stranding/entombment, conservation break, softlock, wrong-behavior, or
+determinism break in any shipped gameplay feature across 47 explicit
+scenario PASSes + paired/verify legs, byte-identical same-seed determinism
+throughout (chopfell full-stdout pair, b55-deep rerun identical in every
+sim field), exact conservation everywhere (chop drops==wood, mine 27/27,
+gather 5/5, LOD0 round-trip to the coin), clean safety invariants (0
+embeds, 0 false teleports, 0 in-terrain ticks).
+
+Binary under test: `bastion-harness.exe 7f087da317+dirty`, built
+2026-07-16T05:27:42Z (isolated scratchpad copy; source tree at build time
+carried uncommitted edits, so binary ≠ exact HEAD — flagged honestly, not
+hidden). Isolation held throughout: own scratchpad copy, own TEMP, no
+builds, no shared-state writes; the 2 process kills were both intentional
+kill-recovery tests on the tester's own children by exact captured PID,
+zero timeout kills.
+
+**Confirmed findings: 4 (all test/tooling infrastructure, none
+game-runtime) + 1 suspected (static).** Filed to `BASTION_COMMON_ISSUES.md`
+as **B49** (harness `--tps≤0` panics after a full ~74s wasted boot instead
+of failing fast at parse time — B16 archetype at the harness front door),
+**B50** (`--data-dir` reuse across a DIFFERENT seed silently accepted, no
+seed-stamp check, produces a plausible-looking franken-state via automatic
+reconciliation), **B51** (the asset dynamic-test suite's multi-occupancy
+leg goes inert in `--asset-test all` mode — suite-cumulative colonist
+state, not a per-asset defect; single-asset invocations still pass clean —
+MEDIUM severity, silently voids the assertion class in exactly the mode
+`ASSET_INTEGRATION_LOG.md` is written from), **B52** (`sprite_orevein_
+velorite`'s placement footprint creates a genuine one-way pathing trap —
+outbound succeeds, return leg sticks, in BOTH suite and single-asset mode —
+the one real dynamic failure the 80-asset suite caught), and **B53**
+(SUSPECTED/static — an unguarded `Duration::from_secs_f64` reader in
+`handle_create_aura_entity`, `server/src/events/entity_creation.rs:728`;
+the `/aura` command path is guarded [ARCH-001], the underlying event reader
+is not — latent panic for any other emitter reaching it with a bad f64).
+
+**Registry corrections from the report's architect-notes:**
+- **B37 flipped to FIX-VERIFIED-LIVE** — the row was stale as "REPORTED,
+  NOT FIXED"; the row-49.2 HAULPIN strike-cap fix holds (`haulpin`
+  scenario PASSES at both 1337 and 777).
+- **B47's seed map extended** — `bed_occupied_mid` now confirmed
+  `true@777` in addition to the existing `true@21`/`false@{1337,42}`
+  datapoints.
+- **B48 gained an exe-generation caution** — an older exe
+  (`7f087da317+dirty`, an ancestor of both the `ff2874b4b6` baseline and
+  the `2244ce8d71` checkpoint) fails `b55-deep` in a DIFFERENT mode
+  (`cycle_exact`/`cycle_work_progressed` false, `mine_conserved` TRUE —
+  the registered +11 growth does not appear) with entirely different field
+  names. Do not conflate the two modes when the deferred instrumentation
+  lands.
+
+**Coverage gaps documented, not exercised** (full list in the report §5):
+CHOP canopy-vs-building clipped-set consequence and mid-fell target
+mutation (needs a live client or new fixture — no headless scenario fells
+real worldgen trees), save/reload mid-action beyond LOD0/LOD1 seams, all
+five deferred camera rows, TIMECTL, NIGHTHORROR spawn/render, zone/pile
+visuals, LADDEROFF's mid-climb-erasure hostile leg, client-message-layer
+input storms, and the 8-concurrent-harness isolation row (deliberately
+skipped — shared machine with a live corpus, own-concurrency capped at
+1-2 instances).
+
+**Notes for the record, not bugs:** the global flight recorder does not
+engage on this binary for ordinary scenario runs despite the env var being
+set (works only via focused probe sessions) — architect will confirm
+engagement at the next tag; `--asset-test` correctly writes
+`ASSET_INTEGRATION_LOG.md` to the asset-lab-dir PARENT (sandboxed
+correctly, repo log untouched); `--verify`'s determinism gate is a 10-field
+aggregate Summary only (a cheap upgrade exists: hash scenario JSON lines
+instead); the `TREE_FELL_CELL_CAP=2048` fell-set cap is confirmed
+KNOWN-INTENDED behavior, not a defect, with its own residual (untested
+consequence of a clipped set) noted for a future live-fell probe.
+
+**Chips spawned** (per architect direction) for the 4 confirmed + 1
+suspected findings — each self-contained, small, and disjoint from current
+builder lanes, so routed as independent follow-up tasks rather than queued
+onto either active lane.
+
+No master-list row (a test-infrastructure QA sweep, not a build block).
+Sonnet-curated registry entries (B37 correction, B47/B48 appends, B49-B53
+new) committed alongside this run-log entry.

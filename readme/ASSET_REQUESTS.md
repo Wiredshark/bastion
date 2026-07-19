@@ -1443,3 +1443,15 @@ identity hook (votive charms against the deep-dark). See ASSET_STYLE_GUIDE §5 r
   indicator (PLAYER-MODES) into one "who is my god right now" panel.
 - **Lore-seed:** *"The petals show what the god has been doing, whatever it once claimed to be — and a wise colony
   watches them turn."*
+
+## TOOLBAR-ICONS 12th icon gap — `tool_bed.png` (builder finding, EXHAUSTIVENESS-ASSERTS+ICONS tags, 2026-07-14)
+**Context:** the overseer palette's 11 icons (`tool_{pan,inspect,mine,chop,gather,farm,build,stockpile,ladder,erase,
+god}.png`) were made before EXHAUSTIVENESS-ASSERTS added `DesignationKind::Bed` to the paintable set (row 51.52).
+TOOLBAR-ICONS (row 51.5) wired all 11 existing icons in but Bed currently renders a transparent image + text-label
+fallback, not a real icon.
+- **Ask:** a 12th palette icon, `tool_bed.png`, matching the existing set's style/size (34×34, same silhouette
+  language as the other 11 designation tools) — a bed/bedroll glyph, distinct enough not to collide with the
+  existing gather↔farm look-alike issue already logged for this set.
+- **Priority:** LOW — queue behind the asset lane's eventual resume and the already-logged readability re-pass on
+  the other 11 icons (mine/chop/pan misreads, gather↔farm collision); not blocking anything, Bed's text-label
+  fallback works fine in the meantime.
