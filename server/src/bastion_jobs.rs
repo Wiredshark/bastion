@@ -11221,7 +11221,26 @@ impl<'a> System<'a> for Sys {
                 .jobs
                 .values()
                 .any(|j| j.is_access && j.claimed_by.is_some());
-            if access_jobs_exist && !access_claimed {
+            // DPA ORDERING FIX (the no-wood emit→prune livelock, before/
+            // after run 2026-07-19): a MATERIAL-STARVED plan is a CLASSIFIED
+            // HOLD, not an abandoned plan. The durable hold
+            // (starved_anchor_columns → access_material_missing) is FED by
+            // the live unclaimed wood-costed rung jobs — pruning them
+            // emptied the pocket-scoping read, the descent emitter re-
+            // planned the same pocket, and the cycle span forever (~20
+            // sim-sec period, zero ladders ever built; the leg-A STAGED
+            // no-wood case only held because its plan kept a claimed job).
+            // While the classified hold is engaged and a wood-gated rung
+            // is live, idleness is the DESIGNED wait: the counter holds at
+            // zero (accruing it would prune the instant wood arrives,
+            // before any colonist can claim).
+            let material_held = board.access_material_missing.is_some()
+                && board.jobs.values().any(|j| {
+                    j.is_access && j.required_item.is_some() && j.claimed_by.is_none()
+                });
+            if access_jobs_exist && !access_claimed && material_held {
+                board.access_idle_secs = 0.0;
+            } else if access_jobs_exist && !access_claimed {
                 board.access_idle_secs += 1.0; // this pass ≈ once per second
                 if board.access_idle_secs >= ACCESS_STALE_SECS {
                     let before = board.jobs.len();
@@ -13429,9 +13448,20 @@ impl<'a> System<'a> for Sys {
             // real digs and re-excluded the starved pocket — the "pocket"
             // definition must match the anchor-coverage geometry it feeds,
             // not exceed it).
+            // DPA ORDERING FIX belt: a STARVED column is covered coverage —
+            // "its access is already coming / blocked-classified" (this
+            // check's own doc line) must include the classified-blocked
+            // case, or the gap state after any prune (starved columns
+            // remembered, no live jobs) re-emits into the same pocket
+            // (the livelock's other arm). Wood arriving clears starved
+            // (the sweep above) and re-opens planning naturally.
             let pocket_covered = access_columns
                 .iter()
-                .any(|c| (c.x - job.pos.x).abs().max((c.y - job.pos.y).abs()) <= 8);
+                .any(|c| (c.x - job.pos.x).abs().max((c.y - job.pos.y).abs()) <= 8)
+                || board
+                    .starved_anchor_columns
+                    .iter()
+                    .any(|c| (c.x - job.pos.x).abs().max((c.y - job.pos.y).abs()) <= 8);
             if !pocket_covered
                 && descent_plan
                     .as_ref()
