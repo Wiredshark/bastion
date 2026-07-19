@@ -4,6 +4,23 @@
 use std::process::Command;
 
 fn main() {
+    // Re-stamp on ANY new commit / checkout move — without this, a commit
+    // touching only OTHER crates leaves the stamp stale while the exe is
+    // fresh (the --print-git-hash pre-flight would false-alarm), and the
+    // reverse staleness defeated the guard's purpose entirely (the flag's
+    // first live test printed a 3-commit-old hash). HEAD covers branch
+    // moves; the index covers the dirty-flag's freshness. Worktree-safe
+    // via --absolute-git-dir.
+    if let Some(git_dir) = Command::new("git")
+        .args(["rev-parse", "--absolute-git-dir"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    {
+        println!("cargo:rerun-if-changed={git_dir}/HEAD");
+        println!("cargo:rerun-if-changed={git_dir}/index");
+    }
     let sha = Command::new("git")
         .args(["rev-parse", "--short=10", "HEAD"])
         .output()

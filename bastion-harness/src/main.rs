@@ -42,6 +42,18 @@ use tracing::{info, warn};
 #[derive(Parser)]
 #[command(name = "bastion-harness", about)]
 struct Args {
+    /// Print the exe's OWN build stamp SHA (BASTION_BUILD_SHA: the first 10
+    /// of the commit hash, `+dirty` suffix if the tree had tracked changes)
+    /// BARE on stdout and exit — no worldgen, no server, instant. The VM
+    /// wrappers' stale-binary pre-flight (architect ask): after building,
+    /// assert `H=$(... --print-git-hash)`; `[ "${H%%+*}" = "$(git rev-parse
+    /// --short=10 HEAD)" ] && [ "$H" = "${H%+dirty}" ]` before any scenario.
+    /// (NOT common's GIT_HASH: that embed only refreshes when common itself
+    /// rebuilds and printed a 3-commit-stale hash on this flag's first live
+    /// test; the harness stamp re-runs per-commit via build.rs rerun-if.)
+    #[arg(long)]
+    print_git_hash: bool,
+
     /// Run a named scenario twice in isolated child processes and compare the
     /// authoritative flight-recorder tapes or structured production result.
     /// Supported values: b55-deep, b58-ladder-integration-fixture,
@@ -807,6 +819,13 @@ fn main() -> ExitCode {
     common::enable_deterministic_worldgen();
 
     let args = Args::parse();
+
+    if args.print_git_hash {
+        // The exe's own stamp (sha10 + optional "+dirty") — the identity
+        // line above went to STDERR; stdout is the bare stamp.
+        println!("{}", env!("BASTION_BUILD_SHA"));
+        return ExitCode::SUCCESS;
+    }
 
     // Logs to stderr so stdout carries exactly one line of JSON.
     tracing_subscriber::fmt()
