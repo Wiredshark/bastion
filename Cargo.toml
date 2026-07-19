@@ -127,6 +127,15 @@ debug = "line-tables-only"
 inherits = 'release'
 lto = "thin"
 
+# bastion (RESTART STEP 1 / BUILD-SPEED lever 2): harness/sim VERIFICATION
+# builds — release-grade runtime speed (worldgen boot dominates wall time)
+# WITHOUT the fat-LTO link tax that hung a voxygen build ~2h on this box.
+# Use `cargo build --profile verify -p bastion-harness` for every gate/
+# scenario binary; fat LTO stays release-only (shipped-game builds).
+[profile.verify]
+inherits = 'release'
+lto = false
+
 # used for cargo bench
 [profile.bench]
 opt-level = 2
