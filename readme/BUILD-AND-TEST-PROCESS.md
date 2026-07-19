@@ -78,7 +78,21 @@ Decide WHERE a test runs by TWO questions:
 - **Cycle the builder per block** — don't run one session so long its context rots (the 16-hour-session failure).
 - Commit at every boundary; own worktree + own target; no drive-by edits outside the current change.
 
-## 9. Queued speedups (coming — will amend §1/§3 when they land)
-- **World-snapshot caching** → skip the ~74s worldgen boot on repeated runs (biggest per-run win).
+## 9. GRIND LIMIT — escalate a stuck problem, don't tunnel (Ben-directed, STANDING RULE)
+Do NOT grind on one problem indefinitely (the 8-hour BACKSTOP / multi-hour mining-fix failure mode).
+**TRIGGER (whichever comes first):** ~**3 failed gate iterations** on the same problem, OR ~**45 minutes**
+grinding without convergence.
+**ACTION:** STOP iterating. Package ALL the data — every failing gate result, each attempt + why it failed,
+the tapes, the current hypotheses — and **ESCALATE to the reviewer** (Sonnet first-line; Opus if
+hard/safety-critical) for a **fresh-eyes root-cause + a proposed better approach.** A builder deep in a problem
+has tunnel vision; the reviewer sees all the data at once and proposes the path. **Reviewers and fresh sessions
+are the loop-breakers — more grinding is not.** Resume once the reviewer proposes a direction (or confirms the
+current one). This is the standing "escalate out of a loop" rule.
+
+## 10. Queued speedups — do them RIGHT AFTER the current task, BEFORE resuming testing (Ben-directed)
+Sequence: **finish (or escalate) the current mining fix → implement BOTH speedups → then back to testing.**
+Front-loaded because they make everything after them faster.
+- **World-snapshot caching** → skip the ~74s worldgen boot on repeated runs (biggest per-run win; hard
+  determinism guard — snapshot-load tapes must byte-match fresh-gen).
 - **Parallel seed execution** → run gate seeds concurrently (halves 2-seed gates; ~8× on corpora).
-Both are M3-corpus prep, sequenced after the current mining fix.
+When they land, amend §1/§3 to make them the default.
