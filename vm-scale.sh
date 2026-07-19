@@ -39,7 +39,7 @@ ssh -i "$KEY" -o StrictHostKeyChecking=no "benshumeyko@$IP" "
   git fetch -q origin && git reset --hard -q origin/$BRANCH
   H=\$(git rev-parse --short HEAD); R=\$(git rev-parse --short origin/$BRANCH)
   [ \"\$H\" = \"\$R\" ] && echo COMMIT=\$H || { echo STALE=\$H/\$R; exit 3; }
-  cargo build --profile verify -p bastion-harness -q
+  cargo build --profile verify -p bastion-harness -q || { echo BUILD_FAIL@\$H; exit 4; }  # NEVER fall through to a stale binary
   for s in \$(seq $FIRST $((FIRST + NSEEDS - 1))); do
     ./target/verify/bastion-harness $ARGS --seed \$s --data-dir /tmp/mf-\$s >/tmp/mf-\$s.json 2>/dev/null &
   done; wait

@@ -21,11 +21,11 @@ cleanup() { k=0; while [ "$k" -lt "$N" ]; do "$GCLOUD" compute instances delete 
 trap 'cleanup' EXIT INT TERM
 
 run_one() {
-  k="$1"; name="bastion-pool-$k"; base=$((FIRST + k*SPV))
+  k="$1"; name="bastion-pool-$k"; base=$((FIRST + k*SPV)); cerr=""
   tries=0  # retry w/ backoff — transient quota bounces from racing a prior batch's teardown
-  until "$GCLOUD" compute instances create "$name" --zone="$ZONE" --source-machine-image="$IMAGE" \
-        --machine-type="$MACHINE" --metadata-from-file=ssh-keys="$SSHKEYS_FILE" >/dev/null 2>&1; do
-    tries=$((tries + 1)); [ "$tries" -ge 4 ] && { echo "CREATE_FAIL"; return; }
+  until cerr=$("$GCLOUD" compute instances create "$name" --zone="$ZONE" --source-machine-image="$IMAGE" \
+        --machine-type="$MACHINE" --metadata-from-file=ssh-keys="$SSHKEYS_FILE" 2>&1 >/dev/null); do
+    tries=$((tries + 1)); [ "$tries" -ge 4 ] && { echo "CREATE_FAIL :: ${cerr##*ERROR: }"; return; }
     sleep $((tries * 15))
   done
   ip=$("$GCLOUD" compute instances describe "$name" --zone="$ZONE" --format="value(networkInterfaces[0].accessConfigs[0].natIP)")
@@ -35,7 +35,7 @@ run_one() {
     git fetch -q origin && git reset --hard -q origin/$BRANCH
     H=\$(git rev-parse --short HEAD); R=\$(git rev-parse --short origin/$BRANCH)
     [ \"\$H\" = \"\$R\" ] && echo COMMIT=\$H || { echo STALE=\$H/\$R; exit 3; }
-    cargo build --profile verify -p bastion-harness -q
+    cargo build --profile verify -p bastion-harness -q || { echo BUILD_FAIL@\$H; exit 4; }  # NEVER fall through to a stale binary
     for s in \$(seq $base $((base + SPV - 1))); do
       ./target/verify/bastion-harness $ARGS --seed \$s --data-dir /tmp/mf-\$s >/tmp/mf-\$s.json 2>/dev/null &
     done; wait
