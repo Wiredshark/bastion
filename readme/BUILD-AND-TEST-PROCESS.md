@@ -141,6 +141,12 @@ runs, and DELETES itself. Idle cost ≈ $0 (only the ~4.5 GB `bastion-golden` im
   Leave headroom. Max ≈ 22 × 4-core, or ~46 × 2-core VMs.
 - `SSD_TOTAL_GB` (us-central1) = **effectively UNLIMITED** (granted 2026-07-19; was 500 GB) — disk is no
   longer a constraint; size the run by vCPU alone.
+- **★ DON'T BE STINGY (Ben directive 2026-07-19):** 96 cores + unlimited disk + ephemeral auto-delete +
+  burn-guard = generous VM use is SAFE and ENCOURAGED. Size runs BIG (a big scale-up VM and/or many VMs,
+  up to ~88 vCPU with headroom) to finish sooner — don't conserve out of over-caution. Idle cost stays
+  ~$0 (self-delete); a burst is pennies. The ONLY guardrails: keep the burn-guard $/time ceilings on,
+  don't schedule to the exact cap (~8 vCPU headroom for teardown races), let the wrappers self-delete.
+  Bias: more VM / bigger VM / done sooner.
 - At a FIXED vCPU budget, **scale-UP (one big VM) beats the clone pool** — the pool pays per-VM build + boot
   overhead. Measured: 24 seeds = 142 s on one 32-core VM vs 367 s on 8×4-core. The pool only wins once you need
   MORE cores than one VM can hold (i.e., after the quota bump).
