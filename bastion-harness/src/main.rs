@@ -5559,35 +5559,35 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         },
         // M3-D (never-stranded PAST-budget arm; the within-budget arm is
         // M3A's zero-teleport bar — the N7/N7B pairing): under a permanent
-        // rim seal nobody exits organically; the 30s override budget
-        // expires, the waiters' watch resumes, and the net delivers
-        // EVERYONE — alive, unentombed, out. a3 STRUCTURAL rewrite (M3
-        // red-class ruling: "bar-calibration not mechanism"): the old bar
-        // (every waiter delivery >= 85s) bundled budget+watch timing
-        // calibrated on seed 1337 and false-reds on other rolls. The
-        // mechanism, stated structurally: (1) the queue-wait hold ENGAGED
-        // for every waiter (WaitingForLadder observed — a dead hold fails
-        // here, the regression this arm exists to catch); (2) NO waiter
-        // was delivered inside the fixture's OWN budget window (a watch
-        // firing through a live hold fails here); (3) the net delivered
-        // everyone past the seal.
+        // rim seal nobody exits organically and the net delivers EVERYONE.
+        // a3 STRUCTURAL rewrite (M3 red-class ruling: "bar-calibration not
+        // mechanism"): the old bar (every waiter delivery >= 85s) bundled
+        // budget+watch timing calibrated on seed 1337 and false-reds on
+        // other rolls. TRACE-DERIVED calibration of the replacement (1337
+        // rerun): under the seal the abort/re-plan cycle dominates — the
+        // hold's own gate needs a COMPLETE route + not-your-turn, so the
+        // ORIGINAL waiters never sustain that state; only the re-queued
+        // ex-owner transits it (observed [true,false,false]). Per-waiter
+        // hold-engagement is therefore NOT an M3D invariant — hold-alive
+        // discrimination lives in M3A (a dead hold nets M3A's waiters and
+        // reds its zero-teleport bar). What M3D asserts structurally:
+        // (1) the hold WITNESS — some member observed in WaitingForLadder
+        // pre-exit (a fully dead hold has no writer for that status);
+        // (2) nobody delivered inside the fixture's OWN budget window
+        // (ONE constant feeds override + bar — no seed-tuned wall number);
+        // (3) the net floor: everyone out, net-delivered, alive,
+        // unentombed. Per-member engagement stays REPORTED (m3d_hold_seen).
         "M3D" => {
             let budget_secs_m3d = M3D_QUEUE_WAIT_BUDGET_TICKS / 30;
-            let waiters: Vec<usize> = names
+            let hold_witness = m3d_hold_seen.iter().any(|&h| h);
+            let none_pre_budget = m3_out_at
                 .iter()
-                .enumerate()
-                .filter(|(_, n)| m3_first_owner.as_deref() != Some(n.as_str()))
-                .map(|(i, _)| i)
-                .collect();
-            let hold_engaged = waiters.iter().all(|&i| m3d_hold_seen[i]);
-            let none_pre_budget = waiters
-                .iter()
-                .all(|&i| m3_out_at[i].is_some_and(|s| s >= budget_secs_m3d));
+                .all(|o| o.is_some_and(|s| s >= budget_secs_m3d));
             staged_ok
                 && position_ok
                 && mutated
                 && m3_out_at.iter().all(|o| o.is_some())
-                && hold_engaged
+                && hold_witness
                 && none_pre_budget
                 && teleports > 0
                 && alive
