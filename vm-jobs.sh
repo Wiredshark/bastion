@@ -35,8 +35,14 @@ trap cleanup EXIT INT TERM
 run_job() {
   k="$1"; cmd="$2"; name="bastion-job-$FAN-$k"; cerr=""
   tries=0  # retry w/ backoff — transient quota bounces from racing a prior batch's teardown
-  until cerr=$("$GCLOUD" compute instances create "$name" --zone="$ZONE" --source-machine-image="$IMAGE" \
-        --machine-type="$MACHINE" --metadata-from-file=ssh-keys="$SSHKEYS_FILE" 2>&1 >/dev/null); do
+  # MIN_CPU_PLATFORM (ENGOPT4 diagnosis): pin VMs to one microarchitecture so
+  # cross-machine comparisons separate SCHEDULING nondeterminism from
+  # hardware-float variance. Only N1/N2/C2 families honor it (e2 ignores the
+  # need entirely — it must not be passed there).
+  set -- --zone="$ZONE" --source-machine-image="$IMAGE" --machine-type="$MACHINE" \
+      --metadata-from-file=ssh-keys="$SSHKEYS_FILE"
+  [ -n "${MIN_CPU_PLATFORM:-}" ] && set -- "$@" --min-cpu-platform="$MIN_CPU_PLATFORM"
+  until cerr=$("$GCLOUD" compute instances create "$name" "$@" 2>&1 >/dev/null); do
     tries=$((tries + 1)); [ "$tries" -ge 4 ] && { echo "CREATE_FAIL: $cmd :: ${cerr##*ERROR: }" > "$OUT/job-$k.out"; return; }
     sleep $((tries * 15))
   done
