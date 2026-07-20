@@ -16,16 +16,24 @@ set -u
 GCLOUD="/c/Program Files (x86)/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
 ZONE=us-central1-a; IMAGE=bastion-golden; KEY="$HOME/.ssh/id_ed25519"; SSHKEYS_FILE="C:/Users/q/.ssh/bastion-sshkeys.txt"
 BRANCH="${BRANCH:-bastion/builder}"   # override e.g. BRANCH=codex/boot-cache for a parallel lane
+# CONCURRENT-FAN SCOPING (Builder-4 incident, 2026-07-20): three fans launched
+# in parallel collided on EVERY shared resource — index-only VM names
+# (bastion-job-$k: CREATE_FAILs + fan A's cleanup deleting fan B's VMs), the
+# shared /tmp/bastion-jobs (each fan's startup rm CLOBBERED the others'
+# results — jobs reported DONE with zero output), and the guard counting/
+# ceiling-cutting by the shared ^bastion-job prefix. Every resource is now
+# scoped by a unique FAN id (overridable for debugging).
+FAN="${FAN_ID:-$(date +%s)-$$}"
 JOBS_FILE="$1"; MACHINE="$2"; MAX_USD="${3:-5}"; MAX_MIN="${4:-30}"
 N=$(grep -cvE '^[[:space:]]*(#|$)' "$JOBS_FILE")
 VCPU_PER=$(echo "$MACHINE" | sed 's/.*-//'); TOTAL_VCPU=$((N * VCPU_PER)); RATE=0.035
-OUT=/tmp/bastion-jobs; mkdir -p "$OUT"; rm -f "$OUT"/*.out "$OUT"/*.log "$OUT"/TRIPPED 2>/dev/null || true
+OUT=/tmp/bastion-jobs/$FAN; mkdir -p "$OUT"; rm -f "$OUT"/*.out "$OUT"/*.log "$OUT"/TRIPPED 2>/dev/null || true
 
-cleanup() { k=0; while [ "$k" -lt "$N" ]; do "$GCLOUD" compute instances delete "bastion-job-$k" --zone="$ZONE" -q >/dev/null 2>&1 & k=$((k+1)); done; wait; }
+cleanup() { k=0; while [ "$k" -lt "$N" ]; do "$GCLOUD" compute instances delete "bastion-job-$FAN-$k" --zone="$ZONE" -q >/dev/null 2>&1 & k=$((k+1)); done; wait; }
 trap cleanup EXIT INT TERM
 
 run_job() {
-  k="$1"; cmd="$2"; name="bastion-job-$k"; cerr=""
+  k="$1"; cmd="$2"; name="bastion-job-$FAN-$k"; cerr=""
   tries=0  # retry w/ backoff — transient quota bounces from racing a prior batch's teardown
   until cerr=$("$GCLOUD" compute instances create "$name" --zone="$ZONE" --source-machine-image="$IMAGE" \
         --machine-type="$MACHINE" --metadata-from-file=ssh-keys="$SSHKEYS_FILE" 2>&1 >/dev/null); do
@@ -52,7 +60,7 @@ guard() {
   gstart="$1"; acc=0; echo 0 > "$OUT/COST"
   while :; do
     sleep 90
-    up=$("$GCLOUD" compute instances list --filter="name~^bastion-job" --format="value(name)" 2>/dev/null | wc -l)
+    up=$("$GCLOUD" compute instances list --filter="name~^bastion-job-$FAN-" --format="value(name)" 2>/dev/null | wc -l)
     acc=$(awk "BEGIN{printf \"%.3f\", $acc + $up*$VCPU_PER*(90/3600.0)*$RATE}")  # true VM-time
     echo "$acc" > "$OUT/COST"
     el_m=$(( ($(date +%s) - gstart) / 60 ))
@@ -63,7 +71,7 @@ guard() {
   done
 }
 
-echo "[jobs] $N different jobs x $MACHINE ($TOTAL_VCPU vCPU). Ceiling \$$MAX_USD/${MAX_MIN}m. Launching in parallel..."
+echo "[jobs] $N different jobs x $MACHINE ($TOTAL_VCPU vCPU). FAN=$FAN. Ceiling \$$MAX_USD/${MAX_MIN}m. Launching in parallel..."
 start=$(date +%s); guard "$start" & GUARD_PID=$!
 k=0; PIDS=""
 while IFS= read -r line; do
