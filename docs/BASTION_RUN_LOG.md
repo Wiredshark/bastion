@@ -4142,3 +4142,57 @@ invariants it doesn't own.
 **Opus gate:** PASS (`BUILD_REVIEW_LOG.md` §B58). Builder 4 standing down
 per the architect — tree held for Ben's morning steer (engine-optimization
 phase next, per the standing Ben-priority order).
+
+## bastion-block-ENGOPT1 — engine-optimization #1, A* frontier determinism + fallback correctness — TAGGED 2026-07-20 (tag `115cd34e54`, branch `bastion/builder`; Opus gate PENDING — architect reviewing at time of logging, not yet PASS)
+
+The first engine-optimization-phase block (per Ben's efficiency→merge-
+codex→engine order — this is "engine," the phase Ben's morning steer
+opened). Packet: `readme/ENGINE-OPT-1-ASTAR-PACKET.md`. Scope: `common/
+src/astar.rs` only. Two commits: `6b8790c490` (the astar work itself) +
+`115cd34e54` (M3 fixture per-violation SOFT-0 lane forensics, env-gated —
+built in response to what this block's own tag-time red demanded, see
+below).
+
+**A* frontier determinism (ledger item 177):** the frontier's tie-break
+key widened to a full total-order tuple `(f, h, g, fxhash64(node), seq)`
+— architect-ruled option (c) after a design call that vek's own types
+don't implement `Ord` (so a naive "just sort the vector" approach doesn't
+compile without this). Falsifier-verified: RED on a seq-only key (proving
+the test actually engages the mechanism, not vacuous), GREEN with the
+full tuple.
+
+**Fallback best-so-far correctness (ledger item 175):** made Detour-
+faithful — the fallback path now stores the NEIGHBOR, not the parent, and
+seeds from the start node; two real pre-existing bugs in the old fallback
+logic fixed as part of landing this correctly (not just a determinism
+tweak, an actual correctness fix).
+
+**Acceptance:** 4/4 property tests; full workspace `rc=0`; `--mine-
+fidelity-scenario` ×2 canonicalized-identical; `--dig-access-scenario` ×2
+byte-identical (a NEW binary self-reproducible — the determinism claim
+holds on freshly-built output, not just against an old golden); N2 PASS.
+
+**M3A@1337 red, classified not hidden (registry B60):** `m3_lane_
+violations=3` — fork-15's vanilla-climb-leak (named-open since M2LADDER)
+RESURFACED: a task-less queued member ascends the rung column with
+`traversing_any=false`. Forensics (the second commit above, a per-
+violation diagnostic distinguishing transient-clip / sustained-crowding /
+vanilla-leak signatures by member/cell/trigger) pinned it precisely. This
+is the now-deterministic A* routing making a queued member's ordinary
+vanilla Goto hit the rung column MORE consistently than the prior
+nondeterministic routing did — an exposure-probability shift, not a new
+leak mechanism, and not something the astar work itself introduced.
+Everything else about M3A improved: 0 teleports, deliveries 61s and 56s
+faster than the B58 baseline. Architect-ruled tag-acceptable; the fork-15
+fix is routed as Builder 4's own immediate next block, falsifier-first.
+
+**Also flagged, not yet acted on (registry B61):** `Civs::neighbors`'
+`track_map` HashMap-iteration order-fragility — same-binary-stable, could
+reorder across a build with different insertion history. No observed
+divergence today; a proactive watch item for Codex's determinism sweep,
+same general class as the persisted-collection-ordering fixes already in
+the determinism-integration base.
+
+**Bookkeeping note:** logged at Builder 4's request while the Opus gate is
+still in progress (architect reviewing). Will update this entry's gate
+line once the verdict lands rather than leave a stale PENDING marker.
