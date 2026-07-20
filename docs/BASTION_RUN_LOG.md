@@ -4509,22 +4509,65 @@ literally the packet-endorsed staging point (a bounded fixed-step
 accumulator). T0.5's `dt`-guard is confirmed a compatible stopgap for the
 packet's fuller schedule-level pause design, not a competing approach.
 
-**Status: tag pending `floor9` only** (the architect's own gate, ~10 min
-estimate at time of report) — this entry documents the green end-proof;
-will confirm the actual tag once `floor9` lands. Escalation-to-Fable/Opus
-path is now moot (only would have triggered on a still-diverging pair,
-which didn't happen).
+**★★★ TAGGED — `bastion-block-ENGOPT6` @ `781a553eb71e`, pushed.** Floor
+gate green: `floorx` fan (rerouted to `us-east1-c` after an `east1-d`
+stock-out) — N2 `rc=0`/`tp1`, M3D `rc=0` `[145,44,204]`/2 violations/hold
+`[T,F,F]`/all alive.
 
-**Next (Builder 4 self-selected, correctly per the master order, started
-as parallel fill while `floor9` runs — no supply needed from me):** T0.10/
-T0.11 (strategic time, absolute world timestamps for long-lived deadlines,
-apply-elapsed-once semantics on promote/demote). Already found a live
-specimen bug while reading the packet: `rtsim`'s `Job::Hired(actor,
-expires: Time)` persists a RESTART-RELATIVE sim-clock deadline — a hire
-duration silently extends by however long the server was down between
-restarts, since the deadline is measured against the wrong clock
-reference. Real find, not yet fixed — tracked as part of the T0.10/T0.11
-work now starting.
+**★ NEW CANONICAL FIXTURE BASELINES (deliberate, expected, T0.7-draw-shift
+class — record these as the reference point for all FUTURE floor
+comparisons, not the old pre-T0.7 numbers):** stable across both
+`c3d53c19` and `781a553e`, confirming they're genuinely new deterministic
+baselines rather than run-to-run noise:
+- M3A: `[66,82,94]`/3/tp0 (old) → **`[66,44,97]`/2/tp0** (new baseline)
+- M3D: `[145,204,263]`/3/tp3 (old) → **`[145,44,204]`/2/tp1** (new baseline)
+
+This is the expected consequence of T0.7 converting raw per-tick
+probabilities to hazard-rate equivalents — draw outcomes shift by ulps at
+the individual-draw level, which can legitimately move downstream timing/
+violation-count numbers even though the underlying RATE is unchanged.
+Fork-15's tracked red (the M3A construction-window crowd-shove class) stays
+open and unaffected by this baseline shift — it's a separate, already-
+tracked issue riding on top of whatever the current baseline is.
+
+Escalation-to-Fable/Opus path is now moot (would only have triggered on a
+still-diverging pair, which didn't happen — the strongest possible close).
+
+## T0.10 + T0.11 (strategic time, absolute world timestamps) — SHIPPED, fixes B69 (commit `bd40e59e1039`, branch `bastion/builder`)
+
+Both `Job::Hired(Actor, TimeOfDay)` and `Quest.timeout: Option<TimeOfDay>`
+converted from persisted RESTART-RELATIVE sim-`Time` deadlines to absolute
+world timestamps — closing B69 exactly as predicted (every server restart
+was silently extending live hires and open quest deadlines by however
+long the server had been down). Hire "days" are now real world days
+(`+days × 86400` world-seconds); quest minute-limits are preserved as
+DURATIONS via `day_cycle_coefficient` rather than being reinterpreted;
+permanent hires are `TimeOfDay(inf)`; expiry checks now compare against
+`ctx.time_of_day` directly. `TimeOfDay` gained `PartialEq`/`PartialOrd` to
+support the comparisons.
+
+**Migration disclosure, not hidden:** this is a one-time, pre-release-
+acceptable break — old saves' raw `f64` payloads reinterpret as world
+timestamps far in the past on load, so existing hires end and any open
+quest timeouts resolve ONCE on first load after the upgrade. No
+compatibility shim shipped for it, deliberately, given the project's
+pre-release stage. Flagging this explicitly rather than letting it surface
+as a surprise later.
+
+**Scope note:** the promote/demote "apply-elapsed-once" ledger (tracking
+a last-processed world timestamp across a promote/demote cycle) is
+DEFERRED to the Tier-2 lifecycle rows where promotion itself lives — this
+block satisfies the packet's deadline-correctness contract, not the fuller
+lifecycle-ledger design. `rtsim` 16/16, `bastion-server` 39/39, `common`
+153/154 (B59 pre-existing only).
+
+**Next (Builder 4 self-selected, correctly per the master order — no
+supply needed from me):** T0.12-lite — a golden phase-manifest +
+parsed-registration validation test (rejects cycles, unknown edges,
+drift), engine code itself untouched. The full descriptor-generated-
+schedule version stays T0-002's endpoint, deliberately deferred as its
+own bigger block rather than smuggled into this lighter validation-only
+slice.
 
 ## T0.6 (tick-rate-invariant probability, ledger #115) — TWO PASSES: shallow done-by-audit SUPERSEDED, then properly completed (commits `654764371b` → `a50f6ca817b7`, branch `bastion/builder`)
 
@@ -4780,3 +4823,12 @@ assumption. One-line trace per correction:
   moved to DONE — floor8 hasn't confirmed yet, consistent with not
   claiming things closed before their own gate reports).
 - `[T0.8]`: annotated IN PROGRESS (Builder 4 actively working it).
+
+**Follow-up correction pass (same day, once floor9/ENGOPT6 confirmed
+green):** `[T0.7]` moved to DONE as `[DONE.20]` (floor-confirmed, new
+canonical baselines recorded inline). `[T0.8]` SPLIT — the shipped
+consistency slice moved to DONE as `[DONE.21]`; the deferred bounded-
+substeps half stays in Tier 0 as `[T0.8-residual]`, its own future block.
+`[T0.10]`/`[T0.11]` left in place but annotated "SEE [DONE.22]" pointing
+at the new consolidated DONE row for the actual landing (`bd40e59e1039`),
+rather than duplicating their text into the DONE section.
