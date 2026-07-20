@@ -470,6 +470,16 @@ struct Args {
     #[arg(long, default_value_t = 50)]
     corpus_child_timeout_mins: u64,
 
+    /// bastion (M3A forensics lesson): directory for per-child stderr
+    /// capture files (corpus seed-children + the b58-paired legs), which
+    /// were previously DISCARDED (`Stdio::null`) — a failed seed's
+    /// forensics were gone and diagnosis needed a slower standalone rerun.
+    /// Default: a fresh pid-scoped directory under the system temp dir
+    /// (path printed at run start). Capture is forensics-only: a
+    /// file/dir-create failure warns and discards, never fails the run.
+    #[arg(long)]
+    corpus_stderr_dir: Option<std::path::PathBuf>,
+
     /// bastion (DPA-0/1/2, SHAFT-ALWAYS-ACCESSED — packet §8): the
     /// dig-provisioned access gate. Leg A: a tight 2×2×13 organic shaft
     /// with ZERO wood — the frontier HOLDS (no deep dig, classified
@@ -686,6 +696,45 @@ fn post_teardown_hygiene_clean() -> bool {
 // target civsim/rtsim/chunk state, not the map file, and must pass the
 // same fresh-vs-load byte-identical pair before adoption.
 
+/// Resolve the per-child stderr capture directory (`--corpus-stderr-dir`
+/// or a pid-scoped temp default). `None` = capture unavailable (warned
+/// once); children then fall back to discarding, exactly the old
+/// behavior — forensics must never fail a run.
+fn child_stderr_dir(args: &Args, label: &str) -> Option<std::path::PathBuf> {
+    let dir = args.corpus_stderr_dir.clone().unwrap_or_else(|| {
+        std::env::temp_dir().join(format!("bastion-corpus-stderr-{}", std::process::id()))
+    });
+    match std::fs::create_dir_all(&dir) {
+        Ok(()) => {
+            eprintln!("{label}: per-child stderr captured under {}", dir.display());
+            Some(dir)
+        },
+        Err(e) => {
+            eprintln!("{label}: stderr capture dir unavailable ({e}); child stderr discarded");
+            None
+        },
+    }
+}
+
+/// Per-child stderr destination: a capture file in `dir`, or the old
+/// discard when the dir is unavailable / the file can't be created.
+fn child_stderr_capture(
+    dir: Option<&std::path::Path>,
+    name: &str,
+) -> (std::process::Stdio, Option<std::path::PathBuf>) {
+    let Some(dir) = dir else {
+        return (std::process::Stdio::null(), None);
+    };
+    let path = dir.join(name);
+    match std::fs::File::create(&path) {
+        Ok(f) => (std::process::Stdio::from(f), Some(path)),
+        Err(e) => {
+            eprintln!("stderr capture unavailable for {name} ({e}); child stderr discarded");
+            (std::process::Stdio::null(), None)
+        },
+    }
+}
+
 /// bastion (M3-CORPUS PREP 2): the parallel corpus runner — see the
 /// `--corpus` arg doc. Children are this same exe (the `b58_paired` /
 /// `verify` spawn pattern); per-seed isolation is by process + own
@@ -709,9 +758,10 @@ fn corpus_runner(args: &Args) -> ExitCode {
         args.corpus_jobs.max(1)
     };
     let flag = format!("--{scenario}");
+    let stderr_dir = child_stderr_dir(args, "CORPUS");
     let mut results: Vec<(u64, bool, String)> = Vec::new();
     for batch in seeds.chunks(jobs) {
-        let mut children: Vec<(u64, std::process::Child)> = Vec::new();
+        let mut children: Vec<(u64, std::process::Child, Option<std::path::PathBuf>)> = Vec::new();
         for seed in batch {
             let seed_string = seed.to_string();
             let tps_string = args.tps.to_string();
@@ -723,13 +773,17 @@ fn corpus_runner(args: &Args) -> ExitCode {
             if let Some(episode) = args.ladder_episode.as_deref() {
                 child_args.extend(["--ladder-episode", episode]);
             }
+            let (child_stderr, stderr_path) = child_stderr_capture(
+                stderr_dir.as_deref(),
+                &format!("{scenario}-seed{seed}.stderr.log"),
+            );
             let child = std::process::Command::new(&exe)
                 .args(child_args)
                 .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null())
+                .stderr(child_stderr)
                 .spawn();
             match child {
-                Ok(c) => children.push((*seed, c)),
+                Ok(c) => children.push((*seed, c, stderr_path)),
                 Err(e) => results.push((*seed, false, format!("spawn failed: {e}"))),
             }
         }
@@ -738,7 +792,13 @@ fn corpus_runner(args: &Args) -> ExitCode {
         // corpus (the observed 0-CPU spawn-wedge class).
         let deadline = std::time::Instant::now()
             + std::time::Duration::from_secs(args.corpus_child_timeout_mins * 60);
-        for (seed, mut child) in children {
+        for (seed, mut child, stderr_path) in children {
+            // Failure rows carry the capture-file pointer — the whole point
+            // of the tee is that a red seed's forensics are one path away.
+            let stderr_note = stderr_path
+                .as_deref()
+                .map(|p| format!(" [stderr: {}]", p.display()))
+                .unwrap_or_default();
             let timed_out = loop {
                 match child.try_wait() {
                     Ok(Some(_)) => break false,
@@ -756,7 +816,11 @@ fn corpus_runner(args: &Args) -> ExitCode {
             };
             let out = child.wait_with_output();
             if timed_out {
-                results.push((seed, false, "TIMEOUT (killed by the wedged-child guard)".into()));
+                results.push((
+                    seed,
+                    false,
+                    format!("TIMEOUT (killed by the wedged-child guard){stderr_note}"),
+                ));
                 continue;
             }
             match out {
@@ -775,9 +839,15 @@ fn corpus_runner(args: &Args) -> ExitCode {
                         .find(|l| !l.trim_start().starts_with('{') && !l.trim().is_empty())
                         .unwrap_or("")
                         .to_string();
-                    results.push((seed, out.status.success(), verdict));
+                    let ok = out.status.success();
+                    let verdict = if ok {
+                        verdict
+                    } else {
+                        format!("{verdict}{stderr_note}")
+                    };
+                    results.push((seed, ok, verdict));
                 },
-                Err(e) => results.push((seed, false, format!("wait failed: {e}"))),
+                Err(e) => results.push((seed, false, format!("wait failed: {e}{stderr_note}"))),
             }
         }
     }
@@ -4588,10 +4658,19 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
     let episode = args.ladder_episode.clone().unwrap_or_else(|| "P0".into());
     // M3-D (shrunken-budget arm): 30s queue-wait budget so the past-budget
     // net-delivery arm fits the episode window. Before Server::new — the
-    // hold reads it once, lazily, during ticking.
+    // hold reads it once, lazily, during ticking. ONE constant feeds both
+    // the override and the verdict's no-pre-budget-delivery bar (a3: the
+    // bar derives from the fixture's OWN budget, not a seed-calibrated
+    // wall number).
+    const M3D_QUEUE_WAIT_BUDGET_TICKS: u64 = 900;
     if episode == "M3D" {
         // SAFETY: single-threaded harness setup phase.
-        unsafe { std::env::set_var("BASTION_M3_QUEUE_WAIT_BUDGET_TICKS", "900") };
+        unsafe {
+            std::env::set_var(
+                "BASTION_M3_QUEUE_WAIT_BUDGET_TICKS",
+                M3D_QUEUE_WAIT_BUDGET_TICKS.to_string(),
+            )
+        };
     }
     let started = Instant::now();
     let data_dir = std::env::temp_dir().join(format!(
@@ -4881,10 +4960,21 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
     // Ticks with >1 member simultaneously in an owned-mode phase — the
     // single-owner-per-link predicate (one link exists in this fixture).
     let mut m3_owned_conflicts: u64 = 0;
-    // Ticks a task-less QUEUED member stood inside the 2x2 shaft footprint
-    // while another member was mid-traversal (SOFT-0 lane exclusion,
-    // shaft-footprint superset form) — or touched a Ladder sprite.
+    // Ticks a task-less QUEUED member stood in the PLANNER'S lane while
+    // another member was mid-traversal (SOFT-0 lane exclusion) — or touched
+    // a Ladder sprite. a2 fixture-hardening (M3 red-class ruling): the lane
+    // is the columns where Ladder rungs actually stand, NOT the fixture's
+    // carved 2x2 — organic rolls site the planner's lane elsewhere, and
+    // counting carved columns was the a2 false-positive class. Rungs only
+    // change on build: rescanned once per second.
     let mut m3_lane_violations: u64 = 0;
+    let mut m3_lane_columns: std::collections::HashSet<(i32, i32)> =
+        std::collections::HashSet::new();
+    let mut m3_lane_scan_sec: Option<u64> = None;
+    // a3 (M3D structural evidence): the queue-wait hold ENGAGED per member
+    // (WaitingForLadder observed at least once) — replaces the delivery-
+    // time wall number that was calibrated on seed 1337.
+    let mut m3d_hold_seen: Vec<bool> = vec![false; names.len()];
     // First observation of the FULL queue (len == n): fair-order reference.
     let mut m3_queue_names: Option<Vec<String>> = None;
     let mut m3_generation_seen: u64 = 0;
@@ -5002,9 +5092,47 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
                     m3_exit_order.push(n.clone());
                 }
             }
+            // a3 sampling: a waiter observed in the queue-wait hold. Only
+            // pre-exit observations count — the status is meaningless once
+            // the member is out.
+            if episode == "M3D" {
+                for (i, n) in names.iter().enumerate() {
+                    if !m3d_hold_seen[i]
+                        && m3_out_at[i].is_none()
+                        && server.bastion_colonist_status(n).is_some_and(|(s, _)| {
+                            s == Some(
+                                common::comp::bastion::BastionColonistStatus::WaitingForLadder,
+                            )
+                        })
+                    {
+                        m3d_hold_seen[i] = true;
+                    }
+                }
+            }
             // SOFT-0 lane exclusion: while any member is mid-traversal, a
-            // DIFFERENT task-less member standing in the shaft footprint
-            // (or touching a Ladder sprite anywhere) is a violation tick.
+            // DIFFERENT task-less member standing in the planner's lane
+            // (a Ladder-rung column, rescanned 1/s) or touching a Ladder
+            // sprite anywhere is a violation tick.
+            if m3_lane_scan_sec != Some(sec) {
+                m3_lane_scan_sec = Some(sec);
+                m3_lane_columns.clear();
+                let terrain = server.state().terrain();
+                for x in (cx - 10)..=(cx + 10) {
+                    for y in (cy - 10)..=(cy + 10) {
+                        for z in (gz - depth)..=(gz + 2) {
+                            if terrain
+                                .get(Vec3::new(x, y, z))
+                                .ok()
+                                .and_then(|b| b.get_sprite())
+                                == Some(SpriteKind::Ladder)
+                            {
+                                m3_lane_columns.insert((x, y));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
             let traversing_any = phases.iter().any(|p| p.starts_with("Traversing"));
             for (i, n) in names.iter().enumerate() {
                 if phases[i] != "-" || m3_out_at[i].is_some() {
@@ -5012,15 +5140,14 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
                 }
                 if let Some((_, p, _)) = states.iter().find(|(sn, ..)| sn == n) {
                     let feet = p.map(|v| v.floor() as i32);
-                    let in_shaft = traversing_any
-                        && (sx..=sx + 1).contains(&feet.x)
-                        && (sy..=sy + 1).contains(&feet.y);
+                    let in_lane =
+                        traversing_any && m3_lane_columns.contains(&(feet.x, feet.y));
                     let terrain = server.state().terrain();
                     let on_rungs = [feet, feet + Vec3::unit_z()].iter().any(|c| {
                         terrain.get(*c).ok().and_then(|b| b.get_sprite())
                             == Some(SpriteKind::Ladder)
                     });
-                    if in_shaft || on_rungs {
+                    if in_lane || on_rungs {
                         m3_lane_violations += 1;
                     }
                 }
@@ -5367,10 +5494,15 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         "m3_queue_order": m3_queue_names,
         "m3_owned_conflicts": m3_owned_conflicts,
         "m3_lane_violations": m3_lane_violations,
+        // a2 legibility: the planner-lane columns the SOFT-0 check actually
+        // used at episode end (empty until rungs exist).
+        "m3_lane_columns": m3_lane_columns.iter().map(|(x, y)| format!("{x},{y}")).collect::<Vec<_>>(),
         "m3_generation_seen": m3_generation_seen,
         "m3_first_owner": m3_first_owner,
         "m3c_injected": m3c_injected,
         "m3c_generation_at_injection": m3c_generation_at_injection,
+        // a3 legibility: per-member queue-wait-hold engagement evidence.
+        "m3d_hold_seen": m3d_hold_seen,
     });
     println!("{result}");
     server::bastion_flight_recorder::finalize();
@@ -5429,20 +5561,34 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         // M3A's zero-teleport bar — the N7/N7B pairing): under a permanent
         // rim seal nobody exits organically; the 30s override budget
         // expires, the waiters' watch resumes, and the net delivers
-        // EVERYONE — alive, unentombed, out. The waiters' delivery time
-        // carries the exemption proof: hold-dead ≈ watch-only ≈ 60-70s;
-        // hold-alive = budget(30s) + watch(60s) ≥ ~85s.
+        // EVERYONE — alive, unentombed, out. a3 STRUCTURAL rewrite (M3
+        // red-class ruling: "bar-calibration not mechanism"): the old bar
+        // (every waiter delivery >= 85s) bundled budget+watch timing
+        // calibrated on seed 1337 and false-reds on other rolls. The
+        // mechanism, stated structurally: (1) the queue-wait hold ENGAGED
+        // for every waiter (WaitingForLadder observed — a dead hold fails
+        // here, the regression this arm exists to catch); (2) NO waiter
+        // was delivered inside the fixture's OWN budget window (a watch
+        // firing through a live hold fails here); (3) the net delivered
+        // everyone past the seal.
         "M3D" => {
-            let waiter_deliveries_past_budget = names
+            let budget_secs_m3d = M3D_QUEUE_WAIT_BUDGET_TICKS / 30;
+            let waiters: Vec<usize> = names
                 .iter()
                 .enumerate()
                 .filter(|(_, n)| m3_first_owner.as_deref() != Some(n.as_str()))
-                .all(|(i, _)| m3_out_at[i].is_some_and(|s| s >= 85));
+                .map(|(i, _)| i)
+                .collect();
+            let hold_engaged = waiters.iter().all(|&i| m3d_hold_seen[i]);
+            let none_pre_budget = waiters
+                .iter()
+                .all(|&i| m3_out_at[i].is_some_and(|s| s >= budget_secs_m3d));
             staged_ok
                 && position_ok
                 && mutated
                 && m3_out_at.iter().all(|o| o.is_some())
-                && waiter_deliveries_past_budget
+                && hold_engaged
+                && none_pre_budget
                 && teleports > 0
                 && alive
                 && unentombed
@@ -13949,7 +14095,18 @@ fn needs_scenario(args: &Args) -> ExitCode {
 /// metrics); the delta is REPORTED, never gated.
 fn b58_paired(args: &Args) -> ExitCode {
     let exe = std::env::current_exe().expect("own exe path");
+    // Same M3A forensics lesson as the corpus runner: leg stderr used to be
+    // discarded; a failed leg now leaves a capture file behind.
+    let stderr_dir = child_stderr_dir(args, "B58PAIRED");
     let run_leg = |tightdig: bool| -> Option<(serde_json::Value, bool)> {
+        let (leg_stderr, _) = child_stderr_capture(
+            stderr_dir.as_deref(),
+            &format!(
+                "b58paired-seed{}-leg{}.stderr.log",
+                args.seed,
+                if tightdig { "B" } else { "A" }
+            ),
+        );
         let mut cmd = std::process::Command::new(&exe);
         cmd.arg("--b58-scenario")
             .arg("--seed")
@@ -13957,7 +14114,7 @@ fn b58_paired(args: &Args) -> ExitCode {
             .arg("--tps")
             .arg(args.tps.to_string())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null());
+            .stderr(leg_stderr);
         if tightdig {
             cmd.env("BASTION_TIGHTDIG", "1");
         } else {
