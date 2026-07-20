@@ -1,4 +1,5 @@
 use crate::{persistence::character_updater, sys::SysScheduler};
+use crate::Tick;
 use common::{
     comp::{
         ActiveAbilities, Alignment, Body, Inventory, MapMarker, Presence, PresenceKind, SkillSet,
@@ -8,7 +9,7 @@ use common::{
     uid::Uid,
 };
 use common_ecs::{Job, Origin, Phase, System};
-use specs::{Join, LendJoin, ReadStorage, Write, WriteExpect};
+use specs::{Join, LendJoin, Read, ReadExpect, ReadStorage, Write, WriteExpect};
 use tracing::error;
 
 #[derive(Default)]
@@ -29,6 +30,8 @@ impl<'a> System<'a> for Sys {
         ReadStorage<'a, ActiveAbilities>,
         WriteExpect<'a, character_updater::CharacterUpdater>,
         Write<'a, SysScheduler<Self>>,
+        Read<'a, Tick>,
+        ReadExpect<'a, common_state::ExecutionMode>,
     );
 
     const NAME: &'static str = "persistence";
@@ -51,9 +54,13 @@ impl<'a> System<'a> for Sys {
             active_abilities,
             mut updater,
             mut scheduler,
+            tick,
+            execution_mode,
         ): Self::SystemData,
     ) {
-        if scheduler.should_run() {
+        // T0.1: tick-cadenced in deterministic mode (wall cadence would
+        // fire on machine-dependent ticks), wall-cadenced live.
+        if scheduler.should_run_at(tick.0, execution_mode.is_deterministic()) {
             updater.batch_update(
                 (
                     &presences,

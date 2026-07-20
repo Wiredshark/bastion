@@ -78,6 +78,14 @@ pub fn run_sync_systems(ecs: &mut specs::World) {
 pub struct SysScheduler<S> {
     interval: Duration,
     last_run: Instant,
+    /// T0.1 (master build order; ledger #5): sim-TICK cadence for
+    /// deterministic mode. A wall-anchored interval lands on a
+    /// machine-throughput-dependent sim tick — the same class the ENGOPT6
+    /// recorder pair pinned for `LootOwner` (a 45-wall-second timeout
+    /// resolving at tick 3960 on one VM and ~3976 on the other). Derived
+    /// from the wall interval at the standard 30 tps fixed step.
+    interval_ticks: u64,
+    last_run_tick: Option<u64>,
     _phantom: PhantomData<S>,
 }
 
@@ -86,12 +94,31 @@ impl<S> SysScheduler<S> {
         Self {
             interval,
             last_run: Instant::now(),
+            interval_ticks: (interval.as_secs_f64() * 30.0).max(1.0) as u64,
+            last_run_tick: None,
             _phantom: PhantomData,
         }
     }
 
-    pub fn should_run(&mut self) -> bool {
-        if self.last_run.elapsed() > self.interval {
+    /// Interval check: wall-clock in live mode (original behavior),
+    /// sim-tick in deterministic mode (lockstep fixed-step scheduling —
+    /// two same-seed runs must fire on the same tick regardless of
+    /// machine throughput). Both paths wait one full interval from
+    /// construction/first-call before the first fire.
+    pub fn should_run_at(&mut self, tick: u64, deterministic: bool) -> bool {
+        if deterministic {
+            match self.last_run_tick {
+                None => {
+                    self.last_run_tick = Some(tick);
+                    false
+                },
+                Some(last) if tick.saturating_sub(last) > self.interval_ticks => {
+                    self.last_run_tick = Some(tick);
+                    true
+                },
+                Some(_) => false,
+            }
+        } else if self.last_run.elapsed() > self.interval {
             self.last_run = Instant::now();
 
             true
@@ -106,7 +133,35 @@ impl<S> Default for SysScheduler<S> {
         Self {
             interval: Duration::from_secs(30),
             last_run: Instant::now(),
+            interval_ticks: 900,
+            last_run_tick: None,
             _phantom: PhantomData,
         }
+    }
+}
+
+// T0.1: the tick path is a pure function of (tick, interval_ticks) — pinned
+// so the deterministic cadence can never silently re-anchor to the wall.
+#[cfg(test)]
+mod sys_scheduler_tests {
+    use super::SysScheduler;
+    use std::time::Duration;
+
+    #[test]
+    fn t0_1_deterministic_cadence_is_tick_pure() {
+        let mut sched: SysScheduler<()> = SysScheduler::every(Duration::from_secs(30));
+        // First observation anchors, never fires.
+        assert!(!sched.should_run_at(5, true));
+        // Within the 900-tick interval: silent.
+        assert!(!sched.should_run_at(904, true));
+        assert!(!sched.should_run_at(905, true));
+        // Past it: exactly one fire, then re-anchored.
+        assert!(sched.should_run_at(906, true));
+        assert!(!sched.should_run_at(907, true));
+        assert!(!sched.should_run_at(1806, true));
+        assert!(sched.should_run_at(1807, true));
+        // Wall time never advanced in this test — the wall path could not
+        // have produced these fires (the property the old API could not
+        // even express).
     }
 }
