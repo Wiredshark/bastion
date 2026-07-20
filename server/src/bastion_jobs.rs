@@ -2075,6 +2075,9 @@ fn emergency_route_waypoint(
                     step.z,
                 )
             });
+        // (The v7 A*-fallback that lived here is DELETED per the M3A
+        // unification ruling: ladder routes never reach this branch any
+        // more — the promoted-head corridor is the one waypoint authority.)
     }
     let mut candidates = HashSet::new();
     for cell in route_cells {
@@ -2222,6 +2225,104 @@ fn emergency_completed_route_prefix(
         top_z,
         prefix.iter().map(|(id, _)| *id).collect(),
     ))
+}
+
+/// bastion (M3 UNIFIED PROMOTED-HEAD APPROACH, Sonnet-ruled at the §9
+/// ceiling): the ONE waypoint authority for a promoted queue head on a
+/// ConstructedLadder route. The v4→v7 arc proved that THREE uncoordinated
+/// waypoint sources (orthogonal decomposition / an A* fallback / the
+/// per-pass retarget) structurally disagree by one cell and livelock the
+/// last member (target==feet ⇒ mount_approach false ⇒ nothing drives).
+/// This consolidates onto the corridor machinery frontier claimants
+/// already use: COMMIT a bounded-A* corridor at promotion (pure ROUTING —
+/// the mount stepper's per-step cylinder preflight, incl. the B57
+/// own-prefix-contact rule, guards every actual move), CONSUME waypoints
+/// statefully, and hand back the MOUNT itself once exhausted so the
+/// final_mount handshake fires naturally. The M2 at-entry case degenerates
+/// to a zero-waypoint corridor. Sentinel frontier id: promoted FULL-EXIT
+/// corridors carry no construction job.
+pub(crate) const PROMOTED_EXIT_FRONTIER: JobId = JobId::MAX;
+
+fn m3_promoted_corridor_waypoint(
+    board: &mut JobBoard,
+    terrain: &TerrainGrid,
+    member: Uid,
+    owner: Uid,
+    mount: Vec3<i32>,
+    position: Vec3<f32>,
+    feet: Vec3<i32>,
+    tick: u64,
+) -> Option<Vec3<i32>> {
+    let mount_center = mount.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+    let current_waypoint_far = |corridor: &EmergencyApproachCorridor| {
+        corridor
+            .waypoints
+            .get(corridor.next_idx)
+            .is_some_and(|wp| {
+                position
+                    .xy()
+                    .distance_squared(wp.map(|value| value as f32).xy() + Vec2::broadcast(0.5))
+                    > 36.0
+            })
+    };
+    let refresh = match board.emergency_approach_corridors.get(&member) {
+        // A displaced member (netted, shoved) re-plans from where it IS.
+        Some(corridor) if corridor.owner == owner && corridor.entry == mount => {
+            current_waypoint_far(corridor)
+        },
+        _ => true,
+    };
+    if refresh {
+        let cfg = common::path::TraversalConfig {
+            node_tolerance: 0.75,
+            slow_factor: 0.0,
+            on_ground: true,
+            in_liquid: false,
+            min_tgt_dist: 0.5,
+            can_climb: false,
+            scramble_reach: 0,
+            can_fly: false,
+            vectored_propulsion: false,
+            is_target_loaded: true,
+            search_allowed: true,
+        };
+        let path = common::path::bastion_full_path(terrain, position, mount_center, &cfg)?;
+        if path.is_empty() || path.len() > 64 || path.last().copied() != Some(mount) {
+            return None;
+        }
+        let waypoints: Vec<Vec3<i32>> =
+            path.into_iter().skip_while(|cell| *cell == feet).collect();
+        board.emergency_approach_corridors.insert(member, EmergencyApproachCorridor {
+            owner,
+            frontier: PROMOTED_EXIT_FRONTIER,
+            entry: mount,
+            waypoints,
+            next_idx: 0,
+            started_tick: tick,
+            origin: position,
+        });
+    }
+    let corridor = board.emergency_approach_corridors.get_mut(&member)?;
+    while corridor.next_idx < corridor.waypoints.len() {
+        let wp = corridor.waypoints[corridor.next_idx];
+        let reached = position
+            .xy()
+            .distance(wp.map(|value| value as f32).xy() + Vec2::broadcast(0.5))
+            <= 0.75
+            && (position.z - wp.z as f32).abs() <= 1.2;
+        if reached {
+            corridor.next_idx += 1;
+        } else {
+            break;
+        }
+    }
+    Some(
+        corridor
+            .waypoints
+            .get(corridor.next_idx)
+            .copied()
+            .unwrap_or(mount),
+    )
 }
 
 /// Reuse the authoritative capsule sweep to select a deterministic supported
@@ -4838,6 +4939,70 @@ impl<'a> System<'a> for Sys {
                         .any(|job_owner| *job_owner == owner)
                         && emergency_route_descriptor_ready(board, &terrain, owner)
                 });
+                // ── M3 PROMOTION DRIVER ───────────────────────────────────
+                // The fair-queue turn IS the egress permission. A member
+                // PROMOTED from the queue holds a long-stale 45s verdict
+                // grant, and the once-granted egress watch (watch.2) never
+                // re-verdicts a successfully-routed member — so without
+                // this arm a promoted head simply has NO driver: v4 tape,
+                // C-1 idled and was netted exactly 60s after promotion;
+                // C-2 wandered to episode end, unexited. Keep the grant
+                // LIVE while the member holds the turn on a COMPLETE route
+                // with no task yet — the existing verdict-granted mount
+                // machinery (climb_free_now → corridor/mount) does all the
+                // rest. Covers the FIRST head too (its fresh verdict made
+                // this a no-op before; now it is guaranteed rather than
+                // timing-dependent).
+                if emergency_route_owner.is_some()
+                    && emergency_route_complete
+                    && owns_route_turn
+                    && !board.bastion_traversal_tasks.contains_key(uid)
+                {
+                    colonist.0.climb_free_until = colonist.0.climb_free_until.max(time.0 + 45.0);
+                    // M3 UNIFIED APPROACH, per-tick DRIVE half (v9 lesson:
+                    // the corridor retarget lives in the once-per-second
+                    // cleanup pass — a controller input written there is 1
+                    // tick in 30, ~0.1 blocks/s crawl, and the net catches
+                    // the member anyway; v8/v9 both showed it). The
+                    // corridor stays the ONE target authority (committed +
+                    // advanced in the retarget); THIS per-tick arm merely
+                    // chases its current target through the owned
+                    // controller — the frontier stepper's exact drive form,
+                    // at the frontier stepper's exact cadence. Task-holders
+                    // are excluded by the arm's gate: the phase machine
+                    // stays the single writer from reservation on.
+                    if let Some(target) = board.egress_targets.get(uid).copied() {
+                        if let Some(entity) = id_maps.uid_entity(*uid)
+                            && let Some(agent) = agents.get_mut(entity)
+                        {
+                            agent.rtsim_controller.activity = None;
+                        }
+                        let target_pos =
+                            target.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
+                        let planar = target_pos.xy() - pos.0.xy();
+                        controller.inputs.move_dir = if planar.magnitude_squared() > 0.01 {
+                            planar.normalized()
+                        } else {
+                            Vec2::zero()
+                        };
+                        controller.inputs.move_z = 0.0;
+                    }
+                    // HEAD-DIAG (env-gated, M3A last-mile): the five gates
+                    // between this grant and the mount block — names which
+                    // one starves a promoted head that never probes.
+                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() && tick.0 % 30 == 0 {
+                        info!(
+                            tick = tick.0,
+                            uid = uid.0.get(),
+                            climb_free_live = colonist.0.climb_free_until > time.0,
+                            egress_target = ?board.egress_targets.get(uid),
+                            on_ground = phys.on_ground.is_some(),
+                            has_task = board.bastion_traversal_tasks.contains_key(uid),
+                            position = ?pos.0,
+                            "bastion: M3 promoted-head gate diag"
+                        );
+                    }
+                }
                 // ── M3 QUEUE-WAIT (the packet's ★ key interaction) ────────
                 // A member legitimately waiting its fair-queue turn makes NO
                 // positional progress — an unexempted progress watch would
@@ -6297,12 +6462,44 @@ impl<'a> System<'a> for Sys {
                         sweep(pos.0, horizontal).or_else(|| sweep(horizontal, target_pos));
                     let vertical_first_hit =
                         sweep(pos.0, vertical).or_else(|| sweep(vertical, target_pos));
+                    // M3A FIX 3 — the THIRD site of the own-prefix-self-hit
+                    // class (the registry-note audit prediction): (1) corridor
+                    // STEP validation [fixed pre-M3, the planned-segment
+                    // ruling], (2) corridor COMMIT validation [fix 2], and
+                    // now (3) the mount-approach preflight: a member standing
+                    // slightly off cell-center sweeps a cylinder corner
+                    // through the route's OWN first-rung cell (v5 tape: 16/17
+                    // probes blocked on exactly the installed Ladder cell)
+                    // — the ladder blocks the approach to its own lane. A
+                    // hit on THIS ROUTE's own Ladder-sprite access cell is
+                    // the destination apparatus, not an obstacle: physics +
+                    // the squeeze window own actual contact (smoke30: the
+                    // body's feet never TARGET the rung voxel — targets come
+                    // from route_mount/waypoints, never the rung column).
+                    let own_prefix_hit =
+                        |hit: &Option<common_systems::phys::TerrainSweepHit>| {
+                            hit.as_ref().is_some_and(|h| {
+                                board
+                                    .emergency_access_cells
+                                    .get(&h.block)
+                                    .is_some_and(|(cell_owner, _)| *cell_owner == route_owner)
+                                    && terrain
+                                        .get(h.block)
+                                        .ok()
+                                        .and_then(|b| b.get_sprite())
+                                        == Some(SpriteKind::Ladder)
+                            })
+                        };
                     let (preflight_clear, preflight_order, preflight_hit) = if cylinder.is_none() {
                         (false, "missing-collider", None)
                     } else if horizontal_first_hit.is_none() {
                         (true, "advance-rise", None)
                     } else if vertical_first_hit.is_none() {
                         (true, "rise-advance", None)
+                    } else if own_prefix_hit(&horizontal_first_hit)
+                        || own_prefix_hit(&vertical_first_hit)
+                    {
+                        (true, "own-prefix-contact", None)
                     } else {
                         (false, "blocked", horizontal_first_hit)
                     };
@@ -8342,10 +8539,42 @@ impl<'a> System<'a> for Sys {
                                         if at_entry {
                                             (Some((descriptor.entry, Vec::new())), Vec::new())
                                         } else if let Some(corridor) = planned_corridor {
+                                            // M3A FIX 2 (the corridor-commit
+                                            // half of the M2 layer-2 ruling —
+                                            // "the sweep's job is terrain-
+                                            // CHANGE detection under the
+                                            // plan, never live-position →
+                                            // waypoint"): committing swept
+                                            // the first edge from the
+                                            // member's LIVE position to wp0.
+                                            // A member elsewhere in the M3
+                                            // chamber (moved since the plan;
+                                            // rungs now built) self-hits
+                                            // arbitrary geometry on that
+                                            // beeline and rejects an INTACT
+                                            // planned corridor forever
+                                            // ("no_reachable_body_lane"
+                                            // every tick on the M3A diag
+                                            // tape) — the stepper below,
+                                            // which is the thing that
+                                            // actually WALKS members to wp0
+                                            // (P0G corpus-proven), never got
+                                            // to run. Validate the PLANNED
+                                            // segments: anchor at wp0's own
+                                            // center (empty corridor keeps
+                                            // the live anchor — degenerate
+                                            // at-entry case, unchanged).
+                                            let validation_start = corridor
+                                                .first()
+                                                .map(|wp| {
+                                                    wp.map(|value| value as f32)
+                                                        + Vec3::new(0.5, 0.5, 0.0)
+                                                })
+                                                .unwrap_or(pos.0);
                                             let hit =
                                                 emergency_validate_constructed_ladder_corridor(
                                                     &*terrain,
-                                                    pos.0,
+                                                    validation_start,
                                                     cylinder,
                                                     descriptor.entry,
                                                     &corridor,
@@ -8714,15 +8943,60 @@ impl<'a> System<'a> for Sys {
                                 }),
                             EmergencyTraversalKind::CarvedStair => (None, None),
                         };
-                        let selected_entry = saved_entry.or_else(|| {
-                            selected_entry_cell.map(|entry| EmergencyPartialRouteEntry {
-                                owner,
-                                frontier: active.job,
-                                entry,
-                                top_z,
-                                started_tick: tick.0,
+                        let selected_entry = saved_entry
+                            .or_else(|| {
+                                selected_entry_cell.map(|entry| EmergencyPartialRouteEntry {
+                                    owner,
+                                    frontier: active.job,
+                                    entry,
+                                    top_z,
+                                    started_tick: tick.0,
+                                })
                             })
-                        });
+                            // M3A FIX (Sonnet §9-escalation verdict): the
+                            // selector above checks ONE fixed candidate — the
+                            // ORIGINAL bottom entry — via a straight sweep
+                            // from the colonist's CURRENT position; mid-route
+                            // in an open CHAMBER that sweep is geometry-
+                            // blocked, so a member with a legitimate bottom-up
+                            // frontier claim could never certify an entry: no
+                            // transaction, no energy-wait hold, netted at 60s
+                            // (m3_first_owner=null on both M3A tapes). The
+                            // intended REQ-0073 fallback (mid-prefix anchor
+                            // search) is diagnostic-only AND chamber-blind
+                            // (its dz=-1 side cells have no floor in open
+                            // space: 16/20 support-rejected on the same tape).
+                            // FALLBACK: a grounded_clear colonist ADJACENT to
+                            // the installed prefix (Chebyshev XY <= 2 of an
+                            // owner access cell — the structural-relationship
+                            // guard) certifies its OWN position as the entry:
+                            // the spot it already stands on is the proof.
+                            // entry_valid below re-checks the same support/
+                            // body/head predicate; entry_distance ~0 skips
+                            // the Goto; `mount` stays PER-MEMBER task state
+                            // (the shared route_mounts is corridor-path-only
+                            // — verified), so no cross-member state is
+                            // touched.
+                            .or_else(|| {
+                                let feet = pos.0.map(|value| value.floor() as i32);
+                                (grounded_clear
+                                    && board.emergency_access_cells.iter().any(
+                                        |(cell, (cell_owner, _))| {
+                                            *cell_owner == owner
+                                                && (cell.x - feet.x)
+                                                    .abs()
+                                                    .max((cell.y - feet.y).abs())
+                                                    <= 2
+                                        },
+                                    ))
+                                .then(|| EmergencyPartialRouteEntry {
+                                    owner,
+                                    frontier: active.job,
+                                    entry: feet,
+                                    top_z,
+                                    started_tick: tick.0,
+                                })
+                            });
                         let Some(entry_record) = selected_entry else {
                             active.stuck_time = 0.0;
                             if let Some(agent) = agent.as_deref_mut() {
@@ -12100,32 +12374,84 @@ impl<'a> System<'a> for Sys {
                             .and_then(|entity| positions.get(entity))
                     {
                         let feet = position.0.map(|value| value.floor() as i32);
-                        if let Some(waypoint) = emergency_route_waypoint(
-                            &terrain,
-                            feet,
-                            &route_cells,
-                            permanent_target,
-                            board.emergency_route_mounts.get(&route_owner).copied(),
-                        ) {
+                        // M3 UNIFIED APPROACH (Sonnet-ruled): ladder routes
+                        // use the ONE waypoint authority — the committed
+                        // promotion corridor — never the orthogonal
+                        // decomposition (whose three-source disagreement
+                        // livelocked the v7 last member one cell out).
+                        // v10 lesson: HEAD-ONLY. Committing mount corridors
+                        // (and worse, the v9 drive) for WAITERS nudged them
+                        // into the shaft (337 SOFT-0 violation ticks) and
+                        // let one free-climb past the queue (the fork-#15
+                        // vanilla-leak shape, out-of-order exit). The queue
+                        // decides WHO approaches; the corridor only decides
+                        // HOW the head gets there.
+                        let is_queue_head =
+                            board.traversal_queue_head(route_owner) == Some(member);
+                        let ladder_mount = board
+                            .emergency_route_descriptors
+                            .get(&route_owner)
+                            .filter(|descriptor| {
+                                descriptor.kind == EmergencyTraversalKind::ConstructedLadder
+                            })
+                            .filter(|_| is_queue_head)
+                            .and_then(|_| {
+                                board.emergency_route_mounts.get(&route_owner).copied()
+                            });
+                        let selected_waypoint = if let Some(mount) = ladder_mount {
+                            m3_promoted_corridor_waypoint(
+                                board,
+                                &terrain,
+                                member,
+                                route_owner,
+                                mount,
+                                position.0,
+                                feet,
+                                tick.0,
+                            )
+                        } else {
+                            emergency_route_waypoint(
+                                &terrain,
+                                feet,
+                                &route_cells,
+                                permanent_target,
+                                board.emergency_route_mounts.get(&route_owner).copied(),
+                            )
+                        };
+                        if let Some(waypoint) = selected_waypoint {
                             board.egress_targets.insert(member, waypoint);
+                            let local_mount_owned =
+                                board.bastion_traversal_tasks.contains_key(&member);
                             if let Some(entity) = id_maps.uid_entity(member)
                                 && let Some(agent) = agents.get_mut(entity)
                             {
-                                // The final orthogonal mount approach is
-                                // executed by the preflighted local stepper.
-                                // A normal Goto written here survives until
-                                // the next system pass and steers the body
-                                // back out of the one-wide lane before that
-                                // stepper can advance (REQ-0058 smoke36c).
-                                let local_mount_owned =
-                                    board.bastion_traversal_tasks.contains_key(&member);
-                                agent.rtsim_controller.activity = (!local_mount_owned).then_some(
-                                    common::rtsim::NpcActivity::Goto(
-                                        waypoint.map(|value| value as f32)
-                                            + Vec3::new(0.5, 0.5, 0.0),
-                                        TRAVEL_SPEED,
-                                    ),
-                                );
+                                if ladder_mount.is_some() && !local_mount_owned {
+                                    // M3 UNIFIED APPROACH: this pass only
+                                    // SELECTS the head's target (corridor
+                                    // authority); the per-tick promotion
+                                    // arm does ALL driving (v9 lesson:
+                                    // this pass is once-per-second — an
+                                    // input written here is a 0.1-blocks/s
+                                    // crawl; v10 lesson: writing inputs
+                                    // here for WAITERS shoved them into
+                                    // the shaft and one jumped the queue).
+                                    // Null the activity so the brain's
+                                    // wander can't fight the head's drive.
+                                    agent.rtsim_controller.activity = None;
+                                    agent.rtsim_controller.clear_path_endpoint();
+                                } else {
+                                    // Non-ladder kinds keep the Goto
+                                    // handoff (REQ-0058 smoke36c); ladder
+                                    // WAITERS also land here and the
+                                    // queue-wait arm neutralizes their
+                                    // Goto per tick, as it always has.
+                                    agent.rtsim_controller.activity = (!local_mount_owned)
+                                        .then_some(common::rtsim::NpcActivity::Goto(
+                                            waypoint.map(|value| value as f32)
+                                                + Vec3::new(0.5, 0.5, 0.0),
+                                            TRAVEL_SPEED,
+                                        ));
+                                }
                             }
                             if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
                                 info!(
@@ -12612,9 +12938,24 @@ impl<'a> System<'a> for Sys {
                 board
                     .emergency_partial_route_entries
                     .retain(|_, entry| entry.owner != owner);
-                board
+                // R10 FIX (architect-ruled SAFETY-CRITICAL, pre-M3-tag): this
+                // was a raw `.retain` on the task map — a removal path
+                // BYPASSING retire_traversal_task, so the link epoch never
+                // advanced and a stale tuple SURVIVED teardown (the exact
+                // race R10 kills; the source-scan pin counted `.remove(`
+                // only and missed it — pin broadened alongside). Any task
+                // still alive at route teardown is a leak-shape anyway;
+                // retire it properly (epoch advances, tuple orphaned).
+                let torn_down: Vec<Uid> = board
                     .bastion_traversal_tasks
-                    .retain(|_, transaction| transaction.owner != owner);
+                    .iter()
+                    .filter_map(|(task_member, transaction)| {
+                        (transaction.owner == owner).then_some(*task_member)
+                    })
+                    .collect();
+                for task_member in torn_down {
+                    board.retire_traversal_task(task_member, "route-teardown");
+                }
                 board.emergency_cleanup_pending.remove(&owner);
                 board.emergency_safe_secs.remove(&owner);
                 info!(
@@ -14283,6 +14624,22 @@ mod tests {
             "a raw bastion_traversal_tasks.remove appeared: route it through \
              retire_traversal_task (the epoch-advancing removal path) and update this pin"
         );
+        // R10 pin BROADENING (architect-ruled with the REQ-0040 retain fix):
+        // the M3 crew stress exposed a raw `.retain` removal the `.remove(`
+        // count missed — a bypassing removal leaves a live epoch and a
+        // survivable stale tuple, the exact race R10 kills. Ban EVERY
+        // removing mutator on the task map so a future bypass fails BY
+        // CONSTRUCTION (needles constructed at runtime — the `{}` break
+        // keeps this test's own source out of the counts).
+        for banned in ["retain(", "drain(", "clear(", "swap_remove("] {
+            let needle = format!("{}.{}", "bastion_traversal_tasks", banned);
+            assert_eq!(
+                src.matches(&needle).count(),
+                0,
+                "a raw bastion_traversal_tasks removing mutator ({banned}) appeared: route \
+                 removals through retire_traversal_task (the epoch-advancing path)"
+            );
+        }
         assert_eq!(
             src.matches(concat!("self.advance_epoch", "(")).count(),
             2,
