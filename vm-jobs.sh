@@ -14,7 +14,10 @@
 # Keep (#jobs x vCPU) under the CPUS_ALL_REGIONS quota, with headroom.
 set -u
 GCLOUD="/c/Program Files (x86)/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
-ZONE=us-central1-a; IMAGE=bastion-golden; KEY="$HOME/.ssh/id_ed25519"; SSHKEYS_FILE="C:/Users/q/.ssh/bastion-sshkeys.txt"
+# VM_ZONE override (ENGOPT4 arc: us-central1-a threw ZONE_RESOURCE_POOL_EXHAUSTED
+# across families — n2 then e2 — within one session; stock-outs are transient and
+# zonal, so fans can just move zones).
+ZONE="${VM_ZONE:-us-central1-a}"; IMAGE=bastion-golden; KEY="$HOME/.ssh/id_ed25519"; SSHKEYS_FILE="C:/Users/q/.ssh/bastion-sshkeys.txt"
 BRANCH="${BRANCH:-bastion/builder}"   # override e.g. BRANCH=codex/boot-cache for a parallel lane
 # CONCURRENT-FAN SCOPING (Builder-4 incident, 2026-07-20): three fans launched
 # in parallel collided on EVERY shared resource — index-only VM names
@@ -34,6 +37,10 @@ trap cleanup EXIT INT TERM
 
 run_job() {
   k="$1"; cmd="$2"; name="bastion-job-$FAN-$k"; cerr=""
+  # RECORDER=1 -> the harness runs with the flight recorder writing to ~/tape
+  # (env exported inline in the ssh command), and the tape is scp'd back.
+  RECORDER_ENV=""
+  [ -n "${RECORDER:-}" ] && RECORDER_ENV="mkdir -p ~/tape && BASTION_FLIGHT_RECORDER_DIR=\$HOME/tape "
   tries=0  # retry w/ backoff — transient quota bounces from racing a prior batch's teardown
   # MIN_CPU_PLATFORM (ENGOPT4 diagnosis): pin VMs to one microarchitecture so
   # cross-machine comparisons separate SCHEDULING nondeterminism from
@@ -69,9 +76,15 @@ run_job() {
     GH=\$(./target/verify/bastion-harness --print-git-hash 2>/dev/null); RH=\$(git rev-parse --short=10 HEAD)
     [ -z \"\$GH\" ] || [ \"\${GH%%+*}\" = \"\$RH\" ] || { echo \"BINARY_STALE: built \$GH != checkout \$RH\"; exit 5; }  # sha-part only (+dirty = LFS noise, code clean via reset --hard)
     echo \"### JOB $k @ \$H : $cmd\"
-    ./target/verify/bastion-harness $cmd; rc=\$?
+    ${RECORDER_ENV}./target/verify/bastion-harness $cmd; rc=\$?
     echo \"=== ATTEST (end): RAN_COMMIT=\$H | job=$k | rc=\$rc ===\"" > "$OUT/job-$k.out" 2>"$OUT/job-$k.log"
   echo "### VM $name cpuPlatform=$cpu_platform" >> "$OUT/job-$k.out"
+  # TAPE mode (first-divergence methodology): pull the recorder tapes back
+  # before teardown — they die with the VM otherwise.
+  if [ -n "${RECORDER:-}" ]; then
+    mkdir -p "$OUT/job-$k-tape"
+    scp -i "$KEY" -o StrictHostKeyChecking=no -r "benshumeyko@$ip:~/tape/*" "$OUT/job-$k-tape/" >/dev/null 2>&1 || echo "TAPE_PULL_FAIL: job=$k" >> "$OUT/job-$k.out"
+  fi
   "$GCLOUD" compute instances delete "$name" --zone="$ZONE" -q >/dev/null 2>&1
 }
 
