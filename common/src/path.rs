@@ -489,6 +489,30 @@ pub struct ChaserDiagnosticSnapshot {
 
 /// A self-contained system that attempts to chase a moving target, only
 /// performing pathfinding if necessary
+impl TraversalConfig {
+    /// bastion ledger #178: the SEARCH-PROFILE fingerprint — every field
+    /// that changes which nodes/edges a search ADMITS or how it terminates.
+    /// A retained search from a different profile is stale by construction:
+    /// the falsifier shows a loaded=true continuation routing THROUGH an
+    /// unloaded band its own profile forbids, on admission state carried
+    /// from an optimistic (loaded=false) retained frontier. (Geometric-cost
+    /// staleness self-heals post-ENGOPT2-reopen — every cfg read goes
+    /// through current closures — but ADMISSION is baked into visited
+    /// entries at insert time.) Floats hash by bit pattern.
+    pub fn search_profile_key(&self) -> u64 {
+        use core::hash::{Hash, Hasher};
+        let mut h = fxhash::FxHasher64::default();
+        self.node_tolerance.to_bits().hash(&mut h);
+        self.in_liquid.hash(&mut h);
+        self.can_climb.hash(&mut h);
+        self.scramble_reach.hash(&mut h);
+        self.can_fly.hash(&mut h);
+        self.vectored_propulsion.hash(&mut h);
+        self.is_target_loaded.hash(&mut h);
+        h.finish()
+    }
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct Chaser {
     last_search_tgt: Option<Vec3<f32>>,
@@ -503,6 +527,10 @@ pub struct Chaser {
     ///
     /// The Vec3 is the astar's start position.
     astar: Option<(Astar<Node, FxBuildHasher>, Vec3<f32>)>,
+    /// bastion ledger #178: the search-profile key the retained `astar`
+    /// was built under — a mismatch invalidates it (see
+    /// `TraversalConfig::search_profile_key`).
+    astar_profile: Option<u64>,
     flee_from: Option<Vec3<f32>>,
     /// Whether to allow consideration of longer paths, npc will stand still
     /// while doing this.
@@ -783,6 +811,14 @@ impl Chaser {
         {
             self.astar = None;
         }
+        // bastion ledger #178: reset the retained search on a PROFILE
+        // change — admission staleness does not self-heal (see
+        // search_profile_key's doc; falsifier: the loaded-flip band test).
+        let profile = traversal_cfg.search_profile_key();
+        if self.astar_profile.is_some_and(|p| p != profile) {
+            self.astar = None;
+        }
+        self.astar_profile = Some(profile);
         match find_path(
             &mut self.astar,
             vol,
@@ -818,6 +854,14 @@ impl Chaser {
     /// search? Route presence is the exact condition `chase`'s own search
     /// arm keys on, read AFTER the agent tick applied its invalidations.
     pub fn needs_search(&self) -> bool { self.route.is_none() }
+
+    /// Test-only: the stored route's nodes (ledger #178 falsifier surface).
+    #[cfg(test)]
+    fn route_nodes(&self) -> Option<Vec<Vec3<i32>>> {
+        self.route
+            .as_ref()
+            .map(|(route, ..)| route.path.nodes.clone())
+    }
 
     /// bastion (PATH-0): the scheduler's search entry — one budgeted
     /// search/resume for `tgt`, storing the route the next agent tick
@@ -1640,7 +1684,7 @@ mod bastion_vertical_tests {
     use hashbrown::HashMap as StdHashMap;
     use vek::Rgb;
 
-    struct MockVol {
+    pub(super) struct MockVol {
         blocks: StdHashMap<Vec3<i32>, Block>,
         air: Block,
     }
@@ -1660,7 +1704,7 @@ mod bastion_vertical_tests {
     /// optionally — a ladder column against the wall face at (9, 0) with
     /// rungs z 1..=5 (one above the ledge, per the dismount rule). Mirrors
     /// the b58 part-(c) geometry.
-    fn wall_world(with_ladder: bool) -> MockVol {
+    pub(super) fn wall_world(with_ladder: bool) -> MockVol {
         let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
         let mut blocks = StdHashMap::new();
         for x in -2..=20 {
@@ -1686,7 +1730,7 @@ mod bastion_vertical_tests {
         }
     }
 
-    fn worker_cfg() -> TraversalConfig {
+    pub(super) fn worker_cfg() -> TraversalConfig {
         TraversalConfig {
             node_tolerance: 1.5,
             slow_factor: 0.0,
@@ -1972,4 +2016,124 @@ pub fn point_on_prolate_spheroid(
     // rot_z_mat is unneeded due to the random rotation defined by lambda
     // let global_coords = midpoint + rot_2_mat * (rot_z_mat * point);
     midpoint + rot_2_mat * point
+}
+
+
+// bastion ledger #178 falsifier: a retained (Pending) search MUST NOT survive
+// a traversal-profile change — continuing a no-climb frontier under a climb
+// config yields a stale-profile result that diverges from a fresh search.
+#[cfg(test)]
+mod ledger_178_tests {
+    use super::{*, bastion_vertical_tests::{MockVol, wall_world, worker_cfg}};
+
+    /// A volume with a genuinely UNLOADED band (get() errors for x in the
+    /// band): `is_target_loaded=false` treats unloaded cells as optimistically
+    /// walkable (see `walkable`), `true` forbids them — the profile flag that
+    /// changes node ADMISSION itself.
+    pub(super) struct BandUnloadedVol {
+        pub inner: MockVol,
+        pub unloaded_x: core::ops::Range<i32>,
+    }
+
+    impl BaseVol for BandUnloadedVol {
+        type Error = ();
+        type Vox = Block;
+    }
+
+    impl ReadVol for BandUnloadedVol {
+        fn get(&self, pos: Vec3<i32>) -> Result<&Block, ()> {
+            if self.unloaded_x.contains(&pos.x) {
+                Err(())
+            } else {
+                self.inner.get(pos)
+            }
+        }
+    }
+
+    /// THE SHARP FALSIFIER (iteration 2 — the broad profile-change version
+    /// went GREEN on unfixed code: every cfg read happens through CURRENT
+    /// closures per poll, and ENGOPT2's reopen makes stale-frontier
+    /// continuations self-heal for geometric costs; documented, kept below).
+    /// The RESIDUAL hole is ADMISSION staleness: nodes admitted under
+    /// loaded=false optimism sit in the retained visited/frontier with live
+    /// g-values; continuing under loaded=true pops them and routes THROUGH
+    /// terrain the current profile forbids. A fresh loaded=true search
+    /// cannot cross the band.
+    #[test]
+    fn ledger_178_loaded_flip_must_not_route_through_forbidden_band() {
+        let vol = BandUnloadedVol {
+            inner: wall_world(false),
+            unloaded_x: 4..7,
+        };
+        let start = Vec3::new(0.0, 0.5, 1.0);
+        let tgt = Vec3::new(8.5, 0.5, 1.0);
+        let loaded = TraversalConfig {
+            is_target_loaded: true,
+            can_climb: false,
+            scramble_reach: 0,
+            ..worker_cfg()
+        };
+        let optimistic = TraversalConfig {
+            is_target_loaded: false,
+            ..loaded
+        };
+
+        // Seed a retained search under OPTIMISM (one budgeted step —
+        // Pending or routed-through-band), then continue under loaded=true.
+        let mut stale = Chaser::default();
+        stale.search_step(&vol, start, tgt, &optimistic);
+        for _ in 0..400 {
+            stale.search_step(&vol, start, tgt, &loaded);
+            if !stale.needs_search() {
+                break;
+            }
+        }
+        if let Some(nodes) = stale.route_nodes() {
+            assert!(
+                !nodes.iter().any(|n| (4..7).contains(&n.x)),
+                "a loaded=true continuation must not route through the band its profile                  forbids (stale-ADMISSION carryover from the optimistic retained search):                  {nodes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ledger_178_profile_change_must_invalidate_retained_search() {
+        let vol = wall_world(false);
+        let start = Vec3::new(0.0, 0.5, 1.0);
+        let tgt = Vec3::new(12.5, 0.5, 5.0);
+        let climb = worker_cfg();
+        let no_climb = TraversalConfig {
+            can_climb: false,
+            scramble_reach: 0,
+            ..worker_cfg()
+        };
+
+        // Reference: a FRESH search under the climb profile.
+        let mut fresh = Chaser::default();
+        for _ in 0..400 {
+            fresh.search_step(&vol, start, tgt, &climb);
+            if !fresh.needs_search() {
+                break;
+            }
+        }
+        let reference = fresh.route_nodes().expect("fresh climb search must route");
+
+        // Stale-continuation: seed a retained search under NO-CLIMB, then
+        // continue under CLIMB. Pre-#178 the retained frontier carries the
+        // no-climb constraint forward; post-#178 the profile change drops it
+        // and the result equals the fresh reference.
+        let mut stale = Chaser::default();
+        stale.search_step(&vol, start, tgt, &no_climb);
+        for _ in 0..400 {
+            stale.search_step(&vol, start, tgt, &climb);
+            if !stale.needs_search() {
+                break;
+            }
+        }
+        let continued = stale.route_nodes().expect("continued search must route");
+        assert_eq!(
+            continued, reference,
+            "a traversal-profile change must invalidate the retained search (ledger #178)"
+        );
+    }
 }
