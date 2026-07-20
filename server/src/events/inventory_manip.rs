@@ -75,6 +75,34 @@ event_emitters! {
         stance: ChangeStanceEvent,
     }
 }
+/// ENGOPT6 hunt round 4: pickup-verdict trail. The round-3 tape pair showed
+/// the contested item's `PickupItem` comp vanishing at tick 3947 in one run
+/// only (the synchronous comp-take of a successful pickup, deletion deferred
+/// to maintain), with every recorded quantity byte-equal before — the
+/// discriminating state therefore lives in THIS arm's verdict path (range /
+/// ownership / inventory space / event order). One event per pickup attempt;
+/// a tick with a verdict in one run and NO event in the other indicts the
+/// EMIT side upstream instead.
+fn record_pickup_verdict(tick: u64, picker: u64, item: u64, verdict: &str, extra: String) {
+    if bastion_server::bastion_flight_recorder::enabled() {
+        bastion_server::bastion_flight_recorder::record_writer(
+            bastion_server::bastion_flight_recorder::WriterEvent {
+                schema: "bastion.flight-recorder.event/v1".into(),
+                tick,
+                uid: picker,
+                observation_sequence: 310,
+                snapshot_stage: "pickup-verdict".into(),
+                dispatcher_dependency_proven: false,
+                writer: "inventory_manip_pickup".into(),
+                move_dir: [0.0; 2],
+                move_z: 0.0,
+                target: None,
+                note: format!("item={item}; verdict={verdict}; {extra}"),
+            },
+        );
+    }
+}
+
 #[derive(SystemData)]
 pub struct InventoryManipData<'a> {
     entities: Entities<'a>,
@@ -86,6 +114,7 @@ pub struct InventoryManipData<'a> {
     terrain: ReadExpect<'a, common::terrain::TerrainGrid>,
     id_maps: Read<'a, IdMaps>,
     time: Read<'a, Time>,
+    tick: Read<'a, crate::Tick>,
     #[cfg(feature = "worldgen")]
     world: ReadExpect<'a, std::sync::Arc<world::World>>,
     #[cfg(feature = "worldgen")]
@@ -183,6 +212,13 @@ impl ServerEvent for InventoryManipEvent {
                         // of the world from the first pickup
                         // attempt was processed.
                         debug!("Failed to get entity for item Uid: {}", pickup_uid);
+                        record_pickup_verdict(
+                            data.tick.0,
+                            uid.0.get(),
+                            pickup_uid.0.get(),
+                            "entity-missing",
+                            String::new(),
+                        );
                         continue;
                     };
                     let entity_cylinder = get_cylinder(entity);
@@ -192,6 +228,13 @@ impl ServerEvent for InventoryManipEvent {
                         debug!(
                             ?entity_cylinder,
                             "Failed to pick up item as not within range, Uid: {}", pickup_uid
+                        );
+                        record_pickup_verdict(
+                            data.tick.0,
+                            uid.0.get(),
+                            pickup_uid.0.get(),
+                            "out-of-range",
+                            String::new(),
                         );
                         continue;
                     }
@@ -228,6 +271,13 @@ impl ServerEvent for InventoryManipEvent {
                         });
 
                     if !ownership_check_passed {
+                        record_pickup_verdict(
+                            data.tick.0,
+                            uid.0.get(),
+                            pickup_uid.0.get(),
+                            "loot-owned",
+                            String::new(),
+                        );
                         continue;
                     }
 
@@ -256,6 +306,13 @@ impl ServerEvent for InventoryManipEvent {
                             "Failed to delete item component for entity, Uid: {}",
                             pickup_uid
                         );
+                        record_pickup_verdict(
+                            data.tick.0,
+                            uid.0.get(),
+                            pickup_uid.0.get(),
+                            "comp-taken",
+                            String::new(),
+                        );
                         continue;
                     };
 
@@ -264,6 +321,7 @@ impl ServerEvent for InventoryManipEvent {
                                                               its PickupItem component.";
 
                     let (item, reinsert_item) = item.pick_up();
+                    let reinsert_item_present = reinsert_item.is_some();
 
                     let mut item_msg = item.frontend_item(&data.ability_map, &data.msm);
 
@@ -319,8 +377,22 @@ impl ServerEvent for InventoryManipEvent {
                                         &data.msm,
                                     );
                                 }
+                                record_pickup_verdict(
+                                    data.tick.0,
+                                    uid.0.get(),
+                                    pickup_uid.0.get(),
+                                    "partial",
+                                    format!("free_slots={}", inventory.free_slots()),
+                                );
                                 InventoryUpdateEvent::Collected(item_msg)
                             } else {
+                                record_pickup_verdict(
+                                    data.tick.0,
+                                    uid.0.get(),
+                                    pickup_uid.0.get(),
+                                    "inventory-full",
+                                    format!("free_slots={}", inventory.free_slots()),
+                                );
                                 InventoryUpdateEvent::EntityCollectFailed {
                                     entity: pickup_uid,
                                     reason: CollectFailedReason::InventoryFull,
@@ -374,6 +446,17 @@ impl ServerEvent for InventoryManipEvent {
                                     &data.msm,
                                 );
                             }
+                            record_pickup_verdict(
+                                data.tick.0,
+                                uid.0.get(),
+                                pickup_uid.0.get(),
+                                "accepted",
+                                format!(
+                                    "free_slots={}; reinserted={}",
+                                    inventory.free_slots(),
+                                    reinsert_item_present
+                                ),
+                            );
                             InventoryUpdateEvent::Collected(item_msg)
                         },
                     };
