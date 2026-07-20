@@ -3935,3 +3935,60 @@ onto either active lane.
 No master-list row (a test-infrastructure QA sweep, not a build block).
 Sonnet-curated registry entries (B37 correction, B47/B48 appends, B49-B53
 new) committed alongside this run-log entry.
+
+## bastion-block-M3 — LADDER CONTENTION (mine-complexity-ladder tier M3) — TAGGED 2026-07-20 (tag `8c4543094a`, branch `bastion/block-B6HAUL`; Opus gate PASS, `BUILD_REVIEW_LOG.md` §M3)
+
+Closes M3 (`readme/MINE-COMPLEXITY-LADDER.md` row M3, CONTENTION): M2's
+single-owner ladder contract proven under 2+ colonists sharing one ladder —
+reservation/queue, exactly one on the ladder at a time, release frees the
+slot, all escape. No master-list row (mine-ladder tiers track outside the
+numbered list, same as M2LADDER/BACKSTOPOPT/CLIMBCAP/CKSTAIR).
+
+**The arc, condensed** (full trail: Builder 3's session, `m3a-arc-package.md`):
+started from `readme/M3-BUILDER-PACKET-FINAL.md` (Sonnet-translated,
+R9-folded — persistent `TraversalLink`, `(enqueue-tick, UID)` fair key,
+queue ticket). Landed via `bastion-block-M3A` (tag `cebb45746f`) which
+carried the crew-contention fix stack: corridor-commit validation anchored
+at wp0, an own-position entry fallback, a promotion driver for
+queued-then-promoted heads, and the mount-preflight own-prefix-contact
+fix (B57 site 3) — capped by a **Sonnet-ruled architectural unification**:
+replaced three independently-disagreeing waypoint sources (orthogonal
+decomposition / an A* fallback / a per-pass retarget — a genuine livelock,
+not a missing case) with ONE authority, a bounded-A* corridor committed at
+promotion and consumed statefully, head-only. Two more B57 sites surfaced
+and closed en route to green (site 3 pre-tag, site 4 post-tag at
+`cf837245da` — a corridor-stepper runtime-revalidation livelock, same
+signature, now B57's fourth confirmed instance).
+
+**24-run seed matrix, classified not just reported:** queue invariants
+(fair exit order, zero same-tick double-ownership, zero SOFT-0 lane
+violations) hold universal on all 24 runs. Four red classes decomposed and
+ruled: (a1) hard-roll backstop (harder organic terrain, never-stranded
+working as designed); (a2) a fixture-predicate false-positive (SOFT-0
+counting the fixture's carved columns, not the emergency planner's actual
+lane); (a3) M3D's timing bars calibrated on 1337, shift on other rolls —
+bar-calibration not mechanism; **(b-inherited, Sonnet-ruled, registry
+B58)** — seeds 21/42 stay red on M3A's own zero-teleport fixture target
+after B57 site-4 closed the corridor livelock, but the discriminator is
+decisive: `N2` (the pre-existing M2-era single-member contract) nets at
+these SAME seeds too, and N2's own acceptance bar was always report-only on
+teleports. Ruled tag-acceptable tracked-open, not fix-before-tag — the M3
+packet's own acceptance criteria already treats the net as a valid
+backstop for "a queued member whose turn never comes," and the gap
+predates M3's queue work entirely (inherited, not introduced or worsened).
+Fixing it is real follow-up work, scoped as its own block (candidate for
+the same corridor-unification treatment), not folded into this tag.
+
+**Opus gate:** PASS, 2 tracked follow-ups, none blocking (`BUILD_REVIEW_LOG.md`
+§M3, architect-run). Registry: B57 (OWN-PREFIX SELF-HIT, now 4 sites) and
+B58 (the b-inherited tag classification) — both Sonnet-filed and verified
+against the landed commits before filing.
+
+**Next supply direction (Ben, via architect):** efficiency gains before
+engine-improvement work. Two items queued: #1 boot-cache (Codex,
+`codex/boot-cache`, architect-reviewed before merge, not a builder-block
+supply) and #2 the `bastion_jobs.rs` crate-split (packet ready,
+`readme/CRATE-SPLIT-BASTION-SERVER-PACKET.md` — a pure structural
+extraction to a leaf crate `bastion-server`, 3 small coupling knots
+[Tick/RtSim/RepositionToFreeSpace], acceptance = byte-identical fidelity
+run + incremental-rebuild timing delta). #2 is Builder 3's next block.
