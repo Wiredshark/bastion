@@ -1956,6 +1956,47 @@ mod tests {
             remaining.is_empty(),
             "dependency cycle among systems: {remaining:?}"
         );
+
+        // T0.14 slice (ledger #8): ORDER CONTRACTS — the load-bearing
+        // happens-before edges the sim's correctness arguments cite, checked
+        // TRANSITIVELY against the manifest (an accidental dep removal that
+        // leaves both systems registered would otherwise reorder them
+        // silently; shred only guarantees orders that are declared).
+        let reaches = |from: &str, to: &str| -> bool {
+            let mut frontier = vec![to];
+            let mut seen = vec![];
+            while let Some(n) = frontier.pop() {
+                if n == from {
+                    return true;
+                }
+                if seen.contains(&n) {
+                    continue;
+                }
+                seen.push(n);
+                if let Some((_, _, deps)) = MANIFEST.iter().find(|(_, name, _)| *name == n) {
+                    frontier.extend(deps.iter().copied());
+                }
+            }
+            false
+        };
+        for (before, after, why) in [
+            ("controller", "phys", "inputs consumed before integration"),
+            ("mount", "controller", "mount state resolved before input consumption"),
+            ("agent", "bastion_path", "PATH-0 searches after the agent tick surfaced Goto"),
+            ("agent", "bastion_jobs", "bastion acquires movement only after the agent pass"),
+            (
+                "bastion_path",
+                "bastion_jobs",
+                "job lifecycle reads the granted route, not a stale one",
+            ),
+            ("stats", "phys", "stat-derived movement params precede integration"),
+        ] {
+            assert!(
+                reaches(before, after),
+                "ORDER CONTRACT BROKEN: `{before}` must run before `{after}` ({why}) — no \
+                 transitive dependency path in the manifest"
+            );
+        }
     }
 
     /// T0.6 (master build order; ledger #115): THE RAW-GATE BAN — rtsim
