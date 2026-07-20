@@ -2248,6 +2248,10 @@ fn m3_promoted_corridor_waypoint(
     terrain: &TerrainGrid,
     member: Uid,
     owner: Uid,
+    // B58 unification: the SAME live-position corridor authority now serves
+    // two callers — promoted queue heads (PROMOTED_EXIT_FRONTIER) and the
+    // frontier-reacquire no-progress replan (the member's live frontier job).
+    frontier: JobId,
     mount: Vec3<i32>,
     position: Vec3<f32>,
     feet: Vec3<i32>,
@@ -2267,7 +2271,11 @@ fn m3_promoted_corridor_waypoint(
     };
     let refresh = match board.emergency_approach_corridors.get(&member) {
         // A displaced member (netted, shoved) re-plans from where it IS.
-        Some(corridor) if corridor.owner == owner && corridor.entry == mount => {
+        Some(corridor)
+            if corridor.owner == owner
+                && corridor.frontier == frontier
+                && corridor.entry == mount =>
+        {
             current_waypoint_far(corridor)
         },
         _ => true,
@@ -2294,12 +2302,13 @@ fn m3_promoted_corridor_waypoint(
             path.into_iter().skip_while(|cell| *cell == feet).collect();
         board.emergency_approach_corridors.insert(member, EmergencyApproachCorridor {
             owner,
-            frontier: PROMOTED_EXIT_FRONTIER,
+            frontier,
             entry: mount,
             waypoints,
             next_idx: 0,
             started_tick: tick,
             origin: position,
+            last_check: None,
         });
     }
     let corridor = board.emergency_approach_corridors.get_mut(&member)?;
@@ -3162,6 +3171,15 @@ pub(crate) struct EmergencyApproachCorridor {
     /// member's off-center transit clipped the route's OWN rung cell and
     /// self-destructed the corridor (M2 layer 2; registry class 10 kin).
     pub origin: Vec3<f32>,
+    /// B58 (s21 class): `(position, tick)` at the last stepper progress
+    /// observation — the no-progress replan trigger's memory. The planned-
+    /// segment sweeps deliberately never validate live-position→waypoint,
+    /// so a member DISPLACED after commit (netted, shoved) can hold a clear
+    /// corridor while terrain blocks the unvalidated member→wp0 gap: the
+    /// drive pushed into the wall for the full failsafe window (seed-21
+    /// tape). Trigger-based (not per-tick sweep — the B57 site-4 livelock
+    /// class) replan-from-position closes it.
+    pub last_check: Option<(Vec3<f32>, u64)>,
 }
 
 /// REQ-0087: the emergency corridor's collision-validated cursor is stricter
@@ -8654,6 +8672,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             next_idx: 0,
                                             started_tick: tick.0,
                                             origin: pos.0,
+                                            last_check: None,
                                         },
                                     );
                                     if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
@@ -8764,6 +8783,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             .map(|value| value as f32)
                                             + Vec3::new(0.5, 0.5, 0.0)
                                     };
+                                    // B58 (s21 class) no-progress observation:
+                                    // the planned-segment sweeps deliberately
+                                    // never validate live-position→waypoint,
+                                    // so a member displaced after commit can
+                                    // drive into the unvalidated gap forever.
+                                    // Position-delta is the progress signal
+                                    // (an idx advance implies movement).
+                                    let (made_progress, replan_due) = match corridor.last_check {
+                                        Some((last_pos, last_tick)) => {
+                                            if pos.0.distance_squared(last_pos) >= 0.01 {
+                                                corridor.last_check = Some((pos.0, tick.0));
+                                                (true, false)
+                                            } else {
+                                                (false, tick.0.saturating_sub(last_tick) >= 30)
+                                            }
+                                        },
+                                        None => {
+                                            corridor.last_check = Some((pos.0, tick.0));
+                                            (true, false)
+                                        },
+                                    };
                                     (
                                         corridor.entry,
                                         corridor.next_idx,
@@ -8771,6 +8811,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         corridor.waypoints.get(corridor.next_idx).copied(),
                                         corridor.started_tick,
                                         segment_origin,
+                                        made_progress,
+                                        replan_due,
                                     )
                                 });
                             if let Some((
@@ -8780,8 +8822,68 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 Some(waypoint),
                                 started_tick,
                                 segment_origin,
+                                made_progress,
+                                replan_due,
                             )) = corridor_step
                             {
+                                // B58 (s21 class): ≥30 driven ticks with zero
+                                // positional progress — the stored-corridor
+                                // replay cannot help a displaced member (same
+                                // waypoints, same unvalidated gap). Replan
+                                // FROM LIVE POSITION through the ONE corridor
+                                // authority promoted heads already use.
+                                if replan_due {
+                                    board.emergency_approach_corridors.remove(&uid);
+                                    let feet = pos.0.map(|value| value.floor() as i32);
+                                    let replanned = m3_promoted_corridor_waypoint(
+                                        board,
+                                        &terrain,
+                                        uid,
+                                        owner,
+                                        active.job,
+                                        route_entry,
+                                        pos.0,
+                                        feet,
+                                        tick.0,
+                                    );
+                                    info!(
+                                        tick = tick.0,
+                                        uid = uid.0.get(),
+                                        owner = owner.0.get(),
+                                        frontier_job = active.job,
+                                        ?entry,
+                                        stale_waypoint = ?waypoint,
+                                        next_idx,
+                                        waypoint_count,
+                                        position = ?pos.0,
+                                        replanned = replanned.is_some(),
+                                        reason = "corridor_no_progress_replan_from_position",
+                                        writer = "unified_corridor_authority",
+                                        "bastion: constructed-ladder approach corridor replanned"
+                                    );
+                                    if let Some(waypoint) = replanned {
+                                        board.egress_targets.insert(uid, waypoint);
+                                        let target = waypoint.map(|value| value as f32)
+                                            + Vec3::new(0.5, 0.5, 0.0);
+                                        let planar = target.xy() - pos.0.xy();
+                                        if let Some(controller) = controllers.get_mut(entity) {
+                                            controller.inputs.move_dir =
+                                                if planar.magnitude_squared() > 0.01 {
+                                                    planar.normalized()
+                                                } else {
+                                                    Vec2::zero()
+                                                };
+                                            controller.inputs.move_z = 0.0;
+                                        }
+                                    } else if let Some(agent) = agent.as_deref_mut() {
+                                        // No live-position corridor either:
+                                        // leave the member to the honest
+                                        // watch/net path (stuck_time is NOT
+                                        // wiped on frozen ticks anymore).
+                                        agent.rtsim_controller.clear_path_endpoint();
+                                    }
+                                    continue;
+                                }
                                 let target =
                                     waypoint.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
                                 let runtime_hit = cylinder.and_then(|cylinder| {
@@ -8833,7 +8935,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     continue;
                                 }
                                 board.egress_targets.insert(uid, waypoint);
-                                active.stuck_time = 0.0;
+                                // B58 stuck-time honesty: the corridor driver
+                                // used to wipe the job stuck-watch EVERY tick
+                                // it drove — a frozen drive (seed-21: pushing
+                                // into the unvalidated member→wp0 gap) held
+                                // the watch flat for the full failsafe window.
+                                // The wipe is now earned by real movement; a
+                                // frozen tick lets the watch accrue toward the
+                                // replan trigger / the ordinary escalation.
+                                if made_progress {
+                                    active.stuck_time = 0.0;
+                                }
                                 active.best_dist = pos.0.distance(target);
                                 active.reset_dist = active.best_dist;
                                 // M2 CORRIDOR-MOVEMENT FIX (architect-ruled option b): drive
@@ -12475,6 +12587,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 &terrain,
                                 member,
                                 route_owner,
+                                PROMOTED_EXIT_FRONTIER,
                                 mount,
                                 position.0,
                                 feet,
