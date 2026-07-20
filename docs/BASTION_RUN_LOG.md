@@ -4713,3 +4713,25 @@ in the same budget), so it needs its own no-regression proof, not a free
 ride on #179/ENGOPT7's floor. The M3A floor at `daaf8aba45` (`floor7`,
 running now) is that proof. Treat as provisional until `floor7` reports
 green.
+
+## Master-order BASE.md doc corrections applied directly (2026-07-20, per architect direction — it's a real editable file, not a live Google Doc)
+
+Edited `H:\My Drive\bastion-Chatgpt\engine design\03-engine-improvement-
+research\ENGINE-IMPROVEMENTS-MASTER-BUILD-ORDER-BASE.md` directly (outside
+the git repo, on the H: drive) rather than routing a paste-to-ChatGPT
+prompt, per the architect's explicit correction to the earlier workflow
+assumption. One-line trace per correction:
+
+- `[DONE.7]` (#183): flipped DONE → REVERTED, with the blocked-on
+  condition and revert commit (`daaf8aba45`) noted inline.
+- `[T0.1]`-`[T0.5]`: moved from Tier 0 into the DONE section as
+  `[DONE.13]`-`[DONE.17]`, each with its landing commit.
+- `[T0.6]`: moved to the DONE section as `[DONE.18]`, noting the
+  superseded shallow first pass (`654764371b` → `a50f6ca817b7`).
+- `[T0.9]`: moved to the DONE section as `[DONE.19]`, marked SUBSUMED BY
+  T0.1/DONE.13 rather than DONE outright (no separate build landed for
+  it — T0.1 satisfied its ask as a side effect).
+- `[T0.7]`: left in Tier 0 but annotated LANDED-pending-`floor8` (not
+  moved to DONE — floor8 hasn't confirmed yet, consistent with not
+  claiming things closed before their own gate reports).
+- `[T0.8]`: annotated IN PROGRESS (Builder 4 actively working it).
