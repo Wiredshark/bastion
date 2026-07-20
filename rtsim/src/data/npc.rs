@@ -1,6 +1,6 @@
 use crate::{
     ai::Action,
-    data::{Reports, Sentiments, quest::Quest},
+    data::{KnownReports, Reports, Sentiments, quest::Quest},
     generate::name,
 };
 pub use common::rtsim::{NpcId, Profession};
@@ -12,14 +12,14 @@ use common::{
     resources::{Time, TimeOfDay},
     rtsim::{
         Actor, Dialogue, DialogueId, DialogueKind, FactionId, NpcAction, NpcActivity, NpcInput,
-        NpcMsg, Personality, QuestId, ReportId, Response, Role, SiteId, TerrainResource,
+        NpcMsg, Personality, QuestId, Response, Role, SiteId, TerrainResource,
     },
     store::Id,
     terrain::CoordinateConversions,
     time::DayPeriod,
     util::Dir,
 };
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashMap;
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use slotmap::DenseSlotMap;
@@ -303,7 +303,7 @@ pub struct Npc {
     pub health_fraction: f32,
 
     /// The [`crate::data::Report`]s that the NPC is aware of.
-    pub known_reports: HashSet<ReportId>,
+    pub known_reports: KnownReports,
 
     #[serde(default)]
     pub personality: Personality,
