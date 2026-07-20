@@ -41,7 +41,12 @@ run_job() {
   # need entirely — it must not be passed there).
   set -- --zone="$ZONE" --source-machine-image="$IMAGE" --machine-type="$MACHINE" \
       --metadata-from-file=ssh-keys="$SSHKEYS_FILE"
-  [ -n "${MIN_CPU_PLATFORM:-}" ] && set -- "$@" --min-cpu-platform="$MIN_CPU_PLATFORM"
+  # cmd-safe quoting: gcloud.cmd is a batch wrapper — cmd.exe RE-SPLITS argv
+  # on spaces, so a platform name like "Intel Ice Lake" must carry EMBEDDED
+  # double-quotes through sh (first attempt failed with the classic
+  # 'C:\Program' is not recognized mangle; the CREATE_FAIL fail-closed rows
+  # caught it with zero cost).
+  [ -n "${MIN_CPU_PLATFORM:-}" ] && set -- "$@" --min-cpu-platform="\"$MIN_CPU_PLATFORM\""
   until cerr=$("$GCLOUD" compute instances create "$name" "$@" 2>&1 >/dev/null); do
     tries=$((tries + 1)); [ "$tries" -ge 4 ] && { echo "CREATE_FAIL: $cmd :: ${cerr##*ERROR: }" > "$OUT/job-$k.out"; return; }
     sleep $((tries * 15))
