@@ -4444,10 +4444,112 @@ merge-sweep-vs-pickup race to actually matter). Fix: leg-1 now re-aims
 for a unit fixture (the arm is scenario-deep); acceptance is the next
 `mf` pair + a floor at the tip. `bastion-server` 38/38.
 
-**Status: still open, no tag.** The `LootOwner` sim-time fix (`3b137017e6`)
-remains kept (real, independent bug) but confirmed NOT the seam. This
-entry documents the diagnosis in-flight; will be finalized once the
-`tapes7` merge-trail hunt closes.
+**★ ROOT CAUSE FOUND (2026-07-20, `tapes7`, round-5 merge trail, pair
+`@b4d33eb1` attested):** the true seam. First CANONICAL divergence at tick
+3947 is a mass item-merge event — a burst of same-created mining drops all
+falling due for a merge check on the same tick. WHICH item gets checked
+FIRST decides the entire merge topology, because the check order follows
+`specs` join order = ENTITY-ID order, which itself carries machine-varying
+allocation/recycling history (not a fixed, portable sequence). One run's
+first checker grabbed exactly 1 merge partner (spreading merges across
+targets 36/37/38/41); the other's grabbed 6 (all funneled into target 37)
+— different surviving item UIDs, cascading into the entire `mf` divergence
+family (this is what made uid 2's contested item-22 alive-in-one-run,
+merged-in-the-other at tick 3960/3976, four investigation rounds ago).
+Also proven en route: `hashbrown` iteration order genuinely differs across
+runs EVEN ON THE SAME MACHINE (a tick-648 backoff-event set was identical
+but differently ORDERED — a process-seeded hasher, not a real divergence)
+— the tape comparator itself needed hardening to canonicalize this
+(merge events now sorted within-tick before comparison) so it stops
+reading hash-order noise as a false divergence.
+
+**Fix (`781a553eb71e`):** applies ENGOPT4's own sorted-apply pattern to
+this consumer — due-checkers now iterate in UID order, partners are
+ranked by `(distance_sqrd bits, uid)`, backoff parents are UID-sorted.
+The item economy is now a pure function of stable state, not entity-ID
+allocation order. The underlying entity-ID-allocation nondeterminism
+itself is flagged as its own future master-order row, not fixed here —
+this fix makes the CONSUMER robust to it, it doesn't make allocation
+itself deterministic.
+
+**Status: end-proof in flight.** `tapes8` pair + `floor8` fan running at
+the tip now; verdict message follows. **Escalation path pre-agreed:** if
+the pair still diverges even after this fix, Builder 4 routes the full
+packet to Fable/Opus per architect+Ben directive — this entry will be
+finalized either way once that verdict lands. The `LootOwner` sim-time
+fix (`3b137017e6`) remains kept (a real, independent bug — wall clock in
+sim state is wrong regardless) but is now confirmed NOT the seam; the
+seam was always the merge-topology race above.
+
+## T0.6 (tick-rate-invariant probability, ledger #115) — TWO PASSES: shallow done-by-audit SUPERSEDED, then properly completed (commits `654764371b` → `a50f6ca817b7`, branch `bastion/builder`)
+
+**First pass (`654764371b`) was too shallow — self-disclosed and
+corrected, not caught externally.** Builder 4's own first audit concluded
+`NpcCtx::chance()` already covered the class and marked T0.6 done-by-audit
+without converting anything. My orchestrator-supply message for this item
+had already independently verified ~20+ raw `random_bool` call sites
+bypassing that helper across `rtsim/src/rule/npc_ai/{mod,dialogue}.rs` and
+`quest.rs` — real gaps, not covered by the shallow read. Flagged before
+the tag closed; Builder 4 redid the pass properly.
+
+**Second pass (`a50f6ca817b7`), COMPLETE:** converted the genuine per-tick
+gates to `NpcCtx::chance()` per-second hazards, preserving today's exact
+behavior via the correct 30-tps inverse conversion (`rate = 1-(1-p)^30`,
+so nothing's tuning silently shifted): `archetype_gate` (the RON weights
+keep their historical meaning — mapped through the conversion at the gate
+itself, no data-file re-tune needed), the guard-thought travel interrupt
+(`0.0003/tick` → `0.0089609.../s`, since `interrupt_with` polls every
+tick), and quest-escort's manual `dt/30` inline scale (the helper's linear
+path `dt*rate` is exactly equivalent for `dt<=1`, so this was a safe drop-
+in). Explicitly EXEMPT-MARKED (not silently skipped) the genuine per-
+decision/one-shot draws that don't need this treatment: conversation
+cutoff, content/activity picks, the site-subset filter, day/visit-plan
+profession gates, speech-target and dialogue mention/hire draws — these
+fire once per decision, not once per tick, so tick-rate invariance doesn't
+apply to them.
+
+**Flagged, not converted:** `sentiment.rs`'s decay draw has `dt` in the
+DENOMINATOR — a suspiciously inverted shape worth its own investigation
+rather than a blind conversion that could silently distort the tuning.
+
+**Executable ban landed:** a `t0_6` source-scan pin over the five rtsim
+policy files — any unmarked raw `random_bool` now fails the pin. The pin
+is proven live, not just present: it caught Builder 4's OWN first marker-
+placement mistake before this tag closed. `bastion-server` 39/39, rtsim
+compiles clean.
+
+## T0.7 (tick-rate-safe AI rates, ledger #166) — landed alongside T0.6's first pass (`654764371b`), FLOORED pending `floor8`
+
+8 raw per-tick gates in `server/agent/action_nodes.rs` converted to
+`hazard(rng, dt, rate_per_second)` (mirrors `discrete_chance`, same
+Poisson/Gillespie-hazard prior art): unwield-idle ×2, hunt-retarget,
+lantern-toggle, pet-dismount, pet-mount, idle-utterance, idle-sit. Rates
+are the exact inverse of today's per-tick constants at 30 tps, pinned to
+`1e-12` plus a compounding-invariance pin, so today's behavior reproduces
+exactly. Per-decision draws (`can_sense` jitter, jump-vs-roll pick)
+deliberately kept raw — same distinction T0.6 made. `unstuck_if`'s
+helper-stream gate is named as its own debt (no `dt` in scope at that call
+site, 10 sites affected, not fixed here). `veloren-server-agent` 3/3.
+
+**Honest disclosure, not swept under the tag:** draw-level outcomes shift
+within the same expected rate (probabilities differ in ulps from the old
+raw constants), so an old fixture byte-baseline COULD legitimately move
+even though the underlying rate is unchanged. `floor8`'s verdict decides
+the read: changed-but-sane result = a legitimate T0.7 re-pin; a genuine
+strand = revert-and-isolate. Not yet finalized as accepted.
+
+**Housekeeping note for the master-order doc (route via the ChatGPT-prompt
+pipeline, batched with the #183 correction already sent):** T0.9
+("deterministic persistence clock... driven by simulation tick") is
+SUBSUMED by T0.1 — the persistence tick-cadence work T0.9 asks for is
+exactly what T0.1 already shipped. Mark accordingly rather than building
+it as a separate item.
+
+Next pick after the fans settle: T0.8 (physics substeps) — flagged by
+Builder 4 as HIGH surface, needing full fixture-ladder acceptance, and
+will read 03-research first (noting again that the `.gdoc` files aren't
+FS-readable from this environment, only the BASE list is — same
+limitation as T0.6).
 
 ## Master-order Tier 0 (T0.1-T0.5) — all pushed, all suites green, FLOORED pending the next fan at tip (branch `bastion/builder`)
 
