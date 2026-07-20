@@ -76,10 +76,21 @@ start=$(date +%s); guard "$start" & GUARD_PID=$!
 k=0; PIDS=""
 while IFS= read -r line; do
   case "$(echo "$line" | tr -d '[:space:]')" in ""|\#*) continue ;; esac
+  echo "LAUNCH: job=$k :: $line" >> "$OUT/launch.log"   # slot-loss forensics (seed-2024 incident)
   run_job "$k" "$line" & PIDS="$PIDS $!"; k=$((k + 1))
   sleep "${STAGGER:-10}"  # GCP rate-limits parallel creates from one machine-image — space them out
 done < "$JOBS_FILE"
 for p in $PIDS; do wait "$p" 2>/dev/null; done   # wait ONLY the run_job workers, never the guard
+# SLOT GUARANTEE (Builder-4 seed-2024 incident: a tail-slot job left ZERO trace
+# — no .out, not even a CREATE_FAIL — on two independent fans; the same
+# silent-result-integrity class as the concurrent-fan clobber): a slot may
+# fail, but it may NEVER vanish. Any slot without an .out gets a loud
+# SLOT_LOST marker so downstream completeness gates fail closed, and
+# launch.log records how far the launcher actually got.
+j=0; while [ "$j" -lt "$N" ]; do
+  [ -f "$OUT/job-$j.out" ] || echo "SLOT_LOST: job=$j left no trace (see launch.log; run_job never wrote)" > "$OUT/job-$j.out"
+  j=$((j + 1))
+done
 kill "$GUARD_PID" 2>/dev/null; wait "$GUARD_PID" 2>/dev/null || true
 end=$(date +%s)
 cost=$(cat "$OUT/COST" 2>/dev/null || echo 0)
