@@ -9,39 +9,90 @@ use std::collections::BinaryHeap;
 
 #[derive(Copy, Clone, Debug)]
 pub struct PathEntry<S> {
-    // cost so far + heursitic
+    // f = cost so far + heuristic (g + h)
     cost_estimate: f32,
+    // h alone: the frontier tie-break's second component.
+    heuristic: f32,
+    // g alone: the third component.
+    cost: f32,
+    // Deterministic hash of the node's identity (FxHasher64, zero seed —
+    // the same fixed-seed hasher the civ layer already uses for
+    // cross-machine determinism): the tie-break's node-identity component,
+    // making the frontier order INSERTION-INDEPENDENT — equal-(f,h,g)
+    // entries order the same way regardless of the order neighbors were
+    // pushed (architect-ruled option (c): `S` deliberately carries no
+    // `Ord` — vek refuses it on vectors — and this rides the existing
+    // `Hash` bound with zero public-API change).
+    node_hash: u64,
+    // Insertion sequence number: unique per pushed entry, so the key below
+    // is a TOTAL order and Eq/Ord stay coherent (`Equal` only vs self); it
+    // also breaks the measure-zero 64-bit hash-collision case
+    // (bastion ENGINE-OPT-1 item 177; prior art: lockstep-deterministic
+    // priority queues + van Dijk's secondary-h comparator). The heap's
+    // previous order compared f alone via `partial_cmp(..).unwrap_or(Equal)`
+    // — equal-f ties (ubiquitous on uniform-cost voxel grids) then resolved
+    // by BinaryHeap's internal sift order, i.e. non-deterministically
+    // w.r.t. anything the caller controls, making the expansion order and
+    // the resulting path non-reproducible run-to-run.
+    seq: u64,
     node: S,
 }
 
-impl<S: Eq> PartialEq for PathEntry<S> {
-    fn eq(&self, other: &PathEntry<S>) -> bool { self.node.eq(&other.node) }
+/// The frontier key's node-identity component (see `PathEntry::node_hash`).
+fn frontier_node_hash<S: core::hash::Hash>(node: &S) -> u64 {
+    use core::hash::Hasher;
+    let mut hasher = fxhash::FxHasher64::default();
+    node.hash(&mut hasher);
+    hasher.finish()
 }
 
-impl<S: Eq> Eq for PathEntry<S> {}
-
-impl<S: Eq> Ord for PathEntry<S> {
-    // This method implements reverse ordering, so that the lowest cost
-    // will be ordered first
-    fn cmp(&self, other: &PathEntry<S>) -> Ordering {
+impl<S> PathEntry<S> {
+    /// The reverse-lexicographic total key `(f, h, g, seq)` compared with
+    /// `f32::total_cmp` (a total order — no NaN-collapse-to-Equal), reversed
+    /// so the max-heap `BinaryHeap` pops the LOWEST key first. `seq` is
+    /// unique per entry, so `Equal` occurs only for an entry vs itself —
+    /// `Eq`/`Ord`/`PartialOrd` below are coherent by construction.
+    ///
+    /// The node-identity component is `fxhash64(node)` rather than the
+    /// packet's literal node-coord (`S` carries no `Ord` bound — vek
+    /// deliberately refuses `Ord` on vectors); architect-ruled option (c):
+    /// insertion-independent like coord, zero public-API change, and
+    /// cross-machine deterministic (fixed-seed FxHasher64, the civ layer's
+    /// own cross-machine hasher).
+    fn key_cmp(&self, other: &Self) -> Ordering {
         other
             .cost_estimate
-            .partial_cmp(&self.cost_estimate)
-            .unwrap_or(Equal)
+            .total_cmp(&self.cost_estimate)
+            .then_with(|| other.heuristic.total_cmp(&self.heuristic))
+            .then_with(|| other.cost.total_cmp(&self.cost))
+            .then_with(|| other.node_hash.cmp(&self.node_hash))
+            .then_with(|| other.seq.cmp(&self.seq))
     }
 }
 
-impl<S: Eq> PartialOrd for PathEntry<S> {
+impl<S> PartialEq for PathEntry<S> {
+    fn eq(&self, other: &PathEntry<S>) -> bool { self.key_cmp(other) == Equal }
+}
+
+impl<S> Eq for PathEntry<S> {}
+
+impl<S> Ord for PathEntry<S> {
+    // Reverse ordering (see `key_cmp`), so that the lowest cost is ordered
+    // first.
+    fn cmp(&self, other: &PathEntry<S>) -> Ordering { self.key_cmp(other) }
+}
+
+impl<S> PartialOrd for PathEntry<S> {
     fn partial_cmp(&self, other: &PathEntry<S>) -> Option<Ordering> { Some(self.cmp(other)) }
 
-    // This is particularily hot in `BinaryHeap::pop`, so we provide this
-    // implementation.
-    //
-    // NOTE: This probably doesn't handle edge cases like `NaNs` in a consistent
-    // manner with `Ord`, but I don't think we need to care about that here(?)
+    // This is particularly hot in `BinaryHeap::pop`, so we provide this
+    // implementation. Unlike the pre-177 version (a bare f-compare that
+    // disagreed with `Ord` on ties), this is exactly `cmp`-consistent.
     //
     // See note about reverse ordering above.
-    fn le(&self, other: &PathEntry<S>) -> bool { other.cost_estimate <= self.cost_estimate }
+    fn le(&self, other: &PathEntry<S>) -> bool {
+        matches!(self.key_cmp(other), Ordering::Less | Equal)
+    }
 }
 
 pub enum PathResult<T> {
@@ -108,6 +159,9 @@ pub struct Astar<S, Hasher> {
     ///
     /// (node, heuristic value)
     closest_node: Option<(S, f32)>,
+    /// Next insertion sequence number for the frontier's total-order
+    /// tie-break (item 177). Monotone; never reused.
+    next_seq: u64,
 }
 
 /// NOTE: Must manually derive since Hasher doesn't implement it.
@@ -131,6 +185,13 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
             iter: 0,
             potential_nodes: core::iter::once(PathEntry {
                 cost_estimate: 0.0,
+                // h/g are unknowable before the first `poll` supplies the
+                // heuristic; a single-entry heap needs no ordering, and the
+                // start entry is popped first regardless.
+                heuristic: 0.0,
+                cost: 0.0,
+                node_hash: frontier_node_hash(&start),
+                seq: 0,
                 node: start.clone(),
             })
             .collect(),
@@ -143,6 +204,7 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
                 s
             },
             closest_node: None,
+            next_seq: 1,
         }
     }
 
@@ -173,6 +235,7 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
             if let Some(PathEntry {
                 node,
                 cost_estimate,
+                ..
             }) = self.potential_nodes.pop()
             {
                 let (node_cost, came_from) = self
@@ -180,6 +243,15 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
                     .get(&node)
                     .map(|n| (n.cost, n.came_from.clone()))
                     .expect("All nodes in the queue should be included in visisted_nodes");
+
+                // Item 175: seed best-so-far with the START node on the
+                // first pop, so an exhausted/unreachable search falls back
+                // to the provably-closest node instead of an EMPTY path
+                // when no neighbor ever improved on the start.
+                if self.closest_node.is_none() {
+                    let h = heuristic(&node);
+                    self.closest_node = Some((node.clone(), h));
+                }
 
                 if satisfied(&node) {
                     return PathResult::Path(self.reconstruct_path_to(node), node_cost);
@@ -218,21 +290,37 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
                             // priority queue does include heuristic
                             let cost_estimate = cost + h;
 
+                            // Item 175 FIX: store the NEIGHBOR — the node
+                            // whose heuristic `h` actually is — not its
+                            // parent. The pre-fix code paired the parent
+                            // with the neighbor's h, so the exhaustion/
+                            // partial fallback reconstructed a path to the
+                            // WRONG node (the best node's parent — or an
+                            // arbitrary parent whose other child scored
+                            // well). Strict `<` keeps the FIRST node seen
+                            // at the best h: deterministic under 177's
+                            // total-order expansion.
                             if self
                                 .closest_node
                                 .as_ref()
                                 .map(|&(_, ch)| h < ch)
                                 .unwrap_or(true)
                             {
-                                self.closest_node = Some((node.clone(), h));
+                                self.closest_node = Some((neighbor.clone(), h));
                             };
 
                             // We don't need to reconsider already visited nodes as astar finds the
                             // shortest path to a node the first time it's visited, assuming the
                             // heuristic function is admissible.
                             if !previously_visited {
+                                let seq = self.next_seq;
+                                self.next_seq += 1;
                                 self.potential_nodes.push(PathEntry {
                                     cost_estimate,
+                                    heuristic: h,
+                                    cost,
+                                    node_hash: frontier_node_hash(&neighbor),
+                                    seq,
                                     node: neighbor,
                                 });
                             }
@@ -276,5 +364,202 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
             cnode = node;
         }
         path.into_iter().rev().collect()
+    }
+}
+
+// bastion ENGINE-OPT-1 (ledger items 175 + 177) property tests. The grid
+// fixtures are deliberately TIE-HEAVY (uniform transition costs on a
+// lattice): equal-f frontier ties are exactly where the pre-177 order was
+// non-deterministic.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::hash_map::RandomState;
+
+    type Node = (i32, i32);
+
+    const W: i32 = 16;
+    const H: i32 = 16;
+
+    /// A 16x16 lattice with a vertical wall at x==8 pierced at y==12, plus
+    /// an optional full seal around the goal quadrant (for the
+    /// unreachable-goal fixtures).
+    fn passable(node: Node, seal_goal: bool) -> bool {
+        let (x, y) = node;
+        if !(0..W).contains(&x) || !(0..H).contains(&y) {
+            return false;
+        }
+        if x == 8 && y != 12 {
+            return false;
+        }
+        if seal_goal && x == 8 && y == 12 {
+            return false;
+        }
+        true
+    }
+
+    fn manhattan(a: Node, b: Node) -> f32 { ((a.0 - b.0).abs() + (a.1 - b.1).abs()) as f32 }
+
+    /// Run a full search, recording the pop (expansion) order via the
+    /// `satisfied` closure (called exactly once per popped node, in order).
+    /// `neighbor_perm` rotates the neighbor-iteration order — simulating a
+    /// caller whose neighbor enumeration order differs run-to-run (the
+    /// HashMap-iteration class): the frontier's tie-break must make the
+    /// expansion order and path INSERTION-INDEPENDENT of it.
+    fn run_search_perm(seal_goal: bool, neighbor_perm: usize) -> (Vec<Node>, PathResult<Node>) {
+        let start: Node = (2, 2);
+        let goal: Node = (13, 3);
+        // A FRESH RandomState per run: the expansion order must not depend
+        // on the hasher (visited_nodes is only ever get/inserted, never
+        // iterated — this pins that property).
+        let mut astar = Astar::new(10_000, start, RandomState::new());
+        let mut expansions = Vec::new();
+        let result = astar.poll(
+            10_000,
+            |&node| manhattan(node, goal),
+            |&(x, y)| {
+                let mut dirs = [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)];
+                dirs.rotate_left(neighbor_perm % 4);
+                if neighbor_perm >= 4 {
+                    dirs.reverse();
+                }
+                dirs.into_iter()
+                    .filter(move |&n| passable(n, seal_goal))
+                    .map(|n| (n, 1.0))
+            },
+            |&node| {
+                expansions.push(node);
+                node == goal
+            },
+        );
+        (expansions, result)
+    }
+
+    fn run_search(seal_goal: bool) -> (Vec<Node>, PathResult<Node>) {
+        run_search_perm(seal_goal, 0)
+    }
+
+    #[test]
+    fn item_177_tie_break_is_insertion_order_independent() {
+        // THE FALSIFIER (architect-conditioned): the reference run and the
+        // permuted runs push equal-key frontier entries in DIFFERENT orders.
+        // A seq-only tie-break provably fails this (seq assignment follows
+        // insertion order); the node-identity hash component makes the
+        // order a pure function of the key set. Verified RED on the
+        // seq-only build before the hash component landed.
+        let (ref_exp, ref_res) = run_search_perm(false, 0);
+        let ref_path = match ref_res {
+            PathResult::Path(p, cost) => (p.nodes, cost),
+            _ => panic!("fixture path must be reachable"),
+        };
+        for perm in 1..8 {
+            let (exp, res) = run_search_perm(false, perm);
+            assert_eq!(
+                exp, ref_exp,
+                "expansion order must be independent of neighbor-iteration order (perm {perm})"
+            );
+            let path = match res {
+                PathResult::Path(p, cost) => (p.nodes, cost),
+                _ => panic!("fixture path must be reachable"),
+            };
+            assert_eq!(
+                path, ref_path,
+                "path must be independent of neighbor-iteration order (perm {perm})"
+            );
+        }
+    }
+
+    #[test]
+    fn item_177_expansion_order_and_path_identical_across_runs() {
+        let (first_exp, first_res) = run_search(false);
+        let first_path = match first_res {
+            PathResult::Path(p, cost) => (p.nodes, cost),
+            _ => panic!("fixture path must be reachable"),
+        };
+        for _ in 0..3 {
+            let (exp, res) = run_search(false);
+            assert_eq!(exp, first_exp, "expansion order must be reproducible");
+            let path = match res {
+                PathResult::Path(p, cost) => (p.nodes, cost),
+                _ => panic!("fixture path must be reachable"),
+            };
+            assert_eq!(path, first_path, "resulting path must be reproducible");
+        }
+    }
+
+    #[test]
+    fn item_175_unreachable_goal_falls_back_to_provably_closest_node() {
+        let (_, res) = run_search(true);
+        let path = match res {
+            PathResult::None(p) => p.nodes,
+            other => panic!(
+                "sealed goal must exhaust the reachable set, got {:?}",
+                match other {
+                    PathResult::Path(..) => "Path",
+                    PathResult::Exhausted(_) => "Exhausted",
+                    PathResult::Pending => "Pending",
+                    PathResult::None(_) => unreachable!(),
+                }
+            ),
+        };
+        let goal: Node = (13, 3);
+        // Brute-force the reachable component's true minimum heuristic.
+        let mut min_h = f32::MAX;
+        for x in 0..W {
+            for y in 0..H {
+                if passable((x, y), true) && x < 8 {
+                    min_h = min_h.min(manhattan((x, y), goal));
+                }
+            }
+        }
+        let end = *path.last().expect("fallback path must be non-empty");
+        assert!(passable(end, true) && end.0 < 8, "endpoint must be reachable");
+        assert_eq!(
+            manhattan(end, goal),
+            min_h,
+            "fallback endpoint must be the provably-closest reachable node"
+        );
+    }
+
+    #[test]
+    fn item_175_best_so_far_is_monotone_and_exhaustion_returns_it() {
+        let start: Node = (2, 2);
+        let goal: Node = (13, 3);
+        let mut astar = Astar::new(120, start, RandomState::new());
+        let mut last_best = f32::MAX;
+        let mut result = PathResult::Pending;
+        for _ in 0..1_000 {
+            result = astar.poll(
+                1,
+                |&node| manhattan(node, goal),
+                |&(x, y)| {
+                    [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
+                        .into_iter()
+                        .filter(move |&n| passable(n, true))
+                        .map(|n| (n, 1.0))
+                },
+                |&node| node == goal,
+            );
+            if let Some((_, h)) = astar.closest_node {
+                assert!(
+                    h <= last_best,
+                    "best-so-far heuristic must never worsen (was {last_best}, now {h})"
+                );
+                last_best = h;
+            }
+            if !matches!(result, PathResult::Pending) {
+                break;
+            }
+        }
+        let path = match result {
+            PathResult::Exhausted(p) => p.nodes,
+            _ => panic!("max_iters=120 on the sealed grid must exhaust"),
+        };
+        let (best_node, _) = astar.closest_node.clone().expect("best-so-far must be seeded");
+        assert_eq!(
+            *path.last().expect("exhausted fallback must be non-empty"),
+            best_node,
+            "exhausted fallback must end at the recorded best-so-far node"
+        );
     }
 }
