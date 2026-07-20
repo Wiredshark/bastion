@@ -13609,10 +13609,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         target: goto_target,
                         note: format!(
                             "phase={phase}; mode={:?}; link_id={:?}; route_owner={:?}; \
-                             frontier={frontier_job:?}",
+                             frontier={frontier_job:?}; job={:?}; progress={:?}; needs={:?}",
                             traversal_ownership.map(|ownership| ownership.mode),
                             traversal_ownership.map(|ownership| ownership.link_id),
                             route_owner.map(|owner| owner.0.get()),
+                            // ENGOPT6 (agent-layer residual): the divergence-
+                            // discriminating quantities the tape was blind to —
+                            // work accrual and needs (both drive completion-
+                            // tick skew invisibly for a stationary colonist).
+                            active.map(|a| a.job),
+                            active.and_then(|a| board.jobs.get(&a.job)).map(|j| j.progress),
+                            needs_storage.get(entity).map(|n| (n.hunger, n.rest)),
                         ),
                     },
                 );
