@@ -795,7 +795,7 @@ impl MoodConfig {
 /// NOT built yet (deferred with it), as are self-generated need-jobs
 /// (FOCUS-1) and the focus→work_rate hook (FOCUS-2). This block is the
 /// vocabulary + the save-shape ONLY.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Need {
     Pray,
     Socialize,
@@ -1268,7 +1268,7 @@ pub struct BastionColonist {
     /// the B-AG3-deferred facet-derivation later sets per-colonist
     /// weights. Schema only this block: nothing reads or writes it.
     #[serde(default)]
-    pub personal_needs: std::collections::HashMap<Need, f32>,
+    pub personal_needs: std::collections::BTreeMap<Need, f32>,
     /// bastion (B-AG3 slice 1): per-colonist VALUE weights on the locked
     /// [`Value`] vocabulary — ±50 (the agency bible's scale: positive =
     /// holds the value, negative = scorns it). Same serde-defaulted
@@ -1445,13 +1445,13 @@ mod tests {
     /// gate leg's in-vivo whole-record round-trip.
     #[test]
     fn bastion_need_collection_serde_shape() {
-        use std::collections::HashMap;
+        use std::collections::{BTreeMap, HashMap};
         #[derive(serde::Deserialize)]
         struct New {
             #[expect(dead_code, reason = "decode-shape witness")]
             name: String,
             #[serde(default)]
-            personal_needs: HashMap<Need, f32>,
+            personal_needs: BTreeMap<Need, f32>,
         }
         // An old-shape payload (no field) -> empty default.
         let decoded: New = ron::from_str(r#"(name: "Trell")"#).expect("decode old shape");
@@ -1462,8 +1462,45 @@ mod tests {
         needs.insert(Need::Socialize, 1.0);
         needs.insert(Need::Fight, 0.75);
         let text = ron::to_string(&needs).expect("encode");
-        let back: HashMap<Need, f32> = ron::from_str(&text).expect("decode");
-        assert_eq!(needs, back);
+        let back: BTreeMap<Need, f32> = ron::from_str(&text).expect("decode");
+        assert_eq!(needs.into_iter().collect::<BTreeMap<_, _>>(), back);
+    }
+
+    #[test]
+    fn bastion_personal_needs_persistence_bytes_are_stable() {
+        use std::collections::{BTreeMap, BTreeSet};
+
+        let entries = [
+            (Need::Pray, 0.1f32),
+            (Need::Socialize, 0.2),
+            (Need::Drink, 0.3),
+            (Need::AdmireArt, 0.4),
+            (Need::Craft, 0.5),
+            (Need::Family, 0.6),
+            (Need::Fight, 0.7),
+            (Need::Learn, 0.8),
+        ];
+        let mut encodings = BTreeSet::new();
+        for shift in 0..entries.len() {
+            let mut needs = BTreeMap::new();
+            for offset in 0..entries.len() {
+                let (need, value) = entries[(shift + offset) % entries.len()];
+                needs.insert(need, value);
+            }
+            encodings.insert(ron::to_string(&needs).expect("encode personal needs"));
+        }
+        println!(
+            "personal_needs distinct persistence encodings={}",
+            encodings.len()
+        );
+        if let Some(first) = encodings.first() {
+            println!("personal_needs representative_ron={first}");
+        }
+        assert_eq!(
+            encodings.len(),
+            1,
+            "equal personal-needs state must have one persisted representation"
+        );
     }
 
     /// bastion (B-AG3 slice 1): the `values` collection carries the same
