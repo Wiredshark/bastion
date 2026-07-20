@@ -2,10 +2,9 @@ use common::{
     character::CharacterId,
     rtsim::{Actor, FactionId, NpcId},
 };
-use hashbrown::HashMap;
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::BinaryHeap;
+use std::collections::{BTreeMap, BinaryHeap};
 
 // Factions have a larger 'social memory' than individual NPCs and so we allow
 // them to have more sentiments
@@ -51,7 +50,7 @@ impl From<Actor> for Target {
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct Sentiments {
     #[serde(rename = "m")]
-    map: HashMap<Target, Sentiment>,
+    map: BTreeMap<Target, Sentiment>,
 }
 
 impl Sentiments {
@@ -213,4 +212,92 @@ impl Sentiment {
             self.value() <= val
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::{SeedableRng, rngs::StdRng};
+    use slotmap::KeyData;
+    use std::collections::BTreeSet;
+
+    fn npc(raw: u64) -> NpcId { KeyData::from_ffi(raw).into() }
+
+    #[test]
+    fn persisted_sentiments_have_stable_bytes() {
+        let entries = [
+            (npc(1), -8i8),
+            (npc(2), -6),
+            (npc(3), -4),
+            (npc(4), -2),
+            (npc(5), 2),
+            (npc(6), 4),
+            (npc(7), 6),
+            (npc(8), 8),
+        ];
+        let mut encodings = BTreeSet::new();
+        for shift in 0..entries.len() {
+            let mut sentiments = Sentiments::default();
+            for offset in 0..entries.len() {
+                let (target, positivity) = entries[(shift + offset) % entries.len()];
+                *sentiments.toward_mut(target) = Sentiment { positivity };
+            }
+            encodings.insert(rmp_serde::to_vec_named(&sentiments).expect("encode sentiments"));
+        }
+        println!(
+            "sentiments distinct persistence encodings={}",
+            encodings.len()
+        );
+        if let Some(first) = encodings.first() {
+            println!("sentiments representative_msgpack={}", hex(first));
+        }
+        assert_eq!(
+            encodings.len(),
+            1,
+            "equal sentiment state must have one persisted representation"
+        );
+    }
+
+    #[test]
+    fn legacy_hash_map_sentiments_remain_loadable() {
+        #[derive(Serialize)]
+        struct LegacySentiments {
+            #[serde(rename = "m")]
+            map: hashbrown::HashMap<Target, Sentiment>,
+        }
+
+        let mut map = hashbrown::HashMap::new();
+        map.insert(npc(2).into(), Sentiment { positivity: -6 });
+        map.insert(npc(1).into(), Sentiment { positivity: 8 });
+        let bytes = rmp_serde::to_vec_named(&LegacySentiments { map }).expect("encode legacy");
+        let decoded: Sentiments = rmp_serde::from_slice(&bytes).expect("decode ordered sentiments");
+        assert_eq!(decoded.toward(npc(1)).positivity, 8);
+        assert_eq!(decoded.toward(npc(2)).positivity, -6);
+    }
+
+    #[test]
+    fn sentiment_decay_assigns_rng_draws_in_target_order() {
+        let entries = [(npc(1), -8i8), (npc(2), -6), (npc(3), 6), (npc(4), 8)];
+        let mut forward = Sentiments::default();
+        let mut reverse = Sentiments::default();
+        for (target, positivity) in entries {
+            *forward.toward_mut(target) = Sentiment { positivity };
+        }
+        for (target, positivity) in entries.into_iter().rev() {
+            *reverse.toward_mut(target) = Sentiment { positivity };
+        }
+        let mut forward_rng = StdRng::seed_from_u64(0x51_4e_54);
+        let mut reverse_rng = StdRng::seed_from_u64(0x51_4e_54);
+        forward.decay(&mut forward_rng, 1_000_000.0);
+        reverse.decay(&mut reverse_rng, 1_000_000.0);
+        for (target, _) in entries {
+            assert_eq!(
+                forward.toward(target).positivity,
+                reverse.toward(target).positivity,
+                "equal state and RNG must decay the same target identically"
+            );
+        }
+    }
+
+    fn hex(bytes: &[u8]) -> String { bytes.iter().map(|byte| format!("{byte:02x}")).collect() }
 }
