@@ -241,14 +241,14 @@ impl InternalSlowJobPool {
             .map(|(&n, l)| (n, ((*l as f32 * limit as f32) / total_limit).min(*l as f32)))
             .collect::<Vec<_>>();
         while limit > 0 {
-            spawn_rates.sort_by(|(_, a), (_, b)| {
-                if b < a {
-                    core::cmp::Ordering::Less
-                } else if (b - a).abs() < f32::EPSILON {
-                    core::cmp::Ordering::Equal
-                } else {
-                    core::cmp::Ordering::Greater
-                }
+            // bastion ENGINE-OPT-4 (ARCH-003): the old comparator ordered by
+            // rate ALONE — equal-rate configs kept the Vec's prior order,
+            // which came from HashMap iteration (per-process random hasher):
+            // spawn order, and therefore job start/completion order, varied
+            // run-to-run. Total key = rate desc THEN config name (unique) —
+            // the 177 tie-break discipline at the pool's selection seam.
+            spawn_rates.sort_by(|(an, a), (bn, b)| {
+                b.total_cmp(a).then_with(|| an.cmp(bn))
             });
             match spawn_rates.first_mut() {
                 Some((n, r)) => {
@@ -880,6 +880,70 @@ mod tests {
         while counter.load(Ordering::SeqCst) == 0 {
             println!("waiting for BAZ task to finish");
             std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+}
+
+// bastion ENGINE-OPT-4 falsifier (appended to the existing suite): the pool's
+// spawn SELECTION must be hasher-independent.
+#[cfg(test)]
+mod engopt4_tests {
+    use super::*;
+
+    /// PREMISE (executable documentation of the pre-fix hole): HashMap
+    /// iteration order over the same keys VARIES across instances (random
+    /// per-process/per-map hasher state) — the old rate-only comparator let
+    /// equal-rate ties inherit exactly that order.
+    #[test]
+    fn engopt4_premise_hashmap_iteration_varies() {
+        let keys = ["FOO", "BAR", "BAZ", "QUX", "QUUX", "CORGE", "GRAULT"];
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..64 {
+            let map: std::collections::HashMap<String, u64> =
+                keys.iter().map(|k| (k.to_string(), 1)).collect();
+            let order: Vec<String> = map.keys().cloned().collect();
+            seen.insert(order);
+        }
+        assert!(
+            seen.len() > 1,
+            "expected iteration-order variance across std HashMap instances (got a single \
+             order 64/64 — the premise needs re-examination, not the pin)"
+        );
+    }
+
+    /// THE PIN: calc_queued_order returns an IDENTICAL order across freshly
+    /// constructed pools (fresh hasher states) for the same equal-rate,
+    /// equal-queue configuration — the tie path the old comparator left
+    /// hasher-ordered.
+    #[test]
+    fn engopt4_spawn_selection_is_hasher_independent() {
+        let names = ["FOO", "BAR", "BAZ", "QUX", "QUUX"];
+        let mut reference: Option<Vec<String>> = None;
+        for _ in 0..16 {
+            let threadpool = rayon::ThreadPoolBuilder::new().num_threads(1).build().unwrap();
+            let internal = InternalSlowJobPool::new(4, 0, Arc::new(threadpool));
+            let mut lock = internal.lock().unwrap();
+            for n in names {
+                lock.configs.insert(n.to_string(), Config {
+                    local_limit: 2,
+                    local_spawned_and_running: 0,
+                });
+                lock.last_spawned_configs.push(n.to_string());
+            }
+            // Equal queue depth per config = equal spawn rates = the tie path.
+            let queued: HashMap<&String, u64> = lock
+                .configs
+                .keys()
+                .map(|n| (n, 3u64))
+                .collect();
+            let order = lock.calc_queued_order(queued, 8);
+            match &reference {
+                None => reference = Some(order),
+                Some(reference) => assert_eq!(
+                    &order, reference,
+                    "spawn selection order must not depend on hasher state"
+                ),
+            }
         }
     }
 }
