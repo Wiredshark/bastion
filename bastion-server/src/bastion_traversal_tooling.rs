@@ -1814,6 +1814,150 @@ mod tests {
         assert_eq!(crate::bastion_jobs::STATUS_DISPLAY_TTL_TICKS, 60);
     }
 
+    /// T0.12-lite (master build order; T0-002 packet): THE PHASE MANIFEST —
+    /// the authoritative dispatcher registration as a declarative golden
+    /// table, validated against the PARSED source of both registration fns.
+    /// Rejects: drift (a system added/removed/re-wired without updating the
+    /// manifest), dependency cycles, and unknown edges (a dep name that no
+    /// registration declares). The T0-002 endpoint (descriptors GENERATING
+    /// both dispatcher modes + reads/writes/apply-boundary validation in CI)
+    /// is a full block of its own; this pin makes today's topology explicit
+    /// and drift-proof first.
+    #[test]
+    fn t0_12_phase_manifest_matches_registration() {
+        // (system, [deps]) — names are module paths sans `crate::`/`::Sys`.
+        const MANIFEST: &[(&str, &str, &[&str])] = &[
+            // common_systems::add_local_systems
+            ("common", "interpolation", &[]),
+            ("common", "tether", &[]),
+            ("common", "mount", &[]),
+            ("common", "controller", &["mount"]),
+            ("common", "character_behavior", &["controller"]),
+            ("common", "buff", &[]),
+            ("common", "stats", &["buff"]),
+            ("common", "phys", &["interpolation", "controller", "mount", "stats"]),
+            ("common", "phys_events", &["phys"]),
+            ("common", "projectile", &["phys"]),
+            ("common", "shockwave", &["phys"]),
+            ("common", "arcing", &["phys"]),
+            ("common", "beam", &["phys"]),
+            ("common", "pool", &["phys"]),
+            ("common", "aura", &[]),
+            // server::sys::add_server_systems
+            ("server", "melee", &["projectile"]),
+            ("server", "agent", &[]),
+            ("server", "bastion_path", &["agent"]),
+            ("server", "bastion_jobs", &["agent", "bastion_path"]),
+            ("server", "bastion_piles", &[]),
+            ("server", "terrain", &["msg::terrain"]),
+            ("server", "waypoint", &[]),
+            ("server", "teleporter", &[]),
+            ("server", "invite_timeout", &[]),
+            ("server", "persistence", &[]),
+            ("server", "object", &[]),
+            ("server", "wiring", &[]),
+            ("server", "chunk_serialize", &[]),
+            ("server", "chunk_send", &[]),
+            ("server", "item", &[]),
+            ("server", "server_info", &[]),
+        ];
+        // Names registered by OTHER builders (sync/msg phase) that in-scope
+        // deps may legitimately reference.
+        const EXTERNAL: &[&str] = &["msg::terrain"];
+
+        fn normalize(path: &str) -> String {
+            let path = path.trim().trim_start_matches("crate::");
+            let path = path.split('<').next().unwrap_or(path);
+            path.trim_end_matches("::Sys")
+                .trim_end_matches(':')
+                .to_string()
+        }
+        let mut parsed: Vec<(String, String, Vec<String>)> = Vec::new();
+        for (scope, path) in [
+            ("common", "common/systems/src/lib.rs"),
+            ("server", "server/src/sys/mod.rs"),
+        ] {
+            let src = repo_text(path);
+            let mut rest = src.as_str();
+            while let Some(start) = rest.find("dispatch::<") {
+                rest = &rest[start + "dispatch::<".len()..];
+                let Some(gt) = rest.find('>') else { break };
+                // Tolerate one generic parameter level inside the type.
+                let mut gt = gt;
+                if rest[..gt].contains('<') {
+                    gt = rest[gt + 1..].find('>').map(|g| gt + 1 + g).unwrap_or(gt);
+                }
+                let name = normalize(&rest[..gt]);
+                let Some(open) = rest.find("&[") else { break };
+                let Some(close) = rest[open..].find(']') else { break };
+                let deps_src = &rest[open + 2..open + close];
+                let deps: Vec<String> = deps_src
+                    .split(',')
+                    .filter_map(|d| {
+                        let d = d.trim();
+                        (!d.is_empty()).then(|| {
+                            normalize(d.trim_start_matches('&').trim_end_matches("::sys_name()"))
+                        })
+                    })
+                    .collect();
+                parsed.push((scope.to_string(), name, deps));
+                rest = &rest[open + close..];
+            }
+        }
+        // Only the two manifest fns' registrations count: filter to fns —
+        // both files register nothing else via dispatch::< outside them
+        // today; drift in that assumption shows up as manifest drift below.
+        let manifest: Vec<(String, String, Vec<String>)> = MANIFEST
+            .iter()
+            .map(|(s, n, d)| {
+                (
+                    s.to_string(),
+                    n.to_string(),
+                    d.iter().map(|x| x.to_string()).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            parsed, manifest,
+            "dispatcher registration drifted from the T0.12 phase manifest — update BOTH \
+             deliberately"
+        );
+        // Unknown-edge check.
+        let names: Vec<&str> = MANIFEST.iter().map(|(_, n, _)| *n).collect();
+        for (_, system, deps) in MANIFEST {
+            for dep in *deps {
+                assert!(
+                    names.contains(dep) || EXTERNAL.contains(dep),
+                    "{system} depends on unregistered `{dep}`"
+                );
+            }
+        }
+        // Cycle check (Kahn).
+        let mut edges: Vec<(&str, &str)> = Vec::new();
+        for (_, system, deps) in MANIFEST {
+            for dep in *deps {
+                if names.contains(dep) {
+                    edges.push((dep, system));
+                }
+            }
+        }
+        let mut remaining: Vec<&str> = names.clone();
+        loop {
+            let Some(pos) = remaining
+                .iter()
+                .position(|n| !edges.iter().any(|(_, to)| to == n))
+            else {
+                break;
+            };
+            let n = remaining.remove(pos);
+            edges.retain(|(from, _)| *from != n);
+        }
+        assert!(
+            remaining.is_empty(),
+            "dependency cycle among systems: {remaining:?}"
+        );
+    }
+
     /// T0.6 (master build order; ledger #115): THE RAW-GATE BAN — rtsim
     /// policy code may not draw `random_bool` outside the typed per-second
     /// hazard (`NpcCtx::chance`) unless the line (or the line above it)
