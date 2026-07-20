@@ -41,7 +41,7 @@ use common::{
     vol::ReadVol,
 };
 use itertools::Itertools;
-use rand::{RngExt, rng};
+use rand::{Rng, RngExt, rng};
 use specs::Entity as EcsEntity;
 use vek::*;
 
@@ -167,6 +167,37 @@ pub fn loot_attempt_decision(
 ) -> bool {
     wants_pickup && authorized && (!is_soft || hostile_to_owner)
 }
+
+/// T0.7 (master build order; ledger #166): tick-rate-invariant probability
+/// gate. `rate_per_second` is the hazard — the chance of the event per
+/// simulated second — compounded down to THIS tick's dt (Poisson/Gillespie
+/// prior art; mirrors rtsim's `discrete_chance`). The named rates below are
+/// the EXACT inverses of the old raw per-tick constants at 30 tps
+/// (`rate = 1 − (1 − p_tick)^SIM_TPS`), so today's per-tick probability is
+/// reproduced while cadence changes no longer distort AI behavior rates.
+/// Per-DECISION draws (one-shot choices like `can_sense_directly_near`'s
+/// jitter or the jump-vs-roll pick) are deliberately NOT hazards and keep
+/// raw draws; `unstuck_if`'s helper-stream gate remains per-tick debt until
+/// dt is plumbed to it.
+fn hazard(rng: &mut impl Rng, dt: f32, rate_per_second: f64) -> bool {
+    let survival = (1.0 - rate_per_second.clamp(0.0, 1.0)).max(0.0);
+    rng.random_bool((1.0 - survival.powf(f64::from(dt))).clamp(0.0, 1.0))
+}
+
+/// 0.1 per tick @30tps: put away a wielded weapon while idling.
+const UNWIELD_IDLE_RATE: f64 = 0.957_608_841_724_783_8;
+/// 0.1 per tick @30tps: re-pick a hunting target.
+const HUNT_RETARGET_RATE: f64 = 0.957_608_841_724_783_8;
+/// 0.001 per tick @30tps: toggle the equipped lantern with day/night.
+const LANTERN_TOGGLE_RATE: f64 = 0.029_569_032_736_914_247;
+/// 0.0001 per tick @30tps: a riding pet hops off its owner's shoulders.
+const PET_DISMOUNT_RATE: f64 = 0.002_995_654_057_260_544;
+/// 0.01 per tick @30tps: a nearby pet jumps onto its owner.
+const PET_MOUNT_RATE: f64 = 0.260_299_626_611_719_8;
+/// 0.0015 per tick @30tps: idle calm utterance.
+const IDLE_UTTERANCE_RATE: f64 = 0.044_034_814_837_612_07;
+/// 0.0035 per tick @30tps: idle sit-down.
+const IDLE_SIT_RATE: f64 = 0.099_841_283_805_460_65;
 
 impl AgentData<'_> {
     ////////////////////////////////////////
@@ -436,7 +467,7 @@ impl AgentData<'_> {
         let lantern_turned_on = self.light_emitter.is_some();
         let day_period = DayPeriod::from(read_data.time_of_day.0);
         // Only emit event for agents that have a lantern equipped
-        if lantern_equipped && rng.random_bool(0.001) {
+        if lantern_equipped && hazard(rng, read_data.dt.0, LANTERN_TOGGLE_RATE) {
             if day_period.is_dark() && !lantern_turned_on {
                 // Agents with turned off lanterns turn them on randomly once it's
                 // nighttime and keep them on.
@@ -584,7 +615,7 @@ impl AgentData<'_> {
                     }
 
                     // Put away weapon
-                    if rng.random_bool(0.1)
+                    if hazard(rng, read_data.dt.0, UNWIELD_IDLE_RATE)
                         && matches!(
                             read_data.char_states.get(*self.entity),
                             Some(CharacterState::Wielding(_))
@@ -817,7 +848,7 @@ impl AgentData<'_> {
                     break 'activity; // Don't fall through to idle wandering
                 },
                 Some(NpcActivity::HuntAnimals) => {
-                    if rng.random::<f32>() < 0.1 {
+                    if hazard(rng, read_data.dt.0, HUNT_RETARGET_RATE) {
                         self.choose_target(
                             agent,
                             controller,
@@ -859,7 +890,7 @@ impl AgentData<'_> {
 
             // Idle NPCs should try to jump on the shoulders of their owner, sometimes.
             if read_data.is_riders.contains(*self.entity) {
-                if rng.random_bool(0.0001) {
+                if hazard(rng, read_data.dt.0, PET_DISMOUNT_RATE) {
                     self.dismount_uncontrollable(controller, read_data);
                 } else {
                     break 'activity;
@@ -867,7 +898,7 @@ impl AgentData<'_> {
             } else if let Some(owner_uid) = owner_uid
                 && is_in_range
                 && !is_being_pet
-                && rng.random_bool(0.01)
+                && hazard(rng, read_data.dt.0, PET_MOUNT_RATE)
             {
                 controller.push_event(ControlEvent::Mount(*owner_uid));
                 break 'activity;
@@ -1020,7 +1051,7 @@ impl AgentData<'_> {
             }
 
             // Put away weapon
-            if rng.random_bool(0.1)
+            if hazard(rng, read_data.dt.0, UNWIELD_IDLE_RATE)
                 && matches!(
                     read_data.char_states.get(*self.entity),
                     Some(CharacterState::Wielding(_))
@@ -1029,12 +1060,12 @@ impl AgentData<'_> {
                 controller.push_action(ControlAction::Unwield);
             }
 
-            if rng.random::<f32>() < 0.0015 {
+            if hazard(rng, read_data.dt.0, IDLE_UTTERANCE_RATE) {
                 controller.push_utterance(UtteranceKind::Calm);
             }
 
             // Sit
-            if rng.random::<f32>() < 0.0035 {
+            if hazard(rng, read_data.dt.0, IDLE_SIT_RATE) {
                 controller.push_action(ControlAction::Sit);
             }
         }
@@ -2744,5 +2775,35 @@ mod loot_auth_tests {
         // UNCONDITIONALLY, even against a soft wish they weren't hostile to.
         assert!(!loot_attempt_decision(true, true, true, false));
         assert!(old_inverted_decision(true, false, true, true, false));
+    }
+}
+
+// T0.7: the named rates are EXACT inverses of the old per-tick constants at
+// 30 tps, and the hazard form is dt-invariant (two half-ticks compound to
+// one full tick) — pinned so a rate edit can't silently change today's
+// behavior and a cadence change can't distort it.
+#[cfg(test)]
+mod t0_7_tests {
+    #[test]
+    fn t0_7_rates_reproduce_old_per_tick_probabilities_at_30_tps() {
+        for (rate, old_p) in [
+            (super::UNWIELD_IDLE_RATE, 0.1),
+            (super::HUNT_RETARGET_RATE, 0.1),
+            (super::LANTERN_TOGGLE_RATE, 0.001),
+            (super::PET_DISMOUNT_RATE, 0.0001),
+            (super::PET_MOUNT_RATE, 0.01),
+            (super::IDLE_UTTERANCE_RATE, 0.0015),
+            (super::IDLE_SIT_RATE, 0.0035),
+        ] {
+            let p = 1.0 - (1.0 - rate).powf(1.0 / 30.0);
+            assert!(
+                (p - old_p).abs() < 1e-12,
+                "rate {rate} reproduces {p}, expected {old_p}"
+            );
+        }
+        let half = 1.0 - (1.0 - super::UNWIELD_IDLE_RATE).powf(0.5 / 30.0);
+        let compound = 1.0 - (1.0 - half) * (1.0 - half);
+        let full = 1.0 - (1.0 - super::UNWIELD_IDLE_RATE).powf(1.0 / 30.0);
+        assert!((compound - full).abs() < 1e-12, "hazard must compound");
     }
 }
