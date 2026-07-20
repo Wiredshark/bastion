@@ -4143,7 +4143,7 @@ invariants it doesn't own.
 per the architect — tree held for Ben's morning steer (engine-optimization
 phase next, per the standing Ben-priority order).
 
-## bastion-block-ENGOPT1 — engine-optimization #1, A* frontier determinism + fallback correctness — TAGGED 2026-07-20 (tag `115cd34e54`, branch `bastion/builder`; Opus gate PENDING — architect reviewing at time of logging, not yet PASS)
+## bastion-block-ENGOPT1 — engine-optimization #1, A* frontier determinism + fallback correctness — TAGGED 2026-07-20 (tag `115cd34e54`, branch `bastion/builder`; Opus gate PASS — `BUILD_REVIEW_LOG.md` §ENGINE-OPT-1, verdict confirmed after initial logging, see the bookkeeping note below)
 
 The first engine-optimization-phase block (per Ben's efficiency→merge-
 codex→engine order — this is "engine," the phase Ben's morning steer
@@ -4223,3 +4223,41 @@ classified-SAFE status unaffected. Registry B60 updated with the closure.
 Next: Builder 4 reported an ENGINE-OPT-2 candidate pick (ledger item 176,
 frontier reopen) to the architect; supply follows their GO or Ben's
 morning steer.
+
+## bastion-block-ENGOPT2 — A* decrease-key/reopen correctness — TAGGED 2026-07-20 (tag `623fc58f01`, branch `bastion/builder`; architect SHIP ruling; Ben-directed GO, no morning hold — engine fixes ran top priority)
+
+Second engine-optimization block, packet standards inherited from
+ENGINE-OPT-1. Scope: `common/src/astar.rs` only (ledger item 176).
+
+**The bug:** the pre-176 `!previously_visited` guard silently DROPPED real
+improvements to already-closed A* nodes — a genuine correctness bug (not
+a determinism-only issue), fixed via lazy-deletion reopen (Detour's
+`findPath` reopen logic quoted verbatim as the prior-art source, per the
+standing prior-art-first discipline).
+
+**Verification:** two falsifiers, both confirmed firing on the emulated
+OLD mechanism before the fix (a diamond-graph case landing on cost 17.0
+instead of the correct 10.0; a Bellman-Ford reference-path divergence) —
+both green after the fix. Full astar suite 6/6. ENGINE-OPT-1's determinism
+work preserved (not regressed by this second pass). Local episode
+no-regression: M3A/M3C/N2/M3D all byte-stable, and the classified M3A red
+(B60/fork-15-reclassified) preserved at EXACTLY `lane_violations=3` — the
+correct outcome, since this fix has nothing to do with that mechanism and
+shouldn't change its signature.
+
+**Downstream economy effect, classified not absorbed (registry B62):** the
+dig-access economy's 7-seed paired A/B under the now-more-correct pathing
+is a MIXED reshuffle (B-side worse on 3 seeds, better on 1, same on 3;
+seed 777 specifically FIXED), not a clean win. Architect-ruled
+SHIPPED-CLASSIFIED — the pathfinding fix itself is correct and proven; the
+economy's own roll-robustness is a SEPARATE, tracked follow-up (a
+stuck-economy retune), deliberately batched for after the pathfinding arc
+closes rather than reactively chased per-fix. Logged to
+`readme/DECISIONS-FOR-BEN.md` as a real design fork.
+
+**Also registered (B63, infra not game code):** two `vm-jobs.sh` test-VM
+tooling incidents from Builder 4's own concurrent-fan usage, both already
+fixed in prior commits (`499845e6d2` FAN-scoping, `81c97f96db` SLOT_LOST
+guarantee) — filed under a shared SILENT-RESULT-INTEGRITY class since both
+are the same underlying shape (a concurrent job runner reporting success
+while its actual output is missing or clobbered, with no loud signal).
