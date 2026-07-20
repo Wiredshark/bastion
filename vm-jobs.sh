@@ -15,7 +15,7 @@
 set -u
 GCLOUD="/c/Program Files (x86)/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
 ZONE=us-central1-a; IMAGE=bastion-golden; KEY="$HOME/.ssh/id_ed25519"; SSHKEYS_FILE="C:/Users/q/.ssh/bastion-sshkeys.txt"
-BRANCH=bastion/builder
+BRANCH="${BRANCH:-bastion/builder}"   # override e.g. BRANCH=codex/boot-cache for a parallel lane
 JOBS_FILE="$1"; MACHINE="$2"; MAX_USD="${3:-5}"; MAX_MIN="${4:-30}"
 N=$(grep -cvE '^[[:space:]]*(#|$)' "$JOBS_FILE")
 VCPU_PER=$(echo "$MACHINE" | sed 's/.*-//'); TOTAL_VCPU=$((N * VCPU_PER)); RATE=0.035

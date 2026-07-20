@@ -11,7 +11,7 @@ set -e
 GCLOUD="/c/Program Files (x86)/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
 ZONE=us-central1-a; IMAGE=bastion-golden; MACHINE=e2-highmem-8
 KEY="$HOME/.ssh/id_ed25519"; SSHKEYS_FILE="C:/Users/q/.ssh/bastion-sshkeys.txt"
-BRANCH=bastion/builder   # the builder's push branch — the VM lands EXACTLY on its remote tip
+BRANCH="${BRANCH:-bastion/builder}"   # default = builder's branch; override e.g. BRANCH=codex/boot-cache for a parallel lane
 NAME="bastion-run-$$"
 trap '"$GCLOUD" compute instances delete "$NAME" --zone="$ZONE" -q >/dev/null 2>&1 || true' EXIT INT TERM
 

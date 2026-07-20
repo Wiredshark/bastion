@@ -12,7 +12,7 @@
 set -u
 GCLOUD="/c/Program Files (x86)/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
 ZONE=us-central1-a; IMAGE=bastion-golden; KEY="$HOME/.ssh/id_ed25519"; SSHKEYS_FILE="C:/Users/q/.ssh/bastion-sshkeys.txt"
-BRANCH=bastion/builder
+BRANCH="${BRANCH:-bastion/builder}"   # override e.g. BRANCH=codex/boot-cache for a parallel lane
 MACHINE="$1"; NSEEDS="$2"; FIRST="$3"; ARGS="$4"; MAX_USD="${5:-5}"; MAX_MIN="${6:-30}"
 VCPU=$(echo "$MACHINE" | sed 's/.*-//'); RATE=0.035; NAME="bastion-scale-$$"
 trap '"$GCLOUD" compute instances delete "$NAME" --zone="$ZONE" -q >/dev/null 2>&1 || true' EXIT INT TERM
