@@ -108,6 +108,29 @@ impl ChunkGenerator {
         None
     }
 
+    /// bastion ENGINE-OPT-4 (ARCH-003, ledger "stable-sort authoritative
+    /// completions"): drain EVERY completed chunk available this tick and
+    /// return them in DETERMINISTIC order (chunk key, lexicographic). The
+    /// raw channel yields completion-time order — scheduling-dependent (the
+    /// same-platform triple-divergence diagnosis: three identical AMD Rome
+    /// VMs, three different simulations). With this, within-tick apply
+    /// order is a pure function of the completed SET. Per-tick MEMBERSHIP
+    /// (which chunks completed by now) remains wall-time-dependent — the
+    /// harness-mode apply-barrier question, tracked as this block's second
+    /// stage. Cancel-stale rejection (the pending_chunks epoch-equivalent)
+    /// is preserved unchanged.
+    pub fn recv_new_chunks_sorted(&mut self) -> Vec<ChunkGenResult> {
+        let mut out = Vec::new();
+        while let Ok((key, res)) = self.chunk_rx.try_recv() {
+            if self.pending_chunks.remove(&key).is_some() {
+                self.metrics.chunks_served.inc();
+                out.push((key, res));
+            }
+        }
+        out.sort_unstable_by_key(|(key, _)| (key.x, key.y));
+        out
+    }
+
     pub fn pending_chunks(&self) -> impl Iterator<Item = Vec2<i32>> + '_ {
         self.pending_chunks.keys().copied()
     }
@@ -129,5 +152,79 @@ impl ChunkGenerator {
             cancel.store(true, Ordering::Relaxed);
             metrics.chunks_canceled.inc();
         });
+    }
+}
+
+// bastion ENGINE-OPT-4 falsifier: the sorted drain's output order must be a
+// pure function of the completed SET — invariant under completion-order
+// permutation (the raw channel's order is scheduling-dependent; three
+// identical AMD Rome VMs produced three different simulations through it).
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::slowjob::SlowJobPool;
+    use std::sync::Arc;
+
+    fn pool() -> SlowJobPool {
+        SlowJobPool::new(
+            2,
+            10,
+            Arc::new(rayon::ThreadPoolBuilder::new().num_threads(2).build().unwrap()),
+        )
+    }
+
+    #[test]
+    fn engopt4_sorted_drain_is_completion_order_invariant() {
+        let _ = pool();
+        let keys: Vec<Vec2<i32>> = vec![
+            Vec2::new(3, -1),
+            Vec2::new(-2, 7),
+            Vec2::new(0, 0),
+            Vec2::new(3, 4),
+            Vec2::new(-2, -9),
+        ];
+        let mut reference: Option<Vec<Vec2<i32>>> = None;
+        // Feed the SAME completed set in several different completion orders
+        // (rotations + a reversal — the permutation family the A* falsifier
+        // established); the drained order must be identical every time.
+        for perm in 0..6 {
+            let mut generator = ChunkGenerator::new(crate::metrics::ChunkGenMetrics::new(
+                &prometheus::Registry::new(),
+            )
+            .unwrap());
+            let mut order = keys.clone();
+            order.rotate_left(perm % keys.len());
+            if perm >= keys.len() {
+                order.reverse();
+            }
+            for key in &order {
+                // Register as pending (the stale-gate) then complete directly
+                // through the channel — the drain path under test.
+                generator
+                    .pending_chunks
+                    .insert(*key, Arc::new(AtomicBool::new(false)));
+                generator
+                    .chunk_tx
+                    .send((*key, Err(None)))
+                    .expect("test channel send");
+            }
+            let drained: Vec<Vec2<i32>> = generator
+                .recv_new_chunks_sorted()
+                .into_iter()
+                .map(|(key, _)| key)
+                .collect();
+            assert_eq!(drained.len(), keys.len(), "every completion drained");
+            match &reference {
+                None => reference = Some(drained),
+                Some(reference) => assert_eq!(
+                    &drained, reference,
+                    "drain order must be invariant under completion-order permutation (perm {perm})"
+                ),
+            }
+        }
+        // And the order is the deterministic key order, explicitly.
+        let mut expected = keys;
+        expected.sort_unstable_by_key(|k| (k.x, k.y));
+        assert_eq!(reference.unwrap(), expected);
     }
 }

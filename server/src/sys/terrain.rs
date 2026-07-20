@@ -135,7 +135,9 @@ impl<'a> System<'a> for Sys {
         // Fetch any generated `TerrainChunk`s and insert them into the terrain.
         // Also, send the chunk data to anybody that is close by.
         let mut new_chunks = Vec::new();
-        'insert_terrain_chunks: while let Some((key, res)) = data.chunk_generator.recv_new_chunk() {
+        // bastion ENGINE-OPT-4: sorted drain — apply order must not depend
+        // on completion timing (see recv_new_chunks_sorted).
+        'insert_terrain_chunks: for (key, res) in data.chunk_generator.recv_new_chunks_sorted() {
             #[cfg_attr(not(feature = "persistent_world"), expect(unused_mut))]
             let (mut chunk, supplement) = match res {
                 Ok((chunk, supplement)) => (chunk, supplement),
