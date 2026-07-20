@@ -4039,3 +4039,29 @@ lands — protects the fresh split from a second concurrent in-tree cut
 racing it. Builder 4 (who tagged this) is holding on non-tree work
 meanwhile (corpus-runner stderr-tee-per-seed, then the a2/a3 M3A fixture-
 hardening items) per Sonnet's routing.
+
+## DETERMINISM-INTEGRATION BASE — bastion/builder fast-forwarded to `a643d8dee6` — 2026-07-20 (architect-run, Ben asleep, exec authority)
+
+Not a fleet block, no master-list row — an integration/merge action folding
+Codex's determinism-sweep pass #1/#2 onto the crate-split tip
+(`bastion-block-CRATESPLIT` → `6357c35d23`), satisfying the sequencing
+constraint noted above. Five Codex commits, all persistence-ordering
+fixes (a classic nondeterminism source — unordered collection iteration
+leaking into serialized output), each independently byte-identical-proven
+before this merge: `e708e40c9f` (order colonist personal needs on
+persist), `d3e4972073` (order persisted sentiments), `8a8f0d0a67`
+(stabilize persisted quest order), `fd9ec4c407` (stabilize known-report
+order), `a643d8dee6` (stabilize persisted colonist value order — the
+fast-forward tip). The architect additionally built/compiled an
+integration-reconciliation pass on top, since the crate split moved
+`bastion_mood.rs` into `bastion-server/src/` between when Codex's
+commits were authored and when they landed here — confirms the passes
+apply cleanly against the NEW crate layout, not just the pre-split one.
+
+**Unblocks:** the `server`/`bastion-server`-tree hold from the CRATESPLIT
+entry above lifts once this base is confirmed placed — Builder 4's held
+in-tree work (B58 corridor-unification) can resume once the architect
+signals. **Not yet folded in:** Codex's determinism SWEEP pass #3 (18
+more holes identified, separate from the 5 fixes above) — explicitly
+deferred, rebases onto `bastion/builder` "when Ben drives it in the
+morning," not a fleet action tonight.
