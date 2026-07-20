@@ -127,6 +127,17 @@ pub struct NpcSystemData<'a> {
     pub rtsim_gizmos: WriteExpect<'a, RtsimGizmos>,
     pub ability_map: ReadExpect<'a, comp::tool::AbilityMap>,
     pub msm: ReadExpect<'a, comp::item::MaterialStatManifest>,
+    /// T0.19 (master build order; ledger #111): CONTRACT + tracked finding.
+    /// NpcAi is snapshot-plan-commit (brains/controllers taken out, world
+    /// data immutable during the par plan, sequential commit) — EXCEPT this
+    /// field: quest actions lock and MUTATE inventories mid-plan. Each op is
+    /// Mutex-atomic (check+remove under one lock — conservation-safe), but
+    /// when two planners touch the SAME inventory in one tick the outcome
+    /// order is rayon scheduling. Deterministic harness mode is immune (the
+    /// one-worker pool serializes nested par_iter in npc order); the
+    /// order-dependence is LIVE-multiplayer-only and its proper fix
+    /// (deferred inventory intents + next-tick acks) is filed with the
+    /// deferred networking tier.
     pub inventories: Mutex<WriteStorage<'a, comp::Inventory>>,
 }
 
