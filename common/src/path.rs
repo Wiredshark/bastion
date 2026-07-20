@@ -513,6 +513,26 @@ impl TraversalConfig {
     }
 }
 
+/// bastion ledger #183: a COMPLETED no-path verdict, remembered so an
+/// unchanged question stops recharging its empty frontier. The question's
+/// identity is (target within the same reset threshold `chase` already uses,
+/// #178 search-profile key); `ticks_left` is the bounded half-open re-probe
+/// (circuit-breaker prior art) standing in for terrain-revision invalidation
+/// until #184 plumbs `TerrainChanges` down to Chaser — bastion terrain is
+/// mutable (mining opens routes), so the cache must never be permanent.
+#[derive(Clone, Debug)]
+struct NoPathCache {
+    tgt: Vec3<f32>,
+    profile: u64,
+    ticks_left: u32,
+}
+
+/// bastion ledger #183: chase ticks a no-path verdict suppresses re-search
+/// before one half-open re-probe (~3 s of agent ticks — the same order as
+/// the travel watchdog, so a colonist never waits longer on a stale verdict
+/// than it would on a stuck route).
+const NO_PATH_RETRY_TICKS: u32 = 90;
+
 #[derive(Default, Clone, Debug)]
 pub struct Chaser {
     last_search_tgt: Option<Vec3<f32>>,
@@ -531,6 +551,9 @@ pub struct Chaser {
     /// was built under — a mismatch invalidates it (see
     /// `TraversalConfig::search_profile_key`).
     astar_profile: Option<u64>,
+    /// bastion ledger #183: negative cache — `Some` exactly while a
+    /// completed no-path verdict suppresses re-search (see [`NoPathCache`]).
+    no_path_cache: Option<NoPathCache>,
     flee_from: Option<Vec3<f32>>,
     /// Whether to allow consideration of longer paths, npc will stand still
     /// while doing this.
@@ -660,6 +683,9 @@ impl Chaser {
         self.last_search_tgt = None;
         self.path_length = Default::default();
         self.flee_from = None;
+        // bastion ledger #183: arrival ends the question the verdict was
+        // about.
+        self.no_path_cache = None;
     }
 
     /// Returns bearing and speed
@@ -710,6 +736,34 @@ impl Chaser {
 
         // Find a route if we don't have one.
         if self.route.is_none() {
+            // bastion ledger #183: an unchanged no-path question is answered
+            // from the negative cache — same movement contract as the
+            // `PathState::None` traverse arm (direct bearing + stuck watch),
+            // zero search spend. Any change to the question (target moved
+            // beyond the reset threshold, profile flipped) or an expired
+            // re-probe window drops the cache and falls through to search.
+            let profile = traversal_cfg.search_profile_key();
+            let cache_live = self.no_path_cache.as_mut().is_some_and(|cache| {
+                if cache.ticks_left > 0
+                    && cache.profile == profile
+                    && cache.tgt.distance_squared(tgt) <= 2.0
+                {
+                    cache.ticks_left -= 1;
+                    true
+                } else {
+                    false
+                }
+            });
+            if cache_live {
+                self.path_state = PathState::None;
+                return Some(self.stuck_check(
+                    pos,
+                    (tgt - pos).try_normalized().unwrap_or_default(),
+                    1.0,
+                    time,
+                ));
+            }
+            self.no_path_cache = None;
             if !traversal_cfg.search_allowed {
                 // bastion (PATH-0): the search is deferred to the
                 // sequential scheduler — hold the Pending stance (the
@@ -742,6 +796,9 @@ impl Chaser {
                         // If the path is invalid, blocks along the path have most likely changed,
                         // so reset the astar.
                         self.astar = None;
+                        // bastion ledger #183: same signal — terrain moved
+                        // under us, so any cached no-path verdict is stale.
+                        self.no_path_cache = None;
                     },
                     TraverseStop::Done => match self.path_state {
                         PathState::None => {
@@ -833,6 +890,15 @@ impl Chaser {
             },
             PathResult::None(path) => {
                 self.path_state = PathState::None;
+                // bastion ledger #183: the frontier COMPLETED empty — cache
+                // the verdict against this (target, profile) question so the
+                // scheduler stops recharging it (Pending/Exhausted results
+                // never arm the cache: their frontiers still hold work).
+                self.no_path_cache = Some(NoPathCache {
+                    tgt,
+                    profile,
+                    ticks_left: NO_PATH_RETRY_TICKS,
+                });
                 self.route = Some((Route { path, next_idx: 0 }, false, tgt));
             },
             PathResult::Exhausted(path) => {
@@ -853,7 +919,11 @@ impl Chaser {
     /// bastion (PATH-0): does this chaser need the scheduler to run a
     /// search? Route presence is the exact condition `chase`'s own search
     /// arm keys on, read AFTER the agent tick applied its invalidations.
-    pub fn needs_search(&self) -> bool { self.route.is_none() }
+    /// bastion ledger #183: a live negative cache also answers "no" — the
+    /// cache's own validity (target/profile/re-probe) is re-checked by
+    /// `chase` every agent tick BEFORE the scheduler reads this, so a stale
+    /// cache is already cleared by the time it could suppress a real search.
+    pub fn needs_search(&self) -> bool { self.route.is_none() && self.no_path_cache.is_none() }
 
     /// Test-only: the stored route's nodes (ledger #178 falsifier surface).
     #[cfg(test)]
@@ -1730,6 +1800,40 @@ mod bastion_vertical_tests {
         }
     }
 
+    /// bastion ledger #183: flat ground (solid z ≤ 0) with the start column
+    /// (0, 0) sealed inside a 1×1×2 rock pocket — walls on all four sides
+    /// plus diagonals, capped above. A search from inside empties its
+    /// frontier within one budgeted step: a genuine no-path verdict
+    /// (`PathResult::None`), not an `Exhausted` one.
+    pub(super) fn sealed_pocket_world() -> MockVol {
+        let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+        let mut blocks = StdHashMap::new();
+        for x in -4..=10 {
+            for y in -4..=4 {
+                blocks.insert(Vec3::new(x, y, 0), rock);
+            }
+        }
+        for (dx, dy) in [
+            (-1, 0),
+            (1, 0),
+            (0, -1),
+            (0, 1),
+            (-1, -1),
+            (-1, 1),
+            (1, -1),
+            (1, 1),
+        ] {
+            for z in 1..=3 {
+                blocks.insert(Vec3::new(dx, dy, z), rock);
+            }
+        }
+        blocks.insert(Vec3::new(0, 0, 3), rock);
+        MockVol {
+            blocks,
+            air: Block::empty(),
+        }
+    }
+
     pub(super) fn worker_cfg() -> TraversalConfig {
         TraversalConfig {
             node_tolerance: 1.5,
@@ -2134,6 +2238,122 @@ mod ledger_178_tests {
         assert_eq!(
             continued, reference,
             "a traversal-profile change must invalidate the retained search (ledger #178)"
+        );
+    }
+}
+
+// bastion ledger #183: a COMPLETED no-path verdict against an unchanged
+// (target, profile) question must not recharge the empty frontier every
+// agent tick — retry only when the question changes (target, profile) or on
+// the bounded half-open re-probe (the stand-in for terrain revisions until
+// #184 plumbs them into Chaser).
+#[cfg(test)]
+mod ledger_183_tests {
+    use super::{
+        *,
+        bastion_vertical_tests::{sealed_pocket_world, worker_cfg},
+    };
+
+    fn scheduler_cfg() -> TraversalConfig {
+        TraversalConfig {
+            search_allowed: false,
+            ..worker_cfg()
+        }
+    }
+
+    /// THE FALSIFIER: sealed start, static target, 200 agent ticks driven
+    /// through the PATH-0 scheduler contract (`needs_search`/`search_step`).
+    /// Unfixed, every tick whose empty route cleared re-runs the full
+    /// no-path search — ~one budget burn per tick. Fixed, the verdict is
+    /// negative-cached and only the bounded re-probe respends budget.
+    #[test]
+    fn ledger_183_sealed_target_must_not_recharge_empty_frontier() {
+        let vol = sealed_pocket_world();
+        let mut chaser = Chaser::default();
+        chaser.set_deterministic_seed(Some(7));
+        let pos = Vec3::new(0.5, 0.5, 1.0);
+        let tgt = Vec3::new(8.5, 0.5, 1.0);
+        let mut searches = 0;
+        for i in 0..200 {
+            let _ = chaser.chase(
+                &vol,
+                pos,
+                Vec3::zero(),
+                tgt,
+                scheduler_cfg(),
+                &Time(i as f64 * 0.1),
+            );
+            if chaser.needs_search() {
+                chaser.search_step(&vol, pos, tgt, &scheduler_cfg());
+                searches += 1;
+            }
+        }
+        assert!(
+            searches <= 5,
+            "an unchanged no-path question must not recharge the empty frontier every tick \
+             (ledger #183): {searches} searches over 200 ticks"
+        );
+        assert!(
+            searches >= 2,
+            "the negative cache must re-probe (half-open), never brick pathing forever: \
+             {searches} searches over 200 ticks"
+        );
+    }
+
+    /// Moving the target is a NEW question: the cache must drop immediately,
+    /// not wait out its re-probe window.
+    #[test]
+    fn ledger_183_target_change_must_invalidate_no_path_cache() {
+        let vol = sealed_pocket_world();
+        let mut chaser = Chaser::default();
+        chaser.set_deterministic_seed(Some(7));
+        let pos = Vec3::new(0.5, 0.5, 1.0);
+        let tgt_a = Vec3::new(8.5, 0.5, 1.0);
+        let tgt_b = Vec3::new(8.5, 3.5, 1.0);
+
+        let _ = chaser.chase(&vol, pos, Vec3::zero(), tgt_a, scheduler_cfg(), &Time(0.0));
+        assert!(chaser.needs_search());
+        chaser.search_step(&vol, pos, tgt_a, &scheduler_cfg());
+        // Drain the empty route; from here the cache owns suppression.
+        let _ = chaser.chase(&vol, pos, Vec3::zero(), tgt_a, scheduler_cfg(), &Time(0.1));
+        assert!(
+            !chaser.needs_search(),
+            "cached no-path verdict must suppress the scheduler"
+        );
+        let _ = chaser.chase(&vol, pos, Vec3::zero(), tgt_a, scheduler_cfg(), &Time(0.2));
+        assert!(!chaser.needs_search());
+
+        let _ = chaser.chase(&vol, pos, Vec3::zero(), tgt_b, scheduler_cfg(), &Time(0.3));
+        assert!(
+            chaser.needs_search(),
+            "a moved target is a new question — the negative cache must drop immediately"
+        );
+    }
+
+    /// A traversal-profile change (the #178 key) is likewise a new question.
+    #[test]
+    fn ledger_183_profile_change_must_invalidate_no_path_cache() {
+        let vol = sealed_pocket_world();
+        let mut chaser = Chaser::default();
+        chaser.set_deterministic_seed(Some(7));
+        let pos = Vec3::new(0.5, 0.5, 1.0);
+        let tgt = Vec3::new(8.5, 0.5, 1.0);
+
+        let _ = chaser.chase(&vol, pos, Vec3::zero(), tgt, scheduler_cfg(), &Time(0.0));
+        assert!(chaser.needs_search());
+        chaser.search_step(&vol, pos, tgt, &scheduler_cfg());
+        let _ = chaser.chase(&vol, pos, Vec3::zero(), tgt, scheduler_cfg(), &Time(0.1));
+        assert!(!chaser.needs_search());
+
+        let flipped = TraversalConfig {
+            can_climb: false,
+            scramble_reach: 0,
+            ..scheduler_cfg()
+        };
+        let _ = chaser.chase(&vol, pos, Vec3::zero(), tgt, flipped, &Time(0.2));
+        assert!(
+            chaser.needs_search(),
+            "a profile change is a new question — the negative cache must drop immediately"
         );
     }
 }
