@@ -721,7 +721,7 @@ pub(crate) fn exit_verified(
 /// STATUS-SURFACE: ticks a live-wait status stamp stays valid (2s at 30tps).
 /// The wait branches re-stamp every tick they hold, so an expired stamp means
 /// the wait genuinely ended — no clear sites to forget.
-pub(crate) const STATUS_DISPLAY_TTL_TICKS: u64 = 60;
+pub(crate) const STATUS_DISPLAY_TTL_TICKS: u64 = 2 * crate::SIM_TPS;
 
 /// STATUS-SURFACE: the pure status classifier. Precedence: sticky exhaustion
 /// (the net WILL deliver) > queued-on-a-link (durable transaction phase) >
@@ -1430,7 +1430,7 @@ fn tightdig_measure(
 
 /// Arbitration cadence in server ticks (~0.5s at 30 tps): "a few Hz, not
 /// every tick".
-pub const ARBITRATION_INTERVAL: u64 = 15;
+pub const ARBITRATION_INTERVAL: u64 = crate::SIM_TPS / 2;
 /// A colonist counts as arrived within this 3D distance of the job's
 /// stand-at target (`block + (0.5, 0.5, 1.0)`).
 const ARRIVE_DIST: f32 = 2.5;
@@ -1442,7 +1442,7 @@ pub const STUCK_TIMEOUT: f32 = 10.0;
 /// ticks before the EMBED WATCH relocates a colonist (~1s at 30 tps —
 /// instant on a human timescale, an eternity past any legitimate mining
 /// transient).
-pub const EMBED_PERSIST_TICKS: u32 = 30;
+pub const EMBED_PERSIST_TICKS: u32 = crate::SIM_TPS as u32;
 /// bastion (B6 HAUL): pending-haul cap per loaded colonist (throttle — the
 /// generator never floods the board; more spawn as deliveries complete).
 pub const HAUL_JOBS_PER_COLONIST: usize = 2;
@@ -5091,8 +5091,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .get(&owner.0.get())
                         .and_then(|link| link.position(*uid))
                 {
-                    const QUEUE_WAIT_BASE_TICKS: u32 = 120 * 30;
-                    const QUEUE_WAIT_PER_TURN_TICKS: u32 = 90 * 30;
+                    const QUEUE_WAIT_BASE_TICKS: u32 = 120 * crate::SIM_TPS as u32;
+                    const QUEUE_WAIT_PER_TURN_TICKS: u32 = 90 * crate::SIM_TPS as u32;
                     // TEST-ONLY budget override (the M3-D shrunken-budget
                     // arm; never set by live binaries). Read ONCE — the
                     // B55 per-tick env-read lesson.
@@ -5267,11 +5267,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let climb_free = climb_free_now;
                 let organic_target = board.egress_targets.get(uid).copied();
                 const MOUNT_STABLE_SAMPLES: u8 = 3;
-                const MOUNT_NO_PROGRESS_TICKS: u64 = 300;
-                const MOUNT_TOTAL_TICKS: u64 = 1_800;
-                const CLIMB_RELEASE_BUDGET_TICKS: u64 = 60;
+                const MOUNT_NO_PROGRESS_TICKS: u64 = 10 * crate::SIM_TPS;
+                const MOUNT_TOTAL_TICKS: u64 = 60 * crate::SIM_TPS;
+                const CLIMB_RELEASE_BUDGET_TICKS: u64 = 2 * crate::SIM_TPS;
                 const EXIT_STABLE_SAMPLES: u8 = 5;
-                const EXIT_TRAVERSAL_BUDGET_TICKS: u64 = 300;
+                const EXIT_TRAVERSAL_BUDGET_TICKS: u64 = 10 * crate::SIM_TPS;
                 if let comp::CharacterState::Climb(data) = cs {
                     board.emergency_climb_profiles.insert(
                         *uid,
@@ -9414,7 +9414,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // the independent net still catches a wait that never
                         // recovers.
                         if grounded_clear && !route_energy_ready {
-                            const ENERGY_WAIT_HOLD_TICKS: u32 = 120 * 30;
+                            const ENERGY_WAIT_HOLD_TICKS: u32 = 120 * crate::SIM_TPS as u32;
                             let waited = board
                                 .emergency_energy_wait_ticks
                                 .entry(uid)
@@ -11887,7 +11887,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // entity's authoritative collision cylinder, normal Goto,
                     // and Stand. No position/velocity write is made here.
                     board.egress_pending.push((uid, from, to));
-                    const SETTLE_NO_PROGRESS_TICKS: u64 = (STUCK_TIMEOUT * 30.0) as u64;
+                    const SETTLE_NO_PROGRESS_TICKS: u64 = (STUCK_TIMEOUT * crate::SIM_TPS as f32) as u64;
                     let previous = board.emergency_settle_anchors.get(&uid).copied();
                     let route_cell = |candidate: Vec3<i32>| {
                         board.emergency_access_cells.contains_key(&candidate)

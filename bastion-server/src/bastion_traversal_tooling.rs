@@ -1801,6 +1801,19 @@ mod tests {
         );
     }
 
+    /// T0.3 (master build order; ledger #39): budget VALUE freeze — deriving
+    /// the rescue/queue/embed budgets from the declared [`crate::SIM_TPS`]
+    /// must not change any live value. A deliberate cadence change breaks
+    /// this pin knowingly (and then every budget scales together — the
+    /// point of the declaration).
+    #[test]
+    fn t0_3_derived_budgets_keep_todays_values() {
+        assert_eq!(crate::SIM_TPS, 30);
+        assert_eq!(crate::bastion_jobs::ARBITRATION_INTERVAL, 15);
+        assert_eq!(crate::bastion_jobs::EMBED_PERSIST_TICKS, 30);
+        assert_eq!(crate::bastion_jobs::STATUS_DISPLAY_TTL_TICKS, 60);
+    }
+
     /// T0.2 (master build order; ledger #21): THE LABOR CLOCK DECLARATION —
     /// every work/farm/need/rescue/item-economy duration rides the SIM clock
     /// (`Time`, `DeltaTime`, `Tick`), never the wall clock. Executable form:

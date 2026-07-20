@@ -94,7 +94,8 @@ impl<S> SysScheduler<S> {
         Self {
             interval,
             last_run: Instant::now(),
-            interval_ticks: (interval.as_secs_f64() * 30.0).max(1.0) as u64,
+            interval_ticks: (interval.as_secs_f64() * bastion_server::SIM_TPS as f64).max(1.0)
+                as u64,
             last_run_tick: None,
             _phantom: PhantomData,
         }

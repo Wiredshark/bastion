@@ -37,6 +37,16 @@ pub mod bastion_traversal_tooling;
 #[derive(Copy, Clone, Default)]
 pub struct Tick(pub u64);
 
+/// T0.3 (master build order; ledger #39): THE declared simulation clock —
+/// the fixed-step cadence (ticks per simulated second) every
+/// tick-denominated budget derives from. The server loop targets 30 tps
+/// (`Settings` tick rate; the headless harness runs the same fixed step
+/// uncapped), and before this constant existed the 30 was scattered as
+/// magic through mount/exit/stability/energy-wait/teleport budgets — a
+/// cadence change would have skewed every budget silently and
+/// independently.
+pub const SIM_TPS: u64 = 30;
+
 // (moved from veloren-server presence.rs in the crate-split; re-exported there)
 #[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RepositionToFreeSpace {

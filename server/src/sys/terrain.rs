@@ -143,7 +143,7 @@ impl<'a> System<'a> for Sys {
         // stream (the residual cross-machine divergence source the probe
         // isolated). Live servers keep the free-running sorted drain.
         data.chunk_generator.note_tick(data.tick.0);
-        const DETERMINISTIC_APPLY_DELAY_TICKS: u64 = 30;
+        const DETERMINISTIC_APPLY_DELAY_TICKS: u64 = bastion_server::SIM_TPS;
         let arrivals = if common::deterministic_worldgen_enabled() {
             data.chunk_generator
                 .recv_new_chunks_deterministic(DETERMINISTIC_APPLY_DELAY_TICKS)
