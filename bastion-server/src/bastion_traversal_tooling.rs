@@ -2009,6 +2009,18 @@ mod tests {
                  transitive dependency path in the manifest"
             );
         }
+        // T0.18 (ledger #90): the physics → RTSim-intent-publish →
+        // NEXT-TICK Agent-consume handoff. The first edge is declared
+        // (tick depends on phys); the second half is a deliberate
+        // CROSS-TICK contract — Agent must NOT be reachable from
+        // rtsim::tick within one tick, or intents would be consumed the
+        // same tick they were published (double-buffer prior art).
+        assert!(
+            !reaches("tick", "agent"),
+            "T0.18 NEGATIVE CONTRACT BROKEN: agent must NOT depend (transitively) on \
+             rtsim::tick — the intent handoff is deliberately next-tick (double-buffered); \
+             a same-tick path would consume intents the tick they were published"
+        );
     }
 
     /// T0.17-lite (master build order; ledger #71): the rtsim RULE SCHEDULE
