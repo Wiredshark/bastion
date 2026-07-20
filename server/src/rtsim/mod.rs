@@ -625,5 +625,14 @@ pub struct LoadedChunkState {
 }
 
 pub fn add_server_systems(dispatch_builder: &mut DispatcherBuilder) {
-    dispatch::<tick::Sys>(dispatch_builder, &[&common_systems::phys::Sys::sys_name()]);
+    // T0.16 (master build order; ledger #67): the jobs -> RTSim THOUGHT
+    // OUTBOX edge, DECLARED — bastion_jobs pushes `pending_thoughts` that
+    // this system drains; without the explicit dependency their order was
+    // implicit shred staging (deterministic per build, but an undeclared
+    // contract a registration shuffle could silently flip, moving thought
+    // delivery by a tick).
+    dispatch::<tick::Sys>(dispatch_builder, &[
+        &common_systems::phys::Sys::sys_name(),
+        &crate::bastion_jobs::Sys::<crate::rtsim::RtSim>::sys_name(),
+    ]);
 }

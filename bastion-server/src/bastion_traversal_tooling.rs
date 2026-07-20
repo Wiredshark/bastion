@@ -1860,6 +1860,10 @@ mod tests {
             ("server", "chunk_send", &[]),
             ("server", "item", &[]),
             ("server", "server_info", &[]),
+            // server::rtsim::add_server_systems (the third registration
+            // site — missed by the manifest's first cut, caught while
+            // declaring the T0.16 outbox edge)
+            ("rtsim", "tick", &["phys", "bastion_jobs"]),
         ];
         // Names registered by OTHER builders (sync/msg phase) that in-scope
         // deps may legitimately reference.
@@ -1868,14 +1872,17 @@ mod tests {
         fn normalize(path: &str) -> String {
             let path = path.trim().trim_start_matches("crate::");
             let path = path.split('<').next().unwrap_or(path);
-            path.trim_end_matches("::Sys")
+            path.trim_end_matches(':')
+                .trim_end_matches("::Sys")
                 .trim_end_matches(':')
+                .trim_start_matches("common_systems::")
                 .to_string()
         }
         let mut parsed: Vec<(String, String, Vec<String>)> = Vec::new();
         for (scope, path) in [
             ("common", "common/systems/src/lib.rs"),
             ("server", "server/src/sys/mod.rs"),
+            ("rtsim", "server/src/rtsim/mod.rs"),
         ] {
             let src = repo_text(path);
             let mut rest = src.as_str();
@@ -1990,6 +1997,11 @@ mod tests {
                 "job lifecycle reads the granted route, not a stale one",
             ),
             ("stats", "phys", "stat-derived movement params precede integration"),
+            (
+                "bastion_jobs",
+                "tick",
+                "T0.16: thoughts pushed by jobs are drained by rtsim the same tick",
+            ),
         ] {
             assert!(
                 reaches(before, after),
