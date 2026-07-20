@@ -4532,6 +4532,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             ReadStorage<'a, common::rtsim::RtSimEntity>,
             ReadExpect<'a, R>,
             ReadStorage<'a, comp::PickupItem>,
+            // ENGOPT6 divergence hunt: read-only item-ownership view for the
+            // recorder's haul-item trail (the contested item's lifecycle is
+            // the diverging quantity the tapes were blind to).
+            ReadStorage<'a, comp::LootOwner>,
             ReadExpect<'a, common::event::EventBus<common::event::InventoryManipEvent>>,
             // ARCH-003: pins job-decision-order ties (equal-score claims,
             // same-depth access plans) deterministically in harness mode —
@@ -4608,6 +4612,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 rtsim_entities,
                 rtsim,
                 pickup_items,
+                loot_owners_view,
                 inventory_manip_events,
                 execution_mode,
                 mut activity_zones,
@@ -13595,6 +13600,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     .map(|controller| controller.inputs.move_z)
                     .unwrap_or(0.0);
 
+                // ENGOPT6 hunt round 2: the contested haul item's OWN trail —
+                // existence, position, ownership-expiry stamp, merge backoff.
+                // The loot-time fix did not move the tick-3960 divergence, so
+                // the item's lifecycle (deletion tick), not its ownership
+                // clock, is the remaining suspect the tapes are blind to.
+                let haul_item = active
+                    .and_then(|active| board.jobs.get(&active.job))
+                    .and_then(|job| match job.kind {
+                        common::bastion::JobKind::Haul { item, .. } => Some(item),
+                        _ => None,
+                    })
+                    .map(|item_uid| {
+                        let ientity = id_maps.uid_entity(item_uid);
+                        (
+                            item_uid.0.get(),
+                            ientity.is_some(),
+                            ientity
+                                .and_then(|ie| positions.get(ie))
+                                .map(|ipos| [ipos.0.x, ipos.0.y, ipos.0.z]),
+                            ientity
+                                .and_then(|ie| loot_owners_view.get(ie))
+                                .map(|lo| lo.expires_at()),
+                            ientity
+                                .and_then(|ie| pickup_items.get(ie))
+                                .map(|pi| pi.next_merge_check().0),
+                        )
+                    });
                 crate::bastion_flight_recorder::record_writer(
                     crate::bastion_flight_recorder::WriterEvent {
                         schema: "bastion.flight-recorder.event/v1".into(),
@@ -13609,7 +13641,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         target: goto_target,
                         note: format!(
                             "phase={phase}; mode={:?}; link_id={:?}; route_owner={:?}; \
-                             frontier={frontier_job:?}; job={:?}; progress={:?}; needs={:?}",
+                             frontier={frontier_job:?}; job={:?}; progress={:?}; needs={:?}; \
+                             haul_item={haul_item:?}",
                             traversal_ownership.map(|ownership| ownership.mode),
                             traversal_ownership.map(|ownership| ownership.link_id),
                             route_owner.map(|owner| owner.0.get()),

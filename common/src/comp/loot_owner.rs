@@ -53,6 +53,9 @@ impl LootOwner {
 
     pub fn expired(&self, now: Time) -> bool { self.expires_at <= now.0 }
 
+    /// Diagnostic view of the raw expiry stamp (ENGOPT6 recorder trail).
+    pub fn expires_at(&self) -> f64 { self.expires_at }
+
     /// This field stands as a wish for NPC's to not pick the loot up, they will
     /// however be able to decide whether they want to follow your wishes or not
     /// (players will be able to pick the item up)
