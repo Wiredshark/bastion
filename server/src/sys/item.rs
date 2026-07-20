@@ -82,16 +82,35 @@ impl<'a> System<'a> for Sys {
         // Delete events are emitted when this is dropped
         let mut delete_emitter = delete_bus.emitter();
 
-        for (entity, item, pos, loot_owner) in
-            (&entities, &items, &positions, loot_owners.maybe()).join()
-        {
+        // ENGOPT6 ROOT FIX (the tick-3947 mass-merge divergence): the merge
+        // TOPOLOGY was a function of specs join order = ENTITY-ID order,
+        // and entity ids carry allocation/recycling history that diverges
+        // across machines invisibly (uids are the stable names). When a
+        // burst of same-created mining drops all came due on one tick, WHICH
+        // item checked first decided who became the surviving target and
+        // who got consumed (`merged`-guard claiming): the tape pair showed
+        // one run's first checker grabbing 1 partner (merges spread over
+        // targets 36/37/38/41) and the other's grabbing 6 (all into 37) —
+        // different surviving item uids, cascading into the whole mf
+        // divergence family. Same class and same cure as ENGOPT4's sorted
+        // chunk-apply: iterate due checkers in UID order and rank partners
+        // by (distance, uid), making the topology a pure function of stable
+        // state.
+        let mut due_checkers: Vec<(u64, specs::Entity)> = (&entities, &items, &uids)
+            .join()
+            .filter(|(_, item, _)| {
+                item.should_merge && program_time.0 >= item.next_merge_check().0
+            })
+            .map(|(entity, _, uid)| (uid.0.get(), entity))
+            .collect();
+        due_checkers.sort_unstable();
+        for (_, entity) in due_checkers {
+            let (Some(item), Some(pos)) = (items.get(entity), positions.get(entity)) else {
+                continue;
+            };
+            let loot_owner = loot_owners.get(entity);
             // Do not process items that are already being merged
             if merged.contains_key(&entity) {
-                continue;
-            }
-
-            // For items that merge, exponentially back off the frequency of the merge check
-            if !item.should_merge || program_time.0 < item.next_merge_check().0 {
                 continue;
             }
 
@@ -100,7 +119,7 @@ impl<'a> System<'a> for Sys {
             merged.insert(entity, true);
 
             let partners_before = merges.len();
-            for (source_entity, _) in get_nearby_mergeable_items(
+            let mut partners: Vec<(specs::Entity, f32)> = get_nearby_mergeable_items(
                 item,
                 pos,
                 loot_owner,
@@ -113,7 +132,18 @@ impl<'a> System<'a> for Sys {
                     &bastion_piles,
                     &spatial_grid,
                 ),
-            ) {
+            )
+            .collect();
+            // Deterministic partner rank: nearest first, uid tiebreak (the
+            // raw iterator order is spatial-cell insertion order = entity-id
+            // order again).
+            partners.sort_unstable_by_key(|(partner, distance)| {
+                (
+                    distance.to_bits(),
+                    uids.get(*partner).map(|u| u.0.get()).unwrap_or(u64::MAX),
+                )
+            });
+            for (source_entity, _) in partners {
                 // Prevent merging an item multiple times, we cannot
                 // do this in the above filter since we mutate `merged` below
                 if merged.contains_key(&source_entity) {
@@ -195,10 +225,16 @@ impl<'a> System<'a> for Sys {
             }
         }
 
-        for updated in merged
+        // ENGOPT6: uid-sorted (HashMap iteration order is process-seeded —
+        // state here is order-independent, but the recorder trail must not
+        // carry hash order as false divergence).
+        let mut updated_parents: Vec<specs::Entity> = merged
             .into_iter()
             .filter_map(|(entity, is_merge_parent)| is_merge_parent.then_some(entity))
-        {
+            .collect();
+        updated_parents
+            .sort_unstable_by_key(|entity| uids.get(*entity).map(|u| u.0.get()).unwrap_or(u64::MAX));
+        for updated in updated_parents {
             if let Some(mut item) = items.get_mut(updated) {
                 item.next_merge_check_mut().0 +=
                     (program_time.0 - item.created().0).max(1.0 / CHECKS_PER_SECOND);
