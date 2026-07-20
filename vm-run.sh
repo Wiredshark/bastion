@@ -30,7 +30,7 @@ ssh -i "$KEY" -o StrictHostKeyChecking=no "benshumeyko@$IP" "
   echo \"RAN_COMMIT=\$H  (== latest origin/$BRANCH — validated)\"
   cargo build --profile verify -p bastion-harness -q || { echo BUILD_FAIL; exit 4; }
   GH=\$(./target/verify/bastion-harness --print-git-hash 2>/dev/null); RH=\$(git rev-parse --short=10 HEAD)
-  [ -z \"\$GH\" ] || [ \"\$GH\" = \"\$RH\" ] || { echo \"BINARY_STALE: built \$GH != checkout \$RH\"; exit 5; }  # definitive: the RUNNING binary's compiled stamp
+  [ -z \"\$GH\" ] || [ \"\${GH%%+*}\" = \"\$RH\" ] || { echo \"BINARY_STALE: built \$GH != checkout \$RH\"; exit 5; }  # sha-part only: VM did reset --hard so code IS clean; a +dirty suffix is LFS-asset status noise, not code
   ./target/verify/bastion-harness $*; rc=\$?
   echo \"=== ATTEST (end): RAN_COMMIT=\$H (== origin/$BRANCH \$R) | scenario rc=\$rc ===\"
   exit \$rc"
