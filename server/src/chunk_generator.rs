@@ -18,15 +18,25 @@ use vek::*;
 #[cfg(feature = "worldgen")]
 use world::{IndexOwned, World};
 
-type ChunkGenResult = (
-    Vec2<i32>,
-    Result<(TerrainChunk, ChunkSupplement), Option<EcsEntity>>,
-);
+type ChunkGenPayload = Result<(TerrainChunk, ChunkSupplement), Option<EcsEntity>>;
+type ChunkGenResult = (Vec2<i32>, ChunkGenPayload);
+
+struct Pending {
+    cancel: Arc<AtomicBool>,
+    /// bastion ENGOPT4 stage 2: the tick this chunk was requested — the
+    /// deterministic barrier releases it exactly `delay` ticks later.
+    request_tick: u64,
+}
 
 pub struct ChunkGenerator {
     chunk_tx: crossbeam_channel::Sender<ChunkGenResult>,
     chunk_rx: crossbeam_channel::Receiver<ChunkGenResult>,
-    pending_chunks: HashMap<Vec2<i32>, Arc<AtomicBool>>,
+    pending_chunks: HashMap<Vec2<i32>, Pending>,
+    /// bastion ENGOPT4 stage 2: results that ARRIVED before their release
+    /// tick — held so apply timing is a pure function of (request tick,
+    /// delay), not of generation speed. Live mode drains this empty.
+    arrived: HashMap<Vec2<i32>, ChunkGenPayload>,
+    current_tick: u64,
     metrics: Arc<ChunkGenMetrics>,
 }
 impl ChunkGenerator {
@@ -36,6 +46,8 @@ impl ChunkGenerator {
             chunk_tx,
             chunk_rx,
             pending_chunks: HashMap::new(),
+            arrived: HashMap::new(),
+            current_tick: 0,
             metrics: Arc::new(metrics),
         }
     }
@@ -57,7 +69,10 @@ impl ChunkGenerator {
             return;
         };
         let cancel = Arc::new(AtomicBool::new(false));
-        v.insert(Arc::clone(&cancel));
+        v.insert(Pending {
+            cancel: Arc::clone(&cancel),
+            request_tick: self.current_tick,
+        });
         let chunk_tx = self.chunk_tx.clone();
         self.metrics.chunks_requested.inc();
 
@@ -108,6 +123,70 @@ impl ChunkGenerator {
         None
     }
 
+
+    /// bastion ENGOPT4 stage 2: advance the generator's tick clock (called
+    /// once per tick from the terrain system before draining).
+    pub fn note_tick(&mut self, tick: u64) { self.current_tick = tick; }
+
+    /// bastion ENGOPT4 stage 2 — the DETERMINISTIC APPLY BARRIER (harness
+    /// mode; the DETRNG precedent): a chunk requested at tick T applies at
+    /// exactly T + `delay`, regardless of generation speed. Early arrivals
+    /// are HELD in `arrived`; due-but-absent chunks are WAITED for
+    /// (blocking recv, loud bounded cap — the harness is sim-paced, so
+    /// blocking trades wall time for byte-identity). Live mode never calls
+    /// this. Probe evidence for the design: stages 1+1b converged
+    /// terrain-content outcomes across VMs (mf_completion byte-equal) but
+    /// per-tick apply MEMBERSHIP still shifted agent timing (teleports
+    /// 10v17) — membership is what this pins.
+    pub fn recv_new_chunks_deterministic(&mut self, delay: u64) -> Vec<ChunkGenResult> {
+        while let Ok((key, res)) = self.chunk_rx.try_recv() {
+            if self.pending_chunks.contains_key(&key) {
+                self.arrived.insert(key, res);
+            }
+        }
+        let due: Vec<Vec2<i32>> = self
+            .pending_chunks
+            .iter()
+            .filter(|(_, p)| p.request_tick.saturating_add(delay) <= self.current_tick)
+            .map(|(k, _)| *k)
+            .collect();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
+        for key in &due {
+            while !self.arrived.contains_key(key) {
+                if std::time::Instant::now() > deadline {
+                    tracing::error!(
+                        ?key,
+                        "deterministic chunk barrier: due chunk never arrived within the \
+                         cap — releasing partial set (this run's determinism is COMPROMISED)"
+                    );
+                    break;
+                }
+                match self
+                    .chunk_rx
+                    .recv_timeout(std::time::Duration::from_millis(50))
+                {
+                    Ok((k, res)) => {
+                        if self.pending_chunks.contains_key(&k) {
+                            self.arrived.insert(k, res);
+                        }
+                    },
+                    Err(crossbeam_channel::RecvTimeoutError::Timeout) => {},
+                    Err(crossbeam_channel::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+        }
+        let mut out: Vec<ChunkGenResult> = Vec::new();
+        for key in due {
+            if let Some(res) = self.arrived.remove(&key) {
+                self.pending_chunks.remove(&key);
+                self.metrics.chunks_served.inc();
+                out.push((key, res));
+            }
+        }
+        out.sort_unstable_by_key(|(key, _)| (key.x, key.y));
+        out
+    }
+
     /// bastion ENGINE-OPT-4 (ARCH-003, ledger "stable-sort authoritative
     /// completions"): drain EVERY completed chunk available this tick and
     /// return them in DETERMINISTIC order (chunk key, lexicographic). The
@@ -121,6 +200,15 @@ impl ChunkGenerator {
     /// is preserved unchanged.
     pub fn recv_new_chunks_sorted(&mut self) -> Vec<ChunkGenResult> {
         let mut out = Vec::new();
+        let held: Vec<Vec2<i32>> = self.arrived.keys().copied().collect();
+        for key in held {
+            if self.pending_chunks.remove(&key).is_some() {
+                if let Some(res) = self.arrived.remove(&key) {
+                    self.metrics.chunks_served.inc();
+                    out.push((key, res));
+                }
+            }
+        }
         while let Ok((key, res)) = self.chunk_rx.try_recv() {
             if self.pending_chunks.remove(&key).is_some() {
                 self.metrics.chunks_served.inc();
@@ -140,18 +228,20 @@ impl ChunkGenerator {
     }
 
     pub fn cancel_if_pending(&mut self, key: Vec2<i32>) {
-        if let Some(cancel) = self.pending_chunks.remove(&key) {
-            cancel.store(true, Ordering::Relaxed);
+        if let Some(pending) = self.pending_chunks.remove(&key) {
+            pending.cancel.store(true, Ordering::Relaxed);
+            self.arrived.remove(&key);
             self.metrics.chunks_canceled.inc();
         }
     }
 
     pub fn cancel_all(&mut self) {
         let metrics = Arc::clone(&self.metrics);
-        self.pending_chunks.drain().for_each(|(_, cancel)| {
-            cancel.store(true, Ordering::Relaxed);
+        self.pending_chunks.drain().for_each(|(_, pending)| {
+            pending.cancel.store(true, Ordering::Relaxed);
             metrics.chunks_canceled.inc();
         });
+        self.arrived.clear();
     }
 }
 
@@ -171,6 +261,41 @@ mod tests {
             10,
             Arc::new(rayon::ThreadPoolBuilder::new().num_threads(2).build().unwrap()),
         )
+    }
+
+    /// Stage-2 barrier semantics: an early arrival is HELD until its
+    /// deterministic due tick (request_tick + delay); the due set releases
+    /// sorted. Apply membership = f(request stream), not generation speed.
+    #[test]
+    fn engopt4_barrier_holds_early_arrivals_until_due() {
+        let mut generator = ChunkGenerator::new(
+            crate::metrics::ChunkGenMetrics::new(&prometheus::Registry::new()).unwrap(),
+        );
+        let a = Vec2::new(5, 5);
+        let b = Vec2::new(-3, 2);
+        generator.note_tick(0);
+        for key in [a, b] {
+            generator.pending_chunks.insert(key, Pending {
+                cancel: Arc::new(AtomicBool::new(false)),
+                request_tick: 0,
+            });
+        }
+        // Both results arrive IMMEDIATELY (generation "instant").
+        generator.chunk_tx.send((a, Err(None))).unwrap();
+        generator.chunk_tx.send((b, Err(None))).unwrap();
+        // Before the due tick: nothing may release, arrivals are held.
+        generator.note_tick(10);
+        assert!(generator.recv_new_chunks_deterministic(30).is_empty());
+        assert_eq!(generator.arrived.len(), 2, "early arrivals must be held");
+        // At the due tick: both release, in key order.
+        generator.note_tick(30);
+        let released: Vec<Vec2<i32>> = generator
+            .recv_new_chunks_deterministic(30)
+            .into_iter()
+            .map(|(k, _)| k)
+            .collect();
+        assert_eq!(released, vec![b, a], "due set releases in sorted key order");
+        assert!(generator.pending_chunks.is_empty());
     }
 
     #[test]
@@ -200,9 +325,10 @@ mod tests {
             for key in &order {
                 // Register as pending (the stale-gate) then complete directly
                 // through the channel — the drain path under test.
-                generator
-                    .pending_chunks
-                    .insert(*key, Arc::new(AtomicBool::new(false)));
+                generator.pending_chunks.insert(*key, Pending {
+                    cancel: Arc::new(AtomicBool::new(false)),
+                    request_tick: 0,
+                });
                 generator
                     .chunk_tx
                     .send((*key, Err(None)))

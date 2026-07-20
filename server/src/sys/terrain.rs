@@ -135,9 +135,22 @@ impl<'a> System<'a> for Sys {
         // Fetch any generated `TerrainChunk`s and insert them into the terrain.
         // Also, send the chunk data to anybody that is close by.
         let mut new_chunks = Vec::new();
-        // bastion ENGINE-OPT-4: sorted drain — apply order must not depend
-        // on completion timing (see recv_new_chunks_sorted).
-        'insert_terrain_chunks: for (key, res) in data.chunk_generator.recv_new_chunks_sorted() {
+        // bastion ENGINE-OPT-4: deterministic drain. Stage 1 (always): apply
+        // in chunk-key order, never completion order. Stage 2 (harness
+        // deterministic mode, the DETRNG switch): the apply BARRIER — a
+        // chunk requested at tick T applies at exactly T + DELAY, so
+        // per-tick apply MEMBERSHIP is a pure function of the request
+        // stream (the residual cross-machine divergence source the probe
+        // isolated). Live servers keep the free-running sorted drain.
+        data.chunk_generator.note_tick(data.tick.0);
+        const DETERMINISTIC_APPLY_DELAY_TICKS: u64 = 30;
+        let arrivals = if common::deterministic_worldgen_enabled() {
+            data.chunk_generator
+                .recv_new_chunks_deterministic(DETERMINISTIC_APPLY_DELAY_TICKS)
+        } else {
+            data.chunk_generator.recv_new_chunks_sorted()
+        };
+        'insert_terrain_chunks: for (key, res) in arrivals {
             #[cfg_attr(not(feature = "persistent_world"), expect(unused_mut))]
             let (mut chunk, supplement) = match res {
                 Ok((chunk, supplement)) => (chunk, supplement),
