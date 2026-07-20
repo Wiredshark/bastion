@@ -1801,6 +1801,39 @@ mod tests {
         );
     }
 
+    /// T0.2 (master build order; ledger #21): THE LABOR CLOCK DECLARATION —
+    /// every work/farm/need/rescue/item-economy duration rides the SIM clock
+    /// (`Time`, `DeltaTime`, `Tick`), never the wall clock. Executable form:
+    /// the labor/economy source files must contain no wall-clock reads at
+    /// all. This pins the ENGOPT6 class at the door: `LootOwner`'s `Instant`
+    /// expiry made a 45-WALL-second timeout resolve at machine-throughput-
+    /// dependent sim ticks (tick 3960 vs ~3976 across an attested same-
+    /// platform VM pair, tapes byte-equal until the flip).
+    #[test]
+    fn t0_2_labor_paths_declare_sim_clock_only() {
+        for path in [
+            "bastion-server/src/bastion_jobs.rs",
+            "bastion-server/src/bastion_actions.rs",
+            "bastion-server/src/bastion_mood.rs",
+            "bastion-server/src/bastion_piles.rs",
+            "bastion-server/src/bastion_chop.rs",
+            "bastion-server/src/bastion_path.rs",
+            "bastion-server/src/bastion_traversal.rs",
+            "common/src/comp/loot_owner.rs",
+            "server/src/sys/loot.rs",
+            "server/src/sys/item.rs",
+        ] {
+            let src = repo_text(path);
+            for banned in ["Instant::now", "SystemTime::now"] {
+                assert!(
+                    !src.contains(banned),
+                    "{path} reads the wall clock ({banned}) inside a labor/economy path — \
+                     labor durations are SIM-clock only (T0.2; the LootOwner/ENGOPT6 class)"
+                );
+            }
+        }
+    }
+
     #[test]
     fn writer_inventory_guard_covers_required_paths_categories_and_activity_owners() {
         let document = repo_text(INVENTORY_DOC);
