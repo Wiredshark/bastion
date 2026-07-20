@@ -5149,6 +5149,22 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
                     });
                     if in_lane || on_rungs {
                         m3_lane_violations += 1;
+                        // Per-violation forensics (ENGINE-OPT-1 taught us a
+                        // bare counter can't distinguish a transient transit
+                        // clip from sustained lane-crowding): name the
+                        // member, cell, and trigger under the diag env.
+                        if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                            info!(
+                                tick = tick_i,
+                                sec,
+                                member = n.as_str(),
+                                ?feet,
+                                in_lane,
+                                on_rungs,
+                                traversing_any,
+                                "fixture: M3 SOFT-0 lane violation tick"
+                            );
+                        }
                     }
                 }
             }
