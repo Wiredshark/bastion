@@ -4472,14 +4472,59 @@ itself is flagged as its own future master-order row, not fixed here —
 this fix makes the CONSUMER robust to it, it doesn't make allocation
 itself deterministic.
 
-**Status: end-proof in flight.** `tapes8` pair + `floor8` fan running at
-the tip now; verdict message follows. **Escalation path pre-agreed:** if
-the pair still diverges even after this fix, Builder 4 routes the full
-packet to Fable/Opus per architect+Ben directive — this entry will be
-finalized either way once that verdict lands. The `LootOwner` sim-time
-fix (`3b137017e6`) remains kept (a real, independent bug — wall clock in
-sim state is wrong regardless) but is now confirmed NOT the seam; the
-seam was always the merge-topology race above.
+**★★ END-PROOF GREEN — strongest evidence grade available.** `tapes8`
+pair at `@781a553e` (both VMs attested same commit + same silicon):
+RAW BYTE-IDENTICAL tapes across both machines — `trajectory.jsonl`,
+`events.jsonl`, `summary.json`, with only `wall_unix_millis` stripped as
+the one expected non-sim field. 36,059 trajectory tick-blocks + 24,726
+event tick-blocks, ZERO divergence anywhere. The 10-minute colony
+simulation is now bit-deterministic across machines — not "canonicalized-
+equal after normalizing known noise," genuinely byte-identical raw output.
+The tape-comparator's own canonicalization logic (built earlier in the
+hunt to filter out hashbrown iteration-order noise) isn't even needed at
+this commit — the divergence class it was built to filter is gone.
+
+**The full closing seam chain, in the order each piece actually mattered**
+(worth preserving for the eventual tag body): ENGOPT1/2 (A* total-order +
+reopen correctness) → ENGOPT4 (sorted chunk-apply, deterministic barrier,
+hasher-independent pool selection) → `LootOwner` wall-clock→sim-time
+(`3b137017e6`, kept — real bug, not the seam) → HAUL-RETARGET fallen-item
+fix (`502ad6897a`, registry B68 — not the seam either, but what made the
+seam's race actually reachable/observable) → the merge-topology UID-sort
+(`781a553eb71e`, the ACTUAL final seam — entity-ID join order vs. stable
+UIDs, closed by applying ENGOPT4's own sorted-apply pattern to a new
+consumer). Five real, independently-useful fixes on the way to one root
+cause — none of them wasted effort even though only the last one was
+"the" seam.
+
+**Instrumentation now permanently in-tree, zero live cost (env-gated):**
+the haul-item trail, the pickup-verdict trail, and the UID-sorted merge
+trail — all available for any FUTURE divergence hunt without needing to
+re-invent this tooling.
+
+**Research-mirror retro-validation (done after the fact, not before):**
+Builder 4 checked T0.1-T0.7's shipped shape against the T0-001 research
+packet's selected architecture — matches. T0.8's slice-in-progress is
+literally the packet-endorsed staging point (a bounded fixed-step
+accumulator). T0.5's `dt`-guard is confirmed a compatible stopgap for the
+packet's fuller schedule-level pause design, not a competing approach.
+
+**Status: tag pending `floor9` only** (the architect's own gate, ~10 min
+estimate at time of report) — this entry documents the green end-proof;
+will confirm the actual tag once `floor9` lands. Escalation-to-Fable/Opus
+path is now moot (only would have triggered on a still-diverging pair,
+which didn't happen).
+
+**Next (Builder 4 self-selected, correctly per the master order, started
+as parallel fill while `floor9` runs — no supply needed from me):** T0.10/
+T0.11 (strategic time, absolute world timestamps for long-lived deadlines,
+apply-elapsed-once semantics on promote/demote). Already found a live
+specimen bug while reading the packet: `rtsim`'s `Job::Hired(actor,
+expires: Time)` persists a RESTART-RELATIVE sim-clock deadline — a hire
+duration silently extends by however long the server was down between
+restarts, since the deadline is measured against the wrong clock
+reference. Real find, not yet fixed — tracked as part of the T0.10/T0.11
+work now starting.
 
 ## T0.6 (tick-rate-invariant probability, ledger #115) — TWO PASSES: shallow done-by-audit SUPERSEDED, then properly completed (commits `654764371b` → `a50f6ca817b7`, branch `bastion/builder`)
 
