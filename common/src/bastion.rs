@@ -818,7 +818,7 @@ pub enum Need {
 /// starting set pulls from the build report's culture examples
 /// (glory/tradition/kin/wealth/piety/nature) + DF's ethic/value list
 /// (craftsmanship, independence) — not invented from scratch.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Value {
     Glory,
     Tradition,
@@ -1277,9 +1277,10 @@ pub struct BastionColonist {
     /// factor of exactly 1.0 = the pre-B-AG3 mood behavior bit-for-bit).
     /// Value ROLLING (culture keying / facet derivation) is a later
     /// slice — this block reads the map in the thought-care weighting
-    /// only; the test hook is the sole writer.
+    /// only; the test hook is the sole writer. `BTreeMap` makes persisted
+    /// iteration follow [`Value`]'s append-only, save-stable enum order.
     #[serde(default)]
-    pub values: std::collections::HashMap<Value, i8>,
+    pub values: std::collections::BTreeMap<Value, i8>,
     /// bastion (B7-0): the persistent mirror of the bodily `Needs` comp
     /// `(hunger, rest, recreation)` — captured from the live ECS every
     /// loaded tick, restored WHOLESALE on promote (the LOD-0 inventory
@@ -1508,26 +1509,33 @@ mod tests {
     /// empty default (old saves), a populated ±50 map round-trips exactly.
     #[test]
     fn bastion_value_collection_serde_shape() {
-        use std::collections::HashMap;
+        use std::collections::BTreeMap;
         #[derive(serde::Deserialize)]
         struct New {
             #[expect(dead_code, reason = "decode-shape witness")]
             name: String,
             #[serde(default)]
-            values: HashMap<Value, i8>,
+            values: BTreeMap<Value, i8>,
         }
         // An old-shape payload (no field) -> empty default.
         let decoded: New = ron::from_str(r#"(name: "Trell")"#).expect("decode old shape");
         assert!(decoded.values.is_empty());
         // A populated map round-trips exactly, negatives included
         // (scorned values are first-class).
-        let mut values = HashMap::new();
+        let mut values = BTreeMap::new();
         values.insert(Value::Glory, 50i8);
         values.insert(Value::Kin, -35);
         values.insert(Value::Piety, 10);
         let text = ron::to_string(&values).expect("encode");
-        let back: HashMap<Value, i8> = ron::from_str(&text).expect("decode");
+        let back: BTreeMap<Value, i8> = ron::from_str(&text).expect("decode");
         assert_eq!(values, back);
+
+        // Persistence must not depend on insertion order. `Value` is an
+        // append-only enum, so its derived order is the save-stable order.
+        let reverse = [(Value::Piety, 10), (Value::Kin, -35), (Value::Glory, 50)]
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(ron::to_string(&reverse).expect("encode reverse"), text);
     }
 
     fn r(min: (i32, i32, i32), max: (i32, i32, i32)) -> Region {
@@ -1899,7 +1907,7 @@ impl BastionColonist {
             // seeded caller. Old saves keep their serde-default (empty =
             // baseline) — the roll only shapes NEW colonists.
             values: {
-                let mut v = std::collections::HashMap::new();
+                let mut v = std::collections::BTreeMap::new();
                 for value in [
                     Value::Glory,
                     Value::Tradition,
