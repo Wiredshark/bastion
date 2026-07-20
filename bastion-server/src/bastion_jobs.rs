@@ -10423,7 +10423,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         });
                         if job.progress < 0.5 {
                             // LEG 1: standing at the item.
-                            if id_maps.uid_entity(item).is_some() {
+                            if let Some(item_entity) = id_maps.uid_entity(item) {
+                                // ENGOPT6 round-4 finding (FALLEN-ITEM
+                                // RETARGET): dropped items are physical and
+                                // FALL — a haul job aiming at the stale drop
+                                // cell leaves the colonist "Arrived" while
+                                // the item lies out of pickup range below
+                                // (the tape showed uid 2 grinding
+                                // out-of-range pickup verdicts every tick
+                                // for 100+ ticks, resolved only by item-
+                                // lifecycle luck). If the LIVE item position
+                                // has drifted from the job's stand-at cell,
+                                // re-aim the job and walk to it.
+                                if let Some(live_pos) = positions.get(item_entity).map(|p| p.0) {
+                                    let stand_at = job.pos.map(|value| value as f32)
+                                        + Vec3::new(0.5, 0.5, 1.0);
+                                    if live_pos.distance_squared(stand_at) > ARRIVE_DIST.powi(2) {
+                                        job.pos = live_pos.map(|value| value.floor() as i32);
+                                        active.state = ActiveJobState::Traveling;
+                                        active.best_dist = f32::MAX;
+                                        active.reset_dist = f32::MAX;
+                                        active.stuck_time = 0.0;
+                                        continue;
+                                    }
+                                }
                                 // Emit the VANILLA pickup (a re-emit against
                                 // a consumed uid no-ops in the handler); the
                                 // entity vanishing is the confirmation,
