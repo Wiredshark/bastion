@@ -964,17 +964,29 @@ impl State {
         }
 
         // Change the time accordingly.
+        // T0.8 (master build order, Run 10 — the consistency half): under a
+        // hitch (dt beyond MAX_DELTA_TIME) the OLD code advanced Time /
+        // TimeOfDay / ProgramTime by the FULL frame dt while DeltaTime (and
+        // so physics displacement) clamped — sim clocks raced ahead of the
+        // world they timestamp, firing timers across un-simulated time. All
+        // clocks now lag TOGETHER by the same clamp ("start lagging" as the
+        // original comment intended). Byte-identical whenever
+        // dt × time_scale <= MAX_DELTA_TIME — i.e. every harness tick and
+        // every normal live frame. Bounded fixed SUBSTEPS (re-running the
+        // dispatcher to consume the lag) remain the high-surface second
+        // half, deliberately not smuggled into this change.
         let time_scale = self.ecs.read_resource::<TimeScale>().0;
+        let scaled_dt = (dt.as_secs_f64() * time_scale).min(f64::from(MAX_DELTA_TIME));
         self.ecs.write_resource::<TimeOfDay>().0 +=
-            dt.as_secs_f64() * server_constants.day_cycle_coefficient * time_scale;
-        self.ecs.write_resource::<Time>().0 += dt.as_secs_f64() * time_scale;
-        self.ecs.write_resource::<ProgramTime>().0 += dt.as_secs_f64();
+            scaled_dt * server_constants.day_cycle_coefficient;
+        self.ecs.write_resource::<Time>().0 += scaled_dt;
+        self.ecs.write_resource::<ProgramTime>().0 +=
+            dt.as_secs_f64().min(f64::from(MAX_DELTA_TIME));
 
         // Update delta time.
         // Beyond a delta time of MAX_DELTA_TIME, start lagging to avoid skipping
         // important physics events.
-        self.ecs.write_resource::<DeltaTime>().0 =
-            (dt.as_secs_f32() * time_scale as f32).min(MAX_DELTA_TIME);
+        self.ecs.write_resource::<DeltaTime>().0 = scaled_dt as f32;
 
         section_span!(guard, "run systems");
         if self.execution_mode.is_deterministic() {
