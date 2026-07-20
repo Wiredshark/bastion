@@ -32,7 +32,16 @@ pub type PersistenceScheduler = SysScheduler<persistence::Sys>;
 pub fn add_server_systems(dispatch_builder: &mut DispatcherBuilder) {
     dispatch::<melee::Sys>(dispatch_builder, &[&projectile::Sys::sys_name()]);
     //Note: server should not depend on interpolation system
-    dispatch::<agent::Sys>(dispatch_builder, &[]);
+    // T0.20 (master build order; ledger #150): the Controller phase
+    // contract, DECLARED — `controller::Sys` = ConsumePreviousCommands
+    // (drains the batch agents wrote LAST tick), `agent::Sys` =
+    // AgentPlanNextCommands (writes the batch consumed NEXT tick). The
+    // order was implicit registration staging (common systems register
+    // before server systems); the explicit edge makes the double-buffered
+    // command frame un-shufflable.
+    dispatch::<agent::Sys>(dispatch_builder, &[
+        &common_systems::controller::Sys::sys_name(),
+    ]);
     // bastion (PATH-0): the sequential path scheduler runs AFTER the
     // agent tick — the tick surfaces routeless Goto colonists (holding
     // the Pending stance), this system searches under the global budget,

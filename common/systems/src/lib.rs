@@ -30,9 +30,15 @@ pub fn add_local_systems(dispatch_builder: &mut DispatcherBuilder) {
     dispatch::<character_behavior::Sys>(dispatch_builder, &[&controller::Sys::sys_name()]);
     dispatch::<buff::Sys>(dispatch_builder, &[]);
     dispatch::<stats::Sys>(dispatch_builder, &[&buff::Sys::sys_name()]);
+    // T0.23 (master build order; Run 10): the CharacterBehavior -> Physics
+    // -> PostPhysics phase, DECLARED — behavior commits state updates before
+    // integration reads them (was implicit registration staging), and
+    // phys_events below IS the named PostPhysics phase (already dependent
+    // on phys).
     dispatch::<phys::Sys>(dispatch_builder, &[
         &interpolation::Sys::sys_name(),
         &controller::Sys::sys_name(),
+        &character_behavior::Sys::sys_name(),
         &mount::Sys::sys_name(),
         &stats::Sys::sys_name(),
     ]);

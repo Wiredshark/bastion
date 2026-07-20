@@ -1835,7 +1835,11 @@ mod tests {
             ("common", "character_behavior", &["controller"]),
             ("common", "buff", &[]),
             ("common", "stats", &["buff"]),
-            ("common", "phys", &["interpolation", "controller", "mount", "stats"]),
+            (
+                "common",
+                "phys",
+                &["interpolation", "controller", "character_behavior", "mount", "stats"],
+            ),
             ("common", "phys_events", &["phys"]),
             ("common", "projectile", &["phys"]),
             ("common", "shockwave", &["phys"]),
@@ -1845,7 +1849,7 @@ mod tests {
             ("common", "aura", &[]),
             // server::sys::add_server_systems
             ("server", "melee", &["projectile"]),
-            ("server", "agent", &[]),
+            ("server", "agent", &["controller"]),
             ("server", "bastion_path", &["agent"]),
             ("server", "bastion_jobs", &["agent", "bastion_path"]),
             ("server", "bastion_piles", &[]),
@@ -1997,6 +2001,17 @@ mod tests {
                 "job lifecycle reads the granted route, not a stale one",
             ),
             ("stats", "phys", "stat-derived movement params precede integration"),
+            (
+                "controller",
+                "agent",
+                "T0.20: ConsumePreviousCommands before AgentPlanNextCommands (double-buffer)",
+            ),
+            (
+                "character_behavior",
+                "phys",
+                "T0.23: behavior commits state updates before integration reads them",
+            ),
+            ("phys", "phys_events", "T0.23: phys_events IS the PostPhysics phase"),
             (
                 "bastion_jobs",
                 "tick",
