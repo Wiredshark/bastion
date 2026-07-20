@@ -4261,3 +4261,36 @@ fixed in prior commits (`499845e6d2` FAN-scoping, `81c97f96db` SLOT_LOST
 guarantee) — filed under a shared SILENT-RESULT-INTEGRITY class since both
 are the same underlying shape (a concurrent job runner reporting success
 while its actual output is missing or clobbered, with no loud signal).
+
+## bastion-block-ENGOPT3 — LOOT-AUTHORIZATION INVERSION fix (ledger #160) — TAGGED 2026-07-20 (tag `695bbb0172`, branch `bastion/builder`; architect-GO'd after a crossing reconciliation)
+
+Fixes registry B64 (`server/agent/src/action_nodes.rs` + `common`'s
+`loot_owner` + a tooling source-scan pin). Closes with two enrichments
+over the original filing:
+
+**It was TWO inversions, not one, and they partially cancelled.** The
+outer `!` around the whole authorization conjunction (already documented
+in B64) PLUS an independently-inverted hostility polarity in the soft-wish
+term (also contradicting its own comment) — and the two inversions
+happened to PARTIALLY CANCEL, so the soft+hostile and soft+peaceful
+branches came out accidentally correct. This is exactly why the bug
+survived review this long, and why a naive single-`!`-flip fix would have
+BROKEN the two branches that were accidentally working by luck. The
+falsifier documents the cancellation executably, not just asserts it.
+
+**Severity was bounded all along.** The authoritative `InventoryEvent::
+Pickup` consumer already revalidates `can_pickup` and denies `LootOwned`
+at execution time — a pre-existing commit-time gate that made the original
+ledger item's TOCTOU concern moot from the start. Observable live damage
+was humanoids wrongly REFUSING their own entitled loot plus attempt-spam
+churn — not actual theft of protected drops.
+
+**Pins landed:** the intended truth table + a verbatim-old-mechanism
+falsifier (agent crate); a `can_pickup` truth table (common crate — that
+file's first tests); a tooling source-scan guard pinning the commit
+gate's continued presence, so this class can't silently regress again.
+
+**Verified:** VM-fan all-attested; M3A's classified red (B60) byte-
+preserved; N2 PASS; `--mine-fidelity-scenario` undisturbed.
+
+Next: ENGOPT4 = SlowJobPool, per the architect's landing-order numbering.
