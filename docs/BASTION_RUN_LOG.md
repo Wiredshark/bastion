@@ -4065,3 +4065,35 @@ signals. **Not yet folded in:** Codex's determinism SWEEP pass #3 (18
 more holes identified, separate from the 5 fixes above) — explicitly
 deferred, rebases onto `bastion/builder` "when Ben drives it in the
 morning," not a fleet action tonight.
+
+## Builder 4 overnight fill (harness-only, pre-B58) — `d80a6b5a58` + `fa339e7694` (branch `bastion/builder`)
+
+Two-item fill while B58 waited on the determinism-integration base, both
+outside the `server`/`bastion-server` tree per the hold: corpus-runner
+stderr-tee-per-seed (`d80a6b5a58`) — live-proven twice (an instant-corpus
+run and a real red-seed `--dig-access-scenario` failure whose FAIL row now
+carries a capture-file path that was usable for live mid-run forensics,
+closing the exact gap that cost real time earlier in the M3A investigation
+when a corpus run's stderr was silently discarded).
+
+Same commit also lands the a2/a3 M3A fixture-hardening from the matrix
+classification (`BASTION_COMMON_ISSUES.md` context, the M3 seed-matrix
+red-class decomposition): **a2** (the SOFT-0 fixture-predicate false
+positive) fixed via a planner-lane scan keyed on the actual Ladder-sprite
+column, not the fixture's carved-column assumption — harness-only, no new
+server surface. **a3** (M3D's timing-bar calibration) took one honest
+fix-forward (`fa339e7694`) after the first attempt's per-waiter
+hold-engagement gate proved WRONG against the actual trace: under M3D's
+seal, only the re-queued ex-owner transits the complete-route wait state
+(observed `[true,false,false]`, not the naive all-waiters expectation —
+serial watch-cadence delivery IS the designed path for the others).
+Corrected to an any-member hold-witness + a no-pre-budget-delivery check
+sourced from the fixture's own constant + the net floor; the finer
+hold-alive discrimination is left to M3A's own zero-teleport bar, not
+duplicated here.
+
+**Verified:** M3A PASS + M3D PASS at seed 1337 on the synced
+(post-determinism-integration) base. Builder 4 now starting B58
+(corridor-unification + the corridor-drive `debug_assert` rider),
+repro-first — red baseline at seeds 21/42 before any code change, per its
+own standing discipline.
