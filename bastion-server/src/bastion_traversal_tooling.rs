@@ -2011,6 +2011,47 @@ mod tests {
         }
     }
 
+    /// T0.17-lite (master build order; ledger #71): the rtsim RULE SCHEDULE
+    /// is startup order — `RtState::emit` invokes handlers in bind order,
+    /// and binds happen in `start_default_rules` order, so that list IS the
+    /// event-phase schedule. Frozen as a golden order (a reorder is a
+    /// schedule change and must be deliberate). The named-phase machinery
+    /// (explicit phases + dependencies on RtState) is the row's endpoint
+    /// for a dedicated block.
+    #[test]
+    fn t0_17_rtsim_rule_schedule_is_frozen() {
+        const RULE_ORDER: &[&str] = &[
+            "Migrate",
+            "Architect",
+            "ReplenishResources",
+            "ReportEvents",
+            "ChronicleEvents",
+            "SyncNpcs",
+            "SimulateNpcs",
+            "NpcAi",
+            "CleanUp",
+        ];
+        let src = repo_text("rtsim/src/lib.rs");
+        let body = src
+            .split("fn start_default_rules")
+            .nth(1)
+            .and_then(|tail| tail.split("pub fn start_rule").next())
+            .expect("start_default_rules body");
+        let mut found = Vec::new();
+        for line in body.lines() {
+            if let Some(rest) = line.trim().strip_prefix("self.start_rule::<rule::") {
+                if let Some(name) = rest.split('>').next().and_then(|p| p.split("::").nth(1)) {
+                    found.push(name.to_string());
+                }
+            }
+        }
+        assert_eq!(
+            found, RULE_ORDER,
+            "rtsim rule startup order changed — this IS the event-handler schedule \
+             (emit runs handlers in bind order); update the golden order deliberately"
+        );
+    }
+
     /// T0.6 (master build order; ledger #115): THE RAW-GATE BAN — rtsim
     /// policy code may not draw `random_bool` outside the typed per-second
     /// hazard (`NpcCtx::chance`) unless the line (or the line above it)
