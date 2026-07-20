@@ -3992,3 +3992,50 @@ supply) and #2 the `bastion_jobs.rs` crate-split (packet ready,
 extraction to a leaf crate `bastion-server`, 3 small coupling knots
 [Tick/RtSim/RepositionToFreeSpace], acceptance = byte-identical fidelity
 run + incremental-rebuild timing delta). #2 is Builder 3's next block.
+
+## bastion-block-CRATESPLIT — efficiency slate #2 — TAGGED 2026-07-20 (tag `6357c35d23`, branch `bastion/builder`, not yet merged to `bastion/block-B6HAUL`; Opus gate PASS, `BUILD_REVIEW_LOG.md` §CRATE-SPLIT)
+
+Pure structural move, no master-list row (efficiency slate, same class as
+the mine-ladder tiers). 11 of the 12 `server/src/bastion_*.rs` modules
+(~18.2k lines) extracted into a new leaf crate `bastion-server`
+(`bastion_arena` stays server-side as an `impl Server` shim — the one
+exception, deliberate). `veloren-server` depends on the new crate and
+re-exports every moved item at its OLD path (`pub use
+bastion_server::{bastion_*, Tick, presence::RepositionToFreeSpace}`), so
+every existing `crate::`/`server::` reference across the whole codebase
+compiles unchanged — no reverse-coupling edits needed anywhere else.
+Dispatcher system names are unchanged (`NAME="bastion_jobs"` etc.), so
+dispatch order stays byte-stable by construction, not by luck.
+
+**6 coupling knots resolved** (the packet scoped 3 up front — `Tick`,
+`RtSim`, `RepositionToFreeSpace` — the actual survey found 3 more once all
+12 modules were checked, not just `bastion_jobs.rs`): `Tick` (re-exported),
+`RtSim` (a trait + generic `Sys<R>`, not a hard dependency), the
+`traversal_config_for` helper (moved to live beside `bastion_path`),
+`RepositionToFreeSpace` (re-exported), the `test_world`+worldgen feature
+forward (build-config plumbing), and `bastion_arena`'s stay-server-side
+carve-out.
+
+**Verification (architect-ruled: byte-identity is conclusive for a pure
+structural move, no separate validation-corpus pass required — VM budget
+saved deliberately):** R10/M3 exhaustiveness pins fire correctly from the
+new crate home (35/35 lib tests + 11/11 server tests); a `--dig-access-
+scenario` run at seed 1337 is byte-identical pre/post-split ×2 (stable
+rc=1 both runs); `--mine-fidelity-scenario` is canonicalized-identical
+(the one field-order variance in `mf_per_colonist` is PRE-EXISTING
+baseline nondeterminism, architect-confirmed unrelated to this move — a
+gap Codex's own determinism sweep will close separately, not this block's
+job to fix).
+
+**The compile-win, measured (the actual deliverable):** full harness
+rebuild 65s → ~50s (−23%); the check-loop (the fast dev-iteration path)
+9.1s → 3.2s (−65%) — a real, measured incremental-compile win, not a
+theoretical one.
+
+**Sequencing constraint (architect, live):** no further work touches the
+`server`/`bastion-server` tree until the architect's determinism-
+integration base (this crate-split's tip + a Codex rebase, pass #1/#2)
+lands — protects the fresh split from a second concurrent in-tree cut
+racing it. Builder 4 (who tagged this) is holding on non-tree work
+meanwhile (corpus-runner stderr-tee-per-seed, then the a2/a3 M3A fixture-
+hardening items) per Sonnet's routing.
