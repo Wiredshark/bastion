@@ -235,6 +235,7 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
             if let Some(PathEntry {
                 node,
                 cost_estimate,
+                cost: entry_cost,
                 ..
             }) = self.potential_nodes.pop()
             {
@@ -243,6 +244,21 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
                     .get(&node)
                     .map(|n| (n.cost, n.came_from.clone()))
                     .expect("All nodes in the queue should be included in visisted_nodes");
+
+                // bastion ENGINE-OPT-2 (ledger 176), lazy-deletion stale-pop
+                // rejection: improvements re-push a fresh entry (below), so
+                // a popped entry whose recorded g exceeds the node's current
+                // best is a superseded duplicate — skip it. (Prior art:
+                // Detour findPath reopens on strict improvement — it clears
+                // DT_NODE_CLOSED and re-pushes/modifies; `BinaryHeap` has no
+                // decrease-key, and duplicate-push + pop-guard is the
+                // standard Rust equivalent.) Strict `>`: the CURRENT entry's
+                // g was stored from the same assignment and matches
+                // bit-for-bit.
+                if entry_cost > node_cost {
+                    self.iter += 1;
+                    continue;
+                }
 
                 // Item 175: seed best-so-far with the START node on the
                 // first pop, so an exhausted/unreachable search falls back
@@ -278,13 +294,10 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
                         let cost = node_cost + transition_cost;
 
                         if cost < neighbor_cost {
-                            let previously_visited = self
-                                .visited_nodes
-                                .insert(neighbor.clone(), NodeEntry {
-                                    came_from: node.clone(),
-                                    cost,
-                                })
-                                .is_some();
+                            self.visited_nodes.insert(neighbor.clone(), NodeEntry {
+                                came_from: node.clone(),
+                                cost,
+                            });
                             let h = heuristic(&neighbor);
                             // note that `cost` field does not include the heuristic
                             // priority queue does include heuristic
@@ -309,21 +322,31 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
                                 self.closest_node = Some((neighbor.clone(), h));
                             };
 
-                            // We don't need to reconsider already visited nodes as astar finds the
-                            // shortest path to a node the first time it's visited, assuming the
-                            // heuristic function is admissible.
-                            if !previously_visited {
-                                let seq = self.next_seq;
-                                self.next_seq += 1;
-                                self.potential_nodes.push(PathEntry {
-                                    cost_estimate,
-                                    heuristic: h,
-                                    cost,
-                                    node_hash: frontier_node_hash(&neighbor),
-                                    seq,
-                                    node: neighbor,
-                                });
-                            }
+                            // bastion ENGINE-OPT-2 (ledger 176): ALWAYS
+                            // re-push on strict improvement — the reopen.
+                            // The old `if !previously_visited` guard silently
+                            // dropped improvements: an already-popped
+                            // (closed) node's cheaper path never propagated
+                            // to its children (correct only for CONSISTENT
+                            // heuristics; ours are merely admissible-ish),
+                            // and even an open node's stale entry popped in
+                            // stale order. Detour's findPath does exactly
+                            // this on strict improvement (clears
+                            // DT_NODE_CLOSED + modify/push); with no
+                            // decrease-key on BinaryHeap, the duplicate
+                            // entry + the pop-guard above is the standard
+                            // equivalent. Duplicates are bounded by edge
+                            // improvements; each costs one guarded pop.
+                            let seq = self.next_seq;
+                            self.next_seq += 1;
+                            self.potential_nodes.push(PathEntry {
+                                cost_estimate,
+                                heuristic: h,
+                                cost,
+                                node_hash: frontier_node_hash(&neighbor),
+                                seq,
+                                node: neighbor,
+                            });
                         }
                     }
                 }
@@ -519,6 +542,110 @@ mod tests {
             min_h,
             "fallback endpoint must be the provably-closest reachable node"
         );
+    }
+
+    /// ENGINE-OPT-2 (ledger 176) FALSIFIER: the late-discovered-shortcut
+    /// diamond. h is admissible everywhere (h ≤ true remaining cost) but
+    /// INCONSISTENT (h(A)=0 uninformed vs h(B)=9 exact), so A closes via
+    /// the expensive direct edge (f=9) before B (f=10) reveals the cheap
+    /// S→B→A path — the improvement lands on a CLOSED node and only a
+    /// reopen propagates it to G. Pre-176 (no-reopen) returns cost 17;
+    /// correct is 10. Verified RED on the pre-change mechanism.
+    #[test]
+    fn item_176_reopen_propagates_late_improvement_to_closed_node() {
+        // S=0, A=1, B=2, G=3; S→A=9, S→B=1, B→A=1, A→G=8.
+        let edges = |n: &u32| -> Vec<(u32, f32)> {
+            match n {
+                0 => vec![(1, 9.0), (2, 1.0)],
+                2 => vec![(1, 1.0)],
+                1 => vec![(3, 8.0)],
+                _ => vec![],
+            }
+        };
+        let h = |n: &u32| -> f32 {
+            match n {
+                0 => 0.0,
+                1 => 0.0,
+                2 => 9.0,
+                _ => 0.0,
+            }
+        };
+        let mut astar = Astar::new(100, 0u32, RandomState::new());
+        let result = astar.poll(100, h, |n| edges(n).into_iter(), |n| *n == 3);
+        match result {
+            PathResult::Path(p, cost) => {
+                assert_eq!(
+                    cost, 10.0,
+                    "reopen must propagate the late S→B→A improvement (pre-176 returned 17)"
+                );
+                assert_eq!(p.nodes, vec![0, 2, 1, 3]);
+            },
+            _ => panic!("path must be found"),
+        }
+    }
+
+    /// ENGINE-OPT-2 optimality property: Dijkstra-mode (h=0) on a weighted
+    /// lattice with deterministic asymmetric edge costs, checked against an
+    /// independent Bellman-Ford reference. Any stale-entry acceptance or
+    /// lost improvement diverges from the reference.
+    #[test]
+    fn item_176_costs_match_bellman_ford_reference_on_weighted_lattice() {
+        let goal: Node = (13, 3);
+        let start: Node = (2, 2);
+        // Deterministic, direction-asymmetric edge cost.
+        let edge_cost = |from: Node, to: Node| -> f32 {
+            1.0 + (((from.0 * 31 + from.1 * 17 + to.0 * 7 + to.1 * 3).rem_euclid(5)) as f32) * 0.5
+        };
+        let neighbors = |n: Node| -> Vec<(Node, f32)> {
+            [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                .into_iter()
+                .map(|(dx, dy)| (n.0 + dx, n.1 + dy))
+                .filter(|&c| passable(c, false))
+                .map(|c| (c, edge_cost(n, c)))
+                .collect()
+        };
+        // Bellman-Ford reference.
+        let mut dist: std::collections::HashMap<Node, f32> = std::collections::HashMap::new();
+        dist.insert(start, 0.0);
+        for _ in 0..(W * H) {
+            let mut changed = false;
+            for x in 0..W {
+                for y in 0..H {
+                    let n = (x, y);
+                    if !passable(n, false) {
+                        continue;
+                    }
+                    let Some(&dn) = dist.get(&n) else { continue };
+                    for (m, c) in neighbors(n) {
+                        let nd = dn + c;
+                        if dist.get(&m).is_none_or(|&dm| nd < dm - 1e-6) {
+                            dist.insert(m, nd);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        let reference = dist[&goal];
+        let mut astar = Astar::new(100_000, start, RandomState::new());
+        let result = astar.poll(
+            100_000,
+            |_| 0.0,
+            |&n| neighbors(n).into_iter(),
+            |&n| n == goal,
+        );
+        match result {
+            PathResult::Path(_, cost) => {
+                assert!(
+                    (cost - reference).abs() < 1e-4,
+                    "A* cost {cost} must match the Bellman-Ford reference {reference}"
+                );
+            },
+            _ => panic!("path must be found"),
+        }
     }
 
     #[test]
