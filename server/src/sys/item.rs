@@ -24,6 +24,8 @@ impl<'a> System<'a> for Sys {
         Read<'a, CachedSpatialGrid>,
         Read<'a, ProgramTime>,
         Read<'a, EventBus<DeleteEvent>>,
+        ReadStorage<'a, common::uid::Uid>,
+        Read<'a, crate::Tick>,
     );
 
     const NAME: &'static str = "item";
@@ -41,8 +43,36 @@ impl<'a> System<'a> for Sys {
             spatial_grid,
             program_time,
             delete_bus,
+            uids,
+            tick,
         ): Self::SystemData,
     ) {
+        // ENGOPT6 hunt round 5: the full merge trail — round 4 proved the
+        // divergent item deletion is THIS system's comp-take (uid 2's own
+        // pickup attempts were out-of-range every tick in both runs), with
+        // the check-due schedules byte-equal until the flip tick: one run's
+        // check found a merge partner, the other's found none. The partner's
+        // own state history was invisible to the recorder — so record every
+        // check fire (partner count), every performed merge, and every
+        // backoff update.
+        let recorder_on = bastion_server::bastion_flight_recorder::enabled();
+        let record_merge_event = |uid: u64, note: String| {
+            bastion_server::bastion_flight_recorder::record_writer(
+                bastion_server::bastion_flight_recorder::WriterEvent {
+                    schema: "bastion.flight-recorder.event/v1".into(),
+                    tick: tick.0,
+                    uid,
+                    observation_sequence: 320,
+                    snapshot_stage: "item-merge-trail".into(),
+                    dispatcher_dependency_proven: false,
+                    writer: "sys_item_merge".into(),
+                    move_dir: [0.0; 2],
+                    move_z: 0.0,
+                    target: None,
+                    note,
+                },
+            );
+        };
         let trace_b55_merges = std::env::var_os("BASTION_B55_TRACE_MERGES").is_some();
         // Contains items that have been checked for merge, or that were merged into
         // another one
@@ -69,6 +99,7 @@ impl<'a> System<'a> for Sys {
             // merged into another
             merged.insert(entity, true);
 
+            let partners_before = merges.len();
             for (source_entity, _) in get_nearby_mergeable_items(
                 item,
                 pos,
@@ -93,6 +124,18 @@ impl<'a> System<'a> for Sys {
                 merged.insert(source_entity, false);
                 // Defer the merge
                 merges.push((source_entity, entity));
+            }
+            if recorder_on {
+                record_merge_event(
+                    uids.get(entity).map(|u| u.0.get()).unwrap_or(0),
+                    format!(
+                        "check-fire; pt={}; due={}; partners={}; amount={}",
+                        program_time.0,
+                        item.next_merge_check().0,
+                        merges.len() - partners_before,
+                        item.amount(),
+                    ),
+                );
             }
         }
 
@@ -138,6 +181,16 @@ impl<'a> System<'a> for Sys {
                     );
                 }
                 // If the merging was successfull, we remove the old item entity from the ECS
+                if recorder_on {
+                    record_merge_event(
+                        uids.get(source).map(|u| u.0.get()).unwrap_or(0),
+                        format!(
+                            "merged-into; target={}; src_amount={source_amount};                              target_after={target_after}; pt={}",
+                            uids.get(target).map(|u| u.0.get()).unwrap_or(0),
+                            program_time.0,
+                        ),
+                    );
+                }
                 delete_emitter.emit(DeleteEvent(source));
             }
         }
@@ -149,6 +202,12 @@ impl<'a> System<'a> for Sys {
             if let Some(mut item) = items.get_mut(updated) {
                 item.next_merge_check_mut().0 +=
                     (program_time.0 - item.created().0).max(1.0 / CHECKS_PER_SECOND);
+                if recorder_on {
+                    record_merge_event(
+                        uids.get(updated).map(|u| u.0.get()).unwrap_or(0),
+                        format!("backoff; next={}; created={}", item.next_merge_check().0, item.created().0),
+                    );
+                }
             }
         }
     }
