@@ -554,6 +554,10 @@ pub struct Chaser {
     /// bastion ledger #183: negative cache — `Some` exactly while a
     /// completed no-path verdict suppresses re-search (see [`NoPathCache`]).
     no_path_cache: Option<NoPathCache>,
+    /// bastion ledger #180: ACTUAL expansions consumed by the most recent
+    /// search step (poll delta), as opposed to the [`Self::planned_iters`]
+    /// estimate. The PATH-0 scheduler debits this against its tick budget.
+    last_search_consumed: u64,
     flee_from: Option<Vec3<f32>>,
     /// Whether to allow consideration of longer paths, npc will stand still
     /// while doing this.
@@ -876,7 +880,7 @@ impl Chaser {
             self.astar = None;
         }
         self.astar_profile = Some(profile);
-        match find_path(
+        let (result, consumed) = find_path(
             &mut self.astar,
             vol,
             pos,
@@ -884,7 +888,11 @@ impl Chaser {
             traversal_cfg,
             self.path_length,
             self.flee_from,
-        ) {
+        );
+        // bastion ledger #180: actual expansions this step spent — the
+        // scheduler debits this, not its planned estimate.
+        self.last_search_consumed = consumed;
+        match result {
             PathResult::Pending => {
                 self.path_state = PathState::Pending;
             },
@@ -948,6 +956,10 @@ impl Chaser {
     {
         if self.route.is_none() {
             self.search_step_inner(vol, pos, tgt, traversal_cfg);
+        } else {
+            // bastion ledger #180: the no-op arm spent nothing — never let
+            // a stale delta from an earlier step be debited again.
+            self.last_search_consumed = 0;
         }
     }
 
@@ -962,6 +974,13 @@ impl Chaser {
             PathLength::Longest => 750,
         }
     }
+
+    /// bastion ledger #180: ACTUAL expansions the most recent search step
+    /// consumed — the scheduler debits this against its tick budget after
+    /// the step (admission still uses the conservative
+    /// [`Self::planned_iters`] estimate, so the cap cannot be exceeded:
+    /// actual <= planned for every step).
+    pub fn last_search_consumed(&self) -> u64 { self.last_search_consumed }
 
     pub fn get_route(&self) -> Option<&Route> { self.route.as_ref().map(|(r, ..)| r) }
 
@@ -1068,6 +1087,9 @@ pub struct Node {
 ///
 /// If `flee_from` is `Some` this will attempt to both walk away from that
 /// position and towards the target.
+/// bastion ledger #180: also returns the ACTUAL expansions this call
+/// consumed (the poll delta) so schedulers can debit real work instead of
+/// their planned estimate.
 fn find_path<V>(
     astar: &mut Option<(Astar<Node, FxBuildHasher>, Vec3<f32>)>,
     vol: &V,
@@ -1076,7 +1098,7 @@ fn find_path<V>(
     traversal_cfg: &TraversalConfig,
     path_length: PathLength,
     flee_from: Option<Vec3<f32>>,
-) -> PathResult<Vec3<i32>>
+) -> (PathResult<Vec3<i32>>, u64)
 where
     V: BaseVol<Vox = Block> + ReadVol,
 {
@@ -1105,7 +1127,7 @@ where
             (start, endf.map(|e| e.floor() as i32))
         },
 
-        _ => return PathResult::None(Path::default()),
+        _ => return (PathResult::None(Path::default()), 0),
     };
 
     let heuristic = |node: &Node| {
@@ -1412,6 +1434,10 @@ where
 
     astar.set_max_iters(max_iters);
 
+    // bastion ledger #180: expansions are counted as a delta around the
+    // poll — correct across resumed searches (a retained astar keeps its
+    // running total) and fresh creations (total starts at zero).
+    let consumed_before = astar.iters_consumed();
     let path_result = astar.poll(
         match path_length {
             PathLength::Small => 250,
@@ -1423,8 +1449,12 @@ where
         neighbors,
         satisfied,
     );
+    let consumed = (astar.iters_consumed() - consumed_before) as u64;
 
-    path_result.map(|path| path.nodes.into_iter().map(|n| n.pos).collect())
+    (
+        path_result.map(|path| path.nodes.into_iter().map(|n| n.pos).collect()),
+        consumed,
+    )
 }
 
 /// bastion (FR15 fix-1): compute a COMPLETE path ONCE — no per-call budget,
@@ -1460,7 +1490,9 @@ where
             traversal_cfg,
             PathLength::Medium,
             None,
-        ) {
+        )
+        .0
+        {
             PathResult::Pending => continue,
             PathResult::Path(path, _cost) => {
                 return Some(path.nodes.into_iter().collect());
@@ -1922,7 +1954,9 @@ mod bastion_vertical_tests {
                 cfg,
                 PathLength::Medium,
                 None,
-            ) {
+            )
+            .0
+            {
                 PathResult::Pending => continue,
                 r => return r,
             }
@@ -2364,6 +2398,65 @@ mod ledger_183_tests {
     }
 }
 
+// bastion ledger #180: the scheduler debits ACTUAL search work (poll
+// deltas), not its planned estimate — these pin the delta semantics the
+// debit relies on (trivial searches are cheap, no-op grants are free,
+// exhausted slices bill the full slice, and actual never exceeds planned).
+#[cfg(test)]
+mod ledger_180_tests {
+    use super::{
+        *,
+        bastion_vertical_tests::{wall_world, worker_cfg},
+    };
+
+    #[test]
+    fn ledger_180_actual_consumption_tracks_real_work() {
+        let vol = wall_world(false);
+        let cfg = TraversalConfig {
+            search_allowed: false,
+            ..worker_cfg()
+        };
+        let pos = Vec3::new(0.0, 0.5, 1.0);
+        let tgt = Vec3::new(3.5, 0.5, 1.0);
+
+        // A trivial 3-cell route must cost far less than the planned slice.
+        let mut chaser = Chaser::default();
+        chaser.search_step(&vol, pos, tgt, &cfg);
+        let trivial = chaser.last_search_consumed();
+        assert!(trivial > 0, "a real search consumes at least one expansion");
+        assert!(
+            trivial < chaser.planned_iters(),
+            "trivial search must undercut the planned estimate: {trivial} vs {}",
+            chaser.planned_iters()
+        );
+
+        // A granted step that races an existing route is a no-op — zero.
+        chaser.search_step(&vol, pos, tgt, &cfg);
+        assert_eq!(
+            chaser.last_search_consumed(),
+            0,
+            "the no-op grant arm must never re-bill a stale delta"
+        );
+
+        // A slice that ends mid-search (Pending) bills exactly the slice.
+        let mut long = Chaser::default();
+        let far_tgt = Vec3::new(12.5, 0.5, 5.0);
+        long.search_step(&vol, Vec3::new(0.0, 0.5, 1.0), far_tgt, &TraversalConfig {
+            can_climb: false,
+            scramble_reach: 0,
+            ..cfg
+        });
+        let (_, state) = long.state();
+        if state == PathState::Pending {
+            assert_eq!(long.last_search_consumed(), 250, "a full slice bills 250");
+        }
+        assert!(
+            long.last_search_consumed() <= long.planned_iters(),
+            "actual must never exceed planned (the cap-holding invariant)"
+        );
+    }
+}
+
 // bastion ledger #179: `find_path`'s edge-cost policy is a function of
 // `path_length` (Small discourages wall-adjacent cells via `edge_cost`;
 // Medium+ does not). The Exhausted-upgrade ladder retains the search across
@@ -2463,7 +2556,9 @@ mod ledger_179_tests {
                 &trap_cfg(),
                 PathLength::Medium,
                 None,
-            ) {
+            )
+            .0
+            {
                 PathResult::Pending => continue,
                 PathResult::Path(path, _) => {
                     reference = Some(path.nodes.clone());

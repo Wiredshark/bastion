@@ -215,6 +215,12 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
 
     pub fn set_max_iters(&mut self, max_iters: usize) { self.max_iters = max_iters; }
 
+    /// bastion ledger #180: total expansions this search has consumed —
+    /// deltas around a poll give the ACTUAL per-slice work, replacing the
+    /// scheduler's planned-budget estimate (cooperative work schedulers /
+    /// token-bucket accounting).
+    pub fn iters_consumed(&self) -> usize { self.iter }
+
     /// bastion ledger #179 (test-only): the visited set — lets a falsifier
     /// assert its stale-region precondition (that the phase-1 search
     /// actually touched the decision surface the comparison rides on).

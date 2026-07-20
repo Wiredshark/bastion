@@ -246,8 +246,15 @@ impl<'a> System<'a> for Sys {
             }
             if let Some(agent) = agents.get_mut(entity) {
                 agent.chaser.search_step(&*terrain, pos.0, tgt, &cfg);
+                // bastion ledger #180: debit ACTUAL expansions, not the
+                // planned estimate — a trivial search no longer eats a
+                // 250-iter slot, so more colonists are served per tick.
+                // Admission (above) still projects with `planned`, and
+                // actual <= planned per step, so the cap holds.
+                used += agent.chaser.last_search_consumed().min(planned);
+            } else {
+                used += planned;
             }
-            used += planned;
             sched.grants_total += 1;
             sched.cursor = Some(uid64);
             sched.waits.remove(&uid64);
