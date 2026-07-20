@@ -229,10 +229,8 @@ impl Server {
 
         self.state.maintain_ecs();
 
-        #[cfg(debug_assertions)]
-        {
-            event_types::check_event_handlers(self.state.ecs_mut())
-        }
+        // T0.26: topology validation runs in ALL builds (one-time).
+        event_types::check_event_handlers(self.state.ecs_mut());
 
         frontend_events
     }

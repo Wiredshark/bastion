@@ -121,7 +121,10 @@ pub(crate) fn register_event_busses(ecs: &mut specs::World) {
 ///
 /// Needs to be called on the first tick after all event handlers have run.
 /// After the initial call this does nothing.
-#[cfg(debug_assertions)]
+///
+/// T0.26 (master build order; Run 12): runs in ALL builds — a release
+/// topology with an unconsumed or doubly-consumed event is exactly as
+/// broken as a debug one, and the check costs one pass on the first tick.
 pub(super) fn check_event_handlers(ecs: &mut specs::World) {
     struct CheckedEventHandlers;
     if ecs.get_mut::<CheckedEventHandlers>().is_some() {
