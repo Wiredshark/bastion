@@ -213,7 +213,14 @@ pub fn quest_request<S: State>(session: DialogueSession) -> impl Action<S> {
                                 let quest =
                                     Quest::escort(ctx.npc_id.into(), session.target, dst_site_id)
                                         .with_deposit(ESCORT_REWARD_ITEM, escort_reward_amount)
-                                        .with_timeout(ctx.time.add_minutes(time_limit));
+                                        // T0.11: sim-minutes preserved as a
+                                        // duration via the day-cycle scale.
+                                        .with_timeout(common::resources::TimeOfDay(
+                                            ctx.time_of_day.0
+                                                + time_limit
+                                                    * 60.0
+                                                    * ctx.system_data.server_constants.day_cycle_coefficient,
+                                        ));
                                 create_quest(quest.clone())
                                     .and_then(move |quest_id| {
                                         now(move |ctx, _| {
@@ -293,7 +300,12 @@ pub fn quest_request<S: State>(session: DialogueSession) -> impl Action<S> {
                                     session.target,
                                 )
                                 .with_deposit(ESCORT_REWARD_ITEM, slay_reward_amount)
-                                .with_timeout(ctx.time.add_minutes(60.0));
+                                .with_timeout(common::resources::TimeOfDay(
+                                    ctx.time_of_day.0
+                                        + 60.0
+                                            * 60.0
+                                            * ctx.system_data.server_constants.day_cycle_coefficient,
+                                ));
                                 create_quest(quest.clone())
                                     .then(
                                         session.give_marker(
@@ -374,7 +386,12 @@ pub fn quest_request<S: State>(session: DialogueSession) -> impl Action<S> {
                 let tgt_name_marker = tgt_name.clone();
                 let tgt_actor_wpos = quest_tgt.wpos.xy();
                 let tgt_actor = quest_tgt_actor;
-                let quest_exp = ctx.time.add_minutes(180.0);
+                // T0.11: world-clock deadline (sim-minutes preserved as a
+                // duration via the day-cycle scale).
+                let quest_exp = common::resources::TimeOfDay(
+                    ctx.time_of_day.0
+                        + 180.0 * 60.0 * ctx.system_data.server_constants.day_cycle_coefficient,
+                );
 
                 let quest_offer = accept_quest
                     .and_then(move |yes| {
@@ -475,8 +492,8 @@ pub fn check_for_timeouts<S: State>(ctx: &mut NpcCtx) -> Option<impl Action<S> +
             continue;
         };
         if let Some(timeout) = quest.timeout
-            // The quest has timed out...
-            && ctx.time > timeout
+            // The quest has timed out... (T0.11: world-clock compare)
+            && ctx.time_of_day.0 > timeout.0
             // ...so resolve it
             && let Ok(Some(_)) = resolve_take_deposit(ctx, quest_id, false)
         {

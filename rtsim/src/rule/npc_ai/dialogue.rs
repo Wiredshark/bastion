@@ -499,9 +499,14 @@ fn hire<S: State>(tgt: Actor, session: DialogueSession) -> impl Action<S> {
                     session
                         .say_statement(Content::localized("npc-response-accept_hire"))
                         .then(just(move |ctx, _| {
+                            // T0.11: hire "days" are WORLD days — anchor
+                            // the deadline to the world calendar so a server
+                            // restart cannot extend it.
                             ctx.controller.set_newly_hired(
                                 tgt,
-                                ctx.time.add_days(days, &ctx.system_data.server_constants),
+                                common::resources::TimeOfDay(
+                                    ctx.time_of_day.0 + days * 24.0 * 3600.0,
+                                ),
                             );
                         }))
                         .boxed(),

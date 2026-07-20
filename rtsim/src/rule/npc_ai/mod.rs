@@ -629,8 +629,8 @@ fn hired(tgt: Actor) -> impl Action<DefaultState> {
         .interrupt_with(move |ctx, _| {
             // End hiring for various reasons
             if let Some((tgt, expires)) = ctx.npc.hired() {
-                // Hiring period has expired
-                if ctx.time > expires {
+                // Hiring period has expired (T0.11: world-clock compare)
+                if ctx.time_of_day.0 > expires.0 {
                     ctx.controller.end_hiring();
                     // If the actor exists, tell them that the hiring is over
                     if util::actor_exists(ctx, tgt) {
@@ -1589,7 +1589,10 @@ fn check_inbox<S: State>(ctx: &mut NpcCtx) -> Option<impl Action<S> + use<S>> {
                             ctx.controller
                                 .say(from, Content::localized("npc-response-accept_hire"));
                             ctx.controller
-                                .set_newly_hired(from, common::resources::Time(f64::INFINITY));
+                                .set_newly_hired(
+                                    from,
+                                    common::resources::TimeOfDay(f64::INFINITY),
+                                );
                         }))
                         .boxed(),
                 );

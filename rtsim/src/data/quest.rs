@@ -1,5 +1,5 @@
 use common::{
-    resources::Time,
+    resources::{Time, TimeOfDay},
     rtsim::{Actor, ItemResource, QuestId, SiteId},
 };
 use hashbrown::{HashMap, HashSet};
@@ -161,7 +161,10 @@ pub struct Quest {
 
     /// The time before which the quest should be completed to be considered
     /// successful.
-    pub timeout: Option<Time>,
+    ///
+    /// T0.11: WORLD-clock stamp (see `Job::Hired`) — a sim-`Time` deadline
+    /// here silently gained the previous uptime across every restart.
+    pub timeout: Option<TimeOfDay>,
 
     outcome: QuestOutcome,
 
@@ -229,7 +232,7 @@ impl Quest {
 
     /// Add a timeout to the quest, beyond which the quest is considered to be
     /// failed.
-    pub fn with_timeout(mut self, time: Time) -> Self {
+    pub fn with_timeout(mut self, time: TimeOfDay) -> Self {
         self.timeout = Some(time);
         self
     }

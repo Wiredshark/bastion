@@ -7,7 +7,7 @@ use vek::Vec3;
 pub const DAY: f64 = 3600.0 * 24.0;
 
 /// A resource that stores the time of day.
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, Default, PartialEq, PartialOrd)]
 pub struct TimeOfDay(pub f64);
 impl TimeOfDay {
     pub fn new(t: f64) -> Self { TimeOfDay(t) }

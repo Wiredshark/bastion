@@ -147,7 +147,7 @@ impl Controller {
         self.new_home = Some(new_home.into());
     }
 
-    pub fn set_newly_hired(&mut self, actor: Actor, expires: Time) {
+    pub fn set_newly_hired(&mut self, actor: Actor, expires: TimeOfDay) {
         self.job = Some(Job::Hired(actor, expires));
     }
 
@@ -348,7 +348,14 @@ pub struct Npc {
 pub enum Job {
     /// An NPC can temporarily become a hired hand (`(hiring_actor,
     /// termination_time)`).
-    Hired(Actor, Time),
+    ///
+    /// T0.11 (master build order): the termination stamp is a WORLD-clock
+    /// (`TimeOfDay`) timestamp, not sim `Time` — sim time is
+    /// restart-relative, so a persisted deadline on it silently extends by
+    /// the previous server uptime on every load. Long-lived deadlines
+    /// anchor to the world calendar (T0-001 research packet: absolute
+    /// world timestamps for strategic time).
+    Hired(Actor, TimeOfDay),
     /// NPC is helping to perform a quest
     Quest(QuestId),
 }
@@ -478,7 +485,7 @@ impl Npc {
         }
     }
 
-    pub fn hired(&self) -> Option<(Actor, Time)> {
+    pub fn hired(&self) -> Option<(Actor, TimeOfDay)> {
         if let Some(Job::Hired(actor, time)) = self.job {
             Some((actor, time))
         } else {
