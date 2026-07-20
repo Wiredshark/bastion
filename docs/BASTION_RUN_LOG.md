@@ -4186,6 +4186,18 @@ Everything else about M3A improved: 0 teleports, deliveries 61s and 56s
 faster than the B58 baseline. Architect-ruled tag-acceptable; the fork-15
 fix is routed as Builder 4's own immediate next block, falsifier-first.
 
+**★ CORRECTION (2026-07-20, same day): the fork-15/vanilla-climb-leak
+mechanism above was WRONG** — organic-tape writer attribution proved no
+climb-assist writer exists at any violation tick. Actual mechanism:
+PASSIVE physics (soft-collision crowd-shove + vanilla's own auto-step-up
+onto rung platforms) during CONSTRUCTION, because the off-lane staging
+steer only engages once `route_complete` — queued members near an
+in-progress build sit unsteered and get physically nudged onto it. The
+"task-less presence in the lane" symptom was real and correctly flagged;
+the assumed mechanism behind it was not. Full corrected classification:
+registry B60 (updated in place, original framing preserved struck-through
+for the trail).
+
 **Also flagged, not yet acted on (registry B61):** `Civs::neighbors`'
 `track_map` HashMap-iteration order-fragility — same-binary-stable, could
 reorder across a build with different insertion history. No observed
