@@ -2325,6 +2325,24 @@ fn m3_promoted_corridor_waypoint(
     )
 }
 
+/// bastion (B57 site 4): a sweep hit on the route's OWN installed
+/// Ladder-sprite access cell is the destination apparatus, not an obstacle
+/// — the own-prefix-self-hit class (corridor-step anchoring / corridor
+/// commit / mount preflight / NOW the corridor-step runtime re-validation;
+/// seed-21 tape: 1770 commit→invalidate cycles, the planned segment itself
+/// clips the rung column at that geometry). Physics + the squeeze window
+/// own real contact; corridor targets never aim at the rung voxel.
+fn emergency_own_prefix_hit(
+    own_prefix_cells: &HashSet<Vec3<i32>>,
+    terrain: &TerrainGrid,
+    hit: Option<common_systems::phys::TerrainSweepHit>,
+) -> bool {
+    hit.is_some_and(|h| {
+        own_prefix_cells.contains(&h.block)
+            && terrain.get(h.block).ok().and_then(|b| b.get_sprite()) == Some(SpriteKind::Ladder)
+    })
+}
+
 /// Reuse the authoritative capsule sweep to select a deterministic supported
 /// approach beside the installed ladder prefix.  Both the ordinary partial
 /// route handoff and the cursor's contact-reacquisition path call this helper;
@@ -8665,6 +8683,16 @@ impl<'a> System<'a> for Sys {
                                 }
                             }
 
+                            // B57 site 4: the owner's installed access cells,
+                            // snapshotted BEFORE the corridor borrow (the
+                            // own-prefix predicate runs inside it).
+                            let own_prefix_cells: HashSet<Vec3<i32>> = board
+                                .emergency_access_cells
+                                .iter()
+                                .filter_map(|(cell, (cell_owner, _))| {
+                                    (*cell_owner == owner).then_some(*cell)
+                                })
+                                .collect();
                             let corridor_step = board
                                 .emergency_approach_corridors
                                 .get_mut(&uid)
@@ -8690,7 +8718,15 @@ impl<'a> System<'a> for Sys {
                                                 pos.0.xy().distance(target.xy()),
                                                 (pos.0.z - target.z).abs(),
                                                 emergency_corridor_standable(&*terrain, waypoint),
-                                                endpoint_hit.is_none(),
+                                                // B57 site 4: an own-rung
+                                                // clip is not a blocked
+                                                // endpoint.
+                                                endpoint_hit.is_none()
+                                                    || emergency_own_prefix_hit(
+                                                        &own_prefix_cells,
+                                                        &terrain,
+                                                        endpoint_hit,
+                                                    ),
                                             )
                                         {
                                             corridor.next_idx += 1;
@@ -8747,7 +8783,18 @@ impl<'a> System<'a> for Sys {
                                 });
                                 if cylinder.is_none()
                                     || !emergency_corridor_standable(&*terrain, waypoint)
-                                    || runtime_hit.is_some()
+                                    // B57 site 4 (the seed-21 1770-cycle
+                                    // commit→invalidate livelock): a planned
+                                    // segment clipping the route's OWN rung
+                                    // column is contact with the destination
+                                    // apparatus, not staleness — only a
+                                    // NON-own-prefix hit invalidates.
+                                    || (runtime_hit.is_some()
+                                        && !emergency_own_prefix_hit(
+                                            &own_prefix_cells,
+                                            &terrain,
+                                            runtime_hit,
+                                        ))
                                 {
                                     board.emergency_approach_corridors.remove(&uid);
                                     active.stuck_time = 0.0;
@@ -8979,6 +9026,16 @@ impl<'a> System<'a> for Sys {
                             // touched.
                             .or_else(|| {
                                 let feet = pos.0.map(|value| value.floor() as i32);
+                                // Adjacency bound = 4: the ±3 ladder-grab
+                                // band + 1 (the magnetism's own reach —
+                                // 4776's stop-band rationale). The original
+                                // <=2 was one cell too tight in the wild:
+                                // seed-21's owner parks at Chebyshev 3 from
+                                // its own built prefix (frontier claim on
+                                // rung 6, travel suppressed, transaction
+                                // never formed — the whole crew net-drained
+                                // in queue order; quiet-rerun-deterministic
+                                // on seeds 21+42).
                                 (grounded_clear
                                     && board.emergency_access_cells.iter().any(
                                         |(cell, (cell_owner, _))| {
@@ -8986,7 +9043,7 @@ impl<'a> System<'a> for Sys {
                                                 && (cell.x - feet.x)
                                                     .abs()
                                                     .max((cell.y - feet.y).abs())
-                                                    <= 2
+                                                    <= 4
                                         },
                                     ))
                                 .then(|| EmergencyPartialRouteEntry {
