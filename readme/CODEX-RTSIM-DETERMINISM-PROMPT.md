@@ -39,12 +39,26 @@ Re-run your EXACT x2 gate command (same seed 21, same tool, new evidence dir). R
 - Trajectory tapes stay byte-identical (already were).
 If ANY of those aren't identical, report exactly like last time — do not normalize, do not force a pass.
 
-## Only if the gate goes green: the multi-seed corpus
-Your evidence correctly skipped this while the gate was red. Once green, this is a good candidate for
-the VM infra (a "many seeds, one scenario" shape): from your worktree,
-`BRANCH=codex/boot-cache bash /e/veloren-master/vm-scale.sh e2-standard-32 <N_seeds> <first-seed> "<your gate command>" <max_usd> <max_min>`
-runs it on an ephemeral 32-core cloud VM (auto-deletes after; harmless to the M3 builder — separate
-branch, separate VMs). Optional — local is fine too if the corpus is small.
+## Only if the gate goes green: the multi-seed corpus (optional — local is fine for a small corpus)
+This is a good candidate for the shared VM infra (a "many seeds, one scenario" shape). Important: your
+own worktree (`E:\bastion-bootcache`) is anchored at an OLDER commit and does not have these
+scripts/docs locally — they live in the MAIN checkout, so use the ABSOLUTE path shown below (same
+machine, same filesystem — this works regardless of your worktree's anchor commit).
+
+- **Read first (optional but recommended):** `/e/veloren-master/readme/BUILD-AND-TEST-PROCESS.md`
+  §11 (how the ephemeral VMs work) · §12 (quotas: 96 vCPU cap, no disk limit) · §13 (BIG-VM vs
+  MANY-VMs — for this task, ONE e2-standard-32 is right; do NOT spin up many small VMs — GCP
+  rate-limits parallel VM creation from our shared golden image, which caused real failures earlier
+  today) · §14 (cost/safety — every VM self-deletes; nothing persists).
+- **Sanity-check access first** (cheap, confirms gcloud/SSH work before you rely on it):
+  `bash /e/veloren-master/vm-quota-check.sh`
+- **Run the corpus:**
+  `BRANCH=codex/boot-cache bash /e/veloren-master/vm-scale.sh e2-standard-32 <N_seeds> <first-seed> "<your gate command>" <max_usd> <max_min>`
+  (last two args are a hard $ and minute ceiling — the run self-cuts-off if exceeded). This creates
+  ONE ephemeral 32-core VM checked out to `codex/boot-cache`, runs the N seeds in parallel, streams
+  results back, then deletes the VM — harmless to the M3 builder (separate branch, separate VMs).
+- **If anything looks stuck or left running:** `bash /e/veloren-master/vm-cleanup.sh` (panic button —
+  stops/deletes any stray VM; safe to run anytime).
 
 ## Report back exactly like before
 State PASS/FAIL on the re-gate with the same evidence rigor (SHA-256s, exact commands, exit codes). If
