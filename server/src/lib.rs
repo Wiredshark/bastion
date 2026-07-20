@@ -3063,6 +3063,7 @@ impl Server {
                     comp::loot_owner::LootOwnerKind::Player(common::uid::Uid(fake_uid)),
                     false,
                     600,
+                    *ecs.read_resource::<common::resources::Time>(),
                 )),
                 persistent: false,
             });

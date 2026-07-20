@@ -215,7 +215,9 @@ impl ServerEvent for InventoryManipEvent {
                                     entity: pickup_uid,
                                     reason: CollectFailedReason::LootOwned {
                                         owner: loot_owner.owner(),
-                                        expiry_secs: loot_owner.time_until_expiration().as_secs(),
+                                        expiry_secs: loot_owner
+                                            .time_until_expiration(*data.time)
+                                            .as_secs(),
                                     },
                                 };
                                 if let Some(buf) = data.inventory_update_buffers.get_mut(entity) {
@@ -558,6 +560,7 @@ impl ServerEvent for InventoryManipEvent {
                                 LootOwnerKind::Player(*uid),
                                 false,
                                 ONWERSHIP_TIMEOUT_FAST,
+                                *data.time,
                             )),
                             persistent: false,
                         });
@@ -1199,6 +1202,7 @@ impl ServerEvent for InventoryManipEvent {
                     LootOwnerKind::Player(owner),
                     true,
                     ONWERSHIP_TIMEOUT_SLOW,
+                    *data.time,
                 )),
                 persistent: false,
             })

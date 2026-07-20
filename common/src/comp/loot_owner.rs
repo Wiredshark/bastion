@@ -1,19 +1,26 @@
 use crate::{
     comp::{Alignment, Body, Group, Player},
+    resources::Time,
     uid::Uid,
 };
 use serde::{Deserialize, Serialize};
 use specs::{Component, DerefFlaggedStorage};
-use std::{
-    ops::Add,
-    time::{Duration, Instant},
-};
+use std::time::Duration;
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct LootOwner {
-    // TODO: Fix this if expiry is needed client-side, Instant is not serializable
-    #[serde(skip, default = "Instant::now")]
-    expiry: Instant,
+    // bastion ENGOPT6: SIM-time seconds at which ownership lapses. This was
+    // a wall-clock `Instant` — in the headless deterministic harness
+    // (~9x wall speed) a wall-anchored expiry lands on a machine-throughput-
+    // dependent sim tick, and the recorder tape pair pinned exactly that: a
+    // contested haul item's ownership lapsing at tick 3960 on one VM and
+    // ~3976 on the other (tapes byte-equal until that tick), cascading into
+    // the whole agent-layer residual divergence family. Sim-visible logic
+    // may only read the sim clock.
+    // Not synced: the client never needed the old Instant either (it was
+    // serde-skipped); keep the wire format free of it.
+    #[serde(skip)]
+    expires_at: f64,
     owner: LootOwnerKind,
     soft: bool,
 }
@@ -23,9 +30,9 @@ pub const ONWERSHIP_TIMEOUT_SLOW: u64 = 45;
 pub const ONWERSHIP_TIMEOUT_FAST: u64 = 10;
 
 impl LootOwner {
-    pub fn new(kind: LootOwnerKind, soft: bool, duration: u64) -> Self {
+    pub fn new(kind: LootOwnerKind, soft: bool, duration_secs: u64, now: Time) -> Self {
         Self {
-            expiry: Instant::now().add(Duration::from_secs(duration)),
+            expires_at: now.0 + duration_secs as f64,
             owner: kind,
             soft,
         }
@@ -40,11 +47,11 @@ impl LootOwner {
 
     pub fn owner(&self) -> LootOwnerKind { self.owner }
 
-    pub fn time_until_expiration(&self) -> Duration { self.expiry - Instant::now() }
+    pub fn time_until_expiration(&self, now: Time) -> Duration {
+        Duration::from_secs_f64((self.expires_at - now.0).max(0.0))
+    }
 
-    pub fn expired(&self) -> bool { self.expiry <= Instant::now() }
-
-    pub fn default_instant() -> Instant { Instant::now() }
+    pub fn expired(&self, now: Time) -> bool { self.expires_at <= now.0 }
 
     /// This field stands as a wish for NPC's to not pick the loot up, they will
     /// however be able to decide whether they want to follow your wishes or not
@@ -97,7 +104,29 @@ mod tests {
     use super::*;
 
     fn owner_of(uid: Uid, soft: bool) -> LootOwner {
-        LootOwner::new(LootOwnerKind::Player(uid), soft, 60)
+        LootOwner::new(LootOwnerKind::Player(uid), soft, 60, Time(0.0))
+    }
+
+    /// bastion ENGOPT6: expiry is a pure function of SIM time — the
+    /// wall-clock (`Instant`) form could not express this property at all,
+    /// which is exactly how a 45-wall-second timeout became a machine-
+    /// throughput-dependent sim tick (the tick-3960-vs-3976 tape pair).
+    #[test]
+    fn engopt6_expiry_follows_sim_time_only() {
+        let owner = LootOwner::new(LootOwnerKind::Player(uid(1)), false, 45, Time(100.0));
+        assert!(!owner.expired(Time(100.0)));
+        assert!(!owner.expired(Time(144.999)));
+        assert!(owner.expired(Time(145.0)));
+        assert_eq!(
+            owner.time_until_expiration(Time(100.0)),
+            core::time::Duration::from_secs(45)
+        );
+        // Post-expiry the remaining duration saturates at zero (the old
+        // Instant subtraction PANICS on this input in debug builds).
+        assert_eq!(
+            owner.time_until_expiration(Time(200.0)),
+            core::time::Duration::ZERO
+        );
     }
 
     fn uid(n: u64) -> Uid { Uid(core::num::NonZeroU64::new(n).unwrap()) }
