@@ -595,6 +595,13 @@ impl RtSim {
     }
 }
 
+// Crate-split seam: the bastion job system (now in the `bastion-server` leaf)
+// reads rtsim state through this one-method trait instead of naming `RtSim`
+// directly; `sys/mod.rs` registers `bastion_jobs::Sys<RtSim>`.
+impl bastion_server::bastion_jobs::RtSimAccess for RtSim {
+    fn rt_state(&self) -> &RtState { self.state() }
+}
+
 fn save_thread(file_path: PathBuf, rx: Receiver<Data>) {
     if let Some(dir) = file_path.parent() {
         let _ = fs::create_dir_all(dir);

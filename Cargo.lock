@@ -627,6 +627,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "bastion-server"
+version = "0.18.0"
+dependencies = [
+ "enum-map",
+ "hashbrown 0.17.1",
+ "rand 0.10.1",
+ "ron",
+ "serde",
+ "serde_json",
+ "specs",
+ "tracing",
+ "vek 0.17.2",
+ "veloren-common",
+ "veloren-common-ecs",
+ "veloren-common-net",
+ "veloren-common-state",
+ "veloren-common-systems",
+ "veloren-rtsim",
+ "veloren-world",
+]
+
+[[package]]
 name = "bincode"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8947,6 +8969,7 @@ version = "0.18.0"
 dependencies = [
  "atomicwrites",
  "authc",
+ "bastion-server",
  "bincode",
  "censor",
  "chrono",

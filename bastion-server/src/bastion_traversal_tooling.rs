@@ -1286,8 +1286,8 @@ mod tests {
     #[test]
     fn stage1_old_mount_owner_and_duplicate_reservation_are_absent() {
         let root = repo_root();
-        let jobs = fs::read_to_string(root.join("server/src/bastion_jobs.rs")).unwrap();
-        let traversal = fs::read_to_string(root.join("server/src/bastion_traversal.rs")).unwrap();
+        let jobs = fs::read_to_string(root.join("bastion-server/src/bastion_jobs.rs")).unwrap();
+        let traversal = fs::read_to_string(root.join("bastion-server/src/bastion_traversal.rs")).unwrap();
         for legacy in [
             "EmergencyMountTransaction",
             "EmergencyMountPhase",
@@ -1502,7 +1502,7 @@ mod tests {
         },
         RequiredInventoryRecord {
             id: "INV-BASTION-ROUTE",
-            path: "server/src/bastion_jobs.rs",
+            path: "bastion-server/src/bastion_jobs.rs",
             source_marker: "bastion_traversal_tasks",
             eligibility_phase: "Bastion route member; Server Create after Agent and PATH-0",
             classification: "included traversal conflict",
@@ -1785,6 +1785,9 @@ mod tests {
 
         let mut files = Vec::new();
         collect_rs_files(&repo_root().join("server/src"), &mut files);
+        // Crate-split: the bastion modules moved out of server/src — the
+        // activity-writer sweep must keep covering them from their new home.
+        collect_rs_files(&repo_root().join("bastion-server/src"), &mut files);
         let mut activity_writers = files
             .into_iter()
             .filter(|path| !path.ends_with("bastion_traversal_tooling.rs"))
@@ -1801,7 +1804,7 @@ mod tests {
             .collect::<Vec<_>>();
         activity_writers.sort();
         assert_eq!(activity_writers, vec![
-            "server/src/bastion_jobs.rs",
+            "bastion-server/src/bastion_jobs.rs",
             "server/src/lib.rs",
             "server/src/rtsim/tick.rs",
         ]);

@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "bastion-harness",
+    "bastion-server",
     "client",
     "client/i18n",
     "common",

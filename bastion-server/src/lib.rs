@@ -1,0 +1,49 @@
+//! bastion-server: the bastion server-side systems/logic leaf crate.
+//!
+//! Pure structural extraction of the 12 `bastion_*` modules from
+//! `veloren-server` (see `readme/CRATE-SPLIT-BASTION-SERVER-PACKET.md`) so a
+//! job-logic edit recompiles this leaf + a server relink instead of all of
+//! `veloren-server`. Same pattern as `common`/`common-ecs`/`common-state`:
+//! nothing here is new code — behavior is byte-identical by the split's
+//! acceptance bar.
+//!
+//! `veloren-server` re-exports every moved item at its old path (`Tick`,
+//! `presence::RepositionToFreeSpace`, the `bastion_*` modules, `test_world`),
+//! so existing `crate::…` references in the server and `server::…` references
+//! in the harness compile unchanged.
+
+use serde::{Deserialize, Serialize};
+use specs::{Component, VecStorage};
+
+pub mod bastion_actions;
+// (bastion_arena stayed in veloren-server: it is an `impl Server` integration
+// shim — an inherent impl on the server type cannot live in a leaf crate.)
+#[cfg(feature = "worldgen")] pub mod bastion_assets;
+pub mod bastion_chop;
+pub mod bastion_flat_arena;
+pub mod bastion_flight_recorder;
+pub mod bastion_jobs;
+pub mod bastion_mood;
+pub mod bastion_path;
+pub mod bastion_piles;
+pub mod bastion_traversal;
+pub mod bastion_traversal_tooling;
+#[cfg(not(feature = "worldgen"))] pub mod test_world;
+
+// Tick count used for throttling network updates
+// Note this doesn't account for dt (so update rate changes with tick rate)
+// (moved from veloren-server lib.rs in the crate-split; the field is `pub`
+// now that its server-side users live in a different crate)
+#[derive(Copy, Clone, Default)]
+pub struct Tick(pub u64);
+
+// (moved from veloren-server presence.rs in the crate-split; re-exported there)
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RepositionToFreeSpace {
+    pub needs_ground: bool,
+    pub modify_waypoints: bool,
+}
+
+impl Component for RepositionToFreeSpace {
+    type Storage = VecStorage<Self>;
+}

@@ -43,7 +43,7 @@ pub fn add_server_systems(dispatch_builder: &mut DispatcherBuilder) {
     // Stage-1 B5.8: make the Agent -> PATH-0 -> Bastion handoff explicit.
     // Agent alone writes normal approach intent; Bastion may acquire the link
     // owner only after that pass and projects the exclusion used next tick.
-    dispatch::<crate::bastion_jobs::Sys>(dispatch_builder, &[
+    dispatch::<crate::bastion_jobs::Sys<crate::rtsim::RtSim>>(dispatch_builder, &[
         &agent::Sys::sys_name(),
         &crate::bastion_path::Sys::sys_name(),
     ]);

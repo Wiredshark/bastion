@@ -1,0 +1,29 @@
+[package]
+name = "bastion-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+worldgen = []
+
+[dependencies]
+common = { package = "veloren-common", path = "../common" }
+common-ecs = { package = "veloren-common-ecs", path = "../common/ecs" }
+common-state = { package = "veloren-common-state", path = "../common/state" }
+common-net = { package = "veloren-common-net", path = "../common/net" }
+common-systems = { package = "veloren-common-systems", path = "../common/systems" }
+world = { package = "veloren-world", path = "../world" }
+rtsim = { package = "veloren-rtsim", path = "../rtsim" }
+specs = { workspace = true, features = ["shred-derive"] }
+tracing = { workspace = true }
+vek = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ron = { workspace = true }
+rand = { workspace = true }
+hashbrown = { workspace = true }
+enum-map = { workspace = true }

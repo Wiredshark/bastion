@@ -7,23 +7,20 @@
 #![feature(box_patterns, option_zip, const_type_name, slice_partition_dedup)]
 
 pub mod automod;
-// bastion (B-ASSET1): the --asset-arena test chamber (env-gated).
+// bastion (B-ASSET1): the --asset-arena test chamber (env-gated). Stays in
+// this crate (unlike its 11 siblings below): it is an `impl Server` shim.
 #[cfg(feature = "worldgen")]
 pub mod bastion_arena;
-// bastion (B-ASSET1): asset-lab runtime loader + placement (worldgen types).
+// bastion: the other bastion_* modules live in the `bastion-server` leaf crate
+// (crate-split — see readme/CRATE-SPLIT-BASTION-SERVER-PACKET.md); re-exported
+// at their old paths so every crate::bastion_*/server::bastion_* reference
+// compiles unchanged.
 #[cfg(feature = "worldgen")]
-pub mod bastion_assets;
-// bastion (CHOP redesign, FR10): shared whole-tree detection (handler + hook).
-pub mod bastion_actions;
-pub mod bastion_chop;
-pub mod bastion_flat_arena;
-pub mod bastion_flight_recorder;
-pub mod bastion_jobs;
-pub mod bastion_mood;
-pub mod bastion_path;
-pub mod bastion_piles;
-pub mod bastion_traversal;
-pub mod bastion_traversal_tooling;
+pub use bastion_server::bastion_assets;
+pub use bastion_server::{
+    bastion_actions, bastion_chop, bastion_flat_arena, bastion_flight_recorder, bastion_jobs,
+    bastion_mood, bastion_path, bastion_piles, bastion_traversal, bastion_traversal_tooling,
+};
 mod character_creator;
 pub mod chat;
 pub mod chunk_generator;
@@ -48,7 +45,6 @@ pub mod state_ext;
 pub mod sys;
 #[cfg(feature = "persistent_world")]
 pub mod terrain_persistence;
-#[cfg(not(feature = "worldgen"))] mod test_world;
 
 #[cfg(feature = "worldgen")] mod weather;
 
@@ -134,7 +130,7 @@ use std::{
     time::{Duration, Instant},
 };
 #[cfg(not(feature = "worldgen"))]
-use test_world::{IndexOwned, World};
+use bastion_server::test_world::{IndexOwned, World};
 use tokio::runtime::Runtime;
 use tracing::{debug, error, info, trace, warn};
 use vek::*;
@@ -186,10 +182,10 @@ impl Default for SpawnPoint {
 // various mechanics working fluidly (i.e: not unloading nearby entities).
 pub const MIN_VD: u32 = 6;
 
-// Tick count used for throttling network updates
-// Note this doesn't account for dt (so update rate changes with tick rate)
-#[derive(Copy, Clone, Default)]
-pub struct Tick(u64);
+// Tick count used for throttling network updates — moved to the
+// `bastion-server` leaf in the crate-split (its systems read it too);
+// re-exported here so `crate::Tick` stays valid everywhere.
+pub use bastion_server::Tick;
 
 #[derive(Clone)]
 pub struct HwStats {

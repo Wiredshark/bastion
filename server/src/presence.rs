@@ -1,6 +1,5 @@
 use hashbrown::HashSet;
-use serde::{Deserialize, Serialize};
-use specs::{Component, VecStorage};
+use specs::Component;
 use vek::*;
 
 // Distance from fuzzy_chunk before snapping to current chunk
@@ -19,12 +18,7 @@ impl Component for RegionSubscription {
     type Storage = specs::DenseVecStorage<Self>;
 }
 
-#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
-pub struct RepositionToFreeSpace {
-    pub needs_ground: bool,
-    pub modify_waypoints: bool,
-}
-
-impl Component for RepositionToFreeSpace {
-    type Storage = VecStorage<Self>;
-}
+// Moved to the `bastion-server` leaf in the crate-split (its job system reads
+// the storage); re-exported here so `crate::presence::RepositionToFreeSpace`
+// stays valid everywhere.
+pub use bastion_server::RepositionToFreeSpace;

@@ -728,7 +728,7 @@ pub(crate) const STATUS_DISPLAY_TTL_TICKS: u64 = 60;
 /// live-stamped designed wait > sticky zero-progress > nothing (and `None`
 /// on a motionless colonist is the genuine-bug tell). Unit-pinned below;
 /// call through [`colonist_status`], not directly.
-pub(crate) fn colonist_status_display(
+pub fn colonist_status_display(
     reengage_exhausted: bool,
     queued_for_link: bool,
     live_stamp: Option<(common::comp::bastion::BastionColonistStatus, u64)>,
@@ -763,7 +763,7 @@ pub(crate) fn colonist_status_display(
 /// transaction phase (no write site in the traversal arms); the only stamp
 /// writer is the energy-wait hold (watch bookkeeping, not an owned-write
 /// site).
-pub(crate) fn colonist_status(
+pub fn colonist_status(
     board: &JobBoard,
     uid: Uid,
     now_tick: u64,
@@ -3070,14 +3070,14 @@ pub struct FailsafeTeleportEvent {
 /// Construction completion alone is not an executable route: the descriptor
 /// records which authoritative locomotion seam owns the vertical transition.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-pub(crate) enum EmergencyTraversalKind {
+pub enum EmergencyTraversalKind {
     CarvedStair,
     ConstructedLadder,
     NaturalShaft,
 }
 
 #[derive(Clone, Copy, Debug, Hash)]
-pub(crate) struct EmergencyRouteDescriptor {
+pub struct EmergencyRouteDescriptor {
     pub kind: EmergencyTraversalKind,
     pub approach: Vec3<i32>,
     pub entry: Vec3<i32>,
@@ -3123,7 +3123,7 @@ pub(crate) fn emergency_route_terrain_revision(
 /// handoff and suppresses the conflicting generic climb assist while normal
 /// physics resolves the approach.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct EmergencySettleAnchor {
+pub struct EmergencySettleAnchor {
     pub anchor: Option<Vec3<i32>>,
     pub target: Vec3<i32>,
     pub started_tick: u64,
@@ -3135,7 +3135,7 @@ pub(crate) struct EmergencySettleAnchor {
 /// Ordinary navigation owns only the sweep-clear approach to `entry`; the
 /// existing mount transaction takes over at the bounded handoff.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct EmergencyPartialRouteEntry {
+pub struct EmergencyPartialRouteEntry {
     pub owner: Uid,
     pub frontier: JobId,
     pub entry: Vec3<i32>,
@@ -3267,7 +3267,7 @@ pub struct JobBoard {
     /// Stable non-destructive surface target for an active jobless egress
     /// episode. The climb assist reads this directly so horizontal intent
     /// does not depend on the idle NPC pathfinder preserving a `Goto`.
-    pub(crate) egress_targets: HashMap<Uid, Vec3<i32>>,
+    pub egress_targets: HashMap<Uid, Vec3<i32>>,
     /// Best 3-D distance reached toward the stable egress target. Only a
     /// real improvement here may reset the universal teleport timer; random
     /// below-grade wandering remains unable to postpone rescue.
@@ -3276,24 +3276,24 @@ pub struct JobBoard {
     /// Provenance for temporary humanitarian carving. Pending job ids and
     /// original terrain cells are kept outside `Job`/resource accounting so
     /// ordinary B5.5 mining remains exactly conserved.
-    pub(crate) emergency_access_jobs: HashMap<JobId, Uid>,
-    pub(crate) emergency_access_cells: HashMap<Vec3<i32>, (Uid, Block)>,
-    pub(crate) emergency_cleanup_pending: HashSet<Uid>,
+    pub emergency_access_jobs: HashMap<JobId, Uid>,
+    pub emergency_access_cells: HashMap<Vec3<i32>, (Uid, Block)>,
+    pub emergency_cleanup_pending: HashSet<Uid>,
     /// Colonist uid -> shared route owner. Multiple trapped colonists may
     /// use one temporary route; terrain survives until this set is empty.
-    pub(crate) emergency_route_members: HashMap<Uid, Uid>,
+    pub emergency_route_members: HashMap<Uid, Uid>,
     /// Route owner -> planner-selected permanent surface destination. This is
     /// not inferred from provenance cells because a stair's highest carved
     /// cell is head clearance rather than a standable waypoint.
-    pub(crate) emergency_route_targets: HashMap<Uid, Vec3<i32>>,
+    pub emergency_route_targets: HashMap<Uid, Vec3<i32>>,
     /// Route owner -> planner-preflighted adjacent ladder body lane at its
     /// base. Traversal must approach this cell before rising; recomputing a
     /// side after construction can choose the opposite side and cut
     /// diagonally through the solid ladder corner (smoke31b).
-    pub(crate) emergency_route_mounts: HashMap<Uid, Vec3<i32>>,
+    pub emergency_route_mounts: HashMap<Uid, Vec3<i32>>,
     /// Route owner -> planner/executor contract. A route without this record is
     /// never allowed to fall through to an arbitrary permanent-target Goto.
-    pub(crate) emergency_route_descriptors: HashMap<Uid, EmergencyRouteDescriptor>,
+    pub emergency_route_descriptors: HashMap<Uid, EmergencyRouteDescriptor>,
     /// Route owner -> pre-emission shipping-A* proof from the settled source
     /// to the selected constructed-ladder body lane. Runtime copies and
     /// revalidates this exact corridor; it never invents a post-build lane.
@@ -3302,11 +3302,11 @@ pub struct JobBoard {
     /// `emergency_access_jobs`; this immutable sequence lets REQ-0069 prove a
     /// contiguous completed prefix without guessing from height or HashMap
     /// iteration order.
-    pub(crate) emergency_route_sequences: HashMap<Uid, Vec<(JobId, Vec3<i32>)>>,
+    pub emergency_route_sequences: HashMap<Uid, Vec<(JobId, Vec3<i32>)>>,
     /// Traverser uid -> route-owned ladder transaction. While present this is
     /// the sole writer for the bounded mount/climb/top-exit movement mode.
-    pub(crate) bastion_traversal_tasks: HashMap<Uid, BastionTraversalTask>,
-    pub(crate) emergency_partial_route_entries: HashMap<Uid, EmergencyPartialRouteEntry>,
+    pub bastion_traversal_tasks: HashMap<Uid, BastionTraversalTask>,
+    pub emergency_partial_route_entries: HashMap<Uid, EmergencyPartialRouteEntry>,
     pub(crate) emergency_approach_corridors: HashMap<Uid, EmergencyApproachCorridor>,
     /// Last skill-adjusted climb constants observed from the authoritative
     /// `CharacterState::Climb` for this route member. REQ-0073 uses this only
@@ -3356,11 +3356,11 @@ pub struct JobBoard {
     /// Airborne pre-route owners establishing a physically supported origin.
     /// This state remains visible to the deep harness so a leaked/pending
     /// settle episode can never be mistaken for clean `[0,0,0]` teardown.
-    pub(crate) emergency_settle_anchors: HashMap<Uid, EmergencySettleAnchor>,
+    pub emergency_settle_anchors: HashMap<Uid, EmergencySettleAnchor>,
     /// Consecutive one-second samples at a verified stable exit. Temporary
     /// terrain is not restored on first rim contact: doing so removed the
     /// ladder under the climber and dropped it back into the pocket.
-    pub(crate) emergency_safe_secs: HashMap<Uid, f32>,
+    pub emergency_safe_secs: HashMap<Uid, f32>,
     /// bastion (B6, reviewer F3): consecutive seconds the access economy
     /// has been IDLE (access jobs exist, none claimed). A stale abandoned
     /// plan — e.g. a half-carved egress staircase nobody needs after the
@@ -4408,7 +4408,7 @@ impl JobBoard {
     /// PRE-staging spawn roll during setup ticks, and the stale entry then
     /// runs the whole episode at the unstaged cap (the frozen-verify tape:
     /// level=0, cap_blocks=6).
-    pub(crate) fn staging_clear_climb_snapshot(&mut self, uid: &Uid) {
+    pub fn staging_clear_climb_snapshot(&mut self, uid: &Uid) {
         self.climb_cap_skill.remove(uid);
     }
 
@@ -4448,10 +4448,24 @@ impl JobBoard {
     }
 }
 
+/// Crate-split seam: the ONE server-internal read this system keeps is the
+/// rtsim state, and `veloren-server`'s `RtSim` wrapper cannot be named from
+/// this leaf crate. The server implements this one-method trait for its
+/// wrapper and registers `Sys<RtSim>`; `NAME` stays `R`-independent so the
+/// dispatcher's system name (and therefore dispatch order) is unchanged by
+/// the split.
+pub trait RtSimAccess: Send + Sync + 'static {
+    fn rt_state(&self) -> &::rtsim::RtState;
+}
+
 /// The arbitration + travel + work-execution system.
-#[derive(Default)]
-pub struct Sys;
-impl<'a> System<'a> for Sys {
+pub struct Sys<R>(core::marker::PhantomData<R>);
+
+impl<R> Default for Sys<R> {
+    fn default() -> Self { Self(core::marker::PhantomData) }
+}
+
+impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
     type SystemData = (
         Entities<'a>,
         Read<'a, Tick>,
@@ -4488,7 +4502,7 @@ impl<'a> System<'a> for Sys {
         // second pickup mechanism).
         (
             ReadStorage<'a, common::rtsim::RtSimEntity>,
-            ReadExpect<'a, crate::rtsim::RtSim>,
+            ReadExpect<'a, R>,
             ReadStorage<'a, comp::PickupItem>,
             ReadExpect<'a, common::event::EventBus<common::event::InventoryManipEvent>>,
             // ARCH-003: pins job-decision-order ties (equal-score claims,
@@ -4525,7 +4539,7 @@ impl<'a> System<'a> for Sys {
                 ReadStorage<'a, common::link::Is<common::mounting::Rider>>,
                 ReadStorage<'a, common::link::Is<common::mounting::VolumeRider>>,
                 ReadStorage<'a, common::link::Is<common::interaction::Interactor>>,
-                ReadStorage<'a, crate::presence::RepositionToFreeSpace>,
+                ReadStorage<'a, crate::RepositionToFreeSpace>,
                 ReadStorage<'a, <comp::Pos as InterpolatableComponent>::InterpData>,
                 ReadStorage<'a, <comp::Vel as InterpolatableComponent>::InterpData>,
             ),
@@ -4627,7 +4641,7 @@ impl<'a> System<'a> for Sys {
             if tick.0 % ARBITRATION_INTERVAL as u64 == 11 {
                 let table = crate::bastion_mood::ThoughtTable::current();
                 let affinities = crate::bastion_mood::ValueAffinityTable::current();
-                let data = rtsim.state().data();
+                let data = rtsim.rt_state().data();
                 for (colonist, needs, mood, re) in (
                     &colonists,
                     &needs_storage,
@@ -4689,7 +4703,7 @@ impl<'a> System<'a> for Sys {
         // (impossible-by-construction, spec §5D). Permissive defaults: an
         // entity with no rtsim link (or a stale npc id) has no Simulated
         // tier to dupe against — treat as loaded.
-        let rtsim_data = rtsim.state().data();
+        let rtsim_data = rtsim.rt_state().data();
         let is_loaded = |entity: specs::Entity| -> bool {
             rtsim_entities.get(entity).is_none_or(|re| {
                 rtsim_data.npcs.get(*re).is_none_or(|npc| {
@@ -7617,7 +7631,7 @@ impl<'a> System<'a> for Sys {
             // rolled five timing-family legs red at once — the AUTON-3
             // gate's own forensics). The rare flee-fire branch acquires
             // ad hoc.
-            let arb_data = select_tick.then(|| rtsim.state().data());
+            let arb_data = select_tick.then(|| rtsim.rt_state().data());
             let personality4_of = |data: &::rtsim::data::Data, entity: specs::Entity| {
                 rtsim_entities
                     .get(entity)
@@ -7684,7 +7698,7 @@ impl<'a> System<'a> for Sys {
                     // the preemption decision itself unchanged (Flee
                     // fired on the signal, not on the score). Ad-hoc
                     // guard acquisition — flee-fires are rare.
-                    let (adv, wor, soc, intr) = personality4_of(&rtsim.state().data(), entity);
+                    let (adv, wor, soc, intr) = personality4_of(&rtsim.rt_state().data(), entity);
                     arb.last_scores = comp::bastion::modulated_urgencies(
                         (0.0, URGENCY_FLEE, URGENCY_IDLE),
                         &colonist.0.values,
@@ -7904,7 +7918,7 @@ impl<'a> System<'a> for Sys {
             // AUTON-2 (row 50): personality for the trait-stagger rides
             // the same rtsim read guard the mood pass uses (the :%15==11
             // idiom) — zero new coupling.
-            let stagger_data = rtsim.state().data();
+            let stagger_data = rtsim.rt_state().data();
             for (entity, colonist, pos, uid, needs) in
                 (&entities, &colonists, &positions, &uids, &needs_storage).join()
             {

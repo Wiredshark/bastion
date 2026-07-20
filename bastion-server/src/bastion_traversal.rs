@@ -29,7 +29,7 @@ pub(crate) enum BastionTraversalReject {
 /// release/abort/reacquire/re-election presents a stale epoch and its write
 /// becomes a logged no-op by construction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct TraversalAuthority {
+pub struct TraversalAuthority {
     pub link_id: u64,
     pub epoch: u64,
     pub member: Uid,
@@ -56,7 +56,7 @@ pub(crate) fn authority_valid(
 /// tuples in the log line) — never a panic, never blocking the current
 /// owner's valid write. Current state is passed by VALUE (the caller reads
 /// the board) so this stays borrow-clean and pure-testable.
-pub(crate) fn fenced_movement_write(
+pub fn fenced_movement_write(
     current_epoch: u64,
     current_member: Option<Uid>,
     authority: &TraversalAuthority,
@@ -135,7 +135,7 @@ impl BastionTraversalInterruption {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum BastionTraversalPhase {
+pub enum BastionTraversalPhase {
     LinkApproach,
     QueuedForLink,
     Reserved,
@@ -169,13 +169,13 @@ impl BastionTraversalPhase {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum BastionTraversalPurpose {
+pub enum BastionTraversalPurpose {
     FullExit,
     ConstructionFrontier(JobId),
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct BastionTraversalTask {
+pub struct BastionTraversalTask {
     pub link_id: u64,
     /// bastion (R10): the epoch this task was created under (adopt-on-
     /// acquire from the JobBoard's `link_epochs`). The task's writers

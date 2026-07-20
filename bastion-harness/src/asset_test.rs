@@ -997,7 +997,7 @@ fn append_integration_log(results: &[AssetResult], cfg: &AssetTestConfig) {
              engine marker registry:\n200 = gate KeyholeBars (closed) / carved air (open \
              variant),\n206/207/208/209 = pressure-plate/desk/bench/bed → carved air, cells \
              recorded\nas function points. UNKNOWN 200-255 bytes fail marker fidelity — \
-             extend\n`server/src/bastion_assets.rs::marker_registry` first.\n- Figure-layer \
+             extend\n`bastion-server/src/bastion_assets.rs::marker_registry` first.\n- Figure-layer \
              assets (props/items at 11 vox/block, creatures) are load-only /\nSKIP here; their \
              world integration is manifest work (a later block).\n- `test_*` fixtures run only \
              when named explicitly (deliberate-FAIL demos).\n\n",

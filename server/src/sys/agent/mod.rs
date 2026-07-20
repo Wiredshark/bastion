@@ -11,11 +11,10 @@ use crate::{
 };
 use common::{
     comp::{
-        self, Agent, Alignment, Body, CharacterState, Controller, Health, Scale,
+        self, Agent, Alignment, CharacterState, Controller, Health, Scale,
         inventory::slot::EquipSlot, item::ItemDesc,
     },
     mounting::Volume,
-    path::TraversalConfig,
 };
 use common_base::prof_span;
 use common_ecs::{Job, Origin, ParMode, Phase, System};
@@ -41,53 +40,9 @@ fn deterministic_agent_seed(world_seed: u32, tick: u64, uid: common::uid::Uid) -
     x ^ (x >> 31)
 }
 
-/// bastion (PATH-0): THE traversal-config builder — extracted from the
-/// agent tick so the sequential path scheduler builds byte-identical
-/// configs (zero mirror drift; the scheduler passes the colonist's OWN
-/// body/physics/scale — colonists are never mounted). `search_allowed`
-/// is decided here too: a colonist whose current activity is a job-travel
-/// Goto never searches inline (the scheduler owns those searches —
-/// PATH-0's budget covers the N-scaling load); vanilla NPCs and
-/// colonists in any other state (combat, flee) search inline exactly as
-/// before.
-pub(crate) fn traversal_config_for(
-    scale: f32,
-    moving_body: Option<&Body>,
-    physics_state: &comp::PhysicsState,
-    colonist: Option<&comp::Colonist>,
-    goto_scheduled: bool,
-) -> TraversalConfig {
-    // This controls how picky NPCs are about their pathfinding.
-    // Giants are larger and so can afford to be less precise
-    // when trying to move around the world
-    // (especially since they would otherwise get stuck on
-    // obstacles that smaller entities would not).
-    let node_tolerance = scale * 1.5;
-    let slow_factor = moving_body.map_or(0.0, |b| 1.0 - 1.0 / (1.0 + b.base_accel() * 0.01));
-    TraversalConfig {
-        node_tolerance,
-        slow_factor,
-        on_ground: physics_state.on_ground.is_some(),
-        in_liquid: physics_state.in_liquid().is_some(),
-        min_tgt_dist: scale * moving_body.map_or(1.0, |body| body.max_radius()),
-        can_climb: moving_body.is_some_and(Body::can_climb),
-        // bastion (B5.8): vertical reach for colony workers
-        // only (vanilla NPC pathing unchanged), mapped from
-        // the colonist's CLIMBING movement skill — novices
-        // manage 2-block faces, level 1+ unlocks the 3-up
-        // scramble edges. The skill grows with use.
-        scramble_reach: match colonist {
-            Some(c) if moving_body.is_some_and(Body::can_climb) => {
-                2 + (c.0.skills.climbing.level.min(1) as u8)
-            },
-            _ => 0,
-        },
-        can_fly: moving_body.is_some_and(|b| b.fly_thrust().is_some()),
-        vectored_propulsion: moving_body.is_some_and(|b| b.vectored_propulsion()),
-        is_target_loaded: true,
-        search_allowed: !goto_scheduled,
-    }
-}
+// bastion (PATH-0): `traversal_config_for` moved into the `bastion-server`
+// leaf crate (crate-split) — re-imported here so call sites are unchanged.
+pub(crate) use crate::bastion_path::traversal_config_for;
 
 /// This system will allow NPCs to modify their controller
 #[derive(Default)]
