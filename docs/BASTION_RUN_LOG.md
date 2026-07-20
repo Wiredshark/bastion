@@ -4331,3 +4331,103 @@ agent-layer residual.
 
 Next (already opening): first-divergence-tick hunt on the `.par_join()`
 residual via the recorder-comparator methodology.
+
+## ENGOPT6 — agent-layer determinism residual, ROOT-CAUSED + FIX COMMITTED, END-PROOF PENDING (fix `3b137017e6`, instrumentation `c5cdd18bf6`, branch `bastion/builder`)
+
+Not yet tagged — logging the diagnosis now since it's substantial and
+correct, will confirm the tag once the verification fan (tape pair @
+`3b137017e6` + a full safety-floor fan) reports green.
+
+**The chain, tape-comparator-driven, not guessed:** a tape pair at
+`7b994ea99c` (ENGOPT4's tip) first diverges at trajectory line 23743,
+tick 3960, uid 2 — `active_job` `326/Arrived` on one VM vs `None` on the
+other, byte-equal before that point. The recorder itself was blind to the
+discriminating state, so instrumentation landed FIRST (`c5cdd18bf6`,
+extending the post-lifecycle snapshot with job progress + hunger/rest)
+before the real cause could even be seen. Rerun with the new
+instrumentation, both VMs attested same-commit + same silicon (Intel
+Cascade Lake) via the ENGOPT4 attestation work: SAME signature, tick 3960,
+uid 2, job 326 — progress=0.0 on BOTH runs for 35+ ticks (a haul leg-1
+colonist standing at the item, re-emitting pickup), needs/hunger/rest
+byte-equal (exonerated as the cause). One VM's item resolves at 3960, the
+other's ~16 ticks later.
+
+**Root cause:** `common/src/comp/loot_owner.rs`'s `LootOwner.expiry` was
+`std::time::Instant` — a WALL CLOCK. The headless harness runs at ~9×
+wall-clock speed, so a 45-WALL-second ownership timeout lands on a
+machine-throughput-dependent SIM TICK, not a fixed sim-time. A contested
+item's ownership resolves at different sim ticks on machines with
+different real throughput → the claim cascade shifts (339 vs 341) → the
+entire 12-field `mf` divergence family downstream (this is the exact
+residual ENGOPT4 named and declined to claim closed).
+
+**Fix (`3b137017e6`):** `expires_at` is now `f64` sim-seconds;
+`new()`/`expired()`/`time_until_expiration()` all take `Time` instead of
+reading the wall clock. 7 call sites rewired (`sys/loot.rs`,
+`entity_manipulation`, `interaction`, `inventory_manip` ×3, `lib.rs` test
+hook) — serde wire format unchanged, the client never saw the `Instant`
+representation either, so this is save/wire-transparent. Unit pin
+`engopt6_expiry_follows_sim_time_only` covers post-expiry saturation too
+(the OLD `Instant`-subtraction code path panics there in debug builds —
+a real latent crash the fix also closes as a side effect). `ProgramTime`
+was separately audited and confirmed dt-accumulated/deterministic — the
+`PickupItem` family is fine as-is. Remaining `Instant::now()` call sites
+in the codebase were triaged and confirmed non-sim (loop clock, metrics,
+player-facing paths, the ENGOPT4 barrier's own watchdog) — not silently
+missed, checked and ruled out.
+
+**Status:** end-proof is the tape-pair rerun at `3b137017e6` plus a full
+safety-floor fan, both running now. Tag lands as `bastion-block-ENGOPT6`
+on green — bookkeeping entry to be confirmed/finalized then, this is the
+diagnosis record.
+
+## bastion-block-ENGOPT7 — ledger #183 (Chaser no-path negative cache) + #179 (Small→Medium continuation equivalence, executable negative) — TAGGED 2026-07-20 (tag `a4018f948a`, branch `bastion/builder`; self-gated)
+
+**Naming note:** landed as ENGOPT7 rather than strict landing-order
+numbering, deliberately — the in-tree instrumentation commit for the
+still-open residual above already names it `ENGOPT6` (see `c5cdd18bf6`'s
+own commit message), so preserving that in-tree reference took priority
+over sequential numbering. Builder 4 flagged this choice explicitly rather
+than silently deviating; no objection — a naming/numbering call, not a
+behavior or safety question, and it keeps in-tree references consistent
+rather than forcing a rename.
+
+**Ledger #183 (`a4018f948a`), SHIPPED:** a `Chaser` no-path negative
+cache — a COMPLETED empty-frontier search verdict against an unchanged
+`(target, #178-profile)` question now suppresses re-search entirely
+instead of recharging it every tick. Invalidation is real and multi-
+triggered, not a permanent cache (bastion terrain is mutable and #184's
+revision-plumbing isn't in yet, so a permanent cache would be unsound):
+target moved past the existing 2.0-dist² reset threshold, a `#178`
+profile flip, an `InvalidPath` terrain signal, arrival, or a bounded
+90-tick half-open re-probe (circuit-breaker prior art, named as such).
+Falsifier fired on the unfixed code (200 scheduler searches over 200
+ticks in a sealed-pocket world) and is pinned ≤5 fixed; separate pins for
+immediate invalidation on target-change and on profile-change. PATH-0's
+own contract preserved — candidates drop out via `needs_search` exactly
+while the cache is live, and the movement fallback (direct bearing +
+stuck watch + `PathState::None` + the red gizmo) is untouched.
+`veloren-common` 155/156 (the one red is B59, already registered as
+pre-existing and unrelated) — bastion-server 36/36.
+
+**Ledger #179 (`7899fa9106`), EXECUTABLE NEGATIVE — no fix shipped, none
+needed:** the question was whether continuing a Small-taxed search into a
+Medium-tier upgrade is route-equivalent to starting a fresh Medium search
+from scratch. The premise is genuinely LIVE (edge-cost taxing only exists
+below Medium tier; the tier-upgrade arm retains the old `Astar` state;
+`set_max_iters` just raises the iteration cap, it doesn't reset anything)
+— so this wasn't a vacuous question. Three falsifier iterations all came
+back GREEN, and critically the SHARP PRECONDITION was proven engaged, not
+just assumed: a test-only `Astar::visited()` accessor shows the retained
+visited set genuinely covers the narrow-tunnel decision surface (carries
+real Small-taxed g-values there) at the exact moment of upgrade, inside a
+two-door world purpose-built to flip on the tax. ENGINE-OPT-2's own
+strict-improvement re-push (from the reopen-correctness fix) turns out to
+be exactly what heals the mixed frontier. Disposition: same general class
+as #181/B65 (a ledger item resolved by proving the underlying assumption
+false/moot rather than shipping code) but a HIGHER evidence grade — #181
+was a stale premise never engaged; #179 is a genuinely-engaged precondition
+that still came back negative. Test kept permanently as the equivalence
+pin. No separate tag or registry row — rides in the ENGOPT7 lineage per
+Builder 4's own framing, consistent with how ledger #178 rode alongside
+ENGOPT4.
