@@ -15,7 +15,7 @@ pub use self::{
     nature::Nature,
     npc::{Npc, NpcId, Npcs},
     quest::Quests,
-    report::{Report, ReportId, ReportKind, Reports},
+    report::{KnownReports, Report, ReportId, ReportKind, Reports},
     sentiment::{Sentiment, Sentiments},
     site::{Site, SiteId, Sites},
 };

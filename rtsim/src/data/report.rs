@@ -3,12 +3,52 @@ use common::{
     rtsim::{Actor, SiteId},
     terrain::SpriteKind,
 };
-use serde::{Deserialize, Serialize};
+use hashbrown::HashSet;
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeSeq};
 use slotmap::DenseSlotMap;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use vek::*;
 
 pub use common::rtsim::ReportId;
+
+/// A report set with hash-based membership and deterministic persistence and
+/// iteration. Iteration is infrequent (site/NPC report exchange) and report
+/// sets are bounded by cleanup, so sorting this boundary avoids changing the
+/// O(1) membership path used by NPC AI.
+#[derive(Clone, Default, Deserialize)]
+#[serde(transparent)]
+pub struct KnownReports(HashSet<ReportId>);
+
+impl KnownReports {
+    pub fn iter(&self) -> impl Iterator<Item = &ReportId> {
+        let mut reports = self.0.iter().collect::<Vec<_>>();
+        reports.sort_unstable();
+        reports.into_iter()
+    }
+}
+
+impl Serialize for KnownReports {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut sequence = serializer.serialize_seq(Some(self.len()))?;
+        for report in self.iter() {
+            sequence.serialize_element(report)?;
+        }
+        sequence.end()
+    }
+}
+
+impl Deref for KnownReports {
+    type Target = HashSet<ReportId>;
+
+    fn deref(&self) -> &Self::Target { &self.0 }
+}
+
+impl DerefMut for KnownReports {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.0 }
+}
 
 /// Represents a single piece of information known by an rtsim entity.
 ///
@@ -83,4 +123,62 @@ impl Deref for Reports {
     type Target = DenseSlotMap<ReportId, Report>;
 
     fn deref(&self) -> &Self::Target { &self.reports }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use slotmap::KeyData;
+    use std::collections::{BTreeSet, HashSet};
+
+    #[test]
+    fn persisted_known_reports_have_stable_bytes() {
+        let reports = (1..=8)
+            .map(|raw| ReportId::from(KeyData::from_ffi(raw)))
+            .collect::<Vec<_>>();
+        let mut encodings = BTreeSet::new();
+        for shift in 0..reports.len() {
+            let mut known = KnownReports::default();
+            for offset in 0..reports.len() {
+                known.insert(reports[(shift + offset) % reports.len()]);
+            }
+            encodings.insert(rmp_serde::to_vec_named(&known).expect("encode known reports"));
+        }
+        println!(
+            "known_reports distinct persistence encodings={}",
+            encodings.len()
+        );
+        if let Some(first) = encodings.first() {
+            println!("known_reports representative_msgpack={}", hex(first));
+        }
+        assert_eq!(
+            encodings.len(),
+            1,
+            "equal known-report state must have one persisted representation"
+        );
+    }
+
+    #[test]
+    fn legacy_hash_set_reports_remain_loadable() {
+        let reports = (1..=3)
+            .map(|raw| ReportId::from(KeyData::from_ffi(raw)))
+            .collect::<HashSet<_>>();
+        let bytes = rmp_serde::to_vec_named(&reports).expect("encode legacy report set");
+        let decoded: KnownReports =
+            rmp_serde::from_slice(&bytes).expect("decode ordered report set");
+        assert_eq!(decoded.len(), reports.len());
+        assert!(reports.iter().all(|report| decoded.contains(report)));
+    }
+
+    #[test]
+    fn known_report_iteration_is_key_ordered() {
+        let mut reports = KnownReports::default();
+        reports.insert(ReportId::from(KeyData::from_ffi(3)));
+        reports.insert(ReportId::from(KeyData::from_ffi(1)));
+        reports.insert(ReportId::from(KeyData::from_ffi(2)));
+        let ordered = reports.iter().copied().collect::<Vec<_>>();
+        assert!(ordered.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    fn hex(bytes: &[u8]) -> String { bytes.iter().map(|byte| format!("{byte:02x}")).collect() }
 }

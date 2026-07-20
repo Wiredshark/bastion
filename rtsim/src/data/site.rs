@@ -1,4 +1,4 @@
-use crate::data::{ReportId, Reports};
+use crate::data::{KnownReports, Reports};
 pub use common::rtsim::SiteId;
 use common::{
     rtsim::{FactionId, NpcId},
@@ -20,7 +20,7 @@ pub struct Site {
 
     /// The [`crate::data::Report`]s that the site tracks (you can imagine them
     /// being on a noticeboard or something).
-    pub known_reports: HashSet<ReportId>,
+    pub known_reports: KnownReports,
 
     /// How many chunks this site is loaded in.
     #[serde(skip)]
