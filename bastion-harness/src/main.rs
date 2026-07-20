@@ -713,14 +713,18 @@ fn corpus_runner(args: &Args) -> ExitCode {
     for batch in seeds.chunks(jobs) {
         let mut children: Vec<(u64, std::process::Child)> = Vec::new();
         for seed in batch {
+            let seed_string = seed.to_string();
+            let tps_string = args.tps.to_string();
+            let mut child_args =
+                vec![flag.as_str(), "--seed", &seed_string, "--tps", &tps_string];
+            // M3 matrix rider: forward the episode selector so a corpus can
+            // fan the b58 fixture family (--corpus b58-ladder-integration-
+            // fixture --ladder-episode M3B --corpus-seeds ...).
+            if let Some(episode) = args.ladder_episode.as_deref() {
+                child_args.extend(["--ladder-episode", episode]);
+            }
             let child = std::process::Command::new(&exe)
-                .args([
-                    flag.as_str(),
-                    "--seed",
-                    &seed.to_string(),
-                    "--tps",
-                    &args.tps.to_string(),
-                ])
+                .args(child_args)
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::null())
                 .spawn();
