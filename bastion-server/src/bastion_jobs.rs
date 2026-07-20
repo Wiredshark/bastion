@@ -7946,7 +7946,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             Despond(f64),
         }
         let mut preempt_pending: Vec<(specs::Entity, Uid, PendingNeed)> = Vec::new();
-        if tick.0 % ARBITRATION_INTERVAL as u64 == 13 {
+        // T0.5 (master build order; ledger #55): PAUSE SAFETY — this pass
+        // makes DISCRETE autonomy changes (breakdown rolls, need preempts)
+        // on a TICK cadence, but its guards (sustain windows, cooldowns)
+        // compare frozen sim time. With TimeScale 0 the tick keeps running:
+        // a colonist already past its sustain window would re-roll
+        // `break_chance` every WALL tick of the pause — compounding into a
+        // guaranteed breakdown while the world is frozen. Frozen sim time =
+        // no autonomy changes, by declaration.
+        if dt.0 > f32::EPSILON && tick.0 % ARBITRATION_INTERVAL as u64 == 13 {
             let mood_cfg = common::bastion::MoodConfig::current();
             // AUTON-2 (row 50): personality for the trait-stagger rides
             // the same rtsim read guard the mood pass uses (the :%15==11
