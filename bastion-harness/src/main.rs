@@ -4975,13 +4975,20 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
     // (WaitingForLadder observed at least once) — replaces the delivery-
     // time wall number that was calibrated on seed 1337.
     let mut m3d_hold_seen: Vec<bool> = vec![false; names.len()];
-    // M3E (fork-15 falsifier): the injected member + its placement z, and
-    // the LEAK SIGNATURE count — task-less, feet on rung cells, risen ≥1
-    // block above placement (the vanilla climb ENGAGED, not mere contact).
-    let mut m3e_injected: Option<String> = None;
-    let mut m3e_placement_z: f32 = 0.0;
-    let mut m3e_leak_climb_ticks: u64 = 0;
-    let mut m3e_max_rise: f32 = 0.0;
+    // M3E v4 — the STEER-PROPERTY pin (the fork-15 leak's mechanism is
+    // PASSIVE: crowd-shove + auto-step-up onto rung platforms, no writer —
+    // organic-tape attribution; deliberate single-member placement cannot
+    // reproduce a crowd effect, so M3A @1337 itself is the leak's RED pin
+    // and THIS episode pins the FIX's property instead): during the
+    // construction window (rungs exist), every task-less JOB-LESS member
+    // (the claim-owner legitimately works AT the rungs) must not DWELL
+    // within Chebyshev 2 of a lane column — transit is fine (< the dwell
+    // window), parking beside the rungs is the shove-substrate.
+    let mut m3e_window_seen = false;
+    let mut m3e_sustained_breaches: u64 = 0;
+    let mut m3e_prox_run: Vec<u64> = vec![0; names.len()];
+    let mut m3e_max_prox_run: u64 = 0;
+    const M3E_DWELL_TICKS: u64 = 15;
     // First observation of the FULL queue (len == n): fair-order reference.
     let mut m3_queue_names: Option<Vec<String>> = None;
     let mut m3_generation_seen: u64 = 0;
@@ -5198,64 +5205,43 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
             // pins it on purpose. The vanilla climb must NOT carry a queued
             // member up the owned link's rungs (fork-15: the owned contract
             // supersedes vanilla).
-            if episode == "M3E"
-                && !mutated
-                && let Some(&(lx, ly)) = m3_lane_columns.iter().min()
-                && let Some(i) = names.iter().enumerate().position(|(i, n)| {
-                    phases[i] == "-"
-                        && m3_out_at[i].is_none()
-                        && m3_first_owner.as_deref() != Some(n.as_str())
-                })
-            {
-                let base_z = {
-                    let terrain = server.state().terrain();
-                    ((gz - depth)..=(gz + 2))
-                        .find(|&z| {
-                            terrain
-                                .get(Vec3::new(lx, ly, z))
-                                .ok()
-                                .and_then(|b| b.get_sprite())
-                                == Some(SpriteKind::Ladder)
-                        })
-                        .unwrap_or(gz - depth + 1)
-                };
-                m3e_injected = Some(names[i].clone());
-                m3e_placement_z = base_z as f32;
-                server.bastion_teleport_colonist(
-                    &names[i],
-                    Vec3::new(lx as f32 + 0.5, ly as f32 + 0.5, base_z as f32),
-                );
+            // M3E v4 steer-property measurement (no stimulus — the natural
+            // M3A flow IS the substrate; the leak's RED pin is M3A @1337's
+            // own lane_violations bar). Precondition-asserted: the window
+            // must be OBSERVED (rungs existed) for the run to count.
+            if episode == "M3E" && !m3_lane_columns.is_empty() {
+                m3e_window_seen = true;
                 mutated = true;
-            }
-            // M3E leak counting: the signature is exact — the injected
-            // member, still task-less, feet ON a rung cell, ≥1 block above
-            // placement. Contact alone (rise < 1) is not the leak.
-            if episode == "M3E"
-                && let Some(ref injected) = m3e_injected
-                && let Some(i) = names.iter().position(|n| n == injected)
-                && phases[i] == "-"
-                && m3_out_at[i].is_none()
-                && let Some((_, p, _)) = states.iter().find(|(n, ..)| n == injected)
-            {
-                let feet = p.map(|v| v.floor() as i32);
-                let terrain = server.state().terrain();
-                let on_rungs = [feet, feet + Vec3::unit_z()].iter().any(|c| {
-                    terrain.get(*c).ok().and_then(|b| b.get_sprite())
-                        == Some(SpriteKind::Ladder)
-                });
-                let rise = p.z - m3e_placement_z;
-                if on_rungs && rise >= 1.0 {
-                    m3e_leak_climb_ticks += 1;
-                    m3e_max_rise = m3e_max_rise.max(rise);
-                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
-                        info!(
-                            tick = tick_i,
-                            sec,
-                            member = injected.as_str(),
-                            ?feet,
-                            rise,
-                            "fixture: M3E fork-15 leak climb tick"
-                        );
+                for (i, n) in names.iter().enumerate() {
+                    let jobless = states
+                        .iter()
+                        .find(|(sn, ..)| sn == n)
+                        .is_some_and(|(_, _, job)| job.is_none());
+                    let near = phases[i] == "-"
+                        && m3_out_at[i].is_none()
+                        && jobless
+                        && states.iter().find(|(sn, ..)| sn == n).is_some_and(|(_, p, _)| {
+                            let feet = p.map(|v| v.floor() as i32);
+                            m3_lane_columns.iter().any(|&(lx, ly)| {
+                                (feet.x - lx).abs().max((feet.y - ly).abs()) < 2
+                            })
+                        });
+                    if near {
+                        m3e_prox_run[i] += 1;
+                        m3e_max_prox_run = m3e_max_prox_run.max(m3e_prox_run[i]);
+                        if m3e_prox_run[i] == M3E_DWELL_TICKS {
+                            m3e_sustained_breaches += 1;
+                            if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                                info!(
+                                    tick = tick_i,
+                                    sec,
+                                    member = n.as_str(),
+                                    "fixture: M3E sustained lane-proximity dwell breach"
+                                );
+                            }
+                        }
+                    } else {
+                        m3e_prox_run[i] = 0;
                     }
                 }
             }
@@ -5594,10 +5580,10 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         "m3c_generation_at_injection": m3c_generation_at_injection,
         // a3 legibility: per-member queue-wait-hold engagement evidence.
         "m3d_hold_seen": m3d_hold_seen,
-        // M3E (fork-15 pin) evidence.
-        "m3e_injected": m3e_injected,
-        "m3e_leak_climb_ticks": m3e_leak_climb_ticks,
-        "m3e_max_rise": m3e_max_rise,
+        // M3E v4 (fork-15 steer-property pin) evidence.
+        "m3e_window_seen": m3e_window_seen,
+        "m3e_sustained_breaches": m3e_sustained_breaches,
+        "m3e_max_prox_run": m3e_max_prox_run,
     });
     println!("{result}");
     server::bastion_flight_recorder::finalize();
@@ -5688,19 +5674,19 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
                 && alive
                 && unentombed
         },
-        // M3-E (the fork-15 falsifier pin): a queued task-less member
-        // DELIBERATELY placed on the rung column must NOT be carried up by
-        // the vanilla climb — the owned contract supersedes vanilla
-        // (fork-15). RED = the leak firing (expected pre-fix — this pin was
-        // born from ENGINE-OPT-1's M3A catch); GREEN after the seam closes.
-        // Delivery/exit of the perturbed crew is REPORTED, not gated (the
-        // net remains the inviolable floor); the pin stays narrow.
+        // M3-E v4 (the fork-15 STEER-PROPERTY pin; the leak's RED pin is
+        // M3A's own lane_violations bar): during the construction window,
+        // no task-less JOB-LESS member may DWELL (≥15 consecutive ticks)
+        // within Chebyshev 2 of a lane column — parked crewmates beside
+        // the rungs are the crowd-shove/step-up substrate the passive leak
+        // rides. RED today by construction (no construction-window steer
+        // exists); GREEN when it does. The claim-owner is exempt (works AT
+        // the rungs); transit past the column is under the dwell window.
         "M3E" => {
             staged_ok
                 && position_ok
-                && mutated
-                && m3e_injected.is_some()
-                && m3e_leak_climb_ticks == 0
+                && m3e_window_seen
+                && m3e_sustained_breaches == 0
                 && alive
                 && unentombed
         },
