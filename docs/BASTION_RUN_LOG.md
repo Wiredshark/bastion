@@ -4294,3 +4294,40 @@ gate's continued presence, so this class can't silently regress again.
 preserved; N2 PASS; `--mine-fidelity-scenario` undisturbed.
 
 Next: ENGOPT4 = SlowJobPool, per the architect's landing-order numbering.
+
+## bastion-block-ENGOPT4 + ledger #178 — SlowJobPool/ARCH-003 scheduling + Chaser retained-search invalidation — TAGGED 2026-07-20 (self-gated per the new batched-review process; tags `7b994ea99c` + `4f5de38f08`, branch `bastion/builder`)
+
+Two tags, self-gated (pins + M3A/N2/fence safety floor green → tag → next
+item, no per-block architect gate — batched review to follow; new
+standing process). Bookkept together.
+
+**ENGOPT4 (`7b994ea99c`, SlowJobPool/ARCH-003):** scheduling-divergence
+diagnosis via same-platform triple-divergence with attested `cpuPlatform`
+(so a cross-VM diff can't be blamed on silently-different hardware). Three
+stages: sorted chunk-apply, a hasher-independent pool-selection fix (1b),
+and a harness-mode deterministic apply barrier (stage 2) — all
+falsifier-pinned. Measured: cross-VM field divergence 20→12; `mf_
+completion` now byte-equal cross-machine. Honest disclosure: full `mf`
+byte-identity was NOT achieved — the residual traces to the agent-layer
+`.par_join()` seam, named explicitly as the next block rather than
+claimed closed. Also: PATH-0 re-verified already-deterministic; ledger
+item #181's premise is stale (doesn't need the work it assumed).
+
+**Ledger #178 (`4f5de38f08`):** profile-keyed invalidation for the
+Chaser's retained search-context (opened mid-ENGOPT4 during a VM-stock
+wait, per the never-stop-on-the-ledger rule). A sharp falsifier fired on
+stale admission through a since-unloaded band; a broader falsifier is an
+honest EXECUTABLE NEGATIVE — it pins that ENGINE-OPT-2's reopen fix
+already self-heals this case, not a second bug needing its own fix.
+
+**Safety floor (shared across both):** M3A's classified red byte-
+preserved, N2/M3D PASS, all attested at `7b994ea99c` with the new apply
+barrier active.
+
+**Registry candidates flagged, not yet filed:** the wrapper-capabilities
+arc (cpuPlatform attestation, VM_ZONE, the msys `--min-cpu-platform`
+quoting limitation), the #181-premise-stale note, and the named
+agent-layer residual.
+
+Next (already opening): first-divergence-tick hunt on the `.par_join()`
+residual via the recorder-comparator methodology.
