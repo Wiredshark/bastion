@@ -194,6 +194,11 @@ impl Sentiment {
 
             // For some reason, RNG doesn't work with small chances (possibly due to impl
             // limits), so use two bools
+            // FLAGGED, not converted: this hand-rolled decay draw has dt in
+            // the DENOMINATOR (larger dt => smaller per-check chance) —
+            // suspicious inversion vs a hazard's dt-proportional form, but
+            // re-deriving the intended decay curve is its own row; converting
+            // blind would distort sentiment tuning. t0.6-exempt
             if rng.random_bool(chance.sqrt()) && rng.random_bool(chance.sqrt()) {
                 self.positivity -= self.positivity.signum();
             }

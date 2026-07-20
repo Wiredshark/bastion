@@ -333,6 +333,7 @@ fn about_site<S: State>(session: DialogueSession) -> impl Action<S> {
                 && let Some(current_site) = ctx.data.sites.get(current_site)
             {
                 for mention_site in &current_site.nearby_sites_by_size {
+                    // t0.6-exempt: one-shot per-dialogue mention draw
                     if ctx.rng.random_bool(0.5)
                         && let Some(content) = tell_site_content(ctx, *mention_site)
                     {
@@ -460,6 +461,7 @@ fn sentiments<S: State>(tgt: Actor, session: DialogueSession) -> impl Action<S> 
 
 fn hire<S: State>(tgt: Actor, session: DialogueSession) -> impl Action<S> {
     now(move |ctx, _| {
+        // t0.6-exempt: keyed one-shot hire coin-flip
         if ctx.npc.job.is_none() && ctx.npc.rng(38792).random_bool(0.5) {
             let hire_level = match ctx.npc.profession() {
                 Some(Profession::Adventurer(l)) => l,

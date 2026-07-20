@@ -1814,6 +1814,40 @@ mod tests {
         assert_eq!(crate::bastion_jobs::STATUS_DISPLAY_TTL_TICKS, 60);
     }
 
+    /// T0.6 (master build order; ledger #115): THE RAW-GATE BAN — rtsim
+    /// policy code may not draw `random_bool` outside the typed per-second
+    /// hazard (`NpcCtx::chance`) unless the line (or the line above it)
+    /// carries a `t0.6-exempt` marker documenting per-decision/one-shot
+    /// semantics. Unmarked raw draws are per-tick-cadence bugs by default:
+    /// the event rate silently depends on AI tick cadence, not sim time.
+    #[test]
+    fn t0_6_rtsim_policy_bans_unmarked_raw_probability_gates() {
+        for path in [
+            "rtsim/src/rule/npc_ai/mod.rs",
+            "rtsim/src/rule/npc_ai/dialogue.rs",
+            "rtsim/src/rule/npc_ai/quest.rs",
+            "rtsim/src/rule/npc_ai/movement.rs",
+            "rtsim/src/data/sentiment.rs",
+        ] {
+            let src = repo_text(path);
+            let lines: Vec<&str> = src.lines().collect();
+            for (i, line) in lines.iter().enumerate() {
+                if line.contains("random_bool(")
+                    && !line.contains("t0.6-exempt")
+                    && !(i > 0 && lines[i - 1].contains("t0.6-exempt"))
+                    && !line.trim_start().starts_with("//")
+                {
+                    panic!(
+                        "{path}:{}: unmarked raw probability gate — route through \
+                         NpcCtx::chance (per-second hazard) or mark the line \
+                         `t0.6-exempt` with its one-shot justification: {line}",
+                        i + 1
+                    );
+                }
+            }
+        }
+    }
+
     /// T0.2 (master build order; ledger #21): THE LABOR CLOCK DECLARATION —
     /// every work/farm/need/rescue/item-economy duration rides the SIM clock
     /// (`Time`, `DeltaTime`, `Tick`), never the wall clock. Executable form:

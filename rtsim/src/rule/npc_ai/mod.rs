@@ -268,6 +268,7 @@ fn tell_site_content(ctx: &NpcCtx, site: SiteId) -> Option<Content> {
 
 fn smalltalk_to<S: State>(tgt: Actor) -> impl Action<S> {
     now(move |ctx, _| {
+        // t0.6-exempt: per-conversation-round draw, not a tick gate
         if matches!(tgt, Actor::Npc(_)) && ctx.rng.random_bool(0.2) {
             // Cut off the conversation sometimes to avoid infinite conversations (but only
             // if the target is an NPC!) TODO: Don't special case this, have
@@ -275,6 +276,7 @@ fn smalltalk_to<S: State>(tgt: Actor) -> impl Action<S> {
             idle().boxed()
         } else {
             // Mention nearby sites
+            // t0.6-exempt: one-shot content selection
             let comment = if ctx.rng.random_bool(0.3)
                 && let Some(current_site) = ctx.npc.current_site
                 && let Some(current_site) = ctx.data.sites.get(current_site)
@@ -283,6 +285,7 @@ fn smalltalk_to<S: State>(tgt: Actor) -> impl Action<S> {
             {
                 content
             // Mention current site
+            // t0.6-exempt: one-shot content/decision draw
             } else if ctx.rng.random_bool(0.3)
                 && let Some(current_site) = ctx.npc.current_site
                 && let Some(current_site_name) = util::site_name(ctx, current_site)
@@ -290,6 +293,7 @@ fn smalltalk_to<S: State>(tgt: Actor) -> impl Action<S> {
                 Content::localized("npc-speech-site").with_arg("site", current_site_name)
 
             // Mention nearby monsters
+            // t0.6-exempt: one-shot content/decision draw
             } else if ctx.rng.random_bool(0.3)
                 && let Some(monster) = ctx
                     .data
@@ -310,8 +314,10 @@ fn smalltalk_to<S: State>(tgt: Actor) -> impl Action<S> {
                             .localize_npc(),
                     )
             // Specific night dialog
+            // t0.6-exempt: one-shot content selection
             } else if ctx.rng.random_bool(0.6) && DayPeriod::from(ctx.time_of_day.0).is_dark() {
                 Content::localized("npc-speech-night")
+            // t0.6-exempt: one-shot content/decision draw
             } else if ctx.rng.random_bool(0.3)
                 && let Some(profession_comment) = match_some!(ctx.npc.profession(),
                     Some(Profession::Pirate(_)) => Content::localized("npc-speech-pirate"),
@@ -344,6 +350,7 @@ fn socialize() -> impl Action<EveryRange> {
             && !ctx.npc.personality.is(PersonalityTrait::Introverted)
         {
             // Sometimes dance
+            // t0.6-exempt: per-decision activity pick
             if ctx.rng.random_bool(0.15) {
                 return just(|ctx, _| ctx.controller.do_dance(None))
                     .repeat()
@@ -590,6 +597,7 @@ fn adventure() -> impl Action<DefaultState> {
             .iter()
             .filter(|(site_id, site)| {
                 site.world_site.is_some_and(|ws| ctx.index.sites.get(ws).any_plot(|p| p.is_workshop())) && (ctx.npc.current_site != Some(*site_id))
+                    // t0.6-exempt: one-shot site-subset filter
                     && ctx.rng.random_bool(0.25)
             })
             .min_by_key(|(_, site)| site.wpos.as_().distance(ctx.npc.wpos.xy()) as i32)
@@ -848,10 +856,19 @@ fn colonist_idle(anchor: Option<Vec3<f32>>) -> impl Action<DefaultState> {
 /// archetype, the DATA decides. The rng rolls ONLY when the archetype
 /// lists the activity — preserving each NPC's rng stream exactly as the
 /// old short-circuit did (it rolled only on a profession match).
+/// T0.6 (ledger #115): the gate is dt-INVARIANT — the RON weights keep
+/// their historical meaning (per-evaluation probability at the 30 tps
+/// cadence) and are mapped through the exact inverse
+/// (`rate = 1 − (1 − w)^30`) into `NpcCtx::chance`'s per-second hazard, so
+/// AI cadence changes no longer distort activity rates and the data file
+/// needs no re-tuning.
 fn archetype_gate(ctx: &mut NpcCtx, activity: &str) -> bool {
     archetype::archetype_key(ctx.npc.profession())
         .and_then(|key| archetype::archetype_chance(key, activity))
-        .is_some_and(|w| ctx.rng.random_bool(w.clamp(0.0, 1.0) as f64))
+        .is_some_and(|w| {
+            let rate = 1.0 - (1.0 - f64::from(w.clamp(0.0, 1.0))).powi(30);
+            ctx.chance(rate)
+        })
 }
 
 fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
@@ -989,6 +1006,7 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
         if
             // Ain't no rest for the wicked
             !matches!(ctx.npc.profession(), Some(Profession::Guard | Profession::Chef))
+            // t0.6-exempt: per-day-plan decision draw
             && (matches!(day_period, DayPeriod::Evening) || is_free_time || ctx.rng.random_bool(0.05))
         {
             let mut fun_activities = Vec::new();
@@ -1017,8 +1035,10 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
                     let action = just(move |ctx, _| ctx.controller.say(None, Content::localized("npc-speech-arena")))
                             .then(goto_2d(seat.xy(), 0.6, 1.0).debug(|| "go to arena"))
                             // Turn toward the centre of the arena and watch the action!
+                            // t0.6-exempt: one-shot content/decision draw
                             .then(now(move |ctx, _| if ctx.rng.random_bool(0.3) {
                                 just(move |ctx,_| ctx.controller.do_cheer(look_dir)).repeat().stop_if(timeout(5.0)).boxed()
+                            // t0.6-exempt: one-shot content/decision draw
                             } else if ctx.rng.random_bool(0.15) {
                                 just(move |ctx,_| ctx.controller.do_dance(look_dir)).repeat().stop_if(timeout(5.0)).boxed()
                             } else {
@@ -1065,6 +1085,7 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
         }
 
         if matches!(ctx.npc.profession(), Some(Profession::Farmer))
+            // t0.6-exempt: per-visit-plan decision draw
             && ctx.rng.random_bool(0.8)
             && let Some(farm_wpos) = find_farm(ctx, visiting_site)
         {
@@ -1104,7 +1125,9 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
                 travel_to_point(plaza_wpos, 0.4)
                     .debug(|| "patrol")
                     .interrupt_with(move |ctx, _| {
-                        if ctx.rng.random_bool(0.0003) {
+                        // T0.6: polled every travel tick — per-second hazard
+                        // (exact inverse of the old 0.0003/tick at 30 tps).
+                        if ctx.chance(0.008960959398364388) {
                             Some(just(move |ctx, _| {
                                 ctx.controller
                                     .say(None, Content::localized("npc-speech-guard_thought"))
@@ -1117,10 +1140,12 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
             );
         }
 
+        // t0.6-exempt: per-visit-plan decision draw
         if matches!(ctx.npc.profession(), Some(Profession::Merchant)) && ctx.rng.random_bool(0.8) {
             consider.casual(
                 just(|ctx, _| {
                     // Try to direct our speech at nearby actors, if there are any
+                    // t0.6-exempt: one-shot speech-target choice
                     let (target, phrase) = if ctx.rng.random_bool(0.3) && let Some(other) = ctx.data
                         .npcs
                         .nearby(Some(ctx.npc_id), ctx.npc.wpos, 8.0)
@@ -1143,6 +1168,7 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
         }
 
         if matches!(ctx.npc.profession(), Some(Profession::Chef))
+            // t0.6-exempt: per-visit-plan decision draw
             && ctx.rng.random_bool(0.8)
             && let Some(ws_id) = ctx.data.sites[visiting_site].world_site
             && let Some(tavern) = ctx.index.sites.get(ws_id).plots().filter_map(|p| match_some!(p.kind(), PlotKind::Tavern(a) => a)).choose(&mut ctx.rng)

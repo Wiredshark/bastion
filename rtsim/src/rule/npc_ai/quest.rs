@@ -511,7 +511,10 @@ pub fn escorted<S: State>(quest_id: QuestId, escorter: Actor, dst_site: SiteId) 
             // Occasionally, tell the escoter to wait if we're lagging far behind
             if let Some(escorter_pos) = util::locate_actor(ctx, escorter)
                 && ctx.npc.wpos.xy().distance_squared(escorter_pos.xy()) > 20.0f32.powi(2)
-                && ctx.rng.random_bool(ctx.dt as f64 / 30.0)
+                // T0.6: was a MANUAL dt/30 scale hardcoding the cadence
+                // inline — the typed helper's linear path (dt * rate) is
+                // exactly equivalent for dt <= 1 s.
+                && ctx.chance(1.0 / 30.0)
             {
                 ctx.controller
                     .say(None, Content::localized("npc-speech-wait_for_me"));
