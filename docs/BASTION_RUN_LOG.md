@@ -4376,12 +4376,30 @@ in the codebase were triaged and confirmed non-sim (loop clock, metrics,
 player-facing paths, the ENGOPT4 barrier's own watchdog) — not silently
 missed, checked and ruled out.
 
-**Status:** end-proof is the tape-pair rerun at `3b137017e6` plus a full
-safety-floor fan, both running now. Tag lands as `bastion-block-ENGOPT6`
-on green — bookkeeping entry to be confirmed/finalized then, this is the
-diagnosis record.
+**★ CORRECTION (2026-07-20, same day): the fix did NOT close the
+divergence.** The end-proof tape pair at `3b137017e6` diverges at the
+IDENTICAL point — tick 3960, uid 2, job 326, byte-equal before it. New
+data from the round-1 instrumentation: `progress=0.0` on BOTH runs for
+35+ ticks (job 326 is a Haul leg-1, colonist waiting at the item), needs
+byte-equal — so hunger/rest AND work accrual are BOTH exonerated. The
+item ENTITY itself vanishes at tick 3960 on one VM vs ~3976 on the other,
+WITHOUT being picked up by uid 2 first (the moot-release path, not a
+successful pickup). **The `LootOwner` wall-clock fix is KEPT, not
+reverted** — it's real dirt regardless (a wall clock has no business in
+deterministic sim state, and it separately closed a genuine post-expiry
+saturation panic) — but it was not THE seam causing tick 3960's
+divergence. Remaining suspect: the contested item's LIFECYCLE (whatever
+deletes the entity at a machine-throughput-dependent tick). Round-2
+instrumentation landed (`0e5e264c6c`): the per-colonist snapshot note now
+carries the active Haul item's `(uid, exists, position, owner
+expires_at, next_merge_check)`. `tapes5` fan running at `daaf8aba45` now
+(the tag has moved past this commit since the #183 revert landed on top —
+see below).
 
-## bastion-block-ENGOPT7 — ledger #183 (Chaser no-path negative cache) + #179 (Small→Medium continuation equivalence, executable negative) — TAGGED 2026-07-20 (tag `a4018f948a`, branch `bastion/builder`; self-gated)
+**Status: still open, no tag.** This entry documents the diagnosis
+in-flight; will be finalized once the item-lifecycle hunt closes.
+
+## bastion-block-ENGOPT7 — ledger #183 (REVERTED, see correction below) + #179 (Small→Medium continuation equivalence, executable negative, STANDS) — tag `a4018f948a`, branch `bastion/builder`, self-gated — ★ `a4018f948a` alone is NOT a safe restore point: reverting to it re-introduces the M3A strand regression #183 caused; the tree at `daaf8aba45` (the revert commit) is the actual good state
 
 **Naming note:** landed as ENGOPT7 rather than strict landing-order
 numbering, deliberately — the in-tree instrumentation commit for the
@@ -4431,3 +4449,58 @@ that still came back negative. Test kept permanently as the equivalence
 pin. No separate tag or registry row — rides in the ENGOPT7 lineage per
 Builder 4's own framing, consistent with how ledger #178 rode alongside
 ENGOPT4.
+
+**★ CORRECTION (2026-07-20, same day): #183 REVERTED — do NOT treat as
+shipped.** ~~Ledger #183 (`a4018f948a`), SHIPPED~~ was wrong; the tag
+`bastion-block-ENGOPT7` above should be read as historical/superseded for
+#183's portion (its #179 portion still stands as described). The
+`floor6` safety fan at `3b137017e6` caught a real M3A strand regression:
+`[66,null,null]`/0 lane violations vs the byte-baseline `[66,82,94]`/3
+(that 3-violation red IS the tracked, expected fork-15 baseline — its
+ABSENCE here is the tell, not a new pass). Full local-repro evidence
+chain: the cache-off kill-switch restores the baseline exactly; leg
+isolation narrowed it to the scheduler-search-cycle suppression itself
+(not the candidacy-restore path, which reproduces baseline fine) —
+suppressing PATH-0's search cycle changed a waiting queue-member's
+movement duty from 14% to 91% bearing-ticks, which relocated its parking
+spot, which flipped the feet-anchored organic-egress TARGET computation
+onto an unreachable elevated ladder-column cell (a goto blip at
+`(15860,16240,394)` vs the baseline mount at `(15861,16241,391)`) — the
+`final_mount` gate (`route_mount.xy==target.xy`) never fired, no
+`QueuedForLink` task formed, and the provenance window was lost after the
+owner's route cleanup. A [[stuck-economy-constraint]]-class finding: a new
+steer/drive duty invalidated the tuned egress web, exactly the class
+this project has hit before.
+
+**Disposition:** the 200-searches/200-ticks inefficiency #183 was fixing
+is REAL (the falsifier fired correctly before shipping) — but the fix is
+BLOCKED ON decoupling egress-target selection from search-cycle side
+effects, which is its own future block, not a quick patch. Revert
+(`daaf8aba45`) removes the live cache semantics + #183's own pins/
+fixtures; #178/#179/#180 are untouched (the `ledger_180` module was
+restored after the revert slice briefly clipped it; a dead `u_trap`
+fixture dropped, `trap_cfg` kept since #179's pin needs it).
+`veloren-common` 153/154 (B59 pre-existing only). M3A local at the
+reverted tree: `[66,82,94]`/3, the correct byte-baseline. `floor7` fan
+re-running at `daaf8aba45` now.
+
+## Ledger #180 SHIPPED, UNFLOORED pending floor7 — actual-work accounting through the search stack (commit `58ba5e4ee2`, branch `bastion/builder`)
+
+`find_path` now returns the poll's expansion delta (correct across a
+resumed/retained-astar search, which keeps its own running total);
+`Chaser` stores and reports `last_search_consumed()` (a no-op grant arm
+zeroes it, so a stale delta never gets re-billed); the PATH-0 scheduler
+debits ACTUAL consumed work instead of the planned estimate per search
+(admission still PROJECTS with the planned estimate for the tick-cap
+math, and actual≤planned holds per step, so the cap invariant itself is
+unbroken) — trivial searches stop eating a full 250-iteration slot they
+never needed. Pins in `ledger_180_tests`: trivial-search consumed>0 and
+<planned; no-op grant=0; a `Pending` slice still bills exactly 250;
+actual≤planned holds as an invariant.
+
+**Not yet floored — explicitly unconfirmed:** #180 changes how MANY
+searches the scheduler can serve per tick (more trivial searches now fit
+in the same budget), so it needs its own no-regression proof, not a free
+ride on #179/ENGOPT7's floor. The M3A floor at `daaf8aba45` (`floor7`,
+running now) is that proof. Treat as provisional until `floor7` reports
+green.
