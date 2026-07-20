@@ -215,6 +215,12 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
 
     pub fn set_max_iters(&mut self, max_iters: usize) { self.max_iters = max_iters; }
 
+    /// bastion ledger #179 (test-only): the visited set — lets a falsifier
+    /// assert its stale-region precondition (that the phase-1 search
+    /// actually touched the decision surface the comparison rides on).
+    #[cfg(test)]
+    pub(crate) fn visited(&self) -> impl Iterator<Item = &S> { self.visited_nodes.keys() }
+
     /// To guarantee an optimal path the heuristic function needs to be
     /// [admissible](https://en.wikipedia.org/wiki/A*_search_algorithm#Admissibility).
     pub fn poll<I>(

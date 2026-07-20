@@ -1759,6 +1759,12 @@ mod bastion_vertical_tests {
         air: Block,
     }
 
+    impl MockVol {
+        pub(super) fn from_parts(blocks: StdHashMap<Vec3<i32>, Block>, air: Block) -> Self {
+            Self { blocks, air }
+        }
+    }
+
     impl BaseVol for MockVol {
         type Error = ();
         type Vox = Block;
@@ -2354,6 +2360,173 @@ mod ledger_183_tests {
         assert!(
             chaser.needs_search(),
             "a profile change is a new question — the negative cache must drop immediately"
+        );
+    }
+}
+
+// bastion ledger #179: `find_path`'s edge-cost policy is a function of
+// `path_length` (Small discourages wall-adjacent cells via `edge_cost`;
+// Medium+ does not). The Exhausted-upgrade ladder retains the search across
+// the Small→Medium boundary (`set_max_iters` just raises the cap), so every
+// visited g-value keeps Small's wall penalties baked in — a mixed-policy
+// search. The live window is exactly the boxed-in case: an exhausted search
+// whose best-progress node is within the anchor tolerance (otherwise the
+// agent walks the partial route and the >2-block anchor-move wipe restarts
+// the search anyway).
+#[cfg(test)]
+mod ledger_179_tests {
+    use super::{
+        *,
+        bastion_vertical_tests::{MockVol, worker_cfg},
+    };
+    use crate::terrain::BlockKind;
+    use hashbrown::HashMap as StdHashMap;
+    use vek::Rgb;
+
+    /// Flat ground with a long wall (rock z 1..=4) at y = 4 spanning
+    /// x in [-hw, hw]. Start pressed against the wall so the Small search
+    /// exhausts with its best-progress node AT the start (the in-place
+    /// upgrade window); the real route rounds the wall ends.
+    fn u_trap_world(hw: i32) -> MockVol {
+        let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+        let mut blocks = StdHashMap::new();
+        for x in -(hw + 4)..=(hw + 4) {
+            for y in -3..=12 {
+                blocks.insert(Vec3::new(x, y, 0), rock);
+            }
+        }
+        for x in -hw..=hw {
+            for z in 1..=4 {
+                blocks.insert(Vec3::new(x, 4, z), rock);
+            }
+        }
+        MockVol::from_parts(blocks, Block::empty())
+    }
+
+    fn trap_cfg() -> TraversalConfig {
+        TraversalConfig {
+            can_climb: false,
+            scramble_reach: 0,
+            search_allowed: false,
+            ..worker_cfg()
+        }
+    }
+
+    /// Two-door variant: a DEEP narrow tunnel (2-thick wall, 1-wide slot at
+    /// x = 5 — every through-step is wall-flanked and pays Small's
+    /// `edge_cost`) vs a wide penalty-free door centered at x = -6, one cell
+    /// longer by geometry. Fresh Medium (no edge tax) takes the short
+    /// tunnel; a frontier whose tunnel g-values were baked under Small's
+    /// tax prefers the wide door — the mixed-cost-model flip.
+    fn two_door_world() -> MockVol {
+        let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+        let mut blocks = StdHashMap::new();
+        for x in -10..=10 {
+            for y in -3..=12 {
+                blocks.insert(Vec3::new(x, y, 0), rock);
+            }
+        }
+        for x in -10..=10 {
+            for y in [4, 5] {
+                // Narrow tunnel slot at x = 5; wide door at x in [-7, -5].
+                if x == 5 || (-7..=-5).contains(&x) {
+                    continue;
+                }
+                for z in 1..=4 {
+                    blocks.insert(Vec3::new(x, y, z), rock);
+                }
+            }
+        }
+        MockVol::from_parts(blocks, Block::empty())
+    }
+
+    /// THE FALSIFIER: the continued (Small-exhausted → Medium) route must
+    /// equal a fresh Medium-policy search — a mixed-cost-model frontier is
+    /// the defect (search-epoch invalidation; LPA*-style repair is
+    /// deliberately not attempted).
+    #[test]
+    fn ledger_179_policy_boundary_must_not_mix_cost_models() {
+        let vol = two_door_world();
+        let pos = Vec3::new(0.5, 3.5, 1.0);
+        let tgt = Vec3::new(0.5, 8.5, 1.0);
+
+        // Reference: a FRESH search that runs under the Medium policy from
+        // its first expansion.
+        let mut fresh_astar = None;
+        let mut reference = None;
+        for _ in 0..64 {
+            match find_path(
+                &mut fresh_astar,
+                &vol,
+                pos,
+                tgt,
+                &trap_cfg(),
+                PathLength::Medium,
+                None,
+            ) {
+                PathResult::Pending => continue,
+                PathResult::Path(path, _) => {
+                    reference = Some(path.nodes.clone());
+                    break;
+                },
+                PathResult::None(_) => panic!("fresh Medium search must not report no-path"),
+                PathResult::Exhausted(_) => panic!("fresh Medium search must not exhaust"),
+            }
+        }
+        let reference = reference.expect("fresh Medium search must terminate");
+
+        // Continued: drive the REAL Chaser ladder — Small exhausts in the
+        // trap bowl, the trivial partial route Done-s in place (pos static,
+        // within the anchor tolerance), the upgrade arm fires and the
+        // retained frontier continues under Medium.
+        let mut chaser = Chaser::default();
+        chaser.set_deterministic_seed(Some(7));
+        let mut continued = None;
+        let mut saw_exhausted = false;
+        let mut saw_upgrade = false;
+        for i in 0..600 {
+            let _ = chaser.chase(&vol, pos, Vec3::zero(), tgt, trap_cfg(), &Time(i as f64 * 0.1));
+            let (length, state) = chaser.state();
+            saw_exhausted |= state == PathState::Exhausted;
+            if !saw_upgrade && length > PathLength::Small {
+                saw_upgrade = true;
+                // PRECONDITION (the falsifier is evidence only if the
+                // mechanism engaged where it matters): at the upgrade
+                // instant — BEFORE the first Medium poll extends it — the
+                // retained visited set must already cover the narrow-tunnel
+                // decision surface, i.e. carry Small-taxed g-values there.
+                let touched_tunnel = chaser.astar.as_ref().is_some_and(|(astar, _)| {
+                    astar
+                        .visited()
+                        .any(|node| node.pos.x == 5 && (4..=5).contains(&node.pos.y))
+                });
+                assert!(
+                    touched_tunnel,
+                    "precondition unmet: the Small phase never reached the tunnel — the \
+                     mixed-cost comparison below would be vacuous"
+                );
+            }
+            if chaser.needs_search() {
+                chaser.search_step(&vol, pos, tgt, &trap_cfg());
+            }
+            if chaser.route_is_complete() == Some(true) {
+                continued = chaser.route_nodes();
+                break;
+            }
+        }
+        assert!(
+            saw_exhausted && saw_upgrade,
+            "precondition unmet: Small must exhaust (saw_exhausted={saw_exhausted}) and the \
+             ladder must upgrade in place (saw_upgrade={saw_upgrade}) for the policy-boundary \
+             comparison to be evidence at all"
+        );
+        let continued = continued.expect(
+            "the upgrade ladder must eventually deliver a complete route around the wall",
+        );
+        assert_eq!(
+            continued, reference,
+            "a Small-exhausted frontier continued under Medium must equal the fresh \
+             Medium-policy search (ledger #179: edge-cost policy epoch)"
         );
     }
 }
