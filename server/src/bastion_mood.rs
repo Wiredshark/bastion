@@ -13,7 +13,10 @@
 
 use common::assets::{self, AssetExt, BoxedError, FileAsset, load_ron};
 use serde::Deserialize;
-use std::{borrow::Cow, collections::HashMap};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+};
 
 /// Thought tuning: [`rtsim::data::ChronicleKind`] → (signed magnitude,
 /// lifetime in game-seconds). An event only weighs on a colonist whose
@@ -83,7 +86,7 @@ pub fn thought_sum(
     affinity_table: &ValueAffinityTable,
     actor: common::rtsim::Actor,
     now: f64,
-    values: &HashMap<common::bastion::Value, i8>,
+    values: &BTreeMap<common::bastion::Value, i8>,
     neurotic: bool,
 ) -> f32 {
     chronicle

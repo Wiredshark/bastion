@@ -7113,7 +7113,7 @@ fn preempt_scenario(args: &Args) -> ExitCode {
         .bastion_colonist_temperament(&a)
         .unwrap_or((false, false));
     let eff_rest = {
-        let mut vals = std::collections::HashMap::new();
+        let mut vals = std::collections::BTreeMap::new();
         vals.insert(common::bastion::Value::Craft, 0i8);
         vals.insert(common::bastion::Value::Tradition, 0i8);
         common::comp::bastion::stagger_interrupt(0.2, &vals, a_consc, a_neur)
@@ -9108,7 +9108,7 @@ fn auton3_scenario(args: &Args) -> ExitCode {
             .unwrap_or((false, false, false, false))
     };
     let predict = |server: &Server, n: &str, glory: i8, wealth: i8, kin: i8| {
-        let mut vals = std::collections::HashMap::new();
+        let mut vals = std::collections::BTreeMap::new();
         vals.insert(common::bastion::Value::Glory, glory);
         vals.insert(common::bastion::Value::Wealth, wealth);
         vals.insert(common::bastion::Value::Kin, kin);
@@ -9131,7 +9131,7 @@ fn auton3_scenario(args: &Args) -> ExitCode {
     // any possible work score (the unit test pins the absolute
     // bravest; this samples the seed's actual colonist).
     let (adv, wor, soc, intr) = p4(&server, &a);
-    let mut brave_vals = std::collections::HashMap::new();
+    let mut brave_vals = std::collections::BTreeMap::new();
     brave_vals.insert(common::bastion::Value::Glory, 50i8);
     brave_vals.insert(common::bastion::Value::Wealth, 50i8);
     brave_vals.insert(common::bastion::Value::Kin, -50i8);
@@ -12330,7 +12330,7 @@ fn spiral_scenario(args: &Args) -> ExitCode {
     // pub fn on the values just set + the rolled temperament.
     let expected: Vec<f32> = (0..names.len())
         .map(|i| {
-            let mut vals = std::collections::HashMap::new();
+            let mut vals = std::collections::BTreeMap::new();
             let w: i8 = match role[i] {
                 1 => 50,
                 -1 => -50,

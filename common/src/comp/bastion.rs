@@ -289,7 +289,7 @@ pub const NEUROTIC_NEGATIVE_AMP: f32 = 1.5;
 pub fn derive_need_weight(
     need: crate::bastion::Need,
     personality: &crate::rtsim::Personality,
-    values: &std::collections::HashMap<crate::bastion::Value, i8>,
+    values: &std::collections::BTreeMap<crate::bastion::Value, i8>,
 ) -> f32 {
     use crate::{
         bastion::{Need, Value},
@@ -351,7 +351,7 @@ pub const INTERRUPT_FLOOR: f32 = 0.05;
 /// (field reads only — the determinism house invariant).
 pub fn stagger_interrupt(
     base: f32,
-    values: &std::collections::HashMap<crate::bastion::Value, i8>,
+    values: &std::collections::BTreeMap<crate::bastion::Value, i8>,
     conscientious: bool,
     neurotic: bool,
 ) -> f32 {
@@ -522,7 +522,7 @@ pub const FLEE_URGENCY_FLOOR: f32 = 0.8;
 #[expect(clippy::too_many_arguments)]
 pub fn modulated_urgencies(
     base: (f32, f32, f32),
-    values: &std::collections::HashMap<crate::bastion::Value, i8>,
+    values: &std::collections::BTreeMap<crate::bastion::Value, i8>,
     adventurous: bool,
     worried: bool,
     sociable: bool,
@@ -548,7 +548,7 @@ pub fn modulated_urgencies(
 }
 
 pub fn care_factor(
-    values: &std::collections::HashMap<crate::bastion::Value, i8>,
+    values: &std::collections::BTreeMap<crate::bastion::Value, i8>,
     affinities: &[(crate::bastion::Value, f32)],
     neurotic: bool,
     base_weight: f32,
@@ -588,19 +588,19 @@ mod bastion_b70_tests {
     #[test]
     fn auton3_drive_order_guard() {
         use crate::bastion::Value;
-        use std::collections::HashMap;
+        use std::collections::BTreeMap;
         let base = (0.5f32, 1.0f32, 0.1f32);
-        let none = HashMap::new();
+        let none = BTreeMap::new();
         // Identity.
         assert_eq!(
             modulated_urgencies(base, &none, false, false, false, false),
             base
         );
         // Bravest Flee vs greediest Work — the order guard, exact.
-        let mut brave = HashMap::new();
+        let mut brave = BTreeMap::new();
         brave.insert(Value::Glory, 50i8);
         let (_, flee_min, _) = modulated_urgencies(base, &brave, true, false, false, false);
-        let mut greedy = HashMap::new();
+        let mut greedy = BTreeMap::new();
         greedy.insert(Value::Wealth, 50i8);
         let (work_max, _, _) = modulated_urgencies(base, &greedy, false, false, false, false);
         assert!((flee_min - 0.85).abs() < 1e-6);
@@ -609,15 +609,15 @@ mod bastion_b70_tests {
         assert!(flee_min >= FLEE_URGENCY_FLOOR);
         // Zero-preservation: no flee signal (base 0.0) stays 0.0 even
         // for the most fearful roll (modulation cannot INVENT a flee).
-        let mut fearful = HashMap::new();
+        let mut fearful = BTreeMap::new();
         fearful.insert(Value::Glory, -50i8);
         let (_, f0, _) = modulated_urgencies((0.5, 0.0, 0.1), &fearful, false, true, false, false);
         assert_eq!(f0, 0.0);
         // Idle ceiling < Work floor: the liveness contract.
-        let mut social = HashMap::new();
+        let mut social = BTreeMap::new();
         social.insert(Value::Kin, 50i8);
         let (_, _, idle_max) = modulated_urgencies(base, &social, false, false, true, false);
-        let mut lazy_poor = HashMap::new();
+        let mut lazy_poor = BTreeMap::new();
         lazy_poor.insert(Value::Wealth, -50i8);
         let (work_min, _, _) = modulated_urgencies(base, &lazy_poor, false, false, false, false);
         assert!((idle_max - 0.13).abs() < 1e-6);
@@ -636,9 +636,9 @@ mod bastion_b70_tests {
     #[test]
     fn auton2_stagger_interrupt_floor_and_shape() {
         use crate::bastion::Value;
-        use std::collections::HashMap;
+        use std::collections::BTreeMap;
         let base = 0.2f32;
-        let mut hardiest = HashMap::new();
+        let mut hardiest = BTreeMap::new();
         hardiest.insert(Value::Craft, 50i8);
         hardiest.insert(Value::Tradition, 50i8);
         let floor_case = stagger_interrupt(base, &hardiest, true, false);
@@ -647,10 +647,10 @@ mod bastion_b70_tests {
         // h = 1.5 → 0.2 × (1 − 0.6) = 0.08 exactly.
         assert!((floor_case - 0.08).abs() < 1e-6);
         // Identity: empty values, no traits → base bit-for-bit.
-        let none = HashMap::new();
+        let none = BTreeMap::new();
         assert_eq!(stagger_interrupt(base, &none, false, false), base);
         // Monotone: each hardiness step never RAISES the threshold.
-        let mut mid = HashMap::new();
+        let mut mid = BTreeMap::new();
         mid.insert(Value::Craft, 50i8);
         let steps = [
             stagger_interrupt(base, &none, false, true), // anxious
@@ -664,7 +664,7 @@ mod bastion_b70_tests {
         }
         // The anxious ceiling: h = −1.5 → 0.2×1.6 = 0.32, clamped to
         // base×1.5 = 0.3 — still under the 0.5 comfort band.
-        let mut anti = HashMap::new();
+        let mut anti = BTreeMap::new();
         anti.insert(Value::Craft, -50i8);
         anti.insert(Value::Tradition, -50i8);
         let anxious = stagger_interrupt(base, &anti, false, true);
@@ -717,16 +717,16 @@ mod bastion_b70_tests {
     #[test]
     fn bastion_care_factor_exact() {
         use crate::bastion::Value;
-        use std::collections::HashMap;
-        let empty: HashMap<Value, i8> = HashMap::new();
+        use std::collections::BTreeMap;
+        let empty: BTreeMap<Value, i8> = BTreeMap::new();
         let row = [(Value::Kin, 0.6f32), (Value::Glory, -0.4)];
         // Identity: no values, or no affinity row -> exactly 1.0.
         assert_eq!(care_factor(&empty, &row, false, -0.15), 1.0);
-        let mut kin = HashMap::new();
+        let mut kin = BTreeMap::new();
         kin.insert(Value::Kin, 50i8);
         assert_eq!(care_factor(&kin, &[], false, -0.15), 1.0);
         // DIVERGENCE: same row, two different value maps.
-        let mut glory = HashMap::new();
+        let mut glory = BTreeMap::new();
         glory.insert(Value::Glory, 50i8);
         let care_kin = care_factor(&kin, &row, false, -0.15);
         let care_glory = care_factor(&glory, &row, false, -0.15);
@@ -734,7 +734,7 @@ mod bastion_b70_tests {
         assert!((care_glory - 0.6).abs() < 1e-6); // 1 + (50/50)·(−0.4)
         assert!(care_kin > care_glory);
         // Scorn: a negative weight flips the affinity's direction.
-        let mut scorns_kin = HashMap::new();
+        let mut scorns_kin = BTreeMap::new();
         scorns_kin.insert(Value::Kin, -50i8);
         assert!((care_factor(&scorns_kin, &row, false, -0.15) - 0.4).abs() < 1e-6);
         // Clamps: stacked scorn floors at CARE_MIN, stacked zeal caps at
@@ -764,13 +764,13 @@ mod bastion_b70_tests {
             rtsim::{Personality, PersonalityTrait},
         };
         use rand::SeedableRng;
-        use std::collections::HashMap;
+        use std::collections::BTreeMap;
         let mut rng = rand::rngs::StdRng::seed_from_u64(0xF0C0_5D34);
         let neutral = Personality::random(&mut rng);
         // Value arms: exact linear map, empty = baseline.
-        let empty: HashMap<Value, i8> = HashMap::new();
+        let empty: BTreeMap<Value, i8> = BTreeMap::new();
         assert_eq!(derive_need_weight(Need::Pray, &neutral, &empty), 1.0);
-        let mut v = HashMap::new();
+        let mut v = BTreeMap::new();
         v.insert(Value::Piety, 50i8);
         v.insert(Value::Kin, -50);
         v.insert(Value::Wealth, 25);
