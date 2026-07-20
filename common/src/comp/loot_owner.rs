@@ -87,3 +87,37 @@ pub enum LootOwnerKind {
     Player(Uid),
     Group(Group),
 }
+
+// bastion ENGINE-OPT-3 (ledger #160): `can_pickup` is THE loot authority —
+// the AI's attempt decision AND the commit gate (`inventory_manip`'s Pickup
+// arm) both call it. Its table is pinned here so neither caller can drift
+// on a silent semantics change.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn owner_of(uid: Uid, soft: bool) -> LootOwner {
+        LootOwner::new(LootOwnerKind::Player(uid), soft, 60)
+    }
+
+    fn uid(n: u64) -> Uid { Uid(core::num::NonZeroU64::new(n).unwrap()) }
+
+    #[test]
+    fn item_160_can_pickup_truth_table() {
+        let humanoid = Body::Humanoid(crate::comp::humanoid::Body::random());
+        let wolf = Body::QuadrupedMedium(crate::comp::quadruped_medium::Body::random());
+        let owner = owner_of(uid(1), false);
+        // The owner picks up their own hard-owned loot.
+        assert!(owner.can_pickup(uid(1), None, None, Some(&humanoid), None));
+        // A foreign humanoid cannot take hard-owned loot.
+        assert!(!owner.can_pickup(uid(2), None, None, Some(&humanoid), None));
+        // Soft ownership authorizes anyone (the WISH is courtesy, not law).
+        let soft = owner_of(uid(1), true);
+        assert!(soft.can_pickup(uid(2), None, None, Some(&humanoid), None));
+        // Non-humanoids ignore ownership BY DESIGN (documented in-function).
+        assert!(owner.can_pickup(uid(2), None, None, Some(&wolf), None));
+        // Pets never pick up owned loot (owned alignment, not a player).
+        let pet_alignment = Alignment::Owned(uid(9));
+        assert!(!owner.can_pickup(uid(2), None, Some(&pet_alignment), Some(&wolf), None));
+    }
+}

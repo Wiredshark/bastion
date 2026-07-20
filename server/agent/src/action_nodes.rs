@@ -140,6 +140,34 @@ pub fn select_healing_item(
         .map(|(id, _)| id)
 }
 
+/// bastion ENGINE-OPT-3 (ledger #160): the loot-pickup ATTEMPT decision,
+/// extracted pure so its truth table is unit-pinned (the release-decision
+/// discipline). `authorized` = `LootOwner::can_pickup` (the SAME authority
+/// the commit-side gate in `inventory_manip` revalidates — choose-time here
+/// is advisory; the commit is the security boundary). `is_soft` = the
+/// owner's no-pickup WISH, respected unless we are hostile to them.
+///
+/// Non-humanoids need no special arm: `can_pickup` already encodes
+/// "non-humanoids ignore ownership" by design, and `wants_pickup` already
+/// restricts them to consumables.
+///
+/// HISTORY (why this exists): the old inline predicate carried TWO
+/// inversions — an outer `!` around the entire authorization conjunction
+/// (humanoids attempted pickup precisely when unauthorized, refused their
+/// own drops; the commit gate then rejected the unauthorized attempts, so
+/// the observable damage was refused-entitled-loot + attempt-spam, not
+/// theft) and a hostility polarity in the soft-wish term that contradicted
+/// its own comment. The paired test module pins both the intended table
+/// and the old predicate's flipped rows.
+pub fn loot_attempt_decision(
+    wants_pickup: bool,
+    authorized: bool,
+    is_soft: bool,
+    hostile_to_owner: bool,
+) -> bool {
+    wants_pickup && authorized && (!is_soft || hostile_to_owner)
+}
+
 impl AgentData<'_> {
     ////////////////////////////////////////
     // Action Nodes
@@ -1226,26 +1254,38 @@ impl AgentData<'_> {
                         && (is_humanoid || matches!(item, body::item::Body::Consumable));
 
                     // The agent will attempt to pickup the item if it wants to pick it up and
-                    // is allowed to
-                    let attempt_pickup = wants_pickup
-                    && read_data
+                    // is allowed to (bastion ENGINE-OPT-3, ledger #160: the old inline
+                    // predicate wrapped this whole authorization in `!` — humanoids
+                    // attempted pickup exactly when can_pickup was FALSE and refused
+                    // their own/group/soft drops — and its soft-wish term additionally
+                    // inverted hostility against its own comment. Decision extracted
+                    // pure; truth table pinned in the tests below.)
+                    let attempt_pickup = read_data
                         .loot_owners
-                        .get(entity).is_none_or(|loot_owner| {
-                            !(is_humanoid
-                                && loot_owner.can_pickup(
-                                    *self.uid,
-                                    read_data.groups.get(entity),
-                                    self.alignment,
-                                    self.body,
-                                    None,
-                                )
-                                && (
-                                    !loot_owner.is_soft() ||
-                                    // If we are hostile towards the owner, ignore their wish to not pick up the loot
-                                    loot_owner
-                                        .uid()
-                                        .and_then(|uid| read_data.id_maps.uid_entity(uid)).is_none_or(|entity| !is_enemy(self, entity, read_data)))
-                                )
+                        .get(entity)
+                        .map_or(wants_pickup, |loot_owner| {
+                            let authorized = loot_owner.can_pickup(
+                                *self.uid,
+                                read_data.groups.get(entity),
+                                self.alignment,
+                                self.body,
+                                None,
+                            );
+                            // If we are hostile towards the owner, ignore their wish
+                            // to not pick up the loot (soft ownership). An
+                            // unresolvable owner (offline) counts as not-hostile, so
+                            // the wish is respected — the conservative default the
+                            // old code also took.
+                            let hostile_to_owner = loot_owner
+                                .uid()
+                                .and_then(|uid| read_data.id_maps.uid_entity(uid))
+                                .is_some_and(|owner| is_enemy(self, owner, read_data));
+                            loot_attempt_decision(
+                                wants_pickup,
+                                authorized,
+                                loot_owner.is_soft(),
+                                hostile_to_owner,
+                            )
                         });
 
                     if attempt_pickup {
@@ -2641,5 +2681,68 @@ impl AgentData<'_> {
         {
             controller.push_event(ControlEvent::Unmount);
         }
+    }
+}
+
+// bastion ENGINE-OPT-3 (ledger #160) truth-table pins.
+#[cfg(test)]
+mod loot_auth_tests {
+    use super::loot_attempt_decision;
+
+    /// The pre-fix inline predicate, transcribed VERBATIM in shape (outer
+    /// negation + inverted hostility) — the falsifier's reference. Kept so
+    /// the flipped rows below remain executable documentation of the bug.
+    fn old_inverted_decision(
+        wants_pickup: bool,
+        is_humanoid: bool,
+        authorized: bool,
+        is_soft: bool,
+        hostile_to_owner: bool,
+    ) -> bool {
+        wants_pickup && !(is_humanoid && authorized && (!is_soft || !hostile_to_owner))
+    }
+
+    #[test]
+    fn item_160_intended_truth_table() {
+        // wants nothing -> never.
+        assert!(!loot_attempt_decision(false, true, false, false));
+        // entitled (own/group drop, hard ownership) -> attempt.
+        assert!(loot_attempt_decision(true, true, false, false));
+        // foreign hard-owned, unauthorized -> no attempt.
+        assert!(!loot_attempt_decision(true, false, false, false));
+        // soft wish, not hostile -> respect the wish.
+        assert!(!loot_attempt_decision(true, true, true, false));
+        // soft wish, hostile to the owner -> ignore the wish, attempt.
+        assert!(loot_attempt_decision(true, true, true, true));
+    }
+
+    #[test]
+    fn item_160_falsifier_old_predicate_flips_the_load_bearing_rows() {
+        // ROW 1 — entitled humanoid (owns the drop, hard): intended ATTEMPT,
+        // old REFUSED (the refused-entitled-loot half of the bug).
+        assert!(loot_attempt_decision(true, true, false, false));
+        assert!(!old_inverted_decision(true, true, true, false, false));
+        // ROW 2 — foreign hard-owned, unauthorized humanoid: intended NO,
+        // old ATTEMPTED (the attempt-spam half; commit gate then rejected).
+        assert!(!loot_attempt_decision(true, false, false, false));
+        assert!(old_inverted_decision(true, true, false, false, false));
+        // ROW 3 — soft + hostile: intended ATTEMPT (ignore an enemy's
+        // wish) — and the OLD predicate ALSO attempted here: its two
+        // inversions CANCELLED on this branch (the outer `!` undoing the
+        // flipped hostility), which is precisely why the bug survived
+        // review — some branches accidentally behaved correctly.
+        assert!(loot_attempt_decision(true, true, true, true));
+        assert!(old_inverted_decision(true, true, true, true, true));
+        // ROW 3b — soft + NOT hostile: both respect the wish (cancelled
+        // branch too; documented for completeness).
+        assert!(!loot_attempt_decision(true, true, true, false));
+        assert!(!old_inverted_decision(true, true, true, true, false));
+        // ROW 4 — non-humanoid on owned loot: can_pickup's design says
+        // authorized=true (non-humanoids ignore ownership); intended follows
+        // the same single path (attempt unless soft-and-not-hostile) — the
+        // old predicate's `is_humanoid` guard made non-humanoids attempt
+        // UNCONDITIONALLY, even against a soft wish they weren't hostile to.
+        assert!(!loot_attempt_decision(true, true, true, false));
+        assert!(old_inverted_decision(true, false, true, true, false));
     }
 }

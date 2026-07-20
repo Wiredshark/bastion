@@ -1778,6 +1778,29 @@ mod tests {
         }));
     }
 
+    /// bastion ENGINE-OPT-3 (ledger #160): the authoritative Pickup commit
+    /// must keep revalidating `LootOwner::can_pickup` and denying with
+    /// `LootOwned` — the AI-side attempt check is advisory; this gate is the
+    /// security boundary (it is what bounded the old inverted predicate's
+    /// damage to refusal+spam instead of theft). Source-scan pin, U8 style.
+    #[test]
+    fn item_160_pickup_commit_gate_present() {
+        let src = repo_text("server/src/events/inventory_manip.rs");
+        let arm = src
+            .split("InventoryManip::Pickup")
+            .nth(1)
+            .expect("the Pickup arm must exist in inventory_manip");
+        let window = &arm[..arm.len().min(4000)];
+        assert!(
+            window.contains(".can_pickup("),
+            "the Pickup commit lost its LootOwner::can_pickup revalidation (ledger #160 TOCTOU gate)"
+        );
+        assert!(
+            window.contains("LootOwned"),
+            "the Pickup commit must deny with CollectFailedReason::LootOwned"
+        );
+    }
+
     #[test]
     fn writer_inventory_guard_covers_required_paths_categories_and_activity_owners() {
         let document = repo_text(INVENTORY_DOC);
