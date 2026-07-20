@@ -4097,3 +4097,48 @@ duplicated here.
 (corridor-unification + the corridor-drive `debug_assert` rider),
 repro-first — red baseline at seeds 21/42 before any code change, per its
 own standing discipline.
+
+## bastion-block-B58 — frontier-approach corridor-unification — TAGGED 2026-07-20 (tag `8e0e3bc03d`, branch `bastion/builder`; Opus gate PASS, `BUILD_REVIEW_LOG.md` §B58, architect-run overnight, Ben asleep)
+
+Closes the B58 tracked-open follow-up filed in `docs/BASTION_RUN_LOG.md`
+§bastion-block-M3 (row B58 in the registry) — the inherited M2-era
+frontier-approach net-reliance at seeds 21/42. No master-list row,
+mine-ladder-adjacent, same untracked convention as M3/CRATESPLIT. Repro-
+first per Builder 4's own discipline: red baseline confirmed at 21/42
+before any code change.
+
+**Three commits.** `a7213f735d` (the s21 leg): the frontier-reacquire path
+unified onto the LIVE-POSITION corridor authority via a `frontier` param
+threaded into `m3_promoted_corridor_waypoint` — the same authority M3A's
+promoted-head path already uses, now covering the reacquire case too.
+Added a no-progress replan-from-position trigger (≥30 ticks / <0.1 blocks
+moved) replacing the old stored-corridor replay for a displaced member
+(a stale stored corridor can't self-correct; replanning from the member's
+actual current position can). `stuck_time` wipes are now earned by real
+measured movement, not just by entering the reacquire path. `6dcd679253`
+(rider, as planned): single-owner `debug_assert`s at the authority-entry
+and reacquire-drive sites, release-inert (compiled out / no-op outside
+debug builds, per the standing rider-not-standalone framing). `8e0e3bc03d`
+(test fix-forward): the corridor unit-test initializer needed the new
+`last_check` field — caught in Builder 4's own self-gate (lib-test target
+failed to compile; the episode binaries themselves were unaffected), fixed
+before tagging, not after. 35/35 unit tests green.
+
+**Evidence:** the seed-21 member that previously sat frozen (per the B58
+registry row's own N2-discriminator finding) now forms its transaction and
+climbs out for real — `m3_first_owner` None→`Colonist-0`, teleports 4→3,
+first-member delivery 234s→183s. Self-gate M3A + M3D + N2 all PASS at
+seed 1337 with the rider asserts live (i.e. the new safety asserts don't
+themselves trip under normal operation). Seed 21 stays red ×2
+deterministic, seed 42 also red — an HONEST residual, not silently
+absorbed: Builder 4 traced every remaining net to the SEPARATELY-FILED
+organic-climb-bounce escalation-starvation class (`BUILD_REVIEW_LOG.md`
+§FILED — ties the stuck-economy/R11 generalization and the FR15
+paired-A/B work, explicitly routed to Ben's morning triage, not folded
+into this tag). R10/M3 pin counts unchanged (`remove==1, advance_epoch==2,
+insert==3, fenced==13`) — confirms this block didn't touch the fencing
+invariants it doesn't own.
+
+**Opus gate:** PASS (`BUILD_REVIEW_LOG.md` §B58). Builder 4 standing down
+per the architect — tree held for Ben's morning steer (engine-optimization
+phase next, per the standing Ben-priority order).
