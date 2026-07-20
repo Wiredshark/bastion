@@ -43,6 +43,18 @@ impl TimeOfDay {
 }
 
 /// A resource that stores the tick (i.e: physics) time.
+///
+/// T0.4 CLOCK-DOMAIN DECLARATION (master build order; ledger #54): this is
+/// THE SIM CLOCK — seconds of simulated time, advanced by `dt × TimeScale`
+/// each tick, frozen while paused. It is the only clock simulation logic
+/// (labor, needs, rescue, item economy, expiries) may read; wall-anchored
+/// alternatives (`Instant`, `SystemTime`) resolve at machine-throughput-
+/// dependent sim ticks in the headless harness (the LootOwner/ENGOPT6
+/// class). Sibling domains: [`ProgramTime`] = unscaled accumulated dt
+/// (advances through pauses; persistence/merge-backoff bookkeeping, never
+/// behavior), [`TimeOfDay`] = world-calendar seconds (day-cycle scaled),
+/// `Tick` (server crate) = fixed-step counter (cadence gates; convert via
+/// the declared `SIM_TPS`), [`TimeScale`] = the pause/speed dial.
 #[derive(Copy, Clone, Debug, Default, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub struct Time(pub f64);
 

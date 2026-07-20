@@ -7986,7 +7986,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if let Some(mood) = moods.get(entity) {
                     if mood.0 < mood_cfg.break_minor {
                         let since = *board.mood_below_since.entry(*uid).or_insert(time.0);
-                        if time.0 - since >= mood_cfg.break_sustain_secs
+                        if mood_cfg.break_sustain_secs.has_elapsed(since, *time)
                             && !board
                                 .preempt_cooldown
                                 .get(uid)
@@ -8007,7 +8007,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             preempt_pending.push((
                                 entity,
                                 *uid,
-                                PendingNeed::Despond(time.0 + mood_cfg.despond_secs),
+                                PendingNeed::Despond(mood_cfg.despond_secs.after(*time).0),
                             ));
                             continue;
                         }

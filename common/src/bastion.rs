@@ -702,6 +702,28 @@ pub struct NeedTuning {
 
 fn default_need_interrupt() -> f32 { 0.2 }
 
+/// T0.4 (master build order; ledger #54): a SIM-clock duration in seconds —
+/// the units-of-measure boundary for tuning fields. Transparent for RON
+/// compat; arithmetic goes through [`crate::resources::Time`] explicitly so
+/// a wall-clock or tick-count value cannot be mixed in silently (the
+/// LootOwner/ENGOPT6 class, closed at the type level).
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, PartialOrd)]
+#[serde(transparent)]
+pub struct SimSecs(pub f64);
+
+impl SimSecs {
+    /// The sim instant this duration ends if started `now`.
+    pub fn after(self, now: crate::resources::Time) -> crate::resources::Time {
+        crate::resources::Time(now.0 + self.0)
+    }
+
+    /// Whether this duration has fully elapsed between a stored sim instant
+    /// and `now`.
+    pub fn has_elapsed(self, since: f64, now: crate::resources::Time) -> bool {
+        now.0 - since >= self.0
+    }
+}
+
 /// bastion (B7-0): the needs/mood tuning — RON
 /// (`assets/common/bastion_mood.ron`), graceful default (the
 /// `SeasonConfig` idiom). Holds the base and the three bodily-need
@@ -722,20 +744,20 @@ pub struct MoodConfig {
     pub break_minor: f32,
     /// Sustained-below window before the per-cadence roll starts.
     #[serde(default = "default_break_sustain")]
-    pub break_sustain_secs: f64,
+    pub break_sustain_secs: SimSecs,
     /// Per-cadence break chance once sustained (not an instant flip —
     /// forgiving, per the prior art).
     #[serde(default = "default_break_chance")]
     pub break_chance: f32,
     /// How long a despondent colonist stays down.
     #[serde(default = "default_despond_secs")]
-    pub despond_secs: f64,
+    pub despond_secs: SimSecs,
 }
 
 fn default_break_minor() -> f32 { 0.25 }
-fn default_break_sustain() -> f64 { 30.0 }
+fn default_break_sustain() -> SimSecs { SimSecs(30.0) }
 fn default_break_chance() -> f32 { 0.15 }
-fn default_despond_secs() -> f64 { 60.0 }
+fn default_despond_secs() -> SimSecs { SimSecs(60.0) }
 
 impl Default for MoodConfig {
     fn default() -> Self {
@@ -760,9 +782,9 @@ impl Default for MoodConfig {
                 interrupt: 0.0,
             },
             break_minor: 0.25,
-            break_sustain_secs: 30.0,
+            break_sustain_secs: SimSecs(30.0),
             break_chance: 0.15,
-            despond_secs: 60.0,
+            despond_secs: SimSecs(60.0),
         }
     }
 }
