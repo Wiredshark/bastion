@@ -4396,8 +4396,115 @@ expires_at, next_merge_check)`. `tapes5` fan running at `daaf8aba45` now
 (the tag has moved past this commit since the #183 revert landed on top —
 see below).
 
-**Status: still open, no tag.** This entry documents the diagnosis
-in-flight; will be finalized once the item-lifecycle hunt closes.
+**Rounds 3-5 (all pairs attested same-commit + same silicon, Cascade
+Lake):**
+
+- **Round 3** (`@daaf8aba`, item-trail note): needs/work-accrual both
+  re-exonerated. The contested haul item's ENTITY is deleted at a
+  machine-dependent tick; its `next_merge_check` timestamp reads
+  `131.9999986` sim-seconds ≈ tick 3960 EXACTLY — the item's own
+  merge-check SCHEDULE is what the original divergence tick was pointing
+  at all along.
+- **Round 4** (`390cfa7a`, pickup-verdict trail): moved the needle
+  decisively. First divergence is actually tick 3947 uid 1 (earlier than
+  previously pinned) — item-35's `PickupItem` component vanishes in ONE
+  run only (a synchronous comp-take from a SUCCESSFUL pickup), while the
+  other run's copy still carries `next_merge_check=131.9999986` = tick
+  3960. So the real race is per-tick pickup ATTEMPTS vs the periodic
+  MERGE SWEEP for the same item — whichever wins first deletes it, and
+  which one wins is machine-dependent. Every Pickup attempt now records a
+  full verdict (entity-missing / out-of-range / loot-owned / comp-taken /
+  partial / inventory-full / accepted).
+- **Round 5** (`b4d33eb1a5`, full merge-trail instrumentation): proved the
+  divergent deletion is `sys/item`'s comp-take path. uid 2's own pickup
+  attempts verdict `out-of-range` on EVERY tick in BOTH runs — not the
+  cause, a SEPARATE standing bug (see below). Check-due schedules are
+  byte-equal through the pre-flip tick; then the SAME due check finds a
+  merge partner in one run and finds none in the other (backing off to
+  187.43). The spatial grid itself was audited and is deterministic
+  (sequential entity-id-order build, coordinate-order cell walk) GIVEN
+  identical history — so the conclusion is that the PARTNER item's own
+  state history diverged earlier, invisibly, before this tick. Every check
+  fire, every performed merge, and every backoff update is now recorded;
+  the `tapes7` fan running now should name the true seam directly from its
+  first divergent merge-trail line.
+
+**Standing bug found + fixed along the way, unrelated to the hunt itself
+but discovered because of it (`502ad6897a`, HAUL-RETARGET — registry
+B68):** dropped items are physical and FALL after being dropped; a haul
+job's leg-1 aims at the STALE drop cell, so a hauler can end up standing
+"Arrived" at the drop cell while the actual item has fallen ~5 blocks
+below, permanently out of `MAX_PICKUP_RANGE` (5.0 cylinder distance) —
+grinding out-of-range pickup verdicts for 100+ ticks with no recovery,
+which is exactly what makes the divergence-hunt race above possible in
+the first place (a job stuck this way sits around long enough for the
+merge-sweep-vs-pickup race to actually matter). Fix: leg-1 now re-aims
+`job.pos` at the item's LIVE position when it's drifted past
+`ARRIVE_DIST`, and returns to `Traveling`. Live-tape evidence stands in
+for a unit fixture (the arm is scenario-deep); acceptance is the next
+`mf` pair + a floor at the tip. `bastion-server` 38/38.
+
+**Status: still open, no tag.** The `LootOwner` sim-time fix (`3b137017e6`)
+remains kept (real, independent bug) but confirmed NOT the seam. This
+entry documents the diagnosis in-flight; will be finalized once the
+`tapes7` merge-trail hunt closes.
+
+## Master-order Tier 0 (T0.1-T0.5) — all pushed, all suites green, FLOORED pending the next fan at tip (branch `bastion/builder`)
+
+New process note: the standing source of truth for engine-improvement
+sequencing is now `ENGINE-IMPROVEMENTS-MASTER-BUILD-ORDER.md` (architect
+relay from Ben/ChatGPT), read strictly top-to-bottom. ENGOPT1-7 are marked
+DONE there. **★ ONE CORRECTION NEEDED IN THAT DOC, not fixable from this
+checkout (it isn't in this repo — routing to the architect for relay to
+Ben/ChatGPT):** its `[DONE.7]` row claims ledger #183 is done via
+ENGOPT7 — that predates the revert above. #183 is NOT done; it's reverted
+(`daaf8aba45`) and blocked on decoupling egress-target selection from
+search-cycle side effects.
+
+Tier 0 landed, all suites green (`veloren-common` 153/154 B59-only,
+`veloren-server` 14/14, `bastion-server` 38/38):
+
+- **T0.1** (`9b3bb074a7`, ledger #5): `SysScheduler::should_run_at(tick,
+  deterministic)` — sim-tick cadence in harness mode, byte-identical wall
+  path live. Only consumer today is player-character persistence (inert
+  in the headless harness) — a substrate fix landing ahead of its future
+  consumers, same class ENGOPT6 just pinned for `LootOwner`.
+- **T0.2** (`41738059c6`, ledger #21): the labor clock DECLARED in
+  executable form — a source-scan pin over 10 labor/economy files banning
+  `Instant::now`/`SystemTime::now` outright. All clean today (post-ENGOPT6
+  fix); the pin locks the door on this whole bug class going forward.
+- **T0.3** (`8e17073bc5`, ledger #39): `pub const SIM_TPS: u64 = 30`
+  declared in `bastion-server`; 11 scattered tick-budget constants (mount
+  timeouts, climb-release, queue-wait, energy-wait-hold, arbitration
+  interval, the deterministic chunk-apply delay, T0.1's own derivation)
+  re-expressed through it. Every value byte-identical — a value-freeze
+  pin, zero tuning drift, but a future deliberate cadence change now
+  moves every budget together instead of drifting independently.
+- **T0.4** (`67b23e6f95`, ledger #54): a clock-domain DECLARATION doc on
+  `Time` (the sim clock = the only clock sim logic may read; sibling
+  clocks `ProgramTime`/`TimeOfDay`/`Tick`/`TimeScale` each named with
+  their own advancement rule and permitted consumers) + `SimSecs`, a new
+  serde-transparent sim-duration newtype, applied to `MoodConfig`'s
+  `break_sustain_secs`/`despond_secs` with arithmetic forced through
+  `Time`. RON format unchanged (transparent), values byte-identical.
+  Wholesale adoption across every raw sim-instant field is deferred to
+  future rows — the type exists now for them to adopt.
+- **T0.5** (`867216c8af`, ledger #55): pause safety for the need/
+  breakdown arbitration pass — it rolls discrete changes on TICK cadence
+  while its own sustain/cooldown guards compare SIM time; with
+  `TimeScale 0`, a colonist already past its sustain window would re-roll
+  `break_chance` every WALL tick of a pause, compounding toward a
+  guaranteed breakdown while the world is frozen. Guard: `dt.0 >
+  EPSILON`. Behavior is byte-identical outside an actual pause (harness/
+  live `dt` is always positive); the paused-server RED case has no
+  harness fixture to prove it against, so it's classified as an
+  arithmetic-evident guard, flagged honestly as such rather than claimed
+  fully proven.
+
+**Floor status:** `floor7` at `daaf8aba45` (the #183-revert tip) was a
+full byte-baseline (M3A `[66,82,94]`/3, M3D `[145,204,263]`/3/tp3, N2
+clean). T0.1-T0.5 + the HAUL-RETARGET fix are floored by the NEXT fan at
+the current tip, pending alongside the `tapes7` verdict.
 
 ## bastion-block-ENGOPT7 — ledger #183 (REVERTED, see correction below) + #179 (Small→Medium continuation equivalence, executable negative, STANDS) — tag `a4018f948a`, branch `bastion/builder`, self-gated — ★ `a4018f948a` alone is NOT a safe restore point: reverting to it re-introduces the M3A strand regression #183 caused; the tree at `daaf8aba45` (the revert commit) is the actual good state
 
