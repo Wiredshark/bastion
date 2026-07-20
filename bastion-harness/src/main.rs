@@ -4806,7 +4806,7 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         // M3 contention family: 3-body fair queue (A), 5-body chokepoint
         // (B), 3-body with a mid-traversal owner abort (C), 3-body
         // never-stranded both-arms (D).
-        "M3A" | "M3C" | "M3D" => 3,
+        "M3A" | "M3C" | "M3D" | "M3E" => 3,
         "M3B" => 5,
         _ => 1,
     };
@@ -4975,6 +4975,13 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
     // (WaitingForLadder observed at least once) — replaces the delivery-
     // time wall number that was calibrated on seed 1337.
     let mut m3d_hold_seen: Vec<bool> = vec![false; names.len()];
+    // M3E (fork-15 falsifier): the injected member + its placement z, and
+    // the LEAK SIGNATURE count — task-less, feet on rung cells, risen ≥1
+    // block above placement (the vanilla climb ENGAGED, not mere contact).
+    let mut m3e_injected: Option<String> = None;
+    let mut m3e_placement_z: f32 = 0.0;
+    let mut m3e_leak_climb_ticks: u64 = 0;
+    let mut m3e_max_rise: f32 = 0.0;
     // First observation of the FULL queue (len == n): fair-order reference.
     let mut m3_queue_names: Option<Vec<String>> = None;
     let mut m3_generation_seen: u64 = 0;
@@ -5183,6 +5190,74 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
                     Vec3::new(cx as f32 - 3.5, cy as f32 - 3.5, gz as f32 + 1.5),
                 );
                 mutated = true;
+            }
+            // M3E injection (the fork-15 falsifier stimulus): once rungs
+            // exist, DELIBERATELY place a task-less non-owner member at the
+            // rung column's base — ENGINE-OPT-1's deterministic re-route
+            // reached this state by accident (M3A @1337, secs 30-43); this
+            // pins it on purpose. The vanilla climb must NOT carry a queued
+            // member up the owned link's rungs (fork-15: the owned contract
+            // supersedes vanilla).
+            if episode == "M3E"
+                && !mutated
+                && let Some(&(lx, ly)) = m3_lane_columns.iter().min()
+                && let Some(i) = names.iter().enumerate().position(|(i, n)| {
+                    phases[i] == "-"
+                        && m3_out_at[i].is_none()
+                        && m3_first_owner.as_deref() != Some(n.as_str())
+                })
+            {
+                let base_z = {
+                    let terrain = server.state().terrain();
+                    ((gz - depth)..=(gz + 2))
+                        .find(|&z| {
+                            terrain
+                                .get(Vec3::new(lx, ly, z))
+                                .ok()
+                                .and_then(|b| b.get_sprite())
+                                == Some(SpriteKind::Ladder)
+                        })
+                        .unwrap_or(gz - depth + 1)
+                };
+                m3e_injected = Some(names[i].clone());
+                m3e_placement_z = base_z as f32;
+                server.bastion_teleport_colonist(
+                    &names[i],
+                    Vec3::new(lx as f32 + 0.5, ly as f32 + 0.5, base_z as f32),
+                );
+                mutated = true;
+            }
+            // M3E leak counting: the signature is exact — the injected
+            // member, still task-less, feet ON a rung cell, ≥1 block above
+            // placement. Contact alone (rise < 1) is not the leak.
+            if episode == "M3E"
+                && let Some(ref injected) = m3e_injected
+                && let Some(i) = names.iter().position(|n| n == injected)
+                && phases[i] == "-"
+                && m3_out_at[i].is_none()
+                && let Some((_, p, _)) = states.iter().find(|(n, ..)| n == injected)
+            {
+                let feet = p.map(|v| v.floor() as i32);
+                let terrain = server.state().terrain();
+                let on_rungs = [feet, feet + Vec3::unit_z()].iter().any(|c| {
+                    terrain.get(*c).ok().and_then(|b| b.get_sprite())
+                        == Some(SpriteKind::Ladder)
+                });
+                let rise = p.z - m3e_placement_z;
+                if on_rungs && rise >= 1.0 {
+                    m3e_leak_climb_ticks += 1;
+                    m3e_max_rise = m3e_max_rise.max(rise);
+                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                        info!(
+                            tick = tick_i,
+                            sec,
+                            member = injected.as_str(),
+                            ?feet,
+                            rise,
+                            "fixture: M3E fork-15 leak climb tick"
+                        );
+                    }
+                }
             }
         }
         // M3D: N1C's armed sustained rim-ring seal — nobody exits
@@ -5519,6 +5594,10 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
         "m3c_generation_at_injection": m3c_generation_at_injection,
         // a3 legibility: per-member queue-wait-hold engagement evidence.
         "m3d_hold_seen": m3d_hold_seen,
+        // M3E (fork-15 pin) evidence.
+        "m3e_injected": m3e_injected,
+        "m3e_leak_climb_ticks": m3e_leak_climb_ticks,
+        "m3e_max_rise": m3e_max_rise,
     });
     println!("{result}");
     server::bastion_flight_recorder::finalize();
@@ -5606,6 +5685,22 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
                 && hold_witness
                 && none_pre_budget
                 && teleports > 0
+                && alive
+                && unentombed
+        },
+        // M3-E (the fork-15 falsifier pin): a queued task-less member
+        // DELIBERATELY placed on the rung column must NOT be carried up by
+        // the vanilla climb — the owned contract supersedes vanilla
+        // (fork-15). RED = the leak firing (expected pre-fix — this pin was
+        // born from ENGINE-OPT-1's M3A catch); GREEN after the seam closes.
+        // Delivery/exit of the perturbed crew is REPORTED, not gated (the
+        // net remains the inviolable floor); the pin stays narrow.
+        "M3E" => {
+            staged_ok
+                && position_ok
+                && mutated
+                && m3e_injected.is_some()
+                && m3e_leak_climb_ticks == 0
                 && alive
                 && unentombed
         },
