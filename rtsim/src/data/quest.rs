@@ -3,8 +3,7 @@ use common::{
     rtsim::{Actor, ItemResource, QuestId, SiteId},
 };
 use hashbrown::{HashMap, HashSet};
-use itertools::Either;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap};
 use std::{
     num::NonZeroU32,
     sync::atomic::{AtomicU8, AtomicU64, Ordering},
@@ -29,9 +28,26 @@ pub struct Quests {
     /// the end of each tick. This is guarded by a utility function, so
     /// unregistered quests *shouldn't* be visible to the rest of the code.
     id_counter: AtomicU64,
+    #[serde(serialize_with = "serialize_quests_in_id_order")]
     quests: HashMap<QuestId, Quest>,
     #[serde(skip)]
     related_quests: HashMap<Actor, HashSet<QuestId>>,
+}
+
+fn serialize_quests_in_id_order<S>(
+    quests: &HashMap<QuestId, Quest>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut entries = quests.iter().collect::<Vec<_>>();
+    entries.sort_unstable_by_key(|(id, _)| id.0);
+    let mut map = serializer.serialize_map(Some(entries.len()))?;
+    for (id, quest) in entries {
+        map.serialize_entry(id, quest)?;
+    }
+    map.end()
 }
 
 impl Clone for Quests {
@@ -71,14 +87,23 @@ impl Quests {
     pub fn get(&self, id: QuestId) -> Option<&Quest> { self.quests.get(&id) }
 
     pub fn related_to(&self, actor: impl Into<Actor>) -> impl Iterator<Item = QuestId> + '_ {
-        match self.related_quests.get(&actor.into()) {
-            Some(quests) => Either::Left(
-                quests.iter()
-                // Don't consider resolved quests to be related
-                .filter(|id| self.get(**id).is_some_and(|q| q.resolution().is_none()))
-                .copied(),
-            ),
-            None => Either::Right(core::iter::empty()),
+        let actor = actor.into();
+        let mut quests = self
+            .related_quests
+            .get(&actor)
+            .into_iter()
+            .flatten()
+            .copied()
+            // Don't consider resolved quests to be related.
+            .filter(|id| self.get(*id).is_some_and(|q| q.resolution().is_none()))
+            .collect::<Vec<_>>();
+        quests.sort_unstable_by_key(|id| id.0);
+        quests.into_iter()
+    }
+
+    fn push_related_actor(related: &mut Vec<Actor>, actor: Actor, candidate: Actor) {
+        if candidate != actor && !related.contains(&candidate) {
+            related.push(candidate);
         }
     }
 
@@ -88,16 +113,14 @@ impl Quests {
         actor: impl Into<Actor>,
     ) -> impl ExactSizeIterator<Item = Actor> + '_ {
         let actor = actor.into();
-        let mut related = HashSet::new();
+        let mut related = Vec::new();
         for quest_id in self.related_to(actor) {
             if let Some(quest) = self.quests.get(&quest_id)
                 // resolved quests aren't relevant
                 && quest.resolution().is_none()
             {
                 quest.for_related_actors(|a| {
-                    if a != actor {
-                        related.insert(a);
-                    }
+                    Self::push_related_actor(&mut related, actor, a);
                 });
             }
         }
@@ -289,6 +312,99 @@ impl QuestRes {
             _ => Some(true),
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::rtsim::NpcId;
+    use slotmap::KeyData;
+    use std::collections::BTreeSet;
+
+    fn actor(raw: u64) -> Actor { Actor::Npc(NpcId::from(KeyData::from_ffi(raw))) }
+
+    #[test]
+    fn persisted_quests_have_stable_bytes() {
+        let ids = [
+            QuestId(1),
+            QuestId(2),
+            QuestId(3),
+            QuestId(4),
+            QuestId(5),
+            QuestId(6),
+            QuestId(7),
+            QuestId(8),
+        ];
+        let mut encodings = BTreeSet::new();
+        for shift in 0..ids.len() {
+            let mut quests = Quests::default();
+            for offset in 0..ids.len() {
+                let id = ids[(shift + offset) % ids.len()];
+                quests.create(
+                    id,
+                    Quest::slay(actor(id.0 * 3), actor(id.0 * 3 + 1), actor(id.0 * 3 + 2)),
+                );
+            }
+            encodings.insert(rmp_serde::to_vec_named(&quests).expect("encode quests"));
+        }
+        println!("quests distinct persistence encodings={}", encodings.len());
+        if let Some(first) = encodings.first() {
+            println!("quests representative_msgpack={}", hex(first));
+        }
+        assert_eq!(
+            encodings.len(),
+            1,
+            "equal quest state must have one persisted representation"
+        );
+    }
+
+    #[test]
+    fn legacy_hash_map_quests_remain_loadable() {
+        #[derive(Serialize)]
+        struct LegacyQuests {
+            id_counter: AtomicU64,
+            quests: HashMap<QuestId, Quest>,
+        }
+
+        let mut quests = HashMap::new();
+        quests.insert(QuestId(2), Quest::slay(actor(6), actor(7), actor(8)));
+        quests.insert(QuestId(1), Quest::slay(actor(3), actor(4), actor(5)));
+        let bytes = rmp_serde::to_vec_named(&LegacyQuests {
+            id_counter: AtomicU64::new(3),
+            quests,
+        })
+        .expect("encode legacy quests");
+        let decoded: Quests = rmp_serde::from_slice(&bytes).expect("decode ordered quests");
+        assert!(decoded.get(QuestId(1)).is_some());
+        assert!(decoded.get(QuestId(2)).is_some());
+    }
+
+    #[test]
+    fn related_quest_and_actor_iteration_is_id_ordered() {
+        let common_actor = actor(100);
+        let build = |ids: &[QuestId]| {
+            let mut quests = Quests::default();
+            for id in ids {
+                quests.create(
+                    *id,
+                    Quest::slay(common_actor, actor(id.0 * 3), actor(id.0 * 3 + 1)),
+                );
+            }
+            quests
+        };
+        let ascending = build(&[QuestId(1), QuestId(2), QuestId(3)]);
+        let descending = build(&[QuestId(3), QuestId(2), QuestId(1)]);
+        assert_eq!(
+            ascending.related_to(common_actor).collect::<Vec<_>>(),
+            descending.related_to(common_actor).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            ascending.related_actors(common_actor).collect::<Vec<_>>(),
+            descending.related_actors(common_actor).collect::<Vec<_>>()
+        );
+    }
+
+    fn hex(bytes: &[u8]) -> String { bytes.iter().map(|byte| format!("{byte:02x}")).collect() }
 }
 
 impl Clone for QuestRes {
