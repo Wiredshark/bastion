@@ -41,17 +41,24 @@ run_job() {
   # need entirely — it must not be passed there).
   set -- --zone="$ZONE" --source-machine-image="$IMAGE" --machine-type="$MACHINE" \
       --metadata-from-file=ssh-keys="$SSHKEYS_FILE"
-  # cmd-safe quoting: gcloud.cmd is a batch wrapper — cmd.exe RE-SPLITS argv
-  # on spaces, so a platform name like "Intel Ice Lake" must carry EMBEDDED
-  # double-quotes through sh (first attempt failed with the classic
-  # 'C:\Program' is not recognized mangle; the CREATE_FAIL fail-closed rows
-  # caught it with zero cost).
-  [ -n "${MIN_CPU_PLATFORM:-}" ] && set -- "$@" --min-cpu-platform="\"$MIN_CPU_PLATFORM\""
+  # NOTE: passing --min-cpu-platform (value contains spaces) is NOT POSSIBLE
+  # from this msys sh → gcloud.cmd path: bash's command-line re-assembly for
+  # .cmd targets mangles ANY spaced/quoted arg (two attempts: bare and
+  # embedded-quotes both died with the 'C:\Program' mangle — the GCLOUD
+  # path itself loses quoting; CREATE_FAIL rows caught both at zero cost).
+  # Platform control is therefore POST-HOC: create unpinned, and the job
+  # header below ATTESTS the actual cpuPlatform so same-platform claims are
+  # verified, not assumed.
+  [ -n "${MIN_CPU_PLATFORM:-}" ] && { echo "MIN_CPU_PLATFORM unsupported on Windows sh->cmd (see comment); create unpinned + verify attested cpuPlatform" >&2; }
   until cerr=$("$GCLOUD" compute instances create "$name" "$@" 2>&1 >/dev/null); do
     tries=$((tries + 1)); [ "$tries" -ge 4 ] && { echo "CREATE_FAIL: $cmd :: ${cerr##*ERROR: }" > "$OUT/job-$k.out"; return; }
     sleep $((tries * 15))
   done
   ip=$("$GCLOUD" compute instances describe "$name" --zone="$ZONE" --format="value(networkInterfaces[0].accessConfigs[0].natIP)")
+  # Attested hardware platform (ENGOPT4 diagnosis: same-platform claims must
+  # be verified from the VM's own record, not assumed from the machine type).
+  # Captured here, appended AFTER the ssh block (whose `>` would clobber it).
+  cpu_platform=$("$GCLOUD" compute instances describe "$name" --zone="$ZONE" --format="value(cpuPlatform)")
   i=0; while [ "$i" -lt 45 ]; do ssh -i "$KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=5 "benshumeyko@$ip" true 2>/dev/null && break; i=$((i+1)); sleep 4; done
   ssh -i "$KEY" -o StrictHostKeyChecking=no "benshumeyko@$ip" "
     source \$HOME/.cargo/env; cd ~/bastion
@@ -64,6 +71,7 @@ run_job() {
     echo \"### JOB $k @ \$H : $cmd\"
     ./target/verify/bastion-harness $cmd; rc=\$?
     echo \"=== ATTEST (end): RAN_COMMIT=\$H | job=$k | rc=\$rc ===\"" > "$OUT/job-$k.out" 2>"$OUT/job-$k.log"
+  echo "### VM $name cpuPlatform=$cpu_platform" >> "$OUT/job-$k.out"
   "$GCLOUD" compute instances delete "$name" --zone="$ZONE" -q >/dev/null 2>&1
 }
 
