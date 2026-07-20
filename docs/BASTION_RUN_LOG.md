@@ -4208,3 +4208,18 @@ the determinism-integration base.
 **Bookkeeping note:** logged at Builder 4's request while the Opus gate is
 still in progress (architect reviewing). Will update this entry's gate
 line once the verdict lands rather than leave a stale PENDING marker.
+
+## FORK15 investigation — closed TRACKED-OPEN at Ben's iteration bound — pin commit `798bdfca8f` on `bastion/builder` (no tag; investigation block, not a build block)
+
+Follow-up to B60's corrected mechanism (passive crowd-shove + vanilla
+auto-step-up during construction, no code writer). Mechanism now fully
+named; M3E reworked as a deliberately-RED steer-property pin (4 sustained
+dwell breaches, max 1439 ticks) rather than continuing fix attempts — a
+first construction-window staging-steer attempt went inert and was
+reverted, with a binding-scope hypothesis left in the commit trail for
+whoever picks the fix up next. `M3A@1337`'s `lane_violations=3` stays the
+leak's own regression pin, unchanged. Harness-only, no behavior shipped,
+classified-SAFE status unaffected. Registry B60 updated with the closure.
+Next: Builder 4 reported an ENGINE-OPT-2 candidate pick (ledger item 176,
+frontier reopen) to the architect; supply follows their GO or Ben's
+morning steer.
