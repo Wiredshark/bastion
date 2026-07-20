@@ -14571,6 +14571,7 @@ mod tests {
             next_idx: 0,
             started_tick: 7,
             origin: Vec3::zero(),
+            last_check: None,
         };
 
         assert!(emergency_corridor_owns_movement(
