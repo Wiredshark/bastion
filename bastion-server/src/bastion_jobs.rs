@@ -2257,6 +2257,16 @@ fn m3_promoted_corridor_waypoint(
     feet: Vec3<i32>,
     tick: u64,
 ) -> Option<Vec3<i32>> {
+    // M3-review follow-up (B58 rider): corridor approach and task-phase
+    // movement are mutually exclusive single-owner regimes — a live task
+    // owns the member's movement outright, so the corridor authority must
+    // never be consulted for a task holder. Behavioral invariant upgraded
+    // to by-construction in debug/test builds (every gate runs debug).
+    debug_assert!(
+        !board.bastion_traversal_tasks.contains_key(&member),
+        "corridor authority driven for a member holding a live traversal task \
+         (single-owner violation): member={member:?} frontier={frontier}"
+    );
     let mount_center = mount.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
     let current_waypoint_far = |corridor: &EmergencyApproachCorridor| {
         corridor
@@ -8934,6 +8944,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     );
                                     continue;
                                 }
+                                // B58 rider (M3-review follow-up): the
+                                // reacquire drive consumes the corridor
+                                // without the authority call — assert the
+                                // same single-owner invariant at this
+                                // consumption site too.
+                                debug_assert!(
+                                    !board.bastion_traversal_tasks.contains_key(&uid),
+                                    "reacquire corridor driven for a member holding a live \
+                                     traversal task (single-owner violation): member={uid:?}"
+                                );
                                 board.egress_targets.insert(uid, waypoint);
                                 // B58 stuck-time honesty: the corridor driver
                                 // used to wipe the job stuck-watch EVERY tick
