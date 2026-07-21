@@ -317,10 +317,22 @@ impl Server {
         let pools = State::pools_with_mode(GameMode::Server, execution_mode);
         if execution_mode.is_deterministic() {
             let rayon_threads = pools.current_num_threads();
-            assert_eq!(
-                rayon_threads, 1,
-                "ARCH-003 deterministic execution requires a one-worker Rayon pool"
-            );
+            // T0.52: the serial-vs-parallel equivalence PROBE deliberately
+            // runs deterministic seeds on a multi-worker pool — the old
+            // invariant (deterministic ⇒ one worker) is exactly what the
+            // probe tests the engine beyond. Guard stays for normal runs.
+            if std::env::var_os("BASTION_DETERMINISTIC_PARALLEL").is_some() {
+                tracing::warn!(
+                    rayon_threads,
+                    "T0.52 PROBE RUN: deterministic seeds on a multi-worker pool — \
+                     serial-vs-parallel equivalence experiment, not a shipping mode"
+                );
+            } else {
+                assert_eq!(
+                    rayon_threads, 1,
+                    "ARCH-003 deterministic execution requires a one-worker Rayon pool"
+                );
+            }
         }
 
         // Load plugins before generating the world.
