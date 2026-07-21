@@ -166,6 +166,52 @@ pub fn undeclared_actions(emitted: &[&str], contracts: &[ActionContract]) -> Vec
         .collect()
 }
 
+/// T2.1 (T2 lifecycle group): the promote/demote pair audit — records and
+/// asserts activation/deactivation pairs by STABLE rtsim identity, so an
+/// imbalance (an entity promoted twice, or demoted without being loaded, or
+/// left loaded at a clean shutdown) is caught rather than leaking a stale
+/// ECS entity or a lost projection. Layers onto the T1.9 audit framework's
+/// record-never-repair discipline.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PromoteDemoteLedger {
+    loaded: std::collections::BTreeSet<u64>,
+}
+
+/// A lifecycle-pairing imbalance.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum LifecycleImbalance {
+    /// Promoted an entity that is already loaded (double activation).
+    DoublePromote(u64),
+    /// Demoted an entity that was not loaded (orphan deactivation).
+    OrphanDemote(u64),
+}
+
+impl PromoteDemoteLedger {
+    /// Record a promotion; returns an imbalance if it was already loaded.
+    pub fn record_promote(&mut self, stable_id: u64) -> Option<LifecycleImbalance> {
+        if !self.loaded.insert(stable_id) {
+            Some(LifecycleImbalance::DoublePromote(stable_id))
+        } else {
+            None
+        }
+    }
+
+    /// Record a demotion; returns an imbalance if it was not loaded.
+    pub fn record_demote(&mut self, stable_id: u64) -> Option<LifecycleImbalance> {
+        if !self.loaded.remove(&stable_id) {
+            Some(LifecycleImbalance::OrphanDemote(stable_id))
+        } else {
+            None
+        }
+    }
+
+    pub fn is_loaded(&self, stable_id: u64) -> bool { self.loaded.contains(&stable_id) }
+
+    /// Entities still loaded — at a clean shutdown this must be empty (every
+    /// promote paired with a demote).
+    pub fn still_loaded(&self) -> Vec<u64> { self.loaded.iter().copied().collect() }
+}
+
 #[cfg(test)]
 mod t2_lifecycle_tests {
     use super::*;
@@ -213,6 +259,31 @@ mod t2_lifecycle_tests {
         assert!(!LoadedLinkage::KnownLoaded.needs_reconciliation());
         assert!(!LoadedLinkage::Unloaded.needs_reconciliation());
         assert!(LoadedLinkage::MissingOrStaleLink.needs_reconciliation());
+    }
+
+    #[test]
+    fn t2_1_promote_demote_pairs_are_balanced() {
+        let mut ledger = PromoteDemoteLedger::default();
+        // Balanced pair.
+        assert_eq!(ledger.record_promote(7), None);
+        assert!(ledger.is_loaded(7));
+        // Double promote.
+        assert_eq!(
+            ledger.record_promote(7),
+            Some(LifecycleImbalance::DoublePromote(7))
+        );
+        assert_eq!(ledger.record_demote(7), None);
+        assert!(!ledger.is_loaded(7));
+        // Orphan demote.
+        assert_eq!(
+            ledger.record_demote(9),
+            Some(LifecycleImbalance::OrphanDemote(9))
+        );
+        // Clean shutdown: nothing left loaded.
+        assert!(ledger.still_loaded().is_empty());
+        // A promote with no demote leaks.
+        ledger.record_promote(3);
+        assert_eq!(ledger.still_loaded(), vec![3]);
     }
 
     #[test]
