@@ -128,8 +128,11 @@ impl<'a> System<'a> for Sys {
         job.cpu_stats.measure(ParMode::Rayon);
 
         // Beams
-        // Emitters will append their events when dropped.
-        let (_emitters, add_hit_entities, new_outcomes) = (
+        // DET-EVT-011 (v5 deep-pass): each beam gets its OWN emitter buffer
+        // + outcome vec, keyed by the beam's stable uid; post-reduce they
+        // sort by uid and flush SEQUENTIALLY, so bus/outcome/hit chronology
+        // is a pure function of the beam set — never the Rayon tree shape.
+        let (keyed_emitters, add_hit_entities, keyed_outcomes) = (
             &read_data.entities,
             &read_data.positions,
             &read_data.orientations,
@@ -138,12 +141,27 @@ impl<'a> System<'a> for Sys {
         )
             .par_join()
             .fold(
-                || (read_data.events.get_emitters(), Vec::new(), Vec::new()),
-                |(mut emitters, mut add_hit_entities, mut outcomes),
+                || (Vec::new(), Vec::new(), Vec::new()),
+                |(mut keyed_emitters, mut add_hit_entities, mut keyed_outcomes): (
+                    Vec<(u64, _)>,
+                    Vec<(u64, specs::Entity, specs::Entity)>,
+                    Vec<(u64, Vec<Outcome>)>,
+                ),
                  (entity, pos, ori, uid, beam)| {
-                    // Note: rayon makes it difficult to hold onto a thread-local RNG, if grabbing
-                    // this becomes a bottleneck we can look into alternatives.
-                    let mut rng = rand::rng();
+                    let mut emitters = read_data.events.get_emitters();
+                    let mut outcomes = Vec::new();
+                    // DET-EVT-011 + combat determinism: keyed per-beam stream
+                    // (uid, sim-time) — the previous ambient rand::rng() fed
+                    // COMBAT draws (apply_attack procs + the sound roll) from
+                    // OS entropy inside the parallel fold.
+                    let mut rng = {
+                        use rand::SeedableRng;
+                        rand_chacha::ChaCha8Rng::seed_from_u64(
+                            uid.0.get().wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                ^ read_data.time.0.to_bits()
+                                ^ 0xBEA0_0011,
+                        )
+                    };
                     if rng.random_bool(0.005) {
                         emitters.emit(event::SoundEvent {
                             sound: Sound::new(SoundKind::Beam, pos.0, 13.0, read_data.time.0),
@@ -330,27 +348,47 @@ impl<'a> System<'a> for Sys {
                                 0,
                             );
 
-                            add_hit_entities.push((entity, target));
+                            add_hit_entities.push((uid.0.get(), entity, target));
                         }
                     });
-                    (emitters, add_hit_entities, outcomes)
+                    keyed_emitters.push((uid.0.get(), emitters));
+                    if !outcomes.is_empty() {
+                        keyed_outcomes.push((uid.0.get(), outcomes));
+                    }
+                    (keyed_emitters, add_hit_entities, keyed_outcomes)
                 },
             )
             .reduce(
-                || (read_data.events.get_emitters(), Vec::new(), Vec::new()),
-                |(mut events_a, mut hit_entities_a, mut outcomes_a),
-                 (events_b, mut hit_entities_b, mut outcomes_b)| {
-                    events_a.append(events_b);
+                || (Vec::new(), Vec::new(), Vec::new()),
+                |(mut emitters_a, mut hit_entities_a, mut outcomes_a),
+                 (mut emitters_b, mut hit_entities_b, mut outcomes_b)| {
+                    emitters_a.append(&mut emitters_b);
                     hit_entities_a.append(&mut hit_entities_b);
                     outcomes_a.append(&mut outcomes_b);
-                    (events_a, hit_entities_a, outcomes_a)
+                    (emitters_a, hit_entities_a, outcomes_a)
                 },
             );
         job.cpu_stats.measure(ParMode::Single);
 
-        outcomes_emitter.emit_many(new_outcomes);
+        // DET-EVT-011: canonical flush — sort every keyed stream by the
+        // beam uid, then release sequentially.
+        let mut keyed_emitters = keyed_emitters;
+        keyed_emitters.sort_unstable_by_key(|(uid, _)| *uid);
+        for (_, emitters) in keyed_emitters {
+            drop(emitters); // flushes this beam's events into the buses
+        }
+        let mut keyed_outcomes = keyed_outcomes;
+        keyed_outcomes.sort_unstable_by_key(|(uid, _)| *uid);
+        outcomes_emitter.emit_many(
+            keyed_outcomes
+                .into_iter()
+                .flat_map(|(_, outcomes)| outcomes)
+                .collect::<Vec<Outcome>>(),
+        );
 
-        for (entity, hit_entity) in add_hit_entities {
+        let mut add_hit_entities = add_hit_entities;
+        add_hit_entities.sort_unstable_by_key(|(uid, ..)| *uid);
+        for (_, entity, hit_entity) in add_hit_entities {
             if let Some(ref mut beam) = beams.get_mut(entity) {
                 beam.hit_entities.push(hit_entity);
             }
