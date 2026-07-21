@@ -3254,6 +3254,12 @@ fn clear_verified_emergency_exit_movement(
 /// The job board resource.
 #[derive(Default)]
 pub struct JobBoard {
+    /// T1.3/T1.10 (T1-001): the command admission ledger for job-completion
+    /// commands routed through the CommandReceipt/CommandStatus lifecycle.
+    /// Runtime-only (JobBoard is not serialized and not recorder-sampled),
+    /// pruned per completion (`forget`) so it stays bounded; the monotonic
+    /// command-id counter never reuses ids.
+    command_admission: common::command_protocol::AdmissionLedger,
     next_id: JobId,
     pub jobs: HashMap<JobId, Job>,
     /// bastion (B5.8): the union of placed designation volumes — the
@@ -10545,9 +10551,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                             continue;
                         }
-                        // LEG 2: at the zone — drop the WHOLE held stack of
-                        // the cargo def (fresh colonists carry none of the
-                        // bastion outputs; pile merging re-aggregates).
+                        // LEG 2: at the zone — the haul ITEM-TRANSFER
+                        // completion, routed through the T1.3/T1.10 command
+                        // lifecycle (Accepted → Executing → Committed). PURE
+                        // REFACTOR: the receipt + status are transient
+                        // observability over the SAME completion on a
+                        // runtime-only ledger (JobBoard is neither
+                        // serialized nor recorder-sampled, so nothing here
+                        // reaches the tape or persistence — byte-identity
+                        // holds); the existing job.remove already makes a
+                        // re-completion a no-op, so this proves the pipeline
+                        // CARRIES the completion, it grants no new authority.
+                        use common::command_protocol::{
+                            AdmissionStatus, CommandStatus, CorrelationId, IdempotencyKey,
+                        };
                         let mut dropped = 0u32;
                         if let Some(req) = job.required_item
                             && let Some(mut inv) = inventories.get_mut(entity)
@@ -10560,18 +10577,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 *program_time,
                             );
                         }
+                        // Last read of `job` — it is dead after this copy,
+                        // freeing `board` for the admission-ledger borrow.
+                        let rid = job.reservation;
+                        let idempotency_key = IdempotencyKey(active.job);
+                        let receipt = board.command_admission.admit(
+                            idempotency_key,
+                            CorrelationId(uids.get(entity).map(|u| u.0.get()).unwrap_or(0)),
+                            AdmissionStatus::Accepted,
+                        );
+                        let mut status = CommandStatus::Accepted;
+                        debug_assert!(status.may_transition_to(&CommandStatus::Executing));
+                        status = CommandStatus::Executing;
                         info!(
                             job = active.job,
+                            command = receipt.command_id.0,
                             zone = destination,
                             amount = dropped,
                             "bastion: haul delivered"
                         );
-                        let rid = job.reservation;
                         if let Some(rid) = rid {
                             board.reservations.remove(&rid);
                         }
                         board.jobs.remove(&active.job);
                         to_release.push(entity);
+                        debug_assert!(status.may_transition_to(&CommandStatus::Committed));
+                        status = CommandStatus::Committed;
+                        debug_assert!(status.is_terminal());
+                        board.command_admission.forget(idempotency_key);
                         continue;
                     }
                     // B5: accumulate work, rate scaled by the relevant skill.

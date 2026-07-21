@@ -137,6 +137,13 @@ impl AdmissionLedger {
     pub fn receipt(&self, idempotency_key: IdempotencyKey) -> Option<&CommandReceipt> {
         self.receipts.get(&idempotency_key)
     }
+
+    /// Forget a completed command's receipt — bounds memory on a hot
+    /// completion path. `next_command_id` stays monotonic (ids are never
+    /// reused even after a forget), so the never-reuse law holds.
+    pub fn forget(&mut self, idempotency_key: IdempotencyKey) {
+        self.receipts.remove(&idempotency_key);
+    }
 }
 
 /// T1.7 (T1-001 packet, step 5): a persistence batch id.
