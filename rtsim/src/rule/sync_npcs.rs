@@ -117,13 +117,23 @@ fn on_tick(ctx: EventCtx<SyncNpcs, OnTick>) {
         {
             // TODO: Sites should have an inbox and their own AI code
             site.known_reports.extend(npc.known_reports.iter().copied());
-            npc.inbox.extend(
-                site.known_reports
-                    .iter()
-                    .copied()
-                    .filter(|report| !npc.known_reports.contains(report))
-                    .map(NpcInput::Report),
-            );
+            // DET-ESIM-011 (v8 rtsim-economy, Critical): `site.known_reports`
+            // is a HashSet, so extending the NPC's ORDERED inbox by iterating
+            // it directly made inbox order — and therefore report-processing
+            // order, sentiment application, and the chosen action — ride the
+            // process hash seed. Collect the newly-shared reports and sort them
+            // by ReportId so the inbox receives them in a canonical order.
+            // (The set-extend above is order-independent; only this ordered
+            // target needs canonicalising.)
+            let mut new_reports = site
+                .known_reports
+                .iter()
+                .copied()
+                .filter(|report| !npc.known_reports.contains(report))
+                .collect::<Vec<_>>();
+            new_reports.sort_unstable();
+            npc.inbox
+                .extend(new_reports.into_iter().map(NpcInput::Report));
         }
 
         // Update the NPC's grid cell
