@@ -24,8 +24,11 @@ use sha2::Digest;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PluginData {
     name: String,
-    modules: HashSet<PathBuf>,
-    dependencies: HashSet<String>,
+    // DET-AST-017 (v6 deep-pass, Critical): BTreeSet, not HashSet — the
+    // module list drives load/iteration order, and its serialized form is
+    // part of plugin identity; both must be canonical.
+    modules: std::collections::BTreeSet<PathBuf>,
+    dependencies: std::collections::BTreeSet<String>,
 }
 
 fn compute_hash(data: &[u8]) -> PluginHash {

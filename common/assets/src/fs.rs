@@ -73,26 +73,39 @@ impl Source for FileSystem {
         //
         // The rest is just properly routing errors.
         let mut collected = HashSet::new();
-
-        let mut f = |dir_entry: DirEntry| {
+        // DET-AST-010 (v6 deep-pass, Critical): BUFFER the merged
+        // enumeration and flush it SORTED — the backends stream entries in
+        // OS directory order, which is filesystem/platform-dependent, and
+        // that order previously reached the caller directly (content
+        // discovery order = source order, one of the hidden authority
+        // channels).
+        let mut entries: Vec<(String, Option<String>)> = Vec::new();
+        let mut gather = |dir_entry: DirEntry| {
             let cache_id = match dir_entry {
                 DirEntry::File(path, ext) => (path.to_owned(), Some(ext.to_owned())),
                 DirEntry::Directory(path) => (path.to_owned(), None),
             };
 
-            // on first hit, call the callback
-            if collected.insert(cache_id) {
-                f(dir_entry)
+            // on first hit, record it
+            if collected.insert(cache_id.clone()) {
+                entries.push(cache_id);
             }
         };
 
-        let default_res = self.default.read_dir(id, &mut f);
+        let default_res = self.default.read_dir(id, &mut gather);
         let Some(dir) = &self.override_dir else {
-            // If no override, return right there.
+            // If no override, flush sorted and return right there.
+            entries.sort();
+            for (path, ext) in &entries {
+                match ext {
+                    Some(ext) => f(DirEntry::File(path, ext)),
+                    None => f(DirEntry::Directory(path)),
+                }
+            }
             return default_res;
         };
 
-        let override_res = match dir.read_dir(id, &mut f) {
+        let override_res = match dir.read_dir(id, &mut gather) {
             Ok(()) => Ok(()),
             Err(err) => {
                 if err.kind() != io::ErrorKind::NotFound {
@@ -106,6 +119,16 @@ impl Source for FileSystem {
                 Err(err)
             },
         };
+
+        // DET-AST-010: canonical flush — whatever was gathered (from
+        // whichever backends succeeded) reaches the caller in sorted order.
+        entries.sort();
+        for (path, ext) in &entries {
+            match ext {
+                Some(ext) => f(DirEntry::File(path, ext)),
+                None => f(DirEntry::Directory(path)),
+            }
+        }
 
         // Error juggling
         match (default_res, override_res) {

@@ -262,6 +262,11 @@ pub trait Concatenate {
 }
 
 impl<K: Eq + Hash, V, S: BuildHasher> Concatenate for HashMap<K, V, S> {
+    // DET-AST-014 (v6 deep-pass, declared policy): concatenate is
+    // LAST-WRITER-WINS by MERGE ORDER — deterministic iff the caller's merge
+    // sequence is canonical. Plugin/content merge order is canonicalized
+    // upstream (sorted enumeration DET-AST-010, ordered module sets
+    // DET-AST-017); this impl declares rather than hides the policy.
     fn concatenate(mut self, b: Self) -> Self {
         self.extend(b);
         self
