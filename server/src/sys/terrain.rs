@@ -131,13 +131,11 @@ impl<'a> System<'a> for Sys {
             )
         });
 
-        let mut rng = rand::rng();
         // T0.36 (T0-003): chunk-supplement spawns draw from a rng KEYED by
-        // (world_seed, chunk key) — `rand::rng()` above is OS entropy, which
-        // made spawn orientations nondeterministic even under the harness
-        // flag (invisible to the mf tapes only because wildlife facing
-        // isn't divergence-visible in that window). Constructed per chunk
-        // below at the spawn sites.
+        // (world_seed, chunk key) — constructed per chunk below at the spawn
+        // sites (`chunk_spawn_rng`). DET-RNG-006: removed a dead leftover
+        // `let mut rng = rand::rng();` here (OS entropy, unused since T0.36
+        // moved keying to the per-chunk sites) so no ambient RNG survives.
         let spawn_seed_base = u64::from(data.server_settings.world_seed);
         // Fetch any generated `TerrainChunk`s and insert them into the terrain.
         // Also, send the chunk data to anybody that is close by.
