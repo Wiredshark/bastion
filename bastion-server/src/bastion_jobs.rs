@@ -14749,6 +14749,52 @@ mod tests {
     // Row-51.7 (registry class 12): the (B) exhaustion leg's honest pin — the
     // leg is race-dominated in sims (three net terminators, fastest wins), so
     // the bound is proven here, fast and deterministic.
+
+    /// DET-REN-004 (determinism audit): the "no GPU-to-simulation authority"
+    /// architecture rule, codified as the audit recommends — a DEPENDENCY
+    /// boundary. No authoritative simulation crate may depend on a GPU API
+    /// crate: if simulation logic could read GPU state (occlusion queries,
+    /// readbacks, timings), device/driver variance would become authoritative
+    /// sim input. Renderer crates (voxygen) live OUTSIDE this list on
+    /// purpose. Fails closed if a manifest cannot be read.
+    #[test]
+    fn det_ren_004_no_gpu_dependency_in_authoritative_crates() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("bastion-server sits in the workspace root")
+            .to_path_buf();
+        let authoritative = [
+            "common/Cargo.toml",
+            "common/state/Cargo.toml",
+            "common/systems/Cargo.toml",
+            "common/net/Cargo.toml",
+            "server/Cargo.toml",
+            "server/agent/Cargo.toml",
+            "rtsim/Cargo.toml",
+            "world/Cargo.toml",
+            "bastion-server/Cargo.toml",
+        ];
+        // Dependency NAMES, matched at line start (a plain substring scan
+        // false-positived on ahash/fxhash containing "ash =").
+        let gpu_crates = ["wgpu", "naga", "vulkano", "gfx-hal", "ash", "metal"];
+        for manifest in authoritative {
+            let path = root.join(manifest);
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("DET-REN-004: cannot read {path:?}: {e}"));
+            for line in text.lines() {
+                let dep_name = line
+                    .trim_start()
+                    .split(['=', ' ', '.'])
+                    .next()
+                    .unwrap_or_default();
+                assert!(
+                    !gpu_crates.contains(&dep_name),
+                    "DET-REN-004: authoritative crate manifest {manifest} depends on GPU                      crate {dep_name:?} — GPU output must never become simulation input                      (renderer work belongs in voxygen)"
+                );
+            }
+        }
+    }
+
     #[test]
     fn t1_13_reservation_bidirectional_uniqueness() {
         let uid = |n: u64| Uid(NonZeroU64::new(n).unwrap());
