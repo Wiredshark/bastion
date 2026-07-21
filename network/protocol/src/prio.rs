@@ -25,7 +25,13 @@ struct StreamInfo {
 /// is used. Then remaining bandwidth is used to fill up the prios.
 #[derive(Debug)]
 pub(crate) struct PrioManager {
-    streams: HashMap<Sid, StreamInfo>,
+    // DET-NET-018 (v6 deep-pass, Critical): BTreeMap, not HashMap — equal-
+    // priority streams are serviced in ITERATION order each scheduling
+    // cycle, so frame interleaving (and thus cross-stream arrival
+    // chronology) rode the process hash seed. Ascending-Sid order is
+    // canonical. Transport order only; semantic commit uses the stage-1+
+    // package stamps.
+    streams: std::collections::BTreeMap<Sid, StreamInfo>,
     metrics: ProtocolMetricCache,
 }
 
@@ -34,7 +40,7 @@ pub(crate) struct PrioManager {
 impl PrioManager {
     pub fn new(metrics: ProtocolMetricCache) -> Self {
         Self {
-            streams: HashMap::new(),
+            streams: std::collections::BTreeMap::new(),
             metrics,
         }
     }
