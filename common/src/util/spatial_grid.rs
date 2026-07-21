@@ -101,6 +101,21 @@ impl SpatialGrid {
         self.in_aabr(aabr)
     }
 
+    /// DET-PHY-005 (v5 deep-pass, reviewer ruling (c) = the audit's own
+    /// fix): canonicalize every cell's candidate list by a stable identity
+    /// key after construction — insertion followed ECS join order, so
+    /// collision-candidate order was entity-INDEX order (not semantic
+    /// identity), a divergence amplifier if allocation ever varies.
+    /// Per-cell sort keeps the cost off the global hot path.
+    pub fn canonicalize_cells(&mut self, mut key: impl FnMut(specs::Entity) -> u64) {
+        for cell in self.grid.values_mut() {
+            cell.sort_unstable_by_key(|e| key(*e));
+        }
+        for cell in self.large_grid.values_mut() {
+            cell.sort_unstable_by_key(|e| key(*e));
+        }
+    }
+
     pub fn clear(&mut self) {
         self.grid.clear();
         self.large_grid.clear();

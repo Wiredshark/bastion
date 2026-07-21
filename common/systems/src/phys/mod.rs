@@ -384,6 +384,10 @@ impl PhysicsData<'_> {
             const POS_TRUNCATION_ERROR: u32 = 1;
             spatial_grid.insert(pos_2d, radius_2d + POS_TRUNCATION_ERROR, entity);
         }
+        // DET-PHY-005: canonical per-cell candidate order by stable Uid.
+        spatial_grid.canonicalize_cells(|e| {
+            read.uids.get(e).map(|u| u.0.get()).unwrap_or(u64::MAX)
+        });
 
         spatial_grid
     }
@@ -707,6 +711,10 @@ impl PhysicsData<'_> {
                 spatial_grid.insert(pos_2d, radius + POS_TRUNCATION_ERROR, entity);
             }
         }
+        // DET-PHY-005: canonical per-cell candidate order by stable Uid.
+        spatial_grid.canonicalize_cells(|e| {
+            read.uids.get(e).map(|u| u.0.get()).unwrap_or(u64::MAX)
+        });
 
         spatial_grid
     }
