@@ -52,6 +52,7 @@ pub mod cmd;
 pub mod depot;
 pub mod effect;
 pub mod async_work;
+pub mod state_hash;
 pub mod event;
 pub mod explosion;
 pub mod figure;
