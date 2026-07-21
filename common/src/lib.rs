@@ -51,6 +51,7 @@ pub mod clock;
 pub mod cmd;
 pub mod depot;
 pub mod effect;
+pub mod async_schedule;
 pub mod async_work;
 pub mod causal_graph;
 pub mod causal_record;
