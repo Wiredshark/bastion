@@ -201,6 +201,13 @@ impl RtSim {
         )
     }
 
+    /// T0.49 (master build order; T0-003): allocate the next persistent
+    /// item-instance identity from the world-save allocator — called only
+    /// at the authoritative creation commit (`create_item_drop`).
+    pub fn allocate_item_instance_id(&mut self) -> common::comp::item::ItemInstanceId {
+        self.state.get_data_mut().item_instance_allocator.allocate()
+    }
+
     pub fn hook_load_chunk(
         &mut self,
         key: Vec2<i32>,

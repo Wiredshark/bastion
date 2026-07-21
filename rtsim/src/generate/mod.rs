@@ -99,6 +99,8 @@ impl Data {
             airship_sim: Default::default(),
             architect: Default::default(),
             quests: Default::default(),
+            // T0.49: mints the per-world namespace nonce at world creation.
+            item_instance_allocator: Default::default(),
             // bastion (HIST-0): a fresh world's memory starts empty.
             chronicle: Default::default(),
             // bastion (IDLE-HOME-LEASH): ephemeral; the bridge writes it.

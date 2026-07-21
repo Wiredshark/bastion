@@ -331,6 +331,16 @@ impl StateExt for State {
 
         let spawned_at = *self.ecs().read_resource::<Time>();
 
+        // T0.49: THE authoritative creation commit — stamp the persistent
+        // instance identity (the merge path above consumed no identity:
+        // the drop merged into an existing instance).
+        let mut world_item = world_item;
+        world_item.set_instance_id(
+            self.ecs()
+                .write_resource::<RtSim>()
+                .allocate_item_instance_id(),
+        );
+
         let item_body = comp::body::item::Body::from(world_item.item());
         let body = comp::Body::Item(item_body);
         // ARCH-003: live drops keep their randomized presentation, but the

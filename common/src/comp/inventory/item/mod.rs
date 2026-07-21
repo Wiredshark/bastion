@@ -519,6 +519,26 @@ pub struct PickupItem {
     /// items of the same kind (see [`Item::can_merge`]). Currently only used
     /// for inventory dropped items to prevent entity DoS.
     pub should_merge: bool,
+    /// T0.49 (master build order; T0-003): the persistent instance identity —
+    /// stamped ONCE at the authoritative creation commit
+    /// (`create_item_drop`); `None` for instances predating the field or not
+    /// yet committed. Field-first per the ruling: no consumer switches yet
+    /// (harness item hashes keep their current mechanism).
+    #[serde(default)]
+    instance_id: Option<ItemInstanceId>,
+}
+
+/// T0.49: the packet-specified persistent item-instance identity. The
+/// world namespace is a one-time per-world NONCE (minted at world
+/// creation — two saves sharing a worldgen seed must not alias), and the
+/// creation sequence is allocated only at the authoritative creation
+/// commit. Content hashes are definition/migration fingerprints, never
+/// instance identity; UUIDs/pointers/entity ids rejected as primary
+/// identity per the packet.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct ItemInstanceId {
+    pub world_namespace: u64,
+    pub creation_sequence: u64,
 }
 
 /// Newtype around [`Item`] so that thrown projectiles can track which item
@@ -1651,8 +1671,21 @@ impl PickupItem {
             created_at: time,
             next_merge_check: time,
             should_merge,
+            instance_id: None,
         }
     }
+
+    /// T0.49: stamp the persistent instance identity at the authoritative
+    /// creation commit — set-once (a re-stamp is a logic error).
+    pub fn set_instance_id(&mut self, id: ItemInstanceId) {
+        debug_assert!(
+            self.instance_id.is_none(),
+            "item instance identity re-stamped"
+        );
+        self.instance_id = Some(id);
+    }
+
+    pub fn instance_id(&self) -> Option<ItemInstanceId> { self.instance_id }
 
     /// Get a reference to the last item in this stack
     ///

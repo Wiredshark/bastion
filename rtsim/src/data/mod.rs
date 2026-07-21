@@ -57,6 +57,11 @@ pub struct Data {
     pub architect: Architect,
     #[serde(default)]
     pub quests: Quests,
+    /// T0.49 (master build order; T0-003): the persistent item-instance
+    /// allocator — lives in THE authoritative world save (sibling
+    /// `#[serde(default)]` pattern, no version bump).
+    #[serde(default)]
+    pub item_instance_allocator: ItemInstanceAllocator,
     /// bastion (HIST-0): the world's PERMANENT memory — the persistent
     /// twin of the fading `reports` feed (see [`chronicle`]). Sibling
     /// pattern: `#[serde(default)]`, no version bump.
@@ -179,4 +184,62 @@ fn rugged_de_enum_map<
     }
 
     de.deserialize_map(Visitor::<_, _, DEFAULT>(PhantomData))
+}
+
+
+/// T0.49: the per-world item-instance identity allocator. The namespace is
+/// a ONE-TIME nonce minted at world creation (OS entropy is fine here — the
+/// packet rejects randomness as ongoing PRIMARY identity, not as a one-time
+/// per-world seed component; two saves sharing a worldgen seed must not
+/// alias instance ids). The sequence is a single persisted monotonic
+/// counter, incremented only at the authoritative creation commit
+/// (`create_item_drop`); full retry-safe RANGE reservation is Tier-1
+/// transaction scope (T1.17/T1.24), deliberately not built here.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ItemInstanceAllocator {
+    pub world_namespace: u64,
+    pub next_sequence: u64,
+}
+
+impl Default for ItemInstanceAllocator {
+    fn default() -> Self {
+        Self {
+            world_namespace: rand::random::<u64>(),
+            next_sequence: 0,
+        }
+    }
+}
+
+impl ItemInstanceAllocator {
+    /// Allocate the next instance identity — synchronous at the
+    /// non-yielding construction point, so no reserve-without-commit gap.
+    pub fn allocate(&mut self) -> common::comp::item::ItemInstanceId {
+        let id = common::comp::item::ItemInstanceId {
+            world_namespace: self.world_namespace,
+            creation_sequence: self.next_sequence,
+        };
+        self.next_sequence += 1;
+        id
+    }
+}
+
+// T0.49: monotonicity + namespace-constancy pin.
+#[cfg(test)]
+mod t0_49_tests {
+    use super::ItemInstanceAllocator;
+
+    #[test]
+    fn t0_49_allocator_is_monotonic_within_a_constant_namespace() {
+        let mut alloc = ItemInstanceAllocator {
+            world_namespace: 7,
+            next_sequence: 0,
+        };
+        let a = alloc.allocate();
+        let b = alloc.allocate();
+        assert_eq!(a.world_namespace, 7);
+        assert_eq!(b.world_namespace, 7);
+        assert_eq!(a.creation_sequence, 0);
+        assert_eq!(b.creation_sequence, 1);
+        assert!(a < b, "identity is totally ordered by (namespace, sequence)");
+    }
 }
