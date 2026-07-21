@@ -98,8 +98,38 @@ pub(crate) fn migrate_from_diesel(
         FROM 	_migration_map m
         JOIN 	__diesel_schema_migrations d ON (d.version = m.diesel_version);
 
-        DROP TABLE __diesel_schema_migrations;"
+    ")?;
+
+    // DET-MIG-005 (v12 save-migration, Critical): the INSERT..SELECT above is an
+    // INNER JOIN of the real diesel history against a hardcoded _migration_map.
+    // Any __diesel_schema_migrations row whose version is absent from that map
+    // is silently dropped, so the converted refinery history would omit part of
+    // the database's true transformation history with no error. Require the
+    // mapping to be BIJECTIVE before discarding the source: every diesel row
+    // must have produced a refinery row, else fail closed rather than proceed
+    // with an incomplete, ambiguous-provenance history.
+    let diesel_count: i64 = transaction.query_row(
+        "SELECT COUNT(1) FROM __diesel_schema_migrations",
+        [],
+        |row| row.get(0),
     )?;
+    let converted_count: i64 = transaction.query_row(
+        "SELECT COUNT(1) FROM refinery_schema_history",
+        [],
+        |row| row.get(0),
+    )?;
+    if diesel_count != converted_count {
+        return Err(PersistenceError::ConversionError(format!(
+            "diesel-to-refinery migration is not bijective: {} legacy \
+             __diesel_schema_migrations row(s) had no _migration_map entry and \
+             would be silently dropped (diesel={}, converted={}); refusing to \
+             discard the source history",
+            diesel_count - converted_count,
+            diesel_count,
+            converted_count,
+        )));
+    }
+    transaction.execute_batch("DROP TABLE __diesel_schema_migrations;")?;
 
     transaction.commit()?;
     info!("Successfully performed one-time diesel to refinery migration");
