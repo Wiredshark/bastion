@@ -2520,12 +2520,7 @@ impl Client {
                 .entry(self.entity())
                 .map(|entry| {
                     entry
-                        .or_insert_with(|| Controller {
-                            inputs: inputs.clone(),
-                            queued_inputs: BTreeMap::new(),
-                            events: Vec::new(),
-                            actions: Vec::new(),
-                        })
+                        .or_insert_with(Controller::default)
                         .inputs = inputs.clone();
                 })
             {

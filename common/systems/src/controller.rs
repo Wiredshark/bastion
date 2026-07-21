@@ -88,7 +88,7 @@ impl<'a> System<'a> for Sys {
                 }
 
                 // Process other controller events
-                for event in controller.events.drain(..) {
+                for event in controller.drain_events() {
                     match event {
                         ControlEvent::Mount(mountee_uid) => {
                             if let Some(mountee_entity) = read_data.id_maps.uid_entity(mountee_uid)

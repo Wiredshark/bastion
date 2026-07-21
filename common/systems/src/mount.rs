@@ -136,22 +136,19 @@ impl<'a> System<'a> for Sys {
                 // Only take inputs and actions from the rider if the mount is not
                 // intelligent (TODO: expand the definition of 'intelligent').
                 if body.is_some_and(|b| !b.has_free_will()) {
-                    let actions = c
-                        .actions
-                        .extract_if(.., |action| match action {
-                            ControlAction::StartInput { input: i, .. }
-                            | ControlAction::CancelInput { input: i } => {
-                                matches!(
-                                    i,
-                                    InputKind::Jump
-                                        | InputKind::WallJump
-                                        | InputKind::Fly
-                                        | InputKind::Roll
-                                )
-                            },
-                            _ => false,
-                        })
-                        .collect();
+                    let actions = c.extract_actions_if(|action| match action {
+                        ControlAction::StartInput { input: i, .. }
+                        | ControlAction::CancelInput { input: i } => {
+                            matches!(
+                                i,
+                                InputKind::Jump
+                                    | InputKind::WallJump
+                                    | InputKind::Fly
+                                    | InputKind::Roll
+                            )
+                        },
+                        _ => false,
+                    });
                     Some((c.inputs.clone(), actions))
                 } else {
                     None
@@ -190,7 +187,7 @@ impl<'a> System<'a> for Sys {
                 && let Some(controller) = controllers.get_mut(entity)
             {
                 controller.inputs = inputs;
-                controller.actions = actions;
+                controller.set_actions(actions);
             }
         }
 
@@ -278,22 +275,16 @@ impl<'a> System<'a> for Sys {
             }
 
             let inputs = controllers.get_mut(entity).map(|c| {
-                let actions: Vec<_> = c
-                    .actions
-                    .extract_if(.., |action| match action {
-                        ControlAction::StartInput { input: i, .. }
-                        | ControlAction::CancelInput { input: i } => {
-                            matches!(
-                                i,
-                                InputKind::Jump
-                                    | InputKind::WallJump
-                                    | InputKind::Fly
-                                    | InputKind::Roll
-                            )
-                        },
-                        _ => false,
-                    })
-                    .collect();
+                let actions: Vec<_> = c.extract_actions_if(|action| match action {
+                    ControlAction::StartInput { input: i, .. }
+                    | ControlAction::CancelInput { input: i } => {
+                        matches!(
+                            i,
+                            InputKind::Jump | InputKind::WallJump | InputKind::Fly | InputKind::Roll
+                        )
+                    },
+                    _ => false,
+                });
                 let inputs = c.inputs.clone();
 
                 (actions, inputs)
@@ -314,7 +305,7 @@ impl<'a> System<'a> for Sys {
                             id_maps.uid_entity(uid).and_then(|e| controllers.get_mut(e))
                         {
                             controller.inputs = inputs;
-                            controller.actions = actions;
+                            controller.set_actions(actions);
                         }
                     },
                     common::mounting::Volume::Terrain => {},

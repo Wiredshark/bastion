@@ -5381,7 +5381,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             !agent.rtsim_controller.actions.is_empty()
                         }) {
                             Some(crate::bastion_traversal::BastionTraversalInterruption::RtsimAction)
-                        } else if !controller.events.is_empty() {
+                        } else if controller.has_queued_events() {
                             Some(
                                 crate::bastion_traversal::BastionTraversalInterruption::ControllerEvent,
                             )

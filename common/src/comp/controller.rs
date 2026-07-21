@@ -269,9 +269,19 @@ pub struct ControllerInputs {
 pub struct Controller {
     pub inputs: ControllerInputs,
     pub queued_inputs: BTreeMap<InputKind, InputAttr>,
+    // T0.21 (master build order; ledger #151): the command buffers are
+    // PRIVATE — producers stage through the push_* API and consumers take
+    // whole frames at their scheduled drain points (`drain_events`,
+    // `take_actions`), which advance the frame stamp. The type now enforces
+    // what the T0.20 dispatcher edge declares: consumption is a frame
+    // operation, not ad-hoc vec surgery mid-phase.
     // TODO: consider SmallVec
-    pub events: Vec<ControlEvent>,
-    pub actions: Vec<ControlAction>,
+    events: Vec<ControlEvent>,
+    actions: Vec<ControlAction>,
+    /// Frame generation — incremented by each scheduled drain; staleness
+    /// checks and pins read it.
+    #[serde(skip)]
+    frame: u64,
 }
 
 impl ControllerInputs {
@@ -307,6 +317,36 @@ impl Controller {
 
     pub fn clear_events(&mut self) { self.events.clear(); }
 
+    /// T0.21: the EVENT consumer's scheduled drain — takes the whole frame
+    /// and advances the generation.
+    pub fn drain_events(&mut self) -> Vec<ControlEvent> {
+        self.frame += 1;
+        core::mem::take(&mut self.events)
+    }
+
+    /// T0.21: the ACTION consumer's scheduled drain — takes the whole frame
+    /// and advances the generation.
+    pub fn take_actions(&mut self) -> Vec<ControlAction> {
+        self.frame += 1;
+        core::mem::take(&mut self.actions)
+    }
+
+    /// Wholesale action replacement (rider→mount redirection).
+    pub fn set_actions(&mut self, actions: Vec<ControlAction>) { self.actions = actions; }
+
+    /// Selective extraction (rider→mount input redirection) — explicit API
+    /// so partial drains remain visible operations.
+    pub fn extract_actions_if(
+        &mut self,
+        pred: impl FnMut(&mut ControlAction) -> bool,
+    ) -> Vec<ControlAction> {
+        self.actions.extract_if(.., pred).collect()
+    }
+
+    pub fn has_queued_events(&self) -> bool { !self.events.is_empty() }
+
+    pub fn frame(&self) -> u64 { self.frame }
+
     pub fn push_event(&mut self, event: ControlEvent) { self.events.push(event); }
 
     pub fn push_utterance(&mut self, utterance: UtteranceKind) {
@@ -334,4 +374,39 @@ impl Controller {
 
 impl Component for Controller {
     type Storage = specs::VecStorage<Self>;
+}
+
+// T0.21: the frame contract — staging never advances the generation,
+// scheduled drains do, and a drained frame is gone (exactly-once).
+#[cfg(test)]
+mod t0_21_tests {
+    use super::*;
+
+    #[test]
+    fn t0_21_command_frames_are_exactly_once() {
+        let mut c = Controller::default();
+        assert_eq!(c.frame(), 0);
+        c.push_event(ControlEvent::EnableLantern);
+        c.push_event(ControlEvent::DisableLantern);
+        c.push_basic_input(InputKind::Jump);
+        assert_eq!(c.frame(), 0, "staging must not advance the frame");
+        assert!(c.has_queued_events());
+
+        let events = c.drain_events();
+        assert_eq!(events.len(), 2);
+        assert_eq!(c.frame(), 1, "a drain advances the generation");
+        assert!(c.drain_events().is_empty(), "a drained frame is gone");
+        assert_eq!(c.frame(), 2);
+
+        let actions = c.take_actions();
+        assert_eq!(actions.len(), 1);
+        assert_eq!(c.frame(), 3);
+        assert!(c.take_actions().is_empty(), "exactly-once consumption");
+
+        // Post-drain staging lands in the NEXT frame, untouched by the
+        // previous consumer.
+        c.push_event(ControlEvent::EnableLantern);
+        assert!(c.has_queued_events());
+        assert_eq!(c.drain_events().len(), 1);
+    }
 }
