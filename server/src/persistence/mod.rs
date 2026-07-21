@@ -174,8 +174,23 @@ pub fn run_migrations(settings: &DatabaseSettings) {
 
     // If migrations fail to run, the server cannot start since the database will
     // not be in the required state.
+    // DET-MIG-001 (v12 save-migration, Critical): abort on a divergent
+    // migration (name/checksum mismatch against the recorded history) rather
+    // than silently accepting it — refinery's own default, loosened here at
+    // some point without justification. A changed already-applied migration
+    // means the database's transformation history no longer uniquely
+    // identifies the code that produced it, i.e. ambiguous save provenance;
+    // the determinism law requires that to fail closed. Corrections must be
+    // new migration IDs, never edits to applied ones.
+    //
+    // NOTE (ship-policy, escalated to Ben — same shape as BLD-031(b)): this is
+    // a live all-player-DB startup gate, so on a real database that carries a
+    // divergent migration this now hard-panics at the `.expect` below. Whether
+    // the SHIPPED behaviour should stay a hard failure or soften to
+    // warn+record is Ben's call; this change makes the cert/determinism lane
+    // correct now regardless.
     let report: Report = embedded::migrations::runner()
-        .set_abort_divergent(false)
+        .set_abort_divergent(true)
         .run(&mut conn.connection)
         .expect("Database migrations failed, server startup aborted");
 
