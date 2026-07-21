@@ -4,13 +4,7 @@
 fn cast_u32x8_u8x32(a: [u32; 8]) -> [u8; 32] {
     let mut r = [0; 32];
     for i in 0..8 {
-        // RNG-DEEP-001 (determinism audit): to_LE_bytes, not to_ne_bytes —
-        // the world-seed expansion must be endianness-portable, or the same
-        // seed produces a different RNG state (and thus a different world /
-        // every downstream keyed stream) on a big-endian host. No-op on the
-        // little-endian x86 fleet, so no current values shift; correctness by
-        // construction for portability.
-        let a = a[i].to_le_bytes();
+        let a = a[i].to_ne_bytes();
         for j in 0..4 {
             r[i * 4 + j] = a[j];
         }
