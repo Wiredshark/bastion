@@ -268,6 +268,7 @@ mod tests {
         #[derive(Serialize)]
         struct LegacySentiments {
             #[serde(rename = "m")]
+            // t0.48: hash-ok — legacy-compat TEST struct, not persisted data.
             map: hashbrown::HashMap<Target, Sentiment>,
         }
 

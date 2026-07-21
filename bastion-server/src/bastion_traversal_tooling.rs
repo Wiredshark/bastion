@@ -2038,6 +2038,57 @@ mod tests {
         );
     }
 
+    /// T0.48 (master build order; T0-003): THE STANDING PERSISTED-COLLECTION
+    /// GATE — every hash-container FIELD in rtsim's persisted data tree must
+    /// carry an explicit `t0.48:` classification (canonical-encode /
+    /// hash-ok-skipped / hash-ok-pure-lookup / hash-ok-deterministic-hasher)
+    /// within the five lines above it. An unclassified hash container in
+    /// world-save data is a serialization-order bug by default (the class
+    /// DONE.10/11 already converted the big maps out of). The
+    /// permutation/restored byte-compare halves ride the existing pair infra
+    /// (fresh/fresh IS the VM pair) + the DONE.11 legacy-load tests.
+    #[test]
+    fn t0_48_rtsim_data_hash_containers_are_classified() {
+        for entry in std::fs::read_dir(repo_root().join("rtsim/src/data")).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|extension| extension != "rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            let lines: Vec<&str> = text.lines().collect();
+            for (i, line) in lines.iter().enumerate() {
+                let trimmed = line.trim_start();
+                // Field-position hash containers only: `name: HashMap<...`.
+                let is_field = (trimmed.starts_with("pub ") || {
+                    let mut parts = trimmed.splitn(2, ':');
+                    parts.next().is_some_and(|head| {
+                        !head.is_empty()
+                            && head.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+                    }) && parts.next().is_some()
+                }) && (trimmed.contains(": HashMap<")
+                    || trimmed.contains(": HashSet<")
+                    || trimmed.contains(": DHashMap<")
+                    || trimmed.contains(": hashbrown::HashMap<"))
+                    && trimmed.ends_with(',');
+                if is_field
+                    && !(1..=5).any(|back| {
+                        i.checked_sub(back)
+                            .and_then(|j| lines.get(j))
+                            .is_some_and(|prev| prev.contains("t0.48:"))
+                    })
+                {
+                    panic!(
+                        "{}:{}: unclassified hash container in persisted rtsim data — add a \
+                         `t0.48:` classification (canonical-encode it, or justify hash-ok): {}",
+                        path.display(),
+                        i + 1,
+                        line
+                    );
+                }
+            }
+        }
+    }
+
     /// T0.25 (master build order; Run 12; Sonnet's validation-first ruling):
     /// the HANDLER REGISTRY cross-check — every event type in the
     /// `server_events!` universe must be consumed by EXACTLY ONE declared

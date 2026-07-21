@@ -43,6 +43,8 @@ pub struct Site {
     pub world_site: Option<Id<WorldSite>>,
 
     // Note: there's currently no guarantee that site populations are non-intersecting
+    // t0.48: hash-ok — serde-skipped ephemeral (rebuilt); iteration is
+    // aggregate-only today (any future authoritative iteration must sort).
     #[serde(skip_serializing, skip_deserializing)]
     pub population: HashSet<NpcId>,
 
@@ -75,6 +77,7 @@ pub struct Sites {
     pub uid_counter: u64,
     pub sites: DenseSlotMap<SiteId, Site>,
 
+    // t0.48: hash-ok — serde-skipped, pure lookup (T0.41 audit).
     #[serde(skip_serializing, skip_deserializing)]
     pub world_site_map: HashMap<Id<WorldSite>, SiteId>,
 }

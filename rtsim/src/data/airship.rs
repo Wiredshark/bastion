@@ -17,9 +17,12 @@ pub struct AirshipSim {
     /// a tuple. The first element is the index for the outer Airships::routes
     /// Vec (the route loop index), and the second element is the index for the
     /// pilot's initial route leg in the inner Airships::routes Vec.
+    // t0.48: hash-ok — DHashMap = FxHasher (deterministic, no process
+    // seeding): iteration/serialization stable per insertion history.
     pub assigned_routes: DHashMap<NpcId, (usize, usize)>,
 
     /// The pilots assigned to a route in the order they fly the route.
+    // t0.48: hash-ok — DHashMap (see above).
     pub route_pilots: DHashMap<usize, Vec<NpcId>>,
 }
 

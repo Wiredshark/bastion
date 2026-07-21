@@ -533,7 +533,31 @@ struct Riders {
 pub struct NpcLinks {
     links: DenseSlotMap<MountId, NpcLink>,
     mount_map: slotmap::SecondaryMap<NpcId, Riders>,
+    // t0.48: canonical-encode — serialized via `serialize_rider_map_sorted`
+    // (entries sorted by a stable Actor projection); a raw HashMap here
+    // serialized in process-seeded order.
+    #[serde(serialize_with = "serialize_rider_map_sorted")]
     rider_map: HashMap<Actor, MountId>,
+}
+
+/// T0.48 (master build order; T0-003): canonical rider-map encoding — sort
+/// by (actor discriminant, stable inner id bits) so equal state has one
+/// persisted representation (the DONE.11 ordered-boundary pattern).
+fn serialize_rider_map_sorted<S: serde::Serializer>(
+    map: &HashMap<Actor, MountId>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut entries: Vec<(&Actor, &MountId)> = map.iter().collect();
+    entries.sort_unstable_by_key(|(actor, _)| match actor {
+        Actor::Npc(id) => (0u8, slotmap::Key::data(id).as_ffi()),
+        Actor::Character(id) => (1u8, id.0 as u64),
+    });
+    let mut state = serializer.serialize_map(Some(entries.len()))?;
+    for (actor, mount) in entries {
+        state.serialize_entry(actor, mount)?;
+    }
+    state.end()
 }
 
 impl NpcLinks {
@@ -723,8 +747,10 @@ pub struct Npcs {
     pub mounts: NpcLinks,
     // TODO: This feels like it should be its own rtsim resource
     // TODO: Consider switching to `common::util::SpatialGrid` instead
+    // t0.48: hash-ok — serde-skipped ephemeral mirror (rebuilt).
     #[serde(skip, default = "construct_npc_grid")]
     pub npc_grid: Grid<GridCell>,
+    // t0.48: hash-ok — serde-skipped ephemeral mirror (rebuilt).
     #[serde(skip)]
     pub character_map: HashMap<Vec2<i32>, Vec<(CharacterId, Vec3<f32>)>>,
 }

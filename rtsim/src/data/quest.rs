@@ -28,8 +28,10 @@ pub struct Quests {
     /// the end of each tick. This is guarded by a utility function, so
     /// unregistered quests *shouldn't* be visible to the rest of the code.
     id_counter: AtomicU64,
+    // t0.48: canonical-encode — serialize_quests_in_id_order (DONE.11).
     #[serde(serialize_with = "serialize_quests_in_id_order")]
     quests: HashMap<QuestId, Quest>,
+    // t0.48: hash-ok — serde-skipped derived index (rebuilt on load).
     #[serde(skip)]
     related_quests: HashMap<Actor, HashSet<QuestId>>,
 }
@@ -366,6 +368,7 @@ mod tests {
         #[derive(Serialize)]
         struct LegacyQuests {
             id_counter: AtomicU64,
+            // t0.48: hash-ok — legacy-compat TEST struct, not persisted data.
             quests: HashMap<QuestId, Quest>,
         }
 
