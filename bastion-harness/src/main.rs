@@ -1619,6 +1619,7 @@ fn recorder_probe_sample(
         endpoint_distance: Some((4.0 - tick as f32).abs()),
         // R10/M3 v2 fields: absent in the lifecycle probe (v1-shaped fixture).
         ownership_epoch: None,
+        fetch_reservation: None,
         climb_token_witness: None,
         queue_position: None,
         queue_enqueue_tick: None,
