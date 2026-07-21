@@ -2038,6 +2038,43 @@ mod tests {
         );
     }
 
+    /// T0.27-lite (master build order; Run 12): the SERVER TICK PHASES,
+    /// named and frozen — direct mutation (the dispatcher inside
+    /// `state.tick`) → event application (`handle_events`, incl. the serial
+    /// tail) → structural maintenance (terrain/region updates) →
+    /// synchronization (`run_sync_systems`). The `before_*` timing anchors
+    /// are the stable landmarks; a reorder is a phase-contract change.
+    #[test]
+    fn t0_27_server_tick_phase_order_is_frozen() {
+        let src = repo_text("server/src/lib.rs");
+        let body = src
+            .split("pub fn tick(&mut self, _input: Input")
+            .nth(1)
+            .expect("Server::tick body");
+        let window = &body[..body.len().min(20_000)];
+        let pos = |needle: &str| {
+            window
+                .find(needle)
+                .unwrap_or_else(|| panic!("Server::tick lost phase landmark `{needle}`"))
+        };
+        let order = [
+            "before_state_tick",
+            "before_handle_events",
+            "before_update_terrain_and_regions",
+            "before_sync",
+            "before_world_tick",
+        ];
+        for pair in order.windows(2) {
+            assert!(
+                pos(pair[0]) < pos(pair[1]),
+                "server tick phases reordered: `{}` must precede `{}` (direct mutation → \
+                 event application → structural maintenance → sync)",
+                pair[0],
+                pair[1]
+            );
+        }
+    }
+
     /// T0.24-lite (master build order; Run 12): the DELIVERY-POLICY
     /// declaration, executable — server events split into two declared
     /// classes: the Apply dispatcher (event_dispatch systems — the
