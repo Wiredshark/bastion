@@ -66,6 +66,14 @@ pub struct FlightSample {
     /// untouched by construction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ownership_epoch: Option<u64>,
+    /// T1.18 (conservation cluster, schema-additive): the stable reservation
+    /// id the sampled colonist's active job holds (`None` = no reserved
+    /// item, e.g. off a material Fetch leg). Makes a fetch's source-item
+    /// custody traceable in the tape — a fetch divergence names its
+    /// reservation, not just its job. `skip_if_none` keeps non-fetch samples
+    /// byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fetch_reservation: Option<u64>,
     /// FABLE-004 F1 (schema v2, additive): the climb TOKEN WITNESS —
     /// `Some(true)` = this sample's climb is driven by the OWNED ladder
     /// token (live task in a Traversing* phase with ladder contact);
@@ -810,6 +818,7 @@ fn focused_sample(
         endpoint_distance: Some(endpoint_distance),
         // R10/M3 v2 fields: absent in the focused probe (v1-shaped fixture).
         ownership_epoch: None,
+        fetch_reservation: None,
         climb_token_witness: None,
         queue_position: None,
         queue_enqueue_tick: None,

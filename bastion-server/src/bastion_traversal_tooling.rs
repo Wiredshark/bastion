@@ -179,6 +179,7 @@ fn record_stage1_task_snapshot(task: BastionTraversalTask, tick: u64, marker: &s
         // R10 v2: the focused contract probe carries the task's epoch;
         // no climb witness (no physics in this probe).
         ownership_epoch: Some(task.epoch),
+        fetch_reservation: None,
         climb_token_witness: None,
         queue_position: None,
         queue_enqueue_tick: None,

@@ -4304,6 +4304,17 @@ impl JobBoard {
         {
             self.reservations.remove(&rid);
         }
+        // T1.19: a removed RestAt releases its creation-reserved bed (any
+        // cancel/moot path), so a bed can never leak occupied by a colonist
+        // who is no longer coming. Only clears if THIS job's claimant still
+        // holds it (a re-assigned bed is another job's custody).
+        if let Some(j) = &job
+            && let common::bastion::JobKind::RestAt { bed_pos } = j.kind
+            && let Some(slot) = self.beds.get_mut(&bed_pos)
+            && slot.occupant == j.claimed_by
+        {
+            slot.occupant = None;
+        }
         // CHOP-FELLING: a removed base-cut takes its stored fell-set with
         // it (moot/unreachable-drop/cancel — the tree stays standing).
         self.chop_fell_sets.remove(&id);
@@ -4394,6 +4405,14 @@ impl JobBoard {
             depth: 0,
             reservation: None,
         });
+        // T1.19 (conservation cluster): reserve the bed at CREATION, not at
+        // arrival. The assigner filters occupied beds, so claiming it now
+        // closes the create→arrive window where a second colonist could be
+        // routed to the same bed. Released by remove_job on any cancel/moot,
+        // by the arrival path on wake, and by the dead-occupant sweep.
+        if let Some(slot) = self.beds.get_mut(&bed_pos) {
+            slot.occupant = Some(uid);
+        }
         self.total_claims += 1;
         id
     }
@@ -13888,6 +13907,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         exit_plane_z: descriptor.map(|descriptor| descriptor.top_anchor.z as f32),
                         endpoint_distance,
                         ownership_epoch: transaction.map(|task| task.epoch),
+                        // T1.18: the active job's stable reservation id (the
+                        // fetched item's custody handle) — None off a Fetch.
+                        fetch_reservation: active
+                            .and_then(|a| board.jobs.get(&a.job))
+                            .and_then(|j| j.reservation),
                         climb_token_witness,
                         queue_position: board
                             .emergency_route_members
