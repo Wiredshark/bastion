@@ -101,20 +101,33 @@ impl<'a> System<'a> for Sys {
                                 None
                             },
                             PresenceKind::Character(id) => {
-                                let pets = (&alignments, &bodies, &stats, &pets)
+                                // DET-PER-009 (v5 deep-pass, Critical): collect
+                                // the owner's pets in canonical Uid order. The
+                                // ECS join yields them in storage order, and
+                                // that order is what update_pets zips against a
+                                // freshly-allocated id range (PER-024) — so pet
+                                // persistent identity rode ECS iteration order.
+                                // Key on the pet's own Uid (stable), sort, drop
+                                // the key.
+                                let mut pets = (&alignments, &bodies, &stats, &pets, &uids)
                                     .join()
-                                    .filter_map(|(alignment, body, stats, pet)| match alignment {
-                                        // Don't try to persist non-tameable pets (likely spawned
-                                        // using /spawn) since there isn't any code to handle
-                                        // persisting them
-                                        Alignment::Owned(pet_owner)
-                                            if pet_owner == player_uid && is_tameable(body) =>
-                                        {
-                                            Some(((*pet).clone(), *body, stats.clone()))
-                                        },
-                                        _ => None,
+                                    .filter_map(|(alignment, body, stats, pet, pet_uid)| {
+                                        match alignment {
+                                            // Don't try to persist non-tameable pets (likely spawned
+                                            // using /spawn) since there isn't any code to handle
+                                            // persisting them
+                                            Alignment::Owned(pet_owner)
+                                                if pet_owner == player_uid && is_tameable(body) =>
+                                            {
+                                                Some((*pet_uid, ((*pet).clone(), *body, stats.clone())))
+                                            },
+                                            _ => None,
+                                        }
                                     })
-                                    .collect();
+                                    .collect::<Vec<_>>();
+                                pets.sort_unstable_by_key(|(pet_uid, _)| pet_uid.0);
+                                let pets =
+                                    pets.into_iter().map(|(_, pet)| pet).collect::<Vec<_>>();
 
                                 Some((
                                     id,
