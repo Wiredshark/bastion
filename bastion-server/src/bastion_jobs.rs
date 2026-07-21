@@ -10567,11 +10567,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             } else {
                                 // Item vanished and we don't hold it (a
                                 // player grabbed it / merged away) — moot.
-                                let rid = job.reservation;
-                                if let Some(rid) = rid {
-                                    board.reservations.remove(&rid);
-                                }
-                                board.jobs.remove(&active.job);
+                                // T1.15: route through the ONE removal path
+                                // (remove_job releases the reservation + any
+                                // future side-table cleanup — no manual
+                                // reservations.remove that can drift).
+                                board.remove_job(active.job);
                                 to_release.push(entity);
                             }
                             continue;
@@ -10602,9 +10602,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 *program_time,
                             );
                         }
-                        // Last read of `job` — it is dead after this copy,
+                        // Last read of `job` — it is dead after this,
                         // freeing `board` for the admission-ledger borrow.
-                        let rid = job.reservation;
+                        // T1.15: remove_job (below) releases the reservation
+                        // via the one path, so no manual rid copy is needed.
+                        let _ = &job;
                         let idempotency_key = IdempotencyKey(active.job);
                         let receipt = board.command_admission.admit(
                             idempotency_key,
@@ -10621,10 +10623,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             amount = dropped,
                             "bastion: haul delivered"
                         );
-                        if let Some(rid) = rid {
-                            board.reservations.remove(&rid);
-                        }
-                        board.jobs.remove(&active.job);
+                        // T1.15: the one removal path (releases the
+                        // reservation; no manual reservations.remove).
+                        board.remove_job(active.job);
                         to_release.push(entity);
                         debug_assert!(status.may_transition_to(&CommandStatus::Committed));
                         status = CommandStatus::Committed;

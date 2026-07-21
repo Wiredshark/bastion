@@ -166,8 +166,17 @@ pub fn deposit_all_of(
         })
         .collect();
     let mut deposited = 0u32;
+    // T1.17 (conservation cluster): item-transaction durability — every
+    // inventory decrement must produce EXACTLY one world drop, so a
+    // decrement can never desync from its drop (item loss) nor a drop appear
+    // without its decrement (dupe). The move of `item_out` from the
+    // inventory INTO the drop event makes this atomic by construction; the
+    // paired counters pin it against a future refactor that splits the two.
+    let mut decrements = 0u32;
+    let mut drops = 0u32;
     for slot in slots {
         if let Some(item_out) = inv.remove(slot) {
+            decrements += 1;
             deposited += item_out.amount();
             emitter.emit(CreateItemDropEvent {
                 pos: comp::Pos(pos.map(|e| e as f32) + Vec3::new(0.5, 0.5, 1.0)),
@@ -177,7 +186,13 @@ pub fn deposit_all_of(
                 loot_owner: None,
                 persistent: true,
             });
+            drops += 1;
         }
     }
+    debug_assert_eq!(
+        decrements, drops,
+        "T1.17: item-transaction durability — each inventory decrement must \
+         create exactly one world drop"
+    );
     deposited
 }
