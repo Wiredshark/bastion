@@ -3716,11 +3716,12 @@ impl Server {
         let before_state_tick = Instant::now();
 
         fn on_block_update(ecs: &specs::World, changes: Vec<BlockDiff>) {
-            // When a resource block updates, inform rtsim
-            if changes
-                .iter()
-                .any(|c| c.old.get_rtsim_resource() != c.new.get_rtsim_resource())
-            {
+            // When a resource block updates, inform rtsim. T1.12: the
+            // resource-class-change test is the single authoritative
+            // `BlockDiff::changes_rtsim_resource` predicate — every applied
+            // diff (from `State::apply_terrain_changes`) is screened through
+            // it so no resource creation/deletion escapes rtsim's ledger.
+            if changes.iter().any(|c| c.changes_rtsim_resource()) {
                 ecs.write_resource::<rtsim::RtSim>().hook_block_update(
                     &ecs.read_resource::<Arc<world::World>>(),
                     ecs.read_resource::<world::IndexOwned>().as_index_ref(),

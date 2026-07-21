@@ -129,6 +129,26 @@ pub struct BlockDiff {
     pub new: Block,
 }
 
+impl BlockDiff {
+    /// T1.12 (Bastion conservation cluster): the RTSim resource-conservation
+    /// predicate — true iff this diff changes the block's rtsim resource
+    /// CLASS (a `Some`↔`None` transition, or one class to another). This is
+    /// the SINGLE authority deciding whether a block change must be forwarded
+    /// to `RtSim::hook_block_update`: a resource block that is mined, grown,
+    /// or otherwise reclassified without this returning `true` would silently
+    /// desync rtsim's resource ledger (an untracked deletion or creation).
+    /// Two sprites of the SAME class (e.g. `Stones` vs `Stones2`, both
+    /// `Stone`) is NOT a class change and correctly needs no rtsim hook.
+    ///
+    /// Determinism (Ben's law): a pure total function of `(old, new)` blocks
+    /// — no state, no RNG, no wall-clock. Centralising it here means every
+    /// forwarding decision reads ONE predicate, pinned against drift by
+    /// `t1_12_resource_change_predicate`.
+    pub fn changes_rtsim_resource(&self) -> bool {
+        self.old.get_rtsim_resource() != self.new.get_rtsim_resource()
+    }
+}
+
 /// A type used to represent game state stored on both the client and the
 /// server. This includes things like entity components, terrain data, and
 /// global states like weather, time of day, etc.
@@ -1122,4 +1142,46 @@ impl<'a> MetricsGuard<'a> {
 
 impl Drop for MetricsGuard<'_> {
     fn drop(&mut self) { self.metrics.add(self.label, self.start.elapsed()); }
+}
+
+#[cfg(test)]
+mod t1_12_tests {
+    use super::BlockDiff;
+    use common::terrain::{Block, sprite::SpriteKind};
+    use vek::Vec3;
+
+    fn diff(old: Block, new: Block) -> BlockDiff {
+        BlockDiff {
+            wpos: Vec3::zero(),
+            old,
+            new,
+        }
+    }
+
+    #[test]
+    fn t1_12_resource_change_predicate() {
+        let stones = Block::air(SpriteKind::Stones); // rtsim resource: Stone
+        let stones2 = Block::air(SpriteKind::Stones2); // ALSO Stone
+        let empty = Block::air(SpriteKind::Empty); // no rtsim resource
+        let iron = Block::air(SpriteKind::Iron); // rtsim resource: Ore
+
+        // Sanity on the underlying classifier the predicate rides.
+        assert!(stones.get_rtsim_resource().is_some());
+        assert_eq!(stones.get_rtsim_resource(), stones2.get_rtsim_resource());
+        assert!(empty.get_rtsim_resource().is_none());
+
+        // A resource block mined to nothing IS a class change → must forward.
+        assert!(diff(stones, empty).changes_rtsim_resource());
+        // Nothing growing INTO a resource IS a class change → must forward.
+        assert!(diff(empty, iron).changes_rtsim_resource());
+        // One class to a DIFFERENT class → must forward.
+        assert!(diff(stones, iron).changes_rtsim_resource());
+
+        // Two sprites of the SAME class → NOT a class change → no hook.
+        assert!(!diff(stones, stones2).changes_rtsim_resource());
+        // A pure non-resource edit → no hook.
+        assert!(!diff(empty, empty).changes_rtsim_resource());
+        // Identity → no hook.
+        assert!(!diff(iron, iron).changes_rtsim_resource());
+    }
 }
