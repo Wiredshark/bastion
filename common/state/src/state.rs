@@ -199,7 +199,14 @@ impl State {
             }
         };
 
-        let num_threads = if execution_mode.is_deterministic() {
+        // T0.52 (T0-004 packet, step 5): BASTION_DETERMINISTIC_PARALLEL runs
+        // deterministic mode on a MULTI-worker pool with parallel dispatch —
+        // the serial-vs-parallel equivalence probe. If the stamped bus,
+        // per-entity disjoint writes, and keyed draws hold, a parallel
+        // deterministic run must be byte-identical to the serial one; any
+        // divergence names a real schedule-order authority leak.
+        let deterministic_parallel = std::env::var_os("BASTION_DETERMINISTIC_PARALLEL").is_some();
+        let num_threads = if execution_mode.is_deterministic() && !deterministic_parallel {
             1
         } else {
             num_cpus::get().max(common::consts::MIN_RECOMMENDED_RAYON_THREADS)
@@ -989,7 +996,11 @@ impl State {
         self.ecs.write_resource::<DeltaTime>().0 = scaled_dt as f32;
 
         section_span!(guard, "run systems");
-        if self.execution_mode.is_deterministic() {
+        // T0.52: the parallel-equivalence probe uses the PARALLEL dispatcher
+        // under deterministic seeds (see pools_with_mode).
+        let deterministic_parallel =
+            std::env::var_os("BASTION_DETERMINISTIC_PARALLEL").is_some();
+        if self.execution_mode.is_deterministic() && !deterministic_parallel {
             // `dispatch_seq` fixes the Specs/Shred system order. Running it
             // inside this State's one-worker pool also captures nested
             // `par_join`/`par_iter` calls; otherwise sequential dispatch from

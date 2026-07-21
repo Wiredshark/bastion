@@ -97,6 +97,14 @@ struct Args {
     #[arg(long, default_value_t = 30.0)]
     tps: f64,
 
+    /// T0.52 (T0-004): the serial-vs-parallel equivalence PROBE — run the
+    /// deterministic harness on a MULTI-worker pool with the PARALLEL
+    /// dispatcher (identical seeds/inputs otherwise). A probe run must be
+    /// byte-identical to the serial run; any divergence names a real
+    /// schedule-order authority leak.
+    #[arg(long, default_value_t = false)]
+    deterministic_parallel: bool,
+
     /// Run the same seed twice in two isolated child processes, diff the
     /// aggregate dumps, and report DETERMINISM: OK/DIVERGED (exit 0/1).
     #[arg(long)]
@@ -877,6 +885,13 @@ fn main() -> ExitCode {
     // Stderr, not stdout: JSON-line consumers stay untouched. BEFORE
     // Args::parse so even a --help/parse-error run identifies its exe.
     eprintln!("bastion-harness {BUILD_STAMP}");
+
+    // T0.52: the probe flag must be visible before State construction —
+    // scan argv directly (Args::parse happens later in some paths).
+    if std::env::args().any(|a| a == "--deterministic-parallel") {
+        // SAFETY: single-threaded at this point (before any pool exists).
+        unsafe { std::env::set_var("BASTION_DETERMINISTIC_PARALLEL", "1") };
+    }
 
     // DETRNG (B8 root fix): EVERY harness run is deterministic — rtsim rule
     // RNGs derive from (world seed, tick) instead of OS entropy, so --seed
