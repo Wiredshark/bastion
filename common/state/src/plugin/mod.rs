@@ -6,7 +6,7 @@ use bincode::error::DecodeError;
 use common::{assets::ASSETS_PATH, event::PluginHash, uid::Uid};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -241,7 +241,7 @@ impl PluginMgr {
     }
 
     fn from_dir(path: &Path) -> Result<Self, PluginError> {
-        let plugins = fs::read_dir(path)
+        let mut plugins = fs::read_dir(path)
             .map_err(|e| {
                 if e.kind() == std::io::ErrorKind::NotFound {
                     PluginError::FromDirDoesNotExist
@@ -276,6 +276,18 @@ impl PluginMgr {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
+        // DET-AST-024/025 (v6 deep-pass, Critical/High): canonically order the
+        // plugin set by content hash. `fs::read_dir` above yields OS directory
+        // order (and `load_server_plugin` pushes in network-arrival order) —
+        // both non-canonical. `create_body`, `update_skeleton`, and
+        // `command_event` are all LAST-WINS over this Vec, so which provider
+        // won for a stable body/skeleton/command name depended on load order.
+        // `PluginHash` is the SHA-256 of plugin content: globally unique,
+        // content-derived, identical on every machine — sorting by it makes
+        // every last-wins arbitration a pure function of the plugin SET. This
+        // is exactly the canonical order DET-AST-023's comment already assumes.
+        plugins.sort_unstable_by_key(|p| p.hash);
+
         for plugin in &plugins {
             info!(
                 "Loaded plugin '{}' with {} module(s)",
@@ -295,6 +307,10 @@ impl PluginMgr {
             }
             let hash = plugin.hash;
             self.plugins.push(plugin);
+            // DET-AST-024/025: re-establish the canonical content-hash order so
+            // a server-delivered plugin never selects last-wins arbitration by
+            // its network arrival position (see `from_dir`).
+            self.plugins.sort_unstable_by_key(|p| p.hash);
             hash
         })
     }
@@ -336,11 +352,11 @@ impl PluginMgr {
         player: Uid,
     ) -> Result<Vec<String>, CommandResults> {
         // DET-AST-023 (v6 deep-pass, declared policy): LAST-registered
-        // handler wins, in the canonical plugin order (sorted enumeration
-        // DET-AST-010 + ordered module sets DET-AST-017 make that order a
-        // pure function of the plugin set). Multiple handlers for one
-        // command are an AMBIGUITY — witnessed loudly below rather than
-        // silent.
+        // handler wins, in the canonical plugin order. That order is a pure
+        // function of the plugin set because `self.plugins` is kept sorted by
+        // content hash (DET-AST-024/025 at the `from_dir` / `load_server_plugin`
+        // write sites). Multiple handlers for one command are an AMBIGUITY —
+        // witnessed loudly below rather than silent.
         let mut handlers = 0u32;
         let mut result = Err(CommandResults::UnknownCommand);
         self.plugins.iter_mut().for_each(|plugin| {
