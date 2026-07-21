@@ -1,0 +1,12 @@
+{
+  "_purpose": "Recorded mine-fidelity (mf) / M3A floor baseline fingerprint. Future floor runs compare their MF-CERTIFICATE.durable_composite against this. A MATCH = the sim is fingerprint-stable (floor green in the tracked-red sense). A SHIFT means the authoritative sim changed — investigate whether it was an intended determinism re-pin (like GenCtx's world re-roll, which legitimately moves world-derived fingerprints) or a real regression.",
+  "scenario": "--mine-fidelity-scenario",
+  "world_seed": 1337,
+  "tick": 54000,
+  "durable_composite": [167, 10, 6, 25, 158, 135, 47, 76, 213, 104, 34, 4, 119, 3, 242, 105, 74, 103, 177, 211, 43, 173, 15, 125, 180, 218, 98, 3, 43, 159, 231, 86],
+  "captured_at_commit": "a073243e3e",
+  "captured_notes": "Confirmed byte-identical across two isolated runs at this tip (AST-024/025 49a3e0b204 + AST-034 0ed4bb7179 + NET-014 a073243e3e in tree). mf_stalled=false. NOTE: mf on seed 1337 exhibits the same B78-class stuck-miner fragility as b5 (69 failsafe teleports, 67 unreachable, 36.7% completion) — these are MEASURED metrics, not a gate, and do not affect the durable_composite determinism fingerprint.",
+  "known_tracked_reds": {
+    "b5_mine_cleared": "FALSE (25/27) — B78, pre-existing mine-access fragility exposed by GenCtx's world re-roll; NOT a determinism violation (byte-identical dev/verify)."
+  }
+}
