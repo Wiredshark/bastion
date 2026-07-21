@@ -12,6 +12,7 @@ use common::{
     },
     consts::MAX_TRADE_RANGE,
     event::{InitiateInviteEvent, InviteResponseEvent},
+    resources::Time,
     trade::{TradeResult, Trades},
     uid::{IdMaps, Uid},
 };
@@ -21,7 +22,7 @@ use specs::ReadExpect;
 use specs::{
     DispatcherBuilder, Entities, Entity, Read, ReadStorage, SystemData, Write, WriteStorage, shred,
 };
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tracing::{error, warn};
 #[cfg(feature = "worldgen")]
 use world::IndexOwned;
@@ -52,6 +53,7 @@ impl ServerEvent for InitiateInviteEvent {
         ReadStorage<'a, Group>,
         ReadStorage<'a, Health>,
         ReadStorage<'a, CharacterState>,
+        Read<'a, Time>,
     );
 
     fn handle(
@@ -71,6 +73,7 @@ impl ServerEvent for InitiateInviteEvent {
             groups,
             healths,
             character_states,
+            time,
         ): Self::SystemData<'_>,
     ) {
         for InitiateInviteEvent(inviter, invitee_uid, kind) in events {
@@ -175,7 +178,9 @@ impl ServerEvent for InitiateInviteEvent {
                                 entry.or_insert_with(|| PendingInvites(Vec::new())).0.push((
                                     invitee,
                                     kind,
-                                    Instant::now() + INVITE_TIMEOUT_DUR,
+                                    // DET-ADD-002: sim-time deadline (seconds),
+                                    // not a wall-clock Instant.
+                                    time.0 + INVITE_TIMEOUT_DUR.as_secs_f64(),
                                 ));
                                 invite_sent = true;
                                 true

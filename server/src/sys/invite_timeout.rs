@@ -1,11 +1,12 @@
 use crate::client::Client;
 use common::{
     comp::invite::{Invite, PendingInvites},
+    resources::Time,
     uid::Uid,
 };
 use common_ecs::{Job, Origin, Phase, System};
 use common_net::msg::{InviteAnswer, ServerGeneral};
-use specs::{Entities, Join, ReadStorage, WriteStorage};
+use specs::{Entities, Join, Read, ReadStorage, WriteStorage};
 
 /// This system removes timed out invites
 #[derive(Default)]
@@ -17,6 +18,7 @@ impl<'a> System<'a> for Sys {
         WriteStorage<'a, PendingInvites>,
         ReadStorage<'a, Client>,
         ReadStorage<'a, Uid>,
+        Read<'a, Time>,
     );
 
     const NAME: &'static str = "invite_timeout";
@@ -25,9 +27,11 @@ impl<'a> System<'a> for Sys {
 
     fn run(
         _job: &mut Job<Self>,
-        (entities, mut invites, mut pending_invites, clients, uids): Self::SystemData,
+        (entities, mut invites, mut pending_invites, clients, uids, time): Self::SystemData,
     ) {
-        let now = std::time::Instant::now();
+        // DET-ADD-002: compare against the deterministic sim-clock (seconds),
+        // not wall-clock Instant::now().
+        let now = time.0;
         let timed_out_invites = (&entities, &invites)
             .join()
             .filter_map(|(invitee, Invite { inviter, kind })| {
