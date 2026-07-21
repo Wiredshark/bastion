@@ -45,7 +45,11 @@ impl Component for RtSimEntity {
     type Storage = specs::VecStorage<Self>;
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+// DET-AIT-004 (v8 npc-combat-targeting): a total order on Actor, so callers can
+// select a canonical actor from a non-canonically-iterated set (e.g. the
+// nearest/first enemy) instead of taking whichever one grid/history iteration
+// happened to yield first. Ordered by variant then inner id.
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Actor {
     Npc(NpcId),
     Character(CharacterId),

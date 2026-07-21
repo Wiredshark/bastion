@@ -1621,10 +1621,17 @@ fn check_for_enemies<S: State>(ctx: &mut NpcCtx) -> Option<impl Action<S> + use<
     // implementing this means accounting for changes in sentiment (that could
     // suddenly make a nearby actor an enemy) as well as variable NPC tick
     // rates!
+    // DET-AIT-004 (v8 npc-combat-targeting, High): `nearby` yields actors in
+    // grid-traversal + slotmap + character-map order, so `.find(is ENEMY)`
+    // engaged whichever enemy that (non-canonical) iteration surfaced first.
+    // Pick the canonically-lowest enemy Actor instead, so the engaged target is
+    // a pure function of the nearby-enemy set. (All candidates are already
+    // within the 24-unit radius, so this stays a "nearby enemy".)
     ctx.data
         .npcs
         .nearby(Some(ctx.npc_id), ctx.npc.wpos, 24.0)
-        .find(|actor| ctx.sentiments.toward(*actor).is(Sentiment::ENEMY))
+        .filter(|actor| ctx.sentiments.toward(*actor).is(Sentiment::ENEMY))
+        .min()
         .map(|enemy| just(move |ctx, _| ctx.controller.attack(enemy)))
 }
 
