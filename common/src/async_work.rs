@@ -80,6 +80,72 @@ pub fn accepts(
     current_key == result_key && current_generation == result_generation && !already_terminal
 }
 
+/// T0.51 (packet step 2): the work class — scheduling and terminal
+/// semantics differ per class (a PureCompute result can always be
+/// recomputed; an ExternalTransaction that committed must surface its
+/// watermark even when superseded locally).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AsyncWorkClass {
+    PureCompute,
+    ExternalRead,
+    ExternalTransaction,
+}
+
+/// T0.51: the shared request envelope every async service speaks.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AsyncWorkRequest<I> {
+    pub request_id: AsyncRequestId,
+    pub owner: AsyncOwnerKey,
+    pub generation: AsyncGeneration,
+    pub class: AsyncWorkClass,
+    /// Higher = sooner within a class; ties break on request_id (stable).
+    pub priority: u16,
+    /// Semantic cost units (never microseconds) for admission budgeting.
+    pub estimated_cost: u32,
+    pub estimated_bytes: u32,
+    /// Requests sharing a live coalesce key may be merged by admission —
+    /// the packet's coalescing hook; `None` = never coalesce.
+    pub coalesce_key: Option<u64>,
+    /// Tick after which the service should not START this work (already-
+    /// running work finishes and is generation-validated as usual).
+    pub deadline_tick: Option<u64>,
+    /// EFFICIENCY-ONLY early-out flag (see module docs: the generation is
+    /// the correctness barrier, never this).
+    pub cancel: bool,
+    pub input: I,
+}
+
+/// T0.51: the exhaustive terminal outcome — every admitted request reaches
+/// EXACTLY ONE of these (a missing terminal is itself an invariant
+/// failure, per the packet).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AsyncTerminal<O, E> {
+    Succeeded(O),
+    /// The owner's generation moved while the work ran — the result is
+    /// discarded by the acceptance predicate; recorded, not silently lost.
+    Superseded,
+    CanceledBeforeStart,
+    CanceledDuringCompute,
+    /// Failed in a way the owner may retry (with a NEW request id).
+    Retryable(E),
+    PermanentFailure(E),
+    /// An external transaction COMMITTED even though the local owner moved
+    /// on — the watermark + output must surface so reconciliation can run
+    /// (never pretend an external commit didn't happen).
+    CommittedExternal { watermark: u64, output: O },
+}
+
+impl<O, E> AsyncTerminal<O, E> {
+    /// Whether this terminal carries authoritative output the owner-phase
+    /// merge should offer to the acceptance predicate.
+    pub fn carries_output(&self) -> bool {
+        matches!(
+            self,
+            AsyncTerminal::Succeeded(_) | AsyncTerminal::CommittedExternal { .. }
+        )
+    }
+}
+
 #[cfg(test)]
 mod t0_50_tests {
     use super::*;
