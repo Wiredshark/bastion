@@ -23,11 +23,21 @@ impl Rule for CleanUp {
             // TODO: Use `.into_par_iter()` for these by implementing rayon traits in upstream slotmap.
 
             // Decay NPC sentiments
+            // T0.34 (T0-003): PER-NPC keyed streams — one shared stream drawn
+            // in iteration order meant any mid-tick npc set change shifted
+            // every subsequent npc's decay draws (the draw-count-varies-with-
+            // iteration-order pattern the packet bans). Keyed by npc.seed,
+            // matching NpcAi's per-NPC salting.
             data.npcs
                 .iter_mut()
                 // Only cleanup NPCs every few ticks
                 .filter(|(_, npc)| (npc.seed as u64 + ctx.event.tick).is_multiple_of(NPC_SENTIMENT_TICK_SKIP))
-                .for_each(|(_, npc)| npc.sentiments.decay(&mut rng, ctx.event.dt * NPC_SENTIMENT_TICK_SKIP as f32));
+                .for_each(|(_, npc)| {
+                    let mut npc_rng =
+                        crate::tick_rng(ctx.index.seed, ctx.event.tick, npc.seed ^ 0xC1EA);
+                    npc.sentiments
+                        .decay(&mut npc_rng, ctx.event.dt * NPC_SENTIMENT_TICK_SKIP as f32);
+                });
 
             // Remove dead NPCs
             // TODO: Don't do this every tick, find a sensible way to gradually remove dead NPCs after they've been
