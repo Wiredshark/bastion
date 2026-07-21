@@ -4453,6 +4453,9 @@ impl JobBoard {
             claimed,
             unreachable,
             claims_distinct: distinct,
+            // T1.16: surface the reservation-ledger bidirectional-uniqueness
+            // audit (T1.13) in the one board-conservation verdict.
+            reservation_conflicts: self.reservation_conflicts().len(),
         }
     }
 
@@ -11117,6 +11120,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
                         if let Some(cells) = floating_chunk(is_filled, done_pos, CAVEIN_SUPPORT_CAP)
                         {
+                            // T1.14 (conservation cluster): stage the cave-in
+                            // completion as ONE validated JobCompletionPlan —
+                            // every severed cell is a yielding clear (block→air
+                            // paired with exactly one drop), so a clear can
+                            // never desync from its drop. Validated BEFORE any
+                            // authoritative mutation (a partial/imbalanced
+                            // completion is a conservation leak).
+                            let mut completion =
+                                common::job_completion::JobCompletionPlan::new(None);
+                            for &cell in &cells {
+                                completion.yield_clear(cell, cell);
+                            }
+                            debug_assert!(
+                                completion.validate().is_ok(),
+                                "T1.14: cave-in completion plan imbalanced (clears≠drops)"
+                            );
                             for &cell in &cells {
                                 block_change.set(cell, Block::empty());
                                 item_drop_emitter.emit(CreateItemDropEvent {

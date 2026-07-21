@@ -1090,6 +1090,20 @@ pub struct JobAudit {
     /// True iff no two claimed jobs share a claimant and no claimant appears
     /// twice (each colonist works at most one job).
     pub claims_distinct: bool,
+    /// T1.16 (conservation cluster): the number of item entities reserved by
+    /// MORE THAN ONE job (the T1.13 reservation-ledger bidirectional-
+    /// uniqueness audit). Non-zero = a double-spend — two jobs believe they
+    /// own the same physical item.
+    pub reservation_conflicts: usize,
+}
+
+impl JobAudit {
+    /// T1.16: the single board-conservation verdict — claims are distinct
+    /// (one colonist per job) AND no item is double-reserved. A colony that
+    /// fails this has leaked a claim ticket or a reservation.
+    pub fn conserved(&self) -> bool {
+        self.claims_distinct && self.reservation_conflicts == 0
+    }
 }
 
 // ─── B3: colonists ──────────────────────────────────────────────────────────
@@ -1954,6 +1968,27 @@ impl BastionColonist {
             // otherwise.
             running: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod t1_16_tests {
+    use super::*;
+
+    #[test]
+    fn t1_16_board_conservation_verdict() {
+        let base = JobAudit {
+            total: 3,
+            claimed: 2,
+            unreachable: 0,
+            claims_distinct: true,
+            reservation_conflicts: 0,
+        };
+        assert!(base.conserved());
+        // A double-reserved item breaks conservation.
+        assert!(!JobAudit { reservation_conflicts: 1, ..base }.conserved());
+        // A shared claim ticket breaks conservation.
+        assert!(!JobAudit { claims_distinct: false, ..base }.conserved());
     }
 }
 
