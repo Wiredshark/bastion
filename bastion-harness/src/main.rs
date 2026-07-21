@@ -105,6 +105,12 @@ struct Args {
     #[arg(long, default_value_t = false)]
     deterministic_parallel: bool,
 
+    /// T0.64 (T0-004): legal-schedule fuzzer seed — sets a seed-derived
+    /// worker count (implies --deterministic-parallel). A campaign varies
+    /// this; every leg must match the serial FinalStateCertificate.
+    #[arg(long)]
+    schedule_seed: Option<u64>,
+
     /// Run the same seed twice in two isolated child processes, diff the
     /// aggregate dumps, and report DETERMINISM: OK/DIVERGED (exit 0/1).
     #[arg(long)]
@@ -11607,6 +11613,60 @@ fn mine_fidelity_scenario(args: &Args) -> ExitCode {
          teleports={failsafe_delta}",
         completion * 100.0
     );
+
+    // T0.61/T0.55 LIVE PROOF (option B): emit a FinalStateCertificate over
+    // the AUTHORITATIVE mf state — per-colonist leaves (key npc/<name>) +
+    // one scenario-outcome leaf — through the T0.53 domain-hash substrate.
+    // This is the packet's intended equivalence INTERFACE: the serial and
+    // --schedule-seed parallel legs must produce an identical durable
+    // composite (the byte-identity the svp pairs prove, now certified at
+    // the canonical-logical-state level rather than tape bytes).
+    {
+        use common::state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        };
+        let mut leaves: Vec<MerkleLeaf> = per_colonist
+            .iter()
+            .map(|entry| {
+                let name = entry
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("<unknown>");
+                let mut hasher = DomainHasher::new("bastion/domain/colonist/v1/sha256");
+                hasher.field(entry.to_string().as_bytes());
+                MerkleLeaf {
+                    key: format!("npc/{name}"),
+                    hash: hasher.finish(),
+                }
+            })
+            .collect();
+        // The scenario-outcome leaf: the authoritative aggregate (dug /
+        // remaining / completion bits / claims / done designations).
+        let mut outcome = DomainHasher::new("bastion/domain/mf-outcome/v1/sha256");
+        outcome.field(&(dug as u64).to_le_bytes());
+        outcome.field(&(remaining as u64).to_le_bytes());
+        outcome.field(&completion.to_bits().to_le_bytes());
+        outcome.field(&(claims_delta as i64).to_le_bytes());
+        outcome.field(&(done_delta as i64).to_le_bytes());
+        leaves.push(MerkleLeaf {
+            key: "scenario/mf-outcome".to_string(),
+            hash: outcome.finish(),
+        });
+        let durable = category_root(DomainCategory::Durable, leaves);
+        let certificate = FinalStateCertificate {
+            schema: "bastion/final-state-certificate/v1".to_string(),
+            world_seed: args.seed,
+            tick: elapsed,
+            durable_composite: durable,
+            // The harness has no separate rebuildable-index tier to certify.
+            rebuildable_integrity: IntegrityHash(DomainHash([0u8; 32]).0),
+        };
+        println!(
+            "MF-CERTIFICATE: {}",
+            serde_json::to_string(&certificate).unwrap_or_default()
+        );
+    }
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
