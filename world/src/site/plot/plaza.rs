@@ -451,7 +451,7 @@ impl Structure for Plaza {
             }
         }
 
-        let rng = &mut rand::rng();
+        let rng = &mut super::plot_render_rng(self.aabr.center(), 0x21A2_000E);
         if rng.random_bool(0.5) {
             let spec = [
                 "common.entity.wild.peaceful.cat",

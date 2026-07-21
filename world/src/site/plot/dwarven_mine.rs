@@ -439,7 +439,8 @@ fn spawn_entities(
 }
 
 fn spawn_random_entity(pos: Vec3<i32>, painter: &Painter, rot: u8) {
-    let mut rng = rand::rng();
+    // DET-RNG-006: position-keyed, not OS entropy (see plot_render_rng).
+    let mut rng = super::plot_render_rng(pos.xy(), 0xD3A6_0017);
 
     let entities = [
         "common.entity.dungeon.dwarven_quarry.miner",
