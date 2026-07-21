@@ -57,6 +57,7 @@ pub mod async_work;
 pub mod causal_graph;
 pub mod causal_record;
 pub mod command_protocol;
+pub mod conservation_saga;
 pub mod content_manifest;
 pub mod run_equivalence;
 pub mod state_hash;
