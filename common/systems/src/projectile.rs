@@ -136,7 +136,19 @@ impl<'a> System<'a> for Sys {
             let mut projectile_vanished: bool = false;
 
             // Hit entity
-            for (&other, &pos_hit_other) in physics.touch_entities.iter() {
+            // DET-PHY-011 (v5 deep-pass, Critical): canonical target order —
+            // touch_entities is a HashMap, so which entity a
+            // piercing-limited projectile hit FIRST (before
+            // projectile_vanished stops the loop) was process-hash order.
+            // Sort candidates by stable Uid: the winner is a pure function
+            // of the contact set.
+            let mut touch_targets: Vec<_> = physics
+                .touch_entities
+                .iter()
+                .map(|(&other, &pos_hit_other)| (other, pos_hit_other))
+                .collect();
+            touch_targets.sort_unstable_by_key(|(other, _)| other.0.get());
+            for (other, pos_hit_other) in touch_targets {
                 let same_group = projectile_owner
                     // Note: somewhat inefficient since we do the lookup for every touching
                     // entity, but if we pull this out of the loop we would want to do it only
