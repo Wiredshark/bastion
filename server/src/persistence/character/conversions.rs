@@ -94,11 +94,22 @@ pub fn convert_items_to_database_items(
 
     // Use Breadth-first search to recurse into containers/modular weapons to store
     // their parts
-    let mut bfs_queue: VecDeque<_> = inventory
+    // DET-PER-025 (v5 deep-pass, Critical): canonicalize the BFS seed by its
+    // position key. New item ids are assigned in pop_front order below, so the
+    // id->item mapping was dependent on the per-source iteration order (the
+    // recipe-book iterator in particular is not guaranteed canonical) even
+    // though the final upsert Vec is sorted by (depth, item_id). Every seed
+    // entry is a depth-0 root, so reordering them preserves the
+    // parent-before-child BFS invariant; children are already enqueued in
+    // index order. New-item id assignment is now a pure function of the item
+    // set.
+    let mut bfs_seed = inventory
         .chain(loadout)
         .chain(overflow_items)
         .chain(recipe_book)
-        .collect();
+        .collect::<Vec<_>>();
+    bfs_seed.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut bfs_queue: VecDeque<_> = bfs_seed.into();
     let mut upserts = Vec::new();
     let mut depth = HashMap::new();
     depth.insert(inventory_container_id, 0);
