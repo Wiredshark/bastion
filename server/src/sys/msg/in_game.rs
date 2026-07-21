@@ -64,10 +64,22 @@ event_emitters! {
     }
 }
 
+// DET-EVT-005 (v5 deep-pass): events produced inside the parallel per-client
+// handler are BUFFERED here and emitted in the sorted commit phase — their
+// cross-client bus order was worker-completion order (the T0.29 stable merge
+// ties on (epoch, producer-site, worker-local seq) for one par site).
+enum DeferredInGameEvent {
+    ExitIngame(event::ExitIngameEvent),
+    SiteInfo(event::RequestSiteInfoEvent),
+    MapMarker(event::UpdateMapMarkerEvent),
+    BattleMode(event::SetBattleModeEvent),
+    Disconnect(event::ClientDisconnectEvent),
+}
+
 impl Sys {
     #[expect(clippy::too_many_arguments)]
     fn handle_client_in_game_msg(
-        emitters: &mut Emitters,
+        deferred_events: &mut Vec<DeferredInGameEvent>,
         entity: specs::Entity,
         client: &Client,
         maybe_presence: &mut Option<&mut Presence>,
@@ -126,7 +138,7 @@ impl Sys {
         match msg {
             // Go back to registered state (char selection screen)
             ClientGeneral::ExitInGame => {
-                emitters.emit(event::ExitIngameEvent { entity });
+                deferred_events.push(DeferredInGameEvent::ExitIngame(event::ExitIngameEvent { entity }));
                 client.send(ServerGeneral::ExitInGameSuccess)?;
                 *maybe_presence = None;
             },
@@ -243,7 +255,7 @@ impl Sys {
                     .transpose();
             },
             ClientGeneral::RequestSiteInfo(id) => {
-                emitters.emit(event::RequestSiteInfoEvent { entity, id });
+                deferred_events.push(DeferredInGameEvent::SiteInfo(event::RequestSiteInfoEvent { entity, id }));
             },
             ClientGeneral::RequestPlayerPhysics {
                 server_authoritative,
@@ -258,7 +270,7 @@ impl Sys {
                 presence.lossy_terrain_compression = lossy_terrain_compression;
             },
             ClientGeneral::UpdateMapMarker(update) => {
-                emitters.emit(event::UpdateMapMarkerEvent { entity, update });
+                deferred_events.push(DeferredInGameEvent::MapMarker(event::UpdateMapMarkerEvent { entity, update }));
             },
             ClientGeneral::SpectatePosition(pos) => {
                 if let Some(admin) = maybe_admin
@@ -571,10 +583,9 @@ impl Sys {
                 ))?;
             },
             ClientGeneral::SetBattleMode(battle_mode) => {
-                emitters.emit(event::SetBattleModeEvent {
-                    entity,
-                    battle_mode,
-                });
+                deferred_events.push(DeferredInGameEvent::BattleMode(
+                    event::SetBattleModeEvent { entity, battle_mode },
+                ));
             },
             ClientGeneral::RequestCharacterList
             | ClientGeneral::CreateCharacter { .. }
@@ -589,9 +600,11 @@ impl Sys {
             | ClientGeneral::Terminate
             | ClientGeneral::RequestPlugins(_) => {
                 debug!("Kicking possibly misbehaving client due to invalid client in game request");
-                emitters.emit(event::ClientDisconnectEvent(
-                    entity,
-                    common::comp::DisconnectReason::NetworkError,
+                deferred_events.push(DeferredInGameEvent::Disconnect(
+                    event::ClientDisconnectEvent(
+                        entity,
+                        common::comp::DisconnectReason::NetworkError,
+                    ),
                 ));
             },
         }
@@ -850,8 +863,10 @@ impl<'a> System<'a> for Sys {
             // NOTE: Required because Specs has very poor work splitting for sparse joins.
             .par_bridge()
             .map_init(
-                || events.get_emitters(),
-                |emitters, (
+                // DET-EVT-005: the parallel section emits NOTHING — all
+                // events buffer per client and emit at the sorted commit.
+                || (),
+                |(), (
                     entity,
                     client,
                     mut maybe_presence,
@@ -884,9 +899,10 @@ impl<'a> System<'a> for Sys {
                     let mut bastion_designations = Vec::new();
                     let mut bastion_inspects = Vec::new();
                     let mut terrain_writes = Vec::new();
+                    let mut deferred_events = Vec::new();
                     let _ = super::try_recv_all(client, 2, |client, msg| {
                         Self::handle_client_in_game_msg(
-                            emitters,
+                            &mut deferred_events,
                             entity,
                             client,
                             &mut clearable_maybe_presence,
@@ -1055,16 +1071,18 @@ impl<'a> System<'a> for Sys {
                         bastion_designations,
                         bastion_inspects_update,
                         terrain_writes,
+                        deferred_events,
                     )
                 },
             )
             // NOTE: Would be nice to combine this with the map_init somehow, but I'm not sure if
             // that's possible.
-            .filter(|(_, x, y, z, w, v, d, i, tw)| {
+            .filter(|(_, x, y, z, w, v, d, i, tw, ev)| {
                 x.is_some() || y.is_some() || z.is_some() || w.is_some() || v.is_some()
                     || !d.is_empty()
                     || i.is_some()
                     || !tw.is_empty()
+                    || !ev.is_empty()
             })
             // NOTE: I feel like we shouldn't actually need to allocate here, but hopefully this
             // doesn't turn out to be important as there shouldn't be that many connected clients.
@@ -1097,7 +1115,20 @@ impl<'a> System<'a> for Sys {
                 bastion_designation_updates,
                 bastion_inspects_update,
                 terrain_writes,
+                deferred_events,
             )| {
+                // DET-EVT-005: emit the buffered events in the SORTED commit
+                // order — bus chronology is now a pure function of the
+                // client set, not worker timing.
+                for ev in deferred_events.drain(..) {
+                    match ev {
+                        DeferredInGameEvent::ExitIngame(e) => post_emitters.emit(e),
+                        DeferredInGameEvent::SiteInfo(e) => post_emitters.emit(e),
+                        DeferredInGameEvent::MapMarker(e) => post_emitters.emit(e),
+                        DeferredInGameEvent::BattleMode(e) => post_emitters.emit(e),
+                        DeferredInGameEvent::Disconnect(e) => post_emitters.emit(e),
+                    }
+                }
                 // DET-ECS-015: apply the deferred terrain writes in the
                 // SORTED commit order - same-cell conflicts resolve by the
                 // canonical client order (first writer wins via try_set),
