@@ -244,6 +244,94 @@ impl<I> AsyncWorkQueue<I> {
     }
 }
 
+/// T0.51 step 4 (T0-004 packet): one completed unit of work as the worker
+/// reports it — carried verbatim into the owner-phase merge; nothing here
+/// touches live state.
+#[derive(Clone, Debug)]
+pub struct CompletedWork<O, E> {
+    pub request_id: AsyncRequestId,
+    pub owner: AsyncOwnerKey,
+    pub generation: AsyncGeneration,
+    pub terminal: AsyncTerminal<O, E>,
+}
+
+/// Why a completed unit was rejected at the merge.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum CompletionRejection {
+    /// Generation/key validation failed — the owner moved on (the packet's
+    /// Superseded path at acceptance time).
+    Stale,
+    /// This request id already reached a terminal — exactly-once violated
+    /// by a duplicate report; the duplicate is refused.
+    DuplicateTerminal,
+}
+
+/// T0.51 step 4: the owner-phase completion buffer — workers push in
+/// completion order (meaningless), the owner phase drains at its named
+/// point: SORT BY SEMANTIC KEY (owner, purpose, request id — never
+/// arrival), enforce terminal-uniqueness, validate via the acceptance
+/// predicate, and hand accepted outputs onward (the caller's command
+/// journal). Completion arrival order is never semantic authority.
+#[derive(Clone, Debug, Default)]
+pub struct AsyncCompletionBuffer<O, E> {
+    completed: Vec<CompletedWork<O, E>>,
+    /// Terminal-uniqueness ledger (ids are monotonic; prune below the
+    /// caller's outstanding watermark to bound memory).
+    terminalized: std::collections::BTreeSet<AsyncRequestId>,
+}
+
+impl<O, E> AsyncCompletionBuffer<O, E> {
+    /// Worker-side push — any thread order; order is discarded at drain.
+    pub fn push(&mut self, work: CompletedWork<O, E>) { self.completed.push(work); }
+
+    /// The named owner-phase drain. `current` reports the owner's live
+    /// (generation, already_terminal) — `None` = owner gone (stale).
+    /// Returns (accepted in semantic order, rejections in the same order).
+    #[expect(clippy::type_complexity, reason = "the merge's two result lanes")]
+    pub fn drain_at_owner_phase(
+        &mut self,
+        mut current: impl FnMut(AsyncOwnerKey) -> Option<(AsyncGeneration, bool)>,
+    ) -> (
+        Vec<(AsyncOwnerKey, AsyncRequestId, AsyncTerminal<O, E>)>,
+        Vec<(AsyncRequestId, CompletionRejection)>,
+    ) {
+        let mut batch = core::mem::take(&mut self.completed);
+        // THE SEMANTIC MERGE KEY — never completion arrival.
+        batch.sort_by_key(|work| (work.owner, work.request_id));
+        let mut accepted = Vec::new();
+        let mut rejected = Vec::new();
+        for work in batch {
+            if self.terminalized.contains(&work.request_id) {
+                rejected.push((work.request_id, CompletionRejection::DuplicateTerminal));
+                continue;
+            }
+            self.terminalized.insert(work.request_id);
+            let live = current(work.owner);
+            let ok = live.is_some_and(|(generation, already_terminal)| {
+                accepts(
+                    work.owner,
+                    generation,
+                    work.owner,
+                    work.generation,
+                    already_terminal,
+                )
+            });
+            if ok {
+                accepted.push((work.owner, work.request_id, work.terminal));
+            } else {
+                rejected.push((work.request_id, CompletionRejection::Stale));
+            }
+        }
+        (accepted, rejected)
+    }
+
+    /// Prune the uniqueness ledger below the caller's minimum outstanding
+    /// request id (everything below can never legitimately complete again).
+    pub fn prune_terminalized_below(&mut self, watermark: AsyncRequestId) {
+        self.terminalized = self.terminalized.split_off(&watermark);
+    }
+}
+
 #[cfg(test)]
 mod t0_50_tests {
     use super::*;
@@ -354,5 +442,45 @@ mod t0_50_tests {
         // Shutdown drains the remainder to terminals.
         assert_eq!(queue.drain_for_shutdown(), vec![AsyncRequestId(1)]);
         assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn t0_51_owner_phase_merge_is_semantic_order_validated_exactly_once() {
+        let mut buffer: AsyncCompletionBuffer<u32, ()> = AsyncCompletionBuffer::default();
+        let completed = |id: u64, owner: u64, input_generation: u64| CompletedWork {
+            request_id: AsyncRequestId(id),
+            owner: key(owner, 0),
+            generation: generation(input_generation),
+            terminal: AsyncTerminal::Succeeded(id as u32),
+        };
+        // Completion ARRIVAL order deliberately scrambled + one stale + one
+        // duplicate.
+        buffer.push(completed(9, 2, 0));
+        buffer.push(completed(3, 1, 0));
+        buffer.push(completed(5, 1, 7)); // stale: owner is at input_generation 0
+        buffer.push(completed(3, 1, 0)); // duplicate terminal
+        let (accepted, rejected) =
+            buffer.drain_at_owner_phase(|_| Some((generation(0), false)));
+        let ids: Vec<u64> = accepted.iter().map(|(_, id, _)| id.0).collect();
+        // Semantic order: owner 1 before owner 2; ids ascending within.
+        assert_eq!(ids, vec![3, 9]);
+        assert_eq!(rejected, vec![
+            (AsyncRequestId(3), CompletionRejection::DuplicateTerminal),
+            (AsyncRequestId(5), CompletionRejection::Stale),
+        ]);
+        // Owner-gone results are stale, never accepted.
+        buffer.push(completed(11, 3, 0));
+        let (accepted, rejected) = buffer.drain_at_owner_phase(|_| None);
+        assert!(accepted.is_empty());
+        assert_eq!(rejected, vec![(AsyncRequestId(11), CompletionRejection::Stale)]);
+        // Pruning bounds the ledger without forgetting live ids.
+        buffer.prune_terminalized_below(AsyncRequestId(10));
+        buffer.push(completed(9, 2, 0));
+        let (accepted, _) = buffer.drain_at_owner_phase(|_| Some((generation(0), false)));
+        // Id 9 was pruned below the watermark — the caller guarantees no
+        // legitimate re-completion below it, so this duplicate slips the
+        // ledger BY DESIGN (documented contract: watermark = min
+        // outstanding).
+        assert_eq!(accepted.len(), 1);
     }
 }
