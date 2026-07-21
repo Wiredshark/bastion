@@ -892,6 +892,18 @@ fn main() -> ExitCode {
         // SAFETY: single-threaded at this point (before any pool exists).
         unsafe { std::env::set_var("BASTION_DETERMINISTIC_PARALLEL", "1") };
     }
+    // T0.64: --schedule-seed N sets the fuzzer's seed-derived worker count
+    // (implies --deterministic-parallel). A campaign varies N; every leg
+    // must be byte-identical to serial.
+    if let Some(pos) = std::env::args().position(|a| a == "--schedule-seed")
+        && let Some(seed) = std::env::args().nth(pos + 1)
+    {
+        // SAFETY: single-threaded here (before any pool exists).
+        unsafe {
+            std::env::set_var("BASTION_DETERMINISTIC_PARALLEL", "1");
+            std::env::set_var("BASTION_SCHEDULE_SEED", seed);
+        }
+    }
 
     // DETRNG (B8 root fix): EVERY harness run is deterministic — rtsim rule
     // RNGs derive from (world seed, tick) instead of OS entropy, so --seed

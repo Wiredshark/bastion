@@ -208,6 +208,23 @@ impl State {
         let deterministic_parallel = std::env::var_os("BASTION_DETERMINISTIC_PARALLEL").is_some();
         let num_threads = if execution_mode.is_deterministic() && !deterministic_parallel {
             1
+        } else if execution_mode.is_deterministic() && deterministic_parallel {
+            // T0.64 (T0-004 packet, step 10): the legal-schedule FUZZER —
+            // BASTION_SCHEDULE_SEED varies the WORKER COUNT (a declared
+            // scheduling freedom: any worker count is legal, shred still
+            // enforces the phase manifest's dependencies). A campaign runs
+            // one serial baseline + K parallel legs at seed-derived thread
+            // counts and asserts every leg is byte-identical to serial; a
+            // diverging seed is the minimal repro (the shrink is already a
+            // single seed). Unset seed = full num_cpus (the plain probe).
+            match std::env::var("BASTION_SCHEDULE_SEED").ok().and_then(|s| s.parse::<u64>().ok()) {
+                Some(seed) => {
+                    let max = num_cpus::get().max(2);
+                    // Seed-derived worker count in [2, max].
+                    2 + (seed as usize % (max - 1).max(1))
+                },
+                None => num_cpus::get().max(common::consts::MIN_RECOMMENDED_RAYON_THREADS),
+            }
         } else {
             num_cpus::get().max(common::consts::MIN_RECOMMENDED_RAYON_THREADS)
         };
