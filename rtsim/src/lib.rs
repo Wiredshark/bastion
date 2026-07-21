@@ -175,11 +175,23 @@ pub fn enable_deterministic_rtsim() {
 pub fn tick_rng(world_seed: u32, tick: u64, salt: u32) -> rand_chacha::ChaChaRng {
     use rand::prelude::*;
     if deterministic_rtsim_enabled() {
-        let mut s = [0u8; 32];
-        s[0..4].copy_from_slice(&world_seed.to_le_bytes());
-        s[4..12].copy_from_slice(&tick.to_le_bytes());
-        s[12..16].copy_from_slice(&salt.to_le_bytes());
-        rand_chacha::ChaChaRng::from_seed(s)
+        // RNG-DEEP-003 (determinism audit): the manual byte-packing left 16
+        // of the 32 seed bytes ZERO (world_seed 4 + tick 8 + salt 4 = 16),
+        // and the salt was an untyped u32 — two call sites passing the same
+        // value collided. Derive the FULL 32-byte seed by domain-separated
+        // hashing of the key material through the shared DomainHasher
+        // (Sha256: portable, all 32 bytes populated, length-prefixed fields
+        // so distinct (seed, tick, salt) can never alias). Return type stays
+        // ChaChaRng — no caller ripple. (The larger "shared RngKey / typed
+        // domain enum / ChaCha8" refactor the deep-research doc envisions is
+        // a separate scoped follow-up; this closes the two concrete defects.)
+        let mut h = common::state_hash::DomainHasher::new(
+            "bastion/domain/rtsim-tick-rng/v1/sha256",
+        );
+        h.field(&world_seed.to_le_bytes());
+        h.field(&tick.to_le_bytes());
+        h.field(&salt.to_le_bytes());
+        rand_chacha::ChaChaRng::from_seed(h.finish().0)
     } else {
         rand_chacha::ChaChaRng::from_seed(rand::rng().random::<[u8; 32]>())
     }
