@@ -121,7 +121,81 @@ pub fn get_npc_name(npc_type: NpcKind, body_type: Option<BodyType>) -> String {
     }
 }
 
-/// Randomly generates a body associated with this NPC kind.
+/// RNG-P3-037 (determinism audit): the injectable variant — generates the
+/// body from the CALLER'S stream via each family's `random_with`, so
+/// authoritative sim paths own their draws. `kind_to_body` below (ambient)
+/// remains ONLY for the operator chat-command path (`/spawn` parsing), which
+/// is an external input, not sim-loop state.
+pub fn kind_to_body_with(kind: NpcKind, rng: &mut impl rand::RngExt) -> Body {
+    use rand::prelude::IndexedRandom;
+    match kind {
+        NpcKind::Humanoid => {
+            let species = *comp::humanoid::ALL_SPECIES.choose(rng).unwrap();
+            comp::humanoid::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Pig => {
+            let species = *comp::quadruped_small::ALL_SPECIES.choose(rng).unwrap();
+            comp::quadruped_small::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Wolf => {
+            let species = *comp::quadruped_medium::ALL_SPECIES.choose(rng).unwrap();
+            comp::quadruped_medium::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Duck => {
+            let species = *comp::bird_medium::ALL_SPECIES.choose(rng).unwrap();
+            comp::bird_medium::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Phoenix => {
+            let species = *comp::bird_large::ALL_SPECIES.choose(rng).unwrap();
+            comp::bird_large::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Clownfish => {
+            let species = *comp::fish_small::ALL_SPECIES.choose(rng).unwrap();
+            comp::fish_small::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Marlin => {
+            let species = *comp::fish_medium::ALL_SPECIES.choose(rng).unwrap();
+            comp::fish_medium::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Ogre => {
+            let species = *comp::biped_large::ALL_SPECIES.choose(rng).unwrap();
+            comp::biped_large::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Gnome => {
+            let species = *comp::biped_small::ALL_SPECIES.choose(rng).unwrap();
+            comp::biped_small::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Archaeos => {
+            let species = *comp::theropod::ALL_SPECIES.choose(rng).unwrap();
+            comp::theropod::Body::random_with(rng, &species).into()
+        },
+        NpcKind::StoneGolem => {
+            let species = *comp::golem::ALL_SPECIES.choose(rng).unwrap();
+            comp::golem::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Reddragon => {
+            let species = *comp::dragon::ALL_SPECIES.choose(rng).unwrap();
+            comp::dragon::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Crocodile => {
+            let species = *comp::quadruped_low::ALL_SPECIES.choose(rng).unwrap();
+            comp::quadruped_low::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Tarantula => {
+            let species = *comp::arthropod::ALL_SPECIES.choose(rng).unwrap();
+            comp::arthropod::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Crab => {
+            let species = *comp::crustacean::ALL_SPECIES.choose(rng).unwrap();
+            comp::crustacean::Body::random_with(rng, &species).into()
+        },
+        NpcKind::Plugin => comp::plugin::Body::random().into(),
+    }
+}
+
+/// Randomly generates a body associated with this NPC kind (AMBIENT OS
+/// entropy — operator-command path only; sim paths use
+/// [`kind_to_body_with`]).
 pub fn kind_to_body(kind: NpcKind) -> Body {
     match kind {
         NpcKind::Humanoid => comp::humanoid::Body::random().into(),

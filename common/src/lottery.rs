@@ -65,7 +65,13 @@ impl<T> From<Vec<(f32, T)>> for Lottery<T> {
 
 impl<T> Lottery<T> {
     pub fn choose_seeded(&self, seed: u32) -> &T {
-        let x = ((seed % 65536) as f32 / 65536.0) * self.total;
+        // RNG-P3-003 (determinism audit): use the seed's FULL 32-bit range —
+        // the old `% 65536` collapsed every seed into 65,536 outcomes before
+        // scaling by the cumulative weights, so entries whose weight
+        // boundaries were finer than total/65536 could never be selected.
+        // f64 keeps all 32 bits exact through the division; the quotient is
+        // strictly < 1.0 so x < total (the end-index case stays impossible).
+        let x = ((seed as f64 / (u32::MAX as f64 + 1.0)) * self.total as f64) as f32;
         &self.items[self
             .items
             .binary_search_by(|(y, _)| y.partial_cmp(&x).unwrap())
@@ -111,7 +117,26 @@ pub fn distribute_many<T: Copy + Eq + Hash, I>(
 
     let mut total_weight = 0.0;
 
-    let mut participants = participants
+    // RNG-P3-006 (determinism audit): CANONICAL participant order. The f32
+    // cumulative prefix sums (and thus which participant each draw maps to)
+    // depended on the caller's insertion order — the live caller iterates a
+    // HashMap, so the same draws could award loot to different participants
+    // run-to-run. Sort by (weight, stable identity hash) — a total order
+    // using only the existing T: Hash bound (stable_hash_u64 is the
+    // DET-ADD-008 version-stable hasher), making the interval assignment a
+    // pure function of the participant SET.
+    let mut canonical: Vec<(f32, T)> = participants.into_iter().collect();
+    canonical.sort_by(|a, b| {
+        a.0.total_cmp(&b.0).then_with(|| {
+            crate::state_hash::stable_hash_u64("bastion/domain/loot-participant/v1", &a.1)
+                .cmp(&crate::state_hash::stable_hash_u64(
+                    "bastion/domain/loot-participant/v1",
+                    &b.1,
+                ))
+        })
+    });
+
+    let mut participants = canonical
         .into_iter()
         .map(|(weight, participant)| Participant {
             weight,
@@ -349,7 +374,13 @@ impl<T: AsRef<str>> LootSpec<T> {
             Self::LootTable(table) => {
                 let loot_spec = Lottery::<LootSpec<String>>::load_expect(table.as_ref()).read();
                 for _ in 0..amount {
-                    loot_spec.choose().to_items_inner(rng, 1, items)
+                    // RNG-P3-004 (determinism audit): draw from the CALLER'S
+                    // rng, not the ambient OS-entropy `choose()` — the nested
+                    // table severed stream ownership, so the parent's seeded
+                    // stream no longer controlled nested loot.
+                    loot_spec
+                        .choose_seeded(rng.random())
+                        .to_items_inner(rng, 1, items)
                 }
             },
             Self::Lottery(table) => {
@@ -361,7 +392,10 @@ impl<T: AsRef<str>> LootSpec<T> {
                 );
 
                 for _ in 0..amount {
-                    lottery.choose().to_items_inner(rng, 1, items)
+                    // RNG-P3-004: caller's stream, as above.
+                    lottery
+                        .choose_seeded(rng.random())
+                        .to_items_inner(rng, 1, items)
                 }
             },
             Self::Nothing => {},

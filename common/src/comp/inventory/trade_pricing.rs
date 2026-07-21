@@ -1003,7 +1003,11 @@ impl TradePricing {
             if candidates.is_empty() {
                 break;
             }
-            let index = (rng.random::<f32>() * candidates.len() as f32).floor() as usize;
+            // RNG-P3-018 (determinism audit): integer index draw, not
+            // float-scale-and-floor — the f32 round-trip loses exactness for
+            // larger candidate lists (biased/unreachable indices) and couples
+            // the index to float rounding behavior. random_range is exact.
+            let index = rng.random_range(0..candidates.len());
             let result2 = candidates[index];
             let amount: u32 = if result2.stackable {
                 let max_amount = result2
