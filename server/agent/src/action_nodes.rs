@@ -1227,9 +1227,18 @@ impl AgentData<'_> {
         // TODO: choose target by more than just distance
         let common::CachedSpatialGrid(grid) = self.cached_spatial_grid;
 
-        let entities_nearby = grid
+        // DET-AIT-001 (v8 npc-combat-targeting, Critical): the spatial grid
+        // yields candidates in cell-traversal order. That order then drives
+        // tie-breaking in target selection AND the call order of the
+        // per-candidate helper RNG (`can_sense_directly_near`) — both
+        // authoritative. Sort the candidates by Uid so target choice is a pure
+        // function of the candidate SET, not grid traversal order (this also
+        // makes the shared helper-RNG cursor advance in a canonical order,
+        // addressing the ordering half of DET-AIT-002).
+        let mut entities_nearby = grid
             .in_circle_aabr(self.pos.0.xy(), agent.psyche.search_dist())
             .collect_vec();
+        entities_nearby.sort_unstable_by_key(|e| read_data.uids.get(*e).map(|u| u.0));
 
         let get_pos = |entity| read_data.positions.get(entity);
         let get_enemy = |(entity, attack_target): (EcsEntity, bool)| {
