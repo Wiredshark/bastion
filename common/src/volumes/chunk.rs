@@ -148,9 +148,18 @@ impl<V, S: VolSize, M> Chunk<V, S, M> {
             });
         // Now, find the block with max frequency in the HashMap and make that our new
         // default.
+        // T0.46 (master build order; T0-003): equal-frequency ties break on
+        // the smallest member group index (each value's group list is
+        // ascending by construction), never process-seeded HashMap order —
+        // the chosen default decides the chunk's serialized layout.
         let (new_default, default_groups) = if let Some((new_default, default_groups)) = map
             .into_iter()
-            .max_by_key(|(_, default_groups)| default_groups.len())
+            .max_by_key(|(_, default_groups)| {
+                (
+                    default_groups.len(),
+                    core::cmp::Reverse(default_groups.first().copied().unwrap_or(usize::MAX)),
+                )
+            })
         {
             (new_default.clone(), default_groups)
         } else {
