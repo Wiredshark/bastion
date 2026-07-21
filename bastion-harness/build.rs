@@ -4,6 +4,22 @@
 use std::process::Command;
 
 fn main() {
+    // DET-BLD-023 (v6 deep-pass, Critical): ambient-RUSTFLAGS witness. An
+    // environment RUSTFLAGS OVERRIDES the repository target rustflags
+    // entirely (cargo precedence), silently changing codegen/link behavior
+    // of the certified binary. Detect and warn LOUDLY so no certified build
+    // carries invisible ambient flags; the VM/cert lane treats the warning
+    // as a red flag.
+    for var in ["RUSTFLAGS", "CARGO_BUILD_RUSTFLAGS"] {
+        if let Ok(flags) = std::env::var(var) {
+            if !flags.trim().is_empty() {
+                println!(
+                    "cargo:warning=DET-BLD-023: ambient {var}={flags:?} overrides the                      repository target rustflags — this build is NOT flag-canonical"
+                );
+            }
+        }
+    }
+
     // Re-stamp on ANY new commit / checkout move — without this, a commit
     // touching only OTHER crates leaves the stamp stale while the exe is
     // fresh (the --print-git-hash pre-flight would false-alarm), and the
