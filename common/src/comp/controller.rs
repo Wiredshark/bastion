@@ -265,19 +265,54 @@ pub struct ControllerInputs {
     pub strafing: bool,
 }
 
+/// T0.22 (master build order; ledger #190): which scheduled consumer a
+/// staged command is addressed to — `Control` = `controller::Sys` (control
+/// events), `Behavior` = `character_behavior::Sys` (control actions). The
+/// phase tag plus the producer-local sequence is the envelope's identity;
+/// tick and actor are implicit (the frame stamp and the owning entity), and
+/// producer rank is carried by the DECLARED system schedule (T0.12/14/20
+/// edges) that fixes push order.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CommandPhase {
+    Control,
+    Behavior,
+}
+
+/// T0.22: the tagged command payload — one channel for what were two
+/// unrelated vecs, so CROSS-CHANNEL relative order is preserved by
+/// construction.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum CommandPayload {
+    Event(ControlEvent),
+    Action(ControlAction),
+}
+
+/// T0.22: one staged command in the envelope channel.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct QueuedCommand {
+    pub phase: CommandPhase,
+    /// Producer-local sequence within the current frame — monotonic across
+    /// BOTH phases (the cross-channel ordering witness).
+    pub seq: u32,
+    pub payload: CommandPayload,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Controller {
     pub inputs: ControllerInputs,
     pub queued_inputs: BTreeMap<InputKind, InputAttr>,
-    // T0.21 (master build order; ledger #151): the command buffers are
-    // PRIVATE — producers stage through the push_* API and consumers take
-    // whole frames at their scheduled drain points (`drain_events`,
-    // `take_actions`), which advance the frame stamp. The type now enforces
-    // what the T0.20 dispatcher edge declares: consumption is a frame
-    // operation, not ad-hoc vec surgery mid-phase.
-    // TODO: consider SmallVec
-    events: Vec<ControlEvent>,
-    actions: Vec<ControlAction>,
+    // T0.21 (ledger #151) + T0.22 (ledger #190): ONE private sequenced
+    // command channel. Producers stage through the push_* API (which tags
+    // phase + sequence); each scheduled consumer drains ITS phase from the
+    // shared frame at its dispatch point (`drain_events` = Control,
+    // `take_actions` = Behavior), exactly-once per phase, advancing the
+    // frame stamp. The type enforces what the T0.20 dispatcher edge
+    // declares, and the single channel preserves cross-channel relative
+    // order by construction.
+    commands: Vec<QueuedCommand>,
+    /// Producer-local sequence counter for the current frame.
+    #[serde(skip)]
+    seq: u32,
     /// Frame generation — incremented by each scheduled drain; staleness
     /// checks and pins read it.
     #[serde(skip)]
@@ -315,39 +350,88 @@ impl Controller {
         self.queued_inputs = Default::default();
     }
 
-    pub fn clear_events(&mut self) { self.events.clear(); }
+    pub fn clear_events(&mut self) {
+        self.commands
+            .retain(|command| command.phase != CommandPhase::Control);
+    }
 
-    /// T0.21: the EVENT consumer's scheduled drain — takes the whole frame
+    fn stage(&mut self, phase: CommandPhase, payload: CommandPayload) {
+        let seq = self.seq;
+        self.seq = self.seq.wrapping_add(1);
+        self.commands.push(QueuedCommand { phase, seq, payload });
+    }
+
+    /// T0.21/T0.22: the Control-phase consumer's scheduled drain — takes
+    /// this phase's entries from the shared frame (exactly-once per phase)
     /// and advances the generation.
     pub fn drain_events(&mut self) -> Vec<ControlEvent> {
         self.frame += 1;
-        core::mem::take(&mut self.events)
+        self.commands
+            .extract_if(.., |command| command.phase == CommandPhase::Control)
+            .filter_map(|command| match command.payload {
+                CommandPayload::Event(event) => Some(event),
+                CommandPayload::Action(_) => None,
+            })
+            .collect()
     }
 
-    /// T0.21: the ACTION consumer's scheduled drain — takes the whole frame
+    /// T0.21/T0.22: the Behavior-phase consumer's scheduled drain — takes
+    /// this phase's entries from the shared frame (exactly-once per phase)
     /// and advances the generation.
     pub fn take_actions(&mut self) -> Vec<ControlAction> {
         self.frame += 1;
-        core::mem::take(&mut self.actions)
+        self.commands
+            .extract_if(.., |command| command.phase == CommandPhase::Behavior)
+            .filter_map(|command| match command.payload {
+                CommandPayload::Action(action) => Some(action),
+                CommandPayload::Event(_) => None,
+            })
+            .collect()
     }
 
-    /// Wholesale action replacement (rider→mount redirection).
-    pub fn set_actions(&mut self, actions: Vec<ControlAction>) { self.actions = actions; }
+    /// Wholesale action replacement (rider→mount redirection): drops the
+    /// staged Behavior entries and stages the replacements in order.
+    pub fn set_actions(&mut self, actions: Vec<ControlAction>) {
+        self.commands
+            .retain(|command| command.phase != CommandPhase::Behavior);
+        for action in actions {
+            self.stage(CommandPhase::Behavior, CommandPayload::Action(action));
+        }
+    }
 
     /// Selective extraction (rider→mount input redirection) — explicit API
     /// so partial drains remain visible operations.
     pub fn extract_actions_if(
         &mut self,
-        pred: impl FnMut(&mut ControlAction) -> bool,
+        mut pred: impl FnMut(&mut ControlAction) -> bool,
     ) -> Vec<ControlAction> {
-        self.actions.extract_if(.., pred).collect()
+        self.commands
+            .extract_if(.., |command| match &mut command.payload {
+                CommandPayload::Action(action) => pred(action),
+                CommandPayload::Event(_) => false,
+            })
+            .filter_map(|command| match command.payload {
+                CommandPayload::Action(action) => Some(action),
+                CommandPayload::Event(_) => None,
+            })
+            .collect()
     }
 
-    pub fn has_queued_events(&self) -> bool { !self.events.is_empty() }
+    pub fn has_queued_events(&self) -> bool {
+        self.commands
+            .iter()
+            .any(|command| command.phase == CommandPhase::Control)
+    }
+
+    /// T0.22: read-only view of the staged envelope in producer order — the
+    /// cross-channel ordering witness (tests/diagnostics).
+    pub fn staged_commands(&self) -> &[QueuedCommand] { &self.commands }
 
     pub fn frame(&self) -> u64 { self.frame }
 
-    pub fn push_event(&mut self, event: ControlEvent) { self.events.push(event); }
+    pub fn push_event(&mut self, event: ControlEvent) {
+        self.stage(CommandPhase::Control, CommandPayload::Event(event));
+    }
 
     pub fn push_utterance(&mut self, utterance: UtteranceKind) {
         self.push_event(ControlEvent::Utterance(utterance));
@@ -361,7 +445,9 @@ impl Controller {
         self.push_event(ControlEvent::InitiateInvite(uid, invite));
     }
 
-    pub fn push_action(&mut self, action: ControlAction) { self.actions.push(action); }
+    pub fn push_action(&mut self, action: ControlAction) {
+        self.stage(CommandPhase::Behavior, CommandPayload::Action(action));
+    }
 
     pub fn push_basic_input(&mut self, input: InputKind) {
         self.push_action(ControlAction::basic_input(input));
@@ -408,5 +494,36 @@ mod t0_21_tests {
         c.push_event(ControlEvent::EnableLantern);
         assert!(c.has_queued_events());
         assert_eq!(c.drain_events().len(), 1);
+    }
+
+    /// T0.22: the single channel preserves CROSS-CHANNEL relative order
+    /// (the seq witness), and each phase drains exactly its own entries.
+    #[test]
+    fn t0_22_envelope_preserves_cross_channel_order() {
+        let mut c = Controller::default();
+        c.push_event(ControlEvent::EnableLantern);
+        c.push_basic_input(InputKind::Jump);
+        c.push_event(ControlEvent::DisableLantern);
+
+        let seqs: Vec<(CommandPhase, u32)> = c
+            .staged_commands()
+            .iter()
+            .map(|q| (q.phase, q.seq))
+            .collect();
+        assert_eq!(seqs, vec![
+            (CommandPhase::Control, 0),
+            (CommandPhase::Behavior, 1),
+            (CommandPhase::Control, 2),
+        ]);
+
+        // Phase drains are disjoint views of the one frame.
+        let events = c.drain_events();
+        assert_eq!(events, vec![
+            ControlEvent::EnableLantern,
+            ControlEvent::DisableLantern
+        ]);
+        let actions = c.take_actions();
+        assert_eq!(actions.len(), 1);
+        assert!(c.staged_commands().is_empty());
     }
 }
