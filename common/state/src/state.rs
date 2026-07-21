@@ -837,6 +837,16 @@ impl State {
         // server update, so we do not want to panic in that scenario.
         if scheduled_changes.last_poll_time < current_time {
             scheduled_changes.last_poll_time = current_time;
+            // DET-TER-013 (v5 deep-pass, disposition): the same-cell
+            // precedence here is IMPLICIT but TOTAL and deterministic —
+            // batches poll in (due-time, insertion-sequence) order from the
+            // timer queue, and extend() overwrites, so the LATEST-due
+            // scheduled write wins a cell, and any scheduled write beats the
+            // live tick's earlier entry for that cell (scheduled-over-live).
+            // Each batch is a position-keyed map (no intra-batch duplicate
+            // cells), so batch-internal iteration order cannot matter.
+            // Declared here so the policy is explicit; a stamped
+            // per-operation schedule remains optional hardening.
             while let Some(changes) = scheduled_changes.changes.poll(current_time) {
                 modified_blocks.extend(changes.iter());
             }

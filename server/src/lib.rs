@@ -4646,7 +4646,6 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        bastion_flight_recorder::finalize();
         self.state
             .notify_players(ServerGeneral::Disconnect(DisconnectReason::Shutdown));
 
@@ -4664,6 +4663,12 @@ impl Drop for Server {
             debug!("Saving rtsim state...");
             self.state.ecs().write_resource::<rtsim::RtSim>().save(true);
         }
+
+        // DET-TER-018 (v5 deep-pass): the recorder finalizes LAST — after
+        // terrain persistence unload and the rtsim save — so the tape's
+        // terminal record covers the true shutdown persistence sequence
+        // instead of claiming finalization before persistence ran.
+        bastion_flight_recorder::finalize();
     }
 }
 
