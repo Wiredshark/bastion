@@ -207,7 +207,13 @@ impl TerrainPersistence {
     }
 
     pub fn unload_all(&mut self) {
-        for key in self.chunks.keys().copied().collect::<Vec<_>>() {
+        // DET-PER-033 (v5 deep-pass, High): unload in canonical chunk-key
+        // order. `self.chunks` is a HashMap whose key iteration rode the
+        // process hash seed, so the persistence write sequence (and any
+        // order-sensitive side effect in `unload_chunk`) was non-canonical.
+        let mut keys = self.chunks.keys().copied().collect::<Vec<_>>();
+        keys.sort_unstable_by_key(|k| (k.x, k.y));
+        for key in keys {
             self.unload_chunk(key);
         }
     }
