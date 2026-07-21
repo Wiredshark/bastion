@@ -83,14 +83,16 @@ pub fn load_items(connection: &Connection, root: i64) -> Result<Vec<Item>, Persi
             item_definition_id,
             stack_size,
             position,
-            properties
+            properties,
+            depth
         ) AS (
             SELECT  item_id,
                     parent_container_item_id,
                     item_definition_id,
                     stack_size,
                     position,
-                    properties
+                    properties,
+                    0
             FROM item
             WHERE parent_container_item_id = ?1
             UNION ALL
@@ -99,12 +101,20 @@ pub fn load_items(connection: &Connection, root: i64) -> Result<Vec<Item>, Persi
                     item.item_definition_id,
                     item.stack_size,
                     item.position,
-                    item.properties
+                    item.properties,
+                    items_tree.depth + 1
             FROM item, items_tree
             WHERE item.parent_container_item_id = items_tree.item_id
         )
+        -- DET-ADD-004 (determinism audit, Critical): the converter assumes
+        -- parent-before-child row order, but SQL does not guarantee recursive
+        -- CTE output order without an explicit ORDER BY. Order by the tracked
+        -- depth (every ancestor precedes its descendants) then item_id (a
+        -- total, deterministic order within a depth), so the tree rebuild is
+        -- correct regardless of SQLite version / query-planner changes.
         SELECT  *
-        FROM    items_tree",
+        FROM    items_tree
+        ORDER BY depth, item_id",
     )?;
 
     let items = stmt
@@ -225,7 +235,12 @@ pub fn load_character_data(
                 b.body_data
         FROM    pet p
         JOIN    body b ON (p.pet_id = b.body_id)
-        WHERE   p.character_id = ?1",
+        WHERE   p.character_id = ?1
+        -- DET-ADD-005 (determinism audit, High): without ORDER BY the pet row
+        -- order is undefined, so pet entity/UID-allocation order (and the
+        -- DET-ADD-006 orientation ordinal) rode SQLite's choice. Order by the
+        -- stable pet_id.
+        ORDER BY p.pet_id",
     )?;
 
     let db_pets = stmt

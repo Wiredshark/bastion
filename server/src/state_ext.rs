@@ -821,9 +821,23 @@ impl StateExt for State {
                     pets.len(),
                     player_pos
                 );
-                let mut rng = rand::rng();
-
-                for (pet, body, stats) in pets {
+                for (index, (pet, body, stats)) in pets.into_iter().enumerate() {
+                    // DET-ADD-006 (determinism audit, High): pet orientation
+                    // was an OS-entropy draw (rand::rng()), so a pet faced a
+                    // random direction on EVERY character load. Key it by
+                    // (player uid, pet ordinal) — deterministic per load; the
+                    // ordinal is stable once pets load in a fixed order
+                    // (DET-ADD-005's ORDER BY). Same class as DET-RNG-007: no
+                    // OS entropy, keyed by identity.
+                    use rand::SeedableRng;
+                    let mut rng = rand::rngs::StdRng::seed_from_u64(
+                        player_uid
+                            .0
+                            .get()
+                            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                            ^ (index as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+                            ^ 0x9E7_0006,
+                    );
                     let ori = comp::Ori::from(Dir::random_2d(&mut rng));
                     let pet_entity = self
                         .create_npc(
