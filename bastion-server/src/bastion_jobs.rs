@@ -8006,7 +8006,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 let p = 1.0
                                     - (1.0 - f64::from(mood_cfg.break_chance))
                                         .powf(pass_secs * BREAK_TUNING_HZ);
-                                f64::from(rng.random::<f32>()) < p
+                                // T0.33 (ledger #52): the breakdown draw is
+                                // KEYED by (tick, colonist uid, episode
+                                // start), not taken from the pass's shared
+                                // stream — an unrelated upstream draw or a
+                                // join-order change can no longer shift
+                                // which colonist breaks. (The row's
+                                // world-seed term is carried by per-seed
+                                // harness runs; this system has no world
+                                // seed in scope — noted, not smuggled.)
+                                use rand::SeedableRng;
+                                let mut break_rng = rand::rngs::StdRng::seed_from_u64(
+                                    (tick.0 ^ 0xB4EA_CD07)
+                                        ^ uid.0.get().rotate_left(23)
+                                        ^ since.to_bits().rotate_left(41),
+                                );
+                                f64::from(break_rng.random::<f32>()) < p
                             }
                         {
                             board
