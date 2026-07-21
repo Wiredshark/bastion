@@ -2038,6 +2038,47 @@ mod tests {
         );
     }
 
+    /// T0.24-lite (master build order; Run 12): the DELIVERY-POLICY
+    /// declaration, executable — server events split into two declared
+    /// classes: the Apply dispatcher (event_dispatch systems — the
+    /// ImmediateDownstream class) and the SERIAL TAIL
+    /// (`handle_all_serial_events` — structural maintenance: entity
+    /// create/delete, session lifecycle, possession — whose ORDER is
+    /// load-bearing: creates before deletes before disconnects). The tail's
+    /// call sequence is frozen; a reorder or addition is a delivery-policy
+    /// change and must be deliberate. Typed NextTick delivery = the T0-002
+    /// endpoint (T0.13's three-buffer machinery, deferred with networking).
+    #[test]
+    fn t0_24_serial_tail_delivery_order_is_frozen() {
+        const SERIAL_TAIL_CALLS: usize = 30;
+        let src = repo_text("server/src/events/mod.rs");
+        let body = src
+            .split("fn handle_all_serial_events")
+            .nth(1)
+            .and_then(|tail| tail.split("\n    }").next())
+            .expect("handle_all_serial_events body");
+        let calls = body.matches("self.handle_serial_events(").count();
+        assert_eq!(
+            calls, SERIAL_TAIL_CALLS,
+            "the serial tail gained/lost a handler — that is a delivery-policy change; \
+             re-freeze deliberately and re-check the create-before-delete-before-disconnect \
+             ordering"
+        );
+        // The load-bearing ordering landmarks, by position.
+        let pos = |needle: &str| {
+            body.find(needle)
+                .unwrap_or_else(|| panic!("serial tail lost `{needle}`"))
+        };
+        assert!(
+            pos("handle_create_npc") < pos("handle_delete"),
+            "creates must precede deletes in the serial tail"
+        );
+        assert!(
+            pos("handle_delete") < pos("ClientDisconnectEvent"),
+            "deletes must precede disconnects in the serial tail"
+        );
+    }
+
     /// T0.17-lite (master build order; ledger #71): the rtsim RULE SCHEDULE
     /// is startup order — `RtState::emit` invokes handlers in bind order,
     /// and binds happen in `start_default_rules` order, so that list IS the
