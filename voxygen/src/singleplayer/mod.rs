@@ -326,7 +326,20 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
         }
 
         let events = server
-            .tick(Input::default(), clock.game_dt())
+            .tick(
+                Input::default(),
+                // DET-CLK-006 (determinism audit, DOMAIN ROOT): the
+                // authoritative tick duration is the DECLARED fixed step,
+                // never wall-clock game_dt() — host load/pauses/scheduling
+                // must not reach authoritative state (Time/physics/AI/
+                // persistence). `clock` remains the PACER (clock.tick()
+                // still sleeps to target TPS) and a diagnostics source.
+                // INTENDED live-behavior change per the full-determinism
+                // mandate: an overloaded host now slows SIM TIME (fixed-
+                // step, one tick per loop) instead of free-running larger
+                // dts through gameplay.
+                Duration::from_secs_f64(1.0 / TPS as f64),
+            )
             .expect("Failed to tick server!");
 
         for event in events {
