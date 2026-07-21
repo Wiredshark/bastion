@@ -80,6 +80,7 @@ pub mod mounting;
 pub mod npc;
 pub mod outcome;
 pub mod path;
+pub mod projection_schema;
 pub mod ray;
 pub mod recipe;
 pub mod region;
