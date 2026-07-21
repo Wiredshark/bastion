@@ -158,6 +158,140 @@ mod t0_58_tests {
     }
 }
 
+/// T0.55 (T0-004 packet, step 7): the four state categories a Merkle
+/// domain tree covers. Each category is its OWN root; the durable root is
+/// the authoritative one, the rebuildable-index root is compared against a
+/// fresh rebuild and never folded into durable.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum DomainCategory {
+    /// The authoritative durable data (rtsim save, jobs, inventories).
+    Durable,
+    /// The loaded projection (ECS mirror of durable state).
+    LoadedProjection,
+    /// The representation mapping (rtsim id ↔ ecs entity).
+    RepresentationMapping,
+    /// Rebuildable indexes (caches) — separate integrity root, per the
+    /// type-separation rule.
+    RebuildableIndex,
+}
+
+impl DomainCategory {
+    fn label(self) -> &'static str {
+        match self {
+            DomainCategory::Durable => "bastion/category/durable/v1/sha256",
+            DomainCategory::LoadedProjection => "bastion/category/loaded-projection/v1/sha256",
+            DomainCategory::RepresentationMapping => {
+                "bastion/category/representation-mapping/v1/sha256"
+            },
+            DomainCategory::RebuildableIndex => "bastion/category/rebuildable-index/v1/sha256",
+        }
+    }
+}
+
+/// T0.55: one Merkle leaf — a stable key (`npc/<stable_actor_id>`,
+/// `site/<site_id>`) and its canonical content hash.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MerkleLeaf {
+    pub key: String,
+    pub hash: DomainHash,
+}
+
+/// Compute a category root from its leaves — sorted by stable key so
+/// insertion/iteration order can never affect the root (the packet's
+/// canonical-order rule).
+pub fn category_root(category: DomainCategory, mut leaves: Vec<MerkleLeaf>) -> DomainHash {
+    leaves.sort_by(|a, b| a.key.cmp(&b.key));
+    let mut hasher = DomainHasher::new(category.label());
+    for leaf in &leaves {
+        hasher.field(leaf.key.as_bytes());
+        hasher.field(&leaf.hash.0);
+    }
+    hasher.finish()
+}
+
+/// T0.61 (T0-004 packet, step 7): the final-state certificate — a
+/// TEST/REPLAY artifact captured at the final authoritative phase, NOT a
+/// save replacement. Each domain defines its own canonical leaves; there is
+/// no universal serialization across domains. The rebuildable-index
+/// integrity root stays SEPARATE from the durable composite.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FinalStateCertificate {
+    /// e.g. `bastion/final-state-certificate/v1`.
+    pub schema: String,
+    pub world_seed: u32,
+    pub tick: u64,
+    /// The authoritative composite over Durable + LoadedProjection +
+    /// RepresentationMapping (label-sorted via PhaseStateHash).
+    pub durable_composite: DomainHash,
+    /// The rebuildable-index root — compared against a fresh rebuild,
+    /// distinct from the durable composite (a different field, not folded).
+    pub rebuildable_integrity: IntegrityHash,
+}
+
+impl FinalStateCertificate {
+    /// Whether another certificate matches on the AUTHORITATIVE surface
+    /// (seed, tick, durable composite) — the replay-equivalence check. The
+    /// rebuildable integrity is compared separately and only against a
+    /// fresh rebuild, never used to reject a replay.
+    pub fn authoritative_matches(&self, other: &FinalStateCertificate) -> bool {
+        self.world_seed == other.world_seed
+            && self.tick == other.tick
+            && self.durable_composite == other.durable_composite
+    }
+}
+
+#[cfg(test)]
+mod t0_55_tests {
+    use super::*;
+
+    fn leaf(key: &str, byte: u8) -> MerkleLeaf {
+        let mut hasher = DomainHasher::new("bastion/domain/npc/v1/sha256");
+        hasher.field(&[byte]);
+        MerkleLeaf {
+            key: key.to_string(),
+            hash: hasher.finish(),
+        }
+    }
+
+    #[test]
+    fn t0_55_category_root_is_key_order_free() {
+        let a = category_root(DomainCategory::Durable, vec![
+            leaf("npc/2", 20),
+            leaf("npc/1", 10),
+            leaf("site/1", 30),
+        ]);
+        let b = category_root(DomainCategory::Durable, vec![
+            leaf("site/1", 30),
+            leaf("npc/1", 10),
+            leaf("npc/2", 20),
+        ]);
+        assert_eq!(a, b, "leaf insertion order must not affect the category root");
+        // Different category label → different root for the same leaves.
+        let c = category_root(DomainCategory::LoadedProjection, vec![
+            leaf("npc/1", 10),
+            leaf("npc/2", 20),
+            leaf("site/1", 30),
+        ]);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn t0_61_certificate_authoritative_match_excludes_integrity() {
+        let cert = |durable: u8, integrity: u8| FinalStateCertificate {
+            schema: "bastion/final-state-certificate/v1".to_string(),
+            world_seed: 7,
+            tick: 100,
+            durable_composite: DomainHash([durable; 32]),
+            rebuildable_integrity: IntegrityHash([integrity; 32]),
+        };
+        // Same authoritative surface, DIFFERENT rebuildable integrity →
+        // still an authoritative match (indexes are rebuilt, not replayed).
+        assert!(cert(1, 9).authoritative_matches(&cert(1, 5)));
+        // Different durable composite → no match.
+        assert!(!cert(1, 9).authoritative_matches(&cert(2, 9)));
+    }
+}
+
 #[cfg(test)]
 mod t0_53_tests {
     use super::*;
