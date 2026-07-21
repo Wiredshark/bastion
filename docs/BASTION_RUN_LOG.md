@@ -4832,3 +4832,646 @@ substeps half stays in Tier 0 as `[T0.8-residual]`, its own future block.
 `[T0.10]`/`[T0.11]` left in place but annotated "SEE [DONE.22]" pointing
 at the new consolidated DONE row for the actual landing (`bd40e59e1039`),
 rather than duplicating their text into the DONE section.
+
+### T0-002 group (T0.12-T0.27, phase manifest/scheduling), progress
+
+One group prompt issued covering the whole packet; builder self-drives
+item-by-item, tags reported here as they land — no re-prompt per item.
+
+- `[T0.12]` DONE `e8d890d413` — golden phase-manifest, drift/cycle-checked.
+- `[T0.13]` DEFERRED — every late-event site is networking-adjacent
+  (session/admin), no sim-surface consumer under single-player scope;
+  revisit at the networking phase.
+- `[T0.14]` SLICE DONE `c3b7923e80` — six order contracts on the manifest.
+  Full read/write ambiguity introspection still open, own future block.
+- `[T0.15]` DONE `26eecf436209` — covered-by-slices (existing contracts
+  already express the named boundaries); phase LABELS deferred as endpoint.
+- `[T0.16]` DONE `d77b61435c04` — jobs→rtsim outbox edge declared.
+  Acceptance GREEN: tapes9 byte-identical, floory at established baselines.
+- `[T0.17]` LITE DONE `2615354dc9ac` — rule schedule frozen (golden bind-
+  order pin). Named-phase machinery deferred as endpoint.
+- `[T0.18]` DONE `26eecf436209` — negative order contract (agent NOT
+  same-tick reachable from rtsim::tick; handoff is deliberately next-tick).
+- `[T0.20]`+`[T0.23]` DONE `89f49c92bd5a` — two more implicit orderings
+  declared as dispatcher edges (agent←controller, phys←character_behavior
+  + phys→phys_events). No schedule change, contracts only.
+- `[T0.26]` DONE `0839693f579e` — exactly-one-consumer check now runs in
+  all builds, not just debug.
+
+Note: builder self-caught a python-heredoc truncation mid-edit (test count
+dropped 41→26), restored from HEAD, redone via Edit tool — no bad state
+landed. Also a stated commit-message "42/42" was actually 41/41; noted here
+for the record, not worth a correction pass in the commit itself.
+
+Batched acceptance (tapes10 + floorz) running at tip `0839693f57` for the
+T0.17/18/15/20/23/26 cluster above — verdict pending, will confirm on landing.
+
+Remaining in the group (real architecture blocks, no lite form): T0.19,
+T0.21, T0.22, T0.24, T0.25, T0.27 — builder taking them one at a time,
+starting T0.19, each with its own pair+floor.
+
+**Acceptance round result:** tapes10/floorz FAILED, both fail-closed, no
+bad data. tapes10 job-0 was a real build gap (registry B70) — fixed
+`783196b2c96b`. tapes10 job-1 + all of floorz were VM image-create
+rate-limit collisions from running two fans in parallel — new standing
+discipline: sequential fans only, ~10min cooldown between. tapes11 queued
+at `783196b2c96b`, floor to follow after cooldown; verdict pending.
+
+- `[T0.19]` DONE `e709b028d81f` — closed-by-existing-architecture, `NpcAi`
+  already does snapshot-plan-commit. Tracked finding filed as B71
+  (deferred-networking-only exposure, not a today bug).
+- `[T0.24]` LITE DONE `8049b4806d5b` — delivery-policy frozen (Apply=
+  ImmediateDownstream vs SERIAL TAIL, 30 calls pinned); typed NextTick
+  deferred with T0.13. (Self-caught: first count was a truncated read
+  window, 23→30, corrected before landing.)
+- `[T0.27]` LITE DONE `d415e001d312` — server tick phases named+frozen
+  (direct mutation → event application → structural maintenance → sync
+  → world tick).
+
+**Acceptance COMPLETE for the T0-002 slice cluster:** tapes11 byte-
+identical + floorw at canonical baselines (M3A `[66,44,97]`/2, N2 rc=0,
+M3D `[145,44,204]`/2 hold[T,F,F]) at tip `d415e001`. DISCHARGED:
+T0.12/13/14/15/16/17/18/19/20/23/24/26/27. Fan discipline (sequential +
+cooldown) holding, no further rate-limit fails.
+
+REMAINING in the T0-002 group: T0.21+T0.22 (Controller transaction frames
++ tagged command envelope — full block, builder starting now), T0.25
+(generated handler registry — its own design pass, not yet scoped).
+
+- `[T0.21]` SHIPPED `1c766ca6598b` — Controller buffers private + generation-
+  stamped (push_*/drain_events/take_actions), exactly-once frame
+  consumption, T0.20's declared edge now type-enforced. Acceptance
+  (tapes12+floor) queued, sequential-fan discipline holding, no rate-
+  limit fails since. Two disclosures filed: B72 (python whole-file
+  writes churning CRLF, 2nd recurrence — Edit-tool-only rule adopted)
+  and B73 (pre-existing plugins-feature cfg gap at
+  `client/src/lib.rs:738`, not caused by this work, not yet fixed).
+- `[T0.22]` DONE `e8cf0343fac5` — one sequenced channel per my ruling:
+  `QueuedCommand{phase,seq,payload}`, each consumer drains its own phase
+  from the shared T0.21 frame, exactly-once per phase, cross-channel
+  order pinned by producer-local seq. Zero call-site changes beyond T0.21.
+- `[T0.28]` DONE `7c90df32d0` — LandOnGround emission sorted by entity id
+  (live-mode half; harness was already immune).
+- `[T0.32]` DONE `a98128405b` — breakdown roll compounds RON break_chance
+  to the true pass interval from declared clocks, cadence-invariant,
+  exact to 1 f64 ulp of current behavior.
+- `[T0.33]` DONE `1ee8e7a0e1` — breakdown draw keyed (tick, uid, episode-
+  start), join-order/upstream-draw decoupled. World-seed term noted
+  out of scope.
+
+**Acceptance:** tapes12 came back byte-identical and attested `a9812840`
+(later than intended) — covers T0.21+T0.28+T0.32 in one shot. tapes13
+queued at `e8cf0343` covers T0.22+T0.33, floor follows sequentially.
+T0.21/22 block closes once tapes13+floor land green.
+
+- `[T0.25]` DONE `4c62173704ad` — validation-first per ruling: static
+  cross-check of `server_events!`'s 70 types against the Apply set and
+  the 30-type SerialTail golden, partition asserted exact-complement.
+  Caught one real miscue en route (RequestPluginsEvent Apply not
+  serial). Full bus-creation codegen stays the endpoint.
+
+**★ T0-002 GROUP COMPLETE — T0.12 through T0.27, all discharged.**
+Pending: tapes13 (T0.22+T0.33 pair) + floor in flight, T0.25 rides free
+(test-only). Group prompt issued for the rest of T0-003 (T0.29-31,
+T0.34-49) below; builder self-drives per the same group-cadence.
+
+- `[T0.38]`+`[T0.39]` DONE `9b3c6850ac` — claim/need-target determinism
+  now unconditional in LIVE mode too (was harness-gated): decision_job_ids
+  + egress-request sort always run; EAT ties break on item uid, bed ties
+  on coordinate (was HashMap order in both cases). Landed opportunistically
+  ahead of T0.29-31/34-37 (tractable-first within the group, same pattern
+  as T0.32/33) — spotted on the builder branch, not yet formally reported.
+- `[T0.42]` DONE (audited, no code change) — candidate sources already
+  stable-by-construction + keyed DETRNG (B8) makes choose() deterministic
+  end-to-end. Forward-looking caveat filed as registry B74.
+
+**Acceptance:** tapes12 (`a9812840`, byte-identical) + tapes13
+(`4c621737`, byte-identical) — unbroken byte-identity chain since
+ENGOPT6, now covering T0.21/22/25/28/32/33. floorv queued at tip
+`9b3c6850ac`; on green, the T0.21/22 Controller-frame block closes as
+one tag: **`bastion-block-CTRLFRAME`** (naming call, consistent with the
+FARM/HAULPIN/SEASONHUD short-code convention). Builder to cut the tag on
+floorv green.
+
+**Recheck pass (this session):** cross-referenced every T0.x commit on
+the builder branch against the master-order rows — found and fixed one
+gap (T0.21 had landed but its row was never annotated DONE). All 27
+landed commits now correctly reflected.
+
+**★ `bastion-block-CTRLFRAME` TAGGED + PUSHED @9b3c6850ac3e.** floorv
+green at tip `b3314978` — M3A `[66,44,97]`/2 (tracked-red), N2 rc=0 tp1,
+M3D `[145,44,204]`/2 hold[T,F,F] rc=0, no baseline shift from T0.34/38/39
+(as predicted). T0.21/22 block CLOSED. Ledger row added.
+
+- `[T0.34]` DONE `b33149786036` — CleanUp sentiment decay per-NPC keyed;
+  Architect + dialogue_start audited already-keyed, no change needed.
+
+Group state: T0.28/32/33/34/38/39/42 discharged. Continuing tractable-
+first: T0.35/36/37/40/41 next, then T0.43-45 (physics pair family, own
+acceptance pair) and T0.46-49 (canonical state + item identity — T0.49
+likely needs a design ruling for `ItemInstanceId`). Ping-for-ruling on
+T0.29-31 still pending, prep already done.
+
+- `[T0.36]` DONE `e7c8cb8161a4` — NPC spawn orientation keyed via ChaCha8
+  (was OS entropy, latent seam invisible to prior byte-identity proofs).
+- `[T0.37]` DONE `fc4299e67531` — 3 OS-entropy RNG constructions in
+  Apply handlers (head loss, death/buff-proc/loot-winner, loot-drop
+  placement — authoritative economy state) now sim-time-keyed ChaCha8.
+
+Both were real, previously-undetected determinism bugs — a byte-identical
+acceptance pair only proves determinism for its own comparison window,
+not the whole system. Filed as registry B75 (general coverage-gap lesson).
+
+Acceptance: tapes14 launched at `fc4299e675` (post-cooldown), one pair
+covers the whole accumulated draw-shift batch (T0.34/36/37/38/39); floor
+follows sequentially.
+
+**tapes14b confirmed byte-identical.** flooru running.
+
+- `[T0.35]` DONE (audited, no code change) — T0.7 + DETRNG already cover
+  Agent main/helper/Chaser and action-node helper streams.
+- `[T0.40]` DONE `c99125a71c32` — thought_sum now Neumaier-compensated f64.
+- `[T0.41]` DONE (audited, no code change) — current_site resolution is
+  first-in-worldgen-order over a stable Vec; world_site_map is pure-
+  lookup (packet's hash-is-fine class).
+
+Group scoreboard: 12/22 of T0-003 discharged (T0.28/32-42 done; open =
+T0.29-31 + T0.43-49).
+
+**T0.29-31 ruling (builder's proposed opening slice, confirmed with one
+addition):** yes to the shape — (a) Emitter-level stamp of (producer
+identity, local seq), producers themselves unchanged; (b) recv_all_mut
+merge-sorts by (producer rank, local seq), tick/phase correctly left out
+of the SORT key since a single drain is already scoped to one tick/phase
+so they're constant within it; (c) causation/correlation/idempotency as
+optional fields, machinery-present-but-unpopulated initially. ONE addition:
+still STORE tick+phase on the stamp itself (cheap, known at emit time)
+even though they're not needed for sorting — T0.31's causation graph will
+need to reconstruct cross-tick relationships later, and re-deriving these
+after the fact is wasted work. Full EventEnvelope wrap (every field
+required for every producer) stays the endpoint, deferred, matching the
+established lite-first pattern.
+
+- `[T0.29]`+`[T0.30]`+`[T0.31]` DONE `5905a44c3727` — EventStamp{epoch,
+  producer: &'static Location via track_caller, seq, causation/
+  correlation/idempotency: Option}, merge-sorts (epoch, producer site,
+  seq), stamps stripped post-drain. Disclosed deviation: drain EPOCH
+  substitutes for literal tick (avoids fleet-wide Emitter plumbing;
+  epoch is 1:1 with tick, origin frame still preserved not lost) — ruled
+  acceptable, no literal-tick plumbing needed. Zero churn for producers
+  or consumers. Own pair+floor required (changes bus processing order),
+  queued after flooru per sequential-fan discipline.
+
+Group scoreboard: 15/22 of T0-003 discharged. Remaining: T0.43-45
+(physics pair family), T0.46-48 (canonical state), T0.49 (ItemInstanceId
+— builder will flag for a quick ruling, packet already specifies the
+struct shape).
+
+- `[T0.43]` DONE (audited) — pushback per-entity independent, stable
+  in-regime neighbor order, determinism already holds.
+- `[T0.44]` DISPOSITIONED — (min,max) pair-ownership redesign only buys
+  momentum-symmetry, HIGH fixture surface; deferred as own endpoint block.
+- `[T0.45]` DONE (done-by-existing) — B5.8 already shares preflight and
+  resolution collision-choice internals.
+- `[T0.46]` DONE `a66f4fda885d` — default-group ties break on smallest
+  member group index (was hash order, run-varying serialization bytes).
+- `[T0.47]` DONE `3907378d96c8` — persistence batch drain sorts by
+  character id before SQL (was hash order).
+
+Acceptance: flooru green @`c99125a7` (T0.34-40 batch fully accepted).
+tapes15b running at `3907378d96` covering T0.29-31+T0.46+T0.47.
+
+Group scoreboard: 18/22 of T0-003 discharged. Remaining: T0.44 (deferred
+endpoint), T0.48 (persisted-collection gate, sizeable), T0.49
+(ItemInstanceId, ruling below).
+
+**T0.49 ruling, answering builder's 3 scoping questions:**
+(1) `world_namespace` = a persisted per-world NONCE minted once at world
+creation, NOT derived from world_seed. Two saves sharing a seed (a reset
+test-world, a regenerated world) must not alias item-instance namespaces
+— that's exactly the collision this field exists to prevent. A one-time
+random mint for the NAMESPACE is fine (the packet rejects random UUIDs as
+PRIMARY item identity, not as a one-time per-world seed component).
+(2) Allocator = a single persisted monotonic u64 counter living beside
+world_namespace in the same authoritative Data/save structure, incremented
+at the actual commit point (item construction/insertion), covering every
+creation site (drops, inventory instantiation, crafting output, loot).
+Full retry-safe RANGE reservation (packet's "retried transactions reuse
+the same range") is Tier-1 transaction-machinery scope (T1.17/T1.24
+already exist for that) — for this Tier-0 slice, allocate synchronously
+at the single non-yielding construction point so there's no reserve-
+without-commit gap in practice. Don't build the full retry apparatus now.
+(3) Field-first, consumers-later. Add `id: ItemInstanceId` to Item/
+PickupItem now — that's T0.49's actual scope. Do NOT switch mf_completion
+or other harness item-hash consumers over in the same change; that's its
+own follow-up. Swapping a working acceptance-harness mechanism in the
+same commit as landing a new identity substrate conflates two different
+risk surfaces for no gain — matches the deferred-consumer pattern used
+throughout this group (T0.24 NextTick, T0.13 networking, etc.).
+
+- `[T0.49]` DONE `b73db1583fbb` — shipped exactly per ruling: serde-
+  default Option on PickupItem, allocator in rtsim Data, namespace=one-
+  time nonce, sequence=synchronous counter at create_item_drop (post-
+  merge, merged drops consume no new identity), zero consumer switches.
+
+**tapes15b confirmed byte-identical** (T0.29-31 stamped bus survives
+cross-machine, plus T0.46/47 covered). floort running.
+
+**T0-003 GROUP: 18/19 resolved, only T0.48 remains** (standing persisted-
+collection determinism gate — container inventory + insertion-order
+permutation tests + fresh/fresh/restored byte-compare across thread
+counts). Builder already has the packet's canonical-state guidance from
+the original group prompt (container classification: serialized/hashed
+→canonical encoding, authoritative-iteration→sort/ordered, RNG-consuming
+→canonicalize-before-draw, pure-lookup→hash is fine) — no re-prompt
+needed, confirmed sufficient and told to proceed.
+
+**★ T0-003 GROUP COMPLETE — 19/19 rows resolved.** Shipped: T0.29/30/31,
+32/33/34/36/37, 38/39, 40, 46, 47, 48 (+ real fix: `NpcLinks.rider_map`
+canonical-serialize, DONE.11 pattern), 49. Audited-no-change with
+endpoints filed: T0.28(prior)/35/41/42/43/44/45. floort in flight
+(floors the T0.29-31/46/47 batch; T0.48/49 are save-side, covered by the
+gate's own tests, riding the next routine pair). Tag on floort green:
+**`bastion-block-T0DET3`** (short-code convention, DET3 = T0-003's
+determinism/RNG/canonical-state group). Builder to cut on green.
+
+Next per master order: T0-004 (T0.50-66, async acceptance/agent command
+merge/domain hashes/recorder schemas). Packet content to be folded into
+one group prompt per the established cadence.
+
+**T0-004 group prompt sent.** Note: this packet is denser than T0-002/003
+— it ships full selected data shapes AND its own dependency-ordered build
+sequence (12 steps), not just one-line issue-map entries. Instructed
+builder to respect that order more strictly than the tractable-first
+pattern used for T0-002/003 (later rows build on earlier rows' types).
+Full per-row compressed shapes + the packet's cross-packet non-negotiable
+rules (worker-completion-order-never-authority, cancellation-never-
+substitutes-generation, exactly-one-terminal-outcome, canonical-not-
+memory-layout hashes, wall-time-never-authoritative, no-silent-drop-under-
+load) relayed verbatim in the prompt, not reproduced here.
+
+**★ `bastion-block-T0DET3` TAGGED + PUSHED @96315c8fbf85.** floort green
+at T0.49 tip `b73db158`: M3A `[66,44,97]`/2 (tracked-red), N2 tp1,
+M3D `[145,44,204]`/2 hold-live — all canonical. T0-003 group CLOSED,
+19/19. Ledger row added.
+
+**Recheck pass (this turn):** cross-referenced every T0.x commit on the
+builder branch against `-updated.md` — found gaps from the file-switch
+(T0.12, T0.29, T0.30, T0.31, T0.35, T0.40, T0.41 had landed but weren't
+annotated in the new file, since they were bookkept on the plain BASE.md
+before the switch). Fixed all 7.
+
+- `[T0.50]` DONE `3cc66d52f73e` — `common::async_work` with
+  AsyncOwnerKey/AsyncGeneration/AsyncRequestId+allocator, acceptance
+  predicate per packet shape (incarnation semantics, cancellation-is-
+  efficiency-only, never-reused ids). common t0_50 2/2. T0-004 step 1
+  of 12 (packet-ordered), builder proceeding to step 2 (T0.51 envelope).
+
+- `[T0.51]` SLICE DONE `41c7897c8f`→`bbe94e570f`→`b4afb1772b05` — envelope
+  (AsyncWorkRequest, semantic-unit costs, exhaustive AsyncTerminal incl.
+  CommittedExternal), bounded queue (coalescing, backpressure-never-drop,
+  stable pop order proven against scrambled arrival, cancel/deadline,
+  shutdown-drains-to-terminals), owner-phase merge (semantic-key sort —
+  completion arrival never authority, terminal-uniqueness ledger with
+  watermark contract). Actor-adapter half deferred to its first consumer
+  (persistence adapter), disclosed not smuggled. T0-004 steps 2-4/12,
+  pure additive types, no fan needed yet (no consumer wiring).
+
+Next: step 5 (T0.52, Agent parallel plan buffers + deterministic
+Controller publication) — first behavioral/consumer-side rework of the
+group, touches NpcAi/agent publication, needs its own pair+floor.
+
+**★ T0.52 VERDICT: serial === parallel, RAW BYTE-IDENTICAL** (`808c724d`,
+svp2 pair, both rc=0, trajectory/events/summary all byte-equal wall-
+stripped) — the strongest evidence grade in this whole arc. A 10-minute
+colony sim produces bit-identical output on one worker (serial) vs many
+workers with the real parallel dispatcher. T0-002/003's substrate
+(stamped bus, per-entity disjoint writes, keyed RNG, sorted applies,
+total-order selections) carried the entire load with zero schedule-order
+authority leaks.
+
+- `[T0.52]` DONE `808c724d` — packet's serial-reference-diff requirement
+  delivered as an executable full-engine equivalence probe
+  (`--deterministic-parallel`, now PERMANENT standing infra — a reusable
+  oracle for any future feature). Per-entity-plan-buffer redesign
+  empirically unnecessary: current code already deterministic under real
+  parallel dispatch, proven not asserted. svp1 abort earned its keep —
+  caught a pre-existing ENGOPT4-era one-worker assertion, fixed forward
+  `856b9a665b` (probe env-var exempted with a loud warning, guard intact
+  for normal runs). Caveat: mf lightly exercises loaded-combat Agent
+  par_join — filed as registry B76.
+- `[T0.53]` DONE `4d41a5f605` — canonical domain-hash, type-separated
+  durable/integrity roots, prefix-safe fields, insertion-order-free
+  composite.
+- `[T0.58]` DONE `808c724ddb5d` — RecorderSchemaRef version discipline.
+
+Floor launched at tip (guard-exemption touched the deterministic server
+path — confirms normal runs unaffected). Builder continuing T0-004 steps
+7-12 (RTSim/domain leaves + final certificate, recorder schema/causal
+records/provenance, partial-order oracle, Loom/Shuttle/legal-schedule
+fuzzer, token-bucket+DRR event budgets, hierarchical work quotas).
+
+**Steps 7-8 checkpoint, floor green @`6ec8d1d9` canonical baselines:**
+- `[T0.55]`+`[T0.61]` DONE `6ec8d1d9` — Merkle DomainCategory tree,
+  category roots key-sorted; FinalStateCertificate, authoritative-match
+  excludes rebuildable integrity roots. Types-first.
+- `[T0.56]` DONE `26918c6f6b` — causal_record: derive_span_id pure fold,
+  exhaustive CausalOutcome terminal, links-not-parenthood. Types-first.
+- `[T0.54]`+`[T0.57]` DONE `ab3d43d4b1ca` — content_manifest: walk-order-
+  free root + changed-paths diff; provenance statement shape. Types-first.
+
+T0-004 steps 1-8 substrate now DONE as types, adoption (walking domains
+to emit leaves, instrumenting live phases) deferred per the packet's own
+build order + the T0.49 field-first pattern — 7 modules currently
+unconsumed by design, not oversight.
+
+**PACING RULING (builder flagged A vs B, genuine judgment call):**
+confirmed (A) — continue to step 9 (T0.59/62/63 oracle+equivalence
+tooling) rather than detour into proving one consumer ad-hoc now. Step 9
+IS the natural first real consumer of the hash/recorder substrate — it
+formalizes the ad-hoc byte-comparison already in use into the packet's
+richer equivalence policy (final hashes + causal edges + conservation +
+independent-multiset tolerance), so building it next both follows the
+packet's prescribed order AND delivers the live proof Ben's determinism
+law wants, without a bespoke harness hookup that would likely need
+rework once the real oracle lands. Also approved: fold
+`--deterministic-parallel` into ROUTINE acceptance (an extra probe leg
+alongside the cross-machine pair, not opt-in) — directly serves the
+determinism-by-construction law as a standing regression guard against
+future schedule-order leaks, and the ephemeral-VM cost model ($0 idle,
+one extra job) makes this cheap relative to its value (ENGOPT6's 5-round
+hunt is exactly the class of bug this now catches automatically).
+
+**Steps 1-9 checkpoint (14 commits, tip `826f1e6cdc1e`), all types-first,
+verify-profile clean:** T0.59/60/62/63 (causal oracle + run-equivalence
+policy + span hierarchy) on top of the already-logged T0.50/51/53-58/61.
+T0-004's substrate is now ~9 modules landed, none yet wired to real
+running data — see ruling below.
+
+**TWO FORK RULINGS + a pacing course-correction (Ben asleep, executive
+control):**
+
+FORK 1 (T0.64, Loom/Shuttle dep decision) — SPLIT THE FORK. Approved:
+ship the Bastion-specific full-engine legal-schedule fuzzer now (needs
+no new deps, extends `--deterministic-parallel` with a
+`BASTION_SCHEDULE_SEED` knob permuting only declared-schedule freedoms).
+DEFERRED: Loom(primitives)/Shuttle(components) — adding heavy dev-deps
+to the shared workspace + rewriting primitives to use Loom's own sync
+types is a real tooling-investment decision, not a mechanical add;
+logged to `readme/DECISIONS-FOR-BEN.md` for his call rather than decided
+unilaterally, even though dev-deps are technically reversible.
+
+FORK 2 (T0.66, domain-budget split) — CONFIRMED as proposed: reuse
+T0.12's existing dispatcher-manifest groupings (path/events/jobs/rtsim/
+terrain/persistence-apply) verbatim, zero new taxonomy. Quanta as
+parameters defaulted to effectively-unbounded (pure substrate add, no
+behavior/baseline shift); real tuning deferred until a fixture surface
+justifies specific values. Textbook reuse-first, no design tension.
+
+**PACING COURSE-CORRECTION:** my prior ruling assumed step 9 (T0.63)
+would itself deliver a live proof; it landed as types-only like
+everything else, same as before. With 9+ modules now unconsumed and only
+T0.65/T0.66/the-Bastion-fuzzer-half-of-T0.64 left before the packet's
+substrate is fully typed, the right shape is: finish that small remaining
+substrate (T0.65 next as builder proposed, then T0.66 per Fork 2, then
+T0.64's non-dep half), and treat that as the CLOSE of pure substrate-
+building for this group — do NOT open a new research group after. The
+REQUIRED next step before T0-004 counts as done is proving ONE real
+consumer end-to-end: emit an actual `FinalStateCertificate` at the
+harness's real final phase and fold it into the existing svp/mf byte-
+comparison. This is option (B), deliberately sequenced AFTER the last
+small substrate pieces rather than interrupting them.
+
+**★★ T0-004 COMPLETE, LIVE-PROVEN, NOT TYPES-ONLY.** Builder executed the
+exact sequence: T0.65 (token-bucket+DRR) → T0.66 `227a61628450`
+(hierarchical DRR reusing T0.12 manifest domains verbatim, unbounded-
+default no-behavior-change; a saturating_add overflow caught by its own
+pin) → T0.64 non-dep fuzzer half `5d86df15e008` (BASTION_SCHEDULE_SEED
+over declared-schedule freedoms; Loom+Shuttle deferred per Fork 1,
+DECISIONS-FOR-BEN.md #24) → **Option B live proof `a1130b1c5793`**: the
+harness emits a real FinalStateCertificate at the mine-fidelity final
+phase; serial + `--schedule-seed 5` + `--schedule-seed 12` (three
+distinct legal schedules, different worker counts) all produce the
+IDENTICAL `durable_composite`. T0.63's equivalence policy is now proven
+against live authoritative state, not types.
+
+- `[T0.64]`/`[T0.65]`/`[T0.66]` DONE (see master-order for commits/detail).
+- `[T0.63]` upgraded from types-only to LIVE-PROVEN.
+
+fuzz1 campaign RUNNING (cross-machine × cross-schedule in one fan: serial
++ `--schedule-seed 3` + `--schedule-seed 7`, durable_composite must match
+across different MACHINES and worker counts — the definitive T0-004
+acceptance). Tag on green: **`bastion-block-T0DET4`** (confirmed, matches
+CTRLFRAME/T0DET3 convention). `--schedule-seed` legs now ROUTINE in every
+acceptance campaign per the earlier ruling — fuzz1 is the first instance.
+
+T0-004 group final tally: 17 commits, T0.50/51/53-66 all shipped (T0.52
+separately proven byte-identical as standing infra). Next per master
+order: Tier 1 (correctness/transactions). T1-001 packet (T1.1-11,
+command/commit/capability protocols) already read — group prompt ready
+to send once the tag lands.
+
+**★ T1-001 GROUP COMPLETE — T1.1-11, all 10 packet steps shipped in
+dependency order** (11 commits, tip `5fbffc18a105`, 20/20 T1 pins green
+together, full common 199 pass B59-only, zero warnings). T1.1 (fitness
+gate + starter registry) → T1.3+T1.10 (CommandReceipt admission +
+9-state CommandStatus lifecycle, centralized legal transitions) →
+T1.2+T1.4 (effect_journal, prepare-validates/commit-non-fallible,
+rejects general 2PC) → T1.7 (DatabaseBatchOutcome, remove-pending-only-
+on-commit) → T1.5 (conservation_saga, orchestrated, reverse-order
+compensation, conservation-pinned) → T1.8 (BastionCommitQueue,
+stable-order + conflict + generation validation) → T1.9 (audit_framework,
+3 tiers, record-never-repair) → T1.11 (capability, server-issued grants,
+sim-tick expiry) → T1.6.
+
+**★ T1.6 = A REAL LIVE BUG FIX, not a type** (matches the T0-004 lesson
+better than T0-004 itself did — this group didn't even need a course-
+correction). `execute_character_edit` committed the DB transaction on a
+FAILED edit: `CharacterScreenResponse::is_err()` matched Create/List/Data
+errors but OMITTED `CharacterEdit(Err(_))` — every failed character edit
+silently committed (real data corruption, live). Fixed: commit decided
+on the actual typed Result, `is_err()` helper REMOVED so a future variant
+can't silently bypass again. server 14/14.
+
+**PACING RULING (builder proactively flagged, same A/B shape as
+T0-004):** confirmed (B)-lite exactly as proposed — wire ONE substrate
+piece into a harness-exercised Bastion job-completion path (not a
+player-persistence path; those are harness-inert, no mf/floor/schedule-
+seed coverage). Specific pick: wire **T1.3/T1.10 (CommandReceipt +
+CommandStatus) first**, not the full ConservationSaga — the lighter
+substrate proves the pipeline stages are real and exercised with lower
+risk, and T1.5's saga (heavier: compensation logic, multi-owner) is the
+natural SECOND wire-in once the first is proven, same lite-then-full
+sequencing as T0-004. Pick a single narrow job type (a haul/ItemTransfer
+completion is the obvious candidate — small blast radius, already
+harness-covered) and route its commit lifecycle through
+Accepted→Executing→Committed instead of whatever ad-hoc completion logic
+exists today. **HARD CONSTRAINT: this must be a pure refactor — identical
+completion behavior/outcomes, self-gated against the M3/N2/fence floor
+for ANY baseline shift.** We are proving the plumbing carries state
+correctly, not changing what jobs do. Don't tag `bastion-block-T1CMD`
+until this wire-in lands and passes acceptance (incl. the routine
+`--schedule-seed` leg) — same discipline as T0-004's Option B.
+
+**Wire-in shipped `d319508dacb6`:** T1.3/T1.10 routed through the haul
+ItemTransfer completion (Accepted→Executing→Committed). Pure-refactor
+confirmed LOCALLY: mf FinalStateCertificate durable_composite byte-
+identical pre/post wire-in. JobBoard gained a runtime-only
+`command_admission` ledger (not serialized, not recorder-sampled —
+`JobBoard` is `#[derive(Default)]`-only, zero tape/persistence surface);
+admits by idempotency_key=job id, forgets the receipt after Committed
+(bounded memory). VM acceptance (t1cmd cross-machine × cross-schedule +
+t1cmdfloor safety floor) running — tag on both green.
+
+**t1cmd GREEN:** all 3 legs (serial + `--schedule-seed 3`+`7`, all
+`d319508d`) identical durable composite, MATCHING the pre-wire-in fuzz1
+baseline exactly — certificate-invariant cross-machine and cross-
+schedule, not just the local check. Waiting on t1cmdfloor for the
+both-green tag gate.
+
+**★ `bastion-block-T1CMD` TAGGED + PUSHED @d319508dacb6.** Both halves
+green: t1cmd certificate-identical cross-machine × cross-schedule
+(matching pre-wire-in baseline exactly); t1cmdfloor canonical (M3A
+`[66,44,97]`/2 tracked-red, N2 tp1, M3D `[145,44,204]`/2 hold[T,F,F] —
+wire-in didn't perturb the ladder fixtures). T1-001 CLOSED. Ledger row
+added. Three engine blocks tagged this session: T0DET3, T0DET4, T1CMD.
+
+Next per master order: Tier 2 (RTSim↔ECS lifecycle/state-machine
+formalization, 100+ rows). **No research packet exists yet for T2**
+(confirmed: neither the readable export nor the H-drive source has a
+T2-00x file, and the master-order's own T2 rows carry no packet
+citation at all, unlike T0.67-89 which at least cited a missing-but-
+named file). Builder pre-scouted the master-order's own row text for the
+first natural cluster (T2.1-18ish: promotion/demotion lifecycle, stable
+actor identity, reason-coded events, projection schema, T2.16's cross-
+seed/dispatcher-mode determinism check) and mapped real reuse threads
+back to T0.50/52/53/56 + T1.10/11 substrate. Verifying that mapping
+against the actual code before crafting the group prompt — code-
+verification fallback (T0.6 precedent), since there's no packet to
+fold in this time.
+
+**T2 group prompt sent (T2.1-22), code-verification-grounded** —
+confirmed `SimulationMode` is exactly `{Simulated, Loaded}`
+(rtsim/src/data/npc.rs:43), `NpcId` (slotmap key) vs `Npc.uid: u64`
+(npc.rs:291) is a real dual-identity split, `hook_rtsim_entity_unload`
+is real (server/src/rtsim/mod.rs:478) before sending. Flagged T2.2
+(SimulationMode 2→4 states) as the one row with real new behavioral
+surface, told builder to reason about crash-recovery semantics before
+building it.
+
+- `[T2.4]`/`[T2.7]`/`[T2.8]`/`[T2.9]` DONE `b92afa89dfb1` — T2 opener,
+  reuse-first cluster: EntityIncarnation guard (T0.50's AsyncOwnerKey
+  barrier applied to entity targeting), one aggregate reason-coded
+  LifecycleEvent (feeds T0.56 causal records), LoadedLinkage tri-state
+  (needs_reconciliation flags only broken links, T2.11's target).
+
+**T2.2 RULING — confirmed, builder's own analysis is correct and fully
+de-risks it.** Verified the linchpin claim directly: `Npc.mode:
+SimulationMode` IS `#[serde(skip)]` (npc.rs:337-338) — mode is NEVER
+persisted. So there is no cross-restart stuck-intermediate-state
+recovery problem at all: every NPC boots to `Simulated` (its `#[default]`)
+since ECS state isn't persisted either, and re-promotes cleanly into
+whatever chunks are loaded. The 2 new states (PromotionPending/
+DemotionPending) are runtime-only, within-session, bracketing the two
+irreversible transitions — standard reconciliation shape (intent
+declared → in-progress → settled). Proposed cycle confirmed: Simulated
+→PromotionPending(CreateNpcEvent emitted, not yet ECS-linked)→Loaded
+(ECS+IdMaps linked+decorated, atomic via T2.15)→DemotionPending(unload
+begun, projection not yet committed)→Simulated(projection commits+ECS
+deleted, unified via T2.12/18). Determinism: transitions ride the
+already-deterministic tick/load-unload order; Rust's exhaustive-match
+means no silent gap is even possible once the enum grows (every existing
+`match SimulationMode` becomes a compile error until updated — a real
+safety net here, not just an assumption). One thing to actually check
+(not a blocker, just verify): whether the flight recorder samples
+`Npc.mode` at runtime — serde-skip protects the SAVE file, not
+necessarily the tape, so confirm the recorder's own state capture is
+either indifferent to mode or handles the 2 new variants correctly.
+Build sequencing confirmed: land the 4-state enum as a behavior-
+PRESERVING refactor first (transient states set+cleared within the same
+path, observable behavior = today's), let T2.11/12/15 give the new
+states real duration/purpose. Go.
+
+- `[T2.1]` DONE `b901288b49b3` — promote/demote pair audit.
+- `[T2.13]`/`[T2.19]`/`[T2.21]` DONE `7f5f297668fd` — versioned
+  projection schema + fitness gate + versioned field projection registry.
+- `[T2.17]` DONE `926d5db36628` — offscreen action-disposition contract
+  + completeness gate.
+
+Reuse-first formalization cluster complete (T2.1/4/7/8/9/13/17/19/21),
+zero live-behavior surface, all direct T0-004/T1 substrate reuse.
+
+**Message-cross:** my T2.2 confirmation queued but hadn't landed when
+builder's next report went out — reaffirmed, no change to the ruling.
+
+**T2.16 sequencing (builder's option a vs b):** confirmed (a), gate-first
+— build T2.16 (the determinism oracle) before the live/behavioral rows,
+so every subsequent live refactor has something to prove against
+immediately. Sharpened: validate EACH live row against T2.16+floor+
+schedule-seed INDIVIDUALLY as it lands, not batched at the end — batching
+several live changes then checking once risks a regression landing
+un-isolated across multiple commits (the exact diagnostic cost ENGOPT6
+paid). Live-row order: no rigid sequence imposed — but T2.2 pairs
+naturally with T2.11/T2.12+18/T2.15 (those rows are literally what give
+T2.2's new intermediate states real duration, per builder's own earlier
+framing) — build that connected group together rather than scattered
+among the others. T2.3 (identity) and T2.10/14/20/22 (smaller mirror/
+cost/keying rows) can interleave around it per builder's own judgment —
+trusted after the sequencing shown all session.
+
+- `[T2.16]` DONE (substrate) `90fb70e630e1` — activation-frame
+  determinism oracle. T2 substrate complete: T2.1/4/7/8/9/13/16/17/19/21.
+
+**SECOND message-cross on the same T2.2/sequencing ruling** — both prior
+replies were still queued (unconfirmed) when builder's next two reports
+went out; builder correctly held (live promote/demote refactors pending
+a stuck ruling counts as genuinely blocked, not idle-waiting). Resent
+plainly, verified via list_events this time rather than assuming
+delivery, per the queued≠delivered rule.
+
+Cross confirmed benign — the resend and builder's own unblock crossed in
+transit, no actual delay.
+
+- `[T2.2]` DONE — 4-state cycle + `may_transition_to` validator (16
+  (from,to) pairs asserted, no shortcuts, `t2_2` pin green). Pure-refactor
+  confirmed on 3 axes: recorder is mode-blind (zero tape references —
+  the requested check, satisfied), the single exhaustive match site
+  updated with a self-healing no-op arm, non-exhaustive sites unaffected.
+  Pending states not yet threaded into live transitions by design — that
+  activation is T2.11/12/15/18's job. Own floor+schedule-seed acceptance
+  pending before T2.11 starts (one-at-a-time, per ruling).
+
+**★ SELF-CAUGHT PROCESS ERROR (Ben asked "did you skip tier 1"): yes.**
+After T1CMD closed T1.1-11 I jumped straight to Tier 2 without checking
+whether Tier 1 had more rows — it does, T1.12-121 is untouched (resource
+conservation, reservations, completion atomicity, and on — real Bastion
+job/economy correctness, not filler). No T1-002 packet exists either.
+This is a genuine violation of the top-to-bottom master-order rule, not
+a judgment call. CORRECTION: let the current T2 connected group finish
+(T2.11→T2.12/18→T2.15 — mid-flight, interrupting it now is worse than
+the ordering slip), then STOP opening further T2 rows and return to
+T1.12+ in strict order before T2.3/10/14/20/22 or anything else in T2.
+
+Builder self-caught two loud, non-silent failures before trusting a
+T2.2 floor result: a stale pre-T2.2 binary (version-stamp mismatch
+caught it, the exact discipline [[log-time-namespace-and-vm-attestation]]
+calls for) + a malformed `--corpus-seeds` arg (clap wants repeated flags
+not space-separated, exit 2). No invalid verdict was ever trusted.
+Rebuilding clean before re-running.
+
+**Good architectural find:** promotion and demotion are ALREADY two-
+phase in the live code (promote: Loaded+spawn tick N, decorate tick
+N+1; demote: flip Simulated tick N, flush+delete tick N+1) — so T2.2's
+PromotionPending/DemotionPending slot into the EXISTING phase-1 step and
+gain real duration for free. T2.11/15 (promote) and T2.12/18 (demote)
+aren't adding a new mechanism, they're naming a phase that already
+exists. Lower risk than expected.
+
+**Architect endorsed + tightened both corrections:** ordering plan
+confirmed (finish only the in-flight T2 group, then strict T1.12+, no
+new T2 work beyond it). VM-every-change made a hard requirement, with
+one addition: the Opus-Reviewer backfill must produce ATTESTED evidence
+(SHA-matched ATTEST line per run) — an unattested "re-ran, looks fine"
+claim isn't evidence. Relayed to Opus Reviewer. Report threshold: large
+achievements only (T2 group close, T1.12 return, any backfill red) —
+nothing smaller.
