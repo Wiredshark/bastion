@@ -108,11 +108,21 @@ impl<'a> System<'a> for Sys {
         // TODO: Don't send all changed blocks to all clients
         // Sync changed blocks
         if !terrain_changes.modified_blocks.is_empty() {
+            // DET-NET-014: emit a position-sorted Vec so the compressed wire
+            // payload is byte-canonical (modified_blocks is a HashMap whose
+            // iteration order rides the process hash seed) and applies on the
+            // client in a deterministic order.
+            let mut modified_blocks: Vec<_> = terrain_changes
+                .modified_blocks
+                .iter()
+                .map(|(p, b)| (*p, *b))
+                .collect();
+            modified_blocks.sort_unstable_by_key(|(p, _)| (p.x, p.y, p.z));
             let mut lazy_msg = None;
             for (_, client) in (&presences, &clients).join() {
                 if lazy_msg.is_none() {
                     lazy_msg = Some(client.prepare(ServerGeneral::TerrainBlockUpdates(
-                        CompressedData::compress(&terrain_changes.modified_blocks, 1),
+                        CompressedData::compress(&modified_blocks, 1),
                     )));
                 }
                 lazy_msg.as_ref().map(|msg| client.send_prepared(msg));

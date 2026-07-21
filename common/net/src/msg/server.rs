@@ -199,7 +199,12 @@ pub enum ServerGeneral {
         key: Vec2<i32>,
         zone: lod::Zone,
     },
-    TerrainBlockUpdates(CompressedData<HashMap<Vec3<i32>, Block>>),
+    // DET-NET-014 (v6 deep-pass, High): the wire payload is a POSITION-SORTED
+    // Vec, not a HashMap. A HashMap serializes in process-seed iteration order,
+    // so equivalent terrain updates encoded to different bytes (breaking exact
+    // wire evidence) and applied on the client in different order. The sorted
+    // Vec is canonical by construction.
+    TerrainBlockUpdates(CompressedData<Vec<(Vec3<i32>, Block)>>),
     // Always possible
     PlayerListUpdate(PlayerListUpdate),
     /// A message to go into the client chat box. The client is responsible for

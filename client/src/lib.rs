@@ -3339,8 +3339,10 @@ impl Client {
                 self.lod_last_requested = None;
             },
             ServerGeneral::TerrainBlockUpdates(blocks) => {
-                if let Some(mut blocks) = blocks.decompress() {
-                    blocks.drain().for_each(|(pos, block)| {
+                // DET-NET-014: the payload is now a position-sorted Vec; apply
+                // in that canonical order (was a HashMap drained in seed order).
+                if let Some(blocks) = blocks.decompress() {
+                    blocks.into_iter().for_each(|(pos, block)| {
                         self.state.set_block(pos, block);
                     });
                 }
