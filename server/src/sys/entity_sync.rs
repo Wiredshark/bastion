@@ -217,11 +217,16 @@ impl<'a> System<'a> for Sys {
 
                 // Sync tracked components
                 // Get deleted entities in this region from DeletedEntities
-                let (entity_sync_package, comp_sync_package) = trackers.create_sync_packages(
-                    &tracked_storages,
-                    region.entities(),
-                    deleted_entities_in_region,
-                );
+                let (mut entity_sync_package, mut comp_sync_package) = trackers
+                    .create_sync_packages(
+                        &tracked_storages,
+                        region.entities(),
+                        deleted_entities_in_region,
+                    );
+                // DET-NET-011/012 (v6, stage 1): stamp the server sim tick —
+                // the client can align packages across streams by tick.
+                entity_sync_package.sync_tick = tick;
+                comp_sync_package.sync_tick = tick;
                 // We lazily initialize the the synchronization messages in case there are no
                 // clients.
                 let mut entity_comp_sync = Either::Left((entity_sync_package, comp_sync_package));
@@ -246,6 +251,8 @@ impl<'a> System<'a> for Sys {
 
                 for (client, _, client_entity, client_pos) in &mut subscribers {
                     let mut comp_sync_package = CompSyncPackage::new();
+                    // DET-NET-012 (v6, stage 1): tick stamp.
+                    comp_sync_package.sync_tick = tick;
 
                     for (_, entity, &uid, (&pos, last_pos), vel, ori, collider) in (
                         region.entities(),
@@ -365,6 +372,8 @@ impl<'a> System<'a> for Sys {
                 );
             }
 
+            // DET-NET-012 (v6, stage 1): tick stamp.
+            comp_sync_package.sync_tick = tick;
             if !comp_sync_package.is_empty() {
                 client.send_fallible(ServerGeneral::CompSync(
                     comp_sync_package,
@@ -382,12 +391,14 @@ impl<'a> System<'a> for Sys {
             //
             // Additionally, when we stop spectating we don't delete the components that are
             // synced for spectators. Leaving stale components on the client.
-            let comp_sync_package = trackers.create_sync_from_spectated_entity_package(
+            let mut comp_sync_package = trackers.create_sync_from_spectated_entity_package(
                 &tracked_storages,
                 entity,
                 spectating_entity.0,
             );
 
+            // DET-NET-012 (v6, stage 1): tick stamp.
+            comp_sync_package.sync_tick = tick;
             if !comp_sync_package.is_empty() {
                 client.send_fallible(ServerGeneral::CompSync(
                     comp_sync_package,

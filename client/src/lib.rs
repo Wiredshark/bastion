@@ -311,6 +311,9 @@ pub struct Client {
     lod_last_requested: Option<Instant>,
     lod_pos_fallback: Option<Vec2<f32>>,
     force_update_counter: u64,
+    // DET-NET-011/012 (v6, stage 1): newest server sync tick seen across
+    // the replication streams (the chronology witness).
+    last_server_sync_tick: u64,
 
     role: Option<AdminRole>,
     max_group_size: u32,
@@ -1114,6 +1117,7 @@ impl Client {
             lod_pos_fallback: None,
 
             force_update_counter: 0,
+            last_server_sync_tick: 0,
 
             role,
             max_group_size,
@@ -3006,12 +3010,38 @@ impl Client {
                 };
             },
             ServerGeneral::EntitySync(entity_sync_package) => {
+                // DET-NET-011 (v6, stage 1): cross-stream chronology witness —
+                // a stamped package whose server tick regresses against the
+                // newest seen is logged (0 = unstamped legacy, skipped).
+                if entity_sync_package.sync_tick != 0 {
+                    if entity_sync_package.sync_tick < self.last_server_sync_tick {
+                        tracing::warn!(
+                            got = entity_sync_package.sync_tick,
+                            newest = self.last_server_sync_tick,
+                            "DET-NET-011: EntitySync arrived with a regressed server tick"
+                        );
+                    }
+                    self.last_server_sync_tick =
+                        self.last_server_sync_tick.max(entity_sync_package.sync_tick);
+                }
                 let uid = self.uid();
                 self.state
                     .ecs_mut()
                     .apply_entity_sync_package(entity_sync_package, uid);
             },
             ServerGeneral::CompSync(comp_sync_package, force_counter) => {
+                // DET-NET-012 (v6, stage 1): same chronology witness.
+                if comp_sync_package.sync_tick != 0 {
+                    if comp_sync_package.sync_tick < self.last_server_sync_tick {
+                        tracing::warn!(
+                            got = comp_sync_package.sync_tick,
+                            newest = self.last_server_sync_tick,
+                            "DET-NET-012: CompSync arrived with a regressed server tick"
+                        );
+                    }
+                    self.last_server_sync_tick =
+                        self.last_server_sync_tick.max(comp_sync_package.sync_tick);
+                }
                 self.force_update_counter = force_counter;
                 self.state
                     .ecs_mut()

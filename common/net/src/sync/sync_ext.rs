@@ -109,6 +109,8 @@ impl WorldSyncExt for specs::World {
     fn apply_entity_sync_package(&mut self, package: EntitySyncPackage, client_uid: Option<Uid>) {
         // Take ownership of the fields
         let EntitySyncPackage {
+            sync_tick: _,
+            sequence: _,
             created_entities,
             deleted_entities,
         } = package;

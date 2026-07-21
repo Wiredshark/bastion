@@ -8868,6 +8868,7 @@ dependencies = [
  "itertools 0.14.0",
  "ordered-float 5.3.0",
  "rand 0.10.1",
+ "rand_chacha 0.10.0",
  "rayon",
  "specs",
  "tracing",

@@ -110,6 +110,13 @@ pub struct EntityPackage<P: CompPacket> {
 pub struct EntitySyncPackage {
     pub created_entities: Vec<Uid>,
     pub deleted_entities: Vec<Uid>,
+    // DET-NET-011 (v6 deep-pass, stage 1 of the NET chronology root): the
+    // server sim tick this package was built at, and a per-client monotonic
+    // sequence. 0 = unstamped (legacy constructor); the client records and
+    // warns on regression — cross-stream barrier acceptance builds on these
+    // in later stages.
+    pub sync_tick: u64,
+    pub sequence: u64,
 }
 impl EntitySyncPackage {
     pub fn new(
@@ -127,6 +134,8 @@ impl EntitySyncPackage {
         Self {
             created_entities,
             deleted_entities,
+            sync_tick: 0,
+            sequence: 0,
         }
     }
 }
@@ -135,6 +144,10 @@ impl EntitySyncPackage {
 pub struct CompSyncPackage<P: CompPacket> {
     // TODO: this can be made to take less space by clumping updates for the same entity together
     pub comp_updates: Vec<(NonZeroU64, CompUpdateKind<P>)>,
+    // DET-NET-012 (v6 deep-pass, stage 1): see EntitySyncPackage — sim tick
+    // + per-client sequence; 0 = unstamped.
+    pub sync_tick: u64,
+    pub sequence: u64,
 }
 
 impl<P: CompPacket> CompSyncPackage<P> {
@@ -142,6 +155,8 @@ impl<P: CompPacket> CompSyncPackage<P> {
     pub fn new() -> Self {
         Self {
             comp_updates: Vec::new(),
+            sync_tick: 0,
+            sequence: 0,
         }
     }
 
