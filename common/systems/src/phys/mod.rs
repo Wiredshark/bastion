@@ -943,7 +943,7 @@ impl PhysicsData<'_> {
         );
         span!(guard, "Apply terrain collision");
         job.cpu_stats.measure(ParMode::Rayon);
-        let (mut land_on_grounds, outcomes) = (
+        let (mut land_on_grounds, keyed_outcomes) = (
             &read.entities,
             read.scales.maybe(),
             read.stickies.maybe(),
@@ -1543,24 +1543,29 @@ impl PhysicsData<'_> {
                         pos_vel_ori_defer.ori = None;
                     }
 
-                    (land_on_ground, outcomes)
+                    // DET-EVT-010: carry the source entity id so the
+                    // outcome chronology can be canonicalized post-reduce.
+                    (entity.id(), land_on_ground, outcomes)
                 },
             )
             .fold(
                 || (Vec::new(), Vec::new()),
-                |(mut land_on_grounds, mut all_outcomes), (land_on_ground, mut outcomes)| {
+                |(mut land_on_grounds, mut keyed): (_, Vec<(u32, Vec<Outcome>)>),
+                 (id, land_on_ground, outcomes)| {
                     land_on_ground.map(|log| land_on_grounds.push(log));
-                    all_outcomes.append(&mut outcomes);
-                    (land_on_grounds, all_outcomes)
+                    if !outcomes.is_empty() {
+                        keyed.push((id, outcomes));
+                    }
+                    (land_on_grounds, keyed)
                 },
             )
             .reduce(
                 || (Vec::new(), Vec::new()),
-                |(mut land_on_grounds_a, mut outcomes_a),
-                 (mut land_on_grounds_b, mut outcomes_b)| {
+                |(mut land_on_grounds_a, mut keyed_a),
+                 (mut land_on_grounds_b, mut keyed_b)| {
                     land_on_grounds_a.append(&mut land_on_grounds_b);
-                    outcomes_a.append(&mut outcomes_b);
-                    (land_on_grounds_a, outcomes_a)
+                    keyed_a.append(&mut keyed_b);
+                    (land_on_grounds_a, keyed_a)
                 },
             );
         drop(guard);
@@ -1571,10 +1576,19 @@ impl PhysicsData<'_> {
         // partitioning. The deterministic harness serializes on its
         // one-worker pool; LIVE mode did not. `land_on_grounds` is the
         // AUTHORITATIVE payload (fall damage) — canonicalize by entity id
-        // before emission. `outcomes` feed client presentation only
-        // (sounds/particles); their full (kind, pos) canonical key is noted
-        // debt, not authoritative surface.
+        // before emission.
+        // DET-EVT-010 (v5 deep-pass): the T0.28 noted-debt is closed —
+        // OUTCOMES are also canonicalized, keyed by source entity id
+        // (within one entity, its own emission order is preserved), so the
+        // networked outcome chronology no longer rides the Rayon
+        // partition/reduction tree.
         land_on_grounds.sort_unstable_by_key(|(entity, ..)| entity.id());
+        let mut keyed_outcomes = keyed_outcomes;
+        keyed_outcomes.sort_unstable_by_key(|(id, _)| *id);
+        let outcomes: Vec<Outcome> = keyed_outcomes
+            .into_iter()
+            .flat_map(|(_, outcomes)| outcomes)
+            .collect();
 
         write.outcomes.emitter().emit_many(outcomes);
 
