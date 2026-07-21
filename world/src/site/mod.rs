@@ -3283,7 +3283,30 @@ impl Site {
 
                                     if let Some(spec) = entity_path {
                                         let entity = EntityInfo::at(pos.as_());
-                                        let mut loadout_rng = rand::rng();
+                                        // DET-RNG-007 (determinism audit,
+                                        // Critical): the structure-entity
+                                        // loadout was rolled from fresh OS
+                                        // entropy (`rand::rng()`), so
+                                        // authoritative equipment varied
+                                        // run-to-run even under deterministic
+                                        // worldgen. Key it by construction on
+                                        // (world seed, entity WORLD position)
+                                        // + a loadout domain salt — the
+                                        // position is intrinsic to the
+                                        // structure, so this is stable and
+                                        // independent of generation/iteration
+                                        // order.
+                                        let seed = info.index().seed;
+                                        let mut loadout_rng = ChaChaRng::seed_from_u64(
+                                            (seed as u64)
+                                                ^ (pos.x as u64)
+                                                    .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                                ^ (pos.y as u64)
+                                                    .wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+                                                ^ (pos.z as u64)
+                                                    .wrapping_mul(0x1656_67B1_9E37_79F9)
+                                                ^ 0x1_0AD0_07E4,
+                                        );
                                         entities_from_structure_blocks.push(
                                             entity.with_asset_expect(&spec, &mut loadout_rng, None),
                                         );
