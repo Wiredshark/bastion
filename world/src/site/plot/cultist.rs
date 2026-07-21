@@ -119,7 +119,7 @@ impl Structure for Cultist {
         let base = self.base;
         let room_size = self.room_size;
         let floors = self.floors;
-        let mut rng = rand::rng();
+        let mut rng = super::plot_render_rng(self.bounds.center(), 0xC01D_0003);
         let candles_lite = Fill::Sampling(Arc::new(|wpos| {
             Some(match (RandomField::new(0).get(wpos)) % 30 {
                 0 => Block::air(SpriteKind::Candle),

@@ -49,7 +49,7 @@ impl Structure for TrollCave {
     fn render_inner(&self, _site: &Site, land: &Land, painter: &Painter) {
         let center = self.bounds.center();
         let base = land.get_alt_approx(center) as i32;
-        let mut rng = rand::rng();
+        let mut rng = super::plot_render_rng(self.bounds.center(), 0x7011_0007);
         let model_pos = center.with_z(base);
         // model
         lazy_static! {
