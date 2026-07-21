@@ -243,3 +243,52 @@ mod t0_49_tests {
         assert!(a < b, "identity is totally ordered by (namespace, sequence)");
     }
 }
+
+#[cfg(test)]
+mod det_rng_009_gate {
+    //! DET-RNG-009 (determinism audit) — the persisted-RNG-cursor gate.
+    //!
+    //! Confirmed moot by construction: all authoritative sim RNG is
+    //! re-derived every tick from `crate::tick_rng(world_seed, tick, salt)`
+    //! (counter-RNG), so nothing carries stream state across a save/reload —
+    //! there is no cursor to fork. This gate PINS that: no field of a
+    //! persisted rtsim `data` struct may be an RNG cursor type (which WOULD
+    //! serialize/restore a stream position and silently fork post-reload).
+    //! The only live RNG values are the per-tick `NpcCtx` fields in
+    //! `ai/mod.rs` — a transient context, never persisted, out of scope.
+
+    #[test]
+    fn no_persisted_rng_cursor_in_rtsim_data() {
+        // Every source file that defines serialized rtsim `data` state.
+        let sources: &[&str] = &[
+            include_str!("mod.rs"),
+            include_str!("npc.rs"),
+            include_str!("site.rs"),
+            include_str!("faction.rs"),
+            include_str!("nature.rs"),
+            include_str!("sentiment.rs"),
+            include_str!("quest.rs"),
+            include_str!("report.rs"),
+            include_str!("chronicle.rs"),
+            include_str!("architect.rs"),
+            include_str!("airship.rs"),
+        ];
+        // RNG cursor types that would carry a stream position across a save.
+        // Needles are built at RUNTIME so this test's own source (scanned via
+        // include_str!("mod.rs")) never self-matches.
+        for ty in ["ChaChaRng", "ChaCha20Rng", "StdRng", "SmallRng", "Pcg64", "Pcg32"] {
+            let field_needle = format!(": {ty}");
+            for src in sources {
+                assert_eq!(
+                    src.matches(&field_needle).count(),
+                    0,
+                    "a persisted RNG cursor field (`{field_needle}`) appeared in rtsim \
+                     `data` — authoritative sim RNG must be re-derived per tick from \
+                     tick_rng (counter-RNG), never STORED, or it forks across save/reload \
+                     (DET-RNG-009). If this is genuinely a transient non-persisted field, \
+                     move it off the data struct."
+                );
+            }
+        }
+    }
+}
