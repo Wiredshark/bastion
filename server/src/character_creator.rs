@@ -51,7 +51,9 @@ pub fn create_character(
     };
     // The client sends None if a weapon hand is empty
     let loadout = LoadoutBuilder::empty()
-        .defaults()
+        // RNG-P3 threading: character creation is an external input event —
+        // ambient entropy is fine here, now visible at the call site.
+        .defaults(&mut rand::rng())
         .active_mainhand(character_mainhand.map(|x| Item::new_from_asset_expect(&x)))
         .active_offhand(character_offhand.map(|x| Item::new_from_asset_expect(&x)))
         .build();

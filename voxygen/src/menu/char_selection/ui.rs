@@ -229,7 +229,7 @@ impl Mode {
         let offhand = None;
 
         let loadout = LoadoutBuilder::empty()
-            .defaults()
+            .defaults(&mut rand::rng())
             .active_mainhand(mainhand.map(Item::new_from_asset_expect))
             .active_offhand(offhand.map(Item::new_from_asset_expect))
             .build();

@@ -464,7 +464,7 @@ impl Structure for Plaza {
                 rng.random_range(self.aabr.min.y..self.aabr.max.y),
             );
             painter.spawn(
-                EntityInfo::at(wpos_2d.with_z(self.hard_alt.unwrap_or(self.alt)).as_())
+                EntityInfo::at(wpos_2d.with_z(self.hard_alt.unwrap_or(self.alt)).as_(), &mut *rng)
                     .with_asset_expect(spec, rng, None)
                     .with_alignment(Alignment::Tame),
             );

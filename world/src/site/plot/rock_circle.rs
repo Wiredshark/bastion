@@ -59,7 +59,7 @@ impl Structure for RockCircle {
         if rng.random_range(0..=8) < 1 {
             // dullahan
             painter.spawn(
-                EntityInfo::at(center.with_z(base + 2).as_()).with_asset_expect(
+                EntityInfo::at(center.with_z(base + 2).as_(), &mut rng).with_asset_expect(
                     "common.entity.wild.aggressive.dullahan",
                     &mut rng,
                     None,

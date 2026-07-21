@@ -3282,7 +3282,6 @@ impl Site {
                                     );
 
                                     if let Some(spec) = entity_path {
-                                        let entity = EntityInfo::at(pos.as_());
                                         // DET-RNG-007 (determinism audit,
                                         // Critical): the structure-entity
                                         // loadout was rolled from fresh OS
@@ -3307,6 +3306,8 @@ impl Site {
                                                     .wrapping_mul(0x1656_67B1_9E37_79F9)
                                                 ^ 0x1_0AD0_07E4,
                                         );
+                                        let entity =
+                                            EntityInfo::at(pos.as_(), &mut loadout_rng);
                                         entities_from_structure_blocks.push(
                                             entity.with_asset_expect(&spec, &mut loadout_rng, None),
                                         );

@@ -29,6 +29,18 @@ use crate::{
     util::Dir,
 };
 use rand::RngExt;
+
+/// RNG-P3-040 / combat instance ids (determinism audit): a process-monotonic
+/// attack/health-change instance id. These ids only group/dedup health
+/// changes from one attack (networked correlation identity — never balance,
+/// never persistence), so uniqueness is the whole contract. A counter is
+/// deterministic given deterministic event order; `rand::random()` (OS
+/// entropy) was not.
+pub fn next_attack_instance() -> u64 {
+    use core::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
 use serde::{Deserialize, Serialize};
 use specs::{Entity as EcsEntity, ReadStorage};
 use std::ops::{Mul, MulAssign};
@@ -304,7 +316,10 @@ impl Attack {
                  + EmitExt<TransformEvent>
              ),
         mut emit_outcome: impl FnMut(Outcome),
-        rng: &mut rand::rngs::ThreadRng,
+        // RNG-P3-012/combat (determinism audit): generic stream, not a hard
+        // ThreadRng — callers may inject a keyed deterministic stream; live
+        // callers keep passing thread-local entropy, byte-identical behavior.
+        rng: &mut impl RngExt,
         damage_instance_offset: u64,
     ) -> bool {
         // TODO: Maybe move this higher and pass it as argument into this function?
@@ -584,7 +599,7 @@ impl Attack {
                                     cause: None,
                                     time,
                                     precise: false,
-                                    instance: rand::random(),
+                                    instance: next_attack_instance(),
                                 };
                                 if change.amount.abs() > Health::HEALTH_EPSILON {
                                     emitters.emit(HealthChangeEvent {
@@ -626,7 +641,7 @@ impl Attack {
                                 cause: None,
                                 time,
                                 precise: false,
-                                instance: rand::random(),
+                                instance: next_attack_instance(),
                             };
                             if change.amount.abs() > Health::HEALTH_EPSILON {
                                 emitters.emit(HealthChangeEvent {
@@ -742,7 +757,7 @@ impl Attack {
                                             continue;
                                         };
 
-                                        EntityInfo::at(target.pos).with_entity_config(
+                                        EntityInfo::at(target.pos, &mut *rng).with_entity_config(
                                             entity_config.read().clone().into_inner(),
                                             Some(entity_spec),
                                             rng,
@@ -883,7 +898,7 @@ impl Attack {
                                 cause: None,
                                 time,
                                 precise: false,
-                                instance: rand::random(),
+                                instance: next_attack_instance(),
                             };
                             if change.amount.abs() > Health::HEALTH_EPSILON {
                                 emitters.emit(HealthChangeEvent {
@@ -925,7 +940,7 @@ impl Attack {
                             cause: None,
                             time,
                             precise: false,
-                            instance: rand::random(),
+                            instance: next_attack_instance(),
                         };
                         if change.amount.abs() > Health::HEALTH_EPSILON {
                             emitters.emit(HealthChangeEvent {
@@ -953,7 +968,7 @@ impl Attack {
                                 cause: Some(DamageSource::from(attack_source)),
                                 time,
                                 precise: precision_mult.is_some(),
-                                instance: rand::random(),
+                                instance: next_attack_instance(),
                             };
                             emitters.emit(HealthChangeEvent {
                                 entity: target.entity,
@@ -977,7 +992,7 @@ impl Attack {
                                 cause: Some(DamageSource::from(attack_source)),
                                 time,
                                 precise: precision_mult.is_some(),
-                                instance: rand::random(),
+                                instance: next_attack_instance(),
                             };
                             emitters.emit(HealthChangeEvent {
                                 entity: target.entity,
@@ -993,7 +1008,7 @@ impl Attack {
                                 cause: Some(DamageSource::from(attack_source)),
                                 time,
                                 precise: precision_mult.is_some(),
-                                instance: rand::random(),
+                                instance: next_attack_instance(),
                             };
                             emitters.emit(HealthChangeEvent {
                                 entity: target.entity,
@@ -1049,7 +1064,7 @@ impl Attack {
                                         continue;
                                     };
 
-                                    EntityInfo::at(target.pos).with_entity_config(
+                                    EntityInfo::at(target.pos, &mut *rng).with_entity_config(
                                         entity_config.read().clone().into_inner(),
                                         Some(entity_spec),
                                         rng,
@@ -1084,7 +1099,7 @@ impl Attack {
                                     cause: Some(DamageSource::from(attack_source)),
                                     time,
                                     precise: precision_mult.is_some(),
-                                    instance: rand::random(),
+                                    instance: next_attack_instance(),
                                 };
                                 emitters.emit(HealthChangeEvent {
                                     entity: target.entity,

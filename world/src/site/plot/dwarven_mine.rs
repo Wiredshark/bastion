@@ -401,7 +401,7 @@ fn spawn_entity(pos: Vec3<f32>, painter: &Painter, entity_path: &str) {
     // DET-RNG-006: position-keyed, not OS entropy (see plot_render_rng).
     let mut rng = super::plot_render_rng(pos.xy().as_(), 0xD3A6_0011);
     painter.spawn(
-        EntityInfo::at(pos)
+        EntityInfo::at(pos, &mut rng)
             .with_asset_expect(entity_path, &mut rng, None)
             .with_no_flee(),
     );
@@ -434,7 +434,7 @@ fn spawn_entities(
 
         let spawn_pos = pos + Vec3::new(x_offset, y_offset, 0.0);
 
-        painter.spawn(EntityInfo::at(spawn_pos).with_asset_expect(entity_path, &mut rng, None));
+        painter.spawn(EntityInfo::at(spawn_pos, &mut rng).with_asset_expect(entity_path, &mut rng, None));
     }
 }
 

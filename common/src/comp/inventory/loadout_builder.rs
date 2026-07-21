@@ -1149,9 +1149,11 @@ impl LoadoutBuilder {
         }
     }
 
+    // RNG-P3 threading block (determinism audit): the caller owns the
+    // stream — no internal ambient rand::rng(), so preset loadout rolls can
+    // be keyed by the summoner/spawner's identity.
     #[must_use = "Method consumes builder and returns updated builder."]
-    pub fn with_preset(mut self, preset: Preset) -> Self {
-        let rng = &mut rand::rng();
+    pub fn with_preset(mut self, preset: Preset, rng: &mut impl rand::RngExt) -> Self {
         match preset {
             Preset::HuskSummon => {
                 self = self.with_asset_expect("common.loadout.dungeon.cultist.husk", rng, None);
@@ -1340,9 +1342,9 @@ impl LoadoutBuilder {
 
     /// Set default armor items for the loadout. This may vary with game
     /// updates, but should be safe defaults for a new character.
+    // RNG-P3 threading block: caller-owned stream (see with_preset).
     #[must_use = "Method consumes builder and returns updated builder."]
-    pub fn defaults(self) -> Self {
-        let rng = &mut rand::rng();
+    pub fn defaults(self, rng: &mut impl rand::RngExt) -> Self {
         self.with_asset_expect("common.loadout.default", rng, None)
     }
 
@@ -1464,8 +1466,10 @@ mod tests {
     // Things that will be catched - invalid assets paths
     #[test]
     fn test_loadout_presets() {
+        use rand::SeedableRng;
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x10AD_0075);
         for preset in Preset::iter() {
-            drop(LoadoutBuilder::empty().with_preset(preset));
+            drop(LoadoutBuilder::empty().with_preset(preset, &mut rng));
         }
     }
 

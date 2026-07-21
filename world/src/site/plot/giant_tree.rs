@@ -51,7 +51,7 @@ impl GiantTree {
         dynamic_rng: &mut impl RngExt,
     ) -> Option<EntityInfo> {
         if above_block.kind() == BlockKind::Leaves && dynamic_rng.random_bool(0.000055) {
-            let entity = EntityInfo::at(pos.as_());
+            let entity = EntityInfo::at(pos.as_(), &mut *dynamic_rng);
             match dynamic_rng.random_range(0..=7) {
                 0 => Some(entity.with_asset_expect(
                     "common.entity.wild.aggressive.horn_beetle",

@@ -574,7 +574,7 @@ mod tests {
             // evaluate to get template to modify later
             let entity_config = Ron::<EntityConfig>::load_expect_cloned(&config_asset).into_inner();
             // evaluate to get random body
-            let template_entity = EntityInfo::at(Vec3::zero()).with_entity_config(
+            let template_entity = EntityInfo::at(Vec3::zero(), &mut rng).with_entity_config(
                 entity_config.clone(),
                 Some(&config_asset),
                 &mut rng,
@@ -590,7 +590,7 @@ mod tests {
                 // real entity config we plan to test with
                 let entity_config = entity_config.clone().with_body(BodyBuilder::Exact(*body));
                 // evaluate to get the resulting name
-                let entity = EntityInfo::at(Vec3::zero()).with_entity_config(
+                let entity = EntityInfo::at(Vec3::zero(), &mut rng).with_entity_config(
                     entity_config,
                     Some(&config_asset),
                     &mut rng,

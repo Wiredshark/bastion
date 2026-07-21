@@ -563,7 +563,7 @@ impl World {
             }
             if spawn_rules.waypoints {
                 supplement.add_entity_spawn(EntitySpawn::Entity(Box::new(
-                    EntityInfo::at(waypoint_pos).into_special(SpecialEntity::Waypoint),
+                    EntityInfo::at(waypoint_pos, &mut dynamic_rng).into_special(SpecialEntity::Waypoint),
                 )));
             }
         }

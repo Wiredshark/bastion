@@ -874,6 +874,7 @@ fn handle_into_npc(
             .read_component_copied::<comp::Pos>(target)
             .map(|p| p.0)
             .unwrap_or_default(),
+        &mut loadout_rng,
     )
     .with_entity_config(
         config.clone().into_inner(),
@@ -936,7 +937,7 @@ fn handle_make_npc(
     let mut loadout_rng = rng();
     for _ in 0..number {
         let comp::Pos(pos) = position(server, target, "target")?;
-        let entity_info = EntityInfo::at(pos).with_entity_config(
+        let entity_info = EntityInfo::at(pos, &mut loadout_rng).with_entity_config(
             config.clone().into_inner(),
             Some(&entity_config),
             &mut loadout_rng,
@@ -1790,7 +1791,7 @@ fn handle_health(
                 cause: None,
                 precise: false,
                 time: *time,
-                instance: rand::random(),
+                instance: common::combat::next_attack_instance(),
             };
             health.change_by(change);
             Ok(())

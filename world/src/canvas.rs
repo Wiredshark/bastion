@@ -313,7 +313,7 @@ impl<'a> Canvas<'a> {
         });
         for (pos, spec) in entities.drain(..) {
             self.spawn(EntitySpawn::Entity(Box::new(
-                EntityInfo::at(pos).with_asset_expect(&spec, &mut rng, None),
+                EntityInfo::at(pos, &mut rng).with_asset_expect(&spec, &mut rng, None),
             )));
         }
     }

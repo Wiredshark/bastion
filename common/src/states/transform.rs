@@ -74,7 +74,7 @@ impl CharacterBehavior for Data {
                         return update;
                     };
 
-                    let entity_info = EntityInfo::at(data.pos.0).with_entity_config(
+                    let entity_info = EntityInfo::at(data.pos.0, &mut rng()).with_entity_config(
                         entity_config.read().clone().into_inner(),
                         Some(&self.static_data.target),
                         &mut rng(),

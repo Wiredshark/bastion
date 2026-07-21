@@ -1538,7 +1538,7 @@ impl Server {
                     cause: Some(common::DamageSource::Falling),
                     time,
                     precise: false,
-                    // Fixed instance: rand::random() made N6 nondeterministic
+                    // Fixed instance: common::combat::next_attack_instance() made N6 nondeterministic
                     // across identical runs (the x2 comparator caught it).
                     instance: 0xBA57_10D4,
                 },

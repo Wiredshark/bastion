@@ -166,7 +166,7 @@ impl Structure for TerracottaYard {
             // npcs
             // statue
             painter.spawn(
-                EntityInfo::at((center).with_z(base).as_()).with_asset_expect(
+                EntityInfo::at((center).with_z(base).as_(), &mut rng).with_asset_expect(
                     "common.entity.dungeon.terracotta.terracotta_statue_key",
                     &mut rng,
                     None,

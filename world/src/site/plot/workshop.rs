@@ -159,7 +159,7 @@ impl Structure for Workshop {
         }
 
         painter.spawn(
-            EntityInfo::at(self.bounds.center().with_z(base).map(|e| e as f32 + 0.5))
+            EntityInfo::at(self.bounds.center().with_z(base).map(|e| e as f32 + 0.5), &mut super::plot_render_rng(self.bounds.center(), 0x3095_003A))
                 .into_special(SpecialEntity::Waypoint),
         );
     }

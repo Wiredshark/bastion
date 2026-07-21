@@ -2491,7 +2491,7 @@ impl Structure for DesertCityMultiPlot {
                 let campfire_pos = (center).with_z(base + 1);
                 if self.campfire {
                     painter.spawn(
-                        EntityInfo::at(campfire_pos.map(|e| e as f32))
+                        EntityInfo::at(campfire_pos.map(|e| e as f32), &mut super::plot_render_rng(campfire_pos.xy(), 0xDE5E_0037))
                             .into_special(SpecialEntity::Waypoint),
                     )
                 }

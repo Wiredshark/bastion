@@ -559,7 +559,7 @@ impl Structure for Cultist {
                                 .with_z(room_base - room_size + ((room_size / 3) * f));
                             let pos_var = RandomField::new(0).get(npc_pos) % 10;
                             if pos_var < 2 {
-                                painter.spawn(EntityInfo::at(npc_pos.as_()).with_asset_expect(
+                                painter.spawn(EntityInfo::at(npc_pos.as_(), &mut rng).with_asset_expect(
                                     "common.entity.dungeon.cultist.cultist",
                                     &mut rng,
                                     None,
@@ -619,14 +619,14 @@ impl Structure for Cultist {
                 exit_position.as_::<f32>()
             };
             if mob_room {
-                painter.spawn(EntityInfo::at(mob_portal.as_::<f32>()).into_special(
+                painter.spawn(EntityInfo::at(mob_portal.as_::<f32>(), &mut rng).into_special(
                     SpecialEntity::Teleporter(PortalData {
                         target: mob_portal_target.as_::<f32>(),
                         requires_no_aggro: true,
                         buildup_time: Secs(5.),
                     }),
                 ));
-                painter.spawn(EntityInfo::at(mini_boss_portal.as_::<f32>()).into_special(
+                painter.spawn(EntityInfo::at(mini_boss_portal.as_::<f32>(), &mut rng).into_special(
                     SpecialEntity::Teleporter(PortalData {
                         target: mini_boss_portal_target,
                         requires_no_aggro: true,
@@ -634,7 +634,7 @@ impl Structure for Cultist {
                     }),
                 ));
             } else if boss_room {
-                painter.spawn(EntityInfo::at(boss_portal.as_::<f32>()).into_special(
+                painter.spawn(EntityInfo::at(boss_portal.as_::<f32>(), &mut rng).into_special(
                     SpecialEntity::Teleporter(PortalData {
                         target: exit_position.as_::<f32>(),
                         requires_no_aggro: true,
@@ -647,26 +647,26 @@ impl Structure for Cultist {
                 if boss_room {
                     let npc_pos = room_center.with_z(room_base - room_size);
 
-                    painter.spawn(EntityInfo::at(npc_pos.as_()).with_asset_expect(
+                    painter.spawn(EntityInfo::at(npc_pos.as_(), &mut rng).with_asset_expect(
                         "common.entity.dungeon.cultist.mindflayer",
                         &mut rng,
                         None,
                     ));
                 } else {
                     let npc_pos = (room_center - 2).with_z(room_base - room_size);
-                    painter.spawn(EntityInfo::at(npc_pos.as_()).with_asset_expect(
+                    painter.spawn(EntityInfo::at(npc_pos.as_(), &mut rng).with_asset_expect(
                         "common.entity.dungeon.cultist.warlock",
                         &mut rng,
                         None,
                     ));
 
-                    painter.spawn(EntityInfo::at(npc_pos.as_()).with_asset_expect(
+                    painter.spawn(EntityInfo::at(npc_pos.as_(), &mut rng).with_asset_expect(
                         "common.entity.dungeon.cultist.warlord",
                         &mut rng,
                         None,
                     ));
                     painter.spawn(
-                        EntityInfo::at(((room_center + 5).with_z(room_base - room_size)).as_())
+                        EntityInfo::at(((room_center + 5).with_z(room_base - room_size)).as_(), &mut rng)
                             .with_asset_expect(
                                 "common.entity.dungeon.cultist.beastmaster",
                                 &mut rng,
@@ -730,7 +730,7 @@ impl Structure for Cultist {
                                 max: (sprite_pos + 1).with_z(sprite_pos.z + 2),
                             })
                             .clear();
-                        painter.spawn(EntityInfo::at(sprite_pos.as_()).with_asset_expect(
+                        painter.spawn(EntityInfo::at(sprite_pos.as_(), &mut rng).with_asset_expect(
                             match (RandomField::new(0).get(sprite_pos)) % 10 {
                                 0 => "common.entity.village.farmer",
                                 1 => "common.entity.village.guard",
@@ -814,7 +814,7 @@ impl Structure for Cultist {
                 "common.entity.dungeon.cultist.hound",
             ];
             let npc = entities[(RandomField::new(0).get(pos) % entities.len() as u32) as usize];
-            painter.spawn(EntityInfo::at(pos.as_()).with_asset_expect(npc, &mut rng, None));
+            painter.spawn(EntityInfo::at(pos.as_(), &mut rng).with_asset_expect(npc, &mut rng, None));
         }
 
         // outside portal
@@ -831,7 +831,7 @@ impl Structure for Cultist {
             bottom_position.z as f32,
         );
         painter.spawn(
-            EntityInfo::at(bottom_pos).into_special(SpecialEntity::Teleporter(PortalData {
+            EntityInfo::at(bottom_pos, &mut rng).into_special(SpecialEntity::Teleporter(PortalData {
                 target: top_pos,
                 requires_no_aggro: true,
                 buildup_time: Secs(5.),

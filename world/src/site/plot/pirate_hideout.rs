@@ -70,7 +70,7 @@ impl Structure for PirateHideout {
             match RandomField::new(0).get(npc_pos.with_z(base + 2)) % 2 {
                 // rat
                 0 => painter.spawn(
-                    EntityInfo::at(npc_pos.with_z(base).as_()).with_asset_expect(
+                    EntityInfo::at(npc_pos.with_z(base).as_(), &mut rng).with_asset_expect(
                         "common.entity.wild.peaceful.rat",
                         &mut rng,
                         None,
@@ -78,7 +78,7 @@ impl Structure for PirateHideout {
                 ),
                 // parrot
                 _ => painter.spawn(
-                    EntityInfo::at(npc_pos.with_z(base).as_()).with_asset_expect(
+                    EntityInfo::at(npc_pos.with_z(base).as_(), &mut rng).with_asset_expect(
                         "common.entity.wild.peaceful.parrot",
                         &mut rng,
                         None,

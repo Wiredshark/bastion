@@ -1250,10 +1250,10 @@ impl Structure for DesertCityArena {
                 .fill(sandstone.clone());
             // campfires & repair benches
             painter.spawn(
-                EntityInfo::at((spire_pos - 2).with_z(base - 1).as_())
+                EntityInfo::at((spire_pos - 2).with_z(base - 1).as_(), &mut super::plot_render_rng(*spire_pos, 0xDE5E_0035))
                     .into_special(SpecialEntity::Waypoint),
             );
-            painter.spawn(EntityInfo::at(center.with_z(base).as_()).into_special(
+            painter.spawn(EntityInfo::at(center.with_z(base).as_(), &mut super::plot_render_rng(center, 0xDE5E_0036)).into_special(
                 SpecialEntity::ArenaTotem {
                     range: length as f32,
                 },

@@ -1927,13 +1927,13 @@ fn apply_entity_spawns<R: Rng>(canvas: &mut Canvas, wpos: Vec3<i32>, biome: &Bio
         .and_then(|s| s.0)
     {
         canvas.spawn(EntitySpawn::Entity(Box::new(
-            EntityInfo::at(wpos.map(|e| e as f32)).with_asset_expect(entity_asset, rng, None),
+            EntityInfo::at(wpos.map(|e| e as f32), &mut *rng).with_asset_expect(entity_asset, rng, None),
         )));
     }
 
     // FIXME: Add back waypoints once caves are not impossible to escape.
     /* // Occasionally place down a waypoint
     if RandomField::new(canvas.info().index().seed).chance(wpos, 0.000005) {
-        canvas.spawn(EntityInfo::at(wpos.map(|e| e as f32)).into_waypoint());
+        canvas.spawn(EntityInfo::at(wpos.map(|e| e as f32), &mut rng).into_waypoint());
     } */
 }

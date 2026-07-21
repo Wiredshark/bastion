@@ -439,7 +439,7 @@ impl Structure for DesertCityAirshipDock {
                         Vec2::new(center.x + bldg_length - 2, center.y)
                             .with_z(bldg_base + height + 1)
                             .map(|e| e as f32 + 0.5),
-                    )
+                    &mut super::plot_render_rng(center, 0xDE5E_003B))
                     .into_special(SpecialEntity::Waypoint),
                 );
             }

@@ -655,7 +655,7 @@ impl Structure for TerracottaPalace {
             let npc = chamber_npcs
                 .swap_remove(RandomField::new(0).get(npc_pos) as usize % chamber_npcs.len());
 
-            painter.spawn(EntityInfo::at(npc_pos.as_()).with_asset_expect(npc, &mut rng, None));
+            painter.spawn(EntityInfo::at(npc_pos.as_(), &mut rng).with_asset_expect(npc, &mut rng, None));
         }
         // chamber_1
         painter
@@ -909,7 +909,7 @@ impl Structure for TerracottaPalace {
             let statue = statue_npcs
                 .swap_remove(RandomField::new(0).get(statue_pos) as usize % statue_npcs.len());
             painter.spawn(
-                EntityInfo::at((statue_pos).as_()).with_asset_expect(statue, &mut rng, None),
+                EntityInfo::at((statue_pos).as_(), &mut rng).with_asset_expect(statue, &mut rng, None),
             );
         }
         // clear tunnel
@@ -1041,7 +1041,7 @@ impl Structure for TerracottaPalace {
                         RandomField::new(0).get(cellar_statue_pos) as usize
                             % cellar_statue_npcs.len(),
                     );
-                    painter.spawn(EntityInfo::at(cellar_statue_pos.as_()).with_asset_expect(
+                    painter.spawn(EntityInfo::at(cellar_statue_pos.as_(), &mut rng).with_asset_expect(
                         cellar_statue,
                         &mut rng,
                         None,
@@ -1069,7 +1069,7 @@ impl Structure for TerracottaPalace {
         }
         // platform mogwai
         painter.spawn(
-            EntityInfo::at((center.with_z(base + (3 * (room_size / 10)) + 2)).as_())
+            EntityInfo::at((center.with_z(base + (3 * (room_size / 10)) + 2)).as_(), &mut rng)
                 .with_asset_expect("common.entity.dungeon.terracotta.mogwai", &mut rng, None),
         );
 
@@ -1103,7 +1103,7 @@ pub fn spawn_random_entity(pos: Vec3<i32>, painter: &Painter, amount: RangeInclu
         let random_entity_index = rng.random_range(0..entities.len());
         let random_entity = entities[random_entity_index];
         let position = Vec3::new(pos.x + n, pos.y + n, pos.z);
-        painter.spawn(EntityInfo::at(position.as_()).with_asset_expect(
+        painter.spawn(EntityInfo::at(position.as_(), &mut rng).with_asset_expect(
             random_entity,
             &mut rng,
             None,

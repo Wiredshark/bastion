@@ -267,7 +267,7 @@ impl Structure for SavannahAirshipDock {
         // campfire
         let campfire_pos = (center - (2 * (length / 3)) - 1).with_z(base + platform_height);
         painter.spawn(
-            EntityInfo::at(campfire_pos.map(|e| e as f32 + 0.5))
+            EntityInfo::at(campfire_pos.map(|e| e as f32 + 0.5), &mut super::plot_render_rng(campfire_pos.xy(), 0x5A7A_0038))
                 .into_special(SpecialEntity::Waypoint),
         );
         for b in 0..2 {

@@ -418,7 +418,7 @@ impl Structure for CliffTownAirshipDock {
                             Vec2::new(plot_center.x - platform_length - 2, plot_center.y)
                                 .with_z(floor_level);
                         painter.spawn(
-                            EntityInfo::at(campfire_pos.map(|e| e as f32 + 0.5))
+                            EntityInfo::at(campfire_pos.map(|e| e as f32 + 0.5), &mut super::plot_render_rng(campfire_pos.xy(), 0xC1FA_0032))
                                 .into_special(SpecialEntity::Waypoint),
                         );
                     }

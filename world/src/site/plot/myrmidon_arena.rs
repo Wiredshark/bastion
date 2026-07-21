@@ -507,7 +507,7 @@ impl Structure for MyrmidonArena {
             ];
             let npc_pos = npc_position.with_z(base + 2);
             let npc = entities[(RandomField::new(0).get(npc_pos) % entities.len() as u32) as usize];
-            painter.spawn(EntityInfo::at(npc_pos.as_()).with_asset_expect(npc, &mut rng, None));
+            painter.spawn(EntityInfo::at(npc_pos.as_(), &mut rng).with_asset_expect(npc, &mut rng, None));
         }
         let mob_positions_pit = place_circular(center, (radius / 3) as f32, 10);
         for npc_position in mob_positions_pit {
@@ -518,12 +518,12 @@ impl Structure for MyrmidonArena {
             ];
             let npc_pos = npc_position.with_z(base - 20);
             let npc = entities[(RandomField::new(0).get(npc_pos) % entities.len() as u32) as usize];
-            painter.spawn(EntityInfo::at(npc_pos.as_()).with_asset_expect(npc, &mut rng, None));
+            painter.spawn(EntityInfo::at(npc_pos.as_(), &mut rng).with_asset_expect(npc, &mut rng, None));
         }
         let mob_positions_high = place_circular(center, radius as f32, 20);
         for npc_position in mob_positions_high {
             let npc_pos = npc_position.with_z(base + top_platform_height + 5);
-            painter.spawn(EntityInfo::at(npc_pos.as_()).with_asset_expect(
+            painter.spawn(EntityInfo::at(npc_pos.as_(), &mut rng).with_asset_expect(
                 "common.entity.dungeon.myrmidon.marksman",
                 &mut rng,
                 None,
@@ -593,7 +593,7 @@ impl Structure for MyrmidonArena {
 
         let npc_pos = Vec2::new(boss_pos.x - 50, boss_pos.y).with_z(base - 20);
 
-        painter.spawn(EntityInfo::at(npc_pos.as_()).with_asset_expect(
+        painter.spawn(EntityInfo::at(npc_pos.as_(), &mut rng).with_asset_expect(
             "common.entity.dungeon.myrmidon.minotaur",
             &mut rng,
             None,
@@ -695,7 +695,7 @@ impl Structure for MyrmidonArena {
                 Dir2::X,
             )
             .clear();
-        painter.spawn(EntityInfo::at(cyclops_pos_high.as_()).with_asset_expect(
+        painter.spawn(EntityInfo::at(cyclops_pos_high.as_(), &mut rng).with_asset_expect(
             "common.entity.dungeon.myrmidon.cyclops_key",
             &mut rng,
             None,
@@ -710,7 +710,7 @@ impl Structure for MyrmidonArena {
                 Dir2::X,
             )
             .clear();
-        painter.spawn(EntityInfo::at(cyclops_pos_low.as_()).with_asset_expect(
+        painter.spawn(EntityInfo::at(cyclops_pos_low.as_(), &mut rng).with_asset_expect(
             "common.entity.dungeon.myrmidon.cyclops",
             &mut rng,
             None,
@@ -718,7 +718,7 @@ impl Structure for MyrmidonArena {
         let mob_positions_cellar = place_circular(center, 2.0, 3);
         for npc_position in mob_positions_cellar {
             let npc_pos = npc_position.with_z(base - 79);
-            painter.spawn(EntityInfo::at(npc_pos.as_()).with_asset_expect(
+            painter.spawn(EntityInfo::at(npc_pos.as_(), &mut rng).with_asset_expect(
                 "common.entity.dungeon.myrmidon.marksman",
                 &mut rng,
                 None,

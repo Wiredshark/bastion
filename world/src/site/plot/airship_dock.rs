@@ -932,7 +932,7 @@ impl Structure for AirshipDock {
 
         // campfire
         painter.spawn(
-            EntityInfo::at(self.campfire_pos.map(|e| e as f32 + 0.5))
+            EntityInfo::at(self.campfire_pos.map(|e| e as f32 + 0.5), &mut super::plot_render_rng(self.campfire_pos.xy(), 0xA1D0_0030))
                 .into_special(SpecialEntity::Waypoint),
         );
 

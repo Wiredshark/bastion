@@ -397,7 +397,7 @@ impl Structure for CoastalAirshipDock {
                 // campfire
                 let campfire_pos = (center + Vec2::new(0, -3)).with_z(level_height);
                 painter.spawn(
-                    EntityInfo::at(campfire_pos.map(|e| e as f32 + 0.5))
+                    EntityInfo::at(campfire_pos.map(|e| e as f32 + 0.5), &mut super::plot_render_rng(campfire_pos.xy(), 0xC0A5_0033))
                         .into_special(SpecialEntity::Waypoint),
                 );
             }

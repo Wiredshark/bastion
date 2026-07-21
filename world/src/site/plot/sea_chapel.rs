@@ -625,7 +625,7 @@ impl Structure for SeaChapel {
         // cellar sea crocodiles
         let cellar_sea_croc_pos = (center - (diameter / 4)).with_z(base - (diameter / 2));
         for _ in 0..(3 + ((RandomField::new(0).get((cellar_sea_croc_pos).with_z(base))) % 5)) {
-            painter.spawn(EntityInfo::at(cellar_sea_croc_pos.as_()).with_asset_expect(
+            painter.spawn(EntityInfo::at(cellar_sea_croc_pos.as_(), &mut rng).with_asset_expect(
                 "common.entity.wild.aggressive.sea_crocodile",
                 &mut rng,
                 None,
@@ -696,7 +696,7 @@ impl Structure for SeaChapel {
         // organ on chapel top floor organ podium
         let first_floor_organ_pos = center_o2.with_z(base - (diameter / 8) + diameter - 4);
         painter.spawn(
-            EntityInfo::at(first_floor_organ_pos.as_()).with_asset_expect(
+            EntityInfo::at(first_floor_organ_pos.as_(), &mut rng).with_asset_expect(
                 "common.entity.dungeon.sea_chapel.organ",
                 &mut rng,
                 None,
@@ -706,7 +706,7 @@ impl Structure for SeaChapel {
         let first_floor_spawn_pos = (center_o2 - 2).with_z(base - (diameter / 8) + diameter - 4);
         for _ in 0..(2 + ((RandomField::new(0).get((first_floor_spawn_pos).with_z(base))) % 2)) {
             painter.spawn(
-                EntityInfo::at(first_floor_spawn_pos.as_()).with_asset_expect(
+                EntityInfo::at(first_floor_spawn_pos.as_(), &mut rng).with_asset_expect(
                     "common.entity.dungeon.sea_chapel.sea_cleric",
                     &mut rng,
                     None,
@@ -714,7 +714,7 @@ impl Structure for SeaChapel {
             )
         }
         painter.spawn(
-            EntityInfo::at(first_floor_spawn_pos.as_()).with_asset_expect(
+            EntityInfo::at(first_floor_spawn_pos.as_(), &mut rng).with_asset_expect(
                 "common.entity.dungeon.sea_chapel.sea_bishop",
                 &mut rng,
                 None,
@@ -763,7 +763,7 @@ impl Structure for SeaChapel {
         // organ on chapel main room organ podium
         let first_floor_organ_pos = center_o1.with_z(base + 2);
         painter.spawn(
-            EntityInfo::at(first_floor_organ_pos.as_()).with_asset_expect(
+            EntityInfo::at(first_floor_organ_pos.as_(), &mut rng).with_asset_expect(
                 "common.entity.dungeon.sea_chapel.organ",
                 &mut rng,
                 None,
@@ -774,7 +774,7 @@ impl Structure for SeaChapel {
         for _ in 0..(3 + ((RandomField::new(0).get((main_room_sea_clerics_pos).with_z(base))) % 3))
         {
             painter.spawn(
-                EntityInfo::at(main_room_sea_clerics_pos.as_()).with_asset_expect(
+                EntityInfo::at(main_room_sea_clerics_pos.as_(), &mut rng).with_asset_expect(
                     "common.entity.dungeon.sea_chapel.sea_cleric",
                     &mut rng,
                     None,
@@ -783,14 +783,14 @@ impl Structure for SeaChapel {
         }
         // coral golem on main floor
         painter.spawn(
-            EntityInfo::at((first_floor_organ_pos + 2).as_()).with_asset_expect(
+            EntityInfo::at((first_floor_organ_pos + 2).as_(), &mut rng).with_asset_expect(
                 "common.entity.dungeon.sea_chapel.coralgolem",
                 &mut rng,
                 None,
             ),
         );
         painter.spawn(
-            EntityInfo::at((first_floor_organ_pos + 4).as_()).with_asset_expect(
+            EntityInfo::at((first_floor_organ_pos + 4).as_(), &mut rng).with_asset_expect(
                 "common.entity.dungeon.sea_chapel.sea_bishop",
                 &mut rng,
                 None,
@@ -869,7 +869,7 @@ impl Structure for SeaChapel {
         // cardinals room sea clerics
         let cr_sea_clerics_pos = (center - (diameter / 5)).with_z(base - (diameter / 4) - 3);
         for _ in 0..(2 + ((RandomField::new(0).get((cr_sea_clerics_pos).with_z(base))) % 3)) {
-            painter.spawn(EntityInfo::at(cr_sea_clerics_pos.as_()).with_asset_expect(
+            painter.spawn(EntityInfo::at(cr_sea_clerics_pos.as_(), &mut rng).with_asset_expect(
                 "common.entity.dungeon.sea_chapel.sea_cleric",
                 &mut rng,
                 None,
@@ -877,7 +877,7 @@ impl Structure for SeaChapel {
         }
         // Cardinal
         let cr_cardinal_pos = (center - (diameter / 6)).with_z(base - (diameter / 4) - 3);
-        painter.spawn(EntityInfo::at(cr_cardinal_pos.as_()).with_asset_expect(
+        painter.spawn(EntityInfo::at(cr_cardinal_pos.as_(), &mut rng).with_asset_expect(
             "common.entity.dungeon.sea_chapel.cardinal",
             &mut rng,
             None,
@@ -1429,7 +1429,7 @@ impl Structure for SeaChapel {
                         // room sea clerics
                         let room_clerics_pos =
                             (points[0] + 2).with_z(base + (6 * up) + (t * (steps - 1) * up) - 4);
-                        painter.spawn(EntityInfo::at(room_clerics_pos.as_()).with_asset_expect(
+                        painter.spawn(EntityInfo::at(room_clerics_pos.as_(), &mut rng).with_asset_expect(
                             "common.entity.dungeon.sea_chapel.sea_cleric",
                             &mut rng,
                             None,
@@ -1707,7 +1707,7 @@ impl Structure for SeaChapel {
         let underwater_organ_pos =
             (center - (diameter / 4)).with_z(base - (3 * diameter) + (diameter / 2) + 1);
         painter.spawn(
-            EntityInfo::at(underwater_organ_pos.as_()).with_asset_expect(
+            EntityInfo::at(underwater_organ_pos.as_(), &mut rng).with_asset_expect(
                 "common.entity.dungeon.sea_chapel.organ",
                 &mut rng,
                 None,
@@ -1766,7 +1766,7 @@ impl Structure for SeaChapel {
             .fill(gold_chain);
         // underwater chamber dagon
         let cellar_miniboss_pos = (center + 6).with_z(base - (3 * diameter) + (diameter / 2) + 1);
-        painter.spawn(EntityInfo::at(cellar_miniboss_pos.as_()).with_asset_expect(
+        painter.spawn(EntityInfo::at(cellar_miniboss_pos.as_(), &mut rng).with_asset_expect(
             "common.entity.dungeon.sea_chapel.dagon",
             &mut rng,
             None,
@@ -2807,7 +2807,7 @@ impl Structure for SeaChapel {
                 0..(2 + ((RandomField::new(0).get((bldg_cellar_sea_croc_pos).with_z(base))) % 2))
             {
                 painter.spawn(
-                    EntityInfo::at(bldg_cellar_sea_croc_pos.as_()).with_asset_expect(
+                    EntityInfo::at(bldg_cellar_sea_croc_pos.as_(), &mut rng).with_asset_expect(
                         "common.entity.wild.aggressive.sea_crocodile",
                         &mut rng,
                         None,
@@ -2864,7 +2864,7 @@ impl Structure for SeaChapel {
                         + ((RandomField::new(0).get((bldg_floor_sea_cleric_pos).with_z(base))) % 2))
                     {
                         painter.spawn(
-                            EntityInfo::at(bldg_floor_sea_cleric_pos.as_()).with_asset_expect(
+                            EntityInfo::at(bldg_floor_sea_cleric_pos.as_(), &mut rng).with_asset_expect(
                                 "common.entity.dungeon.sea_chapel.sea_cleric",
                                 &mut rng,
                                 None,
@@ -3006,7 +3006,7 @@ impl Structure for SeaChapel {
                         + ((RandomField::new(0).get((bldg_floor_sea_cleric_pos).with_z(base))) % 2))
                     {
                         painter.spawn(
-                            EntityInfo::at(bldg_floor_sea_cleric_pos.as_()).with_asset_expect(
+                            EntityInfo::at(bldg_floor_sea_cleric_pos.as_(), &mut rng).with_asset_expect(
                                 "common.entity.dungeon.sea_chapel.sea_cleric",
                                 &mut rng,
                                 None,
@@ -3019,7 +3019,7 @@ impl Structure for SeaChapel {
                             % 2))
                     {
                         painter.spawn(
-                            EntityInfo::at(bldg_floor3_sea_cleric_pos.as_()).with_asset_expect(
+                            EntityInfo::at(bldg_floor3_sea_cleric_pos.as_(), &mut rng).with_asset_expect(
                                 "common.entity.dungeon.sea_chapel.sea_cleric",
                                 &mut rng,
                                 None,
@@ -3366,7 +3366,7 @@ impl Structure for SeaChapel {
                                     + ((RandomField::new(0).get((prisoner_pos).with_z(base))) % 6))
                                 {
                                     painter.spawn(
-                                        EntityInfo::at(prisoner_pos.as_()).with_asset_expect(
+                                        EntityInfo::at(prisoner_pos.as_(), &mut rng).with_asset_expect(
                                             "common.entity.dungeon.sea_chapel.prisoner",
                                             &mut rng,
                                             None,

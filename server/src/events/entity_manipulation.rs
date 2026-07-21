@@ -863,7 +863,7 @@ impl ServerEvent for DestroyEvent {
                                     cause: None,
                                     time: *data.time,
                                     precise: false,
-                                    instance: rand::random(),
+                                    instance: common::combat::next_attack_instance(),
                                 };
                                 if change.amount.abs() > Health::HEALTH_EPSILON {
                                     emitters.emit(HealthChangeEvent {
@@ -905,7 +905,7 @@ impl ServerEvent for DestroyEvent {
                                     cause: None,
                                     time: *data.time,
                                     precise: false,
-                                    instance: rand::random(),
+                                    instance: common::combat::next_attack_instance(),
                                 };
                                 if change.amount.abs() > Health::HEALTH_EPSILON {
                                     emitters.emit(HealthChangeEvent {
@@ -932,7 +932,7 @@ impl ServerEvent for DestroyEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: rand::random(),
+                                        instance: common::combat::next_attack_instance(),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -960,7 +960,7 @@ impl ServerEvent for DestroyEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: rand::random(),
+                                        instance: common::combat::next_attack_instance(),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -980,7 +980,7 @@ impl ServerEvent for DestroyEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: rand::random(),
+                                        instance: common::combat::next_attack_instance(),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -1045,6 +1045,7 @@ impl ServerEvent for DestroyEvent {
                                                     .get(effect_target)
                                                     .map(|p| p.0)
                                                     .unwrap_or_default(),
+                                                &mut rng,
                                             )
                                             .with_entity_config(
                                                 entity_config.read().clone().into_inner(),
@@ -1081,7 +1082,7 @@ impl ServerEvent for DestroyEvent {
                                             cause: Some(DamageSource::Other),
                                             time: *data.time,
                                             precise: false,
-                                            instance: rand::random(),
+                                            instance: common::combat::next_attack_instance(),
                                         };
                                         emitters.emit(HealthChangeEvent {
                                             entity: effect_target,
@@ -1205,11 +1206,28 @@ impl ServerEvent for DestroyEvent {
                     }
                 }
 
+                // DET-ADD-007 (determinism audit, Critical): CANONICAL order
+                // before any floating-point reduction. The contributor map is
+                // a HashMap (process-seeded hash order), and both the f64
+                // damage total (non-associative addition) and the award list
+                // order rode that iteration order — so identical fights could
+                // award bit-different XP across runs. Sort by the
+                // version-stable identity hash of each contributor, then sum
+                // / percentage / award in that fixed order.
+                let mut damage_contributors: Vec<(DamageContrib, (u64, f32))> =
+                    damage_contributors.into_iter().collect();
+                damage_contributors.sort_by_key(|(contrib, _)| {
+                    common::state_hash::stable_hash_u64(
+                        "bastion/domain/xp-contrib/v1",
+                        contrib,
+                    )
+                });
+
                 // Calculate the percentage of total damage that each DamageContributor
                 // contributed
                 let total_damage: f64 = damage_contributors
-                    .values()
-                    .map(|(damage, _)| *damage as f64)
+                    .iter()
+                    .map(|(_, (damage, _))| *damage as f64)
                     .sum();
                 damage_contributors
                     .iter_mut()
@@ -3060,7 +3078,7 @@ impl ServerEvent for EntityAttackedHookEvent {
                                     cause: None,
                                     time: *data.time,
                                     precise: false,
-                                    instance: rand::random(),
+                                    instance: common::combat::next_attack_instance(),
                                 };
                                 if change.amount.abs() > Health::HEALTH_EPSILON {
                                     emitters.emit(HealthChangeEvent {
@@ -3102,7 +3120,7 @@ impl ServerEvent for EntityAttackedHookEvent {
                                     cause: None,
                                     time: *data.time,
                                     precise: false,
-                                    instance: rand::random(),
+                                    instance: common::combat::next_attack_instance(),
                                 };
                                 if change.amount.abs() > Health::HEALTH_EPSILON {
                                     emitters.emit(HealthChangeEvent {
@@ -3129,7 +3147,7 @@ impl ServerEvent for EntityAttackedHookEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: rand::random(),
+                                        instance: common::combat::next_attack_instance(),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -3157,7 +3175,7 @@ impl ServerEvent for EntityAttackedHookEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: rand::random(),
+                                        instance: common::combat::next_attack_instance(),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -3177,7 +3195,7 @@ impl ServerEvent for EntityAttackedHookEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: rand::random(),
+                                        instance: common::combat::next_attack_instance(),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -3239,6 +3257,7 @@ impl ServerEvent for EntityAttackedHookEvent {
                                                     .get(effect_target)
                                                     .map(|p| p.0)
                                                     .unwrap_or_default(),
+                                                &mut rng,
                                             )
                                             .with_entity_config(
                                                 entity_config.read().clone().into_inner(),
@@ -3275,7 +3294,7 @@ impl ServerEvent for EntityAttackedHookEvent {
                                             cause: Some(DamageSource::Other),
                                             time: *data.time,
                                             precise: false,
-                                            instance: rand::random(),
+                                            instance: common::combat::next_attack_instance(),
                                         };
                                         emitters.emit(HealthChangeEvent {
                                             entity: effect_target,
@@ -3580,7 +3599,7 @@ impl ServerEvent for RegrowHeadEvent {
                         cause: Some(DamageSource::Other),
                         time: *time,
                         precise: false,
-                        instance: rand::random(),
+                        instance: common::combat::next_attack_instance(),
                     },
                 })
             }

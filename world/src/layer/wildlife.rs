@@ -127,7 +127,7 @@ impl Pack {
             .groups
             .choose_weighted(dynamic_rng, |(p, _group)| *p)
             .expect("Failed to choose group");
-        let entity = EntityInfo::at(pos).with_asset_expect(entity_asset, dynamic_rng, None);
+        let entity = EntityInfo::at(pos, &mut *dynamic_rng).with_asset_expect(entity_asset, dynamic_rng, None);
         let group_size = dynamic_rng.random_range(*from..=*to);
 
         if group_size > 1 {
@@ -728,7 +728,7 @@ mod tests {
                     let dummy_pos = Vec3::new(0.0, 0.0, 0.0);
                     let mut dummy_rng = rand::rng();
                     let entity =
-                        EntityInfo::at(dummy_pos).with_asset_expect(asset, &mut dummy_rng, None);
+                        EntityInfo::at(dummy_pos, &mut dummy_rng).with_asset_expect(asset, &mut dummy_rng, None);
                     drop(entity);
                 }
             }

@@ -115,7 +115,7 @@ pub fn main() {
                 );
                 // TODO: Could have args te specify calendar too.
                 let info =
-                    EntityInfo::at(Vec3::zero()).with_asset_expect(specifier, &mut rng, None);
+                    EntityInfo::at(Vec3::zero(), &mut rng).with_asset_expect(specifier, &mut rng, None);
                 let bones = load_npc_bones(info, &manifests, Mat4::identity());
                 if bones.is_empty() {
                     continue;

@@ -145,7 +145,7 @@ impl Health {
                 cause: None,
                 precise: false,
                 time: Time(0.0),
-                instance: rand::random(),
+                instance: crate::combat::next_attack_instance(),
             },
             is_dead: false,
             can_have_death_protection: death_protection,
@@ -242,7 +242,7 @@ impl Health {
                 cause: None,
                 precise: false,
                 time: Time(0.0),
-                instance: rand::random(),
+                instance: crate::combat::next_attack_instance(),
             },
             is_dead: false,
             can_have_death_protection: false,
@@ -293,7 +293,7 @@ mod tests {
             by: Some(damage_contrib),
             cause: None,
             precise: false,
-            instance: rand::random(),
+            instance: crate::combat::next_attack_instance(),
         };
 
         health.change_by(health_change);
@@ -320,7 +320,7 @@ mod tests {
             by: Some(damage_contrib),
             cause: None,
             precise: false,
-            instance: rand::random(),
+            instance: crate::combat::next_attack_instance(),
         };
 
         health.change_by(health_change);
@@ -341,7 +341,7 @@ mod tests {
             by: Some(damage_contrib),
             cause: None,
             precise: false,
-            instance: rand::random(),
+            instance: crate::combat::next_attack_instance(),
         };
         health.change_by(health_change);
         health.change_by(health_change);
@@ -368,7 +368,7 @@ mod tests {
             by: Some(damage_contrib1),
             cause: None,
             precise: false,
-            instance: rand::random(),
+            instance: crate::combat::next_attack_instance(),
         };
         health.change_by(health_change);
 
@@ -379,7 +379,7 @@ mod tests {
             by: Some(damage_contrib2),
             cause: None,
             precise: false,
-            instance: rand::random(),
+            instance: crate::combat::next_attack_instance(),
         };
         health.change_by(health_change);
 
@@ -394,7 +394,7 @@ mod tests {
             by: Some(damage_contrib2),
             cause: None,
             precise: false,
-            instance: rand::random(),
+            instance: crate::combat::next_attack_instance(),
         };
         health.change_by(health_change);
 

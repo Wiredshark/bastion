@@ -228,7 +228,10 @@ pub fn bastion_class7_item_fixture(npc_seed: u32) -> Class7ItemFixtureResult {
             .next()
             .expect("humanoid body corpus is non-empty"),
     );
-    let info = EntityInfo::at(Vec3::zero())
+    let info = EntityInfo::at(
+        Vec3::zero(),
+        &mut <rand_chacha::ChaCha8Rng as rand::SeedableRng>::seed_from_u64(lazy_loadout_seed),
+    )
         .with_body(body)
         .with_lazy_loadout(farmer_loadout, lazy_loadout_seed);
     let SpawnEntityData::Npc(data) = SpawnEntityData::from_entity_info(info) else {
@@ -469,7 +472,7 @@ fn get_npc_entity_info(
 
         let entity_config = EntityConfig::from_asset_expect_owned(config_asset)
             .with_body(BodyBuilder::Exact(npc.body));
-        EntityInfo::at(pos.0)
+        EntityInfo::at(pos.0, &mut rng)
             .with_entity_config(entity_config, Some(config_asset), &mut rng, time)
             .with_alignment(
                 if matches!(profession, Profession::Cultist | Profession::Pirate(_)) {
@@ -537,7 +540,8 @@ fn get_npc_entity_info(
         let entity_config = EntityConfig::from_asset_expect_owned(config_asset)
             .with_body(BodyBuilder::Exact(npc.body));
 
-        EntityInfo::at(pos.0).with_entity_config(entity_config, Some(config_asset), &mut rng, time)
+        EntityInfo::at(pos.0, &mut rng)
+            .with_entity_config(entity_config, Some(config_asset), &mut rng, time)
     }
 }
 

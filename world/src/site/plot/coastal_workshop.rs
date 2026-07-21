@@ -348,7 +348,7 @@ impl Structure for CoastalWorkshop {
         }
 
         painter.spawn(
-            EntityInfo::at((center - 2).with_z(base - 2).map(|e| e as f32 + 0.5))
+            EntityInfo::at((center - 2).with_z(base - 2).map(|e| e as f32 + 0.5), &mut super::plot_render_rng(center, 0xC0A5_0034))
                 .into_special(SpecialEntity::Waypoint),
         );
     }

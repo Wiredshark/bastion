@@ -91,7 +91,7 @@ impl Structure for Camp {
             CampType::Pirate => {
                 for p in 0..npc_rng {
                     painter.spawn(
-                        EntityInfo::at((center + p).with_z(base + 2).as_()).with_asset_expect(
+                        EntityInfo::at((center + p).with_z(base + 2).as_(), &mut rng).with_asset_expect(
                             "common.entity.spot.pirate",
                             &mut rng,
                             None,
@@ -104,14 +104,14 @@ impl Structure for Camp {
                     "common.entity.wild.peaceful.rat"
                 };
                 painter.spawn(
-                    EntityInfo::at(center.with_z(base + 2).as_())
+                    EntityInfo::at(center.with_z(base + 2).as_(), &mut rng)
                         .with_asset_expect(pet, &mut rng, None),
                 )
             },
             _ => {
                 if npc_rng > 2 {
                     painter.spawn(
-                        EntityInfo::at((center - 1).with_z(base + 2).as_()).with_asset_expect(
+                        EntityInfo::at((center - 1).with_z(base + 2).as_(), &mut rng).with_asset_expect(
                             "common.entity.village.bowman",
                             &mut rng,
                             None,
@@ -120,7 +120,7 @@ impl Structure for Camp {
                 }
                 if npc_rng < 4 {
                     painter.spawn(
-                        EntityInfo::at((center + 1).with_z(base + 2).as_()).with_asset_expect(
+                        EntityInfo::at((center + 1).with_z(base + 2).as_(), &mut rng).with_asset_expect(
                             "common.entity.village.skinner",
                             &mut rng,
                             None,

@@ -316,7 +316,7 @@ impl Structure for SavannahWorkshop {
         }
 
         painter.spawn(
-            EntityInfo::at((center).with_z(base - 2).map(|e| e as f32 + 0.5))
+            EntityInfo::at((center).with_z(base - 2).map(|e| e as f32 + 0.5), &mut super::plot_render_rng(center, 0x5A7A_0039))
                 .into_special(SpecialEntity::Waypoint),
         );
     }

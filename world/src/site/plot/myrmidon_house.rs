@@ -362,7 +362,7 @@ impl Structure for MyrmidonHouse {
             ];
             let npc_pos = (center + n).with_z(base);
             let npc = entities[(RandomField::new(0).get(npc_pos) % entities.len() as u32) as usize];
-            painter.spawn(EntityInfo::at(npc_pos.as_()).with_asset_expect(npc, &mut rng, None));
+            painter.spawn(EntityInfo::at(npc_pos.as_(), &mut rng).with_asset_expect(npc, &mut rng, None));
         }
         if amount < 1 {
             if bldg_var > 0 {
@@ -429,7 +429,7 @@ impl Structure for MyrmidonHouse {
             }
             let npc_pos = (center - 8).with_z(base);
 
-            painter.spawn(EntityInfo::at(npc_pos.as_()).with_asset_expect(
+            painter.spawn(EntityInfo::at(npc_pos.as_(), &mut rng).with_asset_expect(
                 "common.entity.dungeon.myrmidon.cyclops",
                 &mut rng,
                 None,

@@ -244,7 +244,7 @@ impl Structure for JungleRuin {
             match RandomField::new(0).get(center.with_z(plot_base)) % 6 {
                 // grave robbers
                 0 => painter.spawn(
-                    EntityInfo::at(npc_pos.with_z(plot_base + 5).as_()).with_asset_expect(
+                    EntityInfo::at(npc_pos.with_z(plot_base + 5).as_(), &mut rng).with_asset_expect(
                         "common.entity.spot.dwarf_grave_robber",
                         &mut rng,
                         None,
@@ -252,7 +252,7 @@ impl Structure for JungleRuin {
                 ),
                 // sauroks
                 1 => painter.spawn(
-                    EntityInfo::at(npc_pos.with_z(plot_base + 5).as_()).with_asset_expect(
+                    EntityInfo::at(npc_pos.with_z(plot_base + 5).as_(), &mut rng).with_asset_expect(
                         "common.entity.spot.saurok",
                         &mut rng,
                         None,
@@ -260,7 +260,7 @@ impl Structure for JungleRuin {
                 ),
                 // grim salvager
                 2 => painter.spawn(
-                    EntityInfo::at(npc_pos.with_z(plot_base + 5).as_()).with_asset_expect(
+                    EntityInfo::at(npc_pos.with_z(plot_base + 5).as_(), &mut rng).with_asset_expect(
                         "common.entity.spot.grim_salvager",
                         &mut rng,
                         None,

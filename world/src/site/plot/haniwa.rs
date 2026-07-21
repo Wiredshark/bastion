@@ -548,7 +548,7 @@ impl Structure for Haniwa {
                     for _ in 0..=rng.random_range(0..2) {
                         // archers on pillars
                         painter.spawn(
-                            EntityInfo::at(pillar_pos.with_z(floor - (room_size / 4) + 11).as_())
+                            EntityInfo::at(pillar_pos.with_z(floor - (room_size / 4) + 11).as_(), &mut rng)
                                 .with_asset_expect(
                                     "common.entity.dungeon.haniwa.archer",
                                     &mut rng,
@@ -566,13 +566,13 @@ impl Structure for Haniwa {
                         (room_center + 10 + n)
                             .with_z(floor - (room_size / 4) + 6)
                             .as_(),
-                    )
+                    &mut rng)
                     .with_asset_expect(npcs[select], &mut rng, None),
                 )
             }
             let effigy_pos = (room_center - 8).with_z(floor - (room_size / 4) + 6);
             if (RandomField::new(0).get(effigy_pos) % 2) as usize > 0 {
-                painter.spawn(EntityInfo::at(effigy_pos.as_()).with_asset_expect(
+                painter.spawn(EntityInfo::at(effigy_pos.as_(), &mut rng).with_asset_expect(
                     "common.entity.dungeon.haniwa.ancienteffigy",
                     &mut rng,
                     None,
@@ -584,7 +584,7 @@ impl Structure for Haniwa {
                     for dir in CARDINALS {
                         let sentry_pos = room_center + dir * 10;
                         painter.spawn(
-                            EntityInfo::at(sentry_pos.with_z(floor - (room_size / 4) + 6).as_())
+                            EntityInfo::at(sentry_pos.with_z(floor - (room_size / 4) + 6).as_(), &mut rng)
                                 .with_asset_expect(
                                     "common.entity.dungeon.haniwa.sentry",
                                     &mut rng,
@@ -857,7 +857,7 @@ impl Structure for Haniwa {
             self.mini_boss_room_positions[0].y,
             self.mini_boss_room_positions[0].z + 5,
         );
-        painter.spawn(EntityInfo::at(golem_pos.as_()).with_asset_expect(
+        painter.spawn(EntityInfo::at(golem_pos.as_(), &mut rng).with_asset_expect(
             "common.entity.dungeon.haniwa.claygolem",
             &mut rng,
             None,
@@ -876,7 +876,7 @@ impl Structure for Haniwa {
                         self.mini_boss_room_positions[1].z + 5,
                     )
                     .as_(),
-                )
+                &mut rng)
                 .with_asset_expect(npc, &mut rng, None),
             );
         }
@@ -889,7 +889,7 @@ impl Structure for Haniwa {
                     self.boss_room_position.z + 5,
                 )
                 .as_(),
-            )
+            &mut rng)
             .with_asset_expect(
                 "common.entity.dungeon.haniwa.gravewarden",
                 &mut rng,
@@ -898,7 +898,7 @@ impl Structure for Haniwa {
         );
         let bonerattler_pos = (center + ((entrance - center) / 3)).with_z(base);
         for _ in 0..(1 + RandomField::new(0).get(center.with_z(base)) % 2) as i32 {
-            painter.spawn(EntityInfo::at(bonerattler_pos.as_()).with_asset_expect(
+            painter.spawn(EntityInfo::at(bonerattler_pos.as_(), &mut rng).with_asset_expect(
                 "common.entity.dungeon.haniwa.claysteed",
                 &mut rng,
                 None,

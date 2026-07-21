@@ -397,7 +397,7 @@ impl Structure for TerracottaHouse {
                 })
                 .fill(clay_unbroken);
             // miniboss
-            painter.spawn(EntityInfo::at(center.with_z(base).as_()).with_asset_expect(
+            painter.spawn(EntityInfo::at(center.with_z(base).as_(), &mut rng).with_asset_expect(
                 "common.entity.dungeon.terracotta.terracotta_statue_key_chance",
                 &mut rng,
                 None,

@@ -109,7 +109,7 @@ pub enum Meta {
 /// let dummy_position = Vec3::new(0.0, 0.0, 0.0);
 /// // rng is required because some elements may be randomly generated
 /// let mut dummy_rng = rand::rng();
-/// let entity = EntityInfo::at(dummy_position).with_asset_expect(
+/// let entity = EntityInfo::at(dummy_position, &mut dummy_rng).with_asset_expect(
 ///     "common.entity.template",
 ///     &mut dummy_rng,
 ///     None,
@@ -260,7 +260,17 @@ pub struct EntityInfo {
 }
 
 impl EntityInfo {
-    pub fn at(pos: Vec3<f32>) -> Self {
+    // RNG-P3-038 / threading block (determinism audit): the constructor
+    // takes the CALLER'S rng — the default body was an ambient
+    // humanoid::Body::random() (OS entropy), which STUCK whenever an asset
+    // configured no body, leaking nondeterministic figure identity past
+    // every keyed spawn path. Now the default draws from the same stream
+    // the caller uses for the rest of the entity.
+    pub fn at(pos: Vec3<f32>, rng: &mut impl rand::RngExt) -> Self {
+        use rand::prelude::IndexedRandom;
+        let species = *humanoid::ALL_SPECIES
+            .choose(rng)
+            .expect("humanoid species catalog is non-empty");
         Self {
             pos,
             alignment: Alignment::Wild,
@@ -271,7 +281,7 @@ impl EntityInfo {
             idle_wander_factor: 1.0,
             aggro_range_multiplier: 1.0,
 
-            body: Body::Humanoid(humanoid::Body::random()),
+            body: Body::Humanoid(humanoid::Body::random_with(rng, &species)),
             name: None,
             scale: 1.0,
             loot: LootSpec::Nothing,
@@ -379,7 +389,7 @@ impl EntityInfo {
             }
 
             pet_infos.extend((0..loadout_rng.random_range(start..=end)).map(|_| {
-                EntityInfo::at(self.pos).with_entity_config(
+                EntityInfo::at(self.pos, &mut *loadout_rng).with_entity_config(
                     config.clone().into_inner(),
                     config_asset,
                     loadout_rng,
@@ -393,7 +403,7 @@ impl EntityInfo {
 
         self.rider = rider.map(|rider| {
             let config = Ron::<EntityConfig>::load_expect(&rider).read();
-            Box::new(EntityInfo::at(self.pos).with_entity_config(
+            Box::new(EntityInfo::at(self.pos, &mut *loadout_rng).with_entity_config(
                 config.clone().into_inner(),
                 config_asset,
                 loadout_rng,

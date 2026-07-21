@@ -1039,26 +1039,10 @@ impl TradePricing {
         self.price_lookup(&item.to_owned()).cloned()
     }
 
-    #[must_use]
-    pub fn random_items(
-        stock: &mut HashMap<Good, f32>,
-        number: u32,
-        selling: bool,
-        always_coin: bool,
-        limit: u32,
-        permitted: impl FnMut(Good) -> bool,
-    ) -> Vec<(ItemDefinitionIdOwned, u32)> {
-        let mut rng = rand::rng();
-        TRADE_PRICING.random_items_impl(
-            stock,
-            number,
-            selling,
-            always_coin,
-            limit,
-            permitted,
-            &mut rng,
-        )
-    }
+    // RNG-P3 threading block (determinism audit): the ambient `random_items`
+    // wrapper (internal `rand::rng()`) is REMOVED — callers own their stream
+    // and pass it through `random_items_with_rng` below, so stock generation
+    // can be keyed by merchant/site identity.
 
     /// Deterministic variant for callers that own a stable RNG stream.
     #[must_use]
@@ -1388,7 +1372,12 @@ mod tests {
         .copied()
         .collect();
 
-        let loadout = TradePricing::random_items(&mut stock, 20, false, false, 999, |_| true);
+        let mut rng = {
+            use rand::SeedableRng;
+            rand_chacha::ChaCha8Rng::seed_from_u64(0x7E57_0001)
+        };
+        let loadout =
+            TradePricing::random_items_with_rng(&mut stock, 20, false, false, 999, |_| true, &mut rng);
         for i in loadout.iter() {
             info!("Random item {:?}*{}", i.0, i.1);
         }

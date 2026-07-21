@@ -832,7 +832,7 @@ impl Structure for CliffTower {
         if self.campfire {
             let campfire_pos = (plot_center - 20).with_z(self.alt + 18);
             painter.spawn(
-                EntityInfo::at(campfire_pos.map(|e| e as f32))
+                EntityInfo::at(campfire_pos.map(|e| e as f32), &mut super::plot_render_rng(campfire_pos.xy(), 0xC1F7_0031))
                     .into_special(SpecialEntity::Waypoint),
             );
         }

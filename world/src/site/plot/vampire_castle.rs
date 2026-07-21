@@ -2183,7 +2183,7 @@ impl Structure for VampireCastle {
         }
         // boss
         let boss_pos = center.with_z(castle_base + (castle_height / 2) + 2);
-        painter.spawn(EntityInfo::at(boss_pos.as_()).with_asset_expect(
+        painter.spawn(EntityInfo::at(boss_pos.as_(), &mut rng).with_asset_expect(
             "common.entity.dungeon.vampire.bloodmoon_bat",
             &mut rng,
             None,
@@ -2191,7 +2191,7 @@ impl Structure for VampireCastle {
         // bats
         for bat_pos in bat_positions {
             for _ in 0..2 {
-                painter.spawn(EntityInfo::at(bat_pos.as_()).with_asset_expect(
+                painter.spawn(EntityInfo::at(bat_pos.as_(), &mut rng).with_asset_expect(
                     "common.entity.dungeon.vampire.vampire_bat",
                     &mut rng,
                     None,
@@ -2200,7 +2200,7 @@ impl Structure for VampireCastle {
         }
         // harlequins
         for harlequin_pos in harlequin_positions {
-            painter.spawn(EntityInfo::at(harlequin_pos.as_()).with_asset_expect(
+            painter.spawn(EntityInfo::at(harlequin_pos.as_(), &mut rng).with_asset_expect(
                 "common.entity.dungeon.vampire.harlequin",
                 &mut rng,
                 None,
@@ -2222,5 +2222,5 @@ pub fn spawn_random_entity(pos: Vec3<i32>, painter: &Painter) {
     ];
     let random_entity_index = rng.random_range(0..entities.len());
     let random_entity = entities[random_entity_index];
-    painter.spawn(EntityInfo::at(pos.as_()).with_asset_expect(random_entity, &mut rng, None));
+    painter.spawn(EntityInfo::at(pos.as_(), &mut rng).with_asset_expect(random_entity, &mut rng, None));
 }
