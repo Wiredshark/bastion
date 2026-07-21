@@ -3,7 +3,7 @@ use common::{
     resources::TimeOfDay,
     weather::{CELL_SIZE, CHUNKS_PER_CELL, Weather, WeatherGrid},
 };
-use noise::{NoiseFn, Perlin, SuperSimplex, Turbulence};
+use noise::{NoiseFn, Perlin, Seedable, SuperSimplex, Turbulence};
 use vek::*;
 use world::World;
 
@@ -26,6 +26,9 @@ pub struct WeatherSim {
     size: Vec2<u32>,
     consts: Grid<CellConsts>,
     zones: Grid<Option<WeatherZone>>,
+    /// DET-WTH-001 (v8 weather): the world seed, so the weather noise is a
+    /// function of the world rather than fixed to zero.
+    seed: u32,
 }
 
 /// A list of weather cells where lightning has a chance to strike.
@@ -62,6 +65,7 @@ impl WeatherSim {
                     .collect::<Vec<_>>(),
             ),
             zones: Grid::new(size.as_(), None),
+            seed: world.sim().seed,
         }
     }
 
@@ -92,15 +96,32 @@ impl WeatherSim {
     pub fn tick(&mut self, time_of_day: TimeOfDay, out: &mut WeatherGrid) -> LightningCells {
         let time = time_of_day.0;
 
+        // DET-WTH-001 (v8 weather, High): the weather noise was seeded with a
+        // literal 0 (both the SuperSimplex cores and the Turbulence Perlin
+        // displacements defaulted to a fixed seed), so EVERY world generated
+        // the identical weather base pattern independent of its world seed.
+        // Derive each generator's seed from the world seed through the shared
+        // DomainHasher (label-separated), matching worldgen's `noise_seed`.
+        let weather_seed = self.seed;
+        let noise_seed = |name: &str| -> u32 {
+            let mut h =
+                common::state_hash::DomainHasher::new("bastion/domain/weather-noise/v1/sha256");
+            h.field(&weather_seed.to_le_bytes());
+            h.field(name.as_bytes());
+            u32::from_le_bytes(h.finish().0[..4].try_into().expect("sha256 >= 4 bytes"))
+        };
+
         let base_nz: Turbulence<Turbulence<SuperSimplex, Perlin>, Perlin> = Turbulence::new(
-            Turbulence::new(SuperSimplex::new(0))
+            Turbulence::new(SuperSimplex::new(noise_seed("base")))
+                .set_seed(noise_seed("base_turb_inner"))
                 .set_frequency(0.2)
                 .set_power(1.5),
         )
+        .set_seed(noise_seed("base_turb_outer"))
         .set_frequency(2.0)
         .set_power(0.2);
 
-        let rain_nz = SuperSimplex::new(0);
+        let rain_nz = SuperSimplex::new(noise_seed("rain"));
 
         let mut lightning_cells = Vec::new();
         for (point, cell) in out.iter_mut() {
