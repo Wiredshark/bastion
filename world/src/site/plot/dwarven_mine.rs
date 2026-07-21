@@ -398,7 +398,8 @@ impl Structure for DwarvenMine {
     }
 }
 fn spawn_entity(pos: Vec3<f32>, painter: &Painter, entity_path: &str) {
-    let mut rng = rand::rng();
+    // DET-RNG-006: position-keyed, not OS entropy (see plot_render_rng).
+    let mut rng = super::plot_render_rng(pos.xy().as_(), 0xD3A6_0011);
     painter.spawn(
         EntityInfo::at(pos)
             .with_asset_expect(entity_path, &mut rng, None)
@@ -414,7 +415,8 @@ fn spawn_entities(
     max_distance: f32,
     entity_distance: f32,
 ) {
-    let mut rng = rand::rng();
+    // DET-RNG-006: position-keyed, not OS entropy (see plot_render_rng).
+    let mut rng = super::plot_render_rng(pos.xy().as_(), 0xD3A6_0012);
     let num_paths = entity_paths.len();
 
     let side_length = (num_entities as f32).sqrt().ceil() as u32;

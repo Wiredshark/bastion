@@ -111,7 +111,8 @@ impl Structure for VampireCastle {
     }
 
     fn render_inner(&self, _site: &Site, _land: &Land, painter: &Painter) {
-        let mut rng = rand::rng();
+        // DET-RNG-006: position-keyed, not OS entropy (see plot_render_rng).
+        let mut rng = super::plot_render_rng(self.bounds.center(), 0xBA39_000F);
         let brick = Fill::Brick(BlockKind::Rock, Rgb::new(80, 75, 85), 24);
         let roof_color = Fill::Block(Block::new(BlockKind::GlowingRock, Rgb::new(30, 37, 55)));
         let wood = Fill::Brick(BlockKind::Rock, Rgb::new(71, 33, 11), 12);
@@ -2212,7 +2213,8 @@ impl Structure for VampireCastle {
 }
 
 pub fn spawn_random_entity(pos: Vec3<i32>, painter: &Painter) {
-    let mut rng = rand::rng();
+    // DET-RNG-006: position-keyed, not OS entropy (see plot_render_rng).
+    let mut rng = super::plot_render_rng(pos.xy(), 0xBA39_0013);
     let entities = [
         "common.entity.dungeon.vampire.strigoi",
         "common.entity.dungeon.vampire.executioner",

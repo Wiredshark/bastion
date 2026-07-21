@@ -496,7 +496,8 @@ impl Structure for AdletStronghold {
                 _ => Block::new(BlockKind::Air, Rgb::new(0, 0, 0)),
             })
         }));
-        let mut rng = rand::rng();
+        // DET-RNG-006: position-keyed, not OS entropy (see plot_render_rng).
+        let mut rng = super::plot_render_rng(self.cavern_center, 0xAD1E_0015);
 
         // Tunnel
         let dist: f32 = self.cavern_center.as_().distance(self.entrance.as_());

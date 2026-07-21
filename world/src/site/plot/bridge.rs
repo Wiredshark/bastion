@@ -529,7 +529,8 @@ fn render_heightened_viaduct(bridge: &Bridge, painter: &Painter, data: &Heighten
     */
 
     // Small chance to spawn a troll.
-    let mut rng = rand::rng();
+    // DET-RNG-006: position-keyed, not OS entropy (see plot_render_rng).
+    let mut rng = super::plot_render_rng(bridge.center.xy(), 0xB41D_0016);
     if rng.random_bool(0.1) {
         painter.spawn(
             EntityInfo::at(c.with_z(vault_top - 2).as_()).with_asset_expect(

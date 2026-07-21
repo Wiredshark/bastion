@@ -58,7 +58,8 @@ impl Structure for TerracottaPalace {
     fn render_inner(&self, _site: &Site, _land: &Land, painter: &Painter) {
         let base = self.alt + 1;
         let center = self.bounds.center();
-        let mut rng = rand::rng();
+        // DET-RNG-006: position-keyed, not OS entropy (see plot_render_rng).
+        let mut rng = super::plot_render_rng(center, 0x7EC0_0010);
         let clay_broken = Fill::Sampling(Arc::new(|center| {
             Some(match (RandomField::new(0).get(center)) % 42 {
                 0..=8 => Block::new(BlockKind::Rock, Rgb::new(242, 161, 53)),
@@ -1088,7 +1089,8 @@ impl Structure for TerracottaPalace {
 }
 
 pub fn spawn_random_entity(pos: Vec3<i32>, painter: &Painter, amount: RangeInclusive<i32>) {
-    let mut rng = rand::rng();
+    // DET-RNG-006: position-keyed, not OS entropy (see plot_render_rng).
+    let mut rng = super::plot_render_rng(pos.xy(), 0x7EC0_0014);
     let entities = [
         "common.entity.dungeon.terracotta.besieger",
         "common.entity.dungeon.terracotta.demolisher",
