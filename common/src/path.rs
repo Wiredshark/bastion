@@ -1508,6 +1508,18 @@ where
     V: BaseVol<Vox = Block> + ReadVol,
 {
     const MAX_POINTS: usize = 7000;
+    // RNG-P3-016 (determinism audit): ONE deterministic stream for the whole
+    // RRT search, keyed by the search's intrinsic identity (start, end) —
+    // replaces ambient OS-entropy draws (spheroid sampler + parent re-pick),
+    // so an identical query explores identically.
+    let mut rrt_rng = ChaCha8Rng::seed_from_u64(
+        (startf.x.to_bits() as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ (startf.y.to_bits() as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+            ^ (startf.z.to_bits() as u64).wrapping_mul(0x1656_67B1_9E37_79F9)
+            ^ (endf.x.to_bits() as u64).wrapping_mul(0xD6E8_FEB8_6659_FD93)
+            ^ (((endf.y.to_bits() as u64) << 32) | endf.z.to_bits() as u64)
+            ^ 0x4247_0016,
+    );
     let mut path = Vec::new();
 
     // Each tree has a vector of nodes
@@ -1557,7 +1569,7 @@ where
 
         // Sample a point on the bounding spheroid
         let (sampled_point1, sampled_point2) = {
-            let point = point_on_prolate_spheroid(startf, endf, search_parameter);
+            let point = point_on_prolate_spheroid(startf, endf, search_parameter, &mut rrt_rng);
             (point, point)
         };
 
@@ -1665,7 +1677,11 @@ where
             if current_node_index1 == 0
                 || nodes1[current_node_index1].distance_squared(startf) < 4.0
             {
-                if let Some(index) = parents1.values().choose(&mut rng()) {
+                // RNG-P3-016: sort the candidate set (HashMap::values order
+                // is process-seeded) and draw from the search's keyed stream.
+                let mut candidates: Vec<_> = parents1.values().copied().collect();
+                candidates.sort_unstable();
+                if let Some(index) = candidates.iter().choose(&mut rrt_rng) {
                     current_node_index1 = *index;
                 } else {
                     break;
@@ -1960,8 +1976,9 @@ pub fn point_on_prolate_spheroid(
     focus1: Vec3<f32>,
     focus2: Vec3<f32>,
     search_parameter: f32,
+    // RNG-P3-016: the caller's stream, not ambient OS entropy.
+    rng: &mut impl RngExt,
 ) -> Vec3<f32> {
-    let mut rng = rng();
     // Uniform distribution
     let range = Uniform::new(0.0, 1.0).unwrap();
 
@@ -1998,8 +2015,8 @@ pub fn point_on_prolate_spheroid(
     //
     // Select these two angles using the uniform distribution defined at the
     // beginning of the function from 0.0 to 1.0
-    let rtheta: f32 = PI * range.sample(&mut rng) - 0.5 * PI;
-    let lambda: f32 = 2.0 * PI * range.sample(&mut rng);
+    let rtheta: f32 = PI * range.sample(&mut *rng) - 0.5 * PI;
+    let lambda: f32 = 2.0 * PI * range.sample(&mut *rng);
     // Select a point on the surface of the ellipsoid
     let point = Vec3::new(
         a * rtheta.cos() * lambda.cos(),
