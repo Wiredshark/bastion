@@ -247,7 +247,13 @@ impl ServerEvent for HealthChangeEvent {
 
     fn handle(events: impl ExactSizeIterator<Item = Self>, mut data: Self::SystemData<'_>) {
         let mut emitters = data.events.get_emitters();
-        let mut rng = rand::rng();
+        // T0.37 (T0-003): Apply-handler draws are keyed by sim time (the
+        // tick-deterministic clock in scope), never OS entropy — head loss
+        // is authoritative state.
+        let mut rng = {
+            use rand::SeedableRng;
+            rand_chacha::ChaCha8Rng::seed_from_u64(data.time.0.to_bits() ^ 0x4EA1_7C4A)
+        };
         for ev in events {
             if let Some((mut health, inventory, pos, uid, heads)) = (
                 &mut data.healths,
@@ -605,7 +611,12 @@ impl ServerEvent for DestroyEvent {
     fn handle(events: impl ExactSizeIterator<Item = Self>, mut data: Self::SystemData<'_>) {
         let mut outcomes_emitter = data.outcomes.emitter();
         let mut emitters = data.event_buses.get_emitters();
-        let mut rng = rand::rng();
+        // T0.37 (T0-003): keyed by sim time — death outcomes (incl. buff
+        // procs and downstream loot rolls) are authoritative.
+        let mut rng = {
+            use rand::SeedableRng;
+            rand_chacha::ChaCha8Rng::seed_from_u64(data.time.0.to_bits() ^ 0xDE57_1207)
+        };
         data.entities_died_last_tick.0.clear();
 
         for ev in events {
@@ -1355,7 +1366,15 @@ impl ServerEvent for DestroyEvent {
                         let mut item_offset_spiral =
                             Spiral2d::new().map(|offset| offset.as_::<f32>() * 0.5);
 
-                        let mut rng = rand::rng();
+                        // T0.37: keyed (sim time + salt) — loot-drop
+                        // placement/orientation is authoritative economy
+                        // state.
+                        let mut rng = {
+                            use rand::SeedableRng;
+                            rand_chacha::ChaCha8Rng::seed_from_u64(
+                                data.time.0.to_bits() ^ 0x100D_D209,
+                            )
+                        };
                         let mut spawn_item = |item, loot_owner| {
                             let offset = item_offset_spiral.next().unwrap_or_default();
                             emitters.emit(CreateItemDropEvent {
