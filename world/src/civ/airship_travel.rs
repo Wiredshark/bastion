@@ -1500,7 +1500,17 @@ impl Airships {
     ) -> (Vec3<f32>, Dir) {
         // choose a random side for docking if not specified
         let dock_side = docking_side.unwrap_or_else(|| {
-            if rand::rng().random::<bool>() {
+            // DET-RNG-006 (determinism audit): the docking side was an OS-
+            // entropy coin flip (rand::rng()), but this is called from rtsim
+            // (see doc above) — so it varied run-to-run. Key it by the dock's
+            // world position: deterministic, order-independent, no OS entropy.
+            let c = airship_dock_center.map(|e| e as i32);
+            let mut rng = ChaChaRng::seed_from_u64(
+                (c.x as u32 as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                    ^ (c.y as u32 as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+                    ^ 0xA125_0019,
+            );
+            if rng.random::<bool>() {
                 AirshipDockingSide::Starboard
             } else {
                 AirshipDockingSide::Port

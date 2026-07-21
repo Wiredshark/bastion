@@ -12,7 +12,7 @@ use common::{
     },
 };
 use core::ops::{Div, Mul, Range};
-use rand::prelude::IndexedRandom;
+use rand::{SeedableRng, prelude::IndexedRandom};
 use serde::Deserialize;
 use vek::*;
 
@@ -486,7 +486,21 @@ pub fn block_from_structure<'a>(
             }
         },
         StructureBlock::Choice(block_table) => block_table
-            .choose_weighted(&mut rand::rng(), |(w, _)| *w)
+            // DET-RNG-006 (determinism audit): the structure-block variant
+            // choice was an OS-entropy roll (rand::rng()), so a rendered
+            // structure's blocks varied run-to-run. Key it by the fn's own
+            // deterministic inputs — (structure_seed, block pos) — the same
+            // basis as the `RandomField::new(structure_seed)` above.
+            .choose_weighted(
+                &mut rand_chacha::ChaCha8Rng::seed_from_u64(
+                    (structure_seed as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                        ^ (pos.x as u32 as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+                        ^ (pos.y as u32 as u64).wrapping_mul(0x1656_67B1_9E37_79F9)
+                        ^ (pos.z as u32 as u64).wrapping_mul(0xD6E8_FEB8_6659_FD93)
+                        ^ 0xB10C_0020,
+                ),
+                |(w, _)| *w,
+            )
             .map(|(_, item)| {
                 block_from_structure(
                     index,
