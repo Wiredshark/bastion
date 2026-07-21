@@ -191,13 +191,25 @@ impl CombinedCache {
     pub fn register_tar(&self, path: PathBuf) -> std::io::Result<()> {
         let tar_source = Tar::open(&path)?;
         let cache = AssetCache::with_source(tar_source);
-        self.0
+        let mut plugin_list = self
+            .0
             .downcast_raw_source::<CombinedSource>()
             .unwrap()
             .plugin_list
             .write()
-            .unwrap()
-            .push(PluginEntry { path, cache });
+            .unwrap();
+        plugin_list.push(PluginEntry { path, cache });
+        // DET-AST-034 (v6 deep-pass, Critical): `combine` folds every plugin's
+        // asset into the base LAST-WRITER-WINS in `plugin_list` order (see
+        // `Concatenate`, DET-AST-014). `register_tar` is called in `fs::read_dir`
+        // (OS directory) order for filesystem plugins and network-arrival order
+        // for server-delivered ones — so authoritative combined RON tables
+        // (recipes, abilities, …) inherited a non-canonical merge order. Keep
+        // `plugin_list` sorted by tar path: all entries share the same
+        // plugins-root prefix, so the ordering key reduces to the per-plugin
+        // suffix and is identical across machines for a fixed plugin set,
+        // making the fold a pure function of that set.
+        plugin_list.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(())
     }
 
