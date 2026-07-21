@@ -125,8 +125,19 @@ impl Message {
             self.data
         };
 
+        // DET-NET-017 (v6 deep-pass, High): reject trailing bytes. bincode
+        // decodes exactly ONE value and reports how many bytes it consumed;
+        // the old code discarded that count, so a buffer with extra trailing
+        // bytes deserialized successfully — a NON-INJECTIVE wire mapping (two
+        // distinct byte sequences decode to one message, so exact wire
+        // evidence / byte-level replay could not distinguish them). Framing
+        // delivers an exact-length message buffer, so a full consume is the
+        // invariant; a short consume is a malformed frame and fails closed.
         match decode_from_slice(&uncompressed_data, legacy()) {
-            Ok((m, _)) => Ok(m),
+            Ok((m, consumed)) if consumed == uncompressed_data.len() => Ok(m),
+            Ok(_) => Err(StreamError::Deserialize(Box::new(DecodeError::Other(
+                "trailing bytes after message",
+            )))),
             Err(e) => Err(StreamError::Deserialize(Box::new(e))),
         }
     }
