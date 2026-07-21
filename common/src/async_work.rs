@@ -146,6 +146,104 @@ impl<O, E> AsyncTerminal<O, E> {
     }
 }
 
+/// T0.51 step 3 (T0-004 packet): the bounded admission queue — pure data
+/// structure (services embed it; no threads here). Admission enforces the
+/// bound, coalesces on live coalesce keys, and orders by
+/// (class, priority desc, request_id) — a stable total order, never
+/// arrival time. Cancellation flags efficiency-only; shutdown drains
+/// everything to CanceledBeforeStart terminals so EVERY admitted request
+/// still reaches exactly one terminal.
+#[derive(Clone, Debug)]
+pub struct AsyncWorkQueue<I> {
+    pending: Vec<AsyncWorkRequest<I>>,
+    capacity: usize,
+}
+
+/// Why admission refused a request.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AdmissionRefusal {
+    /// The queue is at capacity — the caller backpressures (correctness
+    /// work is delayed, never silently dropped, per the packet).
+    AtCapacity,
+    /// Coalesced into an existing live request (its id is returned) — the
+    /// caller treats that request as its own.
+    Coalesced(AsyncRequestId),
+}
+
+impl<I> AsyncWorkQueue<I> {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            pending: Vec::new(),
+            capacity,
+        }
+    }
+
+    pub fn len(&self) -> usize { self.pending.len() }
+
+    pub fn is_empty(&self) -> bool { self.pending.is_empty() }
+
+    /// Admit a request: coalesce first (a live request with the same
+    /// coalesce key absorbs this one), then bound-check.
+    pub fn admit(&mut self, request: AsyncWorkRequest<I>) -> Result<(), AdmissionRefusal> {
+        if let Some(key) = request.coalesce_key
+            && let Some(existing) = self
+                .pending
+                .iter()
+                .find(|p| p.coalesce_key == Some(key) && !p.cancel)
+        {
+            return Err(AdmissionRefusal::Coalesced(existing.request_id));
+        }
+        if self.pending.len() >= self.capacity {
+            return Err(AdmissionRefusal::AtCapacity);
+        }
+        self.pending.push(request);
+        Ok(())
+    }
+
+    /// Flag a pending request canceled (efficiency-only — see module docs).
+    pub fn cancel(&mut self, id: AsyncRequestId) {
+        if let Some(request) = self.pending.iter_mut().find(|p| p.request_id == id) {
+            request.cancel = true;
+        }
+    }
+
+    /// Pop the next request to run: stable total order
+    /// (class, priority desc, request_id) — never arrival order. Canceled
+    /// entries pop first as immediate CanceledBeforeStart terminals via
+    /// `Err`.
+    pub fn pop_next(&mut self, now_tick: u64) -> Option<Result<AsyncWorkRequest<I>, AsyncRequestId>> {
+        // Deadline-expired or canceled entries terminate without starting.
+        if let Some(position) = self.pending.iter().position(|p| {
+            p.cancel || p.deadline_tick.is_some_and(|deadline| now_tick > deadline)
+        }) {
+            return Some(Err(self.pending.remove(position).request_id));
+        }
+        let best = self
+            .pending
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, p)| {
+                (
+                    match p.class {
+                        AsyncWorkClass::ExternalTransaction => 0u8,
+                        AsyncWorkClass::ExternalRead => 1,
+                        AsyncWorkClass::PureCompute => 2,
+                    },
+                    u16::MAX - p.priority,
+                    p.request_id,
+                )
+            })
+            .map(|(index, _)| index)?;
+        Some(Ok(self.pending.remove(best)))
+    }
+
+    /// Shutdown: drain everything — every admitted request still reaches
+    /// exactly one terminal (CanceledBeforeStart, reported to the caller).
+    pub fn drain_for_shutdown(&mut self) -> Vec<AsyncRequestId> {
+        self.pending.drain(..).map(|p| p.request_id).collect()
+    }
+}
+
 #[cfg(test)]
 mod t0_50_tests {
     use super::*;
@@ -190,5 +288,71 @@ mod t0_50_tests {
         let b = alloc.allocate();
         assert!(a < b);
         assert_ne!(a, b);
+    }
+
+    fn request(id: u64, class: AsyncWorkClass, priority: u16) -> AsyncWorkRequest<u32> {
+        AsyncWorkRequest {
+            request_id: AsyncRequestId(id),
+            owner: key(1, 0),
+            generation: generation(0),
+            class,
+            priority,
+            estimated_cost: 1,
+            estimated_bytes: 0,
+            coalesce_key: None,
+            deadline_tick: None,
+            cancel: false,
+            input: 0,
+        }
+    }
+
+    #[test]
+    fn t0_51_queue_orders_by_class_priority_id_never_arrival() {
+        let mut queue = AsyncWorkQueue::new(8);
+        // Arrival order deliberately scrambled.
+        queue.admit(request(5, AsyncWorkClass::PureCompute, 0)).unwrap();
+        queue.admit(request(3, AsyncWorkClass::PureCompute, 9)).unwrap();
+        queue
+            .admit(request(9, AsyncWorkClass::ExternalTransaction, 0))
+            .unwrap();
+        queue.admit(request(1, AsyncWorkClass::PureCompute, 9)).unwrap();
+
+        let order: Vec<u64> = core::iter::from_fn(|| queue.pop_next(0))
+            .map(|r| r.unwrap().request_id.0)
+            .collect();
+        // Transactions first, then priority desc, then id.
+        assert_eq!(order, vec![9, 1, 3, 5]);
+    }
+
+    #[test]
+    fn t0_51_queue_bounds_coalesces_cancels_and_drains() {
+        let mut queue = AsyncWorkQueue::new(2);
+        let mut a = request(1, AsyncWorkClass::PureCompute, 0);
+        a.coalesce_key = Some(42);
+        queue.admit(a).unwrap();
+        // Coalesce: same live key absorbs.
+        let mut b = request(2, AsyncWorkClass::PureCompute, 0);
+        b.coalesce_key = Some(42);
+        assert_eq!(
+            queue.admit(b),
+            Err(AdmissionRefusal::Coalesced(AsyncRequestId(1)))
+        );
+        // Bound: backpressure, never drop.
+        queue.admit(request(3, AsyncWorkClass::PureCompute, 0)).unwrap();
+        assert_eq!(
+            queue.admit(request(4, AsyncWorkClass::PureCompute, 0)),
+            Err(AdmissionRefusal::AtCapacity)
+        );
+        // Cancel pops first as a terminal-without-starting.
+        queue.cancel(AsyncRequestId(3));
+        assert!(matches!(queue.pop_next(0), Some(Err(AsyncRequestId(3)))));
+        // Deadline expiry likewise.
+        let mut d = request(7, AsyncWorkClass::PureCompute, 0);
+        d.deadline_tick = Some(10);
+        queue.admit(d).unwrap();
+        assert!(matches!(queue.pop_next(11), Some(Err(AsyncRequestId(7)))));
+        // Shutdown drains the remainder to terminals.
+        assert_eq!(queue.drain_for_shutdown(), vec![AsyncRequestId(1)]);
+        assert!(queue.is_empty());
     }
 }
