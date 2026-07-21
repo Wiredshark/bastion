@@ -18,10 +18,13 @@ use common::{
 };
 use common_base::prof_span;
 use common_ecs::{Job, Origin, ParMode, Phase, System};
-use rand::{
-    RngExt, SeedableRng, rng,
-    rngs::{SmallRng, StdRng},
-};
+use rand::{RngExt, SeedableRng, rng};
+// RNG-DEEP-004/007 (determinism audit): ChaCha8Rng replaces StdRng/SmallRng —
+// both are explicitly NON-portable (algorithm may change across rand versions
+// / platforms), so agent behavior + helper streams could diverge
+// cross-machine even with identical seeds. ChaCha8 is a named, portable,
+// version-stable generator.
+use rand_chacha::ChaCha8Rng;
 use rayon::iter::ParallelIterator;
 use specs::{LendJoin, ParJoin, Read, ReadExpect, ReadStorage, WriteStorage};
 use std::cell::RefCell;
@@ -149,11 +152,11 @@ impl<'a> System<'a> for Sys {
                         deterministic_seed.map(|seed| seed ^ 0xC4A5_E211_0B71_5EED),
                     );
                     let mut rng = if let Some(seed) = deterministic_seed {
-                        StdRng::seed_from_u64(seed)
+                        ChaCha8Rng::seed_from_u64(seed)
                     } else {
                         // Preserve live entropy. Only the deterministic
                         // harness derives an agent stream from stable inputs.
-                        StdRng::from_rng(&mut rng())
+                        ChaCha8Rng::from_rng(&mut rng())
                     };
 
                     // The entity that is moving, if riding it's the mount, otherwise it's itself
@@ -374,7 +377,7 @@ impl<'a> System<'a> for Sys {
                         stance: read_data.stances.get(entity),
                         helper_rng: RefCell::new(
                             deterministic_seed
-                                .map(|seed| SmallRng::seed_from_u64(seed ^ 0x51A7_C0DE_55AA_7711)),
+                                .map(|seed| ChaCha8Rng::seed_from_u64(seed ^ 0x51A7_C0DE_55AA_7711)),
                         ),
                     };
 

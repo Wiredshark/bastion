@@ -14,7 +14,10 @@ use common::{
     path::TraversalConfig,
     rtsim::{NpcAction, RtSimEntity},
 };
-use rand::{RngExt, rngs::StdRng};
+use rand::RngExt;
+// RNG-DEEP-004 (determinism audit): ChaCha8Rng, not StdRng — portable named
+// generator; StdRng's algorithm is explicitly unstable across rand versions.
+use rand_chacha::ChaCha8Rng;
 use server_agent::{data::AgentEmitters, util::is_steering};
 use specs::Entity as EcsEntity;
 use tracing::warn;
@@ -46,7 +49,7 @@ pub struct BehaviorData<'a, 'b, 'c> {
     pub read_data: &'a ReadData<'a>,
     pub emitters: &'a mut AgentEmitters<'c>,
     pub controller: &'a mut Controller,
-    pub rng: &'b mut StdRng,
+    pub rng: &'b mut ChaCha8Rng,
 }
 
 /// Behavior function

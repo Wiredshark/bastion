@@ -10,7 +10,11 @@ use fxhash::FxBuildHasher;
 use hashbrown::HashMap;
 #[cfg(feature = "rrt_pathfinding")]
 use kiddo::{SquaredEuclidean, float::kdtree::KdTree, nearest_neighbour::NearestNeighbour}; /* For RRT paths (disabled for now) */
-use rand::{RngExt, SeedableRng, rng, rngs::SmallRng};
+use rand::{RngExt, SeedableRng, rng};
+// RNG-DEEP-009 (determinism audit): ChaCha8Rng, not SmallRng — the hidden
+// Chaser stream must be a portable named generator or its state transitions
+// diverge cross-machine (SmallRng's algorithm is explicitly unstable).
+use rand_chacha::ChaCha8Rng;
 #[cfg(feature = "rrt_pathfinding")]
 use rand::{
     distr::{Distribution, Uniform},
@@ -551,7 +555,7 @@ pub struct Chaser {
     /// ARCH-003: a per-tick deterministic stream installed by the server's
     /// deterministic harness mode. Live mode leaves this as `None` and keeps
     /// the existing OS-seeded entropy.
-    deterministic_rng: Option<SmallRng>,
+    deterministic_rng: Option<ChaCha8Rng>,
 }
 
 impl Chaser {
@@ -559,7 +563,7 @@ impl Chaser {
     /// Reinstalling a seed once per agent tick makes those transitions a pure
     /// function of (world seed, tick, uid) in deterministic harness mode.
     pub fn set_deterministic_seed(&mut self, seed: Option<u64>) {
-        self.deterministic_rng = seed.map(SmallRng::seed_from_u64);
+        self.deterministic_rng = seed.map(ChaCha8Rng::seed_from_u64);
     }
 
     fn stuck_check(

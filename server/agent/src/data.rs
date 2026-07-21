@@ -77,7 +77,10 @@ pub struct AgentData<'a> {
     pub rtsim_entity: Option<&'a RtSimEntity>,
     /// ARCH-003: deterministic harness stream for helpers that historically
     /// called `rand::rng()` internally. `None` preserves live OS entropy.
-    pub helper_rng: RefCell<Option<rand::rngs::SmallRng>>,
+    // RNG-DEEP-007 (determinism audit): ChaCha8Rng, not SmallRng — SmallRng
+    // is explicitly non-portable (its algorithm may differ across platforms
+    // and rand versions), so the helper stream could diverge cross-machine.
+    pub helper_rng: RefCell<Option<rand_chacha::ChaCha8Rng>>,
 }
 
 pub struct TargetData<'a> {

@@ -83,11 +83,17 @@ pub fn wanted_population(world: &World, index: IndexRef) -> Population {
 
 impl Data {
     pub fn generate(settings: &WorldSettings, world: &World, index: IndexRef) -> Self {
-        let mut seed = [0; 32];
-        seed.iter_mut()
-            .zip(&mut index.seed.to_le_bytes())
-            .for_each(|(dst, src)| *dst = *src);
-        let mut rng = SmallRng::from_seed(seed);
+        // RNG-DEEP-010 (determinism audit): the generator seed populated only
+        // 4 of 32 key bytes (32 bits of entropy) and used SmallRng, which is
+        // explicitly NON-portable — rtsim genesis (population/sites/NPCs)
+        // could differ cross-platform for the same world seed. Derive the
+        // full 32-byte seed via the shared DomainHasher (Sha256, portable,
+        // domain-separated) and drive a portable ChaChaRng.
+        let mut h = common::state_hash::DomainHasher::new(
+            "bastion/domain/rtsim-generate/v1/sha256",
+        );
+        h.field(&index.seed.to_le_bytes());
+        let mut rng = ChaChaRng::from_seed(h.finish().0);
 
         let mut this = Self {
             version: CURRENT_VERSION,
