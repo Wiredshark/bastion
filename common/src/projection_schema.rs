@@ -14,6 +14,7 @@
 //! Determinism story (Ben's law): a pure declaration + pure validation; no
 //! runtime effect, no RNG, no wall-clock.
 
+use crate::state_hash::DomainHash;
 use serde::{Deserialize, Serialize};
 
 /// Which side owns the authoritative value of a field.
@@ -100,6 +101,89 @@ pub fn validate_schema(schema: &ProjectionSchema) -> Vec<ProjectionViolation> {
         }
     }
     violations
+}
+
+/// T2.16 (T2 lifecycle group — the group's DETERMINISM GATE): the
+/// first-promotion activation frame. `generic_hash` is the create-payload
+/// frame (before Bastion decoration); `decorated_hash` is the frame after
+/// full decoration (name / colonist components / inventory). Two runs
+/// (across seeds AND dispatcher modes) must produce IDENTICAL activation
+/// frames for the same stable id — else promotion is nondeterministic even
+/// if it self-heals before the tape samples.
+///
+/// The whole-run byte-identity (the T0.52 `--deterministic-parallel` /
+/// T0.64 `--schedule-seed` probes, svp2/fuzz1 already green) covers this
+/// transitively; this FOCUSED frame makes a promotion-specific divergence
+/// directly visible and comparable — the T0.53 domain-hash substrate
+/// applied to the activation transform.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActivationFrame {
+    pub stable_id: u64,
+    pub generic_hash: DomainHash,
+    pub decorated_hash: DomainHash,
+}
+
+impl ActivationFrame {
+    /// Two activation frames for the same entity match iff BOTH the generic
+    /// and decorated hashes are identical (decoration is deterministic).
+    pub fn matches(&self, other: &ActivationFrame) -> bool {
+        self.stable_id == other.stable_id
+            && self.generic_hash == other.generic_hash
+            && self.decorated_hash == other.decorated_hash
+    }
+}
+
+/// Compare two runs' activation-frame sets (keyed by stable id): every
+/// entity promoted in both must have matching frames; returns the stable
+/// ids whose frames diverged (the promotion-determinism verdict).
+pub fn diverging_activations(
+    a: &[ActivationFrame],
+    b: &[ActivationFrame],
+) -> Vec<u64> {
+    use std::collections::BTreeMap;
+    let index: BTreeMap<u64, &ActivationFrame> =
+        b.iter().map(|frame| (frame.stable_id, frame)).collect();
+    let mut diverged = Vec::new();
+    for frame in a {
+        if let Some(other) = index.get(&frame.stable_id)
+            && !frame.matches(other)
+        {
+            diverged.push(frame.stable_id);
+        }
+    }
+    diverged.sort_unstable();
+    diverged.dedup();
+    diverged
+}
+
+#[cfg(test)]
+mod t2_16_tests {
+    use super::*;
+    use crate::state_hash::DomainHash;
+
+    fn frame(id: u64, generic: u8, decorated: u8) -> ActivationFrame {
+        ActivationFrame {
+            stable_id: id,
+            generic_hash: DomainHash([generic; 32]),
+            decorated_hash: DomainHash([decorated; 32]),
+        }
+    }
+
+    #[test]
+    fn t2_16_identical_activations_do_not_diverge() {
+        let run_a = vec![frame(1, 10, 20), frame(2, 30, 40)];
+        let run_b = vec![frame(2, 30, 40), frame(1, 10, 20)]; // order-free
+        assert!(diverging_activations(&run_a, &run_b).is_empty());
+    }
+
+    #[test]
+    fn t2_16_divergent_decoration_is_caught() {
+        let run_a = vec![frame(1, 10, 20)];
+        // Same generic (create), DIFFERENT decorated → nondeterministic
+        // decoration.
+        let run_b = vec![frame(1, 10, 99)];
+        assert_eq!(diverging_activations(&run_a, &run_b), vec![1]);
+    }
 }
 
 #[cfg(test)]
