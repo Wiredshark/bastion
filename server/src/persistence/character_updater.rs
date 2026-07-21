@@ -377,11 +377,23 @@ impl CharacterUpdater {
             .collect::<Vec<_>>();
         existing_pending_actions.sort_unstable_by_key(|(character_id, _)| *character_id);
 
+        // DET-PER-008 (v5 deep-pass, High): the logged-in-character updates
+        // arrive in ECS join order (see the persistence system's `.join()`),
+        // so the batch's player segment was non-canonical. Sort by character
+        // id before chaining, matching the T0.47 treatment of the pending
+        // actions above — the whole batch is now char-id ordered.
+        let mut incoming_updates = updates.collect::<Vec<_>>();
+        incoming_updates.sort_unstable_by_key(|update| update.0);
+
         // Combine the pending actions with the updates for logged in characters
         let pending_actions = existing_pending_actions
             .into_iter()
             .map(|(_, action)| action)
-            .chain(updates.map(|update| DatabaseActionKind::UpdateCharacter(Box::new(update))))
+            .chain(
+                incoming_updates
+                    .into_iter()
+                    .map(|update| DatabaseActionKind::UpdateCharacter(Box::new(update))),
+            )
             .collect::<Vec<DatabaseActionKind>>();
 
         if !pending_actions.is_empty() {

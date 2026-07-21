@@ -506,10 +506,16 @@ pub fn convert_inventory_from_database_items(
 
     // For overflow items and failed inserts, attempt to push to inventory. If push
     // fails, move to overflow slots.
+    // DET-PER-027 (v5 deep-pass, High): drain failed inserts in canonical
+    // position order. `failed_inserts` is a HashMap whose value iteration rode
+    // the process hash seed, and push order determines which slots the retried
+    // items land in (and the overflow set), so it must be deterministic.
+    let mut failed_sorted = failed_inserts.into_iter().collect::<Vec<_>>();
+    failed_sorted.sort_by(|(a, _), (b, _)| a.cmp(b));
     if let Err(inv_error) = inventory.push_all(
         overflow_items
             .into_iter()
-            .chain(failed_inserts.into_values()),
+            .chain(failed_sorted.into_iter().map(|(_, item)| item)),
     ) {
         inventory.persistence_push_overflow_items(inv_error.returned_items());
     }
