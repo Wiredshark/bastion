@@ -4764,16 +4764,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }
             }
         }
-        // DETRNG (B8 root fix): tick-seeded, not OS entropy — the toss
-        // velocities this feeds are cosmetic scatter (drop landing spots →
-        // pile merge grouping), and seeding them per-tick makes the whole
-        // system reproducible under --seed (the last b5 residual:
-        // stone_entities varied run-to-run). Same scatter feel in the live
-        // game; deterministic everywhere.
-        let mut rng = {
-            use rand::SeedableRng;
-            rand::rngs::StdRng::seed_from_u64(tick.0 ^ 0xBA57_10AA)
-        };
+        // DET-RNG-008 (determinism audit): the toss scatter was a SINGLE
+        // tick-global StdRng cursor shared across every drop site in the
+        // loop, so its draws attached to items in ECS-join order — the law
+        // forbids keying authoritative-ish draws on iteration order (a
+        // reorder would swap scatter between items → different pile-merge
+        // grouping). Each drop SITE now draws from its own stream keyed by
+        // (tick, drop world-position, site domain) via `toss_scatter_rng` —
+        // order-invariant, distinct per site. Cosmetic scatter values re-pin
+        // vs the old shared cursor.
         // Pre-deref so field borrows split (jobs mutably + anchors shared
         // inside the same loop).
         let board = &mut *board;
@@ -10777,6 +10776,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             {
                                 block_change.set(job.pos, Block::empty());
                                 board.farm_growth.remove(&(job.pos.x, job.pos.y, job.pos.z));
+                                // DET-RNG-008: farm-harvest toss stream keyed
+                                // on the harvested cell (both yield loops draw
+                                // from it in order).
+                                let mut rng = toss_scatter_rng(tick.0, job.pos, 0xFA47_0001);
                                 for _ in 0..FARM_WHEAT_YIELD {
                                     crate::bastion_actions::emit_drop(
                                         &mut item_drop_emitter,
@@ -11084,6 +11087,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // one entity per block. Gentle toss (was ±2.0
                         // horizontal): drops land close, so spawn-time
                         // merging within MAX_ITEM_MERGE_DIST actually fires.
+                        // DET-RNG-008: mine-drop toss stream keyed on the
+                        // mined cell.
+                        let mut rng = toss_scatter_rng(tick.0, job.pos, 0x30E_0002);
                         crate::bastion_actions::emit_drop(
                             &mut item_drop_emitter,
                             job.pos,
@@ -11279,6 +11285,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     match terrain.get(cell).ok().map(|b| b.kind()) {
                         Some(BlockKind::Wood) => {
                             block_change.set(cell, Block::empty());
+                            // DET-RNG-008: chop-drop toss stream keyed on the
+                            // felled cell.
+                            let mut rng = toss_scatter_rng(tick.0, cell, 0xC40B_0003);
                             crate::bastion_actions::emit_drop(
                                 &mut item_drop_emitter,
                                 cell,
@@ -14682,6 +14691,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             });
         }
     }
+}
+
+/// DET-RNG-008 (determinism audit): a per-drop-site toss-scatter stream
+/// keyed on (tick, drop world-position, site domain). Order-invariant (the
+/// position is intrinsic to the drop) and distinct per site (domain salt) —
+/// replaces the single tick-global cursor that keyed draws on ECS-join
+/// order. Determinism: pure function of (tick, pos, domain), no wall-clock,
+/// no OS entropy, no iteration-order dependence.
+fn toss_scatter_rng(tick: u64, pos: Vec3<i32>, domain: u64) -> rand::rngs::StdRng {
+    use rand::SeedableRng;
+    rand::rngs::StdRng::seed_from_u64(
+        tick ^ (pos.x as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ (pos.y as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+            ^ (pos.z as u64).wrapping_mul(0x1656_67B1_9E37_79F9)
+            ^ domain,
+    )
 }
 
 /// T1.13 (conservation cluster): item `Uid`s reserved by more than one
