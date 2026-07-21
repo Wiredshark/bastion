@@ -98,8 +98,24 @@ impl Plugin {
                     }))
                 })
             })
-            .collect::<Result<HashMap<_, _>, _>>()
-            .map_err(PluginError::Io)?;
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(PluginError::Io)?
+            .into_iter()
+            .try_fold(HashMap::new(), |mut files, (path, bytes)| {
+                // DET-AST-019 (v6 deep-pass, Critical): duplicate archive
+                // paths were silent last-entry-wins by archive order — an
+                // aliased/malformed archive could shadow content invisibly.
+                // Duplicates are REJECTED fail-closed; plugin content is a
+                // pure function of a well-formed archive.
+                if files.insert(path.clone(), bytes).is_some() {
+                    tracing::error!(
+                        ?path,
+                        "DET-AST-019: duplicate path inside plugin archive — rejected"
+                    );
+                    return Err(PluginError::NoConfig);
+                }
+                Ok(files)
+            })?;
 
         let data = toml::de::from_str::<PluginData>(
             std::str::from_utf8(
@@ -319,11 +335,26 @@ impl PluginMgr {
         args: &[String],
         player: Uid,
     ) -> Result<Vec<String>, CommandResults> {
-        // return last value or last error
+        // DET-AST-023 (v6 deep-pass, declared policy): LAST-registered
+        // handler wins, in the canonical plugin order (sorted enumeration
+        // DET-AST-010 + ordered module sets DET-AST-017 make that order a
+        // pure function of the plugin set). Multiple handlers for one
+        // command are an AMBIGUITY — witnessed loudly below rather than
+        // silent.
+        let mut handlers = 0u32;
         let mut result = Err(CommandResults::UnknownCommand);
         self.plugins.iter_mut().for_each(|plugin| {
             match plugin.command_event(ecs, name, args, player) {
-                Ok(val) => result = Ok(val),
+                Ok(val) => {
+                    handlers += 1;
+                    if handlers > 1 {
+                        tracing::warn!(
+                            command = name,
+                            "DET-AST-023: multiple plugins handle this command —                              last in canonical order wins"
+                        );
+                    }
+                    result = Ok(val)
+                },
                 Err(CommandResults::UnknownCommand) => (),
                 Err(err) => {
                     if result.is_err() {
