@@ -107,7 +107,8 @@ impl Structure for GiantTree {
 
     fn render_inner(&self, _site: &Site, _land: &Land, painter: &Painter) {
         let leaf_col = self.leaf_color();
-        let mut rng = rand::rng();
+        // DET-RNG-006: position-keyed, not OS entropy (see plot_render_rng).
+        let mut rng = super::plot_render_rng(self.wpos.xy(), 0x671A_0002);
         self.tree.walk(|branch, parent| {
             let aabr = Aabr {
                 min: self.wpos.xy() + branch.get_aabb().min.xy().as_(),

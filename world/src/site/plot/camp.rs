@@ -53,7 +53,8 @@ impl Structure for Camp {
     fn render_inner(&self, _site: &Site, land: &Land, painter: &Painter) {
         let center = self.bounds.center();
         let base = land.get_alt_approx(center) as i32;
-        let mut rng = rand::rng();
+        // DET-RNG-006: position-keyed, not OS entropy (see plot_render_rng).
+        let mut rng = super::plot_render_rng(center, 0xCA33_0001);
         let model_pos = center.with_z(base);
         let temp = self.temp;
         let camp_type = if temp >= CONFIG.tropical_temp {

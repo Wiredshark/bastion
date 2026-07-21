@@ -143,6 +143,24 @@ impl Plot {
     }
 }
 
+/// DET-RNG-006 (determinism audit): a position-keyed RNG for structure
+/// render/decoration passes. Plot generators receive a seeded RNG for their
+/// SHAPE, but `render_inner` (the block-paint pass, which takes no RNG) and
+/// its helpers reached for `rand::rng()` (OS entropy) for interior
+/// decoration / loot / mob placement — so every dungeon's contents varied
+/// run-to-run even under deterministic worldgen. Key by the plot's intrinsic
+/// world position + a per-plot-kind salt: deterministic, order-independent,
+/// and distinct per plot kind (same class as DET-RNG-007). Determinism: a
+/// pure function of `(pos, plot_salt)` — no wall-clock, no OS entropy.
+pub fn plot_render_rng(pos: Vec2<i32>, plot_salt: u64) -> ChaCha8Rng {
+    use rand::SeedableRng;
+    ChaCha8Rng::seed_from_u64(
+        (pos.x as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ (pos.y as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+            ^ plot_salt,
+    )
+}
+
 #[derive(strum::Display)]
 pub enum PlotKind {
     House(House),
