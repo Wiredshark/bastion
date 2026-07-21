@@ -537,8 +537,17 @@ impl ServerEvent for CreateSpriteEvent {
                     block_change.set(ev.pos, new_block);
                     // Remove sprite after del_timeout and offset if specified
                     if let Some((timeout, del_offset)) = ev.del_timeout {
-                        use rand::RngExt;
-                        let mut rng = rand::rng();
+                        use rand::{RngExt, SeedableRng};
+                        // DET-RNG-006 (determinism audit): the sprite-removal
+                        // timeout jitter was an OS-entropy draw (rand::rng()).
+                        // Key it by (sprite world position, sim-time) so the
+                        // scheduled removal is deterministic/replayable.
+                        let mut rng = rand::rngs::StdRng::seed_from_u64(
+                            (ev.pos.x as u32 as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                ^ (ev.pos.y as u32 as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+                                ^ (ev.pos.z as u32 as u64).wrapping_mul(0x1656_67B1_9E37_79F9)
+                                ^ time.0.to_bits(),
+                        );
                         let offset = rng.random_range(0.0..del_offset);
                         let current_time: f64 = time.0;
                         let replace_time = current_time + (timeout + offset) as f64;
