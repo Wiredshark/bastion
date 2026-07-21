@@ -2163,7 +2163,14 @@ fn find_best_eulerian_circuit(
     let mut best_min_spread = f32::MAX;
     let mut best_iteration = 0;
 
-    let graph_keys = graph.keys().copied().collect::<Vec<_>>();
+    // DET-SITE-005 (v8 town-city-site-gen, High): iterate candidate start
+    // vertices in canonical order. `graph.keys()` yields nodes in hash order,
+    // and the best-circuit search keeps the FIRST circuit of any equal score,
+    // so the retained airship circuit rode the process hash seed. Sorting the
+    // start vertices makes the tie-break deterministic (lowest start vertex
+    // wins among equal-scoring circuits).
+    let mut graph_keys = graph.keys().copied().collect::<Vec<_>>();
+    graph_keys.sort_unstable();
 
     // Repeat for each node as the starting point.
     for (i, &start_vertex) in graph_keys.iter().enumerate() {
