@@ -193,7 +193,21 @@ pub fn quest_request<S: State>(session: DialogueSession) -> impl Action<S> {
                 .filter(|(site_id, _, dist)| Some(*site_id) != ctx.npc.current_site && (1000.0..5_000.0).contains(dist))
                 // Temporarily, try to choose the same target site for 15 minutes to avoid players asking many times
                 // TODO: Don't do this
-                .choose(&mut ChaChaRng::from_seed([(ctx.time.0 / (60.0 * 15.0)) as u8; 32]))
+                // DET-RNG-010 (determinism audit): the seed was a 15-min time
+                // bucket crushed to a single u8 repeated 32× (256 distinct
+                // seeds, no per-NPC or world keying — every merchant in a
+                // bucket rolled the SAME target stream). Keyed now on (npc
+                // uid, 15-min bucket) + a domain salt: preserves the
+                // intentional "same target for 15 min" stability, distinct
+                // per merchant, proper entropy. `sites` is a DenseSlotMap
+                // (deterministic iteration), so the resulting .choose is
+                // reproducible.
+                .choose(&mut ChaChaRng::seed_from_u64(
+                    ctx.npc.uid.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                        ^ ((ctx.time.0 / (60.0 * 15.0)) as u64)
+                            .wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+                        ^ 0x9E57_0010,
+                ))
             // Escort reward amount is proportional to distance
             && let escort_reward_amount = dist / 5.0
             && let Some(dst_site_name) = util::site_name(ctx, dst_site_id)
