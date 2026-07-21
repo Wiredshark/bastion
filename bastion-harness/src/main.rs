@@ -911,6 +911,34 @@ fn main() -> ExitCode {
         }
     }
 
+    // DET-AST-007 (v6 deep-pass, Critical): the CERTIFIED ASSET ROOT gate.
+    // The asset root was chosen from ambient ordered search paths (env, exe
+    // dir, repo root, system paths) — the same command could silently load a
+    // DIFFERENT asset tree depending on environment or launch directory.
+    // Every harness run is a certified run: pin VELOREN_ASSETS to the
+    // canonical repo-root assets tree if the caller did not declare one, and
+    // require the explicit root downstream (common/assets fails closed
+    // before simulation if the declared root is missing).
+    // SAFETY: single-threaded here (before any pool exists).
+    unsafe {
+        if std::env::var_os("VELOREN_ASSETS").is_none() {
+            let candidate = std::env::current_dir()
+                .map(|d| d.join("assets"))
+                .ok()
+                .filter(|p| p.is_dir());
+            match candidate {
+                Some(root) => std::env::set_var("VELOREN_ASSETS", &root),
+                None => {
+                    eprintln!(
+                        "DET-AST-007: no VELOREN_ASSETS declared and ./assets not found —                          a certified run must declare its asset root"
+                    );
+                    std::process::exit(4);
+                },
+            }
+        }
+        std::env::set_var("BASTION_REQUIRE_EXPLICIT_ASSETS", "1");
+    }
+
     // DETRNG (B8 root fix): EVERY harness run is deterministic — rtsim rule
     // RNGs derive from (world seed, tick) instead of OS entropy, so --seed
     // actually reproduces a run (same seed → same gate outcome; the flake

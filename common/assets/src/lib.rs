@@ -343,6 +343,31 @@ lazy_static! {
     /// 5. Running executable in the target dir (`assets` in workspace)
     /// 6. Running tests (`assets` in workspace root)
     pub static ref ASSETS_PATH: PathBuf = {
+        // DET-AST-007 (v6 deep-pass, Critical): certified-run strictness.
+        // When BASTION_REQUIRE_EXPLICIT_ASSETS=1 (set by the deterministic
+        // harness), the DECLARED root is the ONLY candidate — the ambient
+        // search below (exe dir, cwd repo root, XDG/system paths) is
+        // skipped entirely, so environment/launch-directory can never
+        // silently select a different asset tree. Fails closed BEFORE any
+        // content loads.
+        if std::env::var("BASTION_REQUIRE_EXPLICIT_ASSETS").as_deref() == Ok("1") {
+            let declared = std::env::var("VELOREN_ASSETS").unwrap_or_else(|_| {
+                panic!(
+                    "DET-AST-007: BASTION_REQUIRE_EXPLICIT_ASSETS=1 but no VELOREN_ASSETS                      declared — a certified run must declare its asset root"
+                )
+            });
+            let mut path = PathBuf::from(declared);
+            if !path.ends_with("assets") {
+                path = path.join("assets");
+            }
+            assert!(
+                path.is_dir(),
+                "DET-AST-007: declared certified asset root {} is not a directory",
+                path.display()
+            );
+            tracing::info!("Certified asset root path={}", path.display());
+            return path;
+        }
         let mut paths = Vec::new();
 
         // Note: Ordering matters here!
