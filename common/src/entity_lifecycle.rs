@@ -125,6 +125,47 @@ impl LoadedLinkage {
     }
 }
 
+/// T2.17 (T2 lifecycle group): how a Controller action is handled while its
+/// NPC is SIMULATED (offscreen) — every action kind must declare exactly
+/// one disposition, so offscreen behavior is defined by contract, never by
+/// accident.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ActionDisposition {
+    /// The simulated tick applies the effect ABSTRACTLY (e.g. a Say becomes
+    /// a chronicle entry, not a real utterance).
+    ConsumedAbstractly,
+    /// Carried over when the NPC promotes to Loaded (the loaded Agent picks
+    /// it up).
+    TransferredToLoadedAgent,
+    /// Transient — lost across a save/restart (never persisted).
+    DroppedOnRestart,
+    /// Not allowed while the NPC is under Bastion job ownership (the job
+    /// owns movement/intent).
+    ForbiddenUnderJobOwnership,
+}
+
+/// A declared disposition for one named action kind (the rtsim crate maps
+/// its concrete `NpcAction` variants onto these labels; common holds the
+/// contract + the completeness gate).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActionContract {
+    pub action: String,
+    pub disposition: ActionDisposition,
+}
+
+/// T2.17 gate: every action label a producer emits must have a declared
+/// disposition (no silent offscreen behavior). Returns the undeclared
+/// labels.
+pub fn undeclared_actions(emitted: &[&str], contracts: &[ActionContract]) -> Vec<String> {
+    let declared: std::collections::BTreeSet<&str> =
+        contracts.iter().map(|c| c.action.as_str()).collect();
+    emitted
+        .iter()
+        .filter(|action| !declared.contains(*action))
+        .map(|action| (*action).to_string())
+        .collect()
+}
+
 #[cfg(test)]
 mod t2_lifecycle_tests {
     use super::*;
@@ -172,6 +213,32 @@ mod t2_lifecycle_tests {
         assert!(!LoadedLinkage::KnownLoaded.needs_reconciliation());
         assert!(!LoadedLinkage::Unloaded.needs_reconciliation());
         assert!(LoadedLinkage::MissingOrStaleLink.needs_reconciliation());
+    }
+
+    #[test]
+    fn t2_17_action_contract_completeness_gate() {
+        let contracts = vec![
+            ActionContract {
+                action: "Say".to_string(),
+                disposition: ActionDisposition::ConsumedAbstractly,
+            },
+            ActionContract {
+                action: "Attack".to_string(),
+                disposition: ActionDisposition::TransferredToLoadedAgent,
+            },
+            ActionContract {
+                action: "Goto".to_string(),
+                disposition: ActionDisposition::ForbiddenUnderJobOwnership,
+            },
+        ];
+        // Fully declared → no gaps.
+        assert!(undeclared_actions(&["Say", "Attack", "Goto"], &contracts).is_empty());
+        // An emitted action with no contract is a gap (silent offscreen
+        // behavior).
+        assert_eq!(
+            undeclared_actions(&["Say", "Dance"], &contracts),
+            vec!["Dance".to_string()]
+        );
     }
 
     #[test]
