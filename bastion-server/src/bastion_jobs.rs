@@ -3737,11 +3737,13 @@ impl JobBoard {
     /// harness mode, sorting the monotonic `JobId`s pins equal-score claim
     /// ties and same-depth access-plan ties without imposing a tree-map cost
     /// on the live game.
-    fn decision_job_ids(&self, deterministic: bool) -> Vec<JobId> {
+    /// T0.38 (master build order; T0-003): decision order is a stable
+    /// total order in LIVE and harness alike — arbitration outcomes must
+    /// not ride HashMap iteration in any mode (the claim-determinism row;
+    /// sorting ~thousands of u64 ids per arbitration pass is noise).
+    fn decision_job_ids(&self) -> Vec<JobId> {
         let mut ids = self.jobs.keys().copied().collect::<Vec<_>>();
-        if deterministic {
-            ids.sort_unstable();
-        }
+        ids.sort_unstable();
         ids
     }
 
@@ -4614,7 +4616,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 pickup_items,
                 loot_owners_view,
                 inventory_manip_events,
-                execution_mode,
+                _execution_mode,
                 mut activity_zones,
                 mut needs_storage,
                 mut energies,
@@ -8127,9 +8129,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .is_some_and(|d| FOOD_DEFS.contains(&d))
                                 && !board.is_reserved(**iuid)
                         })
-                        .min_by_key(|(_, ipos, _)| {
+                        // T0.39 (T0-003): equal-distance ties break on the
+                        // stable item uid, not join (entity-allocation)
+                        // order.
+                        .min_by_key(|(_, ipos, iuid)| {
                             let c = ipos.0.map(|e| e.floor() as i32) - feet;
-                            (c.x as i64).pow(2) + (c.y as i64).pow(2) + (c.z as i64).pow(2)
+                            (
+                                (c.x as i64).pow(2)
+                                    + (c.y as i64).pow(2)
+                                    + (c.z as i64).pow(2),
+                                iuid.0.get(),
+                            )
                         })
                         .map(|(pi, ipos, iuid)| {
                             // The matched def as the job's required_item —
@@ -8191,9 +8201,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .beds
                         .iter()
                         .filter(|(_, s)| s.occupant.is_none())
+                        // T0.39 (T0-003): beds iterate a HashMap — equal-
+                        // distance ties break on the bed coordinate, never
+                        // process-seeded hash order.
                         .min_by_key(|(p, _)| {
                             let d = **p - feet;
-                            (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64).pow(2)
+                            (
+                                (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64).pow(2),
+                                p.x,
+                                p.y,
+                                p.z,
+                            )
                         })
                         .map(|(p, _)| *p)
                 });
@@ -11853,11 +11871,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 board.access_idle_secs = 0.0;
             }
 
-            if execution_mode.is_deterministic() {
-                egress_requests.sort_by_key(|(uid, from, to)| {
-                    (uid.0.get(), from.x, from.y, from.z, to.x, to.y, to.z)
-                });
-            }
+            // T0.38: stable order in all modes (was harness-only).
+            egress_requests.sort_by_key(|(uid, from, to)| {
+                (uid.0.get(), from.x, from.y, from.z, to.x, to.y, to.z)
+            });
             for (uid, requested_from, to) in egress_requests {
                 let entity = id_maps.uid_entity(uid);
                 let actual_pos = entity
@@ -14102,7 +14119,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             .filter(|j| j.is_access)
             .map(|j| j.pos.xy())
             .collect();
-        for id in board.decision_job_ids(execution_mode.is_deterministic()) {
+        for id in board.decision_job_ids() {
             let job = &board.jobs[&id];
             if !job.kind.is(DesignationKind::Mine)
                 || job.is_access
@@ -14298,7 +14315,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // Highest priority, then lowest score (distance + B5.8's
             // top-down and dispersion shaping).
             let mut best: Option<(JobId, u8, f32)> = None;
-            for id in board.decision_job_ids(execution_mode.is_deterministic()) {
+            for id in board.decision_job_ids() {
                 let job = &board.jobs[&id];
                 if job.claimed_by.is_some() || job.unreachable {
                     continue;
