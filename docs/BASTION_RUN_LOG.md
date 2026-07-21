@@ -5475,3 +5475,1532 @@ one addition: the Opus-Reviewer backfill must produce ATTESTED evidence
 claim isn't evidence. Relayed to Opus Reviewer. Report threshold: large
 achievements only (T2 group close, T1.12 return, any backfill red) —
 nothing smaller.
+
+Opus Reviewer confirmed the discipline (attested-only, immediate safety-
+red escalation, evidence-complete handoff to Fable — raw ATTEST/composite
+data, not prose, per the build-only/Sonnet-documents split) and verified
+origin/bastion/builder push-state (`90fb70e630` == local, contains the
+whole T2 opener cluster + T1CMD wire-in). Requested 32 vCPU + Builder 4's
+canonical floor job lines; fan fires once received. Plan: per-commit
+cargo-test pins for individual coverage + the mf byte-identity floor as
+the load-bearing no-regression proof (T1CMD's wire-in is the cluster's
+only live-path change, so the floor is what actually proves nothing
+broke). Awaiting attested-green or a safety-red flag.
+
+**T2.2 floor + M3A finding.** T2.2's own no-regression gate is CLEAN:
+M3A fails byte-identically with and without T2.2 applied (builder
+rebuilt clean HEAD `90fb70e630` specifically to isolate this), N2/M3D
+both green. Good differential diagnosis — proceed with T2.2.
+
+Builder flagged M3A's fail as a fresh "safety-red" finding. Checked
+against my own bookkeeping: M3A has been logged as `[66,44,97]/2
+(tracked-red)` in EVERY floor report across this whole session — ENGOPT3/
+4, T0DET3, T0DET4, T1CMD, all showed the identical fingerprint, byte-
+stable across dozens of independent runs on unrelated changes. This is a
+long-standing, already-tracked, explicitly-accepted baseline condition
+(dating to ENGOPT-era, related to B57's own-prefix-self-hit class), NOT
+something the T1CMD floor silently missed — "floor green" in this
+engagement has always meant N2+M3D clean with M3A held at its known
+fingerprint, never "M3A also passes." Builder didn't have that history
+in context, hence the alarm — reasonable given what they could see.
+
+One thing NOT yet confirmed: whether builder's observed signature
+(seed21 teleports=2 Abort@258, seed42 teleports=3+lane_violations=1)
+numerically matches the historical `[66,44,97]/2` fingerprint, or
+whether the field names just differ across reporting eras. Asked Opus
+Reviewer (already running a broader VM pass, already warned about M3A)
+to cross-check against the oldest recorded baseline to close this with
+real proof rather than my own recollection. Not escalated to the
+architect as a fresh safety-red — framed correctly as a legacy tracked
+condition pending signature confirmation.
+
+**★ Ben direct correction: STOP T2.2/M3A immediately** — builder was off
+track, spending tokens on a tangent. T2.2 stashed (not committed, not
+lost), tree clean. Retracted the M3A side-check request to Opus Reviewer.
+Returned strictly to build order: T1.12+ next per master order, not
+T2.11 (supersedes the earlier "finish the connected group first" plan —
+Ben's direct call overrides).
+
+**T1.12-32 group prompt sent** (Bastion job/economy conservation
+cluster — resource conservation, reservations, completion atomicity,
+cleanup, colony invariants). Code-verification fallback, no T1-002
+packet exists; verified core targets are real before sending
+(`server/src/rtsim/mod.rs`, `server/src/bastion_jobs.rs` both exist with
+the cited functions). **Hard requirement stated explicitly and first in
+the prompt this time: every commit tested, every commit gets a VM run,
+no exceptions** — the corrected standard applies from here forward, not
+just as a footer.
+
+**30-min monitoring check-in:** T1.12-19 (8 rows) all built; T1.12
+committed `25a367ac0a` (bookkept earlier), T1.18+T1.19 committed
+`27cce4d635`, bastion-server suite green. Ben personally asked Builder 4
+"what are you even testing here?" — good prompt, produced an honest
+concrete answer: T1.13's reservation duplicate-detection unit pin
+(2 colonists reserving the same dropped item → one dupes/stalls,
+`duplicate_reservations()` + a `debug_assert` in `reserve()` catch it
+loudly) plus a live-guard/VM-floor pairing. Builder disclosed T1.14/T1.18
+honestly as "thin" — invariant-explicit rather than catching a bug that
+exists today.
+
+**★ REAL SELF-CAUGHT GAP, same class as [[gate-must-test-live-path]]:**
+Builder 4 realized the VM floor they've been running (M3A/N2/M3D) tests
+LADDER TRAVERSAL — it never touches an item. T1.12-19 is all item/
+resource-conservation work; the floor has been the wrong subsystem this
+whole cluster. The harness already has the right scenarios:
+`--b5-scenario` (mine+haul, exact item conservation), `--b55-scenario`/
+`b55-deep` (200-block slab, conservation through pile-merge + soak),
+`--mine-fidelity-scenario` (full mine→haul→deposit + FinalStateCertificate),
+an explicit `authoritative_conservation_failure` assertion. Builder asked
+whether to switch the VM leg to these conservation scenarios and re-run
+the whole T1.12-19 batch through them.
+
+**RULING: yes, switch immediately.** Re-run T1.12-19 through b5+b55+
+mine-fidelity, confirm no conservation regression. This is the correct
+gate for this cluster — the ladder floor was never going to catch a
+double-reserve or a decrement/drop desync, only a conservation scenario
+that actually pushes items through reserve→haul→complete→deposit can.
+Keep the ladder floor for anything that touches scheduling/dispatch, but
+item/resource rows get the conservation scenarios from here forward.
+
+**★ REAL VALUE OF THE EVERY-COMMIT-VM-RUN RULE, proven immediately:**
+Opus Reviewer's attested backfill (5/5 VMs, deterministic) caught a
+harness BUILD BREAK at T1.18/19 (`27cce4d635`) that bastion-server's own
+unit pins never would have — `cargo build --profile verify -p
+bastion-harness` fails, `FlightSample` initializer missing the new
+`fetch_reservation` field at main.rs:1581 (the field was added, the
+harness construction site wasn't updated). bastion-server pins pass
+46/0; only the harness build catches this. This is EXACTLY the gap that
+was open all night — a commit with green local pins, silently broken at
+the one boundary local testing never crosses. Opus flagged Builder 4
+directly with the exact fix. Not architect-triage (a straightforward
+missed-field compile break, builder-fixable), not escalated.
+
+**Attested status otherwise, all SHA-matched:** T2 cluster clean (0 new
+failures vs baseline). T1.12/13/14/16/15/17 all green. mf
+durable_composite byte-identical across serial/sched-5/sched-12 AND
+Intel Broadwell + AMD Rome — cross-machine AND cross-schedule AND
+cross-microarchitecture. 2 pre-existing unrelated veloren-common reds
+(i18n wheat gap, slowjob artifact) confirmed constant since baseline,
+not cluster-introduced. Fable handoff still held per standing
+instruction — Opus re-runs no-reg once the FlightSample fix lands.
+
+Fixed + pushed `ade7b2f8c7` — harness build clean. Root cause banked:
+cross-crate struct-field adds need a workspace-wide grep + a harness
+build, crate-level pins never compile the harness bin. Conservation fan
+re-fired at the fixed tip (t1consv2: b5+b55-deep+mine-fidelity). Holding
+T1.20+ until it confirms T1.12-19 conservation-clean.
+
+**Division of labor changed (Ben direct):** Builder 4 off VM testing
+entirely, back to build→pins→commit. Opus Reviewer now owns test
+execution + custom-test authoring going forward, ongoing not one-shot.
+Opus confirmed the FlightSample fix verified green (harness builds, mf
+byte-identical, N2/M3D 2/2) and is running a wide sweep (22 VMs, 100%
+vCPU while builder's stalled: all 14 ladder episodes incl. NFENCE, mf x3,
+5 gameplay scenarios). Will author custom L1-L3 scenarios (conservation
+predicate, reservation-uniqueness soak, command-lifecycle-on-haul) next
+— test code only, isolation discipline (own-files, scoped commits,
+never git add -A). Fable handoff still held.
+
+**30-min check-in:** Builder 4 absorbed the role-change cleanly, banked
+it to memory, waiting on t1consv2 (last VM result they personally track)
+before resuming T1.20+ in the new lighter local-only loop. No stuck/
+looping concern — legitimately blocked on a result outside their lane now.
+
+**★★ PIVOT (Ben direct): pausing Tier-1 build-order, switching to a new
+independent determinism source audit.** Found at
+`H:\My Drive\bastion-Chatgpt\engine design\determism\` — a static-
+analysis-only (no code run) exhaustive audit: 118 findings, 20 coverage
+areas, 34 Critical/69 High/15 Medium, each with exact file/line +
+proven/not-proven + remediation direction. Spot-checked one finding
+(DET-RNG-007, structure loadout `rand::rng()` in world/src/site/mod.rs)
+directly against live source — confirmed accurate. Files:
+`PROJECT-BASTION-EXHAUSTIVE-DETERMINISM-SOURCE-AUDIT.md` (main report),
+`PROJECT-BASTION-DETERMINISM-FINDING-LEDGER.csv` (structured, one row
+per finding), `PROJECT-BASTION-DETERMINISM-CALLSITE-INVENTORY.csv` (the
+193-site raw RNG inventory), `PROJECT-BASTION-DETERMINISM-AUDIT-SUMMARY.json`
+(machine-readable rollup).
+
+Testing scope narrowed per Ben: determinism-only (paired-run harness
+comparator, byte-identity before/after), not the full conservation/
+gameplay suite — same every-commit-tested rule, narrower test type.
+
+Sent Builder 4 the first cluster: DET-COV-001 (RNG foundation, 10
+findings). DET-RNG-001-005 are reference-pattern documentation, not
+bugs. DET-RNG-006 is the 193-callsite master inventory (work Critical
+ones first, not all at once). DET-RNG-007 (structure loadout RNG) is
+real+open+fixable now, same class as T0.36's fix. DET-RNG-008
+(bastion_jobs scatter RNG, tick-global not per-owner) needs a T0.32/33-
+overlap check first. DET-RNG-009 (no RNG-stream persistence protocol) is
+a real scoping question, not a quick fix — likely fork candidate.
+DET-RNG-010 lower priority.
+
+**Note for later:** the audit's own text flags a discrepancy — "a ledger
+says stable A* frontier ordering is DONE [DONE.1/ENGOPT1], but the
+audited common/src/astar.rs still lacks the required total tie-break."
+Worth verifying once the RNG cluster is through — not chased right now.
+
+**Opus Reviewer backfill COMPLETE, VMs handed back to Builder 4** (tip
+`ade7b2f8c7`, all SHA-attested). Green: T2 cluster + T1.12-19, 0 cluster-
+introduced failures; mf byte-identical across serial+3 schedule-seeds
+AND Intel+AMD; P0/P0G/N1C/N2/M3D floors 2/2. Tracked-reds excluded from
+pass bar (N1 known-open vanilla-leak, M3A B57 self-hit, 2 unrelated
+veloren-common reds) — none cluster-introduced. Caught+fixed: the
+FlightSample build break. ~14 wide-sweep jobs incomplete (rate-limited,
+re-runnable later). Fable handoff still held. Opus moves to authoring
+L1-L3 test scenarios next.
+
+**DET-COV-001 (RNG foundation) named findings RESOLVED**, tip `e711c37dea`:
+- DET-RNG-007 DONE `8e7e2c4f55`: structure-entity loadout was fresh
+  `rand::rng()` (OS entropy). Keyed on (world seed, entity world position,
+  loadout domain salt) via ChaChaRng, same class as T0.36. veloren-world
+  clean. (test_site()'s rand::rng() at line 3355 is test-only, left as-is.)
+- DET-RNG-008 DONE `2fe861aeda`: toss scatter was one shared tick-global
+  StdRng cursor across 4 drop sites, keyed by ECS-join order. Now
+  `toss_scatter_rng(tick, drop-cell, site-domain)` per site, order-
+  invariant. Cosmetic outcome shift expected (landing→pile-merge), values
+  re-pin. bastion-server 46/46.
+- DET-RNG-010 DONE `e711c37dea`: merchant escort seed crushed a 15-min
+  bucket to [u8;32] with no keying (every merchant in a bucket shared a
+  stream). Keyed on (npc.uid, bucket, salt), 15-min stability preserved.
+  veloren-rtsim clean.
+- DET-RNG-009 SCOPED, CLOSED AS MOOT: the only two stored RNG fields
+  (NpcCtx.rng, dialogue_rng) are re-derived EVERY TICK from
+  `tick_rng(world_seed, tick, salt)` — counter-RNG, not a persisted
+  cursor. No authoritative RNG state survives across ticks/saves, so
+  there's nothing to fork on reload. Well-verified, real closure not a
+  hand-wave — RULING: close it, AND build the lightweight fitness gate
+  Builder proposed (source-scan asserting no persisted authoritative RNG
+  cursor exists) — cheap, matches the established gate pattern (T0.48/
+  T1.1), prevents a future regression into this exact class.
+- DET-RNG-001-005: confirmed reference patterns, no fix, as expected.
+
+DET-RNG-006 (the 193-callsite master queue): treating this as an ongoing
+ambient queue, not a single blocking gate. RULING: continue pulling
+Critical entries from worldgen/terrain/inventory/events specifically —
+similar low-risk pattern to what's already landed. Explicitly steering
+AWAY from combat's RNG conversion for now (DET-COV-009 flagged "failed
+contract," but combat changes are higher blast-radius — visible balance/
+feel impact, needs real playtesting not just byte-identity, deferred
+until reviewed with more care, not built solo).
+
+**NEW: ledger v2 + residual-pass addendum, 11 more findings
+(DET-ADD-001..011), total 129.** Found in `03-engine-improvement-research/`
+alongside the master-order file. 4 flagged material: DET-ADD-001 (loot
+ownership Instant expiry), DET-ADD-004 (persistence CTE load with no
+ORDER BY, parent-before-child assumed not guaranteed), DET-ADD-007
+(combat XP/damage-contribution reduction over an unordered HashMap),
+DET-ADD-010 (renderer particle timing/randomness).
+
+**CAUGHT: audit methodology gap — wrong branch.** Verified DET-ADD-001
+directly: `common/src/comp/loot_owner.rs` STILL uses raw `Instant` on my
+checkout — but that exact bug was fixed hours ago tonight (`3b137017e6`,
+during the ENGOPT6 hunt) and IS present on `bastion-origin/bastion/builder`
+(confirmed via `merge-base --is-ancestor`). The audit's own metadata says
+it read `bastion/block-B6HAUL` — the docs-only branch — never
+`bastion/builder` where the real code lands. DET-ADD-001 is a false
+positive: already fixed, just not on the branch the audit scanned. Every
+finding (original 118 + these 11) needs a live cross-check against
+`bastion/builder`'s actual tip before being treated as open — same
+staleness discipline as the master-order file, applied to a new document.
+
+Sent Builder 4 the 11 new findings with DET-ADD-001 marked already-
+fixed/skip, instructed to verify each remaining one against their own
+`bastion/builder` checkout before building anything.
+
+**DET-ADD persistence batch DONE `47a9556892`:** DET-ADD-006 (pet
+orientation keyed by player uid+pet ordinal, StdRng, no OS entropy),
+DET-ADD-004 (load_items CTE: added depth column + ORDER BY depth,item_id
+— ancestors before descendants, SQLite-version-robust), DET-ADD-005
+(pet SELECT: ORDER BY p.pet_id). All verified present on bastion/builder
+first. veloren-server clean. No local persistence integration test — SQL
+verified by inspection, runtime/live-load validation deferred to Opus
+(acceptable, this is exactly the class local unit tests can't cover).
+
+**Worldgen plot sweep, findings before the batch:** the "already has a
+seeded rng" theory was wrong — plots DO take a seeded rng in generate(),
+but the actual `rand::rng()` calls are in `render_inner` (the block-
+paint pass, no rng param) and free helper fns. Real fix = position-keyed
+per DET-RNG-007's pattern, not reuse-the-passed-rng. Proposed: one
+shared `plot_render_rng(pos, plot_salt) -> ChaChaRng` helper in
+`world/src/site/plot/mod.rs`, clean self-position sites first, bridge/
+dwarven_mine (free fns needing position threaded in) flagged separately
+as harder. Approved — reuse-first, consistent determinism story, correct
+split of easy-majority from harder-minority. DET-ADD-002 (invites) file
+paths given precisely. DET-ADD-008 confirmed present, queued after sweep.
+
+**30-min check-in:** active, steady progress — `plot_render_rng` helper
+built, sweeping clean self-position sites one at a time (camp done,
+giant_tree in progress). No stuck/looping concern.
+
+**★★★ Ben direct — full scope clarified: "we want this — we are going to
+end all non-determinism in the game once and for all."** Bigger than
+Factorio-parity (simulation-only lockstep) — comprehensive, all 20
+coverage areas including renderer/R0D, networking, asset pipeline,
+shutdown/failure, build reproducibility. Nothing in the 129-finding
+ledger is permanently shelved. Corrected my earlier "renderer/network —
+lower priority, hold" instruction to Builder 4: still holds as practical
+sequencing (finish what's in flight first), not a scope cut.
+
+**★ DET-RNG-006 worldgen plot sweep COMPLETE, 4 commits `f007d19fae`→
+`25f9c07e81`.** ~24 sites across 20 structure-plot files, all now keyed
+via the shared `plot_render_rng(pos, per-kind-salt)` helper — camp,
+giant_tree, cultist, haniwa, jungle_ruin, rock_circle, troll_cave,
+sahagin, sea_chapel, myrmidon_arena/house, terracotta_house/yard/
+palace(×2), vampire_castle(×2), dwarven_mine(×3), adlet, bridge, plaza,
+pirate_hideout. Free-fn sites keyed cleanly (already had a pos param, no
+threading needed). Correctly skipped 5 verified non-holes (test-only
+sites, the intentional live-mode else-branch). veloren-world clean
+throughout. A real, substantial worldgen determinism win — structure
+interior/loot/mob placement is now reproducible.
+
+**DET-RNG-006 worldgen slice 100% CLOSED**, tip `0a9afd3195` — the 2
+standalone sites also done (block.rs keyed by the fn's own structure_seed
++pos matching its existing RandomField basis; airship_travel.rs keyed by
+airship_dock_center). Full world/ subset (26 sites minus 5 verified
+non-holes) done across 6 commits. veloren-world clean throughout.
+
+**DET-ADD-002 DONE `e5630c93b9`:** invite timeouts now f64 sim-time
+deadline (Time.0+dur), same fix class as loot-owner. veloren-server clean.
+
+**DET-ADD-008 DomainHasher reuse ruling:** approved builder's proposed
+adapter — a free fn `stable_hash_u64<H: Hash>(label, value) -> u64` in
+common/src/state_hash.rs, reusing the same Sha256 primitive via a
+PRIVATE std::hash::Hasher adapter, rather than extending DomainHasher's
+public API (which would collide on `finish()` — inherent DomainHash vs
+trait u64). Clean, minimal, no unnecessary new abstraction. Persistence
+question: build it regardless of whether item.hash/terrain_revision
+turn out to be cross-build-persisted or runtime-only — per Ben's full-
+elimination directive we don't skip findings for being "merely
+defensive." Directed builder to do the quick persistence check anyway
+(affects urgency/ordering, not whether it gets built).
+
+**★★★ NEW: `determism/v3/` — RNG deep-research pass, 82 new findings
+(275 merged total), 1224 raw sampling callsites cataloged.** Far more
+rigorous than the first pass — catches classes the earlier work missed
+entirely: native-endian seed bytes, `StdRng`/`SmallRng` being explicitly
+non-portable per Rust's own Rand Book, "parent-cursor reseeding" (a
+child RNG seeded by drawing from the PARENT's cursor — deterministic in
+isolation but silently shifts if ANY unrelated earlier draw on the same
+parent changes), and a real saturation bug in tonight's own DET-RNG-010
+fix. Files: `PROJECT-BASTION-RNG-DEEP-RESEARCH-ADDENDUM.md` (narrative +
+24 named patterns RNG-DEEP-001..025+078/079), `-DEEP-FINDINGS.csv` (82
+rows), `-CHANGE-REGISTER-v2.csv` (275-row merged register), `-SAMPLING-
+CALLSITE-INVENTORY.csv` (1224 raw sites), `-LINE-CHANGE-GUIDE-v2.docx`.
+
+**TWO ARE FOUNDATIONAL — sequence these FIRST, before any more leaf-site
+fixes:**
+- RNG-DEEP-001: `world/src/util/seed_expan.rs:7` uses `to_ne_bytes()`
+  (native-endian) — output differs between little/big-endian targets.
+  This is the WORLD SEED EXPANSION itself — every downstream keyed-RNG
+  fix built tonight ultimately traces through this.
+- RNG-DEEP-003: `rtsim::tick_rng` (the exact pattern generalized as "the
+  good reference" all night) only populates 16 of its 32 seed bytes, and
+  its salt is an untyped u32 (collision-prone). This is the CORE helper
+  most of tonight's fixes are modeled on.
+Fixing these LAST would mean re-shuffling every already-fixed site's
+specific values a second time. Fix root first.
+
+**Real, open, same-class-as-tonight's-fixes (leaf-level, after the
+above):** RNG-DEEP-004/007/009/010 (StdRng/SmallRng non-portability, 4
+sites: server/agent, common/path Chaser, rtsim/generate), RNG-DEEP-011/
+012 (bastion_jobs breakdown-roll shared tick cursor — check overlap with
+DET-RNG-008 first), RNG-DEEP-013/014 (worldgen/civ parent-cursor
+reseed), RNG-DEEP-016/017/018 (rtsim cleanup/migrate/architect — one
+shared cursor across all NPCs/sites in a loop, same class as DET-RNG-008),
+RNG-DEEP-021 (weather lightning — frame-delta + ambient RNG + unordered
+set iteration), RNG-DEEP-023 (npc_ai uses collision-prone `npc.seed`,
+not the stable `npc.uid`, as stream identity), RNG-DEEP-025 (path.rs
+fallback combines OS entropy AND unordered HashMap iteration).
+
+**Needs verification against tonight's own work:** RNG-DEEP-022 —
+same site as the already-fixed DET-RNG-010 (merchant escort quest seed),
+but characterizes a SPECIFIC bug the original finding didn't: float-to-
+u8 casts saturate at 255, so the old seed froze permanently after ~63.75
+hours. Check whether Builder's fix (keyed on npc.uid+bucket+salt)
+actually removed the u8 cast, or just added collision-resistance on top
+of a still-saturating bucket value.
+
+**Already in progress, consistent:** RNG-DEEP-078/079 = DET-ADD-008
+exactly (item_hash/terrain_revision DefaultHasher) — same two sites,
+Builder's stable_hash_u64 plan already matches this doc's recommendation.
+
+**Architectural note, not urgent:** the doc proposes one shared
+`RngKey`/`RngDomain` typed protocol to replace the various ad-hoc keying
+tuples built tonight (tick_rng, deterministic_agent_seed,
+plot_render_rng, etc.) with one unified versioned schema. Real long-term
+value, but NOT worth forcing now — flagging for Ben's awareness as a
+future consolidation pass, not blocking current leaf-fixes which are all
+individually correct even if not yet unified.
+
+**Terrain/inventory/event subset, heterogeneous (not a uniform sweep):**
+- `terrain.rs:134` DONE `6b02648f90` — dead OS-entropy leftover from
+  T0.36 (real spawn RNG already correctly keyed elsewhere), removed.
+- Clean-keyable trio approved to proceed: `interaction.rs:541` (key by
+  ev.pos), `inventory_manip.rs:170`+`interaction.rs:298` (key by entity
+  uid+tick).
+- `loadout_builder.rs:1154`/`1345` + `trade_pricing.rs:1047`: no
+  identity in scope, need API-threading (seed/rng param) that ripples to
+  every caller of these widely-used builder/economy APIs. RULING:
+  DEFER as their own scoped follow-up block, don't ripple mid-sweep —
+  same pattern as T0.44/Loom-Shuttle deferrals tonight (tracked, not
+  dropped). When built: prefer threading an already-seeded `&mut impl
+  Rng` parameter through, not a raw seed value — matches RNG-DEEP-004's
+  own guidance (caller selects/derives the stream, callee just consumes
+  it) and the shared RngKey/RngDomain pattern's `rng_for(key) -> impl Rng`
+  shape. Do the clean-keyable trio now, move on to the RNG-DEEP-001/003
+  foundation fixes.
+
+**★★★ FABLE ESCALATION (Ben direct): RNG-DEEP-001/003 route through
+Fable Reviewer, not routine treatment.** Held Builder 4 from building
+either solo. Independently re-verified both against live
+`bastion-origin/bastion/builder` (not just trusting the audit doc):
+`seed_expan.rs::cast_u32x8_u8x32` still uses `to_ne_bytes()` (native-
+endian), `tick_rng` still only populates 16/32 seed bytes with an
+untyped u32 salt — both exactly as the audit describes, confirmed live.
+Sent a full 4-part evidence packet to the architect (claim/evidence/
+lower-tier-trail/blast-radius) requesting Fable engagement — qualifies
+as a genuine high-blast-radius architectural fork (tick_rng is, per its
+own doc comment, "the ONE constructor every rtsim rule RNG goes
+through"). Builder continuing other approved work meanwhile.
+
+**30-min check-in:** caught a real message-cross — Builder 4 had already
+written + compiled BOTH foundation fixes (seed_expan + tick_rng via
+DomainHasher reuse) before the hold instruction landed, and was running
+the rtsim suite to check pin impact when the hold arrived. Verified
+nothing committed yet (bastion/builder tip is still the sprite-removal-
+timeout commit). Directed builder to `git stash` the uncommitted work
+(preserve, don't commit, don't discard) so it's available as input for
+Fable's review without having bypassed the escalation. Not a stuck/
+ignoring situation — pure timing race, confirmed via git state not
+assumption. Continuing on other approved items meanwhile.
+
+**★★★ DOUBLE message-cross + escalation model changed underneath it.**
+Both my hold AND my stash instruction arrived AFTER Builder 4 had
+already committed+pushed (`2d0e6da435`) — the work was fully done before
+either message could reach them, confirmed via transcript order. NOT
+non-compliance, genuinely unavoidable async timing given how fast this
+particular block moved. Separately, Ben talked to the architect directly
+and CANCELLED the Fable-Reviewer hand-off model: **new standing rule —
+for a genuinely hard/foundational block, ELEVATE THE BUILDER'S level for
+that specific block, don't spin up a separate Fable-Reviewer engagement.**
+Architect's own independent read matches Builder's report exactly:
+seed_expan is a free no-op on the x86 fleet, tick_rng is the real
+foundational one (re-shuffles all RTSim RNG) — acceptance bar set as
+full re-pin + 3-machine × multi-schedule certification. No revert
+needed — the landed fix is accepted, just needs that elevated acceptance
+evidence from Opus, not a separate review hop.
+
+**Full untangle of the commit/revert/re-land sequence on RNG-DEEP-001/
+003, for anyone reading history later:** (1) Builder built+committed+
+auto-pushed `2d0e6da435` before any hold message could land (confirmed
+timing race). (2) My "stash it" instruction (based on a stale "nothing
+committed" check) arrived after the push; Builder correctly judged that
+stashing an already-shared-remote commit risked a force-push, so instead
+REVERTED it as `c6db75cef5` — original preserved in history for later
+re-landing, no history rewrite, responsible call given what they knew.
+(3) Meanwhile Ben and the architect settled directly on the real model:
+no separate Fable engagement — hard/foundational blocks get the BUILDER
+elevated to apex tier for that specific block instead. Architect's
+independent read matched the original fix exactly. (4) Directed Builder
+to re-land (cherry-pick `2d0e6da435` or revert-the-revert of
+`c6db75cef5`) — the fix was correct all along, the churn was pure
+message-timing, not a substantive problem with the work. Net effect once
+re-landed: identical to if none of this had happened, just extra commits
+in the history recording the back-and-forth honestly.
+
+Ben clarified sequencing directly: builder finishes/re-lands NOW (top
+priority, no further hold), Ben personally elevates to Fable as a
+POST-HOC review once landed — not a pre-gate. Relayed to Builder as
+highest priority, ahead of DET-ADD-008/leaf sweep.
+
+**★ RE-LANDED, `48e4c05b77`** — revert-the-revert of `c6db75cef5`,
+byte-identical to the original approved `2d0e6da435`. History preserved
+honestly (orig→revert→reapply, no force-push). Local: veloren-rtsim +
+veloren-world clean, rtsim 18/18 on identical code. Triggered Opus's
+elevated acceptance (full re-pin + 3-machine × multi-schedule cert).
+Builder resuming DET-ADD-008 (was mid-compile when the re-land jumped
+the queue) then the leaf sweep (004/007/009/010/011 + clean-keyable
+trio) with the confirmed minimal per-site pattern, no RngKey abstraction.
+
+Opus's watcher caught the re-land and launched the elevated cert before
+my trigger even landed — 7 mf jobs (serial + 6 schedule-seeds) across
+Intel Broadwell + AMD Rome, N2/M3D floor, all SHA-attested, ~15min ETA.
+Will run through det-classify: DECLARED_REPIN_STABLE at the new
+composite if internally byte-identical, NONDETERMINISTIC (immediate
+flag) if any schedule/machine disagrees.
+
+**Interim result:** composite moved as expected, new value confirmed
+IDENTICAL across all 7/7 schedules (serial + 6 schedule-seeds) — schedule
+-determinism holds at the re-pinned value. Two gaps before final
+attestation: all 7 VMs happened to land AMD (GCP scheduling luck, no
+Intel leg yet), and N2/M3D floor was SLOT_LOST (fan rate-limited).
+Supplement running now (Intel-forced + floor re-run). Opus also self-
+caught + is fixing a real bug in their own classifier tooling
+(INVALID_EVIDENCE guard was scoped too broadly, falsely invalidating
+valid composites alongside the unrelated SLOT_LOST floor jobs) — good
+self-verification discipline. ~15min to final attestation.
+
+**★★★ NEW: `determism/v4/` — RNG pass 3, 52 new findings (327 merged
+total).** Confirms the security boundary explicitly: crypto secrets and
+session/auth entropy stay genuinely unpredictable, isolated from
+authoritative state — not part of the "eliminate everything" mandate.
+Highest-value new findings, NOT yet queued to Builder (finishing current
+sweep first):
+- **A whole new subsystem: `common/src/lottery.rs` loot-table/weighted-
+  selection** — 3 distinct issues (RNG-P3-003 16-bit seed collapse
+  before float-weighted multiply; RNG-P3-004 nested tables call the
+  AMBIENT Lottery::choose() instead of the passed rng, severing stream
+  ownership; RNG-P3-006 participant order + f32 cumulative sums +
+  swap_remove all influence draws). Core to the whole reward economy,
+  untouched until now.
+- **RNG-P3-001**: WASI plugin default context has a random per-context
+  seed — security/plugin-sandbox-adjacent, needs careful treatment
+  (ties to the crypto/session exception above).
+- **Possible OVERLAP with already-fixed/deferred work, needs
+  reconciliation before building anything new:** RNG-P3-011 cites
+  `world/src/block.rs:488-503` — Builder already fixed `block.rs:489`
+  (structure-block choice); check whether this is the same site or a
+  different nearby call. RNG-P3-018 cites `trade_pricing.rs:995-1029` —
+  adjacent to the already-deferred `trade_pricing.rs:1047` item; may be
+  the same deferred block or a distinct float-to-index issue.
+- **RNG-P3-012**: combat-domain (attack.rs weighted AI sampling) — falls
+  under the standing combat hold, don't build solo.
+- **RNG-P3-016**: pathfinding, ambient RNG + powf/sin/cos — cross-
+  platform float-exactness concern, genuinely new site.
+- **RNG-P3-031/032**: worldgen noise-seed INITIALIZER ORDER coupling
+  (source's own comment: "changing initializer order significantly
+  changes worldgen") + a transitive dependency (noise crate's
+  permutation table via an older Rand/XorShift stack in Cargo.lock).
+  Foundational-ish, needs the same care as RNG-DEEP-001/003.
+- **RNG-P3-037/038**: NPC body construction ambient RNG — new site,
+  affects gameplay/animation/figure identity.
+- **RNG-P3-040**: random effect-instance IDs used as semantic
+  correlation/dedup identity — may connect to the entity_manipulation.rs
+  "instance:" sites flagged-but-excluded earlier as "probably just
+  unique IDs" — worth re-checking with this framing.
+- **RNG-P3-043/050**: dependency-policy findings — pin Rand's actual
+  VALUE protocol not just semver range; a tooling/process
+  recommendation, not a single-site code fix.
+- **RNG-P3-048**: loot-table DATA itself (1409 entries, 256 RON files) —
+  content concern, not code.
+
+Not yet sent to Builder — queuing as the next batch after the current
+leaf sweep completes, to avoid more mid-flow context-switch churn after
+tonight's RNG-DEEP-001/003 saga.
+
+**30-min check-in:** steady progress, two clean commits landed —
+`0dbdabd7f9` (DET-ADD-008, StableHasher over the DomainHasher Sha256
+primitive as approved) and `8c6fb446e1` (RNG-DEEP-004/007/009/010 leaf
+batch, portable named generators replacing StdRng/SmallRng at 4 sites,
+minimal per-site pattern as approved, no RngKey abstraction). One known
+pre-existing gap (B59, tracked i18n manifest issue) briefly stopped a
+combined test run before rtsim/common-state executed; builder correctly
+re-ran those crates directly rather than treating it as new. No stuck/
+looping concern.
+
+**★ Full sweep CLOSED, 3 commits (`0dbdabd7f9`, `8c6fb446e1`,
+`d6f1de9d7a`).** DET-ADD-008 done (StableHasher, no collision, impact
+bounded — item.hash only touches voxygen hotbar bindings, terrain_
+revision is session-only). RNG-DEEP leaf sweep done: 004/007/009/010
+fixed (portable ChaCha throughout); 011 was ALREADY substantively fixed
+by the earlier DET-RNG-008 work (audit read the stale branch) — closed
+its portability residual only; **022 VERIFIED CLOSED** — the earlier-
+flagged u8-saturation concern doesn't apply, the bucket already casts to
+u64 in the shipped DET-RNG-010 fix. Clean-keyable duo done — the whole
+terrain/inventory/event DET-RNG-006 subset is now CLOSED. Tests: common
+213/214 (B59 tracked red only, confirmed same pre-existing failure),
+common-state/rtsim/bastion-server/server all green. Re-pins expected
+across the batch — triggering Opus's elevated cert at tip `d6f1de9d7a`.
+
+**Tracked remaining (not forgotten, explicitly listed):** deferred
+loadout_builder/trade_pricing API-threading block, combat holds (DET-
+ADD-007, DET-COV-009), voxygen client-presentation subset, RngKey
+abstraction follow-up, a trivial pre-existing cosmetic FYI (unused
+tick_rng handle at cleanup.rs:21, not builder's).
+
+**Opus anti-churn proposal, APPROVED:** tip is re-pinning faster than a
+full 3-machine × multi-schedule cert can complete (confirmed — tip moved
+`d6f1de9d7a`→`79cd8b4ad7` while the cert was still chasing the prior
+target's Intel leg). New policy: light check per intermediate commit
+(multi-schedule internal stability, single-vendor — cheap, catches a
+broken re-pin fast), full elevated cert reserved for the SETTLED end-of-
+sweep tip once Builder declares the sweep closed. Told Opus NOT to chase
+`48e4c05b77`'s missing cross-vendor leg retroactively — superseded, not
+worth it. Infra blip (transient GCP create-plane rate-limit) self-
+recovered, no lingering VMs, noted only.
+
+**v4 Priority 1+2 DONE, `79cd8b4ad7`:** lottery P3-003 (full 32-bit seed
+via exact f64, closes the %65536 unselectable-entries bug), P3-004
+(nested tables draw from the caller's stream, not ambient), P3-006
+(canonical (weight, stable_hash_u64 identity) sort, reuses existing
+T:Hash bound, no API ripple). trade_pricing P3-018 confirmed genuinely
+DISTINCT from the deferred :1047 item, fixed cleanly (exact integer
+index draw, zero re-pin — the wrapper was live-entropy). npc P3-037
+fixed via the existing injectable `random_with` variant (15 families).
+Overlap verdicts resolved: P3-011 CLOSED-SUPERSEDED (same site as the
+earlier :489 fix, confirmed), P3-018 confirmed distinct as predicted.
+common 213/214 (B59 only) throughout.
+
+**New flag — P3-038's real leak, judgment call:** the actual leak isn't
+where first suspected — `generation.rs:274`, `EntityInfo`'s DEFAULT body
+uses ambient `random_humanoid` whenever an asset configures NO body,
+leaking past the already-fixed loadout RNG. Two options: (a) fixed
+deterministic default — simple, no ripple, but risks VISIBLE clone-spawn
+regression wherever this default path fires; (b) thread rng into
+`EntityInfo::at` — architecturally correct (matches tonight's pattern)
+but wide ripple, same class as the deferred loadout_builder/trade_pricing
+block. RULING: (b), fold into the SAME deferred threading block rather
+than risk a new visible bug for a quick win — don't trade a determinism
+fix for a fresh gameplay regression. That threading block is now the
+next concrete priority (three related fixes: loadout_builder,
+trade_pricing:1047, EntityInfo::at).
+
+**Other flags resolved:** P3-040 folded into the combat-hold triage per
+builder's own sound reasoning (same class as entity_manipulation's
+Outcome-dedup sites) — approved. P3-012 stays held. P3-001 (WASI plugin)
+— confirmed in-scope (it's the INSECURE/non-crypto WASI RNG specifically,
+not the secure one, so it's within the audit's own security exception),
+but asked builder to double-check "insecure" really means
+"not security-critical" in WASI's own terminology before building, given
+plugin-sandbox sensitivity. P3-031/032 (noise-seed init order) — routing
+through the architect-elevation path now, same as RNG-DEEP-001/003.
+
+Verified P3-031/032 live (`world/src/sim/mod.rs` GenCtx initializer —
+~20 noise generators seeded via sequential parent-cursor draws, source's
+own comment admits the order-sensitivity outright). Sent full elevation
+request to architect with a proposed direction (named-domain derivation
+via DomainHasher reuse, same shape as tick_rng). Holding until confirmed.
+
+**Opus standing down on VM certs temporarily** — GCP create-plane
+rate-throttled from tonight's ~8 fans (confirmed throttle not quota:
+single probe VM creates fine, sustained fan creates don't). Correctly
+tied to the approved policy: no reason to fight the throttle light-
+checking a still-moving tip when the heavy cert waits for sweep-closed
+anyway. Plan: stand down until both sweep-closed signal + create-rate
+recovery, then one definitive elevated cert at the settled tip. Suite
+itself stays built/validated regardless — ready to fire the instant a
+clean matrix is possible.
+
+**Architect refined the elevate-in-builder process (standing confirmation
+going forward):** THE BAR = elevate only a DOMAIN-ROOT (single
+constructor/seed/cursor that reshuffles an ENTIRE domain — tick_rng,
+GenCtx). A routine leaf fix stays normal-tier, no flag. Confirmed
+GenCtx clears the bar. Process correction: don't hold a domain-root item
+out-of-band waiting for per-item confirmation (that's what caused the
+RNG-DEEP-001/003 commit/revert/re-land churn) — instead it stays in the
+NORMAL queue at its proper position, tagged apex, and gets flagged to
+the architect only when the builder is ABOUT TO REACH it, not
+preemptively. Standing confirmation granted for anything clearing the
+bar — no fresh nod needed each time. Un-held RNG-P3-031/032 accordingly
+— back in normal queue position, will flag when Builder nears it.
+
+**★★★ Ben direct: full priority ranking, big to small, given to Builder
+as standing work order (not just next-item).** Tier 1 (domain roots):
+seed_expan+tick_rng done, GenCtx in progress. Tier 2 (major subsystems):
+COMBAT un-held as the next priority after GenCtx (DET-COV-009 rated
+"FAILED CONTRACT," the worst rating in the original audit — held all
+night for care, but stops being indefinitely deferred now), then the
+threading block, persistence, renderer, networking (stays deferred per
+standing single-player-first). Tier 3: remaining scattered leaf items +
+whatever the new clock/scheduling/physics/persistence deep-pass finds.
+Tier 4: policy/data items, awareness only. Builder told to work this
+order without waiting on me between tiers, flag only for genuine
+divergence per the corrected chatter policy.
+
+**30-min check-in:** no new commit yet (tip still `79cd8b4ad7`), but
+active substantive progress on GenCtx — `world` crate compiles clean
+with the fix, now working through server + voxygen callers (a genuinely
+large domain-root touching multiple crates, expected to take longer
+than the leaf fixes). No stuck/looping concern, methodical progress on
+a real large item.
+
+**★★★ TIER 1 COMPLETE + TIER 2 TOP TWO DONE, tip `c4f9608a21`.**
+
+- **GenCtx (domain root #3) DONE** `60e1682428` (a heredoc slip garbled
+  the commit message; fixed via a follow-up empty annotation commit
+  `c4f9608a21` carrying the real message — content verified exact, no
+  history rewrite, correct handling). Every noise field's seed (turb_x_nz,
+  chaos_nz, hill_nz, alt_nz, temp_nz, small_nz, rock_nz, tree_nz,
+  structure_gen, humid_nz, river_seed, rock_strength_nz, uplift_nz, etc.)
+  now derives independently as f(world_seed, generator_name) via
+  DomainHasher — the ~20-draw shared-parent-cursor coupling is gone, the
+  source's own "changing order will significantly change WorldGen"
+  warning no longer applies. Intended one-time re-pin of all worldgen
+  terrain output.
+
+- **COMBAT BATCH DONE** `dbbacea48e` (un-held per the ranking): DET-ADD-
+  007 fixed — XP damage-contribution reduction now sorts canonically by
+  stable_hash_u64 before the f64 total/percentage/award pass. All 31
+  `instance: rand::random()` sites (incl. RNG-P3-040's health.rs ones) →
+  `combat::next_attack_instance()` monotonic counter (identity/
+  correlation only, not a random value). RNG-P3-012 verified CLOSED-
+  SUPERSEDED (attack.rs already draws from the caller's agent stream,
+  keyed earlier by RNG-DEEP-004). apply_attack's rng param generalized
+  ThreadRng→&mut impl RngExt (type-level only). Self-verified no balance/
+  feel change — ordering/identity only, correctly self-assessed, no flag.
+
+- **THREADING BLOCK DONE** (same commit): `EntityInfo::at(pos, rng)`
+  threaded through ~150 call sites (worldgen plots pass keyed streams,
+  rtsim passes its own rng, operator/client paths pass explicit ambient
+  rng); with_preset and defaults now take rng; ambient random_items
+  wrapper deleted. Closes RNG-P3-038's default-body leak per the earlier
+  (b) ruling — chose the wider correct fix over a deterministic-default
+  shortcut that risked a visible clone-spawn regression.
+
+Acked Builder 4, cleared to continue to Tier 2 #7 (renderer) as they
+stated. Opus re-cert requested at `c4f9608a21`+, flagged as three
+stacked intended re-pins (GenCtx worldgen + combat instance IDs +
+threading default-body) so the composite is expected to have MOVED, not
+matched old.
+
+**Sweep continued to `a3c4f638b4`, then queue CLEARED.** RNG-P3-001
+WASI DONE (security-checked against WASI's own secure/insecure spec
+split, insecure_random_seed keyed by stable_hash of plugin name, no
+crypto-consumer weakening). DET-ASY-002 CLOSED-SUPERSEDED (already fixed
+by ENGOPT4's tie-break; audit read stale branch). RNG-P3-016 pathfinding
+DONE (RRT search → one ChaCha8 stream keyed by (start,end); spheroid
+sampler takes caller's stream; parent re-pick draws from sorted
+candidates; compiles clean with/without the unused rrt_pathfinding
+feature). Session totals: 3 domain roots + combat batch + worldgen
+DET-RNG-006 subset + threading block + lottery subsystem + persistence
+ORDER BY + rtsim invites clock + StableHasher + WASI + RRT, ~20 commits,
+every commit locally green (common B59-only tracked red).
+
+**★ R0D (renderer) disposition decided.** Builder correctly flagged
+DET-REN-001..006 aren't sweep-shaped — they're the full R0D
+implementation program per
+`renderer-rework/Project Bastion — Renderer Scalability and High-Density
+Voxel Architecture.md` + its own checkpoint (RENDERER-RUN-016, wave-gated
+W0→W7, only W0 currently unblocked, R0P/architecture changes blocked
+until a real production-Voxygen A1-A7 fixture passes paired proof and
+issues `RendererR0DAdmissionV1`). **Decision: R0D = its own staged
+build-packet block, tracked separately from the sweep, wave-level
+check-ins not tag-level — do not compress the gating.** Builder directed
+to: build DET-REN-004 (no-GPU→sim-authority source-scan lint) now as an
+independent small item since it doesn't need the wave gating; then run
+W0 (isolated-checkout preflight) per the checkpoint's own next-step.
+Remaining Tier-3 slot held open for the pending clock/scheduling/
+physics/persistence deep-pass; networking and policy/data items
+unchanged (deferred / awareness-only).
+
+**★★★ v5 DEEP-PASS ARRIVED (clock/scheduling/physics/persistence),
+`determism/v5/`.** 101 new findings (40 Critical/55 High/5 Med/1 Low),
+merged ledger 230, merged change register 428. RNG boundary stays
+closed per the doc's own scope. Read the executive summary + ~20
+highest-value findings in full. Two genuine NEW domain roots identified,
+bigger blast radius than anything in the RNG arc:
+
+- **DET-CLK-006** — `server-cli/src/main.rs:300-324`, live tick loop
+  feeds wall-clock `Clock::game_dt()` as the authoritative tick input.
+  Root of every time-based finding in the doc. Fix = `SimClock` fixed-
+  duration authoritative tick, Clock demoted to pacer/diagnostic only.
+  **Disclosed to Ben: this is a genuine live-server behavior change under
+  load** (currently free-runs when lagging; fixed-step needs its own
+  catch-up policy) — intended consequence of the full-determinism
+  mandate, not a regression, but the biggest feel-affecting change in the
+  arc so far. Proceeding per the standing full-scope directive.
+- **DET-ECS-007** — `common/ecs/src/system.rs:16-30`, System::PHASE is
+  declared but never enforced by the dispatcher. Root of every ordering
+  finding downstream (client-message order, chunk-accept order,
+  event/outcome reduce order all trace back to unenforced phases).
+
+Both tagged apex/elevate-in-builder per THE BAR. Ranked work order given
+to Builder, biggest-first: CLK-006 + ECS-007 (apex) → CLK-010/011/014 +
+ECS-014/015/020 + EVT-005/007/010/011 (downstream ordering, still
+Critical) → PHY-005 (physics's own root: spatial-grid insertion order) +
+PHY-008/011/020/024 → TER-008/012/013/018 + the 33 PER findings
+(migration-divergence, INSERT…SELECT row order, etc. — lower
+architecturally, more contained). Doctrine held: minimal per-site fix
+first, same as RNG arc — do NOT build the proposed shared architecture
+(TimeDomainV1/CanonicalScheduleV1/CanonicalPhysicsV1/
+CanonicalPersistenceV1) as a big-bang prerequisite; introduce a shared
+key struct only where genuinely reused across many sites. Sequencing:
+finish DET-REN-004 + R0D's W0 preflight first (already in flight), then
+v5 becomes the primary standing queue.
+
+**Next ChatGPT prompt to run (proposed, awaiting Ben to paste):** the
+remaining uncovered-by-any-pass areas — networking/replication-order
+determinism, asset/content-pipeline determinism (RON/mod load order,
+content hashing beyond the already-flagged loot-catalog awareness item),
+and build reproducibility (compiler/lockfile/cross-compile pinning).
+Same rigor/format as v2-v5, continuing the merged-ledger numbering from
+230.
+
+**DET-REN-004 DONE** `70502af88b`: no-GPU→simulation-authority as a
+dependency-boundary fitness gate — no authoritative crate manifest
+(common/state/systems/net, server/agent, rtsim, world, bastion-server)
+may name a GPU crate (wgpu/naga/vulkano/gfx-hal/ash/metal). Self-caught
+a false-positive class on its own first run (substring "ash =" matching
+ahash/fxhash), fixed to line-anchored dep-name equality — good self-
+verification. det_ren_004 1/1.
+
+**W0 blocker resolved:** the renderer build-guide/checkpoint on H: are
+`.gdoc` cloud stubs, unreadable to Builder — pointed them at the actual
+plaintext auto-synced mirror (`E:\bastion-engine-research-md\
+renderer-rework\...`), same path I read from, plus pasted the
+checkpoint's exact W0 acceptance text (commit/parent match, clean
+working tree, verified package set, no Cargo-feature/type collision, no
+lease conflict) so they're unblocked immediately. Builder proceeding to
+run W0 in an isolated checkout.
+
+**★ W0 PASS, full handoff.** Isolated worktree
+`.claude/worktrees/renderer-w0` (branch `bastion/renderer-w0`). Commit
+`5de5361bc53cdac252c30c43cc979512550ae5e9` + parent
+`d7e161a914168c8288bb3b9322f99187be08020b` exact match; `git status`
+clean (proves the external-cleanliness unknown the checkpoint flagged);
+all 7 verified packages resolve via `cargo metadata`; whole-tree
+collision scan on every guide-reserved symbol/feature (RendererBenchEntityId,
+RendererSemanticFrameTokenV1, RendererR0DAdmissionV1,
+RendererBenchManifestV1, RendererBenchScenario, renderer_bench module,
+renderer-bench Cargo feature) — zero hits; no lease conflict, W0 touches
+no production source. Artifacts hashed at
+`bastion-test-evidence/renderer-r0d-w0/` (preflight manifest, interface
+manifest, 8-lease ownership table W1-W7, SHA256SUMS). Rollback = delete
+the one dir. **W1 (BUILD-007A1 shared contract + stable ID) authorized
+to launch.**
+
+**★★★ CLK-006 LANDED** `b0da8808df` — both live tick loops (the flagged
+domain-root, wall-clock `Clock::game_dt()` as authoritative input)
+converted to fixed-step. Builder's report was thin on verification detail
+for this one (just "landed") — asked them directly for the determinism
+story (test results, catch-up/pacing policy under load, explicit
+feel-regression self-check) before treating this as settled, given it's
+the single biggest behavior-changing commit in the arc so far and the
+standing "test every change, no exemptions" rule applies hardest here.
+Flagging Opus for priority VM cert once that detail comes back — a
+domain-root behavior change needs the full suite, not a light check.
+
+**ECS-007 in progress, not yet committed:** phase-barrier enforcement
+BUILT (registry + generated barriers + manifest + 4/4 pins, server/
+common-state/common-ecs clean); full-dispatcher harness boot-proof
+(cycle check) in flight, will commit on green. Next after that:
+CLK-010's live residual.
+
+**Opus light-check PASS on the GenCtx/combat/threading batch** (tip
+spanned `a3c4f638`→`70502af8` mid-fan): 4 mf jobs × schedules, all
+IDENTICAL composite `[249,92,138,14,19…]` — multi-schedule stable at the
+NEW value (moved from `[238,…]` via the 3 stacked re-pins, exactly as
+declared), plus bonus Intel Broadwell coverage (exceeded the single-
+vendor bar). Both spanned commits produced the same composite → `70502af8`
+(DET-REN-004) is mf-neutral, as expected for a dependency-boundary lint.
+Opus self-caught a 4th classifier gap from this and added a MIXED_COMMIT
+guard (spanning-commit fans: agreeing composites = newer commit(s)
+neutral, disagreeing = real inter-commit move, not noise) — canaries
+still 10/10. Full 3-machine × multi-schedule cert still reserved for the
+sweep-closed signal.
+
+**CLK-006 verification CLOSED — full answer received, satisfies the
+no-exemptions bar:**
+- Compile proof both live-loop sites: server-cli 3m07s clean, voxygen
+  singleplayer 3m41s clean (Builder self-caught and closed an honest gap
+  here — the first voxygen check silently died on an unrelated ECS-007
+  landing mid-run, re-queued and got a clean verdict before reporting).
+- Catch-up policy: NONE, deliberate — one tick per loop iteration, no
+  extra-tick bursts when behind. Falling behind budget makes SIM TIME
+  DILATE (coherent slow-motion across physics/AI/cooldowns/day-night)
+  rather than free-running catch-up ticks, because bursty catch-up would
+  reintroduce load-dependent tick-batching nondeterminism. A bounded
+  catch-up policy is available later as its own reviewed change if
+  dilation feel proves unacceptable.
+- Feel self-check: NO change at normal load (old `game_dt()` ≈ new fixed
+  dt ± ~1ms OS jitter — imperceptibly smoother, not different). UNDER
+  LOAD it's a real, intended difference: old behavior warped into fewer/
+  larger dt steps (coarser physics, tunneling/rubber-band risk); new
+  behavior holds step size constant and lets sim time slow instead —
+  players on an overloaded server now perceive slow-motion instead of
+  choppy warping. Confirmed as the single biggest feel-affecting change
+  of the arc, exactly as flagged going in.
+- Behavioral proof is explicitly NOT local (harness never touches either
+  live-loop surface — the gate-must-test-live-path class) — flagging to
+  Opus now as a PRIORITY VM cert using the v5 doc's own verification
+  recipe: same input tape under 0/1/10/100ms injected sleeps + two pacing
+  rates, assert identical per-tick state hashes + terminal snapshot.
+
+**ECS-007 boot-proof:** build done, 30-tick dispatcher cycle-check
+executing now, will commit on green. **W1 (BUILD-007A1)** now starting
+in the renderer-w0 checkout.
+
+**CLK-006: Opus returned strong interim evidence, asked for a scope
+decision.** Construction proof (git-verified both sites: `server.tick()`
+now receives a literal constant `Duration::from_secs_f64(1.0/TPS)`, wall-
+clock `game_dt()` fully gone from the authoritative input) + a det-lint
+entropy audit (zero `SystemTime::now`/`Instant::now` anywhere in the
+Bastion authoritative sim path). Real empirical perturbation cert would
+require lifting `FinalStateCertificate` out of
+`bastion-harness/src/main.rs:11618-11667` into a shared accessor (that
+computation is currently inline and server-cli's live loop never touches
+it) plus new server-cli test hooks (bounded-tick + per-tick sleep
+injection + two pacing rates) — real multi-step work, not a light check.
+
+**Decision: full empirical build, not interim-only.** This is exactly
+the [[gate-must-test-live-path]] case — the harness's own construction
+proof never exercises the actual live loop this fix touches. Standing
+rule is test every change on VMs, no exemptions, and this is the single
+biggest behavior-changing commit of the arc — it gets the full
+treatment. Opus proceeding with all four steps (lift the accessor, add
+test hooks, build, run the perturbation matrix). Builder 4 notified to
+steer clear of the shared harness file/region in the meantime.
+
+**Renderer VM image build:** first attempt hit a transient apt-fetch
+network error (single package, connection reset) — clean failure, trap
+deleted the build VM correctly, no orphan/cost leak. Retrying now.
+
+**GPU-hardware VM (forward-looking, discussed with Ben, not yet
+filed):** lavapipe (software render) proves logical/determinism
+correctness but can't validate real performance (CPU rasterizer, useless
+for the scalability goal) or real-driver compatibility (no vendor driver
+quirks/timing/extension gaps to catch). Fix for both = a real GPU-
+attached VM (same ephemeral shape, e.g. one NVIDIA T4/L4) — this needs a
+GCP GPU quota request first. Quota requests are free regardless of
+outcome (only running instances cost money); GPU quotas may face more
+scrutiny than the CPU 96→128 request did. Not filed yet — Ben's call
+pending on timing (now vs. when R0D actually reaches a performance-
+focused wave).
+
+**★★★ v5 BURST, tip `890bc3bb5b`, all locally green:**
+- **ECS-007 LANDED** `f5ea11b5ce` — System::PHASE now ENFORCED via
+  generated dispatcher barriers (per-builder registry, begin_schedule at
+  both construction sites, schedule_manifest golden accessor, 4/4 pins).
+  Unlike CLK-006, this one has genuine BEHAVIORAL proof already, not just
+  compile: bastion-harness booted the real production schedule and ran
+  30 ticks + colony, exit 0 — the harness's own test infra directly
+  exercises the dispatcher, so this doesn't have the same live-path gap
+  CLK-006 had. Second domain root closed.
+- **CLK-010/011/014 LANDED** `f2c5e1347a` — persistence snapshot cadence
+  now tick-indexed live (composes with CLK-006; noted consequence:
+  snapshot wall-interval stretches under dilation, expected); graceful
+  shutdown now terminates at a DECLARED final tick
+  (accepted_tick + grace×TPS) via both signal + console paths — wall
+  clock drives only the countdown messages, not the actual cutoff.
+- **ECS-014 LANDED** (same tip) — in_game `par_bridge` client work now
+  gather-sort-commits by stable client entity id instead of worker-
+  completion order.
+
+Next per the standing order: ECS-015 (terrain-write mutex) → ECS-020 →
+EVT-005/007/010/011 → PHY-005 (physics's own root). R0D's W1 spec fully
+read, staged for interleaving.
+
+**Builder's checkpoint-tip suggestion adopted:** tip is moving fast: told
+Opus `890bc3bb5b` is a good anchor to cert at (covers CLK-006 + ECS-007 +
+the CLK cluster + ECS-014) once their in-flight CLK-006 empirical harness
+work lands, rather than chasing a moving HEAD.
+
+**CLK-006 harness-lift plan CORRECTED by Opus before building:** the
+original plan (lift the harness's `FinalStateCertificate` into a generic
+`state_certificate(&Server)`) was infeasible — that cert is computed from
+mf-scenario-specific data (per-colonist leaves/aggregates), not a generic
+server walk; the real generic authoritative-state hasher is the deferred
+T0.55 half. Corrected, better plan: a server-cli `--det-perturb` test
+mode (forced-deterministic worldgen/rtsim + fixed seed, ticks exactly N
+times under injected 0/1/10/100ms sleep × 2 pacing rates) fingerprinting
+TimeOfDay (= start + N×(1/TPS) exactly under the fix — the actual smoking-
+gun invariant) plus a hash of authoritative aggregates. This needs NO
+harness-file lift — additive, isolated to server-cli's own crate, own
+branch (`bastion/det-clk-cert`), no collision with Builder. Told Builder
+they no longer need to steer clear of `bastion-harness/main.rs`.
+
+**★ RENDERER VM READY: `bastion-golden-renderer` built successfully**
+(first attempt hit a transient apt network blip, clean retry succeeded).
+Confirmed: `vulkaninfo` reports `deviceName = llvmpipe (LLVM 19.1.7, 256
+bits)`, `driverID = DRIVER_ID_MESA_LLVMPIPE` — the software Vulkan device
+is live. Voxygen cold-built clean (`BUILD_OK`). Image snapshotted, build
+VM deleted. `vm-run-renderer.sh` ready for R0D's real-render fixture
+work whenever Builder needs it (W1+).
+
+**GPU-hardware VM:** discussed with Ben — lavapipe proves logic/
+determinism only, not performance or real-driver compatibility. Fix for
+both = a real GPU VM (e.g. one NVIDIA T4/L4), needs a GCP GPU quota
+request first (free to request, may face more scrutiny than the earlier
+CPU 96→128 ask). Not filed yet, Ben's call on timing.
+
+**CLK-006 empirical harness BUILT + perturbation matrix RUNNING.**
+Additive server-cli-only test hooks (`--det-perturb --det-ticks N
+--det-sleep-ms X`), no game-code/harness touched — a bounded
+deterministic tick soak with injected per-tick wall-clock sleep, emitting
+a master-clock fingerprint (TimeOfDay+Time via DomainHasher). Pushed to
+`bastion/det-clk-cert @ 733b31b2b0` off the `890bc3bb5b` checkpoint
+anchor. Running now: same machine/seed(1337)/tick-count, sleeps
+0/1/10/100ms varied — acceptance = all 4 fingerprints byte-identical.
+Fingerprint is over the master clock directly (the exact thing DET-CLK-006
+changes), needs no rtsim determinism. Cross-vendor (Intel) extension
+planned as a follow-on once this same-machine matrix is green. ETA
+~20-25min, verdict pending.
+
+**CLK-006 checkpoint: hook DONE + pushed, matrix run INFRA-BLOCKED (not
+code).** `bastion/det-clk-cert @ 61b71cf829`, server-cli `--det-perturb`
+harness complete (2 build issues found+fixed along the way: the harness-
+cert lift wasn't feasible so pivoted to the clock fingerprint per the
+earlier correction; a missing `specs::WorldExt` import). One-command
+runner (`det-clk-vmrun.sh`) ready. Hit the familiar GCP create-plane
+throttle (recurring, same class as earlier tonight) — Opus correctly
+stood down rather than hammering it (zero lingering VMs, quota clean),
+will probe-first and resume once creates recover (~15-30min cooldown).
+Interim evidence (construction proof + zero-wall-clock-leak audit)
+stands as real supporting proof in the meantime; empirical matrix is
+final confirmation only, gated on infra not on the fix itself.
+
+**Builder stretch closed, tip `86975076b6` — eleven v5 items resolved
+total:** both domain roots (CLK-006, ECS-007) + the full clock cluster
+(CLK-010/011/014) + the in_game.rs trilogy — ECS-014 (records),
+**ECS-015 (terrain writes — the RareWrites mutex DELETED)**, and EVT-005
+(events) all now gather-sort-commit — + two closed-superseded verified
+against live code (ECS-020, EVT-007, both citing pre-ENGOPT4 fixes) +
+**EVT-010 LANDED** (physics outcome chronology now canonicalized by
+source entity, closing T0.28's explicitly-noted debt, phys suite green).
+Discipline held: verify-live-branch-first closed 4 findings as already-
+fixed this stretch alone, minimal-per-site fixes, tests green before
+every commit. Next: EVT-011 (beam.rs, same deferred-buffer pattern keyed
+by beam entity, already surveyed) → **PHY-005** (physics's own domain
+root). R0D's W1 build remains authorized, interleaving continues.
+
+**EVT cluster COMPLETE + PHY started, tip `da04541a83`:**
+- **EVT-011 landed** `e71680df2c` — beam events/outcomes/hits now
+  per-beam keyed buffers flushed in uid order (no more fold-carries-
+  emitters through the Rayon tree). Bonus find at the same site: beam
+  attack procs drew from ambient `rand::rng()` per beam per tick — now a
+  ChaCha8 stream keyed by (beam uid, sim-time).
+- **PHY-011 landed** `da04541a83` — projectile first-hit was HashMap
+  order (an arrow touching two targets hit a process-random one);
+  candidates now sort by stable Uid. common-systems 21+1 green
+  throughout.
+
+**★ PHY-005 fork, decided.** Builder found the spatial-grid Specs-join
+insertion order is EMPIRICALLY stable in-envelope (svp2/fuzz1/t1cmd
+campaigns certified byte-identical tapes through this exact path with
+physics active) and flagged 3 options: (a) sorted insertion — correct
+but a per-tick global-sort cost in the hottest system; (b) disposition
+around the empirical evidence, no code change; (c) sort only per-cell
+candidate vecs post-construction — cheaper, partial.
+
+**Decision: (c).** This is the audit's OWN proposed remediation verbatim
+("sort each cell by StableBodyId after construction"), not an under-
+scoped compromise — closes the actual risk surface (within-cell order
+feeding `resolve_e2e_collision`) at per-cell not global cost. Explicitly
+REJECTED (b): "empirically stable given current deterministic
+allocation" is the exact same fragile-assumption shape that produced the
+GenCtx shared-parent-cursor bug — stable today, silently breaks if
+anything upstream ever regresses, no local defense. Determinism-by-
+construction stays the standing law; don't disposition around it when a
+cheap proper fix is available.
+
+**PHY-008 CLOSED** against the existing T0.43/44 disposition ("per-
+entity independent, stable in-regime neighbor order; momentum-symmetry
+redesign deferred as endpoint block") — ruled distinguishable from the
+PHY-005 case since T0.43/44 was already formally reviewed with a named,
+tracked follow-up, not a fresh ad-hoc "trust it" call. Trusted Builder's
+live-branch verification it's the same surface.
+
+Next: PHY-020 → PHY-024 → TER/PER as planned.
+
+**Real-GPU VM tooling built, blocked on quota.** `vm-build-image-gpu.sh`
+(builds `bastion-golden-gpu`: Debian 12 + real NVIDIA T4 via
+`--accelerator`, GCP's official driver installer, NVIDIA's own Vulkan
+ICD) + `vm-run-gpu.sh` (same ephemeral create→run→delete shape as the
+rest of the fleet — GPU deallocates the instant the instance deletes,
+zero standing cost either way). Checked quota before building anything
+that'd fail: `GPUS_ALL_REGIONS` = 0 project-wide (the real gate, same
+shape as CPUS_ALL_REGIONS) — the per-type regional quotas showing a
+cosmetic "1" don't matter until this clears. Not filable via plain
+`gcloud` (needs the `alpha` component, blocked without admin, or the
+Console Quotas page directly, tied to Ben's account identity same as the
+earlier CPU 128 request). Scripts are ready to fire the moment Ben files
+the increase — nothing to rebuild, just re-run once it clears.
+
+**★★★ STRETCH CLOSED, tip `2050df50ca` — SEVENTEEN v5 items resolved,
+EVERY named CLK/ECS/EVT/PHY finding now closed:** all three domain roots
+landed (CLK-006 fixed-step time, ECS-007 enforced phase barriers,
+**PHY-005 landed** per the ruling — per-cell uid sort at both grid
+construct sites, phys suite green); the full clock cluster; the in_game
+gather-sort-commit trilogy; both Rayon reduce-tree conversions (PHY-020
++ the beam bonus-rng kill); projectile first-hit canonicalization
+(PHY-011); PHY-024 closed. Five findings closed against verified prior
+work rather than rebuilt (live-branch-first discipline). Remaining in
+v5: the TER quartet (supersession checks first) + the 33-finding
+persistence set. Track B (R0D W1) authorized, fully specced, resumes
+interleaved. Nudged Builder to keep going (session had gone idle after
+reporting — not stuck, just paused at a message boundary) straight into
+TER/PER without waiting for a per-item ack, per standing rule.
+
+**★★★ v6 DEEP-PASS ARRIVED (networking/asset-pipeline/build-repro),
+`determism/v6/`.** This is the ChatGPT prompt requested earlier
+(remaining uncovered coverage areas). 92 new findings (39 Critical/49
+High/4 Medium), merged ledger now 322, merged change register 520 (428
+prior + 92 new). Domain split: NET 35, AST 32, BLD 25.
+
+Executive framing: three "hidden authority channels" — (1) arrival
+authority (independent net streams/reconnect epochs have no shared
+sequence/checkpoint protocol), (2) source-order authority (filesystem
+enumeration/plugin registration/HashMap merges decide active content),
+(3) environment authority (mutable images/branches/flags/tools aren't
+captured by one immutable build manifest).
+
+**Domain roots flagged for Builder, ranked into the standing big-to-
+small queue (merged with v5's remaining tail by actual blast radius, not
+by which audit pass they came from):**
+- **DET-NET-006/008/009** — the NetEnvelopeV1 trio: no cross-stream
+  chronology, no universal client-command identity/sequence, no
+  universal replication envelope. Root of nearly every other NET
+  finding downstream (arrival order currently IS the only ordering
+  authority for six independent streams).
+- **DET-AST-007/010/017/014** — asset root chosen from ambient search
+  paths, unsorted directory enumeration, plugin module list is a
+  HashSet, HashMap-concatenate is implicit last-writer-wins. Root of
+  content/plugin determinism — DET-AST-034 (MultiRon merge order)
+  depends on these and affects recipes/skills/bodies/loot broadly.
+- **DET-BLD-032** — no clean-room rebuild equivalence gate (the
+  capstone proof mechanism: two independent builds from the same
+  manifest must match).
+
+**★ META-FINDING, routed to Opus not Builder:** several BLD findings
+(012/014/017/018/019/020/021/022) are about OUR OWN VM test scripts by
+name (`vm-build-image.sh`, `vm-run.sh`) — mutable Debian image family,
+mutable branch clone, no `--locked`/`--frozen`, mutable machine-image
+alias, hard-reset leaves untracked files, no declared target triple, and
+a `--profile verify` that the audit couldn't find defined anywhere
+(SYNC-GAP — worth checking directly). This affects the reproducibility
+CREDIBILITY of tonight's own test methodology, not gameplay determinism
+directly — routed to Opus since they own VM test execution, flagged
+non-urgent/non-blocking (tonight's ATTEST/commit-matching discipline
+still gives real signal; this is a hardening item, not a retroactive
+invalidation).
+
+**Recommendation on further ChatGPT passes (Ben asked):** holding off on
+commissioning a v7 for now — the existing backlog (322 ledger findings /
+520 change-register rows) is already large relative to Builder's
+throughput; better to let real progress catch up before more research
+lands. If another pass is wanted later, the one remaining natural gap is
+UI/input/client-side-prediction-reconciliation determinism (not touched
+by any pass so far) — but that's optional, not urgent.
+
+**Ben overruled the hold-off — commissioning v7 now.** Prompt drafted and
+handed to Ben for pasting: client-side prediction, input handling, and
+reconciliation determinism (input timestamping, whether client
+prediction shares ordering guarantees with the authoritative server
+path, reconciliation/rollback order-dependence, UI state that leaks back
+into gameplay-affecting decisions). Continues numbering from ledger 322
+/ change register 520. Awaiting ChatGPT's output.
+
+**Opus triaged the v6 VM-script findings (own lane):** DET-BLD-019
+CLOSED as false-positive (`[profile.verify]` IS defined at root
+`Cargo.toml:136`, inherits='release' — verified against live code, and
+explains the earlier-documented slowjob `should_panic` artifact via
+debug-assertions-off). DET-BLD-018 (`--locked`/`--frozen`) + DET-BLD-022
+(target triple) confirmed real — hardening own scripts
+(det-clk-vmrun/vm-percommit/bastion-verify) first, will coordinate
+before touching the SHARED vm-run.sh/vm-jobs.sh (a spurious `--locked`
+BUILD_FAIL on a fast-moving branch would hit Builder's runs too).
+DET-BLD-021 (hard-reset untracked leftovers) real, `git clean -fdx`
+pre-build closes it, scoping carefully. DET-BLD-014/017/020 (golden
+image mutable base family + tip-at-build-time) confirmed as the
+substantive item — per-RUN provenance is solid (reset --hard + ATTEST),
+the gap is image-REBUILD reproducibility; needs its own focused
+`vm-build-image.sh` hardening pass. DET-BLD-012 reconfirmed known/
+accepted (LFS noise). Sequencing: CLK-006's matrix run stays priority
+(still gated on GCP create-rate recovery), this hardening lane follows.
+
+**★ v5 FULLY SWEPT, tip `7a1a93fa27` — TER quartet landed** `2d734ef291`:
+TER-018 (recorder now finalizes LAST in Server::drop, after terrain+
+rtsim persistence — the real ordering fix), TER-013 (same-cell
+precedence declared in code: due-time/insertion order, scheduled-over-
+live), TER-012 (closed-by-composition — ECS-007's barriers + ECS-015's
+sorted clients already ARE the declared write order, no new code
+needed), TER-008 (third pre-ENGOPT4 citation, superseded). All 21 v5
+items outside the PER set now resolved. Per the standing ranking, the
+33 PER findings queue BEHIND the v6 NET/AST roots.
+
+**v6 AST root cluster: 3 of 4 landed** (same tip): AST-010 (merged asset
+enumeration now buffers + flushes SORTED on every path — OS directory
+order was a hidden authority channel over content discovery), AST-017
+(PluginData modules/dependencies HashSet→BTreeSet — canonical iteration
+AND canonical serialized plugin identity), AST-014 (concatenate's last-
+writer-wins declared as explicit policy, made deterministic via the
+upstream canonicalization). Remaining: AST-007 (certified asset root —
+planned via reusing T0.57's ContentManifest infra) + the NET-006/008/009
+envelope root (reading the doc's full architecture section first, per
+standing instruction).
+
+**B77 filed:** `common-assets`' `fs::tests::test_read_dir_notfound`
+fails on a CLEAN checkout, baseline-verified unrelated to any
+determinism-arc change — `fs.rs`'s not-found error lost the asset path
+from its message, exactly the pre-existing `assets_manager` regression
+its own NOTE comment warns about. Diagnostics-quality issue, not
+determinism-surface; correctly scoped out of the sweep rather than fixed
+inline. Good discipline verifying against a clean baseline before
+attributing.
+
+Next: AST-007 certified-root gate → NET architecture read → NET-006/
+008/009 minimal-first → BLD-010/023/031 (031 flagged read-carefully,
+profile-semantics implications to be reported before touching) → the
+33-finding PER set.
+
+**★ NEW STANDING GATE requested: performance-regression benchmark
+(Ben-driven).** Risk identified: the determinism-fix pattern (gather-
+sort-commit, per-cell/canonical sorts) trades cheap unordered ops for
+sort/canonicalize-before-commit, individually cheap but compounding
+across dozens of fixes — unlike feel-drift (catchable via self-check +
+playtesting), perf regression is objectively measurable and wasn't being
+measured at all. Sent to Opus: build a tick-time/frame-time benchmark
+leg, additive to the existing determinism certs, run on hot-path-
+touching commits (physics/ECS/network scheduling specifically). Shape:
+high-entity-count stress fixture, ms/tick or ticks/sec averaged post-
+warmup, same-machine before/after comparison, establish a baseline NOW
+(ideally pre-dating tonight's hot-path fixes), flag threshold (~5-10%
+regression suggested, Opus's call). Mitigation techniques flagged if a
+regression trips: radix/bucket sort for bounded key ranges, incremental
+sorted structures instead of re-sort-per-tick, parallelize the sort
+itself, or recognize the collection is small/bounded (per-cell physics
+style) so it's actually a non-issue. Standing leg going forward, not a
+one-time check.
+
+**Perf-gate DESIGNED (Opus, VM-free part done, build gated behind
+CLK-006):** high-entity (100+ colonist) stress fixture on mf/flat-arena,
+deterministic seed for workload fairness; ms/tick averaged post-warmup;
+wall-time strictly DIAGNOSTIC, never gates state-hash correctness.
+**Two baselines, not one** — `b0da8808df` (right before the per-tick-sort
+arc: ECS-007→ECS-014/015→EVT-005/010) isolates SORT-ARC cost alone;
+`90fb70e630` (pre-RNG-DEEP, pre-v5) isolates WHOLE-ARC cost including
+RNG-DEEP hashing overhead. Threshold 7%, soft-flag not hard-fail;
+response to a trip is a cheaper impl, never reverting the correctness
+fix. Confirmed, no changes requested — queued behind CLK-006's
+perturbation matrix, same create-rate-recovery gate.
+
+**★★★ v7 DEEP-PASS ARRIVED (client input/prediction/reconciliation/UI-
+authority), `determism/v7/`.** This is the Ben-commissioned prompt from
+earlier (client-side gap, not the RNG/CLK/NET/AST/BLD areas). 82 new
+findings (47 Critical/34 High/1 Medium), merged ledger 404, merged
+change register 602. Domain split: input capture 28, client prediction
+20, reconciliation/rollback 16, gameplay-UI authority 18.
+
+Executive framing: Bastion has responsive local prediction but no
+deterministic PROTOCOL for it — no universal client_tick/input_seq,
+no ack cursor, no prediction-state digest, no saved-frame history, no
+rollback/resimulation. Canonical pipeline proposed: captured events →
+fixed-tick InputFrameV1 → shared prediction kernel → server (input_seq
+order) → AuthoritativeCorrectionV1 (ack_input_seq + digest) → restore +
+replay unacknowledged → presentation-only smoothing.
+
+**★ DIRECT OVERLAP WITH v6's NET-008 flagged** — DET-PRD-001/005/008/011
+target the SAME message types (`ClientGeneral::ControllerInputs`,
+`common/net/src/msg/client.rs`) that v6's NET-008 (universal client
+command identity) already covers. Told Builder to fold these together
+as ONE protocol pass rather than two sequential ones — avoids designing
+the same envelope/sequencing twice.
+
+**Ranked domain roots (into the standing queue):**
+- **DET-INP-001** — `voxygen/src/window.rs:81-121`, window Events carry
+  no session epoch/device identity/capture sequence — batch position is
+  the only chronology. Root of the whole input-capture domain.
+- **DET-PRD-001/005/011** (merge with NET-008) — no input-frame/sequence
+  identity, no explicit tick-boundary rule between correction/replay/
+  simulate, no certified-identical client/server prediction kernel.
+- **DET-REC-001/016** — ForceUpdate is an unstamped wrapping counter (no
+  tick/ack/digest/reason); correction-ack isn't an independent protocol
+  state. Root of reconciliation determinism.
+- **DET-UIA-003/006/018** — hotbar/inventory swap commands gated by
+  local (possibly stale) inventory/capacity state rather than always
+  sending intent + letting the server decide — the exact UI-authority
+  pattern discussed earlier tonight, now concretely found.
+
+High-value downstream: INP-004/012/017/022/025/027 (binding fan-out
+order, focus-loss state leak, camera-tick quantization, target-sample-
+before-batch timing, equal-distance tie-break, capture-time cursor),
+PRD-008/014 (server trusts latest client physics as state rather than
+replaying inputs; no rollback/resim history at all), REC-003/006/012
+(correction applied without frame history, send-failure silently clears
+the correction flag, interpolation ordered by receipt not server tick),
+UIA-004 (HUD-generated gameplay events land a tick late vs direct
+input). Full doc has all 82; these are the highest-value anchors.
+
+Not yet sent to Builder as a formal work order — next action. [Sent —
+see below.]
+
+**NET stage 1 LANDED** `87fed61346`: EntitySync/CompSync packages now
+carry `sync_tick` stamped at every server seam; client witnesses cross-
+stream chronology and warns on regression; sequence field reserved for
+stage 2. **BLD-010 LANDED**: build.rs now branches on
+`CARGO_CFG_TARGET_OS` (target truth, not host cfg), loud warning on
+cross-compile icon skip, voxygen builds clean through it. **BLD-023
+LANDED**: ambient-RUSTFLAGS witness added to the harness build script —
+emits a `cargo:warning` when RUSTFLAGS isn't flag-canonical; cert lane
+should treat that as red.
+
+**★★★ BLD-031 — MAJOR METHODOLOGY FINDING.** `[profile.verify]` (the VM
+cert lane's own profile) `inherits='release'` → every cert run THIS
+ENTIRE SESSION has had `overflow-checks=false` + `debug-assertions=false`.
+Consequence: every `debug_assert` guard built across the whole arc
+(T1.13 double-reserve, T1.14 completion-balance, T1.17 decrement/drop
+pairing, command-status transition asserts, ECS phase checks) has been
+SILENTLY INERT in certification — a guard-tripping bug would pass cert
+clean and only fail on a dev box. Also: numeric overflow takes different
+control flow per profile (panic in dev, silent wrap in verify/release) —
+dev-tested numeric behavior does not certify shipped behavior, exactly
+the audit's point.
+
+**Decision: option (a) APPROVED** — flip `[profile.verify]` to
+overflow-checks=true + debug-assertions=true, decoupled from bare
+`inherits=release`. Within my authority (own cert lane, not the shipped
+build), no reason to hold. Ordered a sanity re-run of a recent cert
+under the corrected profile once it lands, to surface anything that was
+previously guard-inert. **Option (b) (also flip shipped `release`)
+ESCALATED TO BEN** — genuine ship-tier perf-vs-safety call, not mine to
+decide. Builder holding on release, continuing v6 queue (NET-018 +
+AST-019/023/024/025) meanwhile. Opus notified: sequence CLK-006 matrix +
+perf-gate baseline AFTER the profile fix lands, not before, to avoid
+certifying under the stale guard-inert profile.
+
+**Two follow-on rulings from Opus's ack:**
+1. **Perf-gate profile: GUARDS-OFF (release-representative), confirmed.**
+   Guards-ON would inflate ms/tick with correctness-guard overhead and
+   conflate that with real sort-arc cost — false-positive regressions
+   that don't exist in what ships. Determinism certs stay guards-ON
+   (their whole point); perf gate stays guards-OFF. Same profile for
+   baseline vs tip either way.
+2. **Retroactive scoped check on tonight's completed RNG certs: YES.**
+   Not re-litigating correctness (construction + composite-stability
+   already covers that) — specifically checking whether any
+   `debug_assert` invariant silently fired without a crash to alert us,
+   since it was compiled out the whole night. Same shape as the B75
+   lesson (a passing proof doesn't rule out something outside its
+   comparison window). Scoped to a single-machine run of the settled
+   RNG-arc tip under the corrected guards-on profile — just checking for
+   any assert firing, not a full 3-machine re-cert. If clean, done; if
+   something fires, immediate top priority over the rest of the queue.
+
+Sequence: profile fix → create-rate recovery → probe-first → CLK-006
+matrix + this retroactive check + perf-gate baseline, Opus's own
+ordering once resumed.
+
+**Check-in: BLD-031(a) sanity run in flight.** Builder's running the
+full verify-profile harness rebuild + guard-layer sanity scenario now —
+this IS the decisive check requested (does any previously-inert guard
+fire, surfacing an undetected bug rather than a regression). Also landed
+this stretch: NET stage 1 + NET-018, BLD-010/023, AST-019/023. Staged
+and ready the moment the sanity run frees: NET stage 2a merged with
+PRD-001 (input-frame sequencing on ControllerInputs/ControlEvent/
+ControlAction, client stamps monotonic input sequence, server witnesses
+regression/duplicates — the merged design as directed, not built twice),
+REC-001's minimal form (ForceUpdate stamped with the correction's server
+tick, giving the client a real ack anchor), AST-029 next behind those.
+
+Opus: fully aligned, restated the complete resumption queue (CLK-006
+matrix guards-on → retroactive RNG assert-check single-machine → v6
+script hardening → perf-gate baseline guards-off) — holding correctly on
+profile-fix-lands + create-rate-recovery, zero lingering VMs, nothing to
+nudge.
+
+**★★★ BLD-031(a) VALIDATED + REAL REGRESSION FOUND — TOP PRIORITY, all
+other work paused.** The corrected verify-profile harness (14m47s full
+rebuild) ran the b5 guard-layer scenario clean on the profile question
+itself: zero previously-inert guards fired, zero overflow panics, dev
+and verify now produce BYTE-IDENTICAL output — exactly validates the
+fix. But the SAME run exposed a genuine deterministic behavioral
+regression, unrelated to the profile: **b5_mine_cleared:false — 25/27
+mine cells clear, 2 NEVER complete**, byte-identical under both dev and
+verify at tip `0c0a597e82`+profile-flip (so a real code regression, not
+a profile/guard artifact). All other b5 bars pass (conservation exact,
+stone_sum matches blocks mined; chop/build/slope/hill all green) — the
+failure is isolated to those 2 stuck mine cells.
+
+Regression window is honestly WIDE (b5's last confirmed-green predates
+several batches — the broken-harness tip and a division-of-labor gap
+mean nobody actually read a b5 result across the whole T1-conservation-
+through-v6 stretch). Top suspects by mechanism: PHY-005 (per-cell sort →
+pushback re-pin could strand cells as unreachable), ECS-007 (barrier-
+ordered scheduling shifting work-tick timing), DET-RNG-008/lottery
+re-pins (different scatter → different pile positions blocking access).
+
+**Bisection in progress:** Builder building at `890bc3bb5b` (the pre-
+EVT-010/PHY-005/TER/v6 cert anchor) as the baseline half-split point,
+walking forward/back from its verdict. Asked Opus in parallel whether
+any b5 result exists at a recent tip in their own cert history to pin
+the window instantly instead of blind bisection. **All other work
+(NET/AST/rest of v6/v7, CLK-006 matrix, perf-gate) paused/superseded
+until this resolves** — a real regression outranks backlog progress.
+
+**★★★ REGRESSION WINDOW PINNED.** Opus found a hard floor in their own
+job history: `/tmp/bastion-jobs/t1consv2/job-0.out`, `ade7b2f8c7` attested
+(RAN_COMMIT match, rc=0), `--b5-scenario` → b5_mine_cleared:TRUE, 27/27,
+PASS — a functional completion field, unaffected by the guards-off
+profile question, so a valid floor. **Window narrowed from a blind
+bisect to `(ade7b2f8c7, 890bc3bb5b]`** — the RNG-DEEP reapply
+(`48e4c05b77`) + the entire v5 hot-path sort-before-commit arc. Prime
+suspects (Opus + Builder agree): **ECS-015** (terrain writes sorted-
+commit, RareWrites mutex REMOVED) and **EVT-005** (in-game events
+buffered per client, emitted at sorted commit) — "2 of 27 cells never
+complete" reads as a dropped/lost completion event at a sort-commit
+boundary, not an RNG re-pin. Relayed to Builder to bisect these two
+first, ahead of PHY-005/ECS-007/lottery.
+
+**★ META-FINDING (E1, cert-methodology gap, confirmed priority):** Opus's
+mf composite classifier can confirm a move is STABLE and DECLARED, but
+cannot decompose "intended re-pin" from "intended re-pin + a bundled
+regression riding along in the same window" — the two mf re-pins in
+THIS exact window (`209→238` at `48e4c05b77`, `238→249` at `a3c4f638`)
+both passed as DECLARED_REPIN_STABLE while b5 was silently regressing
+underneath. Live proof the gap is real, not hypothetical. Confirmed as
+priority equal to BLD-031 — Opus to build E1 (per-domain hashes in the
+cert, so a move outside the declared re-pin's domain fires
+DECLARED_SCOPE_EXCEEDED) immediately after b5 is fixed, ahead of
+resuming CLK-006/perf-gate.
+
+**Discriminator relayed:** Opus refined the suspect list after checking
+file locations — ECS-014/ECS-015/EVT-005 are all
+`server/src/sys/msg/in_game.rs` (client→server message path); ECS-007
+is the broader dispatcher-phase mechanism (`common/ecs/src/system.rs` +
+`server/src/events/mod.rs`). One field in the already-failing b5 JSON
+(`b5_mine_jobs`, was 27 at the ade7b2f8c7 PASS) discriminates which
+branch without any new build: dropped to 25 → designation itself was
+lost, points at ECS-014/015; stayed 27 but 2 never clear → completion
+never applied, points at ECS-007. Relayed to Builder to check their
+existing failing-run JSON before building anything new.
+
+**Correction from Builder (independently caught, then confirmed):**
+ECS-014/ECS-015/EVT-005 all live in `server`'s `in_game.rs`, which only
+processes CLIENT messages — b5 is a headless scenario with no clients,
+so those changes are structurally inert for this regression. Relayed to
+Opus. **Bisect leg 1: RED at `890bc3bb5b`** (same 25/27 signature) —
+combined with Opus's GREEN floor at `ade7b2f8c7`, window confirmed at
+**30 commits, (ade7b2f8c7, 890bc3bb5b]**. ECS-015/EVT-005 are actually
+OUTSIDE this window entirely (post-890bc3bb5b), further confirming
+they're exonerated regardless of the client/headless argument.
+
+In-window suspects ranked by mechanism fit for "2 cells never complete":
+`a3c4f638b4` (keyed RRT pathfinding sampler — top suspect, "stuck
+colonists = pathing" is the strongest fit), `b0da8808df` (CLK-006 fixed-
+step dt), `f5ea11b5ce` (ECS-007 phase barriers), `d6f1de9d7a` (mine-loot
+keyed streams), `2fe861aeda` (toss-scatter re-key), `8c6fb446e1`
+(StdRng→portable leaf sweep). **Bisect leg 2 running** at midpoint
+`0dbdabd7f9` (post-RNG-DEEP-foundation-reapply) — RED narrows to the
+early RNG-sweep/worldgen/foundation half, GREEN narrows to {leaf sweep,
+mine-loot roll, lottery, threading+combat, GenCtx, RRT sampler, CLK
+cluster, ECS-007} where the priors concentrate. Next split pre-planned
+either way.
+
+**Opus's shortcut answered + corrections:** `b5_mine_jobs` stayed 27
+(designation intact, completion never applies) — points at the
+completion path per Opus's own branch logic, ECS-014/015 stay ruled out.
+Corrections folded in: window confirmed 30 commits not ~10; EVT-010 is
+outside the window (post-890bc3bb5b); **RRT sampler EXONERATED** —
+behind `cfg(rrt_pathfinding)`, no crate currently enables that feature,
+dead code for this scenario; CLK-006 near-inert for b5 (only touches
+server-cli/voxygen loop callers, harness drives Server::tick directly).
+New structural confirm: `bastion_jobs` IS in the phased dispatcher
+(PHASE=Phase::Create, explicit deps on agent+bastion_path) → ECS-007's
+barriers are LIVE for b5. **Updated ranking: ECS-007 ~ leaf sweep
+(Chaser/agent rng re-pin) ~ tick_rng foundation re-pin > lottery >
+threading+combat.** Mechanism read: a re-pin/reorder landing on a stuck
+2-cell configuration persisting across 5400 ticks (PERSIST, not a
+dropped-event throughput issue). Leg 2 (midpoint 0dbdabd7f9) finishing
+shortly.
+
+**Leg 2: GREEN at `0dbdabd7f9`** (27/27 PASS, full JSON healthy). Window
+narrowed to **13 commits, (0dbdabd7f9, 890bc3bb5b]**. Live in-range
+suspects: leaf sweep (Chaser/agent rng), mine-loot (weak), lottery,
+threading+combat, GenCtx, ECS-007, CLK trio (weak). Confirmed inert in-
+range: WASI, RRT, REN gate, CLK-006, ECS-014, annotation commit. **Leg 3
+building at `dbbacea48e`** — RED narrows to {leaf sweep, mine-loot,
+lottery, threading+combat} (4 commits, ≤2 more legs); GREEN narrows to
+{GenCtx, ECS-007, CLK trio}, with ECS-007 to be tested directly next as
+the strongest of that group. Builder filling the wait with Track B's W1
+authoring (renderer-w0 worktree, zero collision with the bisect tree) —
+good parallel-fill discipline.
+
+**★ TWIST — possibly TWO distinct regressions.** Leg 3 at `dbbacea48e`:
+mine bar HEALTHY (27/27 TRUE) but scenario FAILS on a DIFFERENT bar —
+`b5_build_stall_jobs:0` (expected 1) + `b5_build_stall_untouched:false` +
+`b5_any_needs_materials:false` (a build-designation-with-missing-
+materials probe placed zero jobs instead of staying untouched). Worse:
+leg 1's original "FAIL" at `890bc3bb5b` never printed full JSON (grep
+too narrow) — it may have been THIS build-stall failure, not the mine
+one, meaning the mine-regression window may extend past 890bc3bb5b,
+undoing the earlier post-anchor exoneration for the mine bar
+specifically. Re-running 890bc3bb5b with full JSON to disambiguate.
+
+Two live windows tracked separately: BUILD-STALL regression narrows to
+(0dbdabd7f9, dbbacea48e] = {leaf sweep, mine-loot keying, lottery batch,
+threading+combat} — lottery/job-assignment re-pin is the obvious prior
+for a designation placing 0 jobs. MINE regression window pending the
+890bc3bb5b re-run result. Also live: single root (job-assignment/lottery
+re-pin) manifesting as different bars at different commits. Builder
+switched to bisecting per-BAR rather than per-verdict, having verified
+the harness bar-set is constant/bar-neutral across the window (only 2
+harness-touching commits, both post-890bc3bb5b) — sound approach,
+confirmed.
+
+**★★★ v8 BATCH DELIVERY — 14 audit packages, ~100 new findings total.**
+ChatGPT batched together most of the prompts drafted earlier (colony
+sim, crafting, GOD-DOMAIN/culture/AI-autonomy, inter-settlement
+migration, mine/traversal, needs/mood, NPC combat targeting, party
+loot, plugin runtime, resource depletion, RTSim economy, skill-tree,
+structure placement, town/city gen, trade caravan, weather) into one
+delivery under `determism/v8/`. Survey-level bookkeeping now; full
+ranked work order DEFERRED until the b5 regression resolves — not
+interrupting the bisect with a new backlog.
+
+Per-package new-finding counts: colony-sim 9, crafting 7, GOD/culture/
+autonomy 7, migration 2, mine/traversal 12, needs/mood 0 (fully
+dedup'd — confirms diminishing returns already hitting some areas),
+NPC combat targeting 4, party loot 0 (fully dedup'd), plugin runtime 3,
+resource depletion 3, **RTSim economy 28** (biggest single haul, 10
+Critical), skill-tree 3 (all Medium), structure placement 3, town/city
+gen 5, trade caravan 4, weather 10.
+
+Highlights:
+- **GOD-DOMAIN/AI-player confirmed NOT implemented** (zero findings,
+  design-only) — validates the earlier code-maturity concern.
+  Autonomy-arbitration IS substantially implemented (6 real findings).
+- **RTSim economy**: noncommutative sequential trade settlement, a
+  500-year powf/float price recurrence (genuine long-horizon drift),
+  food-threshold population compounding, parallel AtomicU64 quest
+  identity allocation.
+- **Weather**: a real bug, not just hygiene — the weather base field is
+  fixed to seed zero instead of world/domain identity, meaning every
+  world may generate the SAME weather pattern base.
+- **Mine/traversal**: possible relevance to the live b5 regression —
+  "outer mine-access request arbitration is producer-order dependent"
+  and "built-access admission uses a separate hardcoded depth cutoff
+  instead of the free-climb cap." Flagged to Builder as a possible
+  bisect shortcut, not a redirect.
+- **NPC combat targeting**: "candidate sensing assigns a shared RNG
+  cursor by traversal order and uses live ambient entropy" — same bug
+  class fixed everywhere else tonight, still live here.
+
+**★★★ b5 REGRESSION REFRAMED — not a code-path bug, a latent fragility
+exposed by an intended world re-roll.** Leg 4's full per-bar matrix
+showed `b5_ch_trees`/`ch_cells`/`cavein_drop_cells` swinging across
+commits (13→14→4→13) — the tell that the ARENA WORLD itself is
+re-rolling, legitimately, at each RNG-re-pin-family commit (GenCtx,
+RNG-DEEP-010 rtsim generate, lottery). Build-stall's earlier RED at
+`dbbacea48e` was one roll's artifact (probe landed somewhere placing 0
+jobs), recovered on the next roll — a fixture-sensitivity flicker, not a
+bug. The MINE bar's 2-stuck-cells appeared at the `890bc3bb5b`-era roll
+and PERSISTS at tip even as other world-sensitive bars keep changing —
+meaning the new world's specific geometry triggers a pre-existing,
+always-latent mine-completion fragility (matches Ben's own documented
+observed failure classes: stuck/disconnected/semi-built) rather than a
+newly-introduced logic bug. Mine flip window narrowed to exactly ONE
+world-changing commit: `60e1682428` (GenCtx worldgen-noise DomainHasher
+reseed, domain root #3, intended one-time re-pin). **Leg 5 confirming.**
+
+**Decision, confirmed:** if leg 5 confirms, GenCtx is NOT reverted — it's
+an intended re-pin, not the bug. The actual fix is diagnosing WHY those
+2 cells can't complete in the new world, trace-first per the CarvedStair
+lesson (dump unmined cell coords + colonist recorder trace, don't guess
+from source). Real cross-validation with the v8 mine-traversal audit's
+DET-MTR findings (producer-order access arbitration, depth-cutoff
+coherence) — the static-analysis prediction and this empirical bug may
+be the same mechanism. b5's world-sensitive bars also need a fixture-
+hardening follow-up (filed separately, not blocking the mine fix).
+
+**★ BEN'S CALL: not a determinism issue — filed and deprioritized, back
+to the standing backlog.** Since the stuck-cells result is byte-
+identical/reproducible across dev and verify for the same world, this
+was never a reproducibility violation — it's a pre-existing gameplay
+bug in mine-completion that a legitimate world re-roll exposed. Doesn't
+block certification, isn't part of the determinism sweep. **Filed as
+B78** in `readme/BASTION_COMMON_ISSUES.md` with the full bisect finding,
+the world-reroll mechanism, the v8 DET-MTR correlation, and the b5
+fixture-hardening note. Builder redirected back to the standing v6/v7
+work (NET-018, AST-019/023/024/025, rest of the backlog) — the mine-
+completion fix and fixture hardening queued as their own scoped item
+for later, not blocking anything.
