@@ -589,7 +589,9 @@ struct EventBusInner<E> {
     ///
     /// Used in the first tick to check for if certain event types are handled
     /// and only handled once.
-    #[cfg(debug_assertions)]
+    ///
+    /// T0.26: lives in ALL builds — release topology validation reads it
+    /// (one u8 per bus, saturating adds; the check itself runs once).
     recv_count: u8,
 }
 
@@ -602,7 +604,6 @@ impl<E> Default for EventBus<E> {
         Self {
             inner: Mutex::new(EventBusInner {
                 queue: VecDeque::new(),
-                #[cfg(debug_assertions)]
                 recv_count: 0,
             }),
         }
@@ -624,10 +625,7 @@ impl<E> EventBus<E> {
     pub fn recv_all(&self) -> impl ExactSizeIterator<Item = E> + use<E> {
         {
             let mut guard = self.inner.lock().expect("Poisoned");
-            #[cfg(debug_assertions)]
-            {
-                guard.recv_count = guard.recv_count.saturating_add(1);
-            }
+            guard.recv_count = guard.recv_count.saturating_add(1);
             core::mem::take(&mut guard.queue)
         }
         .into_iter()
@@ -635,14 +633,10 @@ impl<E> EventBus<E> {
 
     pub fn recv_all_mut(&mut self) -> impl ExactSizeIterator<Item = E> + use<E> {
         let inner = self.inner.get_mut().expect("Poisoned");
-        #[cfg(debug_assertions)]
-        {
-            inner.recv_count = inner.recv_count.saturating_add(1);
-        }
+        inner.recv_count = inner.recv_count.saturating_add(1);
         core::mem::take(&mut inner.queue).into_iter()
     }
 
-    #[cfg(debug_assertions)]
     pub fn recv_count(&mut self) -> u8 { self.inner.get_mut().expect("Poisoned").recv_count }
 }
 
