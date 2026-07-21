@@ -282,7 +282,11 @@ end of 2nd level Enums
 /// [`veloren_client::Client::client_type`] wants to emit login events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PlayerListUpdate {
-    Init(HashMap<Uid, PlayerInfo>),
+    // DET-NET-014/015 (v6 deep-pass, High): a Uid-sorted Vec, not a HashMap.
+    // A HashMap serializes in process-seed order, so the initial player list
+    // encoded to different wire bytes run-to-run and the client initialized in
+    // that order. The sorted Vec is canonical by construction.
+    Init(Vec<(Uid, PlayerInfo)>),
     Add(Uid, PlayerInfo),
     SelectedCharacter(Uid, CharacterInfo),
     ExitCharacter(Uid),

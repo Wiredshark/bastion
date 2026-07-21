@@ -2844,7 +2844,9 @@ impl Client {
                 DisconnectReason::Banned(info) => return Err(Error::Banned(info)),
             },
             ServerGeneral::PlayerListUpdate(PlayerListUpdate::Init(list)) => {
-                self.player_list = list
+                // DET-NET-015: wire payload is now a Uid-sorted Vec; rebuild the
+                // local lookup map from it.
+                self.player_list = list.into_iter().collect()
             },
             ServerGeneral::PlayerListUpdate(PlayerListUpdate::Add(uid, player_info)) => {
                 if let Some(old_player_info) = self.player_list.insert(uid, player_info.clone()) {
