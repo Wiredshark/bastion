@@ -943,7 +943,7 @@ impl PhysicsData<'_> {
         );
         span!(guard, "Apply terrain collision");
         job.cpu_stats.measure(ParMode::Rayon);
-        let (land_on_grounds, outcomes) = (
+        let (mut land_on_grounds, outcomes) = (
             &read.entities,
             read.scales.maybe(),
             read.stickies.maybe(),
@@ -1565,6 +1565,16 @@ impl PhysicsData<'_> {
             );
         drop(guard);
         job.cpu_stats.measure(ParMode::Single);
+
+        // T0.28 (master build order; Run 10): the fold/reduce above
+        // concatenates per-rayon-split vecs, so emission order is thread
+        // partitioning. The deterministic harness serializes on its
+        // one-worker pool; LIVE mode did not. `land_on_grounds` is the
+        // AUTHORITATIVE payload (fall damage) — canonicalize by entity id
+        // before emission. `outcomes` feed client presentation only
+        // (sounds/particles); their full (kind, pos) canonical key is noted
+        // debt, not authoritative surface.
+        land_on_grounds.sort_unstable_by_key(|(entity, ..)| entity.id());
 
         write.outcomes.emitter().emit_many(outcomes);
 
