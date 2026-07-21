@@ -54,6 +54,7 @@ pub mod cmd;
 pub mod depot;
 pub mod effect;
 pub mod effect_journal;
+pub mod entity_lifecycle;
 pub mod async_schedule;
 pub mod async_work;
 pub mod audit_framework;
