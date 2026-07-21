@@ -590,7 +590,12 @@ impl Site {
                                 < 0.0
                         })
                 })
-                .min_by_key(|&&p| self.plot(p).root_tile.distance_squared(tpos))
+                // DET-SITE-002 (v8 town-city-site-gen, Medium): tie-break the
+                // nearest-plaza search by plot id. On equal distance the raw
+                // min_by_key kept the first plot in iteration (plot insertion)
+                // order, so the road endpoint rode insertion order; the plot id
+                // makes ties deterministic.
+                .min_by_key(|&&p| (self.plot(p).root_tile.distance_squared(tpos), p))
                 && let PlotKind::Plaza(src_plaza) = &self.plot(p).kind
                 && let PlotKind::Plaza(dst_plaza) = &self.plot(plaza).kind
             {

@@ -690,10 +690,14 @@ impl Civs {
         (0..ctx.sim.map_size_lg().chunks_len()).for_each(|posi| {
             let chpos = uniform_idx_as_vec2(ctx.sim.map_size_lg(), posi);
             let wpos = chpos.map(|e| e as i64) * TerrainChunkSize::RECT_SIZE.map(|e| e as i64);
+            // DET-SITE-003 (v8 town-city-site-gen, High): tie-break the
+            // nearest-site award by site id. Equidistant chunks were awarded to
+            // whichever site `iter_mut` (Store insertion) order visited first;
+            // the site id makes the award deterministic on ties.
             let closest_site = (*sites)
                 .iter_mut()
                 .filter(|s| !matches!(s.1.kind, Some(crate::site::SiteKind::Myrmidon)))
-                .min_by_key(|(_id, s)| s.origin.map(|e| e as i64).distance_squared(wpos));
+                .min_by_key(|(id, s)| (s.origin.map(|e| e as i64).distance_squared(wpos), *id));
             if let Some((_id, s)) = closest_site
                 && s.do_economic_simulation()
             {
