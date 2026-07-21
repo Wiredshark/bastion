@@ -23,6 +23,12 @@ pub(crate) struct ShutdownCoordinator {
     msg_interval: Duration,
     /// The instant that shudown was initiated at
     shutdown_initiated_at: Option<Instant>,
+    /// DET-CLK-014 (v5 deep-pass): the declared FINAL TICK — termination is
+    /// tick-indexed, never a wall deadline, so the number of simulation
+    /// ticks before shutdown (and thus terminal state + save contents) is a
+    /// pure function of (accepted tick, grace period). Wall time still
+    /// drives the human-facing warning messages only.
+    shutdown_final_tick: Option<u64>,
     /// The period to wait before shutting down after shutdown is initiated
     shutdown_grace_period: Duration,
     /// The message to use for the shutdown warning message that is sent to all
@@ -38,6 +44,7 @@ impl ShutdownCoordinator {
             last_shutdown_msg: Instant::now(),
             msg_interval: Duration::from_secs(30),
             shutdown_initiated_at: None,
+            shutdown_final_tick: None,
             shutdown_grace_period: Duration::from_secs(0),
             shutdown_message: String::new(),
             shutdown_signal,
@@ -49,6 +56,8 @@ impl ShutdownCoordinator {
     /// process exits.
     pub fn initiate_shutdown(
         &mut self,
+        // DET-CLK-014: the sim tick at which the request was accepted.
+        current_tick: u64,
         server: &mut Server,
         grace_period: Duration,
         message: String,
@@ -56,6 +65,9 @@ impl ShutdownCoordinator {
         if self.shutdown_initiated_at.is_none() {
             self.shutdown_grace_period = grace_period;
             self.shutdown_initiated_at = Some(Instant::now());
+            // DET-CLK-014: ShutdownRequested { accepted_tick, final_tick }.
+            self.shutdown_final_tick =
+                Some(current_tick + (grace_period.as_secs_f64() * crate::TPS as f64) as u64);
             self.shutdown_message = message;
 
             // Send an initial shutdown warning message to all connected clients
@@ -70,6 +82,7 @@ impl ShutdownCoordinator {
     pub fn abort_shutdown(&mut self, server: &mut Server) {
         if self.shutdown_initiated_at.is_some() {
             self.shutdown_initiated_at = None;
+            self.shutdown_final_tick = None;
             ShutdownCoordinator::send_msg(server, "The shutdown has been aborted".to_owned());
         } else {
             error!("There is no shutdown in progress");
@@ -80,14 +93,19 @@ impl ShutdownCoordinator {
     /// shutdown. If the grace period for an initiated shutdown has expired,
     /// returns `true` which triggers the loop in `main.rs` to break and
     /// exit the server process.
-    pub fn check(&mut self, server: &mut Server, settings: &Settings) -> bool {
+    pub fn check(&mut self, server: &mut Server, settings: &Settings, current_tick: u64) -> bool {
         // Check whether shutdown has been set
-        self.check_shutdown_signal(server, settings);
+        self.check_shutdown_signal(server, settings, current_tick);
 
         // If a shutdown is in progress, check whether it's time to send another warning
         // message or shut down if the grace period has expired.
-        if let Some(shutdown_initiated_at) = self.shutdown_initiated_at {
-            if Instant::now() > shutdown_initiated_at.add(self.shutdown_grace_period) {
+        if let Some(_shutdown_initiated_at) = self.shutdown_initiated_at {
+            // DET-CLK-014: terminate at the DECLARED final tick — the tick
+            // count before shutdown no longer rides wall scheduling.
+            if self
+                .shutdown_final_tick
+                .is_some_and(|final_tick| current_tick >= final_tick)
+            {
                 info!("Shutting down");
                 return true;
             }
@@ -114,13 +132,13 @@ impl ShutdownCoordinator {
     /// Veloren server to send SIGUSR1 instead of SIGTERM which allows us to
     /// react specifically to shutdowns that are for an update.
     /// NOTE: SIGUSR1 is not supported on Windows
-    fn check_shutdown_signal(&mut self, server: &mut Server, settings: &Settings) {
+    fn check_shutdown_signal(&mut self, server: &mut Server, settings: &Settings, current_tick: u64) {
         if self.shutdown_signal.load(Ordering::Relaxed) && self.shutdown_initiated_at.is_none() {
             info!("Received shutdown signal, initiating graceful shutdown");
             let grace_period =
                 Duration::from_secs(u64::from(settings.update_shutdown_grace_period_secs));
             let shutdown_message = settings.update_shutdown_message.to_owned();
-            self.initiate_shutdown(server, grace_period, shutdown_message);
+            self.initiate_shutdown(current_tick, server, grace_period, shutdown_message);
 
             // Reset the SIGUSR1 signal indicator in case shutdown is aborted and we need to
             // trigger shutdown again

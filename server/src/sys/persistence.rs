@@ -60,7 +60,17 @@ impl<'a> System<'a> for Sys {
     ) {
         // T0.1: tick-cadenced in deterministic mode (wall cadence would
         // fire on machine-dependent ticks), wall-cadenced live.
-        if scheduler.should_run_at(tick.0, execution_mode.is_deterministic()) {
+        // DET-CLK-010/011 (v5 deep-pass): tick cadence is now authoritative
+        // in LIVE too — persistence is authoritative work, so which sim tick
+        // it fires on must be a pure function of the tick count, not host
+        // speed. Composes with DET-CLK-006's fixed step (sim time = ticks).
+        // Intended consequence: under server overload (time dilation) the
+        // wall interval between snapshots stretches with sim time — the
+        // deterministic-correct semantics (snapshot cadence tracks sim
+        // evolution, not wall). The wall path in SysScheduler remains only
+        // for future diagnostic/keepalive consumers.
+        let _ = execution_mode; // cadence no longer branches on mode
+        if scheduler.should_run_at(tick.0, true) {
             updater.batch_update(
                 (
                     &presences,

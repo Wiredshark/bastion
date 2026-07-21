@@ -316,7 +316,7 @@ fn server_loop(
 
         tick_no += 1;
         // Terminate the server if instructed to do so by the shutdown coordinator
-        if shutdown_coordinator.check(&mut server, &settings) {
+        if shutdown_coordinator.check(&mut server, &settings, tick_no) {
             break;
         }
 
@@ -362,6 +362,7 @@ fn server_loop(
                     command: Shutdown::Graceful { seconds, reason },
                 } => {
                     shutdown_coordinator.initiate_shutdown(
+                        tick_no,
                         &mut server,
                         Duration::from_secs(seconds),
                         reason,
