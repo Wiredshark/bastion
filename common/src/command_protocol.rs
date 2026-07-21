@@ -139,6 +139,147 @@ impl AdmissionLedger {
     }
 }
 
+/// T1.7 (T1-001 packet, step 5): a persistence batch id.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct BatchId(pub u64);
+
+/// Whether a rolled-back batch may be retried.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RetryDisposition {
+    Retryable,
+    Permanent,
+}
+
+/// T1.7: the outcome of an async persistence batch. Pending actions are
+/// removed ONLY on `Committed`; a rollback is never acknowledged as a
+/// commit.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DatabaseBatchOutcome {
+    Committed { batch_id: BatchId, watermark: u64 },
+    RolledBack {
+        batch_id: BatchId,
+        error: String,
+        retry: RetryDisposition,
+    },
+}
+
+/// T1.7: tracks in-flight persistence batches. `apply_outcome` removes a
+/// pending batch only on commit, keeps it for a retryable rollback, drops
+/// it for a permanent one, and is idempotent by (batch_id, watermark) so a
+/// duplicate completion is a no-op.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PendingBatchTracker {
+    pending: BTreeMap<BatchId, u64>,
+    /// Committed (batch_id, watermark) pairs — the idempotency ledger.
+    committed: std::collections::BTreeSet<(BatchId, u64)>,
+}
+
+/// What `apply_outcome` did (for the caller's bookkeeping/telemetry).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum BatchApplyResult {
+    Committed,
+    KeptForRetry,
+    DroppedPermanent,
+    /// A duplicate completion for an already-committed batch — no-op.
+    DuplicateIgnored,
+    /// An outcome for a batch we have no pending record of — no-op.
+    UnknownBatch,
+}
+
+impl PendingBatchTracker {
+    /// Register a batch as in-flight with its issue watermark.
+    pub fn enqueue(&mut self, batch_id: BatchId, watermark: u64) {
+        self.pending.insert(batch_id, watermark);
+    }
+
+    pub fn is_pending(&self, batch_id: BatchId) -> bool { self.pending.contains_key(&batch_id) }
+
+    pub fn apply_outcome(&mut self, outcome: &DatabaseBatchOutcome) -> BatchApplyResult {
+        match outcome {
+            DatabaseBatchOutcome::Committed { batch_id, watermark } => {
+                if self.committed.contains(&(*batch_id, *watermark)) {
+                    return BatchApplyResult::DuplicateIgnored;
+                }
+                if self.pending.remove(batch_id).is_none() {
+                    // Unknown, but still record commit for idempotency.
+                    self.committed.insert((*batch_id, *watermark));
+                    return BatchApplyResult::UnknownBatch;
+                }
+                self.committed.insert((*batch_id, *watermark));
+                BatchApplyResult::Committed
+            },
+            DatabaseBatchOutcome::RolledBack {
+                batch_id, retry, ..
+            } => {
+                if !self.pending.contains_key(batch_id) {
+                    return BatchApplyResult::UnknownBatch;
+                }
+                match retry {
+                    // Retryable: KEEP the pending batch (rollback ≠ commit).
+                    RetryDisposition::Retryable => BatchApplyResult::KeptForRetry,
+                    RetryDisposition::Permanent => {
+                        self.pending.remove(batch_id);
+                        BatchApplyResult::DroppedPermanent
+                    },
+                }
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod t1_7_tests {
+    use super::*;
+
+    #[test]
+    fn t1_7_pending_removed_only_on_commit_idempotently() {
+        let mut tracker = PendingBatchTracker::default();
+        tracker.enqueue(BatchId(1), 100);
+        tracker.enqueue(BatchId(2), 100);
+
+        // Retryable rollback KEEPS the batch (rollback never = commit).
+        assert_eq!(
+            tracker.apply_outcome(&DatabaseBatchOutcome::RolledBack {
+                batch_id: BatchId(1),
+                error: "conn lost".to_string(),
+                retry: RetryDisposition::Retryable,
+            }),
+            BatchApplyResult::KeptForRetry
+        );
+        assert!(tracker.is_pending(BatchId(1)));
+
+        // Commit removes it.
+        assert_eq!(
+            tracker.apply_outcome(&DatabaseBatchOutcome::Committed {
+                batch_id: BatchId(1),
+                watermark: 101,
+            }),
+            BatchApplyResult::Committed
+        );
+        assert!(!tracker.is_pending(BatchId(1)));
+
+        // Duplicate completion is idempotent.
+        assert_eq!(
+            tracker.apply_outcome(&DatabaseBatchOutcome::Committed {
+                batch_id: BatchId(1),
+                watermark: 101,
+            }),
+            BatchApplyResult::DuplicateIgnored
+        );
+
+        // Permanent rollback drops the batch.
+        assert_eq!(
+            tracker.apply_outcome(&DatabaseBatchOutcome::RolledBack {
+                batch_id: BatchId(2),
+                error: "corrupt".to_string(),
+                retry: RetryDisposition::Permanent,
+            }),
+            BatchApplyResult::DroppedPermanent
+        );
+        assert!(!tracker.is_pending(BatchId(2)));
+    }
+}
+
 #[cfg(test)]
 mod t1_3_tests {
     use super::*;
