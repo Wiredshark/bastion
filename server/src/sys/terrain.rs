@@ -132,6 +132,13 @@ impl<'a> System<'a> for Sys {
         });
 
         let mut rng = rand::rng();
+        // T0.36 (T0-003): chunk-supplement spawns draw from a rng KEYED by
+        // (world_seed, chunk key) — `rand::rng()` above is OS entropy, which
+        // made spawn orientations nondeterministic even under the harness
+        // flag (invisible to the mf tapes only because wildlife facing
+        // isn't divergence-visible in that window). Constructed per chunk
+        // below at the spawn sites.
+        let spawn_seed_base = u64::from(data.server_settings.world_seed);
         // Fetch any generated `TerrainChunk`s and insert them into the terrain.
         // Also, send the chunk data to anybody that is close by.
         let mut new_chunks = Vec::new();
@@ -192,6 +199,17 @@ impl<'a> System<'a> for Sys {
             }
 
             // Handle chunk supplement
+            // T0.36: the keyed spawn stream for THIS chunk — a pure function
+            // of (world_seed, chunk key), independent of apply timing.
+            let mut chunk_spawn_rng = {
+                use rand::SeedableRng;
+                rand_chacha::ChaCha8Rng::seed_from_u64(
+                    spawn_seed_base
+                        ^ ((key.x as u32 as u64) << 32)
+                        ^ u64::from(key.y as u32)
+                        ^ 0x5BA1_4C36_0000_0000,
+                )
+            };
             for entity_spawn in supplement.entity_spawns {
                 // Check this because it's a common source of weird bugs
                 let check_pos = |pos: Vec3<f32>| {
@@ -218,7 +236,7 @@ impl<'a> System<'a> for Sys {
 
                                 emitters.emit(CreateNpcEvent {
                                     pos,
-                                    ori: comp::Ori::from(Dir::random_2d(&mut rng)),
+                                    ori: comp::Ori::from(Dir::random_2d(&mut chunk_spawn_rng)),
                                     npc: npc_builder.with_anchor(comp::Anchor::Chunk(key)),
                                 });
                             },
@@ -237,7 +255,7 @@ impl<'a> System<'a> for Sys {
                                     let (npc_builder, pos) = data.to_npc_builder();
                                     Some(CreateNpcEvent {
                                         pos,
-                                        ori: comp::Ori::from(Dir::random_2d(&mut rng)),
+                                        ori: comp::Ori::from(Dir::random_2d(&mut chunk_spawn_rng)),
                                         npc: npc_builder.with_anchor(comp::Anchor::Chunk(key)),
                                     })
                                 },
