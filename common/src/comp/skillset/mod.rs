@@ -269,9 +269,16 @@ impl SkillSet {
         // entry where the skill group kind is unlocked, insert the skills corresponding
         // to that skill group kind. When no more skill group kinds can be found, break
         // the loop.
+        // DET-SKL-003 (v8 skill-tree, Medium): pick the next unlockable group
+        // canonically (smallest SkillGroupKind), not the first one HashMap
+        // iteration happens to yield. `all_skills` is a RandomState HashMap, so
+        // `.find` made the DB skill-replay order — and thus the reconstructed
+        // skillset when unlock order matters (prerequisite chains / respec
+        // fallback) — ride the process hash seed.
         while let Some(skill_group_kind) = all_skills
             .keys()
-            .find(|kind| skillset.has_skill(Skill::UnlockGroup(**kind)))
+            .filter(|kind| skillset.has_skill(Skill::UnlockGroup(**kind)))
+            .min()
             .copied()
         {
             // Remove valid skill group kind from the hash map so that loop eventually
