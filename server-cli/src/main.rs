@@ -340,6 +340,7 @@ fn server_loop(
         // step conversion (wall-clock cannot move authoritative sim time).
         if det_perturb {
             if tick_no > det_ticks {
+                use specs::WorldExt;
                 let ecs = server.state().ecs();
                 let tod = ecs.read_resource::<common::resources::TimeOfDay>().0;
                 let time = ecs.read_resource::<common::resources::Time>().0;
