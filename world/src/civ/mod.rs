@@ -655,6 +655,14 @@ impl Civs {
         //this.display_info();
 
         // remember neighbor information in economy
+        // DET-SITE-004 (v8 town-city-site-gen, High): `track_map` is a HashMap,
+        // so registering neighbours by iterating it directly gave each
+        // economy a neighbour list in process-seed order — and the 500-year
+        // economy prehistory consumes that list order-sensitively (it compounds
+        // over the whole simulation). Gather the registrations, sort them
+        // canonically by (site, neighbour), then apply, so the neighbour order
+        // is a pure function of the site graph.
+        let mut neighbor_registrations = Vec::new();
         for (s1, val) in this.track_map.iter() {
             if let Some(index1) = this.sites.get(*s1).site_tmp {
                 for (s2, t) in val.iter() {
@@ -663,19 +671,23 @@ impl Civs {
                         && index.sites.get(index2).do_economic_simulation()
                     {
                         let cost = this.tracks.get(*t).path.len();
-                        index
-                            .sites
-                            .get_mut(index1)
-                            .economy_mut()
-                            .add_neighbor(index2, cost);
-                        index
-                            .sites
-                            .get_mut(index2)
-                            .economy_mut()
-                            .add_neighbor(index1, cost);
+                        neighbor_registrations.push((index1, index2, cost));
                     }
                 }
             }
+        }
+        neighbor_registrations.sort_unstable_by_key(|(a, b, _)| (*a, *b));
+        for (index1, index2, cost) in neighbor_registrations {
+            index
+                .sites
+                .get_mut(index1)
+                .economy_mut()
+                .add_neighbor(index2, cost);
+            index
+                .sites
+                .get_mut(index2)
+                .economy_mut()
+                .add_neighbor(index1, cost);
         }
 
         prof_span!(guard, "generate airship routes");
