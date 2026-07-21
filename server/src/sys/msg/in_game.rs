@@ -1063,6 +1063,9 @@ impl<'a> System<'a> for Sys {
                     let bastion_inspects_update = (!bastion_inspects.is_empty())
                         .then_some((entity, bastion_inspects));
                     (
+                        // DET-ECS-014 (v5 deep-pass): stable sort key — the
+                        // collected order below is Rayon completion order.
+                        entity.id(),
                         skill_set_update,
                         spectating_entity_update,
                         physics_update,
@@ -1075,7 +1078,7 @@ impl<'a> System<'a> for Sys {
             )
             // NOTE: Would be nice to combine this with the map_init somehow, but I'm not sure if
             // that's possible.
-            .filter(|(x, y, z, w, v, d, i)| {
+            .filter(|(_, x, y, z, w, v, d, i)| {
                 x.is_some() || y.is_some() || z.is_some() || w.is_some() || v.is_some()
                     || !d.is_empty()
                     || i.is_some()
@@ -1084,6 +1087,13 @@ impl<'a> System<'a> for Sys {
             // doesn't turn out to be important as there shouldn't be that many connected clients.
             // The reason we can't just use unzip is that the two sides might be different lengths.
             .collect::<Vec<_>>();
+        // DET-ECS-014 (v5 deep-pass): GATHER-SORT-COMMIT. par_bridge
+        // explicitly does not preserve order, so the collected per-client
+        // updates (and the deferred event/designation apply order below)
+        // arrived in worker-completion order. Sort by the stable per-client
+        // entity id before applying — the apply order is now a pure function
+        // of the client set, independent of worker timing.
+        deferred_updates.sort_unstable_by_key(|(entity_id, ..)| *entity_id);
         let player_physics_settings = &mut *player_physics_settings_;
         // Deferred updates to skillsets and player physics.
         //
@@ -1095,6 +1105,7 @@ impl<'a> System<'a> for Sys {
         let mut post_emitters = events.get_emitters();
         deferred_updates.iter_mut().for_each(
             |(
+                _entity_id,
                 skill_set_update,
                 spectating_entity_update,
                 physics_update,
