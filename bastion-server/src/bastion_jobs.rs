@@ -4166,6 +4166,17 @@ impl JobBoard {
     /// the id on `Job.reservation`; release goes through [`Self::remove_job`]
     /// or [`Self::release_reservation`].
     pub fn reserve(&mut self, item: Uid) -> common::bastion::ReservationId {
+        // T1.13 (conservation cluster): bidirectional uniqueness BY
+        // CONSTRUCTION — an item entity may be reserved by at most ONE job.
+        // Every caller already gates on `!is_reserved(item)`; asserting it
+        // here makes a forgotten check surface as a LOUD double-spend in
+        // debug/verify builds (where the floors run) instead of a silent
+        // item dupe or a starved job. Release builds keep the fast path.
+        debug_assert!(
+            !self.is_reserved(item),
+            "T1.13: double reservation of item {item:?} — bidirectional \
+             uniqueness violated (a caller skipped its is_reserved gate)"
+        );
         let id = self.next_reservation;
         self.next_reservation += 1;
         self.reservations.insert(id, item);
@@ -4261,6 +4272,17 @@ impl JobBoard {
     /// Is this item entity already reserved by any job? (Linear scan —
     /// colonies are small; the table holds at most a few dozen entries.)
     pub fn is_reserved(&self, item: Uid) -> bool { self.reservations.values().any(|u| *u == item) }
+
+    /// T1.13 (conservation cluster): the reservation ledger's
+    /// bidirectional-uniqueness audit — item `Uid`s reserved by MORE THAN
+    /// ONE reservation id (empty = conserved). The forward direction (one
+    /// id → one item) is a `HashMap` key invariant for free; this checks
+    /// the REVERSE (one item → at most one id), the double-spend guard.
+    /// Non-empty means two jobs believe they own the same physical item.
+    /// Wired into the board audit at T1.16; deterministic (sorted output).
+    pub fn reservation_conflicts(&self) -> Vec<Uid> {
+        duplicate_reservations(&self.reservations)
+    }
 
     pub fn reserved_item(&self, id: common::bastion::ReservationId) -> Option<Uid> {
         self.reservations.get(&id).copied()
@@ -14618,6 +14640,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
     }
 }
 
+/// T1.13 (conservation cluster): item `Uid`s reserved by more than one
+/// reservation id — the reverse-direction (item → id) uniqueness audit of
+/// the reservation ledger. A pure function of the table: no state, no RNG,
+/// no wall-clock; output sorted+deduped so the verdict is deterministic.
+fn duplicate_reservations(
+    reservations: &HashMap<common::bastion::ReservationId, Uid>,
+) -> Vec<Uid> {
+    let mut counts: HashMap<Uid, u32> = HashMap::new();
+    for item in reservations.values() {
+        *counts.entry(*item).or_insert(0) += 1;
+    }
+    let mut dups: Vec<Uid> = counts
+        .into_iter()
+        .filter(|(_, n)| *n > 1)
+        .map(|(item, _)| item)
+        .collect();
+    dups.sort_unstable_by_key(|u| u.0.get());
+    dups
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -14626,6 +14668,25 @@ mod tests {
     // Row-51.7 (registry class 12): the (B) exhaustion leg's honest pin — the
     // leg is race-dominated in sims (three net terminators, fastest wins), so
     // the bound is proven here, fast and deterministic.
+    #[test]
+    fn t1_13_reservation_bidirectional_uniqueness() {
+        let uid = |n: u64| Uid(NonZeroU64::new(n).unwrap());
+        // A conserved ledger: distinct ids → distinct items → no conflicts.
+        let mut r: HashMap<common::bastion::ReservationId, Uid> = HashMap::new();
+        r.insert(1, uid(10));
+        r.insert(2, uid(20));
+        r.insert(3, uid(30));
+        assert!(duplicate_reservations(&r).is_empty());
+        // A double-spend: two ids → the SAME item → that item is flagged.
+        r.insert(4, uid(20));
+        assert_eq!(duplicate_reservations(&r), vec![uid(20)]);
+        // Several conflicts come back sorted (by uid) and deduped, never
+        // once-per-extra-id.
+        r.insert(5, uid(10));
+        r.insert(6, uid(10));
+        assert_eq!(duplicate_reservations(&r), vec![uid(10), uid(20)]);
+    }
+
     #[test]
     fn reengage_bound_five_exhausted_replans_then_net() {
         for count in 1..=EMERGENCY_REENGAGE_BOUND {
