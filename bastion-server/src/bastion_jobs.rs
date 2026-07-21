@@ -11161,16 +11161,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // never desync from its drop. Validated BEFORE any
                             // authoritative mutation (a partial/imbalanced
                             // completion is a conservation leak).
+                            // DET-RSRC-002 (v8 resource-depletion, Critical):
+                            // `floating_chunk` returns a HashSet, so emitting the
+                            // collapse drops by iterating it directly made the
+                            // drop create-order — and therefore which persistent
+                            // pile the merged drops fall under — ride the process
+                            // hash seed. Emit in canonical cell position order.
+                            let mut ordered_cells: Vec<Vec3<i32>> =
+                                cells.iter().copied().collect();
+                            ordered_cells.sort_unstable_by_key(|c| (c.x, c.y, c.z));
                             let mut completion =
                                 common::job_completion::JobCompletionPlan::new(None);
-                            for &cell in &cells {
+                            for &cell in &ordered_cells {
                                 completion.yield_clear(cell, cell);
                             }
                             debug_assert!(
                                 completion.validate().is_ok(),
                                 "T1.14: cave-in completion plan imbalanced (clears≠drops)"
                             );
-                            for &cell in &cells {
+                            for &cell in &ordered_cells {
                                 block_change.set(cell, Block::empty());
                                 item_drop_emitter.emit(CreateItemDropEvent {
                                     pos: comp::Pos(cell.map(|e| e as f32) + Vec3::broadcast(0.5)),
