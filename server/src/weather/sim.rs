@@ -156,11 +156,24 @@ impl WeatherSim {
                     - self.consts[point].humidity * 0.6;
 
                 const RAIN_CLOUD_THRESHOLD: f32 = 0.25;
-                cell.cloud = (1.0 - pressure).max(0.0).powi(2) * 4.0;
+                // DET-WTH-004 (v8 weather, Critical — contract half): clamp the
+                // generated cloud/rain into their declared 0..1 range. The raw
+                // expressions overshoot (cloud is scaled ×4, rain is a powf of
+                // an unbounded product), and Weather::get_kind then classifies
+                // by thresholds — an out-of-contract value can split
+                // authoritative classification. Bounding at the source enforces
+                // the contract for every downstream consumer and shrinks the
+                // cross-platform-float divergence surface. (The remaining
+                // cross-platform-bit-identity concern over this pipeline is
+                // DET-WTH-003, held.) The threshold checks below (0.2 / 0.15)
+                // and is-raining are all < 1.0, so authoritative classification
+                // is unchanged.
+                cell.cloud = ((1.0 - pressure).max(0.0).powi(2) * 4.0).min(1.0);
                 cell.rain = ((1.0 - pressure - RAIN_CLOUD_THRESHOLD).max(0.0)
                     * self.consts[point].humidity
                     * 2.5)
-                    .powf(0.75);
+                    .powf(0.75)
+                    .min(1.0);
                 cell.wind = Vec2::new(
                     rain_nz.get(spos.into_array()).powi(3) as f32,
                     rain_nz.get((spos + 1.0).into_array()).powi(3) as f32,
