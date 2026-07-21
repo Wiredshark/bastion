@@ -136,6 +136,14 @@ lto = "thin"
 [profile.verify]
 inherits = 'release'
 lto = false
+# DET-BLD-031(a) (v6 deep-pass, reviewer-approved): the CERT lane runs the
+# guard layer. verify inherited release semantics (overflow-checks off,
+# debug-assertions off), so every debug_assert guard and overflow panic in
+# the codebase was INERT precisely where certification happened — dev-tested
+# numeric/guard behavior did not certify. The shipped release profile is
+# UNCHANGED pending Ben's explicit ship-semantics decision (option (b)).
+overflow-checks = true
+debug-assertions = true
 
 # used for cargo bench
 [profile.bench]
