@@ -71,6 +71,52 @@ impl DomainHasher {
     }
 }
 
+/// DET-ADD-008 (determinism audit): a STABLE `std::hash::Hasher` for
+/// semantic u64 IDs that must survive a toolchain / library upgrade.
+/// `std::hash::DefaultHasher` (SipHash) is explicitly NOT stable across Rust
+/// versions, so item hashes / terrain-revision IDs computed with it could
+/// silently change on an upgrade even though a single frozen executable
+/// stays consistent. This backs the standard `Hasher` interface with the
+/// SAME Sha256 primitive `DomainHasher` uses (a fixed standard), so it drops
+/// into any existing `value.hash(&mut h)` site while yielding a stable u64.
+/// It is a SEPARATE type from `DomainHasher` (no `finish()` collision on the
+/// domain API). Determinism: a pure function of the fed bytes.
+pub struct StableHasher(Sha256);
+
+impl StableHasher {
+    /// `label` domain-separates independent hash spaces (length-prefixed).
+    pub fn new(label: &str) -> Self {
+        let mut inner = Sha256::new();
+        inner.update((label.len() as u64).to_le_bytes());
+        inner.update(label.as_bytes());
+        StableHasher(inner)
+    }
+}
+
+impl std::hash::Hasher for StableHasher {
+    fn write(&mut self, bytes: &[u8]) { self.0.update(bytes); }
+
+    fn finish(&self) -> u64 {
+        // Clone so finishing does not consume the in-progress digest (the
+        // `Hasher` contract allows finish() to be called mid-stream).
+        let digest = self.0.clone().finalize();
+        u64::from_le_bytes(
+            digest[..8]
+                .try_into()
+                .expect("a sha256 digest is 32 bytes, always >= 8"),
+        )
+    }
+}
+
+/// DET-ADD-008: stable u64 hash of a single `Hash` value (convenience over
+/// [`StableHasher`]); use `StableHasher` directly for multi-field hashes.
+pub fn stable_hash_u64<H: std::hash::Hash + ?Sized>(label: &str, value: &H) -> u64 {
+    use std::hash::Hasher as _;
+    let mut h = StableHasher::new(label);
+    value.hash(&mut h);
+    h.finish()
+}
+
 /// T0.53: the per-phase state hash — versioned schema, per-domain roots,
 /// one composite computed over the LABEL-SORTED domain list (insertion
 /// order can never leak into the composite).
@@ -329,5 +375,37 @@ mod t0_53_tests {
         let reversed = PhaseStateHash::compose("s", 1, "p", vec![d2, d1]);
         assert_eq!(forward.composite, reversed.composite);
         assert_eq!(forward.domains, reversed.domains);
+    }
+}
+
+#[cfg(test)]
+mod det_add_008_tests {
+    use super::*;
+
+    #[test]
+    fn stable_hash_u64_is_deterministic_label_separated_and_value_sensitive() {
+        // Deterministic: same (label, value) → same u64, every call.
+        assert_eq!(
+            stable_hash_u64("l", &"hello"),
+            stable_hash_u64("l", &"hello")
+        );
+        // Label domain-separates: identical value under a different label
+        // must (with overwhelming probability) differ.
+        assert_ne!(
+            stable_hash_u64("a", &"hello"),
+            stable_hash_u64("b", &"hello")
+        );
+        // Value-sensitive.
+        assert_ne!(
+            stable_hash_u64("l", &"hello"),
+            stable_hash_u64("l", &"world")
+        );
+        // Multi-field via StableHasher directly matches the same fields fed
+        // as a tuple through the convenience fn (the terrain-revision shape).
+        use std::hash::{Hash, Hasher};
+        let mut h = StableHasher::new("m");
+        1u64.hash(&mut h);
+        2u64.hash(&mut h);
+        assert_eq!(h.finish(), stable_hash_u64("m", &(1u64, 2u64)));
     }
 }

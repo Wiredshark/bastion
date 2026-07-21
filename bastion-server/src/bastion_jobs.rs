@@ -46,7 +46,7 @@ use hashbrown::{HashMap, HashSet};
 use specs::{
     Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, Write, WriteExpect, WriteStorage,
 };
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{Hash, Hasher};
 use tracing::info;
 use vek::*;
 
@@ -3116,7 +3116,13 @@ pub(crate) fn emergency_route_terrain_revision(
     terrain: &TerrainGrid,
     descriptor: EmergencyRouteDescriptor,
 ) -> u64 {
-    let mut hasher = DefaultHasher::new();
+    // DET-ADD-008 (determinism audit): stable across toolchain upgrades —
+    // was DefaultHasher (SipHash, version-unstable); the terrain-revision id
+    // gates route-task invalidation, so a semantic-id shift on an upgrade
+    // could spuriously invalidate/keep tasks. Same Sha256 primitive as
+    // DomainHasher, via the shared StableHasher.
+    let mut hasher =
+        common::state_hash::StableHasher::new("bastion/domain/terrain-revision/v1");
     descriptor.hash(&mut hasher);
     for cell in [
         descriptor.approach - Vec3::unit_z(),
@@ -8067,7 +8073,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // harness runs; this system has no world
                                 // seed in scope — noted, not smuggled.)
                                 use rand::SeedableRng;
-                                let mut break_rng = rand::rngs::StdRng::seed_from_u64(
+                                // RNG-DEEP-012 residual: portable ChaCha8Rng
+                                // (T0.33 already keyed the roll by colonist).
+                                let mut break_rng = rand_chacha::ChaCha8Rng::seed_from_u64(
                                     (tick.0 ^ 0xB4EA_CD07)
                                         ^ uid.0.get().rotate_left(23)
                                         ^ since.to_bits().rotate_left(41),
@@ -14699,9 +14707,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
 /// replaces the single tick-global cursor that keyed draws on ECS-join
 /// order. Determinism: pure function of (tick, pos, domain), no wall-clock,
 /// no OS entropy, no iteration-order dependence.
-fn toss_scatter_rng(tick: u64, pos: Vec3<i32>, domain: u64) -> rand::rngs::StdRng {
+// RNG-DEEP-011 residual (determinism audit): ChaCha8Rng, not StdRng — the
+// keyed-stream fix (DET-RNG-008) closed the shared-cursor order dependence;
+// this closes the remaining portability gap (StdRng's algorithm is unstable
+// across rand versions).
+fn toss_scatter_rng(tick: u64, pos: Vec3<i32>, domain: u64) -> rand_chacha::ChaCha8Rng {
     use rand::SeedableRng;
-    rand::rngs::StdRng::seed_from_u64(
+    rand_chacha::ChaCha8Rng::seed_from_u64(
         tick ^ (pos.x as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
             ^ (pos.y as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
             ^ (pos.z as u64).wrapping_mul(0x1656_67B1_9E37_79F9)

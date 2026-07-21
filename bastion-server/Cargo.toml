@@ -25,5 +25,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 ron = { workspace = true }
 rand = { workspace = true }
+rand_chacha = { workspace = true }
 hashbrown = { workspace = true }
 enum-map = { workspace = true }

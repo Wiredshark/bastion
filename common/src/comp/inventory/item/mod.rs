@@ -27,7 +27,7 @@ use hashbrown::{Equivalent, HashMap};
 use item_key::ItemKey;
 use serde::{Deserialize, Serialize, Serializer, de};
 use specs::{Component, DenseVecStorage, DerefFlaggedStorage};
-use std::{borrow::Cow, collections::hash_map::DefaultHasher, fmt, sync::Arc};
+use std::{borrow::Cow, fmt, sync::Arc};
 use strum::{EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 use tracing::error;
 use vek::*;
@@ -1271,12 +1271,12 @@ impl Item {
         if let Ok(item_config) = ItemConfig::try_from((&*self, ability_map, msm)) {
             self.item_config = Some(Box::new(item_config));
         }
-        // Updates hash of an item
-        self.hash = {
-            let mut s = DefaultHasher::new();
-            self.hash(&mut s);
-            s.finish()
-        };
+        // Updates hash of an item.
+        // DET-ADD-008 (determinism audit): stable across toolchain/library
+        // upgrades — was std::hash::DefaultHasher (SipHash), which is NOT a
+        // stable algorithm across Rust versions, so this semantic id could
+        // silently shift on an upgrade. Same Sha256 primitive as DomainHasher.
+        self.hash = crate::state_hash::stable_hash_u64("bastion/domain/item-hash/v1", self);
     }
 
     /// Returns an iterator that drains items contained within the item's slots
