@@ -45,6 +45,7 @@ pub mod uid;
 
 pub mod astar;
 pub mod bastion;
+pub mod bastion_commit;
 pub mod calendar;
 pub mod character;
 pub mod clock;
