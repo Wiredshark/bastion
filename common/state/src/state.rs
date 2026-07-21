@@ -364,6 +364,8 @@ impl State {
         #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
     ) -> Self {
         prof_span!(guard, "create dispatcher");
+        // DET-ECS-007: new dispatcher = new phase-barrier schedule.
+        common_ecs::begin_schedule();
         let mut dispatch_builder =
             DispatcherBuilder::<'static, 'static>::new().with_pool(Arc::clone(&pools));
         // TODO: Consider alternative ways to do this

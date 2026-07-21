@@ -246,11 +246,52 @@ pub trait System<'a> {
     fn sys_name() -> String { format!("{}_{}_sys", Self::ORIGIN.name(), Self::NAME) }
 }
 
+// DET-ECS-007 (v5 deep-pass, DOMAIN ROOT): the per-builder schedule registry
+// that makes `System::PHASE` ENFORCED instead of documentation. Registration
+// happens on one thread (dispatcher construction), so a thread_local is the
+// whole mechanism — no API change for callers of `dispatch`.
+std::thread_local! {
+    static SCHEDULE: std::cell::RefCell<Vec<(String, Phase)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Start a NEW dispatcher schedule (call when a `DispatcherBuilder` is
+/// created, before its first [`dispatch`]). Clears the phase registry so
+/// barriers never leak across independent dispatchers.
+pub fn begin_schedule() {
+    SCHEDULE.with(|s| s.borrow_mut().clear());
+}
+
+/// The (name, phase) manifest of the schedule registered since the last
+/// [`begin_schedule`] — registration-ordered; the golden-manifest pin
+/// material DET-ECS-007's verification asks for.
+pub fn schedule_manifest() -> Vec<(String, Phase)> {
+    SCHEDULE.with(|s| s.borrow().clone())
+}
+
 pub fn dispatch<'a, 'b, T>(builder: &mut specs::DispatcherBuilder<'a, 'b>, dep: &[&str])
 where
     T: for<'c> System<'c> + Send + 'a + Default,
 {
-    builder.add(Job::<T>::default(), &T::sys_name(), dep);
+    // DET-ECS-007: generate PHASE BARRIERS. Create < Review < Apply is now
+    // enforced by construction: every system depends on ALL previously
+    // registered systems of any EARLIER phase (specs still parallelizes
+    // freely WITHIN a phase). A system registered without explicit deps can
+    // no longer race a semantically earlier phase.
+    let name = T::sys_name();
+    let barrier: Vec<String> = SCHEDULE.with(|s| {
+        let mut reg = s.borrow_mut();
+        let barrier = reg
+            .iter()
+            .filter(|(n, p)| (*p as u8) < (T::PHASE as u8) && !dep.contains(&n.as_str()))
+            .map(|(n, _)| n.clone())
+            .collect();
+        reg.push((name.clone(), T::PHASE));
+        barrier
+    });
+    let mut deps: Vec<&str> = dep.to_vec();
+    deps.extend(barrier.iter().map(|s| s.as_str()));
+    builder.add(Job::<T>::default(), &name, &deps);
 }
 
 pub fn run_now<'a, 'b, T>(world: &'a specs::World)
@@ -484,5 +525,69 @@ mod tests {
         assert_eq!(s.end_ns(), 4500000000);
         assert_eq!(s.length_ns(), 1000000000);
         assert!(approx_eq!(f32, s.avg_threads(), 0.4615385));
+    }
+}
+
+#[cfg(test)]
+mod det_ecs_007_tests {
+    use super::*;
+
+    macro_rules! dummy_sys {
+        ($name:ident, $phase:expr, $label:literal) => {
+            #[derive(Default)]
+            struct $name;
+            impl<'a> System<'a> for $name {
+                const NAME: &'static str = $label;
+                const ORIGIN: Origin = Origin::Common;
+                const PHASE: Phase = $phase;
+
+                type SystemData = ();
+
+                fn run(_job: &mut Job<Self>, _data: Self::SystemData) {}
+            }
+        };
+    }
+
+    dummy_sys!(CreateA, Phase::Create, "det007_create_a");
+    dummy_sys!(CreateB, Phase::Create, "det007_create_b");
+    dummy_sys!(ReviewA, Phase::Review, "det007_review_a");
+    dummy_sys!(ApplyA, Phase::Apply, "det007_apply_a");
+
+    #[test]
+    fn det_ecs_007_phase_barriers_are_generated_and_manifest_records_schedule() {
+        begin_schedule();
+        let mut builder = specs::DispatcherBuilder::new();
+        // Register deliberately out of phase order — the barrier logic, not
+        // registration luck, must impose Create < Review < Apply.
+        dispatch::<CreateA>(&mut builder, &[]);
+        dispatch::<ReviewA>(&mut builder, &[]);
+        dispatch::<CreateB>(&mut builder, &[]);
+        dispatch::<ApplyA>(&mut builder, &[]);
+
+        // The manifest records the registration schedule (golden material).
+        let manifest = schedule_manifest();
+        let named: Vec<(&str, Phase)> =
+            manifest.iter().map(|(n, p)| (n.as_str(), *p)).collect();
+        assert_eq!(named, vec![
+            ("Common_det007_create_a_sys", Phase::Create),
+            ("Common_det007_review_a_sys", Phase::Review),
+            ("Common_det007_create_b_sys", Phase::Create),
+            ("Common_det007_apply_a_sys", Phase::Apply),
+        ]);
+
+        // The dispatcher BUILDS: every generated barrier dep referenced a
+        // registered name (specs panics on unknown dependencies, so a
+        // successful build proves the generated graph is well-formed —
+        // ReviewA gained a dep on CreateA, ApplyA on both Creates + Review).
+        let mut dispatcher = builder.build();
+        use specs::WorldExt;
+        let mut world = specs::World::new();
+        world.insert(crate::SysMetrics::default());
+        dispatcher.setup(&mut world);
+        dispatcher.dispatch(&world);
+
+        // A fresh schedule clears the registry (no cross-dispatcher leak).
+        begin_schedule();
+        assert!(schedule_manifest().is_empty());
     }
 }

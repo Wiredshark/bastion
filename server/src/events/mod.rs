@@ -239,6 +239,8 @@ impl Server {
         span!(_guard, "create event dispatcher");
         // Run systems to handle events.
         // Create and run a dispatcher for ecs systems.
+        // DET-ECS-007: new dispatcher = new phase-barrier schedule.
+        common_ecs::begin_schedule();
         let mut dispatch_builder = DispatcherBuilder::new().with_pool(pools);
         register_event_systems(&mut dispatch_builder);
         dispatch_builder
