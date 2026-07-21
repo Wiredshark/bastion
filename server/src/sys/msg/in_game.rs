@@ -12,7 +12,7 @@ use common::{
     mounting::{Rider, VolumeRider},
     resources::{DeltaTime, PlayerPhysicsSetting, PlayerPhysicsSettings},
     slowjob::SlowJobPool,
-    terrain::{BlockKind, SpriteKind, TerrainGrid},
+    terrain::{Block, BlockKind, SpriteKind, TerrainGrid},
     uid::IdMaps,
     vol::ReadVol,
 };
@@ -47,10 +47,10 @@ pub type TerrainPersistenceData<'a> = core::marker::PhantomData<&'a mut ()>;
 // In such cases, we're okay putting them behind a mutex and penalizing the
 // system if they're actually used concurrently by lots of users.  Please do not
 // put less rare writes here, unless you want to serialize the system!
-struct RareWrites<'a, 'b> {
-    block_changes: &'b mut BlockChange,
-    _terrain_persistence: &'b mut TerrainPersistenceData<'a>,
-}
+// DET-ECS-015 (v5 deep-pass): RareWrites + its mutex are GONE - terrain
+// writes are now deferred per-client records applied in the sorted commit
+// phase (gather-sort-commit, same shape as DET-ECS-014), so lock-acquisition
+// order can never choose a same-cell winner.
 
 event_emitters! {
     struct Events[Emitters] {
@@ -78,7 +78,7 @@ impl Sys {
         force_update: Option<&&mut ForceUpdate>,
         skill_set: &mut Option<Cow<'_, SkillSet>>,
         healths: &ReadStorage<'_, Health>,
-        rare_writes: &parking_lot::Mutex<RareWrites<'_, '_>>,
+        terrain_writes: &mut Vec<(Vec3<i32>, Block)>,
         position: Option<&mut Pos>,
         spectating_entity: &mut Option<Option<common::uid::Uid>>,
         bastion_anchor: &mut Option<bool>,
@@ -206,16 +206,10 @@ impl Sys {
                                 .and_then(|_| terrain.get(pos).ok())
                         {
                             let new_block = old_block.into_vacant();
-                            // Take the rare writes lock as briefly as possible.
-                            let mut guard = rare_writes.lock();
-                            let _was_set = guard.block_changes.try_set(pos, new_block).is_some();
-                            #[cfg(feature = "persistent_world")]
-                            if _was_set
-                                && let Some(terrain_persistence) =
-                                    guard._terrain_persistence.as_mut()
-                            {
-                                terrain_persistence.set_block(pos, new_block);
-                            }
+                            // DET-ECS-015: deferred - applied in the sorted
+                            // commit phase (first writer in canonical client
+                            // order wins a contested cell).
+                            terrain_writes.push((pos, new_block));
                         }
                     }
                 }
@@ -233,16 +227,8 @@ impl Sys {
                                 .filter(|aabb| aabb.contains_point(pos))
                                 .is_some()
                         {
-                            // Take the rare writes lock as briefly as possible.
-                            let mut guard = rare_writes.lock();
-                            let _was_set = guard.block_changes.try_set(pos, new_block).is_some();
-                            #[cfg(feature = "persistent_world")]
-                            if _was_set
-                                && let Some(terrain_persistence) =
-                                    guard._terrain_persistence.as_mut()
-                            {
-                                terrain_persistence.set_block(pos, new_block);
-                            }
+                            // DET-ECS-015: deferred (see BreakBlock above).
+                            terrain_writes.push((pos, new_block));
                         }
                     }
                 }
@@ -845,12 +831,6 @@ impl<'a> System<'a> for Sys {
     ) {
         let time_for_vd_changes = Instant::now();
 
-        // NOTE: stdlib mutex is more than good enough on Linux and (probably) Windows,
-        // but not Mac.
-        let rare_writes = parking_lot::Mutex::new(RareWrites {
-            block_changes: &mut block_changes,
-            _terrain_persistence: &mut terrain_persistence,
-        });
 
         let player_physics_settings = &*player_physics_settings_;
         let mut deferred_updates = (
@@ -903,6 +883,7 @@ impl<'a> System<'a> for Sys {
                     let mut bastion_spawn = None;
                     let mut bastion_designations = Vec::new();
                     let mut bastion_inspects = Vec::new();
+                    let mut terrain_writes = Vec::new();
                     let _ = super::try_recv_all(client, 2, |client, msg| {
                         Self::handle_client_in_game_msg(
                             emitters,
@@ -916,7 +897,7 @@ impl<'a> System<'a> for Sys {
                             force_update.as_ref(),
                             &mut skill_set,
                             &healths,
-                            &rare_writes,
+                            &mut terrain_writes,
                             pos.as_deref_mut(),
                             &mut spectating_entity,
                             &mut bastion_anchor,
@@ -1073,15 +1054,17 @@ impl<'a> System<'a> for Sys {
                         bastion_spawn,
                         bastion_designations,
                         bastion_inspects_update,
+                        terrain_writes,
                     )
                 },
             )
             // NOTE: Would be nice to combine this with the map_init somehow, but I'm not sure if
             // that's possible.
-            .filter(|(_, x, y, z, w, v, d, i)| {
+            .filter(|(_, x, y, z, w, v, d, i, tw)| {
                 x.is_some() || y.is_some() || z.is_some() || w.is_some() || v.is_some()
                     || !d.is_empty()
                     || i.is_some()
+                    || !tw.is_empty()
             })
             // NOTE: I feel like we shouldn't actually need to allocate here, but hopefully this
             // doesn't turn out to be important as there shouldn't be that many connected clients.
@@ -1113,7 +1096,21 @@ impl<'a> System<'a> for Sys {
                 bastion_spawn_update,
                 bastion_designation_updates,
                 bastion_inspects_update,
+                terrain_writes,
             )| {
+                // DET-ECS-015: apply the deferred terrain writes in the
+                // SORTED commit order - same-cell conflicts resolve by the
+                // canonical client order (first writer wins via try_set),
+                // never by mutex-acquisition timing.
+                for (pos, block) in terrain_writes.drain(..) {
+                    let _was_set = block_changes.try_set(pos, block).is_some();
+                    #[cfg(feature = "persistent_world")]
+                    if _was_set
+                        && let Some(terrain_persistence) = terrain_persistence.as_mut()
+                    {
+                        terrain_persistence.set_block(pos, block);
+                    }
+                }
                 if let Some((entity, new_skill_set)) = skill_set_update {
                     // We know this exists, because we already iterated over it with the skillset
                     // lock taken, so we can ignore the error.
@@ -1319,21 +1316,20 @@ impl<'a> System<'a> for Sys {
                             // anchor for any emptied column so staged
                             // routing doesn't point at a ghost link.
                             let mut removed_any = false;
-                            {
-                                let mut guard = rare_writes.lock();
-                                for x in region.min.x..=region.max.x {
-                                    for y in region.min.y..=region.max.y {
-                                        for z in region.min.z..=region.max.z {
-                                            let p = vek::Vec3::new(x, y, z);
-                                            if let Ok(b) = terrain.get(p)
-                                                && b.get_sprite() == Some(SpriteKind::Ladder)
-                                            {
-                                                let vacant = b.into_vacant();
-                                                if guard.block_changes.try_set(p, vacant).is_some()
-                                                {
-                                                    removed_any = true;
-                                                }
-                                            }
+                            // DET-ECS-015: deferred writes; the removal
+                            // decision derives from the READ (ladder cells
+                            // present), no longer from winning a same-tick
+                            // try_set race - a vanishing-edge semantic shift
+                            // (contested-cell case) disclosed in the commit.
+                            for x in region.min.x..=region.max.x {
+                                for y in region.min.y..=region.max.y {
+                                    for z in region.min.z..=region.max.z {
+                                        let p = vek::Vec3::new(x, y, z);
+                                        if let Ok(b) = terrain.get(p)
+                                            && b.get_sprite() == Some(SpriteKind::Ladder)
+                                        {
+                                            terrain_writes.push((p, b.into_vacant()));
+                                            removed_any = true;
                                         }
                                     }
                                 }
