@@ -364,14 +364,23 @@ impl CharacterUpdater {
 
         // Collect any new updates, ignoring updates from a previous update that are
         // still pending completion
-        let existing_pending_actions = self
+        // T0.47 (master build order; T0-003): the batch drains a HashMap —
+        // sort by character id so SQL statement order (and any
+        // constraint/lock interaction) is deterministic, never
+        // process-seeded hash order.
+        let mut existing_pending_actions = self
             .pending_database_actions
             .iter_mut()
-            .filter_map(|(_, event)| event.take_new(batch_id));
+            .filter_map(|(character_id, event)| {
+                event.take_new(batch_id).map(|action| (*character_id, action))
+            })
+            .collect::<Vec<_>>();
+        existing_pending_actions.sort_unstable_by_key(|(character_id, _)| *character_id);
 
         // Combine the pending actions with the updates for logged in characters
         let pending_actions = existing_pending_actions
             .into_iter()
+            .map(|(_, action)| action)
             .chain(updates.map(|update| DatabaseActionKind::UpdateCharacter(Box::new(update))))
             .collect::<Vec<DatabaseActionKind>>();
 
