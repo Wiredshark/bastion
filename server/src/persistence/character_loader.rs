@@ -46,16 +46,13 @@ pub struct CharacterScreenResponse {
     pub response_kind: CharacterScreenResponseKind,
 }
 
-impl CharacterScreenResponse {
-    pub fn is_err(&self) -> bool {
-        matches!(
-            &self.response_kind,
-            CharacterScreenResponseKind::CharacterData(box Err(_))
-                | CharacterScreenResponseKind::CharacterList(Err(_))
-                | CharacterScreenResponseKind::CharacterCreation(Err(_))
-        )
-    }
-}
+// T1.6 (T1-001 packet): `CharacterScreenResponse::is_err()` was REMOVED —
+// it silently omitted the `CharacterEdit(Err(_))` variant, so a failed
+// character edit read as success and its transaction was committed (data
+// corruption). The commit decision now lives at each transaction site
+// (`execute_character_create`/`execute_character_edit`), keyed on the actual
+// typed Result, committing only Ok. Adding a response variant can no longer
+// silently bypass error handling.
 
 #[derive(Debug)]
 pub enum CharacterScreenResponseKind {

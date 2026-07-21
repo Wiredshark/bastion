@@ -474,23 +474,27 @@ fn execute_character_create(
 ) -> Result<CharacterUpdaterMessage, PersistenceError> {
     let mut transaction = connection.connection.transaction()?;
 
-    let response = CharacterScreenResponse {
-        target_entity: entity,
-        response_kind: CharacterScreenResponseKind::CharacterCreation(
-            super::character::create_character(
-                requesting_player_uuid,
-                &alias,
-                persisted_components,
-                &mut transaction,
-            ),
-        ),
-    };
-
-    if !response.is_err() {
+    // T1.6 (T1-001 packet): decide commit on the ACTUAL transaction result,
+    // not the old `response.is_err()` helper — that helper omitted the
+    // CharacterEdit variant and would COMMIT a failed edit (data
+    // corruption). Commit ONLY on Ok; the response is built from the same
+    // result afterward.
+    let result = super::character::create_character(
+        requesting_player_uuid,
+        &alias,
+        persisted_components,
+        &mut transaction,
+    );
+    if result.is_ok() {
         transaction.commit()?;
-    };
+    }
 
-    Ok(CharacterUpdaterMessage::CharacterScreenResponse(response))
+    Ok(CharacterUpdaterMessage::CharacterScreenResponse(
+        CharacterScreenResponse {
+            target_entity: entity,
+            response_kind: CharacterScreenResponseKind::CharacterCreation(result),
+        },
+    ))
 }
 
 fn execute_character_edit(
@@ -504,25 +508,27 @@ fn execute_character_edit(
 ) -> Result<CharacterUpdaterMessage, PersistenceError> {
     let mut transaction = connection.connection.transaction()?;
 
-    let response = CharacterScreenResponse {
-        target_entity: entity,
-        response_kind: CharacterScreenResponseKind::CharacterEdit(
-            super::character::edit_character(
-                editable_components,
-                trusted_change,
-                &mut transaction,
-                character_id,
-                requesting_player_uuid,
-                alias.as_deref(),
-            ),
-        ),
-    };
-
-    if !response.is_err() {
+    // T1.6: THE BUG THIS ROW TARGETS — a failed CharacterEdit was committed
+    // because `is_err()` never matched CharacterEdit(Err(_)). Commit ONLY on
+    // the actual Ok result.
+    let result = super::character::edit_character(
+        editable_components,
+        trusted_change,
+        &mut transaction,
+        character_id,
+        requesting_player_uuid,
+        alias.as_deref(),
+    );
+    if result.is_ok() {
         transaction.commit()?;
-    };
+    }
 
-    Ok(CharacterUpdaterMessage::CharacterScreenResponse(response))
+    Ok(CharacterUpdaterMessage::CharacterScreenResponse(
+        CharacterScreenResponse {
+            target_entity: entity,
+            response_kind: CharacterScreenResponseKind::CharacterEdit(result),
+        },
+    ))
 }
 
 impl Drop for CharacterUpdater {
