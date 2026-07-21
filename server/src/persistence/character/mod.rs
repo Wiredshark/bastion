@@ -210,7 +210,11 @@ pub fn load_character_data(
                 skills,
                 hash_val
         FROM    skill_group
-        WHERE   entity_id = ?1",
+        WHERE   entity_id = ?1
+        -- DET-PER-022 (v5 deep-pass, High): total ORDER BY. Without it SQLite
+        -- returns rows in an unspecified, storage-dependent order, so the
+        -- loaded skill-group vector was non-canonical run-to-run / cross-DB.
+        ORDER BY skill_group_kind",
     )?;
 
     let skill_group_data = stmt
@@ -1030,6 +1034,10 @@ fn get_pet_ids(
         SELECT  pet_id
         FROM    pet
         WHERE   character_id = ?1
+        -- DET-PER-023 (v5 deep-pass, High): total ORDER BY. The returned
+        -- pet-id order feeds downstream assignment; without ORDER BY it was
+        -- storage-order dependent.
+        ORDER BY pet_id
     ")?;
 
     #[expect(clippy::needless_question_mark)]
