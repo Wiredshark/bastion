@@ -109,6 +109,55 @@ impl PhaseStateHash {
     }
 }
 
+/// T0.58 (T0-004 packet, step 8 family): the versioned schema reference
+/// every recorder/hash record family carries. Published schemas are
+/// immutable; event-kind ids are never reused; unknown kinds are preserved
+/// opaque by consumers.
+///
+/// Version discipline (the packet's rules): additive field = MINOR;
+/// rename-with-transform = MINOR; meaning/units/identity change = MAJOR;
+/// doc or transform bugfix = PATCH.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct RecorderSchemaRef {
+    /// Family ordinal (append-only registry; a family id is never reused).
+    pub family: u16,
+    pub major: u16,
+    pub minor: u16,
+    pub patch: u16,
+}
+
+impl RecorderSchemaRef {
+    /// Whether a reader built for `self` can consume a record of `other`:
+    /// same family, same major, reader minor >= record minor not required
+    /// (additive fields are skippable) — majors must match exactly.
+    pub fn can_read(self, other: RecorderSchemaRef) -> bool {
+        self.family == other.family && self.major == other.major
+    }
+}
+
+#[cfg(test)]
+mod t0_58_tests {
+    use super::RecorderSchemaRef;
+
+    #[test]
+    fn t0_58_compat_is_family_and_major_bound() {
+        let reader = RecorderSchemaRef {
+            family: 3,
+            major: 2,
+            minor: 5,
+            patch: 0,
+        };
+        let mut record = reader;
+        record.minor = 9; // additive fields: readable (skippable)
+        assert!(reader.can_read(record));
+        record.major = 3; // meaning change: unreadable without a transform
+        assert!(!reader.can_read(record));
+        record.major = 2;
+        record.family = 4; // families never alias
+        assert!(!reader.can_read(record));
+    }
+}
+
 #[cfg(test)]
 mod t0_53_tests {
     use super::*;
