@@ -2038,6 +2038,122 @@ mod tests {
         );
     }
 
+    /// T0.25 (master build order; Run 12; Sonnet's validation-first ruling):
+    /// the HANDLER REGISTRY cross-check — every event type in the
+    /// `server_events!` universe must be consumed by EXACTLY ONE declared
+    /// delivery class: the Apply dispatcher (`event_dispatch::<T>`
+    /// registrations, parsed) or the SERIAL TAIL (declared golden set,
+    /// cross-checked as the exact complement). Drift in any of the three
+    /// surfaces (universe, Apply set, serial set) fails here at test time;
+    /// the runtime exactly-once check (T0.26) remains the execution-level
+    /// backstop. Full generation of bus creation from one declaration =
+    /// the endpoint, deferred like T0.24/T0.27's.
+    #[test]
+    fn t0_25_event_registry_partition_is_exact() {
+        // Universe: the server_events! macro list.
+        let src = repo_text("server/src/events/event_types.rs");
+        let body = src
+            .split("macro_rules! server_events")
+            .nth(1)
+            .and_then(|tail| tail.split("$macro! {").nth(1))
+            .and_then(|tail| tail.split('}').next())
+            .expect("server_events macro body");
+        let universe: Vec<String> = body
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| {
+                !line.is_empty()
+                    && line
+                        .chars()
+                        .next()
+                        .is_some_and(|character| character.is_ascii_uppercase())
+                    && line.ends_with("Event")
+            })
+            .map(|line| line.to_string())
+            .collect();
+        assert!(
+            universe.len() >= 60,
+            "server_events! parse collapsed ({} types) — fix the parser before trusting the \
+             partition",
+            universe.len()
+        );
+
+        // Apply set: every event_dispatch::<T> registration.
+        let mut apply: Vec<String> = Vec::new();
+        for entry in std::fs::read_dir(repo_root().join("server/src/events")).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|extension| extension != "rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            let mut rest = text.as_str();
+            while let Some(start) = rest.find("event_dispatch::<") {
+                rest = &rest[start + "event_dispatch::<".len()..];
+                if let Some(end) = rest.find('>') {
+                    let name = rest[..end].rsplit("::").next().unwrap_or("").to_string();
+                    apply.push(name);
+                }
+            }
+        }
+        apply.sort();
+        apply.dedup();
+
+        // The declared SERIAL TAIL set — the golden complement.
+        let mut serial: Vec<&str> = vec![
+            "ArcingEvent",
+            "ChatEvent",
+            "ClientDisconnectEvent",
+            "ClientDisconnectWithoutPersistenceEvent",
+            "CommandEvent",
+            "CreateAuraEntityEvent",
+            "CreateItemDropEvent",
+            "CreateNpcEvent",
+            "CreateNpcGroupEvent",
+            "CreateObjectEvent",
+            "CreatePoolEvent",
+            "CreateShipEvent",
+            "CreateSpecialEntityEvent",
+            "DeleteCharacterEvent",
+            "DeleteEvent",
+            "ExitIngameEvent",
+            "InitializeCharacterEvent",
+            "InitializeSpectatorEvent",
+            "MountEvent",
+            "PossessEvent",
+            "ProcessTradeActionEvent",
+            "SetBattleModeEvent",
+            "ShockwaveEvent",
+            "ShootEvent",
+            "StartInteractionEvent",
+            "SummonBeamPillarsEvent",
+            "TamePetEvent",
+            "ThrowEvent",
+            "TransformEvent",
+            "UpdateCharacterDataEvent",
+        ];
+        serial.sort_unstable();
+
+        let mut derived_serial: Vec<&str> = universe
+            .iter()
+            .filter(|name| !apply.contains(name))
+            .map(String::as_str)
+            .collect();
+        derived_serial.sort_unstable();
+        assert_eq!(
+            derived_serial, serial,
+            "event delivery partition drifted — every universe type must be consumed by \
+             exactly one class (left = universe minus Apply registrations, right = the \
+             declared serial-tail golden set)"
+        );
+        // No type may be in BOTH classes.
+        for name in &serial {
+            assert!(
+                !apply.iter().any(|a| a == name),
+                "`{name}` is registered in BOTH the Apply dispatcher and the serial tail"
+            );
+        }
+    }
+
     /// T0.27-lite (master build order; Run 12): the SERVER TICK PHASES,
     /// named and frozen — direct mutation (the dispatcher inside
     /// `state.tick`) → event application (`handle_events`, incl. the serial
