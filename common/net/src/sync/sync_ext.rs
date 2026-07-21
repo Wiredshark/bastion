@@ -111,9 +111,18 @@ impl WorldSyncExt for specs::World {
         let EntitySyncPackage {
             sync_tick: _,
             sequence: _,
-            created_entities,
-            deleted_entities,
+            mut created_entities,
+            mut deleted_entities,
         } = package;
+
+        // DET-NET-040 (v6 deep-pass, High): apply create/delete in canonical
+        // Uid order, not wire arrival order. Entity creation allocates specs
+        // Entity indices + Uid mappings, so applying in arrival order made the
+        // client's local entity allocation a function of the (non-canonical)
+        // send/region order. Sorting by Uid makes it a pure function of the
+        // Uid set — same client-side allocation regardless of packet order.
+        created_entities.sort_unstable_by_key(|uid| uid.0);
+        deleted_entities.sort_unstable_by_key(|uid| uid.0);
 
         // Attempt to create entities
         created_entities.into_iter().for_each(|uid| {
