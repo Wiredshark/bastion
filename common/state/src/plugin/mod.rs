@@ -58,8 +58,22 @@ fn cache_file_name(
 pub fn store_server_plugin(base_dir: &Path, data: Vec<u8>) -> Result<PathBuf, std::io::Error> {
     let shasum = compute_hash(data.as_slice());
     let result = cache_file_name(base_dir.to_path_buf(), &shasum, true)?;
-    let mut file = std::fs::File::create(result.as_path())?;
-    file.write_all(data.as_slice())?;
+    // DET-AST-030 (v6 deep-pass, High): atomic cache admission. The old code
+    // wrote the payload straight into the hash-named cache file, so a crash or
+    // partial write left an invalid entry under a semantic-looking name that
+    // `find_cached` would later trust as a valid plugin — a corrupt,
+    // non-canonical plugin-load input. Write to a temp sibling, flush it
+    // durably, then atomically rename into place: `find_cached` only ever
+    // observes a complete file whose content hashes to its own name (the name
+    // is `compute_hash(data)` and we wrote exactly `data`, so raw + semantic
+    // identity are verified by construction).
+    let tmp = result.with_extension("partial");
+    {
+        let mut file = std::fs::File::create(tmp.as_path())?;
+        file.write_all(data.as_slice())?;
+        file.sync_all()?;
+    }
+    std::fs::rename(tmp.as_path(), result.as_path())?;
     Ok(result)
 }
 
