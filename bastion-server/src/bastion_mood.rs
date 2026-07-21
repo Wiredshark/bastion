@@ -89,7 +89,12 @@ pub fn thought_sum(
     values: &BTreeMap<common::bastion::Value, i8>,
     neurotic: bool,
 ) -> f32 {
-    chronicle
+    // T0.40 (T0-003): the event sequence is already stable (chronicle
+    // append order); the ACCUMULATION is f64 with Neumaier compensation so
+    // long chronicles cannot drift mood through f32 rounding.
+    let mut sum = 0.0f64;
+    let mut compensation = 0.0f64;
+    for term in chronicle
         .events()
         .filter(|e| e.actors.contains(&actor))
         .filter_map(|e| {
@@ -107,5 +112,15 @@ pub fn thought_sum(
                 care * common::comp::bastion::thought_decay(*mag, e.at_tod.0, now, *life)
             })
         })
-        .sum()
+    {
+        let term = f64::from(term);
+        let tentative = sum + term;
+        compensation += if sum.abs() >= term.abs() {
+            (sum - tentative) + term
+        } else {
+            (term - tentative) + sum
+        };
+        sum = tentative;
+    }
+    (sum + compensation) as f32
 }
