@@ -207,11 +207,15 @@ pub fn is_dressed_as_pirate(entity: EcsEntity, read_data: &ReadData) -> bool {
 }
 
 pub fn get_attacker(entity: EcsEntity, read_data: &ReadData) -> Option<EcsEntity> {
+    // DET-AIT-003 (v8 npc-combat-targeting, Critical): retaliate against the
+    // canonical most-recent damager (a pure function of the damage set), not
+    // `last_change.by` — the latter is whichever HealthChangeEvent was applied
+    // last this tick, so with multiple same-tick attackers the retaliation
+    // target rode event-processing order.
     read_data
         .healths
         .get(entity)
-        .filter(|health| health.last_change.amount < 0.0)
-        .and_then(|health| health.last_change.damage_by())
+        .and_then(|health| health.canonical_recent_attacker())
         .and_then(|damage_contributor| get_entity_by_id(damage_contributor.uid(), read_data))
 }
 

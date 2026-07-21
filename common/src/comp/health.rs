@@ -198,6 +198,22 @@ impl Health {
             .map(|(contrib, (_, time))| (contrib.uid(), *time))
     }
 
+    /// DET-AIT-003 (v8 npc-combat-targeting, Critical): the canonical
+    /// most-recent damage contributor, selected purely from the recorded
+    /// contributor set by (last damage time, then Uid). Retaliation/defense
+    /// targeting must use this rather than `last_change.by`, which is the
+    /// attacker of whichever `HealthChangeEvent` happened to be processed LAST
+    /// this tick — i.e. event-processing-order dependent. This is a pure
+    /// function of the damage set: same set, same attacker, regardless of the
+    /// order the damage events were applied. Damage times are non-negative sim
+    /// time, so `f64::to_bits` orders them correctly.
+    pub fn canonical_recent_attacker(&self) -> Option<DamageContributor> {
+        self.damage_contributors
+            .iter()
+            .max_by_key(|(contrib, (_, time))| (time.0.to_bits(), contrib.uid().0))
+            .map(|(contrib, _)| *contrib)
+    }
+
     pub fn should_die(&self) -> bool { self.current == 0 }
 
     pub fn kill(&mut self) {
