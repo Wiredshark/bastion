@@ -294,12 +294,23 @@ impl ServerEvent for MineBlockEvent {
             uids,
         ): Self::SystemData<'_>,
     ) {
-        use rand::RngExt;
-        let mut rng = rand::rng();
+        use rand::{RngExt, SeedableRng};
         let mut create_item_drop_emitter = create_item_drop_events.emitter();
         let mut sound_event_emitter = sound_events.emitter();
         let mut outcome_emitter = outcomes.emitter();
         for ev in events {
+            // DET-RNG-006 (determinism audit): the mine-block loot roll +
+            // drop scatter drew from ONE handler-level OS-entropy rng, so
+            // draws attached to events in arrival order. Per-event stream
+            // keyed by (mined cell, sim-time): deterministic and
+            // order-independent.
+            let mut rng = rand::rngs::StdRng::seed_from_u64(
+                (ev.pos.x as u32 as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                    ^ (ev.pos.y as u32 as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+                    ^ (ev.pos.z as u32 as u64).wrapping_mul(0x1656_67B1_9E37_79F9)
+                    ^ time.0.to_bits()
+                    ^ 0x313E_0021,
+            );
             if block_change.can_set_block(ev.pos) {
                 let block = terrain.get(ev.pos).ok().copied();
                 if let Some(mut block) =

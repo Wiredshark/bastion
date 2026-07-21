@@ -167,8 +167,6 @@ impl ServerEvent for InventoryManipEvent {
                 )
             })
         };
-        let mut rng = rand::rng();
-
         let mut dropped_items = Vec::new();
 
         for InventoryManipEvent(entity, manip) in events {
@@ -180,6 +178,19 @@ impl ServerEvent for InventoryManipEvent {
                     entity
                 );
                 continue;
+            };
+            // DET-RNG-006 (determinism audit): the consumable-effect choice
+            // (Effects::Any .choose) drew from one handler-level OS-entropy
+            // rng, so draws attached to events in arrival order. Per-event
+            // stream keyed by (actor uid, sim-time): deterministic and
+            // order-independent.
+            let mut rng = {
+                use rand::SeedableRng;
+                rand::rngs::StdRng::seed_from_u64(
+                    uid.0.get().wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                        ^ data.time.0.to_bits()
+                        ^ 0x13FE_0022,
+                )
             };
             if data.trades.in_immutable_trade(uid) {
                 // manipulating the inventory can mutate the trade
