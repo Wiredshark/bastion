@@ -120,22 +120,138 @@ impl<K: Ord + Clone, T> DeficitRoundRobin<K, T> {
     /// (the deterministic schedule). Nothing is dropped — unserved items
     /// stay FIFO for the next round.
     pub fn run_round(&mut self) -> Vec<(K, T)> {
+        let (served, _spent) = self.run_round_bounded(u64::MAX);
+        served
+    }
+
+    /// T0.66: a round bounded by a total semantic-unit `budget` — the
+    /// hierarchical layer caps a domain's per-round spend this way. Returns
+    /// (served items, units spent). A class stops mid-service once the
+    /// shared budget is exhausted; its deficit carries, nothing is dropped.
+    pub fn run_round_bounded(&mut self, budget: u64) -> (Vec<(K, T)>, u64) {
         let mut served = Vec::new();
+        let mut spent = 0u64;
         for (key, class) in self.classes.iter_mut() {
             if class.backlog.is_empty() {
                 // An idle class does not hoard deficit.
                 class.deficit = 0;
                 continue;
             }
-            class.deficit += class.quantum;
+            class.deficit = class.deficit.saturating_add(class.quantum);
             while let Some((cost, _)) = class.backlog.front() {
-                if *cost <= class.deficit {
+                if *cost <= class.deficit && spent + *cost <= budget {
                     class.deficit -= *cost;
+                    spent += *cost;
                     let (_, item) = class.backlog.pop_front().expect("front just checked");
                     served.push((key.clone(), item));
                 } else {
                     break;
                 }
+            }
+        }
+        (served, spent)
+    }
+}
+
+/// T0.66 (master build order; T0-004 packet, step 12): the six scheduling
+/// domains — REUSED VERBATIM from the T0.12 dispatcher-manifest groupings
+/// (zero new taxonomy, Fork 2 ruling). Global budget → these domain
+/// budgets → class queues → stable owner queues.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum SchedulingDomain {
+    Path,
+    Events,
+    Jobs,
+    Rtsim,
+    Terrain,
+    PersistenceApply,
+}
+
+/// One domain's budget policy + its inner (class, owner) DRR.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct DomainBudget<T> {
+    /// Semantic units this domain may spend per global round. DEFAULTS to
+    /// `u64::MAX` (unbounded) — today's behavior, no throttling; tuning is
+    /// deferred to a real fixture (Fork 2 ruling).
+    quantum: u64,
+    /// The DRR over (class id, stable owner id) within the domain.
+    inner: DeficitRoundRobin<(u32, u64), T>,
+}
+
+/// T0.66: hierarchical DRR — global budget distributed across the six
+/// domains (sorted order), each domain's grant capping its inner
+/// (class, owner) DRR round. Wall-duration telemetry is diagnostic/host-
+/// safety only and NEVER decides what committed here.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HierarchicalDrr<T> {
+    domains: BTreeMap<SchedulingDomain, DomainBudget<T>>,
+    /// Total semantic units across all domains per round; `u64::MAX`
+    /// (unbounded) by default.
+    global_quantum: u64,
+}
+
+impl<T> Default for HierarchicalDrr<T> {
+    fn default() -> Self {
+        Self {
+            domains: BTreeMap::new(),
+            global_quantum: u64::MAX,
+        }
+    }
+}
+
+impl<T> HierarchicalDrr<T> {
+    pub fn set_global_quantum(&mut self, quantum: u64) { self.global_quantum = quantum; }
+
+    /// Declare a domain with its per-round quantum (unbounded = u64::MAX).
+    pub fn declare_domain(&mut self, domain: SchedulingDomain, quantum: u64) {
+        self.domains
+            .entry(domain)
+            .and_modify(|budget| budget.quantum = quantum)
+            .or_insert(DomainBudget {
+                quantum,
+                inner: DeficitRoundRobin::default(),
+            });
+    }
+
+    /// Enqueue into a domain's (class, owner) queue (declaring the domain
+    /// unbounded + the inner class with `default_quantum` if new).
+    pub fn enqueue(
+        &mut self,
+        domain: SchedulingDomain,
+        class: u32,
+        owner: u64,
+        cost: u64,
+        item: T,
+        default_quantum: u64,
+    ) {
+        self.domains
+            .entry(domain)
+            .or_insert(DomainBudget {
+                quantum: u64::MAX,
+                inner: DeficitRoundRobin::default(),
+            })
+            .inner
+            .enqueue((class, owner), cost, item, default_quantum);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.domains.values().all(|budget| budget.inner.is_empty())
+    }
+
+    /// Run one global round: domains in sorted order, each granted
+    /// min(its quantum, remaining global budget), running its inner DRR
+    /// bounded by that grant. Returns served items as
+    /// (domain, (class, owner), item) in the deterministic schedule order.
+    #[expect(clippy::type_complexity, reason = "the hierarchical service tuple")]
+    pub fn run_round(&mut self) -> Vec<(SchedulingDomain, (u32, u64), T)> {
+        let mut served = Vec::new();
+        let mut global_remaining = self.global_quantum;
+        for (domain, budget) in self.domains.iter_mut() {
+            let grant = budget.quantum.min(global_remaining);
+            let (items, spent) = budget.inner.run_round_bounded(grant);
+            global_remaining = global_remaining.saturating_sub(spent);
+            for (key, item) in items {
+                served.push((*domain, key, item));
             }
         }
         served
@@ -189,6 +305,45 @@ mod t0_65_tests {
         assert_eq!(drr.run_round(), Vec::<(u8, &str)>::new()); // deficit 2
         assert_eq!(drr.run_round(), Vec::<(u8, &str)>::new()); // deficit 4
         assert_eq!(drr.run_round(), vec![(1, "big")]); // deficit 6 >= 5
+        assert!(drr.is_empty());
+    }
+
+    #[test]
+    fn t0_66_unbounded_default_serves_everything_deterministically() {
+        let mut drr: HierarchicalDrr<&str> = HierarchicalDrr::default();
+        // Enqueue across two domains, all unbounded — everything serves in
+        // sorted domain order, one round.
+        drr.enqueue(SchedulingDomain::Jobs, 0, 1, 1, "job-a", u64::MAX);
+        drr.enqueue(SchedulingDomain::Path, 0, 1, 1, "path-a", u64::MAX);
+        drr.enqueue(SchedulingDomain::Jobs, 0, 2, 1, "job-b", u64::MAX);
+        let served = drr.run_round();
+        // Path < Jobs in the enum order; within Jobs, owner 1 then 2 (stable key).
+        assert_eq!(
+            served,
+            vec![
+                (SchedulingDomain::Path, (0, 1), "path-a"),
+                (SchedulingDomain::Jobs, (0, 1), "job-a"),
+                (SchedulingDomain::Jobs, (0, 2), "job-b"),
+            ]
+        );
+        assert!(drr.is_empty());
+    }
+
+    #[test]
+    fn t0_66_global_budget_caps_and_carries_never_drops() {
+        let mut drr: HierarchicalDrr<&str> = HierarchicalDrr::default();
+        drr.set_global_quantum(2); // only 2 semantic units per round
+        drr.declare_domain(SchedulingDomain::Path, u64::MAX);
+        drr.enqueue(SchedulingDomain::Path, 0, 1, 1, "p1", u64::MAX);
+        drr.enqueue(SchedulingDomain::Path, 0, 2, 1, "p2", u64::MAX);
+        drr.enqueue(SchedulingDomain::Path, 0, 3, 1, "p3", u64::MAX);
+        // Round 1: budget 2 → p1, p2. p3 carries (never dropped).
+        let round1 = drr.run_round();
+        assert_eq!(round1.len(), 2);
+        assert!(!drr.is_empty());
+        // Round 2: p3 serves.
+        let round2 = drr.run_round();
+        assert_eq!(round2, vec![(SchedulingDomain::Path, (0, 3), "p3")]);
         assert!(drr.is_empty());
     }
 }
