@@ -783,49 +783,67 @@ impl WorldSim {
 
         info!("Starting world generation");
 
-        // NOTE: Changing order will significantly change WorldGen, so try not to!
+        // RNG-P3-031 (determinism audit, DOMAIN ROOT): every noise field's
+        // seed derives INDEPENDENTLY from (world seed, generator name) via
+        // the shared DomainHasher — the old sequential `rng.random()` draws
+        // off one parent cursor made every generator's seed depend on
+        // INITIALIZER ORDER (the old NOTE warned "changing order will
+        // significantly change WorldGen"). Now adding/removing/reordering a
+        // field never reshuffles the others: each seed is a pure function of
+        // its name. One-time worldgen re-pin (still fully deterministic per
+        // world seed — just different terrain than the old derivation).
+        let noise_seed = |name: &str| -> u32 {
+            let mut h = common::state_hash::DomainHasher::new(
+                "bastion/domain/worldgen-noise/v1/sha256",
+            );
+            h.field(&seed.to_le_bytes());
+            h.field(name.as_bytes());
+            u32::from_le_bytes(h.finish().0[..4].try_into().expect("sha256 >= 4 bytes"))
+        };
         let gen_ctx = GenCtx {
-            turb_x_nz: SuperSimplex::new(rng.random()),
-            turb_y_nz: SuperSimplex::new(rng.random()),
-            chaos_nz: RidgedMulti::new(rng.random()).set_octaves(7).set_frequency(
-                RidgedMulti::<Perlin>::DEFAULT_FREQUENCY * (5_000.0 / continent_scale),
-            ),
-            hill_nz: SuperSimplex::new(rng.random()),
-            alt_nz: util::HybridMulti::new(rng.random())
+            turb_x_nz: SuperSimplex::new(noise_seed("turb_x")),
+            turb_y_nz: SuperSimplex::new(noise_seed("turb_y")),
+            chaos_nz: RidgedMulti::new(noise_seed("chaos"))
+                .set_octaves(7)
+                .set_frequency(
+                    RidgedMulti::<Perlin>::DEFAULT_FREQUENCY * (5_000.0 / continent_scale),
+                ),
+            hill_nz: SuperSimplex::new(noise_seed("hill")),
+            alt_nz: util::HybridMulti::new(noise_seed("alt"))
                 .set_octaves(8)
                 .set_frequency(10_000.0 / continent_scale)
                 // persistence = lacunarity^(-(1.0 - fractal increment))
                 .set_lacunarity(util::HybridMulti::<Perlin>::DEFAULT_LACUNARITY)
                 .set_persistence(util::HybridMulti::<Perlin>::DEFAULT_LACUNARITY.powi(-1))
                 .set_offset(0.0),
-            temp_nz: Fbm::new(rng.random())
+            temp_nz: Fbm::new(noise_seed("temp"))
                 .set_octaves(6)
                 .set_persistence(0.5)
                 .set_frequency(1.0 / (((1 << 6) * 64) as f64))
                 .set_lacunarity(2.0),
 
-            small_nz: BasicMulti::new(rng.random()).set_octaves(2),
-            rock_nz: HybridMulti::new(rng.random()).set_persistence(0.3),
-            tree_nz: BasicMulti::new(rng.random())
+            small_nz: BasicMulti::new(noise_seed("small")).set_octaves(2),
+            rock_nz: HybridMulti::new(noise_seed("rock")).set_persistence(0.3),
+            tree_nz: BasicMulti::new(noise_seed("tree"))
                 .set_octaves(12)
                 .set_persistence(0.75),
-            _cave_0_nz: SuperSimplex::new(rng.random()),
-            _cave_1_nz: SuperSimplex::new(rng.random()),
+            _cave_0_nz: SuperSimplex::new(noise_seed("cave_0")),
+            _cave_1_nz: SuperSimplex::new(noise_seed("cave_1")),
 
-            structure_gen: StructureGen2d::new(rng.random(), 24, 10),
-            _big_structure_gen: StructureGen2d::new(rng.random(), 768, 512),
-            _region_gen: StructureGen2d::new(rng.random(), 400, 96),
-            humid_nz: Billow::new(rng.random())
+            structure_gen: StructureGen2d::new(noise_seed("structure"), 24, 10),
+            _big_structure_gen: StructureGen2d::new(noise_seed("big_structure"), 768, 512),
+            _region_gen: StructureGen2d::new(noise_seed("region"), 400, 96),
+            humid_nz: Billow::new(noise_seed("humid"))
                 .set_octaves(9)
                 .set_persistence(0.4)
                 .set_frequency(0.2),
 
-            _fast_turb_x_nz: FastNoise::new(rng.random()),
-            _fast_turb_y_nz: FastNoise::new(rng.random()),
+            _fast_turb_x_nz: FastNoise::new(noise_seed("fast_turb_x")),
+            _fast_turb_y_nz: FastNoise::new(noise_seed("fast_turb_y")),
 
-            _town_gen: StructureGen2d::new(rng.random(), 2048, 1024),
-            river_seed: RandomField::new(rng.random()),
-            rock_strength_nz: Fbm::new(rng.random())
+            _town_gen: StructureGen2d::new(noise_seed("town"), 2048, 1024),
+            river_seed: RandomField::new(noise_seed("river")),
+            rock_strength_nz: Fbm::new(noise_seed("rock_strength"))
                 .set_octaves(10)
                 .set_lacunarity(rock_lacunarity)
                 // persistence = lacunarity^(-(1.0 - fractal increment))
@@ -835,7 +853,7 @@ impl WorldSim {
                     1.0 * (5_000.0 / continent_scale)
                         / (2.0 * TerrainChunkSize::RECT_SIZE.x as f64 * 2.0.powi(10 - 1)),
                 ),
-            uplift_nz: util::Worley::new(rng.random())
+            uplift_nz: util::Worley::new(noise_seed("uplift"))
                 .set_frequency(1.0 / (TerrainChunkSize::RECT_SIZE.x as f64 * uplift_scale))
                 .set_distance_function(distance_functions::euclidean),
         };
