@@ -59,6 +59,7 @@ pub mod content_manifest;
 pub mod run_equivalence;
 pub mod state_hash;
 pub mod event;
+pub mod feature_protocol;
 pub mod explosion;
 pub mod figure;
 pub mod generation;
