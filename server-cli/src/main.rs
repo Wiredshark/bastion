@@ -59,6 +59,11 @@ fn main() -> io::Result<()> {
     let noninteractive = app.non_interactive;
     let no_auth = app.no_auth;
     let sql_log_mode = app.sql_log_mode;
+    // bastion (DET-CLK-006 cert): captured early as Copy values so the loop can
+    // read them after `app.command` is (partially) moved later.
+    let det_perturb = app.det_perturb;
+    let det_ticks = app.det_ticks;
+    let det_sleep_ms = app.det_sleep_ms;
 
     // noninteractive implies basic
     let basic = basic || noninteractive;
@@ -129,6 +134,18 @@ fn main() -> io::Result<()> {
     // Apply no_auth modifier to the settings
     if no_auth {
         server_settings.auth_server_address = None;
+    }
+
+    // bastion (DET-CLK-006 cert): in --det-perturb mode, pin the world seed and
+    // deterministic worldgen so the boot is reproducible. The fingerprint emitted
+    // below is over the master CLOCK (TimeOfDay/Time), which advances purely by the
+    // authoritative tick dt — so under the DET-CLK-006 fixed-step fix it is
+    // wall-clock-invariant regardless of rtsim/worldgen entropy. The ONLY variable
+    // across a --det-perturb matrix is the injected per-tick wall-clock sleep, so an
+    // identical fingerprint across sleeps IS the empirical proof the fix holds.
+    if det_perturb {
+        common::enable_deterministic_worldgen();
+        server_settings.world_seed = 1337;
     }
 
     // Relative to data_dir
@@ -315,6 +332,33 @@ fn server_loop(
         };
 
         tick_no += 1;
+        // bastion (DET-CLK-006 cert): bounded deterministic soak + wall-clock
+        // perturbation. After det_ticks authoritative ticks, emit the master-clock
+        // fingerprint (TimeOfDay/Time — advanced purely by the fixed tick dt) and
+        // exit; inject det_sleep_ms before each tick to simulate host load. An
+        // identical fingerprint across the --det-sleep-ms matrix proves the fixed-
+        // step conversion (wall-clock cannot move authoritative sim time).
+        if det_perturb {
+            if tick_no > det_ticks {
+                let ecs = server.state().ecs();
+                let tod = ecs.read_resource::<common::resources::TimeOfDay>().0;
+                let time = ecs.read_resource::<common::resources::Time>().0;
+                let mut h =
+                    common::state_hash::DomainHasher::new("bastion/det-clk-perturb/v1/sha256");
+                h.field(&tod.to_bits().to_le_bytes());
+                h.field(&time.to_bits().to_le_bytes());
+                let fp = h.finish();
+                println!(
+                    "DET-CLK-FINGERPRINT: {{\"ticks\":{},\"sleep_ms\":{},\"time_of_day\":{},\
+                     \"sim_time\":{},\"fingerprint\":{:?}}}",
+                    det_ticks, det_sleep_ms, tod, time, fp.0
+                );
+                break 'outer;
+            }
+            if det_sleep_ms > 0 {
+                std::thread::sleep(Duration::from_millis(det_sleep_ms));
+            }
+        }
         // Terminate the server if instructed to do so by the shutdown coordinator
         if shutdown_coordinator.check(&mut server, &settings, tick_no) {
             break;

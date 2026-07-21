@@ -150,6 +150,20 @@ pub struct ArgvApp {
     #[arg(default_value_t, long, short, value_parser = clap::value_parser!(SqlLogMode))]
     /// Enables SQL logging
     pub sql_log_mode: SqlLogMode,
+    /// bastion (DET-CLK-006 cert): run a bounded DETERMINISTIC tick soak with an
+    /// injected per-tick wall-clock sleep, then print an authoritative-state
+    /// fingerprint and exit. The fingerprint must be byte-identical across every
+    /// `--det-sleep-ms` perturbation — the empirical proof that the fixed-step
+    /// tick conversion holds (host load / wall-clock cannot move sim state).
+    #[arg(long)]
+    pub det_perturb: bool,
+    /// Number of authoritative ticks to run in `--det-perturb` mode.
+    #[arg(long, default_value_t = 300)]
+    pub det_ticks: u64,
+    /// Wall-clock sleep (ms) injected before each tick in `--det-perturb` mode
+    /// (simulates host load / scheduling jitter perturbing the loop cadence).
+    #[arg(long, default_value_t = 0)]
+    pub det_sleep_ms: u64,
     #[command(subcommand)]
     pub command: Option<ArgvCommand>,
 }
