@@ -429,7 +429,12 @@ pub fn modular_weapon(
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RecipeBookManifest {
-    recipes: HashMap<String, Recipe>,
+    // DET-CRF-005 (v8 crafting): BTreeMap, not HashMap. Recipe enumeration
+    // (`iter`, `keys`, `get_available`) drives the recipe list order, and this
+    // manifest is serialized to clients in ServerInit::GameSync — a HashMap
+    // made both the enumeration order and the wire bytes ride the process hash
+    // seed. Keyed by recipe name; BTreeMap makes both canonical by construction.
+    recipes: std::collections::BTreeMap<String, Recipe>,
 }
 
 impl RecipeBookManifest {
