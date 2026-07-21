@@ -576,10 +576,17 @@ fn pirate(is_leader: bool) -> impl Action<DefaultState> {
                                 })
                             })
                         })
-                        .min_by_key(|(_, site)| {
-                            site.wpos
-                                .as_::<i64>()
-                                .distance_squared(ctx.npc.wpos.xy().as_())
+                        // DET-MIG-001 (v8 npc-migration, High): tie-break the
+                        // nearest-site home search by site id, so an
+                        // equal-distance choice is a pure function of the site
+                        // set rather than iteration order.
+                        .min_by_key(|(site_id, site)| {
+                            (
+                                site.wpos
+                                    .as_::<i64>()
+                                    .distance_squared(ctx.npc.wpos.xy().as_()),
+                                *site_id,
+                            )
                         })
                 {
                     ctx.controller.set_new_home(site);
@@ -600,7 +607,11 @@ fn adventure() -> impl Action<DefaultState> {
                     // t0.6-exempt: one-shot site-subset filter
                     && ctx.rng.random_bool(0.25)
             })
-            .min_by_key(|(_, site)| site.wpos.as_().distance(ctx.npc.wpos.xy()) as i32)
+            // DET-MIG-001 (v8 npc-migration, High): tie-break the adventure
+            // destination search by site id (canonical on equal distance).
+            .min_by_key(|(site_id, site)| {
+                (site.wpos.as_().distance(ctx.npc.wpos.xy()) as i32, *site_id)
+            })
             .map(|(site_id, _)| site_id)
         {
             let wait_time = if matches!(ctx.npc.profession(), Some(Profession::Merchant)) {
@@ -900,7 +911,11 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
                 // Only select sites that are less densely populated than our own
                 .filter(|(_, site, houses)| (site.population.len() as f32 / *houses as f32) < home_pop_ratio)
                 // Find the closest of the candidate sites
-                .min_by_key(|(_, site, _)| site.wpos.as_().distance(ctx.npc.wpos.xy()) as i32)
+                // DET-MIG-001 (v8 npc-migration, High): tie-break the migration
+                // destination by site id (canonical on equal distance).
+                .min_by_key(|(site_id, site, _)| {
+                    (site.wpos.as_().distance(ctx.npc.wpos.xy()) as i32, *site_id)
+                })
                 .map(|(site_id, _, _)| site_id)
         {
             let site_name = util::site_name(ctx, new_home);
