@@ -583,8 +583,38 @@ pub struct SummonBeamPillarsEvent {
     pub indicator_specifier: BeamPillarIndicatorSpecifier,
 }
 
+/// T0.29-31 (master build order; T0-003; Sonnet's ruling): the per-event
+/// stamp — assigned by the EMITTER at bus append, invisible to consumers
+/// (drains strip it after the stable merge).
+#[derive(Clone, Debug)]
+pub struct EventStamp {
+    /// The bus's drain epoch when this event was staged — the recorded
+    /// ORIGIN FRAME (the ruling's keep-tick addition; the bus-side
+    /// tick-analog: epoch N = consumed by drain N+1). Phase is subsumed by
+    /// `producer` (the call site IS the system).
+    pub epoch: u64,
+    /// Producer identity: the emitter's creation call site — static,
+    /// unique per system site, same-binary-stable. The declared rank the
+    /// stable merge sorts by (never mutex arrival order).
+    pub producer: &'static core::panic::Location<'static>,
+    /// Producer-local sequence within the batch.
+    pub seq: u32,
+    /// T0.31: relation identities — machinery present, unpopulated until a
+    /// producer opts in (no fake total chronology).
+    pub causation: Option<u64>,
+    pub correlation: Option<u64>,
+    pub idempotency: Option<u64>,
+}
+
+struct Stamped<E> {
+    stamp: EventStamp,
+    event: E,
+}
+
 struct EventBusInner<E> {
-    queue: VecDeque<E>,
+    queue: VecDeque<Stamped<E>>,
+    /// Drain epoch — incremented by every recv; stamps record it.
+    epoch: u64,
     /// Saturates to u8::MAX and is never reset.
     ///
     /// Used in the first tick to check for if certain event types are handled
@@ -604,6 +634,7 @@ impl<E> Default for EventBus<E> {
         Self {
             inner: Mutex::new(EventBusInner {
                 queue: VecDeque::new(),
+                epoch: 0,
                 recv_count: 0,
             }),
         }
@@ -611,30 +642,71 @@ impl<E> Default for EventBus<E> {
 }
 
 impl<E> EventBus<E> {
+    #[track_caller]
     pub fn emitter(&self) -> Emitter<'_, E> {
         Emitter {
             bus: self,
             events: VecDeque::new(),
+            producer: core::panic::Location::caller(),
         }
     }
 
+    #[track_caller]
     pub fn emit_now(&self, event: E) {
-        self.inner.lock().expect("Poisoned").queue.push_back(event);
+        let producer = core::panic::Location::caller();
+        let mut guard = self.inner.lock().expect("Poisoned");
+        let epoch = guard.epoch;
+        guard.queue.push_back(Stamped {
+            stamp: EventStamp {
+                epoch,
+                producer,
+                seq: 0,
+                causation: None,
+                correlation: None,
+                idempotency: None,
+            },
+            event,
+        });
+    }
+
+    /// T0.30: every drain performs the STABLE MERGE — sort by
+    /// (epoch, producer site, producer-local seq); batch arrival (mutex)
+    /// order is never authoritative. Stamps are stripped here; consumers
+    /// see plain events.
+    fn merge_sorted(mut queue: VecDeque<Stamped<E>>) -> impl ExactSizeIterator<Item = E> {
+        queue.make_contiguous().sort_by(|a, b| {
+            (
+                a.stamp.epoch,
+                a.stamp.producer.file(),
+                a.stamp.producer.line(),
+                a.stamp.producer.column(),
+                a.stamp.seq,
+            )
+                .cmp(&(
+                    b.stamp.epoch,
+                    b.stamp.producer.file(),
+                    b.stamp.producer.line(),
+                    b.stamp.producer.column(),
+                    b.stamp.seq,
+                ))
+        });
+        queue.into_iter().map(|stamped| stamped.event)
     }
 
     pub fn recv_all(&self) -> impl ExactSizeIterator<Item = E> + use<E> {
-        {
+        Self::merge_sorted({
             let mut guard = self.inner.lock().expect("Poisoned");
             guard.recv_count = guard.recv_count.saturating_add(1);
+            guard.epoch += 1;
             core::mem::take(&mut guard.queue)
-        }
-        .into_iter()
+        })
     }
 
     pub fn recv_all_mut(&mut self) -> impl ExactSizeIterator<Item = E> + use<E> {
         let inner = self.inner.get_mut().expect("Poisoned");
         inner.recv_count = inner.recv_count.saturating_add(1);
-        core::mem::take(&mut inner.queue).into_iter()
+        inner.epoch += 1;
+        Self::merge_sorted(core::mem::take(&mut inner.queue))
     }
 
     pub fn recv_count(&mut self) -> u8 { self.inner.get_mut().expect("Poisoned").recv_count }
@@ -643,6 +715,8 @@ impl<E> EventBus<E> {
 pub struct Emitter<'a, E> {
     bus: &'a EventBus<E>,
     pub events: VecDeque<E>,
+    /// T0.29: the producer identity stamped onto this batch at append.
+    producer: &'static core::panic::Location<'static>,
 }
 
 impl<E> Emitter<'_, E> {
@@ -665,7 +739,20 @@ impl<E> Drop for Emitter<'_, E> {
     fn drop(&mut self) {
         if !self.events.is_empty() {
             let mut guard = self.bus.inner.lock().expect("Poision");
-            guard.queue.append(&mut self.events);
+            let epoch = guard.epoch;
+            for (index, event) in self.events.drain(..).enumerate() {
+                guard.queue.push_back(Stamped {
+                    stamp: EventStamp {
+                        epoch,
+                        producer: self.producer,
+                        seq: index as u32,
+                        causation: None,
+                        correlation: None,
+                        idempotency: None,
+                    },
+                    event,
+                });
+            }
         }
     }
 }
@@ -738,5 +825,39 @@ macro_rules! event_emitters {
         $(
             $vis use event_emitters::{$read_data, $emitters};
         )+
+    }
+}
+
+
+// T0.29-31: the stable merge is producer-declared order, never mutex
+// arrival order — two batches appended reversed still drain in call-site
+// order, with origin epochs recorded.
+#[cfg(test)]
+mod t0_29_tests {
+    use super::*;
+
+    #[test]
+    fn t0_30_drain_orders_by_producer_site_not_arrival() {
+        let bus: EventBus<u32> = EventBus::default();
+        // Site A (earlier line) buffered first but DROPPED SECOND.
+        let mut emitter_a = bus.emitter();
+        emitter_a.emit(1);
+        emitter_a.emit(2);
+        {
+            let mut emitter_b = bus.emitter();
+            emitter_b.emit(10);
+            drop(emitter_b); // arrives FIRST
+        }
+        drop(emitter_a); // arrives second
+        let drained: Vec<u32> = bus.recv_all().collect();
+        // Producer-site order (a's site is the earlier line), local seq
+        // within each batch.
+        assert_eq!(drained, vec![1, 2, 10]);
+
+        // Epoch advances per drain; a post-drain emit lands in the next
+        // epoch and still drains cleanly.
+        bus.emit_now(7);
+        let again: Vec<u32> = bus.recv_all().collect();
+        assert_eq!(again, vec![7]);
     }
 }
