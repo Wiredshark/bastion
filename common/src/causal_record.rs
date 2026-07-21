@@ -82,6 +82,55 @@ pub struct CausalRecord {
     pub outcome: CausalOutcome,
 }
 
+/// T0.60 (T0-004 packet, step 8 family): the span hierarchy an
+/// instrumented run nests spans into — scenario ⊃ outer_tick ⊃ phase ⊃
+/// command/transaction ⊃ leaf (job-leg / terrain edit / transfer / step).
+/// Batched or scatter-gather causation uses LINKS on [`CausalRecord`], not
+/// fake parenthood — so this is a strict DEPTH ladder, deepening only.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum SpanKind {
+    Scenario,
+    OuterTick,
+    Phase,
+    Command,
+    Leaf,
+}
+
+impl SpanKind {
+    /// Nesting depth (Scenario = 0). A child span's kind must be strictly
+    /// deeper than its parent's — the instrumentation contract, checkable
+    /// where a parent link is real parenthood (not a batched LINK).
+    pub fn depth(self) -> u8 {
+        match self {
+            SpanKind::Scenario => 0,
+            SpanKind::OuterTick => 1,
+            SpanKind::Phase => 2,
+            SpanKind::Command => 3,
+            SpanKind::Leaf => 4,
+        }
+    }
+
+    /// Whether `self` may be the direct parent of `child` (strictly one or
+    /// more levels shallower — the ladder only deepens).
+    pub fn may_parent(self, child: SpanKind) -> bool {
+        self.depth() < child.depth()
+    }
+}
+
+#[cfg(test)]
+mod t0_60_tests {
+    use super::SpanKind;
+
+    #[test]
+    fn t0_60_span_ladder_only_deepens() {
+        assert!(SpanKind::Phase.may_parent(SpanKind::Command));
+        assert!(SpanKind::Command.may_parent(SpanKind::Leaf));
+        // Same level or shallower child is not real parenthood (use LINKS).
+        assert!(!SpanKind::Command.may_parent(SpanKind::Command));
+        assert!(!SpanKind::Leaf.may_parent(SpanKind::Phase));
+    }
+}
+
 #[cfg(test)]
 mod t0_56_tests {
     use super::*;
