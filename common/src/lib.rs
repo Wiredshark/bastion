@@ -47,6 +47,7 @@ pub mod astar;
 pub mod bastion;
 pub mod bastion_commit;
 pub mod calendar;
+pub mod capability;
 pub mod character;
 pub mod clock;
 pub mod cmd;
