@@ -7991,7 +7991,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .preempt_cooldown
                                 .get(uid)
                                 .is_some_and(|until| time.0 < *until)
-                            && rng.random::<f32>() < mood_cfg.break_chance
+                            // T0.32 (master build order; ledger #51): the
+                            // break roll is CADENCE-INVARIANT — the RON
+                            // `break_chance` keeps its tuned meaning (chance
+                            // per pass at the 2 Hz arbitration reference) and
+                            // compounds to the ACTUAL pass interval derived
+                            // from the declared clocks, so an
+                            // ARBITRATION_INTERVAL/SIM_TPS retune no longer
+                            // silently rescales breakdown pressure.
+                            && {
+                                let pass_secs = ARBITRATION_INTERVAL as f64
+                                    / crate::SIM_TPS as f64;
+                                const BREAK_TUNING_HZ: f64 = 2.0;
+                                let p = 1.0
+                                    - (1.0 - f64::from(mood_cfg.break_chance))
+                                        .powf(pass_secs * BREAK_TUNING_HZ);
+                                f64::from(rng.random::<f32>()) < p
+                            }
                         {
                             board
                                 .preempt_cooldown
