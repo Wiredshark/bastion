@@ -371,9 +371,21 @@ impl PluginModule {
 
         let engine = Engine::new(&config).map_err(PluginModuleError::Wasmtime)?;
         // create a WASI environment (std implementing system calls)
+        // RNG-P3-001 (determinism audit): seed the WASI *insecure* random
+        // deterministically by plugin identity. WASI's own contract splits
+        // `wasi:random/random` (secure — MUST stay unpredictable; untouched
+        // here) from `wasi:random/insecure` + `insecure-seed` (explicitly
+        // documented as non-crypto and permitted to be deterministic) — so
+        // this is in-contract and does not weaken the sandbox: crypto
+        // consumers must use the secure interface, which keeps OS entropy.
+        let insecure_seed = common::state_hash::stable_hash_u64(
+            "bastion/domain/wasi-insecure-random/v1",
+            &name,
+        );
         let wasi = WasiCtxBuilder::new()
             .stdout(LogStream(name.clone(), tracing::Level::INFO))
             .stderr(LogStream(name.clone(), tracing::Level::ERROR))
+            .insecure_random_seed(insecure_seed as u128)
             .build();
         let host_ctx = WasiHostCtx {
             preview2_ctx: wasi,
