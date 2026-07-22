@@ -117,6 +117,13 @@ pub fn record_pass(rank: u16, name: &'static str) {
     if let Ok(mut v) = PASS_RECORDS.lock() {
         v.push((rank, name));
     }
+    // .16: a pass boundary is also a marker in the semantic command trace
+    // (kind 0 = pass sentinel, units = pass rank), so every draw record is
+    // pass-scoped and the trace is keyed (pass, command ordinal, args) —
+    // never a pointer-derived handle.
+    if let Ok(mut v) = DRAW_RECORDS.lock() {
+        v.push((0, u32::from(rank), 0));
+    }
 }
 
 /// Drain the frame's pass tape (called from `Drawer::drop`): emits one
@@ -355,9 +362,9 @@ fn emit_draw_tape(sink: &mut String) {
         payload.extend_from_slice(&units.to_le_bytes());
         payload.extend_from_slice(&instances.to_le_bytes());
     }
-    let digest = bastion_renderer_r0d::domain_hash("bastion/r0d/draw-tape", 1, 0, &payload);
+    let digest = bastion_renderer_r0d::domain_hash("bastion/r0d/semantic-trace", 1, 0, &payload);
     sink.push_str(&format!(
-        "draw-tape {} {}\n",
+        "semantic-trace {} {}\n",
         records.len(),
         bastion_renderer_r0d::hex32(&digest)
     ));
