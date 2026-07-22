@@ -767,7 +767,7 @@ impl Widget for Crafting<'_> {
             )
             .collect();
 
-        ordered_recipes.sort_by_key(|(_, recipe, is_craftable, has_materials, known)| {
+        ordered_recipes.sort_by_key(|(name, recipe, is_craftable, has_materials, known)| {
             (
                 !known,
                 !is_craftable,
@@ -777,6 +777,13 @@ impl Widget for Crafting<'_> {
                     let (title, _) = recipe.output.0.i18n(self.item_i18n);
                     self.localized_strings.get_content(&title)
                 },
+                // DET-CRF-006: the recipe-book key (unique per recipe) as the
+                // final tiebreak. Without it, recipes with an identical
+                // (known, craftable, materials, quality, localized title) kept
+                // their pre-sort order, which came from a HashMap iteration and
+                // so shuffled by hash seed. The key makes the display order a
+                // total order.
+                name.to_string(),
             )
         });
 
