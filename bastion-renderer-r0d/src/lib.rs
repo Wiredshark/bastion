@@ -12,9 +12,14 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod admission;
+pub mod bootstrap;
 pub mod cbor;
 
 pub use admission::{CandidateSourceState, R0dSourceAuthorityMismatch, RendererW0AdmissionV2};
+pub use bootstrap::{
+    BootstrapError, PluginIdentityV1, SeedDomainDeclarationV1, SeedRegistryV1, TickContractV1,
+    canonicalize_plugins, hkdf_expand, hkdf_extract, hmac_sha256,
+};
 pub use cbor::{
     CanonicalDecodeError, CanonicalEnvelopeV1, CborValue, ValidatedCanonicalBytesV1, int_map,
 };
