@@ -177,6 +177,19 @@ pub fn capture_config() -> Option<(std::path::PathBuf, u64, u64)> {
     Some((std::path::PathBuf::from(out), warmup, count))
 }
 
+/// §17.3 exact-capture mode: fix wall-clock/animated shader inputs. When
+/// `BASTION_R0D_FREEZE_TIME` is set, the scene's Globals receive constant
+/// time inputs (fixed mid-morning TOD, zeroed sim/local animation time) so
+/// sky/water/cloud animation cannot vary pixels between warm captures.
+#[must_use]
+pub fn freeze_time() -> bool {
+    std::env::var_os("BASTION_R0D_FREEZE_TIME").is_some()
+}
+
+/// The frozen shader-time triple `(time_of_day, sim_time, local_time)` used
+/// when [`freeze_time`] holds: 09:00 into a 24h day, zero animation clocks.
+pub const FROZEN_SHADER_TIME: (f64, f64, f64) = (60.0 * 60.0 * 9.0, 0.0, 0.0);
+
 /// (frames_seen_in_session, captures_requested, captures_completed).
 static CAPTURE_STATE: Mutex<(u64, u64, u64)> = Mutex::new((0, 0, 0));
 

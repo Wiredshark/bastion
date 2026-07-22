@@ -1040,6 +1040,15 @@ impl Scene {
             };
 
         // Update global constants.
+        // R0D §17.3 (exact-capture mode): fix the animated shader-time inputs
+        // so sky/water/cloud animation cannot vary pixels between warm
+        // captures. No-op unless BASTION_R0D_FREEZE_TIME is set.
+        let (time_of_day, r0d_sim_time, r0d_local_time) =
+            if crate::render::bastion_r0d::freeze_time() {
+                crate::render::bastion_r0d::FROZEN_SHADER_TIME
+            } else {
+                (time_of_day, scene_data.state.get_time(), self.local_time)
+            };
         renderer.update_consts(&mut self.data.globals, &[Globals::new(
             view_mat,
             proj_mat,
@@ -1049,8 +1058,8 @@ impl Scene {
             self.lod.get_data().tgt_detail as f32,
             self.map_bounds,
             time_of_day,
-            scene_data.state.get_time(),
-            self.local_time,
+            r0d_sim_time,
+            r0d_local_time,
             renderer.resolution().as_(),
             Vec2::new(SHADOW_NEAR, SHADOW_FAR),
             lights.len(),
