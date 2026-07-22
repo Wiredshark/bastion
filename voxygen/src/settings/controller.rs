@@ -1,6 +1,7 @@
 use crate::{game_input::GameInput, window::MenuInput};
 use gilrs::{Axis as GilAxis, Button as GilButton, ev::Code as GilCode};
 use hashbrown::{HashMap, HashSet};
+use std::collections::BTreeSet;
 use i18n::Localization;
 use serde::{Deserialize, Serialize};
 use strum::{EnumIter, IntoEnumIterator};
@@ -94,9 +95,9 @@ impl Default for ControllerSettingsSerde {
 #[serde(from = "ControllerSettingsSerde", into = "ControllerSettingsSerde")]
 pub struct ControllerSettings {
     pub game_button_map: HashMap<GameInput, Option<Button>>,
-    pub inverse_game_button_map: HashMap<Button, HashSet<GameInput>>,
+    pub inverse_game_button_map: HashMap<Button, BTreeSet<GameInput>>,
     pub menu_button_map: HashMap<MenuInput, Option<Button>>,
-    pub inverse_menu_button_map: HashMap<Button, HashSet<MenuInput>>,
+    pub inverse_menu_button_map: HashMap<Button, BTreeSet<MenuInput>>,
     pub game_analog_button_map: HashMap<AnalogButtonGameAction, AnalogButton>,
     pub inverse_game_analog_button_map: HashMap<AnalogButton, HashSet<AnalogButtonGameAction>>,
     pub menu_analog_button_map: HashMap<AnalogButtonMenuAction, AnalogButton>,
@@ -106,7 +107,7 @@ pub struct ControllerSettings {
     pub menu_axis_map: HashMap<AxisMenuAction, Axis>,
     pub inverse_menu_axis_map: HashMap<Axis, HashSet<AxisMenuAction>>,
     pub layer_button_map: HashMap<GameInput, Option<LayerEntry>>,
-    pub inverse_layer_button_map: HashMap<LayerEntry, HashSet<GameInput>>,
+    pub inverse_layer_button_map: HashMap<LayerEntry, BTreeSet<GameInput>>,
 
     pub modifier_buttons: Vec<Button>,
     pub pan_sensitivity: u32,
@@ -214,18 +215,18 @@ impl ControllerSettings {
     pub fn get_associated_game_button_inputs(
         &self,
         button: &Button,
-    ) -> Option<&HashSet<GameInput>> {
+    ) -> Option<&BTreeSet<GameInput>> {
         self.inverse_game_button_map.get(button)
     }
 
     pub fn get_associated_game_layer_inputs(
         &self,
         layers: &LayerEntry,
-    ) -> Option<&HashSet<GameInput>> {
+    ) -> Option<&BTreeSet<GameInput>> {
         self.inverse_layer_button_map.get(layers)
     }
 
-    pub fn get_associated_game_menu_inputs(&self, button: &Button) -> Option<&HashSet<MenuInput>> {
+    pub fn get_associated_game_menu_inputs(&self, button: &Button) -> Option<&BTreeSet<MenuInput>> {
         self.inverse_menu_button_map.get(button)
     }
 

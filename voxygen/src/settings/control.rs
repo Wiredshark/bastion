@@ -2,8 +2,9 @@ use crate::{
     game_input::GameInput,
     window::{KeyMouse, MenuInput},
 };
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use strum::IntoEnumIterator;
 use winit::{
     event::MouseButton,
@@ -55,9 +56,9 @@ impl Default for ControlSettingsSerde {
 #[serde(from = "ControlSettingsSerde", into = "ControlSettingsSerde")]
 pub struct ControlSettings {
     pub keybindings: HashMap<GameInput, Option<KeyMouse>>,
-    pub inverse_keybindings: HashMap<KeyMouse, HashSet<GameInput>>, // used in event loop
+    pub inverse_keybindings: HashMap<KeyMouse, BTreeSet<GameInput>>, // used in event loop
     pub menubindings: HashMap<MenuInput, Option<KeyMouse>>,
-    pub inverse_menubindings: HashMap<KeyMouse, HashSet<MenuInput>>,
+    pub inverse_menubindings: HashMap<KeyMouse, BTreeSet<MenuInput>>,
 }
 
 impl From<ControlSettingsSerde> for ControlSettings {
@@ -123,11 +124,11 @@ impl ControlSettings {
         self.menubindings.get(&menu_input).cloned().flatten()
     }
 
-    pub fn get_associated_game_inputs(&self, key_mouse: &KeyMouse) -> Option<&HashSet<GameInput>> {
+    pub fn get_associated_game_inputs(&self, key_mouse: &KeyMouse) -> Option<&BTreeSet<GameInput>> {
         self.inverse_keybindings.get(key_mouse)
     }
 
-    pub fn get_associated_menu_inputs(&self, key_mouse: &KeyMouse) -> Option<&HashSet<MenuInput>> {
+    pub fn get_associated_menu_inputs(&self, key_mouse: &KeyMouse) -> Option<&BTreeSet<MenuInput>> {
         self.inverse_menubindings.get(key_mouse)
     }
 

@@ -8,8 +8,9 @@ use crate::{
 use common_base::span;
 use crossbeam_channel as channel;
 use gilrs::{Button as GilButton, EventType, Gilrs};
-use hashbrown::{HashMap, hash_set::Iter};
+use hashbrown::HashMap;
 use itertools::Itertools;
+use std::collections::btree_set::Iter;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use strum::{AsRefStr, EnumIter};
