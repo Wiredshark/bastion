@@ -225,6 +225,19 @@ pub fn drive_capture(renderer: &mut super::renderer::Renderer) -> bool {
         s.0 += 1;
         *s
     };
+    // §12.5 stability gate (BASTION_R0D_STABLE_GATE, default 60): even past
+    // warmup, capture may not begin until the semantic trace has been
+    // IDENTICAL for N consecutive frames — the expected-set-equality proxy
+    // that aligns runs on residency CONTENT, not settling time. Once the
+    // first capture is requested the gate stays open (captures are
+    // consecutive by design).
+    let stable_gate: u64 = std::env::var("BASTION_R0D_STABLE_GATE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60);
+    if requested == 0 && trace_stable_frames() < stable_gate {
+        return false;
+    }
     if frames > warmup && requested < count {
         {
             let mut s = CAPTURE_STATE.lock().expect("capture state");
@@ -332,6 +345,18 @@ pub mod draw_kind {
 /// manifest flag; drained with the pass tape.
 static DRAW_RECORDS: Mutex<Vec<(u16, u32, u32)>> = Mutex::new(Vec::new());
 
+/// §12.5 stability gate state: (last semantic-trace digest, consecutive
+/// identical frames). The steady stream IS the expected set — capture may not
+/// begin until it has held for the configured frame count, so both runs align
+/// on CONTENT regardless of how many frames residency settling took.
+static TRACE_STABILITY: Mutex<([u8; 32], u64)> = Mutex::new(([0; 32], 0));
+
+/// Consecutive frames whose semantic trace was identical.
+#[must_use]
+pub fn trace_stable_frames() -> u64 {
+    TRACE_STABILITY.lock().map(|s| s.1).unwrap_or(0)
+}
+
 /// Record one CPU-encoded draw call (.14). `units` = index or vertex count as
 /// encoded; `instances` = instance count. No-op unless the manifest flag is set.
 pub fn record_draw(kind: u16, units: u32, instances: u32) {
@@ -355,6 +380,23 @@ fn emit_draw_tape(sink: &mut String) {
     if records.is_empty() {
         return;
     }
+    // §12.5 one-shot full-stream dump (BASTION_R0D_TRACE_DUMP): at the frame
+    // where stability reaches 30, write every (kind, units, instances) record
+    // once — the cross-run diff of these files localizes any divergent record
+    // by kind. Diagnostic only; never enters a canonical hash.
+    if let (Some(out), Ok(stab)) = (
+        std::env::var_os("BASTION_R0D_TRACE_DUMP"),
+        TRACE_STABILITY.lock().map(|s| s.1),
+    ) {
+        let p = std::path::PathBuf::from(&out);
+        if stab == 30 && !p.exists() {
+            let mut dump = String::with_capacity(records.len() * 16);
+            for (k, u, i) in &records {
+                dump.push_str(&format!("{k} {u} {i}\n"));
+            }
+            let _ = std::fs::write(&p, dump);
+        }
+    }
     let mut payload = Vec::with_capacity(8 + records.len() * 10);
     payload.extend_from_slice(&(records.len() as u64).to_le_bytes());
     for (kind, units, instances) in &records {
@@ -363,6 +405,14 @@ fn emit_draw_tape(sink: &mut String) {
         payload.extend_from_slice(&instances.to_le_bytes());
     }
     let digest = bastion_renderer_r0d::domain_hash("bastion/r0d/semantic-trace", 1, 0, &payload);
+    // §12.5: advance or reset the stability counter.
+    if let Ok(mut s) = TRACE_STABILITY.lock() {
+        if s.0 == digest {
+            s.1 += 1;
+        } else {
+            *s = (digest, 1);
+        }
+    }
     sink.push_str(&format!(
         "semantic-trace {} {}\n",
         records.len(),
