@@ -1,0 +1,11 @@
+# R0D deterministic renderer substrate. BUILD-007A10.0 lands the W0 source-
+# authority admission (RendererW0AdmissionV2) here; later packets (007A10.1+)
+# add the canonical CBOR protocol and renderer contracts in this crate.
+[package]
+name = "bastion-renderer-r0d"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0"
+
+[dependencies]
+sha2 = "0.10"
