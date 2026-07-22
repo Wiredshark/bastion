@@ -467,6 +467,28 @@ struct Args {
     #[arg(long)]
     phy_permute_order: bool,
 
+    /// bastion determinism fixture TER-01 (SPECIFIED_NOT_EVIDENCED): apply a
+    /// deterministic set of terrain mutations at unique positions, then emit a
+    /// TER-CERTIFICATE hashing the final block at each. Byte-identical across
+    /// serial / --schedule-seed / --ter-permute-order proves terrain-mutation
+    /// ordering is canonical. MEASURES; setup failure is the only non-success.
+    #[arg(long)]
+    ter_scenario: bool,
+
+    /// TER-01: number of unique-position terrain mutations to apply.
+    #[arg(long, default_value_t = 128)]
+    ter_mutations: u32,
+
+    /// TER-01: authoritative ticks to let terrain changes / hooks commit.
+    #[arg(long, default_value_t = 20)]
+    ter_ticks: u64,
+
+    /// TER-01: apply mutations in REVERSED order — the apply-order perturbation.
+    /// Positions are unique, so the final terrain (hashed in canonical position
+    /// order) must be byte-identical to the non-permuted run.
+    #[arg(long)]
+    ter_permute_order: bool,
+
     /// bastion (MINING-LIVE-FIDELITY): dig footprint X width, blocks. The
     /// geometry axis of the completion investigation — wide claims fit the
     /// stairs arm; tight ones force the D16 released-but-unreachable class.
@@ -1172,6 +1194,8 @@ fn main() -> ExitCode {
         mine_fidelity_scenario(&args)
     } else if args.phy_scenario {
         phy_scenario(&args)
+    } else if args.ter_scenario {
+        ter_scenario(&args)
     } else if args.dig_access_scenario {
         dig_access_scenario(&args)
     } else if args.chopfell_scenario {
@@ -11934,6 +11958,191 @@ fn phy_scenario(args: &Args) -> ExitCode {
     info!(bodies = bodies.len(), alive, "phy: fingerprint computed");
     println!(
         "PHY-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture TER-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Applies a deterministic set of authoritative terrain mutations (set_block) at
+/// UNIQUE positions around a force-loaded site, ticks so terrain changes/hooks
+/// commit, then emits a TER-CERTIFICATE hashing the final block (Block::to_u32,
+/// a stable kind+data encoding) at every mutated position in CANONICAL position
+/// order. Because positions are unique (no overwrite), the final terrain is
+/// independent of MUTATION ORDER — so byte-identity across:
+///   - serial repro                 (determinism)
+///   - --schedule-seed N            (worker-count / thread-order invariance)
+///   - --ter-permute-order          (mutation apply-order invariance)
+/// proves terrain-mutation ordering is canonical. MEASURES, never gates.
+fn ter_scenario(args: &Args) -> ExitCode {
+    use common::{
+        state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        },
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-ter-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-ter".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-ter-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "ter: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    let loaded = server.bastion_force_load_area(site_wpos, 5);
+    info!(loaded, "ter: force-loaded area");
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048)
+            .rev()
+            .find(|z| terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| b.is_filled()))
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let cz = ground_z(&server, cx, cy).expect("ter: no ground at site center");
+
+    // Deterministic mutations at UNIQUE positions (an 8x8x(M/64) block within the
+    // force-loaded area). Index is the stable key: hashed in index/position order
+    // regardless of the order the mutations are APPLIED.
+    let m_count = args.ter_mutations.max(1);
+    let mut muts: Vec<(u32, Vec3<i32>, Block)> = Vec::with_capacity(m_count as usize);
+    for m in 0..m_count {
+        let dx = (m % 8) as i32 - 4;
+        let dy = ((m / 8) % 8) as i32 - 4;
+        let dz = (m / 64) as i32 - 1;
+        let pos = Vec3::new(cx + dx, cy + dy, cz + dz);
+        // Deterministic mix of carves (empty) and placements (colored rock).
+        let block = if m % 3 == 0 {
+            Block::empty()
+        } else {
+            Block::new(BlockKind::Rock, Rgb::new((m % 251) as u8, 120, 90))
+        };
+        muts.push((m, pos, block));
+    }
+    let mut apply_order: Vec<usize> = (0..muts.len()).collect();
+    if args.ter_permute_order {
+        apply_order.reverse();
+    }
+    for &k in &apply_order {
+        let (_, pos, block) = muts[k];
+        server.state_mut().set_block(pos, block);
+    }
+    info!(count = muts.len(), permute = args.ter_permute_order, "ter: applied mutations");
+
+    // Let terrain changes / authoritative hooks commit.
+    tick(&mut server, args.ter_ticks);
+
+    // Fingerprint: a deterministic CUBE of terrain around the center, read in
+    // canonical (x,y,z) order. This is NOT just the blocks we wrote — it spans
+    // the WORLDGEN terrain (seed-dependent, so the fingerprint is state-sensitive
+    // and this actually certifies worldgen→terrain determinism) PLUS our
+    // mutations and any authoritative-hook effects on the surrounding blocks. The
+    // final terrain state is independent of mutation-apply order (positions are
+    // unique), so the perturbation invariances still hold. One leaf per column.
+    let r = 8i32; // 16x16x16 cube
+    let (domain_root, leaves) = {
+        let terrain = server.state().terrain();
+        let mut h = DomainHasher::new("bastion/domain/terrain/v1/sha256");
+        let mut leaves: Vec<MerkleLeaf> = Vec::new();
+        for x in (cx - r)..(cx + r) {
+            for y in (cy - r)..(cy + r) {
+                let mut col = DomainHasher::new("bastion/domain/terrain-col/v1/sha256");
+                for z in (cz - r)..(cz + r) {
+                    let raw = terrain
+                        .get(Vec3::new(x, y, z))
+                        .map(|b| b.to_u32())
+                        .unwrap_or(u32::MAX);
+                    h.field(&x.to_le_bytes());
+                    h.field(&y.to_le_bytes());
+                    h.field(&z.to_le_bytes());
+                    h.field(&raw.to_le_bytes());
+                    col.field(&raw.to_le_bytes());
+                }
+                leaves.push(MerkleLeaf {
+                    key: format!("col/{:+05}/{:+05}", x - cx, y - cy),
+                    hash: col.finish(),
+                });
+            }
+        }
+        (h.finish(), leaves)
+    };
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        args.ter_ticks,
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/terrain/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+    info!(mutations = muts.len(), "ter: fingerprint computed");
+    println!(
+        "TER-CERTIFICATE: {}",
         serde_json::to_string(&certificate).unwrap_or_default()
     );
 
