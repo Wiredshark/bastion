@@ -31,7 +31,11 @@ use vek::Vec3;
 /// never re-shape an existing variant — chronicle entries are permanent
 /// data, and per-deed detail belongs in the EVENT's fields (actors / site
 /// / pos / attribution), not in kind payloads.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+// DET-MOOD-003: PartialOrd/Ord so ChronicleKind can be a component of a
+// canonical total-order sort key when draining queued events into the
+// chronicle. Order follows declaration order; the key is never persisted
+// (only the resulting record order is), so it is safe to derive here.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ChronicleKind {
     // ── The original spec's core ten.
     Death,
