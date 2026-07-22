@@ -436,6 +436,13 @@ impl Default for RenderMode {
     }
 }
 
+/// R0D .17: the pipeline-mode projection of a render mode (the same `split`
+/// the renderer uses), exposed so headless tooling/tests can build a real
+/// `PipelineModes` without a renderer.
+impl From<RenderMode> for PipelineModes {
+    fn from(mode: RenderMode) -> Self { mode.split().0 }
+}
+
 impl RenderMode {
     fn split(self) -> (PipelineModes, OtherModes) {
         (

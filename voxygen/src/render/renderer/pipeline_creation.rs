@@ -907,6 +907,173 @@ pub(super) fn build_include_map(
     .collect()
 }
 
+/// R0D BUILD-007A10.17: the headless shader-interface manifest. Every
+/// top-level shader is assembled EXACTLY as the live compiler assembles it
+/// (same include map, same fixpoint expansion), parsed with the PINNED naga
+/// (wgpu 27's re-export — the same frontend the live WgpuCompiler path uses),
+/// validated, and its interface (entry points + resource bindings) extracted.
+/// The manifest digest is over frozen-order, length-framed records; source
+/// order cannot leak (the shader table below is the canonical order).
+///
+/// No GPU device is required — this runs headless in tests and on the VM.
+pub fn shader_interface_manifest(
+    shaders: &Shaders,
+    pipeline_modes: &PipelineModes,
+    has_shadow_views: bool,
+) -> Result<([u8; 32], Vec<String>), String> {
+    use wgpu::naga;
+
+    let include_map = build_include_map(shaders, pipeline_modes, has_shadow_views);
+    let resolve = |name: &str, shader_name: &str| -> Result<String, String> {
+        include_map
+            .get(name)
+            .cloned()
+            .ok_or_else(|| format!("Include {} in {} is not defined", name, shader_name))
+    };
+    // The canonical top-level shader table (name, stage). Mirrors the
+    // ShaderModules::new create_shader calls; the fluid fragment is
+    // mode-selected exactly as there.
+    let fluid_frag = ["fluid-frag.", match pipeline_modes.fluid {
+        FluidMode::Low => "cheap",
+        _ => "shiny",
+    }]
+    .concat();
+    let v = naga::ShaderStage::Vertex;
+    let f = naga::ShaderStage::Fragment;
+    let table: Vec<(String, naga::ShaderStage)> = [
+        ("skybox-vert", v),
+        ("skybox-frag", f),
+        ("debug-vert", v),
+        ("debug-frag", f),
+        ("figure-vert", v),
+        ("figure-frag", f),
+        ("terrain-vert", v),
+        ("terrain-frag", f),
+        ("fluid-vert", v),
+        (fluid_frag.as_str(), f),
+        ("sprite-vert", v),
+        ("sprite-frag", f),
+        ("lod-object-vert", v),
+        ("lod-object-frag", f),
+        ("particle-vert", v),
+        ("particle-frag", f),
+        ("rope-vert", v),
+        ("rope-frag", f),
+        ("trail-vert", v),
+        ("trail-frag", f),
+        ("ui-vert", v),
+        ("ui-frag", f),
+        ("premultiply-alpha-vert", v),
+        ("premultiply-alpha-frag", f),
+        ("lod-terrain-vert", v),
+        ("lod-terrain-frag", f),
+        ("clouds-vert", v),
+        ("clouds-frag", f),
+        ("dual-downsample-filtered-frag", f),
+        ("dual-downsample-frag", f),
+        ("dual-upsample-frag", f),
+        ("postprocess-vert", v),
+        ("postprocess-frag", f),
+        ("blit-vert", v),
+        ("blit-frag", f),
+        ("point-light-shadows-vert", v),
+        ("light-shadows-directed-vert", v),
+        ("light-shadows-figure-vert", v),
+        ("light-shadows-debug-vert", v),
+        ("rain-occlusion-directed-vert", v),
+        ("rain-occlusion-figure-vert", v),
+    ]
+    .into_iter()
+    .map(|(n, s)| (n.to_string(), s))
+    .collect();
+
+    let mut payload = Vec::new();
+    let mut summaries = Vec::with_capacity(table.len());
+    payload.extend_from_slice(&(table.len() as u64).to_le_bytes());
+    for (name, stage) in &table {
+        let glsl = &shaders
+            .get(name)
+            .ok_or_else(|| format!("Can't retrieve shader: {name}"))?
+            .0;
+        let source = super::compiler::expand_includes(glsl, name, &resolve)?;
+        let mut frontend = naga::front::glsl::Frontend::default();
+        let module = frontend
+            .parse(&naga::front::glsl::Options::from(*stage), &source)
+            .map_err(|e| format!("naga parse failed for {name}: {e:?}"))?;
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .map_err(|e| format!("naga validation failed for {name}: {e:?}"))?;
+
+        // Canonical interface record: name, stage tag, source digest, then
+        // resource bindings sorted by (group, binding, name).
+        let source_digest =
+            bastion_renderer_r0d::domain_hash("bastion/r0d/shader-source", 1, 0, source.as_bytes());
+        let mut bindings: Vec<(u32, u32, String, String)> = module
+            .global_variables
+            .iter()
+            .filter_map(|(_, gv)| {
+                gv.binding.as_ref().map(|b| {
+                    (
+                        b.group,
+                        b.binding,
+                        gv.name.clone().unwrap_or_default(),
+                        format!("{:?}", gv.space),
+                    )
+                })
+            })
+            .collect();
+        bindings.sort();
+        payload.extend_from_slice(&(name.len() as u64).to_le_bytes());
+        payload.extend_from_slice(name.as_bytes());
+        payload.push(match stage {
+            naga::ShaderStage::Vertex => 0,
+            naga::ShaderStage::Fragment => 1,
+            naga::ShaderStage::Compute => 2,
+            naga::ShaderStage::Task | naga::ShaderStage::Mesh => 3,
+        });
+        payload.extend_from_slice(&source_digest);
+        payload.extend_from_slice(&(bindings.len() as u64).to_le_bytes());
+        for (group, binding, gname, space) in &bindings {
+            payload.extend_from_slice(&group.to_le_bytes());
+            payload.extend_from_slice(&binding.to_le_bytes());
+            payload.extend_from_slice(&(gname.len() as u64).to_le_bytes());
+            payload.extend_from_slice(gname.as_bytes());
+            payload.extend_from_slice(&(space.len() as u64).to_le_bytes());
+            payload.extend_from_slice(space.as_bytes());
+        }
+        summaries.push(format!("{name}: {} bindings", bindings.len()));
+    }
+    let digest =
+        bastion_renderer_r0d::domain_hash("bastion/r0d/shader-interface", 1, 0, &payload);
+    Ok((digest, summaries))
+}
+
+#[cfg(test)]
+mod r0d_shader_interface_tests {
+    use super::*;
+
+    // Headless .17 acceptance: parse+validate the REAL shader set with the
+    // pinned naga and prove the interface digest is stable and mode-sensitive.
+    #[test]
+    fn interface_manifest_is_stable_and_mode_sensitive() {
+        use common::assets::AssetExt;
+        let shaders = Shaders::load_expect("").cloned();
+        let modes: PipelineModes = crate::render::RenderMode::default().into();
+        let (d1, summaries) =
+            shader_interface_manifest(&shaders, &modes, true).expect("manifest builds");
+        let (d2, _) = shader_interface_manifest(&shaders, &modes, true).expect("manifest builds");
+        assert_eq!(d1, d2, "same inputs => same digest");
+        assert!(summaries.len() >= 40, "all top-level shaders present");
+        // A mode change (shadow views off flips SHADOW_MODE) changes the digest.
+        let (d3, _) =
+            shader_interface_manifest(&shaders, &modes, false).expect("manifest builds");
+        assert_ne!(d1, d3, "mode-sensitive");
+    }
+}
+
 pub(super) fn initial_create_pipelines(
     device: wgpu::Device,
     backend: wgpu::Backend,
