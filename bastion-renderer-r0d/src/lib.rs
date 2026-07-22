@@ -12,8 +12,12 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod admission;
+pub mod cbor;
 
 pub use admission::{CandidateSourceState, R0dSourceAuthorityMismatch, RendererW0AdmissionV2};
+pub use cbor::{
+    CanonicalDecodeError, CanonicalEnvelopeV1, CborValue, ValidatedCanonicalBytesV1, int_map,
+};
 
 /// Design §4.4 length-framed, domain-separated hash. Every R0D hash frames its
 /// domain label and schema so a domain/schema change can never alias.
@@ -35,9 +39,15 @@ pub fn domain_hash(domain: &str, schema_major: u16, schema_minor: u16, payload: 
 /// Lowercase-hex of a 32-byte digest (stable, no allocation surprises).
 #[must_use]
 pub fn hex32(d: &[u8; 32]) -> String {
-    let mut s = String::with_capacity(64);
-    for b in d {
-        s.push_str(&format!("{b:02x}"));
+    hex_bytes(d)
+}
+
+/// Lowercase-hex of an arbitrary byte slice.
+#[must_use]
+pub fn hex_bytes(b: &[u8]) -> String {
+    let mut s = String::with_capacity(b.len() * 2);
+    for x in b {
+        s.push_str(&format!("{x:02x}"));
     }
     s
 }
