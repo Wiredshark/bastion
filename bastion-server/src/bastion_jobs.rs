@@ -3618,7 +3618,7 @@ pub struct JobBoard {
     /// rides the bag until a future re-roll — never lost, never duped).
     /// Drained by the end-of-forage [`JobKind::DepositRun`]; keyed by Uid
     /// so a demote/promote round-trip keeps the debt.
-    gathered_defs: HashMap<Uid, std::collections::HashSet<String>>,
+    gathered_defs: HashMap<Uid, std::collections::BTreeSet<String>>,
     /// bastion (CASE-003 belt, persistence form): consecutive ticks each
     /// colonist's capsule CORE has sat inside solid terrain. At
     /// [`EMBED_PERSIST_TICKS`] the colonist is genuinely WEDGED (the
