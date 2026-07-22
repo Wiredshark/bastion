@@ -663,6 +663,54 @@ impl State {
     /// Get a mutable reference to the internal ECS world.
     pub fn ecs_mut(&mut self) -> &mut specs::World { &mut self.ecs }
 
+    /// Admit a server-required plugin already available on disk, running its
+    /// load hook exactly once against the live ECS.
+    ///
+    /// DET-PLG-003: late-admitted client plugins previously skipped their load
+    /// hook (see [`PluginMgr::load_server_plugin`]). This wraps the manager
+    /// call so the caller does not have to reconstruct the plugin ECS view or
+    /// look up the game mode — both are read from this `State`, so a
+    /// cached/downloaded plugin follows the same activation path as one present
+    /// in the asset directory at construction.
+    #[cfg(feature = "plugins")]
+    pub fn load_server_plugin(
+        &self,
+        path: std::path::PathBuf,
+    ) -> Result<common::event::PluginHash, crate::plugin::errors::PluginError> {
+        let ecs = &self.ecs;
+        let mode = *ecs.read_resource::<GameMode>();
+        let ecs_world = EcsWorld {
+            entities: &ecs.entities(),
+            health: ecs.read_component().into(),
+            uid: ecs.read_component().into(),
+            id_maps: &ecs.read_resource::<IdMaps>().into(),
+            player: ecs.read_component().into(),
+        };
+        ecs.write_resource::<PluginMgr>()
+            .load_server_plugin(path, &ecs_world, mode)
+    }
+
+    /// Cache a server-delivered plugin's bytes and admit it, running its load
+    /// hook exactly once (DET-PLG-003; see [`State::load_server_plugin`]).
+    #[cfg(feature = "plugins")]
+    pub fn cache_server_plugin(
+        &self,
+        base_dir: &std::path::Path,
+        data: Vec<u8>,
+    ) -> Result<common::event::PluginHash, crate::plugin::errors::PluginError> {
+        let ecs = &self.ecs;
+        let mode = *ecs.read_resource::<GameMode>();
+        let ecs_world = EcsWorld {
+            entities: &ecs.entities(),
+            health: ecs.read_component().into(),
+            uid: ecs.read_component().into(),
+            id_maps: &ecs.read_resource::<IdMaps>().into(),
+            player: ecs.read_component().into(),
+        };
+        ecs.write_resource::<PluginMgr>()
+            .cache_server_plugin(base_dir, data, &ecs_world, mode)
+    }
+
     pub fn thread_pool(&self) -> &Arc<ThreadPool> { &self.thread_pool }
 
     /// Get a reference to the `TerrainChanges` structure of the state. This

@@ -21,8 +21,6 @@ use client_init::{ClientInit, Error as InitError, Msg as InitMsg};
 use common::{comp, event::UpdateCharacterMetadata};
 use common_base::span;
 use common_net::msg::ClientType;
-#[cfg(feature = "plugins")]
-use common_state::plugin::PluginMgr;
 use i18n::{LocalizationGuard, LocalizationHandle, fluent_args};
 #[cfg(feature = "singleplayer")]
 use server::ServerInitStage;
@@ -245,12 +243,8 @@ impl PlayState for MainMenuState {
                 // load local plugins needed by the server
                 #[cfg(feature = "plugins")]
                 for path in client.take_local_plugins().drain(..) {
-                    if let Err(e) = client
-                        .state_mut()
-                        .ecs_mut()
-                        .write_resource::<PluginMgr>()
-                        .load_server_plugin(path)
-                    {
+                    // DET-PLG-003: admit via State so the load hook runs once.
+                    if let Err(e) = client.state().load_server_plugin(path) {
                         tracing::error!(?e, "load local plugin");
                     }
                 }
@@ -332,10 +326,10 @@ impl PlayState for MainMenuState {
                                 {
                                     tracing::info!("plugin data {}", data.len());
                                     if let InitState::Pipeline(client, _) = &mut self.init {
+                                        // DET-PLG-003: admit via State so the
+                                        // load hook runs once at admission.
                                         let hash = client
                                             .state()
-                                            .ecs()
-                                            .write_resource::<PluginMgr>()
                                             .cache_server_plugin(&global_state.config_dir, data);
                                         match hash {
                                             Ok(hash) => {
