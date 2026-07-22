@@ -12,9 +12,11 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod admission;
+pub mod agreement;
 pub mod bootstrap;
 pub mod cbor;
 pub mod figure_package;
+pub mod identity;
 
 pub use admission::{CandidateSourceState, R0dSourceAuthorityMismatch, RendererW0AdmissionV2};
 pub use bootstrap::{
