@@ -443,6 +443,30 @@ struct Args {
     #[arg(long, default_value_t = 30.0)]
     mf_minutes: f64,
 
+    /// bastion determinism fixture PHY-01 (SPECIFIED_NOT_EVIDENCED): spawn a
+    /// deterministic grid of physics objects above real terrain, let them fall/
+    /// collide/settle, and emit a PHY-CERTIFICATE hashing every body's final
+    /// pos+vel. Byte-identical across serial vs --schedule-seed (worker-count
+    /// perturbation) and across --phy-permute-order (insertion-order perturbation)
+    /// proves body/contact ordering is canonical. Same-platform (cross-platform
+    /// is the held PHY-H4). MEASURES; setup failure is the only non-success.
+    #[arg(long)]
+    phy_scenario: bool,
+
+    /// PHY-01: side length of the spawned body grid (phy_grid^2 bodies).
+    #[arg(long, default_value_t = 8)]
+    phy_grid: u32,
+
+    /// PHY-01: authoritative ticks to simulate (fall + collide + settle).
+    #[arg(long, default_value_t = 200)]
+    phy_ticks: u64,
+
+    /// PHY-01: spawn bodies in REVERSED grid order — the insertion-order
+    /// perturbation. The fingerprint (hashed in canonical grid-index order) must
+    /// be byte-identical to the non-permuted run.
+    #[arg(long)]
+    phy_permute_order: bool,
+
     /// bastion (MINING-LIVE-FIDELITY): dig footprint X width, blocks. The
     /// geometry axis of the completion investigation — wide claims fit the
     /// stairs arm; tight ones force the D16 released-but-unreachable class.
@@ -1146,6 +1170,8 @@ fn main() -> ExitCode {
         leash_scenario(&args)
     } else if args.mine_fidelity_scenario {
         mine_fidelity_scenario(&args)
+    } else if args.phy_scenario {
+        phy_scenario(&args)
     } else if args.dig_access_scenario {
         dig_access_scenario(&args)
     } else if args.chopfell_scenario {
@@ -11718,6 +11744,198 @@ fn mine_fidelity_scenario(args: &Args) -> ExitCode {
             serde_json::to_string(&certificate).unwrap_or_default()
         );
     }
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture PHY-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Spawns a deterministic grid of physics objects above real terrain, simulates
+/// fall/collide/settle for `phy_ticks`, and emits a PHY-CERTIFICATE hashing every
+/// body's final pos+vel in CANONICAL grid-index order (so insertion order can't
+/// leak in). The determinism claims proven by running this scenario under the
+/// perturbation set and byte-comparing the certificate:
+///   - serial vs `--schedule-seed N`  ⇒ worker-count / thread-order invariance
+///   - `--phy-permute-order`           ⇒ body insertion-order invariance
+/// Same-platform exactness (cross-platform float identity is the held PHY-H4).
+/// MEASURES, never gates: only a setup failure is a non-success exit.
+fn phy_scenario(args: &Args) -> ExitCode {
+    use common::{
+        comp::{Pos, Vel, object},
+        state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        },
+        vol::ReadVol,
+    };
+    use server::state_ext::StateExt;
+    use specs::Builder;
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-phy-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-phy".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-phy-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "phy: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    // Anchor on the first rtsim site, force-load its terrain, find the ground.
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    let loaded = server.bastion_force_load_area(site_wpos, 5);
+    info!(loaded, "phy: force-loaded area");
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048)
+            .rev()
+            .find(|z| terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| b.is_filled()))
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let cz = ground_z(&server, cx, cy).expect("phy: no ground at site center");
+
+    // Canonical grid (index -> column). Spawn possibly-permuted, but the index
+    // is the STABLE key: the fingerprint is hashed in index order regardless.
+    let g = args.phy_grid.max(1);
+    let spacing = 2i32;
+    let drop_height = 15.0f32;
+    let mut cells: Vec<(u32, i32, i32)> = Vec::with_capacity((g * g) as usize);
+    for i in 0..g {
+        for j in 0..g {
+            let idx = i * g + j;
+            let x = cx + (i as i32 - g as i32 / 2) * spacing;
+            let y = cy + (j as i32 - g as i32 / 2) * spacing;
+            cells.push((idx, x, y));
+        }
+    }
+    let mut spawn_order: Vec<usize> = (0..cells.len()).collect();
+    if args.phy_permute_order {
+        spawn_order.reverse();
+    }
+    let mut bodies: Vec<(u32, specs::Entity)> = Vec::with_capacity(cells.len());
+    for &k in &spawn_order {
+        let (idx, x, y) = cells[k];
+        let gz = ground_z(&server, x, y).unwrap_or(cz);
+        // Deterministic initial horizontal velocity (index-derived) so bodies
+        // spread, interact, and exercise contact resolution rather than dropping
+        // straight down in isolation.
+        let vx = (idx as f32 % 7.0 - 3.0) * 0.4;
+        let vy = ((idx / 7) as f32 % 7.0 - 3.0) * 0.4;
+        let pos = Pos(Vec3::new(x as f32 + 0.5, y as f32 + 0.5, gz as f32 + drop_height));
+        let entity = server
+            .state_mut()
+            .create_object(pos, object::Body::Pumpkin)
+            .with(Vel(Vec3::new(vx, vy, 0.0)))
+            .build();
+        bodies.push((idx, entity));
+    }
+    bodies.sort_by_key(|(idx, _)| *idx);
+    info!(count = bodies.len(), permute = args.phy_permute_order, "phy: spawned bodies");
+
+    // Simulate fall / collide / settle.
+    tick(&mut server, args.phy_ticks);
+
+    // Fingerprint: every body's final pos+vel, canonical index order.
+    let (domain_root, leaves, alive) = {
+        let ecs = server.state().ecs();
+        let positions = ecs.read_storage::<Pos>();
+        let velocities = ecs.read_storage::<Vel>();
+        let mut h = DomainHasher::new("bastion/domain/physics/v1/sha256");
+        let mut leaves: Vec<MerkleLeaf> = Vec::with_capacity(bodies.len());
+        let mut alive = 0u32;
+        for (idx, entity) in &bodies {
+            let p = positions.get(*entity).map(|p| p.0).unwrap_or(Vec3::zero());
+            let v = velocities.get(*entity).map(|v| v.0).unwrap_or(Vec3::zero());
+            if positions.get(*entity).is_some() {
+                alive += 1;
+            }
+            h.field(&idx.to_le_bytes());
+            for c in [p.x, p.y, p.z, v.x, v.y, v.z] {
+                h.field(&c.to_bits().to_le_bytes());
+            }
+            let mut lh = DomainHasher::new("bastion/domain/physics-body/v1/sha256");
+            for c in [p.x, p.y, p.z, v.x, v.y, v.z] {
+                lh.field(&c.to_bits().to_le_bytes());
+            }
+            leaves.push(MerkleLeaf {
+                key: format!("body/{idx:08}"),
+                hash: lh.finish(),
+            });
+        }
+        (h.finish(), leaves, alive)
+    };
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        args.phy_ticks,
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/physics/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+    info!(bodies = bodies.len(), alive, "phy: fingerprint computed");
+    println!(
+        "PHY-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
