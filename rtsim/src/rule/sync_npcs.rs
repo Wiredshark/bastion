@@ -45,7 +45,18 @@ fn on_setup(ctx: EventCtx<SyncNpcs, OnSetup>) {
                 // Only include sites in the list if they're not the current one and they're more populus
                 .filter(|(other_id, _, other_site)| *other_id != site_id && other_site.plots().len() > world_site.plots().len())
                 .collect::<Vec<_>>();
-            other_sites.sort_by_key(|(_, other, _)| other.wpos.as_::<i64>().distance_squared(site.wpos.as_::<i64>()));
+            // DET-ESIM-019: total-order sort key. Distance alone leaves ties
+            // broken by incidental slotmap iteration order, which the monotone
+            // "Stalin sort" retain below then bakes into the persisted
+            // nearby_sites_by_size list. Break ties by plot count then stable
+            // SiteId so the retained candidate set is order-independent.
+            other_sites.sort_by_key(|(other_id, other, other_site)| {
+                (
+                    other.wpos.as_::<i64>().distance_squared(site.wpos.as_::<i64>()),
+                    other_site.plots().len(),
+                    slotmap::Key::data(other_id).as_ffi(),
+                )
+            });
             let mut max_size = 0;
             // Remove sites that aren't in increasing order of size (Stalin sort?!)
             other_sites.retain(|(_, _, other_site)| {
