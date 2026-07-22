@@ -489,6 +489,31 @@ struct Args {
     #[arg(long)]
     ter_permute_order: bool,
 
+    /// bastion determinism fixture EVT-01 (SPECIFIED_NOT_EVIDENCED): spawn N
+    /// clustered Health entities, emit ONE ExplosionEvent cascading into N
+    /// HealthChangeEvents via the parallel damage path, and emit an
+    /// EVT-CERTIFICATE hashing final Health per entity (canonical Uid order).
+    /// Byte-identical across serial / --schedule-seed proves the cross-producer
+    /// event cascade is canonically ordered. MEASURES; setup failure = non-success.
+    #[arg(long)]
+    evt_scenario: bool,
+
+    /// EVT-01: number of clustered Health entities to spawn (1..=255).
+    #[arg(long, default_value_t = 32)]
+    evt_entities: u32,
+
+    /// EVT-01: explosion damage value (raw HealthChange amount before falloff).
+    #[arg(long, default_value_t = 2000.0)]
+    evt_power: f32,
+
+    /// EVT-01: explosion radius (blocks); should cover the settled cluster.
+    #[arg(long, default_value_t = 24.0)]
+    evt_radius: f32,
+
+    /// EVT-01: authoritative ticks to apply the explosion→damage→health cascade.
+    #[arg(long, default_value_t = 10)]
+    evt_ticks: u64,
+
     /// bastion determinism fixture ESIM-01 (SPECIFIED_NOT_EVIDENCED): certifies
     /// DET-ESIM-011. Injects a deterministic set of death reports into a
     /// resident NPC's home-site `known_reports`, ticks so the site→NPC share
@@ -1280,6 +1305,8 @@ fn main() -> ExitCode {
         phy_scenario(&args)
     } else if args.ter_scenario {
         ter_scenario(&args)
+    } else if args.evt_scenario {
+        evt_scenario(&args)
     } else if args.esim_scenario {
         esim_scenario(&args)
     } else if args.ait_scenario {
@@ -12233,6 +12260,183 @@ fn ter_scenario(args: &Args) -> ExitCode {
     info!(mutations = muts.len(), "ter: fingerprint computed");
     println!(
         "TER-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture EVT-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// The REAL event-determinism claim (verified: the EventBus is FIFO and the
+/// HealthChange apply-handler is serial + sim-time-seeded, so manual emit-order
+/// is a non-claim): does the PARALLEL event cascade emit into the bus in a
+/// deterministic order? Spawns N clustered entities with Health, emits ONE
+/// ExplosionEvent whose damage effect cascades into N HealthChangeEvents through
+/// the real parallel damage path, ticks to apply, and fingerprints every
+/// entity's final Health in canonical Uid order. Byte-identity across:
+///   - serial repro                 (determinism)
+///   - --schedule-seed 7 / 42       (parallel emitter-merge / worker-count order)
+/// proves the cross-producer event cascade is canonically ordered. MEASURES.
+fn evt_scenario(args: &Args) -> ExitCode {
+    use common::{
+        combat::{Damage, DamageKind},
+        comp::Health,
+        effect::Effect,
+        event::ExplosionEvent,
+        explosion::{Explosion, RadiusEffect},
+        state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        },
+        uid::Uid,
+    };
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-evt-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-evt".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-evt-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "evt: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let cx = site_wpos.x;
+    let cy = site_wpos.y;
+    let cz = {
+        use common::vol::ReadVol;
+        let terrain = server.state().terrain();
+        (0..2048)
+            .rev()
+            .find(|z| {
+                terrain
+                    .get(Vec3::new(cx as i32, cy as i32, *z))
+                    .is_ok_and(|b| b.is_filled())
+            })
+            .expect("evt: no ground at site center") as f32
+    };
+    let center = Vec3::new(cx, cy, cz + 2.0);
+
+    // Spawn N clustered entities WITH Health (colonists), settle them.
+    let n = (args.evt_entities.max(1)).min(255) as u8;
+    let names = server.bastion_spawn_colony(center, n);
+    info!(spawned = names.len(), "evt: spawned health entities");
+    tick(&mut server, 20);
+
+    // ONE explosion → the damage effect cascades into a HealthChangeEvent per
+    // affected entity through the real parallel damage path. Pure entity damage
+    // (no terrain destruction) to keep this an events-only fingerprint.
+    server.state().emit_event_now(ExplosionEvent {
+        pos: center,
+        explosion: Explosion {
+            effects: vec![RadiusEffect::Entity(Effect::Damage(Damage {
+                kind: DamageKind::Energy,
+                value: args.evt_power,
+            }))],
+            radius: args.evt_radius,
+            reagent: None,
+            min_falloff: 0.0,
+        },
+        owner: None,
+    });
+    // Apply the explosion → damage → HealthChangeEvent cascade.
+    tick(&mut server, args.evt_ticks);
+
+    // Fingerprint: every entity's final Health in canonical Uid order.
+    let (domain_root, leaves, count) = {
+        let ecs = server.state().ecs();
+        let uids = ecs.read_storage::<Uid>();
+        let healths = ecs.read_storage::<Health>();
+        let mut items: Vec<(u64, u32, u32)> = (&uids, &healths)
+            .join()
+            .map(|(uid, h)| (uid.0.get(), h.current().to_bits(), h.maximum().to_bits()))
+            .collect();
+        items.sort_by_key(|(uid, _, _)| *uid);
+        let mut h = DomainHasher::new("bastion/domain/events/v1/sha256");
+        let mut leaves: Vec<MerkleLeaf> = Vec::with_capacity(items.len());
+        for (uid, cur, max) in &items {
+            h.field(&uid.to_le_bytes());
+            h.field(&cur.to_le_bytes());
+            h.field(&max.to_le_bytes());
+            let mut lh = DomainHasher::new("bastion/domain/events-hp/v1/sha256");
+            lh.field(&cur.to_le_bytes());
+            lh.field(&max.to_le_bytes());
+            leaves.push(MerkleLeaf {
+                key: format!("hp/{uid:020}"),
+                hash: lh.finish(),
+            });
+        }
+        (h.finish(), leaves, items.len())
+    };
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        args.evt_ticks,
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![("bastion/domain/events/v1/sha256".to_string(), domain_root)],
+    );
+    info!(entities = count, "evt: fingerprint computed");
+    println!(
+        "EVT-CERTIFICATE: {}",
         serde_json::to_string(&certificate).unwrap_or_default()
     );
 
