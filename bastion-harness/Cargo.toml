@@ -20,6 +20,9 @@ rtsim = { package = "veloren-rtsim", path = "../rtsim" }
 
 chrono = { workspace = true }
 clap = { workspace = true }
+# AIT-01 determinism fixture: seeded body construction (deterministic per seed).
+rand = { workspace = true }
+rand_chacha = { workspace = true }
 serde = { workspace = true }
 vek = { workspace = true }
 serde_json = { workspace = true }

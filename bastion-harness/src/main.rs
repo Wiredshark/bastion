@@ -541,6 +541,38 @@ struct Args {
     #[arg(long)]
     col_permute_order: bool,
 
+    /// bastion determinism fixture AIT-01 (SPECIFIED_NOT_EVIDENCED): certifies
+    /// DET-AIT-002 (AIT-001 covered-by-construction). Spawns K Enemy attacker
+    /// agents + M friendly targets in a deterministic tied-distance layout,
+    /// ticks until the PARALLEL agent system acquires targets, and emits an
+    /// AIT-CERTIFICATE hashing (attacker Uid -> selected target Uid) in
+    /// canonical attacker-Uid order. Byte-identical across serial vs
+    /// --schedule-seed 7/42 (par_join worker-count / dispatch order) proves
+    /// combat target selection does not depend on parallel scheduling — the
+    /// property AIT-002's stateless keyed detection restored (the old shared
+    /// helper-RNG cursor in can_sense_directly_near made detection depend on
+    /// cross-agent draw interleaving under par_join). Spawn is FIXED (so Uids
+    /// are fixed across legs; only the worker count varies), avoiding the
+    /// spawn-order/Uid confound. Non-vacuous: at least one attacker must acquire
+    /// a target, and seed 999 yields a different composite. AIT-001's grid-order
+    /// tiebreak builds single-threaded upstream of harness-reachable code, so it
+    /// is covered-by-construction, not independently perturbed here. MEASURES;
+    /// setup failure (no target acquired) is the only non-success.
+    #[arg(long)]
+    ait_scenario: bool,
+
+    /// AIT-01: number of Enemy attacker agents.
+    #[arg(long, default_value_t = 8)]
+    ait_attackers: u32,
+
+    /// AIT-01: number of friendly targets the attackers choose among.
+    #[arg(long, default_value_t = 6)]
+    ait_targets: u32,
+
+    /// AIT-01: authoritative ticks to let the agent system acquire targets.
+    #[arg(long, default_value_t = 60)]
+    ait_ticks: u64,
+
     /// bastion (MINING-LIVE-FIDELITY): dig footprint X width, blocks. The
     /// geometry axis of the completion investigation — wide claims fit the
     /// stairs arm; tight ones force the D16 released-but-unreachable class.
@@ -1250,6 +1282,8 @@ fn main() -> ExitCode {
         ter_scenario(&args)
     } else if args.esim_scenario {
         esim_scenario(&args)
+    } else if args.ait_scenario {
+        ait_scenario(&args)
     } else if args.col_scenario {
         col_scenario(&args)
     } else if args.dig_access_scenario {
@@ -12753,6 +12787,247 @@ fn col_scenario(args: &Args) -> ExitCode {
     }
     println!(
         "COL-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture AIT-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Certifies DET-AIT-002 (AIT-001 covered-by-construction). Spawns K Enemy
+/// attacker agents plus M friendly (Npc) targets in a deterministic tied-
+/// distance layout, ticks until the PARALLEL (par_join) agent system acquires
+/// targets, and emits an AIT-CERTIFICATE hashing (attacker Uid -> selected
+/// target Uid) in canonical attacker-Uid order. Run under the perturbation set
+/// and byte-compared:
+///   - serial vs `--schedule-seed N` ⇒ par_join worker-count / dispatch-order
+///     invariance — the property AIT-002 restored (the old shared helper-RNG
+///     cursor in `can_sense_directly_near` made detection depend on cross-agent
+///     draw interleaving under `par_join`; the keyed decision removed that).
+/// Spawn is FIXED, so Uids are fixed across legs and only the worker count
+/// varies — this sidesteps the spawn-order/Uid confound (permuting spawn order
+/// would reassign Uids and legitimately change the canonical winner).
+/// AIT-001's grid-order tiebreak builds single-threaded upstream of harness-
+/// reachable code, so it is covered-by-construction, not independently
+/// perturbed here. MEASURES; a setup failure (no target acquired) is the only
+/// non-success.
+fn ait_scenario(args: &Args) -> ExitCode {
+    use common::{
+        LoadoutBuilder,
+        comp::{
+            self, Agent, Alignment, Content, Health, Inventory, Ori, Poise, Pos, SkillSet, Stats,
+            Vel,
+        },
+        state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        },
+        uid::Uid,
+        vol::ReadVol,
+    };
+    use rand::SeedableRng;
+    use server::state_ext::StateExt;
+    use specs::{Builder, Join};
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-ait-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-ait".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-ait-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "ait: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    // Anchor on the first rtsim site, force-load its terrain, find the ground.
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    let loaded = server.bastion_force_load_area(site_wpos, 5);
+    info!(loaded, "ait: force-loaded area");
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048)
+            .rev()
+            .find(|z| terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| b.is_filled()))
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let cz = ground_z(&server, cx, cy).expect("ait: no ground at site center") + 1;
+
+    // A single FIXED deterministic humanoid body for everyone — seed-anchored so
+    // seed-999 differs, but identical across the schedule-seed legs of one seed.
+    let mut body_rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x0A17 ^ u64::from(args.seed));
+    let body = comp::Body::Humanoid(comp::humanoid::Body::random_with(
+        &mut body_rng,
+        &comp::humanoid::Species::Human,
+    ));
+
+    let mut spawn = |server: &mut Server, x: f32, y: f32, alignment: Alignment, agent: bool| {
+        let pos = Pos(Vec3::new(x, y, cz as f32));
+        let loadout = LoadoutBuilder::from_default(&body).build();
+        let inventory = Inventory::with_loadout(loadout, body);
+        let mut b = server
+            .state_mut()
+            .create_npc(
+                pos,
+                Ori::default(),
+                Stats::new(Content::Plain("ait".into()), body),
+                SkillSet::default(),
+                Some(Health::new(body)),
+                Poise::new(body),
+                inventory,
+                body,
+                body.scale(),
+            )
+            .with(Vel(Vec3::zero()))
+            .with(alignment);
+        if agent {
+            b = b.with(Agent::from_body(&body).with_patrol_origin(pos.0));
+        }
+        b.build()
+    };
+
+    // Deterministic layout: K attackers clustered at the centre, M friendly
+    // targets in a tight ring so several tie on distance and sit within the
+    // direct-sense radius (the gate AIT-002 keys). Spawn order is FIXED.
+    let k = args.ait_attackers.max(1);
+    let m = args.ait_targets.max(1);
+    let mut attackers: Vec<specs::Entity> = Vec::with_capacity(k as usize);
+    for i in 0..k {
+        let x = cx as f32 + 0.5 + (i as f32 - k as f32 / 2.0) * 0.75;
+        attackers.push(spawn(&mut server, x, cy as f32 + 0.5, Alignment::Enemy, true));
+    }
+    let radius = 4.0f32;
+    for j in 0..m {
+        let theta = std::f32::consts::TAU * (j as f32) / (m as f32);
+        let x = cx as f32 + 0.5 + radius * theta.cos();
+        let y = cy as f32 + 0.5 + radius * theta.sin();
+        let _ = spawn(&mut server, x, y, Alignment::Npc, false);
+    }
+    info!(k, m, "ait: spawned attackers + targets");
+
+    // Let the parallel agent system run target acquisition.
+    tick(&mut server, args.ait_ticks);
+
+    // Fingerprint: (attacker Uid -> selected target Uid), canonical attacker-Uid
+    // order. Uids are stable across the schedule-seed legs (spawn is fixed), so
+    // any divergence is a scheduling-dependent selection — exactly what AIT-002
+    // forbids. Anchored on the seed-dependent site position so seed-999 differs.
+    let (domain_root, leaves, acquired) = {
+        let ecs = server.state().ecs();
+        let agents = ecs.read_storage::<Agent>();
+        let uids = ecs.read_storage::<Uid>();
+        let mut rows: Vec<(u64, u64)> = Vec::with_capacity(attackers.len());
+        for e in &attackers {
+            let a_uid = uids.get(*e).map(|u| u.0.get()).unwrap_or(0);
+            let t_uid = agents
+                .get(*e)
+                .and_then(|ag| ag.target)
+                .and_then(|t| uids.get(t.target).map(|u| u.0.get()))
+                .unwrap_or(0);
+            rows.push((a_uid, t_uid));
+        }
+        rows.sort_by_key(|(a, _)| *a);
+        let acquired = rows.iter().filter(|(_, t)| *t != 0).count() as u64;
+
+        let build = |label: &str| -> DomainHash {
+            let mut hh = DomainHasher::new(label);
+            hh.field(&site_wpos.x.to_bits().to_le_bytes());
+            hh.field(&site_wpos.y.to_bits().to_le_bytes());
+            for (a, t) in &rows {
+                hh.field(&a.to_le_bytes());
+                hh.field(&t.to_le_bytes());
+            }
+            hh.finish()
+        };
+        let domain_root = build("bastion/domain/npc-combat-target/v1/sha256");
+        let leaf = build("bastion/domain/npc-combat-target-leaf/v1/sha256");
+        let leaves = vec![MerkleLeaf {
+            key: "npc/combat/target-selection".to_string(),
+            hash: leaf,
+        }];
+        (domain_root, leaves, acquired)
+    };
+
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        args.ait_ticks,
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/npc-combat-target/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+
+    info!(k, m, acquired, "ait: fingerprint computed");
+    if acquired == 0 {
+        tracing::error!(
+            k, m,
+            "ait: no attacker acquired a target — VACUOUS, failing (adjust layout/ticks)"
+        );
+        drop(server);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "AIT-CERTIFICATE: {}",
         serde_json::to_string(&certificate).unwrap_or_default()
     );
 
