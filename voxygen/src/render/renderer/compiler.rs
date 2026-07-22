@@ -130,6 +130,40 @@ impl WgpuCompiler {
     }
 }
 
+/// R0D .17: device-free recursive include expansion — the exact fixpoint loop
+/// `WgpuCompiler::create_shader_module` uses, extracted so the headless
+/// shader-interface extractor parses the SAME assembled source the live
+/// compiler feeds naga (no drifting copy).
+#[allow(dead_code)] // consumer = the .17 interface extractor (next packet slice)
+pub(super) fn expand_includes(
+    source: &str,
+    shader_name: &str,
+    resolve_include: &dyn Fn(&str, &str) -> Result<String, String>,
+) -> Result<String, String> {
+    use std::borrow::Cow;
+    let reg = regex::Regex::new("(?mR)^#include +<(.+)>$").unwrap();
+    let mut source = Cow::Borrowed(source);
+    let mut err: Option<String> = None;
+    loop {
+        let resolved = reg.replace_all(&source, |cap: &regex::Captures| {
+            match resolve_include(cap.get(1).unwrap().as_str(), shader_name) {
+                Ok(s) => s,
+                Err(e) => {
+                    err = Some(e);
+                    String::new()
+                }
+            }
+        });
+        if let Some(e) = err {
+            return Err(e);
+        }
+        match resolved {
+            Cow::Borrowed(_) => return Ok(source.into_owned()),
+            Cow::Owned(s) => source = Cow::Owned(s),
+        }
+    }
+}
+
 impl Compiler for WgpuCompiler {
     fn create_shader_module(
         &mut self,

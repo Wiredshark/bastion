@@ -243,11 +243,19 @@ impl ShaderModules {
             constants += "#define RAIN_ENABLED\n";
         }
 
-        for shader in pipeline_modes.experimental_shaders.iter() {
-            constants += &format!(
-                "#define EXPERIMENTAL_{}\n",
-                format!("{:?}", shader).to_uppercase()
-            );
+        // R0D (.17 groundwork): the experimental-shader set is UNORDERED —
+        // iterating it directly made the EXPERIMENTAL_* define order (and so
+        // the assembled constants.glsl bytes) process-random whenever more
+        // than one was enabled. Semantically neutral, but a source-identity
+        // instability; sort so the assembled source is deterministic.
+        let mut experimental_defines: Vec<String> = pipeline_modes
+            .experimental_shaders
+            .iter()
+            .map(|shader| format!("#define EXPERIMENTAL_{}\n", format!("{:?}", shader).to_uppercase()))
+            .collect();
+        experimental_defines.sort();
+        for define in experimental_defines {
+            constants += &define;
         }
 
         let constants = match pipeline_modes.bloom {
