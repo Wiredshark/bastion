@@ -1941,6 +1941,30 @@ impl PlayState for SessionState {
         // D1-replay mode keys captures to authoritative SIM TIME (fixed dt),
         // so two runs capture at identical ticks regardless of wall pacing.
         let r0d_sim_time = self.client.borrow().state().get_time();
+        // R0D diagnostic (leg-22 finding: a 90-colonist frame rendered as 4
+        // near-identical greens with zero non-green pixels): log the client's
+        // figure count once/sec in capture mode, to distinguish "entities not
+        // reaching the spectator render path" (structural) from "camera not
+        // framing them" (mechanical). Cheap; capture-mode only.
+        if crate::render::bastion_r0d::capture_config().is_some() {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static LAST: AtomicU64 = AtomicU64::new(0);
+            let sec = r0d_sim_time as u64;
+            if LAST.swap(sec, Ordering::SeqCst) != sec {
+                let cl = self.client.borrow();
+                let entity_count = {
+                    use specs::Join;
+                    let ecs = cl.state().ecs();
+                    (&ecs.entities()).join().count()
+                };
+                tracing::info!(
+                    target: "bastion_r0d",
+                    "R0D-DIAG t={sec} figures={} figures_visible={} ecs_entities={entity_count}",
+                    self.scene.figure_mgr().figure_count(),
+                    self.scene.figure_mgr().figure_count_visible(),
+                );
+            }
+        }
         if crate::render::bastion_r0d::drive_capture(
             global_state.window.renderer_mut(),
             r0d_sim_time,
