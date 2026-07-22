@@ -429,6 +429,16 @@ pub fn should_unpause_on_entry() -> bool {
     capture_config().is_some() && !DONE.swap(true, Ordering::SeqCst)
 }
 
+/// One-shot: fires exactly once per session, on the first tick, to frame the
+/// capture-mode camera at the flat-arena world center (§17.3 — the launch-
+/// flag overseer entry never fires for a spectator, leaving the camera at a
+/// degenerate default; see the leg-21 finding).
+pub fn should_bastion_r0d_frame_camera() -> bool {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static DONE: AtomicBool = AtomicBool::new(false);
+    !DONE.swap(true, Ordering::SeqCst)
+}
+
 /// Record one CPU-encoded draw call (.14). `units` = index or vertex count as
 /// encoded; `instances` = instance count. No-op unless the manifest flag is set.
 pub fn record_draw(kind: u16, units: u32, instances: u32) {

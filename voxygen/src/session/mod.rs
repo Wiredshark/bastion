@@ -3254,6 +3254,30 @@ impl PlayState for SessionState {
                 self.bastion_pending_overseer = false;
                 self.bastion_enter_overseer(global_state);
             }
+            // R0D capture mode: `client.position()` never resolves for a
+            // silent_spectator session (no avatar entity ever gets a Pos
+            // component), so the launch-flag overseer entry above never
+            // fires and the camera is left at Camera::new's raw default
+            // (near world origin, unrelated to the flat-arena's actual
+            // world-center spawn) — the leg-21 finding: a solid-black-then-
+            // solid-green degenerate view with no visible terrain/entities.
+            // Fix: explicitly spectate-position + enter overseer at the
+            // flat-arena's world-center wpos (1024 chunks/side * 32
+            // blocks/chunk / 2 = 16384 — MapSizeLg::new((10,10)) is the
+            // engine default and this value has been externally observed
+            // identical across every seed/run in the campaign, confirming
+            // it's a fixed build constant, not seed-derived). One-shot.
+            if crate::render::bastion_r0d::capture_config().is_some()
+                && crate::render::bastion_r0d::should_bastion_r0d_frame_camera()
+            {
+                let center = Vec3::new(16384.5, 16384.5, 420.0);
+                self.client.borrow_mut().spectate_position(center);
+                let camera = self.scene.camera_mut();
+                camera.set_mode(CameraMode::Overseer);
+                camera.set_orientation_instant(Vec3::new(0.0, camera::OVERSEER_PITCH, 0.0));
+                camera.force_focus_pos(center);
+                self.bastion_sync_context(global_state);
+            }
             // bastion: keep the derived input context synced into the window
             // fan-out filter (idempotent one-enum write; covers every camera-
             // mode transition path).
