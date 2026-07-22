@@ -168,162 +168,17 @@ impl ShaderModules {
     ) -> Result<Self, RenderError> {
         prof_span!(_guard, "ShaderModules::new");
 
-        let constants = shaders.get("include.constants").unwrap();
-        let globals = shaders.get("include.globals").unwrap();
-        let sky = shaders.get("include.sky").unwrap();
-        let light = shaders.get("include.light").unwrap();
-        let srgb = shaders.get("include.srgb").unwrap();
-        let random = shaders.get("include.random").unwrap();
-        let lod = shaders.get("include.lod").unwrap();
-        // bastion (B1.6): the unified occlusion include.
-        let bastion_occlusion = shaders.get("include.bastion_occlusion").unwrap();
-        let shadows = shaders.get("include.shadows").unwrap();
-        let rain_occlusion = shaders.get("include.rain_occlusion").unwrap();
-        let point_glow = shaders.get("include.point_glow").unwrap();
-        let fxaa = shaders.get("include.fxaa").unwrap();
-
-        // We dynamically add extra configuration settings to the constants file.
-        let mut constants = format!(
-            r#"
-{}
-
-#define VOXYGEN_COMPUTATION_PREFERENCE {}
-#define FLUID_MODE {}
-#define CLOUD_MODE {}
-#define REFLECTION_MODE {}
-#define LIGHTING_ALGORITHM {}
-#define SHADOW_MODE {}
-
-"#,
-            constants.0.as_str(),
-            // TODO: Configurable vertex/fragment shader preference.
-            "VOXYGEN_COMPUTATION_PREFERENCE_FRAGMENT",
-            match pipeline_modes.fluid {
-                FluidMode::Low => "FLUID_MODE_LOW",
-                FluidMode::Medium => "FLUID_MODE_MEDIUM",
-                FluidMode::High => "FLUID_MODE_HIGH",
-            },
-            match pipeline_modes.cloud {
-                CloudMode::None => "CLOUD_MODE_NONE",
-                CloudMode::Minimal => "CLOUD_MODE_MINIMAL",
-                CloudMode::Low => "CLOUD_MODE_LOW",
-                CloudMode::Medium => "CLOUD_MODE_MEDIUM",
-                CloudMode::High => "CLOUD_MODE_HIGH",
-                CloudMode::Ultra => "CLOUD_MODE_ULTRA",
-            },
-            match pipeline_modes.reflection {
-                ReflectionMode::Low => "REFLECTION_MODE_LOW",
-                ReflectionMode::Medium => "REFLECTION_MODE_MEDIUM",
-                ReflectionMode::High => "REFLECTION_MODE_HIGH",
-            },
-            match pipeline_modes.lighting {
-                LightingMode::Ashikhmin => "LIGHTING_ALGORITHM_ASHIKHMIN",
-                LightingMode::BlinnPhong => "LIGHTING_ALGORITHM_BLINN_PHONG",
-                LightingMode::Lambertian => "LIGHTING_ALGORITHM_LAMBERTIAN",
-            },
-            match pipeline_modes.shadow {
-                ShadowMode::None => "SHADOW_MODE_NONE",
-                ShadowMode::Map(_) if has_shadow_views => "SHADOW_MODE_MAP",
-                ShadowMode::Cheap | ShadowMode::Map(_) => "SHADOW_MODE_CHEAP",
-            },
-        );
-
-        if pipeline_modes.point_glow > f32::EPSILON {
-            constants += &format!(
-                "\n#define POINT_GLOW_FACTOR {}\n",
-                pipeline_modes.point_glow
-            );
-        }
-
-        if pipeline_modes.flashing_lights_enabled {
-            constants += "#define FLASHING_LIGHTS_ENABLED\n";
-        }
-
-        if pipeline_modes.rain_enabled {
-            constants += "#define RAIN_ENABLED\n";
-        }
-
-        // R0D (.17 groundwork): the experimental-shader set is UNORDERED —
-        // iterating it directly made the EXPERIMENTAL_* define order (and so
-        // the assembled constants.glsl bytes) process-random whenever more
-        // than one was enabled. Semantically neutral, but a source-identity
-        // instability; sort so the assembled source is deterministic.
-        let mut experimental_defines: Vec<String> = pipeline_modes
-            .experimental_shaders
-            .iter()
-            .map(|shader| format!("#define EXPERIMENTAL_{}\n", format!("{:?}", shader).to_uppercase()))
-            .collect();
-        experimental_defines.sort();
-        for define in experimental_defines {
-            constants += &define;
-        }
-
-        let constants = match pipeline_modes.bloom {
-            BloomMode::Off => constants,
-            BloomMode::On(config) => {
-                format!(
-                    r#"
-{}
-
-#define BLOOM_FACTOR {}
-#define BLOOM_UNIFORM_BLUR {}
-
-"#,
-                    constants,
-                    config.factor.fraction(),
-                    config.uniform_blur,
-                )
-            },
-        };
-
-        let anti_alias = shaders
-            .get(match pipeline_modes.aa {
-                AaMode::None => "antialias.none",
-                AaMode::Bilinear => "antialias.bilinear",
-                AaMode::Fxaa => "antialias.fxaa",
-                AaMode::MsaaX4 => "antialias.msaa-x4",
-                AaMode::MsaaX8 => "antialias.msaa-x8",
-                AaMode::MsaaX16 => "antialias.msaa-x16",
-                AaMode::Hqx => "antialias.hqx",
-                AaMode::FxUpscale => "antialias.fxupscale",
-            })
-            .unwrap();
-
-        let cloud = shaders
-            .get(match pipeline_modes.cloud {
-                CloudMode::None => "include.cloud.none",
-                _ => "include.cloud.regular",
-            })
-            .unwrap();
-
+        // R0D .17: the include assembly lives in build_include_map (device-free,
+        // shared with the headless shader-interface extractor).
+        let include_map = build_include_map(shaders, pipeline_modes, has_shadow_views);
         let shaderc_opts = !pipeline_modes
             .experimental_shaders
             .contains(&ExperimentalShader::DisableShadercOptimization);
         let fetch_include = move |name: &str, shader_name: &str| -> Result<String, String> {
-            Ok(match name {
-                "constants.glsl" => constants.clone(),
-                "globals.glsl" => globals.0.to_owned(),
-                "shadows.glsl" => shadows.0.to_owned(),
-                "rain_occlusion.glsl" => rain_occlusion.0.to_owned(),
-                "sky.glsl" => sky.0.to_owned(),
-                "light.glsl" => light.0.to_owned(),
-                "srgb.glsl" => srgb.0.to_owned(),
-                "random.glsl" => random.0.to_owned(),
-                "lod.glsl" => lod.0.to_owned(),
-                "bastion_occlusion.glsl" => bastion_occlusion.0.to_owned(),
-                "anti-aliasing.glsl" => anti_alias.0.to_owned(),
-                "cloud.glsl" => cloud.0.to_owned(),
-                "point_glow.glsl" => point_glow.0.to_owned(),
-                "fxaa.glsl" => fxaa.0.to_owned(),
-                other => {
-                    return Err(format!(
-                        "Include {} in {} is not defined",
-                        other, shader_name
-                    ));
-                },
+            include_map.get(name).cloned().ok_or_else(|| {
+                format!("Include {} in {} is not defined", name, shader_name)
             })
         };
-
         let mut compiler: Box<dyn super::compiler::Compiler> = if pipeline_modes.enable_naga {
             Box::new(WgpuCompiler::new(fetch_include)?)
         } else {
@@ -893,6 +748,165 @@ fn register_create_ingame_and_shadow_pipelines(
 /// It blocks the main thread to create the interface pipelines while moving the
 /// creation of other pipelines into the background
 /// NOTE: this tries to use all the CPU cores to complete as soon as possible
+/// R0D .17: the complete include map — every `#include <name>` a shader may
+/// resolve, as OWNED strings — assembled device-free from the shader assets
+/// and pipeline modes. This IS the assembly the live compilers consume (their
+/// `fetch_include` closures are thin lookups over this map), so the headless
+/// shader-interface extractor parses identical source by construction.
+pub(super) fn build_include_map(
+    shaders: &Shaders,
+    pipeline_modes: &PipelineModes,
+    has_shadow_views: bool,
+) -> std::collections::HashMap<String, String> {
+    let constants = shaders.get("include.constants").unwrap();
+    let globals = shaders.get("include.globals").unwrap();
+    let sky = shaders.get("include.sky").unwrap();
+    let light = shaders.get("include.light").unwrap();
+    let srgb = shaders.get("include.srgb").unwrap();
+    let random = shaders.get("include.random").unwrap();
+    let lod = shaders.get("include.lod").unwrap();
+    // bastion (B1.6): the unified occlusion include.
+    let bastion_occlusion = shaders.get("include.bastion_occlusion").unwrap();
+    let shadows = shaders.get("include.shadows").unwrap();
+    let rain_occlusion = shaders.get("include.rain_occlusion").unwrap();
+    let point_glow = shaders.get("include.point_glow").unwrap();
+    let fxaa = shaders.get("include.fxaa").unwrap();
+
+    // We dynamically add extra configuration settings to the constants file.
+    let mut constants = format!(
+        r#"
+{}
+
+#define VOXYGEN_COMPUTATION_PREFERENCE {}
+#define FLUID_MODE {}
+#define CLOUD_MODE {}
+#define REFLECTION_MODE {}
+#define LIGHTING_ALGORITHM {}
+#define SHADOW_MODE {}
+
+"#,
+        constants.0.as_str(),
+        // TODO: Configurable vertex/fragment shader preference.
+        "VOXYGEN_COMPUTATION_PREFERENCE_FRAGMENT",
+        match pipeline_modes.fluid {
+            FluidMode::Low => "FLUID_MODE_LOW",
+            FluidMode::Medium => "FLUID_MODE_MEDIUM",
+            FluidMode::High => "FLUID_MODE_HIGH",
+        },
+        match pipeline_modes.cloud {
+            CloudMode::None => "CLOUD_MODE_NONE",
+            CloudMode::Minimal => "CLOUD_MODE_MINIMAL",
+            CloudMode::Low => "CLOUD_MODE_LOW",
+            CloudMode::Medium => "CLOUD_MODE_MEDIUM",
+            CloudMode::High => "CLOUD_MODE_HIGH",
+            CloudMode::Ultra => "CLOUD_MODE_ULTRA",
+        },
+        match pipeline_modes.reflection {
+            ReflectionMode::Low => "REFLECTION_MODE_LOW",
+            ReflectionMode::Medium => "REFLECTION_MODE_MEDIUM",
+            ReflectionMode::High => "REFLECTION_MODE_HIGH",
+        },
+        match pipeline_modes.lighting {
+            LightingMode::Ashikhmin => "LIGHTING_ALGORITHM_ASHIKHMIN",
+            LightingMode::BlinnPhong => "LIGHTING_ALGORITHM_BLINN_PHONG",
+            LightingMode::Lambertian => "LIGHTING_ALGORITHM_LAMBERTIAN",
+        },
+        match pipeline_modes.shadow {
+            ShadowMode::None => "SHADOW_MODE_NONE",
+            ShadowMode::Map(_) if has_shadow_views => "SHADOW_MODE_MAP",
+            ShadowMode::Cheap | ShadowMode::Map(_) => "SHADOW_MODE_CHEAP",
+        },
+    );
+
+    if pipeline_modes.point_glow > f32::EPSILON {
+        constants += &format!(
+            "\n#define POINT_GLOW_FACTOR {}\n",
+            pipeline_modes.point_glow
+        );
+    }
+
+    if pipeline_modes.flashing_lights_enabled {
+        constants += "#define FLASHING_LIGHTS_ENABLED\n";
+    }
+
+    if pipeline_modes.rain_enabled {
+        constants += "#define RAIN_ENABLED\n";
+    }
+
+    // R0D (.17 groundwork): the experimental-shader set is UNORDERED —
+    // iterating it directly made the EXPERIMENTAL_* define order (and so
+    // the assembled constants.glsl bytes) process-random whenever more
+    // than one was enabled. Semantically neutral, but a source-identity
+    // instability; sort so the assembled source is deterministic.
+    let mut experimental_defines: Vec<String> = pipeline_modes
+        .experimental_shaders
+        .iter()
+        .map(|shader| format!("#define EXPERIMENTAL_{}\n", format!("{:?}", shader).to_uppercase()))
+        .collect();
+    experimental_defines.sort();
+    for define in experimental_defines {
+        constants += &define;
+    }
+
+    let constants = match pipeline_modes.bloom {
+        BloomMode::Off => constants,
+        BloomMode::On(config) => {
+            format!(
+                r#"
+{}
+
+#define BLOOM_FACTOR {}
+#define BLOOM_UNIFORM_BLUR {}
+
+"#,
+                constants,
+                config.factor.fraction(),
+                config.uniform_blur,
+            )
+        },
+    };
+
+    let anti_alias = shaders
+        .get(match pipeline_modes.aa {
+            AaMode::None => "antialias.none",
+            AaMode::Bilinear => "antialias.bilinear",
+            AaMode::Fxaa => "antialias.fxaa",
+            AaMode::MsaaX4 => "antialias.msaa-x4",
+            AaMode::MsaaX8 => "antialias.msaa-x8",
+            AaMode::MsaaX16 => "antialias.msaa-x16",
+            AaMode::Hqx => "antialias.hqx",
+            AaMode::FxUpscale => "antialias.fxupscale",
+        })
+        .unwrap();
+
+    let cloud = shaders
+        .get(match pipeline_modes.cloud {
+            CloudMode::None => "include.cloud.none",
+            _ => "include.cloud.regular",
+        })
+        .unwrap();
+
+    [
+        ("constants.glsl", constants),
+        ("globals.glsl", globals.0.to_owned()),
+        ("shadows.glsl", shadows.0.to_owned()),
+        ("rain_occlusion.glsl", rain_occlusion.0.to_owned()),
+        ("sky.glsl", sky.0.to_owned()),
+        ("light.glsl", light.0.to_owned()),
+        ("srgb.glsl", srgb.0.to_owned()),
+        ("random.glsl", random.0.to_owned()),
+        ("lod.glsl", lod.0.to_owned()),
+        ("bastion_occlusion.glsl", bastion_occlusion.0.to_owned()),
+        ("anti-aliasing.glsl", anti_alias.0.to_owned()),
+        ("cloud.glsl", cloud.0.to_owned()),
+        ("point_glow.glsl", point_glow.0.to_owned()),
+        ("fxaa.glsl", fxaa.0.to_owned()),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v))
+    .collect()
+}
+
 pub(super) fn initial_create_pipelines(
     device: wgpu::Device,
     backend: wgpu::Backend,
