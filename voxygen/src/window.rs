@@ -658,6 +658,25 @@ impl Window {
                             }
                         }
                     },
+                    EventType::Disconnected => {
+                        // DET-GPD-004: gilrs emits no further events from a
+                        // disconnected gamepad, so its last nonzero analog
+                        // sample would stay latched in movement/camera/mouse-
+                        // emulation state indefinitely (a cable pull or battery
+                        // loss mid-stick leaves the avatar walking/aiming).
+                        // Emit canonical zeroes and clear the window-local
+                        // mouse-emulation vector so persistent analog state
+                        // resets deterministically on disconnect.
+                        self.mouse_emulation_vec = Vec2::zero();
+                        self.events
+                            .push(Event::AnalogGameInput(AnalogGameInput::MovementX(0.0)));
+                        self.events
+                            .push(Event::AnalogGameInput(AnalogGameInput::MovementY(0.0)));
+                        self.events
+                            .push(Event::AnalogGameInput(AnalogGameInput::CameraX(0.0)));
+                        self.events
+                            .push(Event::AnalogGameInput(AnalogGameInput::CameraY(0.0)));
+                    },
                     _ => {},
                 }
             }
@@ -957,6 +976,29 @@ impl Window {
 
     pub fn grab_cursor(&mut self, grab: bool) {
         use winit::window::CursorGrabMode;
+
+        // DET-GPD-005: cursor-grab selects which namespace analog axis samples
+        // route to (game while grabbed, menu while not), but flipping it does
+        // not zero the namespace being deactivated. A stick held across the
+        // switch therefore leaves stale movement/aim latched in the old
+        // namespace, resuming when the context switches back. Emit zeroes for
+        // the deactivated namespace on an actual state change.
+        if self.cursor_grabbed != grab {
+            if grab {
+                // Entering game context: clear the menu mouse-emulation vector.
+                self.mouse_emulation_vec = Vec2::zero();
+            } else {
+                // Entering menu context: zero latched game movement/camera.
+                self.events
+                    .push(Event::AnalogGameInput(AnalogGameInput::MovementX(0.0)));
+                self.events
+                    .push(Event::AnalogGameInput(AnalogGameInput::MovementY(0.0)));
+                self.events
+                    .push(Event::AnalogGameInput(AnalogGameInput::CameraX(0.0)));
+                self.events
+                    .push(Event::AnalogGameInput(AnalogGameInput::CameraY(0.0)));
+            }
+        }
 
         self.cursor_grabbed = grab;
         self.window.set_cursor_visible(!grab);
