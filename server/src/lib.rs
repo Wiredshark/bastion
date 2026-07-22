@@ -166,6 +166,11 @@ pub use world::{
 /// TODO: Discuss time
 const BATTLE_MODE_COOLDOWN: f64 = 60.0 * 5.0;
 
+/// R0D D1-replay: the client anchor tick (0 = unset). Set by
+/// [`Server::bastion_r0d_mark_anchor`] when the capture-mode auto-pause fires;
+/// the colony one-shot keys off `anchor + 100`.
+static R0D_ANCHOR_TICK: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// SpawnPoint corresponds to the default location that players are positioned
 /// at if they have no waypoint. Players *should* always have a waypoint, so
 /// this should basically never be used in practice.
@@ -1702,6 +1707,16 @@ impl Server {
     /// `TerrainChanges::new_chunks` + `rtsim.hook_load_chunk`); chunk
     /// supplements (wildlife spawns) are deliberately skipped. Returns the
     /// number of chunks generated.
+    /// R0D D1-replay: mark the client anchor — the tick at which the first
+    /// player appeared and the capture-mode auto-pause fired. The colony
+    /// one-shot keys off `anchor + 100` so every run's scenario timeline is
+    /// tick-aligned to the client, not to wall-varying login duration.
+    pub fn bastion_r0d_mark_anchor(&self) {
+        let tick_now = self.state.ecs().read_resource::<Tick>().0;
+        R0D_ANCHOR_TICK.store(tick_now.max(1), core::sync::atomic::Ordering::SeqCst);
+        info!(anchor = tick_now, "r0d: client anchor tick marked");
+    }
+
     pub fn bastion_force_load_area(&mut self, center_wpos: Vec2<f32>, chunk_radius: i32) -> usize {
         use common::terrain::CoordinateConversions;
         let center = center_wpos.as_::<i32>().wpos_to_cpos();
@@ -3665,14 +3680,18 @@ impl Server {
 
         // R0D scenario matrix (colony-present leg): with
         // BASTION_R0D_SPAWN_COLONY=N set, one-shot spawn a deterministic
-        // N-colonist band at world spawn once chunks have settled (tick 100 —
-        // colonist promotion is asynchronous, the COL-fixture lesson). The
-        // existing bastion dev-flag pattern; a no-op in every normal boot.
+        // N-colonist band at world spawn 100 ticks AFTER the client anchor
+        // (leg-12 lesson: an absolute-tick spawn fired during wall-varying
+        // login, so pre-anchor wander diverged runs). Anchor-less boots
+        // (no capture leg) never spawn. Promotion is asynchronous — the
+        // COL-fixture settle lesson — hence the +100.
         {
             use std::sync::atomic::{AtomicBool, Ordering};
             static R0D_COLONY_DONE: AtomicBool = AtomicBool::new(false);
             let tick_now = self.state.ecs().read_resource::<Tick>().0;
-            if tick_now == 100
+            let anchor = R0D_ANCHOR_TICK.load(Ordering::SeqCst);
+            if anchor != 0
+                && tick_now == anchor + 100
                 && !R0D_COLONY_DONE.swap(true, Ordering::SeqCst)
                 && let Ok(n) = std::env::var("BASTION_R0D_SPAWN_COLONY")
                 && let Ok(n) = n.parse::<u8>()

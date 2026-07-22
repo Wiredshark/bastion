@@ -1926,6 +1926,12 @@ impl PlayState for SessionState {
         // capture hash has been written, shut the session down cleanly.
         // §17.3: entity-present legs pause the sim once the trace stabilizes,
         // freezing the world exactly so warm-capture identity applies.
+        // D1-replay: the first session tick releases the anchor pause — the
+        // world resumes tick-aligned to the client in every run.
+        #[cfg(feature = "singleplayer")]
+        if crate::render::bastion_r0d::should_unpause_on_entry() {
+            global_state.unpause();
+        }
         #[cfg(feature = "singleplayer")]
         if crate::render::bastion_r0d::should_pause_sim_now(
             crate::render::bastion_r0d::capture_session_frames(),

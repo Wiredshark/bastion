@@ -226,16 +226,23 @@ pub fn drive_capture(renderer: &mut super::renderer::Renderer, sim_time: f64) ->
         *s
     };
     // D1-replay mode (BASTION_R0D_CAPTURE_AT): captures are keyed to SIM TIME
-    // — capture k fires when sim_time >= at + k*every — so two runs capture at
-    // the same authoritative ticks (fixed dt, DET-CLK-006) regardless of wall
-    // pacing. Dynamic scenes become cross-run comparable.
+    // RELATIVE TO THE CLIENT ANCHOR — the first in-session frame records the
+    // base sim time (the leg-12 lesson: absolute sim time includes wall-
+    // varying login duration), then capture k fires at base + at + k*every.
+    // With fixed dt (DET-CLK-006) and the anchor-pause, two runs capture at
+    // identical post-anchor ticks. Dynamic scenes become cross-run comparable.
     if let Ok(at) = std::env::var("BASTION_R0D_CAPTURE_AT") {
+        static CAPTURE_BASE: Mutex<Option<f64>> = Mutex::new(None);
+        let base = {
+            let mut b = CAPTURE_BASE.lock().expect("capture base");
+            *b.get_or_insert(sim_time)
+        };
         let at: f64 = at.parse().unwrap_or(30.0);
         let every: f64 = std::env::var("BASTION_R0D_CAPTURE_EVERY")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(0.5);
-        if requested < count && sim_time >= at + requested as f64 * every {
+        if requested < count && sim_time >= base + at + requested as f64 * every {
             request_one_capture(renderer, &out, requested);
         }
         return completed >= count;
@@ -412,6 +419,14 @@ pub fn should_pause_sim_now(session_frames: u64) -> bool {
 #[must_use]
 pub fn capture_session_frames() -> u64 {
     CAPTURE_STATE.lock().map(|s| s.0).unwrap_or(0)
+}
+
+/// One-shot: the session's first tick unpauses the anchor-paused server
+/// (capture mode only) — the world resumes tick-aligned to the client.
+pub fn should_unpause_on_entry() -> bool {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static DONE: AtomicBool = AtomicBool::new(false);
+    capture_config().is_some() && !DONE.swap(true, Ordering::SeqCst)
 }
 
 /// Record one CPU-encoded draw call (.14). `units` = index or vertex count as
