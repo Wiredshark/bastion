@@ -761,7 +761,16 @@ impl<'a> System<'a> for Sys {
         // recompute reads (a direct Mood write would be overwritten
         // within a cadence). Stamped on the chronicle's own clock.
         // Emitters: cave-in fear, sleep quality.
-        for (re, pos, kind) in std::mem::take(&mut job_board.pending_thoughts) {
+        // DET-MOOD-003: drain the queued thoughts in a canonical total order
+        // (source NPC id, cell x/y/z, kind) before recording. bastion_jobs
+        // populates pending_thoughts during its per-colonist pass, and the
+        // chronicle stamps a monotonic seq and cap-evicts the oldest band
+        // entry on overflow — so the queue's push order would otherwise become
+        // the authoritative, persisted chronicle seq / eviction order. Sorting
+        // at the drain makes that order independent of the producer pass.
+        let mut pending_thoughts = std::mem::take(&mut job_board.pending_thoughts);
+        pending_thoughts.sort_by_key(|(re, pos, kind)| (*re, pos.x, pos.y, pos.z, *kind));
+        for (re, pos, kind) in pending_thoughts {
             let now = data.time_of_day;
             data.chronicle.record(
                 now,

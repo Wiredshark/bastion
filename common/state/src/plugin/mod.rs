@@ -313,19 +313,50 @@ impl PluginMgr {
         Ok(Self { plugins })
     }
 
-    /// Add a plugin received from the server
-    pub fn load_server_plugin(&mut self, path: PathBuf) -> Result<PluginHash, PluginError> {
-        Plugin::from_path(path.clone()).map(|plugin| {
+    /// Add a plugin received from the server, running its load hook exactly
+    /// once as part of admission.
+    ///
+    /// DET-PLG-003 (determinism audit): the raw push APIs used to register a
+    /// late-arriving server plugin and make it visible *without* ever invoking
+    /// its `load_event`. A plugin present in the initial asset directory ran
+    /// its load hook (via `State::setup_ecs_world`), while the same plugin
+    /// delivered from cache/network was published with no hook. Plugin
+    /// activation therefore depended on the bootstrap path/timing, not solely
+    /// on the declared plugin set. We now run the load hook here, against the
+    /// current ECS view and game mode, so every admission path
+    /// (preinstalled/cached/downloaded) shares one lifecycle.
+    ///
+    /// Admission is idempotent: a plugin whose hash is already present is a
+    /// no-op, so duplicate delivery (cache + network, or a repeat) neither
+    /// double-pushes nor double-activates. The hook runs *before* the push, so
+    /// a hook failure leaves the manager unchanged (a small typed rollback).
+    pub fn load_server_plugin(
+        &mut self,
+        path: PathBuf,
+        ecs: &EcsWorld,
+        mode: common::resources::GameMode,
+    ) -> Result<PluginHash, PluginError> {
+        Plugin::from_path(path.clone()).and_then(|mut plugin| {
             if let Err(e) = common::assets::register_tar(path.clone()) {
                 error!("Plugin {:?} tar error {e:?}", path.as_path());
             }
             let hash = plugin.hash;
+            // Idempotent: an already-admitted plugin must not re-run its load
+            // hook or be pushed a second time.
+            if self.plugins.iter().any(|p| p.hash == hash) {
+                return Ok(hash);
+            }
+            // Run the load hook before publishing; on failure the plugin is
+            // never pushed, so the manager is left exactly as it was.
+            plugin.load_event(ecs, mode).map_err(|e| {
+                PluginError::PluginModuleError(plugin.data.name.clone(), "<load>".to_owned(), e)
+            })?;
             self.plugins.push(plugin);
             // DET-AST-024/025: re-establish the canonical content-hash order so
             // a server-delivered plugin never selects last-wins arbitration by
             // its network arrival position (see `from_dir`).
             self.plugins.sort_unstable_by_key(|p| p.hash);
-            hash
+            Ok(hash)
         })
     }
 
@@ -333,9 +364,11 @@ impl PluginMgr {
         &mut self,
         base_dir: &Path,
         data: Vec<u8>,
+        ecs: &EcsWorld,
+        mode: common::resources::GameMode,
     ) -> Result<PluginHash, PluginError> {
         let path = store_server_plugin(base_dir, data).map_err(PluginError::Io)?;
-        self.load_server_plugin(path)
+        self.load_server_plugin(path, ecs, mode)
     }
 
     /// list all registered plugins

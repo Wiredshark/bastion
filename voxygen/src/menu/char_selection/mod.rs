@@ -15,8 +15,6 @@ use crate::{
 use client::{self, Client};
 use common::{comp, event::UpdateCharacterMetadata, resources::DeltaTime};
 use common_base::span;
-#[cfg(feature = "plugins")]
-use common_state::plugin::PluginMgr;
 use specs::WorldExt;
 use std::{cell::RefCell, rc::Rc};
 use tracing::error;
@@ -297,10 +295,10 @@ impl PlayState for CharSelectionState {
                                 {
                                     tracing::info!("plugin data {}", data.len());
                                     let mut client = self.client.borrow_mut();
+                                    // DET-PLG-003: admit via State so the load
+                                    // hook runs once at admission.
                                     let hash = client
                                         .state()
-                                        .ecs()
-                                        .write_resource::<PluginMgr>()
                                         .cache_server_plugin(&global_state.config_dir, data);
                                     match hash {
                                         Ok(hash) => {

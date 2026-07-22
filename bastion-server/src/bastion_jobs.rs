@@ -3618,7 +3618,7 @@ pub struct JobBoard {
     /// rides the bag until a future re-roll — never lost, never duped).
     /// Drained by the end-of-forage [`JobKind::DepositRun`]; keyed by Uid
     /// so a demote/promote round-trip keeps the debt.
-    gathered_defs: HashMap<Uid, std::collections::HashSet<String>>,
+    gathered_defs: HashMap<Uid, std::collections::BTreeSet<String>>,
     /// bastion (CASE-003 belt, persistence form): consecutive ticks each
     /// colonist's capsule CORE has sat inside solid terrain. At
     /// [`EMBED_PERSIST_TICKS`] the colonist is genuinely WEDGED (the
@@ -7506,10 +7506,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .count();
             if pending < cap {
                 let occupied: HashSet<Vec3<i32>> = board.jobs.values().map(|j| j.pos).collect();
+                // Gather all eligible loose drops first, then admit up to the
+                // cap in a canonical total order (source cell z/y/x, item def,
+                // stable item Uid) — ECS join order must not decide WHICH
+                // pickups become haul jobs when more are eligible than the cap
+                // allows (DET-COL-HAUL-001 / DET-AUT-004). Eligibility is read
+                // against board state as of loop entry; each drop has a unique
+                // Uid so the per-item reservation done during commit cannot
+                // change another candidate's admission.
+                let mut candidates: Vec<(Vec3<i32>, &'static str, Uid)> = Vec::new();
                 for (pickup, ipos, iuid) in (&pickup_items, &positions, &uids).join() {
-                    if pending >= cap {
-                        break;
-                    }
                     let matched = match pickup.item().item_definition_id().itemdef_id() {
                         Some(d) if d == MINE_DROP_ITEM => Some(MINE_DROP_ITEM),
                         Some(d) if d == CHOP_DROP_ITEM => Some(CHOP_DROP_ITEM),
@@ -7528,6 +7534,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     {
                         continue;
                     }
+                    candidates.push((cell, static_def, *iuid));
+                }
+                candidates
+                    .sort_unstable_by_key(|&(cell, def, uid)| (cell.z, cell.y, cell.x, def, uid.0));
+                for (cell, static_def, iuid) in candidates {
+                    if pending >= cap {
+                        break;
+                    }
                     let Some(dest) = board
                         .stockpiles
                         .iter()
@@ -7540,12 +7554,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     else {
                         continue;
                     };
-                    let rid = board.reserve(*iuid);
+                    let rid = board.reserve(iuid);
                     let id = board.next_id;
                     board.next_id += 1;
                     board.jobs.insert(id, Job {
                         kind: common::bastion::JobKind::Haul {
-                            item: *iuid,
+                            item: iuid,
                             destination: dest,
                         },
                         work: common::bastion::WorkType::Haul,
@@ -8017,12 +8031,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // the same rtsim read guard the mood pass uses (the :%15==11
             // idiom) — zero new coupling.
             let stagger_data = rtsim.rt_state().data();
-            for (entity, colonist, pos, uid, needs) in
-                (&entities, &colonists, &positions, &uids, &needs_storage).join()
-            {
-                if !is_loaded(entity) {
+            // DET-COL-NEED-001 / DET-COL-NEED-002 / DET-AUT-005: process
+            // colonists in a canonical order — most-urgent survival meter
+            // first, stable Uid as the total-order tiebreak — instead of ECS
+            // join order. The body reserves the nearest unreserved FOOD
+            // greedily and targets the nearest free BED first-come, so join
+            // (entity-allocation) order otherwise decided WHICH colonist won a
+            // scarce resource when several needed one the same tick. A total
+            // order over (severity, Uid) makes that allocation independent of
+            // ECS iteration order. The breakdown roll below is already keyed
+            // by (tick, uid, episode) (T0.33), so its outcome does not depend
+            // on this order; only the greedy reservations do.
+            let mut need_order: Vec<(specs::Entity, Uid, f32)> =
+                (&entities, &colonists, &uids, &needs_storage)
+                    .join()
+                    .filter(|(e, _, _, _)| is_loaded(*e))
+                    .map(|(e, _, u, n)| (e, *u, n.rest.min(n.hunger)))
+                    .collect();
+            need_order.sort_by(|a, b| {
+                a.2.partial_cmp(&b.2)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.1.0.get().cmp(&b.1.0.get()))
+            });
+            for (entity, uid, _) in need_order {
+                let uid = &uid;
+                let (Some(colonist), Some(pos), Some(needs)) = (
+                    colonists.get(entity),
+                    positions.get(entity),
+                    needs_storage.get(entity),
+                ) else {
                     continue;
-                }
+                };
                 // B7-3: an already-despondent colonist HOLDS — the break
                 // is TOP-tier (even needs don't preempt it out; its own
                 // clock in the Arrived arm lifts it).
@@ -14367,13 +14406,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             .filter(|j| j.claimed_by.is_some())
             .map(|j| j.pos)
             .collect();
-        for (entity, colonist, pos, uid, ()) in
-            (&entities, &colonists, &positions, &uids, !&active_jobs).join()
-        {
-            // LOD-1 Loaded-gate: never CLAIM for a demoting colonist.
-            if !is_loaded(entity) {
+        // DET-COL-JOB-001: claim jobs for idle colonists in a canonical order
+        // (stable Uid) instead of ECS join order. Each colonist greedily
+        // claims its best-scoring job and pushes to claimed_pos, which feeds
+        // the clump penalty for colonists processed later this pass -- so join
+        // (entity-allocation) order otherwise decided which colonist won a
+        // contested job and how the anti-clumping spread resolved. The
+        // per-colonist job SCORE is already tie-broken deterministically
+        // (ARCH-003: equal-score claims pinned by JobId); ordering the
+        // claimants by Uid makes the whole assignment independent of ECS
+        // iteration order.
+        let mut claim_order: Vec<(specs::Entity, Uid)> =
+            (&entities, &colonists, &uids, !&active_jobs)
+                .join()
+                .filter(|(e, _, _, _)| is_loaded(*e))
+                .map(|(e, _, u, _)| (e, *u))
+                .collect();
+        claim_order.sort_by_key(|(_, u)| u.0.get());
+        for (entity, uid) in claim_order {
+            let uid = &uid;
+            let (Some(colonist), Some(pos)) = (colonists.get(entity), positions.get(entity))
+            else {
                 continue;
-            }
+            };
             let emergency_route_owner = board.emergency_route_members.get(uid).copied();
             let route_has_claimed_step = emergency_route_owner.is_some_and(|route_owner| {
                 board.emergency_access_jobs.iter().any(|(id, owner)| {

@@ -1,6 +1,7 @@
 use crate::{game_input::GameInput, window::MenuInput};
 use gilrs::{Axis as GilAxis, Button as GilButton, ev::Code as GilCode};
 use hashbrown::{HashMap, HashSet};
+use std::collections::BTreeSet;
 use i18n::Localization;
 use serde::{Deserialize, Serialize};
 use strum::{EnumIter, IntoEnumIterator};
@@ -60,6 +61,10 @@ impl From<ControllerSettings> for ControllerSettingsSerde {
         let pan_sensitivity = controller_settings.pan_sensitivity;
         let pan_invert_y = controller_settings.pan_invert_y;
         let axis_deadzones = controller_settings.axis_deadzones;
+        // DET-GPD-002: persist button deadzones too. This was previously
+        // written empty, so any user-set analog-button deadzone was silently
+        // dropped on save (mirrors `axis_deadzones`, written whole above).
+        let button_deadzones = controller_settings.button_deadzones;
 
         let mouse_emulation_sensitivity = controller_settings.mouse_emulation_sensitivity;
         let inverted_axes = controller_settings.inverted_axes;
@@ -78,7 +83,7 @@ impl From<ControllerSettings> for ControllerSettingsSerde {
             pan_invert_y,
             axis_deadzones,
 
-            button_deadzones: HashMap::new(),
+            button_deadzones,
             mouse_emulation_sensitivity,
             inverted_axes,
         }
@@ -94,9 +99,9 @@ impl Default for ControllerSettingsSerde {
 #[serde(from = "ControllerSettingsSerde", into = "ControllerSettingsSerde")]
 pub struct ControllerSettings {
     pub game_button_map: HashMap<GameInput, Option<Button>>,
-    pub inverse_game_button_map: HashMap<Button, HashSet<GameInput>>,
+    pub inverse_game_button_map: HashMap<Button, BTreeSet<GameInput>>,
     pub menu_button_map: HashMap<MenuInput, Option<Button>>,
-    pub inverse_menu_button_map: HashMap<Button, HashSet<MenuInput>>,
+    pub inverse_menu_button_map: HashMap<Button, BTreeSet<MenuInput>>,
     pub game_analog_button_map: HashMap<AnalogButtonGameAction, AnalogButton>,
     pub inverse_game_analog_button_map: HashMap<AnalogButton, HashSet<AnalogButtonGameAction>>,
     pub menu_analog_button_map: HashMap<AnalogButtonMenuAction, AnalogButton>,
@@ -106,7 +111,7 @@ pub struct ControllerSettings {
     pub menu_axis_map: HashMap<AxisMenuAction, Axis>,
     pub inverse_menu_axis_map: HashMap<Axis, HashSet<AxisMenuAction>>,
     pub layer_button_map: HashMap<GameInput, Option<LayerEntry>>,
-    pub inverse_layer_button_map: HashMap<LayerEntry, HashSet<GameInput>>,
+    pub inverse_layer_button_map: HashMap<LayerEntry, BTreeSet<GameInput>>,
 
     pub modifier_buttons: Vec<Button>,
     pub pan_sensitivity: u32,
@@ -144,6 +149,26 @@ impl From<ControllerSettingsSerde> for ControllerSettings {
                 None => controller_settings.remove_menu_binding(k),
             }
         }
+
+        // DET-GPD-002: restore the non-binding transform fields. Previously the
+        // reverse conversion replayed only button/layer/menu deltas and left
+        // everything else at `default()`, so these serialized fields were
+        // dropped on load -- pan sensitivity, axis/button deadzones, mouse-
+        // emulation sensitivity, inverted axes, and modifier buttons silently
+        // reverted to default on every restart, changing the transform applied
+        // to the same raw controller sample. None of these has an inverse-map
+        // companion, so a direct assignment restores them fully. (The analog/
+        // axis maps have no remap UI and are reconstructed by `default()`, so
+        // they round-trip correctly without handling here.)
+        controller_settings.modifier_buttons = controller_serde.modifier_buttons;
+        controller_settings.pan_sensitivity = controller_serde.pan_sensitivity;
+        controller_settings.pan_invert_y = controller_serde.pan_invert_y;
+        controller_settings.axis_deadzones = controller_serde.axis_deadzones;
+        controller_settings.button_deadzones = controller_serde.button_deadzones;
+        controller_settings.mouse_emulation_sensitivity =
+            controller_serde.mouse_emulation_sensitivity;
+        controller_settings.inverted_axes = controller_serde.inverted_axes;
+
         controller_settings
     }
 }
@@ -214,18 +239,18 @@ impl ControllerSettings {
     pub fn get_associated_game_button_inputs(
         &self,
         button: &Button,
-    ) -> Option<&HashSet<GameInput>> {
+    ) -> Option<&BTreeSet<GameInput>> {
         self.inverse_game_button_map.get(button)
     }
 
     pub fn get_associated_game_layer_inputs(
         &self,
         layers: &LayerEntry,
-    ) -> Option<&HashSet<GameInput>> {
+    ) -> Option<&BTreeSet<GameInput>> {
         self.inverse_layer_button_map.get(layers)
     }
 
-    pub fn get_associated_game_menu_inputs(&self, button: &Button) -> Option<&HashSet<MenuInput>> {
+    pub fn get_associated_game_menu_inputs(&self, button: &Button) -> Option<&BTreeSet<MenuInput>> {
         self.inverse_menu_button_map.get(button)
     }
 
