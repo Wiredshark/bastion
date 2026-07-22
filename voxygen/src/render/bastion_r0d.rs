@@ -234,6 +234,16 @@ pub fn drive_capture(renderer: &mut super::renderer::Renderer) -> bool {
                         .append(true)
                         .open(&out)
                         .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+                    // Diagnostic PNG dump (BASTION_R0D_CAPTURE_PNG): when warm
+                    // captures unexpectedly differ, the images themselves are
+                    // the fastest divergence localizer.
+                    if std::env::var_os("BASTION_R0D_CAPTURE_PNG").is_some() {
+                        let mut png = out.clone();
+                        png.set_extension(format!("{ordinal}.png"));
+                        if let Err(e) = image.save(&png) {
+                            tracing::warn!(target: "bastion_r0d", "png dump failed: {e}");
+                        }
+                    }
                 }
                 Err(e) => {
                     // Typed-terminal spirit (BTL-341): a failed capture is
@@ -263,8 +273,9 @@ pub mod ranks {
     pub const VOLUMETRIC: u16 = 40;
     pub const TRANSPARENT: u16 = 50;
     pub const BLOOM: u16 = 60;
-    pub const UI_PREMULTIPLY: u16 = 70;
-    pub const THIRD: u16 = 80;
+    pub const THIRD: u16 = 70;
+    // LIVE-EVIDENCE CORRECTION: ui_premultiply executes after third begins.
+    pub const UI_PREMULTIPLY: u16 = 80;
 }
 
 #[cfg(test)]

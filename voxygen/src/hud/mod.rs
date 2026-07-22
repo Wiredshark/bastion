@@ -996,7 +996,10 @@ impl Default for Show {
 impl Show {
     pub fn new() -> Self {
         Self {
-            ui: true,
+            // R0D §17.3: the auto-capture leg hides the HUD — dynamic overlay
+            // text (FPS counter, clock) redraws every frame and would make
+            // warm captures unequal. Production default stays true.
+            ui: crate::render::bastion_r0d::capture_config().is_none(),
             intro: false,
             crafting: false,
             bag: false,

@@ -183,8 +183,12 @@ pub mod voxygen_ranks {
     pub const VOLUMETRIC: u16 = 40;
     pub const TRANSPARENT: u16 = 50;
     pub const BLOOM: u16 = 60;
-    pub const UI_PREMULTIPLY: u16 = 70;
-    pub const THIRD: u16 = 80;
+    pub const THIRD: u16 = 70;
+    // LIVE-EVIDENCE CORRECTION (first lavapipe cert run, 2026-07-22): the
+    // ui_premultiply passes execute AFTER the third pass begins (observed on
+    // every frame of both A/B runs), so the declared rank order follows the
+    // real drawer, not the earlier source-reading guess.
+    pub const UI_PREMULTIPLY: u16 = 80;
 }
 
 #[cfg(test)]
