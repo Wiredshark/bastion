@@ -3294,12 +3294,27 @@ impl PlayState for SessionState {
             if crate::render::bastion_r0d::capture_config().is_some()
                 && crate::render::bastion_r0d::should_bastion_r0d_frame_camera()
             {
-                let center = Vec3::new(16384.5, 16384.5, 420.0);
-                self.client.borrow_mut().spectate_position(center);
+                // leg-22 finding: an Overseer top-down at 192-block altitude
+                // renders 2-block colonists sub-pixel over a featureless slab
+                // (figures_visible=1). A ground-level FREEFLY eye a few blocks
+                // back and up, looking horizontally at the spawn cluster,
+                // frames the walking colonists as large distinct figures — the
+                // actual dynamic-motion signal. In Freefly the eye is
+                // focus - dir*dist; with dist≈MIN_ZOOM the eye ≈ focus, so we
+                // place focus at the eye and orient toward the spawn.
+                // Flat-arena slab top is z=400, colonists at z=401.
+                let spawn = Vec3::new(16384.5, 16384.5, 401.0);
+                let eye = spawn + Vec3::new(-12.0, -12.0, 6.0);
+                self.client.borrow_mut().spectate_position(eye);
                 let camera = self.scene.camera_mut();
-                camera.set_mode(CameraMode::Overseer);
-                camera.set_orientation_instant(Vec3::new(0.0, camera::OVERSEER_PITCH, 0.0));
-                camera.force_focus_pos(center);
+                camera.set_mode(CameraMode::Freefly);
+                camera.set_distance(camera::MIN_ZOOM);
+                // Yaw 45° (facing +x,+y toward spawn from the -x,-y eye),
+                // slight downward pitch to catch the ground cluster.
+                let yaw = core::f32::consts::FRAC_PI_4;
+                let pitch = -0.35_f32;
+                camera.set_orientation_instant(Vec3::new(yaw, pitch, 0.0));
+                camera.force_focus_pos(eye);
                 self.bastion_sync_context(global_state);
             }
             // bastion: keep the derived input context synced into the window
