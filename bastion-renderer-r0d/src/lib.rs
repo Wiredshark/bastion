@@ -31,6 +31,7 @@ pub mod selection;
 pub mod shared_adapter;
 pub mod shutdown;
 pub mod tape;
+pub mod texture_payload;
 pub mod visual_oracle;
 
 pub use admission::{CandidateSourceState, R0dSourceAuthorityMismatch, RendererW0AdmissionV2};
