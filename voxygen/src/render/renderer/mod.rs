@@ -349,6 +349,12 @@ impl Renderer {
         // the panic message
         device.on_uncaptured_error(Arc::new(move |error| {
             error!("{}", &error);
+            // R0D .18: in capture mode, record the typed fault terminal
+            // BEFORE the abort — a GPU fault can never publish success, and
+            // the evidence file must say WHY the run died (BTL-341 spirit:
+            // recorded, never silently lost). Exactly-once by construction:
+            // the panic ends the run.
+            crate::render::bastion_r0d::record_fault_terminal(&format!("{error:?}"));
             panic!(
                 "wgpu error (handling all wgpu errors as fatal):\n{:?}\n{:?}",
                 error, info,

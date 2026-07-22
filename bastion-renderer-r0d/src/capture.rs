@@ -26,18 +26,25 @@ pub enum CaptureTargetKind {
 }
 
 /// Frozen capture pixel format (DC-078: Rgba8UnormSrgb for color).
+/// `Rgb8Srgb` records the CURRENT live screenshot path honestly (BGRA/RGBA →
+/// RGB, alpha dropped) until the full DC-079 RGBA readback lands; the V1
+/// descriptor never claims a format the bytes don't have.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CaptureFormat {
     Rgba8UnormSrgb = 0,
     R32Uint = 1,
     Depth32Float = 2,
+    Rgb8Srgb = 3,
 }
 
 impl CaptureFormat {
     /// Bytes per pixel (frozen).
     #[must_use]
     pub fn bytes_per_pixel(self) -> usize {
-        4
+        match self {
+            CaptureFormat::Rgba8UnormSrgb | CaptureFormat::R32Uint | CaptureFormat::Depth32Float => 4,
+            CaptureFormat::Rgb8Srgb => 3,
+        }
     }
 }
 

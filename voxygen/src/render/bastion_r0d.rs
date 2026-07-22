@@ -225,9 +225,25 @@ pub fn drive_capture(renderer: &mut super::renderer::Renderer) -> bool {
                         0,
                         image.as_raw(),
                     );
+                    // R0D .19: bind the canonical capture identity — the frame
+                    // token (capture ordinal in V1) + the honest descriptor
+                    // (current path = tight RGB8, top-left, sRGB, alpha
+                    // dropped). Callback time appears nowhere (DC-080).
+                    let descriptor = bastion_renderer_r0d::capture::RendererCaptureDescriptorV1 {
+                        target: bastion_renderer_r0d::capture::CaptureTargetKind::OffscreenFinalComposite,
+                        format: bastion_renderer_r0d::capture::CaptureFormat::Rgb8Srgb,
+                        channel_order: bastion_renderer_r0d::capture::ChannelOrder::Rgba,
+                        row_origin: bastion_renderer_r0d::capture::RowOrigin::TopLeft,
+                        alpha: bastion_renderer_r0d::capture::AlphaMode::PreservedStraight,
+                        transfer: bastion_renderer_r0d::capture::TransferFunction::Srgb,
+                        width: w,
+                        height: h,
+                    };
+                    let identity = descriptor.capture_identity(ordinal);
                     let line = format!(
-                        "capture {ordinal} {w}x{h} {}\n",
-                        bastion_renderer_r0d::hex32(&digest)
+                        "capture {ordinal} {w}x{h} {} id={}\n",
+                        bastion_renderer_r0d::hex32(&digest),
+                        bastion_renderer_r0d::hex32(&identity),
                     );
                     let _ = std::fs::OpenOptions::new()
                         .create(true)
@@ -262,6 +278,24 @@ pub fn drive_capture(renderer: &mut super::renderer::Renderer) -> bool {
         });
     }
     completed >= count
+}
+
+/// R0D .18: record a typed GPU fault terminal into the capture evidence file.
+/// A faulted run can never publish a clean capture set — the marker line makes
+/// the failure diagnosable from the evidence alone (§19.2/BTL-341). No-op
+/// outside capture mode.
+pub fn record_fault_terminal(detail: &str) {
+    let Some((out, _, _)) = capture_config() else {
+        return;
+    };
+    // One line, classified: validation/OOM/device-loss map to the shutdown
+    // module's typed vocabulary at triage; the raw detail is preserved.
+    let line = format!("FAULT-TERMINAL R0D_INVALID_EVIDENCE_GPU {detail}\n");
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&out)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
 }
 
 /// The frozen drawer pass ranks (mirrors
