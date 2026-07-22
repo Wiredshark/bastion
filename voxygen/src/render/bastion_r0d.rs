@@ -358,23 +358,33 @@ pub fn trace_stable_frames() -> u64 {
 }
 
 /// §17.3 sim-pause lever (BASTION_R0D_PAUSE_SIM): for entity-present scenario
-/// legs, the singleplayer server loop is paused ONCE when trace stability
-/// reaches half the capture gate — the world freezes exactly, so warm-capture
-/// identity applies even with colonists in view. Returns true exactly once.
-pub fn should_pause_sim_now() -> bool {
+/// legs, the singleplayer server loop is paused ONCE — but only IN-SESSION
+/// (leg-9 lesson, the menu-phase precondition bug's third guise: gating on raw
+/// trace stability paused the server during LOGIN and the client never entered
+/// the session). The caller passes the session frame count; the pause fires
+/// once past half the warmup with a stably-settled trace.
+pub fn should_pause_sim_now(session_frames: u64) -> bool {
     use std::sync::atomic::{AtomicBool, Ordering};
     static PAUSED: AtomicBool = AtomicBool::new(false);
-    if std::env::var_os("BASTION_R0D_PAUSE_SIM").is_none() || capture_config().is_none() {
+    if std::env::var_os("BASTION_R0D_PAUSE_SIM").is_none() {
         return false;
     }
-    let gate: u64 = std::env::var("BASTION_R0D_STABLE_GATE")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(60);
-    if trace_stable_frames() >= gate / 2 && !PAUSED.swap(true, Ordering::SeqCst) {
+    let Some((_, warmup, _)) = capture_config() else {
+        return false;
+    };
+    if session_frames >= warmup / 2
+        && trace_stable_frames() >= 30
+        && !PAUSED.swap(true, Ordering::SeqCst)
+    {
         return true;
     }
     false
+}
+
+/// Session frames seen by the capture driver (for the pause lever).
+#[must_use]
+pub fn capture_session_frames() -> u64 {
+    CAPTURE_STATE.lock().map(|s| s.0).unwrap_or(0)
 }
 
 /// Record one CPU-encoded draw call (.14). `units` = index or vertex count as

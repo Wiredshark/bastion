@@ -1927,7 +1927,9 @@ impl PlayState for SessionState {
         // §17.3: entity-present legs pause the sim once the trace stabilizes,
         // freezing the world exactly so warm-capture identity applies.
         #[cfg(feature = "singleplayer")]
-        if crate::render::bastion_r0d::should_pause_sim_now() {
+        if crate::render::bastion_r0d::should_pause_sim_now(
+            crate::render::bastion_r0d::capture_session_frames(),
+        ) {
             global_state.pause();
         }
         if crate::render::bastion_r0d::drive_capture(global_state.window.renderer_mut()) {
