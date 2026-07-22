@@ -3291,31 +3291,45 @@ impl PlayState for SessionState {
             // engine default and this value has been externally observed
             // identical across every seed/run in the campaign, confirming
             // it's a fixed build constant, not seed-derived). One-shot.
-            if crate::render::bastion_r0d::capture_config().is_some()
-                && crate::render::bastion_r0d::should_bastion_r0d_frame_camera()
-            {
-                // leg-22 finding: an Overseer top-down at 192-block altitude
-                // renders 2-block colonists sub-pixel over a featureless slab
-                // (figures_visible=1). A ground-level FREEFLY eye a few blocks
-                // back and up, looking horizontally at the spawn cluster,
-                // frames the walking colonists as large distinct figures — the
-                // actual dynamic-motion signal. In Freefly the eye is
-                // focus - dir*dist; with dist≈MIN_ZOOM the eye ≈ focus, so we
-                // place focus at the eye and orient toward the spawn.
-                // Flat-arena slab top is z=400, colonists at z=401.
-                let spawn = Vec3::new(16384.5, 16384.5, 401.0);
-                let eye = spawn + Vec3::new(-12.0, -12.0, 6.0);
-                self.client.borrow_mut().spectate_position(eye);
-                let camera = self.scene.camera_mut();
-                camera.set_mode(CameraMode::Freefly);
-                camera.set_distance(camera::MIN_ZOOM);
-                // Yaw 45° (facing +x,+y toward spawn from the -x,-y eye),
-                // slight downward pitch to catch the ground cluster.
-                let yaw = core::f32::consts::FRAC_PI_4;
-                let pitch = -0.35_f32;
-                camera.set_orientation_instant(Vec3::new(yaw, pitch, 0.0));
-                camera.force_focus_pos(eye);
-                self.bastion_sync_context(global_state);
+            // R0D dynamic-capture camera (Ben-directed, leg-24 fix): a fixed
+            // spectator point aimed at world origin never framed the
+            // colonists (figures drawn but off-screen). Instead, EACH capture
+            // tick anchor the camera to a live colonist: pick the LOWEST-Uid
+            // alive bodied entity — deterministic (the target is a pure
+            // function of authoritative state; in the flat arena the only
+            // bodied entities are the spawned colonists) — and orbit the
+            // camera on it with a fixed chase distance/angle, so a walking
+            // colonist is centered and large in every frame. In Freefly the
+            // focus is the look-at point and dist is how far back the eye
+            // sits, so the target stays centered regardless of orbit angle.
+            if crate::render::bastion_r0d::capture_config().is_some() {
+                let target = {
+                    use specs::Join;
+                    let cl = self.client.borrow();
+                    let ecs = cl.state().ecs();
+                    let uids = ecs.read_storage::<common::uid::Uid>();
+                    let positions = ecs.read_storage::<comp::Pos>();
+                    let bodies = ecs.read_storage::<comp::Body>();
+                    (&uids, &positions, &bodies)
+                        .join()
+                        .min_by_key(|(uid, _, _)| uid.0.get())
+                        .map(|(_, pos, _)| pos.0)
+                };
+                if let Some(tgt) = target {
+                    let camera = self.scene.camera_mut();
+                    camera.set_mode(CameraMode::Freefly);
+                    camera.set_distance(6.0);
+                    // Chase angle: yaw 45°, modest downward pitch onto the
+                    // colonist. Frozen — never wall-time-driven.
+                    camera.set_orientation_instant(Vec3::new(
+                        core::f32::consts::FRAC_PI_4,
+                        0.3,
+                        0.0,
+                    ));
+                    // Look at the colonist's torso (feet at pos, +1 block up).
+                    camera.force_focus_pos(Vec3::new(tgt.x, tgt.y, tgt.z + 1.0));
+                    self.bastion_sync_context(global_state);
+                }
             }
             // bastion: keep the derived input context synced into the window
             // fan-out filter (idempotent one-enum write; covers every camera-
