@@ -3724,12 +3724,40 @@ impl Server {
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(3);
                 let loaded = self.bastion_force_load_area(spawn.xy().map(|e| e as f32), radius);
-                let names = self.bastion_spawn_colony(spawn.map(|e| e as f32), n);
+                // R0D max-stress leg: BASTION_R0D_SPAWN_BANDS spawns N
+                // colonist bands at deterministic offsets around a ring
+                // (angle = 2*pi*i/bands, fixed radius in blocks) instead of
+                // one band at spawn — genuine directional/spread variety, no
+                // RNG (pure integer/float math on the band index). Default 1
+                // (the original single-band-at-spawn behavior).
+                let bands: u32 = std::env::var("BASTION_R0D_SPAWN_BANDS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(1)
+                    .max(1);
+                let ring_radius = 12.0_f32 * (radius as f32 / 3.0).max(1.0);
+                let mut total_spawned = 0usize;
+                for i in 0..bands {
+                    let wpos = if bands == 1 {
+                        spawn.map(|e| e as f32)
+                    } else {
+                        let angle = std::f32::consts::TAU * (i as f32) / (bands as f32);
+                        vek::Vec3::new(
+                            spawn.x as f32 + ring_radius * angle.cos(),
+                            spawn.y as f32 + ring_radius * angle.sin(),
+                            spawn.z as f32,
+                        )
+                    };
+                    let names = self.bastion_spawn_colony(wpos, n);
+                    total_spawned += names.len();
+                }
                 let renamed = self.bastion_rename_colonists_unique();
                 info!(
                     ?spawn,
                     loaded,
-                    spawned = names.len(),
+                    bands,
+                    per_band = n,
+                    spawned = total_spawned,
                     renamed = renamed.len(),
                     "r0d: colony-present scenario spawn"
                 );
