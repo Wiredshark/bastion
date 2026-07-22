@@ -142,10 +142,20 @@ pub fn emit_pass_tape() {
         records.len(),
         tape.join(","),
     );
+    // .14 slice: drain the frame's CPU draw-structural tape UNCONDITIONALLY
+    // (log-only mode must not accumulate records forever).
+    let mut draw_tape = String::new();
+    emit_draw_tape(&mut draw_tape);
+    if !draw_tape.is_empty() {
+        tracing::info!(target: "bastion_r0d", "R0D-{}", draw_tape.trim_end());
+    }
     if let Some(v) = std::env::var_os("BASTION_R0D_MANIFEST") {
         let s = v.to_string_lossy();
         if s != "1" && !s.is_empty() {
-            let line = format!("pass-tape {} monotonic={monotonic}\n", tape.join(","));
+            let line = format!(
+                "pass-tape {} monotonic={monotonic}\n{draw_tape}",
+                tape.join(",")
+            );
             let _ = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -278,6 +288,79 @@ pub fn drive_capture(renderer: &mut super::renderer::Renderer) -> bool {
         });
     }
     completed >= count
+}
+
+// ---------------------------------------------------------------------------
+// BUILD-007A10.14 slice: the CPU draw-structural tape.
+// ---------------------------------------------------------------------------
+
+/// Frozen draw-kind registry (.14): every CPU-encoded draw call carries one.
+/// Append-only; the numeric tag enters the draw-tape digest.
+pub mod draw_kind {
+    pub const SKYBOX: u16 = 1;
+    pub const DEBUG: u16 = 2;
+    pub const LOD_TERRAIN: u16 = 3;
+    pub const FIGURE: u16 = 4;
+    pub const TERRAIN: u16 = 5;
+    pub const FLUID: u16 = 6;
+    pub const SPRITE: u16 = 7;
+    pub const LOD_OBJECT: u16 = 8;
+    pub const PARTICLE: u16 = 9;
+    pub const ROPE: u16 = 10;
+    pub const TRAIL: u16 = 11;
+    pub const CLOUDS: u16 = 12;
+    pub const POSTPROCESS: u16 = 13;
+    pub const UI: u16 = 14;
+    pub const FIGURE_SHADOW: u16 = 15;
+    pub const TERRAIN_SHADOW: u16 = 16;
+    pub const DEBUG_SHADOW: u16 = 17;
+    pub const POINT_SHADOW: u16 = 18;
+    pub const BLOOM: u16 = 21;
+    pub const UI_PREMULTIPLY: u16 = 22;
+    pub const BLIT: u16 = 23;
+}
+
+/// Frame-local CPU draw records `(kind, units, instances)` in encode order —
+/// the §13.1 "draw group and instance order" structural evidence. Behind the
+/// manifest flag; drained with the pass tape.
+static DRAW_RECORDS: Mutex<Vec<(u16, u32, u32)>> = Mutex::new(Vec::new());
+
+/// Record one CPU-encoded draw call (.14). `units` = index or vertex count as
+/// encoded; `instances` = instance count. No-op unless the manifest flag is set.
+pub fn record_draw(kind: u16, units: u32, instances: u32) {
+    if !manifest_enabled() {
+        return;
+    }
+    if let Ok(mut v) = DRAW_RECORDS.lock() {
+        v.push((kind, units, instances));
+    }
+}
+
+/// Drain the frame's draw tape (called with the pass tape at `Drawer::drop`):
+/// one `draw-tape <n> <digest>` line — the digest chains every (kind, units,
+/// instances) record in encode order through the shared domain_hash, so two
+/// runs match iff their CPU draw streams are identical.
+fn emit_draw_tape(sink: &mut String) {
+    let records: Vec<(u16, u32, u32)> = match DRAW_RECORDS.lock() {
+        Ok(mut v) => std::mem::take(&mut *v),
+        Err(_) => return,
+    };
+    if records.is_empty() {
+        return;
+    }
+    let mut payload = Vec::with_capacity(8 + records.len() * 10);
+    payload.extend_from_slice(&(records.len() as u64).to_le_bytes());
+    for (kind, units, instances) in &records {
+        payload.extend_from_slice(&kind.to_le_bytes());
+        payload.extend_from_slice(&units.to_le_bytes());
+        payload.extend_from_slice(&instances.to_le_bytes());
+    }
+    let digest = bastion_renderer_r0d::domain_hash("bastion/r0d/draw-tape", 1, 0, &payload);
+    sink.push_str(&format!(
+        "draw-tape {} {}\n",
+        records.len(),
+        bastion_renderer_r0d::hex32(&digest)
+    ));
 }
 
 /// R0D .18: record a typed GPU fault terminal into the capture evidence file.
