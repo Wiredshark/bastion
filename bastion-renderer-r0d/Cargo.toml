@@ -9,3 +9,7 @@ license = "GPL-3.0"
 
 [dependencies]
 sha2 = "0.10"
+# BUILD-007A10.10 (§3A): the renderer program MUST reuse the shared
+# determinism substrate (state_hash, async_work, causal_record, run_equivalence,
+# content_manifest, feature_protocol) rather than create independent equivalents.
+common = { package = "veloren-common", path = "../common" }

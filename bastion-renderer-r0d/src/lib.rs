@@ -23,6 +23,7 @@ pub mod publication;
 pub mod readiness;
 pub mod replay;
 pub mod selection;
+pub mod shared_adapter;
 pub mod shutdown;
 pub mod tape;
 pub mod visual_oracle;
