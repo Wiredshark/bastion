@@ -122,8 +122,9 @@ fn on_tick(ctx: EventCtx<SimulateNpcs, OnTick>) {
             // NPC-to-NPC messages never leave rtsim
             NpcAction::Msg { to, msg } => {
                 if let Actor::Npc(to) = to {
-                    npc_inputs.push((*to, NpcInput::Msg {
-                        from: npc_id.into(),
+                    let from: Actor = npc_id.into();
+                    npc_inputs.push((*to, from, NpcInput::Msg {
+                        from,
                         msg: msg.clone(),
                     }));
                 } else {
@@ -352,7 +353,14 @@ fn on_tick(ctx: EventCtx<SimulateNpcs, OnTick>) {
         npc.job = npc.controller.job.clone();
     }
 
-    for (npc_id, input) in npc_inputs {
+    // DET-ESIM-015 (v8 rtsim-economy, High): deliver NPC-to-NPC messages to each
+    // recipient inbox in canonical (recipient, sender) order. npc_inputs was
+    // built by iterating the npc slotmap, so the inbox chronology rode that
+    // (arbitrary, though stable) iteration order — the determinism law forbids
+    // authoritative outcomes depending on iteration order even when stable.
+    // Stable sort keeps multiple messages from one sender in send order.
+    npc_inputs.sort_by_key(|(to, from, _)| (*to, *from));
+    for (npc_id, _from, input) in npc_inputs {
         if let Some(npc) = data.npcs.get_mut(npc_id) {
             npc.inbox.push_back(input);
         }
