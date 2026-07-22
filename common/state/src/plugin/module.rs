@@ -2,8 +2,12 @@ use std::{
     io,
     num::NonZeroU64,
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     task::{Context, Poll},
+    time::Duration,
 };
 
 use super::{
@@ -18,7 +22,7 @@ use wasmtime::{
     component::{Component, HasSelf, Linker},
 };
 use wasmtime_wasi::{
-    WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView,
+    HostMonotonicClock, HostWallClock, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView,
     cli::{IsTerminal, StdoutStream},
     p2::Pollable,
 };
@@ -360,6 +364,63 @@ impl StdoutStream for LogStream {
     }
 }
 
+// DET-PLG-002 (determinism audit): deny the host wall/monotonic clocks to
+// plugin hooks and inject deterministic replacements.
+//
+// Wasmtime's default `WasiCtxBuilder` wires the *host* clocks into every plugin
+// store. That leaves plugin hook behaviour dependent on launch time,
+// command-arrival delay, scheduler stalls, and machine load even when the
+// accepted game history and plugin traversal order are identical — an ambient
+// nondeterministic input, the time-domain twin of RNG-P3-001. We replace both
+// clocks so no host time can enter a hook. The WASI contract only requires the
+// wall clock to report Unix time and the monotonic clock to be non-decreasing;
+// both hold here.
+
+/// Fixed Unix timestamp (seconds) reported to every plugin's wall clock. Any
+/// constant works; a frozen value means the wall clock is a pure function of
+/// nothing external, so it cannot carry real time into a hook.
+const PLUGIN_WALL_CLOCK_UNIX_SECS: u64 = 1_600_000_000; // 2020-09-13T12:26:40Z
+
+/// Nanoseconds the deterministic monotonic clock advances per read. A nonzero
+/// step keeps the clock strictly increasing, so a guest that waits on elapsed
+/// monotonic time makes deterministic progress instead of stalling on a frozen
+/// value, while any two identical replays observe an identical read sequence.
+const PLUGIN_MONOTONIC_STEP_NANOS: u64 = 1_000;
+
+/// Frozen wall clock: always reports the same Unix instant (see DET-PLG-002).
+struct DeterministicWallClock;
+
+impl HostWallClock for DeterministicWallClock {
+    fn resolution(&self) -> Duration { Duration::from_secs(1) }
+
+    fn now(&self) -> Duration { Duration::from_secs(PLUGIN_WALL_CLOCK_UNIX_SECS) }
+}
+
+/// Monotonic clock driven by a per-read counter rather than host time (see
+/// DET-PLG-002). Each read returns the current value and advances by a fixed
+/// step; the sequence is a pure function of the guest's own (already
+/// deterministic) execution, so it replays identically.
+struct DeterministicMonotonicClock {
+    now_nanos: AtomicU64,
+}
+
+impl DeterministicMonotonicClock {
+    fn new() -> Self {
+        Self {
+            now_nanos: AtomicU64::new(0),
+        }
+    }
+}
+
+impl HostMonotonicClock for DeterministicMonotonicClock {
+    fn resolution(&self) -> u64 { PLUGIN_MONOTONIC_STEP_NANOS }
+
+    fn now(&self) -> u64 {
+        self.now_nanos
+            .fetch_add(PLUGIN_MONOTONIC_STEP_NANOS, Ordering::Relaxed)
+    }
+}
+
 impl PluginModule {
     /// This function takes bytes from a WASM File and compile them
     pub fn new(name: String, wasm_data: &[u8]) -> Result<Self, PluginModuleError> {
@@ -386,6 +447,10 @@ impl PluginModule {
             .stdout(LogStream(name.clone(), tracing::Level::INFO))
             .stderr(LogStream(name.clone(), tracing::Level::ERROR))
             .insecure_random_seed(insecure_seed as u128)
+            // DET-PLG-002: replace the host clocks with deterministic ones so
+            // plugin hooks cannot observe real wall/monotonic time.
+            .wall_clock(DeterministicWallClock)
+            .monotonic_clock(DeterministicMonotonicClock::new())
             .build();
         let host_ctx = WasiHostCtx {
             preview2_ctx: wasi,
