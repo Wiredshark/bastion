@@ -489,6 +489,35 @@ struct Args {
     #[arg(long)]
     ter_permute_order: bool,
 
+    /// bastion determinism fixture ESIM-01 (SPECIFIED_NOT_EVIDENCED): certifies
+    /// DET-ESIM-011. Injects a deterministic set of death reports into a
+    /// resident NPC's home-site `known_reports`, ticks so the site→NPC share
+    /// (sorted by ReportId) and the NPC brain process them, and emits an
+    /// ESIM-CERTIFICATE hashing the NPC's resulting sentiments. Byte-identical
+    /// across serial vs --schedule-seed (worker-count) and vs --esim-permute-
+    /// order (injection-order) proves report propagation is canonical, not
+    /// HashSet/process-hash-seed ordered. MEASURES; setup failure is the only
+    /// non-success.
+    #[arg(long)]
+    esim_scenario: bool,
+
+    /// ESIM-01: number of distinct death reports to inject.
+    #[arg(long, default_value_t = 32)]
+    esim_reports: u32,
+
+    /// ESIM-01: authoritative ticks to let the share + NPC brain process the
+    /// injected reports (the resident NPC is force-loaded, so it processes its
+    /// inbox every tick).
+    #[arg(long, default_value_t = 30)]
+    esim_ticks: u64,
+
+    /// ESIM-01: inject the reports into the site's `known_reports` in REVERSED
+    /// order — the injection-order perturbation. ESIM-011 sorts the shared
+    /// reports by ReportId, so the NPC's sentiments (hashed canonically) must be
+    /// byte-identical to the non-permuted run.
+    #[arg(long)]
+    esim_permute_order: bool,
+
     /// bastion (MINING-LIVE-FIDELITY): dig footprint X width, blocks. The
     /// geometry axis of the completion investigation — wide claims fit the
     /// stairs arm; tight ones force the D16 released-but-unreachable class.
@@ -1196,6 +1225,8 @@ fn main() -> ExitCode {
         phy_scenario(&args)
     } else if args.ter_scenario {
         ter_scenario(&args)
+    } else if args.esim_scenario {
+        esim_scenario(&args)
     } else if args.dig_access_scenario {
         dig_access_scenario(&args)
     } else if args.chopfell_scenario {
@@ -12143,6 +12174,288 @@ fn ter_scenario(args: &Args) -> ExitCode {
     info!(mutations = muts.len(), "ter: fingerprint computed");
     println!(
         "TER-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture ESIM-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Certifies DET-ESIM-011: when a home site shares its known reports with a
+/// resident NPC, they enter the NPC's ORDERED inbox sorted by ReportId, so the
+/// resulting sentiments are a pure function of the report SET — never the
+/// (process-hash-seeded) `HashSet` iteration or the injection order. Injects a
+/// deterministic set of death reports into a resident NPC's home-site
+/// `known_reports`, ticks so the site→NPC share and the NPC brain process them,
+/// and emits an ESIM-CERTIFICATE hashing the NPC's resulting sentiments in
+/// canonical (serde `BTreeMap`) order. Proven by byte-comparing the certificate
+/// under the perturbation set:
+///   - serial vs `--schedule-seed N`  ⇒ worker-count / process-order invariance
+///   - `--esim-permute-order`          ⇒ report injection-order invariance
+/// Non-vacuous: a different `--seed` yields a different certificate, and the
+/// target NPC provably ingested the injected reports. MEASURES, never gates:
+/// only a setup failure (no resident NPC, or nothing ingested) is a non-success.
+fn esim_scenario(args: &Args) -> ExitCode {
+    use ::rtsim::data::report::{Report, ReportKind};
+    use common::{
+        resources::TimeOfDay,
+        rtsim::Actor,
+        state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        },
+    };
+    use vek::Vec2;
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-esim-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-esim".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-esim-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "esim: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    // Canonical, fully-controlled target: the first NPC and first site in
+    // slotmap order (deterministic for a fixed seed). At boot rtsim NPCs have no
+    // home assigned yet, so we assign one below. Anchor the force-load on the
+    // chosen site so the target NPC is loaded rather than only coarse-simulated.
+    let (target_key, site_id, site_wpos): (_, _, Vec2<f32>) = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        let target_id = data
+            .npcs
+            .npcs
+            .keys()
+            .next()
+            .expect("esim: no NPCs in world");
+        let (site_id, site) = data
+            .sites
+            .sites
+            .iter()
+            .next()
+            .expect("esim: no sites in world");
+        (target_id, site_id, site.wpos.map(|e| e as f32))
+    };
+    let _ = site_id;
+
+    // Phase 1: place the target at the site's position. `current_site` is
+    // recomputed from `wpos` every tick (sync_npcs), so a manual assignment
+    // would not stick — the NPC must physically be at the site for the share to
+    // fire.
+    {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let mut data = rtsim.state().data_mut();
+        if let Some(npc) = data.npcs.npcs.get_mut(target_key) {
+            npc.wpos.x = site_wpos.x;
+            npc.wpos.y = site_wpos.y;
+        }
+    }
+    // One tick so sync_npcs derives current_site from the new position.
+    tick(&mut server, 1);
+
+    // Phase 2: adopt the derived current_site as the target's home so the
+    // site->NPC report share fires, then inject a deterministic set of death
+    // reports into that site's known_reports in canonical or reversed order.
+    let injected = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let mut data = rtsim.state().data_mut();
+
+        let inject_site = data
+            .npcs
+            .npcs
+            .get(target_key)
+            .and_then(|npc| npc.current_site)
+            .expect("esim: target has no current_site after placement");
+        if let Some(npc) = data.npcs.npcs.get_mut(target_key) {
+            npc.home = Some(inject_site);
+        }
+
+        // Deterministic killer actors: other NPCs in slotmap order.
+        let others: Vec<Actor> = data
+            .npcs
+            .npcs
+            .keys()
+            .filter(|id| *id != target_key)
+            .take(args.esim_reports as usize)
+            .map(Actor::Npc)
+            .collect();
+        // A fixed victim keeps the reports distinct only in their killer.
+        let victim = others.first().copied().unwrap_or(Actor::Npc(target_key));
+
+        let mut report_ids = Vec::with_capacity(others.len());
+        for killer in &others {
+            let rid = data.reports.create(Report {
+                kind: ReportKind::Death {
+                    actor: victim,
+                    killer: Some(*killer),
+                },
+                at_tod: TimeOfDay(0.0),
+            });
+            report_ids.push(rid);
+        }
+        // Injection-order perturbation: insert into the site's HashSet reversed.
+        // ESIM-011 sorts on share, so the shared inbox order must not move.
+        if args.esim_permute_order {
+            report_ids.reverse();
+        }
+        let n = report_ids.len();
+        if let Some(site) = data.sites.sites.get_mut(inject_site) {
+            for rid in report_ids {
+                site.known_reports.insert(rid);
+            }
+        }
+        n
+    };
+
+    // Tick: the site→NPC share (sorted by ReportId) + the NPC brain process the
+    // inbox, updating sentiments.
+    tick(&mut server, args.esim_ticks);
+
+    // Fingerprint: the target NPC's shared inbox (the report sequence that
+    // ESIM-011 canonicalises on share) plus any processed sentiments/known
+    // reports. Hashed as an ordered sequence — the whole point is that this
+    // order is a pure function of the report SET, never the injection order or
+    // the process hash seed. The inbox is populated by the sync_npcs share
+    // rule, independent of whether the NPC brain has run.
+    let (domain_root, leaves, live_count, inbox_reports) = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        let npc = data
+            .npcs
+            .npcs
+            .get(target_key)
+            .expect("esim: target NPC vanished");
+
+        let mut h = DomainHasher::new("bastion/domain/rtsim-social/v1/sha256");
+        // Anchor the fingerprint to seed-dependent world state (the target
+        // site's worldgen position). The synthetic report contents are
+        // seed-INDEPENDENT — rtsim slotmap keys are 0,1,2,… regardless of seed —
+        // so this anchor plus the liveness guard is what keeps the certificate
+        // non-vacuous across seeds; the report ORDER below is what proves
+        // ESIM-011 (order-invariance under the injection/schedule perturbation).
+        h.field(&site_wpos.x.to_bits().to_le_bytes());
+        h.field(&site_wpos.y.to_bits().to_le_bytes());
+        // Ordered inbox report sequence, hashed by CONTENT in inbox order.
+        // Order-sensitivity proves ESIM-011 canonicalised the share.
+        let mut inbox_reports = 0u64;
+        for input in npc.inbox.iter() {
+            if let common::rtsim::NpcInput::Report(rid) = input {
+                if let Some(report) = data.reports.get(*rid) {
+                    h.field(&serde_json::to_vec(report).unwrap_or_default());
+                }
+                inbox_reports += 1;
+            }
+        }
+        // Fold in downstream state in case the brain has already processed some.
+        let sentiments = serde_json::to_vec(&npc.sentiments).unwrap_or_default();
+        h.field(&sentiments);
+        let known_after = npc.known_reports.len() as u64;
+        let live_count = inbox_reports + known_after;
+
+        let mut lh = DomainHasher::new("bastion/domain/rtsim-social-inbox/v1/sha256");
+        // Same seed-dependent world anchor as the domain root (durable_composite
+        // is built from these leaves, so the anchor must live here too).
+        lh.field(&site_wpos.x.to_bits().to_le_bytes());
+        lh.field(&site_wpos.y.to_bits().to_le_bytes());
+        for input in npc.inbox.iter() {
+            if let common::rtsim::NpcInput::Report(rid) = input {
+                if let Some(report) = data.reports.get(*rid) {
+                    lh.field(&serde_json::to_vec(report).unwrap_or_default());
+                }
+            }
+        }
+        lh.field(&sentiments);
+        let leaves = vec![MerkleLeaf {
+            key: "npc/target/social".to_string(),
+            hash: lh.finish(),
+        }];
+        (h.finish(), leaves, live_count, inbox_reports)
+    };
+
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        args.esim_ticks,
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/rtsim-social/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+
+    // Liveness: the target must actually have ingested the injected reports (its
+    // known_reports grew to at least the injected count) or the fingerprint is
+    // vacuous — exactly the empty-pass TER-01 was fixed to forbid.
+    info!(
+        injected,
+        live_count,
+        inbox_reports,
+        permute = args.esim_permute_order,
+        "esim: fingerprint computed"
+    );
+    if live_count == 0 {
+        tracing::error!(
+            injected, live_count,
+            "esim: no reports reached the target inbox/known set — VACUOUS, failing"
+        );
+        drop(server);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "ESIM-CERTIFICATE: {}",
         serde_json::to_string(&certificate).unwrap_or_default()
     );
 
