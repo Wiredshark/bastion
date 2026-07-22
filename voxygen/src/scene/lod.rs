@@ -268,13 +268,29 @@ impl Lod {
         }
 
         if !matches!(culling_mode, CullingMode::Underground) {
-            // Draw LoD objects
+            // Draw LoD objects.
+            // R0D §13.5 (leg-10 trace-diff finding): both zone_objects maps are
+            // hash-ordered, so the lod-object DRAW ORDER followed zone-arrival/
+            // hash order and differed between runs with an identical resident
+            // set. Gather-sort-commit by the canonical (zone.y, zone.x, kind)
+            // key — no unordered container may control the command stream.
+            // Visually neutral (opaque, depth-tested); order is now a pure
+            // function of the resident set.
+            let mut draws: Vec<(Vec2<i32>, lod::ObjectKind, &ObjectGroup)> = self
+                .zone_objects
+                .iter()
+                .flat_map(|(p, groups)| {
+                    groups
+                        .iter()
+                        .filter(|(_, g)| g.visible)
+                        .map(move |(kind, g)| (*p, *kind, g))
+                })
+                .collect();
+            draws.sort_by_key(|(p, kind, _)| (p.y, p.x, *kind as u16));
             let mut drawer = drawer.draw_lod_objects();
-            for groups in self.zone_objects.values() {
-                for (kind, group) in groups.iter().filter(|(_, g)| g.visible) {
-                    if let Some((model, _, _)) = self.object_data.get(kind) {
-                        drawer.draw(model, &group.instances);
-                    }
+            for (_, kind, group) in draws {
+                if let Some((model, _, _)) = self.object_data.get(&kind) {
+                    drawer.draw(model, &group.instances);
                 }
             }
         }
