@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub mod admission;
 pub mod bootstrap;
 pub mod cbor;
+pub mod figure_package;
 
 pub use admission::{CandidateSourceState, R0dSourceAuthorityMismatch, RendererW0AdmissionV2};
 pub use bootstrap::{
