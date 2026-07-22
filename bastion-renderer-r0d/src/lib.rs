@@ -19,6 +19,7 @@ pub mod cbor;
 pub mod cosmetic_rng;
 pub mod figure_package;
 pub mod identity;
+pub mod parallel;
 pub mod publication;
 pub mod readiness;
 pub mod replay;

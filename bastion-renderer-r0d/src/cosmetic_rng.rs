@@ -94,6 +94,39 @@ pub fn u01_f32(sample_u32: u32) -> f32 {
     ((sample_u32 >> 8) as f32) * (1.0 / (1u32 << 24) as f32)
 }
 
+/// BUILD-007A10.13 — the closed purpose-lane registry for the cosmetic tuple
+/// ABI. Lanes are frozen append-only ordinals; an effect using an unregistered
+/// lane is a contract violation caught at declaration, not a silent new stream.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PurposeLane {
+    SpawnPosition = 0,
+    SpawnVelocity = 1,
+    Lifetime = 2,
+    ColorJitter = 3,
+    SizeJitter = 4,
+    PhaseOffset = 5,
+    DitherPhase = 6,
+    LightningFork = 7,
+}
+
+impl PurposeLane {
+    /// Resolve a numeric lane against the closed registry.
+    pub fn from_lane(lane: u32) -> Option<PurposeLane> {
+        use PurposeLane::*;
+        Some(match lane {
+            0 => SpawnPosition,
+            1 => SpawnVelocity,
+            2 => Lifetime,
+            3 => ColorJitter,
+            4 => SizeJitter,
+            5 => PhaseOffset,
+            6 => DitherPhase,
+            7 => LightningFork,
+            _ => return None,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,5 +184,75 @@ mod tests {
         assert!((u01_f32(0) - 0.0).abs() < f32::EPSILON);
         assert!(u01_f32(u32::MAX) < 1.0);
         assert!(u01_f32(u32::MAX) > 0.99);
+    }
+
+    // ---- BUILD-007A10.13 additions ----
+
+    #[test]
+    fn purpose_lane_registry_is_closed() {
+        assert_eq!(PurposeLane::from_lane(0), Some(PurposeLane::SpawnPosition));
+        assert_eq!(PurposeLane::from_lane(7), Some(PurposeLane::LightningFork));
+        assert_eq!(PurposeLane::from_lane(8), None);
+    }
+
+    #[test]
+    fn frozen_tuple_derivation_vector_for_wgsl_parity() {
+        // THE CPU golden vector a WGSL implementation must reproduce exactly
+        // before it may be used in deterministic capture (packet A10.13).
+        let s = cosmetic_sample(
+            &[0x33; 32],
+            7,
+            &[0x44; 32],
+            &[0x55; 32],
+            0x1_0000_0064, // >32-bit tick exercises the lo/hi split
+            9,
+            PurposeLane::ColorJitter as u32,
+            2,
+        );
+        assert_eq!(
+            s,
+            [0x407400fe, 0x74e841ee, 0x3419c605, 0xe414c054],
+            "frozen cosmetic tuple vector drift"
+        );
+    }
+
+    #[test]
+    fn authority_isolation_root_and_labels_are_separate() {
+        // The cosmetic PRK is an INDEPENDENT input: the same bytes used as an
+        // authority bootstrap root produce unrelated streams because the HKDF
+        // info labels differ (bootstrap salt label vs cosmetic-philox label).
+        // Cosmetic sampling can never consume an authority seed by construction
+        // — there is no code path from SeedRegistryV1 into cosmetic_sample.
+        let shared_root = [0x77u8; 32];
+        let bootstrap_seed = {
+            let reg = crate::bootstrap::SeedRegistryV1::new(
+                shared_root,
+                vec![crate::bootstrap::SeedDomainDeclarationV1 {
+                    domain: "bastion/r0d/worldgen".to_string(),
+                    schema_major: 1,
+                    schema_minor: 0,
+                    owner_digest: [0x22; 32],
+                }],
+            )
+            .unwrap();
+            reg.seed("bastion/r0d/worldgen").unwrap()
+        };
+        let cosmetic = cosmetic_sample(&shared_root, 0, &[0; 32], &[0; 32], 0, 0, 0, 0);
+        let cosmetic_bytes: Vec<u8> = cosmetic.iter().flat_map(|w| w.to_le_bytes()).collect();
+        assert_ne!(bootstrap_seed[..16], cosmetic_bytes[..16], "streams unrelated");
+    }
+
+    #[test]
+    fn neighboring_input_canaries_all_axes() {
+        let base = cosmetic_sample(&[1; 32], 5, &[2; 32], &[3; 32], 100, 4, 1, 0);
+        // Every tuple axis independently changes the sample.
+        assert_ne!(base, cosmetic_sample(&[9; 32], 5, &[2; 32], &[3; 32], 100, 4, 1, 0), "prk");
+        assert_ne!(base, cosmetic_sample(&[1; 32], 6, &[2; 32], &[3; 32], 100, 4, 1, 0), "kind");
+        assert_ne!(base, cosmetic_sample(&[1; 32], 5, &[9; 32], &[3; 32], 100, 4, 1, 0), "emitter");
+        assert_ne!(base, cosmetic_sample(&[1; 32], 5, &[2; 32], &[9; 32], 100, 4, 1, 0), "instance");
+        assert_ne!(base, cosmetic_sample(&[1; 32], 5, &[2; 32], &[3; 32], 101, 4, 1, 0), "tick");
+        assert_ne!(base, cosmetic_sample(&[1; 32], 5, &[2; 32], &[3; 32], 100, 5, 1, 0), "ordinal");
+        assert_ne!(base, cosmetic_sample(&[1; 32], 5, &[2; 32], &[3; 32], 100, 4, 2, 0), "purpose");
+        assert_ne!(base, cosmetic_sample(&[1; 32], 5, &[2; 32], &[3; 32], 100, 4, 1, 1), "index");
     }
 }
