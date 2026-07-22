@@ -98,6 +98,76 @@ pub fn emit_manifest(context: &str, digest: &[u8; 32]) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Phase II seam 2: pass-execution recording (BUILD-007A10.15 wiring).
+// ---------------------------------------------------------------------------
+
+use std::sync::Mutex;
+
+/// Frame-local pass-execution records: `(pass_rank, name)` in observed entry
+/// order. Only ever touched behind the flag; drained at frame end.
+static PASS_RECORDS: Mutex<Vec<(u16, &'static str)>> = Mutex::new(Vec::new());
+
+/// Record one pass entry (no-op unless the manifest flag is set). Called at
+/// each `Drawer` pass-drawer construction site.
+pub fn record_pass(rank: u16, name: &'static str) {
+    if !manifest_enabled() {
+        return;
+    }
+    if let Ok(mut v) = PASS_RECORDS.lock() {
+        v.push((rank, name));
+    }
+}
+
+/// Drain the frame's pass tape (called from `Drawer::drop`): emits one
+/// `R0D-PASS-TAPE` line — the observed order plus a monotonicity verdict
+/// against the frozen rank registry. The registry order IS the canonical order
+/// for the drawer's declared linear graph, so nondecreasing ranks == conformant.
+pub fn emit_pass_tape() {
+    if !manifest_enabled() {
+        return;
+    }
+    let records: Vec<(u16, &'static str)> = match PASS_RECORDS.lock() {
+        Ok(mut v) => std::mem::take(&mut *v),
+        Err(_) => return,
+    };
+    if records.is_empty() {
+        return;
+    }
+    let monotonic = records.windows(2).all(|w| w[0].0 <= w[1].0);
+    let tape: Vec<String> = records.iter().map(|(r, n)| format!("{r}:{n}")).collect();
+    tracing::info!(
+        target: "bastion_r0d",
+        "R0D-PASS-TAPE[{}]: {} monotonic={monotonic}",
+        records.len(),
+        tape.join(","),
+    );
+    if let Some(v) = std::env::var_os("BASTION_R0D_MANIFEST") {
+        let s = v.to_string_lossy();
+        if s != "1" && !s.is_empty() {
+            let line = format!("pass-tape {} monotonic={monotonic}\n", tape.join(","));
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(s.as_ref())
+                .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+        }
+    }
+}
+
+/// The frozen drawer pass ranks (mirrors
+/// `bastion_renderer_r0d::pass_graph::voxygen_ranks`).
+pub mod ranks {
+    pub const RAIN_OCCLUSION: u16 = 10;
+    pub const SHADOW: u16 = 20;
+    pub const FIRST: u16 = 30;
+    pub const VOLUMETRIC: u16 = 40;
+    pub const TRANSPARENT: u16 = 50;
+    pub const BLOOM: u16 = 60;
+    pub const UI_PREMULTIPLY: u16 = 70;
+    pub const THIRD: u16 = 80;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -238,6 +238,7 @@ impl<'frame> Drawer<'frame> {
     /// Returns None if the rain occlusion renderer is not enabled at some
     /// level, the pipelines are not available yet or clouds are disabled.
     pub fn rain_occlusion_pass(&mut self) -> Option<RainOcclusionPassDrawer<'_>> {
+        crate::render::bastion_r0d::record_pass(crate::render::bastion_r0d::ranks::RAIN_OCCLUSION, "rain_occlusion");
         if !self.borrow.pipeline_modes.cloud.is_enabled() {
             return None;
         }
@@ -277,6 +278,7 @@ impl<'frame> Drawer<'frame> {
     /// Returns None if the shadow renderer is not enabled at some level or the
     /// pipelines are not available yet
     pub fn shadow_pass(&mut self) -> Option<ShadowPassDrawer<'_>> {
+        crate::render::bastion_r0d::record_pass(crate::render::bastion_r0d::ranks::SHADOW, "shadow");
         if !self.borrow.pipeline_modes.shadow.is_map() {
             return None;
         }
@@ -313,6 +315,7 @@ impl<'frame> Drawer<'frame> {
 
     /// Returns None if all the pipelines are not available
     pub fn first_pass(&mut self) -> Option<FirstPassDrawer<'_>> {
+        crate::render::bastion_r0d::record_pass(crate::render::bastion_r0d::ranks::FIRST, "first");
         let pipelines = self.borrow.pipelines.all()?;
         // Note: this becomes Some once pipeline creation is complete even if shadows
         // are not enabled
@@ -367,6 +370,7 @@ impl<'frame> Drawer<'frame> {
 
     /// Returns None if the volumetrics pipeline is not available
     pub fn volumetric_pass(&mut self) -> Option<VolumetricPassDrawer<'_>> {
+        crate::render::bastion_r0d::record_pass(crate::render::bastion_r0d::ranks::VOLUMETRIC, "volumetric");
         let pipelines = &self.borrow.pipelines.all()?;
         let shadow = self.borrow.shadow?;
 
@@ -400,6 +404,7 @@ impl<'frame> Drawer<'frame> {
 
     /// Returns None if the trail pipeline is not available
     pub fn transparent_pass(&mut self) -> Option<TransparentPassDrawer<'_>> {
+        crate::render::bastion_r0d::record_pass(crate::render::bastion_r0d::ranks::TRANSPARENT, "transparent");
         let pipelines = &self.borrow.pipelines.all()?;
         let shadow = self.borrow.shadow?;
 
@@ -442,6 +447,7 @@ impl<'frame> Drawer<'frame> {
     /// does nothing if the ingame pipelines are not yet ready
     /// does nothing if bloom is disabled
     pub fn run_bloom_passes(&mut self) {
+        crate::render::bastion_r0d::record_pass(crate::render::bastion_r0d::ranks::BLOOM, "bloom");
         let locals = &self.borrow.locals;
         let views = &self.borrow.views;
 
@@ -537,6 +543,7 @@ impl<'frame> Drawer<'frame> {
     /// Runs render passes with alpha premultiplication pipeline to complete any
     /// pending uploads.
     fn run_ui_premultiply_passes(&mut self) {
+        crate::render::bastion_r0d::record_pass(crate::render::bastion_r0d::ranks::UI_PREMULTIPLY, "ui_premultiply");
         prof_span!("run_ui_premultiply_passes");
         let Some(premultiply_alpha) = self.borrow.pipelines.premultiply_alpha() else {
             return;
@@ -581,6 +588,7 @@ impl<'frame> Drawer<'frame> {
     /// Note, this automatically calls the internal `run_ui_premultiply_passes`
     /// to complete any pending image uploads for the UI.
     pub fn third_pass(&mut self) -> ThirdPassDrawer<'_> {
+        crate::render::bastion_r0d::record_pass(crate::render::bastion_r0d::ranks::THIRD, "third");
         self.run_ui_premultiply_passes();
 
         let mut render_pass =
@@ -833,6 +841,9 @@ impl<'frame> Drawer<'frame> {
 
 impl Drop for Drawer<'_> {
     fn drop(&mut self) {
+        // R0D Phase II seam 2: drain and emit the frame's pass-execution tape
+        // (no-op unless BASTION_R0D_MANIFEST is set).
+        crate::render::bastion_r0d::emit_pass_tape();
         // If taking a screenshot and the blit pipeline is available
         // NOTE: blit pipeline should always be available for now so we don't report an
         // error if it isn't
