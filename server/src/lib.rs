@@ -549,6 +549,15 @@ impl Server {
             flat_arena_enabled = bastion_flat_arena::enabled(),
             "bastion: FLAT-TEST-ARENA env check at server boot"
         );
+
+        // R0D D1-replay: flip deterministic rtsim BEFORE rtsim boots (the
+        // harness does this at its own entry; the live capture leg transports
+        // it via env — same proven configuration, same flip point relative to
+        // rtsim construction below).
+        if std::env::var_os("BASTION_R0D_DETERMINISTIC").is_some() {
+            ::rtsim::DETERMINISTIC_RTSIM.store(true, core::sync::atomic::Ordering::Relaxed);
+            info!("r0d: DETERMINISTIC_RTSIM enabled for capture leg");
+        }
         #[cfg(feature = "worldgen")]
         let spawn_point = SpawnPoint(if bastion_flat_arena::enabled() {
             // bastion (FLAT-TEST-ARENA): land on the slab, not at the

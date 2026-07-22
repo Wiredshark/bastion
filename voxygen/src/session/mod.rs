@@ -1932,7 +1932,13 @@ impl PlayState for SessionState {
         ) {
             global_state.pause();
         }
-        if crate::render::bastion_r0d::drive_capture(global_state.window.renderer_mut()) {
+        // D1-replay mode keys captures to authoritative SIM TIME (fixed dt),
+        // so two runs capture at identical ticks regardless of wall pacing.
+        let r0d_sim_time = self.client.borrow().state().get_time();
+        if crate::render::bastion_r0d::drive_capture(
+            global_state.window.renderer_mut(),
+            r0d_sim_time,
+        ) {
             return PlayStateResult::Shutdown;
         }
         // TODO: let mut client = self.client.borrow_mut();

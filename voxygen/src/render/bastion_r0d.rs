@@ -216,7 +216,7 @@ static CAPTURE_STATE: Mutex<(u64, u64, u64)> = Mutex::new((0, 0, 0));
 /// domain_hash, appends `capture <ordinal> <w>x<h> <hex>` to the output file,
 /// and returns `true` (request shutdown) once every capture has completed.
 /// No-op returning `false` unless the env config is present.
-pub fn drive_capture(renderer: &mut super::renderer::Renderer) -> bool {
+pub fn drive_capture(renderer: &mut super::renderer::Renderer, sim_time: f64) -> bool {
     let Some((out, warmup, count)) = capture_config() else {
         return false;
     };
@@ -225,6 +225,21 @@ pub fn drive_capture(renderer: &mut super::renderer::Renderer) -> bool {
         s.0 += 1;
         *s
     };
+    // D1-replay mode (BASTION_R0D_CAPTURE_AT): captures are keyed to SIM TIME
+    // — capture k fires when sim_time >= at + k*every — so two runs capture at
+    // the same authoritative ticks (fixed dt, DET-CLK-006) regardless of wall
+    // pacing. Dynamic scenes become cross-run comparable.
+    if let Ok(at) = std::env::var("BASTION_R0D_CAPTURE_AT") {
+        let at: f64 = at.parse().unwrap_or(30.0);
+        let every: f64 = std::env::var("BASTION_R0D_CAPTURE_EVERY")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.5);
+        if requested < count && sim_time >= at + requested as f64 * every {
+            request_one_capture(renderer, &out, requested);
+        }
+        return completed >= count;
+    }
     // §12.5 stability gate (BASTION_R0D_STABLE_GATE, default 60): even past
     // warmup, capture may not begin until the semantic trace has been
     // IDENTICAL for N consecutive frames — the expected-set-equality proxy
@@ -239,12 +254,25 @@ pub fn drive_capture(renderer: &mut super::renderer::Renderer) -> bool {
         return false;
     }
     if frames > warmup && requested < count {
-        {
-            let mut s = CAPTURE_STATE.lock().expect("capture state");
-            s.1 += 1;
-        }
-        let ordinal = requested; // 0-based capture ordinal
-        let out = out.clone();
+        request_one_capture(renderer, &out, requested);
+    }
+    completed >= count
+}
+
+/// Request exactly one capture: bump the requested counter, then hash+record
+/// the completed image (or its typed failure) against the given ordinal.
+fn request_one_capture(
+    renderer: &mut super::renderer::Renderer,
+    out: &std::path::Path,
+    ordinal_now: u64,
+) {
+    {
+        let mut s = CAPTURE_STATE.lock().expect("capture state");
+        s.1 += 1;
+    }
+    {
+        let ordinal = ordinal_now;
+        let out = out.to_path_buf();
         renderer.create_screenshot(move |result| {
             match result {
                 Ok(image) => {
@@ -307,7 +335,6 @@ pub fn drive_capture(renderer: &mut super::renderer::Renderer) -> bool {
             }
         });
     }
-    completed >= count
 }
 
 // ---------------------------------------------------------------------------
