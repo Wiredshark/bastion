@@ -48,6 +48,9 @@ default-publish = [
 default = ["default-publish", "hot-reloading", "shaderc-from-source", "egui-ui"]
 
 [dependencies]
+# R0D Phase II (BUILD-007A10.15 seam): frozen domain_hash framing for the
+# flag-gated pipeline-identity manifest.
+bastion-renderer-r0d = { path = "../bastion-renderer-r0d" }
 client = { package = "veloren-client", path = "../client" }
 common = { package = "veloren-common", path = "../common" }
 common-base = { package = "veloren-common-base", path = "../common/base" }

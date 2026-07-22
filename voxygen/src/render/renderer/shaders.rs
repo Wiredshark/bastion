@@ -113,4 +113,18 @@ impl Shaders {
     pub fn get(&self, shader: &str) -> Option<impl core::ops::Deref<Target = Glsl> + use<>> {
         self.shaders.get(shader).map(|a| a.read())
     }
+
+    /// R0D Phase II (BUILD-007A10.15 seam): every shader's (name, source),
+    /// SORTED by name so HashMap iteration order can never leak into the
+    /// pipeline-identity manifest. Read-only; used only by the flag-gated
+    /// manifest hook.
+    pub fn bastion_sorted_sources(&self) -> Vec<(String, String)> {
+        let mut v: Vec<(String, String)> = self
+            .shaders
+            .iter()
+            .map(|(name, handle)| (name.clone(), handle.read().0.clone()))
+            .collect();
+        v.sort_by(|a, b| a.0.cmp(&b.0));
+        v
+    }
 }

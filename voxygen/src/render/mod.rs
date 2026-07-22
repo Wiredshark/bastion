@@ -1,3 +1,4 @@
+pub mod bastion_r0d;
 pub mod bound;
 mod buffer;
 pub mod consts;
@@ -482,6 +483,43 @@ pub struct PipelineModes {
 }
 
 impl PipelineModes {
+    /// R0D Phase II (BUILD-007A10.15 seam): explicit field-by-field identity
+    /// bytes for the pipeline-identity manifest. Enum discriminants are
+    /// length-framed Debug labels (stable within this build); the unordered
+    /// experimental-shader set is SORTED before encoding so set iteration
+    /// order can never leak. Field order is frozen — reordering fields here is
+    /// a manifest schema change.
+    pub fn bastion_identity_bytes(&self) -> Vec<u8> {
+        let mut b = Vec::new();
+        let mut label = |b: &mut Vec<u8>, s: String| {
+            b.extend_from_slice(&(s.len() as u64).to_le_bytes());
+            b.extend_from_slice(s.as_bytes());
+        };
+        label(&mut b, format!("{:?}", self.aa));
+        label(&mut b, format!("{:?}", self.cloud));
+        label(&mut b, format!("{:?}", self.fluid));
+        label(&mut b, format!("{:?}", self.reflection));
+        label(&mut b, format!("{:?}", self.lighting));
+        label(&mut b, format!("{:?}", self.shadow));
+        b.push(u8::from(self.rain_enabled));
+        label(&mut b, format!("{:?}", self.rain_occlusion));
+        label(&mut b, format!("{:?}", self.bloom));
+        b.extend_from_slice(&self.point_glow.to_bits().to_le_bytes());
+        b.push(u8::from(self.flashing_lights_enabled));
+        let mut experimental: Vec<String> = self
+            .experimental_shaders
+            .iter()
+            .map(|s| format!("{s:?}"))
+            .collect();
+        experimental.sort();
+        b.extend_from_slice(&(experimental.len() as u64).to_le_bytes());
+        for e in experimental {
+            label(&mut b, e);
+        }
+        b.push(u8::from(self.enable_naga));
+        b
+    }
+
     pub fn remove_unsupported(&mut self) {
         // Only enable experimental shaders that are supported by the game's current
         // state

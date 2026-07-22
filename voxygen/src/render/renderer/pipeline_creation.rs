@@ -903,6 +903,20 @@ pub(super) fn initial_create_pipelines(
 > {
     prof_span!(_guard, "initial_create_pipelines");
 
+    // R0D Phase II (BUILD-007A10.15 seam): flag-gated pipeline-identity
+    // manifest. No-op unless BASTION_R0D_MANIFEST is set — production
+    // behavior unchanged; rollback = unset the flag.
+    if crate::render::bastion_r0d::manifest_enabled() {
+        let digest = crate::render::bastion_r0d::pipeline_identity_digest(
+            &shaders.bastion_sorted_sources(),
+            &pipeline_modes.bastion_identity_bytes(),
+            crate::render::bastion_r0d::backend_tag(backend),
+            &format!("{:?}", surface_config.format),
+            &format!("{intermediate_format:?}"),
+        );
+        crate::render::bastion_r0d::emit_manifest("initial", &digest);
+    }
+
     // Process shaders into modules
     let shader_modules = ShaderModules::new(&device, &shaders, &pipeline_modes, has_shadow_views)?;
 
@@ -998,6 +1012,19 @@ pub(super) fn recreate_pipelines(
     >,
 > {
     prof_span!(_guard, "recreate_pipelines");
+
+    // R0D Phase II: same flag-gated manifest on the recreate path, so a
+    // settings-driven pipeline rebuild re-attests its identity.
+    if crate::render::bastion_r0d::manifest_enabled() {
+        let digest = crate::render::bastion_r0d::pipeline_identity_digest(
+            &shaders.bastion_sorted_sources(),
+            &pipeline_modes.bastion_identity_bytes(),
+            crate::render::bastion_r0d::backend_tag(backend),
+            &format!("{:?}", surface_config.format),
+            &format!("{intermediate_format:?}"),
+        );
+        crate::render::bastion_r0d::emit_manifest("recreate", &digest);
+    }
 
     let is_opengl = matches!(backend, wgpu::Backend::Gl);
     // Create threadpool for parallel portion
