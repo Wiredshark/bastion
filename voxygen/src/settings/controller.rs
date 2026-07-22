@@ -61,6 +61,10 @@ impl From<ControllerSettings> for ControllerSettingsSerde {
         let pan_sensitivity = controller_settings.pan_sensitivity;
         let pan_invert_y = controller_settings.pan_invert_y;
         let axis_deadzones = controller_settings.axis_deadzones;
+        // DET-GPD-002: persist button deadzones too. This was previously
+        // written empty, so any user-set analog-button deadzone was silently
+        // dropped on save (mirrors `axis_deadzones`, written whole above).
+        let button_deadzones = controller_settings.button_deadzones;
 
         let mouse_emulation_sensitivity = controller_settings.mouse_emulation_sensitivity;
         let inverted_axes = controller_settings.inverted_axes;
@@ -79,7 +83,7 @@ impl From<ControllerSettings> for ControllerSettingsSerde {
             pan_invert_y,
             axis_deadzones,
 
-            button_deadzones: HashMap::new(),
+            button_deadzones,
             mouse_emulation_sensitivity,
             inverted_axes,
         }
@@ -145,6 +149,26 @@ impl From<ControllerSettingsSerde> for ControllerSettings {
                 None => controller_settings.remove_menu_binding(k),
             }
         }
+
+        // DET-GPD-002: restore the non-binding transform fields. Previously the
+        // reverse conversion replayed only button/layer/menu deltas and left
+        // everything else at `default()`, so these serialized fields were
+        // dropped on load -- pan sensitivity, axis/button deadzones, mouse-
+        // emulation sensitivity, inverted axes, and modifier buttons silently
+        // reverted to default on every restart, changing the transform applied
+        // to the same raw controller sample. None of these has an inverse-map
+        // companion, so a direct assignment restores them fully. (The analog/
+        // axis maps have no remap UI and are reconstructed by `default()`, so
+        // they round-trip correctly without handling here.)
+        controller_settings.modifier_buttons = controller_serde.modifier_buttons;
+        controller_settings.pan_sensitivity = controller_serde.pan_sensitivity;
+        controller_settings.pan_invert_y = controller_serde.pan_invert_y;
+        controller_settings.axis_deadzones = controller_serde.axis_deadzones;
+        controller_settings.button_deadzones = controller_serde.button_deadzones;
+        controller_settings.mouse_emulation_sensitivity =
+            controller_serde.mouse_emulation_sensitivity;
+        controller_settings.inverted_axes = controller_serde.inverted_axes;
+
         controller_settings
     }
 }

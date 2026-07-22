@@ -194,8 +194,24 @@ pub fn run_migrations(settings: &DatabaseSettings) {
         .run(&mut conn.connection)
         .expect("Database migrations failed, server startup aborted");
 
-    let applied_migrations = report.applied_migrations().len();
-    info!("Applied {} database migrations", applied_migrations);
+    // DET-MIG-002 (v12 save-migration, High): record the identity of every
+    // applied migration -- its ordered version/name and checksum -- not just a
+    // count. The database's transformation history is authoritative save
+    // provenance; logging only "Applied N migrations" means a later audit
+    // cannot reconstruct which exact migrations ran from Bastion's own durable
+    // evidence. This is pure diagnostic logging: no schema or save-format
+    // change, and it pairs with DET-MIG-001's fail-closed divergence check.
+    let applied = report.applied_migrations();
+    if applied.is_empty() {
+        info!("No database migrations were pending");
+    } else {
+        info!("Applied {} database migration(s):", applied.len());
+        for migration in applied {
+            // `migration` Displays as `<prefix><version>__<name>` (e.g.
+            // `V12__add_foo`); checksum uniquely identifies the applied SQL.
+            info!("  {} (checksum {})", migration, migration.checksum());
+        }
+    }
 }
 
 /// Runs after the migrations. In some cases, it can reclaim a significant
