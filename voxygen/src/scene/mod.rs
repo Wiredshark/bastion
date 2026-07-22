@@ -793,8 +793,15 @@ impl Scene {
         };
 
         // Tick camera for interpolation.
-        self.camera
-            .update(scene_data.state.get_time(), dt, scene_data.mouse_smoothing);
+        // R0D §17.3 (exact-capture mode): the smoothing lerp approaches its
+        // target ASYMPTOTICALLY — with a static target it still mutates the
+        // ori/pos floats every frame, jittering view_mat LSBs and flipping
+        // rounding on scattered pixels (the iteration-2 cert signature:
+        // ±1-LSB full-frame scatter). Freezing time freezes the camera too.
+        if !crate::render::bastion_r0d::freeze_time() {
+            self.camera
+                .update(scene_data.state.get_time(), dt, scene_data.mouse_smoothing);
+        }
 
         // Compute camera matrices.
         self.camera.compute_dependents(&scene_data.state.terrain());
