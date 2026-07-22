@@ -43,6 +43,12 @@ pub enum AuthorityDomain {
     Rtsim,
     JobBoardCoordination,
     Persistence,
+    /// R0D §3A.7 (append-only, reviewer-approved): renderer PRESENTATION
+    /// authority — snapshots, selection, captures. A feature holding only this
+    /// domain can never write Terrain/Inventory/Ecs/Rtsim/coordination/
+    /// persistence state; the renderer-r0d validator rule enforces that its
+    /// authoritative_domains equal exactly [RendererPresentation].
+    RendererPresentation,
 }
 
 /// The clock domains a feature reads (T0.4). Wall is diagnostic-only and
@@ -54,6 +60,10 @@ pub enum ClockDomain {
     World,
     Program,
     Wall,
+    /// R0D §3A.7 (append-only, reviewer-approved): the render-frame clock —
+    /// permitted only for presentation/capture progression, never to gate
+    /// gameplay (the renderer-r0d validator enforces this scoping).
+    RenderFrame,
 }
 
 /// How the feature's effects commit.

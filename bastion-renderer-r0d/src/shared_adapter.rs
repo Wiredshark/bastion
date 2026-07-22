@@ -369,29 +369,36 @@ pub fn renderer_equivalence(
 // §3A.7 staged feature-protocol fitness rule
 // ----------------------------------------------------------------------------
 
-/// Staged renderer-feature violations (§3A.7). Expressible in the CURRENT
-/// shared vocabulary; the `AuthorityDomain::RendererPresentation` /
-/// `ClockDomain::RenderFrame` enum additions await shared-engine review and are
-/// NOT made by this crate.
+/// Renderer-feature violations (§3A.7). The shared enum extension
+/// (`AuthorityDomain::RendererPresentation`, `ClockDomain::RenderFrame`) landed
+/// with reviewer approval, so the FULL rule now applies.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RendererFeatureViolation {
-    /// The renderer feature declared an existing WRITE authority domain —
-    /// forbidden: its only authority is renderer presentation.
+    /// The renderer feature declared a WRITE authority domain other than
+    /// `RendererPresentation` — its only authority is renderer presentation.
     ForbiddenWriteAuthority(AuthorityDomain),
+    /// The feature must declare exactly `[RendererPresentation]` (§3A.7).
+    MissingRendererPresentation,
     /// `Wall` is rejected outright for the renderer feature.
     WallClock,
     /// The renderer feature must record causal.
     MissingCausalRecording,
 }
 
-/// Validate the `renderer-r0d` feature declaration under the staged rule
-/// (§3A.7): no Terrain/Inventory/Ecs/Rtsim/JobBoardCoordination/Persistence
-/// write authority, no Wall clock, causal recording required. When the shared
-/// enum extension lands, this tightens to exactly `[RendererPresentation]`.
+/// Validate the `renderer-r0d` feature declaration under the FULL §3A.7 rule:
+/// authoritative domains equal exactly `[RendererPresentation]`; `Wall`
+/// rejected (`RenderFrame` is permitted, presentation/capture progression
+/// only); causal recording required. Simulation/world reads are read-only
+/// dependencies and need no authority declaration.
 pub fn validate_renderer_feature(decl: &FeatureProtocolDecl) -> Vec<RendererFeatureViolation> {
     let mut v = Vec::new();
     for d in &decl.authoritative_domains {
-        v.push(RendererFeatureViolation::ForbiddenWriteAuthority(*d));
+        if *d != AuthorityDomain::RendererPresentation {
+            v.push(RendererFeatureViolation::ForbiddenWriteAuthority(*d));
+        }
+    }
+    if decl.authoritative_domains != vec![AuthorityDomain::RendererPresentation] {
+        v.push(RendererFeatureViolation::MissingRendererPresentation);
     }
     if decl.clock_domains.contains(&ClockDomain::Wall) {
         v.push(RendererFeatureViolation::WallClock);
@@ -595,14 +602,32 @@ mod tests {
     }
 
     #[test]
-    fn staged_renderer_feature_rule() {
-        // Clean: no write authority, Sim clock only, causal recorded.
-        assert!(validate_renderer_feature(&renderer_decl(vec![], vec![ClockDomain::Sim], true)).is_empty());
-        // Any existing write authority is forbidden.
-        let v = validate_renderer_feature(&renderer_decl(vec![AuthorityDomain::Ecs], vec![ClockDomain::Sim], true));
-        assert_eq!(v, vec![RendererFeatureViolation::ForbiddenWriteAuthority(AuthorityDomain::Ecs)]);
-        // Wall is rejected; missing causal recording is rejected.
-        let v = validate_renderer_feature(&renderer_decl(vec![], vec![ClockDomain::Wall], false));
+    fn full_renderer_feature_rule() {
+        // Clean: exactly [RendererPresentation], Sim+RenderFrame clocks, causal.
+        assert!(
+            validate_renderer_feature(&renderer_decl(
+                vec![AuthorityDomain::RendererPresentation],
+                vec![ClockDomain::Sim, ClockDomain::RenderFrame],
+                true
+            ))
+            .is_empty()
+        );
+        // Any OTHER write authority is forbidden (even alongside the right one).
+        let v = validate_renderer_feature(&renderer_decl(
+            vec![AuthorityDomain::RendererPresentation, AuthorityDomain::Ecs],
+            vec![ClockDomain::Sim],
+            true,
+        ));
+        assert!(v.contains(&RendererFeatureViolation::ForbiddenWriteAuthority(AuthorityDomain::Ecs)));
+        // Empty domains: must declare exactly [RendererPresentation].
+        let v = validate_renderer_feature(&renderer_decl(vec![], vec![ClockDomain::Sim], true));
+        assert_eq!(v, vec![RendererFeatureViolation::MissingRendererPresentation]);
+        // Wall rejected; missing causal recording rejected.
+        let v = validate_renderer_feature(&renderer_decl(
+            vec![AuthorityDomain::RendererPresentation],
+            vec![ClockDomain::Wall],
+            false,
+        ));
         assert!(v.contains(&RendererFeatureViolation::WallClock));
         assert!(v.contains(&RendererFeatureViolation::MissingCausalRecording));
     }
