@@ -30,6 +30,17 @@ impl<'a> System<'a> for Sys {
         _job: &mut Job<Self>,
         (entities, dt, positions, orientations, velocities, bodies, mut interpolated): Self::SystemData,
     ) {
+        // R0D §7.4: "Deterministic capture mode disables [render interpolation]."
+        // The lerp below advances by POS_LERP_RATE_FACTOR * dt.0, where dt.0 is
+        // the CLIENT's wall-clock render delta — so the exact interpolated
+        // position after N frames depends on real host scheduling, not just
+        // authoritative state (invisible for static scenes, where the lerp
+        // target never moves; a scattered ±1-LSB cross-run diff on any MOVING
+        // entity once colonists actually walk). In capture mode, always snap
+        // straight to the authoritative pos/ori — the same path already used
+        // for "far things" below — so rendered state is a pure function of the
+        // authoritative tick.
+        let r0d_snap = crate::render::bastion_r0d::freeze_time();
         // Update interpolated positions and orientations
         for (pos, ori, i, body, vel) in (
             &positions,
@@ -41,7 +52,10 @@ impl<'a> System<'a> for Sys {
             .join()
         {
             // Update interpolation values, but don't interpolate far things or objects
-            if i.pos.distance_squared(pos.0) < 64.0 * 64.0 && !matches!(body, Body::Object(_)) {
+            if !r0d_snap
+                && i.pos.distance_squared(pos.0) < 64.0 * 64.0
+                && !matches!(body, Body::Object(_))
+            {
                 // Note, these values are specifically tuned for smoother motion with high
                 // network latency or low network sampling rate and for smooth
                 // block hopping (which is instantaneous)
