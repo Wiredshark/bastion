@@ -2586,13 +2586,41 @@ impl AgentData<'_> {
         other_scale: Option<&Scale>,
         read_data: &ReadData,
     ) -> bool {
-        self.can_sense_directly_near(other_pos)
+        self.can_sense_directly_near(other_pos, *other, read_data)
             || self.can_see_entity(agent, controller, *other, other_pos, other_scale, read_data)
     }
 
-    pub fn can_sense_directly_near(&self, e_pos: &Pos) -> bool {
-        let chance = self.helper_random_bool(0.3);
-        e_pos.0.distance_squared(self.pos.0) < 5_f32.powi(2) && chance
+    pub fn can_sense_directly_near(
+        &self,
+        e_pos: &Pos,
+        other: EcsEntity,
+        read_data: &ReadData,
+    ) -> bool {
+        e_pos.0.distance_squared(self.pos.0) < 5_f32.powi(2) && self.senses_directly(other, read_data)
+    }
+
+    /// DET-AIT-002: the 0.3 "senses a nearby entity directly" gate, as a
+    /// STATELESS keyed decision instead of a shared-cursor RNG draw. The old
+    /// `helper_random_bool(0.3)` advanced a per-agent RNG cursor, so the
+    /// outcome for THIS (observer, candidate) pair depended on how many other
+    /// detection checks were evaluated first this tick — an order-coupling
+    /// across unrelated candidates in an authoritative code path. Derive the
+    /// gate purely from certified inputs (tick, observer uid, candidate uid)
+    /// so each pair's decision is independent of evaluation order and
+    /// idempotent within a tick. ARCH-003's `helper_rng` stream is retained
+    /// for its other (non-authoritative) users.
+    fn senses_directly(&self, other: EcsEntity, read_data: &ReadData) -> bool {
+        let candidate = read_data.uids.get(other).map_or(0, |u| u.0.get());
+        let mut h = common::state_hash::DomainHasher::new(
+            "bastion/domain/agent-sense-directly/v1/sha256",
+        );
+        h.field(&read_data.time.0.to_bits().to_le_bytes());
+        h.field(&self.uid.0.get().to_le_bytes());
+        h.field(&candidate.to_le_bytes());
+        let draw = u64::from_le_bytes(h.finish().0[..8].try_into().expect("sha256 >= 8 bytes"));
+        // 0.3 probability gate over the uniform u64 draw:
+        //   floor(0.3 * 2^64) = 5_534_023_222_112_865_484
+        draw < 5_534_023_222_112_865_484
     }
 
     /// Draw from the deterministic per-agent helper stream in harness mode,
