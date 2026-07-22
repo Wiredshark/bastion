@@ -294,6 +294,9 @@ fn main() -> io::Result<()> {
         tui,
         web_ui_request_r,
         shutdown_signal,
+        det_perturb,
+        det_ticks,
+        det_sleep_ms,
     )?;
 
     metrics_shutdown.notify_one();
@@ -311,6 +314,11 @@ fn server_loop(
         tokio::sync::oneshot::Sender<MessageReturn>,
     )>,
     shutdown_signal: Arc<AtomicBool>,
+    // bastion (DET-CLK-006 cert): threaded from `main` so the tick loop can
+    // emit the master-clock fingerprint + inject the wall-clock perturbation.
+    det_perturb: bool,
+    det_ticks: u64,
+    det_sleep_ms: u64,
 ) -> io::Result<()> {
     // Set up an fps clock
     let mut clock = Clock::new(Duration::from_secs_f64(1.0 / TPS as f64));
