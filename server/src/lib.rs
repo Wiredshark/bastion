@@ -3715,7 +3715,15 @@ impl Server {
                 && n > 0
             {
                 let spawn = self.state.ecs().read_resource::<SpawnPoint>().0;
-                let loaded = self.bastion_force_load_area(spawn.xy().map(|e| e as f32), 3);
+                // R0D max-stress leg: BASTION_R0D_LOAD_RADIUS widens the
+                // force-loaded area so a large colonist band has room to
+                // spread/wander without hitting the unloaded edge. Default 3
+                // (the original single-band footprint) when unset.
+                let radius: i32 = std::env::var("BASTION_R0D_LOAD_RADIUS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(3);
+                let loaded = self.bastion_force_load_area(spawn.xy().map(|e| e as f32), radius);
                 let names = self.bastion_spawn_colony(spawn.map(|e| e as f32), n);
                 let renamed = self.bastion_rename_colonists_unique();
                 info!(
