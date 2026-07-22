@@ -318,23 +318,10 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
         // Wait for the next tick.
         clock.tick();
 
-        // R0D D1-replay (leg-12 fix): the client CONNECT tick is wall-timed,
-        // so cross-run world histories diverged. In capture mode, AUTO-PAUSE
-        // exactly when the first player appears (0 -> 1 transition, one-shot);
-        // the session unpauses on entry and anchors the capture clock — every
-        // run's post-anchor history is then tick-aligned to the client.
-        {
-            use std::sync::atomic::AtomicBool as AB;
-            static R0D_ANCHORED: AB = AB::new(false);
-            if crate::render::bastion_r0d::capture_config().is_some()
-                && server.number_of_players() >= 1
-                && !R0D_ANCHORED.swap(true, Ordering::SeqCst)
-            {
-                server.bastion_r0d_mark_anchor();
-                paused.store(true, Ordering::SeqCst);
-                info!("r0d: server auto-paused at first-player anchor");
-            }
-        }
+        // R0D D1-replay: the client anchor is marked SERVER-SIDE at first
+        // Presence (leg-14 lesson: pausing at number_of_players>=1 — which
+        // fires at CONNECT, before login completes — deadlocked the handshake;
+        // no pause is needed, only the anchor tick).
 
         // Skip updating the server if it's paused
         if paused.load(Ordering::SeqCst) && server.number_of_players() < 2 {

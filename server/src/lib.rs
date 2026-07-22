@@ -3678,6 +3678,23 @@ impl Server {
         #[cfg(feature = "worldgen")]
         self.bastion_arena_tick();
 
+        // R0D D1-replay: mark the client anchor at the FIRST PRESENCE — login
+        // complete, the client actually in the world (leg-14 lesson: anchoring
+        // at connect deadlocked; presence is the true session-entry signal).
+        {
+            use std::sync::atomic::Ordering;
+            if R0D_ANCHOR_TICK.load(Ordering::SeqCst) == 0
+                && std::env::var_os("BASTION_R0D_DETERMINISTIC").is_some()
+                && !self
+                    .state
+                    .ecs()
+                    .read_storage::<comp::Presence>()
+                    .is_empty()
+            {
+                self.bastion_r0d_mark_anchor();
+            }
+        }
+
         // R0D scenario matrix (colony-present leg): with
         // BASTION_R0D_SPAWN_COLONY=N set, one-shot spawn a deterministic
         // N-colonist band at world spawn 100 ticks AFTER the client anchor
