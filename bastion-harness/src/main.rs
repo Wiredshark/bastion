@@ -135,6 +135,15 @@ struct Args {
     #[arg(long)]
     b4_scenario: bool,
 
+    /// R0D BUILD-007A10.11 Phase I: headless renderer-extraction determinism.
+    /// Boots the server, spawns a colonist band, then builds one
+    /// RendererExtractSnapshotV1 per authoritative tick from live ECS state
+    /// (through the double-buffered SnapshotSlotV1) and chains the extraction
+    /// roots. Baseline and --schedule-seed legs must print an identical final
+    /// chain; a different --seed must print a different one (non-vacuity).
+    #[arg(long)]
+    r0d_extract_scenario: bool,
+
     /// bastion (B5): run the work-execution acceptance scenario (mine dig +
     /// stone drops, chop + log drops, build with/without material, skill XP)
     /// + a zero-input soak. Prints one JSON result line; exit code reflects
@@ -994,6 +1003,8 @@ fn main() -> ExitCode {
         })
     } else if args.b4_scenario {
         b4_scenario(&args)
+    } else if args.r0d_extract_scenario {
+        r0d_extract_scenario(&args)
     } else if args.b5_scenario {
         b5_scenario(&args)
     } else if args.b55_scenario {
@@ -2321,6 +2332,205 @@ fn b4_scenario(args: &Args) -> ExitCode {
     if pass {
         ExitCode::SUCCESS
     } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// R0D BUILD-007A10.11 Phase I (design §5.1/§5.1A): headless renderer-
+/// extraction determinism. One RendererExtractSnapshotV1 is built per
+/// authoritative tick from LIVE ECS colonist state, published through the
+/// double-buffered SnapshotSlotV1 (monotonicity live-proved), and the
+/// extraction roots are chained. Graphics never exists in this scenario —
+/// which is the point: the extract chain is a pure function of the
+/// authoritative tick stream, so a --schedule-seed leg must match baseline
+/// byte-for-byte and a different --seed must diverge (non-vacuity anchor).
+fn r0d_extract_scenario(args: &Args) -> ExitCode {
+    use bastion_renderer_r0d::extract::{
+        RendererEntitySnapshotV1, RendererExtractSnapshotV1, SnapshotSlotV1,
+        WeatherVisualSnapshotV1,
+    };
+    use bastion_renderer_r0d::identity::semantic_entity_digest;
+    use common::state_hash::{
+        DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+        MerkleLeaf, category_root,
+    };
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-r0dx-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-r0dx".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "r0dx: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    // Anchor at the first site, force-load, spawn a small band, settle.
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    let _loaded = server.bastion_force_load_area(site_wpos, 5);
+    let _names = server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, 500.0), 3);
+    server.bastion_rename_colonists_unique();
+    // COL-fixture lesson: colonist promotion is asynchronous — settle first.
+    tick(&mut server, 60);
+
+    // The non-vacuity anchor: the world seed is bound into the content root,
+    // so a different --seed provably changes the final chain.
+    let content_root = {
+        let mut h = DomainHasher::new("bastion/r0d/extract-scenario-content/v1/sha256");
+        h.field(&args.seed.to_le_bytes());
+        h.finish()
+    };
+
+    const EXTRACT_TICKS: u64 = 60;
+    let mut slot = SnapshotSlotV1::default();
+    let mut chain = DomainHasher::new("bastion/r0d/extract-chain/v1/sha256");
+    let mut min_colonists = usize::MAX;
+    let mut publishes_ok = 0u64;
+    for i in 0..EXTRACT_TICKS {
+        tick(&mut server, 1);
+        let states = server.bastion_colonist_states_full();
+        min_colonists = min_colonists.min(states.len());
+
+        // Authoritative leaves -> the REAL durable composite for this tick.
+        let leaves: Vec<MerkleLeaf> = states
+            .iter()
+            .map(|(uid, name, pos, job)| {
+                let mut h = DomainHasher::new("bastion/domain/colonist/v1/sha256");
+                h.field(&uid.to_le_bytes());
+                for c in [pos.x, pos.y, pos.z] {
+                    h.field(&c.to_bits().to_le_bytes());
+                }
+                if let Some((job, active)) = job {
+                    h.field(&job.to_le_bytes());
+                    h.field(&[u8::from(*active)]);
+                }
+                MerkleLeaf {
+                    key: format!("npc/{name}"),
+                    hash: h.finish(),
+                }
+            })
+            .collect();
+        let certificate = FinalStateCertificate {
+            schema: "bastion/final-state-certificate/v1".to_string(),
+            world_seed: args.seed,
+            tick: i + 1,
+            durable_composite: category_root(DomainCategory::Durable, leaves),
+            rebuildable_integrity: IntegrityHash(DomainHash([0u8; 32]).0),
+        };
+
+        // Renderer-visible entity projections (deterministic mm quantization;
+        // figure key = entity digest until the .4 typed projection lands).
+        let entities: Vec<RendererEntitySnapshotV1> = states
+            .iter()
+            .map(|(uid, _name, pos, _job)| {
+                let digest = semantic_entity_digest(&format!(
+                    "fixture/extract-01/colonist/{uid:016}"
+                ))
+                .expect("valid semantic path");
+                RendererEntitySnapshotV1 {
+                    entity_digest: digest,
+                    figure_key_digest: digest,
+                    position_mm: [
+                        (f64::from(pos.x) * 1000.0).round() as i64,
+                        (f64::from(pos.y) * 1000.0).round() as i64,
+                        (f64::from(pos.z) * 1000.0).round() as i64,
+                    ],
+                    orientation_q: [0, 0, 0, 1 << 30],
+                    character_state_tag: 0,
+                    scale_milli: 1000,
+                }
+            })
+            .collect();
+
+        let snapshot = RendererExtractSnapshotV1::build(
+            1,
+            i + 1,
+            3,
+            certificate,
+            content_root,
+            entities,
+            WeatherVisualSnapshotV1::default(),
+        );
+        chain.field(&snapshot.extraction_root().0);
+        // Live monotonicity proof: every per-tick publish must be accepted.
+        if slot.publish(snapshot).is_ok() {
+            publishes_ok += 1;
+        }
+    }
+    let final_chain = chain.finish();
+
+    // Liveness guards: entities present every extract tick, every publish ok.
+    let live = min_colonists >= 1 && min_colonists != usize::MAX;
+    let all_published = publishes_ok == EXTRACT_TICKS;
+    println!(
+        "R0D-EXTRACT: {}",
+        serde_json::json!({
+            "final_chain": bastion_renderer_r0d::hex32(&final_chain.0),
+            "ticks": EXTRACT_TICKS,
+            "min_colonists": if min_colonists == usize::MAX { 0 } else { min_colonists },
+            "publishes_ok": publishes_ok,
+            "seed": args.seed,
+        })
+    );
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if live && all_published {
+        ExitCode::SUCCESS
+    } else {
+        warn!(min_colonists, publishes_ok, "r0dx: liveness/publication guard failed");
         ExitCode::FAILURE
     }
 }

@@ -14,6 +14,9 @@ chrono = { workspace = true }
 [dependencies]
 server = { package = "veloren-server", path = "../server" }
 common = { package = "veloren-common", path = "../common" }
+# R0D BUILD-007A10.11 Phase I: the headless extract-determinism scenario builds
+# real RendererExtractSnapshotV1s from live server state.
+bastion-renderer-r0d = { path = "../bastion-renderer-r0d" }
 # DETRNG (B8 root fix): direct dep only to flip rtsim::DETERMINISTIC_RTSIM at
 # boot — the harness runs reproducibly; the live game keeps its entropy.
 rtsim = { package = "veloren-rtsim", path = "../rtsim" }
