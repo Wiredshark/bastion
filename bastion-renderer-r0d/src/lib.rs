@@ -19,9 +19,11 @@ pub mod cbor;
 pub mod cosmetic_rng;
 pub mod figure_package;
 pub mod identity;
+pub mod publication;
 pub mod readiness;
 pub mod replay;
 pub mod selection;
+pub mod shutdown;
 pub mod tape;
 pub mod visual_oracle;
 
