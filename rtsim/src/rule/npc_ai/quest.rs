@@ -165,7 +165,26 @@ pub fn finalize_courier_task(ctx: &mut NpcCtx, quest_id: QuestId, read_only: boo
 /// rtsim tick (for reasons related to parallelism).
 pub fn create_quest<S: State>(quest: Quest) -> impl Action<S, QuestId> {
     just(move |ctx, _| {
-        let quest_id = ctx.data.quests.register();
+        // DET-ESIM-020 (v8 rtsim-economy, Critical): derive the QuestId
+        // deterministically instead of racing a shared AtomicU64. NPC AI runs
+        // under par_iter_mut, so `Quests::register`'s fetch_add interleaved
+        // non-deterministically across threads — and the id is consumed here
+        // in parallel (it sets the NPC's Job::Quest and a dialogue marker), so
+        // it can't simply be deferred to the serial commit. Key it by
+        // (creating NPC, sim time, per-NPC quest index this tick) through the
+        // shared DomainHasher: a pure function of the creator's state, unique
+        // by construction, deterministic under rayon — the same pattern as the
+        // per-NPC tick_rng streams.
+        let quest_id = {
+            let mut h =
+                common::state_hash::DomainHasher::new("bastion/domain/quest-id/v1/sha256");
+            h.field(&slotmap::Key::data(&ctx.npc_id).as_ffi().to_le_bytes());
+            h.field(&ctx.time.0.to_bits().to_le_bytes());
+            h.field(&(ctx.controller.quests_to_create.len() as u64).to_le_bytes());
+            QuestId(u64::from_le_bytes(
+                h.finish().0[..8].try_into().expect("sha256 >= 8 bytes"),
+            ))
+        };
         ctx.controller
             .quests_to_create
             .push((quest_id, quest.clone()));
