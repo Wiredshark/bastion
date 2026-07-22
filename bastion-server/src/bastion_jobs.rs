@@ -8031,12 +8031,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // the same rtsim read guard the mood pass uses (the :%15==11
             // idiom) — zero new coupling.
             let stagger_data = rtsim.rt_state().data();
-            for (entity, colonist, pos, uid, needs) in
-                (&entities, &colonists, &positions, &uids, &needs_storage).join()
-            {
-                if !is_loaded(entity) {
+            // DET-COL-NEED-001 / DET-COL-NEED-002 / DET-AUT-005: process
+            // colonists in a canonical order — most-urgent survival meter
+            // first, stable Uid as the total-order tiebreak — instead of ECS
+            // join order. The body reserves the nearest unreserved FOOD
+            // greedily and targets the nearest free BED first-come, so join
+            // (entity-allocation) order otherwise decided WHICH colonist won a
+            // scarce resource when several needed one the same tick. A total
+            // order over (severity, Uid) makes that allocation independent of
+            // ECS iteration order. The breakdown roll below is already keyed
+            // by (tick, uid, episode) (T0.33), so its outcome does not depend
+            // on this order; only the greedy reservations do.
+            let mut need_order: Vec<(specs::Entity, Uid, f32)> =
+                (&entities, &colonists, &uids, &needs_storage)
+                    .join()
+                    .filter(|(e, _, _, _)| is_loaded(*e))
+                    .map(|(e, _, u, n)| (e, *u, n.rest.min(n.hunger)))
+                    .collect();
+            need_order.sort_by(|a, b| {
+                a.2.partial_cmp(&b.2)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.1.0.get().cmp(&b.1.0.get()))
+            });
+            for (entity, uid, _) in need_order {
+                let uid = &uid;
+                let (Some(colonist), Some(pos), Some(needs)) = (
+                    colonists.get(entity),
+                    positions.get(entity),
+                    needs_storage.get(entity),
+                ) else {
                     continue;
-                }
+                };
                 // B7-3: an already-despondent colonist HOLDS — the break
                 // is TOP-tier (even needs don't preempt it out; its own
                 // clock in the Arrived arm lifts it).
