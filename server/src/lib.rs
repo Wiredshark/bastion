@@ -3203,7 +3203,8 @@ impl Server {
             .join()
             .find(|(_, c)| c.0.name == name)
             .and_then(|(e, c)| {
-                crate::rtsim::tick::colonist_record(c, inventories.get(e), None, None).inventory
+                crate::rtsim::tick::colonist_record(c, inventories.get(e), None, None, None, 0.0)
+                    .inventory
             })
     }
 

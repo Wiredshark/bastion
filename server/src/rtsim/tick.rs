@@ -555,12 +555,22 @@ pub(crate) fn colonist_record(
     inv: Option<&comp::Inventory>,
     needs: Option<&comp::bastion::Needs>,
     mood: Option<&comp::bastion::Mood>,
+    arbiter: Option<&comp::bastion::Arbiter>,
+    now: f64,
 ) -> common::bastion::BastionColonist {
     let mut rec = c.0.clone();
     // B7-0: mirror the live meters (same wholesale-Option semantics as
     // the bag below).
     rec.needs = needs.map(|n| (n.hunger, n.rest, n.recreation));
     rec.mood = mood.map(|m| m.0);
+    // DET-COL-AUT-002: mirror the arbiter drive, storing the commitment as a
+    // REMAINING duration (never the absolute `committed_until` sim-Time) so it
+    // survives a reload where the clock resets or jumps. `last_scores` and
+    // `activity` are REPORTED telemetry (recomputed next tick), not persisted.
+    rec.arbiter = arbiter.map(|a| common::bastion::ArbiterStateV1 {
+        current: a.current,
+        commitment_remaining_secs: (a.committed_until - now).max(0.0),
+    });
     rec.inventory = inv.map(|inv| {
         let mut items: Vec<(String, u32)> = Vec::new();
         for item in inv.slots().flatten() {
@@ -611,6 +621,9 @@ impl<'a> System<'a> for Sys {
             WriteStorage<'a, comp::PlayerColony>,
             WriteStorage<'a, comp::bastion::Needs>,
             WriteStorage<'a, comp::bastion::Mood>,
+            // DET-COL-AUT-002: mirror the arbiter drive into the persistent
+            // record every loaded tick and restore it on promote.
+            WriteStorage<'a, comp::bastion::Arbiter>,
             WriteStorage<'a, comp::Stats>,
             ReadStorage<'a, comp::bastion::ActiveJob>,
             // bastion (B-ASSET1): test-goto fixtures own their activity too.
@@ -660,6 +673,7 @@ impl<'a> System<'a> for Sys {
                 mut player_colony,
                 mut bastion_needs,
                 mut bastion_moods,
+                mut bastion_arbiters,
                 mut stats_storage,
                 bastion_active_jobs,
                 bastion_test_gotos,
@@ -934,6 +948,23 @@ impl<'a> System<'a> for Sys {
                                     .mood
                                     .map_or_else(comp::bastion::Mood::default, comp::bastion::Mood),
                             );
+                            // DET-COL-AUT-002: RESTORE the persisted arbiter
+                            // drive (`None` = never captured / old save → the
+                            // default `Idle` arbiter, pre-AUT-002 behavior).
+                            // The commitment deadline is reconstructed from the
+                            // stored REMAINING duration against the current
+                            // clock; last_scores/activity recompute next tick.
+                            let _ = bastion_arbiters.insert(
+                                entity,
+                                colonist.arbiter.map_or_else(
+                                    comp::bastion::Arbiter::default,
+                                    |st| comp::bastion::Arbiter {
+                                        current: st.current,
+                                        committed_until: time.0 + st.commitment_remaining_secs,
+                                        ..Default::default()
+                                    },
+                                ),
+                            );
                             if let Some(mut stats) = stats_storage.get_mut(entity) {
                                 stats.name = comp::Content::Plain(colonist.name.clone());
                             }
@@ -998,6 +1029,8 @@ impl<'a> System<'a> for Sys {
                                 inventories.get(entity),
                                 bastion_needs.get(entity),
                                 bastion_moods.get(entity),
+                                bastion_arbiters.get(entity),
+                                time.0,
                             ));
                         }
 
@@ -1040,6 +1073,8 @@ impl<'a> System<'a> for Sys {
                                 inventories.get(entity),
                                 bastion_needs.get(entity),
                                 bastion_moods.get(entity),
+                                bastion_arbiters.get(entity),
+                                time.0,
                             ));
                         }
                         delete_emitter.emit(DeleteEvent(entity));

@@ -1249,6 +1249,20 @@ impl WorkPriorities {
     }
 }
 
+/// bastion (DET-COL-AUT-002): the persisted slice of a colonist's
+/// [`crate::comp::bastion::Arbiter`]. The same-tier commitment is stored as a
+/// REMAINING duration in seconds (`commitment_remaining_secs`), never the
+/// absolute `committed_until` sim-`Time`, so it stays meaningful across a
+/// reload where the clock resets or jumps: on promote the deadline is
+/// reconstructed as `now + commitment_remaining_secs`. A named `V1` type (not
+/// a bare tuple like `needs`) so future arbiter fields can be added as
+/// serde-defaulted fields without a save migration.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ArbiterStateV1 {
+    pub current: crate::comp::bastion::Drive,
+    pub commitment_remaining_secs: f64,
+}
+
 /// The per-colonist record. Lives in the rtsim `Npc` (persisted, works
 /// headlessly) and is mirrored into the ECS `comp::Colonist` when the NPC is
 /// promoted to a loaded entity.
@@ -1329,6 +1343,18 @@ pub struct BastionColonist {
     /// restore semantics as `needs`.
     #[serde(default)]
     pub mood: Option<f32>,
+    /// bastion (DET-COL-AUT-002): the persistent mirror of the per-colonist
+    /// [`crate::comp::bastion::Arbiter`] drive. Without it the arbiter reset
+    /// to `Drive::Idle` on every LOD unload/re-promote and on save/reload,
+    /// silently dropping any in-progress same-tier commitment (an undeclared
+    /// dependence on process/session lifetime). Same wholesale-`Option`
+    /// capture/restore semantics as `needs`/`mood`. Only the sim-authoritative
+    /// fields are mirrored — `last_scores`/`activity` are REPORTED telemetry,
+    /// recomputed next tick, so they are deliberately NOT persisted.
+    /// serde-default: old saves → `None` → a promote keeps the default `Idle`
+    /// arbiter (pre-AUT-002 behavior, bit-for-bit).
+    #[serde(default)]
+    pub arbiter: Option<ArbiterStateV1>,
     /// bastion (RUN-0, row 47): the emergency-run gait flag — walk
     /// (TRAVEL_SPEED) is every colonist's default; true feeds RUN_SPEED
     /// into the SAME Goto call sites (no parallel movement path). Set by
@@ -1962,6 +1988,9 @@ impl BastionColonist {
             // the live meters (LOD-0 semantics).
             needs: None,
             mood: None,
+            // DET-COL-AUT-002: a fresh colonist has no persisted arbiter yet;
+            // the default Idle arbiter is installed on promote.
+            arbiter: None,
             // B7-1: no bed until one is assigned.
             owned_bed: None,
             // RUN-0: everyone walks until an urgency trigger says
