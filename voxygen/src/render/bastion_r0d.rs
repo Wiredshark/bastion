@@ -409,7 +409,10 @@ fn emit_draw_tape(sink: &mut String) {
         TRACE_STABILITY.lock().map(|s| s.1),
     ) {
         let p = std::path::PathBuf::from(&out);
-        if stab == 30 && !p.exists() {
+        // Precondition-engaged dump (the leg-8 lesson: the MENU trace, 27
+        // records, stabilizes first and stole the dump): only an IN-SESSION
+        // stream (>=100 records) at its stability-30 crossing qualifies.
+        if stab == 30 && records.len() >= 100 && !p.exists() {
             let mut dump = String::with_capacity(records.len() * 16);
             for (k, u, i) in &records {
                 dump.push_str(&format!("{k} {u} {i}\n"));
