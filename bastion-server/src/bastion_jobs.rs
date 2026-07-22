@@ -7506,10 +7506,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .count();
             if pending < cap {
                 let occupied: HashSet<Vec3<i32>> = board.jobs.values().map(|j| j.pos).collect();
+                // Gather all eligible loose drops first, then admit up to the
+                // cap in a canonical total order (source cell z/y/x, item def,
+                // stable item Uid) — ECS join order must not decide WHICH
+                // pickups become haul jobs when more are eligible than the cap
+                // allows (DET-COL-HAUL-001 / DET-AUT-004). Eligibility is read
+                // against board state as of loop entry; each drop has a unique
+                // Uid so the per-item reservation done during commit cannot
+                // change another candidate's admission.
+                let mut candidates: Vec<(Vec3<i32>, &'static str, Uid)> = Vec::new();
                 for (pickup, ipos, iuid) in (&pickup_items, &positions, &uids).join() {
-                    if pending >= cap {
-                        break;
-                    }
                     let matched = match pickup.item().item_definition_id().itemdef_id() {
                         Some(d) if d == MINE_DROP_ITEM => Some(MINE_DROP_ITEM),
                         Some(d) if d == CHOP_DROP_ITEM => Some(CHOP_DROP_ITEM),
@@ -7528,6 +7534,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     {
                         continue;
                     }
+                    candidates.push((cell, static_def, *iuid));
+                }
+                candidates
+                    .sort_unstable_by_key(|&(cell, def, uid)| (cell.z, cell.y, cell.x, def, uid.0));
+                for (cell, static_def, iuid) in candidates {
+                    if pending >= cap {
+                        break;
+                    }
                     let Some(dest) = board
                         .stockpiles
                         .iter()
@@ -7540,12 +7554,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     else {
                         continue;
                     };
-                    let rid = board.reserve(*iuid);
+                    let rid = board.reserve(iuid);
                     let id = board.next_id;
                     board.next_id += 1;
                     board.jobs.insert(id, Job {
                         kind: common::bastion::JobKind::Haul {
-                            item: *iuid,
+                            item: iuid,
                             destination: dest,
                         },
                         work: common::bastion::WorkType::Haul,
