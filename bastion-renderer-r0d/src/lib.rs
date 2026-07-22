@@ -13,6 +13,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub mod admission;
 pub mod agreement;
+pub mod atlas;
+pub mod capture;
 pub mod bootstrap;
 pub mod camera;
 pub mod cbor;
