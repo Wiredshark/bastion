@@ -3654,6 +3654,35 @@ impl Server {
         #[cfg(feature = "worldgen")]
         self.bastion_arena_tick();
 
+        // R0D scenario matrix (colony-present leg): with
+        // BASTION_R0D_SPAWN_COLONY=N set, one-shot spawn a deterministic
+        // N-colonist band at world spawn once chunks have settled (tick 100 —
+        // colonist promotion is asynchronous, the COL-fixture lesson). The
+        // existing bastion dev-flag pattern; a no-op in every normal boot.
+        {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static R0D_COLONY_DONE: AtomicBool = AtomicBool::new(false);
+            let tick_now = self.state.ecs().read_resource::<Tick>().0;
+            if tick_now == 100
+                && !R0D_COLONY_DONE.swap(true, Ordering::SeqCst)
+                && let Ok(n) = std::env::var("BASTION_R0D_SPAWN_COLONY")
+                && let Ok(n) = n.parse::<u8>()
+                && n > 0
+            {
+                let spawn = self.state.ecs().read_resource::<SpawnPoint>().0;
+                let loaded = self.bastion_force_load_area(spawn.xy().map(|e| e as f32), 3);
+                let names = self.bastion_spawn_colony(spawn.map(|e| e as f32), n);
+                let renamed = self.bastion_rename_colonists_unique();
+                info!(
+                    ?spawn,
+                    loaded,
+                    spawned = names.len(),
+                    renamed = renamed.len(),
+                    "r0d: colony-present scenario spawn"
+                );
+            }
+        }
+
         // Update calendar events as time changes
         // TODO: If a lot of calendar events get added, this might become expensive.
         // Maybe don't do this every tick?

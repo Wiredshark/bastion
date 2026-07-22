@@ -1924,6 +1924,12 @@ impl PlayState for SessionState {
         // R0D Phase III: flag-gated auto-capture driver (no-op unless the
         // BASTION_R0D_CAPTURE_* env config is present). Once every requested
         // capture hash has been written, shut the session down cleanly.
+        // §17.3: entity-present legs pause the sim once the trace stabilizes,
+        // freezing the world exactly so warm-capture identity applies.
+        #[cfg(feature = "singleplayer")]
+        if crate::render::bastion_r0d::should_pause_sim_now() {
+            global_state.pause();
+        }
         if crate::render::bastion_r0d::drive_capture(global_state.window.renderer_mut()) {
             return PlayStateResult::Shutdown;
         }

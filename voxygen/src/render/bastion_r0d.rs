@@ -357,6 +357,26 @@ pub fn trace_stable_frames() -> u64 {
     TRACE_STABILITY.lock().map(|s| s.1).unwrap_or(0)
 }
 
+/// §17.3 sim-pause lever (BASTION_R0D_PAUSE_SIM): for entity-present scenario
+/// legs, the singleplayer server loop is paused ONCE when trace stability
+/// reaches half the capture gate — the world freezes exactly, so warm-capture
+/// identity applies even with colonists in view. Returns true exactly once.
+pub fn should_pause_sim_now() -> bool {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static PAUSED: AtomicBool = AtomicBool::new(false);
+    if std::env::var_os("BASTION_R0D_PAUSE_SIM").is_none() || capture_config().is_none() {
+        return false;
+    }
+    let gate: u64 = std::env::var("BASTION_R0D_STABLE_GATE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60);
+    if trace_stable_frames() >= gate / 2 && !PAUSED.swap(true, Ordering::SeqCst) {
+        return true;
+    }
+    false
+}
+
 /// Record one CPU-encoded draw call (.14). `units` = index or vertex count as
 /// encoded; `instances` = instance count. No-op unless the manifest flag is set.
 pub fn record_draw(kind: u16, units: u32, instances: u32) {
