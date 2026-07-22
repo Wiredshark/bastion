@@ -1263,6 +1263,17 @@ impl FigureMgr {
             .map(|state| state.can_shadow_sun())
             .unwrap_or(false);
 
+        // R0D §12.5/§13.6: in deterministic capture mode, figure view-distance
+        // and frustum culling are BYPASSED. Both read frame-timing-sensitive
+        // residency/position state, so "which figures are drawn this frame"
+        // otherwise depends on non-deterministic chunk/entity residency arrival
+        // timing rather than purely on authoritative state — the draw stream
+        // diverges cross-run under motion (same class as the leg-10 LOD-HashMap
+        // ordering bug). Drawing EVERY synced figure every frame makes the draw
+        // set a pure function of the authoritative entity set. Capture-only; no
+        // effect on normal play.
+        let r0d_no_cull = crate::render::bastion_r0d::freeze_time();
+
         // Don't process figures outside the vd
         let vd_frac = anim::vek::Vec2::from(pos.0 - data.player_pos)
             .map2(TerrainChunk::RECT_SIZE, |d: f32, sz| d.abs() / sz as f32)
@@ -1270,10 +1281,10 @@ impl FigureMgr {
             / data.view_distance as f32;
 
         // Keep from re-adding/removing entities on the border of the vd
-        if vd_frac > 1.2 {
+        if !r0d_no_cull && vd_frac > 1.2 {
             self.states.remove(body, &entity);
             return;
-        } else if vd_frac > 1.0 {
+        } else if !r0d_no_cull && vd_frac > 1.0 {
             state.as_mut().map(|state| state.visible = false);
             // Keep processing if this might be a shadow caster.
             // NOTE: Not worth to do for rain_occlusion, since that only happens in closeby
@@ -1295,7 +1306,9 @@ impl FigureMgr {
                 .coherent_test_against_frustum(data.frustum, meta.lpindex);
             let in_frustum = in_frustum
                 || matches!(body, Body::Ship(_))
-                || pos.0.distance_squared(data.focus_pos) < 32.0f32.powi(2);
+                || pos.0.distance_squared(data.focus_pos) < 32.0f32.powi(2)
+                // R0D capture mode: force visible (see r0d_no_cull note above).
+                || r0d_no_cull;
             meta.visible = in_frustum;
             meta.lpindex = lpindex;
             if in_frustum {
