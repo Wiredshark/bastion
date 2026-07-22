@@ -17,6 +17,7 @@ pub mod bootstrap;
 pub mod camera;
 pub mod cbor;
 pub mod cosmetic_rng;
+pub mod extract;
 pub mod figure_package;
 pub mod identity;
 pub mod parallel;
