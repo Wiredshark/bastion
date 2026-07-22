@@ -128,6 +128,34 @@ impl PlayState for MainMenuState {
             }
         }
 
+        // R0D Phase III: the auto-capture leg boots straight into singleplayer
+        // with no menu interaction (the asset-arena one-shot pattern). Creates
+        // a world if none exists; the normal poll/login machinery below takes
+        // over once the server is up. No-op unless BASTION_R0D_CAPTURE_OUT is
+        // set.
+        #[cfg(feature = "singleplayer")]
+        if crate::render::bastion_r0d::capture_config().is_some() {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static R0D_STARTED: AtomicBool = AtomicBool::new(false);
+            if !R0D_STARTED.swap(true, Ordering::SeqCst) {
+                if matches!(global_state.singleplayer, SingleplayerState::None) {
+                    global_state.singleplayer = SingleplayerState::init();
+                }
+                if let SingleplayerState::Init(ref mut init) = global_state.singleplayer {
+                    if init.current.is_none() {
+                        init.new_world();
+                        init.current = Some(init.worlds.len().saturating_sub(1));
+                    }
+                }
+                global_state.singleplayer.run(
+                    &global_state.tokio_runtime,
+                    &global_state.settings.language.selected_language,
+                    &global_state.i18n,
+                    global_state.args.bastion_overseer,
+                );
+            }
+        }
+
         // Poll server creation
         #[cfg(feature = "singleplayer")]
         {

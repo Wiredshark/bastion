@@ -1921,6 +1921,12 @@ impl PlayState for SessionState {
 
     fn tick(&mut self, global_state: &mut GlobalState, events: Vec<Event>) -> PlayStateResult {
         span!(_guard, "tick", "<Session as PlayState>::tick");
+        // R0D Phase III: flag-gated auto-capture driver (no-op unless the
+        // BASTION_R0D_CAPTURE_* env config is present). Once every requested
+        // capture hash has been written, shut the session down cleanly.
+        if crate::render::bastion_r0d::drive_capture(global_state.window.renderer_mut()) {
+            return PlayStateResult::Shutdown;
+        }
         // TODO: let mut client = self.client.borrow_mut();
         // TODO: can this be a method on the session or are there borrowcheck issues?
         let (client_presence, client_type, client_registered) = {

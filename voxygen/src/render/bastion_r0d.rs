@@ -155,6 +155,92 @@ pub fn emit_pass_tape() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Phase III: flag-gated auto-capture (the live R0D certification driver).
+// ---------------------------------------------------------------------------
+
+/// Capture configuration from env (Phase III live leg):
+/// `BASTION_R0D_CAPTURE_OUT` = output file; `BASTION_R0D_CAPTURE_WARMUP`
+/// (default 240 frames — settle worldgen/streaming); `BASTION_R0D_CAPTURE_COUNT`
+/// (default 10 — the §17.4 warm-capture certification count).
+#[must_use]
+pub fn capture_config() -> Option<(std::path::PathBuf, u64, u64)> {
+    let out = std::env::var_os("BASTION_R0D_CAPTURE_OUT")?;
+    let warmup = std::env::var("BASTION_R0D_CAPTURE_WARMUP")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(240);
+    let count = std::env::var("BASTION_R0D_CAPTURE_COUNT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10);
+    Some((std::path::PathBuf::from(out), warmup, count))
+}
+
+/// (frames_seen_in_session, captures_requested, captures_completed).
+static CAPTURE_STATE: Mutex<(u64, u64, u64)> = Mutex::new((0, 0, 0));
+
+/// Drive one session frame of the auto-capture leg. Counts warmup frames,
+/// requests one screenshot per frame until `count` are in flight, hashes each
+/// completed image's TIGHT bytes (RgbImage raw is unpadded) through the shared
+/// domain_hash, appends `capture <ordinal> <w>x<h> <hex>` to the output file,
+/// and returns `true` (request shutdown) once every capture has completed.
+/// No-op returning `false` unless the env config is present.
+pub fn drive_capture(renderer: &mut super::renderer::Renderer) -> bool {
+    let Some((out, warmup, count)) = capture_config() else {
+        return false;
+    };
+    let (frames, requested, completed) = {
+        let mut s = CAPTURE_STATE.lock().expect("capture state");
+        s.0 += 1;
+        *s
+    };
+    if frames > warmup && requested < count {
+        {
+            let mut s = CAPTURE_STATE.lock().expect("capture state");
+            s.1 += 1;
+        }
+        let ordinal = requested; // 0-based capture ordinal
+        let out = out.clone();
+        renderer.create_screenshot(move |result| {
+            match result {
+                Ok(image) => {
+                    let (w, h) = image.dimensions();
+                    let digest = bastion_renderer_r0d::domain_hash(
+                        "bastion/r0d/live-capture",
+                        1,
+                        0,
+                        image.as_raw(),
+                    );
+                    let line = format!(
+                        "capture {ordinal} {w}x{h} {}\n",
+                        bastion_renderer_r0d::hex32(&digest)
+                    );
+                    let _ = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&out)
+                        .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+                }
+                Err(e) => {
+                    // Typed-terminal spirit (BTL-341): a failed capture is
+                    // recorded, never silently lost.
+                    let line = format!("capture {ordinal} FAILED {e}\n");
+                    let _ = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&out)
+                        .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+                }
+            }
+            if let Ok(mut s) = CAPTURE_STATE.lock() {
+                s.2 += 1;
+            }
+        });
+    }
+    completed >= count
+}
+
 /// The frozen drawer pass ranks (mirrors
 /// `bastion_renderer_r0d::pass_graph::voxygen_ranks`).
 pub mod ranks {
