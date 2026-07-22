@@ -11566,6 +11566,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // is emitted (requests keep their turn — the attempt flag burns at
         // plan time). Concurrent plans overlap and dig each other's step
         // floors out (run-7's gallery of chaos); one stair serves everyone.
+        // DET-MTR-001 (v8 mine-traversal, Critical): only ONE access plan is
+        // emitted per tick (the .take(1) below), and the carve requests were
+        // gathered in ECS upkeep (producer) order, so which stuck job won the
+        // tick's single access plan rode producer order — internally
+        // deterministic route selection was applied to whichever pocket the
+        // producer happened to surface first. Sort by (target cell, parent job
+        // id) so the winning request is a pure function of the pending set.
+        carve_requests.sort_by_key(|(_from, to, parent)| (to.x, to.y, to.z, *parent));
         let access_pending = board.jobs.values().any(|j| j.is_access);
         for (from, to, parent) in
             carve_requests
