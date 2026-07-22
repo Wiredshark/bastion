@@ -19,7 +19,9 @@ pub mod cbor;
 pub mod figure_package;
 pub mod identity;
 pub mod readiness;
+pub mod replay;
 pub mod selection;
+pub mod tape;
 
 pub use admission::{CandidateSourceState, R0dSourceAuthorityMismatch, RendererW0AdmissionV2};
 pub use bootstrap::{
