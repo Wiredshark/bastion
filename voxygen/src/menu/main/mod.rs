@@ -144,7 +144,14 @@ impl PlayState for MainMenuState {
                 if let SingleplayerState::Init(ref mut init) = global_state.singleplayer {
                     if init.current.is_none() {
                         init.new_world();
-                        init.current = Some(init.worlds.len().saturating_sub(1));
+                        let idx = init.worlds.len().saturating_sub(1);
+                        // R0D: pin the world seed so two FRESH capture runs
+                        // build the identical world — cross-run comparability
+                        // without the full D1 replay stack.
+                        if let Some(w) = init.worlds.get_mut(idx) {
+                            w.seed = 1000;
+                        }
+                        init.current = Some(idx);
                     }
                 }
                 global_state.singleplayer.run(
