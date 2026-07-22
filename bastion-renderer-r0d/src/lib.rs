@@ -16,12 +16,14 @@ pub mod agreement;
 pub mod bootstrap;
 pub mod camera;
 pub mod cbor;
+pub mod cosmetic_rng;
 pub mod figure_package;
 pub mod identity;
 pub mod readiness;
 pub mod replay;
 pub mod selection;
 pub mod tape;
+pub mod visual_oracle;
 
 pub use admission::{CandidateSourceState, R0dSourceAuthorityMismatch, RendererW0AdmissionV2};
 pub use bootstrap::{
