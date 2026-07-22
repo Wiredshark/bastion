@@ -14406,13 +14406,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             .filter(|j| j.claimed_by.is_some())
             .map(|j| j.pos)
             .collect();
-        for (entity, colonist, pos, uid, ()) in
-            (&entities, &colonists, &positions, &uids, !&active_jobs).join()
-        {
-            // LOD-1 Loaded-gate: never CLAIM for a demoting colonist.
-            if !is_loaded(entity) {
+        // DET-COL-JOB-001: claim jobs for idle colonists in a canonical order
+        // (stable Uid) instead of ECS join order. Each colonist greedily
+        // claims its best-scoring job and pushes to claimed_pos, which feeds
+        // the clump penalty for colonists processed later this pass -- so join
+        // (entity-allocation) order otherwise decided which colonist won a
+        // contested job and how the anti-clumping spread resolved. The
+        // per-colonist job SCORE is already tie-broken deterministically
+        // (ARCH-003: equal-score claims pinned by JobId); ordering the
+        // claimants by Uid makes the whole assignment independent of ECS
+        // iteration order.
+        let mut claim_order: Vec<(specs::Entity, Uid)> =
+            (&entities, &colonists, &uids, !&active_jobs)
+                .join()
+                .filter(|(e, _, _, _)| is_loaded(*e))
+                .map(|(e, _, u, _)| (e, *u))
+                .collect();
+        claim_order.sort_by_key(|(_, u)| u.0.get());
+        for (entity, uid) in claim_order {
+            let uid = &uid;
+            let (Some(colonist), Some(pos)) = (colonists.get(entity), positions.get(entity))
+            else {
                 continue;
-            }
+            };
             let emergency_route_owner = board.emergency_route_members.get(uid).copied();
             let route_has_claimed_step = emergency_route_owner.is_some_and(|route_owner| {
                 board.emergency_access_jobs.iter().any(|(id, owner)| {
