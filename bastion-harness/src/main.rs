@@ -518,6 +518,29 @@ struct Args {
     #[arg(long)]
     esim_permute_order: bool,
 
+    /// bastion determinism fixture COL-01 (SPECIFIED_NOT_EVIDENCED): certifies
+    /// DET-COL-JOB-001. Builds a set of idle colonists whose ECS join order
+    /// (entity-index order) diverges from Uid order via delete+respawn slot
+    /// reuse, places contested mine designations, and ticks the claim pass.
+    /// Emits a COL-CERTIFICATE hashing (per colonist, by Uid) the claimed JobId.
+    /// Byte-identical across serial / --schedule-seed / --col-permute-order
+    /// (which toggles the join-order desync) proves the contested-claim
+    /// assignment is canonical (Uid-ordered), not ECS-iteration ordered.
+    /// MEASURES; a setup failure (no desync, no claim) is the only non-success.
+    #[arg(long)]
+    col_scenario: bool,
+
+    /// COL-01: number of ARBITRATION_INTERVAL rounds to run the claim pass.
+    #[arg(long, default_value_t = 4)]
+    col_arb_rounds: u64,
+
+    /// COL-01: build the SYNCED colonist join order (spawn N then kill the
+    /// first, no slot reuse) instead of the DESYNCED order (spawn N-1, kill the
+    /// first, respawn one into the freed slot). Same surviving Uid set, opposite
+    /// join order — the perturbation JOB-001's Uid-sort must be invariant to.
+    #[arg(long)]
+    col_permute_order: bool,
+
     /// bastion (MINING-LIVE-FIDELITY): dig footprint X width, blocks. The
     /// geometry axis of the completion investigation — wide claims fit the
     /// stairs arm; tight ones force the D16 released-but-unreachable class.
@@ -1227,6 +1250,8 @@ fn main() -> ExitCode {
         ter_scenario(&args)
     } else if args.esim_scenario {
         esim_scenario(&args)
+    } else if args.col_scenario {
+        col_scenario(&args)
     } else if args.dig_access_scenario {
         dig_access_scenario(&args)
     } else if args.chopfell_scenario {
@@ -12456,6 +12481,278 @@ fn esim_scenario(args: &Args) -> ExitCode {
     }
     println!(
         "ESIM-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture COL-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Certifies DET-COL-JOB-001: the idle-colonist job-claim pass gathers claimants
+/// via a serial ECS join (entity-index order) then sorts by stable Uid, so which
+/// colonist wins a CONTESTED job (and the anti-clump spread) is a pure function
+/// of Uid order, not ECS iteration order. The proof needs a genuine divergence
+/// between join order and Uid order — which only arises after entity delete +
+/// slot reuse (specs reuses freed entity slots while the Uid counter only
+/// increments). --col-permute-order toggles between:
+///   - DESYNCED (default): spawn 3, kill the first, respawn one into the freed
+///     slot -> the respawn's entity index precedes the survivors while its Uid
+///     is highest, so join order != Uid order
+///   - SYNCED: spawn 4, kill the first -> survivors keep ascending slots == Uids
+/// Both leave the SAME surviving Uid set, so a byte-identical COL-CERTIFICATE
+/// across the toggle proves the assignment is Uid-canonical. Also byte-identical
+/// across serial / --schedule-seed. A different --seed varies the worldgen
+/// anchor (non-vacuous). The fixture asserts the baseline actually desynced so
+/// it can't pass vacuously. MEASURES, never gates.
+fn col_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, Region},
+        comp::{Colonist, bastion::ActiveJob},
+        state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        },
+        uid::Uid,
+        vol::ReadVol,
+    };
+    use specs::{Join, WorldExt};
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-col-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-col".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-col-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "col: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    // Anchor on the first rtsim site; force-load its area and find the ground.
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    let loaded = server.bastion_force_load_area(site_wpos, 5);
+    info!(loaded, "col: force-loaded area");
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048)
+            .rev()
+            .find(|z| terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| b.is_filled()))
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let cz = ground_z(&server, cx, cy).expect("col: no ground at site center");
+    let spawn_pos = Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0);
+
+    // Build the idle-colonist set with a controlled ECS join order. Colonists
+    // are rtsim NPCs promoted to ECS entities over ticks, so each spawn/kill
+    // needs settle ticks to materialize before the next step.
+    const PROMOTE_TICKS: u64 = 30;
+    let survivors: Vec<String> = if args.col_permute_order {
+        // SYNCED: spawn 4, kill the first; survivors keep ascending entity slots.
+        let mut ns = Vec::new();
+        for _ in 0..4 {
+            ns.extend(server.bastion_spawn_colony(spawn_pos, 1));
+        }
+        tick(&mut server, PROMOTE_TICKS);
+        server.bastion_kill_colonist(&ns[0]);
+        tick(&mut server, PROMOTE_TICKS);
+        ns[1..].to_vec()
+    } else {
+        // DESYNCED: spawn 3, promote, kill the first, tick (maintain frees the
+        // slot), respawn one -> its promotion reuses the freed slot, so its
+        // entity index precedes the survivors while its Uid is highest.
+        let mut ns = Vec::new();
+        for _ in 0..3 {
+            ns.extend(server.bastion_spawn_colony(spawn_pos, 1));
+        }
+        tick(&mut server, PROMOTE_TICKS);
+        let killed = ns[0].clone();
+        let mut survs = ns[1..].to_vec();
+        server.bastion_kill_colonist(&killed);
+        tick(&mut server, PROMOTE_TICKS);
+        survs.extend(server.bastion_spawn_colony(spawn_pos, 1));
+        tick(&mut server, PROMOTE_TICKS);
+        survs
+    };
+
+    // The surviving colonists' Uids (the SET the assignment must be canonical
+    // over, identical across the permutation).
+    let target_uids: std::collections::BTreeSet<u64> = survivors
+        .iter()
+        .filter_map(|n| server.bastion_colonist_uid(n))
+        .collect();
+
+    // Confirm the premise: read the surviving colonists in ECS join order and
+    // check whether that order diverges from Uid-sorted order.
+    let (join_uids, desynced) = {
+        let ecs = server.state().ecs();
+        let colonists = ecs.read_storage::<Colonist>();
+        let uids = ecs.read_storage::<Uid>();
+        let mut join_uids: Vec<u64> = Vec::new();
+        for (_c, u) in (&colonists, &uids).join() {
+            join_uids.push(u.0.get());
+        }
+        let mut sorted = join_uids.clone();
+        sorted.sort_unstable();
+        let desynced = join_uids != sorted;
+        (join_uids, desynced)
+    };
+    info!(
+        ?join_uids,
+        n_targets = target_uids.len(),
+        desynced,
+        permute = args.col_permute_order,
+        "col: colonist join order"
+    );
+    if !args.col_permute_order && !desynced {
+        tracing::error!(
+            ?join_uids,
+            "col: baseline join order did NOT desync from Uid order — premise unmet, failing"
+        );
+        drop(server);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        return ExitCode::FAILURE;
+    }
+
+    // Place contested mine designations: fewer jobs than colonists, clustered so
+    // several idle colonists contend for the same cells (the anti-clump spread
+    // and contested winner are exactly what join order used to decide).
+    for dx in 0..2 {
+        let b = Vec3::new(cx + dx, cy, cz);
+        server.bastion_place_designation(Region { min: b, max: b }, DesignationKind::Mine);
+    }
+
+    // Run the claim pass.
+    tick(
+        &mut server,
+        server::bastion_jobs::ARBITRATION_INTERVAL * args.col_arb_rounds.max(1),
+    );
+
+    // Fingerprint: per surviving colonist, by Uid, the claimed JobId.
+    let (domain_root, leaves, claimed) = {
+        let ecs = server.state().ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<Colonist>();
+        let uids = ecs.read_storage::<Uid>();
+        let active_jobs = ecs.read_storage::<ActiveJob>();
+        let mut rows: Vec<(u64, Vec<u8>)> = Vec::new();
+        for (e, _c, u) in (&entities, &colonists, &uids).join() {
+            let job = active_jobs
+                .get(e)
+                .map(|aj| serde_json::to_vec(&aj.job).unwrap_or_default())
+                .unwrap_or_default();
+            rows.push((u.0.get(), job));
+        }
+        rows.sort_by_key(|(u, _)| *u);
+        let claimed = rows.iter().filter(|(_, j)| !j.is_empty()).count() as u64;
+
+        let build = |label: &str| -> DomainHash {
+            let mut hh = DomainHasher::new(label);
+            // seeded worldgen anchor (non-vacuity across seeds)
+            hh.field(&site_wpos.x.to_bits().to_le_bytes());
+            hh.field(&site_wpos.y.to_bits().to_le_bytes());
+            for (u, j) in &rows {
+                hh.field(&u.to_le_bytes());
+                hh.field(j);
+            }
+            hh.finish()
+        };
+        let domain_root = build("bastion/domain/colony-claim/v1/sha256");
+        let leaf = build("bastion/domain/colony-claim-leaf/v1/sha256");
+        let leaves = vec![MerkleLeaf {
+            key: "colony/claim-assignment".to_string(),
+            hash: leaf,
+        }];
+        (domain_root, leaves, claimed)
+    };
+
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        server::bastion_jobs::ARBITRATION_INTERVAL * args.col_arb_rounds.max(1),
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/colony-claim/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+
+    info!(
+        colonists = target_uids.len(),
+        claimed,
+        desynced,
+        permute = args.col_permute_order,
+        "col: fingerprint computed"
+    );
+    // Liveness: at least one contested job must have been claimed, or the
+    // fingerprint is vacuous (the claim pass never assigned anything).
+    if claimed == 0 {
+        tracing::error!(
+            claimed,
+            "col: no colonist claimed a job — VACUOUS, failing"
+        );
+        drop(server);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "COL-CERTIFICATE: {}",
         serde_json::to_string(&certificate).unwrap_or_default()
     );
 
