@@ -3313,8 +3313,25 @@ impl PlayState for SessionState {
                     (&uids, &positions, &bodies)
                         .join()
                         .min_by_key(|(uid, _, _)| uid.0.get())
-                        .map(|(_, pos, _)| pos.0)
+                        .map(|(uid, pos, _)| (uid.0.get(), pos.0))
                 };
+                // R0D diagnostic: log the tracked target (Uid + exact pos) once
+                // per sim-second, so cross-run comparison distinguishes a
+                // camera-target divergence (different Uid) from a live-sim
+                // position divergence (same Uid, different pos).
+                if let Some((uid, p)) = target {
+                    use std::sync::atomic::{AtomicU64, Ordering};
+                    static LAST: AtomicU64 = AtomicU64::new(u64::MAX);
+                    let sec = r0d_sim_time as u64;
+                    if LAST.swap(sec, Ordering::SeqCst) != sec {
+                        tracing::info!(
+                            target: "bastion_r0d",
+                            "R0D-TARGET t={sec} uid={uid} pos=[{:.4},{:.4},{:.4}]",
+                            p.x, p.y, p.z,
+                        );
+                    }
+                }
+                let target = target.map(|(_, p)| p);
                 if let Some(tgt) = target {
                     let camera = self.scene.camera_mut();
                     camera.set_mode(CameraMode::Freefly);
