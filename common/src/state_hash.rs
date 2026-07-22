@@ -272,18 +272,61 @@ pub struct FinalStateCertificate {
     /// The rebuildable-index root — compared against a fresh rebuild,
     /// distinct from the durable composite (a different field, not folded).
     pub rebuildable_integrity: IntegrityHash,
+    /// E1 (engine-emission, determinism tool suite): the DIAGNOSTIC per-domain
+    /// breakdown — `(domain label, root)` pairs, stored LABEL-SORTED so
+    /// insertion order can never leak in (the same canonical-order rule as
+    /// [`PhaseStateHash`]/[`category_root`]). This attributes WHICH domain
+    /// moved when the composite changes, so the expected-change classifier can
+    /// enforce `allowed_domains`/`forbidden_domains` (DECLARED_SCOPE_EXCEEDED).
+    /// It is DIAGNOSTIC ONLY: excluded from [`Self::authoritative_matches`], so
+    /// the durable composite stays the sole equivalence surface and adding or
+    /// refining this breakdown never perturbs an existing `durable_composite`.
+    /// `#[serde(default)]` keeps it additive — a v1 certificate JSON without
+    /// the field still deserializes (an empty breakdown).
+    #[serde(default)]
+    pub domain_hashes: Vec<(String, DomainHash)>,
 }
 
 impl FinalStateCertificate {
+    /// Build a certificate, storing `domain_hashes` LABEL-SORTED so insertion
+    /// order can never affect the diagnostic breakdown. `durable_composite` is
+    /// passed in already-computed (over whatever canonical leaves the scenario
+    /// defines) and is NOT recomputed from `domain_hashes` — the two are
+    /// independent by design so this additive breakdown cannot shift a frozen
+    /// composite baseline.
+    pub fn new(
+        schema: impl Into<String>,
+        world_seed: u32,
+        tick: u64,
+        durable_composite: DomainHash,
+        rebuildable_integrity: IntegrityHash,
+        mut domain_hashes: Vec<(String, DomainHash)>,
+    ) -> Self {
+        domain_hashes.sort_by(|a, b| a.0.cmp(&b.0));
+        Self {
+            schema: schema.into(),
+            world_seed,
+            tick,
+            durable_composite,
+            rebuildable_integrity,
+            domain_hashes,
+        }
+    }
+
     /// Whether another certificate matches on the AUTHORITATIVE surface
     /// (seed, tick, durable composite) — the replay-equivalence check. The
     /// rebuildable integrity is compared separately and only against a
-    /// fresh rebuild, never used to reject a replay.
+    /// fresh rebuild, never used to reject a replay. `domain_hashes` is
+    /// diagnostic and deliberately NOT compared here.
     pub fn authoritative_matches(&self, other: &FinalStateCertificate) -> bool {
         self.world_seed == other.world_seed
             && self.tick == other.tick
             && self.durable_composite == other.durable_composite
     }
+
+    /// The diagnostic breakdown as an ordered slice of `(label, root)` — the
+    /// classifier reads this to see which domain roots moved between two runs.
+    pub fn domain_hashes(&self) -> &[(String, DomainHash)] { &self.domain_hashes }
 }
 
 #[cfg(test)]
@@ -329,12 +372,70 @@ mod t0_55_tests {
             tick: 100,
             durable_composite: DomainHash([durable; 32]),
             rebuildable_integrity: IntegrityHash([integrity; 32]),
+            domain_hashes: Vec::new(),
         };
         // Same authoritative surface, DIFFERENT rebuildable integrity →
         // still an authoritative match (indexes are rebuilt, not replayed).
         assert!(cert(1, 9).authoritative_matches(&cert(1, 5)));
         // Different durable composite → no match.
         assert!(!cert(1, 9).authoritative_matches(&cert(2, 9)));
+    }
+
+    #[test]
+    fn e1_domain_hashes_are_sorted_and_diagnostic_only() {
+        let dh = |b: u8| DomainHash([b; 32]);
+        // `new` stores the breakdown LABEL-SORTED regardless of insertion order.
+        let forward = FinalStateCertificate::new(
+            "bastion/final-state-certificate/v1",
+            7,
+            100,
+            dh(1),
+            IntegrityHash([0; 32]),
+            vec![
+                ("bastion/domain/terrain/v1/sha256".to_string(), dh(30)),
+                ("bastion/domain/jobs/v1/sha256".to_string(), dh(20)),
+            ],
+        );
+        let reversed = FinalStateCertificate::new(
+            "bastion/final-state-certificate/v1",
+            7,
+            100,
+            dh(1),
+            IntegrityHash([0; 32]),
+            vec![
+                ("bastion/domain/jobs/v1/sha256".to_string(), dh(20)),
+                ("bastion/domain/terrain/v1/sha256".to_string(), dh(30)),
+            ],
+        );
+        assert_eq!(
+            forward.domain_hashes(),
+            reversed.domain_hashes(),
+            "insertion order must not affect the stored breakdown"
+        );
+        assert_eq!(forward.domain_hashes()[0].0, "bastion/domain/jobs/v1/sha256");
+
+        // The breakdown is DIAGNOSTIC: two certs with an IDENTICAL durable
+        // composite but DIFFERENT domain_hashes still match authoritatively —
+        // the composite is the sole equivalence surface.
+        let no_breakdown = FinalStateCertificate::new(
+            "bastion/final-state-certificate/v1",
+            7,
+            100,
+            dh(1),
+            IntegrityHash([0; 32]),
+            Vec::new(),
+        );
+        assert!(forward.authoritative_matches(&no_breakdown));
+
+        // Additive-schema: a v1 JSON WITHOUT the field deserializes (empty
+        // breakdown), and a round-trip with the field is stable.
+        let v1_json = r#"{"schema":"bastion/final-state-certificate/v1","world_seed":7,"tick":100,"durable_composite":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"rebuildable_integrity":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}"#;
+        let legacy: FinalStateCertificate =
+            serde_json::from_str(v1_json).expect("v1 cert without domain_hashes must deserialize");
+        assert!(legacy.domain_hashes().is_empty());
+        let round: FinalStateCertificate =
+            serde_json::from_str(&serde_json::to_string(&forward).unwrap()).unwrap();
+        assert_eq!(round.domain_hashes(), forward.domain_hashes());
     }
 }
 

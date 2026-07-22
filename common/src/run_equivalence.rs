@@ -128,6 +128,7 @@ mod t0_63_tests {
             tick: 100,
             durable_composite: DomainHash([durable; 32]),
             rebuildable_integrity: IntegrityHash([0; 32]),
+            domain_hashes: Vec::new(),
         }
     }
 

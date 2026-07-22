@@ -11655,7 +11655,7 @@ fn mine_fidelity_scenario(args: &Args) -> ExitCode {
             DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
             MerkleLeaf, category_root,
         };
-        let mut leaves: Vec<MerkleLeaf> = per_colonist
+        let colonist_leaves: Vec<MerkleLeaf> = per_colonist
             .iter()
             .map(|entry| {
                 let name = entry
@@ -11678,19 +11678,41 @@ fn mine_fidelity_scenario(args: &Args) -> ExitCode {
         outcome.field(&completion.to_bits().to_le_bytes());
         outcome.field(&(claims_delta as i64).to_le_bytes());
         outcome.field(&(done_delta as i64).to_le_bytes());
-        leaves.push(MerkleLeaf {
+        let outcome_hash = outcome.finish();
+
+        // E1 (engine-emission): the DIAGNOSTIC per-domain breakdown, so the
+        // classifier can attribute WHICH domain moved (DECLARED_SCOPE_EXCEEDED).
+        // These roots are computed OVER THE SAME canonical leaves grouped by
+        // domain, but are INDEPENDENT of `durable_composite` — the composite
+        // below is byte-identical to before this change (all leaves in one
+        // Durable root), so this additive breakdown cannot shift a frozen
+        // composite baseline. The `colonists` root re-hashes only the npc
+        // leaves; `mf-outcome` is the aggregate leaf's own root.
+        let colonists_root =
+            category_root(DomainCategory::Durable, colonist_leaves.clone());
+        let domain_hashes = vec![
+            ("bastion/domain/colonists/v1/sha256".to_string(), colonists_root),
+            ("bastion/domain/mf-outcome/v1/sha256".to_string(), outcome_hash),
+        ];
+
+        // `durable_composite`: UNCHANGED — all colonist leaves plus the one
+        // scenario-outcome leaf in a single Durable category root (category_root
+        // sorts by key, so push order is irrelevant to the byte result).
+        let mut all_leaves = colonist_leaves;
+        all_leaves.push(MerkleLeaf {
             key: "scenario/mf-outcome".to_string(),
-            hash: outcome.finish(),
+            hash: outcome_hash,
         });
-        let durable = category_root(DomainCategory::Durable, leaves);
-        let certificate = FinalStateCertificate {
-            schema: "bastion/final-state-certificate/v1".to_string(),
-            world_seed: args.seed,
-            tick: elapsed,
-            durable_composite: durable,
+        let durable = category_root(DomainCategory::Durable, all_leaves);
+        let certificate = FinalStateCertificate::new(
+            "bastion/final-state-certificate/v1",
+            args.seed,
+            elapsed,
+            durable,
             // The harness has no separate rebuildable-index tier to certify.
-            rebuildable_integrity: IntegrityHash(DomainHash([0u8; 32]).0),
-        };
+            IntegrityHash(DomainHash([0u8; 32]).0),
+            domain_hashes,
+        );
         println!(
             "MF-CERTIFICATE: {}",
             serde_json::to_string(&certificate).unwrap_or_default()
