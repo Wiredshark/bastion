@@ -277,7 +277,22 @@ impl RtSim {
         // DETRNG/ARCH-003: colony generation is simulation input, not
         // cosmetic entropy. Reuse the one rtsim RNG authority so the
         // harness gets a stable stream while live still receives OS entropy.
-        let mut rng = ::rtsim::tick_rng(self.world_seed, data.tick, 0xBA57_C010);
+        //
+        // R0D D1 fix: the seed's tick component is data.tick — the SPAWN tick.
+        // In the live capture leg the spawn fires at anchor+100, and the anchor
+        // (first client Presence) is wall-timing-dependent, so data.tick differs
+        // cross-run -> different scatter offsets -> different spawn positions
+        // (the confirmed residual after DeterministicSerial + pure-serial). Pin
+        // the seed tick to 0 in R0D capture mode so the colonist layout is a
+        // pure function of the world seed, independent of WHEN the spawn fired.
+        // The harness (no R0D flag) keeps data.tick — its boot sequence is
+        // already deterministic.
+        let seed_tick = if std::env::var_os("BASTION_R0D_DETERMINISTIC").is_some() {
+            0
+        } else {
+            data.tick
+        };
+        let mut rng = ::rtsim::tick_rng(self.world_seed, seed_tick, 0xBA57_C010);
         // Home = nearest site, so simulated-mode AI keeps them local.
         let home = data
             .sites

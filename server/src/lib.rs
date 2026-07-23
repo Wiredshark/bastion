@@ -3709,18 +3709,27 @@ impl Server {
 
         // R0D scenario matrix (colony-present leg): with
         // BASTION_R0D_SPAWN_COLONY=N set, one-shot spawn a deterministic
-        // N-colonist band at world spawn 100 ticks AFTER the client anchor
-        // (leg-12 lesson: an absolute-tick spawn fired during wall-varying
-        // login, so pre-anchor wander diverged runs). Anchor-less boots
-        // (no capture leg) never spawn. Promotion is asynchronous — the
-        // COL-fixture settle lesson — hence the +100.
+        // N-colonist band at a FIXED ABSOLUTE server tick (BASTION_R0D_SPAWN_TICK,
+        // default 150). D1 fix: the earlier anchor+100 trigger fired at a
+        // wall-timing-dependent server tick (anchor = first client Presence),
+        // and the colony spawn's RNG is seeded on the spawn tick — so the layout
+        // AND the elapsed-since-spawn diverged cross-run. Now the whole run is
+        // deterministic from tick 0 (DeterministicSerial + DETERMINISTIC_RTSIM +
+        // pure serial + fixed spawn seed), so a fixed absolute spawn tick makes
+        // the authoritative colonist state a pure function of the server
+        // timeline; combined with absolute-sim-time capture keying, two runs
+        // capture identical state. Gated on the capture flag so normal play
+        // never spawns. Fires only well after boot so chunks/rtsim have settled.
         {
             use std::sync::atomic::{AtomicBool, Ordering};
             static R0D_COLONY_DONE: AtomicBool = AtomicBool::new(false);
             let tick_now = self.state.ecs().read_resource::<Tick>().0;
-            let anchor = R0D_ANCHOR_TICK.load(Ordering::SeqCst);
-            if anchor != 0
-                && tick_now == anchor + 100
+            let spawn_tick: u64 = std::env::var("BASTION_R0D_SPAWN_TICK")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(150);
+            if std::env::var_os("BASTION_R0D_DETERMINISTIC").is_some()
+                && tick_now == spawn_tick
                 && !R0D_COLONY_DONE.swap(true, Ordering::SeqCst)
                 && let Ok(n) = std::env::var("BASTION_R0D_SPAWN_COLONY")
                 && let Ok(n) = n.parse::<u8>()

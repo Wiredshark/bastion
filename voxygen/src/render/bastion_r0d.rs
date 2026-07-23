@@ -225,24 +225,23 @@ pub fn drive_capture(renderer: &mut super::renderer::Renderer, sim_time: f64) ->
         s.0 += 1;
         *s
     };
-    // D1-replay mode (BASTION_R0D_CAPTURE_AT): captures are keyed to SIM TIME
-    // RELATIVE TO THE CLIENT ANCHOR — the first in-session frame records the
-    // base sim time (the leg-12 lesson: absolute sim time includes wall-
-    // varying login duration), then capture k fires at base + at + k*every.
-    // With fixed dt (DET-CLK-006) and the anchor-pause, two runs capture at
-    // identical post-anchor ticks. Dynamic scenes become cross-run comparable.
+    // D1-replay mode (BASTION_R0D_CAPTURE_AT): captures are keyed to ABSOLUTE
+    // server SIM TIME — capture k fires at at + k*every. D1 fix: with the whole
+    // run deterministic from tick 0 (DeterministicSerial + DETERMINISTIC_RTSIM +
+    // pure serial + fixed spawn tick/seed), the server's sim-time IS a
+    // deterministic function of the server tick, identical cross-run. So two
+    // runs capturing at the same absolute sim-time capture the SAME authoritative
+    // tick -> identical state. (The earlier base-relative keying masked the
+    // then-live non-determinism; now removed.) The colony spawns at a fixed
+    // absolute tick, so pick CAPTURE_AT after that (default spawn tick 150 = 5s
+    // at 30 TPS).
     if let Ok(at) = std::env::var("BASTION_R0D_CAPTURE_AT") {
-        static CAPTURE_BASE: Mutex<Option<f64>> = Mutex::new(None);
-        let base = {
-            let mut b = CAPTURE_BASE.lock().expect("capture base");
-            *b.get_or_insert(sim_time)
-        };
         let at: f64 = at.parse().unwrap_or(30.0);
         let every: f64 = std::env::var("BASTION_R0D_CAPTURE_EVERY")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(0.5);
-        if requested < count && sim_time >= base + at + requested as f64 * every {
+        if requested < count && sim_time >= at + requested as f64 * every {
             request_one_capture(renderer, &out, requested);
         }
         return completed >= count;
