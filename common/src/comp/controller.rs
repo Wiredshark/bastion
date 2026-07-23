@@ -527,3 +527,86 @@ mod t0_21_tests {
         assert!(c.staged_commands().is_empty());
     }
 }
+
+/// INP-01 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof): DET-INP —
+/// input-SELECTION determinism. When several player inputs are queued in the
+/// same tick, the state machine picks which to act on via
+/// `queued_inputs.keys().next()` (the canonically-lowest InputKind — see
+/// common/src/states/utils.rs, `handle_ability`/interrupt selection). Because
+/// `queued_inputs` is a `BTreeMap<InputKind, _>`, that selection is a pure
+/// function of the queued input SET, independent of the order the inputs were
+/// inserted / received over the network. If the container ever regressed to a
+/// HashMap (which would still compile), WHICH ability fires when two are queued
+/// the same tick would become non-deterministic — a live-desync bug. The inline
+/// BTreeMap had no executable evidence pinning that contract.
+///
+/// This is the COMMON-side (server-authoritative) input-determinism surface —
+/// distinct from the voxygen keybinding UI (which key maps to which action is a
+/// cosmetic client setting, not a determinism input). No graphics build needed.
+#[cfg(test)]
+mod inp_det_tests {
+    use super::*;
+
+    const A: InputAttr = InputAttr {
+        select_pos: None,
+        target_entity: None,
+    };
+
+    // Build a controller with the given inputs queued in the given order.
+    fn queue(order: &[InputKind]) -> Controller {
+        let mut c = Controller::default();
+        for k in order {
+            c.queued_inputs.insert(*k, A);
+        }
+        c
+    }
+
+    #[test]
+    fn inp_queued_input_selection_is_insertion_order_independent() {
+        use InputKind::*;
+        // The SAME input set, inserted forward vs reversed.
+        let set = [Primary, Block, Ability(2), Jump, Fly];
+        let mut rev = set.to_vec();
+        rev.reverse();
+        let fwd = queue(&set);
+        let bwd = queue(&rev);
+
+        // Full processing order (BTreeMap iteration) is identical across
+        // insertion orders AND equals the canonical InputKind order.
+        let keys_fwd: Vec<InputKind> = fwd.queued_inputs.keys().copied().collect();
+        let keys_bwd: Vec<InputKind> = bwd.queued_inputs.keys().copied().collect();
+        assert_eq!(
+            keys_fwd, keys_bwd,
+            "iteration order must not depend on insertion order"
+        );
+        assert_eq!(
+            keys_fwd,
+            vec![Primary, Block, Ability(2), Jump, Fly],
+            "must be canonical InputKind order (Primary<Block<Ability<Jump<Fly)"
+        );
+
+        // The SELECTED input (`.keys().next()` — what the state machine acts
+        // on) is the canonical min regardless of insertion order.
+        assert_eq!(fwd.queued_inputs.keys().next(), Some(&Primary));
+        assert_eq!(bwd.queued_inputs.keys().next(), Some(&Primary));
+    }
+
+    #[test]
+    fn inp_selection_is_non_vacuous() {
+        use InputKind::*;
+        // A DIFFERENT set selects a DIFFERENT input — the contract carries
+        // information, it is not a trivially-constant answer.
+        let s1 = queue(&[Secondary, Jump]);
+        let s2 = queue(&[Block, Fly]);
+        assert_eq!(s1.queued_inputs.keys().next(), Some(&Secondary));
+        assert_eq!(s2.queued_inputs.keys().next(), Some(&Block));
+        assert_ne!(
+            s1.queued_inputs.keys().next(),
+            s2.queued_inputs.keys().next()
+        );
+        // Ability(usize) orders between Block and Roll (variant discriminant),
+        // and by its payload within — so Ability(0) is the min here.
+        let s3 = queue(&[Jump, Ability(0), Roll]);
+        assert_eq!(s3.queued_inputs.keys().next(), Some(&Ability(0)));
+    }
+}
