@@ -8890,6 +8890,10 @@ fn path_scenario(args: &Args) -> ExitCode {
 fn farm_scenario(args: &Args) -> ExitCode {
     use common::{
         bastion::{DesignationKind, Region},
+        state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        },
         terrain::{Block, BlockKind},
         vol::ReadVol,
     };
@@ -9160,6 +9164,55 @@ fn farm_scenario(args: &Args) -> ExitCode {
         && no_embeds;
     println!("{}", result);
     println!("FARM SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    // FARM-CERTIFICATE (DET-FARM): hash the deterministic farm-cycle final state
+    // — every plot cell's crop growth (canonical y,x enumeration) plus the
+    // colony's wheat + seed stock, anchored to the seeded worldgen site. Byte-
+    // identical across serial / --schedule-seed proves the till->sow->grow->
+    // harvest->re-sow cycle's authoritative outcome is worker-count/process-order
+    // invariant; a different --seed yields a different certificate.
+    let (domain_root, leaves) = {
+        let build = |label: &str| -> DomainHash {
+            let mut hh = DomainHasher::new(label);
+            hh.field(&site_wpos.x.to_bits().to_le_bytes());
+            hh.field(&site_wpos.y.to_bits().to_le_bytes());
+            hh.field(&(wheat_n as u64).to_le_bytes());
+            hh.field(&seeds_total.to_le_bytes());
+            for y in plot.min.y..=plot.max.y {
+                for x in plot.min.x..=plot.max.x {
+                    let g = server
+                        .bastion_sprite_growth(Vec3::new(x, y, gz + 1))
+                        .unwrap_or(0);
+                    hh.field(&x.to_le_bytes());
+                    hh.field(&y.to_le_bytes());
+                    hh.field(&[g]);
+                }
+            }
+            hh.finish()
+        };
+        let domain_root = build("bastion/domain/colony-farm/v1/sha256");
+        let leaf = build("bastion/domain/colony-farm-leaf/v1/sha256");
+        (domain_root, vec![MerkleLeaf {
+            key: "colony/farm-cycle".to_string(),
+            hash: leaf,
+        }])
+    };
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        0,
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/colony-farm/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+    println!(
+        "FARM-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
