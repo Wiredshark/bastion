@@ -5,6 +5,8 @@ use sha2::{Digest, Sha256};
 mod admission;
 pub mod bootstrap;
 pub mod cbor;
+pub mod extract;
+pub mod identity;
 
 pub use admission::{
     AdmissionErrorV1, MAX_CORPUS_INPUT_BYTES_V1, MAX_CORPUS_INPUTS_V1,
