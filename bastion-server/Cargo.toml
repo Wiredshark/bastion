@@ -28,3 +28,7 @@ rand = { workspace = true }
 rand_chacha = { workspace = true }
 hashbrown = { workspace = true }
 enum-map = { workspace = true }
+
+[dev-dependencies]
+# Test-only: construct ordered NpcId (slotmap) keys for the DET-MOOD-003 fixture.
+slotmap = "1.0"

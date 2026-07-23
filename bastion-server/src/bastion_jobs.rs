@@ -3674,6 +3674,19 @@ pub struct JobBoard {
     pub felling: Vec<FellingTree>,
 }
 
+/// DET-MOOD-003: canonical total order for draining queued thoughts before the
+/// chronicle records them — sorted by (source NPC id, cell x, y, z, kind). The
+/// producer (the per-colonist job-board sweep) pushes `pending_thoughts` in an
+/// order that would otherwise become the authoritative, persisted chronicle seq
+/// and cap-eviction order; sorting at the drain makes that order a pure function
+/// of the thought SET, not the producer pass order.
+pub fn canonical_thought_drain_order(
+    mut pending: Vec<(common::rtsim::RtSimEntity, Vec3<i32>, ::rtsim::data::ChronicleKind)>,
+) -> Vec<(common::rtsim::RtSimEntity, Vec3<i32>, ::rtsim::data::ChronicleKind)> {
+    pending.sort_by_key(|(re, pos, kind)| (*re, pos.x, pos.y, pos.z, *kind));
+    pending
+}
+
 impl JobBoard {
     /// Stage-1 single reservation authority. A live task's reserved member is
     /// authoritative. Before a task exists, the head of the link's FAIR
@@ -14817,6 +14830,58 @@ fn duplicate_reservations(
 mod tests {
     use super::*;
     use std::num::NonZeroU64;
+
+    /// MOOD-01 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof): DET-MOOD-003 —
+    /// canonical_thought_drain_order sorts queued thoughts by (source NPC id,
+    /// cell x, y, z, kind), independent of the producer push order, so the
+    /// chronicle seq / cap-eviction order it feeds is a pure function of the
+    /// thought SET. The inline sort in the rtsim tick had no executable evidence.
+    #[test]
+    fn canonical_thought_drain_order_is_producer_order_independent() {
+        use ::rtsim::data::ChronicleKind;
+        // Ordered NpcIds from a fresh slotmap: n0 < n1 < n2 (index order).
+        let mut sm: slotmap::DenseSlotMap<common::rtsim::RtSimEntity, ()> =
+            slotmap::DenseSlotMap::with_key();
+        let n0 = sm.insert(());
+        let n1 = sm.insert(());
+        let n2 = sm.insert(());
+        let k = ChronicleKind::CaveIn;
+        let p = |x, y, z| Vec3::new(x, y, z);
+
+        // The same thought set pushed in two DIFFERENT producer orders.
+        let set_a = vec![
+            (n2, p(0, 0, 0), k),
+            (n0, p(5, 0, 0), k),
+            (n0, p(1, 0, 0), k),
+            (n1, p(0, 0, 0), k),
+        ];
+        let set_b = vec![
+            (n0, p(1, 0, 0), k),
+            (n1, p(0, 0, 0), k),
+            (n2, p(0, 0, 0), k),
+            (n0, p(5, 0, 0), k),
+        ];
+
+        let a = canonical_thought_drain_order(set_a);
+        let b = canonical_thought_drain_order(set_b);
+
+        // Canonical: by NpcId, then (x,y,z). n0 (x=1 then x=5), then n1, then n2.
+        let order_a: Vec<(common::rtsim::RtSimEntity, i32)> =
+            a.iter().map(|(re, pos, _)| (*re, pos.x)).collect();
+        assert_eq!(
+            order_a,
+            vec![(n0, 1), (n0, 5), (n1, 0), (n2, 0)],
+            "thought drain not in canonical (NpcId, x, y, z) order (DET-MOOD-003)"
+        );
+
+        // Producer-order-independent: the two push orders give the same result.
+        let order_b: Vec<(common::rtsim::RtSimEntity, i32)> =
+            b.iter().map(|(re, pos, _)| (*re, pos.x)).collect();
+        assert_eq!(
+            order_a, order_b,
+            "thought drain order depends on producer push order — DET-MOOD-003 regressed"
+        );
+    }
 
     // Row-51.7 (registry class 12): the (B) exhaustion leg's honest pin — the
     // leg is race-dominated in sims (three net terminators, fastest wins), so

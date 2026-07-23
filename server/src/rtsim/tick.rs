@@ -768,8 +768,13 @@ impl<'a> System<'a> for Sys {
         // entry on overflow — so the queue's push order would otherwise become
         // the authoritative, persisted chronicle seq / eviction order. Sorting
         // at the drain makes that order independent of the producer pass.
-        let mut pending_thoughts = std::mem::take(&mut job_board.pending_thoughts);
-        pending_thoughts.sort_by_key(|(re, pos, kind)| (*re, pos.x, pos.y, pos.z, *kind));
+        // DET-MOOD-003: drain through the canonical-order helper (sorted by
+        // source NPC id, cell x/y/z, kind) so the chronicle seq / eviction order
+        // is independent of the producer pass. The ordering contract is
+        // unit-tested in bastion_jobs (det_mood_003_tests).
+        let pending_thoughts = crate::bastion_jobs::canonical_thought_drain_order(
+            std::mem::take(&mut job_board.pending_thoughts),
+        );
         for (re, pos, kind) in pending_thoughts {
             let now = data.time_of_day;
             data.chronicle.record(
