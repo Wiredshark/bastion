@@ -607,6 +607,56 @@ pub mod tests {
         );
     }
 
+    /// LOOT-02 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof):
+    /// `distribute_many` assigns stacked items to weighted participants in a
+    /// CANONICAL participant order (RNG-P3-006), so with the same RNG seed the
+    /// allocation is independent of the participant INPUT order. The existing
+    /// `test_distribute_many` drives it off OS entropy and only checks a "known
+    /// successful case" — it cannot evidence this order-independence contract.
+    #[test]
+    fn distribute_many_is_participant_order_independent() {
+        use rand::SeedableRng;
+        use std::collections::BTreeMap;
+
+        // Distribute a fixed set of stacked items across weighted participants,
+        // capturing each participant's TOTAL allocation. exec_item reports the
+        // per-item-type count (then it is reset), so summing yields the total.
+        fn run(seed: u64, participants: Vec<(f32, char)>) -> BTreeMap<char, u32> {
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let items: Vec<u32> = vec![3, 2, 5, 1, 4];
+            let mut got: BTreeMap<char, u32> = BTreeMap::new();
+            distribute_many(
+                participants,
+                &mut rng,
+                &items,
+                |&amount| amount,
+                |_item, who, amount| {
+                    *got.entry(who).or_default() += amount;
+                },
+            );
+            got
+        }
+
+        // Same seed, participants supplied FORWARD vs REVERSED. RNG-P3-006's
+        // canonical ordering must make the allocation identical either way.
+        let seed = 0x0D15_712B_u64;
+        let forward = run(seed, vec![(0.5, 'a'), (0.3, 'b'), (0.2, 'c')]);
+        let reversed = run(seed, vec![(0.2, 'c'), (0.3, 'b'), (0.5, 'a')]);
+        assert_eq!(
+            forward, reversed,
+            "distribute_many allocation depends on participant INPUT order: the RNG-P3-006 \
+             canonical participant ordering has regressed"
+        );
+
+        // Non-vacuity: the run actually distributed items (an empty distribution
+        // would make the equality above trivially true).
+        let total: u32 = forward.values().sum();
+        assert!(
+            total > 0,
+            "distribute_many placed no items — the order-independence check is vacuous"
+        );
+    }
+
     #[test]
     fn test_distribute_many() {
         let mut rng = rand::rng();
