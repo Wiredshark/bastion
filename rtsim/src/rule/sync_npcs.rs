@@ -41,22 +41,30 @@ fn on_setup(ctx: EventCtx<SyncNpcs, OnSetup>) {
     });
     let nearest_by_size = sites_iter.clone()
         .map(|(site_id, site, world_site)| {
-            let mut other_sites = sites_iter.clone()
+            let other_sites = sites_iter.clone()
                 // Only include sites in the list if they're not the current one and they're more populus
                 .filter(|(other_id, _, other_site)| *other_id != site_id && other_site.plots().len() > world_site.plots().len())
                 .collect::<Vec<_>>();
-            // DET-ESIM-019: total-order sort key. Distance alone leaves ties
-            // broken by incidental slotmap iteration order, which the monotone
-            // "Stalin sort" retain below then bakes into the persisted
-            // nearby_sites_by_size list. Break ties by plot count then stable
-            // SiteId so the retained candidate set is order-independent.
-            other_sites.sort_by_key(|(other_id, other, other_site)| {
-                (
-                    other.wpos.as_::<i64>().distance_squared(site.wpos.as_::<i64>()),
-                    other_site.plots().len(),
-                    slotmap::Key::data(other_id).as_ffi(),
-                )
-            });
+            // DET-ESIM-019: project each candidate to its canonical total key
+            // (distance² to the home site, plot count, stable SiteId) and sort
+            // via the helper (unit-tested in det_esim_019_tests). Distance alone
+            // leaves ties broken by incidental slotmap iteration order, which the
+            // monotone "Stalin sort" retain below then bakes into the persisted
+            // nearby_sites_by_size list; the total key makes the retained
+            // candidate set order-independent.
+            let keyed: Vec<(i64, usize, u64, _)> = other_sites
+                .into_iter()
+                .map(|(other_id, other, other_site)| {
+                    let dist2 = other.wpos.as_::<i64>().distance_squared(site.wpos.as_::<i64>());
+                    let plots = other_site.plots().len();
+                    let ffi = slotmap::Key::data(&other_id).as_ffi();
+                    (dist2, plots, ffi, (other_id, other, other_site))
+                })
+                .collect();
+            let mut other_sites: Vec<_> = canonical_nearby_site_order(keyed)
+                .into_iter()
+                .map(|(_, _, _, v)| v)
+                .collect();
             let mut max_size = 0;
             // Remove sites that aren't in increasing order of size (Stalin sort?!)
             other_sites.retain(|(_, _, other_site)| {
@@ -162,5 +170,64 @@ fn on_tick(ctx: EventCtx<SyncNpcs, OnTick>) {
                 cell.npcs.push(npc_id);
             }
         }
+    }
+}
+
+/// DET-ESIM-019: order candidate nearby sites by a canonical TOTAL key —
+/// (distance² to the home site, then plot count, then stable SiteId as-ffi) — so
+/// the monotone "Stalin sort" retain that bakes the result into the persisted
+/// nearby_sites_by_size list is independent of slotmap iteration order (distance
+/// alone leaves ties broken by that incidental order). Generic over the carried
+/// value; the caller pre-projects each candidate to its (dist², plots, ffi) key.
+pub fn canonical_nearby_site_order<T>(
+    mut keyed: Vec<(i64, usize, u64, T)>,
+) -> Vec<(i64, usize, u64, T)> {
+    keyed.sort_by_key(|(dist2, plots, ffi, _)| (*dist2, *plots, *ffi));
+    keyed
+}
+
+#[cfg(test)]
+mod det_esim_019_tests {
+    use super::*;
+
+    /// ESIM-019 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof): the
+    /// nearby-sites candidate order is a canonical total order (dist², plots,
+    /// SiteId), so the persisted nearby_sites_by_size list is independent of the
+    /// slotmap iteration order the candidates were gathered in. The inline sort
+    /// had no test.
+    #[test]
+    fn canonical_nearby_site_order_is_slotmap_order_independent() {
+        // (dist2, plots, site_ffi, tag). Same candidate set in two different
+        // (slotmap-iteration) orders; ties on dist2 break by plots then ffi.
+        let set_a: Vec<(i64, usize, u64, u32)> = vec![
+            (100, 3, 50, 1),
+            (100, 3, 20, 2), // ties (100,3) with tag 1 -> ffi 20 < 50 sorts first
+            (100, 5, 10, 3), // dist 100, more plots -> after the plots=3 pair
+            (40, 2, 99, 4),  // nearest -> first
+        ];
+        let set_b: Vec<(i64, usize, u64, u32)> = vec![
+            (100, 5, 10, 3),
+            (40, 2, 99, 4),
+            (100, 3, 50, 1),
+            (100, 3, 20, 2),
+        ];
+        let a: Vec<u32> = canonical_nearby_site_order(set_a)
+            .iter()
+            .map(|(_, _, _, t)| *t)
+            .collect();
+        let b: Vec<u32> = canonical_nearby_site_order(set_b)
+            .iter()
+            .map(|(_, _, _, t)| *t)
+            .collect();
+        // Canonical (dist2, plots, ffi): 4 (40,2,99), 2 (100,3,20), 1 (100,3,50), 3 (100,5,10).
+        assert_eq!(
+            a,
+            vec![4, 2, 1, 3],
+            "nearby sites not in canonical (dist2, plots, ffi) order (DET-ESIM-019)"
+        );
+        assert_eq!(
+            a, b,
+            "nearby-site order depends on slotmap iteration order — DET-ESIM-019 regressed"
+        );
     }
 }
