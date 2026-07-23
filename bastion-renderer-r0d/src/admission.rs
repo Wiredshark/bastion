@@ -31,6 +31,15 @@ const R0D_FIXED_HEADER_BYTES: usize = 8 + 2 + 2 + SOURCE_EPOCH_BYTES + 2;
 const R0D_INPUT_COUNT_OFFSET: usize = R0D_FIXED_HEADER_BYTES - 2;
 const R0D_CORPUS_ENTRY_BYTES: usize = 2 + DIGEST_BYTES_LEN + 8;
 
+const fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u16)]
 pub enum RendererCorpusRoleV1 {
@@ -86,11 +95,13 @@ impl RendererSourceEpochV1 {
         }
 
         let mut source_commit = [0_u8; COMMIT_BYTES_LEN];
-        for i in 0..COMMIT_BYTES_LEN {
-            let chunk = &source_commit_hex[i * 2..i * 2 + 2];
-            let decoded =
-                u8::from_str_radix(chunk, 16).map_err(|_| AdmissionErrorV1::InvalidHex)?;
-            source_commit[i] = decoded;
+        for (output, pair) in source_commit
+            .iter_mut()
+            .zip(source_commit_hex.as_bytes().chunks_exact(2))
+        {
+            let high = hex_nibble(pair[0]).ok_or(AdmissionErrorV1::InvalidHex)?;
+            let low = hex_nibble(pair[1]).ok_or(AdmissionErrorV1::InvalidHex)?;
+            *output = (high << 4) | low;
         }
 
         Ok(Self {

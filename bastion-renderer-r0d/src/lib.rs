@@ -121,6 +121,27 @@ mod tests {
     }
 
     #[test]
+    fn non_ascii_commit_hex_returns_typed_error_without_unwinding() {
+        let malformed = format!("aé{}", "b".repeat(37));
+        assert_eq!(malformed.len(), 40);
+
+        let outcome = std::panic::catch_unwind(|| {
+            RendererSourceEpochV1::from_hex(
+                &malformed,
+                digest(1),
+                digest(2),
+                digest(3),
+                digest(4),
+                digest(5),
+            )
+        });
+        match outcome {
+            Ok(result) => assert_eq!(result, Err(AdmissionErrorV1::InvalidHex)),
+            Err(_) => panic!("non-ASCII commit input unwound instead of returning InvalidHex"),
+        }
+    }
+
+    #[test]
     fn rejects_duplicate_and_missing_required_roles() {
         assert_eq!(
             RendererAdmissionV1::new(epoch(COMMIT_A), vec![
