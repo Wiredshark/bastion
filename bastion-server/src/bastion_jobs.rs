@@ -14976,6 +14976,20 @@ mod tests {
     /// tiebreak), so which colonist wins a scarce FOOD/BED reservation is a pure
     /// function of (severity, Uid), not the ECS join order. The inline sort had
     /// no executable evidence.
+    ///
+    /// TWO-ANGLE COVERAGE (reconciled 2026-07-23): this is the UNIT axis of
+    /// DET-COL-NEED-001 — it proves the ordering PRIMITIVE (`canonical_need_order`)
+    /// constructs a join-order-independent (severity, Uid) total order in isolation,
+    /// across BOTH the FOOD and BED meters, including the severity-tie Uid tiebreak.
+    /// Its INTEGRATION counterpart is Builder 4's `--colneed-scenario` harness fixture
+    /// (bastion/det-fixtures @ 832472dcb4): a full server boot that forces ECS join
+    /// order to diverge from Uid order (delete+respawn slot reuse) and certifies the
+    /// LIVE need-arbitration picks the same scarce-FOOD winner under that desync +
+    /// --schedule-seed. The two are complementary, not duplicate: this covers the
+    /// primitive's full contract + BED; the scenario closes the "gate must test the
+    /// LIVE path" gap (that the arbitration actually calls this order under adversarial
+    /// iteration), which a unit test structurally cannot. Count as ONE domain
+    /// (DET-COL-NEED-001) proven from two angles, not two domains closed.
     #[test]
     fn canonical_need_order_is_join_order_independent() {
         let uid = |n: u64| Uid(NonZeroU64::new(n).unwrap());
