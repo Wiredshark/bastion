@@ -671,6 +671,31 @@ struct Args {
     #[arg(long, default_value_t = 2)]
     site_ticks: u64,
 
+    /// bastion determinism fixture COLNEED-01 (SPECIFIED_NOT_EVIDENCED): certifies
+    /// DET-COL-NEED-001 / DET-AUT-005. Builds an idle-colonist set whose ECS join
+    /// order diverges from Uid order (delete+respawn slot reuse, reusing
+    /// --col-permute-order as the desync toggle), sets every colonist below the
+    /// hunger interrupt, spawns FEWER loose food items than colonists so they
+    /// contend, and ticks the B7-2 need-check. Emits a COLNEED-CERTIFICATE hashing
+    /// (per colonist, by Uid) the reserved EatFrom target. Byte-identical across
+    /// serial / --schedule-seed / --col-permute-order proves the scarce-food
+    /// winner is canonical (severity-then-Uid), not ECS-iteration ordered.
+    /// MEASURES; a setup failure (no desync, or no colonist reserved food) is the
+    /// only non-success.
+    #[arg(long)]
+    colneed_scenario: bool,
+
+    /// COLNEED-01: number of loose food items to spawn (keep < colonist count so
+    /// they contend).
+    #[arg(long, default_value_t = 1)]
+    colneed_food: u32,
+
+    /// COLNEED-01: ARBITRATION_INTERVAL rounds to run the need-check pass. Kept
+    /// short so the winner cannot walk to the far food and consume it before the
+    /// snapshot (the reserved EatFrom job is what we hash).
+    #[arg(long, default_value_t = 1)]
+    colneed_rounds: u64,
+
     /// bastion (MINING-LIVE-FIDELITY): dig footprint X width, blocks. The
     /// geometry axis of the completion investigation — wide claims fit the
     /// stairs arm; tight ones force the D16 released-but-unreachable class.
@@ -1392,6 +1417,8 @@ fn main() -> ExitCode {
         mood_scenario(&args)
     } else if args.site_scenario {
         site_scenario(&args)
+    } else if args.colneed_scenario {
+        colneed_scenario(&args)
     } else if args.col_scenario {
         col_scenario(&args)
     } else if args.dig_access_scenario {
@@ -14105,6 +14132,260 @@ fn site_scenario(args: &Args) -> ExitCode {
     }
     println!(
         "SITE-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture COLNEED-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Certifies DET-COL-NEED-001 / DET-AUT-005. Builds an idle-colonist set whose
+/// ECS join order diverges from Uid order (delete+respawn slot reuse), sets every
+/// colonist below the hunger interrupt, spawns FEWER loose food items than
+/// colonists so they contend, and ticks the B7-2 need-check. Emits a
+/// COLNEED-CERTIFICATE hashing (per colonist, by Uid) the reserved EatFrom food.
+/// Byte-identical across serial / --schedule-seed / --col-permute-order (which
+/// toggles the join-order desync) proves the scarce-food winner is canonical
+/// (severity-then-Uid), not ECS-iteration ordered. MEASURES; a setup failure
+/// (no desync, or no colonist reserved food) is the only non-success.
+fn colneed_scenario(args: &Args) -> ExitCode {
+    use common::{
+        comp::Colonist,
+        state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        },
+        uid::Uid,
+    };
+    use specs::Join;
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-colneed-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-colneed".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-colneed-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "colneed: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        use common::vol::ReadVol;
+        let terrain = server.state().terrain();
+        (0..2048)
+            .rev()
+            .find(|z| terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| b.is_filled()))
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let cz = ground_z(&server, cx, cy).expect("colneed: no ground at site center");
+    let spawn_pos = Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0);
+
+    // Idle-colonist set with a controlled ECS join order (same desync rig as
+    // COL-01): SYNCED keeps survivors in ascending entity slots; DESYNCED reuses a
+    // freed slot so an entity index precedes the survivors while its Uid is highest.
+    const PROMOTE_TICKS: u64 = 30;
+    let survivors: Vec<String> = if args.col_permute_order {
+        let mut ns = Vec::new();
+        for _ in 0..4 {
+            ns.extend(server.bastion_spawn_colony(spawn_pos, 1));
+        }
+        tick(&mut server, PROMOTE_TICKS);
+        server.bastion_kill_colonist(&ns[0]);
+        tick(&mut server, PROMOTE_TICKS);
+        ns[1..].to_vec()
+    } else {
+        let mut ns = Vec::new();
+        for _ in 0..3 {
+            ns.extend(server.bastion_spawn_colony(spawn_pos, 1));
+        }
+        tick(&mut server, PROMOTE_TICKS);
+        let killed = ns[0].clone();
+        let mut survs = ns[1..].to_vec();
+        server.bastion_kill_colonist(&killed);
+        tick(&mut server, PROMOTE_TICKS);
+        survs.extend(server.bastion_spawn_colony(spawn_pos, 1));
+        tick(&mut server, PROMOTE_TICKS);
+        survs
+    };
+
+    // Every survivor is EQUALLY, deeply hungry (below the interrupt) with rest and
+    // recreation satisfied — so hunger is the sole preempting need and the winner
+    // among equal-severity requesters is decided purely by the Uid tiebreak.
+    for name in &survivors {
+        server.bastion_set_needs(name, 0.02, 0.95, 0.95);
+    }
+
+    // Confirm the desync premise (ECS join order vs Uid-sorted order).
+    let (join_uids, desynced) = {
+        let ecs = server.state().ecs();
+        let colonists = ecs.read_storage::<Colonist>();
+        let uids = ecs.read_storage::<Uid>();
+        let mut join_uids: Vec<u64> = (&colonists, &uids).join().map(|(_, u)| u.0.get()).collect();
+        let mut sorted = join_uids.clone();
+        sorted.sort_unstable();
+        let desynced = join_uids != sorted;
+        (std::mem::take(&mut join_uids), desynced)
+    };
+    if !args.col_permute_order && !desynced {
+        tracing::error!(?join_uids, "colneed: baseline join order did NOT desync — premise unmet, failing");
+        drop(server);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        return ExitCode::FAILURE;
+    }
+
+    // Scarce loose food: fewer mushrooms than colonists, placed FAR enough that
+    // the winner cannot travel to and CONSUME it inside the snapshot window — so
+    // the reservation + pre-claimed EatFrom job (what we hash) persist. Each on
+    // valid ground for its column.
+    for j in 0..args.colneed_food.max(1) {
+        let fx = cx + 30 + j as i32;
+        let fy = cy;
+        let fz = ground_z(&server, fx, fy).unwrap_or(cz) + 1;
+        let fp = Vec3::new(fx as f32 + 0.5, fy as f32 + 0.5, fz as f32);
+        server.bastion_spawn_item(fp, "common.items.food.mushroom", 1);
+    }
+
+    // Run the need-check pass (short window: the preempt reserves the food and
+    // pre-claims the EatFrom job; we snapshot before the winner can walk the 30
+    // blocks and eat).
+    tick(
+        &mut server,
+        server::bastion_jobs::ARBITRATION_INTERVAL * args.colneed_rounds.max(1),
+    );
+
+    // Fingerprint: per colonist, by Uid, the reserved EatFrom food item (the
+    // scarce-resource winner NEED-001 makes canonical). 0 = no food reserved.
+    let (domain_root, leaves, reserved) = {
+        let ecs = server.state().ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<Colonist>();
+        let uids = ecs.read_storage::<Uid>();
+        let board = ecs.read_resource::<server::bastion_jobs::JobBoard>();
+        // EatFrom allocations, keyed by the winner's Uid -> reserved food item
+        // Uid. Read from the board (the pre-claimed job persists until the food
+        // is consumed), not the ActiveJob comp — robust to assignment timing.
+        let mut eat_by_uid: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
+        for j in board.jobs.values() {
+            if let common::bastion::JobKind::EatFrom { item } = j.kind
+                && let Some(owner) = j.claimed_by
+            {
+                eat_by_uid.insert(owner.0.get(), item.0.get());
+            }
+        }
+        let mut rows: Vec<(u64, u64)> = Vec::new();
+        for (_e, _c, u) in (&entities, &colonists, &uids).join() {
+            let eat = eat_by_uid.get(&u.0.get()).copied().unwrap_or(0);
+            rows.push((u.0.get(), eat));
+        }
+        rows.sort_by_key(|(u, _)| *u);
+        let reserved = rows.iter().filter(|(_, e)| *e != 0).count() as u64;
+
+        let build = |label: &str| -> DomainHash {
+            let mut hh = DomainHasher::new(label);
+            hh.field(&site_wpos.x.to_bits().to_le_bytes());
+            hh.field(&site_wpos.y.to_bits().to_le_bytes());
+            for (u, e) in &rows {
+                hh.field(&u.to_le_bytes());
+                hh.field(&e.to_le_bytes());
+            }
+            hh.finish()
+        };
+        let domain_root = build("bastion/domain/colony-need-alloc/v1/sha256");
+        let leaf = build("bastion/domain/colony-need-alloc-leaf/v1/sha256");
+        let leaves = vec![MerkleLeaf {
+            key: "colony/need/food-reservation".to_string(),
+            hash: leaf,
+        }];
+        (domain_root, leaves, reserved)
+    };
+
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        server::bastion_jobs::ARBITRATION_INTERVAL * args.colneed_rounds.max(1),
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/colony-need-alloc/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+
+    info!(
+        survivors = survivors.len(),
+        food = args.colneed_food,
+        reserved,
+        permute = args.col_permute_order,
+        desynced,
+        "colneed: fingerprint computed"
+    );
+    if reserved == 0 {
+        tracing::error!("colneed: no colonist reserved the scarce food — VACUOUS, failing");
+        drop(server);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "COLNEED-CERTIFICATE: {}",
         serde_json::to_string(&certificate).unwrap_or_default()
     );
 
