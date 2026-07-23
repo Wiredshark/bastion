@@ -560,6 +560,53 @@ pub mod tests {
         }
     }
 
+    /// LOOT-01 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof):
+    /// `Lottery::choose_seeded` is a pure, seed-deterministic selector that
+    /// consumes the FULL 32-bit seed range (RNG-P3-003). The existing lottery
+    /// tests only validate table CONTENTS and drive `distribute_many` off OS
+    /// entropy — neither evidences the seeded-selection determinism contract.
+    #[test]
+    fn lottery_choose_seeded_is_deterministic_and_uses_full_seed_range() {
+        // 26 equal-weight entries => total 26; choose_seeded maps a seed in
+        // [0, 2^32) linearly onto [0, 26), so entry index = floor(seed/2^32 * 26).
+        let lottery = Lottery::from((0u32..26).map(|i| (1.0f32, i)).collect::<Vec<_>>());
+
+        // Determinism: choose_seeded is a pure function of the seed.
+        for &s in &[0u32, 1, 12345, 0x1234_5678, u32::MAX] {
+            assert_eq!(
+                lottery.choose_seeded(s),
+                lottery.choose_seeded(s),
+                "choose_seeded must be a pure function of the seed"
+            );
+        }
+
+        // Non-vacuity: distinct seeds reach distinct entries, so the outcome
+        // genuinely depends on the seed rather than being constant.
+        let reached: std::collections::BTreeSet<u32> = (0..26u64)
+            .map(|k| *lottery.choose_seeded((k * (1u64 << 32) / 26) as u32))
+            .collect();
+        assert!(
+            reached.len() > 1,
+            "lottery outcome does not vary with the seed (only reached {:?})",
+            reached
+        );
+
+        // RNG-P3-003 (full 32-bit range): the OLD `% 65536` discarded the HIGH
+        // 16 seed bits, so any two seeds sharing their low 16 bits collapsed to
+        // the same outcome. seed_a/seed_b share low16 = 0x1234 but differ in the
+        // high bits and MUST be able to select different entries — direct
+        // evidence the high seed bits are not discarded. (Under the old formula
+        // both map to the same entry, so this assertion fails RED on a regression.)
+        let seed_a = 0x0000_1234u32;
+        let seed_b = 0x8000_1234u32;
+        assert_ne!(
+            lottery.choose_seeded(seed_a),
+            lottery.choose_seeded(seed_b),
+            "seeds differing only in their high 16 bits collapsed to the same outcome: the \
+             RNG-P3-003 full-32-bit-range fix has regressed (high seed bits are being discarded)"
+        );
+    }
+
     #[test]
     fn test_distribute_many() {
         let mut rng = rand::rng();
