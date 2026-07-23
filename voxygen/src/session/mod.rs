@@ -693,7 +693,6 @@ impl SessionState {
     /// cyan overhead marker — so the picked colonist reads at a glance in
     /// the world. Deselecting or a vanished entity drops its ring.
     fn bastion_sync_selection_rings(&mut self) {
-        use specs::Join;
         let sel: Vec<(specs::Entity, Vec3<f32>)> = {
             let client = self.client.borrow();
             let ecs = client.state().ecs();
@@ -1977,10 +1976,14 @@ impl PlayState for SessionState {
             )
         };
 
-        let r0d_sim_time = self.client.borrow().state().get_time();
+        let (r0d_sim_time, r0d_simulation_tick) = {
+            let client = self.client.borrow();
+            (client.state().get_time(), client.get_tick())
+        };
         if crate::render::bastion_r0d::drive_capture(
             global_state.window.renderer_mut(),
             r0d_sim_time,
+            r0d_simulation_tick,
         ) {
             return PlayStateResult::Shutdown;
         }
@@ -3294,13 +3297,24 @@ impl PlayState for SessionState {
                     let uids = ecs.read_storage::<common::uid::Uid>();
                     let positions = ecs.read_storage::<comp::Pos>();
                     let bodies = ecs.read_storage::<comp::Body>();
-                    (&entities, &uids, &positions, &bodies)
+                    let colonists = ecs.read_storage::<comp::Colonist>();
+                    (&entities, &uids, &positions, &bodies, &colonists)
                         .join()
-                        .filter(|(entity, _, _, _)| *entity != own)
-                        .min_by_key(|(_, uid, _, _)| uid.0.get())
-                        .map(|(_, _, position, _)| position.0)
+                        .filter(|(entity, _, _, _, _)| *entity != own)
+                        .min_by_key(|(_, uid, _, _, _)| uid.0.get())
+                        .map(|(_, uid, position, body, _)| {
+                            (
+                                position.0,
+                                crate::render::bastion_r0d::CaptureAnchorEvidenceV1 {
+                                    uid: uid.0.get(),
+                                    body_category: "bastion_colonist".to_owned(),
+                                    body: format!("{body:?}"),
+                                },
+                            )
+                        })
                 };
-                if let Some(target) = target {
+                if let Some((target, anchor)) = target {
+                    crate::render::bastion_r0d::set_capture_anchor(anchor);
                     let camera = self.scene.camera_mut();
                     camera.set_mode(CameraMode::Freefly);
                     camera.set_distance(6.0);
