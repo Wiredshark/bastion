@@ -3,7 +3,7 @@ use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
 use i18n::LocalizationHandle;
 use rand::seq::IteratorRandom;
 use server::{
-    Error as ServerError, Event, Input, Server, ServerInitStage,
+    Error as ServerError, Event, Input, Server, ServerInitStage, Tick,
     persistence::{DatabaseSettings, SqlLogMode},
     settings::server_description::ServerDescription,
 };
@@ -307,6 +307,22 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
     // Set up an fps clock
     let mut clock = Clock::new(Duration::from_secs_f64(1.0 / TPS as f64));
 
+    // R0D D1 dynamic-visual capstone: pause the AUTHORITATIVE sim at a fixed
+    // DETERMINISTIC server tick (not wall-clock, not client sim-time). Once the
+    // server holds at tick T it sends no further entity syncs, so the client
+    // renders a frozen scene and the runC stability-gated capture path fires —
+    // 10/1 within-run AND byte-identical cross-run, because tick T's frozen
+    // colonist state is a pure function of the world seed (the 5-layer D1 fix).
+    // This eliminates the residual client ±1-tick sampling PHASE offset seen on
+    // the moving-capture path (that was a capture-alignment artifact, not a sim
+    // or renderer determinism defect). Set BASTION_R0D_PAUSE_AT_TICK to the tick;
+    // run several legs at different ticks to exhibit deterministic MOTION between
+    // frozen frames. Off in production (env unset).
+    let r0d_pause_at_tick: Option<u64> = std::env::var("BASTION_R0D_PAUSE_AT_TICK")
+        .ok()
+        .and_then(|v| v.parse().ok());
+    let mut r0d_pause_armed = r0d_pause_at_tick.is_some();
+
     loop {
         // Check any event such as stopping and pausing
         match stop_server_r.try_recv() {
@@ -322,6 +338,22 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
         // Presence (leg-14 lesson: pausing at number_of_players>=1 — which
         // fires at CONNECT, before login completes — deadlocked the handshake;
         // no pause is needed, only the anchor tick).
+
+        // R0D D1 dynamic-visual capstone: freeze the sim once the authoritative
+        // tick counter reaches the deterministic target. Checked BEFORE the
+        // skip below, so the last COMPLETED tick is T-1 in both runs (consistent
+        // cross-run). One-shot (disarm) so a later menu unpause can't re-trigger.
+        if r0d_pause_armed
+            && let Some(target) = r0d_pause_at_tick
+            && {
+                use specs::WorldExt;
+                server.state().ecs().read_resource::<Tick>().0 >= target
+            }
+        {
+            paused.store(true, Ordering::SeqCst);
+            r0d_pause_armed = false;
+            info!(target, "R0D: authoritative sim paused at deterministic tick");
+        }
 
         // Skip updating the server if it's paused
         if paused.load(Ordering::SeqCst) && server.number_of_players() < 2 {
