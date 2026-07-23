@@ -610,6 +610,35 @@ struct Args {
     #[arg(long, default_value_t = 60)]
     ait_ticks: u64,
 
+    /// bastion determinism fixture MOOD-01 (SPECIFIED_NOT_EVIDENCED): certifies
+    /// DET-COL-MOOD-003. Injects a deterministic set of queued colonist thoughts
+    /// (distinct NPC / cell / ChronicleKind) into JobBoard.pending_thoughts in
+    /// canonical or reversed order, ticks so the rtsim tick drains them (sorted
+    /// by (NpcId, cell x/y/z, kind)) into the chronicle, and emits a
+    /// MOOD-CERTIFICATE hashing the resulting serialized Chronicle. Byte-
+    /// identical across serial / --schedule-seed / --mood-permute-order (which
+    /// reverses the injection order) proves the chronicle seq / cap-eviction
+    /// order is a pure function of the thought SET, not the producer/injection
+    /// order — the property MOOD-003's drain-time sort restored. Non-vacuous:
+    /// the chronicle must grow by the injected count, and seed 999 differs.
+    /// MEASURES; a setup failure (no thoughts recorded) is the only non-success.
+    #[arg(long)]
+    mood_scenario: bool,
+
+    /// MOOD-01: number of distinct thoughts to inject.
+    #[arg(long, default_value_t = 24)]
+    mood_thoughts: u32,
+
+    /// MOOD-01: authoritative ticks to let the rtsim drain + chronicle record.
+    #[arg(long, default_value_t = 4)]
+    mood_ticks: u64,
+
+    /// MOOD-01: inject the thoughts in REVERSED order — the injection-order
+    /// perturbation. MOOD-003 sorts on drain, so the recorded chronicle (hashed
+    /// canonically) must be byte-identical to the non-permuted run.
+    #[arg(long)]
+    mood_permute_order: bool,
+
     /// bastion (MINING-LIVE-FIDELITY): dig footprint X width, blocks. The
     /// geometry axis of the completion investigation — wide claims fit the
     /// stairs arm; tight ones force the D16 released-but-unreachable class.
@@ -1325,6 +1354,8 @@ fn main() -> ExitCode {
         esim_scenario(&args)
     } else if args.ait_scenario {
         ait_scenario(&args)
+    } else if args.mood_scenario {
+        mood_scenario(&args)
     } else if args.col_scenario {
         col_scenario(&args)
     } else if args.dig_access_scenario {
@@ -13497,6 +13528,204 @@ fn ait_scenario(args: &Args) -> ExitCode {
     }
     println!(
         "AIT-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture MOOD-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Certifies DET-COL-MOOD-003. Injects a deterministic set of queued colonist
+/// thoughts (distinct NPC / cell / ChronicleKind) into JobBoard.pending_thoughts
+/// in canonical or reversed order, ticks so the rtsim tick drains them into the
+/// chronicle, and emits a MOOD-CERTIFICATE hashing the resulting serialized
+/// Chronicle. Run under the perturbation set and byte-compared:
+///   - serial vs `--schedule-seed N`   ⇒ dispatch-order invariance
+///   - `--mood-permute-order`          ⇒ injection-order invariance
+/// The drain sorts by (NpcId, cell x/y/z, kind), so the chronicle seq / cap-
+/// eviction order is a pure function of the thought SET, not the producer or
+/// injection order — the property MOOD-003 restored. Non-vacuous: the chronicle
+/// must grow by the injected count, and seed 999 differs. MEASURES; a setup
+/// failure (no thoughts recorded) is the only non-success.
+fn mood_scenario(args: &Args) -> ExitCode {
+    use common::state_hash::{
+        DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash, MerkleLeaf,
+        category_root,
+    };
+    use rtsim::data::ChronicleKind;
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-mood-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-mood".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-mood-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "mood: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    // Seed-anchor + a set of real rtsim NPC ids to attribute the thoughts to
+    // (slotmap keys are deterministic for a fixed seed).
+    let (site_wpos, npc_ids): (Vec2<f32>, Vec<common::rtsim::NpcId>) = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        let wpos = data
+            .sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0));
+        let ids = data
+            .npcs
+            .npcs
+            .keys()
+            .take(args.mood_thoughts.max(1) as usize)
+            .collect();
+        (wpos, ids)
+    };
+
+    // Build a deterministic set of distinct thoughts. Distinct NpcId per thought
+    // means the drain's (NpcId, ...) total-order sort is decisive; a few kinds
+    // cycle so the kind tiebreak is also exercised. Injection order is FIXED
+    // ascending, or reversed under --mood-permute-order.
+    let kinds = [
+        ChronicleKind::Death,
+        ChronicleKind::Theft,
+        ChronicleKind::Founding,
+        ChronicleKind::Harvest,
+        ChronicleKind::Masterwork,
+        ChronicleKind::Famine,
+    ];
+    let mut thoughts: Vec<(common::rtsim::NpcId, Vec3<i32>, ChronicleKind)> = npc_ids
+        .iter()
+        .enumerate()
+        .map(|(i, &id)| {
+            let cell = Vec3::new(i as i32, (i * 7 % 13) as i32, (i % 5) as i32);
+            (id, cell, kinds[i % kinds.len()])
+        })
+        .collect();
+    if args.mood_permute_order {
+        thoughts.reverse();
+    }
+    let injected = thoughts.len() as u64;
+
+    // Inject into the board's pending-thought queue (the seam bastion_jobs
+    // normally fills; here we fill it directly and let the rtsim tick drain it).
+    {
+        let ecs = server.state().ecs();
+        let mut board = ecs.write_resource::<server::bastion_jobs::JobBoard>();
+        board.pending_thoughts.extend(thoughts);
+    }
+
+    // Tick: the rtsim tick drains pending_thoughts (sorted by MOOD-003) into the
+    // chronicle.
+    tick(&mut server, args.mood_ticks);
+
+    // Fingerprint: the serialized Chronicle. Its bands are seq-ordered VecDeques,
+    // so the recorded ORDER (what MOOD-003 canonicalises) is captured by content.
+    // Anchored on the seed-dependent site position (the synthetic thoughts are
+    // seed-independent — slotmap keys are 0,1,2,…) so seed 999 differs.
+    let (domain_root, leaves, recorded) = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        let ser = serde_json::to_vec(&data.chronicle).unwrap_or_default();
+        // One "seq": key per recorded ChronicleEvent.
+        let recorded = ser.windows(6).filter(|w| *w == b"\"seq\":").count() as u64;
+
+        let build = |label: &str| -> DomainHash {
+            let mut h = DomainHasher::new(label);
+            h.field(&site_wpos.x.to_bits().to_le_bytes());
+            h.field(&site_wpos.y.to_bits().to_le_bytes());
+            h.field(&ser);
+            h.finish()
+        };
+        let domain_root = build("bastion/domain/colony-chronicle/v1/sha256");
+        let leaf = build("bastion/domain/colony-chronicle-leaf/v1/sha256");
+        let leaves = vec![MerkleLeaf {
+            key: "colony/chronicle/thought-record".to_string(),
+            hash: leaf,
+        }];
+        (domain_root, leaves, recorded)
+    };
+
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        args.mood_ticks,
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/colony-chronicle/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+
+    info!(
+        injected,
+        recorded,
+        permute = args.mood_permute_order,
+        "mood: fingerprint computed"
+    );
+    if recorded < injected {
+        tracing::error!(
+            injected, recorded,
+            "mood: chronicle did not record the injected thoughts — VACUOUS, failing"
+        );
+        drop(server);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "MOOD-CERTIFICATE: {}",
         serde_json::to_string(&certificate).unwrap_or_default()
     );
 
