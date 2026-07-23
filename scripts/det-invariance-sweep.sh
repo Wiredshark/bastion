@@ -49,7 +49,8 @@ sweep --ter-scenario           TER-CERTIFICATE    --ter-permute-order
 sweep --mine-fidelity-scenario MF-CERTIFICATE     ""
 sweep --farm-scenario          FARM-CERTIFICATE   ""
 sweep --cavein-scenario        CAVEIN-CERTIFICATE ""
-sweep --gather-scenario        GATHER-CERTIFICATE ""
+sweep --gather-scenario        GATHER-CERTIFICATE   ""
+sweep --chopfell-scenario      CHOPFELL-CERTIFICATE ""
 
 echo "########## BIGGER-SCALE / LONGER STRESS ##########"
 sweep --col-scenario  COL-CERTIFICATE  --col-permute-order  --colony 8 --col-arb-rounds 6

@@ -13697,6 +13697,67 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
     println!("{}", result);
     println!("CHOPFELL SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
+    // CHOPFELL-CERTIFICATE (DET-CHOPFELL): hash the deterministic tree-fell
+    // outcome for BOTH trees — present-cell counts, wood counts, the frozen
+    // Wood-proportional thresholds, the one-job / felled / top-down / no-orphan
+    // invariant flags, drop counts, and the size-scaling proof — via the shared
+    // FinalStateCertificate substrate. site_wpos is the seed-varying non-vacuity
+    // witness (the outcome scalars are designed-constant). The two activity_max
+    // floats are DELIBERATELY EXCLUDED: they are UI chop-progress fractions
+    // sampled in a per-tick polling loop, so their exact max is poll-tick-aligned
+    // (a harness artifact), not authoritative sim state. Byte-identical across
+    // serial / --schedule-seed proves the fell outcome is worker-count /
+    // process-order invariant; a different --seed differs.
+    {
+        use common::state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        };
+        let build = |label: &str| -> DomainHash {
+            let mut hh = DomainHasher::new(label);
+            hh.field(&site_wpos.x.to_bits().to_le_bytes());
+            hh.field(&site_wpos.y.to_bits().to_le_bytes());
+            hh.field(&(s_cells as u64).to_le_bytes());
+            hh.field(&(s_wood as u64).to_le_bytes());
+            hh.field(&s_thresh.to_bits().to_le_bytes());
+            hh.field(&s_drops.to_le_bytes());
+            hh.field(&(b_cells as u64).to_le_bytes());
+            hh.field(&(b_wood as u64).to_le_bytes());
+            hh.field(&b_thresh.to_bits().to_le_bytes());
+            hh.field(&b_drops.to_le_bytes());
+            hh.field(&[
+                s_one as u8,
+                s_felled as u8,
+                s_td as u8,
+                s_orphan as u8,
+                b_one as u8,
+                b_felled as u8,
+                b_td as u8,
+                b_orphan as u8,
+                size_scales as u8,
+            ]);
+            hh.finish()
+        };
+        let domain_root = build("bastion/domain/chopfell/v1/sha256");
+        let leaf = build("bastion/domain/chopfell-leaf/v1/sha256");
+        let durable = category_root(DomainCategory::Durable, vec![MerkleLeaf {
+            key: "chopfell/outcome".to_string(),
+            hash: leaf,
+        }]);
+        let certificate = FinalStateCertificate::new(
+            "bastion/final-state-certificate/v1",
+            args.seed,
+            0,
+            durable,
+            IntegrityHash(DomainHash([0u8; 32]).0),
+            vec![("bastion/domain/chopfell/v1/sha256".to_string(), domain_root)],
+        );
+        println!(
+            "CHOPFELL-CERTIFICATE: {}",
+            serde_json::to_string(&certificate).unwrap_or_default()
+        );
+    }
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass {
