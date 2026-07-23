@@ -466,6 +466,44 @@ mod tests {
             |input: &str| input.chars().any(|c| c.is_uppercase() || c.is_whitespace());
         assert!(!recipe_book.iter().any(|(k, _)| is_invalid_key(k)));
     }
+
+    /// CRAFT-01 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof): the
+    /// recipe manifest's enumeration order is CANONICAL — strictly ascending by
+    /// recipe key — and therefore identical in every process. DET-CRF-005 stores
+    /// recipes in a `BTreeMap` precisely so this holds: `Asset::load`
+    /// deserializes the raw recipes through a `HashMap<String, RawRecipe>`
+    /// (ahash-seeded, per-process iteration order) and inserts them into the
+    /// BTreeMap, which re-canonicalizes by key. A regression back to a HashMap
+    /// final store would make `iter()` order depend on the process hash seed —
+    /// and the manifest is serialized to clients in `ServerInit::GameSync`, so a
+    /// per-process order would split cross-client determinism. This asserts the
+    /// contract directly over the real manifest; it is the missing executable
+    /// evidence for DET-CRF-005.
+    #[test]
+    fn recipe_manifest_enumeration_is_canonical() {
+        let recipe_book = complete_recipe_book().read();
+        let keys: Vec<&String> = recipe_book.iter().map(|(k, _)| k).collect();
+        // Teeth: a 0/1-entry manifest would satisfy "sorted" vacuously.
+        assert!(
+            keys.len() > 1,
+            "recipe manifest has {} entries — too few for a meaningful canonical-order proof",
+            keys.len()
+        );
+        // Strictly ascending => canonical key sort AND no duplicate keys. A
+        // HashMap-backed store could not guarantee this across processes; the
+        // BTreeMap does, by construction (DET-CRF-005). Non-vacuous: with the
+        // real manifest's hundreds of recipes, a HashMap's ahash-seeded order
+        // being coincidentally sorted is astronomically improbable.
+        for w in keys.windows(2) {
+            assert!(
+                w[0] < w[1],
+                "recipe manifest enumeration is not canonical (DET-CRF-005 BTreeMap keyed sort): \
+                 {:?} precedes {:?} — a non-canonical (HashMap-order) store has regressed",
+                w[0],
+                w[1]
+            );
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
