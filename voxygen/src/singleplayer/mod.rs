@@ -290,6 +290,83 @@ impl SingleplayerState {
         });
     }
 
+    /// Certification-only flat arena boot: a fresh fixed-seed world with one
+    /// deterministic colony fixture. The CLI flag is explicit, the data root
+    /// is process-unique, and normal singleplayer persistence is untouched.
+    pub fn run_bastion_flat_arena(&mut self, runtime: &Arc<Runtime>) {
+        if matches!(self, Self::Running(_)) {
+            error!("run_bastion_flat_arena called, but singleplayer is already running");
+            return;
+        }
+        let server_data_dir =
+            std::env::temp_dir().join(format!("bastion-flat-arena-{}", std::process::id()));
+        if let Err(e) = std::fs::create_dir_all(&server_data_dir) {
+            error!(?e, "could not create flat arena data dir");
+            return;
+        }
+
+        let mut settings = server::Settings::singleplayer(&server_data_dir);
+        settings.map_file = None;
+        settings.world_seed = 1337;
+        let editable_settings = server::EditableSettings::singleplayer(&server_data_dir);
+        let database_settings = DatabaseSettings {
+            db_dir: server_data_dir.join("saves"),
+            sql_log_mode: SqlLogMode::Disabled,
+        };
+
+        let (stop_server_s, stop_server_r) = unbounded();
+        let (server_stage_tx, server_stage_rx) = unbounded();
+        let paused = Arc::new(AtomicBool::new(false));
+        let paused1 = Arc::clone(&paused);
+        let (result_sender, result_receiver) = bounded(1);
+
+        let builder = thread::Builder::new().name("singleplayer-server-thread".into());
+        let runtime = Arc::clone(runtime);
+        let thread = builder
+            .spawn(move || {
+                trace!("starting bastion flat-arena server thread");
+                let (server, init_result) = match Server::new(
+                    settings,
+                    editable_settings,
+                    database_settings,
+                    &server_data_dir,
+                    &|init_stage| {
+                        let _ = server_stage_tx.send(init_stage);
+                    },
+                    runtime,
+                ) {
+                    Ok(mut server) => {
+                        let center = server.bastion_world_center_wpos();
+                        let fixture_position = server::bastion_flat_arena::spawn_wpos(center);
+                        let fixture = server.bastion_spawn_colony(fixture_position, 1);
+                        info!(
+                            ?fixture,
+                            world_seed = 1337,
+                            ?fixture_position,
+                            "bastion: capture flat-arena fixture declared"
+                        );
+                        (Some(server), Ok(()))
+                    },
+                    Err(err) => (None, Err(err)),
+                };
+                match (result_sender.send(init_result), server) {
+                    (Err(e), _) => warn!(?e, "Failed to send flat arena server init result"),
+                    (Ok(()), None) => (),
+                    (Ok(()), Some(server)) => run_server(server, stop_server_r, paused1),
+                }
+                trace!("ending bastion flat-arena server thread");
+            })
+            .unwrap();
+
+        *self = SingleplayerState::Running(Singleplayer {
+            _server_thread: thread,
+            stop_server_s,
+            init_stage_receiver: server_stage_rx,
+            receiver: result_receiver,
+            paused,
+        });
+    }
+
     pub fn as_running(&self) -> Option<&Singleplayer> {
         match_some!(self, SingleplayerState::Running(s) => s)
     }

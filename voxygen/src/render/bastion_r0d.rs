@@ -1,7 +1,12 @@
 //! Flag-gated renderer pipeline-identity seam.
 
 use super::PipelineModes;
-use std::sync::Mutex;
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 pub const PIPELINE_IDENTITY_SCHEMA_V1: (u16, u16) = (1, 0);
 
@@ -87,7 +92,7 @@ fn hex_digest(bytes: &[u8; 32]) -> String {
     out
 }
 
-fn append_evidence_line(path: &std::path::Path, line: &str) {
+fn append_evidence_line(path: &Path, line: &str) {
     if let Err(error) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -110,6 +115,7 @@ pub fn emit_manifest(context: &str, digest: &[u8; 32]) {
 }
 
 static PASS_RECORDS: Mutex<Vec<(u16, &'static str)>> = Mutex::new(Vec::new());
+static LATEST_PASS_TAPE: Mutex<Option<String>> = Mutex::new(None);
 
 pub use bastion_renderer_r0d::pass_graph::voxygen_ranks as ranks;
 
@@ -120,6 +126,10 @@ pub fn record_pass(rank: u16, name: &'static str) {
     match PASS_RECORDS.lock() {
         Ok(mut records) => records.push((rank, name)),
         Err(error) => tracing::warn!(target: "bastion_r0d", "pass tape lock failed: {error}"),
+    }
+    match DRAW_RECORDS.lock() {
+        Ok(mut records) => records.push((0, u32::from(rank), 0)),
+        Err(error) => tracing::warn!(target: "bastion_r0d", "draw tape lock failed: {error}"),
     }
 }
 
@@ -148,6 +158,10 @@ pub fn emit_pass_tape() {
         return;
     }
     let (tape, monotonic) = pass_tape_snapshot(&records);
+    if let Ok(mut latest) = LATEST_PASS_TAPE.lock() {
+        *latest = Some(format!("{tape} monotonic={monotonic}"));
+    }
+    let draw_tape = take_draw_tape();
     tracing::info!(
         target: "bastion_r0d",
         "R0D-PASS-TAPE[{}]: {tape} monotonic={monotonic}",
@@ -158,7 +172,87 @@ pub fn emit_pass_tape() {
         && !path.as_os_str().is_empty()
     {
         append_evidence_line(&path, &format!("pass-tape {tape} monotonic={monotonic}\n"));
+        if let Some((count, digest)) = draw_tape {
+            append_evidence_line(
+                &path,
+                &format!(
+                    "semantic-trace count={count} digest={}\n",
+                    hex_digest(&digest)
+                ),
+            );
+        }
     }
+}
+
+pub mod draw_kind {
+    pub const SKYBOX: u16 = 1;
+    pub const DEBUG: u16 = 2;
+    pub const LOD_TERRAIN: u16 = 3;
+    pub const FIGURE: u16 = 4;
+    pub const TERRAIN: u16 = 5;
+    pub const FLUID: u16 = 6;
+    pub const SPRITE: u16 = 7;
+    pub const LOD_OBJECT: u16 = 8;
+    pub const PARTICLE: u16 = 9;
+    pub const ROPE: u16 = 10;
+    pub const TRAIL: u16 = 11;
+    pub const CLOUDS: u16 = 12;
+    pub const POSTPROCESS: u16 = 13;
+    pub const UI: u16 = 14;
+    pub const FIGURE_SHADOW: u16 = 15;
+    pub const TERRAIN_SHADOW: u16 = 16;
+    pub const DEBUG_SHADOW: u16 = 17;
+    pub const POINT_SHADOW: u16 = 18;
+    pub const BLOOM: u16 = 21;
+    pub const UI_PREMULTIPLY: u16 = 22;
+    pub const BLIT: u16 = 23;
+}
+
+static DRAW_RECORDS: Mutex<Vec<(u16, u32, u32)>> = Mutex::new(Vec::new());
+static LATEST_SEMANTIC_TRACE: Mutex<Option<(usize, [u8; 32])>> = Mutex::new(None);
+
+pub fn record_draw(kind: u16, units: u32, instances: u32) {
+    if !manifest_enabled() {
+        return;
+    }
+    match DRAW_RECORDS.lock() {
+        Ok(mut records) => records.push((kind, units, instances)),
+        Err(error) => tracing::warn!(target: "bastion_r0d", "draw tape lock failed: {error}"),
+    }
+}
+
+fn take_draw_tape() -> Option<(usize, [u8; 32])> {
+    let records = match DRAW_RECORDS.lock() {
+        Ok(mut records) => std::mem::take(&mut *records),
+        Err(error) => {
+            tracing::warn!(target: "bastion_r0d", "draw tape lock failed: {error}");
+            return None;
+        },
+    };
+    if records.is_empty() {
+        return None;
+    }
+    draw_tape_snapshot(&records)
+}
+
+fn draw_tape_snapshot(records: &[(u16, u32, u32)]) -> Option<(usize, [u8; 32])> {
+    if records.is_empty() {
+        return None;
+    }
+    let mut payload = Vec::with_capacity(8 + records.len() * 10);
+    payload.extend_from_slice(&u64::try_from(records.len()).ok()?.to_le_bytes());
+    for (kind, units, instances) in records {
+        payload.extend_from_slice(&kind.to_le_bytes());
+        payload.extend_from_slice(&units.to_le_bytes());
+        payload.extend_from_slice(&instances.to_le_bytes());
+    }
+    let digest =
+        bastion_renderer_r0d::domain_hash_v1("bastion/r0d/semantic-trace", 1, 0, &payload).ok()?;
+    let result = (records.len(), digest);
+    if let Ok(mut latest) = LATEST_SEMANTIC_TRACE.lock() {
+        *latest = Some(result);
+    }
+    Some(result)
 }
 
 /// Capture-only switch. Normal play retains its ordinary culling policy.
@@ -186,14 +280,61 @@ pub fn capture_config() -> Option<(std::path::PathBuf, u64, u64)> {
 
 static CAPTURE_STATE: Mutex<(u64, u64, u64)> = Mutex::new((0, 0, 0));
 
-pub fn drive_capture(renderer: &mut super::renderer::Renderer, sim_time: f64) -> bool {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CaptureAnchorEvidenceV1 {
+    pub uid: u64,
+    pub body_category: String,
+    pub body: String,
+}
+
+static CAPTURE_ANCHOR: Mutex<Option<CaptureAnchorEvidenceV1>> = Mutex::new(None);
+
+pub fn set_capture_anchor(anchor: CaptureAnchorEvidenceV1) {
+    match CAPTURE_ANCHOR.lock() {
+        Ok(mut current) => *current = Some(anchor),
+        Err(error) => tracing::warn!(target: "bastion_r0d", "capture anchor lock failed: {error}"),
+    }
+}
+
+fn capture_fault_path(output: &Path) -> PathBuf { output.join("capture-faults.log") }
+
+fn write_capture_fault(output: &Path, message: &str) {
+    if let Err(error) = fs::create_dir_all(output) {
+        tracing::warn!(target: "bastion_r0d", "capture evidence directory failed: {error}");
+        return;
+    }
+    append_evidence_line(&capture_fault_path(output), message);
+}
+
+fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "invalid capture file name",
+            )
+        })?;
+    let staged = path.with_file_name(format!(".{file_name}.staging"));
+    let mut file = fs::File::create(&staged)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    fs::rename(staged, path)
+}
+
+pub fn drive_capture(
+    renderer: &mut super::renderer::Renderer,
+    sim_time: f64,
+    simulation_tick: u64,
+) -> bool {
     let Some((output, warmup, count)) = capture_config() else {
         return false;
     };
     let (frames, requested, completed) = match CAPTURE_STATE.lock() {
         Ok(mut state) => {
             let Some(next_frame) = state.0.checked_add(1) else {
-                append_evidence_line(
+                write_capture_fault(
                     &output,
                     "FAULT-TERMINAL R0D_INVALID_EVIDENCE_CAPTURE_FRAME_OVERFLOW\n",
                 );
@@ -203,7 +344,7 @@ pub fn drive_capture(renderer: &mut super::renderer::Renderer, sim_time: f64) ->
             *state
         },
         Err(error) => {
-            append_evidence_line(
+            write_capture_fault(
                 &output,
                 &format!("FAULT-TERMINAL R0D_INVALID_EVIDENCE_CAPTURE_STATE {error}\n"),
             );
@@ -222,20 +363,28 @@ pub fn drive_capture(renderer: &mut super::renderer::Renderer, sim_time: f64) ->
         frames > warmup
     };
     if requested < count && should_request {
-        request_one_capture(renderer, &output, requested);
+        request_one_capture(
+            renderer,
+            &output,
+            requested,
+            simulation_tick,
+            sim_time.to_bits(),
+        );
     }
     completed >= count
 }
 
 fn request_one_capture(
     renderer: &mut super::renderer::Renderer,
-    output: &std::path::Path,
+    output: &Path,
     ordinal: u64,
+    simulation_tick: u64,
+    simulation_time_bits: u64,
 ) {
     match CAPTURE_STATE.lock() {
         Ok(mut state) => {
             let Some(requested) = state.1.checked_add(1) else {
-                append_evidence_line(
+                write_capture_fault(
                     output,
                     "FAULT-TERMINAL R0D_INVALID_EVIDENCE_CAPTURE_REQUEST_OVERFLOW\n",
                 );
@@ -244,7 +393,7 @@ fn request_one_capture(
             state.1 = requested;
         },
         Err(error) => {
-            append_evidence_line(
+            write_capture_fault(
                 output,
                 &format!("FAULT-TERMINAL R0D_INVALID_EVIDENCE_CAPTURE_STATE {error}\n"),
             );
@@ -252,6 +401,9 @@ fn request_one_capture(
         },
     }
     let output = output.to_path_buf();
+    let anchor = CAPTURE_ANCHOR.lock().ok().and_then(|anchor| anchor.clone());
+    let pass_tape = LATEST_PASS_TAPE.lock().ok().and_then(|value| value.clone());
+    let semantic_trace = LATEST_SEMANTIC_TRACE.lock().ok().and_then(|value| *value);
     renderer.create_screenshot(move |result| {
         match result {
             Ok(image) => {
@@ -262,20 +414,89 @@ fn request_one_capture(
                     0,
                     image.as_raw(),
                 ) {
-                    Ok(digest) => append_evidence_line(
-                        &output,
-                        &format!(
-                            "capture {ordinal} {width}x{height} {}\n",
-                            hex_digest(&digest)
-                        ),
-                    ),
-                    Err(error) => append_evidence_line(
+                    Ok(digest) => {
+                        let stem = format!("capture-{ordinal:04}");
+                        let raw_path = output.join(format!("{stem}.rgb"));
+                        let png_path = output.join(format!("{stem}.png"));
+                        let metadata_path = output.join(format!("{stem}.meta"));
+                        let staged_png = output.join(format!(".{stem}.png.staging"));
+                        let result = fs::create_dir_all(&output)
+                            .and_then(|()| write_atomic(&raw_path, image.as_raw()))
+                            .and_then(|()| {
+                                image
+                                    .save_with_format(&staged_png, image::ImageFormat::Png)
+                                    .map_err(std::io::Error::other)
+                            })
+                            .and_then(|()| fs::rename(&staged_png, &png_path))
+                            .and_then(|()| {
+                                let anchor = anchor.as_ref().ok_or_else(|| {
+                                    std::io::Error::new(
+                                        std::io::ErrorKind::InvalidData,
+                                        "capture anchor absent",
+                                    )
+                                })?;
+                                let pass_tape = pass_tape.as_deref().ok_or_else(|| {
+                                    std::io::Error::new(
+                                        std::io::ErrorKind::InvalidData,
+                                        "pass tape absent",
+                                    )
+                                })?;
+                                let (semantic_trace_count, semantic_trace_digest) = semantic_trace
+                                    .ok_or_else(|| {
+                                        std::io::Error::new(
+                                            std::io::ErrorKind::InvalidData,
+                                            "semantic trace absent",
+                                        )
+                                    })?;
+                                let metadata = format!(
+                                    concat!(
+                                        "schema=RendererCaptureEvidenceV1\n",
+                                        "ordinal={}\n",
+                                        "simulation_tick={}\n",
+                                        "simulation_time_bits={:016x}\n",
+                                        "width={}\n",
+                                        "height={}\n",
+                                        "pixel_format=rgb8_srgb\n",
+                                        "pixel_sha256={}\n",
+                                        "anchor_uid={}\n",
+                                        "anchor_category={}\n",
+                                        "anchor_body={}\n",
+                                        "pass_tape={}\n",
+                                        "semantic_trace_count={}\n",
+                                        "semantic_trace_sha256={}\n",
+                                    ),
+                                    ordinal,
+                                    simulation_tick,
+                                    simulation_time_bits,
+                                    width,
+                                    height,
+                                    hex_digest(&digest),
+                                    anchor.uid,
+                                    anchor.body_category,
+                                    anchor.body,
+                                    pass_tape,
+                                    semantic_trace_count,
+                                    hex_digest(&semantic_trace_digest),
+                                );
+                                write_atomic(&metadata_path, metadata.as_bytes())
+                            });
+                        if let Err(error) = result {
+                            write_capture_fault(
+                                &output,
+                                &format!(
+                                    "FAULT-TERMINAL R0D_INVALID_EVIDENCE_CAPTURE_PERSIST \
+                                     ordinal={ordinal} {error}\n"
+                                ),
+                            );
+                        }
+                    },
+                    Err(error) => write_capture_fault(
                         &output,
                         &format!("FAULT-TERMINAL R0D_INVALID_EVIDENCE_CAPTURE_HASH {error:?}\n"),
                     ),
                 }
             },
-            Err(error) => append_evidence_line(
+            Err(error) => write_capture_fault(
                 &output,
                 &format!("FAULT-TERMINAL R0D_INVALID_EVIDENCE_CAPTURE {error}\n"),
             ),
@@ -285,13 +506,13 @@ fn request_one_capture(
                 if let Some(completed) = state.2.checked_add(1) {
                     state.2 = completed;
                 } else {
-                    append_evidence_line(
+                    write_capture_fault(
                         &output,
                         "FAULT-TERMINAL R0D_INVALID_EVIDENCE_CAPTURE_COMPLETION_OVERFLOW\n",
                     );
                 }
             },
-            Err(error) => append_evidence_line(
+            Err(error) => write_capture_fault(
                 &output,
                 &format!("FAULT-TERMINAL R0D_INVALID_EVIDENCE_CAPTURE_STATE {error}\n"),
             ),
@@ -364,5 +585,14 @@ mod tests {
         );
         let reversed = [(ranks::UI_PREMULTIPLY, "ui"), (ranks::THIRD, "third")];
         assert!(!pass_tape_snapshot(&reversed).1);
+    }
+
+    #[test]
+    fn draw_tape_binds_order_and_counts() {
+        let ordered = [(draw_kind::FIGURE, 12, 2), (draw_kind::TERRAIN, 24, 1)];
+        let first = draw_tape_snapshot(&ordered).unwrap();
+        assert_eq!(draw_tape_snapshot(&ordered).unwrap(), first);
+        let reversed = [ordered[1], ordered[0]];
+        assert_ne!(draw_tape_snapshot(&reversed).unwrap().1, first.1);
     }
 }

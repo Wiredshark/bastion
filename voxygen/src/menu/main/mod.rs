@@ -130,6 +130,23 @@ impl PlayState for MainMenuState {
             }
         }
 
+        // The flat-arena certification vehicle is also self-starting. It uses
+        // a process-unique server data root and fixed seed, so each Voxygen
+        // process is a fresh, isolated leg without menu automation.
+        #[cfg(feature = "singleplayer")]
+        if global_state.args.bastion_flat_arena
+            && global_state.args.asset_arena.is_none()
+            && matches!(global_state.singleplayer, SingleplayerState::None)
+        {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static FLAT_ARENA_STARTED: AtomicBool = AtomicBool::new(false);
+            if !FLAT_ARENA_STARTED.swap(true, Ordering::SeqCst) {
+                global_state
+                    .singleplayer
+                    .run_bastion_flat_arena(&global_state.tokio_runtime);
+            }
+        }
+
         // Poll server creation
         #[cfg(feature = "singleplayer")]
         {
