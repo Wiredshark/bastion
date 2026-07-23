@@ -32,6 +32,7 @@ const R0D_INPUT_COUNT_OFFSET: usize = R0D_FIXED_HEADER_BYTES - 2;
 const R0D_CORPUS_ENTRY_BYTES: usize = 2 + DIGEST_BYTES_LEN + 8;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u16)]
 pub enum RendererCorpusRoleV1 {
     CanonicalRendererCorpus = 0,
     LivingWorldRedesign = 1,
@@ -53,6 +54,7 @@ pub enum AdmissionErrorV1 {
     Truncated,
     TrailingBytes(usize),
     SourceEpochMismatch,
+    CorpusInputMismatch(RendererCorpusRoleV1),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -173,7 +175,16 @@ impl fmt::Display for RendererCorpusRoleV1 {
 impl RendererCorpusRoleV1 {
     const REQUIRED: [Self; 2] = [Self::CanonicalRendererCorpus, Self::LivingWorldRedesign];
 
-    const fn to_u16(self) -> u16 { self as u16 }
+    pub const fn stable_tag(self) -> u16 { self as u16 }
+
+    pub const fn stable_name(self) -> &'static str {
+        match self {
+            Self::CanonicalRendererCorpus => "CANONICAL_RENDERER_CORPUS",
+            Self::LivingWorldRedesign => "LIVING_WORLD_REDESIGN",
+        }
+    }
+
+    const fn to_u16(self) -> u16 { self.stable_tag() }
 
     fn from_u16(raw: u16) -> Result<Self, AdmissionErrorV1> {
         match raw {
@@ -357,7 +368,10 @@ impl RendererAdmissionV1 {
             let role_raw = u16::from_le_bytes([bytes[0], bytes[1]]);
             let role = RendererCorpusRoleV1::from_u16(role_raw)?;
 
-            if previous_role.is_some() && role_raw <= previous_role.expect("set") {
+            if previous_role == Some(role_raw) {
+                return Err(AdmissionErrorV1::DuplicateRole(role));
+            }
+            if previous_role.is_some() && role_raw < previous_role.expect("set") {
                 return Err(AdmissionErrorV1::NonCanonicalRoleOrder);
             }
             previous_role = Some(role as u16);
@@ -404,6 +418,23 @@ impl RendererAdmissionV1 {
     ) -> Result<(), AdmissionErrorV1> {
         if self.source_epoch != *expected_source_epoch {
             return Err(AdmissionErrorV1::SourceEpochMismatch);
+        }
+        Ok(())
+    }
+
+    pub fn validate_authority(
+        &self,
+        expected_admission: &RendererAdmissionV1,
+    ) -> Result<(), AdmissionErrorV1> {
+        self.validate_against(expected_admission.source_epoch())?;
+        for (actual, expected) in self
+            .corpus_inputs
+            .iter()
+            .zip(&expected_admission.corpus_inputs)
+        {
+            if actual != expected {
+                return Err(AdmissionErrorV1::CorpusInputMismatch(actual.role));
+            }
         }
         Ok(())
     }
