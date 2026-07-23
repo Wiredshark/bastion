@@ -7625,6 +7625,57 @@ fn cavein_scenario(args: &Args) -> ExitCode {
     });
     println!("{}", result);
     println!("CAVEIN SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    // CAVEIN-CERTIFICATE (DET-CAVEIN): hash the deterministic structural-collapse
+    // outcome — collapse + victim/eject/fear flags & counts and the resulting
+    // mood + victim HP — via the shared FinalStateCertificate substrate. Byte-
+    // identical across serial / --schedule-seed proves the collapse outcome is
+    // worker-count/process-order invariant; a different --seed differs.
+    {
+        use common::state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        };
+        let build = |label: &str| -> DomainHash {
+            let mut hh = DomainHasher::new(label);
+            hh.field(&[
+                collapsed as u8,
+                ejected as u8,
+                feared as u8,
+                standable as u8,
+                deep_ejected as u8,
+                deep_feared as u8,
+                deep_standable as u8,
+                fear_persists as u8,
+            ]);
+            hh.field(&(victims as i64).to_le_bytes());
+            hh.field(&(deep_victims as i64).to_le_bytes());
+            hh.field(&mood.to_bits().to_le_bytes());
+            hh.field(&base_mood.to_bits().to_le_bytes());
+            hh.field(&hp.unwrap_or(0.0).to_bits().to_le_bytes());
+            hh.field(&min_mood_after_recompute.to_bits().to_le_bytes());
+            hh.finish()
+        };
+        let domain_root = build("bastion/domain/cavein/v1/sha256");
+        let leaf = build("bastion/domain/cavein-leaf/v1/sha256");
+        let durable = category_root(DomainCategory::Durable, vec![MerkleLeaf {
+            key: "cavein/outcome".to_string(),
+            hash: leaf,
+        }]);
+        let certificate = FinalStateCertificate::new(
+            "bastion/final-state-certificate/v1",
+            args.seed,
+            0,
+            durable,
+            IntegrityHash(DomainHash([0u8; 32]).0),
+            vec![("bastion/domain/cavein/v1/sha256".to_string(), domain_root)],
+        );
+        println!(
+            "CAVEIN-CERTIFICATE: {}",
+            serde_json::to_string(&certificate).unwrap_or_default()
+        );
+    }
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass {
