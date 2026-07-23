@@ -696,6 +696,34 @@ struct Args {
     #[arg(long, default_value_t = 1)]
     colneed_rounds: u64,
 
+    /// bastion determinism fixture COLHAUL-01 (SPECIFIED_NOT_EVIDENCED): certifies
+    /// DET-COL-HAUL-001 / DET-AUT-004. Spawns a loaded colonist (haul cap =
+    /// colonists * HAUL_JOBS_PER_COLONIST = 2), injects a stockpile, and spawns
+    /// MORE loose MINE_DROP items than the cap at distinct cells in forward or
+    /// reversed order (--colhaul-permute-order). Ticks the B6-HAUL self-
+    /// designation pass and emits a COLHAUL-CERTIFICATE hashing the created Haul
+    /// jobs by drop CELL (canonical z/y/x). Byte-identical across serial /
+    /// --schedule-seed / --colhaul-permute-order proves WHICH drops become haul
+    /// jobs is canonical (cell-sorted), not ECS-join(spawn) ordered. Hashing by
+    /// CELL (spawn-order-stable), not item Uid (spawn-order-dependent), avoids the
+    /// Uid confound. MEASURES; a setup failure (no haul jobs created) is the only
+    /// non-success.
+    #[arg(long)]
+    colhaul_scenario: bool,
+
+    /// COLHAUL-01: number of loose MINE_DROP items to spawn (keep > cap of 2).
+    #[arg(long, default_value_t = 6)]
+    colhaul_drops: u32,
+
+    /// COLHAUL-01: spawn the drops in REVERSED cell order — the injection-order
+    /// perturbation the cell-sort must be invariant to.
+    #[arg(long)]
+    colhaul_permute_order: bool,
+
+    /// COLHAUL-01: ARBITRATION_INTERVAL rounds to run the haul-designation pass.
+    #[arg(long, default_value_t = 2)]
+    colhaul_rounds: u64,
+
     /// bastion (MINING-LIVE-FIDELITY): dig footprint X width, blocks. The
     /// geometry axis of the completion investigation — wide claims fit the
     /// stairs arm; tight ones force the D16 released-but-unreachable class.
@@ -1419,6 +1447,8 @@ fn main() -> ExitCode {
         site_scenario(&args)
     } else if args.colneed_scenario {
         colneed_scenario(&args)
+    } else if args.colhaul_scenario {
+        colhaul_scenario(&args)
     } else if args.col_scenario {
         col_scenario(&args)
     } else if args.dig_access_scenario {
@@ -14386,6 +14416,218 @@ fn colneed_scenario(args: &Args) -> ExitCode {
     }
     println!(
         "COLNEED-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture COLHAUL-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Certifies DET-COL-HAUL-001 / DET-AUT-004. Spawns a loaded colonist (haul cap =
+/// colonists * HAUL_JOBS_PER_COLONIST = 2), injects a stockpile, and spawns MORE
+/// loose MINE_DROP items than the cap at distinct cells in forward or reversed
+/// spawn order. Ticks the B6-HAUL self-designation pass and emits a
+/// COLHAUL-CERTIFICATE hashing the created Haul jobs by drop CELL (canonical
+/// z/y/x). Byte-identical across serial / --schedule-seed / --colhaul-permute-
+/// order proves WHICH drops become haul jobs is canonical (the (cell, def, Uid)
+/// sort), not ECS-join(spawn) ordered. Hashing by CELL (spawn-order-stable),
+/// never item Uid (spawn-order-dependent), sidesteps the Uid confound: the
+/// winners are the cap-many lowest cells regardless of spawn order, so the
+/// certificate holds under the permute — but the OLD take(cap)-in-join-order
+/// code would pick the first-spawned cells, which the permute changes.
+/// MEASURES; a setup failure (no haul jobs) is the only non-success exit.
+fn colhaul_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{JobKind, Region},
+        state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        },
+    };
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-colhaul-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-colhaul".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-colhaul-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "colhaul: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        use common::vol::ReadVol;
+        let terrain = server.state().terrain();
+        (0..2048)
+            .rev()
+            .find(|z| terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| b.is_filled()))
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let cz = ground_z(&server, cx, cy).expect("colhaul: no ground at site center");
+
+    // One loaded colonist → haul cap = 1 * HAUL_JOBS_PER_COLONIST (=2).
+    let _ = server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0), 1);
+    tick(&mut server, 30);
+
+    // Inject a stockpile FAR from the drops (a drop inside a stockpile footprint
+    // is ineligible) so the haul generator has a destination and the drops are
+    // eligible.
+    {
+        let ecs = server.state().ecs();
+        let mut board = ecs.write_resource::<server::bastion_jobs::JobBoard>();
+        let s = Vec3::new(cx - 12, cy - 12, cz);
+        board
+            .stockpiles
+            .push((1u64, Region { min: s, max: s + Vec3::new(2, 2, 0) }));
+    }
+
+    // Spawn MORE loose MINE_DROP items than the cap, at distinct cells. Cells are
+    // FIXED per logical index; only the SPAWN order (and thus Uids) is permuted.
+    let n = args.colhaul_drops.max(3);
+    let mut order: Vec<u32> = (0..n).collect();
+    if args.colhaul_permute_order {
+        order.reverse();
+    }
+    for i in order {
+        let dx = cx + 3 + i as i32;
+        let dy = cy + 5;
+        let dz = ground_z(&server, dx, dy).unwrap_or(cz) + 1;
+        server.bastion_spawn_item(
+            Vec3::new(dx as f32 + 0.5, dy as f32 + 0.5, dz as f32),
+            common::bastion::MINE_DROP_ITEM,
+            1,
+        );
+    }
+    tick(&mut server, 1); // let the drops settle into the spatial grid
+
+    // Run the B6-HAUL self-designation pass.
+    tick(
+        &mut server,
+        server::bastion_jobs::ARBITRATION_INTERVAL * args.colhaul_rounds.max(1),
+    );
+
+    // Fingerprint: the created Haul jobs, by drop CELL (canonical z/y/x). Which
+    // drops won the cap is what HAUL-001 makes canonical; the cell is spawn-order-
+    // stable, so a byte-identical certificate under the permute proves it.
+    let (domain_root, leaves, haul_jobs) = {
+        let ecs = server.state().ecs();
+        let board = ecs.read_resource::<server::bastion_jobs::JobBoard>();
+        let mut cells: Vec<(i32, i32, i32)> = board
+            .jobs
+            .values()
+            .filter_map(|j| match j.kind {
+                JobKind::Haul { .. } => Some((j.pos.z, j.pos.y, j.pos.x)),
+                _ => None,
+            })
+            .collect();
+        cells.sort_unstable();
+        let haul_jobs = cells.len() as u64;
+
+        let build = |label: &str| -> DomainHash {
+            let mut hh = DomainHasher::new(label);
+            hh.field(&site_wpos.x.to_bits().to_le_bytes());
+            hh.field(&site_wpos.y.to_bits().to_le_bytes());
+            for (z, y, x) in &cells {
+                hh.field(&z.to_le_bytes());
+                hh.field(&y.to_le_bytes());
+                hh.field(&x.to_le_bytes());
+            }
+            hh.finish()
+        };
+        let domain_root = build("bastion/domain/colony-haul-designation/v1/sha256");
+        let leaf = build("bastion/domain/colony-haul-designation-leaf/v1/sha256");
+        let leaves = vec![MerkleLeaf {
+            key: "colony/haul/designation-cells".to_string(),
+            hash: leaf,
+        }];
+        (domain_root, leaves, haul_jobs)
+    };
+
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        server::bastion_jobs::ARBITRATION_INTERVAL * args.colhaul_rounds.max(1),
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/colony-haul-designation/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+
+    info!(
+        drops = n,
+        haul_jobs,
+        permute = args.colhaul_permute_order,
+        "colhaul: fingerprint computed"
+    );
+    if haul_jobs == 0 {
+        tracing::error!("colhaul: no haul jobs created — VACUOUS, failing (check stockpile/cap/drops)");
+        drop(server);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "COLHAUL-CERTIFICATE: {}",
         serde_json::to_string(&certificate).unwrap_or_default()
     );
 
