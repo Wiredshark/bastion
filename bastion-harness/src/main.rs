@@ -16228,6 +16228,60 @@ fn gather_scenario(args: &Args) -> ExitCode {
     println!("{}", result);
     println!("GATHER SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
+    // GATHER-CERTIFICATE (DET-GATHER): hash the deterministic forage→deposit
+    // outcome — job count, gathered/expected yield, remaining-collectible,
+    // drain + hand-vacate flags, stockpile deposit + bags-after, total
+    // conservation, and colonist count — via the shared FinalStateCertificate
+    // substrate. Byte-identical across serial / --schedule-seed proves the
+    // whole gather pipeline's outcome is worker-count/process-order invariant;
+    // a different --seed differs.
+    {
+        use common::state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        };
+        let conserved = total_after == baseline + expected;
+        let build = |label: &str| -> DomainHash {
+            let mut hh = DomainHasher::new(label);
+            // Worldgen-derived site position — the seed-varying witness that
+            // keeps the certificate NON-VACUOUS (the outcome scalars below are
+            // designed-constant, so they alone would read vacuous across seed).
+            hh.field(&site_wpos.x.to_bits().to_le_bytes());
+            hh.field(&site_wpos.y.to_bits().to_le_bytes());
+            hh.field(&(jobs as u64).to_le_bytes());
+            hh.field(&gathered.to_le_bytes());
+            hh.field(&expected.to_le_bytes());
+            hh.field(&(remaining_collectible as u64).to_le_bytes());
+            hh.field(&store_count.to_le_bytes());
+            hh.field(&bags_after.to_le_bytes());
+            hh.field(&(names.len() as u64).to_le_bytes());
+            hh.field(&[
+                drained as u8,
+                vacated_by_hand.is_some() as u8,
+                conserved as u8,
+            ]);
+            hh.finish()
+        };
+        let domain_root = build("bastion/domain/gather/v1/sha256");
+        let leaf = build("bastion/domain/gather-leaf/v1/sha256");
+        let durable = category_root(DomainCategory::Durable, vec![MerkleLeaf {
+            key: "gather/outcome".to_string(),
+            hash: leaf,
+        }]);
+        let certificate = FinalStateCertificate::new(
+            "bastion/final-state-certificate/v1",
+            args.seed,
+            0,
+            durable,
+            IntegrityHash(DomainHash([0u8; 32]).0),
+            vec![("bastion/domain/gather/v1/sha256".to_string(), domain_root)],
+        );
+        println!(
+            "GATHER-CERTIFICATE: {}",
+            serde_json::to_string(&certificate).unwrap_or_default()
+        );
+    }
+
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
     if pass {

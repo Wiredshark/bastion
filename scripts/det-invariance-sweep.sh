@@ -10,7 +10,7 @@
 # A HOLD means the scenario's authoritative outcome is invariant to the perturbed
 # knob; a BREAK prints exactly which knob leaked non-determinism — the isolation
 # signal for incremental bisection. Extend by adding a `sweep` line per scenario
-# as new *-CERTIFICATE emitters land (col/esim/phy/ter/mf/farm/cavein today).
+# as new *-CERTIFICATE emitters land (col/esim/phy/ter/mf/farm/cavein/gather today).
 #
 # Usage:  bash scripts/det-invariance-sweep.sh   (from the repo/worktree root)
 #   Override the binary with BASTION_HARNESS_BIN=/path/to/bastion-harness.
@@ -49,6 +49,7 @@ sweep --ter-scenario           TER-CERTIFICATE    --ter-permute-order
 sweep --mine-fidelity-scenario MF-CERTIFICATE     ""
 sweep --farm-scenario          FARM-CERTIFICATE   ""
 sweep --cavein-scenario        CAVEIN-CERTIFICATE ""
+sweep --gather-scenario        GATHER-CERTIFICATE ""
 
 echo "########## BIGGER-SCALE / LONGER STRESS ##########"
 sweep --col-scenario  COL-CERTIFICATE  --col-permute-order  --colony 8 --col-arb-rounds 6
