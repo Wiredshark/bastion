@@ -15040,6 +15040,59 @@ mod tests {
         );
     }
 
+    /// RNG-08 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof): DET-RNG-008 —
+    /// toss_scatter_rng is a pure per-drop-site stream keyed on (tick, drop
+    /// world-position, site domain), replacing the single tick-global cursor
+    /// that keyed draws on ECS-join order. It must be a pure function of its key
+    /// (deterministic), sensitive to each key component (non-vacuous), and give
+    /// distinct sites distinct streams keyed on their intrinsic position
+    /// (order-invariant). The fn had no test.
+    #[test]
+    fn toss_scatter_rng_is_keyed_deterministic_and_order_invariant() {
+        use rand::RngExt;
+        let draws = |mut rng: rand_chacha::ChaCha8Rng| -> [u64; 4] {
+            [
+                rng.random::<u64>(),
+                rng.random::<u64>(),
+                rng.random::<u64>(),
+                rng.random::<u64>(),
+            ]
+        };
+        let t = 1234u64;
+        let p = Vec3::new(10, -20, 30);
+        let d = 0xABCDu64;
+
+        // Determinism: same (tick, pos, domain) -> identical stream.
+        assert_eq!(
+            draws(toss_scatter_rng(t, p, d)),
+            draws(toss_scatter_rng(t, p, d)),
+            "toss_scatter_rng is not a pure function of (tick, pos, domain)"
+        );
+        // Non-vacuity: each key component changes the stream.
+        assert_ne!(
+            draws(toss_scatter_rng(t, p, d)),
+            draws(toss_scatter_rng(t + 1, p, d)),
+            "tick does not affect the toss stream"
+        );
+        assert_ne!(
+            draws(toss_scatter_rng(t, p, d)),
+            draws(toss_scatter_rng(t, Vec3::new(11, -20, 30), d)),
+            "drop position does not affect the toss stream"
+        );
+        assert_ne!(
+            draws(toss_scatter_rng(t, p, d)),
+            draws(toss_scatter_rng(t, p, d + 1)),
+            "site domain does not affect the toss stream"
+        );
+        // Order-invariance: two distinct drop sites get distinct streams keyed
+        // on their intrinsic position, independent of processing order.
+        assert_ne!(
+            draws(toss_scatter_rng(t, Vec3::new(0, 0, 0), d)),
+            draws(toss_scatter_rng(t, Vec3::new(5, 5, 5), d)),
+            "distinct drop sites share a scatter stream (DET-RNG-008)"
+        );
+    }
+
     // Row-51.7 (registry class 12): the (B) exhaustion leg's honest pin — the
     // leg is race-dominated in sims (three net terminators, fastest wins), so
     // the bound is proven here, fast and deterministic.
