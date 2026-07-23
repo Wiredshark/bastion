@@ -489,6 +489,55 @@ struct Args {
     #[arg(long)]
     ter_permute_order: bool,
 
+    /// bastion determinism fixture EVT-01 (SPECIFIED_NOT_EVIDENCED): spawn N
+    /// clustered Health entities, emit ONE ExplosionEvent cascading into N
+    /// HealthChangeEvents via the parallel damage path, and emit an
+    /// EVT-CERTIFICATE hashing final Health per entity (canonical Uid order).
+    /// Byte-identical across serial / --schedule-seed proves the cross-producer
+    /// event cascade is canonically ordered. MEASURES; setup failure = non-success.
+    #[arg(long)]
+    evt_scenario: bool,
+
+    /// EVT-01: number of clustered Health entities to spawn (1..=255).
+    #[arg(long, default_value_t = 32)]
+    evt_entities: u32,
+
+    /// EVT-01: explosion damage value (raw HealthChange amount before falloff).
+    #[arg(long, default_value_t = 2000.0)]
+    evt_power: f32,
+
+    /// EVT-01: explosion radius (blocks); should cover the settled cluster.
+    #[arg(long, default_value_t = 24.0)]
+    evt_radius: f32,
+
+    /// EVT-01: authoritative ticks to apply the explosion→damage→health cascade.
+    #[arg(long, default_value_t = 10)]
+    evt_ticks: u64,
+
+    /// bastion determinism fixture SHD-01 (SPECIFIED_NOT_EVIDENCED): run to a
+    /// shutdown cutpoint, drop the server (real persist sequence), reboot from the
+    /// save, and emit an SHD-CERTIFICATE over the canonical LOGICAL rtsim state
+    /// pre-shutdown and post-reload. Proves lossless identity round-trip +
+    /// deterministic shutdown/reload. MEASURES; setup failure is the only non-success.
+    #[arg(long)]
+    shd_scenario: bool,
+
+    /// SHD-01: authoritative ticks to run before the shutdown (the cutpoint).
+    #[arg(long, default_value_t = 200)]
+    shd_ticks: u64,
+
+    /// bastion determinism fixture PER-01 (SPECIFIED_NOT_EVIDENCED): persistence
+    /// CONTINUATION — compare an uninterrupted 2N-tick run against a save/reload/
+    /// continue (N → shutdown → reboot → N) run, asserting identity continuation +
+    /// determinism over the canonical logical rtsim state. MEASURES; setup failure
+    /// is the only non-success. (K0-K5 crash-injection is the separate PER-01b.)
+    #[arg(long)]
+    per_scenario: bool,
+
+    /// PER-01: N — each leg's half-length (A runs 2N; B runs N, reloads, runs N).
+    #[arg(long, default_value_t = 100)]
+    per_ticks: u64,
+
     /// bastion determinism fixture ESIM-01 (SPECIFIED_NOT_EVIDENCED): certifies
     /// DET-ESIM-011. Injects a deterministic set of death reports into a
     /// resident NPC's home-site `known_reports`, ticks so the site→NPC share
@@ -540,6 +589,140 @@ struct Args {
     /// join order — the perturbation JOB-001's Uid-sort must be invariant to.
     #[arg(long)]
     col_permute_order: bool,
+
+    /// bastion determinism fixture AIT-01 (SPECIFIED_NOT_EVIDENCED): certifies
+    /// DET-AIT-002 (AIT-001 covered-by-construction). Spawns K Enemy attacker
+    /// agents + M friendly targets in a deterministic tied-distance layout,
+    /// ticks until the PARALLEL agent system acquires targets, and emits an
+    /// AIT-CERTIFICATE hashing (attacker Uid -> selected target Uid) in
+    /// canonical attacker-Uid order. Byte-identical across serial vs
+    /// --schedule-seed 7/42 (par_join worker-count / dispatch order) proves
+    /// combat target selection does not depend on parallel scheduling — the
+    /// property AIT-002's stateless keyed detection restored (the old shared
+    /// helper-RNG cursor in can_sense_directly_near made detection depend on
+    /// cross-agent draw interleaving under par_join). Spawn is FIXED (so Uids
+    /// are fixed across legs; only the worker count varies), avoiding the
+    /// spawn-order/Uid confound. Non-vacuous: at least one attacker must acquire
+    /// a target, and seed 999 yields a different composite. AIT-001's grid-order
+    /// tiebreak builds single-threaded upstream of harness-reachable code, so it
+    /// is covered-by-construction, not independently perturbed here. MEASURES;
+    /// setup failure (no target acquired) is the only non-success.
+    #[arg(long)]
+    ait_scenario: bool,
+
+    /// AIT-01: number of Enemy attacker agents.
+    #[arg(long, default_value_t = 8)]
+    ait_attackers: u32,
+
+    /// AIT-01: number of friendly targets the attackers choose among.
+    #[arg(long, default_value_t = 6)]
+    ait_targets: u32,
+
+    /// AIT-01: authoritative ticks to let the agent system acquire targets.
+    #[arg(long, default_value_t = 60)]
+    ait_ticks: u64,
+
+    /// bastion determinism fixture MOOD-01 (SPECIFIED_NOT_EVIDENCED): certifies
+    /// DET-COL-MOOD-003. Injects a deterministic set of queued colonist thoughts
+    /// (distinct NPC / cell / ChronicleKind) into JobBoard.pending_thoughts in
+    /// canonical or reversed order, ticks so the rtsim tick drains them (sorted
+    /// by (NpcId, cell x/y/z, kind)) into the chronicle, and emits a
+    /// MOOD-CERTIFICATE hashing the resulting serialized Chronicle. Byte-
+    /// identical across serial / --schedule-seed / --mood-permute-order (which
+    /// reverses the injection order) proves the chronicle seq / cap-eviction
+    /// order is a pure function of the thought SET, not the producer/injection
+    /// order — the property MOOD-003's drain-time sort restored. Non-vacuous:
+    /// the chronicle must grow by the injected count, and seed 999 differs.
+    /// MEASURES; a setup failure (no thoughts recorded) is the only non-success.
+    #[arg(long)]
+    mood_scenario: bool,
+
+    /// MOOD-01: number of distinct thoughts to inject.
+    #[arg(long, default_value_t = 24)]
+    mood_thoughts: u32,
+
+    /// MOOD-01: authoritative ticks to let the rtsim drain + chronicle record.
+    #[arg(long, default_value_t = 4)]
+    mood_ticks: u64,
+
+    /// MOOD-01: inject the thoughts in REVERSED order — the injection-order
+    /// perturbation. MOOD-003 sorts on drain, so the recorded chronicle (hashed
+    /// canonically) must be byte-identical to the non-permuted run.
+    #[arg(long)]
+    mood_permute_order: bool,
+
+    /// bastion determinism fixture SITE-01 (SPECIFIED_NOT_EVIDENCED): certifies
+    /// cross-run worldgen SITE IDENTITY determinism (DET-SITE-002/003/004/005).
+    /// Boots a class-7 server and emits a SITE-CERTIFICATE hashing every rtsim
+    /// site's identity (stable uid, seed, wpos, faction, linked world_site) in
+    /// canonical uid order. TWO independent Server::new boots at the same world
+    /// seed must produce a BYTE-IDENTICAL certificate — the property no existing
+    /// scenario asserts (mf hashes mine/colonist OUTCOMES, never site identity;
+    /// it only positions its dig from one site's wpos). Also byte-identical
+    /// across --schedule-seed (parallel worldgen site-selection order
+    /// invariance, which the SITE tie-breaks canonicalise). Non-vacuous: sites
+    /// must exist, and seed 999 yields a different certificate (site identity is
+    /// seed-derived). MEASURES; a setup failure (no sites) is the only
+    /// non-success.
+    #[arg(long)]
+    site_scenario: bool,
+
+    /// SITE-01: settle ticks after boot before snapshotting sites.
+    #[arg(long, default_value_t = 2)]
+    site_ticks: u64,
+
+    /// bastion determinism fixture COLNEED-01 (SPECIFIED_NOT_EVIDENCED): certifies
+    /// DET-COL-NEED-001 / DET-AUT-005. Builds an idle-colonist set whose ECS join
+    /// order diverges from Uid order (delete+respawn slot reuse, reusing
+    /// --col-permute-order as the desync toggle), sets every colonist below the
+    /// hunger interrupt, spawns FEWER loose food items than colonists so they
+    /// contend, and ticks the B7-2 need-check. Emits a COLNEED-CERTIFICATE hashing
+    /// (per colonist, by Uid) the reserved EatFrom target. Byte-identical across
+    /// serial / --schedule-seed / --col-permute-order proves the scarce-food
+    /// winner is canonical (severity-then-Uid), not ECS-iteration ordered.
+    /// MEASURES; a setup failure (no desync, or no colonist reserved food) is the
+    /// only non-success.
+    #[arg(long)]
+    colneed_scenario: bool,
+
+    /// COLNEED-01: number of loose food items to spawn (keep < colonist count so
+    /// they contend).
+    #[arg(long, default_value_t = 1)]
+    colneed_food: u32,
+
+    /// COLNEED-01: ARBITRATION_INTERVAL rounds to run the need-check pass. Kept
+    /// short so the winner cannot walk to the far food and consume it before the
+    /// snapshot (the reserved EatFrom job is what we hash).
+    #[arg(long, default_value_t = 1)]
+    colneed_rounds: u64,
+
+    /// bastion determinism fixture COLHAUL-01 (SPECIFIED_NOT_EVIDENCED): certifies
+    /// DET-COL-HAUL-001 / DET-AUT-004. Spawns a loaded colonist (haul cap =
+    /// colonists * HAUL_JOBS_PER_COLONIST = 2), injects a stockpile, and spawns
+    /// MORE loose MINE_DROP items than the cap at distinct cells in forward or
+    /// reversed order (--colhaul-permute-order). Ticks the B6-HAUL self-
+    /// designation pass and emits a COLHAUL-CERTIFICATE hashing the created Haul
+    /// jobs by drop CELL (canonical z/y/x). Byte-identical across serial /
+    /// --schedule-seed / --colhaul-permute-order proves WHICH drops become haul
+    /// jobs is canonical (cell-sorted), not ECS-join(spawn) ordered. Hashing by
+    /// CELL (spawn-order-stable), not item Uid (spawn-order-dependent), avoids the
+    /// Uid confound. MEASURES; a setup failure (no haul jobs created) is the only
+    /// non-success.
+    #[arg(long)]
+    colhaul_scenario: bool,
+
+    /// COLHAUL-01: number of loose MINE_DROP items to spawn (keep > cap of 2).
+    #[arg(long, default_value_t = 6)]
+    colhaul_drops: u32,
+
+    /// COLHAUL-01: spawn the drops in REVERSED cell order — the injection-order
+    /// perturbation the cell-sort must be invariant to.
+    #[arg(long)]
+    colhaul_permute_order: bool,
+
+    /// COLHAUL-01: ARBITRATION_INTERVAL rounds to run the haul-designation pass.
+    #[arg(long, default_value_t = 2)]
+    colhaul_rounds: u64,
 
     /// bastion (MINING-LIVE-FIDELITY): dig footprint X width, blocks. The
     /// geometry axis of the completion investigation — wide claims fit the
@@ -1248,8 +1431,24 @@ fn main() -> ExitCode {
         phy_scenario(&args)
     } else if args.ter_scenario {
         ter_scenario(&args)
+    } else if args.evt_scenario {
+        evt_scenario(&args)
+    } else if args.shd_scenario {
+        shd_scenario(&args)
+    } else if args.per_scenario {
+        per_scenario(&args)
     } else if args.esim_scenario {
         esim_scenario(&args)
+    } else if args.ait_scenario {
+        ait_scenario(&args)
+    } else if args.mood_scenario {
+        mood_scenario(&args)
+    } else if args.site_scenario {
+        site_scenario(&args)
+    } else if args.colneed_scenario {
+        colneed_scenario(&args)
+    } else if args.colhaul_scenario {
+        colhaul_scenario(&args)
     } else if args.col_scenario {
         col_scenario(&args)
     } else if args.dig_access_scenario {
@@ -12311,6 +12510,638 @@ fn ter_scenario(args: &Args) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// bastion determinism fixture EVT-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// The REAL event-determinism claim (verified: the EventBus is FIFO and the
+/// HealthChange apply-handler is serial + sim-time-seeded, so manual emit-order
+/// is a non-claim): does the PARALLEL event cascade emit into the bus in a
+/// deterministic order? Spawns N clustered entities with Health, emits ONE
+/// ExplosionEvent whose damage effect cascades into N HealthChangeEvents through
+/// the real parallel damage path, ticks to apply, and fingerprints every
+/// entity's final Health in canonical Uid order. Byte-identity across:
+///   - serial repro                 (determinism)
+///   - --schedule-seed 7 / 42       (parallel emitter-merge / worker-count order)
+/// proves the cross-producer event cascade is canonically ordered. MEASURES.
+fn evt_scenario(args: &Args) -> ExitCode {
+    use common::{
+        combat::{Damage, DamageKind},
+        comp::Health,
+        effect::Effect,
+        event::ExplosionEvent,
+        explosion::{Explosion, RadiusEffect},
+        state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        },
+        uid::Uid,
+    };
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-evt-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-evt".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-evt-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "evt: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let cx = site_wpos.x;
+    let cy = site_wpos.y;
+    let cz = {
+        use common::vol::ReadVol;
+        let terrain = server.state().terrain();
+        (0..2048)
+            .rev()
+            .find(|z| {
+                terrain
+                    .get(Vec3::new(cx as i32, cy as i32, *z))
+                    .is_ok_and(|b| b.is_filled())
+            })
+            .expect("evt: no ground at site center") as f32
+    };
+    let center = Vec3::new(cx, cy, cz + 2.0);
+
+    // Spawn N clustered entities WITH Health (colonists), settle them.
+    let n = (args.evt_entities.max(1)).min(255) as u8;
+    let names = server.bastion_spawn_colony(center, n);
+    info!(spawned = names.len(), "evt: spawned health entities");
+    tick(&mut server, 20);
+
+    // ONE explosion → the damage effect cascades into a HealthChangeEvent per
+    // affected entity through the real parallel damage path. Pure entity damage
+    // (no terrain destruction) to keep this an events-only fingerprint.
+    server.state().emit_event_now(ExplosionEvent {
+        pos: center,
+        explosion: Explosion {
+            effects: vec![RadiusEffect::Entity(Effect::Damage(Damage {
+                kind: DamageKind::Energy,
+                value: args.evt_power,
+            }))],
+            radius: args.evt_radius,
+            reagent: None,
+            min_falloff: 0.0,
+        },
+        owner: None,
+    });
+    // Apply the explosion → damage → HealthChangeEvent cascade.
+    tick(&mut server, args.evt_ticks);
+
+    // Fingerprint: every entity's final Health in canonical Uid order.
+    let (domain_root, leaves, count) = {
+        let ecs = server.state().ecs();
+        let uids = ecs.read_storage::<Uid>();
+        let healths = ecs.read_storage::<Health>();
+        let mut items: Vec<(u64, u32, u32)> = (&uids, &healths)
+            .join()
+            .map(|(uid, h)| (uid.0.get(), h.current().to_bits(), h.maximum().to_bits()))
+            .collect();
+        items.sort_by_key(|(uid, _, _)| *uid);
+        let mut h = DomainHasher::new("bastion/domain/events/v1/sha256");
+        let mut leaves: Vec<MerkleLeaf> = Vec::with_capacity(items.len());
+        for (uid, cur, max) in &items {
+            h.field(&uid.to_le_bytes());
+            h.field(&cur.to_le_bytes());
+            h.field(&max.to_le_bytes());
+            let mut lh = DomainHasher::new("bastion/domain/events-hp/v1/sha256");
+            lh.field(&cur.to_le_bytes());
+            lh.field(&max.to_le_bytes());
+            leaves.push(MerkleLeaf {
+                key: format!("hp/{uid:020}"),
+                hash: lh.finish(),
+            });
+        }
+        (h.finish(), leaves, items.len())
+    };
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        args.evt_ticks,
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![("bastion/domain/events/v1/sha256".to_string(), domain_root)],
+    );
+    info!(entities = count, "evt: fingerprint computed");
+    println!(
+        "EVT-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture SHD-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Shutdown/flush/terminality via the ROUND-TRIP invariant: boot → run `shd_ticks`
+/// → drop the server (Server::Drop runs the real persist sequence: terrain unload →
+/// rtsim.save(true) → recorder finalize) → REBOOT from the same data_dir (rtsim
+/// loads the save) → hash the CANONICAL LOGICAL rtsim state (npcs + sites sorted by
+/// slotmap key) both before shutdown and after reload. Hashing logical state, never
+/// on-disk bytes, makes this immune to the separately-owned PER-028 save-BYTE
+/// serialization noise (which is why the earlier raw-byte approach was wrong).
+/// Claims proven:
+///   - IDENTITY round-trip is LOSSLESS: pre-shutdown (id+seed+home) == post-reload
+///     — shutdown/flush loses no world identity.
+///   - the whole round-trip is DETERMINISTIC: durable_composite (over pre+post) is
+///     byte-identical across serial repro + --schedule-seed, seed-sensitive, and
+///     per shutdown cutpoint (`shd_ticks`).
+/// Observation (informational, in domain_hashes): npc POSITIONS are not identity
+/// across reload (full_lossless=false) — rtsim deterministically catch-up/reconciles
+/// positions on load; that is a deterministic transform, not data loss. MEASURES.
+fn shd_scenario(args: &Args) -> ExitCode {
+    use common::state_hash::{
+        DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash, MerkleLeaf,
+        category_root,
+    };
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-shd-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-shd".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-shd-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "shd: server booted");
+
+    // Canonical LOGICAL hash of the rtsim terminal state (npcs + sites, sorted by
+    // slotmap key so HashMap/serialization order can't leak in). This is immune to
+    // the PER-028 save-BYTE nondeterminism by construction — it hashes logical
+    // state, never the on-disk bytes. Reused for pre-shutdown and post-reload.
+    // Returns (FULL, IDENTITY): full covers id+seed+home+wpos; identity drops wpos
+    // (the position). A lossless save/reload MUST preserve IDENTITY; positions may
+    // legitimately move if reload runs a deterministic catch-up/reconcile.
+    let logical_hash = |server: &Server| -> (DomainHash, DomainHash) {
+        use slotmap::Key;
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        let mut npcs: Vec<(u64, u32, u64, [u8; 12])> = data
+            .npcs
+            .npcs
+            .iter()
+            .map(|(id, npc)| {
+                let key = id.data().as_ffi();
+                let home = npc.home.map(|h| h.data().as_ffi()).unwrap_or(0);
+                let mut w = [0u8; 12];
+                w[0..4].copy_from_slice(&npc.wpos.x.to_bits().to_le_bytes());
+                w[4..8].copy_from_slice(&npc.wpos.y.to_bits().to_le_bytes());
+                w[8..12].copy_from_slice(&npc.wpos.z.to_bits().to_le_bytes());
+                (key, npc.seed, home, w)
+            })
+            .collect();
+        npcs.sort_by_key(|x| x.0);
+        let mut sites: Vec<(u64, u32, [u8; 8])> = data
+            .sites
+            .sites
+            .iter()
+            .map(|(id, site)| {
+                let key = id.data().as_ffi();
+                let mut w = [0u8; 8];
+                w[0..4].copy_from_slice(&site.wpos.x.to_le_bytes());
+                w[4..8].copy_from_slice(&site.wpos.y.to_le_bytes());
+                (key, site.seed, w)
+            })
+            .collect();
+        sites.sort_by_key(|x| x.0);
+        let mut full = DomainHasher::new("bastion/domain/shutdown-logical/v1/sha256");
+        let mut ident = DomainHasher::new("bastion/domain/shutdown-identity/v1/sha256");
+        full.field(&(npcs.len() as u64).to_le_bytes());
+        ident.field(&(npcs.len() as u64).to_le_bytes());
+        for (k, seed, home, w) in &npcs {
+            full.field(&k.to_le_bytes());
+            full.field(&seed.to_le_bytes());
+            full.field(&home.to_le_bytes());
+            full.field(w);
+            ident.field(&k.to_le_bytes());
+            ident.field(&seed.to_le_bytes());
+            ident.field(&home.to_le_bytes());
+        }
+        full.field(&(sites.len() as u64).to_le_bytes());
+        ident.field(&(sites.len() as u64).to_le_bytes());
+        for (k, seed, w) in &sites {
+            full.field(&k.to_le_bytes());
+            full.field(&seed.to_le_bytes());
+            full.field(w);
+            ident.field(&k.to_le_bytes());
+            ident.field(&seed.to_le_bytes());
+        }
+        (full.finish(), ident.finish())
+    };
+
+    // Run to the shutdown cutpoint; capture PRE-shutdown canonical logical state.
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    for _ in 0..args.shd_ticks {
+        server
+            .tick(Input::default(), dt)
+            .expect("server tick failed");
+        server.cleanup();
+    }
+    let (pre, pre_id) = logical_hash(&server);
+    let (npc_n, site_n) = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let d = rtsim.state().data();
+        (d.npcs.npcs.len(), d.sites.sites.len())
+    };
+    info!(ticks = args.shd_ticks, npcs = npc_n, sites = site_n, pre = %pre, "shd: pre-shutdown logical state captured");
+
+    // THE SHUTDOWN: Server::Drop runs the real persist sequence (rtsim.save etc.).
+    drop(server);
+    info!("shd: server dropped (shutdown persist sequence ran)");
+
+    // REBOOT from the same data_dir — rtsim loads from the persisted save.
+    let settings2 = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-shd-reload".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable2 = EditableSettings::singleplayer(&data_dir);
+    let database2 = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime2 = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-shd-reload-tokio")
+            .build()
+            .expect("failed to build reload tokio runtime"),
+    );
+    let server2 = Server::new(
+        settings2,
+        editable2,
+        database2,
+        &data_dir,
+        &|stage| info!(?stage, "reload server init"),
+        runtime2,
+    )
+    .expect("failed to reboot headless server from persisted save");
+    let (post, post_id) = logical_hash(&server2);
+    let (npc_n2, site_n2) = {
+        let ecs = server2.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let d = rtsim.state().data();
+        (d.npcs.npcs.len(), d.sites.sites.len())
+    };
+    info!(post = %post, npcs = npc_n2, sites = site_n2, "shd: post-reload logical state captured");
+    let identity_lossless = pre_id == post_id;
+    let full_lossless = pre == post;
+    info!(
+        identity_lossless,
+        full_lossless,
+        pre_id = %pre_id,
+        post_id = %post_id,
+        "shd: round-trip — identity (id+seed+home) vs full (incl wpos)"
+    );
+    let lossless = identity_lossless;
+    if !lossless {
+        warn!(
+            "shd: SHUTDOWN NOT LOSSLESS — pre-shutdown logical state != post-reload \
+             (flush/reload dropped or altered rtsim state)"
+        );
+    }
+    drop(server2);
+
+    // Certificate: the ROUND-TRIP logical fingerprint. The invariant is pre==post
+    // (lossless flush→reload); durable_composite covers BOTH pre and post so
+    // cross-run / cross-schedule determinism is asserted on the whole round-trip.
+    let mut rt = DomainHasher::new("bastion/domain/shutdown/v1/sha256");
+    rt.field(&pre.0);
+    rt.field(&post.0);
+    rt.field(&[lossless as u8]);
+    let domain_root = rt.finish();
+    let leaves = vec![
+        MerkleLeaf {
+            key: "pre-shutdown".to_string(),
+            hash: pre,
+        },
+        MerkleLeaf {
+            key: "post-reload".to_string(),
+            hash: post,
+        },
+    ];
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        args.shd_ticks,
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/shutdown/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+    info!(lossless, "shd: round-trip fingerprint computed");
+    println!(
+        "SHD-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture PER-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Persistence CONTINUATION: does shutdown+reload+continue reach the same logical
+/// state as an uninterrupted run? Runs two independent legs at the same seed:
+///   A (uninterrupted): boot → run 2N ticks.
+///   B (save/reload):   boot → run N → drop (persist) → reboot → run N more.
+/// and hashes the canonical LOGICAL rtsim state (npcs+sites by slotmap key, split
+/// identity=id+seed+home vs full=incl wpos) of each. Logical, never bytes → immune
+/// to the separately-owned PER-028 save-byte noise. Claims:
+///   - IDENTITY continuation: A.identity == B.identity — the reload boundary loses
+///     no world identity and the continued sim reaches the same set/seeds/homes.
+///   - DETERMINISM: durable_composite (over A.full + B.full) byte-identical across
+///     serial repro + --schedule-seed, seed-sensitive.
+/// Open observation (informational, per the SHD position-catch-up finding): full
+/// continuation (incl wpos) may differ — recorded as continuation_full. K0-K5
+/// crash-injection is the harder half, filed as PER-01b. MEASURES, never gates.
+fn per_scenario(args: &Args) -> ExitCode {
+    use common::state_hash::{
+        DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash, MerkleLeaf,
+        category_root,
+    };
+
+    // Canonical LOGICAL hash (full, identity) — identical to SHD-01's extraction.
+    let logical_hash = |server: &Server| -> (DomainHash, DomainHash) {
+        use slotmap::Key;
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        let mut npcs: Vec<(u64, u32, u64, [u8; 12])> = data
+            .npcs
+            .npcs
+            .iter()
+            .map(|(id, npc)| {
+                let key = id.data().as_ffi();
+                let home = npc.home.map(|h| h.data().as_ffi()).unwrap_or(0);
+                let mut w = [0u8; 12];
+                w[0..4].copy_from_slice(&npc.wpos.x.to_bits().to_le_bytes());
+                w[4..8].copy_from_slice(&npc.wpos.y.to_bits().to_le_bytes());
+                w[8..12].copy_from_slice(&npc.wpos.z.to_bits().to_le_bytes());
+                (key, npc.seed, home, w)
+            })
+            .collect();
+        npcs.sort_by_key(|x| x.0);
+        let mut sites: Vec<(u64, u32, [u8; 8])> = data
+            .sites
+            .sites
+            .iter()
+            .map(|(id, site)| {
+                let key = id.data().as_ffi();
+                let mut w = [0u8; 8];
+                w[0..4].copy_from_slice(&site.wpos.x.to_le_bytes());
+                w[4..8].copy_from_slice(&site.wpos.y.to_le_bytes());
+                (key, site.seed, w)
+            })
+            .collect();
+        sites.sort_by_key(|x| x.0);
+        let mut full = DomainHasher::new("bastion/domain/persistence-logical/v1/sha256");
+        let mut ident = DomainHasher::new("bastion/domain/persistence-identity/v1/sha256");
+        full.field(&(npcs.len() as u64).to_le_bytes());
+        ident.field(&(npcs.len() as u64).to_le_bytes());
+        for (k, seed, home, w) in &npcs {
+            full.field(&k.to_le_bytes());
+            full.field(&seed.to_le_bytes());
+            full.field(&home.to_le_bytes());
+            full.field(w);
+            ident.field(&k.to_le_bytes());
+            ident.field(&seed.to_le_bytes());
+            ident.field(&home.to_le_bytes());
+        }
+        full.field(&(sites.len() as u64).to_le_bytes());
+        ident.field(&(sites.len() as u64).to_le_bytes());
+        for (k, seed, w) in &sites {
+            full.field(&k.to_le_bytes());
+            full.field(&seed.to_le_bytes());
+            full.field(w);
+            ident.field(&k.to_le_bytes());
+            ident.field(&seed.to_le_bytes());
+        }
+        (full.finish(), ident.finish())
+    };
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let run = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+    let boot = |data_dir: &std::path::Path, name: &str| -> Server {
+        let settings = Settings {
+            gameserver_protocols: Vec::new(),
+            auth_server_address: None,
+            query_address: None,
+            world_seed: args.seed,
+            server_name: name.into(),
+            map_file: None,
+            max_view_distance: None,
+            calendar_mode: CalendarMode::None,
+            ..Settings::default()
+        };
+        let editable = EditableSettings::singleplayer(data_dir);
+        let database = DatabaseSettings {
+            db_dir: data_dir.join("saves"),
+            sql_log_mode: SqlLogMode::Disabled,
+        };
+        let runtime = Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .worker_threads(2)
+                .thread_name("bastion-harness-per-tokio")
+                .build()
+                .expect("failed to build per tokio runtime"),
+        );
+        Server::new(
+            settings,
+            editable,
+            database,
+            data_dir,
+            &|stage| info!(?stage, "per server init"),
+            runtime,
+        )
+        .expect("failed to create headless server")
+    };
+
+    let n = args.per_ticks.max(1);
+    let pid = std::process::id();
+    let uniq = Instant::now().elapsed().as_nanos();
+
+    // Leg A: uninterrupted 2N ticks.
+    let dir_a = std::env::temp_dir().join(format!("bastion-per-a-{pid}-{uniq}"));
+    std::fs::create_dir_all(&dir_a).expect("create per-a dir");
+    let mut sa = boot(&dir_a, "bastion-harness-per-a");
+    run(&mut sa, 2 * n);
+    let (a_full, a_id) = logical_hash(&sa);
+    drop(sa);
+    let _ = std::fs::remove_dir_all(&dir_a);
+    info!(ticks = 2 * n, a_id = %a_id, "per: leg A (uninterrupted) captured");
+
+    // Leg B: N ticks → shutdown → reboot → N more ticks (continue across the save).
+    let dir_b = std::env::temp_dir().join(format!("bastion-per-b-{pid}-{uniq}"));
+    std::fs::create_dir_all(&dir_b).expect("create per-b dir");
+    let mut sb1 = boot(&dir_b, "bastion-harness-per-b1");
+    run(&mut sb1, n);
+    drop(sb1); // persist
+    let mut sb2 = boot(&dir_b, "bastion-harness-per-b2"); // reload
+    run(&mut sb2, n); // continue
+    let (b_full, b_id) = logical_hash(&sb2);
+    drop(sb2);
+    let _ = std::fs::remove_dir_all(&dir_b);
+    info!(ticks = n, b_id = %b_id, "per: leg B (save/reload/continue) captured");
+
+    let continuation_id = a_id == b_id;
+    let continuation_full = a_full == b_full;
+    if !continuation_id {
+        warn!(
+            "per: IDENTITY CONTINUATION BROKEN — uninterrupted != save/reload/continue \
+             (reload boundary altered world identity)"
+        );
+    }
+    info!(
+        continuation_id,
+        continuation_full, "per: continuation — identity (must hold) vs full (incl wpos)"
+    );
+
+    // Certificate: durable_composite over A.full + B.full (both deterministic per
+    // run, so cross-run/-schedule determinism is asserted); the CONTINUATION
+    // invariant (continuation_id) is folded into the domain root.
+    let mut root = DomainHasher::new("bastion/domain/persistence/v1/sha256");
+    root.field(&a_id.0);
+    root.field(&b_id.0);
+    root.field(&[continuation_id as u8]);
+    let domain_root = root.finish();
+    let leaves = vec![
+        MerkleLeaf {
+            key: "leg-a-uninterrupted".to_string(),
+            hash: a_full,
+        },
+        MerkleLeaf {
+            key: "leg-b-reload-continue".to_string(),
+            hash: b_full,
+        },
+    ];
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        2 * n,
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/persistence/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+    info!(continuation_id, "per: continuation fingerprint computed");
+    println!(
+        "PER-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    ExitCode::SUCCESS
+}
+
 /// bastion determinism fixture ESIM-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
 /// Certifies DET-ESIM-011: when a home site shares its known reports with a
 /// resident NPC, they enter the NPC's ORDERED inbox sorted by ReportId, so the
@@ -12857,6 +13688,1050 @@ fn col_scenario(args: &Args) -> ExitCode {
     }
     println!(
         "COL-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture AIT-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Certifies DET-AIT-002 (AIT-001 covered-by-construction). Spawns K Enemy
+/// attacker agents plus M friendly (Npc) targets in a deterministic tied-
+/// distance layout, ticks until the PARALLEL (par_join) agent system acquires
+/// targets, and emits an AIT-CERTIFICATE hashing (attacker Uid -> selected
+/// target Uid) in canonical attacker-Uid order. Run under the perturbation set
+/// and byte-compared:
+///   - serial vs `--schedule-seed N` ⇒ par_join worker-count / dispatch-order
+///     invariance — the property AIT-002 restored (the old shared helper-RNG
+///     cursor in `can_sense_directly_near` made detection depend on cross-agent
+///     draw interleaving under `par_join`; the keyed decision removed that).
+/// Spawn is FIXED, so Uids are fixed across legs and only the worker count
+/// varies — this sidesteps the spawn-order/Uid confound (permuting spawn order
+/// would reassign Uids and legitimately change the canonical winner).
+/// AIT-001's grid-order tiebreak builds single-threaded upstream of harness-
+/// reachable code, so it is covered-by-construction, not independently
+/// perturbed here. MEASURES; a setup failure (no target acquired) is the only
+/// non-success.
+fn ait_scenario(args: &Args) -> ExitCode {
+    use common::{
+        LoadoutBuilder,
+        comp::{
+            self, Agent, Alignment, Content, Health, Inventory, Ori, Poise, Pos, SkillSet, Stats,
+            Vel,
+        },
+        state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        },
+        uid::Uid,
+        vol::ReadVol,
+    };
+    use rand::SeedableRng;
+    use server::state_ext::StateExt;
+    use specs::{Builder, Join};
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-ait-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-ait".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-ait-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "ait: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    // Anchor on the first rtsim site, force-load its terrain, find the ground.
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    let loaded = server.bastion_force_load_area(site_wpos, 5);
+    info!(loaded, "ait: force-loaded area");
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048)
+            .rev()
+            .find(|z| terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| b.is_filled()))
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let cz = ground_z(&server, cx, cy).expect("ait: no ground at site center") + 1;
+
+    // A single FIXED deterministic humanoid body for everyone — seed-anchored so
+    // seed-999 differs, but identical across the schedule-seed legs of one seed.
+    let mut body_rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x0A17 ^ u64::from(args.seed));
+    let body = comp::Body::Humanoid(comp::humanoid::Body::random_with(
+        &mut body_rng,
+        &comp::humanoid::Species::Human,
+    ));
+
+    let mut spawn = |server: &mut Server, x: f32, y: f32, alignment: Alignment, agent: bool| {
+        let pos = Pos(Vec3::new(x, y, cz as f32));
+        let loadout = LoadoutBuilder::from_default(&body).build();
+        let inventory = Inventory::with_loadout(loadout, body);
+        let mut b = server
+            .state_mut()
+            .create_npc(
+                pos,
+                Ori::default(),
+                Stats::new(Content::Plain("ait".into()), body),
+                SkillSet::default(),
+                Some(Health::new(body)),
+                Poise::new(body),
+                inventory,
+                body,
+                body.scale(),
+            )
+            .with(Vel(Vec3::zero()))
+            .with(alignment);
+        if agent {
+            b = b.with(Agent::from_body(&body).with_patrol_origin(pos.0));
+        }
+        b.build()
+    };
+
+    // Deterministic layout: K attackers clustered at the centre, M friendly
+    // targets in a tight ring so several tie on distance and sit within the
+    // direct-sense radius (the gate AIT-002 keys). Spawn order is FIXED.
+    let k = args.ait_attackers.max(1);
+    let m = args.ait_targets.max(1);
+    let mut attackers: Vec<specs::Entity> = Vec::with_capacity(k as usize);
+    for i in 0..k {
+        let x = cx as f32 + 0.5 + (i as f32 - k as f32 / 2.0) * 0.75;
+        attackers.push(spawn(&mut server, x, cy as f32 + 0.5, Alignment::Enemy, true));
+    }
+    let radius = 4.0f32;
+    for j in 0..m {
+        let theta = std::f32::consts::TAU * (j as f32) / (m as f32);
+        let x = cx as f32 + 0.5 + radius * theta.cos();
+        let y = cy as f32 + 0.5 + radius * theta.sin();
+        let _ = spawn(&mut server, x, y, Alignment::Npc, false);
+    }
+    info!(k, m, "ait: spawned attackers + targets");
+
+    // Let the parallel agent system run target acquisition.
+    tick(&mut server, args.ait_ticks);
+
+    // Fingerprint: (attacker Uid -> selected target Uid), canonical attacker-Uid
+    // order. Uids are stable across the schedule-seed legs (spawn is fixed), so
+    // any divergence is a scheduling-dependent selection — exactly what AIT-002
+    // forbids. Anchored on the seed-dependent site position so seed-999 differs.
+    let (domain_root, leaves, acquired) = {
+        let ecs = server.state().ecs();
+        let agents = ecs.read_storage::<Agent>();
+        let uids = ecs.read_storage::<Uid>();
+        let mut rows: Vec<(u64, u64)> = Vec::with_capacity(attackers.len());
+        for e in &attackers {
+            let a_uid = uids.get(*e).map(|u| u.0.get()).unwrap_or(0);
+            let t_uid = agents
+                .get(*e)
+                .and_then(|ag| ag.target)
+                .and_then(|t| uids.get(t.target).map(|u| u.0.get()))
+                .unwrap_or(0);
+            rows.push((a_uid, t_uid));
+        }
+        rows.sort_by_key(|(a, _)| *a);
+        let acquired = rows.iter().filter(|(_, t)| *t != 0).count() as u64;
+
+        let build = |label: &str| -> DomainHash {
+            let mut hh = DomainHasher::new(label);
+            hh.field(&site_wpos.x.to_bits().to_le_bytes());
+            hh.field(&site_wpos.y.to_bits().to_le_bytes());
+            for (a, t) in &rows {
+                hh.field(&a.to_le_bytes());
+                hh.field(&t.to_le_bytes());
+            }
+            hh.finish()
+        };
+        let domain_root = build("bastion/domain/npc-combat-target/v1/sha256");
+        let leaf = build("bastion/domain/npc-combat-target-leaf/v1/sha256");
+        let leaves = vec![MerkleLeaf {
+            key: "npc/combat/target-selection".to_string(),
+            hash: leaf,
+        }];
+        (domain_root, leaves, acquired)
+    };
+
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        args.ait_ticks,
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/npc-combat-target/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+
+    info!(k, m, acquired, "ait: fingerprint computed");
+    if acquired == 0 {
+        tracing::error!(
+            k, m,
+            "ait: no attacker acquired a target — VACUOUS, failing (adjust layout/ticks)"
+        );
+        drop(server);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "AIT-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture MOOD-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Certifies DET-COL-MOOD-003. Injects a deterministic set of queued colonist
+/// thoughts (distinct NPC / cell / ChronicleKind) into JobBoard.pending_thoughts
+/// in canonical or reversed order, ticks so the rtsim tick drains them into the
+/// chronicle, and emits a MOOD-CERTIFICATE hashing the resulting serialized
+/// Chronicle. Run under the perturbation set and byte-compared:
+///   - serial vs `--schedule-seed N`   ⇒ dispatch-order invariance
+///   - `--mood-permute-order`          ⇒ injection-order invariance
+/// The drain sorts by (NpcId, cell x/y/z, kind), so the chronicle seq / cap-
+/// eviction order is a pure function of the thought SET, not the producer or
+/// injection order — the property MOOD-003 restored. Non-vacuous: the chronicle
+/// must grow by the injected count, and seed 999 differs. MEASURES; a setup
+/// failure (no thoughts recorded) is the only non-success.
+fn mood_scenario(args: &Args) -> ExitCode {
+    use common::state_hash::{
+        DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash, MerkleLeaf,
+        category_root,
+    };
+    use rtsim::data::ChronicleKind;
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-mood-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-mood".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-mood-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "mood: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    // Seed-anchor + a set of real rtsim NPC ids to attribute the thoughts to
+    // (slotmap keys are deterministic for a fixed seed).
+    let (site_wpos, npc_ids): (Vec2<f32>, Vec<common::rtsim::NpcId>) = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        let wpos = data
+            .sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0));
+        let ids = data
+            .npcs
+            .npcs
+            .keys()
+            .take(args.mood_thoughts.max(1) as usize)
+            .collect();
+        (wpos, ids)
+    };
+
+    // Build a deterministic set of distinct thoughts. Distinct NpcId per thought
+    // means the drain's (NpcId, ...) total-order sort is decisive; a few kinds
+    // cycle so the kind tiebreak is also exercised. Injection order is FIXED
+    // ascending, or reversed under --mood-permute-order.
+    let kinds = [
+        ChronicleKind::Death,
+        ChronicleKind::Theft,
+        ChronicleKind::Founding,
+        ChronicleKind::Harvest,
+        ChronicleKind::Masterwork,
+        ChronicleKind::Famine,
+    ];
+    let mut thoughts: Vec<(common::rtsim::NpcId, Vec3<i32>, ChronicleKind)> = npc_ids
+        .iter()
+        .enumerate()
+        .map(|(i, &id)| {
+            let cell = Vec3::new(i as i32, (i * 7 % 13) as i32, (i % 5) as i32);
+            (id, cell, kinds[i % kinds.len()])
+        })
+        .collect();
+    if args.mood_permute_order {
+        thoughts.reverse();
+    }
+    let injected = thoughts.len() as u64;
+
+    // Inject into the board's pending-thought queue (the seam bastion_jobs
+    // normally fills; here we fill it directly and let the rtsim tick drain it).
+    {
+        let ecs = server.state().ecs();
+        let mut board = ecs.write_resource::<server::bastion_jobs::JobBoard>();
+        board.pending_thoughts.extend(thoughts);
+    }
+
+    // Tick: the rtsim tick drains pending_thoughts (sorted by MOOD-003) into the
+    // chronicle.
+    tick(&mut server, args.mood_ticks);
+
+    // Fingerprint: the serialized Chronicle. Its bands are seq-ordered VecDeques,
+    // so the recorded ORDER (what MOOD-003 canonicalises) is captured by content.
+    // Anchored on the seed-dependent site position (the synthetic thoughts are
+    // seed-independent — slotmap keys are 0,1,2,…) so seed 999 differs.
+    let (domain_root, leaves, recorded) = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        let ser = serde_json::to_vec(&data.chronicle).unwrap_or_default();
+        // One "seq": key per recorded ChronicleEvent.
+        let recorded = ser.windows(6).filter(|w| *w == b"\"seq\":").count() as u64;
+
+        let build = |label: &str| -> DomainHash {
+            let mut h = DomainHasher::new(label);
+            h.field(&site_wpos.x.to_bits().to_le_bytes());
+            h.field(&site_wpos.y.to_bits().to_le_bytes());
+            h.field(&ser);
+            h.finish()
+        };
+        let domain_root = build("bastion/domain/colony-chronicle/v1/sha256");
+        let leaf = build("bastion/domain/colony-chronicle-leaf/v1/sha256");
+        let leaves = vec![MerkleLeaf {
+            key: "colony/chronicle/thought-record".to_string(),
+            hash: leaf,
+        }];
+        (domain_root, leaves, recorded)
+    };
+
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        args.mood_ticks,
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/colony-chronicle/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+
+    info!(
+        injected,
+        recorded,
+        permute = args.mood_permute_order,
+        "mood: fingerprint computed"
+    );
+    if recorded < injected {
+        tracing::error!(
+            injected, recorded,
+            "mood: chronicle did not record the injected thoughts — VACUOUS, failing"
+        );
+        drop(server);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "MOOD-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture SITE-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Certifies cross-run worldgen SITE IDENTITY determinism (DET-SITE-002/003/004/
+/// 005). Boots a class-7 server and emits a SITE-CERTIFICATE hashing every rtsim
+/// site's identity — stable uid, seed, wpos, faction, linked world_site — in
+/// CANONICAL uid order (slotmap traversal order cannot leak in). The claims:
+///   - TWO independent Server::new boots, same seed ⇒ byte-identical certificate
+///     (the cross-run site-identity determinism no existing scenario asserts;
+///     mf hashes mine/colonist OUTCOMES, not site identity).
+///   - serial vs `--schedule-seed N` ⇒ parallel worldgen site-selection order
+///     invariance (what the SITE tie-breaks canonicalise).
+/// Site identity is inherently seed-derived, so seed 999 gives a different
+/// certificate (non-vacuity) and no synthetic seed-anchor is needed. MEASURES;
+/// a setup failure (no sites generated) is the only non-success exit.
+fn site_scenario(args: &Args) -> ExitCode {
+    use common::state_hash::{
+        DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash, MerkleLeaf,
+        category_root,
+    };
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-site-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-site".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-site-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "site: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    for _ in 0..args.site_ticks {
+        server
+            .tick(Input::default(), dt)
+            .expect("server tick failed");
+        server.cleanup();
+    }
+
+    // Snapshot every rtsim site's identity. Hash in CANONICAL uid order so the
+    // slotmap traversal order (and any parallel worldgen selection order) cannot
+    // enter the fingerprint.
+    let (domain_root, leaves, count) = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        // (uid, seed, wpos.x, wpos.y, faction ffi | 0, world_site id | 0)
+        let mut rows: Vec<(u64, u32, i32, i32, u64, u64)> = Vec::new();
+        for (_sid, site) in data.sites.sites.iter() {
+            let fac = site
+                .faction
+                .map_or(0, |f| slotmap::Key::data(&f).as_ffi());
+            let ws = site.world_site.map_or(0, |id| id.id());
+            rows.push((site.uid, site.seed, site.wpos.x, site.wpos.y, fac, ws));
+        }
+        rows.sort_by_key(|r| r.0);
+        let count = rows.len() as u64;
+
+        let build = |label: &str| -> DomainHash {
+            let mut h = DomainHasher::new(label);
+            for (uid, seed, x, y, fac, ws) in &rows {
+                h.field(&uid.to_le_bytes());
+                h.field(&seed.to_le_bytes());
+                h.field(&x.to_le_bytes());
+                h.field(&y.to_le_bytes());
+                h.field(&fac.to_le_bytes());
+                h.field(&ws.to_le_bytes());
+            }
+            h.finish()
+        };
+        let domain_root = build("bastion/domain/worldgen-site-identity/v1/sha256");
+        let leaf = build("bastion/domain/worldgen-site-identity-leaf/v1/sha256");
+        let leaves = vec![MerkleLeaf {
+            key: "worldgen/site-identity".to_string(),
+            hash: leaf,
+        }];
+        (domain_root, leaves, count)
+    };
+
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        args.site_ticks,
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/worldgen-site-identity/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+
+    info!(sites = count, "site: fingerprint computed");
+    if count == 0 {
+        tracing::error!("site: no sites generated — VACUOUS, failing");
+        drop(server);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "SITE-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture COLNEED-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Certifies DET-COL-NEED-001 / DET-AUT-005. Builds an idle-colonist set whose
+/// ECS join order diverges from Uid order (delete+respawn slot reuse), sets every
+/// colonist below the hunger interrupt, spawns FEWER loose food items than
+/// colonists so they contend, and ticks the B7-2 need-check. Emits a
+/// COLNEED-CERTIFICATE hashing (per colonist, by Uid) the reserved EatFrom food.
+/// Byte-identical across serial / --schedule-seed / --col-permute-order (which
+/// toggles the join-order desync) proves the scarce-food winner is canonical
+/// (severity-then-Uid), not ECS-iteration ordered. MEASURES; a setup failure
+/// (no desync, or no colonist reserved food) is the only non-success.
+fn colneed_scenario(args: &Args) -> ExitCode {
+    use common::{
+        comp::Colonist,
+        state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        },
+        uid::Uid,
+    };
+    use specs::Join;
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-colneed-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-colneed".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-colneed-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "colneed: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        use common::vol::ReadVol;
+        let terrain = server.state().terrain();
+        (0..2048)
+            .rev()
+            .find(|z| terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| b.is_filled()))
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let cz = ground_z(&server, cx, cy).expect("colneed: no ground at site center");
+    let spawn_pos = Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0);
+
+    // Idle-colonist set with a controlled ECS join order (same desync rig as
+    // COL-01): SYNCED keeps survivors in ascending entity slots; DESYNCED reuses a
+    // freed slot so an entity index precedes the survivors while its Uid is highest.
+    const PROMOTE_TICKS: u64 = 30;
+    let survivors: Vec<String> = if args.col_permute_order {
+        let mut ns = Vec::new();
+        for _ in 0..4 {
+            ns.extend(server.bastion_spawn_colony(spawn_pos, 1));
+        }
+        tick(&mut server, PROMOTE_TICKS);
+        server.bastion_kill_colonist(&ns[0]);
+        tick(&mut server, PROMOTE_TICKS);
+        ns[1..].to_vec()
+    } else {
+        let mut ns = Vec::new();
+        for _ in 0..3 {
+            ns.extend(server.bastion_spawn_colony(spawn_pos, 1));
+        }
+        tick(&mut server, PROMOTE_TICKS);
+        let killed = ns[0].clone();
+        let mut survs = ns[1..].to_vec();
+        server.bastion_kill_colonist(&killed);
+        tick(&mut server, PROMOTE_TICKS);
+        survs.extend(server.bastion_spawn_colony(spawn_pos, 1));
+        tick(&mut server, PROMOTE_TICKS);
+        survs
+    };
+
+    // Every survivor is EQUALLY, deeply hungry (below the interrupt) with rest and
+    // recreation satisfied — so hunger is the sole preempting need and the winner
+    // among equal-severity requesters is decided purely by the Uid tiebreak.
+    for name in &survivors {
+        server.bastion_set_needs(name, 0.02, 0.95, 0.95);
+    }
+
+    // Confirm the desync premise (ECS join order vs Uid-sorted order).
+    let (join_uids, desynced) = {
+        let ecs = server.state().ecs();
+        let colonists = ecs.read_storage::<Colonist>();
+        let uids = ecs.read_storage::<Uid>();
+        let mut join_uids: Vec<u64> = (&colonists, &uids).join().map(|(_, u)| u.0.get()).collect();
+        let mut sorted = join_uids.clone();
+        sorted.sort_unstable();
+        let desynced = join_uids != sorted;
+        (std::mem::take(&mut join_uids), desynced)
+    };
+    if !args.col_permute_order && !desynced {
+        tracing::error!(?join_uids, "colneed: baseline join order did NOT desync — premise unmet, failing");
+        drop(server);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        return ExitCode::FAILURE;
+    }
+
+    // Scarce loose food: fewer mushrooms than colonists, placed FAR enough that
+    // the winner cannot travel to and CONSUME it inside the snapshot window — so
+    // the reservation + pre-claimed EatFrom job (what we hash) persist. Each on
+    // valid ground for its column.
+    for j in 0..args.colneed_food.max(1) {
+        let fx = cx + 30 + j as i32;
+        let fy = cy;
+        let fz = ground_z(&server, fx, fy).unwrap_or(cz) + 1;
+        let fp = Vec3::new(fx as f32 + 0.5, fy as f32 + 0.5, fz as f32);
+        server.bastion_spawn_item(fp, "common.items.food.mushroom", 1);
+    }
+
+    // Run the need-check pass (short window: the preempt reserves the food and
+    // pre-claims the EatFrom job; we snapshot before the winner can walk the 30
+    // blocks and eat).
+    tick(
+        &mut server,
+        server::bastion_jobs::ARBITRATION_INTERVAL * args.colneed_rounds.max(1),
+    );
+
+    // Fingerprint: per colonist, by Uid, the reserved EatFrom food item (the
+    // scarce-resource winner NEED-001 makes canonical). 0 = no food reserved.
+    let (domain_root, leaves, reserved) = {
+        let ecs = server.state().ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<Colonist>();
+        let uids = ecs.read_storage::<Uid>();
+        let board = ecs.read_resource::<server::bastion_jobs::JobBoard>();
+        // EatFrom allocations, keyed by the winner's Uid -> reserved food item
+        // Uid. Read from the board (the pre-claimed job persists until the food
+        // is consumed), not the ActiveJob comp — robust to assignment timing.
+        let mut eat_by_uid: std::collections::HashMap<u64, u64> = std::collections::HashMap::new();
+        for j in board.jobs.values() {
+            if let common::bastion::JobKind::EatFrom { item } = j.kind
+                && let Some(owner) = j.claimed_by
+            {
+                eat_by_uid.insert(owner.0.get(), item.0.get());
+            }
+        }
+        let mut rows: Vec<(u64, u64)> = Vec::new();
+        for (_e, _c, u) in (&entities, &colonists, &uids).join() {
+            let eat = eat_by_uid.get(&u.0.get()).copied().unwrap_or(0);
+            rows.push((u.0.get(), eat));
+        }
+        rows.sort_by_key(|(u, _)| *u);
+        let reserved = rows.iter().filter(|(_, e)| *e != 0).count() as u64;
+
+        let build = |label: &str| -> DomainHash {
+            let mut hh = DomainHasher::new(label);
+            hh.field(&site_wpos.x.to_bits().to_le_bytes());
+            hh.field(&site_wpos.y.to_bits().to_le_bytes());
+            for (u, e) in &rows {
+                hh.field(&u.to_le_bytes());
+                hh.field(&e.to_le_bytes());
+            }
+            hh.finish()
+        };
+        let domain_root = build("bastion/domain/colony-need-alloc/v1/sha256");
+        let leaf = build("bastion/domain/colony-need-alloc-leaf/v1/sha256");
+        let leaves = vec![MerkleLeaf {
+            key: "colony/need/food-reservation".to_string(),
+            hash: leaf,
+        }];
+        (domain_root, leaves, reserved)
+    };
+
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        server::bastion_jobs::ARBITRATION_INTERVAL * args.colneed_rounds.max(1),
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/colony-need-alloc/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+
+    info!(
+        survivors = survivors.len(),
+        food = args.colneed_food,
+        reserved,
+        permute = args.col_permute_order,
+        desynced,
+        "colneed: fingerprint computed"
+    );
+    if reserved == 0 {
+        tracing::error!("colneed: no colonist reserved the scarce food — VACUOUS, failing");
+        drop(server);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "COLNEED-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture COLHAUL-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Certifies DET-COL-HAUL-001 / DET-AUT-004. Spawns a loaded colonist (haul cap =
+/// colonists * HAUL_JOBS_PER_COLONIST = 2), injects a stockpile, and spawns MORE
+/// loose MINE_DROP items than the cap at distinct cells in forward or reversed
+/// spawn order. Ticks the B6-HAUL self-designation pass and emits a
+/// COLHAUL-CERTIFICATE hashing the created Haul jobs by drop CELL (canonical
+/// z/y/x). Byte-identical across serial / --schedule-seed / --colhaul-permute-
+/// order proves WHICH drops become haul jobs is canonical (the (cell, def, Uid)
+/// sort), not ECS-join(spawn) ordered. Hashing by CELL (spawn-order-stable),
+/// never item Uid (spawn-order-dependent), sidesteps the Uid confound: the
+/// winners are the cap-many lowest cells regardless of spawn order, so the
+/// certificate holds under the permute — but the OLD take(cap)-in-join-order
+/// code would pick the first-spawned cells, which the permute changes.
+/// MEASURES; a setup failure (no haul jobs) is the only non-success exit.
+fn colhaul_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{JobKind, Region},
+        state_hash::{
+            DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash,
+            MerkleLeaf, category_root,
+        },
+    };
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-colhaul-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-colhaul".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-colhaul-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "colhaul: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        use common::vol::ReadVol;
+        let terrain = server.state().terrain();
+        (0..2048)
+            .rev()
+            .find(|z| terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| b.is_filled()))
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let cz = ground_z(&server, cx, cy).expect("colhaul: no ground at site center");
+
+    // One loaded colonist → haul cap = 1 * HAUL_JOBS_PER_COLONIST (=2).
+    let _ = server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, cz as f32 + 2.0), 1);
+    tick(&mut server, 30);
+
+    // Inject a stockpile FAR from the drops (a drop inside a stockpile footprint
+    // is ineligible) so the haul generator has a destination and the drops are
+    // eligible.
+    {
+        let ecs = server.state().ecs();
+        let mut board = ecs.write_resource::<server::bastion_jobs::JobBoard>();
+        let s = Vec3::new(cx - 12, cy - 12, cz);
+        board
+            .stockpiles
+            .push((1u64, Region { min: s, max: s + Vec3::new(2, 2, 0) }));
+    }
+
+    // Spawn MORE loose MINE_DROP items than the cap, at distinct cells. Cells are
+    // FIXED per logical index; only the SPAWN order (and thus Uids) is permuted.
+    let n = args.colhaul_drops.max(3);
+    let mut order: Vec<u32> = (0..n).collect();
+    if args.colhaul_permute_order {
+        order.reverse();
+    }
+    for i in order {
+        let dx = cx + 3 + i as i32;
+        let dy = cy + 5;
+        let dz = ground_z(&server, dx, dy).unwrap_or(cz) + 1;
+        server.bastion_spawn_item(
+            Vec3::new(dx as f32 + 0.5, dy as f32 + 0.5, dz as f32),
+            common::bastion::MINE_DROP_ITEM,
+            1,
+        );
+    }
+    tick(&mut server, 1); // let the drops settle into the spatial grid
+
+    // Run the B6-HAUL self-designation pass.
+    tick(
+        &mut server,
+        server::bastion_jobs::ARBITRATION_INTERVAL * args.colhaul_rounds.max(1),
+    );
+
+    // Fingerprint: the created Haul jobs, by drop CELL (canonical z/y/x). Which
+    // drops won the cap is what HAUL-001 makes canonical; the cell is spawn-order-
+    // stable, so a byte-identical certificate under the permute proves it.
+    let (domain_root, leaves, haul_jobs) = {
+        let ecs = server.state().ecs();
+        let board = ecs.read_resource::<server::bastion_jobs::JobBoard>();
+        let mut cells: Vec<(i32, i32, i32)> = board
+            .jobs
+            .values()
+            .filter_map(|j| match j.kind {
+                JobKind::Haul { .. } => Some((j.pos.z, j.pos.y, j.pos.x)),
+                _ => None,
+            })
+            .collect();
+        cells.sort_unstable();
+        let haul_jobs = cells.len() as u64;
+
+        let build = |label: &str| -> DomainHash {
+            let mut hh = DomainHasher::new(label);
+            hh.field(&site_wpos.x.to_bits().to_le_bytes());
+            hh.field(&site_wpos.y.to_bits().to_le_bytes());
+            for (z, y, x) in &cells {
+                hh.field(&z.to_le_bytes());
+                hh.field(&y.to_le_bytes());
+                hh.field(&x.to_le_bytes());
+            }
+            hh.finish()
+        };
+        let domain_root = build("bastion/domain/colony-haul-designation/v1/sha256");
+        let leaf = build("bastion/domain/colony-haul-designation-leaf/v1/sha256");
+        let leaves = vec![MerkleLeaf {
+            key: "colony/haul/designation-cells".to_string(),
+            hash: leaf,
+        }];
+        (domain_root, leaves, haul_jobs)
+    };
+
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        server::bastion_jobs::ARBITRATION_INTERVAL * args.colhaul_rounds.max(1),
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/colony-haul-designation/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+
+    info!(
+        drops = n,
+        haul_jobs,
+        permute = args.colhaul_permute_order,
+        "colhaul: fingerprint computed"
+    );
+    if haul_jobs == 0 {
+        tracing::error!("colhaul: no haul jobs created — VACUOUS, failing (check stockpile/cap/drops)");
+        drop(server);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "COLHAUL-CERTIFICATE: {}",
         serde_json::to_string(&certificate).unwrap_or_default()
     );
 
