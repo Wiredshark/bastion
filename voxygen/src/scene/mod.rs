@@ -1039,6 +1039,14 @@ impl Scene {
                 0.0
             };
 
+        // Exact-capture mode removes all wall/render-clock shader inputs.
+        let (time_of_day, r0d_sim_time, r0d_local_time) =
+            if crate::render::bastion_r0d::freeze_time() {
+                crate::render::bastion_r0d::FROZEN_SHADER_TIME
+            } else {
+                (time_of_day, scene_data.state.get_time(), self.local_time)
+            };
+
         // Update global constants.
         renderer.update_consts(&mut self.data.globals, &[Globals::new(
             view_mat,
@@ -1049,8 +1057,8 @@ impl Scene {
             self.lod.get_data().tgt_detail as f32,
             self.map_bounds,
             time_of_day,
-            scene_data.state.get_time(),
-            self.local_time,
+            r0d_sim_time,
+            r0d_local_time,
             renderer.resolution().as_(),
             Vec2::new(SHADOW_NEAR, SHADOW_FAR),
             lights.len(),

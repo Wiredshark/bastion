@@ -30,6 +30,9 @@ impl<'a> System<'a> for Sys {
         _job: &mut Job<Self>,
         (entities, dt, positions, orientations, velocities, bodies, mut interpolated): Self::SystemData,
     ) {
+        // Render interpolation consumes the client's wall-clock delta. Exact
+        // capture instead snaps to the authoritative position/orientation.
+        let r0d_snap = crate::render::bastion_r0d::freeze_time();
         // Update interpolated positions and orientations
         for (pos, ori, i, body, vel) in (
             &positions,
@@ -41,7 +44,10 @@ impl<'a> System<'a> for Sys {
             .join()
         {
             // Update interpolation values, but don't interpolate far things or objects
-            if i.pos.distance_squared(pos.0) < 64.0 * 64.0 && !matches!(body, Body::Object(_)) {
+            if !r0d_snap
+                && i.pos.distance_squared(pos.0) < 64.0 * 64.0
+                && !matches!(body, Body::Object(_))
+            {
                 // Note, these values are specifically tuned for smoother motion with high
                 // network latency or low network sampling rate and for smooth
                 // block hopping (which is instantaneous)

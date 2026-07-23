@@ -1284,12 +1284,8 @@ impl SessionState {
                                 S::WaitingForLadder => {
                                     "Status: Waiting for ladder (queued)".to_string()
                                 },
-                                S::RescueImminent => {
-                                    "Status: Rescue imminent".to_string()
-                                },
-                                S::Replanning => {
-                                    "Status: Replanning route".to_string()
-                                },
+                                S::RescueImminent => "Status: Rescue imminent".to_string(),
+                                S::Replanning => "Status: Replanning route".to_string(),
                             });
                         }
                         lines
@@ -1980,6 +1976,14 @@ impl PlayState for SessionState {
                 client.registered(),
             )
         };
+
+        let r0d_sim_time = self.client.borrow().state().get_time();
+        if crate::render::bastion_r0d::drive_capture(
+            global_state.window.renderer_mut(),
+            r0d_sim_time,
+        ) {
+            return PlayStateResult::Shutdown;
+        }
 
         if let Some(presence) = client_presence {
             let camera = self.scene.camera_mut();
@@ -3276,6 +3280,38 @@ impl PlayState for SessionState {
             if self.bastion_pending_overseer && self.client.borrow().position().is_some() {
                 self.bastion_pending_overseer = false;
                 self.bastion_enter_overseer(global_state);
+            }
+            // Capture mode follows the lowest stable entity identity while
+            // excluding the client's spectator entity. Hash/storage iteration
+            // order therefore cannot select the camera target.
+            if crate::render::bastion_r0d::capture_config().is_some() {
+                let target = {
+                    use specs::Join;
+                    let client = self.client.borrow();
+                    let own = client.entity();
+                    let ecs = client.state().ecs();
+                    let entities = ecs.entities();
+                    let uids = ecs.read_storage::<common::uid::Uid>();
+                    let positions = ecs.read_storage::<comp::Pos>();
+                    let bodies = ecs.read_storage::<comp::Body>();
+                    (&entities, &uids, &positions, &bodies)
+                        .join()
+                        .filter(|(entity, _, _, _)| *entity != own)
+                        .min_by_key(|(_, uid, _, _)| uid.0.get())
+                        .map(|(_, _, position, _)| position.0)
+                };
+                if let Some(target) = target {
+                    let camera = self.scene.camera_mut();
+                    camera.set_mode(CameraMode::Freefly);
+                    camera.set_distance(6.0);
+                    camera.set_orientation_instant(Vec3::new(
+                        core::f32::consts::FRAC_PI_4,
+                        0.3,
+                        0.0,
+                    ));
+                    camera.force_focus_pos(Vec3::new(target.x, target.y, target.z + 1.0));
+                    self.bastion_sync_context(global_state);
+                }
             }
             // bastion: keep the derived input context synced into the window
             // fan-out filter (idempotent one-enum write; covers every camera-

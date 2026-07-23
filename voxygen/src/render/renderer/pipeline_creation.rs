@@ -243,11 +243,19 @@ impl ShaderModules {
             constants += "#define RAIN_ENABLED\n";
         }
 
-        for shader in pipeline_modes.experimental_shaders.iter() {
-            constants += &format!(
-                "#define EXPERIMENTAL_{}\n",
-                format!("{:?}", shader).to_uppercase()
-            );
+        let mut experimental_defines: Vec<String> = pipeline_modes
+            .experimental_shaders
+            .iter()
+            .map(|shader| {
+                format!(
+                    "#define EXPERIMENTAL_{}\n",
+                    format!("{shader:?}").to_uppercase()
+                )
+            })
+            .collect();
+        experimental_defines.sort();
+        for define in experimental_defines {
+            constants += &define;
         }
 
         let constants = match pipeline_modes.bloom {
@@ -903,6 +911,22 @@ pub(super) fn initial_create_pipelines(
 > {
     prof_span!(_guard, "initial_create_pipelines");
 
+    if crate::render::bastion_r0d::manifest_enabled() {
+        match crate::render::bastion_r0d::pipeline_identity_digest_v1(
+            &shaders.bastion_sorted_sources(),
+            &pipeline_modes,
+            crate::render::bastion_r0d::backend_tag(backend),
+            &format!("{:?}", surface_config.format),
+            &format!("{intermediate_format:?}"),
+        ) {
+            Ok(digest) => crate::render::bastion_r0d::emit_manifest("initial", &digest),
+            Err(error) => tracing::warn!(
+                target: "bastion_r0d",
+                "initial pipeline identity rejected: {error:?}"
+            ),
+        }
+    }
+
     // Process shaders into modules
     let shader_modules = ShaderModules::new(&device, &shaders, &pipeline_modes, has_shadow_views)?;
 
@@ -998,6 +1022,22 @@ pub(super) fn recreate_pipelines(
     >,
 > {
     prof_span!(_guard, "recreate_pipelines");
+
+    if crate::render::bastion_r0d::manifest_enabled() {
+        match crate::render::bastion_r0d::pipeline_identity_digest_v1(
+            &shaders.bastion_sorted_sources(),
+            &pipeline_modes,
+            crate::render::bastion_r0d::backend_tag(backend),
+            &format!("{:?}", surface_config.format),
+            &format!("{intermediate_format:?}"),
+        ) {
+            Ok(digest) => crate::render::bastion_r0d::emit_manifest("recreate", &digest),
+            Err(error) => tracing::warn!(
+                target: "bastion_r0d",
+                "recreated pipeline identity rejected: {error:?}"
+            ),
+        }
+    }
 
     let is_opengl = matches!(backend, wgpu::Backend::Gl);
     // Create threadpool for parallel portion

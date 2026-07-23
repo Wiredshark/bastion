@@ -3,13 +3,27 @@
 use sha2::{Digest, Sha256};
 
 mod admission;
+pub mod agreement;
+pub mod atlas;
 pub mod bootstrap;
 pub mod camera;
+pub mod capture;
 pub mod cbor;
+pub mod cosmetic_rng;
 pub mod extract;
+pub mod figure_package;
 pub mod identity;
+pub mod parallel;
+pub mod pass_graph;
+pub mod publication;
 pub mod readiness;
+pub mod replay;
 pub mod selection;
+pub mod shared_adapter;
+pub mod shutdown;
+pub mod tape;
+pub mod texture_payload;
+pub mod visual_oracle;
 
 pub use admission::{
     AdmissionErrorV1, MAX_CORPUS_INPUT_BYTES_V1, MAX_CORPUS_INPUTS_V1,
@@ -48,6 +62,23 @@ pub fn domain_hash_v1(
     Ok(hasher.finalize().into())
 }
 
+/// Fixed internal R0D domain labels use the same checked protocol as every
+/// public caller.  The `Result` is deliberately retained at port boundaries:
+/// a future non-literal domain cannot become an unchecked fallback hash.
+pub(crate) fn domain_hash(
+    domain: &'static str,
+    schema_major: u16,
+    schema_minor: u16,
+    payload: &[u8],
+) -> [u8; 32] {
+    // Crate-private fixed protocol labels only. Public/untrusted paths use
+    // the fallible `domain_hash_v1` API above.
+    match domain_hash_v1(domain, schema_major, schema_minor, payload) {
+        Ok(digest) => digest,
+        Err(_) => unreachable!("fixed renderer protocol label violates V1 bounds"),
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn hex_bytes(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -58,6 +89,9 @@ pub(crate) fn hex_bytes(bytes: &[u8]) -> String {
     }
     output
 }
+
+#[cfg(test)]
+pub(crate) fn hex32(bytes: &[u8; 32]) -> String { hex_bytes(bytes) }
 
 #[cfg(test)]
 mod tests {

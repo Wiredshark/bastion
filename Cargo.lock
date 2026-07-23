@@ -610,6 +610,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 name = "bastion-harness"
 version = "0.1.0"
 dependencies = [
+ "bastion-renderer-r0d",
  "chrono",
  "clap",
  "hex",
@@ -9090,6 +9091,7 @@ name = "veloren-voxygen"
 version = "0.18.0"
 dependencies = [
  "backtrace",
+ "bastion-renderer-r0d",
  "bitflags 2.13.0",
  "bytemuck",
  "chrono",
