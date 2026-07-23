@@ -66,16 +66,19 @@ fn main() {
         }
     }
 
-    // R0D D1-replay integration: capture mode runs the embedded server in the
-    // harness's PROVEN deterministic configuration — deterministic parallel
-    // dispatch with a fixed schedule seed, plus deterministic rtsim (flipped
-    // server-side off BASTION_R0D_DETERMINISTIC before rtsim boots). Same safe
-    // point as above: main(), single-threaded.
+    // R0D D1-replay integration: capture mode runs the embedded server in
+    // DeterministicSerial mode (BASTION_R0D_DETERMINISTIC flips the flag at the
+    // top of Server::new). PURE SERIAL — 1 worker — is used rather than the
+    // deterministic-parallel probe: the T0.52/T0.64 parallel-equivalence
+    // proofs cover the HARNESS scenarios, not the live colonist agent path, so
+    // BASTION_DETERMINISTIC_PARALLEL is deliberately NOT set here (a residual
+    // parallel-order dependency in the live path would otherwise reintroduce
+    // cross-run divergence — the leg-D1-diag finding: same colonist, deterministic
+    // wander RNG, but divergent positions on a 2-worker deterministic pool).
+    // Same safe point as above: main(), single-threaded.
     if veloren_voxygen::render::bastion_r0d::capture_config().is_some() {
         #[expect(unsafe_code)]
         unsafe {
-            std::env::set_var("BASTION_DETERMINISTIC_PARALLEL", "1");
-            std::env::set_var("BASTION_SCHEDULE_SEED", "0");
             std::env::set_var("BASTION_R0D_DETERMINISTIC", "1");
         }
     }
