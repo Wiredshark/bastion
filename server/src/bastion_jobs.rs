@@ -4290,10 +4290,6 @@ impl<'a> System<'a> for Sys {
         // system reproducible under --seed (the last b5 residual:
         // stone_entities varied run-to-run). Same scatter feel in the live
         // game; deterministic everywhere.
-        let mut rng = {
-            use rand::SeedableRng;
-            rand::rngs::StdRng::seed_from_u64(tick.0 ^ 0xBA57_10AA)
-        };
         // Pre-deref so field borrows split (jobs mutably + anchors shared
         // inside the same loop).
         let board = &mut *board;
@@ -7183,13 +7179,19 @@ impl<'a> System<'a> for Sys {
                 // cooldown (one break attempt per window).
                 if let Some(mood) = moods.get(entity) {
                     if mood.0 < mood_cfg.break_minor {
+                        use rand::SeedableRng;
+                        let mut break_rng = rand_chacha::ChaCha8Rng::seed_from_u64(
+                            tick.0
+                                ^ uid.0.get().wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                ^ 0xB7EA_0004,
+                        );
                         let since = *board.mood_below_since.entry(*uid).or_insert(time.0);
                         if time.0 - since >= mood_cfg.break_sustain_secs
                             && !board
                                 .preempt_cooldown
                                 .get(uid)
                                 .is_some_and(|until| time.0 < *until)
-                            && rng.random::<f32>() < mood_cfg.break_chance
+                            && break_rng.random::<f32>() < mood_cfg.break_chance
                         {
                             board
                                 .preempt_cooldown
@@ -9576,6 +9578,7 @@ impl<'a> System<'a> for Sys {
                             {
                                 block_change.set(job.pos, Block::empty());
                                 board.farm_growth.remove(&(job.pos.x, job.pos.y, job.pos.z));
+                                let mut rng = toss_scatter_rng(tick.0, job.pos, 0xFA47_0001);
                                 for _ in 0..FARM_WHEAT_YIELD {
                                     crate::bastion_actions::emit_drop(
                                         &mut item_drop_emitter,
@@ -9883,6 +9886,7 @@ impl<'a> System<'a> for Sys {
                         // one entity per block. Gentle toss (was ±2.0
                         // horizontal): drops land close, so spawn-time
                         // merging within MAX_ITEM_MERGE_DIST actually fires.
+                        let mut rng = toss_scatter_rng(tick.0, job.pos, 0x30E_0002);
                         crate::bastion_actions::emit_drop(
                             &mut item_drop_emitter,
                             job.pos,
@@ -10062,6 +10066,7 @@ impl<'a> System<'a> for Sys {
                     match terrain.get(cell).ok().map(|b| b.kind()) {
                         Some(BlockKind::Wood) => {
                             block_change.set(cell, Block::empty());
+                            let mut rng = toss_scatter_rng(tick.0, cell, 0xC40B_0003);
                             crate::bastion_actions::emit_drop(
                                 &mut item_drop_emitter,
                                 cell,
@@ -13071,10 +13076,33 @@ impl<'a> System<'a> for Sys {
     }
 }
 
+/// Per-drop-site portable stream. The semantic tuple is independent of ECS
+/// traversal order, so identical sites receive identical scatter.
+fn toss_scatter_rng(tick: u64, pos: Vec3<i32>, domain: u64) -> rand_chacha::ChaCha8Rng {
+    use rand::SeedableRng;
+    rand_chacha::ChaCha8Rng::seed_from_u64(
+        tick ^ (pos.x as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ (pos.y as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
+            ^ (pos.z as u64).wrapping_mul(0x1656_67B1_9E37_79F9)
+            ^ domain,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::RngExt;
     use std::num::NonZeroU64;
+
+    #[test]
+    fn toss_scatter_is_site_keyed_and_order_independent() {
+        let site = Vec3::new(7, -2, 19);
+        let first = toss_scatter_rng(55, site, 9).random::<u64>();
+        let repeated = toss_scatter_rng(55, site, 9).random::<u64>();
+        let neighbor = toss_scatter_rng(55, site + Vec3::unit_x(), 9).random::<u64>();
+        assert_eq!(first, repeated);
+        assert_ne!(first, neighbor);
+    }
 
     // Row-51.7 (registry class 12): the (B) exhaustion leg's honest pin — the
     // leg is race-dominated in sims (three net terminators, fastest wins), so

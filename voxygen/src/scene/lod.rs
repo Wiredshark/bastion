@@ -268,13 +268,22 @@ impl Lod {
         }
 
         if !matches!(culling_mode, CullingMode::Underground) {
-            // Draw LoD objects
+            // Hash-map residency order must never control the draw stream.
+            let mut draws: Vec<(Vec2<i32>, lod::ObjectKind, &ObjectGroup)> = self
+                .zone_objects
+                .iter()
+                .flat_map(|(zone, groups)| {
+                    groups
+                        .iter()
+                        .filter(|(_, group)| group.visible)
+                        .map(move |(kind, group)| (*zone, *kind, group))
+                })
+                .collect();
+            draws.sort_by_key(|(zone, kind, _)| (zone.y, zone.x, *kind as u16));
             let mut drawer = drawer.draw_lod_objects();
-            for groups in self.zone_objects.values() {
-                for (kind, group) in groups.iter().filter(|(_, g)| g.visible) {
-                    if let Some((model, _, _)) = self.object_data.get(kind) {
-                        drawer.draw(model, &group.instances);
-                    }
+            for (_, kind, group) in draws {
+                if let Some((model, _, _)) = self.object_data.get(&kind) {
+                    drawer.draw(model, &group.instances);
                 }
             }
         }
