@@ -122,3 +122,57 @@ impl SpatialGrid {
         self.largest_large_radius = self.radius_cutoff;
     }
 }
+
+#[cfg(test)]
+mod det_phy_005_tests {
+    use super::*;
+    use specs::{Builder, WorldExt};
+
+    /// Insert the given entities (by index into `entities`) into a single cell
+    /// in the specified order, canonicalize by entity id, then return the query
+    /// order for that cell.
+    fn query_order(insertion: &[usize], entities: &[specs::Entity]) -> Vec<u32> {
+        let mut grid = SpatialGrid::new(5, 6, 8);
+        // All at the same position => one regular-grid cell (radius 0 <= cutoff 8).
+        for &i in insertion {
+            grid.insert(Vec2::new(0, 0), 0, entities[i]);
+        }
+        grid.canonicalize_cells(|e| e.id() as u64);
+        grid.in_aabr(Aabr {
+            min: Vec2::new(-1, -1),
+            max: Vec2::new(1, 1),
+        })
+        .map(|e| e.id())
+        .collect()
+    }
+
+    /// PHY-02 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof): DET-PHY-005 —
+    /// `canonicalize_cells` makes each cell's collision-candidate order a pure
+    /// function of the stable identity key, independent of insertion (ECS-join)
+    /// order. Without it the candidate order was entity-INDEX order, a
+    /// cross-run divergence amplifier if allocation ever varied. No executable
+    /// evidence existed (the file had no tests).
+    #[test]
+    fn spatial_grid_canonicalize_cells_is_insertion_order_independent() {
+        let mut world = specs::World::new();
+        let entities: Vec<specs::Entity> =
+            (0..5).map(|_| world.create_entity().build()).collect();
+        let mut expected: Vec<u32> = entities.iter().map(|e| e.id()).collect();
+        expected.sort_unstable();
+
+        // Two DIFFERENT insertion orders of the same entities into the cell.
+        let a = query_order(&[4, 0, 2, 1, 3], &entities);
+        let b = query_order(&[1, 3, 0, 4, 2], &entities);
+
+        // Canonical: sorted by identity key (entity id).
+        assert_eq!(
+            a, expected,
+            "cell candidate order is not canonical by identity key (DET-PHY-005): {a:?}"
+        );
+        // Insertion-order-independent: the two orders produce the same result.
+        assert_eq!(
+            a, b,
+            "cell candidate order depends on insertion order — DET-PHY-005 regressed"
+        );
+    }
+}
