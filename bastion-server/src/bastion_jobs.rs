@@ -3715,6 +3715,17 @@ pub fn canonical_need_order<E>(mut order: Vec<(E, Uid, f32)>) -> Vec<(E, Uid, f3
     order
 }
 
+/// DET-RSRC-002: emit cave-in collapse drops in a canonical cell position order
+/// (x, y, z). `floating_chunk` returns a HashSet, so iterating it directly made
+/// the drop create-order — and therefore which persistent pile the merged drops
+/// fall under — ride the process hash seed. Sorting makes the emission a pure
+/// function of the severed-cell SET.
+pub fn canonical_cell_drop_order(cells: impl IntoIterator<Item = Vec3<i32>>) -> Vec<Vec3<i32>> {
+    let mut ordered: Vec<Vec3<i32>> = cells.into_iter().collect();
+    ordered.sort_unstable_by_key(|c| (c.x, c.y, c.z));
+    ordered
+}
+
 impl JobBoard {
     /// Stage-1 single reservation authority. A live task's reserved member is
     /// authoritative. Before a task exists, the head of the link's FAIR
@@ -11246,9 +11257,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // drop create-order — and therefore which persistent
                             // pile the merged drops fall under — ride the process
                             // hash seed. Emit in canonical cell position order.
-                            let mut ordered_cells: Vec<Vec3<i32>> =
-                                cells.iter().copied().collect();
-                            ordered_cells.sort_unstable_by_key(|c| (c.x, c.y, c.z));
+                            // DET-RSRC-002: canonical cell drop order (unit-tested
+                            // in the det_* tests below).
+                            let ordered_cells = canonical_cell_drop_order(cells.iter().copied());
                             let mut completion =
                                 common::job_completion::JobCompletionPlan::new(None);
                             for &cell in &ordered_cells {
@@ -14998,6 +15009,34 @@ mod tests {
             order(&a),
             order(&b),
             "needs processing order depends on ECS join order — DET-COL-NEED regressed"
+        );
+    }
+
+    /// RSRC-01 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof):
+    /// DET-RSRC-002 — cave-in collapse drops are emitted in a canonical cell
+    /// position order (x, y, z), so which persistent pile the merged drops fall
+    /// under is a pure function of the severed-cell set, not the process hash
+    /// seed the HashSet iterates in. The inline sort had no executable evidence.
+    #[test]
+    fn canonical_cell_drop_order_is_position_sorted() {
+        use std::collections::HashSet;
+        // A HashSet has no inherent order (its iteration rides the process seed);
+        // the helper must impose the canonical (x, y, z) order.
+        let cells: HashSet<Vec3<i32>> = [
+            Vec3::new(2, 0, 0),
+            Vec3::new(0, 1, 0),
+            Vec3::new(0, 0, 3),
+            Vec3::new(0, 0, 1),
+            Vec3::new(1, 0, 0),
+        ]
+        .into_iter()
+        .collect();
+        let ordered = canonical_cell_drop_order(cells.iter().copied());
+        let keys: Vec<(i32, i32, i32)> = ordered.iter().map(|c| (c.x, c.y, c.z)).collect();
+        assert_eq!(
+            keys,
+            vec![(0, 0, 1), (0, 0, 3), (0, 1, 0), (1, 0, 0), (2, 0, 0)],
+            "cave-in collapse drops not in canonical (x, y, z) order (DET-RSRC-002)"
         );
     }
 
