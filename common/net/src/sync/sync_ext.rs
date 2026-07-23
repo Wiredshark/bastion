@@ -111,8 +111,8 @@ impl WorldSyncExt for specs::World {
         let EntitySyncPackage {
             sync_tick: _,
             sequence: _,
-            mut created_entities,
-            mut deleted_entities,
+            created_entities,
+            deleted_entities,
         } = package;
 
         // DET-NET-040 (v6 deep-pass, High): apply create/delete in canonical
@@ -121,8 +121,9 @@ impl WorldSyncExt for specs::World {
         // client's local entity allocation a function of the (non-canonical)
         // send/region order. Sorting by Uid makes it a pure function of the
         // Uid set — same client-side allocation regardless of packet order.
-        created_entities.sort_unstable_by_key(|uid| uid.0);
-        deleted_entities.sort_unstable_by_key(|uid| uid.0);
+        // (The ordering contract is unit-tested in det_net_040_tests.)
+        let created_entities = canonical_uid_apply_order(created_entities);
+        let deleted_entities = canonical_uid_apply_order(deleted_entities);
 
         // Attempt to create entities
         created_entities.into_iter().for_each(|uid| {
@@ -182,5 +183,51 @@ fn create_entity_with_uid(specs_world: &mut specs::World, entity_uid: Uid) -> sp
                 .add_entity(entity_uid, entity_builder.entity);
             entity_builder.with(entity_uid).build()
         },
+    }
+}
+
+/// DET-NET-040: apply entity create/delete in a canonical Uid order (ascending
+/// by Uid), not wire arrival order. Entity creation allocates specs Entity
+/// indices + Uid mappings, so applying in arrival (send/region) order made the
+/// client's local allocation depend on packet order; sorting by Uid makes it a
+/// pure function of the Uid SET — same client-side allocation regardless of
+/// packet order.
+pub fn canonical_uid_apply_order(mut uids: Vec<Uid>) -> Vec<Uid> {
+    uids.sort_unstable_by_key(|uid| uid.0);
+    uids
+}
+
+#[cfg(test)]
+mod det_net_040_tests {
+    use super::*;
+    use std::num::NonZeroU64;
+
+    /// NET-03 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof): DET-NET-040 —
+    /// entity create/delete is applied in a canonical Uid order regardless of the
+    /// wire arrival (send/region) order, so the client's local entity/Uid
+    /// allocation is a pure function of the Uid set. The inline sort had no test.
+    #[test]
+    fn canonical_uid_apply_order_is_packet_order_independent() {
+        let uid = |n: u64| Uid(NonZeroU64::new(n).unwrap());
+        // The same entity set arriving in two different packet orders.
+        let order_a = vec![uid(5), uid(1), uid(9), uid(3)];
+        let order_b = vec![uid(9), uid(3), uid(1), uid(5)];
+        let a: Vec<u64> = canonical_uid_apply_order(order_a)
+            .iter()
+            .map(|u| u.0.get())
+            .collect();
+        let b: Vec<u64> = canonical_uid_apply_order(order_b)
+            .iter()
+            .map(|u| u.0.get())
+            .collect();
+        assert_eq!(
+            a,
+            vec![1, 3, 5, 9],
+            "entities not applied in canonical Uid order (DET-NET-040)"
+        );
+        assert_eq!(
+            a, b,
+            "entity apply order depends on packet/arrival order — DET-NET-040 regressed"
+        );
     }
 }
