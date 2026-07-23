@@ -1,0 +1,46 @@
+{
+  "_schema": "pre-hard-four/hard-four-fingerprints/v1",
+  "_note": "Phase-0 freeze of the four held problems (protocol §3). ONLY these four IDs may appear in the known-failure registry at certification time (§3.1). Each held divergence must match its exact fingerprint; a fifth unexplained divergence BLOCKS certification. INVALID_EVIDENCE can never be converted to a hard-four exception.",
+  "platform_scope_K": ["P1 Linux-x86_64-Intel", "P2 Linux-x86_64-AMD"],
+  "held": [
+    {
+      "id": "H4-PHY",
+      "problem": "Cross-platform physics float identity",
+      "held_scope": "Full bit-identical trajectories / contact resolution across platform classes",
+      "must_pass_before_work": "Same-platform contact/body-order invariance; cross-platform hand-verified physics microvectors (GV-PHY); ALL pre-physics inputs + contact keys exact; NO non-physics domain movement.",
+      "allowed_fingerprint": "Exact first-divergent tick + domain + entity + field + operation + platform pair.",
+      "forbidden_domains": "Any non-physics domain (jobs, terrain, rtsim, economy, net...). Movement there = NOT this fingerprint = blocker."
+    },
+    {
+      "id": "H4-PRD",
+      "problem": "Full client prediction/rollback protocol",
+      "held_scope": "Versioned prediction frames, saved history, rollback/resimulation, acknowledgements, shared kernel",
+      "must_pass_before_work": "Input capture, tick/sequence identity, UI authority, server authority, network envelope, and IMPLEMENTED correction behavior all exact (INP/UIA/NET/REC current-envelope stable).",
+      "allowed_fingerprint": "Exact protocol-gap record; NO server-state divergence caused by frame-rate or packet perturbation.",
+      "forbidden_domains": "Server authoritative state. A frame-rate/packet perturbation moving server state = blocker, not this fingerprint."
+    },
+    {
+      "id": "H4-ESIM",
+      "problem": "Long-horizon economy numerical drift",
+      "held_scope": "Very-long recurrence/compounding stability + cross-platform exactness",
+      "must_pass_before_work": "Short/medium-horizon market, population, social, quest, and catch-up behavior exact; long-run divergence restricted to DECLARED economy numeric fields.",
+      "allowed_fingerprint": "Exact horizon + recurrence + fields; NO spill into non-economy domains before the recorded boundary.",
+      "forbidden_domains": "Any non-economy domain; any economy divergence BEFORE the recorded long-horizon boundary."
+    },
+    {
+      "id": "H4-BLD",
+      "problem": "Genuine build reproducibility (byte-identical rebuild artifacts)",
+      "held_scope": "Byte-identical OUTPUT ARTIFACTS from independent clean rebuilds",
+      "must_pass_before_work": "Source/dependency/asset/build manifests exact; independent builds produce IDENTICAL simulation + semantic tapes (semantic equivalence holds even if bytes differ).",
+      "allowed_fingerprint": "Exact artifact sections/metadata that differ (BLD-H4 byte diff, classified sections).",
+      "forbidden_domains": "The semantic corpus must remain EXACT. A semantic-tape divergence is NOT this fingerprint = blocker."
+    }
+  ],
+  "exception_law_3_1": [
+    "Only H4-PHY, H4-PRD, H4-ESIM, H4-BLD may be in the known-failure registry at cert time.",
+    "Each entry names exact scenarios, seeds, platform pairs, first divergence, moved fields, forbidden domains.",
+    "A fingerprint is INVALID if it: appears earlier, appears in another scenario, moves another domain, changes classification, adds a second divergence, or disappears without an updated record.",
+    "An INVALID_EVIDENCE run can never be converted to a hard-four exception.",
+    "Any FIFTH unresolved divergence blocks certification and becomes a new engineering blocker."
+  ]
+}
