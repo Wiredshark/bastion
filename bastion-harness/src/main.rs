@@ -408,6 +408,28 @@ struct Args {
     #[arg(long)]
     farm_scenario: bool,
 
+    /// ENDURANCE (Ben's long-live-sim determinism test): boot a full colony
+    /// with standing farm work and let the ENTIRE integrated live sim run for
+    /// `--endurance-ticks`, emitting an authoritative-state ENDURANCE-CHECKPOINT
+    /// every `--endurance-checkpoint` ticks. Run twice + bit-compare the
+    /// checkpoint stream: all-identical = deterministic over the long haul;
+    /// first mismatch = the exact divergence tick to isolation-bisect.
+    #[arg(long)]
+    endurance_scenario: bool,
+
+    /// ENDURANCE: total authoritative ticks to simulate (crank arbitrarily high
+    /// — this is the "continually longer" knob).
+    #[arg(long, default_value_t = 5000)]
+    endurance_ticks: u64,
+
+    /// ENDURANCE: emit an authoritative-state checkpoint every N ticks.
+    #[arg(long, default_value_t = 100)]
+    endurance_checkpoint: u64,
+
+    /// ENDURANCE: colony size (scale knob).
+    #[arg(long, default_value_t = 4)]
+    endurance_colony: usize,
+
     /// bastion (RUN-0, row 47): the emergency-run gait — walk stays the
     /// default; the run flag yields a measurably higher travel rate and
     /// drains Energy; the governor force-reverts at the floor; energy
@@ -1407,6 +1429,8 @@ fn main() -> ExitCode {
         path_scenario(&args)
     } else if args.farm_scenario {
         farm_scenario(&args)
+    } else if args.endurance_scenario {
+        endurance_scenario(&args)
     } else if args.run_scenario {
         run_scenario(&args)
     } else if args.auton_scenario {
@@ -9462,6 +9486,216 @@ fn farm_scenario(args: &Args) -> ExitCode {
     println!(
         "FARM-CERTIFICATE: {}",
         serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// ENDURANCE (Ben's long-live-sim determinism test): boot a full colony with
+/// standing work (a farm + stockpile economy), then let the ENTIRE integrated
+/// live sim — agents, jobs, physics, rtsim, needs/mood, chronicle — run for a
+/// LONG duration (`--endurance-ticks`), hashing the full authoritative colony
+/// state into a CHECKPOINT every `--endurance-checkpoint` ticks. Emitting the
+/// checkpoint STREAM (not just a final hash) lets a cross-run bit-compare
+/// pinpoint the FIRST tick determinism diverges — run twice, diff the
+/// ENDURANCE-CHECKPOINT lines: all-identical = deterministic over the long haul
+/// (the strongest evidence); first mismatch = the divergence tick to isolation-
+/// bisect. Deterministic by construction: no wall-clock, fixed seed, scripted
+/// setup; `--schedule-seed` / bigger `--endurance-colony` / longer
+/// `--endurance-ticks` are the boost-it-up stress knobs.
+fn endurance_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, Region},
+        state_hash::DomainHasher,
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    const SEEDS: &str = "common.items.bastion.wheat_seeds";
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-endurance-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-endurance".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-endurance-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    // Standing work: a farm plot + stockpile + seed stock -> a perpetual
+    // sow/grow/harvest/haul/re-sow economy that keeps the WHOLE sim busy for the
+    // long run (agents pathing, jobs cycling, needs decaying, mood recomputing,
+    // chronicle recording) instead of idling into a fixed point.
+    let store = Region {
+        min: Vec3::new(cx - 1, cy, gz),
+        max: Vec3::new(cx, cy + 1, gz + 1),
+    };
+    server.bastion_place_designation(store, DesignationKind::Stockpile);
+    let plot = Region {
+        min: Vec3::new(cx - 9, cy - 4, gz),
+        max: Vec3::new(cx - 6, cy - 1, gz),
+    };
+    server.bastion_place_designation(plot, DesignationKind::Farm);
+    server.bastion_spawn_item(
+        Vec3::new(cx as f32 - 0.5, cy as f32 + 0.5, gz as f32 + 1.5),
+        SEEDS,
+        40,
+    );
+    let colony = args.endurance_colony.max(1);
+    server.bastion_spawn_colony(
+        Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
+        colony as u8,
+    );
+    tick(&mut server, 30);
+
+    // The authoritative-state checkpoint: hash the FULL colony state in a
+    // canonical (uid-sorted) order + global aggregates into one 32-byte digest.
+    // Positions are the core motion state (what the D1 investigation tracked);
+    // chronicle / job-board / stock aggregates catch non-positional drift.
+    let hex = |d: &[u8]| d.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let checkpoint = |server: &Server| -> String {
+        let mut hh = DomainHasher::new("bastion/domain/endurance/v1/sha256");
+        let mut states = server.bastion_colonist_states_full();
+        states.sort_by_key(|(uid, ..)| *uid);
+        hh.field(&(states.len() as u64).to_le_bytes());
+        for (uid, _name, pos, mount) in &states {
+            hh.field(&uid.to_le_bytes());
+            hh.field(&pos.x.to_bits().to_le_bytes());
+            hh.field(&pos.y.to_bits().to_le_bytes());
+            hh.field(&pos.z.to_bits().to_le_bytes());
+            let (mu, mb) = mount.unwrap_or((0, false));
+            hh.field(&mu.to_le_bytes());
+            hh.field(&[mb as u8]);
+        }
+        let (routine, notable, legendary) = server.bastion_chronicle_counts();
+        hh.field(&(routine as u64).to_le_bytes());
+        hh.field(&(notable as u64).to_le_bytes());
+        hh.field(&(legendary as u64).to_le_bytes());
+        let (next_id, reservations) = server.bastion_board_probe();
+        hh.field(&next_id.to_le_bytes());
+        hh.field(&(reservations as u64).to_le_bytes());
+        hh.field(&server.bastion_colony_item_total(SEEDS).to_le_bytes());
+        hex(&hh.finish().0)
+    };
+
+    let total = args.endurance_ticks;
+    let interval = args.endurance_checkpoint.max(1);
+    println!("ENDURANCE-CHECKPOINT: tick=0 {}", checkpoint(&server));
+    let mut t = 0u64;
+    while t < total {
+        let step = interval.min(total - t);
+        tick(&mut server, step);
+        t += step;
+        println!("ENDURANCE-CHECKPOINT: tick={t} {}", checkpoint(&server));
+    }
+
+    // The colony survived the long run (didn't fully collapse) — the checkpoint
+    // STREAM above is the actual determinism artifact (cross-run bit-compare).
+    let colonists = server.bastion_colonist_states_full().len();
+    let pass = colonists >= 1;
+    println!(
+        "ENDURANCE SCENARIO: {} (colony={colony} survivors={colonists} ticks={total} \
+         interval={interval} elapsed={:?})",
+        if pass { "PASS" } else { "FAIL" },
+        started.elapsed(),
     );
 
     drop(server);
