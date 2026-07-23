@@ -14874,6 +14874,15 @@ mod tests {
     /// cell x, y, z, kind), independent of the producer push order, so the
     /// chronicle seq / cap-eviction order it feeds is a pure function of the
     /// thought SET. The inline sort in the rtsim tick had no executable evidence.
+    ///
+    /// TWO-ANGLE COVERAGE (reconciled 2026-07-23): this is the UNIT axis of
+    /// DET-MOOD-003 (the drain-sort PRIMITIVE in isolation). Its INTEGRATION
+    /// counterpart is Builder 4's `--mood-scenario` (bastion/det-fixtures), which
+    /// injects thoughts, ticks the LIVE rtsim drain into the chronicle, and hashes
+    /// the serialized Chronicle under --schedule-seed / --mood-permute-order.
+    /// Complementary, not duplicate — count as ONE domain from two angles. Same
+    /// blind-build overlap class as COL-NEED-01 / COL-HAUL-01 (coverage-map lists
+    /// domains, not existing tests).
     #[test]
     fn canonical_thought_drain_order_is_producer_order_independent() {
         use ::rtsim::data::ChronicleKind;
@@ -14927,6 +14936,15 @@ mod tests {
     /// drops become haul jobs (when eligible > cap) is independent of the ECS
     /// join order the candidates were gathered in. The inline sort in the haul
     /// generator had no executable evidence.
+    ///
+    /// TWO-ANGLE COVERAGE (reconciled 2026-07-23): this is the UNIT axis of
+    /// DET-COL-HAUL-001 (the pickup-admission sort PRIMITIVE, incl. the item-Uid
+    /// tiebreak). Its INTEGRATION counterpart is Builder 4's `--colhaul-scenario`
+    /// (bastion/det-fixtures), which boots, spawns more drops than the haul cap,
+    /// ticks the LIVE B6-HAUL self-designation pass, and hashes the created Haul
+    /// jobs by drop cell under --schedule-seed / --colhaul-permute-order.
+    /// Complementary, not duplicate — count as ONE domain from two angles. Same
+    /// blind-build overlap class as COL-NEED-01 / MOOD-01.
     #[test]
     fn canonical_haul_pickup_order_is_join_order_independent() {
         let uid = |n: u64| Uid(NonZeroU64::new(n).unwrap());
