@@ -526,6 +526,18 @@ struct Args {
     #[arg(long, default_value_t = 200)]
     shd_ticks: u64,
 
+    /// bastion determinism fixture PER-01 (SPECIFIED_NOT_EVIDENCED): persistence
+    /// CONTINUATION — compare an uninterrupted 2N-tick run against a save/reload/
+    /// continue (N → shutdown → reboot → N) run, asserting identity continuation +
+    /// determinism over the canonical logical rtsim state. MEASURES; setup failure
+    /// is the only non-success. (K0-K5 crash-injection is the separate PER-01b.)
+    #[arg(long)]
+    per_scenario: bool,
+
+    /// PER-01: N — each leg's half-length (A runs 2N; B runs N, reloads, runs N).
+    #[arg(long, default_value_t = 100)]
+    per_ticks: u64,
+
     /// bastion determinism fixture ESIM-01 (SPECIFIED_NOT_EVIDENCED): certifies
     /// DET-ESIM-011. Injects a deterministic set of death reports into a
     /// resident NPC's home-site `known_reports`, ticks so the site→NPC share
@@ -1370,6 +1382,8 @@ fn main() -> ExitCode {
         evt_scenario(&args)
     } else if args.shd_scenario {
         shd_scenario(&args)
+    } else if args.per_scenario {
+        per_scenario(&args)
     } else if args.esim_scenario {
         esim_scenario(&args)
     } else if args.ait_scenario {
@@ -12760,6 +12774,210 @@ fn shd_scenario(args: &Args) -> ExitCode {
     );
 
     let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture PER-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Persistence CONTINUATION: does shutdown+reload+continue reach the same logical
+/// state as an uninterrupted run? Runs two independent legs at the same seed:
+///   A (uninterrupted): boot → run 2N ticks.
+///   B (save/reload):   boot → run N → drop (persist) → reboot → run N more.
+/// and hashes the canonical LOGICAL rtsim state (npcs+sites by slotmap key, split
+/// identity=id+seed+home vs full=incl wpos) of each. Logical, never bytes → immune
+/// to the separately-owned PER-028 save-byte noise. Claims:
+///   - IDENTITY continuation: A.identity == B.identity — the reload boundary loses
+///     no world identity and the continued sim reaches the same set/seeds/homes.
+///   - DETERMINISM: durable_composite (over A.full + B.full) byte-identical across
+///     serial repro + --schedule-seed, seed-sensitive.
+/// Open observation (informational, per the SHD position-catch-up finding): full
+/// continuation (incl wpos) may differ — recorded as continuation_full. K0-K5
+/// crash-injection is the harder half, filed as PER-01b. MEASURES, never gates.
+fn per_scenario(args: &Args) -> ExitCode {
+    use common::state_hash::{
+        DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash, MerkleLeaf,
+        category_root,
+    };
+
+    // Canonical LOGICAL hash (full, identity) — identical to SHD-01's extraction.
+    let logical_hash = |server: &Server| -> (DomainHash, DomainHash) {
+        use slotmap::Key;
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        let mut npcs: Vec<(u64, u32, u64, [u8; 12])> = data
+            .npcs
+            .npcs
+            .iter()
+            .map(|(id, npc)| {
+                let key = id.data().as_ffi();
+                let home = npc.home.map(|h| h.data().as_ffi()).unwrap_or(0);
+                let mut w = [0u8; 12];
+                w[0..4].copy_from_slice(&npc.wpos.x.to_bits().to_le_bytes());
+                w[4..8].copy_from_slice(&npc.wpos.y.to_bits().to_le_bytes());
+                w[8..12].copy_from_slice(&npc.wpos.z.to_bits().to_le_bytes());
+                (key, npc.seed, home, w)
+            })
+            .collect();
+        npcs.sort_by_key(|x| x.0);
+        let mut sites: Vec<(u64, u32, [u8; 8])> = data
+            .sites
+            .sites
+            .iter()
+            .map(|(id, site)| {
+                let key = id.data().as_ffi();
+                let mut w = [0u8; 8];
+                w[0..4].copy_from_slice(&site.wpos.x.to_le_bytes());
+                w[4..8].copy_from_slice(&site.wpos.y.to_le_bytes());
+                (key, site.seed, w)
+            })
+            .collect();
+        sites.sort_by_key(|x| x.0);
+        let mut full = DomainHasher::new("bastion/domain/persistence-logical/v1/sha256");
+        let mut ident = DomainHasher::new("bastion/domain/persistence-identity/v1/sha256");
+        full.field(&(npcs.len() as u64).to_le_bytes());
+        ident.field(&(npcs.len() as u64).to_le_bytes());
+        for (k, seed, home, w) in &npcs {
+            full.field(&k.to_le_bytes());
+            full.field(&seed.to_le_bytes());
+            full.field(&home.to_le_bytes());
+            full.field(w);
+            ident.field(&k.to_le_bytes());
+            ident.field(&seed.to_le_bytes());
+            ident.field(&home.to_le_bytes());
+        }
+        full.field(&(sites.len() as u64).to_le_bytes());
+        ident.field(&(sites.len() as u64).to_le_bytes());
+        for (k, seed, w) in &sites {
+            full.field(&k.to_le_bytes());
+            full.field(&seed.to_le_bytes());
+            full.field(w);
+            ident.field(&k.to_le_bytes());
+            ident.field(&seed.to_le_bytes());
+        }
+        (full.finish(), ident.finish())
+    };
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let run = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+    let boot = |data_dir: &std::path::Path, name: &str| -> Server {
+        let settings = Settings {
+            gameserver_protocols: Vec::new(),
+            auth_server_address: None,
+            query_address: None,
+            world_seed: args.seed,
+            server_name: name.into(),
+            map_file: None,
+            max_view_distance: None,
+            calendar_mode: CalendarMode::None,
+            ..Settings::default()
+        };
+        let editable = EditableSettings::singleplayer(data_dir);
+        let database = DatabaseSettings {
+            db_dir: data_dir.join("saves"),
+            sql_log_mode: SqlLogMode::Disabled,
+        };
+        let runtime = Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .worker_threads(2)
+                .thread_name("bastion-harness-per-tokio")
+                .build()
+                .expect("failed to build per tokio runtime"),
+        );
+        Server::new(
+            settings,
+            editable,
+            database,
+            data_dir,
+            &|stage| info!(?stage, "per server init"),
+            runtime,
+        )
+        .expect("failed to create headless server")
+    };
+
+    let n = args.per_ticks.max(1);
+    let pid = std::process::id();
+    let uniq = Instant::now().elapsed().as_nanos();
+
+    // Leg A: uninterrupted 2N ticks.
+    let dir_a = std::env::temp_dir().join(format!("bastion-per-a-{pid}-{uniq}"));
+    std::fs::create_dir_all(&dir_a).expect("create per-a dir");
+    let mut sa = boot(&dir_a, "bastion-harness-per-a");
+    run(&mut sa, 2 * n);
+    let (a_full, a_id) = logical_hash(&sa);
+    drop(sa);
+    let _ = std::fs::remove_dir_all(&dir_a);
+    info!(ticks = 2 * n, a_id = %a_id, "per: leg A (uninterrupted) captured");
+
+    // Leg B: N ticks → shutdown → reboot → N more ticks (continue across the save).
+    let dir_b = std::env::temp_dir().join(format!("bastion-per-b-{pid}-{uniq}"));
+    std::fs::create_dir_all(&dir_b).expect("create per-b dir");
+    let mut sb1 = boot(&dir_b, "bastion-harness-per-b1");
+    run(&mut sb1, n);
+    drop(sb1); // persist
+    let mut sb2 = boot(&dir_b, "bastion-harness-per-b2"); // reload
+    run(&mut sb2, n); // continue
+    let (b_full, b_id) = logical_hash(&sb2);
+    drop(sb2);
+    let _ = std::fs::remove_dir_all(&dir_b);
+    info!(ticks = n, b_id = %b_id, "per: leg B (save/reload/continue) captured");
+
+    let continuation_id = a_id == b_id;
+    let continuation_full = a_full == b_full;
+    if !continuation_id {
+        warn!(
+            "per: IDENTITY CONTINUATION BROKEN — uninterrupted != save/reload/continue \
+             (reload boundary altered world identity)"
+        );
+    }
+    info!(
+        continuation_id,
+        continuation_full, "per: continuation — identity (must hold) vs full (incl wpos)"
+    );
+
+    // Certificate: durable_composite over A.full + B.full (both deterministic per
+    // run, so cross-run/-schedule determinism is asserted); the CONTINUATION
+    // invariant (continuation_id) is folded into the domain root.
+    let mut root = DomainHasher::new("bastion/domain/persistence/v1/sha256");
+    root.field(&a_id.0);
+    root.field(&b_id.0);
+    root.field(&[continuation_id as u8]);
+    let domain_root = root.finish();
+    let leaves = vec![
+        MerkleLeaf {
+            key: "leg-a-uninterrupted".to_string(),
+            hash: a_full,
+        },
+        MerkleLeaf {
+            key: "leg-b-reload-continue".to_string(),
+            hash: b_full,
+        },
+    ];
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        2 * n,
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/persistence/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+    info!(continuation_id, "per: continuation fingerprint computed");
+    println!(
+        "PER-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
     ExitCode::SUCCESS
 }
 

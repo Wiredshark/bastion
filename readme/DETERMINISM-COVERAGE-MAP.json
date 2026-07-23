@@ -1,0 +1,40 @@
+{
+  "_schema": "pre-hard-four/coverage-map/v1",
+  "_note": "Phase-0 fixture-build backlog for the fleet split. Disposition per Appendix A, grounded by the v13 union register's domain landscape. build_needed=true rows are the coverage-closure critical path (~38). Platform scope K = {P1 Linux-x86_64-Intel, P2 Linux-x86_64-AMD}.",
+  "dispositions": {
+    "READY_expand_only": {
+      "build_needed": false,
+      "action": "Execute existing direct/indirect suite; expand seeds only.",
+      "domains": ["PROV", "HAR", "ADD", "RNG", "WGEN", "RTS", "JOB", "CLK", "ECS", "BLD"],
+      "count": 10
+    },
+    "SPECIFIED_NOT_EVIDENCED": {
+      "build_needed": true,
+      "action": "Code exists, NO test — build a NEW direct fixture.",
+      "domains": ["EVT", "PHY", "TER", "PER", "SHD"],
+      "count": 5
+    },
+    "MISSING": {
+      "build_needed": true,
+      "action": "No test AND on the build list — build a NEW direct fixture (dominant cost).",
+      "domains": ["SITE", "WTH", "ESIM-short-med", "COL-JOB", "COL-HAUL", "COL-CON", "COL-NEED", "COL-MOOD", "CRAFT", "PATH", "MTR", "RSRC", "PLV", "SKL", "AIT", "COM", "LOOT", "MIGR", "CAR", "AGC-AUT", "TER-MESH", "ASY", "NET", "INP", "UIA", "PRD", "REC", "SVC", "WVC", "CDR", "MIG", "RPL", "AST", "PLG", "FIG", "REN"],
+      "count": 36,
+      "absence_gated": ["LOOT", "CAR", "REN"]
+    },
+    "HARD_FOUR_HOLD": {
+      "build_needed": false,
+      "action": "Exact scoped fingerprint only (see hard-four-fingerprints.json); NOT built for cert.",
+      "domains": ["PHY-H4", "PRD-H4", "ESIM-H4", "REC-H4", "BLD-H4"],
+      "count": 5
+    }
+  },
+  "sizing": {
+    "coverage_closure_fixtures_to_build": 38,
+    "derivation": "5 SPECIFIED_NOT_EVIDENCED + 33 MISSING (36 MISSING minus 3 absence-gated that need only an absence-assertion, not a full behavioral fixture)",
+    "note": "Fixture construction is the campaign critical path, NOT the matrix run or seed count. The §9 finite matrix count cannot be computed until these fixtures exist (each contributes S x n_s x CA3 rows)."
+  },
+  "prerequisites": [
+    "E1 per-domain-hash root oracle (enables §5 per-domain coverage + DECLARED_SCOPE_EXCEEDED scope guard) — build FIRST.",
+    "BLD-031 profile fix + positive-control assert-fire (guards live in cert lane) before any guard-dependent fixture is trusted."
+  ]
+}
