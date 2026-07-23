@@ -430,6 +430,13 @@ struct Args {
     #[arg(long, default_value_t = 4)]
     endurance_colony: usize,
 
+    /// ENDURANCE: flatten a work slab under the colony (default). Pass
+    /// --endurance-flatten=false to spawn into RAW worldgen terrain — the
+    /// closest headless proxy for an actual playthrough on a real generated
+    /// world (Ben's "play the game and see where seeds diverge").
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    endurance_flatten: bool,
+
     /// bastion (RUN-0, row 47): the emergency-run gait — walk stays the
     /// default; the run flag yields a measurably higher travel rate and
     /// drains Energy; the governor force-reverts at the floor; energy
@@ -9606,45 +9613,52 @@ fn endurance_scenario(args: &Args) -> ExitCode {
         .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
         .max()
         .expect("no ground around site center");
-    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
-    let air = Block::empty();
-    for x in (cx - 16)..=(cx + 16) {
-        for y in (cy - 12)..=(cy + 12) {
-            for z in (gz - 6)..=gz {
-                server.state_mut().set_block(Vec3::new(x, y, z), rock);
-            }
-            for z in (gz + 1)..=(gz + 8) {
-                server.state_mut().set_block(Vec3::new(x, y, z), air);
+    // FLATTEN mode (default): a work slab + a farm/stockpile economy so the sim
+    // stays busy (agents pathing, jobs cycling, needs/mood, chronicle) instead of
+    // idling into a fixed point. REAL-TERRAIN mode (--endurance-flatten=false):
+    // skip all scripting — spawn into raw worldgen and let the colony LIVE
+    // (wander/needs/rtsim/physics on real ground), the closest headless proxy for
+    // an actual playthrough. Either way the FULL live sim runs; determinism is
+    // the property under test, not colony success.
+    if args.endurance_flatten {
+        let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+        let air = Block::empty();
+        for x in (cx - 16)..=(cx + 16) {
+            for y in (cy - 12)..=(cy + 12) {
+                for z in (gz - 6)..=gz {
+                    server.state_mut().set_block(Vec3::new(x, y, z), rock);
+                }
+                for z in (gz + 1)..=(gz + 8) {
+                    server.state_mut().set_block(Vec3::new(x, y, z), air);
+                }
             }
         }
+        tick(&mut server, 2);
+        let store = Region {
+            min: Vec3::new(cx - 1, cy, gz),
+            max: Vec3::new(cx, cy + 1, gz + 1),
+        };
+        server.bastion_place_designation(store, DesignationKind::Stockpile);
+        let plot = Region {
+            min: Vec3::new(cx - 9, cy - 4, gz),
+            max: Vec3::new(cx - 6, cy - 1, gz),
+        };
+        server.bastion_place_designation(plot, DesignationKind::Farm);
+        server.bastion_spawn_item(
+            Vec3::new(cx as f32 - 0.5, cy as f32 + 0.5, gz as f32 + 1.5),
+            SEEDS,
+            40,
+        );
     }
-    tick(&mut server, 2);
-
-    // Standing work: a farm plot + stockpile + seed stock -> a perpetual
-    // sow/grow/harvest/haul/re-sow economy that keeps the WHOLE sim busy for the
-    // long run (agents pathing, jobs cycling, needs decaying, mood recomputing,
-    // chronicle recording) instead of idling into a fixed point.
-    let store = Region {
-        min: Vec3::new(cx - 1, cy, gz),
-        max: Vec3::new(cx, cy + 1, gz + 1),
-    };
-    server.bastion_place_designation(store, DesignationKind::Stockpile);
-    let plot = Region {
-        min: Vec3::new(cx - 9, cy - 4, gz),
-        max: Vec3::new(cx - 6, cy - 1, gz),
-    };
-    server.bastion_place_designation(plot, DesignationKind::Farm);
-    server.bastion_spawn_item(
-        Vec3::new(cx as f32 - 0.5, cy as f32 + 0.5, gz as f32 + 1.5),
-        SEEDS,
-        40,
-    );
     let colony = args.endurance_colony.max(1);
     server.bastion_spawn_colony(
         Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0),
         colony as u8,
     );
     tick(&mut server, 30);
+    // Unique stable names so the by-name living-state helpers (needs/mood,
+    // energy, health) resolve unambiguously in the checkpoint.
+    server.bastion_rename_colonists_unique();
 
     // The authoritative-state checkpoint: hash the FULL colony state in a
     // canonical (uid-sorted) order + global aggregates into one 32-byte digest.
@@ -9656,7 +9670,7 @@ fn endurance_scenario(args: &Args) -> ExitCode {
         let mut states = server.bastion_colonist_states_full();
         states.sort_by_key(|(uid, ..)| *uid);
         hh.field(&(states.len() as u64).to_le_bytes());
-        for (uid, _name, pos, mount) in &states {
+        for (uid, name, pos, mount) in &states {
             hh.field(&uid.to_le_bytes());
             hh.field(&pos.x.to_bits().to_le_bytes());
             hh.field(&pos.y.to_bits().to_le_bytes());
@@ -9664,6 +9678,21 @@ fn endurance_scenario(args: &Args) -> ExitCode {
             let (mu, mb) = mount.unwrap_or((0, false));
             hh.field(&mu.to_le_bytes());
             hh.field(&[mb as u8]);
+            // Living state — decays/changes even for an idle colonist, so the
+            // checkpoint stream is non-vacuous on raw terrain (no scripted work).
+            if let Some((h, r, c, m)) = server.bastion_colonist_needs_mood(name) {
+                for v in [h, r, c, m] {
+                    hh.field(&v.to_bits().to_le_bytes());
+                }
+            }
+            if let Some((e, e_max, _)) = server.bastion_colonist_energy(name) {
+                hh.field(&e.to_bits().to_le_bytes());
+                hh.field(&e_max.to_bits().to_le_bytes());
+            }
+            if let Some((hp, hp_max)) = server.bastion_colonist_health(name) {
+                hh.field(&hp.to_bits().to_le_bytes());
+                hh.field(&hp_max.to_bits().to_le_bytes());
+            }
         }
         let (routine, notable, legendary) = server.bastion_chronicle_counts();
         hh.field(&(routine as u64).to_le_bytes());
