@@ -192,3 +192,93 @@ impl WeatherSim {
 
     pub fn size(&self) -> Vec2<u32> { self.size }
 }
+
+#[cfg(test)]
+impl WeatherSim {
+    /// WTH-01 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof): a
+    /// worldgen-free constructor for the determinism fixture — a synthetic
+    /// uniform-humidity arena at an EXPLICIT world seed. The determinism-critical
+    /// surface (the seed-derived noise of DET-WTH-001 plus the DET-WTH-003/004
+    /// clamps) is fully exercised without a `World`. Only the humidity `consts`
+    /// are stubbed uniform; those are themselves a deterministic worldgen
+    /// function of the seed and thus can never be a non-determinism SOURCE, so
+    /// stubbing them faithfully isolates the seed -> weather contract under test.
+    fn from_seed_for_test(size: Vec2<u32>, seed: u32, humidity: f32) -> Self {
+        let n = (size.x * size.y) as usize;
+        Self {
+            size,
+            consts: Grid::from_raw(
+                size.as_(),
+                (0..n).map(|_| CellConsts { humidity }).collect::<Vec<_>>(),
+            ),
+            zones: Grid::new(size.as_(), None),
+            seed,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Drive `WeatherSim::tick` over a full-day TimeOfDay sweep and capture the
+    /// entire weather field as RAW f32 BITS (exact / ULP-sensitive — the "raw
+    /// bits, never approximate" discipline), plus the derived lightning-cell
+    /// set, as one flat signature. Grid iteration is row-major (deterministic).
+    fn run_sequence(seed: u32) -> Vec<u32> {
+        let size = Vec2::new(6u32, 5u32);
+        let mut sim = WeatherSim::from_seed_for_test(size, seed, 0.5);
+        let mut grid = WeatherGrid::new(size);
+        let mut sig = Vec::new();
+        // 48 half-hour steps = one in-game day, so the time-dependent noise axis
+        // (advection + pressure delay) is genuinely swept, not a single frame.
+        for step in 0..48u64 {
+            let tod = TimeOfDay((step as f64) * 1800.0);
+            let lightning = sim.tick(tod, &mut grid);
+            for (_p, cell) in grid.iter() {
+                sig.push(cell.cloud.to_bits());
+                sig.push(cell.rain.to_bits());
+                sig.push(cell.wind.x.to_bits());
+                sig.push(cell.wind.y.to_bits());
+            }
+            // Fold the authoritative lightning-cell classification into the
+            // signature too (it is the downstream consumer of the thresholds).
+            sig.push(lightning.cells.len() as u32);
+            for c in &lightning.cells {
+                sig.push(c.x as u32);
+                sig.push(c.y as u32);
+            }
+        }
+        sig
+    }
+
+    /// DETERMINISM: two independent WeatherSim runs at the SAME world seed must
+    /// produce byte-identical weather over a full-day sweep. No ambient entropy
+    /// (thread_rng / wall-clock / HashMap order) may reach the weather pipeline.
+    /// Guards DET-WTH-001 (seed-derived noise) and DET-WTH-003/004 (the clamps).
+    #[test]
+    fn weather_sim_is_seed_deterministic() {
+        let a = run_sequence(1000);
+        let b = run_sequence(1000);
+        assert_eq!(
+            a, b,
+            "same-seed weather diverged: a non-deterministic input reached WeatherSim::tick"
+        );
+    }
+
+    /// NON-VACUITY: different world seeds MUST produce different weather. This is
+    /// the exact DET-WTH-001 regression — pre-fix the noise cores were seeded
+    /// with a literal 0, so every world got identical weather regardless of its
+    /// seed. Without this assertion the determinism test above would pass even
+    /// if the seed were ignored entirely, making the proof vacuous.
+    #[test]
+    fn weather_sim_seed_is_non_vacuous() {
+        let a = run_sequence(1000);
+        let c = run_sequence(2024);
+        assert_ne!(
+            a, c,
+            "different seeds produced identical weather: the seed -> noise \
+             derivation (DET-WTH-001) is not actually wired"
+        );
+    }
+}
