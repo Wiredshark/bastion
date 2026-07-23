@@ -627,6 +627,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "bastion-renderer-r0d"
+version = "0.18.0"
+
+[[package]]
 name = "bincode"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
