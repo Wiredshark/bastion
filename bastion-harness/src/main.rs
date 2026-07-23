@@ -639,6 +639,26 @@ struct Args {
     #[arg(long)]
     mood_permute_order: bool,
 
+    /// bastion determinism fixture SITE-01 (SPECIFIED_NOT_EVIDENCED): certifies
+    /// cross-run worldgen SITE IDENTITY determinism (DET-SITE-002/003/004/005).
+    /// Boots a class-7 server and emits a SITE-CERTIFICATE hashing every rtsim
+    /// site's identity (stable uid, seed, wpos, faction, linked world_site) in
+    /// canonical uid order. TWO independent Server::new boots at the same world
+    /// seed must produce a BYTE-IDENTICAL certificate — the property no existing
+    /// scenario asserts (mf hashes mine/colonist OUTCOMES, never site identity;
+    /// it only positions its dig from one site's wpos). Also byte-identical
+    /// across --schedule-seed (parallel worldgen site-selection order
+    /// invariance, which the SITE tie-breaks canonicalise). Non-vacuous: sites
+    /// must exist, and seed 999 yields a different certificate (site identity is
+    /// seed-derived). MEASURES; a setup failure (no sites) is the only
+    /// non-success.
+    #[arg(long)]
+    site_scenario: bool,
+
+    /// SITE-01: settle ticks after boot before snapshotting sites.
+    #[arg(long, default_value_t = 2)]
+    site_ticks: u64,
+
     /// bastion (MINING-LIVE-FIDELITY): dig footprint X width, blocks. The
     /// geometry axis of the completion investigation — wide claims fit the
     /// stairs arm; tight ones force the D16 released-but-unreachable class.
@@ -1356,6 +1376,8 @@ fn main() -> ExitCode {
         ait_scenario(&args)
     } else if args.mood_scenario {
         mood_scenario(&args)
+    } else if args.site_scenario {
+        site_scenario(&args)
     } else if args.col_scenario {
         col_scenario(&args)
     } else if args.dig_access_scenario {
@@ -13726,6 +13748,145 @@ fn mood_scenario(args: &Args) -> ExitCode {
     }
     println!(
         "MOOD-CERTIFICATE: {}",
+        serde_json::to_string(&certificate).unwrap_or_default()
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion determinism fixture SITE-01 (SPECIFIED_NOT_EVIDENCED → direct proof).
+/// Certifies cross-run worldgen SITE IDENTITY determinism (DET-SITE-002/003/004/
+/// 005). Boots a class-7 server and emits a SITE-CERTIFICATE hashing every rtsim
+/// site's identity — stable uid, seed, wpos, faction, linked world_site — in
+/// CANONICAL uid order (slotmap traversal order cannot leak in). The claims:
+///   - TWO independent Server::new boots, same seed ⇒ byte-identical certificate
+///     (the cross-run site-identity determinism no existing scenario asserts;
+///     mf hashes mine/colonist OUTCOMES, not site identity).
+///   - serial vs `--schedule-seed N` ⇒ parallel worldgen site-selection order
+///     invariance (what the SITE tie-breaks canonicalise).
+/// Site identity is inherently seed-derived, so seed 999 gives a different
+/// certificate (non-vacuity) and no synthetic seed-anchor is needed. MEASURES;
+/// a setup failure (no sites generated) is the only non-success exit.
+fn site_scenario(args: &Args) -> ExitCode {
+    use common::state_hash::{
+        DomainCategory, DomainHash, DomainHasher, FinalStateCertificate, IntegrityHash, MerkleLeaf,
+        category_root,
+    };
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-site-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-site".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-site-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "site: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    for _ in 0..args.site_ticks {
+        server
+            .tick(Input::default(), dt)
+            .expect("server tick failed");
+        server.cleanup();
+    }
+
+    // Snapshot every rtsim site's identity. Hash in CANONICAL uid order so the
+    // slotmap traversal order (and any parallel worldgen selection order) cannot
+    // enter the fingerprint.
+    let (domain_root, leaves, count) = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        // (uid, seed, wpos.x, wpos.y, faction ffi | 0, world_site id | 0)
+        let mut rows: Vec<(u64, u32, i32, i32, u64, u64)> = Vec::new();
+        for (_sid, site) in data.sites.sites.iter() {
+            let fac = site
+                .faction
+                .map_or(0, |f| slotmap::Key::data(&f).as_ffi());
+            let ws = site.world_site.map_or(0, |id| id.id());
+            rows.push((site.uid, site.seed, site.wpos.x, site.wpos.y, fac, ws));
+        }
+        rows.sort_by_key(|r| r.0);
+        let count = rows.len() as u64;
+
+        let build = |label: &str| -> DomainHash {
+            let mut h = DomainHasher::new(label);
+            for (uid, seed, x, y, fac, ws) in &rows {
+                h.field(&uid.to_le_bytes());
+                h.field(&seed.to_le_bytes());
+                h.field(&x.to_le_bytes());
+                h.field(&y.to_le_bytes());
+                h.field(&fac.to_le_bytes());
+                h.field(&ws.to_le_bytes());
+            }
+            h.finish()
+        };
+        let domain_root = build("bastion/domain/worldgen-site-identity/v1/sha256");
+        let leaf = build("bastion/domain/worldgen-site-identity-leaf/v1/sha256");
+        let leaves = vec![MerkleLeaf {
+            key: "worldgen/site-identity".to_string(),
+            hash: leaf,
+        }];
+        (domain_root, leaves, count)
+    };
+
+    let durable = category_root(DomainCategory::Durable, leaves);
+    let certificate = FinalStateCertificate::new(
+        "bastion/final-state-certificate/v1",
+        args.seed,
+        args.site_ticks,
+        durable,
+        IntegrityHash(DomainHash([0u8; 32]).0),
+        vec![(
+            "bastion/domain/worldgen-site-identity/v1/sha256".to_string(),
+            domain_root,
+        )],
+    );
+
+    info!(sites = count, "site: fingerprint computed");
+    if count == 0 {
+        tracing::error!("site: no sites generated — VACUOUS, failing");
+        drop(server);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        return ExitCode::FAILURE;
+    }
+    println!(
+        "SITE-CERTIFICATE: {}",
         serde_json::to_string(&certificate).unwrap_or_default()
     );
 
