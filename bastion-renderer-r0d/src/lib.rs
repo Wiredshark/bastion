@@ -46,6 +46,14 @@ mod tests {
     fn canonical_round_trip_orders_roles_and_is_byte_stable() {
         let value = admission();
         assert_eq!(
+            RendererCorpusRoleV1::CanonicalRendererCorpus.stable_tag(),
+            0
+        );
+        assert_eq!(
+            RendererCorpusRoleV1::LivingWorldRedesign.stable_name(),
+            "LIVING_WORLD_REDESIGN"
+        );
+        assert_eq!(
             value.corpus_inputs()[0].role(),
             RendererCorpusRoleV1::CanonicalRendererCorpus
         );
@@ -146,9 +154,22 @@ mod tests {
             Err(AdmissionErrorV1::UnknownRole(99))
         );
 
-        let mut reversed = bytes;
+        let mut duplicate = bytes.clone();
         let width = RendererAdmissionV1::CORPUS_ENTRY_BYTES;
         let second_role_offset = first_role_offset + width;
+        duplicate[second_role_offset..second_role_offset + 2].copy_from_slice(
+            &RendererCorpusRoleV1::CanonicalRendererCorpus
+                .stable_tag()
+                .to_le_bytes(),
+        );
+        assert_eq!(
+            RendererAdmissionV1::decode_exact(&duplicate),
+            Err(AdmissionErrorV1::DuplicateRole(
+                RendererCorpusRoleV1::CanonicalRendererCorpus
+            ))
+        );
+
+        let mut reversed = bytes;
         let first = reversed[first_role_offset..first_role_offset + width].to_vec();
         let second = reversed[second_role_offset..second_role_offset + width].to_vec();
         reversed[first_role_offset..first_role_offset + width].copy_from_slice(&second);
@@ -164,6 +185,21 @@ mod tests {
         assert_eq!(
             admission().validate_against(&epoch(COMMIT_B)),
             Err(AdmissionErrorV1::SourceEpochMismatch)
+        );
+    }
+
+    #[test]
+    fn rejects_wrong_authoritative_corpus_input() {
+        let expected = RendererAdmissionV1::new(epoch(COMMIT_A), vec![
+            input(RendererCorpusRoleV1::CanonicalRendererCorpus, 42),
+            input(RendererCorpusRoleV1::LivingWorldRedesign, 7),
+        ])
+        .unwrap();
+        assert_eq!(
+            admission().validate_authority(&expected),
+            Err(AdmissionErrorV1::CorpusInputMismatch(
+                RendererCorpusRoleV1::CanonicalRendererCorpus
+            ))
         );
     }
 
