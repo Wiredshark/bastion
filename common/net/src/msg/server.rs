@@ -296,6 +296,20 @@ pub enum PlayerListUpdate {
     UpdateBattleMode(Uid, BattleMode),
 }
 
+impl PlayerListUpdate {
+    /// DET-NET-015: build the initial player-list update with a canonical,
+    /// wire-stable ordering — sorted by Uid. Callers hold the player list as a
+    /// HashMap (built in ECS-join / process-hash order), so constructing `Init`
+    /// through this helper (rather than collecting the HashMap directly) is what
+    /// makes the serialized bytes — and the order the client initializes its
+    /// player list — identical run-to-run.
+    pub fn init_canonical(player_list: impl IntoIterator<Item = (Uid, PlayerInfo)>) -> Self {
+        let mut list: Vec<(Uid, PlayerInfo)> = player_list.into_iter().collect();
+        list.sort_unstable_by_key(|(uid, _)| uid.0);
+        PlayerListUpdate::Init(list)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerInfo {
     pub is_moderator: bool,
@@ -464,4 +478,70 @@ impl From<ServerGeneral> for ServerMsg {
 
 impl From<PingMsg> for ServerMsg {
     fn from(o: PingMsg) -> ServerMsg { ServerMsg::Ping(o) }
+}
+
+#[cfg(test)]
+mod det_net_015_tests {
+    use super::*;
+    use std::num::NonZeroU64;
+
+    fn uid(n: u64) -> Uid { Uid(NonZeroU64::new(n).unwrap()) }
+
+    fn dummy_info(alias: &str) -> PlayerInfo {
+        PlayerInfo {
+            is_moderator: false,
+            is_online: true,
+            player_alias: alias.to_string(),
+            character: None,
+            uuid: Uuid::nil(),
+        }
+    }
+
+    /// NET-01 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof):
+    /// `PlayerListUpdate::init_canonical` emits the initial player list in a
+    /// canonical Uid-sorted order regardless of the caller's HashMap iteration
+    /// order (DET-NET-015). Without it the wire bytes — and the order the client
+    /// initializes its player list — would vary per process hash seed. There was
+    /// no executable evidence for this contract; the sort was inline in the
+    /// register system.
+    #[test]
+    fn player_list_init_is_uid_sorted_and_input_order_independent() {
+        // The same three players supplied in two DIFFERENT input orders (as a
+        // HashMap's per-process iteration order would).
+        let order_a = vec![
+            (uid(5), dummy_info("e")),
+            (uid(1), dummy_info("a")),
+            (uid(3), dummy_info("c")),
+        ];
+        let order_b = vec![
+            (uid(3), dummy_info("c")),
+            (uid(5), dummy_info("e")),
+            (uid(1), dummy_info("a")),
+        ];
+
+        let (va, vb) = match (
+            PlayerListUpdate::init_canonical(order_a),
+            PlayerListUpdate::init_canonical(order_b),
+        ) {
+            (PlayerListUpdate::Init(va), PlayerListUpdate::Init(vb)) => (va, vb),
+            _ => panic!("init_canonical must produce PlayerListUpdate::Init"),
+        };
+
+        // Canonical: strictly ascending by Uid.
+        let uids_a: Vec<u64> = va.iter().map(|(u, _)| u.0.get()).collect();
+        assert_eq!(
+            uids_a,
+            vec![1, 3, 5],
+            "initial player list is not Uid-sorted (DET-NET-015): {uids_a:?}"
+        );
+
+        // Input-order-independent: the two source orderings produce identical
+        // wire ordering. A regression that collected the HashMap directly would
+        // encode per-process-order bytes and fail this.
+        let uids_b: Vec<u64> = vb.iter().map(|(u, _)| u.0.get()).collect();
+        assert_eq!(
+            uids_a, uids_b,
+            "player list wire order depends on input/HashMap order — DET-NET-015 regressed"
+        );
+    }
 }

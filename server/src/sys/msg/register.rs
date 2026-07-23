@@ -410,17 +410,16 @@ impl<'a> System<'a> for Sys {
                         debug!("Done initial sync with client.");
 
                         // Send initial player list.
-                        // DET-NET-015: emit a Uid-sorted Vec so the wire bytes
-                        // are canonical (player_list is a HashMap built in ECS
-                        // join order) and the client initializes deterministically.
-                        let mut sorted_player_list: Vec<_> = player_list
-                            .iter()
-                            .map(|(uid, info)| (*uid, info.clone()))
-                            .collect();
-                        sorted_player_list.sort_unstable_by_key(|(uid, _)| uid.0);
-                        client.send(ServerGeneral::PlayerListUpdate(PlayerListUpdate::Init(
-                            sorted_player_list,
-                        )))?;
+                        // DET-NET-015: build Init through the canonical helper so
+                        // the wire bytes are Uid-sorted (player_list is a HashMap
+                        // built in ECS join order) and the client initializes
+                        // deterministically. The ordering contract is unit-tested
+                        // in common_net (det_net_015_tests).
+                        client.send(ServerGeneral::PlayerListUpdate(
+                            PlayerListUpdate::init_canonical(
+                                player_list.iter().map(|(uid, info)| (*uid, info.clone())),
+                            ),
+                        ))?;
 
                         Ok(())
                     }() {
