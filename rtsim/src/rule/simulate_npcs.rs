@@ -359,10 +359,77 @@ fn on_tick(ctx: EventCtx<SimulateNpcs, OnTick>) {
     // (arbitrary, though stable) iteration order — the determinism law forbids
     // authoritative outcomes depending on iteration order even when stable.
     // Stable sort keeps multiple messages from one sender in send order.
-    npc_inputs.sort_by_key(|(to, from, _)| (*to, *from));
+    let npc_inputs = canonical_npc_input_order(npc_inputs);
     for (npc_id, _from, input) in npc_inputs {
         if let Some(npc) = data.npcs.get_mut(npc_id) {
             npc.inbox.push_back(input);
         }
+    }
+}
+
+/// DET-ESIM-015: deliver NPC-to-NPC messages to each recipient inbox in a
+/// canonical (recipient, sender) order. The inputs are built by iterating the
+/// npc slotmap, so without this the inbox chronology rode that stable-but-
+/// arbitrary iteration order (the determinism law forbids authoritative outcomes
+/// depending on iteration order even when stable). STABLE sort so multiple
+/// messages from one sender keep their send order. Generic over the payload.
+pub fn canonical_npc_input_order<I>(
+    mut npc_inputs: Vec<(common::rtsim::NpcId, common::rtsim::Actor, I)>,
+) -> Vec<(common::rtsim::NpcId, common::rtsim::Actor, I)> {
+    npc_inputs.sort_by_key(|(to, from, _)| (*to, *from));
+    npc_inputs
+}
+
+#[cfg(test)]
+mod det_esim_015_tests {
+    use super::*;
+    use common::rtsim::{Actor, NpcId};
+
+    #[test]
+    fn canonical_npc_input_order_is_iteration_order_independent_and_stable() {
+        // Ordered NpcIds from a fresh slotmap: a < b < c.
+        let mut sm: slotmap::DenseSlotMap<NpcId, ()> = slotmap::DenseSlotMap::with_key();
+        let a = sm.insert(());
+        let b = sm.insert(());
+        let c = sm.insert(());
+        // Senders are Actors (npc_id.into()); Actor::Npc(a) < Actor::Npc(c).
+        let (na, nb, nc) = (Actor::Npc(a), Actor::Npc(b), Actor::Npc(c));
+
+        // (to, from, tag). Two messages to b from na (tags 1,2) must keep send
+        // order (stable). The same set in two different iteration orders.
+        let set1 = vec![
+            (c, na, 10u32),
+            (b, na, 1u32),
+            (b, nc, 3u32),
+            (b, na, 2u32),
+            (a, nb, 5u32),
+        ];
+        let set2 = vec![
+            (a, nb, 5u32),
+            (b, na, 1u32),
+            (b, na, 2u32),
+            (b, nc, 3u32),
+            (c, na, 10u32),
+        ];
+        let r1 = canonical_npc_input_order(set1);
+        let r2 = canonical_npc_input_order(set2);
+
+        // Canonical (recipient, sender) order, stable within (b,na): 1 then 2.
+        let expected = vec![
+            (a, nb, 5u32),
+            (b, na, 1u32),
+            (b, na, 2u32),
+            (b, nc, 3u32),
+            (c, na, 10u32),
+        ];
+        assert_eq!(
+            r1, expected,
+            "npc inputs not in canonical (recipient, sender) order or unstable (DET-ESIM-015)"
+        );
+        // Iteration-order-independent.
+        assert_eq!(
+            r1, r2,
+            "npc input delivery order depends on iteration order — DET-ESIM-015 regressed"
+        );
     }
 }
