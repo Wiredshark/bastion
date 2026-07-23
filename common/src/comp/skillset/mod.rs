@@ -252,6 +252,27 @@ impl SkillSet {
         skills
     }
 
+    /// DET-SKL-003: the canonical next skill group to unlock while replaying a
+    /// persisted skillset — the SMALLEST (by `SkillGroupKind` Ord) group whose
+    /// unlock skill the skillset already has. Extracted from the inline
+    /// `load_from_database` selection so the canonical-order contract is
+    /// directly testable: the choice is a pure function of the candidate SET,
+    /// never the `hashbrown` / `RandomState` iteration order. Reverting it to
+    /// `.next()` / `.find()` (first-in-hash) reintroduces the process-hash-seed
+    /// dependence in DB skill replay that DET-SKL-003 fixed — it only alters the
+    /// RESULT when group-unlock order matters (a cross-group prerequisite /
+    /// respec fallback), but the canonical selection is guarded regardless.
+    fn canonical_next_unlockable_group<V>(
+        all_skills: &HashMap<SkillGroupKind, V>,
+        skillset: &SkillSet,
+    ) -> Option<SkillGroupKind> {
+        all_skills
+            .keys()
+            .filter(|kind| skillset.has_skill(Skill::UnlockGroup(**kind)))
+            .min()
+            .copied()
+    }
+
     /// NOTE: This does *not* return an error on failure, since we can partially
     /// recover from some failures.  Instead, it returns the error in the
     /// second return value; make sure to handle it if present!
@@ -269,17 +290,11 @@ impl SkillSet {
         // entry where the skill group kind is unlocked, insert the skills corresponding
         // to that skill group kind. When no more skill group kinds can be found, break
         // the loop.
-        // DET-SKL-003 (v8 skill-tree, Medium): pick the next unlockable group
-        // canonically (smallest SkillGroupKind), not the first one HashMap
-        // iteration happens to yield. `all_skills` is a RandomState HashMap, so
-        // `.find` made the DB skill-replay order — and thus the reconstructed
-        // skillset when unlock order matters (prerequisite chains / respec
-        // fallback) — ride the process hash seed.
-        while let Some(skill_group_kind) = all_skills
-            .keys()
-            .filter(|kind| skillset.has_skill(Skill::UnlockGroup(**kind)))
-            .min()
-            .copied()
+        // DET-SKL-003: pick the next unlockable group via the canonical helper
+        // (smallest SkillGroupKind), so DB skill replay never rides the process
+        // hash seed. See `canonical_next_unlockable_group`.
+        while let Some(skill_group_kind) =
+            Self::canonical_next_unlockable_group(&all_skills, &skillset)
         {
             // Remove valid skill group kind from the hash map so that loop eventually
             // terminates.
