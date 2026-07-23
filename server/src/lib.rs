@@ -315,6 +315,19 @@ impl Server {
 
         let battlemode_buffer = BattleModeBuffer::default();
 
+        // R0D live-capture determinism (D1 root-cause fix): the singleplayer
+        // capture leg must run the SAME deterministic execution mode the
+        // harness uses, or the per-tick agent RNG falls to OS entropy
+        // (ChaCha8Rng::from_rng in the agent System's Parallel branch), making
+        // colonist wander non-deterministic cross-run — the confirmed
+        // divergence (same uid, identical start, positions drift at the same
+        // sim-tick). The atomic MUST be set before the execution_mode() read
+        // below (the existing "harness sets it before Server::new" contract);
+        // an earlier flip deeper in this fn was too late for this read.
+        if std::env::var_os("BASTION_R0D_DETERMINISTIC").is_some() {
+            ::rtsim::enable_deterministic_rtsim();
+        }
+
         // DETRNG/ARCH-003: the harness sets the rtsim flag before Server::new.
         // Read it once at construction so execution policy cannot change
         // halfway through a run. Live never sets it and remains parallel.
@@ -555,13 +568,12 @@ impl Server {
             "bastion: FLAT-TEST-ARENA env check at server boot"
         );
 
-        // R0D D1-replay: flip deterministic rtsim BEFORE rtsim boots (the
-        // harness does this at its own entry; the live capture leg transports
-        // it via env — same proven configuration, same flip point relative to
-        // rtsim construction below).
-        if std::env::var_os("BASTION_R0D_DETERMINISTIC").is_some() {
-            ::rtsim::DETERMINISTIC_RTSIM.store(true, core::sync::atomic::Ordering::Relaxed);
-            info!("r0d: DETERMINISTIC_RTSIM enabled for capture leg");
+        // R0D D1-replay: the deterministic-rtsim flip now happens at the TOP
+        // of Server::new (before the execution_mode() read), so it also gates
+        // deterministic ECS/agent execution — not just rtsim rules. (Log kept
+        // here so the boot line still confirms the capture-leg mode.)
+        if ::rtsim::deterministic_rtsim_enabled() {
+            info!("r0d: DETERMINISTIC_RTSIM + DeterministicSerial execution active");
         }
         #[cfg(feature = "worldgen")]
         let spawn_point = SpawnPoint(if bastion_flat_arena::enabled() {
