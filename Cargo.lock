@@ -637,6 +637,7 @@ dependencies = [
  "ron",
  "serde",
  "serde_json",
+ "slotmap",
  "specs",
  "tracing",
  "vek 0.17.2",
