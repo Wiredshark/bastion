@@ -437,6 +437,13 @@ struct Args {
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
     endurance_flatten: bool,
 
+    /// ENDURANCE: drive the lowest-uid colonist as a scripted PLAYER avatar —
+    /// deterministic per-tick locomotion input (a pure function of tick) written
+    /// into its Controller, so the run exercises input->world interaction (Ben's
+    /// player-in-the-loop). Cross-run determinism must still hold.
+    #[arg(long)]
+    endurance_avatar: bool,
+
     /// bastion (RUN-0, row 47): the emergency-run gait — walk stays the
     /// default; the run flag yields a measurably higher travel rate and
     /// drains Energy; the governor force-reverts at the floor; energy
@@ -9705,13 +9712,44 @@ fn endurance_scenario(args: &Args) -> ExitCode {
         hex(&hh.finish().0)
     };
 
+    // AVATAR mode: designate the lowest-uid colonist as the scripted player and
+    // drive its Controller each tick with a deterministic input (pure fn of tick)
+    // — so the run exercises input->world, not just the autonomous world.
+    let avatar: Option<String> = if args.endurance_avatar {
+        let mut s = server.bastion_colonist_states_full();
+        s.sort_by_key(|(uid, ..)| *uid);
+        s.first().map(|(_, name, ..)| name.clone())
+    } else {
+        None
+    };
+
     let total = args.endurance_ticks;
     let interval = args.endurance_checkpoint.max(1);
     println!("ENDURANCE-CHECKPOINT: tick=0 {}", checkpoint(&server));
     let mut t = 0u64;
     while t < total {
         let step = interval.min(total - t);
-        tick(&mut server, step);
+        if let Some(a) = &avatar {
+            for i in 0..step {
+                let gt = t + i;
+                // Deterministic scripted locomotion: a slowly-rotating heading
+                // (walk a reproducible loop through the world) with a periodic
+                // pause. Same tick -> same input, every run.
+                let ang = gt as f32 * 0.03;
+                let md = if gt % 60 < 45 {
+                    Vec2::new(ang.cos(), ang.sin())
+                } else {
+                    Vec2::zero()
+                };
+                server.bastion_set_avatar_input(a, md, 0.0);
+                server
+                    .tick(Input::default(), dt)
+                    .expect("server tick failed");
+                server.cleanup();
+            }
+        } else {
+            tick(&mut server, step);
+        }
         t += step;
         println!("ENDURANCE-CHECKPOINT: tick={t} {}", checkpoint(&server));
     }

@@ -3489,6 +3489,43 @@ impl Server {
             .push(pos);
     }
 
+    /// bastion (avatar/playthrough hook): drive a named colonist as a scripted
+    /// PLAYER avatar — write locomotion input straight into its `Controller`,
+    /// the same component client input lands in, so an endurance run can
+    /// exercise input->world interaction (not just the world living itself).
+    /// Deterministic by construction: the caller supplies a pure-function-of-
+    /// tick input, so cross-run determinism must still hold. Returns whether the
+    /// colonist was found. (v1 = locomotion only; abilities are a later add.)
+    pub fn bastion_set_avatar_input(
+        &mut self,
+        name: &str,
+        move_dir: vek::Vec2<f32>,
+        move_z: f32,
+    ) -> bool {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entity = {
+            let colonists = ecs.read_storage::<comp::Colonist>();
+            let entities = ecs.entities();
+            (&entities, &colonists)
+                .join()
+                .find(|(_, c)| c.0.name == name)
+                .map(|(e, _)| e)
+        };
+        let Some(entity) = entity else {
+            return false;
+        };
+        let mut controllers = ecs.write_storage::<comp::Controller>();
+        match controllers.get_mut(entity) {
+            Some(controller) => {
+                controller.inputs.move_dir = move_dir;
+                controller.inputs.move_z = move_z;
+                true
+            },
+            None => false,
+        }
+    }
+
     /// bastion (TOOL-0, harness hook): equip an item asset into a loaded
     /// colonist's mainhand (deterministic tool-speed scenarios; whatever
     /// the swap displaces is discarded — scenarios don't care).
