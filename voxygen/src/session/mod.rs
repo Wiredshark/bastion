@@ -3306,14 +3306,29 @@ impl PlayState for SessionState {
                 let target = {
                     use specs::Join;
                     let cl = self.client.borrow();
+                    // R0D D1 fix: EXCLUDE the client's own entity. The
+                    // silent_spectator has its own bodied entity at the spawn
+                    // point (the lowest Uid, uid 1), and it is the ONE
+                    // non-deterministic entity in the scene — under client-view
+                    // async chunk loading its supporting floor chunk can load a
+                    // tick late, so the spectator falls through the world in one
+                    // run but not another (proven by a per-uid AUTH_POS_LOG diff:
+                    // colonists uid>=2 are bit-identical cross-run; only uid 1
+                    // diverges). Anchoring the capture camera to it made the
+                    // frozen-tick capture diverge cross-run even though every
+                    // colonist was deterministic. Skip it so the camera tracks
+                    // the lowest-Uid COLONIST, whose motion is deterministic.
+                    let own = cl.entity();
                     let ecs = cl.state().ecs();
+                    let entities = ecs.entities();
                     let uids = ecs.read_storage::<common::uid::Uid>();
                     let positions = ecs.read_storage::<comp::Pos>();
                     let bodies = ecs.read_storage::<comp::Body>();
-                    (&uids, &positions, &bodies)
+                    (&entities, &uids, &positions, &bodies)
                         .join()
-                        .min_by_key(|(uid, _, _)| uid.0.get())
-                        .map(|(uid, pos, _)| (uid.0.get(), pos.0))
+                        .filter(|(e, _, _, _)| *e != own)
+                        .min_by_key(|(_, uid, _, _)| uid.0.get())
+                        .map(|(_, uid, pos, _)| (uid.0.get(), pos.0))
                 };
                 // R0D diagnostic: log the tracked target (Uid + exact pos) once
                 // per sim-second, so cross-run comparison distinguishes a
