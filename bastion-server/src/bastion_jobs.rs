@@ -3699,6 +3699,22 @@ pub fn canonical_haul_pickup_order(
     candidates
 }
 
+/// DET-COL-NEED-001 / DET-COL-NEED-002 / DET-AUT-005: process colonists' needs
+/// in a canonical total order — most-urgent survival meter first (ascending
+/// severity), stable Uid as the tiebreak — so the greedy nearest-FOOD /
+/// nearest-BED reservations (which colonist wins a scarce resource when several
+/// need one the same tick) are a pure function of (severity, Uid), not the ECS
+/// join order the colonists were iterated in. Generic over the entity handle
+/// (not part of the key) so the order is unit-testable without an ECS world.
+pub fn canonical_need_order<E>(mut order: Vec<(E, Uid, f32)>) -> Vec<(E, Uid, f32)> {
+    order.sort_by(|a, b| {
+        a.2.partial_cmp(&b.2)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.1.0.get().cmp(&b.1.0.get()))
+    });
+    order
+}
+
 impl JobBoard {
     /// Stage-1 single reservation authority. A live task's reserved member is
     /// authoritative. Before a task exists, the head of the link's FAIR
@@ -8068,17 +8084,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // ECS iteration order. The breakdown roll below is already keyed
             // by (tick, uid, episode) (T0.33), so its outcome does not depend
             // on this order; only the greedy reservations do.
-            let mut need_order: Vec<(specs::Entity, Uid, f32)> =
+            let need_order: Vec<(specs::Entity, Uid, f32)> =
                 (&entities, &colonists, &uids, &needs_storage)
                     .join()
                     .filter(|(e, _, _, _)| is_loaded(*e))
                     .map(|(e, _, u, n)| (e, *u, n.rest.min(n.hunger)))
                     .collect();
-            need_order.sort_by(|a, b| {
-                a.2.partial_cmp(&b.2)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| a.1.0.get().cmp(&b.1.0.get()))
-            });
+            // DET-COL-NEED-001/002 / DET-AUT-005: canonical (severity, Uid)
+            // order (unit-tested in the det_* tests below).
+            let need_order = canonical_need_order(need_order);
             for (entity, uid, _) in need_order {
                 let uid = &uid;
                 let (Some(colonist), Some(pos), Some(needs)) = (
@@ -14942,6 +14956,48 @@ mod tests {
             key(&a),
             key(&b),
             "haul pickup admission depends on join order — DET-COL-HAUL-001 regressed"
+        );
+    }
+
+    /// COL-NEED-01 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof):
+    /// DET-COL-NEED-001/002 / DET-AUT-005 — colonists' needs are processed in a
+    /// canonical total order (most-urgent survival meter first, stable Uid
+    /// tiebreak), so which colonist wins a scarce FOOD/BED reservation is a pure
+    /// function of (severity, Uid), not the ECS join order. The inline sort had
+    /// no executable evidence.
+    #[test]
+    fn canonical_need_order_is_join_order_independent() {
+        let uid = |n: u64| Uid(NonZeroU64::new(n).unwrap());
+        // (entity-placeholder, uid, severity). Lower severity = more urgent =
+        // processed first; ties in severity break by ascending Uid.
+        let set_a: Vec<((), Uid, f32)> = vec![
+            ((), uid(5), 0.9),
+            ((), uid(2), 0.3),
+            ((), uid(8), 0.3), // ties uid(2) on severity -> Uid tiebreak
+            ((), uid(1), 0.6),
+        ];
+        let set_b: Vec<((), Uid, f32)> = vec![
+            ((), uid(8), 0.3),
+            ((), uid(1), 0.6),
+            ((), uid(5), 0.9),
+            ((), uid(2), 0.3),
+        ];
+        let a = canonical_need_order(set_a);
+        let b = canonical_need_order(set_b);
+        let order = |v: &Vec<((), Uid, f32)>| -> Vec<(u64, f32)> {
+            v.iter().map(|(_, u, s)| (u.0.get(), *s)).collect()
+        };
+        // Canonical: severity ascending, then Uid ascending.
+        assert_eq!(
+            order(&a),
+            vec![(2, 0.3), (8, 0.3), (1, 0.6), (5, 0.9)],
+            "needs not processed in canonical (severity, Uid) order (DET-COL-NEED-001/002)"
+        );
+        // Join-order-independent.
+        assert_eq!(
+            order(&a),
+            order(&b),
+            "needs processing order depends on ECS join order — DET-COL-NEED regressed"
         );
     }
 
