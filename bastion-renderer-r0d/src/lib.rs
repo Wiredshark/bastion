@@ -1,12 +1,58 @@
 //! Renderer-owned, simulation-independent source admission primitives.
 
+use sha2::{Digest, Sha256};
+
 mod admission;
+pub mod bootstrap;
+pub mod cbor;
 
 pub use admission::{
     AdmissionErrorV1, MAX_CORPUS_INPUT_BYTES_V1, MAX_CORPUS_INPUTS_V1,
     RENDERER_ADMISSION_V1_VERSION, RENDERER_SOURCE_EPOCH_V1_VERSION, RendererAdmissionV1,
     RendererCorpusInputV1, RendererCorpusRoleV1, RendererSourceEpochV1,
 };
+
+pub const MAX_HASH_DOMAIN_BYTES_V1: usize = 128;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DomainHashErrorV1 {
+    InvalidDomain,
+    PayloadLengthOutOfRange,
+}
+
+pub fn domain_hash_v1(
+    domain: &str,
+    schema_major: u16,
+    schema_minor: u16,
+    payload: &[u8],
+) -> Result<[u8; 32], DomainHashErrorV1> {
+    if domain.is_empty() || domain.len() > MAX_HASH_DOMAIN_BYTES_V1 || !domain.is_ascii() {
+        return Err(DomainHashErrorV1::InvalidDomain);
+    }
+    let domain_len = u16::try_from(domain.len()).map_err(|_| DomainHashErrorV1::InvalidDomain)?;
+    let payload_len =
+        u64::try_from(payload.len()).map_err(|_| DomainHashErrorV1::PayloadLengthOutOfRange)?;
+
+    let mut hasher = Sha256::new();
+    hasher.update(domain_len.to_le_bytes());
+    hasher.update(domain.as_bytes());
+    hasher.update(schema_major.to_le_bytes());
+    hasher.update(schema_minor.to_le_bytes());
+    hasher.update(payload_len.to_le_bytes());
+    hasher.update(payload);
+    Ok(hasher.finalize().into())
+}
+
+#[cfg(test)]
+pub(crate) fn hex_bytes(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len().saturating_mul(2));
+    for &byte in bytes {
+        output.push(char::from(HEX[usize::from(byte >> 4)]));
+        output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    output
+}
 
 #[cfg(test)]
 mod tests {
@@ -16,6 +62,22 @@ mod tests {
     const COMMIT_B: &str = "07b30de6d916930c96f181919160ff7839aa6d5b";
 
     fn digest(byte: u8) -> [u8; 32] { [byte; 32] }
+
+    #[test]
+    fn frozen_domain_hash_vector_and_bounds() {
+        assert_eq!(
+            hex_bytes(&domain_hash_v1("bastion/r0d/test", 1, 0, b"abc").unwrap()),
+            "91b5eab66fecc7f95e62afec1a4fc9674c5d2a06eddcd940c050682aea944b0d"
+        );
+        assert_eq!(
+            domain_hash_v1("", 1, 0, b"abc"),
+            Err(DomainHashErrorV1::InvalidDomain)
+        );
+        assert_eq!(
+            domain_hash_v1("bastion/r0d/é", 1, 0, b"abc"),
+            Err(DomainHashErrorV1::InvalidDomain)
+        );
+    }
 
     fn epoch(commit: &str) -> RendererSourceEpochV1 {
         RendererSourceEpochV1::from_hex(
