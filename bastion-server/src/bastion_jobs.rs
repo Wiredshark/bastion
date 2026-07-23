@@ -3687,6 +3687,18 @@ pub fn canonical_thought_drain_order(
     pending
 }
 
+/// DET-COL-HAUL-001 / DET-AUT-004: admit eligible loose-drop pickups as haul
+/// jobs in a canonical total order — source cell (z, y, x), item def, stable
+/// item Uid — so that WHICH pickups become haul jobs, when more are eligible
+/// than the per-tick cap allows, is a pure function of the drop SET, not the ECS
+/// join order the candidates were gathered in.
+pub fn canonical_haul_pickup_order(
+    mut candidates: Vec<(Vec3<i32>, &'static str, Uid)>,
+) -> Vec<(Vec3<i32>, &'static str, Uid)> {
+    candidates.sort_unstable_by_key(|&(cell, def, uid)| (cell.z, cell.y, cell.x, def, uid.0));
+    candidates
+}
+
 impl JobBoard {
     /// Stage-1 single reservation authority. A live task's reserved member is
     /// authoritative. Before a task exists, the head of the link's FAIR
@@ -7549,8 +7561,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                     candidates.push((cell, static_def, *iuid));
                 }
-                candidates
-                    .sort_unstable_by_key(|&(cell, def, uid)| (cell.z, cell.y, cell.x, def, uid.0));
+                // DET-COL-HAUL-001 / DET-AUT-004: canonical admission order
+                // (unit-tested in the det_mood_003/haul tests below).
+                let candidates = canonical_haul_pickup_order(candidates);
                 for (cell, static_def, iuid) in candidates {
                     if pending >= cap {
                         break;
@@ -14880,6 +14893,55 @@ mod tests {
         assert_eq!(
             order_a, order_b,
             "thought drain order depends on producer push order — DET-MOOD-003 regressed"
+        );
+    }
+
+    /// COL-HAUL-01 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof):
+    /// DET-COL-HAUL-001 — canonical_haul_pickup_order admits eligible loose-drop
+    /// pickups in a canonical (cell z, y, x, item def, item Uid) order, so WHICH
+    /// drops become haul jobs (when eligible > cap) is independent of the ECS
+    /// join order the candidates were gathered in. The inline sort in the haul
+    /// generator had no executable evidence.
+    #[test]
+    fn canonical_haul_pickup_order_is_join_order_independent() {
+        let uid = |n: u64| Uid(NonZeroU64::new(n).unwrap());
+        // c(z, y, x, def, item-uid) -> the candidate tuple (Vec3 is x, y, z).
+        let c = |z, y, x, def: &'static str, u: u64| (Vec3::new(x, y, z), def, uid(u));
+        // The same eligible-drop set gathered in two DIFFERENT join orders.
+        let set_a = vec![
+            c(1, 0, 0, "stone", 5),
+            c(0, 2, 0, "stone", 3),
+            c(0, 0, 0, "wood", 9),
+            c(0, 0, 0, "stone", 1),
+        ];
+        let set_b = vec![
+            c(0, 0, 0, "stone", 1),
+            c(0, 0, 0, "wood", 9),
+            c(0, 2, 0, "stone", 3),
+            c(1, 0, 0, "stone", 5),
+        ];
+        let a = canonical_haul_pickup_order(set_a);
+        let b = canonical_haul_pickup_order(set_b);
+
+        let key = |v: &Vec<(Vec3<i32>, &'static str, Uid)>| -> Vec<(i32, i32, i32, &'static str, u64)> {
+            v.iter().map(|(p, d, u)| (p.z, p.y, p.x, *d, u.0.get())).collect()
+        };
+        // Canonical order by (z, y, x, def, uid).
+        assert_eq!(
+            key(&a),
+            vec![
+                (0, 0, 0, "stone", 1),
+                (0, 0, 0, "wood", 9),
+                (0, 2, 0, "stone", 3),
+                (1, 0, 0, "stone", 5),
+            ],
+            "haul pickups not admitted in canonical (z, y, x, def, uid) order (DET-COL-HAUL-001)"
+        );
+        // Join-order-independent: two gather orders give the same admission order.
+        assert_eq!(
+            key(&a),
+            key(&b),
+            "haul pickup admission depends on join order — DET-COL-HAUL-001 regressed"
         );
     }
 
