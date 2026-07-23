@@ -3785,6 +3785,50 @@ impl Server {
             }
         }
 
+        // R0D D1 authoritative-determinism probe: per-tick colonist position
+        // dump. BASTION_R0D_AUTH_POS_LOG=path appends every Uid+Pos entity each
+        // tick as RAW f32 BITS (exact, ULP-sensitive) plus decimal. Two headless
+        // server-cli runs + a diff localize the FIRST diverging tick / uid /
+        // axis and its magnitude — isolating the residual non-RNG divergence
+        // source (entity collision vs a non-RNG wander input) that the pixel
+        // capture only shows indirectly (via the anchor-colonist camera shift).
+        // Logged at tick-start = the settled end-state of the previous tick;
+        // consistent cross-run, so the comparison point is stable. Off in
+        // production (env unset).
+        if let Some(path) = std::env::var_os("BASTION_R0D_AUTH_POS_LOG") {
+            use specs::Join;
+            let tick_now = self.state.ecs().read_resource::<Tick>().0;
+            let ecs = self.state.ecs();
+            let uids = ecs.read_storage::<Uid>();
+            let positions = ecs.read_storage::<comp::Pos>();
+            let mut rows: Vec<(u64, [u32; 3], vek::Vec3<f32>)> = (&uids, &positions)
+                .join()
+                .map(|(uid, pos)| {
+                    (
+                        uid.0.get(),
+                        [pos.0.x.to_bits(), pos.0.y.to_bits(), pos.0.z.to_bits()],
+                        pos.0,
+                    )
+                })
+                .collect();
+            rows.sort_by_key(|r| r.0);
+            let mut buf = String::new();
+            for (u, bits, p) in &rows {
+                buf.push_str(&format!(
+                    "t {} uid {} bits {:08x} {:08x} {:08x} pos {:.6} {:.6} {:.6}\n",
+                    tick_now, u, bits[0], bits[1], bits[2], p.x, p.y, p.z
+                ));
+            }
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+            {
+                let _ = f.write_all(buf.as_bytes());
+            }
+        }
+
         // Update calendar events as time changes
         // TODO: If a lot of calendar events get added, this might become expensive.
         // Maybe don't do this every tick?
