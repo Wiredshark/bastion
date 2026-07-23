@@ -480,8 +480,21 @@ impl From<PingMsg> for ServerMsg {
     fn from(o: PingMsg) -> ServerMsg { ServerMsg::Ping(o) }
 }
 
+/// DET-NET-014: canonicalize terrain block updates into a position-sorted Vec
+/// for the wire. The source is a HashMap<Vec3<i32>, Block> whose iteration order
+/// rides the process hash seed, so building the compressed `TerrainBlockUpdates`
+/// payload through this helper is what makes the serialized bytes byte-canonical
+/// and the client apply them in a deterministic order.
+pub fn canonical_terrain_block_updates(
+    blocks: impl IntoIterator<Item = (Vec3<i32>, Block)>,
+) -> Vec<(Vec3<i32>, Block)> {
+    let mut list: Vec<(Vec3<i32>, Block)> = blocks.into_iter().collect();
+    list.sort_unstable_by_key(|(p, _)| (p.x, p.y, p.z));
+    list
+}
+
 #[cfg(test)]
-mod det_net_015_tests {
+mod det_net_wire_order_tests {
     use super::*;
     use std::num::NonZeroU64;
 
@@ -542,6 +555,46 @@ mod det_net_015_tests {
         assert_eq!(
             uids_a, uids_b,
             "player list wire order depends on input/HashMap order — DET-NET-015 regressed"
+        );
+    }
+
+    /// NET-02 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof):
+    /// `canonical_terrain_block_updates` emits block updates in a canonical
+    /// (x,y,z)-sorted order regardless of the caller's HashMap iteration order
+    /// (DET-NET-014). The sort was inline in the terrain_sync system with no
+    /// executable evidence.
+    #[test]
+    fn terrain_block_updates_are_position_sorted_and_input_order_independent() {
+        let b = Block::empty();
+        // The same block set supplied in two DIFFERENT input orders.
+        let order_a = vec![
+            (Vec3::new(2, 0, 0), b),
+            (Vec3::new(0, 1, 0), b),
+            (Vec3::new(0, 0, 3), b),
+            (Vec3::new(0, 0, 1), b),
+        ];
+        let order_b = vec![
+            (Vec3::new(0, 0, 1), b),
+            (Vec3::new(0, 0, 3), b),
+            (Vec3::new(0, 1, 0), b),
+            (Vec3::new(2, 0, 0), b),
+        ];
+        let va = canonical_terrain_block_updates(order_a);
+        let vb = canonical_terrain_block_updates(order_b);
+
+        // Canonical: sorted by (x, y, z).
+        let pa: Vec<(i32, i32, i32)> = va.iter().map(|(p, _)| (p.x, p.y, p.z)).collect();
+        assert_eq!(
+            pa,
+            vec![(0, 0, 1), (0, 0, 3), (0, 1, 0), (2, 0, 0)],
+            "terrain block updates not position-sorted (DET-NET-014): {pa:?}"
+        );
+
+        // Input-order-independent.
+        let pb: Vec<(i32, i32, i32)> = vb.iter().map(|(p, _)| (p.x, p.y, p.z)).collect();
+        assert_eq!(
+            pa, pb,
+            "terrain block-update wire order depends on input/HashMap order — DET-NET-014 regressed"
         );
     }
 }
