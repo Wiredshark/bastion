@@ -131,6 +131,7 @@ fn figure_batch_key_digest(
     body: &Body,
     inventory: Option<&Inventory>,
     model: &SubModel<'_, TerrainVertex>,
+    tier_decision: Option<bastion_renderer_r0d::individual_tier::IndividualTierDecisionV1>,
 ) -> Option<bastion_renderer_r0d::figure_batch::FigureBatchKeyV1> {
     use bastion_renderer_r0d::{
         domain_hash_v1,
@@ -142,6 +143,7 @@ fn figure_batch_key_digest(
         figure_gpu::{
             FIGURE_GPU_ABI_VERSION_V1, FIGURE_GPU_INSTANCE_STRIDE_V1, FIGURE_GPU_POSE_PAGE_BYTES_V1,
         },
+        individual_tier::{AnimationTierV1, IndividualShadowTierV1, RepresentationTierV1},
     };
 
     let body_text = format!("{body:?}");
@@ -190,8 +192,19 @@ fn figure_batch_key_digest(
             b"figure-linear-clamp-v1",
         )
         .ok()?,
-        form: FigureFormV1::Full,
-        lod_level: 0,
+        form: match tier_decision.map(|decision| decision.representation) {
+            Some(RepresentationTierV1::Lod | RepresentationTierV1::Impostor) => FigureFormV1::Lod,
+            _ => FigureFormV1::Full,
+        },
+        lod_level: match tier_decision.map(|decision| decision.representation) {
+            Some(RepresentationTierV1::Lod) => 1,
+            Some(RepresentationTierV1::Impostor) => 2,
+            _ => 0,
+        },
+        animation_tier: tier_decision
+            .map(|decision| decision.animation)
+            .unwrap_or(AnimationTierV1::EveryTick),
+        fade_phase: tier_decision.map_or(0, |decision| decision.fade_phase),
         abi_version: FIGURE_GPU_ABI_VERSION_V1,
         instance_stride: u32::try_from(FIGURE_GPU_INSTANCE_STRIDE_V1).ok()?,
         pose_page_bytes: u32::try_from(FIGURE_GPU_POSE_PAGE_BYTES_V1).ok()?,
@@ -212,7 +225,11 @@ fn figure_batch_key_digest(
         first_index: 0,
         base_vertex: 0,
         shadow_tier: if pass == FigurePassV1::Shadow {
-            ShadowTierV1::MainMesh
+            match tier_decision.map(|decision| decision.shadow) {
+                Some(IndividualShadowTierV1::Proxy) => ShadowTierV1::Proxy,
+                Some(IndividualShadowTierV1::None) => return None,
+                _ => ShadowTierV1::MainMesh,
+            }
         } else {
             ShadowTierV1::None
         },
@@ -760,6 +777,8 @@ struct FigureReadData<'a> {
     volume_riders: ReadStorage<'a, VolumeRiders>,
     colliders: ReadStorage<'a, Collider>,
     heads: ReadStorage<'a, Heads>,
+    uids: ReadStorage<'a, Uid>,
+    colonists: ReadStorage<'a, comp::Colonist>,
 }
 
 struct FigureUpdateData<'a, CSS, COR> {
@@ -809,6 +828,8 @@ impl FigureReadData<'_> {
             volume_riders: self.volume_riders.get(entity),
             collider: self.colliders.get(entity),
             heads: self.heads.get(entity),
+            uid: self.uids.get(entity),
+            colonist: self.colonists.get(entity),
         })
     }
 
@@ -837,6 +858,8 @@ impl FigureReadData<'_> {
                 self.volume_riders.maybe(),
                 self.colliders.maybe(),
                 self.heads.maybe(),
+                self.uids.maybe(),
+                self.colonists.maybe(),
             ),
         )
             .join()
@@ -865,6 +888,8 @@ impl FigureReadData<'_> {
                         volume_riders,
                         collider,
                         heads,
+                        uid,
+                        colonist,
                     ),
                 )| FigureUpdateParams {
                     entity,
@@ -889,6 +914,8 @@ impl FigureReadData<'_> {
                     volume_riders,
                     collider,
                     heads,
+                    uid,
+                    colonist,
                 },
             )
     }
@@ -917,6 +944,8 @@ struct FigureUpdateParams<'a> {
     volume_riders: Option<&'a VolumeRiders>,
     collider: Option<&'a Collider>,
     heads: Option<&'a Heads>,
+    uid: Option<&'a Uid>,
+    colonist: Option<&'a comp::Colonist>,
 }
 
 pub struct FigureMgr {
@@ -1345,6 +1374,27 @@ impl FigureMgr {
                 .interpolated
                 .map_or(entity_data.pos.0, |i| i.pos);
 
+            let tier_decision = entity_data
+                .colonist
+                .zip(entity_data.uid)
+                .and_then(|(_, uid)| crate::r1d_tiers::decision_for_uid(uid.0.get()));
+            if let Some(decision) = tier_decision {
+                if decision.representation
+                    == bastion_renderer_r0d::individual_tier::RepresentationTierV1::Culled
+                {
+                    if let Some(state) = self.states.get_mut(entity_data.body, &entity_data.entity)
+                    {
+                        state.visible = false;
+                    }
+                    continue;
+                }
+                if !decision.should_sample_animation(data.tick) {
+                    // Reuse the previously accepted pose. Cadence is a pure
+                    // function of semantic identity's accepted tier and tick.
+                    continue;
+                }
+            }
+
             // Maintaining figure data and sending new figure data to the GPU turns out to
             // be a very expensive operation. We want to avoid doing it as much
             // as possible, so we make the assumption that players don't care so
@@ -1354,7 +1404,8 @@ impl FigureMgr {
             // interpolate motion
             const MIN_PERFECT_RATE_DIST: f32 = 100.0;
 
-            if !matches!(&entity_data.body, Body::Ship(_))
+            if tier_decision.is_none()
+                && !matches!(&entity_data.body, Body::Ship(_))
                 && !(i as u64 + data.tick).is_multiple_of(
                     ((((pos.distance_squared(focus_pos) / entity_data.scale.map_or(1.0, |s| s.0))
                         .powf(0.25)
@@ -1413,6 +1464,7 @@ impl FigureMgr {
             volume_riders: _,
             collider,
             heads,
+            ..
         } = *entity_data;
 
         let renderer = &mut *data.renderer;
@@ -7149,6 +7201,19 @@ impl FigureMgr {
             .filter(|(_, _, _, _, health, _, _, _, _)| health.is_none_or(|h| !h.is_dead))
             .filter(|(_, _, _, _, _, _, _, _, obj)| !self.should_flicker(*time, *obj))
         {
+            let tier_decision = colonists
+                .get(entity)
+                .zip(uids.get(entity))
+                .and_then(|(_, uid)| crate::r1d_tiers::decision_for_uid(uid.0.get()));
+            if tier_decision.is_some_and(|decision| {
+                decision.representation
+                    == bastion_renderer_r0d::individual_tier::RepresentationTierV1::Culled
+                    || (pass == bastion_renderer_r0d::figure_batch::FigurePassV1::Shadow
+                        && decision.shadow
+                            == bastion_renderer_r0d::individual_tier::IndividualShadowTierV1::None)
+            }) {
+                continue;
+            }
             if let Some((bound, model, _)) = self.get_model_for_render(
                 tick,
                 camera,
@@ -7160,6 +7225,10 @@ impl FigureMgr {
                 false,
                 pos.0,
                 figure_lod_render_distance * scale.map_or(1.0, |s| s.0),
+                tier_decision.and_then(|_| {
+                    uids.get(entity)
+                        .and_then(|uid| crate::r1d_tiers::forced_lod(uid.0.get()))
+                }),
                 match collider {
                     Some(Collider::Volume(vol)) => vol.mut_count,
                     _ => 0,
@@ -7186,6 +7255,7 @@ impl FigureMgr {
                                 body,
                                 inventory,
                                 &model,
+                                tier_decision,
                             )?,
                             model: model.clone(),
                             bound,
@@ -7412,6 +7482,16 @@ impl FigureMgr {
         .filter(|(entity, _, _, _, _, _, _, _)| *entity != viewpoint_entity)
         .filter(|(_, _, _, _, _, _, _, obj)| !self.should_flicker(*time, *obj))
         {
+            let tier_decision = colonists
+                .get(entity)
+                .zip(uids.get(entity))
+                .and_then(|(_, uid)| crate::r1d_tiers::decision_for_uid(uid.0.get()));
+            if tier_decision.is_some_and(|decision| {
+                decision.representation
+                    == bastion_renderer_r0d::individual_tier::RepresentationTierV1::Culled
+            }) {
+                continue;
+            }
             if let Some((bound, model, atlas)) = self.get_model_for_render(
                 tick,
                 camera,
@@ -7423,6 +7503,10 @@ impl FigureMgr {
                 false,
                 pos.0,
                 figure_lod_render_distance * scale.map_or(1.0, |s| s.0),
+                tier_decision.and_then(|_| {
+                    uids.get(entity)
+                        .and_then(|uid| crate::r1d_tiers::forced_lod(uid.0.get()))
+                }),
                 match collider {
                     Some(Collider::Volume(vol)) => vol.mut_count,
                     _ => 0,
@@ -7449,6 +7533,7 @@ impl FigureMgr {
                                 body,
                                 inventory,
                                 &model,
+                                tier_decision,
                             )?,
                             model: model.clone(),
                             bound,
@@ -7544,6 +7629,7 @@ impl FigureMgr {
                 true,
                 pos.0,
                 figure_lod_render_distance,
+                None,
                 0,
                 |state| state.visible(),
                 match body {
@@ -7584,6 +7670,7 @@ impl FigureMgr {
         is_viewpoint: bool,
         pos: Vec3<f32>,
         figure_lod_render_distance: f32,
+        forced_lod: Option<usize>,
         mut_count: usize,
         filter_state: impl Fn(&FigureStateMeta) -> bool,
         item_key: Option<ItemKey>,
@@ -8066,7 +8153,9 @@ impl FigureMgr {
                 * scale.map_or(1.0, |s| s.0)
                 * 0.5;
 
-            let model = if pos.distance_squared(cam_pos) > figure_low_detail_distance.powi(2) {
+            let model = if let Some(lod) = forced_lod {
+                model_entry.lod_model(lod)
+            } else if pos.distance_squared(cam_pos) > figure_low_detail_distance.powi(2) {
                 model_entry.lod_model(2)
             } else if pos.distance_squared(cam_pos) > figure_mid_detail_distance.powi(2) {
                 model_entry.lod_model(1)

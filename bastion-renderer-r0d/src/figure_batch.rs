@@ -8,9 +8,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use sha2::{Digest, Sha256};
 
-use crate::figure_gpu::{
-    FIGURE_GPU_ABI_VERSION_V1, FigureGpuAssignmentV1, FigureGpuErrorV1, FigureGpuUploadPlanV1,
-    UploadReceiptTerminalV1, UploadReceiptV1,
+use crate::{
+    figure_gpu::{
+        FIGURE_GPU_ABI_VERSION_V1, FigureGpuAssignmentV1, FigureGpuErrorV1, FigureGpuUploadPlanV1,
+        UploadReceiptTerminalV1, UploadReceiptV1,
+    },
+    individual_tier::AnimationTierV1,
 };
 
 pub const FIGURE_BATCH_SCHEMA_VERSION_V1: u16 = 1;
@@ -118,6 +121,8 @@ pub struct FigureBatchKeyV1 {
     pub sampler_digest: FigureBatchDigestV1,
     pub form: FigureFormV1,
     pub lod_level: u16,
+    pub animation_tier: AnimationTierV1,
+    pub fade_phase: u16,
     pub abi_version: u16,
     pub instance_stride: u32,
     pub pose_page_bytes: u32,
@@ -158,6 +163,10 @@ impl FigureBatchKeyV1 {
             cursor += 32;
         }
         output[cursor..cursor + 2].copy_from_slice(&self.lod_level.to_le_bytes());
+        cursor += 2;
+        output[cursor] = self.animation_tier as u8;
+        cursor += 1;
+        output[cursor..cursor + 2].copy_from_slice(&self.fade_phase.to_le_bytes());
         cursor += 2;
         output[cursor..cursor + 2].copy_from_slice(&self.abi_version.to_le_bytes());
         cursor += 2;
@@ -798,6 +807,8 @@ mod tests {
             sampler_digest: digest(77),
             form: FigureFormV1::Full,
             lod_level: 0,
+            animation_tier: AnimationTierV1::EveryTick,
+            fade_phase: 0,
             abi_version: FIGURE_GPU_ABI_VERSION_V1,
             instance_stride: 256,
             pose_page_bytes: 4_096,
@@ -829,7 +840,7 @@ mod tests {
         let baseline = baseline_key.digest().unwrap();
         assert_eq!(
             crate::hex32(&baseline),
-            "c29b5f0726e396d139c79e22bfdbae577e29218879dcda3f845e0056d33e952f"
+            "136b8467c83dbcb6ad0295196d03fe33c8c0fdd0e0700bc13fca020f151fc039"
         );
         let variants = [
             {
@@ -885,6 +896,16 @@ mod tests {
             {
                 let mut v = baseline_key.clone();
                 v.lod_level = 1;
+                v
+            },
+            {
+                let mut v = baseline_key.clone();
+                v.animation_tier = AnimationTierV1::EverySecondTick;
+                v
+            },
+            {
+                let mut v = baseline_key.clone();
+                v.fade_phase = 1;
                 v
             },
             {

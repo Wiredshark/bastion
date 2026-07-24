@@ -349,6 +349,7 @@ impl SingleplayerState {
                             .and_then(|value| value.parse::<u8>().ok())
                             .filter(|count| (1..=64).contains(count))
                             .unwrap_or(1);
+                        let r1d_tier_smoke = std::env::var_os("BASTION_R1D_TIER_SMOKE").is_some();
                         let fixture = if figure_count == 1 {
                             server.bastion_spawn_colony(fixture_position, 1)
                         } else {
@@ -361,8 +362,22 @@ impl SingleplayerState {
                             let width = 8_u8;
                             (0..figure_count)
                                 .flat_map(|ordinal| {
-                                    let x = f32::from(ordinal % width) * 2.5;
-                                    let y = f32::from(ordinal / width) * 2.5;
+                                    let (x, y) = if r1d_tier_smoke {
+                                        // Four depth bands follow the declared
+                                        // capture camera's +X/+Y view axis.
+                                        // Lateral offsets keep bodies visibly
+                                        // distinct without changing semantic
+                                        // tier selection by enumeration order.
+                                        let band = usize::from(ordinal / 6).min(3);
+                                        let depth = [0.0_f32, 9.0, 22.0, 40.0][band];
+                                        let lateral = (f32::from(ordinal % 6) - 2.5) * 1.6;
+                                        (depth + lateral, depth - lateral)
+                                    } else {
+                                        (
+                                            f32::from(ordinal % width) * 2.5,
+                                            f32::from(ordinal / width) * 2.5,
+                                        )
+                                    };
                                     server.bastion_spawn_colony(
                                         fixture_position + Vec3::new(x, y, 0.0),
                                         1,
@@ -373,6 +388,7 @@ impl SingleplayerState {
                         info!(
                             ?fixture,
                             figure_count,
+                            r1d_tier_smoke,
                             world_seed = 1337,
                             ?fixture_position,
                             "bastion: capture flat-arena fixture declared"

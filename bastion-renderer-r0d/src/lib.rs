@@ -16,6 +16,7 @@ pub mod figure_batch;
 pub mod figure_gpu;
 pub mod figure_package;
 pub mod identity;
+pub mod individual_tier;
 pub mod parallel;
 pub mod pass_graph;
 pub mod presentation;

@@ -28,6 +28,9 @@ pub struct ProductionPresentationEntityInputV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProductionPresentationInputV1 {
     pub simulation_tick: u64,
+    /// Fixed-point renderer camera authority for deterministic individual tier
+    /// selection, sampled with the coherent presentation read.
+    pub camera_position_mm: [i64; 3],
     pub anchor_uid: u64,
     pub anchor_body: String,
     pub anchor_position_mm: [i64; 3],
@@ -373,6 +376,7 @@ mod tests {
     fn input(tick: u64) -> ProductionPresentationInputV1 {
         ProductionPresentationInputV1 {
             simulation_tick: tick,
+            camera_position_mm: [0, 0, 2_000],
             anchor_uid: 2,
             anchor_body: "Humanoid(Dwarf)".to_owned(),
             anchor_position_mm: [1_000, 2_000, 3_000],
