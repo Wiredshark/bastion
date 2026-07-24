@@ -173,28 +173,34 @@ pub fn enable_deterministic_rtsim() {
 /// convention — no site can drift back to bare OS entropy unnoticed). `salt`
 /// distinguishes call sites (and per-NPC streams: pass the npc seed).
 pub fn tick_rng(world_seed: u32, tick: u64, salt: u32) -> rand_chacha::ChaChaRng {
-    use rand::prelude::*;
-    if deterministic_rtsim_enabled() {
-        // RNG-DEEP-003 (determinism audit): the manual byte-packing left 16
-        // of the 32 seed bytes ZERO (world_seed 4 + tick 8 + salt 4 = 16),
-        // and the salt was an untyped u32 — two call sites passing the same
-        // value collided. Derive the FULL 32-byte seed by domain-separated
-        // hashing of the key material through the shared DomainHasher
-        // (Sha256: portable, all 32 bytes populated, length-prefixed fields
-        // so distinct (seed, tick, salt) can never alias). Return type stays
-        // ChaChaRng — no caller ripple. (The larger "shared RngKey / typed
-        // domain enum / ChaCha8" refactor the deep-research doc envisions is
-        // a separate scoped follow-up; this closes the two concrete defects.)
-        let mut h = common::state_hash::DomainHasher::new(
-            "bastion/domain/rtsim-tick-rng/v1/sha256",
-        );
-        h.field(&world_seed.to_le_bytes());
-        h.field(&tick.to_le_bytes());
-        h.field(&salt.to_le_bytes());
-        rand_chacha::ChaChaRng::from_seed(h.finish().0)
-    } else {
-        rand_chacha::ChaChaRng::from_seed(rand::rng().random::<[u8; 32]>())
-    }
+    use rand::SeedableRng;
+    // DETERMINISM-BY-DEFAULT (Ben, 2026-07-24, DECISIONS #28): seed ALWAYS from
+    // (world_seed, tick, salt) — NEVER OS entropy. This previously fell back to
+    // `rand::rng()` unless `deterministic_rtsim_enabled()` (harness only), so
+    // the LIVE game rolled fresh RNG every launch: the SAME world founded a
+    // DIFFERENT colony each time. Now the RNG SEEDING is reproducible by default.
+    //
+    // DECOUPLED from execution_mode ON PURPOSE — this is PERF-NEUTRAL: the flag
+    // still selects DeterministicSerial (1 worker) only for the byte-exact
+    // harness; the LIVE game stays Parallel/multi-core. So this fixes the gross
+    // visible symptom (same seed -> same colony) at zero perf cost.
+    //
+    // CAVEAT (do not overclaim): reproducible seeding is NOT full byte-
+    // determinism for the LIVE (Parallel) game. Parallel op-ORDER can still vary
+    // where the live agent/rtsim path isn't canonically ordered, so two live
+    // runs may still diverge downstream. Full byte-determinism-by-default needs
+    // a shipping DeterministicParallel mode + a full-live-path order-invariance
+    // proof (filed as a separate scoped blocker, #2 / T0.52-T0.64). The harness's
+    // DeterministicSerial remains the byte-exact reference.
+    //
+    // RNG-DEEP-003: derive the FULL 32-byte seed by domain-separated hashing
+    // (Sha256, length-prefixed fields) so distinct (seed, tick, salt) can never
+    // alias — the old manual byte-packing left 16 of 32 bytes zero and collided.
+    let mut h = common::state_hash::DomainHasher::new("bastion/domain/rtsim-tick-rng/v1/sha256");
+    h.field(&world_seed.to_le_bytes());
+    h.field(&tick.to_le_bytes());
+    h.field(&salt.to_le_bytes());
+    rand_chacha::ChaChaRng::from_seed(h.finish().0)
 }
 
 pub use self::{
