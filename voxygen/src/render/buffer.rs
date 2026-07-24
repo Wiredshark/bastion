@@ -12,6 +12,7 @@ pub struct Buffer<T: Copy + Pod> {
 impl<T: Copy + Pod> Buffer<T> {
     pub fn new(device: &wgpu::Device, usage: wgpu::BufferUsages, data: &[T]) -> Self {
         let contents = bytemuck::cast_slice(data);
+        crate::r0p_observer::record_buffer_upload(contents.len());
 
         Self {
             buf: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -47,6 +48,7 @@ impl<T: Copy + Pod> DynamicBuffer<T> {
 
     pub fn update(&self, queue: &wgpu::Queue, vals: &[T], offset: usize) {
         if !vals.is_empty() {
+            crate::r0p_observer::record_buffer_upload(std::mem::size_of_val(vals));
             queue.write_buffer(
                 &self.buf,
                 offset as u64 * std::mem::size_of::<T>() as u64,

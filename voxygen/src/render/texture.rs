@@ -58,6 +58,7 @@ impl Texture {
             view_formats: &[],
         });
 
+        crate::r0p_observer::record_texture_upload(buffer.as_slice().len());
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &tex,
@@ -204,6 +205,7 @@ impl Texture {
             size[0] as usize * size[1] as usize * bytes_per_pixel as usize
         );
         // TODO: Only works for 2D images
+        crate::r0p_observer::record_texture_upload(data.len());
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.tex,

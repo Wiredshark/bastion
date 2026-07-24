@@ -26,6 +26,7 @@ pub mod menu;
 pub mod mesh;
 pub mod panic_handler;
 pub mod profile;
+pub mod r0p_observer;
 pub mod render;
 pub mod run;
 pub mod scene;

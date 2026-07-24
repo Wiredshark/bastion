@@ -275,6 +275,13 @@ impl Renderer {
         };
 
         let info = adapter.get_info();
+        crate::r0p_observer::record_adapter(
+            &info.name,
+            info.vendor,
+            info.device,
+            &format!("{:?}", info.backend),
+            &format!("{:?}", info.device_type),
+        );
         let supported_limits = adapter.limits();
         info!(
             ?info.name,
@@ -574,6 +581,9 @@ impl Renderer {
             create_quad_index_buffer_u16(&device, QUAD_INDEX_BUFFER_U16_START_VERT_LEN as usize);
         let quad_index_buffer_u32 =
             create_quad_index_buffer_u32(&device, QUAD_INDEX_BUFFER_U32_START_VERT_LEN as usize);
+        if crate::r0p_observer::enabled() {
+            other_modes.profiler_enabled = true;
+        }
         other_modes.profiler_enabled &= profiler_features_enabled;
         #[cfg(not(feature = "tracy"))]
         let profiler =
@@ -1087,6 +1097,8 @@ impl Renderer {
             let timestamp_period = self.queue.get_timestamp_period();
             if let Some(profile_times) = self.profiler.process_finished_frame(timestamp_period) {
                 self.profile_times = profile_times;
+                let timings = self.timings();
+                crate::r0p_observer::record_gpu_timings(&timings);
             }
         }
 
