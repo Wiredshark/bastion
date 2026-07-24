@@ -262,6 +262,22 @@ pub fn deterministic_capture_enabled() -> bool {
 
 pub fn freeze_time() -> bool { deterministic_capture_enabled() }
 
+pub fn absolute_time_capture_selected() -> bool {
+    std::env::var_os("BASTION_R0D_CAPTURE_AT").is_some()
+}
+
+pub const fn capture_waits_for_pause_v1(flat_arena: bool, absolute_time: bool) -> bool {
+    flat_arena && !absolute_time
+}
+
+pub const fn certification_freeze_tick_v1(flat_arena: bool, absolute_time: bool) -> Option<u64> {
+    if capture_waits_for_pause_v1(flat_arena, absolute_time) {
+        Some(300)
+    } else {
+        None
+    }
+}
+
 pub const FROZEN_SHADER_TIME: (f64, f64, f64) = (60.0 * 60.0 * 9.0, 0.0, 0.0);
 
 pub fn capture_config() -> Option<(std::path::PathBuf, u64, u64)> {
@@ -536,6 +552,20 @@ pub fn capture_anchor_uid_v1(
 mod tests {
     use super::*;
     use crate::render::RenderMode;
+
+    #[test]
+    fn absolute_time_capture_bypasses_pause_and_server_freeze() {
+        assert!(!capture_waits_for_pause_v1(true, true));
+        assert_eq!(certification_freeze_tick_v1(true, true), None);
+    }
+
+    #[test]
+    fn pause_only_capture_remains_flat_arena_opt_in() {
+        assert!(capture_waits_for_pause_v1(true, false));
+        assert_eq!(certification_freeze_tick_v1(true, false), Some(300));
+        assert!(!capture_waits_for_pause_v1(false, false));
+        assert_eq!(certification_freeze_tick_v1(false, false), None);
+    }
 
     #[test]
     fn capture_anchor_excludes_client_and_ignores_input_order() {
