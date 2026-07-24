@@ -15,6 +15,7 @@ pub mod figure_package;
 pub mod identity;
 pub mod parallel;
 pub mod pass_graph;
+pub mod presentation;
 pub mod publication;
 pub mod readiness;
 pub mod replay;

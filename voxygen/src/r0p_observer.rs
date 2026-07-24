@@ -245,6 +245,16 @@ pub fn record_gpu_timings(timings: &[(u8, &str, f64)]) {
 
 pub fn record_cpu_frame(phases: CpuFramePhasesV1) {
     with_state(|state| {
+        let presentation = crate::r1a_presentation::ready_token();
+        let presentation_generation = presentation
+            .map(|token| token.client_applied_generation)
+            .unwrap_or(0);
+        let presentation_frame = presentation
+            .map(|token| hex_digest(&token.frame_digest))
+            .unwrap_or_else(|| "0".repeat(64));
+        let presentation_resources = presentation
+            .map(|token| hex_digest(&token.resource_set_digest))
+            .unwrap_or_else(|| "0".repeat(64));
         let busy_ns = phases.total_wall_ns.saturating_sub(phases.pacing_ns);
         let work = state.work;
         let scene = state.scene;
@@ -260,7 +270,9 @@ pub fn record_cpu_frame(phases: CpuFramePhasesV1) {
                 "\"texture_upload_bytes\":{},\"submissions\":{},",
                 "\"terrain_chunks\":{},\"visible_terrain_chunks\":{},",
                 "\"shadow_terrain_chunks\":{},\"figures\":{},\"visible_figures\":{},",
-                "\"particles\":{},\"visible_particles\":{}}}\n"
+                "\"particles\":{},\"visible_particles\":{},",
+                "\"presentation_generation\":{},\"presentation_frame_sha256\":\"{}\",",
+                "\"presentation_resource_set_sha256\":\"{}\"}}\n"
             ),
             state.frame_sequence,
             phases.reconciles(),
@@ -288,11 +300,24 @@ pub fn record_cpu_frame(phases: CpuFramePhasesV1) {
             scene.visible_figures,
             scene.particles,
             scene.visible_particles,
+            presentation_generation,
+            presentation_frame,
+            presentation_resources,
         );
         push_bounded(&mut state.frame_lines, line);
         state.frame_sequence = state.frame_sequence.saturating_add(1);
         state.work = WorkCountersV1::default();
     });
+}
+
+fn hex_digest(digest: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(64);
+    for byte in digest {
+        output.push(char::from(HEX[usize::from(byte >> 4)]));
+        output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    output
 }
 
 pub fn finalize() {

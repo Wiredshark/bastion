@@ -5,7 +5,10 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 pub const PIPELINE_IDENTITY_SCHEMA_V1: (u16, u16) = (1, 0);
@@ -254,9 +257,15 @@ pub struct SemanticTraceSnapshotV1 {
     pub record_count: usize,
     pub digest: [u8; 32],
     pub visible_scene_coverage: VisibleSceneCoverageV1,
+    pub presentation_generation: Option<u64>,
 }
 
 static LATEST_SEMANTIC_TRACE: Mutex<Option<SemanticTraceSnapshotV1>> = Mutex::new(None);
+static PRESENTATION_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+pub fn set_presentation_generation_v1(generation: Option<u64>) {
+    PRESENTATION_GENERATION.store(generation.unwrap_or(0), Ordering::Release);
+}
 
 pub fn record_draw(kind: u16, units: u32, instances: u32) {
     crate::r0p_observer::record_draw(units, instances);
@@ -309,6 +318,10 @@ fn draw_tape_snapshot(records: &[(u16, u32, u32)]) -> Option<(usize, [u8; 32])> 
                 record_count: records.len(),
                 digest,
                 visible_scene_coverage,
+                presentation_generation: match PRESENTATION_GENERATION.load(Ordering::Acquire) {
+                    0 => None,
+                    value => Some(value),
+                },
             });
         }
     }
@@ -686,6 +699,10 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "visible_scene_lod_terrain_draw_count"
         | "visible_scene_lod_terrain_units"
         | "visible_scene_lod_terrain_instances"
+        | "presentation_generation"
+        | "presentation_frame_sha256"
+        | "presentation_resource_set_sha256"
+        | "presentation_semantic_tape_sha256"
         | "anchor_uid"
         | "anchor_selected_non_client_colonist"
         | "ordinal" => Some(CaptureMetadataFieldClassV1::Authority),
@@ -715,6 +732,7 @@ struct CaptureRequestContextV1 {
     diagnostic_client_tick: u64,
     diagnostic_interpolated_time_bits: u64,
     semantic_trace: SemanticTraceSnapshotV1,
+    presentation: bastion_renderer_r0d::presentation::PresentationReadyTokenV1,
 }
 
 static CAPTURE_ANCHOR: Mutex<Option<CaptureAnchorEvidenceV1>> = Mutex::new(None);
@@ -731,6 +749,28 @@ pub fn clear_capture_anchor() {
         Ok(mut current) => *current = None,
         Err(error) => tracing::warn!(target: "bastion_r0d", "capture anchor lock failed: {error}"),
     }
+}
+
+#[must_use]
+pub fn capture_anchor_v1() -> Option<CaptureAnchorEvidenceV1> {
+    CAPTURE_ANCHOR.lock().ok().and_then(|anchor| anchor.clone())
+}
+
+#[must_use]
+pub fn latest_visible_resource_coverage_v1() -> (Option<u64>, bool, bool) {
+    LATEST_SEMANTIC_TRACE
+        .lock()
+        .ok()
+        .and_then(|trace| *trace)
+        .map(|trace| {
+            (
+                trace.presentation_generation,
+                trace.visible_scene_coverage.terrain_draw_count > 0
+                    || trace.visible_scene_coverage.lod_terrain_draw_count > 0,
+                trace.visible_scene_coverage.figure_draw_count > 0,
+            )
+        })
+        .unwrap_or((None, false, false))
 }
 
 fn capture_fault_path(output: &Path) -> PathBuf { output.join("capture-faults.log") }
@@ -790,6 +830,9 @@ pub fn drive_capture(
     };
 
     let authority = certification_server_latch_v1();
+    let Some(presentation) = crate::r1a_presentation::ready_token() else {
+        return false;
+    };
     let semantic_trace = LATEST_SEMANTIC_TRACE.lock().ok().and_then(|value| *value);
     let anchor = CAPTURE_ANCHOR.lock().ok().and_then(|anchor| anchor.clone());
     let absolute_mode = absolute_time_capture_selected();
@@ -867,6 +910,7 @@ pub fn drive_capture(
                 diagnostic_client_tick: simulation_tick,
                 diagnostic_interpolated_time_bits: sim_time.to_bits(),
                 semantic_trace,
+                presentation,
             },
         );
     }
@@ -955,6 +999,10 @@ fn request_one_capture(
                                         "visible_scene_lod_terrain_draw_count={}\n",
                                         "visible_scene_lod_terrain_units={}\n",
                                         "visible_scene_lod_terrain_instances={}\n",
+                                        "presentation_generation={}\n",
+                                        "presentation_frame_sha256={}\n",
+                                        "presentation_resource_set_sha256={}\n",
+                                        "presentation_semantic_tape_sha256={}\n",
                                         "diagnostic_client_tick={}\n",
                                         "diagnostic_interpolated_time_bits={:016x}\n",
                                         "width={}\n",
@@ -984,6 +1032,10 @@ fn request_one_capture(
                                     context.visible_scene_coverage.lod_terrain_draw_count,
                                     context.visible_scene_coverage.lod_terrain_units,
                                     context.visible_scene_coverage.lod_terrain_instances,
+                                    context.presentation.client_applied_generation,
+                                    hex_digest(&context.presentation.frame_digest),
+                                    hex_digest(&context.presentation.resource_set_digest),
+                                    hex_digest(&context.presentation.semantic_tape_root),
                                     context.diagnostic_client_tick,
                                     context.diagnostic_interpolated_time_bits,
                                     width,
@@ -1080,6 +1132,7 @@ mod tests {
             record_count: 10,
             digest,
             visible_scene_coverage,
+            presentation_generation: None,
         }
     }
 

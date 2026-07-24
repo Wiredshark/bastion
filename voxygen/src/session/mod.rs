@@ -226,6 +226,15 @@ const BASTION_PAN_STOP: f32 = 1.0;
 /// picks from teleporting the camera.
 const BASTION_GRAB_MAX_STEP: f32 = 512.0;
 
+fn fixed_mm(value: f32) -> Option<i64> {
+    const LIMIT: f64 = 9_000_000_000_000.0;
+    let millimetres = f64::from(value) * 1_000.0;
+    if !millimetres.is_finite() || !(-LIMIT..=LIMIT).contains(&millimetres) {
+        return None;
+    }
+    Some(millimetres.round() as i64)
+}
+
 /// Represents an active game session (i.e., the one being played).
 impl SessionState {
     /// Create a new `SessionState`.
@@ -271,6 +280,7 @@ impl SessionState {
         let hud = Hud::new(global_state, persisted_state, &client.borrow());
         let walk_forward_dir = scene.camera().forward_xy();
         let walk_right_dir = scene.camera().right_xy();
+        crate::r1a_presentation::reset();
 
         Self {
             scene,
@@ -325,6 +335,100 @@ impl SessionState {
     // bastion: overseer camera mode switching (B1) + input contexts (B1.5)
     fn bastion_overseer_active(&self) -> bool {
         self.scene.camera().get_mode() == CameraMode::Overseer
+    }
+
+    fn r1a_presentation_input(
+        &self,
+        settings: &Settings,
+    ) -> Option<crate::r1a_presentation::ProductionPresentationInputV1> {
+        use specs::Join;
+
+        let client = self.client.borrow();
+        let own = client.entity();
+        let ecs = client.state().ecs();
+        let entities = ecs.entities();
+        let uids = ecs.read_storage::<common::uid::Uid>();
+        let positions = ecs.read_storage::<comp::Pos>();
+        let bodies = ecs.read_storage::<comp::Body>();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let (_, uid, position, body, _) = (&entities, &uids, &positions, &bodies, &colonists)
+            .join()
+            .filter(|(entity, _, _, _, _)| *entity != own)
+            .min_by_key(|(_, uid, _, _, _)| uid.0.get())?;
+        let position_mm = [
+            fixed_mm(position.0.x)?,
+            fixed_mm(position.0.y)?,
+            fixed_mm(position.0.z)?,
+        ];
+        let terrain_distance = u16::try_from(client.view_distance().unwrap_or(1)).ok()?;
+        let entity_distance = u16::try_from(
+            client
+                .view_distance()
+                .unwrap_or(1)
+                .min(settings.graphics.entity_view_distance),
+        )
+        .ok()?;
+        let figure_distance = u16::try_from(settings.graphics.figure_lod_render_distance).ok()?;
+        let sprite_distance = u16::try_from(settings.graphics.sprite_render_distance).ok()?;
+        let mut policy_bytes = Vec::with_capacity(11);
+        policy_bytes.extend_from_slice(&terrain_distance.to_le_bytes());
+        policy_bytes.extend_from_slice(&entity_distance.to_le_bytes());
+        policy_bytes.extend_from_slice(&figure_distance.to_le_bytes());
+        policy_bytes.extend_from_slice(&sprite_distance.to_le_bytes());
+        policy_bytes.push(u8::from(settings.graphics.particles_enabled));
+        policy_bytes.push(u8::from(settings.graphics.weapon_trails_enabled));
+        policy_bytes.push(u8::from(
+            settings.graphics.render_mode.flashing_lights_enabled,
+        ));
+        let policy_digest = bastion_renderer_r0d::domain_hash_v1(
+            "bastion/r1a/production-visual-policy",
+            1,
+            0,
+            &policy_bytes,
+        )
+        .ok()?;
+        let asset_identity = std::env::var("BASTION_R0P_ASSET_TREE")
+            .unwrap_or_else(|_| "veloren-production-assets-v1".to_owned());
+        let terrain_resource = bastion_renderer_r0d::domain_hash_v1(
+            "bastion/r1a/production-terrain-resource",
+            1,
+            0,
+            asset_identity.as_bytes(),
+        )
+        .ok()?;
+        let mut environment_bytes = Vec::with_capacity(48);
+        environment_bytes.extend_from_slice(&terrain_resource);
+        environment_bytes.extend_from_slice(&client.get_tick().to_le_bytes());
+        environment_bytes.extend_from_slice(&uid.0.get().to_le_bytes());
+        let environment_digest = bastion_renderer_r0d::domain_hash_v1(
+            "bastion/r1a/production-environment",
+            1,
+            0,
+            &environment_bytes,
+        )
+        .ok()?;
+        Some(crate::r1a_presentation::ProductionPresentationInputV1 {
+            simulation_tick: client.get_tick(),
+            anchor_uid: uid.0.get(),
+            anchor_body: format!("{body:?}"),
+            anchor_position_mm: position_mm,
+            terrain_resource,
+            environment_digest,
+            cloud_milli: 0,
+            rain_milli: 0,
+            wind_mm_s: [0, 0],
+            daylight_milli: 500,
+            policy: bastion_renderer_r0d::presentation::PresentationVisualPolicyV1 {
+                policy_digest,
+                terrain_view_distance: terrain_distance,
+                entity_view_distance: entity_distance,
+                figure_lod_distance: figure_distance,
+                sprite_distance,
+                particles_enabled: settings.graphics.particles_enabled,
+                weapon_trails_enabled: settings.graphics.weapon_trails_enabled,
+                flashing_lights_enabled: settings.graphics.render_mode.flashing_lights_enabled,
+            },
+        })
     }
 
     /// bastion: the active input context (design doc §3b) is *derived* — a
@@ -1945,20 +2049,6 @@ impl PlayState for SessionState {
             visible_particles: u64::try_from(self.scene.particle_mgr().particle_count_visible())
                 .unwrap_or(u64::MAX),
         });
-        let r0d_capture_ready = !crate::render::bastion_r0d::capture_waits_for_pause_v1(
-            std::env::var_os("BASTION_FLAT_ARENA").is_some(),
-            crate::render::bastion_r0d::absolute_time_capture_selected(),
-        ) || global_state.paused();
-        if r0d_capture_ready
-            && crate::render::bastion_r0d::drive_capture(
-                global_state.window.renderer_mut(),
-                r0d_sim_time,
-                r0d_simulation_tick,
-            )
-        {
-            return PlayStateResult::Shutdown;
-        }
-
         if let Some(presence) = client_presence {
             let camera = self.scene.camera_mut();
 
@@ -4205,8 +4295,13 @@ impl PlayState for SessionState {
                     wind_vel: self.scene.wind_vel,
                 };
 
-                // Runs if either in a multiplayer server or the singleplayer server is unpaused
-                if !global_state.paused() {
+                // R1A compatibility cutover: a frozen singleplayer snapshot
+                // must keep feeding the legacy scene until its exact
+                // presentation generation is resource-complete. Otherwise
+                // pause can freeze a permanently black/incomplete world.
+                if !global_state.paused()
+                    || crate::r1a_presentation::maintain_paused_scene_required()
+                {
                     self.scene.maintain(
                         global_state.window.renderer_mut(),
                         &mut global_state.audio,
@@ -4223,6 +4318,42 @@ impl PlayState for SessionState {
                         self.hud.handle_outcome(&outcome, &scene_data, global_state);
                     }
                 }
+            }
+
+            if crate::render::bastion_r0d::capture_config().is_some()
+                && let Some(input) = self.r1a_presentation_input(&global_state.settings)
+            {
+                let (presentation_generation, terrain_draw_coverage, figure_draw_coverage) =
+                    crate::render::bastion_r0d::latest_visible_resource_coverage_v1();
+                if let Err(error) = crate::r1a_presentation::observe(
+                    &input,
+                    crate::r1a_presentation::RendererResourceEvidenceV1 {
+                        // GlobalState::maintain polls the renderer after every
+                        // prior frame; this observation is therefore for a
+                        // completed maintain cycle, never the current upload.
+                        presentation_generation,
+                        renderer_maintain_completed: true,
+                        terrain_draw_coverage,
+                        figure_draw_coverage,
+                    },
+                ) {
+                    tracing::warn!(target: "bastion_r1a", ?error, "presentation handoff rejected");
+                }
+            }
+
+            let r0d_capture_ready = crate::r1a_presentation::ready_for_capture_measurement()
+                && (!crate::render::bastion_r0d::capture_waits_for_pause_v1(
+                    std::env::var_os("BASTION_FLAT_ARENA").is_some(),
+                    crate::render::bastion_r0d::absolute_time_capture_selected(),
+                ) || global_state.paused());
+            if r0d_capture_ready
+                && crate::render::bastion_r0d::drive_capture(
+                    global_state.window.renderer_mut(),
+                    r0d_sim_time,
+                    r0d_simulation_tick,
+                )
+            {
+                return PlayStateResult::Shutdown;
             }
 
             // Clean things up after the tick.
