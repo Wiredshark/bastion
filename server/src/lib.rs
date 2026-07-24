@@ -3690,6 +3690,38 @@ impl Server {
         #[cfg(feature = "worldgen")]
         self.bastion_arena_tick();
 
+        // bastion (det-capture): env-gated AUTO-FOUND a colony for NON-INTERACTIVE
+        // determinism runs. server-cli has no client to found a colony via the
+        // normal command, so on a flat-arena boot with BASTION_AUTOFOUND_COLONY=N
+        // set, force-load the slab center (tick 1) then spawn N colonists at the
+        // deterministic slab-center spawn (tick 30, once chunks are in). Lets a
+        // headless run capture the very colony an overseer client would found —
+        // the missing piece for a rendered-equivalent determinism capture.
+        #[cfg(feature = "worldgen")]
+        {
+            use std::sync::OnceLock;
+            static N: OnceLock<Option<u8>> = OnceLock::new();
+            let n = *N.get_or_init(|| {
+                std::env::var("BASTION_AUTOFOUND_COLONY")
+                    .ok()
+                    .and_then(|s| s.parse::<u8>().ok())
+                    .filter(|&n| n > 0 && bastion_flat_arena::enabled())
+            });
+            if let Some(n) = n {
+                let tick = self.state.ecs().read_resource::<Tick>().0;
+                if tick == 1 {
+                    let center =
+                        bastion_flat_arena::world_center_wpos(&self.world).map(|e| e as f32);
+                    self.bastion_force_load_area(center, 5);
+                } else if tick == 30 {
+                    let sp = bastion_flat_arena::spawn_wpos(bastion_flat_arena::world_center_wpos(
+                        &self.world,
+                    ));
+                    self.bastion_spawn_colony(sp, n);
+                }
+            }
+        }
+
         // Update calendar events as time changes
         // TODO: If a lot of calendar events get added, this might become expensive.
         // Maybe don't do this every tick?
@@ -3807,6 +3839,52 @@ impl Server {
 
         // 6) Synchronise clients with the new state of the world.
         sys::run_sync_systems(self.state.ecs_mut());
+
+        // bastion (det-capture hook): per-tick authoritative colonist Pos dump
+        // (raw f32 bits), gated by BASTION_AUTH_POS_LOG. The D1 arbiter — run
+        // the game twice, diff these logs, find the FIRST diverging tick (or
+        // prove HOLD). Sim-authoritative (server side), so it captures identical
+        // state whether the server runs headless (server-cli) or under voxygen's
+        // singleplayer — the "where do seeds diverge" probe for the live game.
+        {
+            use std::sync::OnceLock;
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static LOG_PATH: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
+            let path = LOG_PATH
+                .get_or_init(|| std::env::var_os("BASTION_AUTH_POS_LOG").map(Into::into));
+            if let Some(path) = path {
+                use specs::Join;
+                static TICK: AtomicU64 = AtomicU64::new(0);
+                let t = TICK.fetch_add(1, Ordering::Relaxed);
+                let ecs = self.state.ecs();
+                let uids = ecs.read_storage::<common::uid::Uid>();
+                let positions = ecs.read_storage::<comp::Pos>();
+                let colonists = ecs.read_storage::<comp::Colonist>();
+                let mut rows: Vec<(u64, f32, f32, f32)> = (&uids, &positions, &colonists)
+                    .join()
+                    .map(|(uid, pos, _)| (uid.0.get(), pos.0.x, pos.0.y, pos.0.z))
+                    .collect();
+                rows.sort_by_key(|(uid, ..)| *uid);
+                let mut line = String::new();
+                for (uid, x, y, z) in &rows {
+                    // raw f32 bits (decimal) so a byte-exact diff is trivial.
+                    line.push_str(&format!(
+                        "t {t} uid {uid} pos {} {} {}\n",
+                        x.to_bits(),
+                        y.to_bits(),
+                        z.to_bits()
+                    ));
+                }
+                use std::io::Write;
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                {
+                    let _ = f.write_all(line.as_bytes());
+                }
+            }
+        }
 
         let before_world_tick = Instant::now();
 
