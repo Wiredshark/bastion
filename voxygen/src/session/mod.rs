@@ -281,6 +281,7 @@ impl SessionState {
         let walk_forward_dir = scene.camera().forward_xy();
         let walk_right_dir = scene.camera().right_xy();
         crate::r1a_presentation::reset();
+        crate::r1d_groups::reset();
         crate::r1d_tiers::reset();
         if let Err(error) = global_state.window.renderer_mut().reset_r1bc_figure_gpu() {
             tracing::warn!(
@@ -431,6 +432,59 @@ impl SessionState {
             &environment_bytes,
         )
         .ok()?;
+        // No renderer heuristic invents semantic groups. The production
+        // certification path has no bound authoritative group feed today, so
+        // the explicit R1D smoke flag declares exactly two packet-owned groups
+        // over the already coherent, canonically ordered fixture entities.
+        let mut presentation_groups = if std::env::var_os("BASTION_R1D_GROUP_SMOKE").is_some()
+            && presentation_entities.len() >= 4
+        {
+            let split = presentation_entities.len() / 2;
+            let source_capability_digest = bastion_renderer_r0d::domain_hash_v1(
+                "bastion/r1d/group-source-capability",
+                1,
+                0,
+                b"R1D-GROUPS-002:flat-arena-explicit-two-group-fixture",
+            )
+            .ok()?;
+            [
+                (&presentation_entities[..split], 1_u8),
+                (&presentation_entities[split..], 2_u8),
+            ]
+            .into_iter()
+            .map(|(members, ordinal)| {
+                let semantic_id =
+                    bastion_renderer_r0d::domain_hash_v1("bastion/r1d/fixture-group", 1, 0, &[
+                        ordinal,
+                    ])
+                    .ok()?;
+                let member_uids = members.iter().map(|member| member.uid).collect::<Vec<_>>();
+                let leader_uid = *member_uids.first()?;
+                Some(crate::r1a_presentation::ProductionPresentationGroupInputV1 {
+                        semantic_id,
+                        kind_tag:
+                            bastion_renderer_r0d::group_representation::GroupKindV1::Formation
+                                as u16,
+                        member_uids,
+                        leader_uid,
+                        protected_member_uids: (leader_uid == anchor.uid)
+                            .then_some(vec![anchor.uid])
+                            .unwrap_or_default(),
+                        formation: if ordinal == 1 {
+                            bastion_renderer_r0d::group_representation::FormationKindV1::Wedge
+                        } else {
+                            bastion_renderer_r0d::group_representation::FormationKindV1::Grid
+                        },
+                        source_provenance: bastion_renderer_r0d::group_representation::
+                            GroupSourceProvenanceV1::DeclaredPacketFixture,
+                        source_capability_digest,
+                    })
+            })
+            .collect::<Option<Vec<_>>>()?
+        } else {
+            Vec::new()
+        };
+        presentation_groups.sort();
         Some(crate::r1a_presentation::ProductionPresentationInputV1 {
             simulation_tick: client.get_tick(),
             camera_position_mm: {
@@ -446,6 +500,7 @@ impl SessionState {
             anchor_body: anchor.body.clone(),
             anchor_position_mm: anchor.position_mm,
             entities: presentation_entities,
+            groups: presentation_groups,
             terrain_resource,
             environment_digest,
             cloud_milli: 0,
@@ -4439,7 +4494,22 @@ impl PlayState for SessionState {
                                             false
                                         },
                                     };
-                                if tier_plan_accepted
+                                let group_plan_accepted = if tier_plan_accepted {
+                                    match crate::r1d_groups::update(&frame, &input) {
+                                        Ok(_) => true,
+                                        Err(error) => {
+                                            tracing::warn!(
+                                                target: "bastion_r1d",
+                                                ?error,
+                                                "group representation plan rejected"
+                                            );
+                                            false
+                                        },
+                                    }
+                                } else {
+                                    false
+                                };
+                                if group_plan_accepted
                                     && crate::r1a_presentation::upload_required(&frame)
                                 {
                                     match crate::r1bc_figure_package::production_package_for_frame(

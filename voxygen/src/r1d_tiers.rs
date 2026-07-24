@@ -168,6 +168,11 @@ pub fn latest_evidence() -> Option<ProductionTierEvidenceV1> {
 }
 
 #[must_use]
+pub fn latest_plan() -> Option<IndividualTierPlanV1> {
+    state().lock().ok().and_then(|state| state.plan.clone())
+}
+
+#[must_use]
 pub fn forced_lod(uid: u64) -> Option<usize> {
     match decision_for_uid(uid)?.representation {
         RepresentationTierV1::Full | RepresentationTierV1::ReducedAnimation => Some(0),

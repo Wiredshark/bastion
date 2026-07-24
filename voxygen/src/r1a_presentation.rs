@@ -8,11 +8,12 @@ use std::sync::{Mutex, OnceLock};
 use bastion_renderer_r0d::{
     domain_hash_v1,
     figure_gpu::UploadReceiptV1,
+    group_representation::{FormationKindV1, GroupSourceProvenanceV1},
     presentation::{
         PresentationEntityV1, PresentationEnvironmentV1, PresentationErrorV1,
         PresentationFrameDraftV1, PresentationFrameV1, PresentationGenerationV1,
-        PresentationHandoffErrorV1, PresentationHandoffV1, PresentationReadyTokenV1,
-        PresentationVisualPolicyV1,
+        PresentationGroupV1, PresentationHandoffErrorV1, PresentationHandoffV1,
+        PresentationReadyTokenV1, PresentationVisualPolicyV1,
     },
 };
 
@@ -23,6 +24,18 @@ pub struct ProductionPresentationEntityInputV1 {
     pub uid: u64,
     pub body: String,
     pub position_mm: [i64; 3],
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ProductionPresentationGroupInputV1 {
+    pub semantic_id: [u8; 32],
+    pub kind_tag: u16,
+    pub member_uids: Vec<u64>,
+    pub leader_uid: u64,
+    pub protected_member_uids: Vec<u64>,
+    pub formation: FormationKindV1,
+    pub source_provenance: GroupSourceProvenanceV1,
+    pub source_capability_digest: [u8; 32],
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -37,6 +50,9 @@ pub struct ProductionPresentationInputV1 {
     /// Complete, canonically ordered figure-visible colonist slice. The anchor
     /// must occur exactly once. This is one coherent client-applied read.
     pub entities: Vec<ProductionPresentationEntityInputV1>,
+    /// Explicit authoritative or packet-fixture membership. Empty means the
+    /// current production source has no bound group capability.
+    pub groups: Vec<ProductionPresentationGroupInputV1>,
     pub terrain_resource: [u8; 32],
     pub environment_digest: [u8; 32],
     pub cloud_milli: u16,
@@ -80,6 +96,9 @@ struct CompatibilityStateV1 {
 }
 
 static STATE: OnceLock<Mutex<CompatibilityStateV1>> = OnceLock::new();
+
+#[cfg(test)]
+pub(crate) static TEST_LOCK_V1: Mutex<()> = Mutex::new(());
 
 fn state() -> &'static Mutex<CompatibilityStateV1> {
     STATE.get_or_init(|| Mutex::new(CompatibilityStateV1::default()))
@@ -214,6 +233,35 @@ fn build_frame(
     figure_resource: [u8; 32],
 ) -> Result<bastion_renderer_r0d::presentation::PresentationFrameV1, ProductionPresentationErrorV1>
 {
+    let mut group_by_uid = std::collections::BTreeMap::new();
+    let mut groups = Vec::with_capacity(input.groups.len());
+    for group in &input.groups {
+        let mut member_ids = Vec::with_capacity(group.member_uids.len());
+        for uid in &group.member_uids {
+            let semantic_id = production_entity_semantic_id(*uid)?;
+            if group_by_uid.insert(*uid, group.semantic_id).is_some() {
+                return Err(ProductionPresentationErrorV1::InvalidAnchor);
+            }
+            member_ids.push(semantic_id);
+        }
+        member_ids.sort_unstable();
+        let mut state = Vec::with_capacity(96 + member_ids.len() * 32);
+        state.extend_from_slice(&snapshot_root);
+        state.extend_from_slice(&group.semantic_id);
+        state.extend_from_slice(&group.kind_tag.to_le_bytes());
+        state.push(group.formation as u8);
+        state.push(group.source_provenance as u8);
+        state.extend_from_slice(&group.source_capability_digest);
+        for member in &member_ids {
+            state.extend_from_slice(member);
+        }
+        groups.push(PresentationGroupV1 {
+            semantic_id: group.semantic_id,
+            kind_tag: group.kind_tag,
+            member_ids,
+            state_digest: hash("bastion/r1d/production-group-state", &state)?,
+        });
+    }
     let mut entities = Vec::with_capacity(input.entities.len());
     for entity in &input.entities {
         let semantic_id = production_entity_semantic_id(entity.uid)?;
@@ -228,7 +276,7 @@ fn build_frame(
         entities.push(PresentationEntityV1 {
             semantic_id,
             figure_resource,
-            group_id: None,
+            group_id: group_by_uid.get(&entity.uid).copied(),
             position_mm: entity.position_mm,
             orientation_q30: [0, 0, 0, 1 << 30],
             scale_milli: 1_000,
@@ -244,7 +292,7 @@ fn build_frame(
             coherent_snapshot_root: snapshot_root,
         },
         entities,
-        groups: Vec::new(),
+        groups,
         events: Vec::new(),
         environment: PresentationEnvironmentV1 {
             terrain_root: input.terrain_resource,
@@ -317,6 +365,52 @@ fn coherent_snapshot_root(
     {
         return Err(ProductionPresentationErrorV1::InvalidAnchor);
     }
+    let mut groups = input.groups.clone();
+    groups.sort();
+    if groups != input.groups
+        || groups.len() > bastion_renderer_r0d::presentation::MAX_PRESENTATION_GROUPS_V1
+        || groups
+            .windows(2)
+            .any(|pair| pair[0].semantic_id == pair[1].semantic_id)
+    {
+        return Err(ProductionPresentationErrorV1::InvalidAnchor);
+    }
+    let entity_uids = input
+        .entities
+        .iter()
+        .map(|entity| entity.uid)
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut grouped_uids = std::collections::BTreeSet::new();
+    for group in &input.groups {
+        if group.semantic_id == [0; 32]
+            || group.kind_tag == 0
+            || group.member_uids.is_empty()
+            || group.member_uids.len()
+                > bastion_renderer_r0d::presentation::MAX_PRESENTATION_GROUP_MEMBERS_V1
+            || group.leader_uid == 0
+            || group.source_capability_digest == [0; 32]
+        {
+            return Err(ProductionPresentationErrorV1::InvalidAnchor);
+        }
+        let mut members = group.member_uids.clone();
+        members.sort_unstable();
+        let mut protected = group.protected_member_uids.clone();
+        protected.sort_unstable();
+        if members != group.member_uids
+            || protected != group.protected_member_uids
+            || members.windows(2).any(|pair| pair[0] == pair[1])
+            || protected.windows(2).any(|pair| pair[0] == pair[1])
+            || members.binary_search(&group.leader_uid).is_err()
+            || protected
+                .iter()
+                .any(|member| members.binary_search(member).is_err())
+            || members
+                .iter()
+                .any(|member| !entity_uids.contains(member) || !grouped_uids.insert(*member))
+        {
+            return Err(ProductionPresentationErrorV1::InvalidAnchor);
+        }
+    }
     let body_len =
         u64::try_from(input.anchor_body.len()).map_err(|_| ProductionPresentationErrorV1::Hash)?;
     let mut payload = Vec::with_capacity(8 + 8 + 24 + input.anchor_body.len() + 96);
@@ -344,6 +438,35 @@ fn coherent_snapshot_root(
             payload.extend_from_slice(&component.to_le_bytes());
         }
     }
+    payload.extend_from_slice(
+        &u64::try_from(input.groups.len())
+            .map_err(|_| ProductionPresentationErrorV1::Hash)?
+            .to_le_bytes(),
+    );
+    for group in &input.groups {
+        payload.extend_from_slice(&group.semantic_id);
+        payload.extend_from_slice(&group.kind_tag.to_le_bytes());
+        payload.push(group.formation as u8);
+        payload.push(group.source_provenance as u8);
+        payload.extend_from_slice(&group.source_capability_digest);
+        payload.extend_from_slice(&group.leader_uid.to_le_bytes());
+        payload.extend_from_slice(
+            &u64::try_from(group.member_uids.len())
+                .map_err(|_| ProductionPresentationErrorV1::Hash)?
+                .to_le_bytes(),
+        );
+        for member in &group.member_uids {
+            payload.extend_from_slice(&member.to_le_bytes());
+        }
+        payload.extend_from_slice(
+            &u64::try_from(group.protected_member_uids.len())
+                .map_err(|_| ProductionPresentationErrorV1::Hash)?
+                .to_le_bytes(),
+        );
+        for member in &group.protected_member_uids {
+            payload.extend_from_slice(&member.to_le_bytes());
+        }
+    }
     payload.extend_from_slice(&input.terrain_resource);
     payload.extend_from_slice(&input.environment_digest);
     payload.extend_from_slice(&input.policy.policy_digest);
@@ -369,8 +492,6 @@ mod tests {
         },
     };
 
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-
     fn digest(byte: u8) -> [u8; 32] { [byte; 32] }
 
     fn input(tick: u64) -> ProductionPresentationInputV1 {
@@ -385,6 +506,7 @@ mod tests {
                 body: "Humanoid(Dwarf)".to_owned(),
                 position_mm: [1_000, 2_000, 3_000],
             }],
+            groups: Vec::new(),
             terrain_resource: digest(1),
             environment_digest: digest(2),
             cloud_milli: 100,
@@ -493,7 +615,7 @@ mod tests {
 
     #[test]
     fn exact_upload_receipt_is_required_before_visible_scene_can_open() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK_V1.lock().unwrap();
         reset();
         let package = package();
         let frame = prepare_frame(&input(300), package.package_digest()).unwrap();
@@ -521,7 +643,7 @@ mod tests {
 
     #[test]
     fn diagnostic_draw_coverage_only_settles_after_upload_and_resets_on_loss() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK_V1.lock().unwrap();
         reset();
         let package = package();
         let frame = prepare_frame(&input(300), package.package_digest()).unwrap();
@@ -545,7 +667,7 @@ mod tests {
 
     #[test]
     fn newer_snapshot_supersedes_the_old_upload_generation() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK_V1.lock().unwrap();
         reset();
         let package = package();
         let old = prepare_frame(&input(300), package.package_digest()).unwrap();
@@ -568,7 +690,7 @@ mod tests {
 
     #[test]
     fn trace_from_prior_generation_is_diagnostic_only_and_cannot_open_capture() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK_V1.lock().unwrap();
         reset();
         let package = package();
         let frame = prepare_frame(&input(300), package.package_digest()).unwrap();
@@ -588,7 +710,7 @@ mod tests {
 
     #[test]
     fn malformed_projection_fails_closed() {
-        let _guard = TEST_LOCK.lock().unwrap();
+        let _guard = TEST_LOCK_V1.lock().unwrap();
         reset();
         let mut invalid = input(300);
         invalid.anchor_uid = 0;
@@ -597,5 +719,50 @@ mod tests {
             Err(ProductionPresentationErrorV1::InvalidAnchor)
         );
         assert!(!ready_for_capture_measurement());
+    }
+
+    #[test]
+    fn explicit_group_fixture_projects_exact_membership_and_provenance() {
+        let mut grouped = input(300);
+        grouped.entities.extend([
+            ProductionPresentationEntityInputV1 {
+                uid: 3,
+                body: "Humanoid(Dwarf)".to_owned(),
+                position_mm: [3_000, 4_000, 3_000],
+            },
+            ProductionPresentationEntityInputV1 {
+                uid: 4,
+                body: "Humanoid(Dwarf)".to_owned(),
+                position_mm: [5_000, 6_000, 3_000],
+            },
+        ]);
+        grouped.entities.sort();
+        grouped.groups = vec![ProductionPresentationGroupInputV1 {
+            semantic_id: digest(40),
+            kind_tag: 4,
+            member_uids: vec![2, 3, 4],
+            leader_uid: 2,
+            protected_member_uids: vec![2],
+            formation: FormationKindV1::Wedge,
+            source_provenance: GroupSourceProvenanceV1::DeclaredPacketFixture,
+            source_capability_digest: digest(41),
+        }];
+        let snapshot = coherent_snapshot_root(&grouped).unwrap();
+        let frame = build_frame(&grouped, 1, snapshot, digest(9)).unwrap();
+        assert_eq!(frame.groups().len(), 1);
+        assert_eq!(frame.groups()[0].semantic_id, digest(40));
+        assert_eq!(frame.groups()[0].member_ids.len(), 3);
+        assert!(
+            frame
+                .entities()
+                .iter()
+                .all(|entity| entity.group_id == Some(digest(40)))
+        );
+
+        grouped.groups[0].member_uids.push(99);
+        assert_eq!(
+            coherent_snapshot_root(&grouped),
+            Err(ProductionPresentationErrorV1::InvalidAnchor)
+        );
     }
 }
