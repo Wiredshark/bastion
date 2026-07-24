@@ -3735,24 +3735,33 @@ impl Server {
             });
             if let Some(n) = n {
                 use std::sync::atomic::{AtomicBool, Ordering};
-                static DONE: AtomicBool = AtomicBool::new(false);
-                // Found on the VERY FIRST server tick, when the rtsim `data.tick`
-                // — the counter bastion_spawn_colony's scatter RNG seeds from
-                // (rtsim/mod.rs) — is deterministically 0 (rtsim ticks later in
-                // the server tick, AFTER this hook). Any later tick is unsafe:
-                // during boot rtsim catches up in variable-size steps, so
-                // data.tick at a given server tick differs cross-run (the
-                // divergence this test caught). Force-load the flat slab
-                // (synchronous) and spawn in the SAME tick so nothing between can
-                // perturb the seed -> identical founding across runs. Colonists
-                // may settle onto the slab over the next ticks, but identically.
-                if !DONE.swap(true, Ordering::Relaxed) {
+                static LOADED: AtomicBool = AtomicBool::new(false);
+                static SPAWNED: AtomicBool = AtomicBool::new(false);
+                // Force-load the flat slab on the first tick, then found the
+                // colony at rtsim data.tick >= 30 — LATE enough that the world is
+                // loaded and colonists promote to ACTIVE (wandering) entities, so
+                // the capture exercises a MOVING colony, not a frozen spawn. This
+                // is only safe because BASTION_DETERMINISTIC (required for this
+                // path) makes execution serial + data.tick deterministic, so both
+                // runs reach data.tick 30 identically. The founding RNG is also
+                // pinned to a fixed seed_tick (0) belt-and-suspenders.
+                if !LOADED.swap(true, Ordering::Relaxed) {
                     let center = bastion_flat_arena::world_center_wpos(&self.world);
                     self.bastion_force_load_area(center.map(|e| e as f32), 5);
-                    let sp = bastion_flat_arena::spawn_wpos(center);
-                    // FIXED seed tick (0) — the live data.tick isn't deterministic
-                    // at boot, so pin the founding RNG for a reproducible capture.
-                    self.bastion_spawn_colony_seeded(sp, n, 0);
+                } else if !SPAWNED.load(Ordering::Relaxed) {
+                    let dtick = self
+                        .state
+                        .ecs()
+                        .read_resource::<rtsim::RtSim>()
+                        .state()
+                        .data()
+                        .tick;
+                    if dtick >= 30 {
+                        SPAWNED.store(true, Ordering::Relaxed);
+                        let center = bastion_flat_arena::world_center_wpos(&self.world);
+                        let sp = bastion_flat_arena::spawn_wpos(center);
+                        self.bastion_spawn_colony_seeded(sp, n, 0);
+                    }
                 }
             }
         }
