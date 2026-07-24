@@ -170,6 +170,7 @@ pub struct Drawer<'frame> {
     surface_view: wgpu::TextureView,
     encoder: ManualScope<'frame>,
     borrow: RendererBorrow<'frame>,
+    figure_batch: &'frame mut crate::render::figure_batch::FigureBatchRuntimeV1,
     surface_texture: Option<wgpu::SurfaceTexture>,
     globals: &'frame GlobalsBindGroup,
     // Texture and other info for taking a screenshot
@@ -184,6 +185,7 @@ impl<'frame> Drawer<'frame> {
         surface_texture: wgpu::SurfaceTexture,
         globals: &'frame GlobalsBindGroup,
     ) -> Self {
+        renderer.figure_batch.begin_frame();
         let taking_screenshot = renderer.take_screenshot.take().map(|screenshot_fn| {
             super::screenshot::TakeScreenshot::new(
                 &renderer.device,
@@ -233,6 +235,7 @@ impl<'frame> Drawer<'frame> {
             surface_view,
             encoder,
             borrow,
+            figure_batch: &mut renderer.figure_batch,
             surface_texture: Some(surface_texture),
             globals,
             taking_screenshot,
@@ -278,6 +281,7 @@ impl<'frame> Drawer<'frame> {
             Some(RainOcclusionPassDrawer {
                 render_pass,
                 borrow: &self.borrow,
+                figure_batch: &mut *self.figure_batch,
                 rain_occlusion_renderer,
             })
         } else {
@@ -319,6 +323,7 @@ impl<'frame> Drawer<'frame> {
             Some(ShadowPassDrawer {
                 render_pass,
                 borrow: &self.borrow,
+                figure_batch: &mut *self.figure_batch,
                 shadow_renderer,
             })
         } else {
@@ -376,6 +381,7 @@ impl<'frame> Drawer<'frame> {
         Some(FirstPassDrawer {
             render_pass,
             borrow: &self.borrow,
+            figure_batch: &mut *self.figure_batch,
             pipelines,
             globals: self.globals,
         })
@@ -946,6 +952,7 @@ impl Drop for Drawer<'_> {
 pub struct ShadowPassDrawer<'pass> {
     render_pass: OwningScope<'pass, wgpu::RenderPass<'pass>>,
     borrow: &'pass RendererBorrow<'pass>,
+    figure_batch: &'pass mut crate::render::figure_batch::FigureBatchRuntimeV1,
     shadow_renderer: &'pass ShadowMapRenderer,
 }
 
@@ -953,10 +960,16 @@ impl<'pass> ShadowPassDrawer<'pass> {
     pub fn draw_figure_shadows(&mut self) -> FigureShadowDrawer<'_, 'pass> {
         let mut render_pass = self.render_pass.scope("directed_figure_shadows");
 
-        render_pass.set_pipeline(&self.shadow_renderer.figure_directed_pipeline.pipeline);
         set_quad_index_buffer::<terrain::Vertex>(&mut render_pass, self.borrow);
 
-        FigureShadowDrawer { render_pass }
+        FigureShadowDrawer {
+            render_pass,
+            queue: self.borrow.queue,
+            runtime: &mut *self.figure_batch,
+            legacy_pipeline: &self.shadow_renderer.figure_directed_pipeline.pipeline,
+            batch_pipeline: &self.shadow_renderer.figure_batch_directed_pipeline.pipeline,
+            pass: crate::render::figure_batch::RuntimeFigurePassV1::Shadow,
+        }
     }
 
     pub fn draw_terrain_shadows(&mut self) -> TerrainShadowDrawer<'_, 'pass> {
@@ -982,6 +995,7 @@ impl<'pass> ShadowPassDrawer<'pass> {
 pub struct RainOcclusionPassDrawer<'pass> {
     render_pass: OwningScope<'pass, wgpu::RenderPass<'pass>>,
     borrow: &'pass RendererBorrow<'pass>,
+    figure_batch: &'pass mut crate::render::figure_batch::FigureBatchRuntimeV1,
     rain_occlusion_renderer: &'pass RainOcclusionMapRenderer,
 }
 
@@ -989,10 +1003,16 @@ impl<'pass> RainOcclusionPassDrawer<'pass> {
     pub fn draw_figure_shadows(&mut self) -> FigureShadowDrawer<'_, 'pass> {
         let mut render_pass = self.render_pass.scope("directed_figure_rain_occlusion");
 
-        render_pass.set_pipeline(&self.rain_occlusion_renderer.figure_pipeline.pipeline);
         set_quad_index_buffer::<terrain::Vertex>(&mut render_pass, self.borrow);
 
-        FigureShadowDrawer { render_pass }
+        FigureShadowDrawer {
+            render_pass,
+            queue: self.borrow.queue,
+            runtime: &mut *self.figure_batch,
+            legacy_pipeline: &self.rain_occlusion_renderer.figure_pipeline.pipeline,
+            batch_pipeline: &self.rain_occlusion_renderer.figure_batch_pipeline.pipeline,
+            pass: crate::render::figure_batch::RuntimeFigurePassV1::Rain,
+        }
     }
 
     pub fn draw_terrain_shadows(&mut self) -> TerrainShadowDrawer<'_, 'pass> {
@@ -1008,6 +1028,11 @@ impl<'pass> RainOcclusionPassDrawer<'pass> {
 #[must_use]
 pub struct FigureShadowDrawer<'pass_ref, 'pass: 'pass_ref> {
     render_pass: Scope<'pass_ref, wgpu::RenderPass<'pass>>,
+    queue: &'pass wgpu::Queue,
+    runtime: &'pass_ref mut crate::render::figure_batch::FigureBatchRuntimeV1,
+    legacy_pipeline: &'pass wgpu::RenderPipeline,
+    batch_pipeline: &'pass wgpu::RenderPipeline,
+    pass: crate::render::figure_batch::RuntimeFigurePassV1,
 }
 
 impl<'pass_ref, 'pass: 'pass_ref> FigureShadowDrawer<'pass_ref, 'pass> {
@@ -1016,6 +1041,7 @@ impl<'pass_ref, 'pass: 'pass_ref> FigureShadowDrawer<'pass_ref, 'pass> {
         model: SubModel<'data, terrain::Vertex>,
         locals: &'data figure::BoundLocals,
     ) {
+        self.render_pass.set_pipeline(self.legacy_pipeline);
         observed_bind_group!(self.render_pass, 1, &locals.bind_group);
         self.render_pass.set_vertex_buffer(0, model.buf());
         crate::render::bastion_r0d::record_draw(
@@ -1025,6 +1051,29 @@ impl<'pass_ref, 'pass: 'pass_ref> FigureShadowDrawer<'pass_ref, 'pass> {
         );
         self.render_pass
             .draw_indexed(0..model.len() / 4 * 6, 0, 0..1);
+    }
+
+    pub fn draw_batch<'data: 'pass>(
+        &mut self,
+        model: SubModel<'data, terrain::Vertex>,
+        instances: &[figure::FigureBatchInstance],
+    ) -> Result<(), crate::render::figure_batch::FigureBatchRuntimeErrorV1> {
+        let instance_range = self.runtime.stage(self.queue, self.pass, instances)?;
+        self.render_pass.set_pipeline(self.batch_pipeline);
+        observed_bind_group!(self.render_pass, 1, &self.runtime.bind_group);
+        self.render_pass.set_vertex_buffer(0, model.buf());
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::FIGURE_SHADOW,
+            model.len() / 4 * 6,
+            u32::try_from(instances.len()).unwrap_or(u32::MAX),
+        );
+        self.render_pass
+            .draw_indexed(0..model.len() / 4 * 6, 0, instance_range);
+        Ok(())
+    }
+
+    pub fn record_fallback(&self, incompatible_resource: bool) {
+        self.runtime.record_fallback(incompatible_resource);
     }
 }
 
@@ -1095,6 +1144,7 @@ impl<'pass_ref, 'pass: 'pass_ref> DebugShadowDrawer<'pass_ref, 'pass> {
 pub struct FirstPassDrawer<'pass> {
     pub(super) render_pass: OwningScope<'pass, wgpu::RenderPass<'pass>>,
     borrow: &'pass RendererBorrow<'pass>,
+    figure_batch: &'pass mut crate::render::figure_batch::FigureBatchRuntimeV1,
     pipelines: &'pass super::Pipelines,
     globals: &'pass GlobalsBindGroup,
 }
@@ -1140,11 +1190,16 @@ impl<'pass> FirstPassDrawer<'pass> {
     pub fn draw_figures(&mut self) -> FigureDrawer<'_, 'pass> {
         let mut render_pass = self.render_pass.scope("figures");
 
-        render_pass.set_pipeline(&self.pipelines.figure.pipeline);
         // Note: figures use the same vertex type as the terrain
         set_quad_index_buffer::<terrain::Vertex>(&mut render_pass, self.borrow);
 
-        FigureDrawer { render_pass }
+        FigureDrawer {
+            render_pass,
+            queue: self.borrow.queue,
+            runtime: &mut *self.figure_batch,
+            legacy_pipeline: &self.pipelines.figure.pipeline,
+            batch_pipeline: &self.pipelines.figure_batch.pipeline,
+        }
     }
 
     pub fn draw_terrain(&mut self) -> TerrainDrawer<'_, 'pass> {
@@ -1239,6 +1294,10 @@ impl<'pass_ref, 'pass: 'pass_ref> DebugDrawer<'pass_ref, 'pass> {
 #[must_use]
 pub struct FigureDrawer<'pass_ref, 'pass: 'pass_ref> {
     render_pass: Scope<'pass_ref, wgpu::RenderPass<'pass>>,
+    queue: &'pass wgpu::Queue,
+    runtime: &'pass_ref mut crate::render::figure_batch::FigureBatchRuntimeV1,
+    legacy_pipeline: &'pass wgpu::RenderPipeline,
+    batch_pipeline: &'pass wgpu::RenderPipeline,
 }
 
 impl<'pass_ref, 'pass: 'pass_ref> FigureDrawer<'pass_ref, 'pass> {
@@ -1249,6 +1308,7 @@ impl<'pass_ref, 'pass: 'pass_ref> FigureDrawer<'pass_ref, 'pass> {
         // TODO: don't rebind this every time once they are shared between figures
         atlas_textures: &'data AtlasTextures<figure::Locals, FigureSpriteAtlasData>,
     ) {
+        self.render_pass.set_pipeline(self.legacy_pipeline);
         observed_bind_group!(self.render_pass, 2, &atlas_textures.bind_group);
         observed_bind_group!(self.render_pass, 3, &locals.bind_group);
         self.render_pass.set_vertex_buffer(0, model.buf());
@@ -1259,6 +1319,35 @@ impl<'pass_ref, 'pass: 'pass_ref> FigureDrawer<'pass_ref, 'pass> {
         );
         self.render_pass
             .draw_indexed(0..model.len() / 4 * 6, 0, 0..1);
+    }
+
+    pub fn draw_batch<'data: 'pass>(
+        &mut self,
+        model: SubModel<'data, terrain::Vertex>,
+        atlas_textures: &'data AtlasTextures<figure::Locals, FigureSpriteAtlasData>,
+        instances: &[figure::FigureBatchInstance],
+    ) -> Result<(), crate::render::figure_batch::FigureBatchRuntimeErrorV1> {
+        let instance_range = self.runtime.stage(
+            self.queue,
+            crate::render::figure_batch::RuntimeFigurePassV1::Main,
+            instances,
+        )?;
+        self.render_pass.set_pipeline(self.batch_pipeline);
+        observed_bind_group!(self.render_pass, 2, &atlas_textures.bind_group);
+        observed_bind_group!(self.render_pass, 3, &self.runtime.bind_group);
+        self.render_pass.set_vertex_buffer(0, model.buf());
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::FIGURE,
+            model.len() / 4 * 6,
+            u32::try_from(instances.len()).unwrap_or(u32::MAX),
+        );
+        self.render_pass
+            .draw_indexed(0..model.len() / 4 * 6, 0, instance_range);
+        Ok(())
+    }
+
+    pub fn record_fallback(&self, incompatible_resource: bool) {
+        self.runtime.record_fallback(incompatible_resource);
     }
 }
 

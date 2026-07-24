@@ -340,6 +340,16 @@ where
     phantom: std::marker::PhantomData<Locals>,
 }
 
+impl<Locals, S: AtlasData> AtlasTextures<Locals, S>
+where
+    [(); S::TEXTURES]:,
+{
+    /// Runtime bind compatibility only; never a semantic identity or sort key.
+    pub(crate) fn runtime_binding_identity(&self) -> usize {
+        core::ptr::from_ref(&self.bind_group).addr()
+    }
+}
+
 pub struct VoxelAtlasLayout<S: AtlasData>(wgpu::BindGroupLayout, PhantomData<S>);
 
 impl<S: AtlasData> VoxelAtlasLayout<S> {

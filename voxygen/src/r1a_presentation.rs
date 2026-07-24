@@ -18,12 +18,22 @@ use bastion_renderer_r0d::{
 
 pub const RESOURCE_COMPLETION_FRAMES_V1: u16 = 240;
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ProductionPresentationEntityInputV1 {
+    pub uid: u64,
+    pub body: String,
+    pub position_mm: [i64; 3],
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProductionPresentationInputV1 {
     pub simulation_tick: u64,
     pub anchor_uid: u64,
     pub anchor_body: String,
     pub anchor_position_mm: [i64; 3],
+    /// Complete, canonically ordered figure-visible colonist slice. The anchor
+    /// must occur exactly once. This is one coherent client-applied read.
+    pub entities: Vec<ProductionPresentationEntityInputV1>,
     pub terrain_resource: [u8; 32],
     pub environment_digest: [u8; 32],
     pub cloud_milli: u16,
@@ -88,6 +98,13 @@ pub fn ready_token() -> Option<PresentationReadyTokenV1> {
     })
 }
 
+/// Exact presentation/package/upload completion authority for renderer work.
+/// Settled-scene capture readiness is intentionally a later, separate gate.
+#[must_use]
+pub(crate) fn upload_complete_token() -> Option<PresentationReadyTokenV1> {
+    state().lock().ok().and_then(|state| state.upload_ready)
+}
+
 #[must_use]
 pub fn ready_for_capture_measurement() -> bool { ready_token().is_some() }
 
@@ -115,11 +132,6 @@ pub fn prepare_frame(
     if package_digest == [0; 32] {
         return Err(ProductionPresentationErrorV1::InvalidResource);
     }
-    let semantic_id = hash(
-        "bastion/r1a/production-entity",
-        &input.anchor_uid.to_le_bytes(),
-    )?;
-
     let mut state = state().lock().map_err(|_| {
         ProductionPresentationErrorV1::Handoff(PresentationHandoffErrorV1::NoPendingFrame)
     })?;
@@ -133,13 +145,7 @@ pub fn prepare_frame(
         .next_generation
         .checked_add(1)
         .ok_or(ProductionPresentationErrorV1::GenerationOverflow)?;
-    let frame = build_frame(
-        input,
-        state.next_generation,
-        snapshot_root,
-        semantic_id,
-        package_digest,
-    )?;
+    let frame = build_frame(input, state.next_generation, snapshot_root, package_digest)?;
     state
         .handoff
         .stage(frame.clone())
@@ -202,11 +208,31 @@ fn build_frame(
     input: &ProductionPresentationInputV1,
     generation: u64,
     snapshot_root: [u8; 32],
-    semantic_id: [u8; 32],
     figure_resource: [u8; 32],
 ) -> Result<bastion_renderer_r0d::presentation::PresentationFrameV1, ProductionPresentationErrorV1>
 {
-    let state_digest = hash("bastion/r1a/production-entity-state", &snapshot_root)?;
+    let mut entities = Vec::with_capacity(input.entities.len());
+    for entity in &input.entities {
+        let semantic_id = production_entity_semantic_id(entity.uid)?;
+        let mut state_bytes = Vec::with_capacity(32 + 8 + 24 + entity.body.len());
+        state_bytes.extend_from_slice(&snapshot_root);
+        state_bytes.extend_from_slice(&entity.uid.to_le_bytes());
+        for component in entity.position_mm {
+            state_bytes.extend_from_slice(&component.to_le_bytes());
+        }
+        state_bytes.extend_from_slice(entity.body.as_bytes());
+        let state_digest = hash("bastion/r1a/production-entity-state", &state_bytes)?;
+        entities.push(PresentationEntityV1 {
+            semantic_id,
+            figure_resource,
+            group_id: None,
+            position_mm: entity.position_mm,
+            orientation_q30: [0, 0, 0, 1 << 30],
+            scale_milli: 1_000,
+            state_tag: 1,
+            state_digest,
+        });
+    }
     PresentationFrameDraftV1 {
         generation: PresentationGenerationV1 {
             run_epoch: 1,
@@ -214,16 +240,7 @@ fn build_frame(
             simulation_tick: input.simulation_tick,
             coherent_snapshot_root: snapshot_root,
         },
-        entities: vec![PresentationEntityV1 {
-            semantic_id,
-            figure_resource,
-            group_id: None,
-            position_mm: input.anchor_position_mm,
-            orientation_q30: [0, 0, 0, 1 << 30],
-            scale_milli: 1_000,
-            state_tag: 1,
-            state_digest,
-        }],
+        entities,
         groups: Vec::new(),
         events: Vec::new(),
         environment: PresentationEnvironmentV1 {
@@ -243,6 +260,12 @@ fn build_frame(
     }
     .seal()
     .map_err(ProductionPresentationErrorV1::Frame)
+}
+
+pub(crate) fn production_entity_semantic_id(
+    uid: u64,
+) -> Result<[u8; 32], ProductionPresentationErrorV1> {
+    hash("bastion/r1a/production-entity", &uid.to_le_bytes())
 }
 
 fn coherent_snapshot_root(
@@ -265,6 +288,32 @@ fn coherent_snapshot_root(
     if input.terrain_resource == [0; 32] || input.environment_digest == [0; 32] {
         return Err(ProductionPresentationErrorV1::InvalidResource);
     }
+    if input.entities.is_empty()
+        || input.entities.len() > bastion_renderer_r0d::presentation::MAX_PRESENTATION_ENTITIES_V1
+    {
+        return Err(ProductionPresentationErrorV1::InvalidAnchor);
+    }
+    let mut entities = input.entities.clone();
+    entities.sort();
+    if entities != input.entities
+        || entities.windows(2).any(|pair| pair[0].uid == pair[1].uid)
+        || entities
+            .iter()
+            .filter(|entity| entity.uid == input.anchor_uid)
+            .count()
+            != 1
+        || entities.iter().any(|entity| {
+            entity.uid == 0
+                || entity.body.is_empty()
+                || entity.body.len() > 4_096
+                || entity
+                    .position_mm
+                    .iter()
+                    .any(|value| *value < -LIMIT || *value > LIMIT)
+        })
+    {
+        return Err(ProductionPresentationErrorV1::InvalidAnchor);
+    }
     let body_len =
         u64::try_from(input.anchor_body.len()).map_err(|_| ProductionPresentationErrorV1::Hash)?;
     let mut payload = Vec::with_capacity(8 + 8 + 24 + input.anchor_body.len() + 96);
@@ -275,6 +324,23 @@ fn coherent_snapshot_root(
     }
     payload.extend_from_slice(&body_len.to_le_bytes());
     payload.extend_from_slice(input.anchor_body.as_bytes());
+    payload.extend_from_slice(
+        &u64::try_from(input.entities.len())
+            .map_err(|_| ProductionPresentationErrorV1::Hash)?
+            .to_le_bytes(),
+    );
+    for entity in &input.entities {
+        payload.extend_from_slice(&entity.uid.to_le_bytes());
+        payload.extend_from_slice(
+            &u64::try_from(entity.body.len())
+                .map_err(|_| ProductionPresentationErrorV1::Hash)?
+                .to_le_bytes(),
+        );
+        payload.extend_from_slice(entity.body.as_bytes());
+        for component in entity.position_mm {
+            payload.extend_from_slice(&component.to_le_bytes());
+        }
+    }
     payload.extend_from_slice(&input.terrain_resource);
     payload.extend_from_slice(&input.environment_digest);
     payload.extend_from_slice(&input.policy.policy_digest);
@@ -310,6 +376,11 @@ mod tests {
             anchor_uid: 2,
             anchor_body: "Humanoid(Dwarf)".to_owned(),
             anchor_position_mm: [1_000, 2_000, 3_000],
+            entities: vec![ProductionPresentationEntityInputV1 {
+                uid: 2,
+                body: "Humanoid(Dwarf)".to_owned(),
+                position_mm: [1_000, 2_000, 3_000],
+            }],
             terrain_resource: digest(1),
             environment_digest: digest(2),
             cloud_milli: 100,
@@ -406,6 +477,17 @@ mod tests {
     }
 
     #[test]
+    fn production_entity_identity_is_the_shared_draw_and_upload_authority() {
+        let input = input(300);
+        let snapshot_root = coherent_snapshot_root(&input).unwrap();
+        let frame = build_frame(&input, 1, snapshot_root, digest(9)).unwrap();
+        assert_eq!(
+            frame.entities()[0].semantic_id,
+            production_entity_semantic_id(input.entities[0].uid).unwrap()
+        );
+    }
+
+    #[test]
     fn exact_upload_receipt_is_required_before_visible_scene_can_open() {
         let _guard = TEST_LOCK.lock().unwrap();
         reset();
@@ -415,9 +497,12 @@ mod tests {
             assert_eq!(observe_visible_scene(complete()).unwrap(), None);
         }
         assert!(!ready_for_capture_measurement());
+        assert_eq!(upload_complete_token(), None);
         let upload = upload_for(&frame, &package);
         let token = acknowledge_upload(&upload).unwrap();
         assert_eq!(token.client_applied_generation, 1);
+        assert_eq!(upload_complete_token(), Some(token));
+        assert!(!ready_for_capture_measurement());
         for _ in 1..RESOURCE_COMPLETION_FRAMES_V1 {
             assert_eq!(observe_visible_scene(complete()).unwrap(), None);
         }

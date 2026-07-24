@@ -358,15 +358,31 @@ impl SessionState {
         let positions = ecs.read_storage::<comp::Pos>();
         let bodies = ecs.read_storage::<comp::Body>();
         let colonists = ecs.read_storage::<comp::Colonist>();
-        let (_, uid, position, body, _) = (&entities, &uids, &positions, &bodies, &colonists)
+        let mut presentation_entities = (&entities, &uids, &positions, &bodies, &colonists)
             .join()
             .filter(|(entity, _, _, _, _)| *entity != own)
-            .min_by_key(|(_, uid, _, _, _)| uid.0.get())?;
-        let position_mm = [
-            fixed_mm(position.0.x)?,
-            fixed_mm(position.0.y)?,
-            fixed_mm(position.0.z)?,
-        ];
+            .map(|(_, uid, position, body, _)| {
+                Some(
+                    crate::r1a_presentation::ProductionPresentationEntityInputV1 {
+                        uid: uid.0.get(),
+                        body: format!("{body:?}"),
+                        position_mm: [
+                            fixed_mm(position.0.x)?,
+                            fixed_mm(position.0.y)?,
+                            fixed_mm(position.0.z)?,
+                        ],
+                    },
+                )
+            })
+            .collect::<Option<Vec<_>>>()?;
+        presentation_entities.sort();
+        if presentation_entities.is_empty()
+            || presentation_entities.len()
+                > bastion_renderer_r0d::presentation::MAX_PRESENTATION_ENTITIES_V1
+        {
+            return None;
+        }
+        let anchor = presentation_entities.first()?;
         let terrain_distance = u16::try_from(client.view_distance().unwrap_or(1)).ok()?;
         let entity_distance = u16::try_from(
             client
@@ -406,7 +422,7 @@ impl SessionState {
         let mut environment_bytes = Vec::with_capacity(48);
         environment_bytes.extend_from_slice(&terrain_resource);
         environment_bytes.extend_from_slice(&client.get_tick().to_le_bytes());
-        environment_bytes.extend_from_slice(&uid.0.get().to_le_bytes());
+        environment_bytes.extend_from_slice(&anchor.uid.to_le_bytes());
         let environment_digest = bastion_renderer_r0d::domain_hash_v1(
             "bastion/r1a/production-environment",
             1,
@@ -416,9 +432,10 @@ impl SessionState {
         .ok()?;
         Some(crate::r1a_presentation::ProductionPresentationInputV1 {
             simulation_tick: client.get_tick(),
-            anchor_uid: uid.0.get(),
-            anchor_body: format!("{body:?}"),
-            anchor_position_mm: position_mm,
+            anchor_uid: anchor.uid,
+            anchor_body: anchor.body.clone(),
+            anchor_position_mm: anchor.position_mm,
+            entities: presentation_entities,
             terrain_resource,
             environment_digest,
             cloud_milli: 0,

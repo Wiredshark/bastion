@@ -50,13 +50,28 @@ pub enum FigureGpuRuntimeErrorV1 {
 }
 
 static LATEST_EVIDENCE: OnceLock<Mutex<Option<FigureGpuProductionEvidenceV1>>> = OnceLock::new();
+static DRAW_AUTHORITY: OnceLock<Mutex<Option<FigureGpuDrawAuthorityV1>>> = OnceLock::new();
+
+#[derive(Clone, Debug)]
+pub(crate) struct FigureGpuDrawAuthorityV1 {
+    pub plan: bastion_renderer_r0d::figure_gpu::FigureGpuUploadPlanV1,
+    pub receipt: UploadReceiptV1,
+}
 
 fn evidence_state() -> &'static Mutex<Option<FigureGpuProductionEvidenceV1>> {
     LATEST_EVIDENCE.get_or_init(|| Mutex::new(None))
 }
 
-pub(super) fn latest_evidence() -> Option<FigureGpuProductionEvidenceV1> {
+pub(crate) fn latest_evidence() -> Option<FigureGpuProductionEvidenceV1> {
     evidence_state().lock().ok().and_then(|value| *value)
+}
+
+pub(crate) fn latest_draw_authority() -> Option<FigureGpuDrawAuthorityV1> {
+    DRAW_AUTHORITY
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .ok()
+        .and_then(|value| value.clone())
 }
 
 pub(super) struct FigureGpuRuntimeV1 {
@@ -98,6 +113,9 @@ impl FigureGpuRuntimeV1 {
         if let Ok(mut latest) = evidence_state().lock() {
             *latest = None;
         }
+        if let Ok(mut authority) = DRAW_AUTHORITY.get_or_init(|| Mutex::new(None)).lock() {
+            *authority = None;
+        }
         Ok(Self {
             pool: FigureGpuPoolV1::new(config)
                 .map_err(|error| FigureGpuRuntimeErrorV1::Core(format!("{error:?}")))?,
@@ -126,10 +144,10 @@ impl FigureGpuRuntimeV1 {
             return Ok(receipt.clone());
         }
 
-        let input = entity_input(frame, package)?;
+        let inputs = entity_inputs(frame, package)?;
         let staged = self
             .pool
-            .begin_generation(frame, package, package_receipt, vec![input])
+            .begin_generation(frame, package, package_receipt, inputs)
             .map_err(|error| FigureGpuRuntimeErrorV1::Core(format!("{error:?}")))?;
         staged
             .plan
@@ -226,6 +244,7 @@ impl FigureGpuRuntimeV1 {
             upload_operations,
             upload_bytes,
         };
+        let draw_plan = staged.plan.clone();
         drop(staged);
         drop(committed);
         if let Some((old_receipt, old_completion)) = previous {
@@ -242,6 +261,16 @@ impl FigureGpuRuntimeV1 {
         } else {
             return Err(FigureGpuRuntimeErrorV1::Backend(
                 "figure GPU evidence lock poisoned".to_owned(),
+            ));
+        }
+        if let Ok(mut authority) = DRAW_AUTHORITY.get_or_init(|| Mutex::new(None)).lock() {
+            *authority = Some(FigureGpuDrawAuthorityV1 {
+                plan: draw_plan,
+                receipt: receipt.clone(),
+            });
+        } else {
+            return Err(FigureGpuRuntimeErrorV1::Backend(
+                "figure GPU draw authority lock poisoned".to_owned(),
             ));
         }
         tracing::info!(
@@ -261,53 +290,62 @@ impl FigureGpuRuntimeV1 {
     }
 }
 
-fn entity_input(
+fn entity_inputs(
     frame: &PresentationFrameV1,
     package: &CompiledFigurePackageV1,
-) -> Result<FigureGpuEntityInputV1, FigureGpuRuntimeErrorV1> {
-    let [entity] = frame.entities() else {
+) -> Result<Vec<FigureGpuEntityInputV1>, FigureGpuRuntimeErrorV1> {
+    if frame.entities().is_empty() {
         return Err(FigureGpuRuntimeErrorV1::InvalidPresentation);
-    };
-    if entity.figure_resource != package.package_digest()
-        || frame.renderer_required_resources() != [package.package_digest()]
+    }
+    if frame.renderer_required_resources() != [package.package_digest()]
+        || frame
+            .entities()
+            .iter()
+            .any(|entity| entity.figure_resource != package.package_digest())
     {
         return Err(FigureGpuRuntimeErrorV1::InvalidPresentation);
     }
-    let mut composition = Vec::with_capacity(64);
-    composition.extend_from_slice(&entity.semantic_id);
-    composition.extend_from_slice(&package.package_digest());
-    let composition_digest = hash("bastion/r1bc/gpu-composition", &composition)?;
     let palette_digest = hash("bastion/r1bc/gpu-palette", &package.authority_digest())?;
-    let mut transform = Vec::with_capacity(24 + 16 + 2);
-    for component in entity.position_mm {
-        transform.extend_from_slice(&component.to_le_bytes());
-    }
-    for component in entity.orientation_q30 {
-        transform.extend_from_slice(&component.to_le_bytes());
-    }
-    transform.extend_from_slice(&entity.scale_milli.to_le_bytes());
-    let transform_digest = hash("bastion/r1bc/gpu-transform", &transform)?;
-    let mut pose = Vec::with_capacity(40);
-    pose.extend_from_slice(&entity.state_digest);
-    pose.extend_from_slice(&frame.generation().simulation_tick.to_le_bytes());
-    let pose_digest = hash("bastion/r1bc/gpu-pose", &pose)?;
-    Ok(FigureGpuEntityInputV1 {
-        generation: frame.generation().client_applied_generation,
-        semantic_entity: entity.semantic_id,
-        package_digest: package.package_digest(),
-        authority_digest: package.authority_digest(),
-        composition_digest,
-        palette_digest,
-        transform_digest,
-        pose_digest,
-        lod_level: 0,
-        section_id: 1,
-        material_id: 1,
-        flags: 0,
-        bones: vec![FigureGpuBoneV1 {
-            matrix_q20: [1 << 20, 0, 0, 0, 0, 1 << 20, 0, 0, 0, 0, 1 << 20, 0],
-        }],
-    })
+    frame
+        .entities()
+        .iter()
+        .map(|entity| {
+            let mut composition = Vec::with_capacity(64);
+            composition.extend_from_slice(&entity.semantic_id);
+            composition.extend_from_slice(&package.package_digest());
+            let composition_digest = hash("bastion/r1bc/gpu-composition", &composition)?;
+            let mut transform = Vec::with_capacity(24 + 16 + 2);
+            for component in entity.position_mm {
+                transform.extend_from_slice(&component.to_le_bytes());
+            }
+            for component in entity.orientation_q30 {
+                transform.extend_from_slice(&component.to_le_bytes());
+            }
+            transform.extend_from_slice(&entity.scale_milli.to_le_bytes());
+            let transform_digest = hash("bastion/r1bc/gpu-transform", &transform)?;
+            let mut pose = Vec::with_capacity(40);
+            pose.extend_from_slice(&entity.state_digest);
+            pose.extend_from_slice(&frame.generation().simulation_tick.to_le_bytes());
+            let pose_digest = hash("bastion/r1bc/gpu-pose", &pose)?;
+            Ok(FigureGpuEntityInputV1 {
+                generation: frame.generation().client_applied_generation,
+                semantic_entity: entity.semantic_id,
+                package_digest: package.package_digest(),
+                authority_digest: package.authority_digest(),
+                composition_digest,
+                palette_digest,
+                transform_digest,
+                pose_digest,
+                lod_level: 0,
+                section_id: 1,
+                material_id: 1,
+                flags: 0,
+                bones: vec![FigureGpuBoneV1 {
+                    matrix_q20: [1 << 20, 0, 0, 0, 0, 1 << 20, 0, 0, 0, 0, 1 << 20, 0],
+                }],
+            })
+        })
+        .collect()
 }
 
 fn hash(domain: &str, bytes: &[u8]) -> Result<[u8; 32], FigureGpuRuntimeErrorV1> {
@@ -410,13 +448,15 @@ mod tests {
     #[test]
     fn production_entity_record_is_stable_and_every_transform_change_is_bound() {
         let package = package();
-        let first = entity_input(&frame(&package, 1), &package).unwrap();
-        let repeated = entity_input(&frame(&package, 1), &package).unwrap();
-        let changed = entity_input(&frame(&package, 2), &package).unwrap();
+        let first = entity_inputs(&frame(&package, 1), &package).unwrap();
+        let repeated = entity_inputs(&frame(&package, 1), &package).unwrap();
+        let changed = entity_inputs(&frame(&package, 2), &package).unwrap();
         assert_eq!(first, repeated);
-        assert_ne!(first.transform_digest, changed.transform_digest);
-        assert_eq!(first.package_digest, package.package_digest());
-        assert_eq!(first.bones.len(), 1);
+        assert_eq!(first.len(), 1);
+        assert_eq!(changed.len(), 1);
+        assert_ne!(first[0].transform_digest, changed[0].transform_digest);
+        assert_eq!(first[0].package_digest, package.package_digest());
+        assert_eq!(first[0].bones.len(), 1);
     }
 
     #[test]
@@ -456,7 +496,7 @@ mod tests {
         .seal()
         .unwrap();
         assert_eq!(
-            entity_input(&empty, &package),
+            entity_inputs(&empty, &package),
             Err(FigureGpuRuntimeErrorV1::InvalidPresentation)
         );
     }

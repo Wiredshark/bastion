@@ -172,6 +172,7 @@ pub struct Renderer {
     profiler_features_enabled: bool,
 
     figure_gpu: super::figure_gpu::FigureGpuRuntimeV1,
+    figure_batch: super::figure_batch::FigureBatchRuntimeV1,
 
     ui_premultiply_uploads: ui::BatchedUploads,
 
@@ -619,6 +620,8 @@ impl Renderer {
             .collect();
         let figure_gpu = super::figure_gpu::FigureGpuRuntimeV1::new(&device)
             .map_err(|error| RenderError::CustomError(format!("{error:?}")))?;
+        let figure_batch = super::figure_batch::FigureBatchRuntimeV1::new(&device, &layouts.figure)
+            .map_err(|error| RenderError::CustomError(format!("{error:?}")))?;
 
         Ok(Self {
             device,
@@ -654,6 +657,7 @@ impl Renderer {
             profiler_features_enabled,
 
             figure_gpu,
+            figure_batch,
 
             ui_premultiply_uploads: Default::default(),
 
@@ -1158,6 +1162,7 @@ impl Renderer {
                         shadow.point,
                         shadow.directed,
                         shadow.figure,
+                        shadow.figure_batch,
                         shadow.debug,
                         shadow_views,
                     );
@@ -1167,6 +1172,7 @@ impl Renderer {
                         &self.queue,
                         rain_occlusion.terrain,
                         rain_occlusion.figure,
+                        rain_occlusion.figure_batch,
                         rain_occlusion_view,
                     );
 
@@ -1218,32 +1224,38 @@ impl Renderer {
                         Some(point_pipeline),
                         Some(terrain_directed_pipeline),
                         Some(figure_directed_pipeline),
+                        Some(figure_batch_directed_pipeline),
                         Some(debug_directed_pipeline),
                         ShadowMap::Enabled(shadow_map),
                     ) = (
                         shadow_pipelines.point,
                         shadow_pipelines.directed,
                         shadow_pipelines.figure,
+                        shadow_pipelines.figure_batch,
                         shadow_pipelines.debug,
                         &mut shadow.map,
                     ) {
                         shadow_map.point_pipeline = point_pipeline;
                         shadow_map.terrain_directed_pipeline = terrain_directed_pipeline;
                         shadow_map.figure_directed_pipeline = figure_directed_pipeline;
+                        shadow_map.figure_batch_directed_pipeline = figure_batch_directed_pipeline;
                         shadow_map.debug_directed_pipeline = debug_directed_pipeline;
                     }
 
                     if let (
                         Some(terrain_directed_pipeline),
                         Some(figure_directed_pipeline),
+                        Some(figure_batch_directed_pipeline),
                         RainOcclusionMap::Enabled(rain_occlusion_map),
                     ) = (
                         rain_occlusion_pipelines.terrain,
                         rain_occlusion_pipelines.figure,
+                        rain_occlusion_pipelines.figure_batch,
                         &mut shadow.rain_map,
                     ) {
                         rain_occlusion_map.terrain_pipeline = terrain_directed_pipeline;
                         rain_occlusion_map.figure_pipeline = figure_directed_pipeline;
+                        rain_occlusion_map.figure_batch_pipeline = figure_batch_directed_pipeline;
                     }
 
                     self.pipeline_modes = new_pipeline_modes;

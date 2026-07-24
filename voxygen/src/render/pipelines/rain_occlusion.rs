@@ -86,6 +86,66 @@ pub struct RainOcclusionFigurePipeline {
     pub pipeline: wgpu::RenderPipeline,
 }
 
+pub struct RainOcclusionFigureBatchPipeline {
+    pub pipeline: wgpu::RenderPipeline,
+}
+
+impl RainOcclusionFigureBatchPipeline {
+    pub fn new(
+        device: &wgpu::Device,
+        vs_module: &wgpu::ShaderModule,
+        global_layout: &GlobalsLayouts,
+        figure_layout: &FigureLayout,
+        aa_mode: AaMode,
+    ) -> Self {
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Bastion rain figure batch layout"),
+            push_constant_ranges: &[],
+            bind_group_layouts: &[&global_layout.globals, &figure_layout.batch_instances],
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Bastion rain figure batch pipeline"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: vs_module,
+                entry_point: Some("main"),
+                buffers: &[TerrainVertex::desc()],
+                compilation_options: Default::default(),
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                unclipped_depth: true,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth24Plus,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState {
+                    front: wgpu::StencilFaceState::IGNORE,
+                    back: wgpu::StencilFaceState::IGNORE,
+                    read_mask: 0,
+                    write_mask: 0,
+                },
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: aa_mode.samples(),
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            fragment: None,
+            multiview: None,
+            cache: None,
+        });
+        Self { pipeline }
+    }
+}
+
 impl RainOcclusionFigurePipeline {
     pub fn new(
         device: &wgpu::Device,
