@@ -1931,11 +1931,15 @@ impl PlayState for SessionState {
             let client = self.client.borrow();
             (client.state().get_time(), client.get_tick())
         };
-        if crate::render::bastion_r0d::drive_capture(
-            global_state.window.renderer_mut(),
-            r0d_sim_time,
-            r0d_simulation_tick,
-        ) {
+        let r0d_capture_ready =
+            std::env::var_os("BASTION_FLAT_ARENA").is_none() || global_state.paused();
+        if r0d_capture_ready
+            && crate::render::bastion_r0d::drive_capture(
+                global_state.window.renderer_mut(),
+                r0d_sim_time,
+                r0d_simulation_tick,
+            )
+        {
             return PlayStateResult::Shutdown;
         }
 

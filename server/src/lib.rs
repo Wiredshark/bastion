@@ -46,6 +46,12 @@ pub mod rtsim;
 pub mod settings;
 pub mod state_ext;
 pub mod sys;
+
+/// Opt-in deterministic simulation policy for the isolated renderer
+/// certification fixture. Production servers never call this entry point.
+pub fn bastion_enable_renderer_certification_determinism() {
+    ::rtsim::enable_deterministic_rtsim();
+}
 #[cfg(feature = "persistent_world")]
 pub mod terrain_persistence;
 #[cfg(not(feature = "worldgen"))] mod test_world;
@@ -2346,12 +2352,13 @@ impl Server {
     }
 
     /// bastion (B5.8 ladder-fixture geometry PROBE, harness read): the emitted
-    /// emergency `EmergencyTraversalKind` for a colonist by name — "CarvedStair"
-    /// (walkable, Phase-1), "ConstructedLadder" (ladder_pillar — the fixture's
-    /// target), or "NaturalShaft" (wrong climb kind). Read from the live route
-    /// descriptor board. This is the read leg of the architect's 2-part pre-build
-    /// proof that a candidate narrow shaft lands on ConstructedLadder, not a
-    /// stair and not NaturalShaft. `None` = no emergency route owned yet.
+    /// emergency `EmergencyTraversalKind` for a colonist by name —
+    /// "CarvedStair" (walkable, Phase-1), "ConstructedLadder"
+    /// (ladder_pillar — the fixture's target), or "NaturalShaft" (wrong
+    /// climb kind). Read from the live route descriptor board. This is the
+    /// read leg of the architect's 2-part pre-build proof that a candidate
+    /// narrow shaft lands on ConstructedLadder, not a stair and not
+    /// NaturalShaft. `None` = no emergency route owned yet.
     pub fn bastion_colonist_route_kind(&self, name: &str) -> Option<String> {
         use specs::Join;
         let ecs = self.state.ecs();
