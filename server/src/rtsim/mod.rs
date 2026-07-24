@@ -269,15 +269,33 @@ impl RtSim {
     /// through the standard loaded↔simulated machinery. Returns the roster
     /// names.
     pub fn bastion_spawn_colony(&mut self, wpos: Vec3<f32>, count: u8) -> Vec<String> {
+        // Live founding seeds from the current rtsim tick — each founding is a
+        // unique roll (intended gameplay).
+        let seed_tick = self.state.get_data_mut().tick;
+        self.bastion_spawn_colony_seeded(wpos, count, seed_tick)
+    }
+
+    /// Deterministic-seed variant of [`Self::bastion_spawn_colony`]: seeds the
+    /// colony-generation RNG from an EXPLICIT tick instead of the live
+    /// `data.tick`. For reproducible founding in determinism captures
+    /// (`BASTION_AUTOFOUND_COLONY`) — the live `data.tick` is NOT deterministic
+    /// at boot in a real server (rtsim generation advances it a variable amount
+    /// before the colony is founded), so a fixed `seed_tick` pins colonist
+    /// identities and spawn positions across runs.
+    pub fn bastion_spawn_colony_seeded(
+        &mut self,
+        wpos: Vec3<f32>,
+        count: u8,
+        seed_tick: u64,
+    ) -> Vec<String> {
         use common::rtsim::{Profession, Role};
         use rand::{RngExt as _, prelude::IndexedRandom};
         use rtsim::data::npc::Npc;
 
         let data = self.state.get_data_mut();
         // DETRNG/ARCH-003: colony generation is simulation input, not
-        // cosmetic entropy. Reuse the one rtsim RNG authority so the
-        // harness gets a stable stream while live still receives OS entropy.
-        let mut rng = ::rtsim::tick_rng(self.world_seed, data.tick, 0xBA57_C010);
+        // cosmetic entropy. Reuse the one rtsim RNG authority.
+        let mut rng = ::rtsim::tick_rng(self.world_seed, seed_tick, 0xBA57_C010);
         // Home = nearest site, so simulated-mode AI keeps them local.
         let home = data
             .sites

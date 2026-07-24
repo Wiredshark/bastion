@@ -310,6 +310,18 @@ impl Server {
 
         let battlemode_buffer = BattleModeBuffer::default();
 
+        // bastion (det-capture): opt-in deterministic rtsim RNG + serial
+        // execution for a LIVE determinism capture (server-cli / voxygen),
+        // gated on BASTION_DETERMINISTIC. The harness enables this directly;
+        // live otherwise boots PARALLEL with OS-entropy rtsim RNG (tick_rng
+        // falls back to `rand::rng()` when the flag is off) — which is exactly
+        // why two live runs of the same world diverged (different colonists,
+        // different wander). Must precede the execution_mode read + worldgen.
+        if std::env::var_os("BASTION_DETERMINISTIC").is_some() {
+            ::rtsim::enable_deterministic_rtsim();
+            common::enable_deterministic_worldgen();
+        }
+
         // DETRNG/ARCH-003: the harness sets the rtsim flag before Server::new.
         // Read it once at construction so execution policy cannot change
         // halfway through a run. Live never sets it and remains parallel.
@@ -839,6 +851,20 @@ impl Server {
             .ecs()
             .write_resource::<rtsim::RtSim>()
             .bastion_spawn_colony(wpos, count)
+    }
+
+    /// Determinism-capture founding: seed the colony from an explicit tick
+    /// (see [`rtsim::RtSim::bastion_spawn_colony_seeded`]).
+    pub fn bastion_spawn_colony_seeded(
+        &mut self,
+        wpos: Vec3<f32>,
+        count: u8,
+        seed_tick: u64,
+    ) -> Vec<String> {
+        self.state
+            .ecs()
+            .write_resource::<rtsim::RtSim>()
+            .bastion_spawn_colony_seeded(wpos, count, seed_tick)
     }
 
     /// bastion (SEASON-0, harness hook): (season-index, year_phase,
@@ -3708,16 +3734,25 @@ impl Server {
                     .filter(|&n| n > 0 && bastion_flat_arena::enabled())
             });
             if let Some(n) = n {
-                let tick = self.state.ecs().read_resource::<Tick>().0;
-                if tick == 1 {
-                    let center =
-                        bastion_flat_arena::world_center_wpos(&self.world).map(|e| e as f32);
-                    self.bastion_force_load_area(center, 5);
-                } else if tick == 30 {
-                    let sp = bastion_flat_arena::spawn_wpos(bastion_flat_arena::world_center_wpos(
-                        &self.world,
-                    ));
-                    self.bastion_spawn_colony(sp, n);
+                use std::sync::atomic::{AtomicBool, Ordering};
+                static DONE: AtomicBool = AtomicBool::new(false);
+                // Found on the VERY FIRST server tick, when the rtsim `data.tick`
+                // — the counter bastion_spawn_colony's scatter RNG seeds from
+                // (rtsim/mod.rs) — is deterministically 0 (rtsim ticks later in
+                // the server tick, AFTER this hook). Any later tick is unsafe:
+                // during boot rtsim catches up in variable-size steps, so
+                // data.tick at a given server tick differs cross-run (the
+                // divergence this test caught). Force-load the flat slab
+                // (synchronous) and spawn in the SAME tick so nothing between can
+                // perturb the seed -> identical founding across runs. Colonists
+                // may settle onto the slab over the next ticks, but identically.
+                if !DONE.swap(true, Ordering::Relaxed) {
+                    let center = bastion_flat_arena::world_center_wpos(&self.world);
+                    self.bastion_force_load_area(center.map(|e| e as f32), 5);
+                    let sp = bastion_flat_arena::spawn_wpos(center);
+                    // FIXED seed tick (0) — the live data.tick isn't deterministic
+                    // at boot, so pin the founding RNG for a reproducible capture.
+                    self.bastion_spawn_colony_seeded(sp, n, 0);
                 }
             }
         }
