@@ -7,11 +7,12 @@ use std::sync::{Mutex, OnceLock};
 
 use bastion_renderer_r0d::{
     domain_hash_v1,
+    figure_gpu::UploadReceiptV1,
     presentation::{
         PresentationEntityV1, PresentationEnvironmentV1, PresentationErrorV1,
-        PresentationFrameDraftV1, PresentationGenerationV1, PresentationHandoffErrorV1,
-        PresentationHandoffV1, PresentationReadyTokenV1, PresentationVisualPolicyV1,
-        RendererUploadCompletionV1,
+        PresentationFrameDraftV1, PresentationFrameV1, PresentationGenerationV1,
+        PresentationHandoffErrorV1, PresentationHandoffV1, PresentationReadyTokenV1,
+        PresentationVisualPolicyV1,
     },
 };
 
@@ -34,10 +35,9 @@ pub struct ProductionPresentationInputV1 {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct RendererResourceEvidenceV1 {
-    /// Generation attached to the completed semantic draw trace. `None`
-    /// means the trace predates the active presentation frame.
+    /// Generation attached to the diagnostic semantic draw trace. This can
+    /// establish visible-scene settling only; it is never upload authority.
     pub presentation_generation: Option<u64>,
-    pub renderer_maintain_completed: bool,
     pub terrain_draw_coverage: bool,
     pub figure_draw_coverage: bool,
 }
@@ -49,6 +49,8 @@ pub enum ProductionPresentationErrorV1 {
     InvalidPosition,
     InvalidResource,
     GenerationOverflow,
+    NoPendingFrame,
+    UploadReceipt,
     Hash,
     Frame(PresentationErrorV1),
     Handoff(PresentationHandoffErrorV1),
@@ -59,8 +61,9 @@ struct CompatibilityStateV1 {
     handoff: PresentationHandoffV1,
     next_generation: u64,
     pending_snapshot_root: Option<[u8; 32]>,
+    pending_frame: Option<PresentationFrameV1>,
     stable_resource_frames: u16,
-    ready: Option<PresentationReadyTokenV1>,
+    upload_ready: Option<PresentationReadyTokenV1>,
 }
 
 static STATE: OnceLock<Mutex<CompatibilityStateV1>> = OnceLock::new();
@@ -78,7 +81,11 @@ pub fn reset() {
 
 #[must_use]
 pub fn ready_token() -> Option<PresentationReadyTokenV1> {
-    state().lock().ok().and_then(|state| state.ready)
+    state().lock().ok().and_then(|state| {
+        (state.stable_resource_frames >= RESOURCE_COMPLETION_FRAMES_V1)
+            .then_some(state.upload_ready)
+            .flatten()
+    })
 }
 
 #[must_use]
@@ -89,15 +96,25 @@ pub fn maintain_paused_scene_required() -> bool {
     crate::render::bastion_r0d::capture_config().is_some() && !ready_for_capture_measurement()
 }
 
-pub fn observe(
+#[must_use]
+pub fn upload_required(frame: &PresentationFrameV1) -> bool {
+    state().lock().is_ok_and(|state| {
+        state.upload_ready.is_none()
+            && state
+                .pending_frame
+                .as_ref()
+                .is_some_and(|pending| pending.frame_digest() == frame.frame_digest())
+    })
+}
+
+pub fn prepare_frame(
     input: &ProductionPresentationInputV1,
-    resources: RendererResourceEvidenceV1,
-) -> Result<Option<PresentationReadyTokenV1>, ProductionPresentationErrorV1> {
+    package_digest: [u8; 32],
+) -> Result<PresentationFrameV1, ProductionPresentationErrorV1> {
     let snapshot_root = coherent_snapshot_root(input)?;
-    let figure_resource = hash(
-        "bastion/r1a/production-figure-resource",
-        input.anchor_body.as_bytes(),
-    )?;
+    if package_digest == [0; 32] {
+        return Err(ProductionPresentationErrorV1::InvalidResource);
+    }
     let semantic_id = hash(
         "bastion/r1a/production-entity",
         &input.anchor_uid.to_le_bytes(),
@@ -106,63 +123,79 @@ pub fn observe(
     let mut state = state().lock().map_err(|_| {
         ProductionPresentationErrorV1::Handoff(PresentationHandoffErrorV1::NoPendingFrame)
     })?;
-    if state.ready.is_some() && state.pending_snapshot_root == Some(snapshot_root) {
-        return Ok(state.ready);
+    if state.pending_snapshot_root == Some(snapshot_root)
+        && let Some(frame) = &state.pending_frame
+        && frame.renderer_required_resources() == [package_digest]
+    {
+        return Ok(frame.clone());
     }
-    if state.pending_snapshot_root != Some(snapshot_root) {
-        state.next_generation = state
-            .next_generation
-            .checked_add(1)
-            .ok_or(ProductionPresentationErrorV1::GenerationOverflow)?;
-        let frame = build_frame(
-            input,
-            state.next_generation,
-            snapshot_root,
-            semantic_id,
-            figure_resource,
-        )?;
-        state
-            .handoff
-            .stage(frame)
-            .map_err(ProductionPresentationErrorV1::Handoff)?;
-        state.pending_snapshot_root = Some(snapshot_root);
-        state.stable_resource_frames = 0;
-        state.ready = None;
-    }
+    state.next_generation = state
+        .next_generation
+        .checked_add(1)
+        .ok_or(ProductionPresentationErrorV1::GenerationOverflow)?;
+    let frame = build_frame(
+        input,
+        state.next_generation,
+        snapshot_root,
+        semantic_id,
+        package_digest,
+    )?;
+    state
+        .handoff
+        .stage(frame.clone())
+        .map_err(ProductionPresentationErrorV1::Handoff)?;
+    state.pending_snapshot_root = Some(snapshot_root);
+    state.pending_frame = Some(frame.clone());
+    state.stable_resource_frames = 0;
+    state.upload_ready = None;
     crate::render::bastion_r0d::set_presentation_generation_v1(Some(state.next_generation));
+    Ok(frame)
+}
 
+pub fn acknowledge_upload(
+    receipt: &UploadReceiptV1,
+) -> Result<PresentationReadyTokenV1, ProductionPresentationErrorV1> {
+    let mut state = state().lock().map_err(|_| {
+        ProductionPresentationErrorV1::Handoff(PresentationHandoffErrorV1::NoPendingFrame)
+    })?;
+    let frame = state
+        .pending_frame
+        .as_ref()
+        .ok_or(ProductionPresentationErrorV1::NoPendingFrame)?;
+    let completion = receipt
+        .to_renderer_completion(frame)
+        .map_err(|_| ProductionPresentationErrorV1::UploadReceipt)?;
+    let token = state
+        .handoff
+        .acknowledge_uploads(completion)
+        .map_err(ProductionPresentationErrorV1::Handoff)?;
+    state.upload_ready = Some(token);
+    Ok(token)
+}
+
+pub fn observe_visible_scene(
+    resources: RendererResourceEvidenceV1,
+) -> Result<Option<PresentationReadyTokenV1>, ProductionPresentationErrorV1> {
+    let mut state = state().lock().map_err(|_| {
+        ProductionPresentationErrorV1::Handoff(PresentationHandoffErrorV1::NoPendingFrame)
+    })?;
     if resources.presentation_generation == Some(state.next_generation)
-        && resources.renderer_maintain_completed
         && resources.terrain_draw_coverage
         && resources.figure_draw_coverage
+        && state.upload_ready.is_some()
     {
-        state.stable_resource_frames = state.stable_resource_frames.saturating_add(1);
+        state.stable_resource_frames = state
+            .stable_resource_frames
+            .checked_add(1)
+            .ok_or(ProductionPresentationErrorV1::GenerationOverflow)?
+            .min(RESOURCE_COMPLETION_FRAMES_V1);
     } else {
         state.stable_resource_frames = 0;
     }
     if state.stable_resource_frames < RESOURCE_COMPLETION_FRAMES_V1 {
         return Ok(None);
     }
-
-    let frame = build_frame(
-        input,
-        state.next_generation,
-        snapshot_root,
-        semantic_id,
-        figure_resource,
-    )?;
-    let completion = RendererUploadCompletionV1 {
-        client_applied_generation: state.next_generation,
-        frame_digest: frame.frame_digest(),
-        resource_set_digest: frame.resource_set_digest(),
-        completed_resources: frame.renderer_required_resources().to_vec(),
-    };
-    let token = state
-        .handoff
-        .acknowledge_uploads(completion)
-        .map_err(ProductionPresentationErrorV1::Handoff)?;
-    state.ready = Some(token);
-    Ok(Some(token))
+    Ok(state.upload_ready)
 }
 
 fn build_frame(
@@ -202,11 +235,10 @@ fn build_frame(
             daylight_milli: input.daylight_milli,
         },
         visual_policy: input.policy,
-        renderer_required_resources: vec![
-            input.terrain_resource,
-            figure_resource,
-            input.policy.policy_digest,
-        ],
+        // Terrain/environment/policy remain bound in the complete frame
+        // digest. The only package/upload resource in this first modular
+        // figure cutover is the exact accepted figure package.
+        renderer_required_resources: vec![figure_resource],
         complete: true,
     }
     .seal()
@@ -256,6 +288,17 @@ fn hash(domain: &str, payload: &[u8]) -> Result<[u8; 32], ProductionPresentation
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bastion_renderer_r0d::{
+        figure_asset::{
+            CachePublicationRecordV1, CachePublicationTerminalV1, CompiledFigurePackageV1,
+            FigureAssetRoleV1, FigurePackageTargetV1, FigureSourceInputV1, MaterialBindingV1,
+            MaterialKindV1, PackageReceiptV1,
+        },
+        figure_gpu::{
+            BackendCompletionV1, FigureGpuBoneV1, FigureGpuEntityInputV1, FigureGpuPoolConfigV1,
+            FigureGpuPoolV1, SubmissionIdentityV1, UploadReceiptV1,
+        },
+    };
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -289,33 +332,116 @@ mod tests {
     fn complete() -> RendererResourceEvidenceV1 {
         RendererResourceEvidenceV1 {
             presentation_generation: Some(1),
-            renderer_maintain_completed: true,
             terrain_draw_coverage: true,
             figure_draw_coverage: true,
         }
     }
 
-    #[test]
-    fn refuses_capture_until_exact_resource_completion_window() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        reset();
-        for _ in 1..RESOURCE_COMPLETION_FRAMES_V1 {
-            assert_eq!(observe(&input(300), complete()).unwrap(), None);
-            assert!(!ready_for_capture_measurement());
-        }
-        let token = observe(&input(300), complete()).unwrap().unwrap();
-        assert_eq!(token.client_applied_generation, 1);
+    fn package() -> CompiledFigurePackageV1 {
+        CompiledFigurePackageV1::compile(
+            FigurePackageTargetV1::Composite,
+            digest(10),
+            digest(11),
+            vec![MaterialBindingV1 {
+                slot: 1,
+                kind: MaterialKindV1::OpaqueVoxel,
+                base_color_rgba: [255; 4],
+                flags: 0,
+            }],
+            vec![FigureSourceInputV1 {
+                logical_path: "fixture/body.vox".to_owned(),
+                role: FigureAssetRoleV1::CoreBody,
+                material_slot: 1,
+                bytes: b"body".to_vec(),
+                deterministic_fixture: false,
+            }],
+        )
+        .unwrap()
+    }
+
+    fn upload_for(
+        frame: &PresentationFrameV1,
+        package: &CompiledFigurePackageV1,
+    ) -> UploadReceiptV1 {
+        let package_receipt =
+            PackageReceiptV1::from_publication(frame, package, &CachePublicationRecordV1 {
+                authority_digest: package.authority_digest(),
+                package_digest: package.package_digest(),
+                terminal: CachePublicationTerminalV1::Published,
+            })
+            .unwrap();
+        let mut pool = FigureGpuPoolV1::new(FigureGpuPoolConfigV1::default()).unwrap();
+        let entity = &frame.entities()[0];
+        let staged = pool
+            .begin_generation(frame, package, &package_receipt, vec![
+                FigureGpuEntityInputV1 {
+                    generation: frame.generation().client_applied_generation,
+                    semantic_entity: entity.semantic_id,
+                    package_digest: package.package_digest(),
+                    authority_digest: package.authority_digest(),
+                    composition_digest: digest(20),
+                    palette_digest: digest(21),
+                    transform_digest: digest(22),
+                    pose_digest: digest(23),
+                    lod_level: 0,
+                    section_id: 1,
+                    material_id: 1,
+                    flags: 0,
+                    bones: vec![FigureGpuBoneV1 {
+                        matrix_q20: [1 << 20; 12],
+                    }],
+                },
+            ])
+            .unwrap();
+        let submission = SubmissionIdentityV1::for_plan(1, &staged.plan).unwrap();
+        UploadReceiptV1::from_backend_completion(
+            frame,
+            package,
+            &package_receipt,
+            &staged.plan,
+            submission,
+            BackendCompletionV1::Completed(submission),
+        )
+        .unwrap()
     }
 
     #[test]
-    fn partial_resource_evidence_resets_progress() {
+    fn exact_upload_receipt_is_required_before_visible_scene_can_open() {
         let _guard = TEST_LOCK.lock().unwrap();
         reset();
-        for _ in 0..100 {
-            observe(&input(300), complete()).unwrap();
+        let package = package();
+        let frame = prepare_frame(&input(300), package.package_digest()).unwrap();
+        for _ in 0..RESOURCE_COMPLETION_FRAMES_V1 {
+            assert_eq!(observe_visible_scene(complete()).unwrap(), None);
+        }
+        assert!(!ready_for_capture_measurement());
+        let upload = upload_for(&frame, &package);
+        let token = acknowledge_upload(&upload).unwrap();
+        assert_eq!(token.client_applied_generation, 1);
+        for _ in 1..RESOURCE_COMPLETION_FRAMES_V1 {
+            assert_eq!(observe_visible_scene(complete()).unwrap(), None);
         }
         assert_eq!(
-            observe(&input(300), RendererResourceEvidenceV1 {
+            observe_visible_scene(complete())
+                .unwrap()
+                .unwrap()
+                .client_applied_generation,
+            1
+        );
+    }
+
+    #[test]
+    fn diagnostic_draw_coverage_only_settles_after_upload_and_resets_on_loss() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        reset();
+        let package = package();
+        let frame = prepare_frame(&input(300), package.package_digest()).unwrap();
+        acknowledge_upload(&upload_for(&frame, &package)).unwrap();
+        for _ in 0..100 {
+            observe_visible_scene(complete()).unwrap();
+        }
+        assert_eq!(
+            observe_visible_scene(RendererResourceEvidenceV1 {
                 figure_draw_coverage: false,
                 ..complete()
             })
@@ -323,49 +449,44 @@ mod tests {
             None
         );
         for _ in 1..RESOURCE_COMPLETION_FRAMES_V1 {
-            assert_eq!(observe(&input(300), complete()).unwrap(), None);
+            assert_eq!(observe_visible_scene(complete()).unwrap(), None);
         }
-        assert!(observe(&input(300), complete()).unwrap().is_some());
+        assert!(observe_visible_scene(complete()).unwrap().is_some());
     }
 
     #[test]
-    fn newer_snapshot_supersedes_incomplete_generation() {
+    fn newer_snapshot_supersedes_the_old_upload_generation() {
         let _guard = TEST_LOCK.lock().unwrap();
         reset();
-        for _ in 0..100 {
-            observe(&input(300), complete()).unwrap();
-        }
+        let package = package();
+        let old = prepare_frame(&input(300), package.package_digest()).unwrap();
+        let old_upload = upload_for(&old, &package);
         let mut newer = input(301);
         newer.anchor_position_mm[0] += 1;
-        for _ in 1..RESOURCE_COMPLETION_FRAMES_V1 {
-            assert_eq!(
-                observe(&newer, RendererResourceEvidenceV1 {
-                    presentation_generation: Some(2),
-                    ..complete()
-                })
-                .unwrap(),
-                None
-            );
-        }
+        let new_frame = prepare_frame(&newer, package.package_digest()).unwrap();
         assert_eq!(
-            observe(&newer, RendererResourceEvidenceV1 {
-                presentation_generation: Some(2),
-                ..complete()
-            })
-            .unwrap()
-            .unwrap()
-            .client_applied_generation,
+            acknowledge_upload(&old_upload),
+            Err(ProductionPresentationErrorV1::UploadReceipt)
+        );
+        let new_upload = upload_for(&new_frame, &package);
+        assert_eq!(
+            acknowledge_upload(&new_upload)
+                .unwrap()
+                .client_applied_generation,
             2
         );
     }
 
     #[test]
-    fn completed_trace_from_prior_generation_cannot_acknowledge_uploads() {
+    fn trace_from_prior_generation_is_diagnostic_only_and_cannot_open_capture() {
         let _guard = TEST_LOCK.lock().unwrap();
         reset();
+        let package = package();
+        let frame = prepare_frame(&input(300), package.package_digest()).unwrap();
+        acknowledge_upload(&upload_for(&frame, &package)).unwrap();
         for _ in 0..RESOURCE_COMPLETION_FRAMES_V1 {
             assert_eq!(
-                observe(&input(300), RendererResourceEvidenceV1 {
+                observe_visible_scene(RendererResourceEvidenceV1 {
                     presentation_generation: None,
                     ..complete()
                 })
@@ -383,7 +504,7 @@ mod tests {
         let mut invalid = input(300);
         invalid.anchor_uid = 0;
         assert_eq!(
-            observe(&invalid, complete()),
+            prepare_frame(&invalid, digest(9)),
             Err(ProductionPresentationErrorV1::InvalidAnchor)
         );
         assert!(!ready_for_capture_measurement());

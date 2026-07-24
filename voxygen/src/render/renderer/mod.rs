@@ -171,6 +171,8 @@ pub struct Renderer {
     profile_times: Vec<wgpu_profiler::GpuTimerQueryResult>,
     profiler_features_enabled: bool,
 
+    figure_gpu: super::figure_gpu::FigureGpuRuntimeV1,
+
     ui_premultiply_uploads: ui::BatchedUploads,
 
     #[cfg(feature = "egui-ui")]
@@ -615,6 +617,8 @@ impl Renderer {
             .into_iter()
             .filter_map(|present_mode| PresentMode::try_from(present_mode).ok())
             .collect();
+        let figure_gpu = super::figure_gpu::FigureGpuRuntimeV1::new(&device)
+            .map_err(|error| RenderError::CustomError(format!("{error:?}")))?;
 
         Ok(Self {
             device,
@@ -649,6 +653,8 @@ impl Renderer {
             profile_times: Vec::new(),
             profiler_features_enabled,
 
+            figure_gpu,
+
             ui_premultiply_uploads: Default::default(),
 
             #[cfg(feature = "egui-ui")]
@@ -667,6 +673,25 @@ impl Renderer {
 
     /// Get the graphics backend being used.
     pub fn graphics_backend(&self) -> wgpu::Backend { self.graphics_backend }
+
+    /// Uploads one complete presentation generation into the persistent R1BC
+    /// figure pools and waits for the exact backend submission boundary.
+    pub fn upload_r1bc_figure_generation(
+        &mut self,
+        frame: &bastion_renderer_r0d::presentation::PresentationFrameV1,
+        package: &bastion_renderer_r0d::figure_asset::CompiledFigurePackageV1,
+        package_receipt: &bastion_renderer_r0d::figure_asset::PackageReceiptV1,
+    ) -> Result<bastion_renderer_r0d::figure_gpu::UploadReceiptV1, String> {
+        self.figure_gpu
+            .upload_generation(&self.device, &self.queue, frame, package, package_receipt)
+            .map_err(|error| format!("{error:?}"))
+    }
+
+    pub fn reset_r1bc_figure_gpu(&mut self) -> Result<(), String> {
+        self.figure_gpu = super::figure_gpu::FigureGpuRuntimeV1::new(&self.device)
+            .map_err(|error| format!("{error:?}"))?;
+        Ok(())
+    }
 
     /// Check the status of the intial pipeline creation
     /// Returns `None` if complete

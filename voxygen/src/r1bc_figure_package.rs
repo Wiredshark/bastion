@@ -7,6 +7,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 use bastion_renderer_r0d::{
@@ -16,8 +17,8 @@ use bastion_renderer_r0d::{
         MaterialBindingV1, MaterialKindV1, PackageReceiptV1, completion_from_package_receipts,
     },
     presentation::{
-        PresentationEnvironmentV1, PresentationFrameDraftV1, PresentationGenerationV1,
-        PresentationVisualPolicyV1,
+        PresentationEnvironmentV1, PresentationFrameDraftV1, PresentationFrameV1,
+        PresentationGenerationV1, PresentationVisualPolicyV1,
     },
 };
 use sha2::{Digest, Sha256};
@@ -58,6 +59,39 @@ pub enum RealFigurePackageErrorV1 {
     InvalidVox { path: String, message: String },
     Renderer(String),
     PackageMismatch,
+}
+
+static PRODUCTION_PACKAGE: OnceLock<Result<CompiledFigurePackageV1, RealFigurePackageErrorV1>> =
+    OnceLock::new();
+
+/// Returns the immutable real-source package and a receipt bound to this exact
+/// presentation generation. Compilation is process-once; publication remains
+/// content-addressed and is independently validated on every generation.
+pub fn production_package_for_frame(
+    frame: &PresentationFrameV1,
+) -> Result<(CompiledFigurePackageV1, PackageReceiptV1), RealFigurePackageErrorV1> {
+    let package = production_package()?;
+    if frame.renderer_required_resources() != [package.package_digest()] {
+        return Err(RealFigurePackageErrorV1::PackageMismatch);
+    }
+    let cache_root = common_base::userdata_dir()
+        .join("voxygen")
+        .join("r1bc-figure-cache-v1");
+    let publication = FigurePackageCacheV1::new(cache_root)
+        .publish(&package, CachePublicationPolicyV1::Commit)
+        .map_err(|error| RealFigurePackageErrorV1::Renderer(format!("{error:?}")))?;
+    let receipt = PackageReceiptV1::from_publication(frame, &package, &publication)
+        .map_err(|error| RealFigurePackageErrorV1::Renderer(format!("{error:?}")))?;
+    Ok((package, receipt))
+}
+
+pub fn production_package() -> Result<CompiledFigurePackageV1, RealFigurePackageErrorV1> {
+    PRODUCTION_PACKAGE
+        .get_or_init(|| {
+            compile_real_figure_package(common::assets::ASSETS_PATH.as_path())
+                .map(|(package, _)| package)
+        })
+        .clone()
 }
 
 pub fn compile_real_figure_package(

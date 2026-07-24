@@ -281,6 +281,13 @@ impl SessionState {
         let walk_forward_dir = scene.camera().forward_xy();
         let walk_right_dir = scene.camera().right_xy();
         crate::r1a_presentation::reset();
+        if let Err(error) = global_state.window.renderer_mut().reset_r1bc_figure_gpu() {
+            tracing::warn!(
+                target: "bastion_r1bc_gpu",
+                %error,
+                "persistent figure GPU state reset failed"
+            );
+        }
 
         Self {
             scene,
@@ -4321,18 +4328,76 @@ impl PlayState for SessionState {
             }
 
             if crate::render::bastion_r0d::capture_config().is_some()
+                && crate::render::bastion_r0d::certification_server_latch_v1()
+                    .is_some_and(|authority| authority.frozen)
                 && let Some(input) = self.r1a_presentation_input(&global_state.settings)
             {
+                match crate::r1bc_figure_package::production_package() {
+                    Ok(package) => {
+                        match crate::r1a_presentation::prepare_frame(
+                            &input,
+                            package.package_digest(),
+                        ) {
+                            Ok(frame) => {
+                                if crate::r1a_presentation::upload_required(&frame) {
+                                    match crate::r1bc_figure_package::production_package_for_frame(
+                                        &frame,
+                                    ) {
+                                        Ok((package, package_receipt)) => {
+                                            match global_state
+                                                .window
+                                                .renderer_mut()
+                                                .upload_r1bc_figure_generation(
+                                                    &frame,
+                                                    &package,
+                                                    &package_receipt,
+                                                ) {
+                                                Ok(upload_receipt) => {
+                                                    if let Err(error) =
+                                                        crate::r1a_presentation::acknowledge_upload(
+                                                            &upload_receipt,
+                                                        )
+                                                    {
+                                                        tracing::warn!(
+                                                            target: "bastion_r1bc_gpu",
+                                                            ?error,
+                                                            "exact figure upload receipt rejected"
+                                                        );
+                                                    }
+                                                },
+                                                Err(error) => tracing::warn!(
+                                                    target: "bastion_r1bc_gpu",
+                                                    %error,
+                                                    "persistent figure GPU upload failed"
+                                                ),
+                                            }
+                                        },
+                                        Err(error) => tracing::warn!(
+                                            target: "bastion_r1bc_gpu",
+                                            ?error,
+                                            "figure package receipt preparation failed"
+                                        ),
+                                    }
+                                }
+                            },
+                            Err(error) => tracing::warn!(
+                                target: "bastion_r1bc_gpu",
+                                ?error,
+                                "presentation frame preparation failed"
+                            ),
+                        }
+                    },
+                    Err(error) => tracing::warn!(
+                        target: "bastion_r1bc_gpu",
+                        ?error,
+                        "real figure package unavailable"
+                    ),
+                }
                 let (presentation_generation, terrain_draw_coverage, figure_draw_coverage) =
                     crate::render::bastion_r0d::latest_visible_resource_coverage_v1();
-                if let Err(error) = crate::r1a_presentation::observe(
-                    &input,
+                if let Err(error) = crate::r1a_presentation::observe_visible_scene(
                     crate::r1a_presentation::RendererResourceEvidenceV1 {
-                        // GlobalState::maintain polls the renderer after every
-                        // prior frame; this observation is therefore for a
-                        // completed maintain cycle, never the current upload.
                         presentation_generation,
-                        renderer_maintain_completed: true,
                         terrain_draw_coverage,
                         figure_draw_coverage,
                     },

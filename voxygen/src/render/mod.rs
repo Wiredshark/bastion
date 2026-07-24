@@ -3,6 +3,7 @@ pub mod bound;
 mod buffer;
 pub mod consts;
 mod error;
+mod figure_gpu;
 pub mod instances;
 pub mod mesh;
 pub mod model;
