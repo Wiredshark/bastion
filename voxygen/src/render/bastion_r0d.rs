@@ -338,6 +338,31 @@ fn draw_tape_snapshot(records: &[(u16, u32, u32)]) -> Option<(usize, [u8; 32])> 
             payload.extend_from_slice(&count.to_le_bytes());
         }
     }
+    if let Some(groups) = crate::r1d_groups::latest_evidence() {
+        payload.extend_from_slice(b"R1DG");
+        payload.extend_from_slice(&groups.generation.to_le_bytes());
+        payload.extend_from_slice(&groups.frame_digest);
+        payload.extend_from_slice(&groups.individual_plan_root);
+        payload.extend_from_slice(&groups.group_plan_root);
+        for count in [
+            groups.group_count,
+            groups.member_count,
+            groups.individual_group_count,
+            groups.formation_group_count,
+            groups.aggregate_group_count,
+            groups.protected_member_count,
+            groups.transition_count,
+            groups.fixture_group_count,
+            groups.authoritative_group_count,
+            groups.line_count,
+            groups.column_count,
+            groups.wedge_count,
+            groups.grid_count,
+            groups.procession_count,
+        ] {
+            payload.extend_from_slice(&count.to_le_bytes());
+        }
+    }
     let digest =
         bastion_renderer_r0d::domain_hash_v1("bastion/r0d/semantic-trace", 1, 0, &payload).ok()?;
     let visible_scene_coverage = visible_scene_coverage_v1(records)?;
@@ -747,6 +772,10 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r1d_tier_generation"
         | "r1d_tier_frame_sha256"
         | "r1d_tier_decision_root_sha256"
+        | "r1d_group_generation"
+        | "r1d_group_frame_sha256"
+        | "r1d_group_individual_plan_sha256"
+        | "r1d_group_plan_sha256"
         | "anchor_uid"
         | "anchor_selected_non_client_colonist"
         | "ordinal" => Some(CaptureMetadataFieldClassV1::Authority),
@@ -795,6 +824,21 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r1d_tier_fallback_lod_unavailable"
         | "r1d_tier_fallback_impostor_unavailable"
         | "r1d_tier_fallback_shadow_proxy_unavailable"
+        | "r1d_group_count"
+        | "r1d_group_member_count"
+        | "r1d_group_individual_count"
+        | "r1d_group_formation_count"
+        | "r1d_group_aggregate_count"
+        | "r1d_group_protected_member_count"
+        | "r1d_group_protected_uids"
+        | "r1d_group_transition_count"
+        | "r1d_group_fixture_count"
+        | "r1d_group_authoritative_count"
+        | "r1d_group_line_count"
+        | "r1d_group_column_count"
+        | "r1d_group_wedge_count"
+        | "r1d_group_grid_count"
+        | "r1d_group_procession_count"
         | "width"
         | "height"
         | "pixel_format"
@@ -1033,6 +1077,8 @@ fn request_one_capture(
     let figure_gpu = super::figure_gpu::latest_evidence();
     let figure_batch = super::figure_batch::latest_evidence();
     let individual_tiers = crate::r1d_tiers::latest_evidence();
+    let group_representations = crate::r1d_groups::latest_evidence();
+    let group_protected_uids = crate::r1d_groups::protected_uid_csv();
     renderer.create_screenshot(move |result| {
         match result {
             Ok(image) => {
@@ -1092,6 +1138,23 @@ fn request_one_capture(
                                             "exact individual tier plan absent",
                                         )
                                     })?;
+                                let group_representations = group_representations.filter(|value| {
+                                    value.generation
+                                        == context.presentation.client_applied_generation
+                                        && value.frame_digest == context.presentation.frame_digest
+                                        && value.individual_plan_root
+                                            == individual_tiers.decision_root
+                                });
+                                if std::env::var_os("BASTION_R1D_GROUP_SMOKE").is_some()
+                                    && group_representations.is_none()
+                                {
+                                    return Err(std::io::Error::new(
+                                        std::io::ErrorKind::InvalidData,
+                                        "exact group representation plan absent",
+                                    ));
+                                }
+                                let group_representations =
+                                    group_representations.unwrap_or_default();
                                 let metadata = format!(
                                     concat!(
                                         "schema=RendererCaptureEvidenceV1\n",
@@ -1161,6 +1224,25 @@ fn request_one_capture(
                                         "r1d_tier_fallback_lod_unavailable={}\n",
                                         "r1d_tier_fallback_impostor_unavailable={}\n",
                                         "r1d_tier_fallback_shadow_proxy_unavailable={}\n",
+                                        "r1d_group_generation={}\n",
+                                        "r1d_group_frame_sha256={}\n",
+                                        "r1d_group_individual_plan_sha256={}\n",
+                                        "r1d_group_plan_sha256={}\n",
+                                        "r1d_group_count={}\n",
+                                        "r1d_group_member_count={}\n",
+                                        "r1d_group_individual_count={}\n",
+                                        "r1d_group_formation_count={}\n",
+                                        "r1d_group_aggregate_count={}\n",
+                                        "r1d_group_protected_member_count={}\n",
+                                        "r1d_group_protected_uids={}\n",
+                                        "r1d_group_transition_count={}\n",
+                                        "r1d_group_fixture_count={}\n",
+                                        "r1d_group_authoritative_count={}\n",
+                                        "r1d_group_line_count={}\n",
+                                        "r1d_group_column_count={}\n",
+                                        "r1d_group_wedge_count={}\n",
+                                        "r1d_group_grid_count={}\n",
+                                        "r1d_group_procession_count={}\n",
                                         "diagnostic_client_tick={}\n",
                                         "diagnostic_interpolated_time_bits={:016x}\n",
                                         "width={}\n",
@@ -1240,6 +1322,25 @@ fn request_one_capture(
                                     individual_tiers.lod_unavailable_fallbacks,
                                     individual_tiers.impostor_unavailable_fallbacks,
                                     individual_tiers.shadow_proxy_unavailable_fallbacks,
+                                    group_representations.generation,
+                                    hex_digest(&group_representations.frame_digest),
+                                    hex_digest(&group_representations.individual_plan_root),
+                                    hex_digest(&group_representations.group_plan_root),
+                                    group_representations.group_count,
+                                    group_representations.member_count,
+                                    group_representations.individual_group_count,
+                                    group_representations.formation_group_count,
+                                    group_representations.aggregate_group_count,
+                                    group_representations.protected_member_count,
+                                    group_protected_uids,
+                                    group_representations.transition_count,
+                                    group_representations.fixture_group_count,
+                                    group_representations.authoritative_group_count,
+                                    group_representations.line_count,
+                                    group_representations.column_count,
+                                    group_representations.wedge_count,
+                                    group_representations.grid_count,
+                                    group_representations.procession_count,
                                     context.diagnostic_client_tick,
                                     context.diagnostic_interpolated_time_bits,
                                     width,

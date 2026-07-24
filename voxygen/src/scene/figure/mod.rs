@@ -132,6 +132,7 @@ fn figure_batch_key_digest(
     inventory: Option<&Inventory>,
     model: &SubModel<'_, TerrainVertex>,
     tier_decision: Option<bastion_renderer_r0d::individual_tier::IndividualTierDecisionV1>,
+    group: Option<crate::r1d_groups::ProductionMemberGroupV1>,
 ) -> Option<bastion_renderer_r0d::figure_batch::FigureBatchKeyV1> {
     use bastion_renderer_r0d::{
         domain_hash_v1,
@@ -192,6 +193,10 @@ fn figure_batch_key_digest(
             b"figure-linear-clamp-v1",
         )
         .ok()?,
+        group_plan_digest: group.map_or([0; 32], |group| group.group_plan_root),
+        group_id: group.map_or([0; 32], |group| group.group_id),
+        group_tier: group.map(|group| group.group_tier),
+        formation: group.map(|group| group.formation),
         form: match tier_decision.map(|decision| decision.representation) {
             Some(RepresentationTierV1::Lod | RepresentationTierV1::Impostor) => FigureFormV1::Lod,
             _ => FigureFormV1::Full,
@@ -7256,6 +7261,8 @@ impl FigureMgr {
                                 inventory,
                                 &model,
                                 tier_decision,
+                                uids.get(entity)
+                                    .and_then(|uid| crate::r1d_groups::member_group(uid.0.get())),
                             )?,
                             model: model.clone(),
                             bound,
@@ -7534,6 +7541,8 @@ impl FigureMgr {
                                 inventory,
                                 &model,
                                 tier_decision,
+                                uids.get(entity)
+                                    .and_then(|uid| crate::r1d_groups::member_group(uid.0.get())),
                             )?,
                             model: model.clone(),
                             bound,

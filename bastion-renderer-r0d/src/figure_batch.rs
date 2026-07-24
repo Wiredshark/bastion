@@ -13,6 +13,7 @@ use crate::{
         FIGURE_GPU_ABI_VERSION_V1, FigureGpuAssignmentV1, FigureGpuErrorV1, FigureGpuUploadPlanV1,
         UploadReceiptTerminalV1, UploadReceiptV1,
     },
+    group_representation::{FormationKindV1, GroupRepresentationTierV1},
     individual_tier::AnimationTierV1,
 };
 
@@ -119,6 +120,12 @@ pub struct FigureBatchKeyV1 {
     pub palette_digest: FigureBatchDigestV1,
     pub texture_or_atlas_digest: FigureBatchDigestV1,
     pub sampler_digest: FigureBatchDigestV1,
+    /// Zero/None for ungrouped figures. Grouped figures bind the exact
+    /// immutable group plan and semantic group identity into the complete key.
+    pub group_plan_digest: FigureBatchDigestV1,
+    pub group_id: FigureBatchDigestV1,
+    pub group_tier: Option<GroupRepresentationTierV1>,
+    pub formation: Option<FormationKindV1>,
     pub form: FigureFormV1,
     pub lod_level: u16,
     pub animation_tier: AnimationTierV1,
@@ -158,10 +165,16 @@ impl FigureBatchKeyV1 {
             self.palette_digest,
             self.texture_or_atlas_digest,
             self.sampler_digest,
+            self.group_plan_digest,
+            self.group_id,
         ] {
             output[cursor..cursor + 32].copy_from_slice(&digest);
             cursor += 32;
         }
+        output[cursor] = self.group_tier.map_or(0, |value| value as u8);
+        cursor += 1;
+        output[cursor] = self.formation.map_or(0, |value| value as u8);
+        cursor += 1;
         output[cursor..cursor + 2].copy_from_slice(&self.lod_level.to_le_bytes());
         cursor += 2;
         output[cursor] = self.animation_tier as u8;
@@ -223,6 +236,17 @@ impl FigureBatchKeyV1 {
             || self.pose_page_bytes == 0
             || self.index_count == 0
         {
+            return Err(FigureBatchErrorV1::InvalidBatchKey);
+        }
+        let group_absent = self.group_plan_digest == [0; 32]
+            && self.group_id == [0; 32]
+            && self.group_tier.is_none()
+            && self.formation.is_none();
+        let group_present = self.group_plan_digest != [0; 32]
+            && self.group_id != [0; 32]
+            && self.group_tier.is_some()
+            && self.formation.is_some();
+        if !group_absent && !group_present {
             return Err(FigureBatchErrorV1::InvalidBatchKey);
         }
         match self.pass {
@@ -805,6 +829,10 @@ mod tests {
             palette_digest: digest(75),
             texture_or_atlas_digest: digest(76),
             sampler_digest: digest(77),
+            group_plan_digest: [0; 32],
+            group_id: [0; 32],
+            group_tier: None,
+            formation: None,
             form: FigureFormV1::Full,
             lod_level: 0,
             animation_tier: AnimationTierV1::EveryTick,
@@ -840,7 +868,7 @@ mod tests {
         let baseline = baseline_key.digest().unwrap();
         assert_eq!(
             crate::hex32(&baseline),
-            "136b8467c83dbcb6ad0295196d03fe33c8c0fdd0e0700bc13fca020f151fc039"
+            "3b5f844b261e376e7b91f8766bc987d7c16a9c8c08ffb71f6a4933ef78b09f3a"
         );
         let variants = [
             {
@@ -886,6 +914,14 @@ mod tests {
             {
                 let mut v = baseline_key.clone();
                 v.sampler_digest = digest(2);
+                v
+            },
+            {
+                let mut v = baseline_key.clone();
+                v.group_plan_digest = digest(2);
+                v.group_id = digest(3);
+                v.group_tier = Some(GroupRepresentationTierV1::FormationMiddle);
+                v.formation = Some(FormationKindV1::Wedge);
                 v
             },
             {

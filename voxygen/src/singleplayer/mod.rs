@@ -350,6 +350,7 @@ impl SingleplayerState {
                             .filter(|count| (1..=64).contains(count))
                             .unwrap_or(1);
                         let r1d_tier_smoke = std::env::var_os("BASTION_R1D_TIER_SMOKE").is_some();
+                        let r1d_group_smoke = std::env::var_os("BASTION_R1D_GROUP_SMOKE").is_some();
                         let fixture = if figure_count == 1 {
                             server.bastion_spawn_colony(fixture_position, 1)
                         } else {
@@ -362,7 +363,34 @@ impl SingleplayerState {
                             let width = 8_u8;
                             (0..figure_count)
                                 .flat_map(|ordinal| {
-                                    let (x, y) = if r1d_tier_smoke {
+                                    let (x, y) = if r1d_group_smoke {
+                                        // Two declared fixture-owned groups:
+                                        // a near wedge and a middle-distance
+                                        // four-column grid. Membership comes
+                                        // from the explicit presentation
+                                        // declaration, never these positions.
+                                        if ordinal < 12 {
+                                            let local = i32::from(ordinal);
+                                            let row = (local + 1) / 2;
+                                            let side = if local == 0 {
+                                                0.0
+                                            } else if local % 2 == 1 {
+                                                -1.0
+                                            } else {
+                                                1.0
+                                            };
+                                            let depth = row as f32 * 1.8;
+                                            let lateral = side * row as f32 * 1.8;
+                                            (depth + lateral, depth - lateral)
+                                        } else {
+                                            let local = i32::from(ordinal - 12);
+                                            let row = local / 4;
+                                            let column = local % 4;
+                                            let depth = 26.0 + row as f32 * 2.5;
+                                            let lateral = (column as f32 - 1.5) * 2.2;
+                                            (depth + lateral, depth - lateral)
+                                        }
+                                    } else if r1d_tier_smoke {
                                         // Four depth bands follow the declared
                                         // capture camera's +X/+Y view axis.
                                         // Lateral offsets keep bodies visibly
@@ -389,6 +417,7 @@ impl SingleplayerState {
                             ?fixture,
                             figure_count,
                             r1d_tier_smoke,
+                            r1d_group_smoke,
                             world_seed = 1337,
                             ?fixture_position,
                             "bastion: capture flat-arena fixture declared"
