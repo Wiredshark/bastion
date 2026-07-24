@@ -388,6 +388,9 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
         std::env::var_os("BASTION_FLAT_ARENA").is_some(),
         crate::render::bastion_r0d::absolute_time_capture_selected(),
     );
+    if certification_freeze_tick.is_some() {
+        crate::render::bastion_r0d::reset_certification_server_latch_v1();
+    }
     let mut completed_ticks = 0_u64;
 
     loop {
@@ -435,13 +438,27 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
 
         // Clean up the server after a tick.
         server.cleanup();
-        completed_ticks = completed_ticks.saturating_add(1);
+        let Some(next_completed_tick) = completed_ticks.checked_add(1) else {
+            error!("bastion: renderer certification server tick overflow");
+            break;
+        };
+        completed_ticks = next_completed_tick;
         if certification_freeze_tick == Some(completed_ticks) {
             paused.store(true, Ordering::SeqCst);
             info!(
                 completed_ticks,
                 "bastion: renderer certification simulation frozen"
             );
+        }
+        if certification_freeze_tick.is_some()
+            && let Err(error) =
+                crate::render::bastion_r0d::record_certification_server_tick_v1(completed_ticks)
+        {
+            error!(
+                ?error,
+                completed_ticks, "bastion: renderer certification server latch rejected tick"
+            );
+            break;
         }
     }
 }
