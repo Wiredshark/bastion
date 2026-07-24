@@ -132,6 +132,15 @@ fn main() {
 
     // Load the settings
     let mut settings = Settings::load(&config_dir);
+    if veloren_voxygen::r0p_observer::enabled() {
+        let graphics = std::mem::take(&mut settings.graphics);
+        settings.graphics = match std::env::var("BASTION_R0P_GRAPHICS_PRESET").as_deref() {
+            Ok("medium") => graphics.into_medium(),
+            Ok("high") => graphics.into_high(),
+            Ok("ultra") => graphics.into_ultra(),
+            _ => graphics,
+        };
+    }
     settings.display_warnings();
 
     panic_handler::set_panic_hook(log_filename, logs_dir);

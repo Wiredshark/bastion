@@ -120,6 +120,7 @@ static LATEST_PASS_TAPE: Mutex<Option<String>> = Mutex::new(None);
 pub use bastion_renderer_r0d::pass_graph::voxygen_ranks as ranks;
 
 pub fn record_pass(rank: u16, name: &'static str) {
+    crate::r0p_observer::record_pass();
     if !manifest_enabled() {
         return;
     }
@@ -258,6 +259,7 @@ pub struct SemanticTraceSnapshotV1 {
 static LATEST_SEMANTIC_TRACE: Mutex<Option<SemanticTraceSnapshotV1>> = Mutex::new(None);
 
 pub fn record_draw(kind: u16, units: u32, instances: u32) {
+    crate::r0p_observer::record_draw(units, instances);
     if !manifest_enabled() {
         return;
     }
@@ -868,7 +870,11 @@ pub fn drive_capture(
             },
         );
     }
-    completed >= count
+    let complete = completed >= count;
+    if complete {
+        crate::r0p_observer::finalize();
+    }
+    complete
 }
 
 fn request_one_capture(

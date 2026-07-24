@@ -604,6 +604,7 @@ impl PremultiplyUpload {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
+        crate::r0p_observer::record_texture_upload(image.as_raw().len());
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &source_tex,

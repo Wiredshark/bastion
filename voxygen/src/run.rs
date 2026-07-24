@@ -6,7 +6,10 @@ use crate::{
     window::{Event, EventLoop},
 };
 use common_base::{prof_span, span};
-use std::{mem, time::Duration};
+use std::{
+    mem,
+    time::{Duration, Instant},
+};
 use tracing::debug;
 use winit::event_loop::ActiveEventLoop;
 
@@ -133,6 +136,7 @@ fn handle_main_events_cleared(
     event_loop: &ActiveEventLoop,
     global_state: &mut GlobalState,
 ) {
+    let r0p_frame_start = Instant::now();
     span!(guard, "Handle MainEventsCleared");
     // Screenshot / Fullscreen toggle
     global_state
@@ -202,12 +206,15 @@ fn handle_main_events_cleared(
             },
         }
     }
+    let r0p_tick_done = Instant::now();
 
     if exit {
         event_loop.exit();
     }
 
     let mut capped_fps = false;
+    let mut r0p_render_done = r0p_tick_done;
+    let mut r0p_post_render_done = r0p_tick_done;
 
     drop(guard);
 
@@ -241,6 +248,7 @@ fn handle_main_events_cleared(
                     Some(drawer.draw_egui(&mut global_state.egui_state.winit_state, scale_factor));
             }
         };
+        r0p_render_done = Instant::now();
 
         #[cfg(feature = "egui-ui")]
         if let Some(output) = platform_output {
@@ -255,6 +263,7 @@ fn handle_main_events_cleared(
         }
 
         drop(guard);
+        r0p_post_render_done = Instant::now();
     }
 
     if !exit {
@@ -288,10 +297,24 @@ fn handle_main_events_cleared(
             .set_target_dt(Duration::from_secs_f64(1.0 / target_fps as f64));
         global_state.clock.tick();
         drop(guard);
+        let r0p_pacing_done = Instant::now();
         #[cfg(feature = "tracy")]
         common_base::tracy_client::frame_mark();
 
         // Maintain global state.
         global_state.maintain();
+        let r0p_maintain_done = Instant::now();
+        crate::r0p_observer::record_cpu_frame(crate::r0p_observer::CpuFramePhasesV1 {
+            tick_ns: duration_ns(r0p_frame_start, r0p_tick_done),
+            render_submit_ns: duration_ns(r0p_tick_done, r0p_render_done),
+            post_render_ns: duration_ns(r0p_render_done, r0p_post_render_done),
+            pacing_ns: duration_ns(r0p_post_render_done, r0p_pacing_done),
+            maintain_ns: duration_ns(r0p_pacing_done, r0p_maintain_done),
+            total_wall_ns: duration_ns(r0p_frame_start, r0p_maintain_done),
+        });
     }
+}
+
+fn duration_ns(start: Instant, end: Instant) -> u64 {
+    u64::try_from(end.duration_since(start).as_nanos()).unwrap_or(u64::MAX)
 }

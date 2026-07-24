@@ -1931,6 +1931,20 @@ impl PlayState for SessionState {
             let client = self.client.borrow();
             (client.state().get_time(), client.get_tick())
         };
+        crate::r0p_observer::record_scene_counters(crate::r0p_observer::SceneCountersV1 {
+            terrain_chunks: u64::try_from(self.scene.terrain().chunk_count()).unwrap_or(u64::MAX),
+            visible_terrain_chunks: u64::try_from(self.scene.terrain().visible_chunk_count())
+                .unwrap_or(u64::MAX),
+            shadow_terrain_chunks: u64::try_from(self.scene.terrain().shadow_chunk_count())
+                .unwrap_or(u64::MAX),
+            figures: u64::try_from(self.scene.figure_mgr().figure_count()).unwrap_or(u64::MAX),
+            visible_figures: u64::try_from(self.scene.figure_mgr().figure_count_visible())
+                .unwrap_or(u64::MAX),
+            particles: u64::try_from(self.scene.particle_mgr().particle_count())
+                .unwrap_or(u64::MAX),
+            visible_particles: u64::try_from(self.scene.particle_mgr().particle_count_visible())
+                .unwrap_or(u64::MAX),
+        });
         let r0d_capture_ready = !crate::render::bastion_r0d::capture_waits_for_pause_v1(
             std::env::var_os("BASTION_FLAT_ARENA").is_some(),
             crate::render::bastion_r0d::absolute_time_capture_selected(),
