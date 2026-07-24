@@ -298,6 +298,7 @@ impl SingleplayerState {
             error!("run_bastion_flat_arena called, but singleplayer is already running");
             return;
         }
+        server::bastion_enable_renderer_certification_determinism();
         let server_data_dir =
             std::env::temp_dir().join(format!("bastion-flat-arena-{}", std::process::id()));
         if let Err(e) = std::fs::create_dir_all(&server_data_dir) {
@@ -383,6 +384,10 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
 
     // Set up an fps clock
     let mut clock = Clock::new(Duration::from_secs_f64(1.0 / TPS as f64));
+    let certification_freeze_tick = std::env::var_os("BASTION_FLAT_ARENA")
+        .is_some()
+        .then_some(300_u64);
+    let mut completed_ticks = 0_u64;
 
     loop {
         // Check any event such as stopping and pausing
@@ -429,5 +434,13 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
 
         // Clean up the server after a tick.
         server.cleanup();
+        completed_ticks = completed_ticks.saturating_add(1);
+        if certification_freeze_tick == Some(completed_ticks) {
+            paused.store(true, Ordering::SeqCst);
+            info!(
+                completed_ticks,
+                "bastion: renderer certification simulation frozen"
+            );
+        }
     }
 }
