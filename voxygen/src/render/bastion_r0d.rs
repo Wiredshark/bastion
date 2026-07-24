@@ -703,6 +703,12 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "presentation_frame_sha256"
         | "presentation_resource_set_sha256"
         | "presentation_semantic_tape_sha256"
+        | "figure_gpu_package_sha256"
+        | "figure_gpu_assignment_sha256"
+        | "figure_gpu_staged_sha256"
+        | "figure_gpu_plan_sha256"
+        | "figure_gpu_submission_sequence"
+        | "figure_gpu_completion_sequence"
         | "anchor_uid"
         | "anchor_selected_non_client_colonist"
         | "ordinal" => Some(CaptureMetadataFieldClassV1::Authority),
@@ -714,6 +720,11 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "pass_tape"
         | "semantic_trace_count"
         | "semantic_trace_sha256"
+        | "figure_gpu_instance_count"
+        | "figure_gpu_pose_page_count"
+        | "figure_gpu_upload_windows"
+        | "figure_gpu_upload_operations"
+        | "figure_gpu_upload_bytes"
         | "width"
         | "height"
         | "pixel_format"
@@ -949,6 +960,7 @@ fn request_one_capture(
     }
     let output = output.to_path_buf();
     let pass_tape = LATEST_PASS_TAPE.lock().ok().and_then(|value| value.clone());
+    let figure_gpu = super::figure_gpu::latest_evidence();
     renderer.create_screenshot(move |result| {
         match result {
             Ok(image) => {
@@ -980,6 +992,21 @@ fn request_one_capture(
                                         "pass tape absent",
                                     )
                                 })?;
+                                let figure_gpu = figure_gpu
+                                    .filter(|value| {
+                                        value.generation
+                                            == context.presentation.client_applied_generation
+                                            && value.frame_digest
+                                                == context.presentation.frame_digest
+                                            && value.resource_set_digest
+                                                == context.presentation.resource_set_digest
+                                    })
+                                    .ok_or_else(|| {
+                                        std::io::Error::new(
+                                            std::io::ErrorKind::InvalidData,
+                                            "exact figure GPU upload completion absent",
+                                        )
+                                    })?;
                                 let metadata = format!(
                                     concat!(
                                         "schema=RendererCaptureEvidenceV1\n",
@@ -1003,6 +1030,17 @@ fn request_one_capture(
                                         "presentation_frame_sha256={}\n",
                                         "presentation_resource_set_sha256={}\n",
                                         "presentation_semantic_tape_sha256={}\n",
+                                        "figure_gpu_package_sha256={}\n",
+                                        "figure_gpu_assignment_sha256={}\n",
+                                        "figure_gpu_staged_sha256={}\n",
+                                        "figure_gpu_plan_sha256={}\n",
+                                        "figure_gpu_submission_sequence={}\n",
+                                        "figure_gpu_completion_sequence={}\n",
+                                        "figure_gpu_instance_count={}\n",
+                                        "figure_gpu_pose_page_count={}\n",
+                                        "figure_gpu_upload_windows={}\n",
+                                        "figure_gpu_upload_operations={}\n",
+                                        "figure_gpu_upload_bytes={}\n",
                                         "diagnostic_client_tick={}\n",
                                         "diagnostic_interpolated_time_bits={:016x}\n",
                                         "width={}\n",
@@ -1036,6 +1074,17 @@ fn request_one_capture(
                                     hex_digest(&context.presentation.frame_digest),
                                     hex_digest(&context.presentation.resource_set_digest),
                                     hex_digest(&context.presentation.semantic_tape_root),
+                                    hex_digest(&figure_gpu.package_digest),
+                                    hex_digest(&figure_gpu.assignment_digest),
+                                    hex_digest(&figure_gpu.staged_digest),
+                                    hex_digest(&figure_gpu.plan_digest),
+                                    figure_gpu.submission_sequence,
+                                    figure_gpu.completion_sequence,
+                                    figure_gpu.instance_count,
+                                    figure_gpu.pose_page_count,
+                                    figure_gpu.upload_windows,
+                                    figure_gpu.upload_operations,
+                                    figure_gpu.upload_bytes,
                                     context.diagnostic_client_tick,
                                     context.diagnostic_interpolated_time_bits,
                                     width,
@@ -1397,6 +1446,14 @@ mod tests {
         assert_eq!(
             capture_metadata_field_class_v1("anchor_selected_non_client_colonist"),
             Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("figure_gpu_completion_sequence"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("figure_gpu_upload_bytes"),
+            Some(CaptureMetadataFieldClassV1::Evidence)
         );
         assert_eq!(
             capture_metadata_field_class_v1("diagnostic_client_tick"),

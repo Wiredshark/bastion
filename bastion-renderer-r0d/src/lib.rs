@@ -12,6 +12,7 @@ pub mod cbor;
 pub mod cosmetic_rng;
 pub mod extract;
 pub mod figure_asset;
+pub mod figure_gpu;
 pub mod figure_package;
 pub mod identity;
 pub mod parallel;
