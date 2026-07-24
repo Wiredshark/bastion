@@ -3313,6 +3313,7 @@ impl PlayState for SessionState {
                                 position.0,
                                 crate::render::bastion_r0d::CaptureAnchorEvidenceV1 {
                                     uid: uid.0.get(),
+                                    selected_non_client_colonist: true,
                                     body_category: "bastion_colonist".to_owned(),
                                     body: format!("{body:?}"),
                                 },
@@ -3331,6 +3332,8 @@ impl PlayState for SessionState {
                     ));
                     camera.force_focus_pos(Vec3::new(target.x, target.y, target.z + 1.0));
                     self.bastion_sync_context(global_state);
+                } else {
+                    crate::render::bastion_r0d::clear_capture_anchor();
                 }
             }
             // bastion: keep the derived input context synced into the window

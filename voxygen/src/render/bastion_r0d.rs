@@ -208,6 +208,43 @@ pub mod draw_kind {
     pub const BLIT: u16 = 23;
 }
 
+pub const VISIBLE_SCENE_FIGURE_MASK_V1: u8 = 1 << 0;
+pub const VISIBLE_SCENE_TERRAIN_MASK_V1: u8 = 1 << 1;
+pub const VISIBLE_SCENE_LOD_TERRAIN_MASK_V1: u8 = 1 << 2;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct VisibleSceneCoverageV1 {
+    pub mask: u8,
+    pub figure_draw_count: u32,
+    pub figure_units: u64,
+    pub figure_instances: u64,
+    pub terrain_draw_count: u32,
+    pub terrain_units: u64,
+    pub terrain_instances: u64,
+    pub lod_terrain_draw_count: u32,
+    pub lod_terrain_units: u64,
+    pub lod_terrain_instances: u64,
+}
+
+impl VisibleSceneCoverageV1 {
+    #[must_use]
+    pub const fn has_figure(self) -> bool {
+        self.mask & VISIBLE_SCENE_FIGURE_MASK_V1 != 0
+            && self.figure_draw_count > 0
+            && self.figure_units > 0
+            && self.figure_instances > 0
+    }
+
+    #[must_use]
+    pub const fn has_terrain(self) -> bool {
+        let terrain_mask = VISIBLE_SCENE_TERRAIN_MASK_V1 | VISIBLE_SCENE_LOD_TERRAIN_MASK_V1;
+        self.mask & terrain_mask != 0
+            && (self.terrain_draw_count > 0 || self.lod_terrain_draw_count > 0)
+            && (self.terrain_units > 0 || self.lod_terrain_units > 0)
+            && (self.terrain_instances > 0 || self.lod_terrain_instances > 0)
+    }
+}
+
 static DRAW_RECORDS: Mutex<Vec<(u16, u32, u32)>> = Mutex::new(Vec::new());
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -215,6 +252,7 @@ pub struct SemanticTraceSnapshotV1 {
     pub generation: u64,
     pub record_count: usize,
     pub digest: [u8; 32],
+    pub visible_scene_coverage: VisibleSceneCoverageV1,
 }
 
 static LATEST_SEMANTIC_TRACE: Mutex<Option<SemanticTraceSnapshotV1>> = Mutex::new(None);
@@ -256,6 +294,7 @@ fn draw_tape_snapshot(records: &[(u16, u32, u32)]) -> Option<(usize, [u8; 32])> 
     }
     let digest =
         bastion_renderer_r0d::domain_hash_v1("bastion/r0d/semantic-trace", 1, 0, &payload).ok()?;
+    let visible_scene_coverage = visible_scene_coverage_v1(records)?;
     let result = (records.len(), digest);
     if let Ok(mut latest) = LATEST_SEMANTIC_TRACE.lock() {
         let generation = latest
@@ -267,10 +306,46 @@ fn draw_tape_snapshot(records: &[(u16, u32, u32)]) -> Option<(usize, [u8; 32])> 
                 generation,
                 record_count: records.len(),
                 digest,
+                visible_scene_coverage,
             });
         }
     }
     Some(result)
+}
+
+fn visible_scene_coverage_v1(records: &[(u16, u32, u32)]) -> Option<VisibleSceneCoverageV1> {
+    let mut coverage = VisibleSceneCoverageV1::default();
+    for &(kind, units, instances) in records {
+        if units == 0 || instances == 0 {
+            continue;
+        }
+        let (draw_count, unit_count, instance_count, mask) = match kind {
+            draw_kind::FIGURE => (
+                &mut coverage.figure_draw_count,
+                &mut coverage.figure_units,
+                &mut coverage.figure_instances,
+                VISIBLE_SCENE_FIGURE_MASK_V1,
+            ),
+            draw_kind::TERRAIN => (
+                &mut coverage.terrain_draw_count,
+                &mut coverage.terrain_units,
+                &mut coverage.terrain_instances,
+                VISIBLE_SCENE_TERRAIN_MASK_V1,
+            ),
+            draw_kind::LOD_TERRAIN => (
+                &mut coverage.lod_terrain_draw_count,
+                &mut coverage.lod_terrain_units,
+                &mut coverage.lod_terrain_instances,
+                VISIBLE_SCENE_LOD_TERRAIN_MASK_V1,
+            ),
+            _ => continue,
+        };
+        *draw_count = draw_count.checked_add(1)?;
+        *unit_count = unit_count.checked_add(u64::from(units))?;
+        *instance_count = instance_count.checked_add(u64::from(instances))?;
+        coverage.mask |= mask;
+    }
+    Some(coverage)
 }
 
 /// Capture-only switch. Normal play retains its ordinary culling policy.
@@ -349,6 +424,7 @@ pub fn reset_certification_server_latch_v1() {
     if let Ok(mut state) = CAPTURE_STATE.lock() {
         *state = (0, 0, 0);
     }
+    clear_capture_anchor();
 }
 
 pub fn record_certification_server_tick_v1(
@@ -378,6 +454,7 @@ pub enum SettledTraceObservationV1 {
     },
     Open {
         digest: [u8; 32],
+        coverage: VisibleSceneCoverageV1,
         stable_frames: u64,
         advanced: bool,
     },
@@ -388,8 +465,12 @@ pub struct SettledTraceGateV1 {
     freeze_generation: Option<u64>,
     last_generation: Option<u64>,
     last_digest: Option<[u8; 32]>,
+    last_coverage: Option<VisibleSceneCoverageV1>,
+    last_anchor_uid: Option<u64>,
     stable_frames: u64,
     open_digest: Option<[u8; 32]>,
+    open_coverage: Option<VisibleSceneCoverageV1>,
+    open_anchor_uid: Option<u64>,
 }
 
 impl SettledTraceGateV1 {
@@ -397,14 +478,19 @@ impl SettledTraceGateV1 {
         self.freeze_generation = None;
         self.last_generation = None;
         self.last_digest = None;
+        self.last_coverage = None;
+        self.last_anchor_uid = None;
         self.stable_frames = 0;
         self.open_digest = None;
+        self.open_coverage = None;
+        self.open_anchor_uid = None;
     }
 
     pub fn observe(
         &mut self,
         authority: CertificationServerLatchV1,
         trace: SemanticTraceSnapshotV1,
+        anchor: Option<&CaptureAnchorEvidenceV1>,
     ) -> Result<SettledTraceObservationV1, SettledTraceFaultV1> {
         if authority.completed_tick != CERTIFICATION_SERVER_TICK_V1 || !authority.frozen {
             if self.open_digest.is_some() {
@@ -413,6 +499,23 @@ impl SettledTraceGateV1 {
             self.reset();
             return Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 });
         }
+
+        let visible_scene_ready = anchor.is_some_and(CaptureAnchorEvidenceV1::is_valid)
+            && trace.visible_scene_coverage.has_figure()
+            && trace.visible_scene_coverage.has_terrain();
+        if !visible_scene_ready {
+            self.freeze_generation = Some(trace.generation);
+            self.last_generation = Some(trace.generation);
+            self.last_digest = None;
+            self.last_coverage = None;
+            self.last_anchor_uid = None;
+            self.stable_frames = 0;
+            self.open_digest = None;
+            self.open_coverage = None;
+            self.open_anchor_uid = None;
+            return Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 });
+        }
+        let anchor_uid = anchor.map(|anchor| anchor.uid).unwrap_or(0);
 
         if self.freeze_generation.is_none() {
             self.freeze_generation = Some(trace.generation);
@@ -428,9 +531,24 @@ impl SettledTraceGateV1 {
             return Err(SettledTraceFaultV1::TraceGenerationRegressed);
         }
         if trace.generation == last_generation {
-            if let Some(digest) = self.open_digest {
+            if let (Some(digest), Some(coverage), Some(open_anchor_uid)) =
+                (self.open_digest, self.open_coverage, self.open_anchor_uid)
+            {
+                if trace.visible_scene_coverage != coverage || anchor_uid != open_anchor_uid {
+                    self.freeze_generation = Some(trace.generation);
+                    self.last_generation = Some(trace.generation);
+                    self.last_digest = None;
+                    self.last_coverage = None;
+                    self.last_anchor_uid = None;
+                    self.stable_frames = 0;
+                    self.open_digest = None;
+                    self.open_coverage = None;
+                    self.open_anchor_uid = None;
+                    return Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 });
+                }
                 return Ok(SettledTraceObservationV1::Open {
                     digest,
+                    coverage,
                     stable_frames: self.stable_frames,
                     advanced: false,
                 });
@@ -441,15 +559,33 @@ impl SettledTraceGateV1 {
         }
 
         self.last_generation = Some(trace.generation);
-        if let Some(open_digest) = self.open_digest {
+        if let (Some(open_digest), Some(open_coverage), Some(open_anchor_uid)) =
+            (self.open_digest, self.open_coverage, self.open_anchor_uid)
+        {
+            if trace.visible_scene_coverage != open_coverage || anchor_uid != open_anchor_uid {
+                self.freeze_generation = Some(trace.generation);
+                self.last_generation = Some(trace.generation);
+                self.last_digest = None;
+                self.last_coverage = None;
+                self.last_anchor_uid = None;
+                self.stable_frames = 0;
+                self.open_digest = None;
+                self.open_coverage = None;
+                self.open_anchor_uid = None;
+                return Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 });
+            }
             return Ok(SettledTraceObservationV1::Open {
                 digest: open_digest,
+                coverage: open_coverage,
                 stable_frames: self.stable_frames,
                 advanced: true,
             });
         }
 
-        self.stable_frames = if self.last_digest == Some(trace.digest) {
+        self.stable_frames = if self.last_digest == Some(trace.digest)
+            && self.last_coverage == Some(trace.visible_scene_coverage)
+            && self.last_anchor_uid == Some(anchor_uid)
+        {
             self.stable_frames
                 .checked_add(1)
                 .ok_or(SettledTraceFaultV1::StableFrameOverflow)?
@@ -457,10 +593,15 @@ impl SettledTraceGateV1 {
             1
         };
         self.last_digest = Some(trace.digest);
+        self.last_coverage = Some(trace.visible_scene_coverage);
+        self.last_anchor_uid = Some(anchor_uid);
         if self.stable_frames >= READINESS_STABLE_RENDER_FRAMES_V1 {
             self.open_digest = Some(trace.digest);
+            self.open_coverage = Some(trace.visible_scene_coverage);
+            self.open_anchor_uid = Some(anchor_uid);
             Ok(SettledTraceObservationV1::Open {
                 digest: trace.digest,
+                coverage: trace.visible_scene_coverage,
                 stable_frames: self.stable_frames,
                 advanced: true,
             })
@@ -493,15 +634,30 @@ static SETTLED_TRACE_GATE: Mutex<SettledTraceGateV1> = Mutex::new(SettledTraceGa
     freeze_generation: None,
     last_generation: None,
     last_digest: None,
+    last_coverage: None,
+    last_anchor_uid: None,
     stable_frames: 0,
     open_digest: None,
+    open_coverage: None,
+    open_anchor_uid: None,
 });
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CaptureAnchorEvidenceV1 {
     pub uid: u64,
+    pub selected_non_client_colonist: bool,
     pub body_category: String,
     pub body: String,
+}
+
+impl CaptureAnchorEvidenceV1 {
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        self.uid != 0
+            && self.selected_non_client_colonist
+            && self.body_category == "bastion_colonist"
+            && !self.body.is_empty()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -517,12 +673,24 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "authoritative_frozen"
         | "readiness_trace_sha256"
         | "readiness_stable_frames"
+        | "visible_scene_ready"
+        | "visible_scene_coverage_mask"
+        | "visible_scene_figure_draw_count"
+        | "visible_scene_figure_units"
+        | "visible_scene_figure_instances"
+        | "visible_scene_terrain_draw_count"
+        | "visible_scene_terrain_units"
+        | "visible_scene_terrain_instances"
+        | "visible_scene_lod_terrain_draw_count"
+        | "visible_scene_lod_terrain_units"
+        | "visible_scene_lod_terrain_instances"
+        | "anchor_uid"
+        | "anchor_selected_non_client_colonist"
         | "ordinal" => Some(CaptureMetadataFieldClassV1::Authority),
         "diagnostic_client_tick" | "diagnostic_interpolated_time_bits" => {
             Some(CaptureMetadataFieldClassV1::Diagnostic)
         },
-        "anchor_uid"
-        | "anchor_category"
+        "anchor_category"
         | "anchor_body"
         | "pass_tape"
         | "semantic_trace_count"
@@ -541,6 +709,7 @@ struct CaptureRequestContextV1 {
     authoritative_frozen: bool,
     readiness_trace_digest: [u8; 32],
     readiness_stable_frames: u64,
+    visible_scene_coverage: VisibleSceneCoverageV1,
     diagnostic_client_tick: u64,
     diagnostic_interpolated_time_bits: u64,
     semantic_trace: SemanticTraceSnapshotV1,
@@ -551,6 +720,13 @@ static CAPTURE_ANCHOR: Mutex<Option<CaptureAnchorEvidenceV1>> = Mutex::new(None)
 pub fn set_capture_anchor(anchor: CaptureAnchorEvidenceV1) {
     match CAPTURE_ANCHOR.lock() {
         Ok(mut current) => *current = Some(anchor),
+        Err(error) => tracing::warn!(target: "bastion_r0d", "capture anchor lock failed: {error}"),
+    }
+}
+
+pub fn clear_capture_anchor() {
+    match CAPTURE_ANCHOR.lock() {
+        Ok(mut current) => *current = None,
         Err(error) => tracing::warn!(target: "bastion_r0d", "capture anchor lock failed: {error}"),
     }
 }
@@ -613,13 +789,14 @@ pub fn drive_capture(
 
     let authority = certification_server_latch_v1();
     let semantic_trace = LATEST_SEMANTIC_TRACE.lock().ok().and_then(|value| *value);
+    let anchor = CAPTURE_ANCHOR.lock().ok().and_then(|anchor| anchor.clone());
     let absolute_mode = absolute_time_capture_selected();
     let readiness = if absolute_mode {
         let (Some(authority), Some(semantic_trace)) = (authority, semantic_trace) else {
             return false;
         };
         let observation = match SETTLED_TRACE_GATE.lock() {
-            Ok(mut gate) => gate.observe(authority, semantic_trace),
+            Ok(mut gate) => gate.observe(authority, semantic_trace, anchor.as_ref()),
             Err(error) => {
                 write_capture_fault(
                     &output,
@@ -631,9 +808,10 @@ pub fn drive_capture(
         match observation {
             Ok(SettledTraceObservationV1::Open {
                 digest,
+                coverage,
                 stable_frames,
                 advanced: true,
-            }) => Some((authority, semantic_trace, digest, stable_frames)),
+            }) => Some((authority, semantic_trace, digest, coverage, stable_frames)),
             Ok(
                 SettledTraceObservationV1::Waiting { .. }
                 | SettledTraceObservationV1::Open {
@@ -652,23 +830,43 @@ pub fn drive_capture(
         authority
             .zip(semantic_trace)
             .map(|(authority, semantic_trace)| {
-                (authority, semantic_trace, semantic_trace.digest, 0_u64)
+                (
+                    authority,
+                    semantic_trace,
+                    semantic_trace.digest,
+                    semantic_trace.visible_scene_coverage,
+                    0_u64,
+                )
             })
     } else {
         None
     };
     if requested < count
-        && let Some((authority, semantic_trace, readiness_trace_digest, stable_frames)) = readiness
-    {
-        request_one_capture(renderer, &output, requested, CaptureRequestContextV1 {
-            authoritative_server_tick: authority.completed_tick,
-            authoritative_frozen: authority.frozen,
-            readiness_trace_digest,
-            readiness_stable_frames: stable_frames,
-            diagnostic_client_tick: simulation_tick,
-            diagnostic_interpolated_time_bits: sim_time.to_bits(),
+        && let Some((
+            authority,
             semantic_trace,
-        });
+            readiness_trace_digest,
+            visible_scene_coverage,
+            stable_frames,
+        )) = readiness
+        && let Some(anchor) = anchor
+    {
+        request_one_capture(
+            renderer,
+            &output,
+            requested,
+            anchor,
+            CaptureRequestContextV1 {
+                authoritative_server_tick: authority.completed_tick,
+                authoritative_frozen: authority.frozen,
+                readiness_trace_digest,
+                readiness_stable_frames: stable_frames,
+                visible_scene_coverage,
+                diagnostic_client_tick: simulation_tick,
+                diagnostic_interpolated_time_bits: sim_time.to_bits(),
+                semantic_trace,
+            },
+        );
     }
     completed >= count
 }
@@ -677,6 +875,7 @@ fn request_one_capture(
     renderer: &mut super::renderer::Renderer,
     output: &Path,
     ordinal: u64,
+    anchor: CaptureAnchorEvidenceV1,
     context: CaptureRequestContextV1,
 ) {
     match CAPTURE_STATE.lock() {
@@ -699,7 +898,6 @@ fn request_one_capture(
         },
     }
     let output = output.to_path_buf();
-    let anchor = CAPTURE_ANCHOR.lock().ok().and_then(|anchor| anchor.clone());
     let pass_tape = LATEST_PASS_TAPE.lock().ok().and_then(|value| value.clone());
     renderer.create_screenshot(move |result| {
         match result {
@@ -726,12 +924,6 @@ fn request_one_capture(
                             })
                             .and_then(|()| fs::rename(&staged_png, &png_path))
                             .and_then(|()| {
-                                let anchor = anchor.as_ref().ok_or_else(|| {
-                                    std::io::Error::new(
-                                        std::io::ErrorKind::InvalidData,
-                                        "capture anchor absent",
-                                    )
-                                })?;
                                 let pass_tape = pass_tape.as_deref().ok_or_else(|| {
                                     std::io::Error::new(
                                         std::io::ErrorKind::InvalidData,
@@ -746,6 +938,17 @@ fn request_one_capture(
                                         "authoritative_frozen={}\n",
                                         "readiness_trace_sha256={}\n",
                                         "readiness_stable_frames={}\n",
+                                        "visible_scene_ready=true\n",
+                                        "visible_scene_coverage_mask={}\n",
+                                        "visible_scene_figure_draw_count={}\n",
+                                        "visible_scene_figure_units={}\n",
+                                        "visible_scene_figure_instances={}\n",
+                                        "visible_scene_terrain_draw_count={}\n",
+                                        "visible_scene_terrain_units={}\n",
+                                        "visible_scene_terrain_instances={}\n",
+                                        "visible_scene_lod_terrain_draw_count={}\n",
+                                        "visible_scene_lod_terrain_units={}\n",
+                                        "visible_scene_lod_terrain_instances={}\n",
                                         "diagnostic_client_tick={}\n",
                                         "diagnostic_interpolated_time_bits={:016x}\n",
                                         "width={}\n",
@@ -753,6 +956,7 @@ fn request_one_capture(
                                         "pixel_format=rgb8_srgb\n",
                                         "pixel_sha256={}\n",
                                         "anchor_uid={}\n",
+                                        "anchor_selected_non_client_colonist={}\n",
                                         "anchor_category={}\n",
                                         "anchor_body={}\n",
                                         "pass_tape={}\n",
@@ -764,12 +968,23 @@ fn request_one_capture(
                                     context.authoritative_frozen,
                                     hex_digest(&context.readiness_trace_digest),
                                     context.readiness_stable_frames,
+                                    context.visible_scene_coverage.mask,
+                                    context.visible_scene_coverage.figure_draw_count,
+                                    context.visible_scene_coverage.figure_units,
+                                    context.visible_scene_coverage.figure_instances,
+                                    context.visible_scene_coverage.terrain_draw_count,
+                                    context.visible_scene_coverage.terrain_units,
+                                    context.visible_scene_coverage.terrain_instances,
+                                    context.visible_scene_coverage.lod_terrain_draw_count,
+                                    context.visible_scene_coverage.lod_terrain_units,
+                                    context.visible_scene_coverage.lod_terrain_instances,
                                     context.diagnostic_client_tick,
                                     context.diagnostic_interpolated_time_bits,
                                     width,
                                     height,
                                     hex_digest(&digest),
                                     anchor.uid,
+                                    anchor.selected_non_client_colonist,
                                     anchor.body_category,
                                     anchor.body,
                                     pass_tape,
@@ -835,6 +1050,40 @@ mod tests {
     use super::*;
     use crate::render::RenderMode;
 
+    fn valid_anchor() -> CaptureAnchorEvidenceV1 {
+        CaptureAnchorEvidenceV1 {
+            uid: 2,
+            selected_non_client_colonist: true,
+            body_category: "bastion_colonist".to_owned(),
+            body: "Humanoid(Dwarf)".to_owned(),
+        }
+    }
+
+    fn valid_coverage() -> VisibleSceneCoverageV1 {
+        visible_scene_coverage_v1(&[(draw_kind::TERRAIN, 24, 1), (draw_kind::FIGURE, 12, 1)])
+            .unwrap()
+    }
+
+    fn trace(
+        generation: u64,
+        digest: [u8; 32],
+        visible_scene_coverage: VisibleSceneCoverageV1,
+    ) -> SemanticTraceSnapshotV1 {
+        SemanticTraceSnapshotV1 {
+            generation,
+            record_count: 10,
+            digest,
+            visible_scene_coverage,
+        }
+    }
+
+    fn frozen_authority() -> CertificationServerLatchV1 {
+        CertificationServerLatchV1 {
+            completed_tick: CERTIFICATION_SERVER_TICK_V1,
+            frozen: true,
+        }
+    }
+
     #[test]
     fn absolute_time_capture_bypasses_client_pause_wait_but_freezes_server() {
         assert!(!capture_waits_for_pause_v1(true, true));
@@ -876,65 +1125,188 @@ mod tests {
     }
 
     #[test]
-    fn settled_trace_resets_before_freeze_and_opens_after_240_new_frames() {
+    fn ui_only_coverage_keeps_readiness_closed() {
+        let coverage = visible_scene_coverage_v1(&[(draw_kind::UI, 12, 1)]).unwrap();
+        assert_eq!(coverage, VisibleSceneCoverageV1::default());
+        let mut gate = SettledTraceGateV1::default();
+        assert_eq!(
+            gate.observe(
+                frozen_authority(),
+                trace(1, [1; 32], coverage),
+                Some(&valid_anchor()),
+            ),
+            Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 })
+        );
+    }
+
+    #[test]
+    fn terrain_only_coverage_keeps_readiness_closed() {
+        let coverage = visible_scene_coverage_v1(&[(draw_kind::TERRAIN, 24, 1)]).unwrap();
+        assert!(coverage.has_terrain());
+        assert!(!coverage.has_figure());
+        let mut gate = SettledTraceGateV1::default();
+        assert_eq!(
+            gate.observe(
+                frozen_authority(),
+                trace(1, [2; 32], coverage),
+                Some(&valid_anchor()),
+            ),
+            Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 })
+        );
+    }
+
+    #[test]
+    fn figure_only_coverage_keeps_readiness_closed() {
+        let coverage = visible_scene_coverage_v1(&[(draw_kind::FIGURE, 12, 1)]).unwrap();
+        assert!(coverage.has_figure());
+        assert!(!coverage.has_terrain());
+        let mut gate = SettledTraceGateV1::default();
+        assert_eq!(
+            gate.observe(
+                frozen_authority(),
+                trace(1, [3; 32], coverage),
+                Some(&valid_anchor()),
+            ),
+            Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 })
+        );
+    }
+
+    #[test]
+    fn missing_or_invalid_anchor_keeps_readiness_closed() {
+        let coverage = valid_coverage();
+        let mut gate = SettledTraceGateV1::default();
+        assert_eq!(
+            gate.observe(frozen_authority(), trace(1, [4; 32], coverage), None),
+            Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 })
+        );
+        for (index, anchor) in [
+            CaptureAnchorEvidenceV1 {
+                uid: 0,
+                ..valid_anchor()
+            },
+            CaptureAnchorEvidenceV1 {
+                selected_non_client_colonist: false,
+                ..valid_anchor()
+            },
+            CaptureAnchorEvidenceV1 {
+                body_category: "client_spectator".to_owned(),
+                ..valid_anchor()
+            },
+            CaptureAnchorEvidenceV1 {
+                body: String::new(),
+                ..valid_anchor()
+            },
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(
+                gate.observe(
+                    frozen_authority(),
+                    trace(index as u64 + 2, [4; 32], coverage),
+                    Some(&anchor),
+                ),
+                Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 })
+            );
+        }
+    }
+
+    #[test]
+    fn visible_scene_coverage_loss_resets_stability() {
+        let digest = [5; 32];
+        let mut gate = SettledTraceGateV1::default();
+        let anchor = valid_anchor();
+        assert_eq!(
+            gate.observe(
+                frozen_authority(),
+                trace(1, digest, valid_coverage()),
+                Some(&anchor),
+            ),
+            Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 })
+        );
+        assert_eq!(
+            gate.observe(
+                frozen_authority(),
+                trace(2, digest, valid_coverage()),
+                Some(&anchor),
+            ),
+            Ok(SettledTraceObservationV1::Waiting { stable_frames: 1 })
+        );
+        let figure_only = visible_scene_coverage_v1(&[(draw_kind::FIGURE, 12, 1)]).unwrap();
+        assert_eq!(
+            gate.observe(
+                frozen_authority(),
+                trace(3, digest, figure_only),
+                Some(&anchor),
+            ),
+            Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 })
+        );
+        assert_eq!(
+            gate.observe(
+                frozen_authority(),
+                trace(4, digest, valid_coverage()),
+                Some(&anchor),
+            ),
+            Ok(SettledTraceObservationV1::Waiting { stable_frames: 1 })
+        );
+    }
+
+    #[test]
+    fn valid_terrain_and_figure_open_after_full_stability_window() {
         let digest = [7; 32];
         let mut gate = SettledTraceGateV1::default();
+        let anchor = valid_anchor();
+        let coverage = valid_coverage();
         let running = CertificationServerLatchV1 {
             completed_tick: CERTIFICATION_SERVER_TICK_V1 - 1,
             frozen: false,
         };
         assert_eq!(
-            gate.observe(running, SemanticTraceSnapshotV1 {
-                generation: 5,
-                record_count: 10,
-                digest,
-            }),
+            gate.observe(running, trace(5, digest, coverage), Some(&anchor)),
             Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 })
         );
-        let frozen = CertificationServerLatchV1 {
-            completed_tick: CERTIFICATION_SERVER_TICK_V1,
-            frozen: true,
-        };
         assert_eq!(
-            gate.observe(frozen, SemanticTraceSnapshotV1 {
-                generation: 6,
-                record_count: 10,
-                digest,
-            }),
+            gate.observe(
+                frozen_authority(),
+                trace(6, digest, coverage),
+                Some(&anchor),
+            ),
             Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 })
         );
         for index in 1..READINESS_STABLE_RENDER_FRAMES_V1 {
             assert_eq!(
-                gate.observe(frozen, SemanticTraceSnapshotV1 {
-                    generation: 6 + index,
-                    record_count: 10,
-                    digest,
-                }),
+                gate.observe(
+                    frozen_authority(),
+                    trace(6 + index, digest, coverage),
+                    Some(&anchor),
+                ),
                 Ok(SettledTraceObservationV1::Waiting {
                     stable_frames: index,
                 })
             );
         }
         assert_eq!(
-            gate.observe(frozen, SemanticTraceSnapshotV1 {
-                generation: 6 + READINESS_STABLE_RENDER_FRAMES_V1,
-                record_count: 10,
-                digest,
-            }),
+            gate.observe(
+                frozen_authority(),
+                trace(6 + READINESS_STABLE_RENDER_FRAMES_V1, digest, coverage,),
+                Some(&anchor),
+            ),
             Ok(SettledTraceObservationV1::Open {
                 digest,
+                coverage,
                 stable_frames: READINESS_STABLE_RENDER_FRAMES_V1,
                 advanced: true,
             })
         );
         assert_eq!(
-            gate.observe(frozen, SemanticTraceSnapshotV1 {
-                generation: 7 + READINESS_STABLE_RENDER_FRAMES_V1,
-                record_count: 10,
-                digest: [8; 32],
-            }),
+            gate.observe(
+                frozen_authority(),
+                trace(7 + READINESS_STABLE_RENDER_FRAMES_V1, [8; 32], coverage,),
+                Some(&anchor),
+            ),
             Ok(SettledTraceObservationV1::Open {
                 digest,
+                coverage,
                 stable_frames: READINESS_STABLE_RENDER_FRAMES_V1,
                 advanced: true,
             })
@@ -953,6 +1325,18 @@ mod tests {
         );
         assert_eq!(
             capture_metadata_field_class_v1("readiness_trace_sha256"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("visible_scene_ready"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("visible_scene_figure_draw_count"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("anchor_selected_non_client_colonist"),
             Some(CaptureMetadataFieldClassV1::Authority)
         );
         assert_eq!(
@@ -1027,5 +1411,13 @@ mod tests {
         assert_eq!(draw_tape_snapshot(&ordered).unwrap(), first);
         let reversed = [ordered[1], ordered[0]];
         assert_ne!(draw_tape_snapshot(&reversed).unwrap().1, first.1);
+        let coverage = visible_scene_coverage_v1(&ordered).unwrap();
+        assert_eq!(coverage.mask, 3);
+        assert_eq!(coverage.figure_draw_count, 1);
+        assert_eq!(coverage.figure_units, 12);
+        assert_eq!(coverage.figure_instances, 2);
+        assert_eq!(coverage.terrain_draw_count, 1);
+        assert_eq!(coverage.terrain_units, 24);
+        assert_eq!(coverage.terrain_instances, 1);
     }
 }
