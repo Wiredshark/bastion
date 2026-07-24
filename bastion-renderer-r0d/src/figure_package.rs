@@ -17,8 +17,9 @@
 //! proven at the unit level by
 //! [`tests::partition_order_does_not_change_bytes`].
 
-use crate::cbor::{CanonicalValueV1, try_int_map};
+use crate::cbor::{CanonicalErrorV1, CanonicalValueV1, try_int_map};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 
 // ----------------------------------------------------------------------------
 // §8.2 machine-path normalization
@@ -137,6 +138,36 @@ pub struct ContentDescriptorV1 {
 /// Fixed package header magic (§8.1). `FigurePackageV1`, version 1.
 const PKG_MAGIC: &[u8; 8] = b"BSTRFP1\0";
 const PKG_VERSION: u32 = 1;
+pub const MAX_FIGURE_PACKAGE_SECTIONS_V1: usize = 64;
+pub const MAX_FIGURE_PACKAGE_SECTION_BYTES_V1: usize = 16 * 1024 * 1024;
+pub const MAX_FIGURE_PACKAGE_BYTES_V1: usize = 64 * 1024 * 1024;
+pub const MAX_FIGURE_PACKAGE_MEDIA_TYPE_BYTES_V1: usize = 96;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FigurePackageErrorV1 {
+    UnsupportedVersion(u32),
+    InvalidMagic,
+    TooManySections(usize),
+    DuplicateSectionTag(SectionTagV1),
+    InvalidSectionTag,
+    InvalidMediaType,
+    SectionTooLarge { tag: SectionTagV1, bytes: usize },
+    PackageTooLarge(usize),
+    Manifest(CanonicalErrorV1),
+    MalformedManifest,
+    DescriptorOrder,
+    DescriptorCountMismatch,
+    DescriptorDigestMismatch(SectionTagV1),
+    Truncated,
+    TrailingBytes(usize),
+    DigestMismatch,
+    LengthOverflow,
+    AllocationFailure,
+}
+
+impl From<CanonicalErrorV1> for FigurePackageErrorV1 {
+    fn from(value: CanonicalErrorV1) -> Self { Self::Manifest(value) }
+}
 
 /// A `FigurePackageV1` builder. `canonical_bytes` produces the uncompressed
 /// content-addressed package; `package_sha256` is the trailing digest.
@@ -149,9 +180,8 @@ impl FigurePackageV1 {
     #[must_use]
     pub fn new() -> Self { Self::default() }
 
-    /// Add a section. Duplicate tags are the caller's error to avoid; the
-    /// canonical sort is by tag and would make duplicates ambiguous, so we keep
-    /// the last write per tag deterministic by tag-then-insertion stability.
+    /// Add a section to the builder. Duplicate tags and all bounds are rejected
+    /// by the fallible canonical build; no duplicate has last-writer meaning.
     pub fn with_section(mut self, tag: SectionTagV1, media_type: &str, bytes: Vec<u8>) -> Self {
         self.sections.push(SectionV1 {
             tag,
@@ -161,25 +191,40 @@ impl FigurePackageV1 {
         self
     }
 
+    #[must_use]
+    pub fn sections(&self) -> &[SectionV1] { &self.sections }
+
+    #[must_use]
+    pub fn section(&self, tag: SectionTagV1) -> Option<&SectionV1> {
+        self.sections.iter().find(|section| section.tag == tag)
+    }
+
+    pub fn try_from_sections(sections: Vec<SectionV1>) -> Result<Self, FigurePackageErrorV1> {
+        validate_sections(&sections)?;
+        Ok(Self { sections })
+    }
+
     /// Descriptors sorted by section tag (§8.1).
-    fn sorted_descriptors(&self) -> Vec<(ContentDescriptorV1, &[u8])> {
-        let mut d: Vec<(ContentDescriptorV1, &[u8])> = self
-            .sections
-            .iter()
-            .map(|s| {
-                (
-                    ContentDescriptorV1 {
-                        media_type: s.media_type.clone(),
-                        sha256: Sha256::digest(&s.bytes).into(),
-                        size: s.bytes.len() as u64,
-                        section_tag: s.tag,
-                    },
-                    s.bytes.as_slice(),
-                )
-            })
-            .collect();
+    fn sorted_descriptors(
+        &self,
+    ) -> Result<Vec<(ContentDescriptorV1, &[u8])>, FigurePackageErrorV1> {
+        let mut d = Vec::new();
+        d.try_reserve_exact(self.sections.len())
+            .map_err(|_| FigurePackageErrorV1::AllocationFailure)?;
+        for section in &self.sections {
+            d.push((
+                ContentDescriptorV1 {
+                    media_type: section.media_type.clone(),
+                    sha256: Sha256::digest(&section.bytes).into(),
+                    size: u64::try_from(section.bytes.len())
+                        .map_err(|_| FigurePackageErrorV1::LengthOverflow)?,
+                    section_tag: section.tag,
+                },
+                section.bytes.as_slice(),
+            ));
+        }
         d.sort_by_key(|(desc, _)| desc.section_tag);
-        d
+        Ok(d)
     }
 
     /// The canonical-CBOR `FigurePackageManifestV1`: schema + the sorted
@@ -210,34 +255,277 @@ impl FigurePackageV1 {
     /// The full canonical package bytes, package SHA-256 appended (§8.1):
     /// `magic || version_le || manifest_len_le || manifest || section_count_le
     /// || raw section bytes (tag order) || package_sha256`.
-    #[must_use]
-    pub fn canonical_bytes(&self) -> Vec<u8> {
-        let descriptors = self.sorted_descriptors();
-        let manifest = self
-            .manifest_cbor(&descriptors)
-            .expect("trusted bounded figure package");
+    pub fn try_canonical_bytes(&self) -> Result<Vec<u8>, FigurePackageErrorV1> {
+        validate_sections(&self.sections)?;
+        let descriptors = self.sorted_descriptors()?;
+        let manifest = self.manifest_cbor(&descriptors)?;
         let mut out = Vec::new();
+        let payload_bytes = descriptors.iter().try_fold(0_usize, |total, (_, bytes)| {
+            total
+                .checked_add(bytes.len())
+                .ok_or(FigurePackageErrorV1::LengthOverflow)
+        })?;
+        let capacity = 8_usize
+            .checked_add(4)
+            .and_then(|value| value.checked_add(4))
+            .and_then(|value| value.checked_add(manifest.len()))
+            .and_then(|value| value.checked_add(4))
+            .and_then(|value| value.checked_add(payload_bytes))
+            .and_then(|value| value.checked_add(32))
+            .ok_or(FigurePackageErrorV1::LengthOverflow)?;
+        if capacity > MAX_FIGURE_PACKAGE_BYTES_V1 {
+            return Err(FigurePackageErrorV1::PackageTooLarge(capacity));
+        }
+        out.try_reserve_exact(capacity)
+            .map_err(|_| FigurePackageErrorV1::AllocationFailure)?;
         out.extend_from_slice(PKG_MAGIC);
         out.extend_from_slice(&PKG_VERSION.to_le_bytes());
-        out.extend_from_slice(&(manifest.len() as u32).to_le_bytes());
+        out.extend_from_slice(
+            &u32::try_from(manifest.len())
+                .map_err(|_| FigurePackageErrorV1::LengthOverflow)?
+                .to_le_bytes(),
+        );
         out.extend_from_slice(&manifest);
-        out.extend_from_slice(&(descriptors.len() as u32).to_le_bytes());
+        out.extend_from_slice(
+            &u32::try_from(descriptors.len())
+                .map_err(|_| FigurePackageErrorV1::LengthOverflow)?
+                .to_le_bytes(),
+        );
         for (_, bytes) in &descriptors {
             out.extend_from_slice(bytes);
         }
         let digest = Sha256::digest(&out);
         out.extend_from_slice(&digest);
-        out
+        Ok(out)
+    }
+
+    pub fn canonical_bytes(&self) -> Result<Vec<u8>, FigurePackageErrorV1> {
+        self.try_canonical_bytes()
     }
 
     /// The trailing package digest (§8.1) — the content address.
-    #[must_use]
-    pub fn package_sha256(&self) -> [u8; 32] {
-        let full = self.canonical_bytes();
+    pub fn package_sha256(&self) -> Result<[u8; 32], FigurePackageErrorV1> {
+        let full = self.try_canonical_bytes()?;
         let mut d = [0u8; 32];
         d.copy_from_slice(&full[full.len() - 32..]);
-        d
+        Ok(d)
     }
+
+    pub fn decode_exact(bytes: &[u8]) -> Result<Self, FigurePackageErrorV1> {
+        if bytes.len() > MAX_FIGURE_PACKAGE_BYTES_V1 {
+            return Err(FigurePackageErrorV1::PackageTooLarge(bytes.len()));
+        }
+        if bytes.len() < 8 + 4 + 4 + 4 + 32 {
+            return Err(FigurePackageErrorV1::Truncated);
+        }
+        let digest_offset = bytes
+            .len()
+            .checked_sub(32)
+            .ok_or(FigurePackageErrorV1::Truncated)?;
+        let expected: [u8; 32] = Sha256::digest(&bytes[..digest_offset]).into();
+        if bytes[digest_offset..] != expected {
+            return Err(FigurePackageErrorV1::DigestMismatch);
+        }
+        let mut reader = PackageReaderV1::new(&bytes[..digest_offset]);
+        if reader.take(8)? != PKG_MAGIC {
+            return Err(FigurePackageErrorV1::InvalidMagic);
+        }
+        let version = reader.u32()?;
+        if version != PKG_VERSION {
+            return Err(FigurePackageErrorV1::UnsupportedVersion(version));
+        }
+        let manifest_len =
+            usize::try_from(reader.u32()?).map_err(|_| FigurePackageErrorV1::LengthOverflow)?;
+        let manifest = CanonicalValueV1::decode_exact(reader.take(manifest_len)?)?;
+        let descriptors = parse_manifest_v1(manifest)?;
+        let count =
+            usize::try_from(reader.u32()?).map_err(|_| FigurePackageErrorV1::LengthOverflow)?;
+        if count != descriptors.len() {
+            return Err(FigurePackageErrorV1::DescriptorCountMismatch);
+        }
+        let mut sections = Vec::new();
+        sections
+            .try_reserve_exact(count)
+            .map_err(|_| FigurePackageErrorV1::AllocationFailure)?;
+        for descriptor in descriptors {
+            let section_bytes = reader.take(
+                usize::try_from(descriptor.size)
+                    .map_err(|_| FigurePackageErrorV1::LengthOverflow)?,
+            )?;
+            let actual: [u8; 32] = Sha256::digest(section_bytes).into();
+            if actual != descriptor.sha256 {
+                return Err(FigurePackageErrorV1::DescriptorDigestMismatch(
+                    descriptor.section_tag,
+                ));
+            }
+            sections.push(SectionV1 {
+                tag: descriptor.section_tag,
+                media_type: descriptor.media_type,
+                bytes: section_bytes.to_vec(),
+            });
+        }
+        if reader.remaining() != 0 {
+            return Err(FigurePackageErrorV1::TrailingBytes(reader.remaining()));
+        }
+        let package = Self::try_from_sections(sections)?;
+        if package.try_canonical_bytes()?.as_slice() != bytes {
+            return Err(FigurePackageErrorV1::DigestMismatch);
+        }
+        Ok(package)
+    }
+}
+
+fn validate_sections(sections: &[SectionV1]) -> Result<(), FigurePackageErrorV1> {
+    if sections.len() > MAX_FIGURE_PACKAGE_SECTIONS_V1 {
+        return Err(FigurePackageErrorV1::TooManySections(sections.len()));
+    }
+    let mut tags = BTreeSet::new();
+    let mut total = 0_usize;
+    for section in sections {
+        if section.tag == 0 {
+            return Err(FigurePackageErrorV1::InvalidSectionTag);
+        }
+        if !tags.insert(section.tag) {
+            return Err(FigurePackageErrorV1::DuplicateSectionTag(section.tag));
+        }
+        if section.media_type.is_empty()
+            || section.media_type.len() > MAX_FIGURE_PACKAGE_MEDIA_TYPE_BYTES_V1
+            || !section.media_type.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"/.+-".contains(&byte)
+            })
+        {
+            return Err(FigurePackageErrorV1::InvalidMediaType);
+        }
+        if section.bytes.len() > MAX_FIGURE_PACKAGE_SECTION_BYTES_V1 {
+            return Err(FigurePackageErrorV1::SectionTooLarge {
+                tag: section.tag,
+                bytes: section.bytes.len(),
+            });
+        }
+        total = total
+            .checked_add(section.bytes.len())
+            .ok_or(FigurePackageErrorV1::LengthOverflow)?;
+    }
+    if total > MAX_FIGURE_PACKAGE_BYTES_V1 {
+        return Err(FigurePackageErrorV1::PackageTooLarge(total));
+    }
+    Ok(())
+}
+
+fn parse_manifest_v1(
+    value: CanonicalValueV1,
+) -> Result<Vec<ContentDescriptorV1>, FigurePackageErrorV1> {
+    let CanonicalValueV1::IntMap(mut root) = value else {
+        return Err(FigurePackageErrorV1::MalformedManifest);
+    };
+    if root.len() != 2 {
+        return Err(FigurePackageErrorV1::MalformedManifest);
+    }
+    let Some(CanonicalValueV1::Uint(version)) = root.remove(&0) else {
+        return Err(FigurePackageErrorV1::MalformedManifest);
+    };
+    if version != u64::from(PKG_VERSION) {
+        return Err(FigurePackageErrorV1::UnsupportedVersion(
+            u32::try_from(version).unwrap_or(u32::MAX),
+        ));
+    }
+    let Some(CanonicalValueV1::Array(values)) = root.remove(&1) else {
+        return Err(FigurePackageErrorV1::MalformedManifest);
+    };
+    if values.len() > MAX_FIGURE_PACKAGE_SECTIONS_V1 {
+        return Err(FigurePackageErrorV1::TooManySections(values.len()));
+    }
+    let mut descriptors = Vec::new();
+    let mut previous = None;
+    for value in values {
+        let CanonicalValueV1::IntMap(mut fields) = value else {
+            return Err(FigurePackageErrorV1::MalformedManifest);
+        };
+        if fields.len() != 4 {
+            return Err(FigurePackageErrorV1::MalformedManifest);
+        }
+        let Some(CanonicalValueV1::Uint(tag)) = fields.remove(&0) else {
+            return Err(FigurePackageErrorV1::MalformedManifest);
+        };
+        let tag =
+            SectionTagV1::try_from(tag).map_err(|_| FigurePackageErrorV1::InvalidSectionTag)?;
+        if tag == 0 {
+            return Err(FigurePackageErrorV1::InvalidSectionTag);
+        }
+        if previous.is_some_and(|value| tag <= value) {
+            return Err(FigurePackageErrorV1::DescriptorOrder);
+        }
+        previous = Some(tag);
+        let Some(CanonicalValueV1::Text(media_type)) = fields.remove(&1) else {
+            return Err(FigurePackageErrorV1::MalformedManifest);
+        };
+        let Some(CanonicalValueV1::Bytes(digest)) = fields.remove(&2) else {
+            return Err(FigurePackageErrorV1::MalformedManifest);
+        };
+        let sha256: [u8; 32] = digest
+            .try_into()
+            .map_err(|_| FigurePackageErrorV1::MalformedManifest)?;
+        let Some(CanonicalValueV1::Uint(size)) = fields.remove(&3) else {
+            return Err(FigurePackageErrorV1::MalformedManifest);
+        };
+        if size
+            > u64::try_from(MAX_FIGURE_PACKAGE_SECTION_BYTES_V1)
+                .map_err(|_| FigurePackageErrorV1::LengthOverflow)?
+        {
+            return Err(FigurePackageErrorV1::SectionTooLarge {
+                tag,
+                bytes: usize::try_from(size).unwrap_or(usize::MAX),
+            });
+        }
+        descriptors.push(ContentDescriptorV1 {
+            media_type,
+            sha256,
+            size,
+            section_tag: tag,
+        });
+    }
+    let sections = descriptors
+        .iter()
+        .map(|descriptor| SectionV1 {
+            tag: descriptor.section_tag,
+            media_type: descriptor.media_type.clone(),
+            bytes: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+    validate_sections(&sections)?;
+    Ok(descriptors)
+}
+
+struct PackageReaderV1<'a> {
+    bytes: &'a [u8],
+    position: usize,
+}
+
+impl<'a> PackageReaderV1<'a> {
+    const fn new(bytes: &'a [u8]) -> Self { Self { bytes, position: 0 } }
+
+    fn take(&mut self, count: usize) -> Result<&'a [u8], FigurePackageErrorV1> {
+        let end = self
+            .position
+            .checked_add(count)
+            .ok_or(FigurePackageErrorV1::LengthOverflow)?;
+        let value = self
+            .bytes
+            .get(self.position..end)
+            .ok_or(FigurePackageErrorV1::Truncated)?;
+        self.position = end;
+        Ok(value)
+    }
+
+    fn u32(&mut self) -> Result<u32, FigurePackageErrorV1> {
+        let bytes: [u8; 4] = self
+            .take(4)?
+            .try_into()
+            .map_err(|_| FigurePackageErrorV1::Truncated)?;
+        Ok(u32::from_le_bytes(bytes))
+    }
+
+    fn remaining(&self) -> usize { self.bytes.len().saturating_sub(self.position) }
 }
 
 // ----------------------------------------------------------------------------
@@ -509,8 +797,8 @@ mod tests {
         let b = FigurePackageV1::new()
             .with_section(2, "application/vnd.bastion.skel", b"skel".to_vec())
             .with_section(7, "application/vnd.bastion.mesh", b"mesh-bytes".to_vec());
-        assert_eq!(a.canonical_bytes(), b.canonical_bytes());
-        assert_eq!(a.package_sha256(), b.package_sha256());
+        assert_eq!(a.canonical_bytes().unwrap(), b.canonical_bytes().unwrap());
+        assert_eq!(a.package_sha256().unwrap(), b.package_sha256().unwrap());
     }
 
     #[test]
@@ -523,10 +811,49 @@ mod tests {
         // Golden content address of the minimal single-section package. A second
         // independent implementation of §8.1 must reproduce this exact digest.
         assert_eq!(
-            hex_bytes(&pkg.package_sha256()),
+            hex_bytes(&pkg.package_sha256().unwrap()),
             "856e131c1f789ca014032137214c0fb5966632cf046ae673b6fcca9fa2b1d9e6",
             "frozen package address drift"
         );
+    }
+
+    #[test]
+    fn bounded_package_builder_and_exact_decoder_fail_closed() {
+        let duplicate = FigurePackageV1::new()
+            .with_section(1, "application/vnd.bastion.mesh", b"a".to_vec())
+            .with_section(1, "application/vnd.bastion.mesh", b"b".to_vec());
+        assert_eq!(
+            duplicate.canonical_bytes(),
+            Err(FigurePackageErrorV1::DuplicateSectionTag(1))
+        );
+        let oversized =
+            FigurePackageV1::new().with_section(1, "application/vnd.bastion.mesh", vec![
+                0;
+                MAX_FIGURE_PACKAGE_SECTION_BYTES_V1
+                    + 1
+            ]);
+        assert!(matches!(
+            oversized.canonical_bytes(),
+            Err(FigurePackageErrorV1::SectionTooLarge { tag: 1, .. })
+        ));
+        let package = FigurePackageV1::new()
+            .with_section(1, "application/vnd.bastion.mesh", b"valid".to_vec())
+            .canonical_bytes()
+            .unwrap();
+        assert_eq!(
+            FigurePackageV1::decode_exact(&package)
+                .unwrap()
+                .canonical_bytes()
+                .unwrap(),
+            package
+        );
+        let mut corrupt = package.clone();
+        corrupt[12] ^= 1;
+        assert!(FigurePackageV1::decode_exact(&corrupt).is_err());
+        assert!(FigurePackageV1::decode_exact(&package[..package.len() - 1]).is_err());
+        let mut trailing = package;
+        trailing.push(0);
+        assert!(FigurePackageV1::decode_exact(&trailing).is_err());
     }
 
     // -------- §8.4 greedy meshing --------
