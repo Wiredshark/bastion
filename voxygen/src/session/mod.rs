@@ -281,6 +281,7 @@ impl SessionState {
         let walk_forward_dir = scene.camera().forward_xy();
         let walk_right_dir = scene.camera().right_xy();
         crate::r1a_presentation::reset();
+        crate::r1d_tiers::reset();
         if let Err(error) = global_state.window.renderer_mut().reset_r1bc_figure_gpu() {
             tracing::warn!(
                 target: "bastion_r1bc_gpu",
@@ -432,6 +433,15 @@ impl SessionState {
         .ok()?;
         Some(crate::r1a_presentation::ProductionPresentationInputV1 {
             simulation_tick: client.get_tick(),
+            camera_position_mm: {
+                let camera = self.scene.camera();
+                let position = camera.dependents().cam_pos + camera.get_focus_pos().map(f32::trunc);
+                [
+                    fixed_mm(position.x)?,
+                    fixed_mm(position.y)?,
+                    fixed_mm(position.z)?,
+                ]
+            },
             anchor_uid: anchor.uid,
             anchor_body: anchor.body.clone(),
             anchor_position_mm: anchor.position_mm,
@@ -4417,7 +4427,21 @@ impl PlayState for SessionState {
                             package.package_digest(),
                         ) {
                             Ok(frame) => {
-                                if crate::r1a_presentation::upload_required(&frame) {
+                                let tier_plan_accepted =
+                                    match crate::r1d_tiers::update(&frame, &input) {
+                                        Ok(_) => true,
+                                        Err(error) => {
+                                            tracing::warn!(
+                                                target: "bastion_r1d",
+                                                ?error,
+                                                "individual representation plan rejected"
+                                            );
+                                            false
+                                        },
+                                    };
+                                if tier_plan_accepted
+                                    && crate::r1a_presentation::upload_required(&frame)
+                                {
                                     match crate::r1bc_figure_package::production_package_for_frame(
                                         &frame,
                                     ) {

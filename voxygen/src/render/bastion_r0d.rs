@@ -303,6 +303,41 @@ fn draw_tape_snapshot(records: &[(u16, u32, u32)]) -> Option<(usize, [u8; 32])> 
         payload.extend_from_slice(&units.to_le_bytes());
         payload.extend_from_slice(&instances.to_le_bytes());
     }
+    // Once the R1D plan exists, the semantic trace binds the complete
+    // renderer-owned representation decision. Draw observation remains
+    // diagnostic; a different tier plan cannot alias the same tape.
+    if let Some(tiers) = crate::r1d_tiers::latest_evidence() {
+        payload.extend_from_slice(b"R1DT");
+        payload.extend_from_slice(&tiers.generation.to_le_bytes());
+        payload.extend_from_slice(&tiers.frame_digest);
+        payload.extend_from_slice(&tiers.decision_root);
+        for count in [
+            tiers.full_count,
+            tiers.reduced_count,
+            tiers.lod_count,
+            tiers.impostor_count,
+            tiers.culled_count,
+            tiers.full_shadow_count,
+            tiers.proxy_shadow_count,
+            tiers.fallback_count,
+            tiers.transition_count,
+            tiers.max_visible,
+            tiers.max_full,
+            tiers.max_reduced,
+            tiers.max_lod,
+            tiers.max_impostor,
+            tiers.full_budget_fallbacks,
+            tiers.animation_budget_fallbacks,
+            tiers.lod_budget_fallbacks,
+            tiers.impostor_budget_fallbacks,
+            tiers.visible_budget_fallbacks,
+            tiers.lod_unavailable_fallbacks,
+            tiers.impostor_unavailable_fallbacks,
+            tiers.shadow_proxy_unavailable_fallbacks,
+        ] {
+            payload.extend_from_slice(&count.to_le_bytes());
+        }
+    }
     let digest =
         bastion_renderer_r0d::domain_hash_v1("bastion/r0d/semantic-trace", 1, 0, &payload).ok()?;
     let visible_scene_coverage = visible_scene_coverage_v1(records)?;
@@ -709,6 +744,9 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "figure_gpu_plan_sha256"
         | "figure_gpu_submission_sequence"
         | "figure_gpu_completion_sequence"
+        | "r1d_tier_generation"
+        | "r1d_tier_frame_sha256"
+        | "r1d_tier_decision_root_sha256"
         | "anchor_uid"
         | "anchor_selected_non_client_colonist"
         | "ordinal" => Some(CaptureMetadataFieldClassV1::Authority),
@@ -735,6 +773,28 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "figure_batch_rain_count"
         | "figure_batch_capacity_fallbacks"
         | "figure_batch_incompatible_resource_fallbacks"
+        | "r1d_tier_full_count"
+        | "r1d_tier_reduced_count"
+        | "r1d_tier_lod_count"
+        | "r1d_tier_impostor_count"
+        | "r1d_tier_culled_count"
+        | "r1d_tier_full_shadow_count"
+        | "r1d_tier_proxy_shadow_count"
+        | "r1d_tier_fallback_count"
+        | "r1d_tier_transition_count"
+        | "r1d_tier_budget_max_visible"
+        | "r1d_tier_budget_max_full"
+        | "r1d_tier_budget_max_reduced"
+        | "r1d_tier_budget_max_lod"
+        | "r1d_tier_budget_max_impostor"
+        | "r1d_tier_fallback_full_budget"
+        | "r1d_tier_fallback_animation_budget"
+        | "r1d_tier_fallback_lod_budget"
+        | "r1d_tier_fallback_impostor_budget"
+        | "r1d_tier_fallback_visible_budget"
+        | "r1d_tier_fallback_lod_unavailable"
+        | "r1d_tier_fallback_impostor_unavailable"
+        | "r1d_tier_fallback_shadow_proxy_unavailable"
         | "width"
         | "height"
         | "pixel_format"
@@ -972,6 +1032,7 @@ fn request_one_capture(
     let pass_tape = LATEST_PASS_TAPE.lock().ok().and_then(|value| value.clone());
     let figure_gpu = super::figure_gpu::latest_evidence();
     let figure_batch = super::figure_batch::latest_evidence();
+    let individual_tiers = crate::r1d_tiers::latest_evidence();
     renderer.create_screenshot(move |result| {
         match result {
             Ok(image) => {
@@ -1018,6 +1079,19 @@ fn request_one_capture(
                                             "exact figure GPU upload completion absent",
                                         )
                                     })?;
+                                let individual_tiers = individual_tiers
+                                    .filter(|value| {
+                                        value.generation
+                                            == context.presentation.client_applied_generation
+                                            && value.frame_digest
+                                                == context.presentation.frame_digest
+                                    })
+                                    .ok_or_else(|| {
+                                        std::io::Error::new(
+                                            std::io::ErrorKind::InvalidData,
+                                            "exact individual tier plan absent",
+                                        )
+                                    })?;
                                 let metadata = format!(
                                     concat!(
                                         "schema=RendererCaptureEvidenceV1\n",
@@ -1062,6 +1136,31 @@ fn request_one_capture(
                                         "figure_batch_rain_count={}\n",
                                         "figure_batch_capacity_fallbacks={}\n",
                                         "figure_batch_incompatible_resource_fallbacks={}\n",
+                                        "r1d_tier_generation={}\n",
+                                        "r1d_tier_frame_sha256={}\n",
+                                        "r1d_tier_decision_root_sha256={}\n",
+                                        "r1d_tier_full_count={}\n",
+                                        "r1d_tier_reduced_count={}\n",
+                                        "r1d_tier_lod_count={}\n",
+                                        "r1d_tier_impostor_count={}\n",
+                                        "r1d_tier_culled_count={}\n",
+                                        "r1d_tier_full_shadow_count={}\n",
+                                        "r1d_tier_proxy_shadow_count={}\n",
+                                        "r1d_tier_fallback_count={}\n",
+                                        "r1d_tier_transition_count={}\n",
+                                        "r1d_tier_budget_max_visible={}\n",
+                                        "r1d_tier_budget_max_full={}\n",
+                                        "r1d_tier_budget_max_reduced={}\n",
+                                        "r1d_tier_budget_max_lod={}\n",
+                                        "r1d_tier_budget_max_impostor={}\n",
+                                        "r1d_tier_fallback_full_budget={}\n",
+                                        "r1d_tier_fallback_animation_budget={}\n",
+                                        "r1d_tier_fallback_lod_budget={}\n",
+                                        "r1d_tier_fallback_impostor_budget={}\n",
+                                        "r1d_tier_fallback_visible_budget={}\n",
+                                        "r1d_tier_fallback_lod_unavailable={}\n",
+                                        "r1d_tier_fallback_impostor_unavailable={}\n",
+                                        "r1d_tier_fallback_shadow_proxy_unavailable={}\n",
                                         "diagnostic_client_tick={}\n",
                                         "diagnostic_interpolated_time_bits={:016x}\n",
                                         "width={}\n",
@@ -1116,6 +1215,31 @@ fn request_one_capture(
                                     figure_batch.rain_batches,
                                     figure_batch.capacity_fallbacks,
                                     figure_batch.incompatible_resource_fallbacks,
+                                    individual_tiers.generation,
+                                    hex_digest(&individual_tiers.frame_digest),
+                                    hex_digest(&individual_tiers.decision_root),
+                                    individual_tiers.full_count,
+                                    individual_tiers.reduced_count,
+                                    individual_tiers.lod_count,
+                                    individual_tiers.impostor_count,
+                                    individual_tiers.culled_count,
+                                    individual_tiers.full_shadow_count,
+                                    individual_tiers.proxy_shadow_count,
+                                    individual_tiers.fallback_count,
+                                    individual_tiers.transition_count,
+                                    individual_tiers.max_visible,
+                                    individual_tiers.max_full,
+                                    individual_tiers.max_reduced,
+                                    individual_tiers.max_lod,
+                                    individual_tiers.max_impostor,
+                                    individual_tiers.full_budget_fallbacks,
+                                    individual_tiers.animation_budget_fallbacks,
+                                    individual_tiers.lod_budget_fallbacks,
+                                    individual_tiers.impostor_budget_fallbacks,
+                                    individual_tiers.visible_budget_fallbacks,
+                                    individual_tiers.lod_unavailable_fallbacks,
+                                    individual_tiers.impostor_unavailable_fallbacks,
+                                    individual_tiers.shadow_proxy_unavailable_fallbacks,
                                     context.diagnostic_client_tick,
                                     context.diagnostic_interpolated_time_bits,
                                     width,
@@ -1481,6 +1605,14 @@ mod tests {
         assert_eq!(
             capture_metadata_field_class_v1("figure_gpu_completion_sequence"),
             Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("r1d_tier_decision_root_sha256"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("r1d_tier_lod_count"),
+            Some(CaptureMetadataFieldClassV1::Evidence)
         );
         assert_eq!(
             capture_metadata_field_class_v1("figure_gpu_upload_bytes"),
