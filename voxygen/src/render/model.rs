@@ -6,6 +6,7 @@ use super::{
 use std::ops::Range;
 
 /// Represents a mesh that has been sent to the GPU.
+#[derive(Clone)]
 pub struct SubModel<'a, V: Vertex> {
     pub vertex_range: Range<u32>,
     buf: &'a wgpu::Buffer,
@@ -21,6 +22,11 @@ impl<'a, V: Vertex> SubModel<'a, V> {
 
     #[expect(clippy::len_without_is_empty)]
     pub fn len(&self) -> u32 { self.vertex_range.end - self.vertex_range.start }
+
+    /// Runtime compatibility only. This identity may decide whether two
+    /// already canonically ordered draws can share one vertex binding; it must
+    /// never enter a checksum, sort key, or semantic selection decision.
+    pub(crate) fn runtime_buffer_identity(&self) -> usize { core::ptr::from_ref(self.buf).addr() }
 }
 
 /// Represents a mesh that has been sent to the GPU.

@@ -47,6 +47,7 @@ layout(location = 1) in uint v_atlas_pos;
 // in uint v_col_light;
 // in vec4 v_pos;
 
+#ifndef FIGURE_BATCHED
 layout (std140, set = 1, binding = 0)
 uniform u_locals {
     mat4 model_mat;
@@ -70,10 +71,34 @@ uniform u_bones {
     // Warning: might not actually be 16 elements long. Don't index out of bounds!
     BoneData bones[16];
 };
+#else
+struct BoneData {
+    mat4 bone_mat;
+    mat4 normals_mat;
+};
+struct FigureBatchInstance {
+    mat4 model_mat;
+    vec4 highlight_col;
+    vec4 model_light;
+    vec4 model_glow;
+    ivec4 atlas_offs;
+    vec3 model_pos;
+    int flags;
+    BoneData bones[16];
+};
+layout (std430, set = 1, binding = 0) readonly buffer u_batch_instances {
+    FigureBatchInstance batch_instances[];
+};
+#endif
 
 // out vec4 shadowMapCoord;
 
 void main() {
+#ifdef FIGURE_BATCHED
+    FigureBatchInstance batch_instance = batch_instances[gl_InstanceIndex];
+    #define model_pos batch_instance.model_pos
+    #define bones batch_instance.bones
+#endif
     uint bone_idx = (v_pos_norm >> 27) & 0xFu;
     vec3 pos = (vec3((uvec3(v_pos_norm) >> uvec3(0, 9, 18)) & uvec3(0x1FFu)) - 256.0) / 2.0;
 

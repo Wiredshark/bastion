@@ -11,6 +11,7 @@ pub struct RainOcclusionMapRenderer {
 
     pub terrain_pipeline: rain_occlusion::RainOcclusionPipeline,
     pub figure_pipeline: rain_occlusion::RainOcclusionFigurePipeline,
+    pub figure_batch_pipeline: rain_occlusion::RainOcclusionFigureBatchPipeline,
 }
 
 pub enum RainOcclusionMap {
@@ -25,15 +26,21 @@ impl RainOcclusionMap {
         queue: &wgpu::Queue,
         directed: Option<rain_occlusion::RainOcclusionPipeline>,
         figure: Option<rain_occlusion::RainOcclusionFigurePipeline>,
+        figure_batch: Option<rain_occlusion::RainOcclusionFigureBatchPipeline>,
         view: Option<Texture>,
     ) -> Self {
-        if let (Some(terrain_pipeline), Some(figure_pipeline), Some(depth)) =
-            (directed, figure, view)
+        if let (
+            Some(terrain_pipeline),
+            Some(figure_pipeline),
+            Some(figure_batch_pipeline),
+            Some(depth),
+        ) = (directed, figure, figure_batch, view)
         {
             Self::Enabled(RainOcclusionMapRenderer {
                 depth,
                 terrain_pipeline,
                 figure_pipeline,
+                figure_batch_pipeline,
             })
         } else {
             Self::Disabled(Self::create_dummy_tex(device, queue))

@@ -22,6 +22,7 @@ use std::sync::{Arc, OnceLock};
 pub struct Pipelines {
     pub debug: debug::DebugPipeline,
     pub figure: figure::FigurePipeline,
+    pub figure_batch: figure::FigureBatchPipeline,
     pub fluid: fluid::FluidPipeline,
     pub lod_terrain: lod_terrain::LodTerrainPipeline,
     pub particle: particle::ParticlePipeline,
@@ -46,6 +47,7 @@ pub struct Pipelines {
 pub struct IngamePipelines {
     debug: debug::DebugPipeline,
     figure: figure::FigurePipeline,
+    figure_batch: figure::FigureBatchPipeline,
     fluid: fluid::FluidPipeline,
     lod_terrain: lod_terrain::LodTerrainPipeline,
     particle: particle::ParticlePipeline,
@@ -66,12 +68,14 @@ pub struct ShadowPipelines {
     pub point: Option<shadow::PointShadowPipeline>,
     pub directed: Option<shadow::ShadowPipeline>,
     pub figure: Option<shadow::ShadowFigurePipeline>,
+    pub figure_batch: Option<shadow::ShadowFigureBatchPipeline>,
     pub debug: Option<shadow::ShadowDebugPipeline>,
 }
 
 pub struct RainOcclusionPipelines {
     pub terrain: Option<rain_occlusion::RainOcclusionPipeline>,
     pub figure: Option<rain_occlusion::RainOcclusionFigurePipeline>,
+    pub figure_batch: Option<rain_occlusion::RainOcclusionFigureBatchPipeline>,
 }
 
 // TODO: Find a better name for this?
@@ -94,6 +98,7 @@ impl Pipelines {
         Self {
             debug: ingame.debug,
             figure: ingame.figure,
+            figure_batch: ingame.figure_batch,
             fluid: ingame.fluid,
             lod_terrain: ingame.lod_terrain,
             particle: ingame.particle,
@@ -122,6 +127,8 @@ struct ShaderModules {
     debug_frag: wgpu::ShaderModule,
     figure_vert: wgpu::ShaderModule,
     figure_frag: wgpu::ShaderModule,
+    figure_batch_vert: wgpu::ShaderModule,
+    figure_batch_frag: wgpu::ShaderModule,
     terrain_vert: wgpu::ShaderModule,
     terrain_frag: wgpu::ShaderModule,
     fluid_vert: wgpu::ShaderModule,
@@ -154,9 +161,11 @@ struct ShaderModules {
     point_light_shadows_vert: wgpu::ShaderModule,
     light_shadows_directed_vert: wgpu::ShaderModule,
     light_shadows_figure_vert: wgpu::ShaderModule,
+    light_shadows_figure_batch_vert: wgpu::ShaderModule,
     light_shadows_debug_vert: wgpu::ShaderModule,
     rain_occlusion_directed_vert: wgpu::ShaderModule,
     rain_occlusion_figure_vert: wgpu::ShaderModule,
+    rain_occlusion_figure_batch_vert: wgpu::ShaderModule,
 }
 
 impl ShaderModules {
@@ -330,13 +339,21 @@ impl ShaderModules {
             Box::new(ShaderCCompiler::new(shaderc_opts, fetch_include)?)
         };
 
-        let mut create_shader = move |name, stage| {
+        let mut create_shader = move |name: &str, stage| {
             tracing::info!("Compiling {name}");
+            let (asset_name, batched) = name
+                .strip_suffix(".batch")
+                .map_or((name, false), |asset| (asset, true));
             let glsl = &shaders
-                .get(name)
+                .get(asset_name)
                 .unwrap_or_else(|| panic!("Can't retrieve shader: {}", name))
                 .0;
-            compiler.create_shader_module(device, glsl, stage, name)
+            if batched {
+                let glsl = glsl.replacen('\n', "\n#define FIGURE_BATCHED\n", 1);
+                compiler.create_shader_module(device, &glsl, stage, name)
+            } else {
+                compiler.create_shader_module(device, glsl, stage, name)
+            }
         };
 
         let selected_fluid_shader = ["fluid-frag.", match pipeline_modes.fluid {
@@ -352,6 +369,8 @@ impl ShaderModules {
             debug_frag: create_shader("debug-frag", ShaderStage::Fragment)?,
             figure_vert: create_shader("figure-vert", ShaderStage::Vertex)?,
             figure_frag: create_shader("figure-frag", ShaderStage::Fragment)?,
+            figure_batch_vert: create_shader("figure-vert.batch", ShaderStage::Vertex)?,
+            figure_batch_frag: create_shader("figure-frag.batch", ShaderStage::Fragment)?,
             terrain_vert: create_shader("terrain-vert", ShaderStage::Vertex)?,
             terrain_frag: create_shader("terrain-frag", ShaderStage::Fragment)?,
             fluid_vert: create_shader("fluid-vert", ShaderStage::Vertex)?,
@@ -396,6 +415,10 @@ impl ShaderModules {
                 "light-shadows-figure-vert",
                 ShaderStage::Vertex,
             )?,
+            light_shadows_figure_batch_vert: create_shader(
+                "light-shadows-figure-vert.batch",
+                ShaderStage::Vertex,
+            )?,
             light_shadows_debug_vert: create_shader(
                 "light-shadows-debug-vert",
                 ShaderStage::Vertex,
@@ -406,6 +429,10 @@ impl ShaderModules {
             )?,
             rain_occlusion_figure_vert: create_shader(
                 "rain-occlusion-figure-vert",
+                ShaderStage::Vertex,
+            )?,
+            rain_occlusion_figure_batch_vert: create_shader(
+                "rain-occlusion-figure-vert.batch",
                 ShaderStage::Vertex,
             )?,
         })
@@ -582,6 +609,20 @@ fn register_create_ingame_and_shadow_pipelines(
             )
         },
         "figure pipeline creation",
+    );
+    let figure_batch = tasks.register(
+        move |needs| {
+            figure::FigureBatchPipeline::new(
+                needs.device,
+                &needs.shaders.figure_batch_vert,
+                &needs.shaders.figure_batch_frag,
+                &needs.layouts.global,
+                &needs.layouts.figure,
+                format,
+                needs.pipeline_modes,
+            )
+        },
+        "figure batch pipeline creation",
     );
     // Pipeline for rendering terrain
     let terrain = tasks.register(
@@ -814,6 +855,18 @@ fn register_create_ingame_and_shadow_pipelines(
         },
         "figure directed shadow pipeline creation",
     );
+    let figure_batch_directed_shadow = tasks.register(
+        move |needs| {
+            shadow::ShadowFigureBatchPipeline::new(
+                needs.device,
+                &needs.shaders.light_shadows_figure_batch_vert,
+                &needs.layouts.global,
+                &needs.layouts.figure,
+                needs.pipeline_modes.aa,
+            )
+        },
+        "figure batch directed shadow pipeline creation",
+    );
     // Pipeline for rendering directional light debug shadow maps.
     let debug_directed_shadow = tasks.register(
         |needs| {
@@ -853,11 +906,24 @@ fn register_create_ingame_and_shadow_pipelines(
         },
         "figure directed rain occlusion pipeline creation",
     );
+    let figure_batch_directed_rain_occlusion = tasks.register(
+        |needs| {
+            rain_occlusion::RainOcclusionFigureBatchPipeline::new(
+                needs.device,
+                &needs.shaders.rain_occlusion_figure_batch_vert,
+                &needs.layouts.global,
+                &needs.layouts.figure,
+                needs.pipeline_modes.aa,
+            )
+        },
+        "figure batch directed rain occlusion pipeline creation",
+    );
 
     || IngameAndShadowPipelines {
         ingame: IngamePipelines {
             debug: debug.resolve(),
             figure: figure.resolve(),
+            figure_batch: figure_batch.resolve(),
             fluid: fluid.resolve(),
             lod_terrain: lod_terrain.resolve(),
             particle: particle.resolve(),
@@ -879,11 +945,13 @@ fn register_create_ingame_and_shadow_pipelines(
             point: Some(point_shadow.resolve()),
             directed: Some(terrain_directed_shadow.resolve()),
             figure: Some(figure_directed_shadow.resolve()),
+            figure_batch: Some(figure_batch_directed_shadow.resolve()),
             debug: Some(debug_directed_shadow.resolve()),
         },
         rain_occlusion: RainOcclusionPipelines {
             terrain: Some(terrain_directed_rain_occlusion.resolve()),
             figure: Some(figure_directed_rain_occlusion.resolve()),
+            figure_batch: Some(figure_batch_directed_rain_occlusion.resolve()),
         },
     }
 }

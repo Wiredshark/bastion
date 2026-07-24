@@ -725,6 +725,16 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "figure_gpu_upload_windows"
         | "figure_gpu_upload_operations"
         | "figure_gpu_upload_bytes"
+        | "figure_batch_visible_figures"
+        | "figure_batch_count"
+        | "figure_batch_fallback_count"
+        | "figure_batch_legacy_draw_equivalent"
+        | "figure_batch_actual_draw_count"
+        | "figure_batch_main_count"
+        | "figure_batch_shadow_count"
+        | "figure_batch_rain_count"
+        | "figure_batch_capacity_fallbacks"
+        | "figure_batch_incompatible_resource_fallbacks"
         | "width"
         | "height"
         | "pixel_format"
@@ -961,6 +971,7 @@ fn request_one_capture(
     let output = output.to_path_buf();
     let pass_tape = LATEST_PASS_TAPE.lock().ok().and_then(|value| value.clone());
     let figure_gpu = super::figure_gpu::latest_evidence();
+    let figure_batch = super::figure_batch::latest_evidence();
     renderer.create_screenshot(move |result| {
         match result {
             Ok(image) => {
@@ -1041,6 +1052,16 @@ fn request_one_capture(
                                         "figure_gpu_upload_windows={}\n",
                                         "figure_gpu_upload_operations={}\n",
                                         "figure_gpu_upload_bytes={}\n",
+                                        "figure_batch_visible_figures={}\n",
+                                        "figure_batch_count={}\n",
+                                        "figure_batch_fallback_count={}\n",
+                                        "figure_batch_legacy_draw_equivalent={}\n",
+                                        "figure_batch_actual_draw_count={}\n",
+                                        "figure_batch_main_count={}\n",
+                                        "figure_batch_shadow_count={}\n",
+                                        "figure_batch_rain_count={}\n",
+                                        "figure_batch_capacity_fallbacks={}\n",
+                                        "figure_batch_incompatible_resource_fallbacks={}\n",
                                         "diagnostic_client_tick={}\n",
                                         "diagnostic_interpolated_time_bits={:016x}\n",
                                         "width={}\n",
@@ -1085,6 +1106,16 @@ fn request_one_capture(
                                     figure_gpu.upload_windows,
                                     figure_gpu.upload_operations,
                                     figure_gpu.upload_bytes,
+                                    figure_batch.visible_figures,
+                                    figure_batch.batch_count,
+                                    figure_batch.fallback_count,
+                                    figure_batch.legacy_draw_equivalent,
+                                    figure_batch.actual_draw_count,
+                                    figure_batch.main_batches,
+                                    figure_batch.shadow_batches,
+                                    figure_batch.rain_batches,
+                                    figure_batch.capacity_fallbacks,
+                                    figure_batch.incompatible_resource_fallbacks,
                                     context.diagnostic_client_tick,
                                     context.diagnostic_interpolated_time_bits,
                                     width,

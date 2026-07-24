@@ -18,6 +18,7 @@ use std::{
 };
 use tokio::runtime::Runtime;
 use tracing::{error, info, trace, warn};
+use vek::Vec3;
 
 mod singleplayer_world;
 pub use singleplayer_world::{SingleplayerWorld, SingleplayerWorlds};
@@ -339,9 +340,39 @@ impl SingleplayerState {
                     Ok(mut server) => {
                         let center = server.bastion_world_center_wpos();
                         let fixture_position = server::bastion_flat_arena::spawn_wpos(center);
-                        let fixture = server.bastion_spawn_colony(fixture_position, 1);
+                        // Reuse the existing bounded colony fixture for the
+                        // R1BC population proof. Normal certification remains
+                        // one figure; an explicit test lane may request up to
+                        // 64 without creating a different gameplay fixture.
+                        let figure_count = std::env::var("BASTION_R1BC_FIGURE_COUNT")
+                            .ok()
+                            .and_then(|value| value.parse::<u8>().ok())
+                            .filter(|count| (1..=64).contains(count))
+                            .unwrap_or(1);
+                        let fixture = if figure_count == 1 {
+                            server.bastion_spawn_colony(fixture_position, 1)
+                        } else {
+                            // The population certification lane must exercise
+                            // genuinely compatible figures. Repeating the
+                            // existing one-colonist fixture at a stable grid
+                            // preserves the same deterministic body/equipment
+                            // source while giving every figure a distinct
+                            // world position and server identity.
+                            let width = 8_u8;
+                            (0..figure_count)
+                                .flat_map(|ordinal| {
+                                    let x = f32::from(ordinal % width) * 2.5;
+                                    let y = f32::from(ordinal / width) * 2.5;
+                                    server.bastion_spawn_colony(
+                                        fixture_position + Vec3::new(x, y, 0.0),
+                                        1,
+                                    )
+                                })
+                                .collect()
+                        };
                         info!(
                             ?fixture,
+                            figure_count,
                             world_seed = 1337,
                             ?fixture_position,
                             "bastion: capture flat-arena fixture declared"
