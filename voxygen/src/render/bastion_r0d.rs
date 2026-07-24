@@ -209,7 +209,15 @@ pub mod draw_kind {
 }
 
 static DRAW_RECORDS: Mutex<Vec<(u16, u32, u32)>> = Mutex::new(Vec::new());
-static LATEST_SEMANTIC_TRACE: Mutex<Option<(usize, [u8; 32])>> = Mutex::new(None);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SemanticTraceSnapshotV1 {
+    pub generation: u64,
+    pub record_count: usize,
+    pub digest: [u8; 32],
+}
+
+static LATEST_SEMANTIC_TRACE: Mutex<Option<SemanticTraceSnapshotV1>> = Mutex::new(None);
 
 pub fn record_draw(kind: u16, units: u32, instances: u32) {
     if !manifest_enabled() {
@@ -250,7 +258,17 @@ fn draw_tape_snapshot(records: &[(u16, u32, u32)]) -> Option<(usize, [u8; 32])> 
         bastion_renderer_r0d::domain_hash_v1("bastion/r0d/semantic-trace", 1, 0, &payload).ok()?;
     let result = (records.len(), digest);
     if let Ok(mut latest) = LATEST_SEMANTIC_TRACE.lock() {
-        *latest = Some(result);
+        let generation = latest
+            .map(|snapshot| snapshot.generation)
+            .unwrap_or(0)
+            .checked_add(1);
+        if let Some(generation) = generation {
+            *latest = Some(SemanticTraceSnapshotV1 {
+                generation,
+                record_count: records.len(),
+                digest,
+            });
+        }
     }
     Some(result)
 }
@@ -271,10 +289,186 @@ pub const fn capture_waits_for_pause_v1(flat_arena: bool, absolute_time: bool) -
 }
 
 pub const fn certification_freeze_tick_v1(flat_arena: bool, absolute_time: bool) -> Option<u64> {
-    if capture_waits_for_pause_v1(flat_arena, absolute_time) {
+    if flat_arena && (absolute_time || capture_waits_for_pause_v1(flat_arena, absolute_time)) {
         Some(300)
     } else {
         None
+    }
+}
+
+pub const CERTIFICATION_SERVER_TICK_V1: u64 = 300;
+pub const READINESS_STABLE_RENDER_FRAMES_V1: u64 = 240;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CertificationServerLatchV1 {
+    pub completed_tick: u64,
+    pub frozen: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CertificationServerLatchErrorV1 {
+    TickRegression,
+    AdvancedAfterFreeze,
+}
+
+impl CertificationServerLatchV1 {
+    pub const fn reset(&mut self) {
+        self.completed_tick = 0;
+        self.frozen = false;
+    }
+
+    pub fn record_completed_tick(
+        &mut self,
+        completed_tick: u64,
+    ) -> Result<(), CertificationServerLatchErrorV1> {
+        if completed_tick < self.completed_tick {
+            return Err(CertificationServerLatchErrorV1::TickRegression);
+        }
+        if self.frozen && completed_tick != self.completed_tick {
+            return Err(CertificationServerLatchErrorV1::AdvancedAfterFreeze);
+        }
+        self.completed_tick = completed_tick;
+        self.frozen = completed_tick == CERTIFICATION_SERVER_TICK_V1;
+        Ok(())
+    }
+}
+
+static CERTIFICATION_SERVER_LATCH: Mutex<CertificationServerLatchV1> =
+    Mutex::new(CertificationServerLatchV1 {
+        completed_tick: 0,
+        frozen: false,
+    });
+
+pub fn reset_certification_server_latch_v1() {
+    if let Ok(mut latch) = CERTIFICATION_SERVER_LATCH.lock() {
+        latch.reset();
+    }
+    if let Ok(mut gate) = SETTLED_TRACE_GATE.lock() {
+        gate.reset();
+    }
+    if let Ok(mut state) = CAPTURE_STATE.lock() {
+        *state = (0, 0, 0);
+    }
+}
+
+pub fn record_certification_server_tick_v1(
+    completed_tick: u64,
+) -> Result<(), CertificationServerLatchErrorV1> {
+    CERTIFICATION_SERVER_LATCH
+        .lock()
+        .map_err(|_| CertificationServerLatchErrorV1::AdvancedAfterFreeze)?
+        .record_completed_tick(completed_tick)
+}
+
+pub fn certification_server_latch_v1() -> Option<CertificationServerLatchV1> {
+    CERTIFICATION_SERVER_LATCH.lock().ok().map(|latch| *latch)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SettledTraceFaultV1 {
+    ServerAuthorityChangedAfterOpen,
+    TraceGenerationRegressed,
+    StableFrameOverflow,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SettledTraceObservationV1 {
+    Waiting {
+        stable_frames: u64,
+    },
+    Open {
+        digest: [u8; 32],
+        stable_frames: u64,
+        advanced: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SettledTraceGateV1 {
+    freeze_generation: Option<u64>,
+    last_generation: Option<u64>,
+    last_digest: Option<[u8; 32]>,
+    stable_frames: u64,
+    open_digest: Option<[u8; 32]>,
+}
+
+impl SettledTraceGateV1 {
+    pub const fn reset(&mut self) {
+        self.freeze_generation = None;
+        self.last_generation = None;
+        self.last_digest = None;
+        self.stable_frames = 0;
+        self.open_digest = None;
+    }
+
+    pub fn observe(
+        &mut self,
+        authority: CertificationServerLatchV1,
+        trace: SemanticTraceSnapshotV1,
+    ) -> Result<SettledTraceObservationV1, SettledTraceFaultV1> {
+        if authority.completed_tick != CERTIFICATION_SERVER_TICK_V1 || !authority.frozen {
+            if self.open_digest.is_some() {
+                return Err(SettledTraceFaultV1::ServerAuthorityChangedAfterOpen);
+            }
+            self.reset();
+            return Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 });
+        }
+
+        if self.freeze_generation.is_none() {
+            self.freeze_generation = Some(trace.generation);
+            self.last_generation = Some(trace.generation);
+            return Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 });
+        }
+
+        let Some(last_generation) = self.last_generation else {
+            self.last_generation = Some(trace.generation);
+            return Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 });
+        };
+        if trace.generation < last_generation {
+            return Err(SettledTraceFaultV1::TraceGenerationRegressed);
+        }
+        if trace.generation == last_generation {
+            if let Some(digest) = self.open_digest {
+                return Ok(SettledTraceObservationV1::Open {
+                    digest,
+                    stable_frames: self.stable_frames,
+                    advanced: false,
+                });
+            }
+            return Ok(SettledTraceObservationV1::Waiting {
+                stable_frames: self.stable_frames,
+            });
+        }
+
+        self.last_generation = Some(trace.generation);
+        if let Some(open_digest) = self.open_digest {
+            return Ok(SettledTraceObservationV1::Open {
+                digest: open_digest,
+                stable_frames: self.stable_frames,
+                advanced: true,
+            });
+        }
+
+        self.stable_frames = if self.last_digest == Some(trace.digest) {
+            self.stable_frames
+                .checked_add(1)
+                .ok_or(SettledTraceFaultV1::StableFrameOverflow)?
+        } else {
+            1
+        };
+        self.last_digest = Some(trace.digest);
+        if self.stable_frames >= READINESS_STABLE_RENDER_FRAMES_V1 {
+            self.open_digest = Some(trace.digest);
+            Ok(SettledTraceObservationV1::Open {
+                digest: trace.digest,
+                stable_frames: self.stable_frames,
+                advanced: true,
+            })
+        } else {
+            Ok(SettledTraceObservationV1::Waiting {
+                stable_frames: self.stable_frames,
+            })
+        }
     }
 }
 
@@ -295,12 +489,61 @@ pub fn capture_config() -> Option<(std::path::PathBuf, u64, u64)> {
 }
 
 static CAPTURE_STATE: Mutex<(u64, u64, u64)> = Mutex::new((0, 0, 0));
+static SETTLED_TRACE_GATE: Mutex<SettledTraceGateV1> = Mutex::new(SettledTraceGateV1 {
+    freeze_generation: None,
+    last_generation: None,
+    last_digest: None,
+    stable_frames: 0,
+    open_digest: None,
+});
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CaptureAnchorEvidenceV1 {
     pub uid: u64,
     pub body_category: String,
     pub body: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CaptureMetadataFieldClassV1 {
+    Authority,
+    Diagnostic,
+    Evidence,
+}
+
+pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFieldClassV1> {
+    match field {
+        "authoritative_server_tick"
+        | "authoritative_frozen"
+        | "readiness_trace_sha256"
+        | "readiness_stable_frames"
+        | "ordinal" => Some(CaptureMetadataFieldClassV1::Authority),
+        "diagnostic_client_tick" | "diagnostic_interpolated_time_bits" => {
+            Some(CaptureMetadataFieldClassV1::Diagnostic)
+        },
+        "anchor_uid"
+        | "anchor_category"
+        | "anchor_body"
+        | "pass_tape"
+        | "semantic_trace_count"
+        | "semantic_trace_sha256"
+        | "width"
+        | "height"
+        | "pixel_format"
+        | "pixel_sha256" => Some(CaptureMetadataFieldClassV1::Evidence),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CaptureRequestContextV1 {
+    authoritative_server_tick: u64,
+    authoritative_frozen: bool,
+    readiness_trace_digest: [u8; 32],
+    readiness_stable_frames: u64,
+    diagnostic_client_tick: u64,
+    diagnostic_interpolated_time_bits: u64,
+    semantic_trace: SemanticTraceSnapshotV1,
 }
 
 static CAPTURE_ANCHOR: Mutex<Option<CaptureAnchorEvidenceV1>> = Mutex::new(None);
@@ -368,24 +611,64 @@ pub fn drive_capture(
         },
     };
 
-    let should_request = if let Ok(at) = std::env::var("BASTION_R0D_CAPTURE_AT") {
-        let at = at.parse::<f64>().unwrap_or(30.0);
-        let every = std::env::var("BASTION_R0D_CAPTURE_EVERY")
-            .ok()
-            .and_then(|value| value.parse::<f64>().ok())
-            .unwrap_or(0.5);
-        sim_time >= at + requested as f64 * every
+    let authority = certification_server_latch_v1();
+    let semantic_trace = LATEST_SEMANTIC_TRACE.lock().ok().and_then(|value| *value);
+    let absolute_mode = absolute_time_capture_selected();
+    let readiness = if absolute_mode {
+        let (Some(authority), Some(semantic_trace)) = (authority, semantic_trace) else {
+            return false;
+        };
+        let observation = match SETTLED_TRACE_GATE.lock() {
+            Ok(mut gate) => gate.observe(authority, semantic_trace),
+            Err(error) => {
+                write_capture_fault(
+                    &output,
+                    &format!("FAULT-TERMINAL R0D_INVALID_EVIDENCE_READINESS_STATE {error}\n"),
+                );
+                return true;
+            },
+        };
+        match observation {
+            Ok(SettledTraceObservationV1::Open {
+                digest,
+                stable_frames,
+                advanced: true,
+            }) => Some((authority, semantic_trace, digest, stable_frames)),
+            Ok(
+                SettledTraceObservationV1::Waiting { .. }
+                | SettledTraceObservationV1::Open {
+                    advanced: false, ..
+                },
+            ) => None,
+            Err(error) => {
+                write_capture_fault(
+                    &output,
+                    &format!("FAULT-TERMINAL R0D_INVALID_EVIDENCE_SETTLED_TRACE {error:?}\n"),
+                );
+                return true;
+            },
+        }
+    } else if frames > warmup {
+        authority
+            .zip(semantic_trace)
+            .map(|(authority, semantic_trace)| {
+                (authority, semantic_trace, semantic_trace.digest, 0_u64)
+            })
     } else {
-        frames > warmup
+        None
     };
-    if requested < count && should_request {
-        request_one_capture(
-            renderer,
-            &output,
-            requested,
-            simulation_tick,
-            sim_time.to_bits(),
-        );
+    if requested < count
+        && let Some((authority, semantic_trace, readiness_trace_digest, stable_frames)) = readiness
+    {
+        request_one_capture(renderer, &output, requested, CaptureRequestContextV1 {
+            authoritative_server_tick: authority.completed_tick,
+            authoritative_frozen: authority.frozen,
+            readiness_trace_digest,
+            readiness_stable_frames: stable_frames,
+            diagnostic_client_tick: simulation_tick,
+            diagnostic_interpolated_time_bits: sim_time.to_bits(),
+            semantic_trace,
+        });
     }
     completed >= count
 }
@@ -394,8 +677,7 @@ fn request_one_capture(
     renderer: &mut super::renderer::Renderer,
     output: &Path,
     ordinal: u64,
-    simulation_tick: u64,
-    simulation_time_bits: u64,
+    context: CaptureRequestContextV1,
 ) {
     match CAPTURE_STATE.lock() {
         Ok(mut state) => {
@@ -419,7 +701,6 @@ fn request_one_capture(
     let output = output.to_path_buf();
     let anchor = CAPTURE_ANCHOR.lock().ok().and_then(|anchor| anchor.clone());
     let pass_tape = LATEST_PASS_TAPE.lock().ok().and_then(|value| value.clone());
-    let semantic_trace = LATEST_SEMANTIC_TRACE.lock().ok().and_then(|value| *value);
     renderer.create_screenshot(move |result| {
         match result {
             Ok(image) => {
@@ -457,19 +738,16 @@ fn request_one_capture(
                                         "pass tape absent",
                                     )
                                 })?;
-                                let (semantic_trace_count, semantic_trace_digest) = semantic_trace
-                                    .ok_or_else(|| {
-                                        std::io::Error::new(
-                                            std::io::ErrorKind::InvalidData,
-                                            "semantic trace absent",
-                                        )
-                                    })?;
                                 let metadata = format!(
                                     concat!(
                                         "schema=RendererCaptureEvidenceV1\n",
                                         "ordinal={}\n",
-                                        "simulation_tick={}\n",
-                                        "simulation_time_bits={:016x}\n",
+                                        "authoritative_server_tick={}\n",
+                                        "authoritative_frozen={}\n",
+                                        "readiness_trace_sha256={}\n",
+                                        "readiness_stable_frames={}\n",
+                                        "diagnostic_client_tick={}\n",
+                                        "diagnostic_interpolated_time_bits={:016x}\n",
                                         "width={}\n",
                                         "height={}\n",
                                         "pixel_format=rgb8_srgb\n",
@@ -482,8 +760,12 @@ fn request_one_capture(
                                         "semantic_trace_sha256={}\n",
                                     ),
                                     ordinal,
-                                    simulation_tick,
-                                    simulation_time_bits,
+                                    context.authoritative_server_tick,
+                                    context.authoritative_frozen,
+                                    hex_digest(&context.readiness_trace_digest),
+                                    context.readiness_stable_frames,
+                                    context.diagnostic_client_tick,
+                                    context.diagnostic_interpolated_time_bits,
                                     width,
                                     height,
                                     hex_digest(&digest),
@@ -491,8 +773,8 @@ fn request_one_capture(
                                     anchor.body_category,
                                     anchor.body,
                                     pass_tape,
-                                    semantic_trace_count,
-                                    hex_digest(&semantic_trace_digest),
+                                    context.semantic_trace.record_count,
+                                    hex_digest(&context.semantic_trace.digest),
                                 );
                                 write_atomic(&metadata_path, metadata.as_bytes())
                             });
@@ -554,9 +836,12 @@ mod tests {
     use crate::render::RenderMode;
 
     #[test]
-    fn absolute_time_capture_bypasses_pause_and_server_freeze() {
+    fn absolute_time_capture_bypasses_client_pause_wait_but_freezes_server() {
         assert!(!capture_waits_for_pause_v1(true, true));
-        assert_eq!(certification_freeze_tick_v1(true, true), None);
+        assert_eq!(
+            certification_freeze_tick_v1(true, true),
+            Some(CERTIFICATION_SERVER_TICK_V1)
+        );
     }
 
     #[test]
@@ -565,6 +850,124 @@ mod tests {
         assert_eq!(certification_freeze_tick_v1(true, false), Some(300));
         assert!(!capture_waits_for_pause_v1(false, false));
         assert_eq!(certification_freeze_tick_v1(false, false), None);
+    }
+
+    #[test]
+    fn certification_server_latch_resets_updates_and_freezes_exactly() {
+        let mut latch = CertificationServerLatchV1::default();
+        latch.record_completed_tick(1).unwrap();
+        assert_eq!(latch, CertificationServerLatchV1 {
+            completed_tick: 1,
+            frozen: false,
+        });
+        latch
+            .record_completed_tick(CERTIFICATION_SERVER_TICK_V1)
+            .unwrap();
+        assert_eq!(latch, CertificationServerLatchV1 {
+            completed_tick: CERTIFICATION_SERVER_TICK_V1,
+            frozen: true,
+        });
+        assert_eq!(
+            latch.record_completed_tick(CERTIFICATION_SERVER_TICK_V1 + 1),
+            Err(CertificationServerLatchErrorV1::AdvancedAfterFreeze)
+        );
+        latch.reset();
+        assert_eq!(latch, CertificationServerLatchV1::default());
+    }
+
+    #[test]
+    fn settled_trace_resets_before_freeze_and_opens_after_240_new_frames() {
+        let digest = [7; 32];
+        let mut gate = SettledTraceGateV1::default();
+        let running = CertificationServerLatchV1 {
+            completed_tick: CERTIFICATION_SERVER_TICK_V1 - 1,
+            frozen: false,
+        };
+        assert_eq!(
+            gate.observe(running, SemanticTraceSnapshotV1 {
+                generation: 5,
+                record_count: 10,
+                digest,
+            }),
+            Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 })
+        );
+        let frozen = CertificationServerLatchV1 {
+            completed_tick: CERTIFICATION_SERVER_TICK_V1,
+            frozen: true,
+        };
+        assert_eq!(
+            gate.observe(frozen, SemanticTraceSnapshotV1 {
+                generation: 6,
+                record_count: 10,
+                digest,
+            }),
+            Ok(SettledTraceObservationV1::Waiting { stable_frames: 0 })
+        );
+        for index in 1..READINESS_STABLE_RENDER_FRAMES_V1 {
+            assert_eq!(
+                gate.observe(frozen, SemanticTraceSnapshotV1 {
+                    generation: 6 + index,
+                    record_count: 10,
+                    digest,
+                }),
+                Ok(SettledTraceObservationV1::Waiting {
+                    stable_frames: index,
+                })
+            );
+        }
+        assert_eq!(
+            gate.observe(frozen, SemanticTraceSnapshotV1 {
+                generation: 6 + READINESS_STABLE_RENDER_FRAMES_V1,
+                record_count: 10,
+                digest,
+            }),
+            Ok(SettledTraceObservationV1::Open {
+                digest,
+                stable_frames: READINESS_STABLE_RENDER_FRAMES_V1,
+                advanced: true,
+            })
+        );
+        assert_eq!(
+            gate.observe(frozen, SemanticTraceSnapshotV1 {
+                generation: 7 + READINESS_STABLE_RENDER_FRAMES_V1,
+                record_count: 10,
+                digest: [8; 32],
+            }),
+            Ok(SettledTraceObservationV1::Open {
+                digest,
+                stable_frames: READINESS_STABLE_RENDER_FRAMES_V1,
+                advanced: true,
+            })
+        );
+    }
+
+    #[test]
+    fn capture_metadata_separates_authority_from_client_diagnostics() {
+        assert_eq!(
+            capture_metadata_field_class_v1("authoritative_server_tick"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("authoritative_frozen"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("readiness_trace_sha256"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("diagnostic_client_tick"),
+            Some(CaptureMetadataFieldClassV1::Diagnostic)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("diagnostic_interpolated_time_bits"),
+            Some(CaptureMetadataFieldClassV1::Diagnostic)
+        );
+        assert_eq!(capture_metadata_field_class_v1("simulation_tick"), None);
+        assert_eq!(
+            capture_metadata_field_class_v1("simulation_time_bits"),
+            None
+        );
     }
 
     #[test]
