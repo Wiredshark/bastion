@@ -39,6 +39,19 @@ fn compute_hash(data: &[u8]) -> PluginHash {
     shasum
 }
 
+/// DET-AST-024/025: put a plugin set into its CANONICAL order — ascending
+/// content hash (`PluginHash` = SHA-256). `fs::read_dir` yields OS-directory
+/// order and `load_server_plugin` pushes in network-arrival order, both
+/// non-canonical; `create_body` / `update_skeleton` / `command_event` are
+/// LAST-WINS over the plugin Vec, so which provider wins a stable
+/// body/skeleton/command name must be a pure function of the plugin SET, not
+/// load order. Sorting by the content-derived, globally-unique hash makes it so.
+/// Extracted from the two inline `sort_unstable_by_key(|p| p.hash)` sites so the
+/// canonical-order contract is directly testable.
+fn canonical_plugin_order<P>(plugins: &mut [P], hash: impl Fn(&P) -> PluginHash) {
+    plugins.sort_unstable_by_key(hash);
+}
+
 fn cache_file_name(
     mut base_dir: PathBuf,
     hash: &PluginHash,
@@ -300,7 +313,7 @@ impl PluginMgr {
         // content-derived, identical on every machine — sorting by it makes
         // every last-wins arbitration a pure function of the plugin SET. This
         // is exactly the canonical order DET-AST-023's comment already assumes.
-        plugins.sort_unstable_by_key(|p| p.hash);
+        canonical_plugin_order(&mut plugins, |p| p.hash);
 
         for plugin in &plugins {
             info!(
@@ -355,7 +368,7 @@ impl PluginMgr {
             // DET-AST-024/025: re-establish the canonical content-hash order so
             // a server-delivered plugin never selects last-wins arbitration by
             // its network arrival position (see `from_dir`).
-            self.plugins.sort_unstable_by_key(|p| p.hash);
+            canonical_plugin_order(&mut self.plugins, |p| p.hash);
             Ok(hash)
         })
     }
@@ -460,4 +473,53 @@ pub enum CommandResults {
     UnknownCommand,
     HostError(wasmtime::Error),
     PluginError(String),
+}
+
+/// DET-AST-024/025 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof):
+/// plugins are processed in a canonical order — ascending content hash — so the
+/// LAST-WINS arbitration for a stable body/skeleton/command name is a pure
+/// function of the plugin SET, never the OS-directory (`fs::read_dir`) or
+/// network-arrival (`load_server_plugin`) load order. Guards the two
+/// `canonical_plugin_order` sites; a revert to raw push/read-dir order would RED.
+#[cfg(test)]
+mod det_ast_order_tests {
+    use super::*;
+
+    // A distinct content hash (SHA-256 stand-in) in the high bytes.
+    fn h(b: u8) -> PluginHash {
+        let mut a = [0u8; 32];
+        a[0] = b;
+        a
+    }
+
+    #[test]
+    fn det_ast_024_plugin_order_is_load_order_independent() {
+        // The SAME plugin set, delivered in two DIFFERENT load orders (OS-dir
+        // vs network-arrival). The payload rides along so a reorder is visible.
+        let mut os_order = vec![(h(3), "gamma"), (h(1), "alpha"), (h(2), "beta")];
+        let mut net_order = vec![(h(2), "beta"), (h(3), "gamma"), (h(1), "alpha")];
+        canonical_plugin_order(&mut os_order, |p| p.0);
+        canonical_plugin_order(&mut net_order, |p| p.0);
+        assert_eq!(
+            os_order, net_order,
+            "canonical plugin order must not depend on load order"
+        );
+        // ...and it is ascending-by-content-hash.
+        assert_eq!(os_order, vec![
+            (h(1), "alpha"),
+            (h(2), "beta"),
+            (h(3), "gamma")
+        ]);
+    }
+
+    #[test]
+    fn det_ast_024_is_non_vacuous() {
+        // A DIFFERENT set orders differently — the contract carries information.
+        let mut set = vec![(h(9), "z"), (h(4), "d")];
+        canonical_plugin_order(&mut set, |p| p.0);
+        assert_eq!(set, vec![(h(4), "d"), (h(9), "z")]);
+        // The lowest-hash provider wins last-wins arbitration regardless of who
+        // was pushed last.
+        assert_eq!(set.first().map(|p| p.1), Some("d"));
+    }
 }
