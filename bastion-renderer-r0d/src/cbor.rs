@@ -62,6 +62,26 @@ pub fn try_int_map(
 }
 
 impl CanonicalValueV1 {
+    /// Decode one canonical value and require exact EOF. This is the inverse of
+    /// [`Self::to_canonical_bytes`] for the bounded V1 subset.
+    pub fn decode_exact(bytes: &[u8]) -> Result<Self, CanonicalErrorV1> {
+        if bytes.len() > MAX_CANONICAL_INPUT_BYTES_V1 {
+            return Err(CanonicalErrorV1::InputTooLarge {
+                actual: bytes.len(),
+                maximum: MAX_CANONICAL_INPUT_BYTES_V1,
+            });
+        }
+        let mut decoder = Decoder::new(bytes);
+        let value = decoder.value(0)?;
+        if decoder.remaining() != 0 {
+            return Err(CanonicalErrorV1::TrailingBytes(decoder.remaining()));
+        }
+        if value.to_canonical_bytes()?.as_slice() != bytes {
+            return Err(CanonicalErrorV1::NonPreferredEncoding);
+        }
+        Ok(value)
+    }
+
     pub fn to_canonical_bytes(&self) -> Result<Vec<u8>, CanonicalErrorV1> {
         self.validate_shape(0)?;
         let mut output = Vec::new();
@@ -214,20 +234,7 @@ pub struct ValidatedCanonicalBytesV1(Vec<u8>);
 
 impl ValidatedCanonicalBytesV1 {
     pub fn validate(bytes: &[u8]) -> Result<Self, CanonicalErrorV1> {
-        if bytes.len() > MAX_CANONICAL_INPUT_BYTES_V1 {
-            return Err(CanonicalErrorV1::InputTooLarge {
-                actual: bytes.len(),
-                maximum: MAX_CANONICAL_INPUT_BYTES_V1,
-            });
-        }
-        let mut decoder = Decoder::new(bytes);
-        let value = decoder.value(0)?;
-        if decoder.remaining() != 0 {
-            return Err(CanonicalErrorV1::TrailingBytes(decoder.remaining()));
-        }
-        if value.to_canonical_bytes()?.as_slice() != bytes {
-            return Err(CanonicalErrorV1::NonPreferredEncoding);
-        }
+        CanonicalValueV1::decode_exact(bytes)?;
         Ok(Self(bytes.to_vec()))
     }
 
