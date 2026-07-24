@@ -384,9 +384,10 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
 
     // Set up an fps clock
     let mut clock = Clock::new(Duration::from_secs_f64(1.0 / TPS as f64));
-    let certification_freeze_tick = std::env::var_os("BASTION_FLAT_ARENA")
-        .is_some()
-        .then_some(300_u64);
+    let certification_freeze_tick = crate::render::bastion_r0d::certification_freeze_tick_v1(
+        std::env::var_os("BASTION_FLAT_ARENA").is_some(),
+        crate::render::bastion_r0d::absolute_time_capture_selected(),
+    );
     let mut completed_ticks = 0_u64;
 
     loop {
