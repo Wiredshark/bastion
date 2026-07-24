@@ -226,6 +226,15 @@ pub struct VisibleSceneCoverageV1 {
     pub lod_terrain_instances: u64,
 }
 
+const DRAW_KIND_SLOT_COUNT_DIAG_V1: usize = 24;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DrawKindAggregateDiagV1 {
+    pub draw_count: u32,
+    pub units: u64,
+    pub instances: u64,
+}
+
 impl VisibleSceneCoverageV1 {
     #[must_use]
     pub const fn has_figure(self) -> bool {
@@ -253,6 +262,7 @@ pub struct SemanticTraceSnapshotV1 {
     pub record_count: usize,
     pub digest: [u8; 32],
     pub visible_scene_coverage: VisibleSceneCoverageV1,
+    pub draw_kind_aggregates: [DrawKindAggregateDiagV1; DRAW_KIND_SLOT_COUNT_DIAG_V1],
 }
 
 static LATEST_SEMANTIC_TRACE: Mutex<Option<SemanticTraceSnapshotV1>> = Mutex::new(None);
@@ -295,6 +305,7 @@ fn draw_tape_snapshot(records: &[(u16, u32, u32)]) -> Option<(usize, [u8; 32])> 
     let digest =
         bastion_renderer_r0d::domain_hash_v1("bastion/r0d/semantic-trace", 1, 0, &payload).ok()?;
     let visible_scene_coverage = visible_scene_coverage_v1(records)?;
+    let draw_kind_aggregates = draw_kind_aggregates_diag_v1(records)?;
     let result = (records.len(), digest);
     if let Ok(mut latest) = LATEST_SEMANTIC_TRACE.lock() {
         let generation = latest
@@ -307,6 +318,7 @@ fn draw_tape_snapshot(records: &[(u16, u32, u32)]) -> Option<(usize, [u8; 32])> 
                 record_count: records.len(),
                 digest,
                 visible_scene_coverage,
+                draw_kind_aggregates,
             });
         }
     }
@@ -346,6 +358,36 @@ fn visible_scene_coverage_v1(records: &[(u16, u32, u32)]) -> Option<VisibleScene
         coverage.mask |= mask;
     }
     Some(coverage)
+}
+
+fn draw_kind_aggregates_diag_v1(
+    records: &[(u16, u32, u32)],
+) -> Option<[DrawKindAggregateDiagV1; DRAW_KIND_SLOT_COUNT_DIAG_V1]> {
+    let mut aggregates = [DrawKindAggregateDiagV1::default(); DRAW_KIND_SLOT_COUNT_DIAG_V1];
+    for &(kind, units, instances) in records {
+        let aggregate = aggregates.get_mut(usize::from(kind))?;
+        aggregate.draw_count = aggregate.draw_count.checked_add(1)?;
+        aggregate.units = aggregate.units.checked_add(u64::from(units))?;
+        aggregate.instances = aggregate.instances.checked_add(u64::from(instances))?;
+    }
+    Some(aggregates)
+}
+
+fn draw_kind_summary_diag_v1(
+    aggregates: &[DrawKindAggregateDiagV1; DRAW_KIND_SLOT_COUNT_DIAG_V1],
+) -> String {
+    aggregates
+        .iter()
+        .enumerate()
+        .filter(|(_, aggregate)| aggregate.draw_count > 0)
+        .map(|(kind, aggregate)| {
+            format!(
+                "{kind}:{}:{}:{}",
+                aggregate.draw_count, aggregate.units, aggregate.instances
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// Capture-only switch. Normal play retains its ordinary culling policy.
@@ -962,6 +1004,7 @@ fn request_one_capture(
                                         "pass_tape={}\n",
                                         "semantic_trace_count={}\n",
                                         "semantic_trace_sha256={}\n",
+                                        "semantic_draw_kind_summary={}\n",
                                     ),
                                     ordinal,
                                     context.authoritative_server_tick,
@@ -990,6 +1033,9 @@ fn request_one_capture(
                                     pass_tape,
                                     context.semantic_trace.record_count,
                                     hex_digest(&context.semantic_trace.digest),
+                                    draw_kind_summary_diag_v1(
+                                        &context.semantic_trace.draw_kind_aggregates,
+                                    ),
                                 );
                                 write_atomic(&metadata_path, metadata.as_bytes())
                             });
@@ -1074,6 +1120,8 @@ mod tests {
             record_count: 10,
             digest,
             visible_scene_coverage,
+            draw_kind_aggregates: [DrawKindAggregateDiagV1::default();
+                DRAW_KIND_SLOT_COUNT_DIAG_V1],
         }
     }
 
