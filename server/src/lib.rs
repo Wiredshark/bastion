@@ -46,6 +46,12 @@ pub mod rtsim;
 pub mod settings;
 pub mod state_ext;
 pub mod sys;
+
+/// Opt-in deterministic simulation policy for the isolated renderer
+/// certification fixture. Production servers never call this entry point.
+pub fn bastion_enable_renderer_certification_determinism() {
+    ::rtsim::enable_deterministic_rtsim();
+}
 #[cfg(feature = "persistent_world")]
 pub mod terrain_persistence;
 #[cfg(not(feature = "worldgen"))] mod test_world;
