@@ -1,0 +1,40 @@
+# APEX Finding Closure Rules v1
+# Machine-checkable predicates for readme/apex/APEX-FINDING-STATUS-MATRIX-v1.csv.
+# Implements APEX-A.2. Consumed by bastion-harness/tools/apex_finding_matrix.py.
+
+schema = "bastion.apex-finding-closure-rules/v1"
+
+[status.OPEN]
+requires_replacement_rows = false
+requires_evidence_gap_or_observation = true
+
+[status.PARTIAL]
+requires_replacement_rows = true
+requires_evidence_gap_or_observation = true
+# A PARTIAL row's live_observation must name the implemented primitive AND
+# the residual unresolved contract; a bare "primitive exists" is rejected.
+
+[status.CLOSED]
+requires_replacement_rows = false
+requires_tests_present = true
+requires_negative_canary = true
+# No row in the current matrix is CLOSED (see APEX-A.2 counts). This rule
+# exists so the validator rejects a future false-CLOSED edit that lacks
+# test/canary evidence, not because any row currently claims it.
+
+[status.SUPERSEDED]
+requires_replacement_rows = true
+requires_supersession_reason = true
+# SUPERSEDED is a traceability decision, not a code-completion claim: the
+# validator must never treat SUPERSEDED as equivalent to CLOSED when
+# rolling up program-level closure counts.
+
+[precedence]
+# Evaluated in this order; first matching violation is the rejection reason.
+rules = [
+  "CLOSED without tests_present and negative_canary -> reject: FALSE_CLOSURE",
+  "PARTIAL without replacement_rows -> reject: PARTIAL_WITHOUT_ROOT_PATH",
+  "SUPERSEDED without replacement_rows or supersession_reason -> reject: SUPERSEDED_WITHOUT_TRACEABILITY",
+  "status not in {OPEN,PARTIAL,CLOSED,SUPERSEDED} -> reject: UNKNOWN_STATUS",
+  "missing or contradictory evidence -> default: OPEN",
+]
