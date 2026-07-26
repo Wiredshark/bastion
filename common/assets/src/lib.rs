@@ -38,6 +38,22 @@ lazy_static! {
 #[cfg(feature = "plugins")]
 pub fn register_tar(path: PathBuf) -> std::io::Result<()> { ASSETS.register_tar(path) }
 
+// APEX-T2.1.08/.09 — global split prepare/commit delegates (batch loaders
+// prepare ALL sources privately, then publish once; unit tests use a LOCAL
+// `CombinedCache` instead of these).
+#[cfg(feature = "plugins")]
+pub use plugin_cache::{CommitLockPoisoned, PreparedPluginAssetSource};
+#[cfg(feature = "plugins")]
+pub fn prepare_plugin_tar(path: PathBuf) -> std::io::Result<PreparedPluginAssetSource> {
+    plugin_cache::CombinedCache::prepare_tar(path)
+}
+#[cfg(feature = "plugins")]
+pub fn commit_prepared_plugin_tars(
+    prepared: Vec<PreparedPluginAssetSource>,
+) -> Result<(), CommitLockPoisoned> {
+    ASSETS.commit_prepared_tars(prepared)
+}
+
 pub type AssetHandle<T> = &'static assets_manager::Handle<T>;
 pub type AssetReadGuard<T> = assets_manager::AssetReadGuard<'static, T>;
 pub type AssetDirHandle<T> = AssetHandle<assets_manager::RecursiveDirectory<T>>;

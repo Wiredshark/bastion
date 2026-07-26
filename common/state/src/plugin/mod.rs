@@ -14,7 +14,10 @@ use std::{
 use tracing::{error, info};
 
 use self::{
-    errors::{PluginError, PluginModuleError},
+    errors::{
+        PluginAssetCommitError, PluginAssetPreparationError, PluginError, PluginInspectionError,
+        PluginInstantiationError, PluginModuleError,
+    },
     memory_manager::EcsWorld,
     module::PluginModule,
 };
@@ -107,72 +110,242 @@ pub struct Plugin {
     data_buf: Vec<u8>,
 }
 
-impl Plugin {
-    pub fn from_path(path_buf: PathBuf) -> Result<Self, PluginError> {
-        let mut reader = fs::File::open(path_buf.as_path()).map_err(PluginError::Io)?;
-        let mut buf = Vec::new();
-        reader.read_to_end(&mut buf).map_err(PluginError::Io)?;
-        let shasum = compute_hash(buf.as_slice());
+/// APEX-T2.1.02 — one sequentially-observed tar entry (observation only; T2.2
+/// decides canonical acceptance). Raw path bytes, type byte, size, and file
+/// position are retained so T2.2 can apply canonical path/type policy without
+/// trusting a prematurely decoded `PathBuf` or reparsing another file version.
+pub(crate) struct LegacyArchiveEntryRecordV1 {
+    pub archive_ordinal: u32,
+    pub raw_path_bytes: Vec<u8>,
+    pub decoded_path: Option<PathBuf>,
+    pub entry_type_byte: u8,
+    pub declared_size: u64,
+    pub raw_file_position: u64,
+}
 
-        let mut files = tar::Archive::new(&*buf)
-            .entries()
-            .map_err(PluginError::Io)?
-            .map(|e| {
-                e.and_then(|e| {
-                    Ok((e.path()?.into_owned(), {
-                        let offset = e.raw_file_position() as usize;
-                        buf[offset..offset + e.size() as usize].to_vec()
-                    }))
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(PluginError::Io)?
-            .into_iter()
-            .try_fold(HashMap::new(), |mut files, (path, bytes)| {
-                // DET-AST-019 (v6 deep-pass, Critical): duplicate archive
-                // paths were silent last-entry-wins by archive order — an
-                // aliased/malformed archive could shadow content invisibly.
-                // Duplicates are REJECTED fail-closed; plugin content is a
-                // pure function of a well-formed archive.
-                if files.insert(path.clone(), bytes).is_some() {
-                    tracing::error!(
-                        ?path,
-                        "DET-AST-019: duplicate path inside plugin archive — rejected"
-                    );
-                    return Err(PluginError::NoConfig);
-                }
-                Ok(files)
+/// APEX-T2.1.02 — inspection observations that are hazards-for-later-rows,
+/// not rejections. DELTA vs the packet's §7.1: `DuplicateExactPath` and
+/// `ModuleOrderIsLegacyHashSet` are omitted because this line already CLOSED
+/// DET-AST-019 (duplicates reject fail-closed, occurrences stay visible in
+/// `entry_inventory`) and DET-AST-017 (modules are a canonical `BTreeSet`).
+#[derive(Debug)]
+pub(crate) enum PluginInspectionWarningV1 {
+    UnsupportedEntryTypeDeferred {
+        archive_ordinal: u32,
+        entry_type_byte: u8,
+    },
+    /// `fs::read_dir` discovery order is legacy provenance, not a canonical
+    /// activation order (T2.4 owns that policy).
+    DiscoveryOrderIsLegacy,
+}
+
+/// APEX-T2.1.02/.03 — a side-effect-free legacy-format archive inspection.
+/// Construction reads bytes, hashes, sequentially inventories every tar entry,
+/// parses the legacy TOML, and verifies every declared module has bytes.
+/// Construction may NOT call Wasmtime, access ECS, invoke guest hooks, publish
+/// a manager entry, or mutate global assets — the type contains no
+/// `PluginModule`, `Engine`, `Store`, ECS reference, or global cache handle.
+pub(crate) struct InspectedPluginArchive {
+    pub source_path: PathBuf,
+    /// Legacy discovery provenance (diagnostic; never an activation priority).
+    #[expect(dead_code, reason = "diagnostic provenance until APEX-T2.4 consumes it")]
+    pub discovery_ordinal: u32,
+    pub artifact_hash: PluginHash,
+    /// The single immutable buffer used for artifact hashing, sequential tar
+    /// inspection, module-byte extraction, and later `Plugin.data_buf`.
+    pub archive_bytes: Vec<u8>,
+    pub manifest: PluginData,
+    #[expect(dead_code, reason = "retained for APEX-T2.3's canonical-manifest revalidation")]
+    pub manifest_bytes: Vec<u8>,
+    #[expect(dead_code, reason = "retained for APEX-T2.2's canonical-profile revalidation")]
+    pub entry_inventory: Vec<LegacyArchiveEntryRecordV1>,
+    pub legacy_files: HashMap<PathBuf, Vec<u8>>,
+    pub warnings: Vec<PluginInspectionWarningV1>,
+}
+
+impl InspectedPluginArchive {
+    /// APEX-T2.1.03 — inspect an archive from a path (reads the file once; the
+    /// same bytes serve hash, inventory, module extraction, and `data_buf`).
+    pub(crate) fn inspect_path(
+        path_buf: PathBuf,
+        discovery_ordinal: u32,
+    ) -> Result<Self, PluginInspectionError> {
+        let mut reader =
+            fs::File::open(path_buf.as_path()).map_err(|source| PluginInspectionError::Io {
+                path: path_buf.clone(),
+                source,
             })?;
+        let mut buf = Vec::new();
+        reader
+            .read_to_end(&mut buf)
+            .map_err(|source| PluginInspectionError::Io {
+                path: path_buf.clone(),
+                source,
+            })?;
+        Self::inspect_bytes(path_buf, discovery_ordinal, buf)
+    }
 
-        let data = toml::de::from_str::<PluginData>(
-            std::str::from_utf8(
-                files
-                    .get(Path::new("plugin.toml"))
-                    .ok_or(PluginError::NoConfig)?,
-            )
-            .map_err(|inner| PluginError::Encoding(Box::new(DecodeError::Utf8 { inner })))?,
+    /// APEX-T2.1.03 — byte-oriented inspection core (no filesystem access).
+    pub(crate) fn inspect_bytes(
+        source_path: PathBuf,
+        discovery_ordinal: u32,
+        archive_bytes: Vec<u8>,
+    ) -> Result<Self, PluginInspectionError> {
+        let artifact_hash = compute_hash(archive_bytes.as_slice());
+        let arch_err = |source| PluginInspectionError::ArchiveEntries {
+            path: source_path.clone(),
+            source,
+        };
+
+        // Sequential raw entry inventory BEFORE any reduction: every
+        // occurrence (incl. would-be duplicates) is observed and retained.
+        let mut entry_inventory = Vec::new();
+        let mut warnings = Vec::new();
+        let mut selected: Vec<(PathBuf, Vec<u8>)> = Vec::new();
+        for (i, entry) in tar::Archive::new(archive_bytes.as_slice())
+            .entries()
+            .map_err(&arch_err)?
+            .enumerate()
+        {
+            let entry = entry.map_err(&arch_err)?;
+            let archive_ordinal = u32::try_from(i)
+                .map_err(|_| arch_err(std::io::Error::other("archive ordinal overflow")))?;
+            let entry_type_byte = entry.header().entry_type().as_byte();
+            let record = LegacyArchiveEntryRecordV1 {
+                archive_ordinal,
+                raw_path_bytes: entry.path_bytes().into_owned(),
+                decoded_path: entry.path().ok().map(|p| p.into_owned()),
+                entry_type_byte,
+                declared_size: entry.size(),
+                raw_file_position: entry.raw_file_position(),
+            };
+            // Legacy selection (current behavior): decoded regular-path bytes
+            // sliced out of the one immutable buffer.
+            match &record.decoded_path {
+                Some(path) => {
+                    let offset = record.raw_file_position as usize;
+                    let end = offset.saturating_add(record.declared_size as usize);
+                    let bytes = archive_bytes
+                        .get(offset..end)
+                        .ok_or_else(|| {
+                            arch_err(std::io::Error::other("entry data outside archive bounds"))
+                        })?
+                        .to_vec();
+                    selected.push((path.clone(), bytes));
+                },
+                None => warnings.push(PluginInspectionWarningV1::UnsupportedEntryTypeDeferred {
+                    archive_ordinal,
+                    entry_type_byte,
+                }),
+            }
+            entry_inventory.push(record);
+        }
+
+        // DET-AST-019 (v6 deep-pass, Critical — CLOSED, preserved): duplicate
+        // archive paths were silent last-entry-wins by archive order — an
+        // aliased/malformed archive could shadow content invisibly. Duplicates
+        // are REJECTED fail-closed (now with a typed terminal); the raw
+        // occurrences remain visible in `entry_inventory` for T2.2.
+        let mut legacy_files = HashMap::new();
+        for (path, bytes) in selected {
+            if legacy_files.insert(path.clone(), bytes).is_some() {
+                tracing::error!(
+                    ?path,
+                    "DET-AST-019: duplicate path inside plugin archive — rejected"
+                );
+                return Err(PluginInspectionError::DuplicateArchivePath {
+                    path: source_path,
+                    duplicate: path,
+                });
+            }
+        }
+
+        let manifest_bytes = legacy_files
+            .get(Path::new("plugin.toml"))
+            .ok_or(PluginInspectionError::NoConfig {
+                path: source_path.clone(),
+            })?
+            .clone();
+        let manifest = toml::de::from_str::<PluginData>(
+            std::str::from_utf8(&manifest_bytes).map_err(|inner| {
+                PluginInspectionError::ConfigEncoding {
+                    path: source_path.clone(),
+                    source: Box::new(DecodeError::Utf8 { inner }),
+                }
+            })?,
         )
-        .map_err(PluginError::Toml)?;
+        .map_err(|source| PluginInspectionError::ConfigToml {
+            path: source_path.clone(),
+            source,
+        })?;
 
+        // Every declared module must have selected bytes (moves the missing-
+        // module failure to inspection, where it belongs: no Wasmtime yet).
+        for module in manifest.modules.iter() {
+            if !legacy_files.contains_key(module) {
+                return Err(PluginInspectionError::MissingDeclaredModule {
+                    plugin: manifest.name.clone(),
+                    module: module.clone(),
+                });
+            }
+        }
+
+        Ok(Self {
+            source_path,
+            discovery_ordinal,
+            artifact_hash,
+            archive_bytes,
+            manifest,
+            manifest_bytes,
+            entry_inventory,
+            legacy_files,
+            warnings,
+        })
+    }
+}
+
+/// APEX-T2.1.05 — legacy discovery provenance. The ordinal records current
+/// `read_dir` position for diagnostics only; it is NOT an activation priority
+/// and must not enter a future canonical plan except as evidence (T2.4).
+struct DiscoveredPluginPath {
+    discovery_ordinal: u32,
+    path: PathBuf,
+}
+
+impl Plugin {
+    /// APEX-T2.1.06/.07 — the ONLY transition from inspected bytes to private
+    /// live modules. Consumes the inspection record: iterates the canonical
+    /// `BTreeSet` module order (DET-AST-017), removes module bytes from the
+    /// legacy map, runs the existing Wasmtime-backed constructor, and moves
+    /// `archive_bytes` into `Plugin.data_buf` (NO second `fs::read` — hash and
+    /// stored bytes come from one buffer). Does NOT call `load_event`, does NOT
+    /// register assets, does NOT insert into a manager.
+    fn instantiate(mut inspected: InspectedPluginArchive) -> Result<Self, PluginInstantiationError> {
+        let data = inspected.manifest;
         let modules = data
             .modules
             .iter()
             .map(|path| {
-                let wasm_data = files.remove(path).ok_or(PluginError::NoSuchModule)?;
-                PluginModule::new(data.name.to_owned(), &wasm_data).map_err(|e| {
-                    PluginError::PluginModuleError(data.name.to_owned(), "<init>".to_owned(), e)
+                let wasm_data = inspected
+                    .legacy_files
+                    .remove(path)
+                    .expect("inspection verified every declared module has bytes");
+                PluginModule::new(data.name.to_owned(), &wasm_data).map_err(|source| {
+                    PluginInstantiationError::Module {
+                        plugin: data.name.to_owned(),
+                        module: path.clone(),
+                        source,
+                    }
                 })
             })
             .collect::<Result<_, _>>()?;
 
-        let data_buf = fs::read(&path_buf).map_err(PluginError::Io)?;
-
         Ok(Plugin {
             data,
             modules,
-            hash: shasum,
-            path: path_buf,
-            data_buf,
+            hash: inspected.artifact_hash,
+            path: inspected.source_path,
+            data_buf: inspected.archive_bytes,
         })
     }
 
@@ -240,6 +413,88 @@ impl Plugin {
     }
 }
 
+/// APEX-T2.1.10 — a fully-prepared, not-yet-published plugin batch. ALL
+/// fallible work (inspection happened before `prepare`; Wasmtime instantiation
+/// and asset-source preparation happen inside it) completes before any
+/// publication: after `commit` succeeds on the asset side, manager
+/// construction is extend/move-only and infallible under normal semantics.
+struct PreparedPluginBatch {
+    plugins: Vec<Plugin>,
+    asset_sources: Vec<common::assets::PreparedPluginAssetSource>,
+}
+
+impl PreparedPluginBatch {
+    /// Phase order (packet §7.5): ALL plugins instantiate privately, then ALL
+    /// asset sources prepare privately (with digest revalidation against the
+    /// inspected artifact hash — the MVP TOCTOU guard; the residual hostile
+    /// path-swap between revalidation and `Tar::open` is NAMED and deferred,
+    /// packet §4.1). Any failure drops the whole private batch: zero manager
+    /// and zero global-asset delta.
+    fn prepare(inspected: Vec<InspectedPluginArchive>) -> Result<Self, PluginError> {
+        // Digest + path pairs survive instantiation (which consumes the recs).
+        let sources: Vec<(PathBuf, PluginHash)> = inspected
+            .iter()
+            .map(|i| (i.source_path.clone(), i.artifact_hash))
+            .collect();
+        let plugins = inspected
+            .into_iter()
+            .map(Plugin::instantiate)
+            .collect::<Result<Vec<_>, _>>()?;
+        let asset_sources = sources
+            .into_iter()
+            .map(|(path, expected)| {
+                // Revalidate the on-disk bytes against the inspected digest
+                // before opening a path-backed Tar source.
+                let observed = fs::read(&path)
+                    .map(|b| compute_hash(&b))
+                    .map_err(|source| PluginAssetPreparationError::TarSource {
+                        path: path.clone(),
+                        source,
+                    })?;
+                if observed != expected {
+                    return Err(PluginAssetPreparationError::ArchiveChangedAfterInspection {
+                        path,
+                        expected,
+                        observed,
+                    });
+                }
+                common::assets::prepare_plugin_tar(path.clone()).map_err(|source| {
+                    PluginAssetPreparationError::TarSource { path, source }
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            plugins,
+            asset_sources,
+        })
+    }
+
+    /// APEX-T2.1.11 — publish the batch as a NEW manager: one asset-registry
+    /// write lock, then manager construction (canonical DET-AST-024/025 hash
+    /// order preserved). Nothing fallible runs after the asset commit.
+    fn commit_new_manager(self) -> Result<PluginMgr, PluginError> {
+        common::assets::commit_prepared_plugin_tars(self.asset_sources)
+            .map_err(|_| PluginAssetCommitError::RegistryLockPoisoned)?;
+        let mut plugins = self.plugins;
+        canonical_plugin_order(&mut plugins, |p| p.hash);
+        Ok(PluginMgr { plugins })
+    }
+
+    /// APEX-T2.1.14 — publish the batch INTO an existing manager (late
+    /// cached/downloaded path). Same commit discipline; returns the admitted
+    /// hashes in input order.
+    fn commit_into(self, manager: &mut PluginMgr) -> Result<Vec<PluginHash>, PluginError> {
+        common::assets::commit_prepared_plugin_tars(self.asset_sources)
+            .map_err(|_| PluginAssetCommitError::RegistryLockPoisoned)?;
+        let hashes = self.plugins.iter().map(|p| p.hash).collect();
+        manager.plugins.extend(self.plugins);
+        // DET-AST-024/025: canonical content-hash order is a manager invariant,
+        // re-established after every admission.
+        canonical_plugin_order(&mut manager.plugins, |p| p.hash);
+        Ok(hashes)
+    }
+}
+
 #[derive(Default)]
 pub struct PluginMgr {
     plugins: Vec<Plugin>,
@@ -267,55 +522,73 @@ impl PluginMgr {
         }
     }
 
+    /// APEX-T2.1.11 — batch path: discover ALL → inspect ALL → prepare batch
+    /// (instantiate all, prepare all asset sources) → ONE commit. A failure at
+    /// any pre-commit phase drops the whole private batch: the returned error
+    /// leaves ZERO plugin asset sources committed by this batch (the old
+    /// per-plugin `register_tar`-inside-the-loop could pollute the global
+    /// combined source with earlier plugins after a later one failed).
     fn from_dir(path: &Path) -> Result<Self, PluginError> {
-        let mut plugins = fs::read_dir(path)
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    PluginError::FromDirDoesNotExist
-                } else {
-                    PluginError::Io(e)
-                }
-            })?
-            .filter_map(|e| e.ok())
-            .map(|entry| {
-                if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false)
-                    && entry
-                        .path()
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .map(|s| s.ends_with(".plugin.tar"))
-                        .unwrap_or(false)
-                {
-                    info!("Loading plugin at {:?}", entry.path());
-                    Plugin::from_path(entry.path()).map(|plugin| {
-                        if let Err(e) = common::assets::register_tar(entry.path()) {
-                            error!("Plugin {:?} tar error {e:?}", entry.path());
-                        }
-                        Some(plugin)
-                    })
-                } else {
-                    Ok(None)
-                }
-            })
-            .filter_map(Result::transpose)
-            .inspect(|p| {
-                let _ = p.as_ref().map_err(|e| error!(?e, "Failed to load plugin"));
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        // APEX-T2.1.04: no silent `filter_map(e.ok())` — every directory entry
+        // yields a path or a typed `DirectoryEntry` terminal.
+        let mut discovered = Vec::new();
+        let mut ordinal: u32 = 0;
+        for entry in fs::read_dir(path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                PluginError::FromDirDoesNotExist
+            } else {
+                PluginError::Io(e)
+            }
+        })? {
+            let entry = entry.map_err(|source| PluginInspectionError::DirectoryEntry {
+                directory: path.to_path_buf(),
+                source,
+            })?;
+            let file_type =
+                entry
+                    .file_type()
+                    .map_err(|source| PluginInspectionError::DirectoryEntry {
+                        directory: path.to_path_buf(),
+                        source,
+                    })?;
+            if file_type.is_file()
+                && entry
+                    .path()
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|s| s.ends_with(".plugin.tar"))
+                    .unwrap_or(false)
+            {
+                // APEX-T2.1.05: ordinal = legacy provenance, never priority.
+                discovered.push(DiscoveredPluginPath {
+                    discovery_ordinal: ordinal,
+                    path: entry.path(),
+                });
+                ordinal += 1;
+            }
+        }
 
-        // DET-AST-024/025 (v6 deep-pass, Critical/High): canonically order the
-        // plugin set by content hash. `fs::read_dir` above yields OS directory
-        // order (and `load_server_plugin` pushes in network-arrival order) —
-        // both non-canonical. `create_body`, `update_skeleton`, and
-        // `command_event` are all LAST-WINS over this Vec, so which provider
-        // won for a stable body/skeleton/command name depended on load order.
-        // `PluginHash` is the SHA-256 of plugin content: globally unique,
-        // content-derived, identical on every machine — sorting by it makes
-        // every last-wins arbitration a pure function of the plugin SET. This
-        // is exactly the canonical order DET-AST-023's comment already assumes.
-        canonical_plugin_order(&mut plugins, |p| p.hash);
+        // Inspect ALL (side-effect-free) before any Wasmtime work.
+        let inspected = discovered
+            .into_iter()
+            .map(|d| {
+                info!("Inspecting plugin at {:?}", d.path);
+                let mut rec = InspectedPluginArchive::inspect_path(d.path, d.discovery_ordinal)?;
+                rec.warnings
+                    .push(PluginInspectionWarningV1::DiscoveryOrderIsLegacy);
+                Ok(rec)
+            })
+            .collect::<Result<Vec<_>, PluginInspectionError>>()
+            .inspect_err(|e| error!(?e, "Failed to inspect plugin"))?;
 
-        for plugin in &plugins {
+        // Instantiate all + prepare all asset sources privately, then commit
+        // once. Canonical DET-AST-024/025 hash order is applied at manager
+        // construction (see `PreparedPluginBatch::commit_new_manager`).
+        let mgr = PreparedPluginBatch::prepare(inspected)
+            .inspect_err(|e| error!(?e, "Failed to prepare plugin batch"))?
+            .commit_new_manager()?;
+
+        for plugin in &mgr.plugins {
             info!(
                 "Loaded plugin '{}' with {} module(s)",
                 plugin.data.name,
@@ -323,7 +596,7 @@ impl PluginMgr {
             );
         }
 
-        Ok(Self { plugins })
+        Ok(mgr)
     }
 
     /// Add a plugin received from the server, running its load hook exactly
@@ -349,28 +622,31 @@ impl PluginMgr {
         ecs: &EcsWorld,
         mode: common::resources::GameMode,
     ) -> Result<PluginHash, PluginError> {
-        Plugin::from_path(path.clone()).and_then(|mut plugin| {
-            if let Err(e) = common::assets::register_tar(path.clone()) {
-                error!("Plugin {:?} tar error {e:?}", path.as_path());
-            }
-            let hash = plugin.hash;
-            // Idempotent: an already-admitted plugin must not re-run its load
-            // hook or be pushed a second time.
-            if self.plugins.iter().any(|p| p.hash == hash) {
-                return Ok(hash);
-            }
-            // Run the load hook before publishing; on failure the plugin is
-            // never pushed, so the manager is left exactly as it was.
-            plugin.load_event(ecs, mode).map_err(|e| {
-                PluginError::PluginModuleError(plugin.data.name.clone(), "<load>".to_owned(), e)
-            })?;
-            self.plugins.push(plugin);
-            // DET-AST-024/025: re-establish the canonical content-hash order so
-            // a server-delivered plugin never selects last-wins arbitration by
-            // its network arrival position (see `from_dir`).
-            canonical_plugin_order(&mut self.plugins, |p| p.hash);
-            Ok(hash)
-        })
+        // APEX-T2.1.14 — same inspect/prepare/commit substrate as the initial
+        // batch, one-item edition. PLG-003's closure is PRESERVED (delta vs the
+        // packet, which targets a tree where the late hook was still skipped):
+        // the hook runs on the PRIVATE plugin BEFORE any publication, so a hook
+        // failure now leaves BOTH the manager AND the global asset source
+        // unchanged (the old path registered the tar before the hook ran).
+        let inspected = InspectedPluginArchive::inspect_path(path, 0)?;
+        let hash = inspected.artifact_hash;
+        // Idempotent: an already-admitted plugin must not re-run its load
+        // hook or be pushed a second time (checked BEFORE any Wasmtime work).
+        if self.plugins.iter().any(|p| p.hash == hash) {
+            return Ok(hash);
+        }
+        let mut batch = PreparedPluginBatch::prepare(vec![inspected])?;
+        let plugin = batch
+            .plugins
+            .first_mut()
+            .expect("one-item batch has one plugin");
+        plugin.load_event(ecs, mode).map_err(|e| {
+            PluginError::PluginModuleError(plugin.data.name.clone(), "<load>".to_owned(), e)
+        })?;
+        // Publication: one asset commit + manager insert + canonical
+        // DET-AST-024/025 re-sort (inside commit_into).
+        batch.commit_into(self)?;
+        Ok(hash)
     }
 
     pub fn cache_server_plugin(
@@ -521,5 +797,230 @@ mod det_ast_order_tests {
         // The lowest-hash provider wins last-wins arbitration regardless of who
         // was pushed last.
         assert_eq!(set.first().map(|p| p.1), Some("d"));
+    }
+}
+
+/// APEX-T2.1.16 — two-phase canaries (case IDs from
+/// PROJECT-BASTION-APEX-T2.1-TWO-PHASE-PLUGIN-CANARIES-v1.json, adapted where
+/// this line is STRONGER than the packet's audited tree: AST-017 BTreeSet
+/// canonical modules, AST-019 duplicate rejection, AST-024/025 canonical hash
+/// order, AST-030 atomic cache store, PLG-003 late load hook present).
+#[cfg(test)]
+mod two_phase_tests {
+    use super::*;
+
+    const TOML_EMPTY: &[u8] = b"name = \"canary\"\nmodules = []\ndependencies = []\n";
+
+    fn tar_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut b = tar::Builder::new(Vec::new());
+        for (path, bytes) in entries {
+            let mut h = tar::Header::new_gnu();
+            h.set_size(bytes.len() as u64);
+            h.set_mode(0o644);
+            h.set_cksum();
+            b.append_data(&mut h, path, *bytes).unwrap();
+        }
+        b.into_inner().unwrap()
+    }
+
+    fn inspect(entries: &[(&str, &[u8])]) -> Result<InspectedPluginArchive, PluginInspectionError> {
+        InspectedPluginArchive::inspect_bytes(
+            PathBuf::from("test.plugin.tar"),
+            0,
+            tar_bytes(entries),
+        )
+    }
+
+    fn temp_tar(tag: &str, bytes: &[u8]) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "apex-t21-state-{}-{}-{tag}.plugin.tar",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    /// PLG2P-001: valid empty-module archive inspects READY.
+    #[test]
+    fn plg2p_001_valid_empty_module_inspects() {
+        let i = inspect(&[("plugin.toml", TOML_EMPTY)]).unwrap();
+        assert_eq!(i.manifest.name, "canary");
+        assert!(i.manifest.modules.is_empty());
+    }
+
+    /// PLG2P-002/003/004/005: typed inspection rejections.
+    #[test]
+    fn plg2p_002_005_inspection_rejections_are_typed() {
+        assert!(matches!(
+            inspect(&[("other.txt", b"x".as_slice())]),
+            Err(PluginInspectionError::NoConfig { .. })
+        ));
+        assert!(matches!(
+            inspect(&[("plugin.toml", &[0xff, 0xfe, 0x00, 0x01][..])]),
+            Err(PluginInspectionError::ConfigEncoding { .. })
+        ));
+        assert!(matches!(
+            inspect(&[("plugin.toml", b"not = = toml".as_slice())]),
+            Err(PluginInspectionError::ConfigToml { .. })
+        ));
+        let missing_mod = b"name = \"canary\"\nmodules = [\"missing.wasm\"]\ndependencies = []\n";
+        assert!(matches!(
+            inspect(&[("plugin.toml", missing_mod.as_slice())]),
+            Err(PluginInspectionError::MissingDeclaredModule { .. })
+        ));
+    }
+
+    /// PLG2P-006/007: invalid Wasm INSPECTS successfully (no compile during
+    /// inspection) and fails only at private instantiation, typed.
+    #[test]
+    fn plg2p_006_007_invalid_wasm_inspects_then_fails_instantiation() {
+        let toml = b"name = \"canary\"\nmodules = [\"bad.wasm\"]\ndependencies = []\n";
+        let i = inspect(&[
+            ("plugin.toml", toml.as_slice()),
+            ("bad.wasm", b"definitely not wasm".as_slice()),
+        ])
+        .expect("PLG2P-006: invalid wasm must inspect successfully");
+        match Plugin::instantiate(i) {
+            Err(PluginInstantiationError::Module { plugin, module, .. }) => {
+                assert_eq!(plugin, "canary");
+                assert_eq!(module, PathBuf::from("bad.wasm"));
+            },
+            Ok(_) => panic!("PLG2P-007: invalid wasm must fail instantiation"),
+        }
+    }
+
+    /// PLG2P-008: the exact inspected bytes become `Plugin.data_buf`.
+    #[test]
+    fn plg2p_008_data_buf_is_inspected_bytes() {
+        let bytes = tar_bytes(&[("plugin.toml", TOML_EMPTY)]);
+        let i = InspectedPluginArchive::inspect_bytes(
+            PathBuf::from("test.plugin.tar"),
+            0,
+            bytes.clone(),
+        )
+        .unwrap();
+        let hash = i.artifact_hash;
+        let plugin = Plugin::instantiate(i).unwrap();
+        assert_eq!(plugin.data_buf(), bytes.as_slice());
+        assert_eq!(plugin.hash, hash);
+        assert_eq!(hash, compute_hash(&bytes));
+    }
+
+    /// PLG2P-010 (STRONGER DELTA): duplicate exact paths REJECT fail-closed
+    /// (DET-AST-019 closed on this line); occurrences observed before
+    /// reduction per the sequential-inventory requirement.
+    #[test]
+    fn plg2p_010_duplicates_reject_typed() {
+        let dup = tar_bytes(&[
+            ("plugin.toml", TOML_EMPTY),
+            ("a.txt", b"one".as_slice()),
+            ("a.txt", b"two".as_slice()),
+        ]);
+        match InspectedPluginArchive::inspect_bytes(PathBuf::from("t.plugin.tar"), 0, dup) {
+            Err(PluginInspectionError::DuplicateArchivePath { duplicate, .. }) => {
+                assert_eq!(duplicate, PathBuf::from("a.txt"));
+            },
+            Err(other) => panic!("expected DuplicateArchivePath, got {other:?}"),
+            Ok(_) => panic!("duplicate paths must reject"),
+        }
+    }
+
+    /// PLG2P-023/024/025 (runtime half): inspection of a wasm-bearing archive
+    /// constructs no module and holds raw bytes only.
+    #[test]
+    fn plg2p_023_025_inspection_constructs_no_modules() {
+        let toml = b"name = \"canary\"\nmodules = [\"bad.wasm\"]\ndependencies = []\n";
+        let i = inspect(&[
+            ("plugin.toml", toml.as_slice()),
+            ("bad.wasm", b"junk".as_slice()),
+        ])
+        .unwrap();
+        assert_eq!(i.legacy_files.len(), 2);
+        assert_eq!(i.entry_inventory.len(), 2);
+    }
+
+    /// PLG2P-013/014-class + PLG2P-040: second-item instantiation failure
+    /// rejects the whole batch before any commit API is reachable.
+    #[test]
+    fn plg2p_013_014_batch_second_failure_rejects_whole_batch() {
+        let good = InspectedPluginArchive::inspect_bytes(
+            PathBuf::from("good.plugin.tar"),
+            0,
+            tar_bytes(&[("plugin.toml", TOML_EMPTY)]),
+        )
+        .unwrap();
+        let toml = b"name = \"bad\"\nmodules = [\"bad.wasm\"]\ndependencies = []\n";
+        let bad = InspectedPluginArchive::inspect_bytes(
+            PathBuf::from("bad.plugin.tar"),
+            1,
+            tar_bytes(&[
+                ("plugin.toml", toml.as_slice()),
+                ("bad.wasm", b"junk".as_slice()),
+            ]),
+        )
+        .unwrap();
+        match PreparedPluginBatch::prepare(vec![good, bad]) {
+            Err(PluginError::Instantiation(PluginInstantiationError::Module {
+                plugin, ..
+            })) => assert_eq!(plugin, "bad"),
+            Err(other) => panic!("expected instantiation rejection, got {other:?}"),
+            Ok(_) => panic!("batch with invalid second plugin must reject"),
+        }
+    }
+
+    /// PLG2P-016: digest change between inspection and asset preparation is a
+    /// typed rejection (MVP TOCTOU guard).
+    #[test]
+    fn plg2p_016_archive_changed_after_inspection_rejects() {
+        let path = temp_tar("toctou", &tar_bytes(&[("plugin.toml", TOML_EMPTY)]));
+        let inspected = InspectedPluginArchive::inspect_path(path.clone(), 0).unwrap();
+        std::fs::write(
+            &path,
+            tar_bytes(&[("plugin.toml", TOML_EMPTY), ("x.txt", b"swap".as_slice())]),
+        )
+        .unwrap();
+        match PreparedPluginBatch::prepare(vec![inspected]) {
+            Err(PluginError::AssetPreparation(
+                PluginAssetPreparationError::ArchiveChangedAfterInspection { .. },
+            )) => (),
+            Err(other) => panic!("expected ArchiveChangedAfterInspection, got {other:?}"),
+            Ok(_) => panic!("changed archive must reject"),
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// DET-AST-024/025 (preserved): manager order is canonical content-hash
+    /// order for BOTH batch input orders.
+    #[test]
+    fn det_ast_024_manager_order_is_canonical_hash_order() {
+        let mk = |name: &str| {
+            let toml = format!("name = \"{name}\"\nmodules = []\ndependencies = []\n");
+            temp_tar(name, &tar_bytes(&[("plugin.toml", toml.as_bytes())]))
+        };
+        let (pa, pb) = (mk("aaa"), mk("bbb"));
+        let m1 = PreparedPluginBatch::prepare(vec![
+            InspectedPluginArchive::inspect_path(pa.clone(), 0).unwrap(),
+            InspectedPluginArchive::inspect_path(pb.clone(), 1).unwrap(),
+        ])
+        .unwrap()
+        .commit_new_manager()
+        .unwrap();
+        let m2 = PreparedPluginBatch::prepare(vec![
+            InspectedPluginArchive::inspect_path(pb.clone(), 0).unwrap(),
+            InspectedPluginArchive::inspect_path(pa.clone(), 1).unwrap(),
+        ])
+        .unwrap()
+        .commit_new_manager()
+        .unwrap();
+        assert_eq!(m1.plugin_list(), m2.plugin_list());
+        let mut sorted = m1.plugin_list();
+        canonical_plugin_order(&mut sorted, |h| *h);
+        assert_eq!(m1.plugin_list(), sorted);
+        let _ = std::fs::remove_file(&pa);
+        let _ = std::fs::remove_file(&pb);
     }
 }
