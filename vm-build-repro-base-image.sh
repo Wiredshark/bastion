@@ -17,7 +17,9 @@ echo "BUILD_LANE=APEX-NIX-V1"
 PROJECT="${GCP_PROJECT:?set GCP_PROJECT}"
 ZONE="${GCP_ZONE:-us-central1-a}"
 VM="apex-repro-base-build"
-IMAGE_NAME="bastion-repro-base-v1"
+# Reusable-lane bake (orchestrator 2026-07-26): default stays the T1.1.08 name;
+# the recurring T1.3/T1.4 lane is baked as IMAGE_NAME=bastion-golden-nix.
+IMAGE_NAME="${IMAGE_NAME:-bastion-repro-base-v1}"
 # EXACT image, not a family (a family is a moving ref — same class of bug as
 # building from a moving branch).
 SOURCE_IMAGE="${REPRO_SOURCE_IMAGE:?set REPRO_SOURCE_IMAGE to an exact debian-12 image name, e.g. debian-12-bookworm-v20260701}"
@@ -50,6 +52,29 @@ echo 'experimental-features = nix-command flakes' | sudo tee -a /etc/nix/nix.con
 sudo rm -rf /root/.nix-channels /home/*/.nix-channels || true
 . /etc/profile.d/nix.sh 2>/dev/null || true
 nix --version
+# ── REAL SMOKE (not install-exit-0): flakes + daemon + store must WORK ───────
+# Build a minimal flake end-to-end; a broken daemon/store/flake support fails here.
+mkdir -p /tmp/flake-smoke && cd /tmp/flake-smoke
+cat > flake.nix <<'FLAKE'
+{
+  description = "bastion nix-lane smoke";
+  inputs = { };
+  outputs = { self }: {
+    packages.x86_64-linux.default =
+      derivation {
+        name = "smoke";
+        system = "x86_64-linux";
+        builder = "/bin/sh";
+        args = [ "-c" "echo nix-lane-smoke-ok > \$out" ];
+      };
+  };
+}
+FLAKE
+git init -q . && git add flake.nix   # flakes need a repo or store path
+OUT=\$(nix build .#default --no-link --print-out-paths)
+grep -q nix-lane-smoke-ok "\$OUT" || { echo "TERMINAL: T1.1-BLOCK-SMOKE (flake build broken)"; exit 7; }
+echo "FLAKE-SMOKE: ok (\$OUT)"
+cd / && rm -rf /tmp/flake-smoke
 # ── CONTAMINATION SCAN (T1.1-BLOCK-IMAGE-CONTAMINATION) ──────────────────────
 FORBIDDEN=0
 for p in /root/bastion /home/*/bastion /root/veloren* /home/*/veloren*; do
