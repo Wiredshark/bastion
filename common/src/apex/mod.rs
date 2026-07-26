@@ -8,6 +8,7 @@
 
 pub mod boundary;
 pub mod digest;
+pub mod identity;
 pub mod manifest;
 pub mod scalar;
 
