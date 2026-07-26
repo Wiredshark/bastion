@@ -443,7 +443,6 @@
     "APEX-T4.3a",
     "APEX-T4.4",
     "APEX-T4.5",
-    "APEX-T4.6",
     "APEX-T5.1",
     "APEX-T5.2",
     "APEX-T5.3",
@@ -461,6 +460,7 @@
     "APEX-T7.4",
     "APEX-T7.5",
     "APEX-T4.3b",
+    "APEX-T4.6",
     "APEX-T8.1",
     "APEX-T8.2",
     "APEX-T8.3",
@@ -1253,32 +1253,6 @@
       "evidence_commands": [],
       "evidence_status": "PENDING_ROW_PACKET",
       "finding_ids": [
-        "DET-SVC-021"
-      ],
-      "hard_dependencies": [
-        "APEX-T4.5"
-      ],
-      "packet_file": null,
-      "rollback_plan": null,
-      "rollback_plan_status": "PENDING_ROW_PACKET",
-      "row_id": "APEX-T4.6",
-      "sequence_index": 30,
-      "source_surfaces": [],
-      "source_surfaces_status": "PENDING_ROW_PACKET",
-      "status": {
-        "deployment": "NOT_DEPLOYED",
-        "implementation": "BLOCKED_ON_PREREQUISITE",
-        "microstep_research": "MICROSTEP_RESEARCH_COMPLETE",
-        "specification": "SPECIFICATION_COMPLETE",
-        "verification": "NOT_STARTED"
-      },
-      "title": "SaveUniverseManifestV1 staged epoch commit"
-    },
-    {
-      "evidence_artifacts": [],
-      "evidence_commands": [],
-      "evidence_status": "PENDING_ROW_PACKET",
-      "finding_ids": [
         "DET-PRD-008",
         "DET-WTH-010"
       ],
@@ -1291,7 +1265,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T5.1",
-      "sequence_index": 31,
+      "sequence_index": 30,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1321,7 +1295,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T5.2",
-      "sequence_index": 32,
+      "sequence_index": 31,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1347,7 +1321,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T5.3",
-      "sequence_index": 33,
+      "sequence_index": 32,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1375,7 +1349,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T5.4",
-      "sequence_index": 34,
+      "sequence_index": 33,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1401,7 +1375,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T5.5",
-      "sequence_index": 35,
+      "sequence_index": 34,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1429,7 +1403,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T6.1",
-      "sequence_index": 36,
+      "sequence_index": 35,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1457,7 +1431,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T6.2",
-      "sequence_index": 37,
+      "sequence_index": 36,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1483,7 +1457,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T6.3",
-      "sequence_index": 38,
+      "sequence_index": 37,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1510,7 +1484,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T6.4",
-      "sequence_index": 39,
+      "sequence_index": 38,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1539,7 +1513,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T6.5",
-      "sequence_index": 40,
+      "sequence_index": 39,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1567,7 +1541,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T6.6",
-      "sequence_index": 41,
+      "sequence_index": 40,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1592,7 +1566,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T7.1",
-      "sequence_index": 42,
+      "sequence_index": 41,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1622,7 +1596,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T7.2",
-      "sequence_index": 43,
+      "sequence_index": 42,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1648,7 +1622,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T7.3",
-      "sequence_index": 44,
+      "sequence_index": 43,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1672,7 +1646,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T7.4",
-      "sequence_index": 45,
+      "sequence_index": 44,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1696,7 +1670,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T7.5",
-      "sequence_index": 46,
+      "sequence_index": 45,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1722,7 +1696,7 @@
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T4.3b",
-      "sequence_index": 47,
+      "sequence_index": 46,
       "source_surfaces": [],
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
@@ -1733,6 +1707,33 @@
         "verification": "NOT_STARTED"
       },
       "title": "WorldBaselineManifestV1: geometry root + economy baseline root"
+    },
+    {
+      "evidence_artifacts": [],
+      "evidence_commands": [],
+      "evidence_status": "PENDING_ROW_PACKET",
+      "finding_ids": [
+        "DET-SVC-021"
+      ],
+      "hard_dependencies": [
+        "APEX-T4.3b",
+        "APEX-T4.5"
+      ],
+      "packet_file": null,
+      "rollback_plan": null,
+      "rollback_plan_status": "PENDING_ROW_PACKET",
+      "row_id": "APEX-T4.6",
+      "sequence_index": 47,
+      "source_surfaces": [],
+      "source_surfaces_status": "PENDING_ROW_PACKET",
+      "status": {
+        "deployment": "NOT_DEPLOYED",
+        "implementation": "BLOCKED_ON_PREREQUISITE",
+        "microstep_research": "MICROSTEP_RESEARCH_COMPLETE",
+        "specification": "SPECIFICATION_COMPLETE",
+        "verification": "NOT_STARTED"
+      },
+      "title": "SaveUniverseManifestV1 staged epoch commit"
     },
     {
       "evidence_artifacts": [],
