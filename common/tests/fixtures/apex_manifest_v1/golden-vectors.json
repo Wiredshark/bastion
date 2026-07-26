@@ -1,0 +1,299 @@
+{
+  "notes": [
+    "Valid bytes are authoritative golden vectors.",
+    "Invalid vectors freeze the required terminal class, not dependency-specific error text.",
+    "Machine text is ASCII-only in V1. Arbitrary user-facing Unicode is not admitted.",
+    "Field maps use unsigned u16 keys in strictly increasing canonical encoded-byte order."
+  ],
+  "profile": "bastion.manifest-cbor.rfc8949-core/v1",
+  "schema": "bastion.apex.manifest-cbor-golden-vectors/v1",
+  "vectors": [
+    {
+      "expected_hex": "00",
+      "id": "unsigned-0",
+      "kind": "valid",
+      "value": 0
+    },
+    {
+      "expected_hex": "17",
+      "id": "unsigned-23",
+      "kind": "valid",
+      "value": 23
+    },
+    {
+      "expected_hex": "1818",
+      "id": "unsigned-24",
+      "kind": "valid",
+      "value": 24
+    },
+    {
+      "expected_hex": "18ff",
+      "id": "unsigned-255",
+      "kind": "valid",
+      "value": 255
+    },
+    {
+      "expected_hex": "190100",
+      "id": "unsigned-256",
+      "kind": "valid",
+      "value": 256
+    },
+    {
+      "expected_hex": "19ffff",
+      "id": "unsigned-65535",
+      "kind": "valid",
+      "value": 65535
+    },
+    {
+      "expected_hex": "1a00010000",
+      "id": "unsigned-65536",
+      "kind": "valid",
+      "value": 65536
+    },
+    {
+      "expected_hex": "1bffffffffffffffff",
+      "id": "unsigned-u64-max",
+      "kind": "valid",
+      "value": 18446744073709551615
+    },
+    {
+      "expected_hex": "20",
+      "id": "negative-minus-1",
+      "kind": "valid",
+      "value": -1
+    },
+    {
+      "expected_hex": "37",
+      "id": "negative-minus-24",
+      "kind": "valid",
+      "value": -24
+    },
+    {
+      "expected_hex": "3818",
+      "id": "negative-minus-25",
+      "kind": "valid",
+      "value": -25
+    },
+    {
+      "expected_hex": "40",
+      "id": "bytes-empty",
+      "kind": "valid",
+      "value": {
+        "bytes_hex": ""
+      }
+    },
+    {
+      "expected_hex": "5000112233445566778899aabbccddeeff",
+      "id": "bytes-16",
+      "kind": "valid",
+      "value": {
+        "bytes_hex": "00112233445566778899aabbccddeeff"
+      }
+    },
+    {
+      "expected_hex": "60",
+      "id": "machine-text-empty",
+      "kind": "valid",
+      "value": ""
+    },
+    {
+      "expected_hex": "7362617374696f6e2e6d616e69666573742f7631",
+      "id": "machine-text-ascii",
+      "kind": "valid",
+      "value": "bastion.manifest/v1"
+    },
+    {
+      "expected_hex": "f4",
+      "id": "bool-false",
+      "kind": "valid",
+      "value": false
+    },
+    {
+      "expected_hex": "f5",
+      "id": "bool-true",
+      "kind": "valid",
+      "value": true
+    },
+    {
+      "expected_hex": "83010203",
+      "id": "array-basic",
+      "kind": "valid",
+      "value": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "expected_hex": "a300010165616c70686102f5",
+      "id": "field-map-basic",
+      "kind": "valid",
+      "value": [
+        {
+          "field": 0,
+          "value": 1
+        },
+        {
+          "field": 1,
+          "value": "alpha"
+        },
+        {
+          "field": 2,
+          "value": true
+        }
+      ]
+    },
+    {
+      "expected_hex": "a500010169626f6f747374726170025011111111111111111111111111111111038301020304a200070143616263",
+      "id": "composite-envelope",
+      "kind": "valid",
+      "value": [
+        {
+          "field": 0,
+          "value": 1
+        },
+        {
+          "field": 1,
+          "value": "bootstrap"
+        },
+        {
+          "field": 2,
+          "value": {
+            "bytes_hex": "11111111111111111111111111111111"
+          }
+        },
+        {
+          "field": 3,
+          "value": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "field": 4,
+          "value": [
+            {
+              "field": 0,
+              "value": 7
+            },
+            {
+              "field": 1,
+              "value": {
+                "bytes_hex": "616263"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "expected_error": "NON_PREFERRED_ENCODING",
+      "id": "nonpreferred-unsigned-zero",
+      "input_hex": "1800",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "NON_PREFERRED_ENCODING",
+      "id": "nonpreferred-bytes-length-zero",
+      "input_hex": "5800",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "INDEFINITE_LENGTH_FORBIDDEN",
+      "id": "indefinite-bytes",
+      "input_hex": "5fff",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "INDEFINITE_LENGTH_FORBIDDEN",
+      "id": "indefinite-text",
+      "input_hex": "7fff",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "INDEFINITE_LENGTH_FORBIDDEN",
+      "id": "indefinite-array",
+      "input_hex": "9fff",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "INDEFINITE_LENGTH_FORBIDDEN",
+      "id": "indefinite-map",
+      "input_hex": "bfff",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "TYPE_FORBIDDEN",
+      "id": "float16-zero",
+      "input_hex": "f90000",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "TYPE_FORBIDDEN",
+      "id": "tag-zero",
+      "input_hex": "c001",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "TYPE_FORBIDDEN",
+      "id": "null",
+      "input_hex": "f6",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "TYPE_FORBIDDEN",
+      "id": "undefined",
+      "input_hex": "f7",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "DUPLICATE_FIELD",
+      "id": "duplicate-field",
+      "input_hex": "a200010002",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "FIELD_ORDER",
+      "id": "unsorted-fields",
+      "input_hex": "a202000101",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "FIELD_KEY_TYPE",
+      "id": "wrong-field-key-type",
+      "input_hex": "a1616101",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "FIELD_KEY_RANGE",
+      "id": "field-key-over-u16",
+      "input_hex": "a11a0001000001",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "MACHINE_TEXT_NON_ASCII",
+      "id": "non-ascii-machine-text",
+      "input_hex": "62c3a9",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "INVALID_UTF8",
+      "id": "invalid-utf8-text",
+      "input_hex": "61ff",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "TRAILING_DATA",
+      "id": "trailing-data",
+      "input_hex": "0000",
+      "kind": "invalid"
+    },
+    {
+      "expected_error": "MALFORMED_CBOR",
+      "id": "reserved-additional-info",
+      "input_hex": "1c",
+      "kind": "invalid"
+    }
+  ]
+}
