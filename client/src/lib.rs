@@ -728,12 +728,7 @@ impl Client {
         // observation before constructing State/PlayerEntity/plugin
         // readiness -- a server restart between registration and this
         // bootstrap message must not mix state across incarnations.
-        if game_sync_server_boot_id != server_info.server_boot_id {
-            return Err(Error::ServerBootMismatch {
-                server_info: server_info.server_boot_id,
-                game_sync: game_sync_server_boot_id,
-            });
-        }
+        crate::error::check_game_sync_boot_scope(server_info.server_boot_id, game_sync_server_boot_id)?;
 
         init_stage_update(ClientInitStage::StartingClient);
         // Spawn in a blocking thread (leaving the network thread free).  This is mostly

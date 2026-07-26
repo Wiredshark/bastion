@@ -17,6 +17,22 @@ use common::{
 };
 use common::apex::identity::ServerBootId;
 use common_base::prof_span;
+
+/// APEX-T3.1.09: the exact boot-scope admission check `ClientRegister`
+/// must pass before `login_provider.verify` runs. Extracted to a free
+/// function (rather than left inline) so `bastion-harness`'s T3.1.17
+/// process-restart fixture can call the identical production code path,
+/// not a copy of the comparison it re-derived itself.
+pub fn check_register_boot_scope(
+    expected: ServerBootId,
+    current: ServerBootId,
+) -> Result<(), RegisterError> {
+    if expected != current {
+        Err(RegisterError::ServerBootMismatch { current, received: expected })
+    } else {
+        Ok(())
+    }
+}
 use common_ecs::{Job, Origin, Phase, System};
 use common_net::msg::{
     CharacterInfo, ClientRegister, DisconnectReason, PlayerInfo, PlayerListUpdate, RegisterError,
@@ -146,12 +162,9 @@ impl<'a> System<'a> for Sys {
                 // registration from a client that observed a prior server
                 // process's ServerInfo must never reach login_provider.verify.
                 let current = *read_data.server_boot_id;
-                if msg.expected_server_boot_id != current {
+                if let Err(err) = check_register_boot_scope(msg.expected_server_boot_id, current) {
                     debug!("Rejecting ClientRegister: server boot ID mismatch (client observed a prior server process)");
-                    let pending = crate::login_provider::PendingLogin::new_failure(RegisterError::ServerBootMismatch {
-                        current,
-                        received: msg.expected_server_boot_id,
-                    });
+                    let pending = crate::login_provider::PendingLogin::new_failure(err);
                     let _ = pending_logins.insert(entity, pending);
                     return Ok(());
                 }

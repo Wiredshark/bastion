@@ -68,3 +68,46 @@ impl From<StreamError> for Error {
 impl From<AuthClientError> for Error {
     fn from(err: AuthClientError) -> Self { Self::AuthClientError(err) }
 }
+
+/// APEX-T3.1.12: the exact boot-scope check `ServerInit::GameSync` must
+/// pass before `State::client` construction. Extracted (not left inline)
+/// so `bastion-harness`'s T3.1.17 process-restart fixture exercises the
+/// identical production code path.
+pub fn check_game_sync_boot_scope(server_info: ServerBootId, game_sync: ServerBootId) -> Result<(), Error> {
+    if server_info != game_sync {
+        Err(Error::ServerBootMismatch { server_info, game_sync })
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::apex::identity::FixedRandomBytesSourceV1;
+
+    fn boot_id(seed: u8) -> ServerBootId { ServerBootId::generate(&mut FixedRandomBytesSourceV1([seed; 16])).unwrap() }
+
+    /// APEX-T3.1.17 (client-side twin of the harness's server-side reboot
+    /// fixture, `bastion-harness --t3-1-17-scenario`): the exact production
+    /// function rejects a stale GameSync boot ID and accepts a matching one.
+    #[test]
+    fn check_game_sync_boot_scope_rejects_stale_and_accepts_same_boot() {
+        let boot_a = boot_id(0xA1);
+        let boot_b = boot_id(0xB2);
+        assert_ne!(boot_a, boot_b);
+
+        // Stale: client observed boot A's ServerInfo but received a GameSync
+        // carrying a different (B's) ID.
+        match check_game_sync_boot_scope(boot_a, boot_b) {
+            Err(Error::ServerBootMismatch { server_info, game_sync }) => {
+                assert_eq!(server_info, boot_a);
+                assert_eq!(game_sync, boot_b);
+            },
+            other => panic!("expected ServerBootMismatch, got {other:?}"),
+        }
+
+        // Positive control: matching IDs must not be rejected.
+        assert!(check_game_sync_boot_scope(boot_b, boot_b).is_ok());
+    }
+}

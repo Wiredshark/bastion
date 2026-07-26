@@ -14,6 +14,8 @@ chrono = { workspace = true }
 [dependencies]
 server = { package = "veloren-server", path = "../server" }
 common = { package = "veloren-common", path = "../common" }
+# APEX-T3.1.17: ClientRegister/RegisterError for the process-restart fixture.
+common-net = { package = "veloren-common-net", path = "../common/net" }
 # DETRNG (B8 root fix): direct dep only to flip rtsim::DETERMINISTIC_RTSIM at
 # boot — the harness runs reproducibly; the live game keeps its entropy.
 rtsim = { package = "veloren-rtsim", path = "../rtsim" }
