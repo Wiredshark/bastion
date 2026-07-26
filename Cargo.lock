@@ -8760,6 +8760,7 @@ dependencies = [
  "lazy_static",
  "ron",
  "serde",
+ "tar",
  "tempfile",
  "tracing",
  "walkdir",
