@@ -27,6 +27,12 @@ vectors, and explicit compatibility rules — it may not replace ID 1.
 | 5 | `bastion/build-manifest/v1` | `APEX-T1.5` |
 | 6 | `bastion/execution-evidence/v1` | `APEX-T1.5`/`T8` |
 | 7 | `bastion/semantic-content/v1` | schema-specific later owners |
+| 8 | `bastion/plugin-manifest/v1` | `APEX-T2.3` |
+
+ID 8 was pre-registered ahead of `APEX-T2.3` at Builder Opus 5's flag:
+`PluginManifestV1`'s semantic root is a distinct object from
+`PluginActivationPlan` (ID 3, `APEX-T2.5`'s resolved *plan*) and must not
+reuse that domain.
 
 Future Merkle-tree leaf/node purposes register their own domain under their
 owning schema; this module does not expose a generic untyped Merkle API.

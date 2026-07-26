@@ -133,6 +133,42 @@ def check_findings(reg, rows_by_id, issues):
     return seen_finding_ids
 
 
+# GUIDE_MISSING_ROW fingerprint: the M3A-style tracked-red pattern (see
+# readme/m3a-floor-tracked-red.md convention) -- a placeholder row for
+# content that doesn't exist in the canonical guide is expected to stay
+# frozen. It is not itself a validator error, but if its frozen fields ever
+# drift without going through an explicit registry-edit commit, that IS an
+# error: silent content appearing/disappearing on a "reserved" row is
+# exactly the kind of false-green the registry exists to prevent.
+GUIDE_MISSING_ROW_FINGERPRINTS = {
+    "APEX-T5.5": {
+        "title": "RESERVED (GUIDE_MISSING_ROW) -- no APEX-T5.5 packet exists in the canonical guide; "
+                  "content TBD from source, routed to guide author",
+        "hard_dependencies": [],
+    },
+}
+
+
+def check_guide_missing_row_fingerprints(reg, rows_by_id, issues):
+    # Only meaningful against the real Bastion registry -- a synthetic
+    # minimal registry built for an unrelated fixture (e.g. a two-row
+    # cycle-detection test) was never expected to carry T5.5 at all, so it
+    # must not fail this check just because it isn't the real registry.
+    if reg.get("canonical_guide") != "PROJECT-BASTION-APEX-DETERMINISM-STEP-BY-STEP-MASTER-BUILD-ORDER.md":
+        return
+    for row_id, expected in GUIDE_MISSING_ROW_FINGERPRINTS.items():
+        row = rows_by_id.get(row_id)
+        if row is None:
+            issues.append(f"GUIDE_MISSING_ROW_FINGERPRINT_MISSING: {row_id} expected but not present in registry")
+            continue
+        if row["status"]["specification"] != "GUIDE_MISSING_ROW":
+            issues.append(f"GUIDE_MISSING_ROW_FINGERPRINT_DRIFT: {row_id} status.specification changed to {row['status']['specification']!r}")
+        if row["title"] != expected["title"]:
+            issues.append(f"GUIDE_MISSING_ROW_FINGERPRINT_DRIFT: {row_id} title changed")
+        if row["hard_dependencies"] != expected["hard_dependencies"]:
+            issues.append(f"GUIDE_MISSING_ROW_FINGERPRINT_DRIFT: {row_id} hard_dependencies changed to {row['hard_dependencies']}")
+
+
 def check_terminal_invariants(reg, issues):
     for r in reg["rows"]:
         s = r["status"]
@@ -151,6 +187,7 @@ def validate(reg):
     check_dependency_graph(reg, rows_by_id, issues)
     check_findings(reg, rows_by_id, issues)
     check_terminal_invariants(reg, issues)
+    check_guide_missing_row_fingerprints(reg, rows_by_id, issues)
     return issues
 
 

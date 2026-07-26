@@ -17,11 +17,27 @@ use crate::apex::manifest::{ManifestDecodeLimitsV1, ManifestEncodeV1, encode_man
 
 const MAGIC: &[u8] = b"bastion-digest/v1\0";
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+/// `Ord` compares `(bytes, domain, algorithm)` — digest bytes are the
+/// primary key (root content identity), domain and algorithm are
+/// tiebreakers. Answers Builder Opus 5's boundary question: yes,
+/// `ProtocolDigestV1` is directly comparable/sortable and is
+/// `ManifestEncodeV1`/`ManifestDecodeV1` standalone (see the `impl`s in
+/// `mod.rs`), not only reachable via `SemanticRootV1`.
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 pub struct ProtocolDigestV1 {
     pub algorithm: DigestAlgorithmIdV1,
     pub domain: DigestDomainIdV1,
     pub bytes: DigestBytes32V1,
+}
+
+impl Ord for ProtocolDigestV1 {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.bytes.cmp(&other.bytes).then_with(|| self.domain.cmp(&other.domain)).then_with(|| self.algorithm.cmp(&other.algorithm))
+    }
+}
+
+impl PartialOrd for ProtocolDigestV1 {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> { Some(self.cmp(other)) }
 }
 
 /// Hashes `canonical_payload` (already-canonical `BastionManifestEncodingV1`

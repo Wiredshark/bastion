@@ -11,13 +11,27 @@ use sha2::{Digest, Sha256};
 use super::algorithm::{DigestAlgorithmIdV1, DigestBytes32V1};
 use super::error::{ArtifactVerificationErrorCodeV1, ArtifactVerificationErrorV1, DigestErrorCodeV1, DigestErrorV1};
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+/// `Ord` compares `(bytes, algorithm)` — digest bytes are the primary key
+/// since they are the actual content identity; algorithm is a tiebreaker
+/// that is a no-op today (only `Sha256` exists) and only matters once a
+/// second algorithm is registered.
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 pub struct ArtifactDigestV1 {
     pub algorithm: DigestAlgorithmIdV1,
     pub bytes: DigestBytes32V1,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+impl Ord for ArtifactDigestV1 {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.bytes.cmp(&other.bytes).then_with(|| self.algorithm.cmp(&other.algorithm))
+    }
+}
+
+impl PartialOrd for ArtifactDigestV1 {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> { Some(self.cmp(other)) }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct ArtifactIdentityV1 {
     pub digest: ArtifactDigestV1,
     pub size_bytes: u64,

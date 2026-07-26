@@ -17,6 +17,10 @@ pub enum DigestDomainIdV1 {
     BuildManifest = 5,
     ExecutionEvidence = 6,
     SemanticContent = 7,
+    /// Registered ahead of `APEX-T2.3` at Opus 5's flag: `PluginManifestV1`'s
+    /// semantic root is a distinct object from `PluginActivationPlan` (ID 3,
+    /// `APEX-T2.5`'s resolved *plan*) and must not reuse that domain.
+    PluginManifest = 8,
 }
 
 impl DigestDomainIdV1 {
@@ -34,10 +38,11 @@ impl DigestDomainIdV1 {
             Self::BuildManifest => "bastion/build-manifest/v1",
             Self::ExecutionEvidence => "bastion/execution-evidence/v1",
             Self::SemanticContent => "bastion/semantic-content/v1",
+            Self::PluginManifest => "bastion/plugin-manifest/v1",
         }
     }
 
-    pub const ALL: [DigestDomainIdV1; 7] = [
+    pub const ALL: [DigestDomainIdV1; 8] = [
         Self::BootstrapManifest,
         Self::SaveUniverseManifest,
         Self::PluginActivationPlan,
@@ -45,6 +50,7 @@ impl DigestDomainIdV1 {
         Self::BuildManifest,
         Self::ExecutionEvidence,
         Self::SemanticContent,
+        Self::PluginManifest,
     ];
 }
 
@@ -84,5 +90,7 @@ mod tests {
         assert_eq!(DigestDomainIdV1::ExecutionEvidence.label(), "bastion/execution-evidence/v1");
         assert_eq!(DigestDomainIdV1::SemanticContent.as_u16(), 7);
         assert_eq!(DigestDomainIdV1::SemanticContent.label(), "bastion/semantic-content/v1");
+        assert_eq!(DigestDomainIdV1::PluginManifest.as_u16(), 8);
+        assert_eq!(DigestDomainIdV1::PluginManifest.label(), "bastion/plugin-manifest/v1");
     }
 }

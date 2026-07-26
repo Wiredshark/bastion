@@ -7,7 +7,7 @@ use super::error::{DigestErrorCodeV1, DigestErrorV1};
 /// algorithm requires a new registered ID, new golden vectors, and
 /// explicit compatibility rules — it may not silently replace ID 1.
 #[repr(u16)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum DigestAlgorithmIdV1 {
     Sha256 = 1,
 }

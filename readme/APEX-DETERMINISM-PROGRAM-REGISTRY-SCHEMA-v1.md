@@ -78,16 +78,33 @@ validator enforces:
 - No row is orphaned from the guide (every `row_order` entry has a record and
   vice versa).
 
-## 6. Known unresolved reference (real finding from this A.3 pass)
+## 6. `GUIDE_MISSING_ROW` — resolved via architect ruling (2026-07-26)
 
-`APEX-A.2`'s finding matrix cites `APEX-T5.5` as a replacement row for
+`APEX-A.2`'s finding matrix cited `APEX-T5.5` as a replacement row for
 `DET-WTH-010`, `DET-PRD-008`, and `DET-PRD-011`, but no `APEX-T5.5` row
-exists anywhere in
-`PROJECT-BASTION-APEX-DETERMINISM-STEP-BY-STEP-MASTER-BUILD-ORDER.md` (Tier 5
-only defines `T5.1`–`T5.4`). This registry records it verbatim in
-`unresolved_row_references` rather than silently dropping the reference or
-inventing a row — that decision belongs to the architect/spec author, not to
-this build pass.
+existed anywhere in the canonical guide (Tier 5 only defines `T5.1`–`T5.4`).
+Fable ruled: add `APEX-T5.5` as a frozen `GUIDE_MISSING_ROW` placeholder —
+reserved ID, empty `hard_dependencies`, fixed title stating no packet
+exists, **no fabricated content**. Content recovery is routed to the
+guide's author via Ben; a builder must never reconstruct it.
+
+A `GUIDE_MISSING_ROW` is not a normal implementable row and is not itself a
+validator error, but its frozen fields (`status.specification ==
+"GUIDE_MISSING_ROW"`, exact title, empty deps) are checked on every
+validation run (`check_guide_missing_row_fingerprints`,
+`tools/validate-apex-program-registry.py`) — this is the M3A-style
+tracked-red pattern: expected-and-frozen, not silently ignored. If those
+fields ever drift (content appears, deps get added, title changes) without
+an explicit registry-edit commit, the validator fails with
+`GUIDE_MISSING_ROW_FINGERPRINT_DRIFT`.
+
+Similarly, `APEX-T4.3`'s `ORDER_VIOLATION` (it depended on `APEX-T6.2`,
+which the guide documents after `APEX-T4.3`'s own tier) was resolved by
+**splitting T4.3** into `APEX-T4.3a` (kept the original tier position,
+depends only on `T0.5`) and `APEX-T4.3b` (re-sequenced to after Tier 6,
+depends on `T6.2`) — see `readme/APEX-DETERMINISM-PROGRAM-REGISTRY.md` for
+the full rationale, including why `APEX-T4.5` was re-scoped to depend on
+`T4.3a` alone rather than both halves.
 
 ## 7. Temporary serialization
 

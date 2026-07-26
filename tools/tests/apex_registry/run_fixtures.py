@@ -126,16 +126,27 @@ check("negative: duplicate row id", minimal_registry(r13), "DUPLICATE_ROW_ID")
 r14 = [base_row("R1", 1)]
 check("negative: row_order references nonexistent row", minimal_registry(r14, row_order=["R1", "GHOST"]), "ROW_ORDER_ORPHAN")
 
-# 15. real registry: known real issues (T5.5 unresolved ref, T4.3/T6.2 order violation)
+# 15. real registry: fully clean after Fable's ruling folded in the T4.3
+# split (resolves the ORDER_VIOLATION) and the T5.5 GUIDE_MISSING_ROW
+# placeholder (resolves the UNRESOLVED_ROW_REFERENCE). Both original findings
+# are proven fixed, not just re-labeled: this asserts zero issues, not "the
+# same two issues with different codes".
 import json
 real_path = Path(__file__).resolve().parents[3] / "readme" / "APEX-DETERMINISM-PROGRAM-REGISTRY-v1.json"
 with open(real_path, encoding="utf-8") as f:
     real_reg = json.load(f)
 real_issues = apex_validator.validate(real_reg)
-expected_codes = {"ORDER_VIOLATION", "UNRESOLVED_ROW_REFERENCE"}
-found_codes = {i.split(":")[0] for i in real_issues}
-ok = found_codes == expected_codes
-(PASS if ok else FAIL).append(("real registry: exactly the two known, documented issues", real_issues))
+ok = real_issues == []
+(PASS if ok else FAIL).append(("real registry: zero issues after the T4.3 split and T5.5 placeholder", real_issues))
+
+# 16. negative: GUIDE_MISSING_ROW fingerprint drift is caught (non-vacuity
+# for the fingerprint check itself -- mutate the real, on-disk T5.5 row's
+# title and confirm the validator flags it).
+import copy
+drifted_reg = copy.deepcopy(real_reg)
+t55 = next(r for r in drifted_reg["rows"] if r["row_id"] == "APEX-T5.5")
+t55["title"] = "some content quietly appeared here"
+check("negative: GUIDE_MISSING_ROW fingerprint drift is caught", drifted_reg, "GUIDE_MISSING_ROW_FINGERPRINT_DRIFT")
 
 print(f"PASS: {len(PASS)}  FAIL: {len(FAIL)}")
 for name, issues in FAIL:
