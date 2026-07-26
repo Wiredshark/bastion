@@ -1,6 +1,7 @@
 use super::{PingMsg, world_msg::SiteId};
 use common::{
     ViewDistances,
+    apex::identity::ServerBootId,
     character::CharacterId,
     comp::{self, AdminRole, Skill},
     event::PluginHash,
@@ -65,6 +66,11 @@ impl ClientType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientRegister {
+    /// APEX-T3.1.08: echoes the `server_boot_id` this client observed in
+    /// `ServerInfo`, proving registration is against the same server
+    /// process incarnation. The server compares this before calling
+    /// `login_provider.verify` -- a mismatch never reaches auth.
+    pub expected_server_boot_id: ServerBootId,
     pub token_or_username: String,
     pub locale: Option<String>,
 }
@@ -271,4 +277,27 @@ impl From<ClientGeneral> for ClientMsg {
 
 impl From<PingMsg> for ClientMsg {
     fn from(other: PingMsg) -> ClientMsg { ClientMsg::Ping(other) }
+}
+
+/// APEX-T3.1.08: bincode-legacy round-trip for `ClientRegister`'s new echo
+/// field, same config `network/src/message.rs` uses.
+#[cfg(test)]
+mod apex_t3_1_wire_tests {
+    use super::*;
+    use common::apex::identity::FixedRandomBytesSourceV1;
+
+    #[test]
+    fn client_register_round_trips_with_expected_boot_id() {
+        let boot_id = ServerBootId::generate(&mut FixedRandomBytesSourceV1([0x77; 16])).unwrap();
+        let msg = ClientRegister {
+            expected_server_boot_id: boot_id,
+            token_or_username: "player".into(),
+            locale: Some("en".into()),
+        };
+        let bytes = bincode::serde::encode_to_vec(&msg, bincode::config::legacy()).unwrap();
+        let (decoded, _): (ClientRegister, usize) =
+            bincode::serde::decode_from_slice(&bytes, bincode::config::legacy()).unwrap();
+        assert_eq!(decoded.expected_server_boot_id, boot_id);
+        assert_eq!(decoded.token_or_username, "player");
+    }
 }

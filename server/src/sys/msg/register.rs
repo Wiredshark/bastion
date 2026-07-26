@@ -15,6 +15,7 @@ use common::{
     shared_server_config::ServerConstants,
     uid::Uid,
 };
+use common::apex::identity::ServerBootId;
 use common_base::prof_span;
 use common_ecs::{Job, Origin, Phase, System};
 use common_net::msg::{
@@ -38,6 +39,9 @@ pub struct ReadData<'a> {
     entities: Entities<'a>,
     stats: ReadStorage<'a, Stats>,
     uids: ReadStorage<'a, Uid>,
+    /// APEX-T3.1.09: compared against `ClientRegister.expected_server_boot_id`
+    /// before any `login_provider.verify` call.
+    server_boot_id: ReadExpect<'a, ServerBootId>,
     client_disconnect_events: Read<'a, EventBus<ClientDisconnectEvent>>,
     make_admin_events: Read<'a, EventBus<MakeAdminEvent>>,
     login_provider: ReadExpect<'a, LoginProvider>,
@@ -138,6 +142,19 @@ impl<'a> System<'a> for Sys {
 
             let _ = super::try_recv_all(client, 0, |_, msg: ClientRegister| {
                 trace!(?msg.token_or_username, "defer auth lockup");
+                // APEX-T3.1.09: compare before authentication -- a stale
+                // registration from a client that observed a prior server
+                // process's ServerInfo must never reach login_provider.verify.
+                let current = *read_data.server_boot_id;
+                if msg.expected_server_boot_id != current {
+                    debug!("Rejecting ClientRegister: server boot ID mismatch (client observed a prior server process)");
+                    let pending = crate::login_provider::PendingLogin::new_failure(RegisterError::ServerBootMismatch {
+                        current,
+                        received: msg.expected_server_boot_id,
+                    });
+                    let _ = pending_logins.insert(entity, pending);
+                    return Ok(());
+                }
                 let pending = read_data.login_provider.verify(&msg.token_or_username);
                 locale = msg.locale;
                 let _ = pending_logins.insert(entity, pending);
@@ -388,6 +405,7 @@ impl<'a> System<'a> for Sys {
                         // as well as synced resources (currently only `TimeOfDay`)
                         debug!("Starting initial sync with client.");
                         client.send(ServerInit::GameSync {
+                            server_boot_id: *read_data.server_boot_id,
                             // Send client their entity
                             entity_package: read_data
                                 .trackers

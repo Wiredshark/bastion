@@ -198,6 +198,14 @@ impl PlayState for MainMenuState {
                                     "raw_error" => e.to_string(),
                                 })
                                 .into_owned(),
+                            // APEX-T3.1.03: rare server-startup entropy failure; no
+                            // dedicated localization key yet, routed through the
+                            // same generic "other" server-error message.
+                            server::Error::BootIdentity(e) => localized_strings
+                                .get_msg_ctx("main-servers-other_error", &i18n::fluent_args! {
+                                    "raw_error" => e.to_string(),
+                                })
+                                .into_owned(),
                             server::Error::Other(e) => localized_strings
                                 .get_msg_ctx("main-servers-other_error", &i18n::fluent_args! {
                                     "raw_error" => e,
@@ -711,6 +719,18 @@ pub(crate) fn get_client_msg_error(
                 "{}: https://{}",
                 localization.get_msg("main-login-failed_auth_server_url_invalid"),
                 e
+            )
+        },
+        // APEX-T3.1.10/.12: server restarted between ServerInfo and this
+        // client's registration/bootstrap. No dedicated localization key
+        // yet; a full reconnect (same as any other network error) resolves
+        // it, so route through the generic error message for now.
+        Error::ServerBootMismatch { server_info, game_sync } => {
+            format!(
+                "{}: server boot mismatch (observed {}, reported {})",
+                localization.get_msg("common-error"),
+                server_info.to_text_v1(),
+                game_sync.to_text_v1(),
             )
         },
     }

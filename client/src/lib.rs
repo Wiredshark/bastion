@@ -701,6 +701,7 @@ impl Client {
         // Wait for initial sync
         let mut ping_interval = tokio::time::interval(Duration::from_secs(1));
         let ServerInit::GameSync {
+            server_boot_id: game_sync_server_boot_id,
             entity_package,
             time_of_day,
             max_group_size,
@@ -722,6 +723,17 @@ impl Client {
                 _ = ping_interval.tick() => ping_stream.send(PingMsg::Ping)?,
             }
         };
+
+        // APEX-T3.1.12: compare GameSync's boot ID against the ServerInfo
+        // observation before constructing State/PlayerEntity/plugin
+        // readiness -- a server restart between registration and this
+        // bootstrap message must not mix state across incarnations.
+        if game_sync_server_boot_id != server_info.server_boot_id {
+            return Err(Error::ServerBootMismatch {
+                server_info: server_info.server_boot_id,
+                game_sync: game_sync_server_boot_id,
+            });
+        }
 
         init_stage_update(ClientInitStage::StartingClient);
         // Spawn in a blocking thread (leaving the network thread free).  This is mostly
@@ -1211,6 +1223,8 @@ impl Client {
         debug!("Registering client...");
 
         register_stream.send(ClientRegister {
+            // APEX-T3.1.08: echo exactly the boot ID observed in ServerInfo.
+            expected_server_boot_id: server_info.server_boot_id,
             token_or_username,
             locale,
         })?;
@@ -1222,6 +1236,9 @@ impl Client {
             Err(RegisterError::Kicked(err)) => Err(Error::Kicked(err)),
             Err(RegisterError::Banned(info)) => Err(Error::Banned(info)),
             Err(RegisterError::TooManyPlayers) => Err(Error::TooManyPlayers),
+            Err(RegisterError::ServerBootMismatch { current, received }) => {
+                Err(Error::ServerBootMismatch { server_info: current, game_sync: received })
+            },
             Ok(()) => {
                 debug!("Client registered successfully.");
                 Ok(())

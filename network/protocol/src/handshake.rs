@@ -226,6 +226,60 @@ mod tests {
         assert_eq!(r2.unwrap(), Err(InitProtocolError::Custom(())));
     }
 
+    /// APEX-T3.1.15: a pre-T3.1 peer advertising the old minor version
+    /// (`[0, 6, 0]`) is rejected -- proves the live `VELOREN_NETWORK_VERSION`
+    /// bump (0.6.0 -> 0.7.0) actually takes effect in the handshake, not
+    /// just that the generic mismatch path works for an arbitrary version.
+    #[tokio::test]
+    async fn handshake_old_minor_version_rejected() {
+        assert_eq!(VELOREN_NETWORK_VERSION, [0, 7, 0], "update this test's OLD_VERSION constant alongside any future bump");
+        const OLD_VERSION: [u32; 3] = [0, 6, 0];
+        let [mut p1, mut p2] = ac_bound(10, None);
+        let r1 = tokio::spawn(async move { p1.initialize(true, Pid::fake(2), 1337).await });
+        let r2 = tokio::spawn(async move {
+            let _ = p2.1.recv().await?;
+            p2.0.send(InitFrame::Handshake {
+                magic_number: VELOREN_MAGIC_NUMBER,
+                version: OLD_VERSION,
+            })
+            .await?;
+            let _ = p2.1.recv().await?;
+            let _ = p2.1.recv().await?;
+            Ok(())
+        });
+        let (r1, r2) = tokio::join!(r1, r2);
+        assert_eq!(r1.unwrap(), Err(InitProtocolError::WrongVersion(OLD_VERSION)));
+        assert_eq!(r2.unwrap(), Err(InitProtocolError::Custom(())));
+    }
+
+    /// Same major/minor, different patch: still accepted (patch is ignored
+    /// by the version gate -- packet section 3.6 / T3.1.15's "patch
+    /// difference behavior pinned"). Manually drives both handshake steps
+    /// (Handshake reply, then Init exchange) since the mock peer isn't
+    /// running the real `initialize()` with the patched version.
+    #[tokio::test]
+    async fn handshake_patch_difference_still_accepted() {
+        let mut patched_version = VELOREN_NETWORK_VERSION;
+        patched_version[2] = patched_version[2].wrapping_add(1);
+        let [mut p1, mut p2] = ac_bound(10, None);
+        let r1 = tokio::spawn(async move { p1.initialize(true, Pid::fake(2), 1337).await });
+        let r2 = tokio::spawn(async move {
+            let _ = p2.1.recv().await?; // recv p1's Handshake
+            p2.0.send(InitFrame::Handshake { magic_number: VELOREN_MAGIC_NUMBER, version: patched_version })
+                .await?; // reply with the patched version
+            match p2.1.recv().await? {
+                InitFrame::Init { pid, secret } => {
+                    p2.0.send(InitFrame::Init { pid: Pid::fake(3), secret: 42 }).await?;
+                    Result::<_, InitProtocolError<()>>::Ok((pid, secret))
+                },
+                other => panic!("expected Init frame, got {other:?}"),
+            }
+        });
+        let (r1, r2) = tokio::join!(r1, r2);
+        assert_eq!(r1.unwrap(), Ok((Pid::fake(3), STREAM_ID_OFFSET1, 42)));
+        assert_eq!(r2.unwrap(), Ok((Pid::fake(2), 1337)));
+    }
+
     #[tokio::test]
     async fn handshake_unexpected_raw() {
         let [mut p1, mut p2] = ac_bound(10, None);

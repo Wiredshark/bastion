@@ -50,7 +50,11 @@ impl Promises {
 
 pub(crate) const VELOREN_MAGIC_NUMBER: [u8; 7] = *b"VELOREN";
 /// When this semver differs, 2 Networks can't communicate.
-pub const VELOREN_NETWORK_VERSION: [u32; 3] = [0, 6, 0];
+/// APEX-T3.1.15: bumped 0.6.0 -> 0.7.0 -- ServerInfo/ClientRegister/
+/// ServerInit::GameSync/RegisterError all gained a new required
+/// server_boot_id-related field (bincode schema-breaking). Confirmed no
+/// other pending change on this branch already claims minor 0.7.
+pub const VELOREN_NETWORK_VERSION: [u32; 3] = [0, 7, 0];
 pub(crate) const STREAM_ID_OFFSET1: Sid = Sid::new(0);
 pub(crate) const STREAM_ID_OFFSET2: Sid = Sid::new(u64::MAX / 2);
 /// Maximal possible Prio to choose (for performance reasons)

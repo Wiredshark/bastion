@@ -77,7 +77,7 @@ use crate::{
 };
 use authc::Uuid;
 use censor::Censor;
-#[cfg(not(feature = "worldgen"))]
+use common::apex::identity::{OsRandomBytesSourceV1, ServerBootId};
 use common::grid::Grid;
 #[cfg(feature = "worldgen")]
 use common::terrain::CoordinateConversions;
@@ -266,6 +266,12 @@ pub struct Server {
 
     event_dispatcher: SendDispatcher<'static>,
     execution_mode: ExecutionMode,
+
+    /// APEX-T3.1: identifies this live server-process incarnation. Fresh on
+    /// every `Server::new`, never persisted, never part of authoritative
+    /// simulation state (see the ECS-resource insertion site for the same
+    /// caveat repeated where it matters for determinism boundary tests).
+    server_boot_id: ServerBootId,
 }
 
 impl Server {
@@ -283,6 +289,15 @@ impl Server {
         if settings.auth_server_address.is_none() {
             info!("Authentication is disabled");
         }
+
+        // APEX-T3.1.04: generate the boot ID first -- before any durable or
+        // externally visible startup work (DB migrations/vacuum, plugin
+        // publication, worldgen, persistence, listeners). A failed attempt
+        // must not have touched any of that; a retry (a fresh `Server::new`
+        // call) generates a new ID rather than reusing a partially-failed one.
+        let server_boot_id =
+            ServerBootId::generate(&mut OsRandomBytesSourceV1).map_err(Error::from)?;
+        info!("Server boot ID: {}", server_boot_id.to_text_v1());
 
         report_stage(ServerInitStage::DbMigrations);
         // Run pending DB migrations (if any)
@@ -416,6 +431,10 @@ impl Server {
             plugin_mgr,
         );
         events::register_event_busses(state.ecs_mut());
+        // APEX-T3.1.05: same Copy value as the Server field above, inserted
+        // once here and never mutated afterward (systems read it via
+        // ReadExpect<ServerBootId>, never write it).
+        state.ecs_mut().insert(server_boot_id);
         state.ecs_mut().insert(battlemode_buffer);
         state.ecs_mut().insert(RecentClientIPs::default());
         state.ecs_mut().insert(settings.clone());
@@ -784,6 +803,8 @@ impl Server {
 
             event_dispatcher: Self::create_event_dispatcher(pools),
             execution_mode,
+
+            server_boot_id,
         };
 
         // bastion (B-ASSET1): the --asset-arena test chamber. Inert unless
@@ -798,10 +819,16 @@ impl Server {
         Ok(this)
     }
 
+    /// APEX-T3.1: this live server-process incarnation's boot identity.
+    /// Public (not secret), not proof of authentication, excluded from
+    /// authoritative simulation state/RNG keys, never persisted.
+    pub fn server_boot_id(&self) -> ServerBootId { self.server_boot_id }
+
     pub fn get_server_info(&self) -> ServerInfo {
         let settings = self.state.ecs().fetch::<Settings>();
 
         ServerInfo {
+            server_boot_id: self.server_boot_id,
             name: settings.server_name.clone(),
             git_hash: *common::util::GIT_HASH,
             git_timestamp: *common::util::GIT_TIMESTAMP,

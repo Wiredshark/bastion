@@ -55,6 +55,17 @@ impl PendingLogin {
 
         Self { pending_r }
     }
+
+    /// APEX-T3.1.09: an immediate, synchronous rejection with zero calls
+    /// into `LoginProvider::verify` -- used for a `ClientRegister` whose
+    /// `expected_server_boot_id` does not match this process's current
+    /// boot ID, so a stale post-restart registration never reaches auth.
+    pub(crate) fn new_failure(err: RegisterError) -> Self {
+        let (pending_s, pending_r) = oneshot::channel();
+        let _ = pending_s.send(Err(err));
+
+        Self { pending_r }
+    }
 }
 
 impl Component for PendingLogin {

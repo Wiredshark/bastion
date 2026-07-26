@@ -4,6 +4,7 @@ use super::{
 };
 use crate::sync;
 use common::{
+    apex::identity::ServerBootId,
     calendar::Calendar,
     character::{self, CharacterItem},
     comp::{
@@ -51,6 +52,11 @@ pub enum ServerMsg {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerInfo {
+    /// APEX-T3.1: identifies this live server-process incarnation, sent
+    /// before authentication so the client can echo it back in
+    /// `ClientRegister` and the server can reject a stale post-restart
+    /// registration before running `login_provider.verify`.
+    pub server_boot_id: ServerBootId,
     pub name: String,
     pub git_hash: u32,
     pub git_timestamp: i64,
@@ -67,6 +73,11 @@ pub struct ServerDescription {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ServerInit {
     GameSync {
+        /// APEX-T3.1.11: repeats the same `ServerInfo` boot ID so the
+        /// client can reject bootstrap state mixed across a server
+        /// restart between registration and this message, before
+        /// constructing `State::client`.
+        server_boot_id: ServerBootId,
         entity_package: sync::EntityPackage<EcsCompPacket>,
         role: Option<AdminRole>,
         time_of_day: TimeOfDay,
@@ -379,6 +390,15 @@ pub enum RegisterError {
     InvalidCharacter,
     NotOnWhitelist,
     TooManyPlayers,
+    /// APEX-T3.1.10: the client's `ClientRegister.expected_server_boot_id`
+    /// does not match this process's current boot ID -- typically because
+    /// the server restarted between sending `ServerInfo` and receiving
+    /// this registration. Distinct from every other terminal here so
+    /// callers can offer a full reconnect rather than an auth/ban/kick UX.
+    ServerBootMismatch {
+        current: ServerBootId,
+        received: ServerBootId,
+    },
 }
 
 impl ServerMsg {
@@ -596,5 +616,50 @@ mod det_net_wire_order_tests {
             pa, pb,
             "terrain block-update wire order depends on input/HashMap order — DET-NET-014 regressed"
         );
+    }
+}
+
+/// APEX-T3.1.06/.11: bincode-legacy round-trip for the fields T3.1 added to
+/// live wire messages -- the same config `network/src/message.rs` uses,
+/// not a synthetic one.
+#[cfg(test)]
+mod apex_t3_1_wire_tests {
+    use super::*;
+    use common::apex::identity::{FixedRandomBytesSourceV1, ServerBootId};
+
+    fn fixed_boot_id() -> ServerBootId {
+        ServerBootId::generate(&mut FixedRandomBytesSourceV1([0x42; 16])).unwrap()
+    }
+
+    #[test]
+    fn server_info_round_trips_with_boot_id() {
+        let info = ServerInfo {
+            server_boot_id: fixed_boot_id(),
+            name: "test".into(),
+            git_hash: 0,
+            git_timestamp: 0,
+            auth_provider: None,
+        };
+        let bytes = bincode::serde::encode_to_vec(&info, bincode::config::legacy()).unwrap();
+        let (decoded, _): (ServerInfo, usize) = bincode::serde::decode_from_slice(&bytes, bincode::config::legacy()).unwrap();
+        assert_eq!(decoded.server_boot_id, info.server_boot_id);
+    }
+
+    #[test]
+    fn register_error_boot_mismatch_round_trips() {
+        let current = fixed_boot_id();
+        let received = ServerBootId::generate(&mut FixedRandomBytesSourceV1([0x99; 16])).unwrap();
+        assert_ne!(current, received);
+        let err: ServerRegisterAnswer = Err(RegisterError::ServerBootMismatch { current, received });
+        let bytes = bincode::serde::encode_to_vec(&err, bincode::config::legacy()).unwrap();
+        let (decoded, _): (ServerRegisterAnswer, usize) =
+            bincode::serde::decode_from_slice(&bytes, bincode::config::legacy()).unwrap();
+        match decoded {
+            Err(RegisterError::ServerBootMismatch { current: c, received: r }) => {
+                assert_eq!(c, current);
+                assert_eq!(r, received);
+            },
+            other => panic!("expected ServerBootMismatch, got {other:?}"),
+        }
     }
 }
