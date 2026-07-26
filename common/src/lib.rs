@@ -43,6 +43,7 @@ pub mod resources;
 pub mod shared_server_config;
 pub mod uid;
 
+pub mod apex;
 pub mod astar;
 pub mod bastion;
 pub mod bastion_commit;
