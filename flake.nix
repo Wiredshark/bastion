@@ -122,6 +122,7 @@
         };
         voxygenOut = config.nci.outputs."veloren-voxygen";
         serverCliOut = config.nci.outputs."veloren-server-cli";
+        harnessOut = config.nci.outputs."bastion-harness";
       in {
         packages.veloren-voxygen = wrapWithAssets voxygenOut.packages.release;
         packages.veloren-voxygen-dev = wrapWithAssets voxygenOut.packages.dev;
@@ -130,6 +131,14 @@
         packages.veloren-server-cli-dev = wrapWithAssets serverCliOut.packages.dev;
         packages.veloren-server-cli-tlto = wrapWithAssets serverCliOut.packages.release-thinlto;
         packages.default = config.packages."veloren-voxygen";
+        # APEX-T1.1.03/.06 (DET-BLD-019/029/032): first-class UNWRAPPED harness
+        # package in the tracked `verify` profile. Deliberately NOT wrapWithAssets
+        # — T1.1 exports the bare build artifact and permits metadata-only
+        # execution; asset/LFS completeness is APEX-T1.2's closure (claiming it
+        # here would be T1.1-BLOCK-ASSET-CLAIM). The same derivation doubles as
+        # the flake check so `nix flake check` proves the package still builds.
+        packages.bastion-harness = harnessOut.packages.verify;
+        checks.bastion-harness-package = harnessOut.packages.verify;
 
         devShells.default = config.nci.outputs."veloren".devShell.overrideAttrs (old: {
           VELOREN_ASSETS = "";
@@ -146,6 +155,47 @@
         nci.projects."veloren" = {
           export = false;
           path = filteredSource;
+        };
+        # APEX-T1.1.03-.05 (DET-BLD-019/029): bastion-harness as a locked NCI
+        # crate in the tracked `verify` profile (root Cargo.toml [profile.verify],
+        # DET-BLD-031(a) semantics: overflow-checks + debug-assertions ON in the
+        # cert lane). The derivation env makes the build self-identifying and
+        # ambient-free (APEX-T1.1 packet §6.4):
+        #  - BASTION_SOURCE_REVISION/SOURCE_DATE_EPOCH from flake sourceInfo →
+        #    build.rs DeclaredCertified stamping (no .git, no wall clock; a
+        #    DIRTY checkout yields dirtyRev ("<hex>-dirty"), which build.rs
+        #    REJECTS as non-40-hex — the packet's dirty-rejection, fail-closed
+        #    at the stamping layer);
+        #  - BASTION_BUILD_LANE=apex-nix-v1 makes missing identity a BUILD
+        #    ERROR (T1.1-BLOCK-UNKNOWN-REVISION), not a silent fallback;
+        #  - RUSTC_WRAPPER="" neutralizes the repo-wide sccache wrapper (cargo:
+        #    empty string resets a configured wrapper) and CARGO_INCREMENTAL=0
+        #    removes incremental cache state (T1.1-BLOCK-AMBIENT-WRAPPER);
+        #  - mold comes from the pinned closure, not the host.
+        nci.crates."bastion-harness" = rec {
+          profiles = {
+            verify.runTests = false;
+          };
+          depsDrvConfig = {
+            mkDerivation.nativeBuildInputs = [pkgs.mold];
+            env =
+              veloren-common-env
+              // {
+                RUSTC_WRAPPER = "";
+                CARGO_INCREMENTAL = "0";
+              };
+          };
+          drvConfig = {
+            mkDerivation = depsDrvConfig.mkDerivation;
+            env =
+              depsDrvConfig.env
+              // {
+                BASTION_SOURCE_REVISION =
+                  inp.self.sourceInfo.rev or inp.self.sourceInfo.dirtyRev or "missing-source-revision";
+                SOURCE_DATE_EPOCH = toString inp.self.sourceInfo.lastModified;
+                BASTION_BUILD_LANE = "apex-nix-v1";
+              };
+          };
         };
         nci.crates."veloren-server-cli" = rec {
           profiles = {
