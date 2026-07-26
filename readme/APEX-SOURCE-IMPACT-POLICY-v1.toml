@@ -1,0 +1,29 @@
+# APEX Source-Impact Policy v1
+# Exact path -> impact classification. Fail-closed: any path not listed here
+# is UnknownImpact. No wildcard/glob rules are permitted (APEX-A.1 section 5.2).
+#
+# Every change to this file is itself an EvidenceOrTooling change (APEX-A.1
+# section 7.2) and must be reviewed; the impact_policy_digest recorded in
+# every SourceAdmissionRecordV1 changes whenever this file changes, so a
+# stale cached verdict can never be silently replayed against a new policy.
+
+policy_schema = "bastion.source-impact-policy/v1"
+default_impact = "unknown_impact"
+
+[[exact_path]]
+path = "docs/BASTION_RUN_LOG.md"
+impact = "documentation_only"
+rationale = "append-only human run log; not a compiled, generated, packaged, or executable input"
+verified_at_commit = "f7b30de6d916930c96f181919160ff7839aa6d5b"
+
+[[exact_path]]
+path = "readme/BASTION_COMMON_ISSUES.md"
+impact = "documentation_only"
+rationale = "human troubleshooting documentation; no live code/build consumer located during APEX-A.1 verification"
+verified_at_commit = "f7b30de6d916930c96f181919160ff7839aa6d5b"
+
+[[exact_path]]
+path = "readme/DECISIONS-FOR-BEN.md"
+impact = "documentation_only"
+rationale = "human decision log; not consumed by build.rs, packaging, or code generation"
+verified_at_commit = "f7b30de6d916930c96f181919160ff7839aa6d5b"
