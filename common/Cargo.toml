@@ -98,6 +98,10 @@ criterion = { workspace = true }
 #test
 tracing-subscriber =  { workspace = true }
 petgraph = "0.8.1"
+# APEX-T3.1: proves the T0.4 opaque-ID Serde derive wire-encodes compactly
+# (16 raw bytes) under the same bincode legacy config network/src/message.rs
+# uses, not the string/hyphenated form. Test-only; not a runtime dependency.
+bincode = { workspace = true }
 
 [build-dependencies]
 regex = "1"

@@ -72,9 +72,33 @@ fn byte_order(a: &Uuid, b: &Uuid) -> core::cmp::Ordering { a.as_bytes().cmp(b.as
 macro_rules! opaque_lifecycle_id {
     ($(#[$meta:meta])* $name:ident, $text_prefix:literal) => {
         $(#[$meta])*
+        // Serde added at APEX-T3.1 (see readme/apex/
+        // APEX-T3.1-T0.4-ABI-REVALIDATION.md): T0.4 deliberately omitted
+        // it ("live wire migration belongs to owning rows"); T3.1 is that
+        // owning row -- these IDs now cross the existing bincode-legacy
+        // wire protocol (ServerInfo/ClientRegister/GameSync), not just
+        // BastionManifestEncodingV1. Manual impl below, NOT #[derive] --
+        // deriving would inherit uuid::Uuid's own Serde impl, which
+        // length-prefixes the bytes under bincode (24 bytes on the wire,
+        // not the compact 16 the packet's acceptance gate asks for) and
+        // skips version/variant revalidation on decode.
         #[repr(transparent)]
         #[derive(Copy, Clone, Eq, PartialEq, Hash)]
         pub struct $name(Uuid);
+
+        impl serde::Serialize for $name {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                self.0.as_bytes().serialize(serializer)
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let bytes: [u8; 16] = serde::Deserialize::deserialize(deserializer)?;
+                Self::from_uuid_v4(Uuid::from_bytes(bytes))
+                    .map_err(|_| serde::de::Error::custom(concat!("invalid ", stringify!($name), ": not a valid UUIDv4")))
+            }
+        }
 
         impl $name {
             pub fn generate(source: &mut impl IdRandomBytesSourceV1) -> Result<Self, IdentityGenerationErrorV1> {
@@ -178,6 +202,48 @@ mod tests {
         let mut source = FixedRandomBytesSourceV1(random);
         let id = ServerBootId::generate(&mut source).unwrap();
         assert_eq!(id.as_uuid().hyphenated().to_string(), "919108f7-52d1-4320-9bac-f847db4148a8");
+    }
+
+    /// Diagnostic, not an assertion of desired behavior: confirms exactly
+    /// which bincode primitive a raw `[u8; 16]` array uses under legacy
+    /// config, to compare against `Uuid`'s own Serde impl below.
+    #[test]
+    fn diagnostic_raw_fixed_array_bincode_length() {
+        let arr: [u8; 16] = [0u8; 16];
+        let bytes = bincode::serde::encode_to_vec(arr, bincode::config::legacy()).unwrap();
+        println!("raw [u8;16] bincode length: {}", bytes.len());
+        assert_eq!(bytes.len(), 16, "a fixed-size array has no length prefix under bincode legacy");
+    }
+
+    /// The manual Serde impl (not derived -- see the macro's doc comment
+    /// for why) produces exactly the compact 16-byte wire form the T3.1
+    /// packet's acceptance gate asks for ("client receives full 16-byte
+    /// ID"), confirmed against the real byte content, not just a length.
+    #[test]
+    fn bincode_legacy_round_trip_is_exactly_sixteen_raw_bytes() {
+        let random = hex_to_16("919108f752d11320dbacf847db4148a8");
+        let mut source = FixedRandomBytesSourceV1(random);
+        let id = ServerBootId::generate(&mut source).unwrap();
+
+        let bytes = bincode::serde::encode_to_vec(id, bincode::config::legacy()).unwrap();
+        assert_eq!(bytes.len(), 16, "expected exactly the 16 raw UUID bytes, got {} bytes: {bytes:02x?}", bytes.len());
+        assert_eq!(&bytes, id.as_uuid().as_bytes());
+
+        let (decoded, consumed): (ServerBootId, usize) =
+            bincode::serde::decode_from_slice(&bytes, bincode::config::legacy()).unwrap();
+        assert_eq!(consumed, 16);
+        assert_eq!(decoded, id);
+    }
+
+    /// Wire deserialization revalidates version/variant bits -- a peer
+    /// cannot smuggle a nil UUID or a non-v4 UUID onto the wire and have
+    /// it silently accepted as a valid opaque ID.
+    #[test]
+    fn bincode_deserialize_rejects_invalid_uuid_bytes() {
+        let nil_bytes = [0u8; 16];
+        let wire = bincode::serde::encode_to_vec(nil_bytes, bincode::config::legacy()).unwrap();
+        let result: Result<(ServerBootId, usize), _> = bincode::serde::decode_from_slice(&wire, bincode::config::legacy());
+        assert!(result.is_err(), "nil UUID must not decode as a valid ServerBootId");
     }
 
     #[test]

@@ -8703,6 +8703,7 @@ version = "0.18.0"
 dependencies = [
  "ahash 0.8.12",
  "approx 0.5.1",
+ "bincode",
  "bitflags 2.13.0",
  "chrono",
  "chrono-tz",
