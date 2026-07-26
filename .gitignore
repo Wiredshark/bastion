@@ -112,3 +112,6 @@ build-*.log
 
 readme/BASTION_LOOP_LOG.md
 readme/loop-sessions/
+
+## Python bytecode cache (apex tooling)
+__pycache__/
