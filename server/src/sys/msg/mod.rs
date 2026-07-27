@@ -339,6 +339,44 @@ mod semantic_ingress_tests {
         assert!(matches!(decoded, ClientGeneral::Terminate));
     }
 
+    /// `APEX-T3.3.20`: profile_root mismatch was implemented (both
+    /// sides) since `T3.3.08` but never independently unit-tested --
+    /// found by this row's own 160-case coverage-mapping exercise
+    /// (`canary_coverage.rs`), closed here rather than left as a
+    /// silent gap.
+    #[test]
+    fn unsupported_profile_is_rejected() {
+        let state = receive_state();
+        let b = binding();
+        let msg = sample_msg();
+        let payload_bytes = encode_payload_v1(&msg);
+        let wrong_profile_root = common::apex::digest::DigestBytes32V1::from_array([0xAB; 32]);
+        let payload_schema = msg.payload_schema();
+        let payload_encoding = SemanticPayloadEncodingV1::Bincode2LegacySerde;
+        let payload_digest = payload_digest_v1(wrong_profile_root, payload_schema, payload_encoding, &payload_bytes);
+        let header = NetEnvelopeHeaderV1 {
+            profile_root: wrong_profile_root,
+            server_boot_id: b.server_boot_id,
+            session_id: b.session_id,
+            connection_epoch: b.epoch,
+            direction: SemanticDirectionV1::ClientToServer,
+            semantic_stream: msg.semantic_stream(),
+            sequence: NonZeroU64::new(1).unwrap(),
+            causality: SemanticCausalityV1 { producer_tick: None, snapshot: None },
+            payload_schema,
+            payload_encoding,
+            payload_len: payload_bytes.len() as u64,
+            payload_digest,
+            command_id: None,
+        };
+        let frame = SemanticWireFrameV1 { header, payload_bytes };
+        let raw = common::apex::manifest::encode_manifest_v1(&frame, &semantic_manifest_limits()).unwrap();
+        assert_eq!(
+            validate_semantic_frame_v1(&raw, &state, SemanticStreamIdV1::General).unwrap_err(),
+            SemanticEnvelopeRejectV1::UnsupportedProfile
+        );
+    }
+
     #[test]
     fn wrong_boot_is_rejected() {
         let state = receive_state();
