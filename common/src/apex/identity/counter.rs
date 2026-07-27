@@ -32,6 +32,24 @@ impl ConnectionEpoch {
     pub const fn get(self) -> u64 { self.0 }
 }
 
+// Serde added at APEX-T3.2, same reason opaque.rs's IDs got it at
+// APEX-T3.1: live wire migration belongs to the owning row, not T0.4
+// (which deliberately omitted it). Manual, not derived: a derived impl
+// on this `#[repr(transparent)]` `u64` wrapper would happily deserialize
+// `0`, silently bypassing the zero-reserved invariant `new` enforces --
+// the same class of bug the T3.1 revalidation caught for the opaque UUID
+// IDs, here for a scalar instead of a UUID.
+impl serde::Serialize for ConnectionEpoch {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> { self.0.serialize(serializer) }
+}
+
+impl<'de> serde::Deserialize<'de> for ConnectionEpoch {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value: u64 = serde::Deserialize::deserialize(deserializer)?;
+        Self::new(value).map_err(|e| serde::de::Error::custom(e.terminal_class()))
+    }
+}
+
 /// A counter family where zero is a legitimate initial value (owning
 /// schema decides genesis/reserved-value policy, not this module).
 macro_rules! zero_valid_counter {
@@ -83,6 +101,28 @@ mod tests {
         assert_eq!(ConnectionEpoch::new(0).unwrap_err(), IdentityDecodeErrorV1::ZeroReserved);
         assert_eq!(ConnectionEpoch::INVALID.get(), 0);
         assert_eq!(ConnectionEpoch::FIRST.get(), 1);
+    }
+
+    /// APEX-T3.2: `ConnectionEpoch` crosses the bincode-legacy wire
+    /// (`ClientRegister`/`ServerInit::GameSync`) via the manual impl
+    /// above -- prove it round-trips as a compact 8-byte u64 (not some
+    /// wrapped/length-prefixed shape a naive derive might produce) and
+    /// that decode re-validates the zero-reserved invariant rather than
+    /// trusting the wire.
+    #[test]
+    fn bincode_legacy_round_trip_is_exactly_eight_raw_bytes() {
+        let epoch = ConnectionEpoch::new(7).unwrap();
+        let bytes = bincode::serde::encode_to_vec(epoch, bincode::config::legacy()).unwrap();
+        assert_eq!(bytes.len(), 8, "a bare u64 has no length prefix under bincode legacy");
+        let (decoded, _): (ConnectionEpoch, usize) = bincode::serde::decode_from_slice(&bytes, bincode::config::legacy()).unwrap();
+        assert_eq!(decoded, epoch);
+    }
+
+    #[test]
+    fn bincode_deserialize_rejects_zero() {
+        let zero_bytes = bincode::serde::encode_to_vec(0u64, bincode::config::legacy()).unwrap();
+        let result: Result<(ConnectionEpoch, usize), _> = bincode::serde::decode_from_slice(&zero_bytes, bincode::config::legacy());
+        assert!(result.is_err(), "decode must re-validate zero-reserved, not trust the wire");
     }
 
     #[test]

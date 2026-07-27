@@ -1,6 +1,7 @@
 use authc::AuthClientError;
-use common::apex::identity::ServerBootId;
-use common_net::msg::server::BanInfo;
+use common::apex::identity::{ConnectionEpoch, ServerBootId};
+use common_net::msg::ClientType;
+use common_net::msg::server::{BanInfo, SessionBindingV1};
 pub use network::{InitProtocolError, NetworkConnectError, NetworkError};
 use network::{ParticipantError, StreamError};
 use rustls::Error as RustlsError;
@@ -43,6 +44,37 @@ pub enum Error {
     Other(String),
     SpecsErr(SpecsError),
     RustlsErr(RustlsError),
+    /// APEX-T3.2: `RegisterAnswer` and `GameSync` carried different
+    /// `SessionBindingV1`s -- checked before `State` construction, same
+    /// shape as `ServerBootMismatch` above (spec section 3.5, canaries
+    /// SES-045/046).
+    SessionBindingMismatch {
+        register_answer: SessionBindingV1,
+        game_sync: SessionBindingV1,
+    },
+    /// APEX-T3.2 (`UNKNOWN-SESSION`).
+    UnknownSession,
+    /// APEX-T3.2 (`SESSION-PRINCIPAL-MISMATCH`).
+    SessionPrincipalMismatch,
+    /// APEX-T3.2 (`SESSION-EXPIRED`).
+    SessionExpired,
+    /// APEX-T3.2 (`STALE-CONNECTION-EPOCH`/`FUTURE-CONNECTION-EPOCH`).
+    ConnectionEpochMismatch {
+        current: ConnectionEpoch,
+        expected: ConnectionEpoch,
+    },
+    /// APEX-T3.2 (`CONNECTION-EPOCH-EXHAUSTED`).
+    ConnectionEpochExhausted,
+    /// APEX-T3.2 (`SESSION-CLIENT-TYPE-MISMATCH`).
+    SessionClientTypeMismatch {
+        session: ClientType,
+        requested: ClientType,
+    },
+    /// APEX-T3.2 (`OLDER-ATTEMPT-SUPERSEDED`): this registration attempt
+    /// lost a same-phase race to a newer attempt from the same principal
+    /// (e.g. a rapid double-click reconnect) -- not a credential/capacity
+    /// failure, just a stale loser. The caller should typically retry.
+    OlderAttemptSuperseded,
 }
 
 impl From<SpecsError> for Error {
@@ -81,6 +113,17 @@ pub fn check_game_sync_boot_scope(server_info: ServerBootId, game_sync: ServerBo
     }
 }
 
+/// APEX-T3.2: `RegisterAnswer`'s admitted `SessionBindingV1` must equal
+/// `GameSync`'s repeated one before `State::client` construction -- the
+/// session-layer twin of [`check_game_sync_boot_scope`] above.
+pub fn check_session_binding_equality(register_answer: SessionBindingV1, game_sync: SessionBindingV1) -> Result<(), Error> {
+    if register_answer != game_sync {
+        Err(Error::SessionBindingMismatch { register_answer, game_sync })
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,5 +152,34 @@ mod tests {
 
         // Positive control: matching IDs must not be rejected.
         assert!(check_game_sync_boot_scope(boot_b, boot_b).is_ok());
+    }
+
+    fn binding(seed: u8, epoch: u64) -> SessionBindingV1 {
+        use common::apex::identity::SessionId;
+        SessionBindingV1 {
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([seed; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(epoch).unwrap(),
+        }
+    }
+
+    /// APEX-T3.2 (client-side twin of the boot-scope test above, spec
+    /// section 3.5): `RegisterAnswer` and `GameSync` disagreeing on the
+    /// session binding must be rejected before `State` construction, and
+    /// matching bindings must not be.
+    #[test]
+    fn check_session_binding_equality_rejects_mismatch_and_accepts_same_binding() {
+        let a = binding(0x11, 1);
+        let b = binding(0x22, 1);
+        assert_ne!(a, b);
+
+        match check_session_binding_equality(a, b) {
+            Err(Error::SessionBindingMismatch { register_answer, game_sync }) => {
+                assert_eq!(register_answer, a);
+                assert_eq!(game_sync, b);
+            },
+            other => panic!("expected SessionBindingMismatch, got {other:?}"),
+        }
+
+        assert!(check_session_binding_equality(a, a).is_ok());
     }
 }

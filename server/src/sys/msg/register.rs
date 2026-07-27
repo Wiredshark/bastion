@@ -3,19 +3,20 @@ use crate::{
     client::Client,
     login_provider::{LoginProvider, PendingLogin},
     metrics::PlayerMetrics,
+    session_registry::{AuthenticatedIntentV1, DEFAULT_DETACHED_RETENTION_CAP, SessionRegistry},
     settings::{BanOperation, banlist::NormalizedIpAddr},
     sys::sentinel::TrackedStorages,
 };
 use authc::Uuid;
 use common::{
-    comp::{self, Admin, Player, Stats},
+    comp::{self, Admin, AdminRole, Player, Stats},
     event::{ClientDisconnectEvent, EventBus, MakeAdminEvent},
     recipe::default_component_recipe_book,
     resources::TimeOfDay,
     shared_server_config::ServerConstants,
     uid::Uid,
 };
-use common::apex::identity::ServerBootId;
+use common::apex::identity::{OsRandomBytesSourceV1, ServerBootId};
 use common_base::prof_span;
 
 /// APEX-T3.1.09: the exact boot-scope admission check `ClientRegister`
@@ -35,16 +36,17 @@ pub fn check_register_boot_scope(
 }
 use common_ecs::{Job, Origin, Phase, System};
 use common_net::msg::{
-    CharacterInfo, ClientRegister, DisconnectReason, PlayerInfo, PlayerListUpdate, RegisterError,
-    ServerGeneral, ServerInit, WorldMapMsg, server::ServerDescription,
+    CharacterInfo, ClientRegister, DisconnectReason, PlayerInfo, PlayerListUpdate,
+    RegisterError, ServerGeneral, ServerInit, SessionAdmissionV1, WorldMapMsg,
+    server::ServerDescription,
 };
-use hashbrown::{HashMap, hash_map};
-use itertools::Either;
+use hashbrown::HashMap;
 use rayon::prelude::*;
 use specs::{
-    Entities, Join, LendJoin, ParJoin, Read, ReadExpect, ReadStorage, SystemData, WriteExpect,
-    WriteStorage, shred,
+    Entities, Entity, Join, LendJoin, ParJoin, Read, ReadExpect, ReadStorage, SystemData,
+    WriteExpect, WriteStorage, shred,
 };
+use std::time::Instant;
 use tracing::{debug, info, trace, warn};
 
 #[cfg(feature = "plugins")]
@@ -74,6 +76,21 @@ pub struct ReadData<'a> {
     data_dir: ReadExpect<'a, crate::DataDir>,
 }
 
+/// One completed, banned/whitelist/client-type-checked authentication,
+/// collected during the parallel phase and committed against
+/// `SessionRegistry` only in the single sequential pass afterward (spec
+/// section 2.2 item 3: registry mutation never happens inside the
+/// parallel phase, canaries SES-024/065).
+struct CollectedAdmissionV1 {
+    entity: Entity,
+    uid: Uid,
+    principal: Uuid,
+    intent: AuthenticatedIntentV1,
+    player: Player,
+    admin_role: Option<AdminRole>,
+    player_list_update_msg: Option<crate::client::PreparedMsg>,
+}
+
 /// This system will handle new messages from clients
 #[derive(Default)]
 pub struct Sys;
@@ -84,6 +101,7 @@ impl<'a> System<'a> for Sys {
         WriteStorage<'a, Player>,
         WriteStorage<'a, PendingLogin>,
         WriteExpect<'a, EditableSettings>,
+        WriteExpect<'a, SessionRegistry>,
     );
 
     const NAME: &'static str = "msg::register";
@@ -92,7 +110,7 @@ impl<'a> System<'a> for Sys {
 
     fn run(
         _job: &mut Job<Self>,
-        (read_data, mut clients, mut players, mut pending_logins, mut editable_settings): Self::SystemData,
+        (read_data, mut clients, mut players, mut pending_logins, mut editable_settings, mut session_registry): Self::SystemData,
     ) {
         let mut make_admin_emitter = read_data.make_admin_events.emitter();
         // Player list to send new players, and lookup from UUID to entity (so we don't
@@ -132,43 +150,44 @@ impl<'a> System<'a> for Sys {
             })
             .unzip();
         let max_players = usize::from(read_data.settings.max_players);
-        // NOTE: max_players starts as a u16, so this will not use unlimited memory even
-        // if people set absurdly high values (though we should also cap the value
-        // elsewhere).
-        let capacity = max_players * 2;
-        // List of new players to update player lists of all clients.
-        //
-        // Big enough that we hopefully won't have to reallocate.
-        //
-        // Also includes a list of logins to retry and finished_pending, since we
-        // happen to update those around the same time that we update the new
-        // players list.
-        //
-        // NOTE: stdlib mutex is more than good enough on Linux and (probably) Windows,
-        // but not Mac.
-        let new_players = parking_lot::Mutex::new((
-            HashMap::<_, (_, _, _, _)>::with_capacity(capacity),
-            Vec::with_capacity(capacity),
-            Vec::with_capacity(capacity),
-        ));
 
-        // defer auth lockup
+        // Phase 1 (sequential, unchanged in spirit): drain ClientRegister,
+        // allocate this entity's SessionAttemptSeqV1 HERE -- before the
+        // awaited auth race below even begins (spec section 2.2 item 1,
+        // canary SES-051) -- and kick off LoginProvider::verify.
         for (entity, client) in (&read_data.entities, &mut clients).join() {
             let mut locale = None;
 
             let _ = super::try_recv_all(client, 0, |_, msg: ClientRegister| {
                 trace!(?msg.token_or_username, "defer auth lockup");
+                // Opus 5's T3.2 boundary-review finding: never default a
+                // failed allocation -- a defaulted attempt_seq is
+                // indistinguishable from a real `0`, which would let two
+                // same-principal registrations in one pass collide on the
+                // exact attempt_seq value `admit_sorted`'s own doc comment
+                // requires the caller to prevent (`BLOCK-AMBIGUOUS-ATTEMPT`).
+                // `Exhausted` here means this process has issued
+                // `u64::MAX` registration attempts since it started (this
+                // counter is process-lifetime, never persisted or
+                // restored) -- unreachable in practice, and by the time it
+                // happens process state has far bigger problems than one
+                // rejected login, so a loud panic is correct: there is no
+                // well-formed `RegisterError` response to build without a
+                // valid attempt_seq to build it from.
+                let attempt_seq = session_registry
+                    .allocate_attempt_seq()
+                    .expect("SessionAttemptSeqV1 (u64, process-lifetime) exhausted -- process state is unrecoverable");
                 // APEX-T3.1.09: compare before authentication -- a stale
                 // registration from a client that observed a prior server
                 // process's ServerInfo must never reach login_provider.verify.
                 let current = *read_data.server_boot_id;
                 if let Err(err) = check_register_boot_scope(msg.expected_server_boot_id, current) {
                     debug!("Rejecting ClientRegister: server boot ID mismatch (client observed a prior server process)");
-                    let pending = crate::login_provider::PendingLogin::new_failure(err);
+                    let pending = crate::login_provider::PendingLogin::new_failure(err, msg.session_request, attempt_seq);
                     let _ = pending_logins.insert(entity, pending);
                     return Ok(());
                 }
-                let pending = read_data.login_provider.verify(&msg.token_or_username);
+                let pending = read_data.login_provider.verify(&msg.token_or_username, msg.session_request, attempt_seq);
                 locale = msg.locale;
                 let _ = pending_logins.insert(entity, pending);
                 Ok(())
@@ -180,13 +199,19 @@ impl<'a> System<'a> for Sys {
             }
         }
 
-        let old_player_count = player_list.len();
-
         // NOTE: this is just default value.
         //
         // It will be overwritten in ServerExt::update_character_data.
         let battle_mode = read_data.settings.gameplay.battle_mode.default_mode();
         let mut upgradeable_bans: EventBus<(NormalizedIpAddr, Uuid, String)> = EventBus::default();
+
+        // Phase 2 (parallel): resolve auth (ban/whitelist/client-type only
+        // -- NO capacity check, NO SessionRegistry access here, per spec
+        // section 2.2 item 3/5, canaries SES-023/024/065/083). Collect
+        // every ban/whitelist/client-type-passed authentication for the
+        // sequential commit pass below.
+        let collected: parking_lot::Mutex<Vec<CollectedAdmissionV1>> = parking_lot::Mutex::new(Vec::new());
+        let finished_pending: parking_lot::Mutex<Vec<Entity>> = parking_lot::Mutex::new(Vec::new());
 
         (
             &read_data.entities,
@@ -202,304 +227,161 @@ impl<'a> System<'a> for Sys {
                 || (read_data.client_disconnect_events.emitter(), upgradeable_bans.emitter()),
                 |(client_disconnect_emitter, upgradeable_ban_emitter), (entity, uid, client, _, pending)| {
                     prof_span!("msg::register login");
-                    if let Err(e) = || -> Result<(), crate::error::Error> {
-                        let extra_checks = |username: String, uuid: authc::Uuid| {
-                            // We construct a few things outside the lock to reduce contention.
-                            let pending_login = PendingLogin::new_success(username.clone(), uuid);
-                            let player = Player::new(username, battle_mode, uuid, None);
+                    // No capacity gate here -- always "not exceeded"; capacity is
+                    // decided once, in the sequential SessionRegistry commit pass
+                    // (spec section 4 policy 1, canary SES-083).
+                    let player_count_exceeded = |username: String, uuid: authc::Uuid| (false, (username, uuid));
+
+                    match LoginProvider::login(
+                        pending,
+                        client,
+                        &editable_settings.admins,
+                        &editable_settings.whitelist,
+                        &editable_settings.banlist,
+                        player_count_exceeded,
+                        |ip, uuid, username| upgradeable_ban_emitter.emit((ip, uuid, username)),
+                    ) {
+                        None => {},
+                        Some(Err(e)) => {
+                            finished_pending.lock().push(entity);
+                            trace!(?e, "pending login returned error");
+                            client_disconnect_emitter.emit(ClientDisconnectEvent(entity, common::comp::DisconnectReason::Kicked));
+                            let _ = client.send(Err::<SessionAdmissionV1, _>(e));
+                        },
+                        Some(Ok((username, uuid))) => {
+                            finished_pending.lock().push(entity);
                             let admin = editable_settings.admins.get(&uuid);
-                            let player_list_update_msg = player
-                                .is_valid()
-                                .then_some(PlayerInfo {
-                                    player_alias: player.alias.clone(),
-                                    is_online: true,
-                                    is_moderator: admin.is_some(),
-                                    character: None, // new players will be on character select.
-                                    uuid: player.uuid(),
-                                })
-                                .map(|player_info| {
-                                    // Prepare the player list update to be sent to all clients.
-                                    client.prepare(ServerGeneral::PlayerListUpdate(
-                                        PlayerListUpdate::Add(*uid, player_info),
-                                    ))
-                                });
-                            // Check if this player was already logged in before the system
-                            // started.
-                            let old_player = old_players_by_uuid
-                            .get(&uuid)
-                            .copied()
-                            // We only need the old client to report an error; however, we
-                            // can't assume the old player has a client (even though it would
-                            // be a bit strange for them not to), so we have to remember that
-                            // case.  So we grab the old client (outside the lock, to avoid
-                            // contention).  We have to distinguish this from the case of a
-                            // *new* player already having logged in (which we can't check
-                            // until the lock is taken); in that case, we *know* the client
-                            // is present, since the list is only populated by the current
-                            // join (which includes the client).
-                            .map(|entity| (entity, Some(clients.get(entity))));
-                            // We take the lock only when necessary, and for a short duration,
-                            // to avoid contention with other threads.  We need to hold the
-                            // guard past the end of the login function because otherwise
-                            // there's a race between when we read it and when we (potentially)
-                            // write to it.
-                            let guard = new_players.lock();
-                            // Guard comes first in the tuple so it's dropped before the other
-                            // stuff if login returns an error.
-                            (
-                                old_player_count + guard.0.len() >= max_players,
-                                (
-                                    guard,
-                                    (
-                                        pending_login,
-                                        player,
-                                        admin,
-                                        player_list_update_msg,
-                                        old_player,
-                                    ),
-                                ),
-                            )
-                        };
-
-                        // Destructure new_players_guard last so it gets dropped before the other
-                        // three.
-                        let (
-                            (pending_login, player, admin, player_list_update_msg, old_player),
-                            mut new_players_guard,
-                        ) = match LoginProvider::login(
-                            pending,
-                            client,
-                            &editable_settings.admins,
-                            &editable_settings.whitelist,
-                            &editable_settings.banlist,
-                            extra_checks,
-                            |ip, uuid, username| {
-                                upgradeable_ban_emitter.emit((ip, uuid, username))
-                            },
-                        ) {
-                            None => return Ok(()),
-                            Some(r) => {
-                                match r {
-                                    Err(e) => {
-                                        new_players.lock().2.push(entity);
-                                        // NOTE: Done only on error to avoid doing extra work within
-                                        // the lock.
-                                        trace!(?e, "pending login returned error");
-                                        client_disconnect_emitter.emit(ClientDisconnectEvent(
-                                            entity,
-                                            common::comp::DisconnectReason::Kicked,
-                                        ));
-                                        client.send(Err(e))?;
-                                        return Ok(());
+                            if !client.client_type.is_valid_for_role(admin.map(|admin| admin.role.into())) {
+                                client_disconnect_emitter.emit(ClientDisconnectEvent(entity, common::comp::DisconnectReason::InvalidClientType));
+                                return;
+                            }
+                            let player = Player::new(username, battle_mode, uuid, None);
+                            let player_list_update_msg = player.is_valid().then(|| {
+                                client.prepare(ServerGeneral::PlayerListUpdate(PlayerListUpdate::Add(
+                                    *uid,
+                                    PlayerInfo {
+                                        player_alias: player.alias.clone(),
+                                        is_online: true,
+                                        is_moderator: admin.is_some(),
+                                        character: None,
+                                        uuid: player.uuid(),
                                     },
-                                    // Swap the order of the tuple, so when it's destructured guard
-                                    // is dropped first.
-                                    Ok((guard, res)) => (res, guard),
-                                }
-                            },
-                        };
-
-                        if !client
-                            .client_type
-                            .is_valid_for_role(admin.map(|admin| admin.role.into()))
-                        {
-                            drop(new_players_guard);
-                            client_disconnect_emitter.emit(ClientDisconnectEvent(
+                                )))
+                            });
+                            if player_list_update_msg.is_none() {
+                                let _ = client.send(Err::<SessionAdmissionV1, _>(RegisterError::InvalidCharacter));
+                                return;
+                            }
+                            collected.lock().push(CollectedAdmissionV1 {
                                 entity,
-                                common::comp::DisconnectReason::InvalidClientType,
-                            ));
-                            return Ok(());
-                        }
-
-                        let (new_players_by_uuid, retries, finished_pending) =
-                            &mut *new_players_guard;
-                        finished_pending.push(entity);
-                        // Check if the user logged in before us during this tick (this is why we
-                        // need the lock held).
-                        let uuid = player.uuid();
-                        let old_player = old_player.map_or_else(
-                            move || match new_players_by_uuid.entry(uuid) {
-                                // We don't actually extract the client yet, to avoid doing extra
-                                // work with the lock held.
-                                hash_map::Entry::Occupied(o) => Either::Left((o.get().0, None)),
-                                hash_map::Entry::Vacant(v) => Either::Right(v),
-                            },
-                            Either::Left,
-                        );
-                        let vacant_player = match old_player {
-                            Either::Left((old_entity, old_client)) => {
-                                if matches!(old_client, None | Some(Some(_))) {
-                                    // We can't login the new client right now as the
-                                    // removal of the old client and player occurs later in
-                                    // the tick, so we instead setup the new login to be
-                                    // processed in the next tick
-                                    // Create "fake" successful pending auth and mark it to
-                                    // be inserted into pending_logins at the end of this
-                                    // run.
-                                    retries.push((entity, pending_login));
-                                    drop(new_players_guard);
-                                    let old_client = old_client
-                                        .flatten()
-                                        .or_else(|| clients.get(old_entity))
-                                        .expect(
-                                            "All entries in the new player list were explicitly \
-                                             joining on client",
-                                        );
-                                    let _ = old_client.send(ServerGeneral::Disconnect(
-                                        DisconnectReason::Kicked(String::from(
-                                            "You have logged in from another location.",
-                                        )),
-                                    ));
-                                } else {
-                                    drop(new_players_guard);
-                                    // A player without a client is strange, so we don't really want
-                                    // to retry.  Warn about this case and hope that trying to
-                                    // perform the disconnect process removes the invalid player
-                                    // entry.
-                                    warn!(
-                                        "Player without client detected for entity {:?}",
-                                        old_entity
-                                    );
-                                }
-                                // Remove old client
-                                client_disconnect_emitter.emit(ClientDisconnectEvent(
-                                    old_entity,
-                                    common::comp::DisconnectReason::NewerLogin,
-                                ));
-                                return Ok(());
-                            },
-                            Either::Right(v) => v,
-                        };
-
-                        let Some(player_login_msg) = player_list_update_msg else {
-                            drop(new_players_guard);
-                            // Invalid player
-                            client.send(Err(RegisterError::InvalidCharacter))?;
-                            return Ok(());
-                        };
-
-                        // We know the player list didn't already contain this entity because we
-                        // joined on !players, so we can assume from here that we'll definitely be
-                        // adding a new player.
-
-                        // Add to list to notify all clients of the new player
-                        vacant_player.insert((
-                            entity,
-                            player,
-                            admin,
-                            client
-                                .client_type
-                                .emit_login_events()
-                                .then_some(player_login_msg),
-                        ));
-                        drop(new_players_guard);
-                        read_data.player_metrics.players_connected.inc();
-
-                        // Tell the client its request was successful.
-                        client.send(Ok(()))?;
-
-                        #[cfg(feature = "plugins")]
-                        let active_plugins = read_data.plugin_mgr.plugin_list();
-                        #[cfg(not(feature = "plugins"))]
-                        let active_plugins = Vec::default();
-
-                        let server_descriptions = &editable_settings.server_description;
-                        let description = ServerDescription {
-                            motd: server_descriptions
-                                .get(client.locale.as_deref())
-                                .map(|d| d.motd.clone())
-                                .unwrap_or_default(),
-                            rules: server_descriptions
-                                .get_rules(client.locale.as_deref())
-                                .map(str::to_string),
-                        };
-
-                        // Send client all the tracked components currently attached to its entity
-                        // as well as synced resources (currently only `TimeOfDay`)
-                        debug!("Starting initial sync with client.");
-                        client.send(ServerInit::GameSync {
-                            server_boot_id: *read_data.server_boot_id,
-                            // Send client their entity
-                            entity_package: read_data
-                                .trackers
-                                .create_entity_package_with_uid(entity, *uid, None, None, None),
-                            role: admin.map(|admin| admin.role.into()),
-                            time_of_day: *read_data.time_of_day,
-                            max_group_size: read_data.settings.max_player_group_size,
-                            client_timeout: read_data.settings.client_timeout,
-                            world_map: (*read_data.map).clone(),
-                            recipe_book: (*read_data.recipe_book).clone(),
-                            component_recipe_book: default_component_recipe_book().cloned(),
-                            material_stats: (*read_data.material_stats).clone(),
-                            ability_map: (*read_data.ability_map).clone(),
-                            server_constants: ServerConstants {
-                                day_cycle_coefficient: read_data.settings.day_cycle_coefficient(),
-                            },
-                            description,
-                            active_plugins,
-                        })?;
-                        debug!("Done initial sync with client.");
-
-                        // Send initial player list.
-                        // DET-NET-015: build Init through the canonical helper so
-                        // the wire bytes are Uid-sorted (player_list is a HashMap
-                        // built in ECS join order) and the client initializes
-                        // deterministically. The ordering contract is unit-tested
-                        // in common_net (det_net_015_tests).
-                        client.send(ServerGeneral::PlayerListUpdate(
-                            PlayerListUpdate::init_canonical(
-                                player_list.iter().map(|(uid, info)| (*uid, info.clone())),
-                            ),
-                        ))?;
-
-                        Ok(())
-                    }() {
-                        trace!(?e, "failed to process register");
+                                uid: *uid,
+                                principal: uuid,
+                                intent: AuthenticatedIntentV1 {
+                                    principal: uuid,
+                                    client_type: client.client_type,
+                                    attempt_seq: pending.attempt_seq,
+                                    request: pending.session_request,
+                                    capacity_exempt: admin.is_some(),
+                                },
+                                player,
+                                admin_role: admin.map(|a| a.role.into()),
+                                player_list_update_msg,
+                            });
+                        },
                     }
                 },
             );
 
-        let (new_players, retries, finished_pending) = new_players.into_inner();
+        let finished_pending = finished_pending.into_inner();
+        let mut collected = collected.into_inner();
+
         finished_pending.into_iter().for_each(|e| {
             // Remove all entities in finished_pending from pending_logins.
             pending_logins.remove(e);
         });
 
-        // Insert retry attempts back into pending_logins to be processed next tick
-        for (entity, pending) in retries {
-            let _ = pending_logins.insert(entity, pending);
+        // Phase 3 (sequential): the ONLY place `SessionRegistry` is
+        // mutated. Sorts and commits `collected` canonically (spec
+        // section 2.2), then applies each outcome's ECS-lifecycle
+        // consequence (fresh insert, same-principal takeover with a
+        // retry-or-kick of the old entity exactly as before this row, or
+        // a typed rejection) sequentially -- no race, no mutex needed
+        // here at all.
+        let intents: Vec<(Entity, AuthenticatedIntentV1)> = collected.iter().map(|c| (c.entity, c.intent.clone())).collect();
+        let mut random_source = OsRandomBytesSourceV1;
+        let outcomes = session_registry.admit_sorted(intents, max_players, Instant::now(), DEFAULT_DETACHED_RETENTION_CAP, &mut random_source);
+
+        // Index collected by entity for the outcome pass below (collected
+        // is consumed by value as we go, order doesn't matter anymore).
+        collected.sort_by_key(|c| c.entity);
+        let mut new_players: HashMap<Uuid, (Entity, Player, Option<AdminRole>, Option<crate::client::PreparedMsg>)> = HashMap::new();
+
+        for (entity, outcome) in outcomes {
+            let Ok(idx) = collected.binary_search_by_key(&entity, |c| c.entity) else { continue };
+            let admission = collected.remove(idx);
+
+            match outcome {
+                Err(RegisterError::OlderAttemptSuperseded) => {
+                    // Lost a same-phase race to a newer attempt from the
+                    // same principal (SES-054/055) -- distinct from a kick,
+                    // this connection simply never becomes a session.
+                    let _ = clients.get(admission.entity).map(|c| c.send(Err::<SessionAdmissionV1, _>(RegisterError::OlderAttemptSuperseded)));
+                    read_data.client_disconnect_events.emitter().emit(ClientDisconnectEvent(admission.entity, common::comp::DisconnectReason::Kicked));
+                },
+                Err(e) => {
+                    let _ = clients.get(admission.entity).map(|c| c.send(Err::<SessionAdmissionV1, _>(e)));
+                    read_data.client_disconnect_events.emitter().emit(ClientDisconnectEvent(admission.entity, common::comp::DisconnectReason::Kicked));
+                },
+                Ok(admitted @ (SessionAdmissionV1::Replaced { .. } | SessionAdmissionV1::Resumed { .. })) => {
+                    // Same-principal takeover of a PRE-EXISTING (prior-tick,
+                    // already ECS-committed) session. Unlike the pre-T3.2
+                    // code, there is no same-tick retry-defer case to
+                    // handle here: `SessionRegistry` already resolved any
+                    // same-phase collision via `OlderAttemptSuperseded`
+                    // above, so a `Replaced`/`Resumed` outcome can only
+                    // ever correlate to an `old_players_by_uuid` entry from
+                    // a genuinely earlier tick, whose `Player` component is
+                    // already committed ECS storage -- no insert-ordering
+                    // hazard, so no deferral is needed.
+                    if let Some(&old_entity) = old_players_by_uuid.get(&admission.principal) {
+                        match clients.get(old_entity) {
+                            Some(old_client) => {
+                                let _ = old_client.send(ServerGeneral::Disconnect(DisconnectReason::Kicked(String::from(
+                                    "You have logged in from another location.",
+                                ))));
+                            },
+                            None => {
+                                warn!("Player without client detected for entity {:?}", old_entity);
+                            },
+                        }
+                        read_data.client_disconnect_events.emitter().emit(ClientDisconnectEvent(old_entity, common::comp::DisconnectReason::NewerLogin));
+                    }
+                    finalize_admission(&read_data, &clients, &editable_settings, &player_list, &mut new_players, admission, admitted);
+                },
+                Ok(admitted @ SessionAdmissionV1::Created { .. }) => {
+                    finalize_admission(&read_data, &clients, &editable_settings, &player_list, &mut new_players, admission, admitted);
+                },
+            }
         }
 
         // Handle new players.
         let msgs = new_players
             .into_values()
-            .filter_map(|(entity, player, admin, msg)| {
+            .filter_map(|(entity, player, admin_role, msg)| {
                 let username = &player.alias;
                 let uuid = player.uuid();
                 info!(?username, "New User");
                 // Add Player component to this client.
-                //
-                // Note that since players has been write locked for the duration of this
-                // system, we know that nobody else added any players since we
-                // last checked its value, and we checked that everything in
-                // new_players was not already in players, so we know the insert
-                // succeeds and the old entry was vacant.  Moreover, we know that all new
-                // players we added have different UUIDs both from each other, and from any old
-                // players, preserving the uniqueness invariant.
                 players
                     .insert(entity, player)
                     .expect("The entity was joined against in the same system, so it exists");
 
                 // Give the Admin component to the player if their name exists in
                 // admin list
-                if let Some(admin) = admin {
+                if let Some(role) = admin_role {
                     // We need to defer writing to the Admin storage since it's borrowed immutably
                     // by this system via TrackedStorages.
-                    make_admin_emitter.emit(MakeAdminEvent {
-                        entity,
-                        admin: Admin(admin.role.into()),
-                        uuid,
-                    });
+                    make_admin_emitter.emit(MakeAdminEvent { entity, admin: Admin(role), uuid });
                 }
                 msg
             })
@@ -530,4 +412,76 @@ impl<'a> System<'a> for Sys {
             }
         }
     }
+}
+
+/// Sends `RegisterAnswer`/`GameSync`/the initial player-list sync for a
+/// successfully-committed admission (any of `Created`/`Replaced`/
+/// `Resumed`) and stages the entity for the final `Player`-component
+/// insertion pass. Mirrors the pre-`T3.2` success path exactly (same
+/// three messages, same ordering), only the `RegisterAnswer`/`GameSync`
+/// payloads themselves are new.
+fn finalize_admission(
+    read_data: &ReadData,
+    clients: &WriteStorage<Client>,
+    editable_settings: &EditableSettings,
+    player_list: &HashMap<Uid, PlayerInfo>,
+    new_players: &mut HashMap<Uuid, (Entity, Player, Option<AdminRole>, Option<crate::client::PreparedMsg>)>,
+    admission: CollectedAdmissionV1,
+    admitted: SessionAdmissionV1,
+) {
+    let Some(client) = clients.get(admission.entity) else { return };
+    read_data.player_metrics.players_connected.inc();
+
+    // Tell the client its request was successful.
+    if client.send(Ok::<_, RegisterError>(admitted)).is_err() {
+        return;
+    }
+
+    #[cfg(feature = "plugins")]
+    let active_plugins = read_data.plugin_mgr.plugin_list();
+    #[cfg(not(feature = "plugins"))]
+    let active_plugins = Vec::default();
+
+    let server_descriptions = &editable_settings.server_description;
+    let description = ServerDescription {
+        motd: server_descriptions.get(client.locale.as_deref()).map(|d| d.motd.clone()).unwrap_or_default(),
+        rules: server_descriptions.get_rules(client.locale.as_deref()).map(str::to_string),
+    };
+
+    // Send client all the tracked components currently attached to its
+    // entity as well as synced resources (currently only `TimeOfDay`).
+    debug!("Starting initial sync with client.");
+    let session_binding = admitted.binding();
+    if client
+        .send(ServerInit::GameSync {
+            server_boot_id: *read_data.server_boot_id,
+            entity_package: read_data.trackers.create_entity_package_with_uid(admission.entity, admission.uid, None, None, None),
+            role: admission.admin_role,
+            time_of_day: *read_data.time_of_day,
+            max_group_size: read_data.settings.max_player_group_size,
+            client_timeout: read_data.settings.client_timeout,
+            world_map: (*read_data.map).clone(),
+            recipe_book: (*read_data.recipe_book).clone(),
+            component_recipe_book: default_component_recipe_book().cloned(),
+            material_stats: (*read_data.material_stats).clone(),
+            ability_map: (*read_data.ability_map).clone(),
+            server_constants: ServerConstants { day_cycle_coefficient: read_data.settings.day_cycle_coefficient() },
+            description,
+            active_plugins,
+            session_binding,
+        })
+        .is_err()
+    {
+        return;
+    }
+    debug!("Done initial sync with client.");
+
+    // Send initial player list.
+    // DET-NET-015: build Init through the canonical helper so the wire
+    // bytes are Uid-sorted and the client initializes deterministically.
+    let _ = client.send(ServerGeneral::PlayerListUpdate(PlayerListUpdate::init_canonical(
+        player_list.iter().map(|(uid, info)| (*uid, info.clone())),
+    )));
+
+    new_players.insert(admission.principal, (admission.entity, admission.player, admission.admin_role, admission.player_list_update_msg));
 }

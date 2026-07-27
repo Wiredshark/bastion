@@ -13536,6 +13536,7 @@ fn t3_1_17_scenario(args: &Args) -> ExitCode {
     // GameSync.
     let stale_register = ClientRegister {
         expected_server_boot_id: boot_id_a,
+        session_request: common_net::msg::client::SessionRequestV1::New,
         token_or_username: "t3117-stale-player".into(),
         locale: None,
     };

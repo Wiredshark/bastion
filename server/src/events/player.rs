@@ -273,6 +273,37 @@ pub fn handle_client_disconnect(
 
         emit_logoff_event = client.client_type.emit_login_events();
         disconnected_event = Some(Event::ClientDisconnected { entity });
+
+        // APEX-T3.2 (spec section 4 policy 4): NetworkError/Timeout detach
+        // (retained, resumable session, SES-085/086); every other reason
+        // closes the session outright (SES-087-090). Looked up by this
+        // player's Uuid, not by SessionId directly -- disconnect handling
+        // only ever knows the entity/principal, never the session locator.
+        if let Some(uuid) = server.state().ecs().read_storage::<comp::Player>().get(entity).map(|p| p.uuid())
+            && let Some(session_id) = server
+                .state()
+                .ecs()
+                .read_resource::<crate::session_registry::SessionRegistry>()
+                .session_for_principal(uuid)
+        {
+            let mut session_registry = server.state().ecs().write_resource::<crate::session_registry::SessionRegistry>();
+            match reason {
+                comp::DisconnectReason::NetworkError | comp::DisconnectReason::Timeout => {
+                    session_registry.detach(
+                        session_id,
+                        std::time::Instant::now(),
+                        crate::session_registry::DETACHED_RETENTION_GRACE,
+                        crate::session_registry::DEFAULT_DETACHED_RETENTION_CAP,
+                    );
+                },
+                comp::DisconnectReason::ClientRequested
+                | comp::DisconnectReason::Kicked
+                | comp::DisconnectReason::NewerLogin
+                | comp::DisconnectReason::InvalidClientType => {
+                    session_registry.close(session_id);
+                },
+            }
+        }
     }
 
     let state = server.state_mut();
