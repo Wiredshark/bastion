@@ -220,6 +220,16 @@ impl ManifestEncodeV1 for W {
 pub enum PluginActivationErrorV1 {
     CanonicalizationFailure,
     NonAsciiIdentity,
+    /// .05 join: a resolved node has no supplied manifest whose RECOMPUTED
+    /// root matches the node's `manifest_root`. A stale or tampered
+    /// manifest object is indistinguishable from a missing one — both
+    /// refuse the whole plan.
+    ManifestMissingForNode { ordinal: u32 },
+    /// A supplied manifest failed its own root recomputation.
+    ManifestRecomputeFailure,
+    /// .08: V1 compiles no SinglePlayer projection — the mode exists in
+    /// the type space only until live semantics are defined.
+    SinglePlayerPlanUnsupported,
 }
 
 fn text(s: &str) -> Result<ManifestValueV1, PluginActivationErrorV1> {
@@ -396,27 +406,51 @@ impl PluginActivationReceiptV1 {
     }
 }
 
-/// .05 seam (typed early so .02's acceptance holds — later steps consume
-/// roots, not loose vectors): compile the deployment plan as a PURE
-/// function of graph + policy + base content root.
+/// .05 — compile the deployment plan as a PURE function of graph +
+/// policy + base content root + the validated manifests. The manifest
+/// join is by RECOMPUTED root equality, never by plugin-id lookup: each
+/// supplied manifest re-derives its own `manifest_semantic_root` and a
+/// node joins only the manifest whose recomputed root equals the node's
+/// `manifest_root` (a manifest object mutated after admission fails the
+/// join instead of smuggling different modules under an admitted root).
 pub fn compile_deployment_plan_v1(
     graph: &ResolvedPluginGraphV1,
     policy: &PluginDeploymentAdmissionPolicyV1,
     base_content_root: ProtocolDigestV1,
+    manifests: &[super::manifest::ValidatedPluginManifestV1],
 ) -> Result<PluginDeploymentPlanV1, PluginActivationErrorV1> {
     let policy_root = policy.policy_root()?;
+    let recomputed: Vec<(ProtocolDigestV1, &super::manifest::ValidatedPluginManifestV1)> = manifests
+        .iter()
+        .map(|m| {
+            super::manifest::recompute_manifest_root(m)
+                .map(|root| (root, m))
+                .map_err(|_| PluginActivationErrorV1::ManifestRecomputeFailure)
+        })
+        .collect::<Result<_, _>>()?;
     let nodes = graph
         .nodes
         .iter()
-        .map(|n| PluginDeploymentNodeV1 {
-            ordinal: n.ordinal,
-            key: n.key.clone(),
-            artifact: n.archive_artifact.clone(),
-            archive_semantic_root: n.archive_semantic_root.clone(),
-            manifest_root: n.manifest_root.clone(),
-            modules: Vec::new(), // populated by .05's manifest join; typed seam now
+        .map(|n| {
+            let manifest = recomputed
+                .iter()
+                .find(|(root, _)| *root == n.manifest_root)
+                .map(|(_, m)| *m)
+                .ok_or(PluginActivationErrorV1::ManifestMissingForNode { ordinal: n.ordinal })?;
+            Ok(PluginDeploymentNodeV1 {
+                ordinal: n.ordinal,
+                key: n.key.clone(),
+                artifact: n.archive_artifact.clone(),
+                archive_semantic_root: n.archive_semantic_root.clone(),
+                manifest_root: n.manifest_root.clone(),
+                modules: manifest
+                    .modules
+                    .iter()
+                    .map(|md| PluginModuleDeploymentV1 { path: md.path.clone(), declared_world: md.world })
+                    .collect(),
+            })
         })
-        .collect();
+        .collect::<Result<_, PluginActivationErrorV1>>()?;
     Ok(PluginDeploymentPlanV1 {
         schema_version: PLUGIN_ACTIVATION_SCHEMA_VERSION_V1,
         graph_root: graph.graph_root.clone(),
@@ -425,6 +459,174 @@ pub fn compile_deployment_plan_v1(
         nodes,
         conflict_decisions: policy.conflict_decisions.clone(),
     })
+}
+
+/// .08 — the pure mode projection: ordinal-ordered subset of deployment
+/// nodes with at least one module whose declared world runs in `mode`.
+/// Node order comes from the resolver's canonical ordinals — never from
+/// discovery, transport, or container order.
+pub fn compile_mode_activation_plan_v1(
+    plan: &PluginDeploymentPlanV1,
+    mode: PluginActivationModeV1,
+) -> Result<PluginActivationPlanV1, PluginActivationErrorV1> {
+    if matches!(mode, PluginActivationModeV1::SinglePlayer) {
+        return Err(PluginActivationErrorV1::SinglePlayerPlanUnsupported);
+    }
+    let mut activations: Vec<u32> = plan
+        .nodes
+        .iter()
+        .filter(|n| n.modules.iter().any(|m| world_active_in_mode(m.declared_world, mode)))
+        .map(|n| n.ordinal)
+        .collect();
+    activations.sort_unstable();
+    Ok(PluginActivationPlanV1 { mode, deployment_root: plan.deployment_root()?, activations })
+}
+
+// ---------------------------------------------------------------------------
+// .07 — operator-owned conflict compilation. Claims arrive pre-expanded
+// to exact resource keys (.06 for assets, manifest runtime claims for
+// commands/animations); NOTHING here may resolve by container order.
+// ---------------------------------------------------------------------------
+
+/// One exact claim: this plugin publishes/owns this resource.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct PluginClaimV1 {
+    pub resource: PluginResourceKeyV1,
+    pub claimant: PluginNodeKeyV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PluginConflictErrorV1 {
+    /// ≥2 claimants and no operator decision — never auto-resolved.
+    UnresolvedCollision { resource: PluginResourceKeyV1, claimants: Vec<PluginNodeKeyV1> },
+    /// V1: no decision can authorize shadowing a base-game resource.
+    BaseResourceShadowingForbidden { resource: PluginResourceKeyV1, claimant: PluginNodeKeyV1 },
+    /// A decision for a resource with NO current collision — the policy
+    /// no longer matches the deployment; refuse instead of ignoring.
+    StaleDecision { resource: PluginResourceKeyV1 },
+    /// The decision's recorded claimant set differs from the observed one.
+    DecisionClaimantMismatch { resource: PluginResourceKeyV1 },
+    /// Resolution internally inconsistent with the observed claimants.
+    DecisionResolutionInvalid { resource: PluginResourceKeyV1, detail: &'static str },
+    /// The operator ruled this collision unacceptable: deployment refused.
+    OperatorRejectedCollision { resource: PluginResourceKeyV1 },
+    /// Two decisions naming the same resource: ambiguous policy, refused
+    /// (picking either would be container-order resolution).
+    DuplicateDecision { resource: PluginResourceKeyV1 },
+}
+
+/// .08 — which module worlds run in which mode. SinglePlayer is a schema
+/// placeholder: no V1 plan is compiled for it.
+fn world_active_in_mode(world: super::manifest::PluginModuleWorldV1, mode: PluginActivationModeV1) -> bool {
+    use super::manifest::PluginModuleWorldV1 as W;
+    match world {
+        W::Plugin => matches!(mode, PluginActivationModeV1::Server | PluginActivationModeV1::Client),
+        W::ServerPlugin => matches!(mode, PluginActivationModeV1::Server),
+        W::AnimationPlugin => matches!(mode, PluginActivationModeV1::Client),
+    }
+}
+
+/// A collision the operator resolved; consumed by mode projection (.08+).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PluginResolvedCollisionV1 {
+    pub resource: PluginResourceKeyV1,
+    pub claimants: Vec<PluginNodeKeyV1>,
+    pub resolution: PluginConflictResolutionV1,
+}
+
+/// Pure conflict compilation. Errors are reported in canonical resource
+/// order — input permutation can never move the outcome (acceptance: no
+/// collision resolved by container order).
+pub fn resolve_claim_conflicts_v1(
+    claims: &[PluginClaimV1],
+    base_resources: &[PluginResourceKeyV1],
+    decisions: &[PluginConflictDecisionV1],
+) -> Result<Vec<PluginResolvedCollisionV1>, PluginConflictErrorV1> {
+    let mut claims: Vec<PluginClaimV1> = claims.to_vec();
+    claims.sort();
+    claims.dedup(); // the same plugin claiming a resource in two modes is one claim
+
+    // Base shadowing first: unconditional, decision-independent.
+    for c in &claims {
+        if base_resources.contains(&c.resource) {
+            return Err(PluginConflictErrorV1::BaseResourceShadowingForbidden {
+                resource: c.resource.clone(),
+                claimant: c.claimant.clone(),
+            });
+        }
+    }
+
+    // Group into collisions (sorted input => groups and members ordered).
+    let mut collisions: Vec<(PluginResourceKeyV1, Vec<PluginNodeKeyV1>)> = Vec::new();
+    for c in &claims {
+        match collisions.last_mut() {
+            Some((res, members)) if *res == c.resource => members.push(c.claimant.clone()),
+            _ => collisions.push((c.resource.clone(), vec![c.claimant.clone()])),
+        }
+    }
+    collisions.retain(|(_, members)| members.len() >= 2);
+
+    // Every decision must match a live collision exactly; every collision
+    // must have a decision; no resource may carry two decisions.
+    let mut decision_resources: Vec<&PluginResourceKeyV1> = decisions.iter().map(|d| &d.resource).collect();
+    decision_resources.sort();
+    for pair in decision_resources.windows(2) {
+        if pair[0] == pair[1] {
+            return Err(PluginConflictErrorV1::DuplicateDecision { resource: pair[0].clone() });
+        }
+    }
+    let mut resolved = Vec::with_capacity(collisions.len());
+    for (resource, claimants) in &collisions {
+        let decision = decisions
+            .iter()
+            .find(|d| d.resource == *resource)
+            .ok_or_else(|| PluginConflictErrorV1::UnresolvedCollision {
+                resource: resource.clone(),
+                claimants: claimants.clone(),
+            })?;
+        let mut recorded = decision.claimants.clone();
+        recorded.sort();
+        if recorded != *claimants {
+            return Err(PluginConflictErrorV1::DecisionClaimantMismatch { resource: resource.clone() });
+        }
+        let invalid = |detail| PluginConflictErrorV1::DecisionResolutionInvalid { resource: resource.clone(), detail };
+        match &decision.resolution {
+            PluginConflictResolutionV1::Reject => {
+                return Err(PluginConflictErrorV1::OperatorRejectedCollision { resource: resource.clone() });
+            },
+            PluginConflictResolutionV1::ExclusiveOwner { owner, displaced } => {
+                if !claimants.contains(owner) {
+                    return Err(invalid("owner is not a claimant"));
+                }
+                let mut expected: Vec<PluginNodeKeyV1> =
+                    claimants.iter().filter(|k| *k != owner).cloned().collect();
+                expected.sort();
+                let mut got = displaced.clone();
+                got.sort();
+                if got != expected {
+                    return Err(invalid("displaced must be exactly the non-owner claimants"));
+                }
+            },
+            PluginConflictResolutionV1::OrderedConcatenate { providers, .. } => {
+                let mut got = providers.clone();
+                got.sort();
+                if got != *claimants {
+                    return Err(invalid("providers must be exactly the claimant set"));
+                }
+            },
+        }
+        resolved.push(PluginResolvedCollisionV1 {
+            resource: resource.clone(),
+            claimants: claimants.clone(),
+            resolution: decision.resolution.clone(),
+        });
+    }
+    for d in decisions {
+        if !collisions.iter().any(|(res, _)| *res == d.resource) {
+            return Err(PluginConflictErrorV1::StaleDecision { resource: d.resource.clone() });
+        }
+    }
+    Ok(resolved)
 }
 
 #[cfg(test)]
@@ -588,17 +790,237 @@ mod tests {
             graph_root: proto(b"graph"),
         };
         let policy = fixture_policy();
-        let plan1 = compile_deployment_plan_v1(&graph, &policy, proto(b"base")).unwrap();
-        let plan2 = compile_deployment_plan_v1(&graph, &policy, proto(b"base")).unwrap();
+        let plan1 = compile_deployment_plan_v1(&graph, &policy, proto(b"base"), &[]).unwrap();
+        let plan2 = compile_deployment_plan_v1(&graph, &policy, proto(b"base"), &[]).unwrap();
         assert_eq!(plan1.deployment_root().unwrap(), plan2.deployment_root().unwrap(), "pure function");
 
         let mut policy2 = policy.clone();
         policy2.policy_revision = 2;
-        let plan3 = compile_deployment_plan_v1(&graph, &policy2, proto(b"base")).unwrap();
+        let plan3 = compile_deployment_plan_v1(&graph, &policy2, proto(b"base"), &[]).unwrap();
         assert_ne!(
             plan1.deployment_root().unwrap(),
             plan3.deployment_root().unwrap(),
             "a policy change moves EVERY deployment root"
         );
+    }
+
+    /// .05 — real T2.3 validate → real T2.4 resolve → compile join.
+    #[test]
+    fn deployment_join_fills_modules_by_recomputed_root_and_refuses_otherwise() {
+        use super::super::archive_profile::CanonicalEntryV1;
+        use super::super::manifest::*;
+        use super::super::resolver::*;
+        use common::apex::digest::hash_artifact_bytes_v1;
+        use common::apex::manifest::CanonicalPathV1;
+
+        let toml = "manifest_version = 1\ndependencies = []\n\n[plugin]\nid = \"x:solo\"\nversion = \"1.0.0\"\n\
+                    host_api = \"veloren:plugin@0.0.1\"\n\n[[modules]]\npath = \"modules/solo.wasm\"\n\
+                    world = \"server-plugin\"\n\n[claims]\nasset_roots = []\n\n\
+                    [[claims.runtime]]\nmode = \"server\"\ncommands = []\nanimations = []\n";
+        let ns: Vec<CanonicalEntryV1> = ["plugin.toml", "modules/solo.wasm"]
+            .iter()
+            .map(|p| CanonicalEntryV1 {
+                path: CanonicalPathV1::new(*p).unwrap(),
+                portability_key: mtext(p),
+                size_bytes: 1,
+                content_sha256: [7; 32],
+            })
+            .collect();
+        let art = hash_artifact_bytes_v1(toml.as_bytes());
+        let archive_root = proto(b"archive-root");
+        let admission = validate_plugin_manifest_v1(
+            toml.as_bytes(),
+            &ns,
+            &art,
+            &archive_root,
+            &fixture_policy().manifest_limits,
+            PluginManifestEnforcementModeV1::StrictV1,
+            archive_root.clone(),
+        )
+        .unwrap();
+        let validated = match &admission {
+            PluginManifestAdmissionV1::ValidatedV1(v) => (**v).clone(),
+            other => panic!("{other:?}"),
+        };
+        let resolver_policy = PluginResolverPolicyV1 {
+            resolver_version: PLUGIN_RESOLVER_VERSION_V1,
+            multiplicity: PluginVersionMultiplicityPolicyV1::SingleVersionPerPluginId,
+            ready_order: PluginReadyOrderV1::AscendingNodeKey,
+            cycle_witness: PluginCycleWitnessPolicyV1::ResidualSortedDfsRotateMinV1,
+            limits: PluginResolverLimitsV1 {
+                max_node_count: 64,
+                max_edge_count: 256,
+                max_error_count: 16,
+                max_cycle_witness_nodes: 16,
+            },
+            policy_root: proto(b"resolver-policy"),
+        };
+        let graph = match resolve_plugin_graph_v1(vec![admission], &resolver_policy) {
+            PluginResolutionTerminalV1::Resolved(g) => g,
+            PluginResolutionTerminalV1::Rejected(r) => panic!("{:?}", r.errors),
+        };
+
+        let policy = fixture_policy();
+        let plan =
+            compile_deployment_plan_v1(&graph, &policy, proto(b"base"), std::slice::from_ref(&validated)).unwrap();
+        assert_eq!(plan.nodes.len(), 1);
+        assert_eq!(plan.nodes[0].modules.len(), 1, "the join must fill modules from the validated manifest");
+        assert_eq!(plan.nodes[0].modules[0].path.as_str(), "modules/solo.wasm");
+        assert_eq!(plan.nodes[0].modules[0].declared_world, PluginModuleWorldV1::ServerPlugin);
+
+        // No manifest supplied => typed refusal, never an empty-module node.
+        assert!(matches!(
+            compile_deployment_plan_v1(&graph, &policy, proto(b"base"), &[]),
+            Err(PluginActivationErrorV1::ManifestMissingForNode { ordinal: 0 })
+        ));
+
+        // A manifest mutated AFTER admission recomputes to a different
+        // root and fails the join — modules can't be smuggled under an
+        // admitted root.
+        let mut tampered = validated;
+        tampered.modules.clear();
+        assert!(matches!(
+            compile_deployment_plan_v1(&graph, &policy, proto(b"base"), &[tampered]),
+            Err(PluginActivationErrorV1::ManifestMissingForNode { ordinal: 0 })
+        ));
+    }
+
+    /// .07 — no collision resolved by container order.
+    #[test]
+    fn plugin_conflict_policy_v1_refuses_everything_but_exact_operator_decisions() {
+        let key = |id: &str| PluginNodeKeyV1 {
+            plugin_id: super::super::manifest::CanonicalPluginIdV1::parse(id, &fixture_policy().manifest_limits)
+                .unwrap(),
+            plugin_version: super::super::manifest::PluginVersionV1::parse("1.0.0").unwrap(),
+        };
+        let res = |kind: PluginResourceKindV1, name: &str| PluginResourceKeyV1 { kind, name: mtext(name) };
+        let cmd = res(PluginResourceKindV1::Command, "hello");
+        let anim = res(PluginResourceKindV1::Skeleton, "wave");
+        let claim = |r: &PluginResourceKeyV1, k: &str| PluginClaimV1 { resource: r.clone(), claimant: key(k) };
+        let decision = |r: &PluginResourceKeyV1, claimants: &[&str], resolution| PluginConflictDecisionV1 {
+            resource: r.clone(),
+            claimants: claimants.iter().map(|k| key(k)).collect(),
+            resolution,
+            policy_version: 1,
+        };
+
+        // Plugin/plugin command collision with an exact ExclusiveOwner
+        // decision resolves — and is permutation-invariant.
+        let claims = [claim(&cmd, "x:a"), claim(&cmd, "x:b"), claim(&anim, "x:a")];
+        let mut permuted = claims.to_vec();
+        permuted.reverse();
+        let decisions = [
+            decision(&cmd, &["x:a", "x:b"], PluginConflictResolutionV1::ExclusiveOwner {
+                owner: key("x:a"),
+                displaced: vec![key("x:b")],
+            }),
+        ];
+        let r1 = resolve_claim_conflicts_v1(&claims, &[], &decisions).unwrap();
+        let r2 = resolve_claim_conflicts_v1(&permuted, &[], &decisions).unwrap();
+        assert_eq!(r1, r2, "claim container order can never move the outcome");
+        assert_eq!(r1.len(), 1, "the solo animation claim is no collision");
+        assert_eq!(r1[0].resource, cmd);
+
+        // No decision => unresolved, never first/last-wins.
+        assert!(matches!(
+            resolve_claim_conflicts_v1(&claims, &[], &[]),
+            Err(PluginConflictErrorV1::UnresolvedCollision { .. })
+        ));
+        // Base/plugin: no decision can authorize shadowing base.
+        assert!(matches!(
+            resolve_claim_conflicts_v1(&claims, std::slice::from_ref(&anim), &decisions),
+            Err(PluginConflictErrorV1::BaseResourceShadowingForbidden { .. })
+        ));
+        // Claimant drift => mismatch (stale set recorded in the policy).
+        let drifted = [claim(&cmd, "x:a"), claim(&cmd, "x:c")];
+        assert!(matches!(
+            resolve_claim_conflicts_v1(&drifted, &[], &decisions),
+            Err(PluginConflictErrorV1::DecisionClaimantMismatch { .. })
+        ));
+        // Decision without a live collision => stale.
+        assert!(matches!(
+            resolve_claim_conflicts_v1(&[claim(&anim, "x:a")], &[], &decisions),
+            Err(PluginConflictErrorV1::StaleDecision { .. })
+        ));
+        // Operator Reject terminal.
+        assert!(matches!(
+            resolve_claim_conflicts_v1(&claims, &[], &[decision(&cmd, &["x:a", "x:b"], PluginConflictResolutionV1::Reject)]),
+            Err(PluginConflictErrorV1::OperatorRejectedCollision { .. })
+        ));
+        // Two decisions on one resource => ambiguous, refused.
+        let dup = [
+            decision(&cmd, &["x:a", "x:b"], PluginConflictResolutionV1::Reject),
+            decision(&cmd, &["x:a", "x:b"], PluginConflictResolutionV1::ExclusiveOwner {
+                owner: key("x:a"),
+                displaced: vec![key("x:b")],
+            }),
+        ];
+        assert!(matches!(
+            resolve_claim_conflicts_v1(&claims, &[], &dup),
+            Err(PluginConflictErrorV1::DuplicateDecision { .. })
+        ));
+        // OrderedConcatenate must name the claimant set exactly.
+        assert!(matches!(
+            resolve_claim_conflicts_v1(&claims, &[], &[decision(
+                &cmd,
+                &["x:a", "x:b"],
+                PluginConflictResolutionV1::OrderedConcatenate { combiner_id: mtext("cat"), providers: vec![key("x:a")] }
+            )]),
+            Err(PluginConflictErrorV1::DecisionResolutionInvalid { .. })
+        ));
+    }
+
+    /// .08 — mode projections.
+    #[test]
+    fn plugin_mode_activation_plans_v1_split_by_declared_world() {
+        use super::super::manifest::{CanonicalPluginIdV1, PluginModuleWorldV1, PluginVersionV1};
+        use common::apex::digest::hash_artifact_bytes_v1;
+        use common::apex::manifest::CanonicalPathV1;
+
+        let node = |ordinal: u32, id: &str, worlds: &[PluginModuleWorldV1]| PluginDeploymentNodeV1 {
+            ordinal,
+            key: PluginNodeKeyV1 {
+                plugin_id: CanonicalPluginIdV1::parse(id, &fixture_policy().manifest_limits).unwrap(),
+                plugin_version: PluginVersionV1::parse("1.0.0").unwrap(),
+            },
+            artifact: hash_artifact_bytes_v1(id.as_bytes()),
+            archive_semantic_root: proto(id.as_bytes()),
+            manifest_root: proto(id.as_bytes()),
+            modules: worlds
+                .iter()
+                .map(|w| PluginModuleDeploymentV1 { path: CanonicalPathV1::new("m.wasm").unwrap(), declared_world: *w })
+                .collect(),
+        };
+        let plan = PluginDeploymentPlanV1 {
+            schema_version: PLUGIN_ACTIVATION_SCHEMA_VERSION_V1,
+            graph_root: proto(b"graph"),
+            policy_root: fixture_policy().policy_root().unwrap(),
+            base_content_root: proto(b"base"),
+            nodes: vec![
+                node(0, "x:server-only", &[PluginModuleWorldV1::ServerPlugin]),
+                node(1, "x:both", &[PluginModuleWorldV1::Plugin]),
+                node(2, "x:anim", &[PluginModuleWorldV1::AnimationPlugin]),
+            ],
+            conflict_decisions: vec![],
+        };
+
+        let server = compile_mode_activation_plan_v1(&plan, PluginActivationModeV1::Server).unwrap();
+        let client = compile_mode_activation_plan_v1(&plan, PluginActivationModeV1::Client).unwrap();
+        assert_eq!(server.activations, vec![0, 1], "server-only + shared");
+        assert_eq!(client.activations, vec![1, 2], "server-only module absent from the client plan");
+        assert_eq!(server.deployment_root, client.deployment_root, "both projections tie to ONE deployment");
+        assert_ne!(server.activation_root().unwrap(), client.activation_root().unwrap());
+        // Stable: recompilation reproduces the roots byte-identically.
+        assert_eq!(
+            compile_mode_activation_plan_v1(&plan, PluginActivationModeV1::Server)
+                .unwrap()
+                .activation_root()
+                .unwrap(),
+            server.activation_root().unwrap()
+        );
+        assert!(matches!(
+            compile_mode_activation_plan_v1(&plan, PluginActivationModeV1::SinglePlayer),
+            Err(PluginActivationErrorV1::SinglePlayerPlanUnsupported)
+        ));
     }
 }

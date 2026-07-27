@@ -18,6 +18,7 @@ pub use assets_manager::{
 };
 
 mod fs;
+#[cfg(feature = "plugins")] pub mod plugin_asset_keys;
 #[cfg(feature = "plugins")] mod plugin_cache;
 mod walk;
 pub use walk::{Walk, walk_tree};
