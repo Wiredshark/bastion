@@ -57,3 +57,5 @@ thread-priority = { workspace = true }
 serde_json = { workspace = true }
 # APEX-T2.5.09 artifact-cache staging tests
 tempfile = "3.27.0"
+# APEX-T2.5.15 component-preflight fixtures (tiny wat-built components)
+wat = "1.252.0"

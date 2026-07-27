@@ -27,6 +27,26 @@ pub enum PluginModuleError {
     /// original failure is replayed for every later module (no module
     /// ever falls back to a private engine).
     RuntimeUnavailable { detail: String },
+    /// APEX-T2.5.15: the module failed component preflight.
+    Preflight(PluginPreflightErrorV1),
+}
+
+/// APEX-T2.5.15 — per-module preflight terminals, classified BY STAGE
+/// (compile → host-linker setup → import resolution/typecheck). Engine
+/// mismatch is unrepresentable since .14's single shared engine.
+#[derive(Debug)]
+pub enum PluginPreflightErrorV1 {
+    /// The shared runtime itself is unavailable (replayed .14 failure).
+    RuntimeUnavailable { detail: String },
+    /// `Component::from_binary` rejected the bytes
+    /// (`PLUGIN-COMPILE-FAILED`).
+    CompileFailed { module: String, detail: String },
+    /// Host API registration on the linker failed
+    /// (`PLUGIN-LINKER-CONFLICT`).
+    LinkerSetupFailed { module: String, detail: String },
+    /// `instantiate_pre` could not resolve/typecheck the component's
+    /// imports (`PLUGIN-IMPORT-FAILED`).
+    ImportResolutionFailed { module: String, detail: String },
 }
 
 /// APEX-T2.1.01 — inspection-phase failures (archive/config/manifest reading;

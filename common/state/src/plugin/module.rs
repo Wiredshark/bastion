@@ -12,7 +12,7 @@ use std::{
 
 use super::{
     CommandResults,
-    errors::PluginModuleError,
+    errors::{PluginModuleError, PluginPreflightErrorV1},
     memory_manager::{EcsAccessManager, EcsWorld},
 };
 use hashbrown::{HashMap, HashSet};
@@ -479,6 +479,46 @@ pub fn plugin_runtime_v1() -> Result<&'static PluginRuntimeV1, PluginModuleError
         .map_err(|e| PluginModuleError::RuntimeUnavailable { detail: e.clone() })
 }
 
+/// `APEX-T2.5.15` — a component that has passed the FULL preflight:
+/// compiled, host linker built, and every import resolved/typechecked
+/// via `instantiate_pre`. Holding one has no side effects; actual
+/// instantiation, wrapper construction, and load hooks remain separate
+/// fallible stages.
+pub struct PreparedPluginModuleV1 {
+    name: String,
+    instance_pre: wasmtime::component::InstancePre<WasiHostCtx>,
+}
+
+impl PreparedPluginModuleV1 {
+    pub fn name(&self) -> &str { &self.name }
+}
+
+/// `APEX-T2.5.15` — the preflight: exact bytes → component → import
+/// resolution/typecheck, each stage a distinct typed terminal. Runs
+/// BEFORE any store, instance, wrapper, or publication exists.
+pub fn preflight_component_v1(
+    name: &str,
+    wasm_data: &[u8],
+) -> Result<PreparedPluginModuleV1, PluginPreflightErrorV1> {
+    let engine = plugin_runtime_v1()
+        .map_err(|e| PluginPreflightErrorV1::RuntimeUnavailable { detail: format!("{e:?}") })?
+        .engine();
+    let component = Component::from_binary(engine, wasm_data).map_err(|e| {
+        PluginPreflightErrorV1::CompileFailed { module: name.to_owned(), detail: e.to_string() }
+    })?;
+    let mut linker: Linker<WasiHostCtx> = Linker::new(engine);
+    wasmtime_wasi::p2::add_to_linker_sync(&mut linker).map_err(|e| {
+        PluginPreflightErrorV1::LinkerSetupFailed { module: name.to_owned(), detail: e.to_string() }
+    })?;
+    Plugin::add_to_linker::<_, HasSelf<_>>(&mut linker, |x| x).map_err(|e| {
+        PluginPreflightErrorV1::LinkerSetupFailed { module: name.to_owned(), detail: e.to_string() }
+    })?;
+    let instance_pre = linker.instantiate_pre(&component).map_err(|e| {
+        PluginPreflightErrorV1::ImportResolutionFailed { module: name.to_owned(), detail: e.to_string() }
+    })?;
+    Ok(PreparedPluginModuleV1 { name: name.to_owned(), instance_pre })
+}
+
 impl PluginModule {
     /// This function takes bytes from a WASM File and compile them.
     /// `limits = None` = legacy/ungoverned (unlimited, recorded);
@@ -488,6 +528,20 @@ impl PluginModule {
         wasm_data: &[u8],
         limits: Option<PluginStoreLimitsV1>,
     ) -> Result<Self, PluginModuleError> {
+        // APEX-T2.5.15: even the single-module path goes through the
+        // full preflight — there is no instantiate-without-preflight.
+        let prepared = preflight_component_v1(&name, wasm_data).map_err(PluginModuleError::Preflight)?;
+        Self::new_from_prepared(&prepared, limits)
+    }
+
+    /// `APEX-T2.5.15` — instantiate from a PREFLIGHTED component: store
+    /// setup + `InstancePre::instantiate` + wrapper probing. Compile and
+    /// import failures are impossible here by construction.
+    pub fn new_from_prepared(
+        prepared: &PreparedPluginModuleV1,
+        limits: Option<PluginStoreLimitsV1>,
+    ) -> Result<Self, PluginModuleError> {
+        let name = prepared.name.clone();
         let ecs = Arc::new(EcsAccessManager::default());
 
         // APEX-T2.5.14: the SHARED engine — no per-module Config exists.
@@ -535,18 +589,11 @@ impl PluginModule {
             .set_fuel(fuel_per_event)
             .expect("fuel metering enabled by PluginRuntimeV1 construction");
 
-        // load wasm from binary
-        let module =
-            Component::from_binary(&engine, wasm_data).map_err(PluginModuleError::Wasmtime)?;
-
-        // register WASI and Veloren methods with the runtime
-        let mut linker = Linker::new(&engine);
-        wasmtime_wasi::p2::add_to_linker_sync(&mut linker).map_err(PluginModuleError::Wasmtime)?;
-        Plugin::add_to_linker::<_, HasSelf<_>>(&mut linker, |x| x)
-            .map_err(PluginModuleError::Wasmtime)?;
-
-        let instance_fut = linker.instantiate(&mut store, &module);
-        let instance = (instance_fut).map_err(PluginModuleError::Wasmtime)?;
+        // APEX-T2.5.15: instantiate from the PREFLIGHTED InstancePre —
+        // compile and import resolution already happened before any
+        // store existed; only instantiation itself can fail here.
+        let instance =
+            prepared.instance_pre.instantiate(&mut store).map_err(PluginModuleError::Wasmtime)?;
 
         let plugin = match Plugin::new(&mut store, &instance) {
             Ok(pl) => Ok(PluginWrapper::Full(pl)),
@@ -667,5 +714,50 @@ impl PluginModule {
         self.refuel();
         self.plugin
             .update_skeleton(self.store.get_mut().unwrap(), *body, *dep, time)
+    }
+}
+
+/// `APEX-T2.5.15` — component preflight canaries: each stage's terminal
+/// driven with a real (wat-built) fixture; no store or instance exists
+/// at any point in these tests.
+#[cfg(test)]
+mod plugin_component_preflight_v1 {
+    use super::*;
+
+    #[test]
+    fn preflight_stages_produce_their_own_terminals() {
+        // Malformed bytes: compile terminal.
+        assert!(matches!(
+            preflight_component_v1("junk", b"not wasm at all"),
+            Err(PluginPreflightErrorV1::CompileFailed { .. })
+        ));
+
+        // A valid but EMPTY component (no imports, no exports): preflight
+        // PASSES — imports resolve trivially. (Missing exports are the
+        // wrapper stage's business, .16.)
+        let empty = wat::parse_str("(component)").unwrap();
+        assert!(preflight_component_v1("empty", &empty).is_ok());
+
+        // Core wasm module (not a component): compile-stage refusal under
+        // the component-model config.
+        let core = wat::parse_str("(module)").unwrap();
+        assert!(matches!(
+            preflight_component_v1("core", &core),
+            Err(PluginPreflightErrorV1::CompileFailed { .. })
+        ));
+
+        // Unknown import: instantiate_pre resolution terminal — the
+        // exact class that used to surface only at live instantiation.
+        // NB: an EMPTY instance import is trivially satisfiable (observed
+        // directly — wasmtime provides it implicitly), so the fixture
+        // must import real content for resolution to have work to do.
+        let unknown_import = wat::parse_str(
+            r#"(component (import "nonexistent:pkg/iface@0.0.1" (instance (export "f" (func)))))"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            preflight_component_v1("ghost", &unknown_import),
+            Err(PluginPreflightErrorV1::ImportResolutionFailed { .. })
+        ));
     }
 }

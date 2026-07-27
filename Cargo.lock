@@ -8869,6 +8869,7 @@ dependencies = [
  "veloren-common-net",
  "wasmtime",
  "wasmtime-wasi",
+ "wat",
 ]
 
 [[package]]

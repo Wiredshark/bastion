@@ -349,7 +349,12 @@ impl Plugin {
         limits: Option<module::PluginStoreLimitsV1>,
     ) -> Result<Self, PluginInstantiationError> {
         let data = inspected.manifest;
-        let modules = data
+        // APEX-T2.5.15: COMPLETE preflight (compile + import
+        // resolution/typecheck) of EVERY module before ANY instantiation
+        // — a failure in the last module surfaces before the first
+        // module instantiates; only private objects exist until the
+        // whole set is through.
+        let preflighted = data
             .modules
             .iter()
             .map(|path| {
@@ -357,7 +362,19 @@ impl Plugin {
                     .legacy_files
                     .remove(path)
                     .expect("inspection verified every declared module has bytes");
-                PluginModule::new(data.name.to_owned(), &wasm_data, limits).map_err(|source| {
+                module::preflight_component_v1(&data.name, &wasm_data)
+                    .map(|prepared| (path.clone(), prepared))
+                    .map_err(|source| PluginInstantiationError::Module {
+                        plugin: data.name.to_owned(),
+                        module: path.clone(),
+                        source: PluginModuleError::Preflight(source),
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let modules = preflighted
+            .iter()
+            .map(|(path, prepared)| {
+                PluginModule::new_from_prepared(prepared, limits).map_err(|source| {
                     PluginInstantiationError::Module {
                         plugin: data.name.to_owned(),
                         module: path.clone(),
