@@ -365,6 +365,10 @@ impl SessionState {
         let positions = ecs.read_storage::<comp::Pos>();
         let bodies = ecs.read_storage::<comp::Body>();
         let colonists = ecs.read_storage::<comp::Colonist>();
+        let presentation_tick = crate::r1a_presentation::authoritative_snapshot_tick_v1(
+            client.get_tick(),
+            crate::render::bastion_r0d::certification_server_latch_v1(),
+        );
         let mut presentation_entities = (&entities, &uids, &positions, &bodies, &colonists)
             .join()
             .filter(|(entity, _, _, _, _)| *entity != own)
@@ -428,7 +432,7 @@ impl SessionState {
         .ok()?;
         let mut environment_bytes = Vec::with_capacity(48);
         environment_bytes.extend_from_slice(&terrain_resource);
-        environment_bytes.extend_from_slice(&client.get_tick().to_le_bytes());
+        environment_bytes.extend_from_slice(&presentation_tick.to_le_bytes());
         environment_bytes.extend_from_slice(&anchor.uid.to_le_bytes());
         let environment_digest = bastion_renderer_r0d::domain_hash_v1(
             "bastion/r1a/production-environment",
@@ -543,7 +547,7 @@ impl SessionState {
         };
         presentation_groups.sort();
         Some(crate::r1a_presentation::ProductionPresentationInputV1 {
-            simulation_tick: client.get_tick(),
+            simulation_tick: presentation_tick,
             camera_position_mm: {
                 let camera = self.scene.camera();
                 let position = camera.dependents().cam_pos + camera.get_focus_pos().map(f32::trunc);
