@@ -1,5 +1,6 @@
 pub mod archive_profile;
 pub mod manifest;
+pub mod activation_plan;
 pub mod resolver;
 pub mod errors;
 pub mod memory_manager;
