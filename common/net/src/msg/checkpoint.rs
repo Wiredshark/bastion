@@ -314,3 +314,126 @@ mod checkpoint_epoch_ordinal_v1 {
         assert_eq!(validate_ordinals_v1(&ord(&[1, 2, 2])), Err(E::OrdinalDuplicate { ordinal: 2 }));
     }
 }
+
+/// `APEX-T3.4.03` — apply-order policy. Ordinals are assigned by the
+/// egress total sort, then applied in phase order; the policy is
+/// equality-critical, so its root is bound into the descriptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointOrderErrorV1 {
+    DuplicateOrderKey,
+    UnknownPhase,
+    PhaseRegression { previous: u16, got: u16 },
+    PolicyMismatch,
+}
+
+/// One data record as the planner sees it: its egress sort key decides
+/// the ordinal, its phase decides when it applies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckpointRecordV1 {
+    pub egress_sort_key: Vec<u8>,
+    pub stream: SemanticStreamIdV1,
+    pub phase: CheckpointApplyPhaseV1,
+    pub payload_digest: [u8; 32],
+}
+
+/// Assigns dense ordinals by egress sort key. Input order is irrelevant;
+/// duplicate keys are a producer bug, not a tie to break.
+pub fn assign_ordinals_v1(
+    mut records: Vec<CheckpointRecordV1>,
+) -> Result<Vec<(CheckpointOrdinalV1, CheckpointRecordV1)>, CheckpointOrderErrorV1> {
+    records.sort_by(|a, b| a.egress_sort_key.cmp(&b.egress_sort_key));
+    if records.windows(2).any(|w| w[0].egress_sort_key == w[1].egress_sort_key) {
+        return Err(CheckpointOrderErrorV1::DuplicateOrderKey);
+    }
+    Ok(records
+        .into_iter()
+        .enumerate()
+        .map(|(i, r)| (CheckpointOrdinalV1(i as u64 + 1), r))
+        .collect())
+}
+
+/// Apply order = phase rank, then ordinal. Verifies a proposed apply
+/// sequence never regresses a phase.
+pub fn validate_apply_order_v1(
+    applied: &[(CheckpointOrdinalV1, CheckpointApplyPhaseV1)],
+) -> Result<(), CheckpointOrderErrorV1> {
+    let mut prev = (0u16, 0u64);
+    for (ord, phase) in applied {
+        let cur = (phase.rank(), ord.0);
+        if cur.0 < prev.0 {
+            return Err(CheckpointOrderErrorV1::PhaseRegression { previous: prev.0, got: cur.0 });
+        }
+        if cur <= prev {
+            return Err(CheckpointOrderErrorV1::DuplicateOrderKey);
+        }
+        prev = cur;
+    }
+    Ok(())
+}
+
+/// The canonical apply sequence for a record set.
+pub fn canonical_apply_sequence_v1(
+    assigned: &[(CheckpointOrdinalV1, CheckpointRecordV1)],
+) -> Vec<(CheckpointOrdinalV1, CheckpointApplyPhaseV1)> {
+    let mut out: Vec<(CheckpointOrdinalV1, CheckpointApplyPhaseV1)> =
+        assigned.iter().map(|(o, r)| (*o, r.phase)).collect();
+    out.sort_by_key(|(o, p)| (p.rank(), o.0));
+    out
+}
+
+#[cfg(test)]
+mod checkpoint_egress_order_v1 {
+    use super::*;
+
+    fn rec(key: &[u8], phase: CheckpointApplyPhaseV1) -> CheckpointRecordV1 {
+        CheckpointRecordV1 {
+            egress_sort_key: key.to_vec(),
+            stream: SemanticStreamIdV1::InGame,
+            phase,
+            payload_digest: [0; 32],
+        }
+    }
+
+    #[test]
+    fn same_intent_set_yields_same_tape_regardless_of_input_order() {
+        use CheckpointApplyPhaseV1 as Ph;
+        let mk = || {
+            vec![
+                rec(b"c", Ph::Components),
+                rec(b"a", Ph::OrderedEvent),
+                rec(b"b", Ph::IdentityLifecycle),
+            ]
+        };
+        let forward = assign_ordinals_v1(mk()).unwrap();
+        let mut reversed_input = mk();
+        reversed_input.reverse();
+        let reversed = assign_ordinals_v1(reversed_input).unwrap();
+        assert_eq!(forward, reversed);
+        // ordinal follows the sort key, not arrival
+        assert_eq!(forward[0].1.egress_sort_key, b"a".to_vec());
+        assert_eq!(forward[0].0, CheckpointOrdinalV1(1));
+
+        // apply sequence is phase-major, ordinal-minor
+        let seq = canonical_apply_sequence_v1(&forward);
+        assert!(validate_apply_order_v1(&seq).is_ok());
+        assert_eq!(seq[0].1, Ph::IdentityLifecycle);
+        assert_eq!(seq.last().unwrap().1, Ph::OrderedEvent);
+    }
+
+    #[test]
+    fn duplicate_key_and_phase_regression_are_typed() {
+        use CheckpointApplyPhaseV1 as Ph;
+        assert_eq!(
+            assign_ordinals_v1(vec![rec(b"x", Ph::Components), rec(b"x", Ph::InGameState)]),
+            Err(CheckpointOrderErrorV1::DuplicateOrderKey)
+        );
+        let bad = vec![
+            (CheckpointOrdinalV1(1), Ph::Components),
+            (CheckpointOrdinalV1(2), Ph::IdentityLifecycle),
+        ];
+        assert!(matches!(
+            validate_apply_order_v1(&bad),
+            Err(CheckpointOrderErrorV1::PhaseRegression { .. })
+        ));
+    }
+}
