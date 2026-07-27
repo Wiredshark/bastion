@@ -189,6 +189,7 @@ pub(crate) fn try_recv_all_semantic<F>(
     client: &mut Client,
     stream_id: u8,
     expected_semantic_stream: SemanticStreamIdV1,
+    metrics: &common_net::msg::envelope::SemanticIngressMetricsV1,
     mut handler: F,
 ) -> Result<u64, crate::error::Error>
 where
@@ -213,6 +214,10 @@ where
                 let advance_result = receive_state_mut.advance_expected(expected_semantic_stream);
                 if advance_result.is_err() {
                     warn!("semantic receive sequence exhausted; dropping message");
+                    metrics.record_terminal(
+                        common_net::msg::envelope::SemanticProtocolTerminalV1::SequenceExhausted,
+                        expected_semantic_stream,
+                    );
                     continue;
                 }
                 // `T3.3.17`: commit strictly AFTER the sequence cursor
@@ -221,6 +226,13 @@ where
                 if let Some(snapshot) = causality.snapshot {
                     receive_state_mut.commit_snapshot(snapshot);
                 }
+                // `T3.3.18`: "application error consumed sequence" --
+                // the cursor already advanced above, unconditionally,
+                // BEFORE this handler call; a handler-level application
+                // error below never gets the sequence back (structural,
+                // same "advance before handler call" ordering this
+                // whole pipeline already follows for every other
+                // commit).
                 if let Err(e) = handler(client, decoded) {
                     break Err(e);
                 }
@@ -228,6 +240,7 @@ where
             },
             Err(reject) => {
                 warn!(?reject, "semantic ingress rejected a frame");
+                metrics.record_reject(&reject, expected_semantic_stream);
             },
         }
     }
@@ -248,13 +261,14 @@ pub(crate) fn try_recv_all_dispatch<F>(
     client: &mut Client,
     stream_id: u8,
     semantic_stream: SemanticStreamIdV1,
+    metrics: &common_net::msg::envelope::SemanticIngressMetricsV1,
     handler: F,
 ) -> Result<u64, crate::error::Error>
 where
     F: FnMut(&Client, ClientGeneral) -> Result<(), crate::error::Error>,
 {
     if client.semantic_receive_state().is_some() {
-        try_recv_all_semantic(client, stream_id, semantic_stream, handler)
+        try_recv_all_semantic(client, stream_id, semantic_stream, metrics, handler)
     } else {
         try_recv_all(client, stream_id, handler)
     }
@@ -495,5 +509,45 @@ mod semantic_ingress_tests {
             validate_semantic_frame_v1(&raw, &state, SemanticStreamIdV1::General).unwrap_err(),
             SemanticEnvelopeRejectV1::WrongDirection
         );
+    }
+
+    /// `APEX-T3.3.18` "redacted metrics" tests (packet names `cargo test
+    /// -p veloren-server semantic_net::metrics_redaction`; this crate's
+    /// actual ingress metrics live where the pipeline itself does,
+    /// `sys::msg`, not `semantic_net` -- same aspirational-vs-actual
+    /// module-path gap `T3.3.17`'s own `envelope::snapshot_monotonicity`
+    /// command had, disclosed there and here rather than silently
+    /// worked around). Proves the REAL reject path (`validate_semantic_
+    /// frame_v1`, unmodified) feeds `SemanticIngressMetricsV1` with
+    /// nothing but a code and a stream -- never the raw frame, the
+    /// rejected bytes, or any session/principal identity, matching the
+    /// acceptance gate's "logs contain no token/chat/command/payload
+    /// bytes" (metrics are the same redacted-observability surface).
+    #[test]
+    fn rejected_traffic_liveness_and_redacted_metrics() {
+        let state = receive_state();
+        let metrics = common_net::msg::envelope::SemanticIngressMetricsV1::new();
+        // A genuine reject (sequence gap: expected 1, received 5) --
+        // the exact same production reject path this row's own
+        // `sequence_gap_is_rejected_with_exact_values` test already
+        // proves returns `Err`; here the point is what happens to that
+        // `Err` next.
+        let raw = valid_frame_bytes(binding(), 5);
+        let Err(reject) = validate_semantic_frame_v1(&raw, &state, SemanticStreamIdV1::General) else {
+            panic!("fixture must reject (sequence gap)");
+        };
+        metrics.record_reject(&reject, SemanticStreamIdV1::General);
+
+        // "Rejected traffic liveness": the receive state itself is
+        // completely unaffected by a reject (packet's own acceptance
+        // gate, already proven by `rejected_frame_leaves_receive_state_
+        // unchanged` above) -- draining continues, nothing here could
+        // have torn the connection down.
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::General).get(), 1);
+
+        // Redaction: the snapshot is EXACTLY (code, stream, count) --
+        // structurally incapable of holding the `SequenceGap` fields
+        // (5, expected 1) or anything about the session that sent it.
+        assert_eq!(metrics.snapshot(), vec![("sequence_gap", SemanticStreamIdV1::General, 1)]);
     }
 }

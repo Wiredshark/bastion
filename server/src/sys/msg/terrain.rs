@@ -10,7 +10,7 @@ use common::{
     vol::RectVolSize,
 };
 use common_ecs::{Job, Origin, ParMode, Phase, System};
-use common_net::msg::{ClientGeneral, ServerGeneral, envelope::SemanticStreamIdV1};
+use common_net::msg::{ClientGeneral, ServerGeneral, envelope::{SemanticIngressMetricsV1, SemanticStreamIdV1}};
 use rayon::prelude::*;
 use specs::{Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, Write, WriteStorage};
 use tracing::{debug, trace};
@@ -30,6 +30,7 @@ impl<'a> System<'a> for Sys {
         ReadStorage<'a, Pos>,
         ReadStorage<'a, Presence>,
         WriteStorage<'a, Client>,
+        ReadExpect<'a, SemanticIngressMetricsV1>,
     );
 
     const NAME: &'static str = "msg::terrain";
@@ -49,6 +50,7 @@ impl<'a> System<'a> for Sys {
             positions,
             presences,
             mut clients,
+            semantic_metrics,
         ): Self::SystemData,
     ) {
         job.cpu_stats.measure(ParMode::Rayon);
@@ -60,7 +62,7 @@ impl<'a> System<'a> for Sys {
                 || (chunk_send_bus.emitter(), client_disconnect_events.emitter()),
                 |(chunk_send_emitter, client_disconnect_emitter), (entity, client, maybe_presence)| {
                     let mut chunk_requests = Vec::new();
-                    let _ = super::try_recv_all_dispatch(client, 5, SemanticStreamIdV1::Terrain, |client, msg| {
+                    let _ = super::try_recv_all_dispatch(client, 5, SemanticStreamIdV1::Terrain, &semantic_metrics, |client, msg| {
                         // SPECIAL CASE: LOD zone requests can be sent by non-present players
                         if let ClientGeneral::LodZoneRequest { key } = &msg {
                             client.send(ServerGeneral::LodZoneUpdate {

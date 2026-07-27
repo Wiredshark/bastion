@@ -17,7 +17,7 @@ use common::{
     vol::ReadVol,
 };
 use common_ecs::{Job, Origin, Phase, System};
-use common_net::msg::{ClientGeneral, ServerGeneral, envelope::SemanticStreamIdV1};
+use common_net::msg::{ClientGeneral, ServerGeneral, envelope::{SemanticIngressMetricsV1, SemanticStreamIdV1}};
 use common_state::{AreasContainer, BlockChange, BuildArea};
 use core::mem;
 use rayon::prelude::*;
@@ -738,6 +738,7 @@ impl<'a> System<'a> for Sys {
             ReadExpect<'a, TerrainGrid>,
             ReadExpect<'a, SlowJobPool>,
             ReadExpect<'a, EditableSettings>,
+            ReadExpect<'a, SemanticIngressMetricsV1>,
         ),
         (
             Read<'a, IdMaps>,
@@ -802,7 +803,7 @@ impl<'a> System<'a> for Sys {
         (
             entities,
             events,
-            (terrain, slow_jobs, editable_settings),
+            (terrain, slow_jobs, editable_settings, semantic_metrics),
             (id_maps, dt, settings, build_areas),
             can_build,
             mut force_updates,
@@ -900,7 +901,7 @@ impl<'a> System<'a> for Sys {
                     let mut bastion_inspects = Vec::new();
                     let mut terrain_writes = Vec::new();
                     let mut deferred_events = Vec::new();
-                    let _ = super::try_recv_all_dispatch(client, 2, SemanticStreamIdV1::InGame, |client, msg| {
+                    let _ = super::try_recv_all_dispatch(client, 2, SemanticStreamIdV1::InGame, &semantic_metrics, |client, msg| {
                         Self::handle_client_in_game_msg(
                             &mut deferred_events,
                             entity,

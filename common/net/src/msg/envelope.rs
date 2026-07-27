@@ -606,6 +606,54 @@ pub enum SemanticProtocolTerminalV1 {
     SendFailedAfterSequenceAllocated,
 }
 
+impl SemanticProtocolTerminalV1 {
+    /// `T3.3.18`: stable, field-independent code -- the metrics label
+    /// and terminal-catalog artifact key. Every variant here is already
+    /// fieldless, but the code is a SEPARATE, deliberately-frozen string
+    /// (never `{:?}`) so a `Debug` reformatting elsewhere in this file
+    /// can never silently change a metrics label's cardinality/spelling.
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::ResyncRequired => "resync_required",
+            Self::SequenceExhausted => "sequence_exhausted",
+            Self::ApplicationError => "application_error",
+            Self::ProtocolViolation => "protocol_violation",
+            Self::SendFailedAfterSequenceAllocated => "send_failed_after_sequence_allocated",
+        }
+    }
+
+    pub const ALL: [SemanticProtocolTerminalV1; 5] = [
+        Self::ResyncRequired,
+        Self::SequenceExhausted,
+        Self::ApplicationError,
+        Self::ProtocolViolation,
+        Self::SendFailedAfterSequenceAllocated,
+    ];
+
+    /// `T3.3.18`: "add protocol disconnect mapping" -- every connection-
+    /// level terminal maps to exactly one EXISTING `DisconnectReason`
+    /// (no new variants invented; the row's own compatibility note says
+    /// "disconnect variants follow negotiated wire version", meaning
+    /// this mapping exists ALONGSIDE the untouched Legacy disconnect
+    /// paths, not replacing them). `ProtocolViolation` -- a client that
+    /// sent malformed/deliberately-invalid traffic -- maps to `Kicked`,
+    /// the same reason this codebase already uses for other deliberate-
+    /// misbehavior disconnects (`register.rs`'s own "logged in from
+    /// another location" kick). Every other terminal here is a
+    /// transient/resource condition, not evidence of bad faith, so it
+    /// maps to `NetworkError` (the existing catch-all this codebase
+    /// already uses for non-graceful, non-malicious disconnects).
+    pub const fn disconnect_reason(self) -> common::comp::DisconnectReason {
+        use common::comp::DisconnectReason as D;
+        match self {
+            Self::ProtocolViolation => D::Kicked,
+            Self::ResyncRequired | Self::SequenceExhausted | Self::ApplicationError | Self::SendFailedAfterSequenceAllocated => {
+                D::NetworkError
+            },
+        }
+    }
+}
+
 const PAYLOAD_DIGEST_MAGIC: &[u8] = b"bastion/net-payload/v1\0";
 
 /// Packet section 7.4:
@@ -691,6 +739,128 @@ pub enum SemanticEnvelopeRejectV1 {
     /// schema fully optional, so this is unreachable on real traffic
     /// today -- only a test profile with a required field exercises it.
     CausalityProfileMismatch,
+}
+
+impl SemanticEnvelopeRejectV1 {
+    /// `T3.3.18`: stable, field-independent code -- the metrics label
+    /// and terminal-catalog artifact key. `SequenceGap`'s own
+    /// `expected`/`received` values are per-frame data (unbounded
+    /// cardinality), never metrics cardinality -- every instance of it
+    /// shares this one code regardless of its fields.
+    pub const fn code(&self) -> &'static str {
+        match self {
+            Self::UnsupportedProfile => "unsupported_profile",
+            Self::WrongBoot => "wrong_boot",
+            Self::WrongSession => "wrong_session",
+            Self::StaleEpoch => "stale_epoch",
+            Self::FutureEpoch => "future_epoch",
+            Self::WrongDirection => "wrong_direction",
+            Self::UnknownStream => "unknown_stream",
+            Self::StreamRouteMismatch => "stream_route_mismatch",
+            Self::SequenceZero => "sequence_zero",
+            Self::DuplicateSequence => "duplicate_sequence",
+            Self::ReplaySequence => "replay_sequence",
+            Self::SequenceGap { .. } => "sequence_gap",
+            Self::SequenceExhausted => "sequence_exhausted",
+            Self::PayloadEncodingUnsupported => "payload_encoding_unsupported",
+            Self::PayloadSchemaUnsupported => "payload_schema_unsupported",
+            Self::PayloadLengthMismatch => "payload_length_mismatch",
+            Self::PayloadDigestMismatch => "payload_digest_mismatch",
+            Self::EnvelopeDecodeFailure => "envelope_decode_failure",
+            Self::EnvelopeTrailingBytes => "envelope_trailing_bytes",
+            Self::PayloadDecodeFailure => "payload_decode_failure",
+            Self::PayloadTrailingBytes => "payload_trailing_bytes",
+            Self::StaleSnapshot => "stale_snapshot",
+            Self::CommandIdUnsupported => "command_id_unsupported",
+            Self::NoActiveAttachment => "no_active_attachment",
+            Self::StaleEgressBinding => "stale_egress_binding",
+            Self::DuplicateOrderKey => "duplicate_order_key",
+            Self::OrderKeyTooLarge => "order_key_too_large",
+            Self::EncodeFailure => "encode_failure",
+            Self::UnknownDomain => "unknown_domain",
+            Self::CausalityProfileMismatch => "causality_profile_mismatch",
+        }
+    }
+
+    /// One representative instance per variant (`SequenceGap` gets
+    /// placeholder field values -- its own fields are not part of its
+    /// code's identity). Used for the terminal-catalog artifact and the
+    /// completeness/uniqueness tests below.
+    pub const ALL: [SemanticEnvelopeRejectV1; 30] = [
+        Self::UnsupportedProfile,
+        Self::WrongBoot,
+        Self::WrongSession,
+        Self::StaleEpoch,
+        Self::FutureEpoch,
+        Self::WrongDirection,
+        Self::UnknownStream,
+        Self::StreamRouteMismatch,
+        Self::SequenceZero,
+        Self::DuplicateSequence,
+        Self::ReplaySequence,
+        Self::SequenceGap { expected: 0, received: 0 },
+        Self::SequenceExhausted,
+        Self::PayloadEncodingUnsupported,
+        Self::PayloadSchemaUnsupported,
+        Self::PayloadLengthMismatch,
+        Self::PayloadDigestMismatch,
+        Self::EnvelopeDecodeFailure,
+        Self::EnvelopeTrailingBytes,
+        Self::PayloadDecodeFailure,
+        Self::PayloadTrailingBytes,
+        Self::StaleSnapshot,
+        Self::CommandIdUnsupported,
+        Self::NoActiveAttachment,
+        Self::StaleEgressBinding,
+        Self::DuplicateOrderKey,
+        Self::OrderKeyTooLarge,
+        Self::EncodeFailure,
+        Self::UnknownDomain,
+        Self::CausalityProfileMismatch,
+    ];
+}
+
+/// `T3.3.18`: "server/client counters keyed by reason/stream" --
+/// shared by both sides (this codebase's existing Prometheus-backed
+/// `PlayerMetrics`/`NetworkRequestMetrics` are server-only
+/// infrastructure the client has no equivalent of; this type is
+/// deliberately independent of that, usable identically on either
+/// side). Redacted BY CONSTRUCTION, not by discipline: the key is
+/// exactly `(&'static str, SemanticStreamIdV1)` -- a fixed, bounded-
+/// cardinality label pair that structurally cannot hold a payload
+/// byte, a token, a chat string, or a session/principal identifier
+/// (packet's own acceptance gate: "logs contain no token/chat/command/
+/// payload bytes"; this type can't violate that even if misused, there
+/// is no field to put one in).
+#[derive(Default)]
+pub struct SemanticIngressMetricsV1 {
+    counts: std::sync::Mutex<std::collections::HashMap<(&'static str, SemanticStreamIdV1), u64>>,
+}
+
+impl SemanticIngressMetricsV1 {
+    pub fn new() -> Self { Self::default() }
+
+    pub fn record_reject(&self, reject: &SemanticEnvelopeRejectV1, stream: SemanticStreamIdV1) {
+        self.record(reject.code(), stream);
+    }
+
+    pub fn record_terminal(&self, terminal: SemanticProtocolTerminalV1, stream: SemanticStreamIdV1) {
+        self.record(terminal.code(), stream);
+    }
+
+    fn record(&self, code: &'static str, stream: SemanticStreamIdV1) {
+        *self.counts.lock().expect("semantic ingress metrics mutex poisoned").entry((code, stream)).or_insert(0) += 1;
+    }
+
+    /// A point-in-time copy -- the "metrics snapshot" evidence artifact.
+    /// Sorted for deterministic output (never iteration-order-dependent
+    /// `HashMap` order).
+    pub fn snapshot(&self) -> Vec<(&'static str, SemanticStreamIdV1, u64)> {
+        let mut out: Vec<_> =
+            self.counts.lock().expect("semantic ingress metrics mutex poisoned").iter().map(|(&(code, stream), &n)| (code, stream, n)).collect();
+        out.sort_by_key(|&(code, stream, _)| (code, stream.as_u8()));
+        out
+    }
 }
 
 /// Packet section 7.10's own outcome classification for one evidence
@@ -1913,5 +2083,67 @@ mod tests {
         let mut buf_d = Vec::new();
         encode_domain_category(&mut buf_d, 5, &[SnapshotDomainId::new(1)]);
         assert_ne!(buf_c, buf_d);
+    }
+
+    /// `APEX-T3.3.18` tests (`cargo test -p veloren-common-net
+    /// envelope::terminal_codes`). Packet's own test list: "One per
+    /// terminal, redaction, rejected traffic liveness, application
+    /// error consumed sequence" -- the last two are ingress-pipeline
+    /// concerns, closed on the server/client sides where the pipeline
+    /// actually lives, not here.
+
+    #[test]
+    fn terminal_codes_are_unique_and_the_pinned_count_forces_this_test_to_be_touched_on_growth() {
+        let codes: HashSet<&str> = SemanticProtocolTerminalV1::ALL.iter().map(|t| t.code()).collect();
+        assert_eq!(codes.len(), SemanticProtocolTerminalV1::ALL.len());
+        assert_eq!(SemanticProtocolTerminalV1::ALL.len(), 5, "a new terminal variant needs its own disconnect_reason mapping too");
+    }
+
+    #[test]
+    fn reject_codes_are_unique_and_the_pinned_count_forces_this_test_to_be_touched_on_growth() {
+        let codes: HashSet<&str> = SemanticEnvelopeRejectV1::ALL.iter().map(|r| r.code()).collect();
+        assert_eq!(codes.len(), SemanticEnvelopeRejectV1::ALL.len());
+        assert_eq!(SemanticEnvelopeRejectV1::ALL.len(), 30);
+    }
+
+    /// "One per terminal": every `SemanticProtocolTerminalV1` maps to
+    /// exactly the `DisconnectReason` its own doc comment names.
+    #[test]
+    fn every_terminal_maps_to_its_documented_disconnect_reason() {
+        use common::comp::DisconnectReason as D;
+        assert!(matches!(SemanticProtocolTerminalV1::ResyncRequired.disconnect_reason(), D::NetworkError));
+        assert!(matches!(SemanticProtocolTerminalV1::SequenceExhausted.disconnect_reason(), D::NetworkError));
+        assert!(matches!(SemanticProtocolTerminalV1::ApplicationError.disconnect_reason(), D::NetworkError));
+        assert!(matches!(SemanticProtocolTerminalV1::ProtocolViolation.disconnect_reason(), D::Kicked));
+        assert!(matches!(SemanticProtocolTerminalV1::SendFailedAfterSequenceAllocated.disconnect_reason(), D::NetworkError));
+    }
+
+    #[test]
+    fn metrics_record_and_snapshot_roundtrip() {
+        let metrics = SemanticIngressMetricsV1::new();
+        metrics.record_reject(&SemanticEnvelopeRejectV1::StaleEpoch, SemanticStreamIdV1::General);
+        metrics.record_reject(&SemanticEnvelopeRejectV1::StaleEpoch, SemanticStreamIdV1::General);
+        metrics.record_reject(&SemanticEnvelopeRejectV1::SequenceGap { expected: 3, received: 9 }, SemanticStreamIdV1::Terrain);
+        metrics.record_terminal(SemanticProtocolTerminalV1::ProtocolViolation, SemanticStreamIdV1::General);
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot, vec![
+            ("protocol_violation", SemanticStreamIdV1::General, 1),
+            ("sequence_gap", SemanticStreamIdV1::Terrain, 1),
+            ("stale_epoch", SemanticStreamIdV1::General, 2),
+        ]);
+    }
+
+    /// `SequenceGap`'s own field values (arbitrary `u64`s, unbounded)
+    /// never leak into the metrics key -- two DIFFERENT `expected`/
+    /// `received` pairs collapse into the same one bucket, exactly the
+    /// "field values are per-frame data, never metrics cardinality"
+    /// guarantee `code()`'s own doc comment states.
+    #[test]
+    fn metrics_redaction_collapses_field_carrying_variants_to_one_bucket() {
+        let metrics = SemanticIngressMetricsV1::new();
+        metrics.record_reject(&SemanticEnvelopeRejectV1::SequenceGap { expected: 1, received: 2 }, SemanticStreamIdV1::General);
+        metrics.record_reject(&SemanticEnvelopeRejectV1::SequenceGap { expected: 999, received: 1_000_000 }, SemanticStreamIdV1::General);
+        assert_eq!(metrics.snapshot(), vec![("sequence_gap", SemanticStreamIdV1::General, 2)]);
     }
 }

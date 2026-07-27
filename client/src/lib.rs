@@ -301,6 +301,11 @@ pub struct Client {
     /// Server-to-client direction (receiving `ServerGeneral`/`ServerInit`
     /// from the server). Dormant: nothing advances this yet (`T3.3.10`).
     semantic_receive_state: Option<common_net::msg::SemanticReceiveStateV1>,
+    /// `T3.3.18`: redacted (reason/stream)-keyed ingress counters, the
+    /// client-side counterpart of the server's own `SemanticIngressMetricsV1`
+    /// resource -- process-lifetime, not per-attachment (unlike
+    /// `semantic_receive_state`, this survives a resume/reconnect).
+    semantic_ingress_metrics: common_net::msg::envelope::SemanticIngressMetricsV1,
     /// Localized server motd and rules
     server_description: ServerDescription,
     world_data: WorldData,
@@ -1152,6 +1157,7 @@ impl Client {
             server_info,
             semantic_send_state: semantic_state_binding.map(common_net::msg::SemanticSendStateV1::new),
             semantic_receive_state: semantic_state_binding.map(common_net::msg::SemanticReceiveStateV1::new),
+            semantic_ingress_metrics: common_net::msg::envelope::SemanticIngressMetricsV1::new(),
             server_description: description,
             world_data: WorldData {
                 lod_base,
@@ -3777,6 +3783,7 @@ impl Client {
         stream: &mut Stream,
         receive_state: &mut Option<common_net::msg::envelope::SemanticReceiveStateV1>,
         semantic_stream: common_net::msg::envelope::SemanticStreamIdV1,
+        metrics: &common_net::msg::envelope::SemanticIngressMetricsV1,
     ) -> Result<Vec<ServerGeneral>, Error> {
         let mut out = Vec::new();
         while let Some(raw) = stream.try_recv::<Vec<u8>>()? {
@@ -3790,6 +3797,10 @@ impl Client {
                     let advance_result = receive_state_mut.advance_expected(semantic_stream);
                     if advance_result.is_err() {
                         warn!("semantic receive sequence exhausted; dropping message");
+                        metrics.record_terminal(
+                            common_net::msg::envelope::SemanticProtocolTerminalV1::SequenceExhausted,
+                            semantic_stream,
+                        );
                         continue;
                     }
                     // `T3.3.17`: commit the snapshot watermark strictly
@@ -3804,6 +3815,7 @@ impl Client {
                 },
                 Err(reject) => {
                     warn!(?reject, "semantic ingress rejected a frame");
+                    metrics.record_reject(&reject, semantic_stream);
                 },
             }
         }
@@ -3824,6 +3836,7 @@ impl Client {
                     &mut self.general_stream,
                     &mut self.semantic_receive_state,
                     SemanticStreamIdV1::General,
+                    &self.semantic_ingress_metrics,
                 )? {
                     cnt += 1;
                     self.handle_server_msg(frontend_events, msg)?;
@@ -3843,6 +3856,7 @@ impl Client {
                     &mut self.character_screen_stream,
                     &mut self.semantic_receive_state,
                     SemanticStreamIdV1::CharacterScreen,
+                    &self.semantic_ingress_metrics,
                 )? {
                     cnt += 1;
                     self.handle_server_character_screen_msg(frontend_events, msg)?;
@@ -3858,6 +3872,7 @@ impl Client {
                     &mut self.in_game_stream,
                     &mut self.semantic_receive_state,
                     SemanticStreamIdV1::InGame,
+                    &self.semantic_ingress_metrics,
                 )? {
                     cnt += 1;
                     #[cfg(feature = "tracy")]
@@ -3881,6 +3896,7 @@ impl Client {
                     &mut self.terrain_stream,
                     &mut self.semantic_receive_state,
                     SemanticStreamIdV1::Terrain,
+                    &self.semantic_ingress_metrics,
                 )? {
                     cnt += 1;
                     #[cfg(feature = "tracy")]
@@ -4565,5 +4581,27 @@ mod tests {
         let raw = recv_frame_bytes(recv_binding(), 99, &msg); // a gap, guaranteed reject
         assert!(Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).is_err());
         assert_eq!(state.next_expected_for(SemanticStreamIdV1::General), before);
+    }
+
+    /// `APEX-T3.3.18` "redacted metrics" test (packet names `cargo test
+    /// -p veloren-client semantic_metrics_redaction`; same aspirational-
+    /// vs-actual module-path gap noted server-side -- this crate's
+    /// tests live in a flat `tests` module, not a `semantic_metrics`
+    /// one). Client-side twin of the server's `rejected_traffic_
+    /// liveness_and_redacted_metrics`: a real reject feeds
+    /// `SemanticIngressMetricsV1` with nothing but a code and a stream.
+    #[test]
+    fn client_rejected_traffic_liveness_and_redacted_metrics() {
+        let state = recv_state();
+        let metrics = common_net::msg::envelope::SemanticIngressMetricsV1::new();
+        let msg = ServerGeneral::UpdateRecipes; // routes InGame
+        let raw = recv_frame_bytes(recv_binding(), 99, &msg); // sequence gap
+        let Err(reject) = Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()) else {
+            panic!("fixture must reject (sequence gap)");
+        };
+        metrics.record_reject(&reject, msg.semantic_stream());
+
+        assert_eq!(state.next_expected_for(msg.semantic_stream()).get(), 1, "rejected traffic must not move the cursor");
+        assert_eq!(metrics.snapshot(), vec![("sequence_gap", SemanticStreamIdV1::InGame, 1)]);
     }
 }

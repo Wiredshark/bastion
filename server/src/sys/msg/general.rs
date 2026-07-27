@@ -7,9 +7,9 @@ use common::{
     uid::Uid,
 };
 use common_ecs::{Job, Origin, Phase, System};
-use common_net::msg::{ClientGeneral, ServerGeneral, envelope::SemanticStreamIdV1};
+use common_net::msg::{ClientGeneral, ServerGeneral, envelope::{SemanticIngressMetricsV1, SemanticStreamIdV1}};
 use rayon::prelude::*;
-use specs::{Entities, LendJoin, ParJoin, Read, ReadStorage, WriteStorage};
+use specs::{Entities, LendJoin, ParJoin, Read, ReadExpect, ReadStorage, WriteStorage};
 use tracing::{debug, error, warn};
 
 event_emitters! {
@@ -109,6 +109,7 @@ impl<'a> System<'a> for Sys {
         ReadStorage<'a, Player>,
         ReadStorage<'a, Group>,
         WriteStorage<'a, Client>,
+        ReadExpect<'a, SemanticIngressMetricsV1>,
     );
 
     const NAME: &'static str = "msg::general";
@@ -117,14 +118,14 @@ impl<'a> System<'a> for Sys {
 
     fn run(
         _job: &mut Job<Self>,
-        (entities, events, program_time, uids, chat_modes, players, groups, mut clients): Self::SystemData,
+        (entities, events, program_time, uids, chat_modes, players, groups, mut clients, semantic_metrics): Self::SystemData,
     ) {
         (&entities, &mut clients, players.maybe())
             .par_join()
             .for_each_init(
                 || events.get_emitters(),
                 |emitters, (entity, client, player)| {
-                    let res = super::try_recv_all_dispatch(client, 3, SemanticStreamIdV1::General, |client, msg| {
+                    let res = super::try_recv_all_dispatch(client, 3, SemanticStreamIdV1::General, &semantic_metrics, |client, msg| {
                         Self::handle_general_msg(
                             emitters,
                             entity,

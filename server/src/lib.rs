@@ -446,6 +446,10 @@ impl Server {
         // T3.3.13/14) and nothing drains it yet (no SemanticEgressSysV1;
         // T3.3.15).
         state.ecs_mut().insert(crate::semantic_net::outbox::ServerSemanticOutboxV1::new());
+        // APEX-T3.3.18: memory-only, redacted-by-construction ingress
+        // counters (keyed by (terminal/reject code, physical stream)
+        // only) -- process lifetime, never persisted.
+        state.ecs_mut().insert(common_net::msg::envelope::SemanticIngressMetricsV1::new());
         state.ecs_mut().insert(battlemode_buffer);
         state.ecs_mut().insert(RecentClientIPs::default());
         state.ecs_mut().insert(settings.clone());

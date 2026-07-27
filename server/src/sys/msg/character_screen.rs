@@ -23,7 +23,7 @@ use common::{
     uid::Uid,
 };
 use common_ecs::{Job, Origin, Phase, System};
-use common_net::msg::{ClientGeneral, ServerGeneral, envelope::SemanticStreamIdV1};
+use common_net::msg::{ClientGeneral, ServerGeneral, envelope::{SemanticIngressMetricsV1, SemanticStreamIdV1}};
 use specs::{
     Entities, Join, ReadExpect, ReadStorage, SystemData, WriteExpect, WriteStorage, shred,
 };
@@ -306,6 +306,7 @@ pub struct Data<'a> {
     #[cfg(feature = "worldgen")]
     index: ReadExpect<'a, IndexOwned>,
     world: ReadExpect<'a, Arc<World>>,
+    semantic_metrics: ReadExpect<'a, SemanticIngressMetricsV1>,
 }
 
 /// This system will handle new messages from clients
@@ -322,7 +323,7 @@ impl<'a> System<'a> for Sys {
         let mut emitters = data.events.get_emitters();
 
         for (entity, client) in (&data.entities, &mut data.clients).join() {
-            let _ = super::try_recv_all_dispatch(client, 1, SemanticStreamIdV1::CharacterScreen, |client, msg| {
+            let _ = super::try_recv_all_dispatch(client, 1, SemanticStreamIdV1::CharacterScreen, &data.semantic_metrics, |client, msg| {
                 Self::handle_client_character_screen_msg(
                     &mut emitters,
                     entity,
