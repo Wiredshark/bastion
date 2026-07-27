@@ -616,7 +616,7 @@ impl PreparedPluginBatch {
         })?;
         let mut plugins = self.plugins;
         canonical_plugin_order(&mut plugins, |p| p.hash);
-        Ok(PluginMgr { plugins, governed: false, lifecycle: PluginLifecycleStateV1::NotActivated, command_owners: None })
+        Ok(PluginMgr { plugins, governed: false, lifecycle: PluginLifecycleStateV1::NotActivated, command_owners: None, skeleton_owners: None })
     }
 
     /// APEX-T2.5.12 — publish the batch as THE one-time content generation
@@ -639,7 +639,7 @@ impl PreparedPluginBatch {
         )?;
         let mut plugins = self.plugins;
         canonical_plugin_order(&mut plugins, |p| p.hash);
-        Ok(PluginMgr { plugins, governed: true, lifecycle: PluginLifecycleStateV1::NotActivated, command_owners: None })
+        Ok(PluginMgr { plugins, governed: true, lifecycle: PluginLifecycleStateV1::NotActivated, command_owners: None, skeleton_owners: None })
     }
 
     /// APEX-T2.1.14 — publish the batch INTO an existing manager (late
@@ -679,6 +679,8 @@ pub struct PluginMgr {
     /// deployments): dispatch is ONE lookup, never a provider scan.
     /// `None` = legacy manager = the old scan.
     command_owners: Option<HashMap<String, PluginHash>>,
+    /// APEX-T2.5.21: animation/skeleton key→owner, same discipline.
+    skeleton_owners: Option<HashMap<String, PluginHash>>,
 }
 
 impl PluginMgr {
@@ -723,12 +725,14 @@ impl PluginMgr {
         limits: Option<module::PluginStoreLimitsV1>,
         max_instances: Option<u32>,
         command_owners: Option<HashMap<String, PluginHash>>,
+        skeleton_owners: Option<HashMap<String, PluginHash>>,
     ) -> Result<Self, errors::PreparedManagerErrorV1> {
         let batch = Self::verified_deployment_batch_v1(paths, expected_artifacts, limits, max_instances)?;
         let mut mgr = batch
             .commit_new_manager_as_generation(generation_token)
             .map_err(errors::PreparedManagerErrorV1::Plugin)?;
         mgr.command_owners = command_owners;
+        mgr.skeleton_owners = skeleton_owners;
         Ok(mgr)
     }
 
@@ -1078,6 +1082,16 @@ impl PluginMgr {
     }
 
     pub fn create_body(&mut self, name: &str) -> Option<module::Body> {
+        // APEX-T2.5.21 — governed: ONE owner lookup, no provider scan; a
+        // key outside the map is a deterministic None. Bodies remain
+        // store-bound WIT resources: the owner-tagged UPDATE handle (so
+        // update_skeleton needs no scan either) is the flagged remaining
+        // half — bindgen resource-identity + Voxygen call-site migration,
+        // for the elevated review.
+        if let Some(owners) = &self.skeleton_owners {
+            let owner_hash = owners.get(name).copied()?;
+            return self.plugins.iter_mut().find(|p| p.hash == owner_hash)?.create_body(name);
+        }
         let mut result = None;
         self.plugins.iter_mut().for_each(|plugin| {
             if let Some(body) = plugin.create_body(name) {

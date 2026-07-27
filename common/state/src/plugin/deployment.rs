@@ -64,6 +64,9 @@ pub struct CompiledDeploymentV1 {
     /// (sole claimant, or the ExclusiveOwner ruling). Sorted by command;
     /// the manager's one-lookup dispatch map.
     pub command_owners: Vec<(String, [u8; 32])>,
+    /// APEX-T2.5.21: animation/skeleton key → owning archive digest,
+    /// same construction as `command_owners`.
+    pub skeleton_owners: Vec<(String, [u8; 32])>,
 }
 
 fn manifest_bytes_of(archive: &[u8], manifest_path: &str) -> Option<Vec<u8>> {
@@ -208,16 +211,23 @@ pub fn compile_deployment_from_archives_v1(
     // OrderedConcatenate has no meaning for commands and is refused
     // here). Owners are recorded by ARCHIVE DIGEST via the claimant key,
     // resolved after plan compilation below.
-    let mut command_claimants: std::collections::BTreeMap<String, Vec<super::resolver::PluginNodeKeyV1>> =
-        std::collections::BTreeMap::new();
-    for c in &claims {
-        if matches!(c.resource.kind, PluginResourceKindV1::Command) {
-            let entry = command_claimants.entry(c.resource.name.as_str().to_owned()).or_default();
-            if !entry.contains(&c.claimant) {
-                entry.push(c.claimant.clone());
+    let claimants_of = |kind: PluginResourceKindV1| {
+        let mut map: std::collections::BTreeMap<String, Vec<super::resolver::PluginNodeKeyV1>> =
+            std::collections::BTreeMap::new();
+        for c in &claims {
+            if c.resource.kind == kind {
+                let entry = map.entry(c.resource.name.as_str().to_owned()).or_default();
+                if !entry.contains(&c.claimant) {
+                    entry.push(c.claimant.clone());
+                }
             }
         }
-    }
+        map
+    };
+    let command_claimants = claimants_of(PluginResourceKindV1::Command);
+    // APEX-T2.5.21: animation/skeleton claims get the same owner-map
+    // treatment as commands.
+    let skeleton_claimants = claimants_of(PluginResourceKindV1::Skeleton);
 
     let graph = match resolve_plugin_graph_v1(admissions, &resolver_policy_for(&policy_root)?) {
         PluginResolutionTerminalV1::Resolved(g) => g,
@@ -250,34 +260,43 @@ pub fn compile_deployment_from_archives_v1(
             .map(|n| *n.artifact.digest.bytes.as_array())
             .ok_or(E::CanonicalizationFailure)
     };
-    let mut command_owners: Vec<(String, [u8; 32])> = Vec::with_capacity(command_claimants.len());
-    for (command, claimants) in &command_claimants {
-        let owner_key = if claimants.len() == 1 {
-            &claimants[0]
-        } else {
-            match resolved_collisions.iter().find(|r| {
-                matches!(r.resource.kind, PluginResourceKindV1::Command) && r.resource.name.as_str() == command
-            }) {
-                Some(PluginResolvedCollisionV1 {
-                    resolution: PluginConflictResolutionV1::ExclusiveOwner { owner, .. },
-                    ..
-                }) => owner,
-                // Reject was refused upstream; OrderedConcatenate has no
-                // command semantics (UNSUPPORTED-COMBINE-SEMANTICS).
-                _ => {
-                    return Err(E::ConflictError(PluginConflictErrorV1::DecisionResolutionInvalid {
-                        resource: PluginResourceKeyV1 {
-                            kind: PluginResourceKindV1::Command,
-                            name: common::apex::manifest::MachineTextV1::new(command)
-                                .map_err(|_| E::CanonicalizationFailure)?,
-                        },
-                        detail: "commands cannot concatenate: only ExclusiveOwner resolves a command collision",
-                    }));
-                },
-            }
-        };
-        command_owners.push((command.clone(), digest_of_key(owner_key)?));
-    }
+    // Shared owner resolution (.20 commands, .21 skeletons/animations):
+    // sole claimant owns; contested needs the operator's ExclusiveOwner
+    // (concatenation has no dispatch semantics for either kind).
+    let owners_of = |claimants_map: &std::collections::BTreeMap<String, Vec<super::resolver::PluginNodeKeyV1>>,
+                     kind: PluginResourceKindV1|
+     -> Result<Vec<(String, [u8; 32])>, PluginDeploymentCompileErrorV1> {
+        let mut owners: Vec<(String, [u8; 32])> = Vec::with_capacity(claimants_map.len());
+        for (name, claimants) in claimants_map {
+            let owner_key = if claimants.len() == 1 {
+                &claimants[0]
+            } else {
+                match resolved_collisions
+                    .iter()
+                    .find(|r| r.resource.kind == kind && r.resource.name.as_str() == name)
+                {
+                    Some(PluginResolvedCollisionV1 {
+                        resolution: PluginConflictResolutionV1::ExclusiveOwner { owner, .. },
+                        ..
+                    }) => owner,
+                    _ => {
+                        return Err(E::ConflictError(PluginConflictErrorV1::DecisionResolutionInvalid {
+                            resource: PluginResourceKeyV1 {
+                                kind,
+                                name: common::apex::manifest::MachineTextV1::new(name)
+                                    .map_err(|_| E::CanonicalizationFailure)?,
+                            },
+                            detail: "only ExclusiveOwner resolves a dispatch-owned collision",
+                        }));
+                    },
+                }
+            };
+            owners.push((name.clone(), digest_of_key(owner_key)?));
+        }
+        Ok(owners)
+    };
+    let command_owners = owners_of(&command_claimants, PluginResourceKindV1::Command)?;
+    let skeleton_owners = owners_of(&skeleton_claimants, PluginResourceKindV1::Skeleton)?;
 
     Ok(CompiledDeploymentV1 {
         plan,
@@ -287,6 +306,7 @@ pub fn compile_deployment_from_archives_v1(
         artifacts,
         resolved_collisions,
         command_owners,
+        skeleton_owners,
     })
 }
 

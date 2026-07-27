@@ -47,6 +47,9 @@ pub struct PluginDeploymentSummaryV1 {
     /// the operator's ExclusiveOwner ruling), command-sorted — the
     /// client's one-lookup dispatch map mirrors the server's exactly.
     pub command_owners: Vec<(String, [u8; 32])>,
+    /// APEX-T2.5.21: animation/skeleton key -> owning archive digest,
+    /// same one-lookup discipline as commands.
+    pub skeleton_owners: Vec<(String, [u8; 32])>,
 }
 
 /// Scalar mirror of the policy's per-mode runtime limits (wire crate has

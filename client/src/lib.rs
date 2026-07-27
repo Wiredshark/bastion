@@ -839,6 +839,7 @@ impl Client {
                         }),
                         Some(summary.client_runtime_limits.max_instances),
                         Some(summary.command_owners.iter().cloned().collect()),
+                        Some(summary.skeleton_owners.iter().cloned().collect()),
                     )
                     .map_err(|e| Error::Other(format!("deployment plugin batch failed: {e:?}")))?,
                 )

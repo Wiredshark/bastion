@@ -409,6 +409,7 @@ impl Server {
                 }),
                 Some(server_runtime_limits.max_instances),
                 Some(summary.command_owners.iter().cloned().collect()),
+                Some(summary.skeleton_owners.iter().cloned().collect()),
             )
             .map_err(|e| Error::Other(format!("deployment plugin batch failed (fail-closed): {e:?}")))?,
             crate::plugin_deployment_policy::PluginDeploymentStateV1::Legacy => {
