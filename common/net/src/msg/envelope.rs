@@ -525,6 +525,28 @@ impl SemanticReceiveStateV1 {
     pub fn binding(&self) -> ActiveSessionBindingV1 { self.binding }
 
     pub fn next_expected_for(&self, stream: SemanticStreamIdV1) -> NonZeroU64 { self.next_expected[stream_index(stream)] }
+
+    /// `T3.3.08`: commits acceptance of the sequence this stream was
+    /// expecting -- called only AFTER every other envelope/payload check
+    /// has already passed (packet: "cursor does not advance on
+    /// validation failure; it advances before handler call"). The
+    /// zero-gap MVP (packet section 5.4) means the caller has already
+    /// confirmed `received == next_expected_for(stream)` before calling
+    /// this; this method's own job is only to advance the cursor for
+    /// next time, which can itself exhaust at `u64::MAX` even though the
+    /// just-accepted value was valid.
+    pub fn advance_expected(&mut self, stream: SemanticStreamIdV1) -> Result<(), common::apex::identity::CounterAdvanceErrorV1> {
+        let idx = stream_index(stream);
+        let advanced = self.next_expected[idx].checked_add(1).ok_or(common::apex::identity::CounterAdvanceErrorV1::Exhausted)?;
+        self.next_expected[idx] = advanced;
+        Ok(())
+    }
+
+    /// Test-only twin of `SemanticSendStateV1::with_cursors_for_test`.
+    #[cfg(test)]
+    fn with_cursors_for_test(binding: ActiveSessionBindingV1, next_expected: [NonZeroU64; 5]) -> Self {
+        Self { binding, next_expected, highest_snapshot: std::collections::BTreeMap::new(), terminal: None }
+    }
 }
 
 const fn stream_index(stream: SemanticStreamIdV1) -> usize {
@@ -1273,6 +1295,32 @@ mod tests {
         for stream in SemanticStreamIdV1::ALL {
             assert!(state.allocate_sequence(stream).is_err());
         }
+    }
+
+    // T3.3.08: SemanticReceiveStateV1::advance_expected -- receive-side
+    // twin of allocate_sequence's own independent-cursors/exhaustion tests.
+
+    #[test]
+    fn advance_expected_advances_each_stream_independently() {
+        let mut state = SemanticReceiveStateV1::new(test_binding(1));
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::InGame).get(), 1);
+        state.advance_expected(SemanticStreamIdV1::InGame).unwrap();
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::InGame).get(), 2);
+        // Other streams untouched.
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::General).get(), 1);
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::Terrain).get(), 1);
+    }
+
+    #[test]
+    fn advance_expected_exhausts_at_u64_max() {
+        let max = NonZeroU64::new(u64::MAX).unwrap();
+        let mut state = SemanticReceiveStateV1::with_cursors_for_test(test_binding(1), [max; 5]);
+        assert_eq!(
+            state.advance_expected(SemanticStreamIdV1::General).unwrap_err(),
+            common::apex::identity::CounterAdvanceErrorV1::Exhausted
+        );
+        // Never silently wraps.
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::General), max);
     }
 
     /// "Old state inaccessible": nothing about `SemanticSendStateV1`

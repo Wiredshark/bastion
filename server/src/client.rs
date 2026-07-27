@@ -126,6 +126,15 @@ impl Client {
         self.semantic_receive_state = Some(SemanticReceiveStateV1::new(binding));
     }
 
+    /// `APEX-T3.3.08`: the ingress validation pipeline's own read/commit
+    /// access to receive-side cursor state -- `None` for `Legacy`
+    /// sessions and while detached, same lifecycle as `reset_semantic_state`.
+    pub(crate) fn semantic_receive_state(&self) -> Option<&SemanticReceiveStateV1> { self.semantic_receive_state.as_ref() }
+
+    pub(crate) fn semantic_receive_state_mut(&mut self) -> Option<&mut SemanticReceiveStateV1> {
+        self.semantic_receive_state.as_mut()
+    }
+
     pub(crate) fn send<M: Into<ServerMsg>>(&self, msg: M) -> Result<(), StreamError> {
         // TODO: hack to avoid locking stream mutex while serializing the message,
         // remove this when the mutexes on the Streams are removed
