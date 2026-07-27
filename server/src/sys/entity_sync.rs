@@ -38,6 +38,47 @@ use specs::{Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, Write, Writ
 use std::sync::Arc;
 use vek::*;
 
+/// `APEX-T3.3.13`/`.14`: this file's own `local_ordinal` conventions,
+/// named and shared between the real call sites below and their test
+/// coverage in `semantic_intents`/`semantic_intents_parallel` --
+/// closing Opus's T3.3.13 pre-merge advisory (the conventions were
+/// previously mirrored as separate literals in the test fixtures, so a
+/// drive-by edit of a real site's ordinal failed no test). Every
+/// constant here is a plain `local_ordinal`; the crucial invariant is
+/// only ever "two intents that could share (recipient, stream,
+/// payload_rank, subject) must not share an ordinal" -- see each
+/// constant's own doc for which sibling it's disambiguating against.
+pub(crate) mod ordinals {
+    /// `Create`/`Delete` entity events: subject is `for_uid(entity)`,
+    /// unique per (client, region, tick) by construction (an entity has
+    /// exactly one Entered/Left event per actual transition) -- no
+    /// sibling to disambiguate against, so a constant `0` is safe.
+    pub(crate) const CREATE_OR_DELETE_ENTITY: u32 = 0;
+    /// The paired-block `EntitySync` batch (subject: `for_region`). No
+    /// same-payload_rank sibling exists, so a constant `0` is safe --
+    /// named separately from [`PAIRED_COMPSYNC`] purely for readability
+    /// even though the values happen to match.
+    pub(crate) const PAIRED_ENTITYSYNC: u32 = 0;
+    /// The paired-block `EntitySync`+`CompSync` batch (subject:
+    /// `for_region`). Disambiguated against [`THROTTLE_COMPSYNC`] below,
+    /// its only same-(recipient,stream,payload_rank,subject) sibling.
+    pub(crate) const PAIRED_COMPSYNC: u32 = 0;
+    /// The physics-throttle `CompSync` batch (subject: `for_region`,
+    /// same region as [`PAIRED_COMPSYNC`] for the same client) --
+    /// disambiguated against it.
+    pub(crate) const THROTTLE_COMPSYNC: u32 = 1;
+    /// Own-entity `CompSync` (subject: `for_uid(client's own entity)`).
+    /// Disambiguated against [`SPECTATOR_COMPSYNC`] below: a spectating
+    /// client's own entity could in principle appear in both this loop
+    /// and the spectator loop in the same tick, and both would share
+    /// the same recipient/subject/payload_rank without this split.
+    pub(crate) const OWN_ENTITY_COMPSYNC: u32 = 0;
+    /// Spectator `CompSync` (subject: `for_uid(spectating client's own
+    /// entity)`, NOT the spectated target -- the recipient is what the
+    /// subject key names). Disambiguated against [`OWN_ENTITY_COMPSYNC`].
+    pub(crate) const SPECTATOR_COMPSYNC: u32 = 1;
+}
+
 /// `APEX-T3.3.13`: builds one `SemanticSendIntentV1` for `payload` and
 /// enqueues it, iff `recipient_binding` is `Some` (the client has a live
 /// V1 attachment) -- Legacy clients (the ONLY kind possible today,
@@ -273,7 +314,7 @@ impl<'a> System<'a> for Sys {
                                                 tick,
                                                 SemanticPayloadRankV1::Create,
                                                 subject,
-                                                0,
+                                                ordinals::CREATE_OR_DELETE_ENTITY,
                                             )
                                         });
                                         if !enqueued {
@@ -305,7 +346,7 @@ impl<'a> System<'a> for Sys {
                                             tick,
                                             SemanticPayloadRankV1::Delete,
                                             CanonicalSubjectKeyV1::for_uid(uid),
-                                            0,
+                                            ordinals::CREATE_OR_DELETE_ENTITY,
                                         );
                                         if !enqueued {
                                             client.send_fallible(ServerGeneral::DeleteEntity(uid));
@@ -351,7 +392,7 @@ impl<'a> System<'a> for Sys {
                         tick,
                         SemanticPayloadRankV1::EntitySync,
                         region_subject.clone(),
-                        0,
+                        ordinals::PAIRED_ENTITYSYNC,
                     ) {
                         try_enqueue_entity_sync_intent(
                             &semantic_outbox,
@@ -363,7 +404,7 @@ impl<'a> System<'a> for Sys {
                             tick,
                             SemanticPayloadRankV1::CompSync,
                             region_subject.clone(),
-                            0,
+                            ordinals::PAIRED_COMPSYNC,
                         );
                         continue;
                     }
@@ -475,7 +516,7 @@ impl<'a> System<'a> for Sys {
                         tick,
                         SemanticPayloadRankV1::CompSync,
                         CanonicalSubjectKeyV1::for_region(key),
-                        1,
+                        ordinals::THROTTLE_COMPSYNC,
                     ) {
                         client.send_fallible(comp_sync_msg);
                     }
@@ -530,10 +571,22 @@ impl<'a> System<'a> for Sys {
             // DET-NET-012 (v6, stage 1): tick stamp.
             comp_sync_package.sync_tick = tick;
             if !comp_sync_package.is_empty() {
-                client.send_fallible(ServerGeneral::CompSync(
-                    comp_sync_package,
-                    force_updates.get(entity).map_or(0, |f| f.counter()),
-                ));
+                // APEX-T3.3.14: the (c) sequential own-entity CompSync
+                // site Fable's T3.3.13 scope ruling deferred here.
+                // Subject = the receiving client's own entity uid
+                // (already in scope from the join above).
+                let msg = ServerGeneral::CompSync(comp_sync_package, force_updates.get(entity).map_or(0, |f| f.counter()));
+                if !try_enqueue_entity_sync_intent(
+                    &semantic_outbox,
+                    client.semantic_send_state().map(|s| s.binding()),
+                    msg.clone(),
+                    tick,
+                    SemanticPayloadRankV1::CompSync,
+                    CanonicalSubjectKeyV1::for_uid(uid),
+                    ordinals::OWN_ENTITY_COMPSYNC,
+                ) {
+                    client.send_fallible(msg);
+                }
             }
         }
 
@@ -555,10 +608,28 @@ impl<'a> System<'a> for Sys {
             // DET-NET-012 (v6, stage 1): tick stamp.
             comp_sync_package.sync_tick = tick;
             if !comp_sync_package.is_empty() {
-                client.send_fallible(ServerGeneral::CompSync(
-                    comp_sync_package,
-                    force_updates.get(entity).map_or(0, |f| f.counter()),
-                ));
+                // APEX-T3.3.14: the (d) sequential spectator CompSync
+                // site Fable's T3.3.13 scope ruling deferred here.
+                // Subject = the SPECTATING client's own entity uid (the
+                // recipient this message is addressed to), not the
+                // spectated target -- distinct local_ordinal from (c)
+                // since the same client could in principle appear in
+                // both loops in one tick.
+                let msg = ServerGeneral::CompSync(comp_sync_package, force_updates.get(entity).map_or(0, |f| f.counter()));
+                let enqueued = uids.get(entity).is_some_and(|&uid| {
+                    try_enqueue_entity_sync_intent(
+                        &semantic_outbox,
+                        client.semantic_send_state().map(|s| s.binding()),
+                        msg.clone(),
+                        tick,
+                        SemanticPayloadRankV1::CompSync,
+                        CanonicalSubjectKeyV1::for_uid(uid),
+                        ordinals::SPECTATOR_COMPSYNC,
+                    )
+                });
+                if !enqueued {
+                    client.send_fallible(msg);
+                }
             }
         }
 
@@ -789,7 +860,7 @@ mod semantic_intents {
             1,
             SemanticPayloadRankV1::Create,
             CanonicalSubjectKeyV1::for_singleton("x"),
-            0,
+            ordinals::CREATE_OR_DELETE_ENTITY,
         );
         assert!(!enqueued);
         assert!(outbox.take_pending().is_empty());
@@ -806,7 +877,7 @@ mod semantic_intents {
             42,
             SemanticPayloadRankV1::Delete,
             CanonicalSubjectKeyV1::for_uid(Uid(std::num::NonZeroU64::new(7).unwrap())),
-            0,
+            ordinals::CREATE_OR_DELETE_ENTITY,
         );
         assert!(enqueued);
         let pending = outbox.take_pending();
@@ -818,7 +889,7 @@ mod semantic_intents {
         assert_eq!(intent.order_key.phase_rank, phase_rank(Phase::Create));
         assert_eq!(intent.order_key.producer_rank, SemanticProducerV1::EntitySync.producer_rank());
         assert_eq!(intent.order_key.payload_rank, SemanticPayloadRankV1::Delete.payload_rank());
-        assert_eq!(intent.order_key.local_ordinal, 0);
+        assert_eq!(intent.order_key.local_ordinal, ordinals::CREATE_OR_DELETE_ENTITY);
     }
 
     /// Create and Delete both use local_ordinal 0 -- proves that's safe
@@ -837,7 +908,7 @@ mod semantic_intents {
             1,
             SemanticPayloadRankV1::Create,
             CanonicalSubjectKeyV1::for_uid(uid),
-            0,
+            ordinals::CREATE_OR_DELETE_ENTITY,
         );
         try_enqueue_entity_sync_intent(
             &outbox,
@@ -846,7 +917,7 @@ mod semantic_intents {
             1,
             SemanticPayloadRankV1::Delete,
             CanonicalSubjectKeyV1::for_uid(uid),
-            0,
+            ordinals::CREATE_OR_DELETE_ENTITY,
         );
         let mut pending = outbox.take_pending();
         pending.sort_by(|a, b| a.total_sort_key().cmp(&b.total_sort_key()));
@@ -862,7 +933,33 @@ mod semantic_intents {
         let outbox = ServerSemanticOutboxV1::new();
         let b = binding(1);
         let subject = CanonicalSubjectKeyV1::for_region(Vec2::new(0, 0));
-        for local_ordinal in [0u32, 1u32] {
+        for local_ordinal in [ordinals::PAIRED_COMPSYNC, ordinals::THROTTLE_COMPSYNC] {
+            try_enqueue_entity_sync_intent(
+                &outbox,
+                Some(b),
+                ServerGeneral::CompSync(CompSyncPackage::new(), 0),
+                1,
+                SemanticPayloadRankV1::CompSync,
+                subject.clone(),
+                local_ordinal,
+            );
+        }
+        let mut pending = outbox.take_pending();
+        pending.sort_by(|a, b| a.total_sort_key().cmp(&b.total_sort_key()));
+        assert_ne!(pending[0].order_key, pending[1].order_key);
+    }
+
+    /// `APEX-T3.3.14`: the (c)/(d) sequential own-entity and spectator
+    /// CompSync sites both key off the RECEIVING client's own entity
+    /// uid, and a spectating client's own entity could in principle
+    /// appear in both loops in the same tick -- proves the ordinal split
+    /// is what keeps them from colliding even with an identical subject.
+    #[test]
+    fn own_entity_and_spectator_compsync_do_not_collide() {
+        let outbox = ServerSemanticOutboxV1::new();
+        let b = binding(1);
+        let subject = CanonicalSubjectKeyV1::for_uid(Uid(std::num::NonZeroU64::new(11).unwrap()));
+        for local_ordinal in [ordinals::OWN_ENTITY_COMPSYNC, ordinals::SPECTATOR_COMPSYNC] {
             try_enqueue_entity_sync_intent(
                 &outbox,
                 Some(b),
@@ -928,7 +1025,7 @@ mod semantic_intents_parallel {
             tick,
             SemanticPayloadRankV1::Create,
             CanonicalSubjectKeyV1::for_uid(created_uid),
-            0,
+            ordinals::CREATE_OR_DELETE_ENTITY,
         );
         try_enqueue_entity_sync_intent(
             outbox,
@@ -937,7 +1034,7 @@ mod semantic_intents_parallel {
             tick,
             SemanticPayloadRankV1::Delete,
             CanonicalSubjectKeyV1::for_uid(deleted_uid),
-            0,
+            ordinals::CREATE_OR_DELETE_ENTITY,
         );
         try_enqueue_entity_sync_intent(
             outbox,
@@ -946,7 +1043,7 @@ mod semantic_intents_parallel {
             tick,
             SemanticPayloadRankV1::CompSync,
             region_subject.clone(),
-            0,
+            ordinals::PAIRED_COMPSYNC,
         );
         try_enqueue_entity_sync_intent(
             outbox,
@@ -955,7 +1052,7 @@ mod semantic_intents_parallel {
             tick,
             SemanticPayloadRankV1::CompSync,
             region_subject,
-            1,
+            ordinals::THROTTLE_COMPSYNC,
         );
     }
 
