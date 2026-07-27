@@ -1320,7 +1320,8 @@ impl Client {
                     ClientGeneral::ChatMsg(_)
                     | ClientGeneral::Command(_, _)
                     | ClientGeneral::Terminate
-                    | ClientGeneral::RequestPlugins(_) => &mut self.general_stream,
+                    | ClientGeneral::RequestPlugins(_)
+                    | ClientGeneral::RequestPluginArtifacts(_) => &mut self.general_stream,
                 };
                 #[cfg(feature = "tracy")]
                 {
@@ -3081,6 +3082,15 @@ impl Client {
                 let plugin_len = d.len();
                 tracing::info!(?plugin_len, "plugin data");
                 frontend_events.push(Event::PluginDataReceived(d));
+            },
+            // APEX-T2.5.10: typed artifact wire is defined but DORMANT
+            // until the .11 bootstrap consumes it through the verified
+            // collector. Ignore-with-warning, never panic on wire input.
+            ServerGeneral::PluginArtifactData(r) => {
+                tracing::warn!(
+                    ordinal = r.descriptor.ordinal,
+                    "PluginArtifactData before the T2.5.11 bootstrap path is active; ignoring"
+                );
             },
             ServerGeneral::SetPlayerRole(role) => {
                 debug!(?role, "Updating client role");

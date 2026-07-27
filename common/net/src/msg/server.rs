@@ -243,6 +243,10 @@ pub enum ServerGeneral {
     SpectatePosition(Vec3<f32>),
     /// Plugin data requested from the server
     PluginData(Vec<u8>),
+    /// APEX-T2.5.10: one typed artifact (root/ordinal/digest/size +
+    /// bytes); transport order carries no meaning. `PluginData` remains
+    /// for explicit legacy mode only.
+    PluginArtifactData(crate::msg::plugin_artifact::PluginArtifactResponseV1),
     /// Update the list of available recipes. Usually called after a new recipe
     /// is acquired
     UpdateRecipes,
@@ -469,6 +473,7 @@ impl ServerMsg {
                         | ServerGeneral::SetPlayerRole(_)
                         | ServerGeneral::LodZoneUpdate { .. } => true,
                         ServerGeneral::PluginData(_) => true,
+                        ServerGeneral::PluginArtifactData(_) => true,
                     }
             },
             ServerMsg::Ping(_) => true,

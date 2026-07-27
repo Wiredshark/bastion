@@ -598,7 +598,8 @@ impl Sys {
             | ClientGeneral::ChatMsg(_)
             | ClientGeneral::Command(..)
             | ClientGeneral::Terminate
-            | ClientGeneral::RequestPlugins(_) => {
+            | ClientGeneral::RequestPlugins(_)
+            | ClientGeneral::RequestPluginArtifacts(_) => {
                 debug!("Kicking possibly misbehaving client due to invalid client in game request");
                 deferred_events.push(DeferredInGameEvent::Disconnect(
                     event::ClientDisconnectEvent(

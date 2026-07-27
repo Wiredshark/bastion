@@ -54,7 +54,12 @@ pub(crate) const VELOREN_MAGIC_NUMBER: [u8; 7] = *b"VELOREN";
 /// ServerInit::GameSync/RegisterError all gained a new required
 /// server_boot_id-related field (bincode schema-breaking). Confirmed no
 /// other pending change on this branch already claims minor 0.7.
-pub const VELOREN_NETWORK_VERSION: [u32; 3] = [0, 7, 0];
+/// APEX-T2.5.10: bumped 0.7.0 -> 0.8.0 -- ClientGeneral gained
+/// RequestPluginArtifacts and ServerGeneral gained PluginArtifactData
+/// (appended variants: schema-breaking for bincode enums). NOTE for the
+/// apex merge: Sonnet's T3.3 lane bumped this constant independently on
+/// bastion/apex; reconcile to a single bump >= both at merge time.
+pub const VELOREN_NETWORK_VERSION: [u32; 3] = [0, 8, 0];
 pub(crate) const STREAM_ID_OFFSET1: Sid = Sid::new(0);
 pub(crate) const STREAM_ID_OFFSET2: Sid = Sid::new(u64::MAX / 2);
 /// Maximal possible Prio to choose (for performance reasons)

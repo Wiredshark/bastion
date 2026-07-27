@@ -188,6 +188,10 @@ pub enum ClientGeneral {
         lossy_terrain_compression: bool,
     },
     RequestPlugins(Vec<PluginHash>),
+    /// APEX-T2.5.10: typed artifact request — exact ordinals under one
+    /// deployment root. `RequestPlugins` remains for explicit legacy mode
+    /// only.
+    RequestPluginArtifacts(crate::msg::plugin_artifact::PluginArtifactRequestV1),
 }
 
 impl ClientMsg {
@@ -252,6 +256,7 @@ impl ClientMsg {
                         // LodZoneRequest is required by the char select screen
                         | ClientGeneral::LodZoneRequest { .. } => true,
                         | ClientGeneral::RequestPlugins(_) => true,
+                        | ClientGeneral::RequestPluginArtifacts(_) => true,
                     }
             },
             ClientMsg::Ping(_) => true,
