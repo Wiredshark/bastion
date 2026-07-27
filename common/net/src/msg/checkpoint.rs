@@ -213,3 +213,104 @@ mod checkpoint_profile_v1 {
         );
     }
 }
+
+/// `APEX-T3.4.02` — global chronology. Epoch starts at 1 per binding
+/// (0 = "no checkpoint committed"); data ordinals are dense 1..=N within
+/// one epoch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct CheckpointOrdinalV1(pub u64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointChronologyErrorV1 {
+    EpochZero,
+    EpochGap { expected: u64, got: u64 },
+    EpochStale { committed: u64, got: u64 },
+    ParentMismatch { expected: u64, got: u64 },
+    OrdinalZero,
+    OrdinalGap { expected: u64, got: u64 },
+    OrdinalDuplicate { ordinal: u64 },
+}
+
+/// Per-binding chronology cursor. A new binding starts committed = 0.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CheckpointChronologyV1 {
+    committed_epoch: u64,
+}
+
+impl CheckpointChronologyV1 {
+    pub fn new() -> Self { Self { committed_epoch: 0 } }
+
+    pub fn committed_epoch(&self) -> u64 { self.committed_epoch }
+
+    /// Admits exactly `committed + 1` with `parent == committed`.
+    pub fn validate_epoch_v1(&self, epoch: u64, parent_epoch: u64) -> Result<(), CheckpointChronologyErrorV1> {
+        use CheckpointChronologyErrorV1 as E;
+        if epoch == 0 {
+            return Err(E::EpochZero);
+        }
+        if epoch <= self.committed_epoch {
+            return Err(E::EpochStale { committed: self.committed_epoch, got: epoch });
+        }
+        if epoch != self.committed_epoch + 1 {
+            return Err(E::EpochGap { expected: self.committed_epoch + 1, got: epoch });
+        }
+        if parent_epoch != self.committed_epoch {
+            return Err(E::ParentMismatch { expected: self.committed_epoch, got: parent_epoch });
+        }
+        Ok(())
+    }
+
+    /// Only a committed checkpoint advances the cursor.
+    pub fn commit_epoch_v1(&mut self, epoch: u64) { self.committed_epoch = epoch; }
+}
+
+/// Validates a whole epoch's ordinal transcript: dense 1..=N, no gap, no
+/// duplicate, order-independent (input may arrive in any order).
+pub fn validate_ordinals_v1(ordinals: &[CheckpointOrdinalV1]) -> Result<(), CheckpointChronologyErrorV1> {
+    use CheckpointChronologyErrorV1 as E;
+    let mut sorted: Vec<u64> = ordinals.iter().map(|o| o.0).collect();
+    sorted.sort_unstable();
+    for (i, &o) in sorted.iter().enumerate() {
+        if o == 0 {
+            return Err(E::OrdinalZero);
+        }
+        if i > 0 && o == sorted[i - 1] {
+            return Err(E::OrdinalDuplicate { ordinal: o });
+        }
+        let expected = i as u64 + 1;
+        if o != expected {
+            return Err(E::OrdinalGap { expected, got: o });
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod checkpoint_epoch_ordinal_v1 {
+    use super::*;
+
+    #[test]
+    fn epoch_chain_is_contiguous_and_non_reusable() {
+        use CheckpointChronologyErrorV1 as E;
+        let mut c = CheckpointChronologyV1::new();
+        assert_eq!(c.validate_epoch_v1(0, 0), Err(E::EpochZero));
+        assert_eq!(c.validate_epoch_v1(2, 0), Err(E::EpochGap { expected: 1, got: 2 }));
+        assert_eq!(c.validate_epoch_v1(1, 7), Err(E::ParentMismatch { expected: 0, got: 7 }));
+        c.validate_epoch_v1(1, 0).unwrap();
+        c.commit_epoch_v1(1);
+        // replay of a committed epoch is stale, not a gap
+        assert_eq!(c.validate_epoch_v1(1, 0), Err(E::EpochStale { committed: 1, got: 1 }));
+        c.validate_epoch_v1(2, 1).unwrap();
+    }
+
+    #[test]
+    fn ordinals_are_dense_and_order_independent() {
+        use CheckpointChronologyErrorV1 as E;
+        let ord = |v: &[u64]| v.iter().map(|&x| CheckpointOrdinalV1(x)).collect::<Vec<_>>();
+        assert!(validate_ordinals_v1(&ord(&[])).is_ok());
+        assert!(validate_ordinals_v1(&ord(&[3, 1, 2])).is_ok());
+        assert_eq!(validate_ordinals_v1(&ord(&[0, 1])), Err(E::OrdinalZero));
+        assert_eq!(validate_ordinals_v1(&ord(&[1, 3])), Err(E::OrdinalGap { expected: 2, got: 3 }));
+        assert_eq!(validate_ordinals_v1(&ord(&[1, 2, 2])), Err(E::OrdinalDuplicate { ordinal: 2 }));
+    }
+}
