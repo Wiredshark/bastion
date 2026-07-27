@@ -125,6 +125,24 @@ the full rationale, including why `APEX-T4.5` was re-scoped to depend on
 ratification against a canonical guide revision — Fable's ruling is the
 final word, `T4.3a`/`T4.3b` are locally-canonical row IDs going forward.
 
+## 6a. `FLEET_AUTHORED` — fleet-written specs replacing unrecoverable packets (2026-07-27)
+
+Ben ordered (2026-07-27, routed via Fable): rows whose standalone packet
+was never real (hallucination-class, same root cause as `APEX-T5.5`'s
+original citation and the `APEX-T0.2`/`T0.1` pin/vector issues resolved
+2026-07-26) are no longer waited on. The fleet authors a replacement
+packet directly, grounded only in the master build order's own row text
+(never the invalid standalone files), the verified finding matrix, and
+live code. `status.specification = "FLEET_AUTHORED"` marks this: distinct
+from `SPECIFICATION_COMPLETE` (a real delivered packet) and from
+`NEEDS_DESIGN` (no packet content exists at all) — a fleet-authored spec
+exists and is intended to be build-grade, but went through a fleet
+author→reviewer cross-review gate instead of external delivery. A row
+must not move past `FLEET_AUTHORED` to `IMPLEMENTED` without that
+cross-review actually happening (author ≠ reviewer at both the spec-review
+and build-approval layers) — this is process discipline, not yet a
+validator-enforced invariant.
+
 ## 7. Temporary serialization
 
 Before `APEX-T0.2` lands: UTF-8 JSON, object keys sorted, arrays in

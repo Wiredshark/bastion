@@ -650,7 +650,7 @@
         "APEX-T0.3",
         "APEX-T0.4"
       ],
-      "packet_file": "PROJECT-BASTION-APEX-MICROSTEP-APEX-T0.5-*.md",
+      "packet_file": "readme/apex/APEX-T0.5-FLEET-AUTHORED-SPEC-v1.md",
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T0.5",
@@ -661,10 +661,10 @@
         "deployment": "NOT_DEPLOYED",
         "implementation": "NOT_STARTED",
         "microstep_research": "MICROSTEP_RESEARCH_COMPLETE",
-        "specification": "SPECIFICATION_COMPLETE",
+        "specification": "FLEET_AUTHORED",
         "verification": "NOT_STARTED"
       },
-      "title": "Subsystem descriptor / compatibility-profile registry"
+      "title": "Subsystem descriptor / compatibility-profile registry (spec fleet-authored 2026-07-27 per Ben's order -- original packet/vectors were hallucinated; DRAFT pending Opus spec-review + Fable approval before build)"
     },
     {
       "evidence_artifacts": [],
