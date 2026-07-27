@@ -147,8 +147,10 @@ toolchain/config file bytes)**. Specifically:
 // NEW-SPEC (fleet). Field IDs frozen; encodes via ManifestEncodeV1.
 struct SourceClosureRecordV1 {          // field id
     schema: MachineTextV1,              // 0  "bastion.source-closure/v1"
-    commit: MachineTextV1,              // 1  40-lower-hex (admitted commit)
-    tree: MachineTextV1,                // 2  full tree id
+    commit: MachineTextV1,              // 1  40-lower-hex (admitted commit; VALIDATED
+                                        //    40-lower-hex at record construction — checked
+                                        //    constructor, not caller convention [cross-review])
+    tree: MachineTextV1,                // 2  full tree id (same 40-hex checked constructor)
     rust_source_root: ProtocolDigestV1, // 3  SourceClosure domain
     asset_tree_root: ProtocolDigestV1,  // 4  SourceClosure domain
     filter_spec_digest: ProtocolDigestV1,// 5 the exclusion list itself
@@ -160,6 +162,11 @@ struct SourceClosureRecordV1 {          // field id
     build_scripts: Vec<BuildScriptPinV1>,// 11 path-byte order
     lfs_report_root: ProtocolDigestV1,  // 12 per-file verdicts manifest
     file_counts: SourceClosureCountsV1, // 13 (rust_files, asset_files, lfs_files) u64s
+}
+struct SourceClosureCountsV1 {
+    rust_files: u64,                    // 0
+    asset_files: u64,                   // 1
+    lfs_files: u64,                     // 2
 }
 struct BuildScriptPinV1 {
     path: CanonicalPathV1,              // 0
