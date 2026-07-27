@@ -11,6 +11,7 @@ pub mod build;
 pub mod digest;
 pub mod identity;
 pub mod manifest;
+pub mod replay_bundle;
 pub mod scalar;
 pub mod subsystem;
 pub mod source_closure;
