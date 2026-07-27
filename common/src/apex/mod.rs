@@ -11,6 +11,7 @@ pub mod digest;
 pub mod identity;
 pub mod manifest;
 pub mod scalar;
+pub mod source_closure;
 
 pub use boundary::AuthoritativeBoundaryKindV1;
 pub use scalar::{
