@@ -150,6 +150,9 @@ pub enum ArchiveRejectV1 {
     DeclaredModulePath,
     DuplicateRawModuleDeclaration,
     DuplicateCanonicalModuleDeclaration,
+    // T2.2.03 — reconciliation rejects.
+    ParserViewMismatch { detail: &'static str },
+    ParserIdentityMismatch,
 }
 
 impl ArchiveRejectV1 {
@@ -205,6 +208,8 @@ impl ArchiveRejectV1 {
             Self::DeclaredModulePath => "REJECT-DECLARED-MODULE-PATH",
             Self::DuplicateRawModuleDeclaration => "REJECT-DUPLICATE-RAW-MODULE-DECLARATION",
             Self::DuplicateCanonicalModuleDeclaration => "REJECT-DUPLICATE-CANONICAL-MODULE-DECLARATION",
+            Self::ParserViewMismatch { .. } => "REJECT-PARSER-VIEW-MISMATCH",
+            Self::ParserIdentityMismatch => "REJECT-PARSER-IDENTITY-MISMATCH",
         }
     }
 }
@@ -324,6 +329,63 @@ pub fn resolve_manifest(
         module_order_unfrozen: true,
         raw_duplicate_dependencies,
     })
+}
+
+// ---------------------------------------------------------------------------
+// T2.2.03 — tar-rs reconciliation against the SAME immutable bytes.
+// ---------------------------------------------------------------------------
+
+/// Exact parser identity recorded in every observation (PAR-C08 keys off
+/// this). The tar-rs half names the WORKSPACE-PINNED version (Cargo.lock);
+/// a lockfile bump that changes it without a deliberate identity update
+/// is exactly what the identity-mismatch canary exists to catch.
+pub const PARSER_IDENTITY_V1: &str = "apex-t2-2-framing-scanner/v1+tar-rs/0.4.46";
+
+/// T2.2.03: reconcile tar-rs's view of the archive against the framing
+/// scanner's, over the SAME buffer. tar-rs NEVER decides framing
+/// (`BLOCK-TAR-RS-FRAMING-SUBSTITUTION` PAR-C04 — structurally, the
+/// strict pipeline calls `scan_framing` first and this reconciler can
+/// only REJECT further, never widen); any disagreement in entry count,
+/// path bytes, or declared size is `REJECT-PARSER-VIEW-MISMATCH`
+/// (PAR-C17): one of the two parsers is being lenient about bytes the
+/// other reads differently, and a split-view archive is exactly the
+/// smuggling shape the reconciliation exists to kill.
+pub fn reconcile_tar_rs(archive: &[u8], scanned: &[ScannedEntryV1]) -> Result<(), ArchiveRejectV1> {
+    let mut tar = tar::Archive::new(archive);
+    let entries = tar
+        .entries()
+        .map_err(|_| ArchiveRejectV1::ParserViewMismatch { detail: "tar-rs refused entries the scanner admitted" })?;
+    let mut count = 0usize;
+    for (i, entry) in entries.enumerate() {
+        let entry =
+            entry.map_err(|_| ArchiveRejectV1::ParserViewMismatch { detail: "tar-rs entry error mid-archive" })?;
+        let ours = scanned
+            .get(i)
+            .ok_or(ArchiveRejectV1::ParserViewMismatch { detail: "tar-rs sees more entries than the scanner" })?;
+        // Path: tar-rs performs its own prefix/name join; compare against
+        // the same join of our raw fields.
+        let mut full = ours.raw_prefix.clone();
+        if !full.is_empty() {
+            full.push(b'/');
+        }
+        full.extend_from_slice(&ours.raw_name);
+        let theirs = entry
+            .path_bytes()
+            .into_owned();
+        if theirs != full {
+            return Err(ArchiveRejectV1::ParserViewMismatch { detail: "path bytes disagree" });
+        }
+        if entry.header().size().map_err(|_| ArchiveRejectV1::ParserViewMismatch { detail: "size unreadable" })?
+            != ours.declared_size
+        {
+            return Err(ArchiveRejectV1::ParserViewMismatch { detail: "declared size disagrees" });
+        }
+        count += 1;
+    }
+    if count != scanned.len() {
+        return Err(ArchiveRejectV1::ParserViewMismatch { detail: "scanner sees more entries than tar-rs" });
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1179,6 +1241,39 @@ mod tests {
         assert_eq!(
             resolve_manifest(&archive, &scanned, &assembled, &ns, &small).unwrap_err(),
             ArchiveRejectV1::ManifestSizeLimit
+        );
+    }
+
+    #[test]
+    fn tar_rs_reconciliation_agrees_and_split_views_bite() {
+        let limits = test_limits();
+        let archive = terminated({
+            let mut b = ustar_entry("plugin.toml", b"name = \"p\"\n", b'0');
+            b.extend(ustar_entry("a.wasm", b"A", b'0'));
+            b
+        });
+        let scan = scan_framing(&archive, &limits).unwrap();
+        assert!(reconcile_tar_rs(&archive, &scan.entries).is_ok(), "two parsers agree on clean bytes");
+
+        // Split view: hide one scanner entry — reconciliation must catch
+        // the count disagreement in BOTH directions.
+        assert!(matches!(
+            reconcile_tar_rs(&archive, &scan.entries[..1]),
+            Err(ArchiveRejectV1::ParserViewMismatch { .. })
+        ));
+
+        // THE SUBSTITUTION PROOF (PAR-C04's mechanism): an archive with
+        // garbage after the terminator — tar-rs stops at the first zero
+        // block and silently tolerates it; the framing scanner REJECTS.
+        // The strict pipeline calls the scanner FIRST, so tar-rs's
+        // tolerance can never widen admission.
+        let mut trailing = terminated(ustar_entry("a.wasm", b"A", b'0'));
+        trailing.extend([0xAAu8; 512]);
+        assert_eq!(scan_framing(&trailing, &limits).unwrap_err(), ArchiveRejectV1::TrailingData);
+        let mut lenient = tar::Archive::new(trailing.as_slice());
+        assert!(
+            lenient.entries().unwrap().all(|e| e.is_ok()),
+            "tar-rs tolerates what the scanner rejects — which is exactly why the scanner decides framing"
         );
     }
 
