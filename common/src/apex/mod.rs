@@ -9,6 +9,7 @@
 pub mod boundary;
 pub mod build;
 pub mod digest;
+pub mod failure_seed;
 pub mod identity;
 pub mod manifest;
 pub mod replay_bundle;

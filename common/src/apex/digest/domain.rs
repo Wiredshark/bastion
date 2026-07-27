@@ -86,6 +86,11 @@ pub enum DigestDomainIdV1 {
     /// replay bundle is a REPLAY INPUT (self-contained enough to re-run a
     /// failure), not a comparison verdict.
     ReplayBundle = 21,
+    /// `APEX-T1.107` (engine-list, Part 2 P2-G6): the failure-seed
+    /// shrinking record's own canonical root. A distinct domain from
+    /// `ReplayBundle` (21): a shrink record CITES seeds/signatures, it
+    /// does not embed a replayable run.
+    FailureSeedRecord = 22,
 }
 
 impl DigestDomainIdV1 {
@@ -117,10 +122,11 @@ impl DigestDomainIdV1 {
             Self::PluginCandidateSet => "bastion/plugin-candidate-set/v1",
             Self::PluginResolvedGraph => "bastion/plugin-resolved-graph/v1",
             Self::ReplayBundle => "bastion/replay-bundle/v1",
+            Self::FailureSeedRecord => "bastion/failure-seed-record/v1",
         }
     }
 
-    pub const ALL: [DigestDomainIdV1; 21] = [
+    pub const ALL: [DigestDomainIdV1; 22] = [
         Self::BootstrapManifest,
         Self::SaveUniverseManifest,
         Self::PluginActivationPlan,
@@ -142,6 +148,7 @@ impl DigestDomainIdV1 {
         Self::PluginCandidateSet,
         Self::PluginResolvedGraph,
         Self::ReplayBundle,
+        Self::FailureSeedRecord,
     ];
 }
 
@@ -209,5 +216,7 @@ mod tests {
         assert_eq!(DigestDomainIdV1::PluginResolvedGraph.label(), "bastion/plugin-resolved-graph/v1");
         assert_eq!(DigestDomainIdV1::ReplayBundle.as_u16(), 21);
         assert_eq!(DigestDomainIdV1::ReplayBundle.label(), "bastion/replay-bundle/v1");
+        assert_eq!(DigestDomainIdV1::FailureSeedRecord.as_u16(), 22);
+        assert_eq!(DigestDomainIdV1::FailureSeedRecord.label(), "bastion/failure-seed-record/v1");
     }
 }
