@@ -145,6 +145,21 @@ pub fn maintain_paused_scene_required() -> bool {
     crate::render::bastion_r0d::capture_config().is_some() && !ready_for_capture_measurement()
 }
 
+/// A certification frame is bound to the completed server tick once that
+/// authority is frozen. `Client::get_tick()` remains a useful diagnostic, but
+/// it is a client-local counter and must not churn the coherent presentation
+/// generation while a frozen fixture is settling.
+#[must_use]
+pub(crate) const fn authoritative_snapshot_tick_v1(
+    diagnostic_client_tick: u64,
+    authority: Option<crate::render::bastion_r0d::CertificationServerLatchV1>,
+) -> u64 {
+    match authority {
+        Some(authority) if authority.frozen => authority.completed_tick,
+        Some(_) | None => diagnostic_client_tick,
+    }
+}
+
 #[must_use]
 pub fn upload_required(frame: &PresentationFrameV1) -> bool {
     state().lock().is_ok_and(|state| {
@@ -490,6 +505,29 @@ fn hash(domain: &str, payload: &[u8]) -> Result<[u8; 32], ProductionPresentation
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frozen_server_tick_is_presentation_authority_not_client_tick() {
+        let frozen = crate::render::bastion_r0d::CertificationServerLatchV1 {
+            completed_tick: crate::render::bastion_r0d::CERTIFICATION_SERVER_TICK_V1,
+            frozen: true,
+        };
+        assert_eq!(
+            authoritative_snapshot_tick_v1(9_999, Some(frozen)),
+            crate::render::bastion_r0d::CERTIFICATION_SERVER_TICK_V1
+        );
+        assert_eq!(
+            authoritative_snapshot_tick_v1(
+                41,
+                Some(crate::render::bastion_r0d::CertificationServerLatchV1 {
+                    completed_tick: 40,
+                    frozen: false,
+                })
+            ),
+            41
+        );
+        assert_eq!(authoritative_snapshot_tick_v1(42, None), 42);
+    }
     use bastion_renderer_r0d::{
         figure_asset::{
             CachePublicationRecordV1, CachePublicationTerminalV1, CompiledFigurePackageV1,

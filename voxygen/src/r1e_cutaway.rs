@@ -22,6 +22,8 @@ pub const CUTAWAY_FIXTURE_RADIUS_V1: i32 = 4;
 pub const CUTAWAY_FIXTURE_DEPTH_V1: i32 = 6;
 pub const CUTAWAY_CAP_MATERIAL_V1: u16 = 17;
 pub const CUTAWAY_VISUAL_RADIUS_V1: f32 = 5.5;
+const CUTAWAY_DIAGNOSTIC_CADENCE_V1: u16 = 120;
+const CUTAWAY_DIAGNOSTIC_LIMIT_V1: u8 = 32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -79,12 +81,35 @@ pub struct CutawayCaptureEvidenceV1 {
 
 static LATEST_EVIDENCE: Mutex<Option<CutawayCaptureEvidenceV1>> = Mutex::new(None);
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct AuthorityChangeBitsV1 {
+    presentation_generation: bool,
+    terrain_generation: bool,
+    terrain_revision: bool,
+    camera_token: bool,
+    camera_sequence: bool,
+}
+
+impl AuthorityChangeBitsV1 {
+    const fn any(self) -> bool {
+        self.presentation_generation
+            || self.terrain_generation
+            || self.terrain_revision
+            || self.camera_token
+            || self.camera_sequence
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct CutawayFixtureStateV1 {
     last_stage: Option<CutawayCaptureStageV1>,
     stage_anchor: Option<Vec3<f32>>,
+    stage_entry_generation: u64,
     cap_shape: Option<DebugShapeId>,
+    cap_shape_lifetime_frames: u32,
     stable_frames: u16,
+    diagnostic_frames_since_emit: u16,
+    diagnostic_emissions: u8,
     latest_geometry: Option<CutawayGeometryV1>,
 }
 
@@ -134,21 +159,43 @@ pub fn apply_fixture(
         state.latch_stage_anchor(stage, anchor, stage_changed || source_authority_changed);
     let expected_camera_token =
         camera_token(stage_anchor, stage).map_err(|_| "camera token hash")?;
-    let authority_changed = state.latest_geometry.as_ref().is_some_and(|geometry| {
-        !geometry_matches_authority(
-            geometry,
-            generation.client_applied_generation,
-            frame.environment().terrain_root,
-            generation.simulation_tick,
-            expected_camera_token,
-            u64::from(stage as u8),
-        )
-    });
+    let change_bits = state
+        .latest_geometry
+        .as_ref()
+        .map(|geometry| {
+            authority_change_bits(
+                geometry,
+                generation.client_applied_generation,
+                frame.environment().terrain_root,
+                generation.simulation_tick,
+                expected_camera_token,
+                u64::from(stage as u8),
+            )
+        })
+        .unwrap_or_default();
+    let authority_changed = change_bits.any();
+    let reset_reason = if stage_changed {
+        Some("stage_changed")
+    } else if change_bits.presentation_generation {
+        Some("presentation_generation_changed")
+    } else if change_bits.terrain_generation {
+        Some("terrain_generation_changed")
+    } else if change_bits.terrain_revision {
+        Some("terrain_revision_changed")
+    } else if change_bits.camera_token {
+        Some("camera_token_changed")
+    } else if change_bits.camera_sequence {
+        Some("camera_sequence_changed")
+    } else {
+        None
+    };
     if stage_changed || authority_changed {
         if let Some(shape) = state.cap_shape.take() {
             scene.debug.remove_shape(shape);
         }
         state.stable_frames = 0;
+        state.cap_shape_lifetime_frames = 0;
+        state.diagnostic_frames_since_emit = 0;
         state.latest_geometry = None;
         let geometry = build_geometry(frame, terrain, stage_anchor, stage)?;
         if stage == CutawayCaptureStageV1::Sliced {
@@ -165,6 +212,13 @@ pub fn apply_fixture(
         }
         state.latest_geometry = Some(geometry);
         state.last_stage = Some(stage);
+        state.stage_entry_generation = generation.client_applied_generation;
+    }
+    if state.cap_shape.is_some() && state.cap_shape_lifetime_frames < u32::MAX {
+        state.cap_shape_lifetime_frames += 1;
+    }
+    if state.diagnostic_frames_since_emit < CUTAWAY_DIAGNOSTIC_CADENCE_V1 {
+        state.diagnostic_frames_since_emit += 1;
     }
     // Scene maintenance precedes this fixture hook. Reasserting the production
     // state is idempotent and leaves the newly created cap shape intact until
@@ -190,10 +244,12 @@ pub fn apply_fixture(
     let cap_triangle_count = cap_face_count
         .checked_mul(2)
         .ok_or("cap triangle count overflow")?;
+    let cap_has_draw_model = match state.cap_shape {
+        Some(shape) => scene.debug.has_draw_model(shape),
+        None => stage != CutawayCaptureStageV1::Sliced,
+    };
     let cap_draw_ready = match stage {
-        CutawayCaptureStageV1::Sliced => state
-            .cap_shape
-            .is_some_and(|shape| scene.debug.has_draw_model(shape)),
+        CutawayCaptureStageV1::Sliced => cap_has_draw_model,
         CutawayCaptureStageV1::Surface | CutawayCaptureStageV1::Restored => true,
     };
     let production_target_count = u32::try_from(scene.bastion_occlusion().targets.len())
@@ -229,10 +285,77 @@ pub fn apply_fixture(
             && (stage != CutawayCaptureStageV1::Sliced || production_target_count == 1),
         fixture_owned: true,
     };
+    if reset_reason.is_some() || state.diagnostic_frames_since_emit == CUTAWAY_DIAGNOSTIC_CADENCE_V1
+    {
+        emit_transition_diagnostic(
+            state,
+            stage,
+            generation.client_applied_generation,
+            change_bits,
+            reset_reason.unwrap_or("cadence"),
+            cap_has_draw_model,
+            cap_draw_ready,
+            production_target_count,
+        );
+    }
     if let Ok(mut latest) = LATEST_EVIDENCE.lock() {
         *latest = Some(evidence);
     }
     Ok(evidence)
+}
+
+fn emit_transition_diagnostic(
+    state: &mut CutawayFixtureStateV1,
+    stage: CutawayCaptureStageV1,
+    current_generation: u64,
+    change_bits: AuthorityChangeBitsV1,
+    reset_reason: &'static str,
+    cap_has_draw_model: bool,
+    cap_draw_ready: bool,
+    production_target_count: u32,
+) {
+    if state.diagnostic_emissions >= CUTAWAY_DIAGNOSTIC_LIMIT_V1 {
+        return;
+    }
+    tracing::info!(
+        target: "bastion_r1e_cutaway",
+        stage = stage.label(),
+        stage_entry_generation = state.stage_entry_generation,
+        current_generation,
+        reset_reason,
+        authority_presentation_generation_changed = change_bits.presentation_generation,
+        authority_terrain_generation_changed = change_bits.terrain_generation,
+        authority_terrain_revision_changed = change_bits.terrain_revision,
+        authority_camera_token_changed = change_bits.camera_token,
+        authority_camera_sequence_changed = change_bits.camera_sequence,
+        cap_shape_id = ?state.cap_shape,
+        cap_shape_lifetime_frames = state.cap_shape_lifetime_frames,
+        cap_has_draw_model,
+        cap_draw_ready,
+        production_target_count,
+        stable_frames = state.stable_frames,
+        diagnostic_ordinal = state.diagnostic_emissions,
+        "bounded cutaway stage transition diagnostic"
+    );
+    state.diagnostic_emissions += 1;
+    state.diagnostic_frames_since_emit = 0;
+}
+
+fn authority_change_bits(
+    geometry: &CutawayGeometryV1,
+    presentation_generation: u64,
+    terrain_generation: [u8; 32],
+    terrain_revision: u64,
+    camera_token: [u8; 32],
+    camera_sequence: u64,
+) -> AuthorityChangeBitsV1 {
+    AuthorityChangeBitsV1 {
+        presentation_generation: geometry.presentation_generation != presentation_generation,
+        terrain_generation: geometry.terrain_generation != terrain_generation,
+        terrain_revision: geometry.terrain_revision != terrain_revision,
+        camera_token: geometry.camera_token != camera_token,
+        camera_sequence: geometry.camera_sequence != camera_sequence,
+    }
 }
 
 impl CutawayFixtureStateV1 {
@@ -456,6 +579,7 @@ fn cap_triangles(geometry: &CutawayGeometryV1) -> Result<Vec<[Vec3<f32>; 3]>, &'
     Ok(output)
 }
 
+#[cfg(test)]
 fn geometry_matches_authority(
     geometry: &CutawayGeometryV1,
     presentation_generation: u64,
@@ -688,5 +812,52 @@ mod tests {
         let latched = state.latch_stage_anchor(CutawayCaptureStageV1::Sliced, replacement, true);
 
         assert_eq!(latched, replacement);
+    }
+
+    #[test]
+    fn authority_diagnostics_identify_the_exact_reset_fields() {
+        let geometry = CutawayGeometryV1 {
+            presentation_generation: 7,
+            terrain_generation: [1; 32],
+            terrain_revision: 9,
+            camera_token: [2; 32],
+            camera_sequence: 1,
+            policy_digest: [3; 32],
+            terrain_root: [4; 32],
+            removed_cells: vec![CellPositionV1::new(0, 0, 1)],
+            cap_faces: Vec::new(),
+            roof_removals: 1,
+            wall_removals: 0,
+            surface_passthrough: false,
+            geometry_digest: [5; 32],
+        };
+        assert_eq!(
+            authority_change_bits(&geometry, 8, [1; 32], 10, [2; 32], 1),
+            AuthorityChangeBitsV1 {
+                presentation_generation: true,
+                terrain_generation: false,
+                terrain_revision: true,
+                camera_token: false,
+                camera_sequence: false,
+            }
+        );
+    }
+
+    #[test]
+    fn transition_diagnostics_are_hard_bounded() {
+        let mut state = CutawayFixtureStateV1::default();
+        for _ in 0..u16::from(CUTAWAY_DIAGNOSTIC_LIMIT_V1) + 4 {
+            emit_transition_diagnostic(
+                &mut state,
+                CutawayCaptureStageV1::Sliced,
+                1,
+                AuthorityChangeBitsV1::default(),
+                "test",
+                false,
+                false,
+                1,
+            );
+        }
+        assert_eq!(state.diagnostic_emissions, CUTAWAY_DIAGNOSTIC_LIMIT_V1);
     }
 }
