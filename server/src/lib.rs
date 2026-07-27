@@ -40,6 +40,7 @@ pub mod persistence;
 mod pet;
 pub mod presence;
 pub mod rtsim;
+pub mod session_registry;
 pub mod settings;
 pub mod state_ext;
 pub mod sys;
@@ -435,6 +436,10 @@ impl Server {
         // once here and never mutated afterward (systems read it via
         // ReadExpect<ServerBootId>, never write it).
         state.ecs_mut().insert(server_boot_id);
+        // APEX-T3.2: memory-only, empty on every fresh process (canary
+        // SES-105) -- inserted once here alongside ServerBootId, never
+        // persisted/reloaded from a save.
+        state.ecs_mut().insert(crate::session_registry::SessionRegistry::new());
         state.ecs_mut().insert(battlemode_buffer);
         state.ecs_mut().insert(RecentClientIPs::default());
         state.ecs_mut().insert(settings.clone());

@@ -60,7 +60,7 @@ use common_net::{
     msg::{
         ChatTypeContext, ClientGeneral, ClientMsg, ClientRegister, DisconnectReason, InviteAnswer,
         Notification, PingMsg, PlayerInfo, PlayerListUpdate, RegisterError, ServerGeneral,
-        ServerInit, ServerRegisterAnswer,
+        ServerInit, ServerRegisterAnswer, SessionBindingV1, SessionRequestV1,
         server::ServerDescription,
         world_msg::{EconomyInfo, PoiInfo, SiteId},
     },
@@ -687,7 +687,7 @@ impl Client {
 
         init_stage_update(ClientInitStage::Authentication);
         // Register client
-        Self::register(
+        let register_session_binding = Self::register(
             username,
             password,
             locale,
@@ -715,6 +715,7 @@ impl Client {
             description,
             active_plugins: _active_plugins,
             role,
+            session_binding: game_sync_session_binding,
         } = loop {
             tokio::select! {
                 // Spawn in a blocking thread (leaving the network thread free).  This is mostly
@@ -729,6 +730,10 @@ impl Client {
         // readiness -- a server restart between registration and this
         // bootstrap message must not mix state across incarnations.
         crate::error::check_game_sync_boot_scope(server_info.server_boot_id, game_sync_server_boot_id)?;
+        // APEX-T3.2: same shape, new field -- RegisterAnswer and GameSync
+        // must carry the identical SessionBindingV1, checked before
+        // constructing State (spec section 3.5, canaries SES-045/046).
+        crate::error::check_session_binding_equality(register_session_binding, game_sync_session_binding)?;
 
         init_stage_update(ClientInitStage::StartingClient);
         // Spawn in a blocking thread (leaving the network thread free).  This is mostly
@@ -1183,7 +1188,7 @@ impl Client {
         mut auth_trusted: impl FnMut(&str) -> bool,
         server_info: &ServerInfo,
         register_stream: &mut Stream,
-    ) -> Result<(), Error> {
+    ) -> Result<SessionBindingV1, Error> {
         // Authentication
         let token_or_username = match &server_info.auth_provider {
             Some(addr) => {
@@ -1220,6 +1225,14 @@ impl Client {
         register_stream.send(ClientRegister {
             // APEX-T3.1.08: echo exactly the boot ID observed in ServerInfo.
             expected_server_boot_id: server_info.server_boot_id,
+            // APEX-T3.2: always `New` for now -- client-side resume-on-
+            // reconnect (storing a prior `SessionBindingV1` across a
+            // voxygen-level retry and threading it back in here) is a
+            // deliberate follow-up, not wired in this pass; the server-side
+            // `Resume` path is fully real and integration-tested via the
+            // harness independent of this client ever sending it (spec
+            // section 5's own scope note).
+            session_request: SessionRequestV1::New,
             token_or_username,
             locale,
         })?;
@@ -1234,9 +1247,20 @@ impl Client {
             Err(RegisterError::ServerBootMismatch { current, received }) => {
                 Err(Error::ServerBootMismatch { server_info: current, game_sync: received })
             },
-            Ok(()) => {
+            Err(RegisterError::UnknownSession) => Err(Error::UnknownSession),
+            Err(RegisterError::SessionPrincipalMismatch) => Err(Error::SessionPrincipalMismatch),
+            Err(RegisterError::SessionExpired) => Err(Error::SessionExpired),
+            Err(RegisterError::ConnectionEpochMismatch { current, expected }) => {
+                Err(Error::ConnectionEpochMismatch { current, expected })
+            },
+            Err(RegisterError::ConnectionEpochExhausted) => Err(Error::ConnectionEpochExhausted),
+            Err(RegisterError::SessionClientTypeMismatch { session, requested }) => {
+                Err(Error::SessionClientTypeMismatch { session, requested })
+            },
+            Err(RegisterError::OlderAttemptSuperseded) => Err(Error::OlderAttemptSuperseded),
+            Ok(admission) => {
                 debug!("Client registered successfully.");
-                Ok(())
+                Ok(admission.binding())
             },
         }
     }

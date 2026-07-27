@@ -1,11 +1,12 @@
 use crate::{
     Client,
+    session_registry::SessionAttemptSeqV1,
     settings::{AdminRecord, Ban, Banlist, WhitelistRecord, banlist::NormalizedIpAddr},
 };
 use authc::{AuthClient, AuthClientError, AuthToken, Uuid};
 use chrono::Utc;
 use common::comp::AdminRole;
-use common_net::msg::RegisterError;
+use common_net::msg::{RegisterError, SessionRequestV1};
 use hashbrown::HashMap;
 use specs::Component;
 use std::{str::FromStr, sync::Arc};
@@ -46,25 +47,32 @@ pub fn derive_singleplayer_uuid() -> Uuid { derive_uuid("singleplayer") }
 
 pub struct PendingLogin {
     pending_r: oneshot::Receiver<Result<(String, Uuid), RegisterError>>,
+    /// APEX-T3.2: the client's `SessionRequestV1`, carried alongside the
+    /// auth receiver so it's available once auth resolves without a
+    /// second per-entity lookup. `New` for the synchronous-failure
+    /// constructor below -- irrelevant since that path never reaches
+    /// session admission.
+    pub session_request: SessionRequestV1,
+    /// APEX-T3.2: allocated at message-receipt time (spec section 2.2 item
+    /// 1), before this auth race begins -- see `SessionAttemptSeqV1`'s own
+    /// docs for why that ordering is what makes admission-commit order
+    /// insensitive to real auth-completion timing.
+    pub attempt_seq: SessionAttemptSeqV1,
 }
 
 impl PendingLogin {
-    pub(crate) fn new_success(username: String, uuid: Uuid) -> Self {
-        let (pending_s, pending_r) = oneshot::channel();
-        let _ = pending_s.send(Ok((username, uuid)));
-
-        Self { pending_r }
-    }
-
     /// APEX-T3.1.09: an immediate, synchronous rejection with zero calls
     /// into `LoginProvider::verify` -- used for a `ClientRegister` whose
     /// `expected_server_boot_id` does not match this process's current
     /// boot ID, so a stale post-restart registration never reaches auth.
-    pub(crate) fn new_failure(err: RegisterError) -> Self {
+    /// `session_request`/`attempt_seq` are irrelevant here (this path
+    /// never reaches session admission) but still required so every
+    /// `PendingLogin` carries the same shape.
+    pub(crate) fn new_failure(err: RegisterError, session_request: SessionRequestV1, attempt_seq: SessionAttemptSeqV1) -> Self {
         let (pending_s, pending_r) = oneshot::channel();
         let _ = pending_s.send(Err(err));
 
-        Self { pending_r }
+        Self { pending_r, session_request, attempt_seq }
     }
 }
 
@@ -100,7 +108,7 @@ impl LoginProvider {
         }
     }
 
-    pub fn verify(&self, username_or_token: &str) -> PendingLogin {
+    pub fn verify(&self, username_or_token: &str, session_request: SessionRequestV1, attempt_seq: SessionAttemptSeqV1) -> PendingLogin {
         let (pending_s, pending_r) = oneshot::channel();
 
         match &self.auth_server {
@@ -120,7 +128,7 @@ impl LoginProvider {
             },
         }
 
-        PendingLogin { pending_r }
+        PendingLogin { pending_r, session_request, attempt_seq }
     }
 
     pub(crate) fn login<R>(

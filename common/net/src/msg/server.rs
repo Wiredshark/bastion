@@ -4,7 +4,7 @@ use super::{
 };
 use crate::sync;
 use common::{
-    apex::identity::ServerBootId,
+    apex::identity::{ConnectionEpoch, ServerBootId, SessionId},
     calendar::Calendar,
     character::{self, CharacterItem},
     comp::{
@@ -91,10 +91,44 @@ pub enum ServerInit {
         server_constants: ServerConstants,
         description: ServerDescription,
         active_plugins: Vec<PluginHash>,
+        /// APEX-T3.2: repeats the same `SessionBindingV1` `RegisterAnswer`
+        /// carried, so the client can reject bootstrap state mixed across
+        /// a session admitted for one binding but synced under another --
+        /// the same "repeat and check equality before constructing State"
+        /// pattern `server_boot_id` above already establishes (spec
+        /// section 3.5, canaries SES-045/046).
+        session_binding: SessionBindingV1,
     },
 }
 
-pub type ServerRegisterAnswer = Result<(), RegisterError>;
+/// APEX-T3.2: identifies exactly one server-issued session attachment.
+/// Carried by `RegisterAnswer`'s success arm and repeated in `GameSync`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionBindingV1 {
+    pub session_id: SessionId,
+    pub epoch: ConnectionEpoch,
+}
+
+/// APEX-T3.2: `RegisterAnswer`'s success payload -- distinguishes a
+/// brand-new session from a resumed one from a same-principal
+/// replacement, all three carrying the binding the client must echo back
+/// for the `GameSync` equality check (spec section 3.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SessionAdmissionV1 {
+    Created { binding: SessionBindingV1 },
+    Resumed { binding: SessionBindingV1 },
+    Replaced { binding: SessionBindingV1 },
+}
+
+impl SessionAdmissionV1 {
+    pub fn binding(&self) -> SessionBindingV1 {
+        match self {
+            Self::Created { binding } | Self::Resumed { binding } | Self::Replaced { binding } => *binding,
+        }
+    }
+}
+
+pub type ServerRegisterAnswer = Result<SessionAdmissionV1, RegisterError>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SerializedTerrainChunk {
@@ -399,6 +433,50 @@ pub enum RegisterError {
         current: ServerBootId,
         received: ServerBootId,
     },
+    /// APEX-T3.2 (`UNKNOWN-SESSION`, SES-027): `Resume`'s locator does not
+    /// name any session record this process holds (never existed, or was
+    /// purged after expiry).
+    UnknownSession,
+    /// APEX-T3.2 (`SESSION-PRINCIPAL-MISMATCH`, SES-028): the
+    /// freshly-authenticated principal differs from the one the resumed
+    /// session record was issued to. Never merged into `UnknownSession`
+    /// -- a distinct terminal so client UX can tell "no such session"
+    /// from "that session isn't yours".
+    SessionPrincipalMismatch,
+    /// APEX-T3.2 (`SESSION-EXPIRED`, SES-030/031): the detached record's
+    /// retention window has elapsed (boundary-inclusive: exactly
+    /// `expires_at` counts as expired).
+    SessionExpired,
+    /// APEX-T3.2 (`STALE-CONNECTION-EPOCH`/`FUTURE-CONNECTION-EPOCH`,
+    /// SES-032/033): `Resume.expected_epoch` does not equal the record's
+    /// current epoch. One variant, `current`/`expected` both carried, so
+    /// the client can tell which direction the mismatch went without a
+    /// second terminal.
+    ConnectionEpochMismatch {
+        current: ConnectionEpoch,
+        expected: ConnectionEpoch,
+    },
+    /// APEX-T3.2 (`CONNECTION-EPOCH-EXHAUSTED`, SES-034): the session's
+    /// epoch counter is already at `u64::MAX`; no further attachment can
+    /// be admitted for it (never silently wraps -- `ConnectionEpoch::
+    /// checked_next` is `checked`, not `wrapping`).
+    ConnectionEpochExhausted,
+    /// APEX-T3.2 (`SESSION-CLIENT-TYPE-MISMATCH`, SES-035-038): `Resume`
+    /// requested a different `ClientType` than the session was created
+    /// with (e.g. a `Game` session resumed as `ChatOnly`).
+    SessionClientTypeMismatch {
+        session: ClientType,
+        requested: ClientType,
+    },
+    /// APEX-T3.2 (`OLDER-ATTEMPT-SUPERSEDED`, SES-054/055): a same-principal
+    /// race within one admission phase -- this attempt's `attempt_seq` was
+    /// smaller than another attempt already committed for the same
+    /// principal in the same phase. Distinct from `SessionBootMismatch`'s
+    /// `NewerLogin` disconnect (that path is for an already-committed
+    /// active session from an *earlier* phase being replaced by a new
+    /// one); this is two intents racing within the *same* phase, neither
+    /// of which had committed yet when the race was resolved.
+    OlderAttemptSuperseded,
 }
 
 impl ServerMsg {

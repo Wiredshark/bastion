@@ -733,6 +733,35 @@ pub(crate) fn get_client_msg_error(
                 game_sync.to_text_v1(),
             )
         },
+        // APEX-T3.2: session-layer terminals. No dedicated localization
+        // keys yet -- same "generic error, reconnect resolves it" posture
+        // as `ServerBootMismatch` above, since every one of these is
+        // surfaced only on registration and a fresh connect attempt
+        // allocates a brand new session.
+        Error::SessionBindingMismatch { .. } => {
+            format!("{}: session binding mismatch", localization.get_msg("common-error"))
+        },
+        Error::UnknownSession => {
+            format!("{}: unknown session", localization.get_msg("common-error"))
+        },
+        Error::SessionPrincipalMismatch => {
+            format!("{}: session principal mismatch", localization.get_msg("common-error"))
+        },
+        Error::SessionExpired => {
+            format!("{}: session expired", localization.get_msg("common-error"))
+        },
+        Error::ConnectionEpochMismatch { .. } => {
+            format!("{}: connection epoch mismatch", localization.get_msg("common-error"))
+        },
+        Error::ConnectionEpochExhausted => {
+            format!("{}: connection epoch exhausted", localization.get_msg("common-error"))
+        },
+        Error::SessionClientTypeMismatch { .. } => {
+            format!("{}: session client type mismatch", localization.get_msg("common-error"))
+        },
+        Error::OlderAttemptSuperseded => {
+            format!("{}: registration attempt superseded, please retry", localization.get_msg("common-error"))
+        },
     }
 }
 

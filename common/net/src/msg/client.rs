@@ -1,7 +1,7 @@
 use super::{PingMsg, world_msg::SiteId};
 use common::{
     ViewDistances,
-    apex::identity::ServerBootId,
+    apex::identity::{ConnectionEpoch, ServerBootId, SessionId},
     character::CharacterId,
     comp::{self, AdminRole, Skill},
     event::PluginHash,
@@ -64,6 +64,22 @@ impl ClientType {
     pub fn can_send_message(&self) -> bool { !matches!(self, Self::SilentSpectator) }
 }
 
+/// APEX-T3.2: whether this registration starts a fresh session or resumes
+/// a prior one this same client process still holds a binding for.
+/// Server-generated only -- `New` never lets the client choose its own
+/// `SessionId` (spec section 3.2, canaries SES-008/009); `Resume`'s
+/// `locator`/`expected_epoch` are a bearer-free continuation request, not
+/// a credential (SES-050 -- possession alone must never substitute for
+/// reauthentication).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SessionRequestV1 {
+    New,
+    Resume {
+        locator: SessionId,
+        expected_epoch: ConnectionEpoch,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientRegister {
     /// APEX-T3.1.08: echoes the `server_boot_id` this client observed in
@@ -71,6 +87,10 @@ pub struct ClientRegister {
     /// process incarnation. The server compares this before calling
     /// `login_provider.verify` -- a mismatch never reaches auth.
     pub expected_server_boot_id: ServerBootId,
+    /// APEX-T3.2: `New` on first connect; `Resume` only with a binding
+    /// this client process actually holds in memory (never across a
+    /// restart -- spec section 5, canaries SES-122/123).
+    pub session_request: SessionRequestV1,
     pub token_or_username: String,
     pub locale: Option<String>,
 }
@@ -291,6 +311,7 @@ mod apex_t3_1_wire_tests {
         let boot_id = ServerBootId::generate(&mut FixedRandomBytesSourceV1([0x77; 16])).unwrap();
         let msg = ClientRegister {
             expected_server_boot_id: boot_id,
+            session_request: SessionRequestV1::New,
             token_or_username: "player".into(),
             locale: Some("en".into()),
         };
@@ -299,5 +320,25 @@ mod apex_t3_1_wire_tests {
             bincode::serde::decode_from_slice(&bytes, bincode::config::legacy()).unwrap();
         assert_eq!(decoded.expected_server_boot_id, boot_id);
         assert_eq!(decoded.token_or_username, "player");
+        assert_eq!(decoded.session_request, SessionRequestV1::New);
+    }
+
+    /// APEX-T3.2: `SessionRequestV1::Resume` round-trips too -- the
+    /// `New`-only case above doesn't exercise the payload-bearing variant.
+    #[test]
+    fn client_register_round_trips_with_resume_session_request() {
+        let boot_id = ServerBootId::generate(&mut FixedRandomBytesSourceV1([0x78; 16])).unwrap();
+        let locator = common::apex::identity::SessionId::generate(&mut FixedRandomBytesSourceV1([0x99; 16])).unwrap();
+        let expected_epoch = common::apex::identity::ConnectionEpoch::new(7).unwrap();
+        let msg = ClientRegister {
+            expected_server_boot_id: boot_id,
+            session_request: SessionRequestV1::Resume { locator, expected_epoch },
+            token_or_username: "player".into(),
+            locale: None,
+        };
+        let bytes = bincode::serde::encode_to_vec(&msg, bincode::config::legacy()).unwrap();
+        let (decoded, _): (ClientRegister, usize) =
+            bincode::serde::decode_from_slice(&bytes, bincode::config::legacy()).unwrap();
+        assert_eq!(decoded.session_request, SessionRequestV1::Resume { locator, expected_epoch });
     }
 }
