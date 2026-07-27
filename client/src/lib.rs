@@ -1386,6 +1386,91 @@ impl Client {
         stream.send(frame_bytes)
     }
 
+    /// `T3.3.10`: client-side, server-to-client counterpart of the
+    /// server's own `validate_semantic_frame_v1`
+    /// (`server/src/sys/msg/mod.rs`) -- decodes and validates one raw
+    /// semantic wire frame BEFORE any local ECS/frontend mutation,
+    /// returning the fully checked `ServerGeneral`. Pure: takes
+    /// `receive_state` by immutable reference, so it structurally cannot
+    /// itself commit the receive cursor (packet: "cursor does not
+    /// advance on validation failure; it advances before handler call").
+    /// Dormant in this tree today for the same reason `send_semantic_v1`
+    /// is -- `T3.3.05`'s negotiation always resolves `Legacy`.
+    fn validate_semantic_frame_v1(
+        raw: &[u8],
+        receive_state: &common_net::msg::envelope::SemanticReceiveStateV1,
+        expected_physical_stream: common_net::msg::envelope::SemanticStreamIdV1,
+    ) -> Result<ServerGeneral, common_net::msg::envelope::SemanticEnvelopeRejectV1> {
+        use common_net::msg::envelope::{
+            NetEnvelopeHeaderV1, SemanticDirectionV1, SemanticEnvelopeRejectV1, SemanticRouteV1, SemanticWireFrameV1,
+            decode_payload_exact_v1, net_envelope_profile_root_v1, payload_digest_v1,
+        };
+
+        let limits = common::apex::manifest::ManifestDecodeLimitsV1 {
+            max_input_bytes: 1 << 20,
+            max_depth: 8,
+            max_nodes: 64,
+            max_array_items: 16,
+            max_map_entries: 16,
+            max_machine_text_bytes: 256,
+            max_byte_string_bytes: 1 << 20,
+        };
+        let frame: SemanticWireFrameV1 = common::apex::manifest::decode_manifest_v1(raw, &limits)
+            .map_err(|_| SemanticEnvelopeRejectV1::EnvelopeDecodeFailure)?;
+        let header: &NetEnvelopeHeaderV1 = &frame.header;
+
+        if header.profile_root != net_envelope_profile_root_v1() {
+            return Err(SemanticEnvelopeRejectV1::UnsupportedProfile);
+        }
+        let binding = receive_state.binding();
+        if header.server_boot_id != binding.server_boot_id {
+            return Err(SemanticEnvelopeRejectV1::WrongBoot);
+        }
+        if header.session_id != binding.session_id {
+            return Err(SemanticEnvelopeRejectV1::WrongSession);
+        }
+        if header.connection_epoch != binding.epoch {
+            return Err(if header.connection_epoch.get() < binding.epoch.get() {
+                SemanticEnvelopeRejectV1::StaleEpoch
+            } else {
+                SemanticEnvelopeRejectV1::FutureEpoch
+            });
+        }
+        if header.direction != SemanticDirectionV1::ServerToClient {
+            return Err(SemanticEnvelopeRejectV1::WrongDirection);
+        }
+        if header.semantic_stream != expected_physical_stream {
+            return Err(SemanticEnvelopeRejectV1::StreamRouteMismatch);
+        }
+        let expected_seq = receive_state.next_expected_for(header.semantic_stream);
+        if header.sequence < expected_seq {
+            return Err(SemanticEnvelopeRejectV1::DuplicateSequence);
+        }
+        if header.sequence > expected_seq {
+            return Err(SemanticEnvelopeRejectV1::SequenceGap { expected: expected_seq.get(), received: header.sequence.get() });
+        }
+        if header.payload_len != frame.payload_bytes.len() as u64 {
+            return Err(SemanticEnvelopeRejectV1::PayloadLengthMismatch);
+        }
+        let recomputed_digest =
+            payload_digest_v1(header.profile_root, header.payload_schema, header.payload_encoding, &frame.payload_bytes);
+        if recomputed_digest.as_array() != header.payload_digest.as_array() {
+            return Err(SemanticEnvelopeRejectV1::PayloadDigestMismatch);
+        }
+        // Dormant until T3.5 (packet section 5.6): `Some` is
+        // unconditionally rejected today, never partially trusted.
+        if header.command_id.is_some() {
+            return Err(SemanticEnvelopeRejectV1::CommandIdUnsupported);
+        }
+
+        let decoded: ServerGeneral = decode_payload_exact_v1(&frame.payload_bytes)?;
+        if decoded.semantic_stream() != header.semantic_stream || decoded.payload_schema() != header.payload_schema {
+            return Err(SemanticEnvelopeRejectV1::StreamRouteMismatch);
+        }
+
+        Ok(decoded)
+    }
+
     fn send_msg_err<S>(&mut self, msg: S) -> Result<(), network::StreamError>
     where
         S: Into<ClientMsg>,
@@ -3595,42 +3680,150 @@ impl Client {
         Ok(())
     }
 
+    /// `T3.3.10`: V1/Legacy receive-helper selector for one semantic
+    /// stream, the client-side counterpart of the server's
+    /// `try_recv_all_dispatch` (`server/src/sys/msg/mod.rs`). Not a
+    /// generic free function taking a handler closure like the
+    /// server's: the client's streams AND its handler methods both live
+    /// on `self`, so a closure capturing `self` for the handler call
+    /// would conflict with the sibling `&mut self.<stream>` /
+    /// `&mut self.semantic_receive_state` borrows in the same call
+    /// expression. Draining into a `Vec` first (no handler calls while
+    /// `self`'s fields are borrowed), then handling each message
+    /// afterward, sidesteps that entirely -- `handle_messages` below
+    /// does the actual per-message dispatch to `self.handle_server_*`.
+    /// Cursor advance still happens strictly before this function
+    /// returns each frame to the caller (packet: "cursor does not
+    /// advance on validation failure; it advances before handler
+    /// call") -- only the RELATIVE ORDER of "handler runs for frame N"
+    /// vs. "cursor already advanced past frame N+1" changes from the
+    /// server's per-frame interleaving to a batch-then-handle split,
+    /// which only matters if a handler errors mid-batch; that error
+    /// tears down the whole connection either way (`Result<u64, Error>`
+    /// propagates out of `handle_messages` to the caller's disconnect
+    /// path), so a handful of already-validated-but-now-orphaned cursor
+    /// advances on a connection that's about to die are inert.
+    fn drain_semantic_stream_v1(
+        stream: &mut Stream,
+        receive_state: &mut Option<common_net::msg::envelope::SemanticReceiveStateV1>,
+        semantic_stream: common_net::msg::envelope::SemanticStreamIdV1,
+    ) -> Result<Vec<ServerGeneral>, Error> {
+        let mut out = Vec::new();
+        while let Some(raw) = stream.try_recv::<Vec<u8>>()? {
+            let Some(state) = receive_state.as_ref() else {
+                warn!("received a semantic V1 frame with no active attachment; dropping");
+                continue;
+            };
+            match Self::validate_semantic_frame_v1(&raw, state, semantic_stream) {
+                Ok(decoded) => {
+                    let advance_result =
+                        receive_state.as_mut().expect("checked Some above").advance_expected(semantic_stream);
+                    if advance_result.is_err() {
+                        warn!("semantic receive sequence exhausted; dropping message");
+                        continue;
+                    }
+                    out.push(decoded);
+                },
+                Err(reject) => {
+                    warn!(?reject, "semantic ingress rejected a frame");
+                },
+            }
+        }
+        Ok(out)
+    }
+
     fn handle_messages(&mut self, frontend_events: &mut Vec<Event>) -> Result<u64, Error> {
+        use common_net::msg::envelope::SemanticStreamIdV1;
+
         let mut cnt = 0;
         #[cfg(feature = "tracy")]
         let (mut terrain_cnt, mut ingame_cnt) = (0, 0);
         loop {
             let cnt_start = cnt;
 
-            while let Some(msg) = self.general_stream.try_recv()? {
-                cnt += 1;
-                self.handle_server_msg(frontend_events, msg)?;
+            if self.semantic_receive_state.is_some() {
+                for msg in Self::drain_semantic_stream_v1(
+                    &mut self.general_stream,
+                    &mut self.semantic_receive_state,
+                    SemanticStreamIdV1::General,
+                )? {
+                    cnt += 1;
+                    self.handle_server_msg(frontend_events, msg)?;
+                }
+            } else {
+                while let Some(msg) = self.general_stream.try_recv()? {
+                    cnt += 1;
+                    self.handle_server_msg(frontend_events, msg)?;
+                }
             }
             while let Some(msg) = self.ping_stream.try_recv()? {
                 cnt += 1;
                 self.handle_ping_msg(msg)?;
             }
-            while let Some(msg) = self.character_screen_stream.try_recv()? {
-                cnt += 1;
-                self.handle_server_character_screen_msg(frontend_events, msg)?;
-            }
-            while let Some(msg) = self.in_game_stream.try_recv()? {
-                cnt += 1;
-                #[cfg(feature = "tracy")]
-                {
-                    ingame_cnt += 1;
+            if self.semantic_receive_state.is_some() {
+                for msg in Self::drain_semantic_stream_v1(
+                    &mut self.character_screen_stream,
+                    &mut self.semantic_receive_state,
+                    SemanticStreamIdV1::CharacterScreen,
+                )? {
+                    cnt += 1;
+                    self.handle_server_character_screen_msg(frontend_events, msg)?;
                 }
-                self.handle_server_in_game_msg(frontend_events, msg)?;
+            } else {
+                while let Some(msg) = self.character_screen_stream.try_recv()? {
+                    cnt += 1;
+                    self.handle_server_character_screen_msg(frontend_events, msg)?;
+                }
             }
-            while let Some(msg) = self.terrain_stream.try_recv()? {
-                cnt += 1;
-                #[cfg(feature = "tracy")]
-                {
-                    if let ServerGeneral::TerrainChunkUpdate { chunk, .. } = &msg {
-                        terrain_cnt += chunk.as_ref().map(|x| x.approx_len()).unwrap_or(0);
+            if self.semantic_receive_state.is_some() {
+                for msg in Self::drain_semantic_stream_v1(
+                    &mut self.in_game_stream,
+                    &mut self.semantic_receive_state,
+                    SemanticStreamIdV1::InGame,
+                )? {
+                    cnt += 1;
+                    #[cfg(feature = "tracy")]
+                    {
+                        ingame_cnt += 1;
                     }
+                    self.handle_server_in_game_msg(frontend_events, msg)?;
                 }
-                self.handle_server_terrain_msg(msg)?;
+            } else {
+                while let Some(msg) = self.in_game_stream.try_recv()? {
+                    cnt += 1;
+                    #[cfg(feature = "tracy")]
+                    {
+                        ingame_cnt += 1;
+                    }
+                    self.handle_server_in_game_msg(frontend_events, msg)?;
+                }
+            }
+            if self.semantic_receive_state.is_some() {
+                for msg in Self::drain_semantic_stream_v1(
+                    &mut self.terrain_stream,
+                    &mut self.semantic_receive_state,
+                    SemanticStreamIdV1::Terrain,
+                )? {
+                    cnt += 1;
+                    #[cfg(feature = "tracy")]
+                    {
+                        if let ServerGeneral::TerrainChunkUpdate { chunk, .. } = &msg {
+                            terrain_cnt += chunk.as_ref().map(|x| x.approx_len()).unwrap_or(0);
+                        }
+                    }
+                    self.handle_server_terrain_msg(msg)?;
+                }
+            } else {
+                while let Some(msg) = self.terrain_stream.try_recv()? {
+                    cnt += 1;
+                    #[cfg(feature = "tracy")]
+                    {
+                        if let ServerGeneral::TerrainChunkUpdate { chunk, .. } = &msg {
+                            terrain_cnt += chunk.as_ref().map(|x| x.approx_len()).unwrap_or(0);
+                        }
+                    }
+                    self.handle_server_terrain_msg(msg)?;
+                }
             }
 
             if cnt_start == cnt {
@@ -4057,5 +4250,223 @@ mod tests {
             client.cleanup();
             clock.tick();
         });
+    }
+
+    // `T3.3.10`: `validate_semantic_frame_v1` is pure (no `Stream`
+    // needed), so it gets the same direct unit-test treatment as the
+    // server's own `validate_semantic_frame_v1` (T3.3.08). The stateful
+    // `drain_semantic_stream_v1` wrapper is NOT independently tested
+    // here, for the same reason `send_semantic_v1` (`T3.3.07`) never
+    // was: both need a live `Stream` backed by a real `network::
+    // Participant`, which this crate has no lightweight way to
+    // construct (`constant_api_test` above is the one place that tries,
+    // via a real TCP dial that's expected to fail without a listening
+    // server). Its own "no mutation on reject" guarantee is structural,
+    // not runtime-tested: `validate_semantic_frame_v1` takes
+    // `receive_state` by `&` (immutable) reference, so no code path
+    // through it, reject or accept, can touch cursor state.
+    //
+    // Packet's own test list ("Duplicate replication/terrain/inventory/
+    // Bastion, wrong route, old GameSync, handler error"): "old
+    // GameSync" is this tree's `StaleEpoch` check under a different
+    // name -- `ConnectionEpoch` IS the mechanism tied to when `GameSync`
+    // last ran (T3.2), so a stale epoch and a stale GameSync are the
+    // same rejection, not two. "Handler error" needs the live-`Stream`
+    // harness noted above and is deferred with it.
+    use common_net::msg::{
+        ServerGeneral,
+        envelope::{
+            ActiveSessionBindingV1, SemanticCausalityV1, SemanticEnvelopeRejectV1, SemanticPayloadEncodingV1,
+            SemanticReceiveStateV1, SemanticRouteV1, SemanticStreamIdV1, encode_payload_v1,
+        },
+    };
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+    use std::num::NonZeroU64;
+    use vek::Vec2;
+
+    fn recv_binding() -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([11; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([12; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(7).unwrap(),
+        }
+    }
+
+    fn recv_state() -> SemanticReceiveStateV1 { SemanticReceiveStateV1::new(recv_binding()) }
+
+    fn recv_frame_bytes(b: ActiveSessionBindingV1, sequence: u64, msg: &ServerGeneral) -> Vec<u8> {
+        let payload_bytes = encode_payload_v1(msg);
+        let profile_root = common_net::msg::envelope::net_envelope_profile_root_v1();
+        let payload_schema = msg.payload_schema();
+        let payload_encoding = SemanticPayloadEncodingV1::Bincode2LegacySerde;
+        let payload_digest = common_net::msg::envelope::payload_digest_v1(
+            profile_root,
+            payload_schema,
+            payload_encoding,
+            &payload_bytes,
+        );
+        let header = common_net::msg::envelope::NetEnvelopeHeaderV1 {
+            profile_root,
+            server_boot_id: b.server_boot_id,
+            session_id: b.session_id,
+            connection_epoch: b.epoch,
+            direction: common_net::msg::envelope::SemanticDirectionV1::ServerToClient,
+            semantic_stream: msg.semantic_stream(),
+            sequence: NonZeroU64::new(sequence).unwrap(),
+            causality: SemanticCausalityV1 { producer_tick: None, snapshot: None },
+            payload_schema,
+            payload_encoding,
+            payload_len: payload_bytes.len() as u64,
+            payload_digest,
+            command_id: None,
+        };
+        let frame = common_net::msg::envelope::SemanticWireFrameV1 { header, payload_bytes };
+        let limits = common::apex::manifest::ManifestDecodeLimitsV1 {
+            max_input_bytes: 1 << 20,
+            max_depth: 8,
+            max_nodes: 64,
+            max_array_items: 16,
+            max_map_entries: 16,
+            max_machine_text_bytes: 256,
+            max_byte_string_bytes: 1 << 20,
+        };
+        common::apex::manifest::encode_manifest_v1(&frame, &limits).unwrap()
+    }
+
+    /// One easy-to-construct representative `ServerGeneral` per stream,
+    /// matching the packet's own named example classes: General stands
+    /// in for "replication" traffic, InGame for "inventory/Bastion"
+    /// (both route InGame per `envelope.rs`'s own classification,
+    /// T3.3.04), Terrain and CharacterScreen for themselves.
+    fn representative_messages() -> [ServerGeneral; 4] {
+        [
+            ServerGeneral::UpdateRecipes,
+            ServerGeneral::CharacterSuccess,
+            ServerGeneral::ExitInGameSuccess,
+            ServerGeneral::TerrainChunkUpdate { key: Vec2::new(0, 0), chunk: Err(()) },
+        ]
+    }
+
+    #[test]
+    fn receive_semantic_v1_valid_frame_is_accepted_for_every_stream() {
+        let state = recv_state();
+        for msg in representative_messages() {
+            let raw = recv_frame_bytes(recv_binding(), 1, &msg);
+            let decoded = Client::validate_semantic_frame_v1(&raw, &state, msg.semantic_stream()).unwrap();
+            assert_eq!(decoded.semantic_stream(), msg.semantic_stream());
+        }
+    }
+
+    #[test]
+    fn receive_semantic_v1_duplicate_sequence_is_rejected_for_every_stream() {
+        // "Duplicate replication/terrain/inventory/Bastion": duplicate-
+        // sequence rejection is stream-agnostic in this tree's
+        // validation pipeline, proven here across all four streams'
+        // representative message kinds rather than assumed from one.
+        for msg in representative_messages() {
+            let mut state = recv_state();
+            state.advance_expected(msg.semantic_stream()).unwrap(); // next_expected is now 2
+            let raw = recv_frame_bytes(recv_binding(), 1, &msg); // stale: already-consumed value
+            assert_eq!(
+                Client::validate_semantic_frame_v1(&raw, &state, msg.semantic_stream()).unwrap_err(),
+                SemanticEnvelopeRejectV1::DuplicateSequence
+            );
+        }
+    }
+
+    #[test]
+    fn receive_semantic_v1_sequence_gap_is_rejected_with_exact_values() {
+        let state = recv_state();
+        let msg = ServerGeneral::UpdateRecipes;
+        let raw = recv_frame_bytes(recv_binding(), 5, &msg); // expected 1, received 5
+        assert_eq!(
+            Client::validate_semantic_frame_v1(&raw, &state, msg.semantic_stream()).unwrap_err(),
+            SemanticEnvelopeRejectV1::SequenceGap { expected: 1, received: 5 }
+        );
+    }
+
+    #[test]
+    fn receive_semantic_v1_wrong_route_is_rejected() {
+        let state = recv_state();
+        let msg = ServerGeneral::UpdateRecipes; // declares InGame
+        let raw = recv_frame_bytes(recv_binding(), 1, &msg);
+        assert_eq!(
+            Client::validate_semantic_frame_v1(&raw, &state, SemanticStreamIdV1::Terrain).unwrap_err(),
+            SemanticEnvelopeRejectV1::StreamRouteMismatch
+        );
+    }
+
+    #[test]
+    fn receive_semantic_v1_old_game_sync_ie_stale_epoch_is_rejected() {
+        let state = recv_state(); // epoch 7
+        let mut stale = recv_binding();
+        stale.epoch = ConnectionEpoch::new(6).unwrap(); // frame from before the last GameSync-triggered epoch bump
+        let msg = ServerGeneral::UpdateRecipes;
+        let raw = recv_frame_bytes(stale, 1, &msg);
+        assert_eq!(
+            Client::validate_semantic_frame_v1(&raw, &state, msg.semantic_stream()).unwrap_err(),
+            SemanticEnvelopeRejectV1::StaleEpoch
+        );
+    }
+
+    #[test]
+    fn receive_semantic_v1_wrong_direction_is_rejected() {
+        let state = recv_state();
+        let msg = ServerGeneral::UpdateRecipes;
+        let payload_bytes = encode_payload_v1(&msg);
+        let profile_root = common_net::msg::envelope::net_envelope_profile_root_v1();
+        let payload_schema = msg.payload_schema();
+        let payload_encoding = SemanticPayloadEncodingV1::Bincode2LegacySerde;
+        let payload_digest = common_net::msg::envelope::payload_digest_v1(
+            profile_root,
+            payload_schema,
+            payload_encoding,
+            &payload_bytes,
+        );
+        let b = recv_binding();
+        let header = common_net::msg::envelope::NetEnvelopeHeaderV1 {
+            profile_root,
+            server_boot_id: b.server_boot_id,
+            session_id: b.session_id,
+            connection_epoch: b.epoch,
+            direction: common_net::msg::envelope::SemanticDirectionV1::ClientToServer, // wrong: client is RECEIVING
+            semantic_stream: msg.semantic_stream(),
+            sequence: NonZeroU64::new(1).unwrap(),
+            causality: SemanticCausalityV1 { producer_tick: None, snapshot: None },
+            payload_schema,
+            payload_encoding,
+            payload_len: payload_bytes.len() as u64,
+            payload_digest,
+            command_id: None,
+        };
+        let frame = common_net::msg::envelope::SemanticWireFrameV1 { header, payload_bytes };
+        let limits = common::apex::manifest::ManifestDecodeLimitsV1 {
+            max_input_bytes: 1 << 20,
+            max_depth: 8,
+            max_nodes: 64,
+            max_array_items: 16,
+            max_map_entries: 16,
+            max_machine_text_bytes: 256,
+            max_byte_string_bytes: 1 << 20,
+        };
+        let raw = common::apex::manifest::encode_manifest_v1(&frame, &limits).unwrap();
+        assert_eq!(
+            Client::validate_semantic_frame_v1(&raw, &state, msg.semantic_stream()).unwrap_err(),
+            SemanticEnvelopeRejectV1::WrongDirection
+        );
+    }
+
+    /// `receive_semantic_no_mutation`: proves the structural guarantee
+    /// noted at the top of this section -- a rejected frame cannot have
+    /// advanced the cursor, because `validate_semantic_frame_v1` only
+    /// ever receives `receive_state` by immutable reference.
+    #[test]
+    fn receive_semantic_no_mutation_on_reject_leaves_cursor_unchanged() {
+        let state = recv_state();
+        let before = state.next_expected_for(SemanticStreamIdV1::General);
+        let msg = ServerGeneral::UpdateRecipes;
+        let raw = recv_frame_bytes(recv_binding(), 99, &msg); // a gap, guaranteed reject
+        assert!(Client::validate_semantic_frame_v1(&raw, &state, msg.semantic_stream()).is_err());
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::General), before);
     }
 }
