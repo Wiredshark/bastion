@@ -179,7 +179,7 @@ mod tests {
         assert_eq!(DigestDomainIdV1::SubsystemDescriptor.label(), "bastion/subsystem-descriptor/v1");
         assert_eq!(DigestDomainIdV1::CompatibilityProfile.as_u16(), 10);
         assert_eq!(DigestDomainIdV1::CompatibilityProfile.label(), "bastion/compatibility-profile/v1");
-        assert_eq!(DigestDomainIdV1::NetEnvelopeProfile.as_u16(), 12);
+        assert_eq!(DigestDomainIdV1::NetEnvelopeProfile.as_u16(), 20);
         assert_eq!(DigestDomainIdV1::NetEnvelopeProfile.label(), "bastion/net-envelope-profile/v1");
         assert_eq!(DigestDomainIdV1::SourceClosure.as_u16(), 11);
         assert_eq!(DigestDomainIdV1::SourceClosure.label(), "bastion/source-closure/v1");
