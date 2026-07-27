@@ -708,6 +708,42 @@ impl Client {
         init_stage_update(ClientInitStage::LoadingInitData);
         // Wait for initial sync
         let mut ping_interval = tokio::time::interval(Duration::from_secs(1));
+        // `APEX-T3.3.16`: V1-envelope GameSync iff negotiation selected
+        // `NetEnvelopeV1` -- packet: "Legacy keeps direct GameSync;
+        // certified V1 requires envelope", "mode mixing terminates". A
+        // rejected/raw frame here is a hard bootstrap failure (`?`
+        // propagates out), unlike a dropped later-game replication frame
+        // (`handle_messages`'s own reject path just warns and drops one
+        // frame) -- there is no partial/degraded way to proceed without
+        // a validated initial GameSync.
+        let game_sync: ServerInit = if register_session_binding.selected_semantic_protocol
+            == common_net::msg::SemanticProtocolIdV1::NetEnvelopeV1
+        {
+            let receive_state = common_net::msg::envelope::SemanticReceiveStateV1::new(common_net::msg::ActiveSessionBindingV1 {
+                server_boot_id: server_info.server_boot_id,
+                session_id: register_session_binding.session_id,
+                epoch: register_session_binding.epoch,
+            });
+            let raw: Vec<u8> = loop {
+                tokio::select! {
+                    res = register_stream.recv::<Vec<u8>>() => break res?,
+                    _ = ping_interval.tick() => ping_stream.send(PingMsg::Ping)?,
+                }
+            };
+            Self::validate_semantic_frame_v1::<ServerInit>(
+                &raw,
+                &receive_state,
+                common_net::msg::envelope::SemanticStreamIdV1::Bootstrap,
+            )
+            .map_err(|reject| Error::Other(format!("semantic V1 GameSync envelope rejected: {reject:?}")))?
+        } else {
+            loop {
+                tokio::select! {
+                    res = register_stream.recv() => break res?,
+                    _ = ping_interval.tick() => ping_stream.send(PingMsg::Ping)?,
+                }
+            }
+        };
         let ServerInit::GameSync {
             server_boot_id: game_sync_server_boot_id,
             entity_package,
@@ -724,14 +760,7 @@ impl Client {
             active_plugins: _active_plugins,
             role,
             session_binding: game_sync_session_binding,
-        } = loop {
-            tokio::select! {
-                // Spawn in a blocking thread (leaving the network thread free).  This is mostly
-                // useful for bots.
-                res = register_stream.recv() => break res?,
-                _ = ping_interval.tick() => ping_stream.send(PingMsg::Ping)?,
-            }
-        };
+        } = game_sync;
 
         // APEX-T3.1.12: compare GameSync's boot ID against the ServerInfo
         // observation before constructing State/PlayerEntity/plugin
@@ -1390,20 +1419,35 @@ impl Client {
     /// server's own `validate_semantic_frame_v1`
     /// (`server/src/sys/msg/mod.rs`) -- decodes and validates one raw
     /// semantic wire frame BEFORE any local ECS/frontend mutation,
-    /// returning the fully checked `ServerGeneral`. Pure: takes
+    /// returning the fully checked payload. Pure: takes
     /// `receive_state` by immutable reference, so it structurally cannot
     /// itself commit the receive cursor (packet: "cursor does not
     /// advance on validation failure; it advances before handler call").
     /// Dormant in this tree today for the same reason `send_semantic_v1`
     /// is -- `T3.3.05`'s negotiation always resolves `Legacy`.
-    fn validate_semantic_frame_v1(
+    ///
+    /// `T3.3.16`: genericized over the payload type (was hardcoded to
+    /// `ServerGeneral`) -- every check here (profile root, boot,
+    /// session, epoch, direction, stream route, sequence, payload
+    /// length, digest, command-id) is payload-independent, and
+    /// `ServerInit::GameSync` needs the identical validation this row's
+    /// own acceptance gate leans on ("no post-auth V1 payload is
+    /// accepted before correctly bound GameSync"). Existing call sites
+    /// keep working unchanged (`ServerGeneral` is still inferred from
+    /// their own surrounding context); only the direct unit tests below
+    /// needed an explicit turbofish once inference had nothing left to
+    /// pin the type from.
+    fn validate_semantic_frame_v1<T>(
         raw: &[u8],
         receive_state: &common_net::msg::envelope::SemanticReceiveStateV1,
         expected_physical_stream: common_net::msg::envelope::SemanticStreamIdV1,
-    ) -> Result<ServerGeneral, common_net::msg::envelope::SemanticEnvelopeRejectV1> {
+    ) -> Result<T, common_net::msg::envelope::SemanticEnvelopeRejectV1>
+    where
+        T: common_net::msg::envelope::SemanticRouteV1 + serde::de::DeserializeOwned,
+    {
         use common_net::msg::envelope::{
-            NetEnvelopeHeaderV1, SemanticDirectionV1, SemanticEnvelopeRejectV1, SemanticRouteV1, SemanticWireFrameV1,
-            decode_payload_exact_v1, net_envelope_profile_root_v1, payload_digest_v1,
+            NetEnvelopeHeaderV1, SemanticDirectionV1, SemanticEnvelopeRejectV1, SemanticWireFrameV1, decode_payload_exact_v1,
+            net_envelope_profile_root_v1, payload_digest_v1,
         };
 
         let limits = common::apex::manifest::ManifestDecodeLimitsV1 {
@@ -1463,7 +1507,7 @@ impl Client {
             return Err(SemanticEnvelopeRejectV1::CommandIdUnsupported);
         }
 
-        let decoded: ServerGeneral = decode_payload_exact_v1(&frame.payload_bytes)?;
+        let decoded: T = decode_payload_exact_v1(&frame.payload_bytes)?;
         if decoded.semantic_stream() != header.semantic_stream || decoded.payload_schema() != header.payload_schema {
             return Err(SemanticEnvelopeRejectV1::StreamRouteMismatch);
         }
@@ -4352,7 +4396,7 @@ mod tests {
         let state = recv_state();
         for msg in representative_messages() {
             let raw = recv_frame_bytes(recv_binding(), 1, &msg);
-            let decoded = Client::validate_semantic_frame_v1(&raw, &state, msg.semantic_stream()).unwrap();
+            let decoded = Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap();
             assert_eq!(decoded.semantic_stream(), msg.semantic_stream());
         }
     }
@@ -4368,7 +4412,7 @@ mod tests {
             state.advance_expected(msg.semantic_stream()).unwrap(); // next_expected is now 2
             let raw = recv_frame_bytes(recv_binding(), 1, &msg); // stale: already-consumed value
             assert_eq!(
-                Client::validate_semantic_frame_v1(&raw, &state, msg.semantic_stream()).unwrap_err(),
+                Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap_err(),
                 SemanticEnvelopeRejectV1::DuplicateSequence
             );
         }
@@ -4380,7 +4424,7 @@ mod tests {
         let msg = ServerGeneral::UpdateRecipes;
         let raw = recv_frame_bytes(recv_binding(), 5, &msg); // expected 1, received 5
         assert_eq!(
-            Client::validate_semantic_frame_v1(&raw, &state, msg.semantic_stream()).unwrap_err(),
+            Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap_err(),
             SemanticEnvelopeRejectV1::SequenceGap { expected: 1, received: 5 }
         );
     }
@@ -4391,7 +4435,7 @@ mod tests {
         let msg = ServerGeneral::UpdateRecipes; // declares InGame
         let raw = recv_frame_bytes(recv_binding(), 1, &msg);
         assert_eq!(
-            Client::validate_semantic_frame_v1(&raw, &state, SemanticStreamIdV1::Terrain).unwrap_err(),
+            Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, SemanticStreamIdV1::Terrain).unwrap_err(),
             SemanticEnvelopeRejectV1::StreamRouteMismatch
         );
     }
@@ -4404,7 +4448,7 @@ mod tests {
         let msg = ServerGeneral::UpdateRecipes;
         let raw = recv_frame_bytes(stale, 1, &msg);
         assert_eq!(
-            Client::validate_semantic_frame_v1(&raw, &state, msg.semantic_stream()).unwrap_err(),
+            Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap_err(),
             SemanticEnvelopeRejectV1::StaleEpoch
         );
     }
@@ -4451,8 +4495,27 @@ mod tests {
         };
         let raw = common::apex::manifest::encode_manifest_v1(&frame, &limits).unwrap();
         assert_eq!(
-            Client::validate_semantic_frame_v1(&raw, &state, msg.semantic_stream()).unwrap_err(),
+            Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap_err(),
             SemanticEnvelopeRejectV1::WrongDirection
+        );
+    }
+
+    /// `T3.3.16`'s own "raw V1" test case: a V1-negotiated attachment
+    /// must never silently accept a raw (non-enveloped) frame as if it
+    /// were a valid semantic payload -- "mode mixing terminates". Raw
+    /// bincode-legacy bytes (exactly what a `Legacy` session would have
+    /// sent for the same payload instead) are not valid T0.2 manifest
+    /// bytes at all, so decode fails outright -- a pre-existing gap in
+    /// this generic function's own coverage (every other test here
+    /// exercises a validly-ENCODED-but-otherwise-wrong frame), closed
+    /// here since this row's packet names it explicitly.
+    #[test]
+    fn receive_semantic_v1_raw_legacy_bytes_are_rejected_not_silently_accepted() {
+        let state = recv_state();
+        let raw_legacy_bytes = encode_payload_v1(&ServerGeneral::UpdateRecipes);
+        assert_eq!(
+            Client::validate_semantic_frame_v1::<ServerGeneral>(&raw_legacy_bytes, &state, SemanticStreamIdV1::General).unwrap_err(),
+            SemanticEnvelopeRejectV1::EnvelopeDecodeFailure
         );
     }
 
@@ -4466,7 +4529,7 @@ mod tests {
         let before = state.next_expected_for(SemanticStreamIdV1::General);
         let msg = ServerGeneral::UpdateRecipes;
         let raw = recv_frame_bytes(recv_binding(), 99, &msg); // a gap, guaranteed reject
-        assert!(Client::validate_semantic_frame_v1(&raw, &state, msg.semantic_stream()).is_err());
+        assert!(Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).is_err());
         assert_eq!(state.next_expected_for(SemanticStreamIdV1::General), before);
     }
 }

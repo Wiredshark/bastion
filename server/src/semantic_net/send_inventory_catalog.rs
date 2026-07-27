@@ -13,7 +13,8 @@
 //! sys/subscription.rs has two identical CreateEntity lines).
 
 use super::SendSiteClassV1::{
-    self, LegacyMechanism, NotAClientSend, Ping, PostAuthCandidate, PreAuth, Terminal, V1EgressMechanism,
+    self, GameSyncV1Migrated, LegacyMechanism, NotAClientSend, Ping, PostAuthCandidate, PreAuth, Terminal,
+    V1EgressMechanism,
 };
 
 pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 194] = [
@@ -209,6 +210,6 @@ pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 194] = 
     ("sys/msg/register.rs", "let _ = old_client.send(ServerGeneral::Disconnect(DisconnectReason::Kicked(String::from(", 0, PreAuth),
     ("sys/msg/register.rs", "let _ = client.send_prepared(msg);", 0, PreAuth),
     ("sys/msg/register.rs", "if client.send(Ok::<_, RegisterError>(admitted)).is_err() {", 0, PreAuth),
-    ("sys/msg/register.rs", ".send(ServerInit::GameSync {", 0, PreAuth),
     ("sys/msg/register.rs", "let _ = client.send(ServerGeneral::PlayerListUpdate(PlayerListUpdate::init_canonical(", 0, PreAuth),
+    ("sys/msg/register.rs", "if !sent_v1 && client.send(game_sync).is_err() {", 0, GameSyncV1Migrated),
 ];

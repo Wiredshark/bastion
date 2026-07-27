@@ -65,6 +65,52 @@ fn manifest_limits() -> common::apex::manifest::ManifestDecodeLimitsV1 {
 
 fn zero_digest() -> common::apex::digest::DigestBytes32V1 { common::apex::digest::DigestBytes32V1::from_array([0; 32]) }
 
+/// `APEX-T3.3.15`/`.16` shared: building a `NetEnvelopeV1` frame is
+/// identical regardless of payload type (same header shape, same
+/// digest, same manifest codec) -- extracted so `Sys::run`'s batched
+/// `ServerGeneral` producers below and `sys/msg/register.rs`'s one-off
+/// `ServerInit::GameSync` send (`T3.3.16`, no producer contention, so
+/// it never goes through the outbox) can't drift apart on how a frame
+/// is actually constructed. Returns the payload schema and digest
+/// alongside the encoded bytes so neither caller has to recompute them
+/// for its own evidence/error handling.
+pub(crate) fn build_semantic_frame_v1<T>(
+    payload: &T,
+    recipient: common_net::msg::envelope::ActiveSessionBindingV1,
+    causality: common_net::msg::envelope::SemanticCausalityV1,
+    sequence: std::num::NonZeroU64,
+) -> Result<
+    (common_net::msg::envelope::SemanticPayloadSchemaV1, common::apex::digest::DigestBytes32V1, Vec<u8>),
+    common::apex::manifest::ManifestCodecErrorV1,
+>
+where
+    T: common_net::msg::envelope::SemanticRouteV1 + serde::Serialize,
+{
+    let payload_bytes = encode_payload_v1(payload);
+    let profile_root = net_envelope_profile_root_v1();
+    let payload_schema = payload.payload_schema();
+    let payload_encoding = SemanticPayloadEncodingV1::Bincode2LegacySerde;
+    let payload_digest = payload_digest_v1(profile_root, payload_schema, payload_encoding, &payload_bytes);
+    let header = NetEnvelopeHeaderV1 {
+        profile_root,
+        server_boot_id: recipient.server_boot_id,
+        session_id: recipient.session_id,
+        connection_epoch: recipient.epoch,
+        direction: SemanticDirectionV1::ServerToClient,
+        semantic_stream: payload.semantic_stream(),
+        sequence,
+        causality,
+        payload_schema,
+        payload_encoding,
+        payload_len: payload_bytes.len() as u64,
+        payload_digest,
+        command_id: None,
+    };
+    let frame = SemanticWireFrameV1 { header, payload_bytes };
+    let frame_bytes = common::apex::manifest::encode_manifest_v1(&frame, &manifest_limits())?;
+    Ok((payload_schema, payload_digest, frame_bytes))
+}
+
 fn evidence(
     tick: u64,
     stream: common_net::msg::envelope::SemanticStreamIdV1,
@@ -263,43 +309,22 @@ impl<'a> System<'a> for Sys {
                 },
             };
 
-            let payload_bytes = encode_payload_v1(&*intent.payload);
-            let profile_root = net_envelope_profile_root_v1();
-            let payload_schema = intent.payload.payload_schema();
-            let payload_encoding = SemanticPayloadEncodingV1::Bincode2LegacySerde;
-            let payload_digest = payload_digest_v1(profile_root, payload_schema, payload_encoding, &payload_bytes);
-            let header = NetEnvelopeHeaderV1 {
-                profile_root,
-                server_boot_id: intent.recipient.server_boot_id,
-                session_id: intent.recipient.session_id,
-                connection_epoch: intent.recipient.epoch,
-                direction: SemanticDirectionV1::ServerToClient,
-                semantic_stream: intent.semantic_stream,
-                sequence,
-                causality: intent.causality,
-                payload_schema,
-                payload_encoding,
-                payload_len: payload_bytes.len() as u64,
-                payload_digest,
-                command_id: None,
-            };
-            let frame = SemanticWireFrameV1 { header, payload_bytes };
-
-            let frame_bytes = match common::apex::manifest::encode_manifest_v1(&frame, &manifest_limits()) {
-                Ok(bytes) => bytes,
-                Err(e) => {
-                    warn!(?e, "semantic egress encode failure");
-                    evidence_log.push(evidence(
-                        tick,
-                        intent.semantic_stream,
-                        intent.recipient.session_id,
-                        intent.recipient.epoch,
-                        payload_schema,
-                        SemanticFrameVerdictV1::Rejected(SemanticEnvelopeRejectV1::EncodeFailure),
-                    ));
-                    continue;
-                },
-            };
+            let (payload_schema, payload_digest, frame_bytes) =
+                match build_semantic_frame_v1(&*intent.payload, intent.recipient, intent.causality, sequence) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        warn!(?e, "semantic egress encode failure");
+                        evidence_log.push(evidence(
+                            tick,
+                            intent.semantic_stream,
+                            intent.recipient.session_id,
+                            intent.recipient.epoch,
+                            intent.payload.payload_schema(),
+                            SemanticFrameVerdictV1::Rejected(SemanticEnvelopeRejectV1::EncodeFailure),
+                        ));
+                        continue;
+                    },
+                };
 
             // Sequence is already consumed above -- a send failure from
             // here on never gets it back (packet: "a failed send

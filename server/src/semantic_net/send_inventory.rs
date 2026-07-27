@@ -53,6 +53,17 @@ pub(crate) enum SendSiteClassV1 {
     /// analogue of `LegacyMechanism`, but for the path migrated
     /// producers now target instead of bypass).
     V1EgressMechanism,
+    /// `T3.3.16`: `ServerInit::GameSync`'s own dual-path raw-Legacy-
+    /// fallback line (`try_send_gamesync_v1` returned `false`) --
+    /// distinct from `PostAuthCandidate` (that class specifically means
+    /// "not yet migrated towards the outbox's after-state"; GameSync IS
+    /// migrated, just deliberately outside the outbox -- no producer
+    /// contention, see `try_send_gamesync_v1`'s own doc) and distinct
+    /// from plain `PreAuth` (which this exact site used to be tagged,
+    /// before this row's migration; `PreAuth`'s own doc comment
+    /// anticipated this split: "GameSync in particular has its own
+    /// dedicated migration step, T3.3.16").
+    GameSyncV1Migrated,
 }
 
 /// Re-scans `server/src` right now, with the exact same pattern the
