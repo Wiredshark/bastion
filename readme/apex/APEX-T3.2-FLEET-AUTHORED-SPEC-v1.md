@@ -135,6 +135,18 @@ determinism-by-construction law) — applied here to *admission-set
 membership* (real, non-reproducible) versus *admission-set processing*
 (must be reproducible given the set).
 
+The non-reproducible side extends one level further than membership
+alone (Opus 5's sharpening, spec review of `887d48a6a2`): when two
+connections from the *same* principal genuinely land within one tick,
+which one the receipt-phase drain assigns the larger `attempt_seq` is
+itself a physical fact of that run's real arrival order at the
+message-drain point (§2.2 item 1) — not something this row makes
+reproducible across different runs. "The larger captured attempt wins"
+(§2.2 item 4) is a claim about *disposition given already-fixed seqs*,
+never a claim that *which physical connection ends up with the larger
+seq* is itself deterministic across runs. Only the former is this row's
+guarantee; a reader must not infer the latter from it.
+
 ### 2.2 The mechanism, and why it holds under real contention
 
 The race that actually happens in production: two clients' `ClientRegister`
@@ -184,7 +196,13 @@ from **when the async race resolves**:
    captured `attempt_seq` wins regardless of which one's auth actually
    finished first (SES-054/SES-055, `OLDER-ATTEMPT-SUPERSEDED`) — again,
    because the comparison key was fixed before the race, the real
-   completion-order race has no vote. A genuine `attempt_seq` collision
+   completion-order race has no vote. (Per §2.1's carve-out: *which*
+   physical connection was assigned the larger `attempt_seq` in the first
+   place is itself a real, run-specific fact of the receipt-phase drain
+   order — not reproducible across runs. What this item guarantees is
+   the disposition *given* whichever seqs were actually assigned, never
+   that the assignment itself is cross-run deterministic.) A genuine
+   `attempt_seq` collision
    (only possible if two intents were assigned the identical sequence
    number, which the receipt-phase's single-threaded allocation should
    make structurally impossible) is `BLOCK-AMBIGUOUS-ATTEMPT` (SES-056) —
