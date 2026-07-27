@@ -21,6 +21,7 @@ pub const CUTAWAY_SETTLE_FRAMES_V1: u16 = 120;
 pub const CUTAWAY_FIXTURE_RADIUS_V1: i32 = 4;
 pub const CUTAWAY_FIXTURE_DEPTH_V1: i32 = 6;
 pub const CUTAWAY_CAP_MATERIAL_V1: u16 = 17;
+pub const CUTAWAY_VISUAL_RADIUS_V1: f32 = 5.5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -65,6 +66,9 @@ pub struct CutawayCaptureEvidenceV1 {
     pub removed_cell_count: u32,
     pub cap_face_count: u32,
     pub cap_triangle_count: u32,
+    pub cap_draw_triangle_count: u32,
+    pub cap_draw_ready: bool,
+    pub production_target_count: u32,
     pub roof_removal_count: u32,
     pub wall_removal_count: u32,
     pub slice_z: Option<i32>,
@@ -140,7 +144,7 @@ pub fn apply_fixture(
                 let shape = scene.debug.add_shape(DebugShape::ConformedTris(triangles));
                 scene
                     .debug
-                    .set_context(shape, [0.0; 4], [0.56, 0.35, 0.16, 1.0], [
+                    .set_context(shape, [0.0; 4], [0.82, 0.24, 0.04, 1.0], [
                         0.0, 0.0, 0.0, 1.0,
                     ]);
                 state.cap_shape = Some(shape);
@@ -166,6 +170,17 @@ pub fn apply_fixture(
     .map_err(|_| "authorized cell count overflow")?;
     let cap_face_count =
         u32::try_from(geometry.cap_faces.len()).map_err(|_| "cap face count overflow")?;
+    let cap_triangle_count = cap_face_count
+        .checked_mul(2)
+        .ok_or("cap triangle count overflow")?;
+    let cap_draw_ready = match stage {
+        CutawayCaptureStageV1::Sliced => state
+            .cap_shape
+            .is_some_and(|shape| scene.debug.has_draw_model(shape)),
+        CutawayCaptureStageV1::Surface | CutawayCaptureStageV1::Restored => true,
+    };
+    let production_target_count = u32::try_from(scene.bastion_occlusion().targets.len())
+        .map_err(|_| "production target count overflow")?;
     let evidence = CutawayCaptureEvidenceV1 {
         stage,
         presentation_generation: geometry.presentation_generation,
@@ -180,14 +195,21 @@ pub fn apply_fixture(
         removed_cell_count: u32::try_from(geometry.removed_cells.len())
             .map_err(|_| "removed cell count overflow")?,
         cap_face_count,
-        cap_triangle_count: cap_face_count
-            .checked_mul(2)
-            .ok_or("cap triangle count overflow")?,
+        cap_triangle_count,
+        cap_draw_triangle_count: if cap_draw_ready && stage == CutawayCaptureStageV1::Sliced {
+            cap_triangle_count
+        } else {
+            0
+        },
+        cap_draw_ready,
+        production_target_count,
         roof_removal_count: geometry.roof_removals,
         wall_removal_count: geometry.wall_removals,
         slice_z: slice_z(anchor, stage),
         stable_frames: state.stable_frames,
-        ready: state.stable_frames == CUTAWAY_SETTLE_FRAMES_V1,
+        ready: state.stable_frames == CUTAWAY_SETTLE_FRAMES_V1
+            && cap_draw_ready
+            && (stage != CutawayCaptureStageV1::Sliced || production_target_count == 1),
         fixture_owned: true,
     };
     if let Ok(mut latest) = LATEST_EVIDENCE.lock() {
@@ -357,11 +379,18 @@ fn configure_scene(
             occlusion.view_mode = crate::bastion::occlusion::ViewMode::Slice;
             occlusion.slice_enabled = true;
             occlusion.proximity_enabled = false;
-            occlusion.cutaway_enabled = false;
+            // The finite camera-to-anchor mask is an existing production
+            // terrain-fragment path. Combining it with the global Z slice
+            // opens the bounded fixture in the camera frustum instead of
+            // leaving the canonical cap hidden under an uncut surface.
+            occlusion.cutaway_enabled = true;
             occlusion.roof_enabled = false;
             occlusion.slice_z = Some(z as f32);
             occlusion.fade_band = 0.25;
             occlusion.strength = 0.0;
+            occlusion.cutaway_radius = CUTAWAY_VISUAL_RADIUS_V1;
+            occlusion.targets.clear();
+            occlusion.targets.push(anchor);
         },
         CutawayCaptureStageV1::Surface | CutawayCaptureStageV1::Restored => {
             if !geometry.surface_passthrough
@@ -372,6 +401,8 @@ fn configure_scene(
             }
             occlusion.view_mode = crate::bastion::occlusion::ViewMode::Solid;
             occlusion.slice_z = None;
+            occlusion.cutaway_enabled = false;
+            occlusion.targets.clear();
         },
     }
     Ok(())
@@ -535,6 +566,16 @@ mod tests {
         assert_eq!(triangles.len(), 2);
         assert_eq!(triangles[0][0], Vec3::new(0.0, 0.0, 1.0));
         assert_eq!(triangles[1][2], Vec3::new(0.0, 1.0, 1.0));
+    }
+
+    #[test]
+    fn sliced_visual_contract_is_bounded_and_nonzero() {
+        assert!(CUTAWAY_VISUAL_RADIUS_V1.is_finite());
+        assert!(CUTAWAY_VISUAL_RADIUS_V1 > 0.0);
+        assert!(
+            CUTAWAY_VISUAL_RADIUS_V1 <= (CUTAWAY_FIXTURE_RADIUS_V1 + 2) as f32,
+            "production cutaway mask must remain within the declared fixture neighborhood"
+        );
     }
 
     #[test]
