@@ -67,6 +67,7 @@ pub mod conservation_saga;
 pub mod content_manifest;
 pub mod run_equivalence;
 pub mod state_hash;
+pub mod threat_policy;
 pub mod event;
 pub mod feature_protocol;
 pub mod explosion;
