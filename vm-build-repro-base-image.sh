@@ -94,5 +94,11 @@ gcloud compute machine-images create "$IMAGE_NAME" \
   --project="$PROJECT" --source-instance="$VM" --source-instance-zone="$ZONE" \
   || { echo "machine image may already exist: $IMAGE_NAME"; }
 
+# T1.4 improvement item (pair run 2026-07-27): clear /etc/machine-id (and
+# /var/lib/dbus/machine-id) before the stop+image-create above, so clones
+# regenerate distinct machine-ids on first boot instead of sharing the
+# baked one. Isolation proof today rests on boot_id + provider instance id
+# (both per-instance); this upgrade makes machine-id usable as a third
+# distinctness fact instead of a recorded image-clone artifact.
 echo "image=$IMAGE_NAME"
 echo "TERMINAL: T1.1-REPRO-BASE-READY"
