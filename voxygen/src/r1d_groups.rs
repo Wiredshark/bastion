@@ -318,6 +318,7 @@ mod tests {
                     source_capability_digest,
                 },
             ],
+            render_islands: Vec::new(),
             terrain_resource: digest(2),
             environment_digest: digest(3),
             cloud_milli: 0,

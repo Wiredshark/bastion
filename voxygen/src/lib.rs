@@ -34,6 +34,7 @@ mod r1d_scale;
 mod r1d_tiers;
 mod r1e_cutaway;
 mod r1e_interiors;
+mod r1e_islands;
 pub mod render;
 pub mod run;
 pub mod scene;

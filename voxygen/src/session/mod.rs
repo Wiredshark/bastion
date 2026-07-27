@@ -25,7 +25,7 @@ use common::{
     consts::MAX_MOUNT_RANGE,
     event::UpdateCharacterMetadata,
     link::Is,
-    mounting::{Mount, VolumePos},
+    mounting::{Mount, Volume, VolumePos, VolumeRider},
     outcome::Outcome,
     recipe::{self, RecipeBookManifest},
     terrain::{Block, BlockKind},
@@ -190,6 +190,8 @@ pub struct SessionState {
     /// no client room/portal graph yet, so this truthfully binds every current
     /// consumer to the existing Z-level slice.
     r1e_interiors: crate::r1e_interiors::InteriorAdapterStateV1,
+    /// Renderer-owned projection of authoritative entity-volume membership.
+    r1e_islands: crate::r1e_islands::IslandAdapterStateV1,
 }
 
 /// bastion: state of an overseer grab-drag.
@@ -242,6 +244,14 @@ fn fixed_mm(value: f32) -> Option<i64> {
     Some(millimetres.round() as i64)
 }
 
+fn fixed_q30(value: f32) -> Option<i32> {
+    let scaled = f64::from(value) * f64::from(bastion_renderer_r0d::island::Q30_ONE_V1);
+    if !scaled.is_finite() || scaled < f64::from(i32::MIN) || scaled > f64::from(i32::MAX) {
+        return None;
+    }
+    Some(scaled.round() as i32)
+}
+
 /// Represents an active game session (i.e., the one being played).
 impl SessionState {
     /// Create a new `SessionState`.
@@ -292,6 +302,7 @@ impl SessionState {
         crate::r1d_tiers::reset();
         crate::r1e_cutaway::reset();
         crate::r1e_interiors::reset();
+        crate::r1e_islands::reset();
         if let Err(error) = global_state.window.renderer_mut().reset_r1bc_figure_gpu() {
             tracing::warn!(
                 target: "bastion_r1bc_gpu",
@@ -349,6 +360,7 @@ impl SessionState {
             bastion_designation_dirty: false,
             r1e_cutaway: crate::r1e_cutaway::CutawayFixtureStateV1::default(),
             r1e_interiors: crate::r1e_interiors::InteriorAdapterStateV1::default(),
+            r1e_islands: crate::r1e_islands::IslandAdapterStateV1::default(),
         }
     }
 
@@ -369,8 +381,10 @@ impl SessionState {
         let entities = ecs.entities();
         let uids = ecs.read_storage::<common::uid::Uid>();
         let positions = ecs.read_storage::<comp::Pos>();
+        let orientations = ecs.read_storage::<comp::Ori>();
         let bodies = ecs.read_storage::<comp::Body>();
         let colonists = ecs.read_storage::<comp::Colonist>();
+        let volume_rider_links = ecs.read_storage::<Is<VolumeRider>>();
         let presentation_tick = crate::r1a_presentation::authoritative_snapshot_tick_v1(
             client.get_tick(),
             crate::render::bastion_r0d::certification_server_latch_v1(),
@@ -399,6 +413,61 @@ impl SessionState {
         {
             return None;
         }
+        let presented_uids = presentation_entities
+            .iter()
+            .map(|entity| entity.uid)
+            .collect::<std::collections::BTreeSet<_>>();
+        let volume_parent_by_rider = (&uids, &volume_rider_links)
+            .join()
+            .filter_map(|(uid, link)| match link.pos.kind {
+                Volume::Terrain => None,
+                Volume::Entity(parent) => Some((uid.0.get(), parent.0.get())),
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let parent_transforms = (&uids, &positions, &orientations)
+            .join()
+            .map(|(uid, position, orientation)| (uid.0.get(), (*position, *orientation)))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let mut members_by_parent = std::collections::BTreeMap::<u64, Vec<u64>>::new();
+        for (rider, parent) in &volume_parent_by_rider {
+            if presented_uids.contains(rider) {
+                members_by_parent.entry(*parent).or_default().push(*rider);
+            }
+        }
+        let mut render_islands = Vec::with_capacity(members_by_parent.len());
+        for (parent_uid, mut member_uids) in members_by_parent {
+            // Nested moving volumes are not yet a production renderer
+            // capability. Refuse the whole coherent input instead of silently
+            // flattening the relationship.
+            if volume_parent_by_rider.contains_key(&parent_uid) {
+                return None;
+            }
+            let (position, orientation) = parent_transforms.get(&parent_uid).copied()?;
+            let orientation = orientation.to_quat();
+            member_uids.sort_unstable();
+            render_islands.push(crate::r1a_presentation::ProductionRenderIslandInputV1 {
+                parent_uid,
+                parent_island_uid: None,
+                parent_transform: bastion_renderer_r0d::island::RenderIslandTransformV1 {
+                    translation_mm: [
+                        fixed_mm(position.0.x)?,
+                        fixed_mm(position.0.y)?,
+                        fixed_mm(position.0.z)?,
+                    ],
+                    orientation_q30: [
+                        fixed_q30(orientation.x)?,
+                        fixed_q30(orientation.y)?,
+                        fixed_q30(orientation.z)?,
+                        fixed_q30(orientation.w)?,
+                    ],
+                    scale_milli: 1_000,
+                },
+                member_uids,
+                // No runtime local-space portal-cell authority is published.
+                portal_cells: Vec::new(),
+            });
+        }
+        render_islands.sort();
         let anchor = presentation_entities.first()?;
         let terrain_distance = u16::try_from(client.view_distance().unwrap_or(1)).ok()?;
         let entity_distance = u16::try_from(
@@ -568,6 +637,7 @@ impl SessionState {
             anchor_position_mm: anchor.position_mm,
             entities: presentation_entities,
             groups: presentation_groups,
+            render_islands,
             terrain_resource,
             environment_digest,
             cloud_milli: 0,
@@ -4588,6 +4658,22 @@ impl PlayState for SessionState {
                             package.package_digest(),
                         ) {
                             Ok(frame) => {
+                                if let Some(interior) = crate::r1e_interiors::latest_evidence()
+                                    && interior.presentation_generation
+                                        == frame.generation().client_applied_generation
+                                    && let Err(error) = crate::r1e_islands::maintain_snapshot(
+                                        &mut self.r1e_islands,
+                                        &frame,
+                                        &interior,
+                                        input.render_islands.clone(),
+                                    )
+                                {
+                                    tracing::warn!(
+                                        target: "bastion_r1e_islands",
+                                        ?error,
+                                        "authoritative render-island snapshot rejected"
+                                    );
+                                }
                                 let tier_plan_accepted =
                                     match crate::r1d_tiers::update(&frame, &input) {
                                         Ok(_) => true,
