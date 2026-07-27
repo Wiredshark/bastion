@@ -83,7 +83,13 @@ fn semantic_manifest_limits() -> common::apex::manifest::ManifestDecodeLimitsV1 
 /// it). Packet's own list, in order: exact-decode frame, validate
 /// profile/binding/direction/physical route/sequence, verify payload,
 /// exact-decode `ClientGeneral`, verify shared route.
-pub(crate) fn validate_semantic_frame_v1(
+/// `T3.3.19`: `pub` (not `pub(crate)`) so `bastion-harness`'s own
+/// `--net-envelope-scenario` can call the REAL production validation
+/// function directly -- same "not a reimplementation of the check"
+/// principle `T3.1.17`'s own scenario established for
+/// `check_register_boot_scope`, just a narrower cross-crate surface
+/// (one pure function, not a whole booted `Server`).
+pub fn validate_semantic_frame_v1(
     raw: &[u8],
     receive_state: &SemanticReceiveStateV1,
     expected_physical_stream: SemanticStreamIdV1,
