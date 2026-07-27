@@ -19,6 +19,7 @@ pub mod figure_package;
 pub mod group_representation;
 pub mod identity;
 pub mod individual_tier;
+pub mod interior;
 pub mod parallel;
 pub mod pass_graph;
 pub mod presentation;

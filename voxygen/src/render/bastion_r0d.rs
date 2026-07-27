@@ -1112,6 +1112,7 @@ fn request_one_capture(
     let group_representations = crate::r1d_groups::latest_evidence();
     let group_protected_uids = crate::r1d_groups::protected_uid_csv();
     let cutaway = crate::r1e_cutaway::latest_evidence();
+    let interiors = crate::r1e_interiors::latest_evidence();
     renderer.create_screenshot(move |result| {
         match result {
             Ok(image) => {
@@ -1548,6 +1549,37 @@ fn request_one_capture(
                                     ));
                                 } else {
                                     metadata.push_str("r1e_cutaway_enabled=false\n");
+                                }
+                                if let Some(interiors) = interiors {
+                                    metadata.push_str(&format!(
+                                        concat!(
+                                            "r1e_interiors_enabled=true\n",
+                                            "r1e_interiors_source_capability={}\n",
+                                            "r1e_interiors_unavailable_room_authority={}\n",
+                                            "r1e_interiors_unavailable_portal_authority={}\n",
+                                            "r1e_interiors_presentation_generation={}\n",
+                                            "r1e_interiors_visibility_sequence={}\n",
+                                            "r1e_interiors_snapshot_sha256={}\n",
+                                            "r1e_interiors_maximum_visible_z={}\n",
+                                            "r1e_interiors_room_count={}\n",
+                                            "r1e_interiors_portal_count={}\n",
+                                            "r1e_interiors_visible_room_count={}\n",
+                                            "r1e_interiors_z_level_fallback={}\n",
+                                        ),
+                                        interiors.source_capability,
+                                        interiors.unavailable_room_authority,
+                                        interiors.unavailable_portal_authority,
+                                        interiors.presentation_generation,
+                                        interiors.visibility_sequence,
+                                        hex_digest(&interiors.snapshot_digest),
+                                        interiors.maximum_visible_z,
+                                        interiors.room_count,
+                                        interiors.portal_count,
+                                        interiors.visible_room_count,
+                                        interiors.z_level_fallback,
+                                    ));
+                                } else {
+                                    metadata.push_str("r1e_interiors_enabled=false\n");
                                 }
                                 write_atomic(&metadata_path, metadata.as_bytes())
                             });
