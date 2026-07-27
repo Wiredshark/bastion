@@ -1651,10 +1651,17 @@ fn check_for_enemies<S: State>(ctx: &mut NpcCtx) -> Option<impl Action<S> + use<
 }
 
 fn react_to_events<S: State>(ctx: &mut NpcCtx, _: &mut S) -> Option<impl Action<S> + use<S>> {
-    check_inbox::<S>(ctx)
+    // T3.34 (E3, Fable-ruled 2026-07-27): reaction precedence is now
+    // explicit — threats always preempt; deadlines (quest/job timeouts)
+    // precede inbox/social. Was inbox > threat > deadline (an accident of
+    // `.or_else()` declaration order, never a designed policy). Each
+    // check's own side effects (inbox drainage, quest-timeout resolution)
+    // still only fire when reached, same as before this reorder — only
+    // the CATEGORY ORDER changed, not that pre-existing conditionality.
+    check_for_enemies(ctx)
         .map(Action::boxed)
-        .or_else(|| check_for_enemies(ctx).map(Action::boxed))
         .or_else(|| quest::check_for_timeouts(ctx).map(Action::boxed))
+        .or_else(|| check_inbox::<S>(ctx).map(Action::boxed))
 }
 
 fn humanoid() -> impl Action<DefaultState> {
