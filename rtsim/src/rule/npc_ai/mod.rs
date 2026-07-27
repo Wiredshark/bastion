@@ -1650,18 +1650,86 @@ fn check_for_enemies<S: State>(ctx: &mut NpcCtx) -> Option<impl Action<S> + use<
         .map(|enemy| just(move |ctx, _| ctx.controller.attack(enemy)))
 }
 
+fn threat_reaction<S: State>(ctx: &mut NpcCtx) -> Option<Box<dyn Action<S>>> {
+    check_for_enemies(ctx).map(Action::boxed)
+}
+fn deadline_reaction<S: State>(ctx: &mut NpcCtx) -> Option<Box<dyn Action<S>>> {
+    quest::check_for_timeouts(ctx).map(Action::boxed)
+}
+fn inbox_reaction<S: State>(ctx: &mut NpcCtx) -> Option<Box<dyn Action<S>>> {
+    check_inbox::<S>(ctx).map(Action::boxed)
+}
+
+/// T3.34 (E3, Fable-ruled 2026-07-27): the reaction-precedence combinator
+/// — threat > deadline > inbox. Was inbox > threat > deadline (an
+/// accident of `.or_else()` declaration order, never a designed policy).
+/// Generic over `C`/`T` (not hardcoded to `NpcCtx`/`Action`) so
+/// [`reaction_precedence_tests`] exercises this EXACT function — the one
+/// `react_to_events` calls — without needing a live `NpcCtx`. Each
+/// candidate is still evaluated lazily, one `fn` call at a time (a plain
+/// reborrow of `ctx` per call, never three simultaneous borrows), so a
+/// lower-precedence check's side effects (inbox drainage, quest-timeout
+/// resolution) only fire when that check is actually reached — same
+/// conditionality as before this row, only the order changed.
+fn reaction_precedence<C, T>(
+    ctx: &mut C,
+    threat: fn(&mut C) -> Option<T>,
+    deadline: fn(&mut C) -> Option<T>,
+    inbox: fn(&mut C) -> Option<T>,
+) -> Option<T> {
+    threat(ctx).or_else(|| deadline(ctx)).or_else(|| inbox(ctx))
+}
+
 fn react_to_events<S: State>(ctx: &mut NpcCtx, _: &mut S) -> Option<impl Action<S> + use<S>> {
-    // T3.34 (E3, Fable-ruled 2026-07-27): reaction precedence is now
-    // explicit — threats always preempt; deadlines (quest/job timeouts)
-    // precede inbox/social. Was inbox > threat > deadline (an accident of
-    // `.or_else()` declaration order, never a designed policy). Each
-    // check's own side effects (inbox drainage, quest-timeout resolution)
-    // still only fire when reached, same as before this reorder — only
-    // the CATEGORY ORDER changed, not that pre-existing conditionality.
-    check_for_enemies(ctx)
-        .map(Action::boxed)
-        .or_else(|| quest::check_for_timeouts(ctx).map(Action::boxed))
-        .or_else(|| check_inbox::<S>(ctx).map(Action::boxed))
+    reaction_precedence(ctx, threat_reaction, deadline_reaction, inbox_reaction)
+}
+
+#[cfg(test)]
+mod reaction_precedence_tests {
+    use super::reaction_precedence;
+
+    fn pending(_: &mut ()) -> Option<&'static str> { Some("pending") }
+    fn absent(_: &mut ()) -> Option<&'static str> { None }
+
+    /// T3.34's own contention case: threat and inbox both pending, no
+    /// deadline — threat must win. Distinct payloads (not just `Some`)
+    /// so the winner's IDENTITY, not merely its presence, is checked.
+    #[test]
+    fn threat_beats_pending_inbox() {
+        fn threat(_: &mut ()) -> Option<&'static str> { Some("threat") }
+        fn inbox(_: &mut ()) -> Option<&'static str> { Some("inbox") }
+        assert_eq!(reaction_precedence(&mut (), threat, absent, inbox), Some("threat"));
+    }
+
+    /// T3.34's other contention case: deadline and inbox both pending, no
+    /// threat — deadline must win.
+    #[test]
+    fn deadline_beats_pending_inbox_when_no_threat() {
+        fn deadline(_: &mut ()) -> Option<&'static str> { Some("deadline") }
+        fn inbox(_: &mut ()) -> Option<&'static str> { Some("inbox") }
+        assert_eq!(reaction_precedence(&mut (), absent, deadline, inbox), Some("deadline"));
+    }
+
+    #[test]
+    fn inbox_wins_only_when_nothing_else_pending() {
+        assert_eq!(reaction_precedence(&mut (), absent, absent, pending), Some("pending"));
+    }
+
+    /// Non-vacuity: reproducing the OLD (pre-T3.34) inbox > threat >
+    /// deadline order on the SAME contention case gives a DIFFERENT
+    /// winner — proving this test actually discriminates between the two
+    /// policies, not just that both compile and return `Some`.
+    #[test]
+    fn non_vacuous_against_the_old_accidental_order() {
+        fn threat(_: &mut ()) -> Option<&'static str> { Some("threat") }
+        fn inbox(_: &mut ()) -> Option<&'static str> { Some("inbox") }
+        let new_order = reaction_precedence(&mut (), threat, absent, inbox);
+        // The old code was `check_inbox().or_else(check_for_enemies).or_else(check_for_timeouts)`.
+        let old_order = reaction_precedence(&mut (), inbox, threat, absent);
+        assert_ne!(old_order, new_order, "the two policies must disagree on this contention case");
+        assert_eq!(new_order, Some("threat"));
+        assert_eq!(old_order, Some("inbox"));
+    }
 }
 
 fn humanoid() -> impl Action<DefaultState> {
