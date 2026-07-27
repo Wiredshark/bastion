@@ -1,0 +1,407 @@
+﻿{
+  "schema": "bastion.apex.t2.4-plugin-dependency-dag-canaries/v1",
+  "profile": "exact-name-single-version-kahn-v1",
+  "generated_at_utc": "2026-07-23T18:04:17Z",
+  "cases": [
+    {
+      "id": "PDG-001",
+      "expected_terminal": "RESOLVED",
+      "mutation": "empty candidate set produces the frozen empty graph root"
+    },
+    {
+      "id": "PDG-002",
+      "expected_terminal": "RESOLVED",
+      "mutation": "one plugin with no dependencies receives ordinal zero"
+    },
+    {
+      "id": "PDG-003",
+      "expected_terminal": "RESOLVED",
+      "mutation": "two independent plugins order by canonical plugin ID"
+    },
+    {
+      "id": "PDG-004",
+      "expected_terminal": "RESOLVED",
+      "mutation": "independent prerelease versions order by exact node key after IDs"
+    },
+    {
+      "id": "PDG-005",
+      "expected_terminal": "RESOLVED",
+      "mutation": "linear dependency chain orders dependency before dependent"
+    },
+    {
+      "id": "PDG-006",
+      "expected_terminal": "RESOLVED",
+      "mutation": "diamond graph emits one canonical order"
+    },
+    {
+      "id": "PDG-007",
+      "expected_terminal": "RESOLVED",
+      "mutation": "fan-in graph orders all prerequisites before consumer"
+    },
+    {
+      "id": "PDG-008",
+      "expected_terminal": "RESOLVED",
+      "mutation": "fan-out graph orders shared prerequisite before dependents"
+    },
+    {
+      "id": "PDG-009",
+      "expected_terminal": "RESOLVED",
+      "mutation": "disconnected DAG components interleave by ready-node key"
+    },
+    {
+      "id": "PDG-010",
+      "expected_terminal": "RESOLVED",
+      "mutation": "dependency declarations already sorted by T2.3 resolve unchanged"
+    },
+    {
+      "id": "PDG-011",
+      "expected_terminal": "RESOLVED",
+      "mutation": "candidate input reverse order produces identical graph"
+    },
+    {
+      "id": "PDG-012",
+      "expected_terminal": "RESOLVED",
+      "mutation": "manifest discovery path order does not affect graph"
+    },
+    {
+      "id": "PDG-013",
+      "expected_terminal": "RESOLVED",
+      "mutation": "archive filename changes do not affect graph identity"
+    },
+    {
+      "id": "PDG-014",
+      "expected_terminal": "RESOLVED",
+      "mutation": "display-name changes do not affect node key"
+    },
+    {
+      "id": "PDG-015",
+      "expected_terminal": "RESOLVED",
+      "mutation": "same DAG with different insertion hash seeds is identical"
+    },
+    {
+      "id": "PDG-016",
+      "expected_terminal": "RESOLVED",
+      "mutation": "all ready nodes are drained through ascending BTreeSet order"
+    },
+    {
+      "id": "PDG-017",
+      "expected_terminal": "RESOLVED",
+      "mutation": "maximum admitted ordinal converts to u32 without loss"
+    },
+    {
+      "id": "PDG-018",
+      "expected_terminal": "RESOLVED",
+      "mutation": "artifact and manifest roots are committed into node records"
+    },
+    {
+      "id": "PDG-019",
+      "expected_terminal": "RESOLVED",
+      "mutation": "edge list is sorted by dependency then dependent"
+    },
+    {
+      "id": "PDG-020",
+      "expected_terminal": "RESOLVED",
+      "mutation": "success report carries candidate-set, policy, and graph roots"
+    },
+    {
+      "id": "PDG-021",
+      "expected_terminal": "LEGACY-CANDIDATE-NOT-RESOLVABLE",
+      "mutation": "ObservedLegacyV0 candidate is present"
+    },
+    {
+      "id": "PDG-022",
+      "expected_terminal": "DUPLICATE-CANDIDATE",
+      "mutation": "same plugin ID/version/artifact appears twice"
+    },
+    {
+      "id": "PDG-023",
+      "expected_terminal": "CONFLICTING-CANDIDATE-ARTIFACT",
+      "mutation": "same plugin ID/version has different artifact digest"
+    },
+    {
+      "id": "PDG-024",
+      "expected_terminal": "CONFLICTING-CANDIDATE-MANIFEST",
+      "mutation": "same plugin ID/version has different manifest root"
+    },
+    {
+      "id": "PDG-025",
+      "expected_terminal": "MULTIPLE-VERSIONS-FOR-PLUGIN-ID",
+      "mutation": "same plugin ID appears at 1.0.0 and 2.0.0"
+    },
+    {
+      "id": "PDG-026",
+      "expected_terminal": "MULTIPLE-VERSIONS-FOR-PLUGIN-ID",
+      "mutation": "same plugin ID appears at release and prerelease"
+    },
+    {
+      "id": "PDG-027",
+      "expected_terminal": "INVALID-CANDIDATE-ROOT",
+      "mutation": "candidate manifest root uses wrong digest domain"
+    },
+    {
+      "id": "PDG-028",
+      "expected_terminal": "INVALID-CANDIDATE-ROOT",
+      "mutation": "archive semantic root is missing"
+    },
+    {
+      "id": "PDG-029",
+      "expected_terminal": "INVALID-CANDIDATE-ROOT",
+      "mutation": "archive artifact identity is absent"
+    },
+    {
+      "id": "PDG-030",
+      "expected_terminal": "POLICY-MISMATCH",
+      "mutation": "candidate was admitted under another manifest policy root"
+    },
+    {
+      "id": "PDG-031",
+      "expected_terminal": "POLICY-MISMATCH",
+      "mutation": "resolver policy root does not match report profile"
+    },
+    {
+      "id": "PDG-032",
+      "expected_terminal": "LIMIT-EXCEEDED",
+      "mutation": "candidate count exceeds injected graph-node limit"
+    },
+    {
+      "id": "PDG-033",
+      "expected_terminal": "MISSING-DEPENDENCIES",
+      "mutation": "one exact dependency key is absent"
+    },
+    {
+      "id": "PDG-034",
+      "expected_terminal": "MISSING-DEPENDENCIES",
+      "mutation": "multiple absent dependencies are reported in canonical order"
+    },
+    {
+      "id": "PDG-035",
+      "expected_terminal": "MISSING-DEPENDENCIES",
+      "mutation": "missing prerelease dependency is not satisfied by release"
+    },
+    {
+      "id": "PDG-036",
+      "expected_terminal": "MISSING-DEPENDENCIES",
+      "mutation": "missing release is not satisfied by prerelease"
+    },
+    {
+      "id": "PDG-037",
+      "expected_terminal": "DEPENDENCY-VERSION-MISMATCH",
+      "mutation": "dependency ID exists only at another exact version"
+    },
+    {
+      "id": "PDG-038",
+      "expected_terminal": "SELF-DEPENDENCY",
+      "mutation": "defense-in-depth catches self edge despite T2.3"
+    },
+    {
+      "id": "PDG-039",
+      "expected_terminal": "DUPLICATE-EDGE",
+      "mutation": "duplicate dependency edge is rejected despite T2.3"
+    },
+    {
+      "id": "PDG-040",
+      "expected_terminal": "EDGE-LIMIT-EXCEEDED",
+      "mutation": "total dependency edge count exceeds injected limit"
+    },
+    {
+      "id": "PDG-041",
+      "expected_terminal": "INDEGREE-OVERFLOW",
+      "mutation": "checked indegree increment cannot fit declared scalar"
+    },
+    {
+      "id": "PDG-042",
+      "expected_terminal": "ERROR-LIMIT-EXCEEDED",
+      "mutation": "missing-dependency report exceeds injected diagnostic limit"
+    },
+    {
+      "id": "PDG-043",
+      "expected_terminal": "DEPENDENCY-CYCLE",
+      "mutation": "two-node cycle"
+    },
+    {
+      "id": "PDG-044",
+      "expected_terminal": "DEPENDENCY-CYCLE",
+      "mutation": "three-node cycle"
+    },
+    {
+      "id": "PDG-045",
+      "expected_terminal": "DEPENDENCY-CYCLE",
+      "mutation": "self loop is still a cycle in resolver defense"
+    },
+    {
+      "id": "PDG-046",
+      "expected_terminal": "DEPENDENCY-CYCLE",
+      "mutation": "cycle with acyclic tail"
+    },
+    {
+      "id": "PDG-047",
+      "expected_terminal": "DEPENDENCY-CYCLE",
+      "mutation": "acyclic prefix leading into cycle"
+    },
+    {
+      "id": "PDG-048",
+      "expected_terminal": "DEPENDENCY-CYCLE",
+      "mutation": "two disconnected cycles choose canonical residual DFS witness"
+    },
+    {
+      "id": "PDG-049",
+      "expected_terminal": "DEPENDENCY-CYCLE",
+      "mutation": "overlapping cycles produce one deterministic witness"
+    },
+    {
+      "id": "PDG-050",
+      "expected_terminal": "DEPENDENCY-CYCLE",
+      "mutation": "cycle witness rotates to smallest node in returned directed cycle"
+    },
+    {
+      "id": "PDG-051",
+      "expected_terminal": "DEPENDENCY-CYCLE",
+      "mutation": "neighbor insertion permutations preserve witness"
+    },
+    {
+      "id": "PDG-052",
+      "expected_terminal": "DEPENDENCY-CYCLE",
+      "mutation": "candidate permutations preserve witness"
+    },
+    {
+      "id": "PDG-053",
+      "expected_terminal": "DEPENDENCY-CYCLE",
+      "mutation": "residual nodes are emitted in canonical key order"
+    },
+    {
+      "id": "PDG-054",
+      "expected_terminal": "DEPENDENCY-CYCLE",
+      "mutation": "cycle error includes policy and candidate-set roots"
+    },
+    {
+      "id": "PDG-055",
+      "expected_terminal": "DEPENDENCY-CYCLE",
+      "mutation": "cycle witness never includes acyclic tail nodes"
+    },
+    {
+      "id": "PDG-056",
+      "expected_terminal": "DEPENDENCY-CYCLE",
+      "mutation": "long cycle at graph limit terminates within bounded work"
+    },
+    {
+      "id": "PDG-057",
+      "expected_terminal": "DEPENDENCY-CYCLE",
+      "mutation": "back-edge selection follows sorted outgoing neighbors"
+    },
+    {
+      "id": "PDG-058",
+      "expected_terminal": "ROOT-MISMATCH",
+      "mutation": "ordinal vector modified after resolution"
+    },
+    {
+      "id": "PDG-059",
+      "expected_terminal": "ROOT-MISMATCH",
+      "mutation": "edge orientation reversed in encoded graph"
+    },
+    {
+      "id": "PDG-060",
+      "expected_terminal": "ROOT-MISMATCH",
+      "mutation": "edge removed from canonical graph projection"
+    },
+    {
+      "id": "PDG-061",
+      "expected_terminal": "ROOT-MISMATCH",
+      "mutation": "node artifact digest changed without graph-root change"
+    },
+    {
+      "id": "PDG-062",
+      "expected_terminal": "ROOT-MISMATCH",
+      "mutation": "node manifest root changed without graph-root change"
+    },
+    {
+      "id": "PDG-063",
+      "expected_terminal": "ROOT-MISMATCH",
+      "mutation": "resolver version changed without graph-root change"
+    },
+    {
+      "id": "PDG-064",
+      "expected_terminal": "ROOT-MISMATCH",
+      "mutation": "single-version policy changed without policy-root change"
+    },
+    {
+      "id": "PDG-065",
+      "expected_terminal": "ROOT-MISMATCH",
+      "mutation": "ready-order policy changed without policy-root change"
+    },
+    {
+      "id": "PDG-066",
+      "expected_terminal": "ROOT-MISMATCH",
+      "mutation": "cycle-witness policy changed without policy-root change"
+    },
+    {
+      "id": "PDG-067",
+      "expected_terminal": "ROOT-MISMATCH",
+      "mutation": "candidate omitted without candidate-set-root change"
+    },
+    {
+      "id": "PDG-068",
+      "expected_terminal": "ROOT-MISMATCH",
+      "mutation": "graph bytes use wrong T0.3 digest domain"
+    },
+    {
+      "id": "PDG-069",
+      "expected_terminal": "SIDE-EFFECT-VIOLATION",
+      "mutation": "resolver invokes PluginModule::new"
+    },
+    {
+      "id": "PDG-070",
+      "expected_terminal": "SIDE-EFFECT-VIOLATION",
+      "mutation": "resolver calls register_tar"
+    },
+    {
+      "id": "PDG-071",
+      "expected_terminal": "SIDE-EFFECT-VIOLATION",
+      "mutation": "resolver mutates PluginMgr.plugins"
+    },
+    {
+      "id": "PDG-072",
+      "expected_terminal": "SIDE-EFFECT-VIOLATION",
+      "mutation": "resolver executes load_event"
+    },
+    {
+      "id": "PDG-073",
+      "expected_terminal": "SIDE-EFFECT-VIOLATION",
+      "mutation": "resolver reads archive path from disk after T2.1 inspection"
+    },
+    {
+      "id": "PDG-074",
+      "expected_terminal": "SIDE-EFFECT-VIOLATION",
+      "mutation": "resolver fetches a missing dependency from network"
+    },
+    {
+      "id": "PDG-075",
+      "expected_terminal": "SIDE-EFFECT-VIOLATION",
+      "mutation": "resolver chooses a conflict winner"
+    },
+    {
+      "id": "PDG-076",
+      "expected_terminal": "DEFERRED-TO-T2.5",
+      "mutation": "valid graph has command or asset claim collisions"
+    },
+    {
+      "id": "PDG-077",
+      "expected_terminal": "DEFERRED-TO-T2.5",
+      "mutation": "valid graph requires host API compatibility decision"
+    },
+    {
+      "id": "PDG-078",
+      "expected_terminal": "DEFERRED-TO-T2.5",
+      "mutation": "valid graph requires component-world preflight"
+    },
+    {
+      "id": "PDG-079",
+      "expected_terminal": "FEATURE-OFF-PASS",
+      "mutation": "veloren-common-state compiles without plugins feature"
+    },
+    {
+      "id": "PDG-080",
+      "expected_terminal": "PERMUTATION-CAMPAIGN-PASS",
+      "mutation": "all frozen candidate/dependency permutations share one terminal and root"
+    }
+  ]
+}

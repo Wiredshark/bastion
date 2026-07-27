@@ -104,11 +104,16 @@ pub enum PluginResolutionErrorV1 {
     ErrorLimitExceeded,
     CycleWitnessLimitExceeded,
     DuplicateCandidate { key: PluginNodeKeyV1 },
+    ConflictingCandidateArtifact { key: PluginNodeKeyV1 },
+    ConflictingCandidateManifest { key: PluginNodeKeyV1 },
+    CandidateAdmissionPolicyMismatch,
     MultipleVersionsForPluginId { plugin_id: String },
     InvalidCandidateManifestRoot { key: PluginNodeKeyV1 },
     MissingDependency { dependent: PluginNodeKeyV1, required: PluginNodeKeyV1 },
     DependencyVersionMismatch { dependent: PluginNodeKeyV1, required: PluginNodeKeyV1, available: Vec<PluginVersionV1> },
     SelfDependency { key: PluginNodeKeyV1 },
+    DuplicateEdge { dependency: PluginNodeKeyV1, dependent: PluginNodeKeyV1 },
+    IndegreeOverflow,
     DependencyCycle { witness: CycleWitnessV1, residual_root: ProtocolDigestV1 },
     GraphCanonicalizationFailure,
 }
@@ -165,7 +170,12 @@ pub fn resolve_plugin_graph_v1(
     policy: &PluginResolverPolicyV1,
 ) -> PluginResolutionTerminalV1 {
     let reject = |candidate_set_root: Option<ProtocolDigestV1>, mut errors: Vec<PluginResolutionErrorV1>| {
-        errors.truncate(policy.limits.max_error_count as usize);
+        // §5.4: aggregate up to the injected limit; exceeding it is ITSELF
+        // recorded, never silently dropped.
+        if errors.len() > policy.limits.max_error_count as usize {
+            errors.truncate((policy.limits.max_error_count as usize).saturating_sub(1));
+            errors.push(PluginResolutionErrorV1::ErrorLimitExceeded);
+        }
         PluginResolutionTerminalV1::Rejected(Box::new(PluginResolutionReportV1 {
             policy_root: policy.policy_root.clone(),
             candidate_set_root,
@@ -199,15 +209,28 @@ pub fn resolve_plugin_graph_v1(
             .then_with(|| a.plugin_version.get().cmp(b.plugin_version.get()))
     });
     let mut admission_errors = Vec::new();
+    // Every candidate must have been admitted under ONE manifest policy
+    // (PDG-030: mixed admission-policy roots cannot resolve together).
+    if validated.windows(2).any(|p| p[0].admission_policy_root != p[1].admission_policy_root) {
+        admission_errors.push(PluginResolutionErrorV1::CandidateAdmissionPolicyMismatch);
+    }
     for pair in validated.windows(2) {
         if pair[0].plugin_id == pair[1].plugin_id {
             if pair[0].plugin_version == pair[1].plugin_version {
-                admission_errors.push(PluginResolutionErrorV1::DuplicateCandidate {
-                    key: PluginNodeKeyV1 {
-                        plugin_id: pair[1].plugin_id.clone(),
-                        plugin_version: pair[1].plugin_version.clone(),
-                    },
-                });
+                let key = PluginNodeKeyV1 {
+                    plugin_id: pair[1].plugin_id.clone(),
+                    plugin_version: pair[1].plugin_version.clone(),
+                };
+                // Same key: distinguish exact duplicate from CONFLICTING
+                // content under one identity (PDG-023/024 — the sharper
+                // finding outranks the generic duplicate).
+                if pair[0].archive_artifact != pair[1].archive_artifact {
+                    admission_errors.push(PluginResolutionErrorV1::ConflictingCandidateArtifact { key });
+                } else if pair[0].manifest_root != pair[1].manifest_root {
+                    admission_errors.push(PluginResolutionErrorV1::ConflictingCandidateManifest { key });
+                } else {
+                    admission_errors.push(PluginResolutionErrorV1::DuplicateCandidate { key });
+                }
             } else {
                 admission_errors.push(PluginResolutionErrorV1::MultipleVersionsForPluginId {
                     plugin_id: pair[1].plugin_id.as_str().to_owned(),
@@ -286,15 +309,34 @@ pub fn resolve_plugin_graph_v1(
     // §9.3 — canonical Kahn: BTreeSet ready-set keyed by index (validated
     // is key-sorted, so index order IS ascending node-key order).
     let n = validated.len();
+    // Duplicate edges cannot arise from a valid T2.3 manifest (deps are
+    // deduped there) — one reaching here is an invariant violation and is
+    // REJECTED, not silently deduped (PDG-039).
+    {
+        let mut seen = std::collections::BTreeSet::new();
+        for &(dep, dependent) in &edges {
+            if !seen.insert((dep, dependent)) {
+                return reject(
+                    Some(candidate_set_root),
+                    vec![PluginResolutionErrorV1::DuplicateEdge {
+                        dependency: key_of(&validated[dep]),
+                        dependent: key_of(&validated[dependent]),
+                    }],
+                );
+            }
+        }
+    }
     let mut indegree = vec![0u32; n];
     let mut outgoing: Vec<Vec<usize>> = vec![Vec::new(); n];
     for &(dep, dependent) in &edges {
         outgoing[dep].push(dependent);
-        indegree[dependent] += 1;
+        indegree[dependent] = match indegree[dependent].checked_add(1) {
+            Some(v) => v,
+            None => return reject(Some(candidate_set_root), vec![PluginResolutionErrorV1::IndegreeOverflow]),
+        };
     }
     for out in &mut outgoing {
         out.sort_unstable();
-        out.dedup();
     }
     let mut ready: std::collections::BTreeSet<usize> = (0..n).filter(|&i| indegree[i] == 0).collect();
     let mut ordinal_of = vec![u32::MAX; n];
