@@ -43,7 +43,8 @@ pub fn setup(add_systems: impl Fn(&mut specs::DispatcherBuilder)) -> State {
         add_systems,
         #[cfg(feature = "plugins")]
         common_state::plugin::PluginMgr::default(),
-    );
+    )
+        .expect("test State construction is legacy-mode and cannot fail");
     state.ecs_mut().insert(MaterialStatManifest::with_empty());
     state.ecs_mut().insert(AbilityMap::load().cloned());
     state.ecs_mut().read_resource::<Time>();

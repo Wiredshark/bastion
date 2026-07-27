@@ -35,7 +35,8 @@ mod tests {
             DEFAULT_WORLD_CHUNKS_LG,
             Arc::new(TerrainChunk::water(0)),
             |dispatch_builder| {
-                dispatch::<character_behavior::Sys>(dispatch_builder, &[]);
+                dispatch::<character_behavior::Sys>(dispatch_builder, &[])
+        .expect("test State construction is legacy-mode and cannot fail");
             },
             #[cfg(feature = "plugins")]
             common_state::plugin::PluginMgr::default(),

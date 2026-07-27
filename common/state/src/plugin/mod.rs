@@ -952,6 +952,13 @@ impl PluginMgr {
 
     pub fn is_governed(&self) -> bool { self.governed }
 
+    /// Test seam: a governed manager whose lifecycle is already poisoned,
+    /// so `activate_v1` fails without needing real wasm.
+    #[cfg(test)]
+    pub fn poisoned_governed_for_test_v1() -> Self {
+        Self { plugins: Vec::new(), governed: true, lifecycle: PluginLifecycleStateV1::Failed, command_owners: None, skeleton_owners: None }
+    }
+
     pub fn lifecycle(&self) -> PluginLifecycleStateV1 { self.lifecycle }
 
     /// APEX-T2.5.18 — THE exactly-once ordered lifecycle: every plugin's

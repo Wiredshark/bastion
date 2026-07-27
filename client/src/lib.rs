@@ -953,7 +953,8 @@ impl Client {
                 #[cfg(feature = "plugins")]
                 deployment_plugin_mgr
                     .unwrap_or_else(common_state::plugin::PluginMgr::from_asset_or_default),
-            );
+            )
+            .map_err(|e| Error::Other(format!("state construction failed: {e:?}")))?;
 
             #[cfg_attr(not(feature = "plugins"), expect(unused_mut))]
             let mut missing_plugins: Vec<PluginHash> = Vec::new();

@@ -482,7 +482,8 @@ impl Server {
             },
             #[cfg(feature = "plugins")]
             plugin_mgr,
-        );
+        )
+        .map_err(|e| Error::Other(format!("state construction failed: {e:?}")))?;
         events::register_event_busses(state.ecs_mut());
         // APEX-T3.1.05: same Copy value as the Server field above, inserted
         // once here and never mutated afterward (systems read it via

@@ -177,6 +177,15 @@ impl ExecutionMode {
     pub const fn is_deterministic(self) -> bool { matches!(self, Self::DeterministicSerial) }
 }
 
+/// `APEX-T2.5.18/.19` — governed plugin activation/registration failure.
+/// Construction must fail rather than panic: this workspace builds with
+/// `panic = "abort"` in dev and release, so a panic aborts the process.
+#[derive(Debug)]
+pub enum StateConstructionErrorV1 {
+    GovernedPluginActivation(String),
+    GovernedRegistrationRejected(String),
+}
+
 impl State {
     pub fn pools(game_mode: GameMode) -> Pools {
         Self::pools_with_mode(game_mode, ExecutionMode::Parallel)
@@ -280,7 +289,7 @@ impl State {
         default_chunk: Arc<TerrainChunk>,
         add_systems: impl Fn(&mut DispatcherBuilder),
         #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
-    ) -> Self {
+    ) -> Result<Self, StateConstructionErrorV1> {
         Self::new(
             GameMode::Client,
             pools,
@@ -299,7 +308,7 @@ impl State {
         default_chunk: Arc<TerrainChunk>,
         add_systems: impl Fn(&mut DispatcherBuilder),
         #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
-    ) -> Self {
+    ) -> Result<Self, StateConstructionErrorV1> {
         Self::server_with_mode(
             pools,
             map_size_lg,
@@ -321,7 +330,7 @@ impl State {
         execution_mode: ExecutionMode,
         add_systems: impl Fn(&mut DispatcherBuilder),
         #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
-    ) -> Self {
+    ) -> Result<Self, StateConstructionErrorV1> {
         Self::new_with_mode(
             GameMode::Server,
             pools,
@@ -341,7 +350,7 @@ impl State {
         default_chunk: Arc<TerrainChunk>,
         add_systems: impl Fn(&mut DispatcherBuilder),
         #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
-    ) -> Self {
+    ) -> Result<Self, StateConstructionErrorV1> {
         Self::new_with_mode(
             game_mode,
             pools,
@@ -362,7 +371,7 @@ impl State {
         execution_mode: ExecutionMode,
         add_systems: impl Fn(&mut DispatcherBuilder),
         #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
-    ) -> Self {
+    ) -> Result<Self, StateConstructionErrorV1> {
         prof_span!(guard, "create dispatcher");
         // DET-ECS-007: new dispatcher = new phase-barrier schedule.
         common_ecs::begin_schedule();
@@ -376,8 +385,8 @@ impl State {
             .unwrap_or_else(|_| panic!("Thread local systems not allowed"));
         drop(guard);
 
-        Self {
-            ecs: Self::setup_ecs_world(
+        Ok(Self {
+            ecs: Self::setup_ecs_world_v1(
                 game_mode,
                 Arc::clone(&pools),
                 map_size_lg,
@@ -385,24 +394,24 @@ impl State {
                 execution_mode,
                 #[cfg(feature = "plugins")]
                 plugin_mgr,
-            ),
+            )?,
             thread_pool: pools,
             dispatcher,
             execution_mode,
-        }
+        })
     }
 
     /// Creates ecs world and registers all the common components and resources
     // TODO: Split up registering into server and client (e.g. move
     // EventBus<ServerEvent> to the server)
-    fn setup_ecs_world(
+    fn setup_ecs_world_v1(
         game_mode: GameMode,
         thread_pool: Arc<ThreadPool>,
         map_size_lg: MapSizeLg,
         default_chunk: Arc<TerrainChunk>,
         execution_mode: ExecutionMode,
         #[cfg(feature = "plugins")] mut plugin_mgr: PluginMgr,
-    ) -> specs::World {
+    ) -> Result<specs::World, StateConstructionErrorV1> {
         prof_span!("State::setup_ecs_world");
         let mut ecs = specs::World::new();
         // Uids for sync
@@ -575,31 +584,23 @@ impl State {
                 id_maps: &ecs.read_resource::<IdMaps>().into(),
                 player: ecs.read_component().into(),
             };
-            // APEX-T2.5.18: exactly-once ORDERED activation. Governed
-            // managers are fail-closed — a hook failure ABORTS State
-            // construction (the log-and-empty fallback is gone on that
-            // path; a governed session never silently runs pluginless).
-            // Legacy managers keep the exact old fallback behavior.
+            // APEX-T2.5.18/.19: exactly-once ordered activation. Governed
+            // sessions are fail-closed via a TYPED error (this workspace
+            // builds panic = "abort", so a panic here would kill the
+            // process, not unwind). Legacy keeps the old fallback.
             let mut plugin_mgr = plugin_mgr;
+            let governed = plugin_mgr.is_governed();
             match plugin_mgr.activate_v1(&ecs_world, game_mode) {
                 Ok(()) => {
-                    // APEX-T2.5.19: governed sessions validate ACTUAL
-                    // registrations against declared manifest claims —
-                    // an undeclared registration aborts initialization.
-                    if plugin_mgr.is_governed() {
+                    if governed {
                         if let Err(e) = plugin_mgr.registration_receipt_input_v1() {
-                            panic!(
-                                "APEX-T2.5.19 undeclared plugin registration (fail-closed): {e:?}"
-                            );
+                            return Err(StateConstructionErrorV1::GovernedRegistrationRejected(format!("{e:?}")));
                         }
                     }
                     plugin_mgr
                 },
-                Err(e) if plugin_mgr.is_governed() => {
-                    // Startup abort (packet: no active-game rollback). On
-                    // the client this unwinds through spawn_blocking as a
-                    // typed JoinError; on the server it kills startup.
-                    panic!("APEX-T2.5.18 governed plugin activation failed (fail-closed): {e:?}");
+                Err(e) if governed => {
+                    return Err(StateConstructionErrorV1::GovernedPluginActivation(format!("{e:?}")));
                 },
                 Err(e) => {
                     tracing::debug!(?e, "Failed to run plugin init");
@@ -609,7 +610,7 @@ impl State {
             }
         });
 
-        ecs
+                Ok(ecs)
     }
 
     /// Register a component with the state's ECS.
@@ -1268,5 +1269,45 @@ mod t1_12_tests {
         assert!(!diff(empty, empty).changes_rtsim_resource());
         // Identity → no hook.
         assert!(!diff(iron, iron).changes_rtsim_resource());
+    }
+}
+
+/// `APEX-T2.5-FINDINGS(3)` — coverage of the CONSTRUCTION path, not just
+/// `activate_v1`: a governed manager whose lifecycle is already poisoned
+/// must make `State::client` return a typed error (never panic — this
+/// workspace is `panic = "abort"`).
+#[cfg(all(test, feature = "plugins"))]
+mod governed_state_construction_v1 {
+    use super::*;
+    use common::terrain::MapSizeLg;
+
+    #[test]
+    fn governed_activation_failure_returns_typed_error_not_panic() {
+        let mgr = crate::plugin::PluginMgr::poisoned_governed_for_test_v1();
+        let pools = State::pools(GameMode::Client);
+        let res = State::client(
+            pools,
+            MapSizeLg::new(Vec2::new(10, 10)).unwrap(),
+            Arc::new(TerrainChunk::water(0)),
+            |_| {},
+            mgr,
+        );
+        assert!(matches!(
+            res.map(|_| ()),
+            Err(StateConstructionErrorV1::GovernedPluginActivation(_))
+        ));
+    }
+
+    #[test]
+    fn legacy_manager_still_constructs() {
+        let pools = State::pools(GameMode::Client);
+        let res = State::client(
+            pools,
+            MapSizeLg::new(Vec2::new(10, 10)).unwrap(),
+            Arc::new(TerrainChunk::water(0)),
+            |_| {},
+            crate::plugin::PluginMgr::default(),
+        );
+        assert!(res.is_ok());
     }
 }
