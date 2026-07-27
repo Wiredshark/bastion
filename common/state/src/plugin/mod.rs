@@ -160,6 +160,12 @@ pub(crate) struct InspectedPluginArchive {
     pub manifest_bytes: Vec<u8>,
     #[expect(dead_code, reason = "retained for APEX-T2.2's canonical-profile revalidation")]
     pub entry_inventory: Vec<LegacyArchiveEntryRecordV1>,
+    /// APEX-T2.2.08: the ObserveLegacy profile observation — a strict-
+    /// pipeline PREVIEW recorded at inventory time. NEVER an admission
+    /// input on this legacy path (spec policy 1: observation-only,
+    /// byte-unchanged legacy behavior).
+    #[expect(dead_code, reason = "evidence surface until APEX-T2.5's rollout consumes it")]
+    pub profile_observation: archive_profile::ObserveSummaryV1,
     pub legacy_files: HashMap<PathBuf, Vec<u8>>,
     pub warnings: Vec<PluginInspectionWarningV1>,
 }
@@ -291,6 +297,17 @@ impl InspectedPluginArchive {
             }
         }
 
+        // APEX-T2.2.08: profile observation over the SAME immutable buffer
+        // — total, side-effect-free, never consulted for THIS (legacy)
+        // admission decision.
+        let profile_observation = archive_profile::observe_legacy(&archive_bytes);
+        tracing::debug!(
+            source = %source_path.display(),
+            dialect = ?profile_observation.dialect,
+            strict_preview = profile_observation.strict_preview_terminal,
+            "APEX-T2.2 archive profile observation"
+        );
+
         Ok(Self {
             source_path,
             discovery_ordinal,
@@ -301,6 +318,7 @@ impl InspectedPluginArchive {
             entry_inventory,
             legacy_files,
             warnings,
+            profile_observation,
         })
     }
 }

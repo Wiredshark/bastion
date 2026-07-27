@@ -153,6 +153,11 @@ pub enum ArchiveRejectV1 {
     // T2.2.03 — reconciliation rejects.
     ParserViewMismatch { detail: &'static str },
     ParserIdentityMismatch,
+    // T2.2.08/.10 — strict-mode admission rejects.
+    StrictRolloutPolicyMissing,
+    GnuLongnameStrictReject,
+    PaxStrictReject,
+    GnuDialectStrictReject,
 }
 
 impl ArchiveRejectV1 {
@@ -210,7 +215,136 @@ impl ArchiveRejectV1 {
             Self::DuplicateCanonicalModuleDeclaration => "REJECT-DUPLICATE-CANONICAL-MODULE-DECLARATION",
             Self::ParserViewMismatch { .. } => "REJECT-PARSER-VIEW-MISMATCH",
             Self::ParserIdentityMismatch => "REJECT-PARSER-IDENTITY-MISMATCH",
+            Self::StrictRolloutPolicyMissing => "BLOCK-STRICT-ROLLOUT-POLICY-MISSING",
+            Self::GnuLongnameStrictReject => "OBSERVE-GNU-LONGNAME-STRICT-REJECT",
+            Self::PaxStrictReject => "OBSERVE-PAX-STRICT-REJECT",
+            Self::GnuDialectStrictReject => "OBSERVE-GNU-NOT-STRICT",
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// T2.2.08/.10 — ObserveLegacy wiring surface + StrictCanonicalV1 assembly.
+// ---------------------------------------------------------------------------
+
+/// The NAMED observation-pass limits policy (PAR-C09: no hidden defaults —
+/// this is an explicit, recorded policy; production STRICT values are
+/// T2.5's decision and are injected separately).
+pub fn observe_legacy_limits_v1() -> ArchiveLimitsPolicyV1 {
+    ArchiveLimitsPolicyV1 {
+        policy_id: MachineTextV1::new("apex-t2-2-observe-legacy-v1").expect("ASCII"),
+        max_archive_bytes: 256 << 20,
+        max_entry_bytes: 128 << 20,
+        max_entries: 65_536,
+        max_path_bytes: 255,
+        max_manifest_bytes: 1 << 20,
+    }
+}
+
+/// Compact per-archive observation attached at the T2.1 inventory seam
+/// (spec section 7: observation-only — NEVER an admission input in
+/// ObserveLegacy).
+#[derive(Clone, Debug)]
+pub struct ObserveSummaryV1 {
+    pub dialect: Option<TarDialectV1>,
+    /// The strict-pipeline PREVIEW verdict name ("ACCEPT" or the catalog
+    /// terminal the strict lane would emit) — what this archive WOULD do
+    /// under StrictCanonicalV1, recorded while legacy admission proceeds
+    /// unchanged.
+    pub strict_preview_terminal: &'static str,
+    pub parser_identity: &'static str,
+    pub limits_policy_id: String,
+    pub semantic_root: Option<ProtocolDigestV1>,
+}
+
+/// A fully admitted StrictCanonicalV1 archive.
+#[derive(Clone, Debug)]
+pub struct StrictArchiveV1 {
+    pub namespace: Vec<CanonicalEntryV1>,
+    pub manifest: ManifestResolutionV1,
+    pub artifact: ArtifactIdentityV1,
+    pub semantic_root: ProtocolDigestV1,
+}
+
+/// T2.2.10 — the strict admission pipeline: framing scan (FIRST — tar-rs
+/// can only narrow), strict-dialect gate, entry-type gate, path assembly,
+/// raw duplicate-manifest gate BEFORE namespace (so DUPLICATE-MANIFEST
+/// outranks the generic dedup), namespace, manifest resolution, tar-rs
+/// reconciliation, identities. `rollout_policy = None` is
+/// `BLOCK-STRICT-ROLLOUT-POLICY-MISSING` (PAR-C14): strict admission is
+/// TEST-ONLY until `APEX-T2.5` supplies a real policy value.
+pub fn admit_strict_canonical(
+    archive: &[u8],
+    limits: &ArchiveLimitsPolicyV1,
+    rollout_policy: Option<&str>,
+) -> Result<StrictArchiveV1, ArchiveRejectV1> {
+    if rollout_policy.is_none() {
+        return Err(ArchiveRejectV1::StrictRolloutPolicyMissing);
+    }
+    let scan = scan_framing(archive, limits)?;
+    for entry in &scan.entries {
+        match entry.dialect {
+            TarDialectV1::UstarStrict => {},
+            TarDialectV1::OldV7 => return Err(ArchiveRejectV1::OldHeaderInStrictV1),
+            TarDialectV1::Pax => return Err(ArchiveRejectV1::PaxStrictReject),
+            TarDialectV1::Gnu => {
+                return if matches!(entry.type_flag, b'L' | b'K') {
+                    Err(ArchiveRejectV1::GnuLongnameStrictReject)
+                } else {
+                    Err(ArchiveRejectV1::GnuDialectStrictReject)
+                };
+            },
+        }
+        match entry.type_flag {
+            b'0' | 0 => {},
+            b'5' => return Err(ArchiveRejectV1::ExplicitDirectoryInStrictV1),
+            other => return Err(ArchiveRejectV1::UnsupportedEntryType { type_flag: other }),
+        }
+    }
+    let assembled: Vec<(CanonicalPathV1, MachineTextV1)> =
+        scan.entries.iter().map(|e| assemble_ustar_path(e, limits)).collect::<Result<_, _>>()?;
+    // Raw duplicate-manifest gate BEFORE namespace dedup (PAR-008 vs 011).
+    if assembled.iter().filter(|(p, _)| p.as_str() == "plugin.toml").count() > 1 {
+        return Err(ArchiveRejectV1::DuplicateManifest);
+    }
+    let entries: Vec<CanonicalEntryV1> = scan
+        .entries
+        .iter()
+        .zip(&assembled)
+        .map(|(e, (p, k))| {
+            use sha2::Digest;
+            let digest: [u8; 32] = sha2::Sha256::digest(entry_content(archive, e)).into();
+            CanonicalEntryV1 {
+                path: p.clone(),
+                portability_key: k.clone(),
+                size_bytes: e.declared_size,
+                content_sha256: digest,
+            }
+        })
+        .collect();
+    let namespace = build_namespace(entries)?;
+    let manifest = resolve_manifest(archive, &scan.entries, &assembled, &namespace, limits)?;
+    reconcile_tar_rs(archive, &scan.entries)?;
+    let semantic_root = semantic_root(&namespace)?;
+    Ok(StrictArchiveV1 { namespace, manifest, artifact: artifact_identity(archive), semantic_root })
+}
+
+/// T2.2.08 — the ObserveLegacy pass: a strict-pipeline PREVIEW recorded
+/// as evidence while legacy admission proceeds byte-for-byte unchanged.
+/// TOTAL: never returns an error, never blocks the legacy path.
+pub fn observe_legacy(archive: &[u8]) -> ObserveSummaryV1 {
+    let limits = observe_legacy_limits_v1();
+    let dialect = scan_framing(archive, &limits).ok().map(|s| s.dialect);
+    let (terminal, root) = match admit_strict_canonical(archive, &limits, Some("observe-preview")) {
+        Ok(strict) => ("ACCEPT", Some(strict.semantic_root)),
+        Err(e) => (e.terminal_name(), None),
+    };
+    ObserveSummaryV1 {
+        dialect,
+        strict_preview_terminal: terminal,
+        parser_identity: PARSER_IDENTITY_V1,
+        limits_policy_id: limits.policy_id.as_str().to_owned(),
+        semantic_root: root,
     }
 }
 
@@ -1339,6 +1473,78 @@ mod tests {
             resolve_manifest(&archive, &scanned, &assembled, &ns, &small).unwrap_err(),
             ArchiveRejectV1::ManifestSizeLimit
         );
+    }
+
+    #[test]
+    fn strict_admission_pipeline_and_observe_preview() {
+        let limits = test_limits();
+        let p = |s: &str| CanonicalPathV1::new(s).unwrap();
+        let clean = pack_canonical(
+            &[(p("plugin.toml"), b"name = \"p\"\nmodules = [\"m.wasm\"]\n"), (p("m.wasm"), b"M")],
+            &limits,
+        )
+        .unwrap();
+
+        // PAR-C14: strict without a rollout policy is BLOCKED — test-only
+        // until T2.5.
+        assert_eq!(
+            admit_strict_canonical(&clean, &limits, None).unwrap_err(),
+            ArchiveRejectV1::StrictRolloutPolicyMissing
+        );
+        // With a policy: full admission, separated identities present.
+        let strict = admit_strict_canonical(&clean, &limits, Some("test")).unwrap();
+        assert_eq!(strict.namespace.len(), 2);
+        assert_eq!(strict.manifest.modules.len(), 1);
+        assert_ne!(strict.artifact.size_bytes, 0);
+
+        // Old-V7 header in strict (PAR-C25).
+        let mut v7 = ustar_entry("a.wasm", b"x", b'0');
+        for b in &mut v7[257..265] {
+            *b = 0;
+        }
+        v7[148..156].copy_from_slice(b"        ");
+        let sum: u64 = v7[..512].iter().map(|&b| b as u64).sum();
+        v7[148..156].copy_from_slice(format!("{:06o}\0 ", sum).as_bytes());
+        assert_eq!(
+            admit_strict_canonical(&terminated(v7), &limits, Some("test")).unwrap_err(),
+            ArchiveRejectV1::OldHeaderInStrictV1
+        );
+
+        // PAX + GNU-longname strict rejects (PAR-C39/C38).
+        assert_eq!(
+            admit_strict_canonical(&terminated(ustar_entry("ph", b"", b'x')), &limits, Some("test")).unwrap_err(),
+            ArchiveRejectV1::PaxStrictReject
+        );
+        assert_eq!(
+            admit_strict_canonical(&terminated(ustar_entry("././@LongLink", b"", b'L')), &limits, Some("test"))
+                .unwrap_err(),
+            ArchiveRejectV1::GnuLongnameStrictReject
+        );
+
+        // Explicit directory record in strict (PAR-C23).
+        let mut body = ustar_entry("dir/", b"", b'5');
+        body.extend(ustar_entry("plugin.toml", b"name = \"p\"\n", b'0'));
+        assert_eq!(
+            admit_strict_canonical(&terminated(body), &limits, Some("test")).unwrap_err(),
+            ArchiveRejectV1::ExplicitDirectoryInStrictV1,
+            "typeflag gate fires before path assembly, so the '5' record gets its own terminal, not trailing-slash"
+        );
+
+        // Duplicate manifest outranks the generic namespace dedup
+        // (PAR-008 vs 011).
+        let mut dup = ustar_entry("plugin.toml", b"name = \"p\"\n", b'0');
+        dup.extend(ustar_entry("plugin.toml", b"name = \"q\"\n", b'0'));
+        assert_eq!(
+            admit_strict_canonical(&terminated(dup), &limits, Some("test")).unwrap_err(),
+            ArchiveRejectV1::DuplicateManifest
+        );
+
+        // T2.2.08: observe is TOTAL and previews strict.
+        let obs = observe_legacy(&clean);
+        assert_eq!(obs.strict_preview_terminal, "ACCEPT");
+        assert!(obs.semantic_root.is_some());
+        let obs_bad = observe_legacy(b"not a tar at all............");
+        assert!(obs_bad.strict_preview_terminal.starts_with("REJECT-"), "observation records, never panics");
     }
 
     #[test]
