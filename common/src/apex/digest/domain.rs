@@ -45,6 +45,9 @@ pub enum DigestDomainIdV1 {
     /// recomputes it (no literal digest is pinned anywhere for it), whereas
     /// T1.3/T1.4's evidence records literal roots derived under 12.
     NetEnvelopeProfile = 20,
+    CheckpointStreamTranscript = 21,
+    CheckpointGlobalTranscript = 22,
+    CheckpointDescriptor = 23,
     // IDs 9 (SubsystemDescriptor) and 10 (CompatibilityProfile) are ALLOCATED
     // to APEX-T0.5's in-flight build (row-order allocation rule, Fable-blessed;
     // collision with SourceClosure caught + resolved at spec stage). Sonnet 5's
@@ -101,6 +104,9 @@ impl DigestDomainIdV1 {
             Self::SubsystemDescriptor => "bastion/subsystem-descriptor/v1",
             Self::CompatibilityProfile => "bastion/compatibility-profile/v1",
             Self::NetEnvelopeProfile => "bastion/net-envelope-profile/v1",
+            Self::CheckpointStreamTranscript => "bastion/checkpoint-stream/v1",
+            Self::CheckpointGlobalTranscript => "bastion/checkpoint-global/v1",
+            Self::CheckpointDescriptor => "bastion/checkpoint-descriptor/v1",
             Self::SourceClosure => "bastion/source-closure/v1",
             Self::LocalReproSmoke => "bastion/build/local-repro-smoke/v1",
             Self::FreshBuilderProfile => "bastion/fresh-builder-profile/v1",
@@ -113,7 +119,7 @@ impl DigestDomainIdV1 {
         }
     }
 
-    pub const ALL: [DigestDomainIdV1; 20] = [
+    pub const ALL: [DigestDomainIdV1; 23] = [
         Self::BootstrapManifest,
         Self::SaveUniverseManifest,
         Self::PluginActivationPlan,
@@ -134,6 +140,9 @@ impl DigestDomainIdV1 {
         Self::PluginArchive,
         Self::PluginCandidateSet,
         Self::PluginResolvedGraph,
+        Self::CheckpointStreamTranscript,
+        Self::CheckpointGlobalTranscript,
+        Self::CheckpointDescriptor,
     ];
 }
 
@@ -179,7 +188,7 @@ mod tests {
         assert_eq!(DigestDomainIdV1::SubsystemDescriptor.label(), "bastion/subsystem-descriptor/v1");
         assert_eq!(DigestDomainIdV1::CompatibilityProfile.as_u16(), 10);
         assert_eq!(DigestDomainIdV1::CompatibilityProfile.label(), "bastion/compatibility-profile/v1");
-        assert_eq!(DigestDomainIdV1::NetEnvelopeProfile.as_u16(), 12);
+        assert_eq!(DigestDomainIdV1::NetEnvelopeProfile.as_u16(), 20);
         assert_eq!(DigestDomainIdV1::NetEnvelopeProfile.label(), "bastion/net-envelope-profile/v1");
         assert_eq!(DigestDomainIdV1::SourceClosure.as_u16(), 11);
         assert_eq!(DigestDomainIdV1::SourceClosure.label(), "bastion/source-closure/v1");
@@ -199,5 +208,11 @@ mod tests {
         assert_eq!(DigestDomainIdV1::PluginCandidateSet.label(), "bastion/plugin-candidate-set/v1");
         assert_eq!(DigestDomainIdV1::PluginResolvedGraph.as_u16(), 19);
         assert_eq!(DigestDomainIdV1::PluginResolvedGraph.label(), "bastion/plugin-resolved-graph/v1");
+        assert_eq!(DigestDomainIdV1::CheckpointStreamTranscript.as_u16(), 21);
+        assert_eq!(DigestDomainIdV1::CheckpointStreamTranscript.label(), "bastion/checkpoint-stream/v1");
+        assert_eq!(DigestDomainIdV1::CheckpointGlobalTranscript.as_u16(), 22);
+        assert_eq!(DigestDomainIdV1::CheckpointGlobalTranscript.label(), "bastion/checkpoint-global/v1");
+        assert_eq!(DigestDomainIdV1::CheckpointDescriptor.as_u16(), 23);
+        assert_eq!(DigestDomainIdV1::CheckpointDescriptor.label(), "bastion/checkpoint-descriptor/v1");
     }
 }
