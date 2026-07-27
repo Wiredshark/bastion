@@ -31,6 +31,12 @@ pub enum DigestDomainIdV1 {
     /// `APEX-T1.5`'s manifest embeds — separating inputs from the manifest
     /// that embeds them is the point of domain separation.
     SourceClosure = 11,
+    /// `APEX-T1.3` (real packet, section 7): the local reproducibility
+    /// smoke's canonical evidence record — same-worker exact-output
+    /// rebuild + host-path impurity smoke. Distinct from `BuildManifest`
+    /// (ID 5, T1.5's manifest) for the same input-vs-embedding reason as
+    /// `SourceClosure`.
+    LocalReproSmoke = 12,
 }
 
 impl DigestDomainIdV1 {
@@ -50,10 +56,11 @@ impl DigestDomainIdV1 {
             Self::SemanticContent => "bastion/semantic-content/v1",
             Self::PluginManifest => "bastion/plugin-manifest/v1",
             Self::SourceClosure => "bastion/source-closure/v1",
+            Self::LocalReproSmoke => "bastion/build/local-repro-smoke/v1",
         }
     }
 
-    pub const ALL: [DigestDomainIdV1; 9] = [
+    pub const ALL: [DigestDomainIdV1; 10] = [
         Self::BootstrapManifest,
         Self::SaveUniverseManifest,
         Self::PluginActivationPlan,
@@ -63,6 +70,7 @@ impl DigestDomainIdV1 {
         Self::SemanticContent,
         Self::PluginManifest,
         Self::SourceClosure,
+        Self::LocalReproSmoke,
     ];
 }
 
@@ -106,5 +114,7 @@ mod tests {
         assert_eq!(DigestDomainIdV1::PluginManifest.label(), "bastion/plugin-manifest/v1");
         assert_eq!(DigestDomainIdV1::SourceClosure.as_u16(), 11);
         assert_eq!(DigestDomainIdV1::SourceClosure.label(), "bastion/source-closure/v1");
+        assert_eq!(DigestDomainIdV1::LocalReproSmoke.as_u16(), 12);
+        assert_eq!(DigestDomainIdV1::LocalReproSmoke.label(), "bastion/build/local-repro-smoke/v1");
     }
 }

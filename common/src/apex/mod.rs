@@ -7,6 +7,7 @@
 //! packets; this module implements `APEX-T0.1`.
 
 pub mod boundary;
+pub mod build;
 pub mod digest;
 pub mod identity;
 pub mod manifest;
