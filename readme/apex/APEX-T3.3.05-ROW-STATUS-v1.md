@@ -39,18 +39,38 @@ escalate to the full elevated gate.
 
 ## Requirement 2 — Before/after wire-compat delta (both directions)
 
+**CORRECTION (Opus 5's boundary-review finding on this row's original
+text, self-flagged by Opus as also a miss in his own T3.2 elevated
+review): this section originally claimed the version-handshake rejection
+mechanism below was already in effect, citing "T3.2's own spec section 9"
+as precedent. That was false: `VELOREN_NETWORK_VERSION` was never
+actually bumped for either T3.2's or this row's bincode-schema-breaking
+wire changes (`network/protocol/src/types.rs` sat at `[0, 7, 0]`,
+last touched by T3.1). The §9 rollback *text* referenced a version bump
+without the constant itself ever having been changed — verified only at
+the prose level, not against the live constant, in both the original
+authoring pass and Opus's review. Consequence: a post-T3.1/pre-T3.2 peer
+would have passed the `0.7.0 == 0.7.0` handshake and then failed at
+bincode decode — exactly the partial/ambiguous failure a clean
+version-mismatch rejection exists to preclude. Fixed in the same commit
+as this correction: `VELOREN_NETWORK_VERSION` bumped `[0,7,0]` ->
+`[0,8,0]`, covering T3.2's and this row's cumulative wire changes in one
+bump (no release shipped between them, no cross-version population
+exists on this branch). The paragraphs below describe the TRUE,
+now-real mechanism.**
+
 **Pre-T3.3 client against a post-T3.3 server:** a pre-T3.3 `ClientRegister`
-has no `requested_semantic_protocol` field. This is the same network-protocol-version-bump
-situation `T3.2`'s own spec section 9 already covers for `session_request`
-(policy 5) — the version handshake rejects the mismatch cleanly before any
-partial admission; there is no code path where an old client's
-`ClientRegister` decodes successfully with a silently-defaulted or
-missing new field.
+has no `requested_semantic_protocol` field, and advertises the pre-bump
+`[0, 7, 0]` network version against this row's `[0, 8, 0]` — the version
+handshake rejects the mismatch cleanly before any partial admission;
+there is no code path where an old client's `ClientRegister` decodes
+successfully with a silently-defaulted or missing new field.
 
 **Post-T3.3 client against a pre-T3.3 server:** symmetric — the server
-does not recognize the new `ClientRegister` shape or the new
-`ServerInfo.supported_semantic_protocols` field the client would expect;
-same version-handshake rejection, not a partial/ambiguous accept.
+advertises the pre-bump version and does not recognize the new
+`ClientRegister` shape or the new `ServerInfo.supported_semantic_protocols`
+field the client would expect; same version-handshake rejection, not a
+partial/ambiguous accept.
 
 **Post-T3.3 client against a post-T3.3 server (the actual golden path
 this row changes):** the live client (this codebase's own

@@ -54,7 +54,24 @@ pub(crate) const VELOREN_MAGIC_NUMBER: [u8; 7] = *b"VELOREN";
 /// ServerInit::GameSync/RegisterError all gained a new required
 /// server_boot_id-related field (bincode schema-breaking). Confirmed no
 /// other pending change on this branch already claims minor 0.7.
-pub const VELOREN_NETWORK_VERSION: [u32; 3] = [0, 7, 0];
+///
+/// APEX-T3.2/T3.3.05 (Opus 5's boundary-review finding on T3.3.01-.06,
+/// self-flagged as missed by both his T3.2 elevated review and this row's
+/// own author): bumped 0.7.0 -> 0.8.0, covering the CUMULATIVE bincode-
+/// schema-breaking wire changes across both rows in one bump -- no
+/// release shipped between them and no cross-version population exists
+/// on this branch, so one bump covers both rather than two. T3.2 added
+/// ClientRegister.session_request, replaced ServerRegisterAnswer's
+/// Result<(), _> with Result<SessionAdmissionV1, _>, and added
+/// ServerInit::GameSync.session_binding. T3.3.05 added
+/// ClientRegister.requested_semantic_protocol,
+/// ServerInfo.supported_semantic_protocols, and
+/// SessionBindingV1.selected_semantic_protocol (reached via GameSync/
+/// RegisterAnswer). Without this bump, a post-T3.1/pre-T3.2 peer would
+/// pass the version handshake and then fail at bincode decode -- exactly
+/// the partial/ambiguous failure a clean version-mismatch rejection is
+/// supposed to preclude.
+pub const VELOREN_NETWORK_VERSION: [u32; 3] = [0, 8, 0];
 pub(crate) const STREAM_ID_OFFSET1: Sid = Sid::new(0);
 pub(crate) const STREAM_ID_OFFSET2: Sid = Sid::new(u64::MAX / 2);
 /// Maximal possible Prio to choose (for performance reasons)
