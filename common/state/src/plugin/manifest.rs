@@ -633,6 +633,12 @@ fn observe_legacy_v0(bytes: &[u8], raw: &toml::Value) -> LegacyPluginManifestObs
     }
 }
 
+/// APEX-T2.4.05 hook: recompute a validated manifest's root for candidate
+/// admission verification (the resolver must not trust the carried root).
+pub fn recompute_manifest_root(v: &ValidatedPluginManifestV1) -> Result<common::apex::digest::ProtocolDigestV1, PluginManifestErrorExtV1> {
+    manifest_semantic_root(&v.plugin_id, &v.plugin_version, &v.host_api, &v.modules, &v.dependencies, &v.claims)
+}
+
 /// §5.10 — the manifest semantic root under `PluginManifest` (= 8):
 /// schema + identity scalars + sorted collections, T0.2-encoded. TOML
 /// formatting/order can never move it (inputs are the canonicalized

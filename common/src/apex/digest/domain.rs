@@ -51,6 +51,11 @@ pub enum DigestDomainIdV1 {
     /// T2.3) and `PluginActivationPlan` (3, T2.5), domain-separated from
     /// both for the SourceClosure-vs-BuildManifest reason.
     PluginArchive = 17,
+    /// `APEX-T2.4` (real packet, section 9.1/9.5): the resolver's two
+    /// evidence namespaces — the admitted candidate set and the resolved
+    /// graph. The T2.5 activation-plan root remains domain 3.
+    PluginCandidateSet = 18,
+    PluginResolvedGraph = 19,
 }
 
 impl DigestDomainIdV1 {
@@ -76,10 +81,12 @@ impl DigestDomainIdV1 {
             Self::FreshRebuildPair => "bastion/fresh-rebuild-pair/v1",
             Self::FreshRebuildCanaryCampaign => "bastion/fresh-rebuild-canary-campaign/v1",
             Self::PluginArchive => "bastion/plugin-archive/v1",
+            Self::PluginCandidateSet => "bastion/plugin-candidate-set/v1",
+            Self::PluginResolvedGraph => "bastion/plugin-resolved-graph/v1",
         }
     }
 
-    pub const ALL: [DigestDomainIdV1; 15] = [
+    pub const ALL: [DigestDomainIdV1; 17] = [
         Self::BootstrapManifest,
         Self::SaveUniverseManifest,
         Self::PluginActivationPlan,
@@ -95,6 +102,8 @@ impl DigestDomainIdV1 {
         Self::FreshRebuildPair,
         Self::FreshRebuildCanaryCampaign,
         Self::PluginArchive,
+        Self::PluginCandidateSet,
+        Self::PluginResolvedGraph,
     ];
 }
 
@@ -150,5 +159,9 @@ mod tests {
         assert_eq!(DigestDomainIdV1::FreshRebuildCanaryCampaign.label(), "bastion/fresh-rebuild-canary-campaign/v1");
         assert_eq!(DigestDomainIdV1::PluginArchive.as_u16(), 17);
         assert_eq!(DigestDomainIdV1::PluginArchive.label(), "bastion/plugin-archive/v1");
+        assert_eq!(DigestDomainIdV1::PluginCandidateSet.as_u16(), 18);
+        assert_eq!(DigestDomainIdV1::PluginCandidateSet.label(), "bastion/plugin-candidate-set/v1");
+        assert_eq!(DigestDomainIdV1::PluginResolvedGraph.as_u16(), 19);
+        assert_eq!(DigestDomainIdV1::PluginResolvedGraph.label(), "bastion/plugin-resolved-graph/v1");
     }
 }
