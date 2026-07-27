@@ -51,9 +51,12 @@ toolchain/config file bytes)**. Specifically:
   two randomized roots).
 - No wall-clock, hostname, username, or environment value enters the record.
 - All digests are SHA-256, domain-separated via T0.3 under ONE new permanent
-  domain: `DigestDomainIdV1::SourceClosure = 9`, label
+  domain: `DigestDomainIdV1::SourceClosure = 11`, label
   `"bastion/source-closure/v1"` (registry addition, PluginManifest=8 precedent;
-  flagged in the implementing commit).
+  flagged in the implementing commit). NUMBERING: 9/10 are allocated to
+  T0.5's SubsystemDescriptor/CompatibilityProfile (row-order allocation rule
+  agreed during cross-review — earlier row wins lower numbers; collision
+  caught at spec stage, before either registered in code).
 - The record's canonical bytes are produced by `BastionManifestEncodingV1`
   (T0.2): integer field IDs, canonical map order, no floats, ASCII machine
   text; a JSON mirror is emitted for humans and is explicitly
