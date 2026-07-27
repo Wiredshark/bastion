@@ -1,0 +1,45 @@
+{
+  "descriptor": {
+    "digest_domain": "SubsystemDescriptor",
+    "digest_hex": "c970f7b339b6eb3ca24e6fb806e94a592a45e436559375c8ba01aceb7dc2b579",
+    "hex": "a30101020103a101a201a20101025820d3d9e5b2cb16a57c0daf64fd7cb1e7aebf78638928ecdf97204d32afed99db5a021819",
+    "name": "descriptor.worldgen"
+  },
+  "profile": {
+    "digest_domain": "CompatibilityProfile",
+    "digest_hex": "09a6028fe2f638432d47bbb450f1dd269c17da05612822515b6d69c1f2899b80",
+    "hex": "838201a30001010002a101a201a20101025820b1ec453b55ea0c7db0d7ff8e16200809e4452d451eaee711507115ea1011aa39020c8202a300020100028201028203a3000601000240",
+    "name": "profile.multi_slot"
+  },
+  "rules": [
+    {
+      "hex": "a30001010002a101a201a20101025820b1ec453b55ea0c7db0d7ff8e16200809e4452d451eaee711507115ea1011aa39020c",
+      "name": "rule.exact"
+    },
+    {
+      "hex": "a30002010002820102",
+      "name": "rule.accept_set"
+    },
+    {
+      "hex": "a30003010002a201010205",
+      "name": "rule.accept_range"
+    },
+    {
+      "hex": "a300040100028101",
+      "name": "rule.negotiated_capability"
+    },
+    {
+      "hex": "a30005010002a401010201030204a201a201010258204f39804e61e2d5bcc5900aae470533e0cf42ceaf236ec619ea4cbf0c521043f70215",
+      "name": "rule.direct_transform"
+    },
+    {
+      "hex": "a3000601000240",
+      "name": "rule.provenance_only"
+    },
+    {
+      "hex": "a30019232901010242a1b2",
+      "name": "rule.unknown_noncritical"
+    }
+  ],
+  "schema": "bastion.apex-subsystem-compatibility-golden-vectors/v1"
+}
