@@ -186,6 +186,10 @@ pub struct SessionState {
     /// R1E: packet-scoped cutaway fixture state. The feature flag is required;
     /// ordinary sessions retain the existing occlusion path unchanged.
     r1e_cutaway: crate::r1e_cutaway::CutawayFixtureStateV1,
+    /// Renderer-owned whole interior visibility publication. Production has
+    /// no client room/portal graph yet, so this truthfully binds every current
+    /// consumer to the existing Z-level slice.
+    r1e_interiors: crate::r1e_interiors::InteriorAdapterStateV1,
 }
 
 /// bastion: state of an overseer grab-drag.
@@ -287,6 +291,7 @@ impl SessionState {
         crate::r1d_groups::reset();
         crate::r1d_tiers::reset();
         crate::r1e_cutaway::reset();
+        crate::r1e_interiors::reset();
         if let Err(error) = global_state.window.renderer_mut().reset_r1bc_figure_gpu() {
             tracing::warn!(
                 target: "bastion_r1bc_gpu",
@@ -343,6 +348,7 @@ impl SessionState {
             bastion_visuals: crate::bastion::tools::VisualsMode::default(),
             bastion_designation_dirty: false,
             r1e_cutaway: crate::r1e_cutaway::CutawayFixtureStateV1::default(),
+            r1e_interiors: crate::r1e_interiors::InteriorAdapterStateV1::default(),
         }
     }
 
@@ -3566,6 +3572,19 @@ impl PlayState for SessionState {
                 } else {
                     crate::render::bastion_r0d::clear_capture_anchor();
                 }
+            }
+            if let Some(frame) = crate::r1a_presentation::current_frame_v1()
+                && let Err(error) = crate::r1e_interiors::maintain_z_level_snapshot(
+                    &mut self.r1e_interiors,
+                    &frame,
+                    self.scene.bastion_slice_z(),
+                )
+            {
+                tracing::warn!(
+                    target: "bastion_r1e_interiors",
+                    ?error,
+                    "interior visibility publication failed closed"
+                );
             }
             // bastion: keep the derived input context synced into the window
             // fan-out filter (idempotent one-enum write; covers every camera-
