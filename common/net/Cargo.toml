@@ -20,6 +20,7 @@ bincode = { workspace = true }
 flate2 = "1.0.20"
 image = { workspace = true, features = ["jpeg"] }
 num-traits = { workspace = true }
+sha2 = { workspace = true }
 sum_type = "0.2.0"
 vek = { workspace = true }
 tracing = { workspace = true }

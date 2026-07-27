@@ -1,6 +1,7 @@
 pub mod client;
 pub mod compression;
 pub mod ecs_packet;
+pub mod envelope;
 pub mod server;
 pub mod world_msg;
 
@@ -12,6 +13,11 @@ pub use self::{
         VoxelImageEncoding, WidePacking, WireChonk,
     },
     ecs_packet::EcsCompPacket,
+    envelope::{
+        NetEnvelopeHeaderV1, SemanticCausalityV1, SemanticDirectionV1, SemanticPayloadEncodingV1, SemanticPayloadSchemaV1,
+        SemanticSnapshotRefV1, SemanticStreamIdV1, SemanticWireFrameV1, SnapshotDomainId, net_envelope_profile_root_v1,
+        payload_digest_v1,
+    },
     server::{
         CharacterInfo, ChatTypeContext, DisconnectReason, InviteAnswer, Notification, PlayerInfo,
         PlayerListUpdate, RegisterError, SerializedTerrainChunk, ServerGeneral, ServerInfo,

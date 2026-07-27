@@ -29,6 +29,11 @@ pub enum SubsystemSlotIdV1 {
     SaveInventory = 7,
     /// `APEX-T4.1`: build identity.
     Build = 8,
+    /// `APEX-T3.3`: frozen `NET_ENVELOPE_PROFILE_V1` protocol-tag vocabulary
+    /// content root. Row-order allocation (fleet standing rule): `T3.3` is
+    /// the only row registering a slot so far, so it simply takes the next
+    /// free ID.
+    NetEnvelope = 9,
 }
 
 impl SubsystemSlotIdV1 {
@@ -44,10 +49,11 @@ impl SubsystemSlotIdV1 {
             Self::Economy => "bastion/subsystem-slot/economy/v1",
             Self::SaveInventory => "bastion/subsystem-slot/save-inventory/v1",
             Self::Build => "bastion/subsystem-slot/build/v1",
+            Self::NetEnvelope => "bastion/subsystem-slot/net-envelope/v1",
         }
     }
 
-    pub const ALL: [SubsystemSlotIdV1; 8] = [
+    pub const ALL: [SubsystemSlotIdV1; 9] = [
         Self::Worldgen,
         Self::Content,
         Self::Numeric,
@@ -56,6 +62,7 @@ impl SubsystemSlotIdV1 {
         Self::Economy,
         Self::SaveInventory,
         Self::Build,
+        Self::NetEnvelope,
     ];
 
     pub fn try_from_u16(raw: u16) -> Option<Self> { Self::ALL.into_iter().find(|s| s.as_u16() == raw) }
@@ -91,6 +98,7 @@ mod tests {
         assert_eq!(SubsystemSlotIdV1::Economy.as_u16(), 6);
         assert_eq!(SubsystemSlotIdV1::SaveInventory.as_u16(), 7);
         assert_eq!(SubsystemSlotIdV1::Build.as_u16(), 8);
+        assert_eq!(SubsystemSlotIdV1::NetEnvelope.as_u16(), 9);
     }
 
     #[test]
@@ -99,7 +107,7 @@ mod tests {
             assert_eq!(SubsystemSlotIdV1::try_from_u16(s.as_u16()), Some(s));
         }
         assert_eq!(SubsystemSlotIdV1::try_from_u16(0), None);
-        assert_eq!(SubsystemSlotIdV1::try_from_u16(9), None);
+        assert_eq!(SubsystemSlotIdV1::try_from_u16(10), None);
         assert_eq!(SubsystemSlotIdV1::try_from_u16(u16::MAX), None);
     }
 
