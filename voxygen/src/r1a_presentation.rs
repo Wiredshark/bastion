@@ -127,6 +127,16 @@ pub(crate) fn upload_complete_token() -> Option<PresentationReadyTokenV1> {
     state().lock().ok().and_then(|state| state.upload_ready)
 }
 
+/// Immutable presentation frame currently staged for the production adapter.
+/// Cutaway work clones this whole-frame snapshot; it never mixes mutable reads.
+#[must_use]
+pub(crate) fn current_frame_v1() -> Option<PresentationFrameV1> {
+    state()
+        .lock()
+        .ok()
+        .and_then(|state| state.pending_frame.clone())
+}
+
 #[must_use]
 pub fn ready_for_capture_measurement() -> bool { ready_token().is_some() }
 
