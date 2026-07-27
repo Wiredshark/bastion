@@ -10,7 +10,7 @@ use common::{
     vol::RectVolSize,
 };
 use common_ecs::{Job, Origin, ParMode, Phase, System};
-use common_net::msg::{ClientGeneral, ServerGeneral};
+use common_net::msg::{ClientGeneral, ServerGeneral, envelope::SemanticStreamIdV1};
 use rayon::prelude::*;
 use specs::{Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, Write, WriteStorage};
 use tracing::{debug, trace};
@@ -60,7 +60,7 @@ impl<'a> System<'a> for Sys {
                 || (chunk_send_bus.emitter(), client_disconnect_events.emitter()),
                 |(chunk_send_emitter, client_disconnect_emitter), (entity, client, maybe_presence)| {
                     let mut chunk_requests = Vec::new();
-                    let _ = super::try_recv_all(client, 5, |client, msg| {
+                    let _ = super::try_recv_all_dispatch(client, 5, SemanticStreamIdV1::Terrain, |client, msg| {
                         // SPECIAL CASE: LOD zone requests can be sent by non-present players
                         if let ClientGeneral::LodZoneRequest { key } = &msg {
                             client.send(ServerGeneral::LodZoneUpdate {
@@ -162,5 +162,27 @@ impl<'a> System<'a> for Sys {
         job.cpu_stats.measure(ParMode::Single);
 
         chunk_requests.append(&mut new_chunk_requests);
+    }
+}
+
+/// `T3.3.09`: see the identical rationale in `general.rs`'s own
+/// `mod semantic` -- the validation matrix is proven once, system-
+/// agnostically, in `T3.3.08`; this test only guards against a
+/// copy-paste stream-ID mismatch at this file's own dispatch call site.
+#[cfg(test)]
+mod semantic {
+    use common_net::msg::{ClientGeneral, envelope::{SemanticRouteV1, SemanticStreamIdV1}};
+    use vek::Vec2;
+
+    #[test]
+    fn dispatch_stream_matches_handled_terrain_messages() {
+        assert_eq!(
+            ClientGeneral::TerrainChunkRequest { key: Vec2::new(0, 0) }.semantic_stream(),
+            SemanticStreamIdV1::Terrain
+        );
+        assert_eq!(
+            ClientGeneral::LodZoneRequest { key: Vec2::new(0, 0) }.semantic_stream(),
+            SemanticStreamIdV1::Terrain
+        );
     }
 }

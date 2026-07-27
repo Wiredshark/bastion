@@ -23,7 +23,7 @@ use common::{
     uid::Uid,
 };
 use common_ecs::{Job, Origin, Phase, System};
-use common_net::msg::{ClientGeneral, ServerGeneral};
+use common_net::msg::{ClientGeneral, ServerGeneral, envelope::SemanticStreamIdV1};
 use specs::{
     Entities, Join, ReadExpect, ReadStorage, SystemData, WriteExpect, WriteStorage, shred,
 };
@@ -322,7 +322,7 @@ impl<'a> System<'a> for Sys {
         let mut emitters = data.events.get_emitters();
 
         for (entity, client) in (&data.entities, &mut data.clients).join() {
-            let _ = super::try_recv_all(client, 1, |client, msg| {
+            let _ = super::try_recv_all_dispatch(client, 1, SemanticStreamIdV1::CharacterScreen, |client, msg| {
                 Self::handle_client_character_screen_msg(
                     &mut emitters,
                     entity,
@@ -344,5 +344,27 @@ impl<'a> System<'a> for Sys {
                 )
             });
         }
+    }
+}
+
+/// `T3.3.09`: see the identical rationale in `general.rs`'s own
+/// `mod semantic` -- the validation matrix is proven once, system-
+/// agnostically, in `T3.3.08`; this test only guards against a
+/// copy-paste stream-ID mismatch at this file's own dispatch call site.
+#[cfg(test)]
+mod semantic {
+    use super::*;
+    use common_net::msg::envelope::SemanticRouteV1;
+
+    #[test]
+    fn dispatch_stream_matches_handled_character_screen_messages() {
+        assert_eq!(
+            ClientGeneral::RequestCharacterList.semantic_stream(),
+            SemanticStreamIdV1::CharacterScreen
+        );
+        assert_eq!(
+            ClientGeneral::DeleteCharacter(common::character::CharacterId(1)).semantic_stream(),
+            SemanticStreamIdV1::CharacterScreen
+        );
     }
 }

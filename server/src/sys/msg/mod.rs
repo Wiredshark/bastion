@@ -161,10 +161,9 @@ pub(crate) fn validate_semantic_frame_v1(
 /// sees it, committing the receive cursor only after every check passes
 /// and strictly before the handler is called (packet: "cursor does not
 /// advance on validation failure; it advances before handler call;
-/// handler error terminates and is never replayed"). This step only
-/// installs the function; `T3.3.09` wires it into the four semantic
-/// receive systems (general/character_screen/in_game/terrain) -- nothing
-/// calls this yet.
+/// handler error terminates and is never replayed"). Reached via
+/// `try_recv_all_dispatch` below, wired into the four semantic receive
+/// systems (general/character_screen/in_game/terrain) as of `T3.3.09`.
 ///
 /// A rejected frame is dropped and draining continues (packet's own
 /// "rejected traffic liveness" test concern, and its acceptance gate
@@ -213,6 +212,33 @@ where
                 warn!(?reject, "semantic ingress rejected a frame");
             },
         }
+    }
+}
+
+/// `T3.3.09`: per-client V1/Legacy receive-helper selector, shared by
+/// all four semantic receive systems (general/character_screen/in_game/
+/// terrain). `client.semantic_receive_state()` is `Some` exactly when
+/// T3.2's handshake negotiated the V1 semantic protocol for this
+/// connection (T3.3.05: negotiation always resolves to `Legacy` today,
+/// so this always takes the `else` branch live -- both arms are already
+/// fully wired and tested, waiting on T3.3.05's own eventual negotiation
+/// change to go live). Both arms share the exact same `handler` closure
+/// unchanged: the decoded `ClientGeneral` payload follows the existing
+/// handler/deferred path either way (packet: "preserve handlers; ensure
+/// envelope acceptance occurs first").
+pub(crate) fn try_recv_all_dispatch<F>(
+    client: &mut Client,
+    stream_id: u8,
+    semantic_stream: SemanticStreamIdV1,
+    handler: F,
+) -> Result<u64, crate::error::Error>
+where
+    F: FnMut(&Client, ClientGeneral) -> Result<(), crate::error::Error>,
+{
+    if client.semantic_receive_state().is_some() {
+        try_recv_all_semantic(client, stream_id, semantic_stream, handler)
+    } else {
+        try_recv_all(client, stream_id, handler)
     }
 }
 
