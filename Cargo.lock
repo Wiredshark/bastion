@@ -8762,6 +8762,7 @@ dependencies = [
  "lazy_static",
  "ron",
  "serde",
+ "tar",
  "tempfile",
  "tracing",
  "walkdir",
@@ -8849,10 +8850,13 @@ dependencies = [
  "num_cpus",
  "rayon",
  "scopeguard",
+ "semver 1.0.28",
  "serde",
+ "serde_json",
  "sha2 0.11.0",
  "specs",
  "tar",
+ "tempfile",
  "thread-priority",
  "timer-queue",
  "tokio",
@@ -8866,6 +8870,7 @@ dependencies = [
  "veloren-common-net",
  "wasmtime",
  "wasmtime-wasi",
+ "wat",
 ]
 
 [[package]]
@@ -9010,6 +9015,7 @@ dependencies = [
  "serde_json",
  "specs",
  "strum",
+ "tempfile",
  "tokio",
  "tracing",
  "vek 0.17.2",

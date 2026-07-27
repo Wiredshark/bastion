@@ -301,6 +301,11 @@ pub struct Client {
     /// Server-to-client direction (receiving `ServerGeneral`/`ServerInit`
     /// from the server). Dormant: nothing advances this yet (`T3.3.10`).
     semantic_receive_state: Option<common_net::msg::SemanticReceiveStateV1>,
+    /// `T3.3.18`: redacted (reason/stream)-keyed ingress counters, the
+    /// client-side counterpart of the server's own `SemanticIngressMetricsV1`
+    /// resource -- process-lifetime, not per-attachment (unlike
+    /// `semantic_receive_state`, this survives a resume/reconnect).
+    semantic_ingress_metrics: common_net::msg::envelope::SemanticIngressMetricsV1,
     /// Localized server motd and rules
     server_description: ServerDescription,
     world_data: WorldData,
@@ -667,7 +672,8 @@ impl Client {
             ConnectionArgs::Mpsc(id) => network.connect(ConnectAddr::Mpsc(id)).await?,
         };
 
-        let stream = participant.opened().await?;
+        #[cfg_attr(not(feature = "plugins"), expect(unused_mut))]
+        let mut stream = participant.opened().await?;
         let ping_stream = participant.opened().await?;
         let mut register_stream = participant.opened().await?;
         let character_screen_stream = participant.opened().await?;
@@ -708,6 +714,47 @@ impl Client {
         init_stage_update(ClientInitStage::LoadingInitData);
         // Wait for initial sync
         let mut ping_interval = tokio::time::interval(Duration::from_secs(1));
+        // `APEX-T3.3.16`: V1-envelope GameSync iff negotiation selected
+        // `NetEnvelopeV1` -- packet: "Legacy keeps direct GameSync;
+        // certified V1 requires envelope", "mode mixing terminates". A
+        // rejected/raw frame here is a hard bootstrap failure (`?`
+        // propagates out), unlike a dropped later-game replication frame
+        // (`handle_messages`'s own reject path just warns and drops one
+        // frame) -- there is no partial/degraded way to proceed without
+        // a validated initial GameSync.
+        let game_sync: ServerInit = if register_session_binding.selected_semantic_protocol
+            == common_net::msg::SemanticProtocolIdV1::NetEnvelopeV1
+        {
+            let receive_state = common_net::msg::envelope::SemanticReceiveStateV1::new(common_net::msg::ActiveSessionBindingV1 {
+                server_boot_id: server_info.server_boot_id,
+                session_id: register_session_binding.session_id,
+                epoch: register_session_binding.epoch,
+            });
+            let raw: Vec<u8> = loop {
+                tokio::select! {
+                    res = register_stream.recv::<Vec<u8>>() => break res?,
+                    _ = ping_interval.tick() => ping_stream.send(PingMsg::Ping)?,
+                }
+            };
+            // The causality half is discarded here -- this `receive_state`
+            // is a throwaway, local-to-bootstrap value (the real,
+            // persistent one is built later once `Client` exists), so
+            // committing a snapshot watermark to it would be pointless.
+            Self::validate_semantic_frame_v1::<ServerInit>(
+                &raw,
+                &receive_state,
+                common_net::msg::envelope::SemanticStreamIdV1::Bootstrap,
+            )
+            .map_err(|reject| Error::Other(format!("semantic V1 GameSync envelope rejected: {reject:?}")))?
+            .0
+        } else {
+            loop {
+                tokio::select! {
+                    res = register_stream.recv() => break res?,
+                    _ = ping_interval.tick() => ping_stream.send(PingMsg::Ping)?,
+                }
+            }
+        };
         let ServerInit::GameSync {
             server_boot_id: game_sync_server_boot_id,
             entity_package,
@@ -722,16 +769,13 @@ impl Client {
             server_constants,
             description,
             active_plugins: _active_plugins,
+            // APEX-T2.5.11: consumed by the acquisition-before-State flow
+            // when it lands; a Some from a newer server is noted, not an
+            // error (legacy hash path still runs).
+            plugin_deployment: _plugin_deployment,
             role,
             session_binding: game_sync_session_binding,
-        } = loop {
-            tokio::select! {
-                // Spawn in a blocking thread (leaving the network thread free).  This is mostly
-                // useful for bots.
-                res = register_stream.recv() => break res?,
-                _ = ping_interval.tick() => ping_stream.send(PingMsg::Ping)?,
-            }
-        };
+        } = game_sync;
 
         // APEX-T3.1.12: compare GameSync's boot ID against the ServerInfo
         // observation before constructing State/PlayerEntity/plugin
@@ -754,7 +798,132 @@ impl Client {
                 epoch: game_sync_session_binding.epoch,
             });
 
+        // APEX-T2.5.11 — acquisition BEFORE State: when the server sent a
+        // typed deployment summary, every client-active artifact is
+        // verified into the cache and the plugin manager is built from
+        // those verified files BEFORE `State::client` exists. No
+        // `load_server_plugin` after State on this path — and per
+        // `RejectLocalPlugins`, local extra plugins are NOT loaded when a
+        // deployment governs the session.
+        #[cfg(feature = "plugins")]
+        let deployment_plugin_mgr: Option<common_state::plugin::PluginMgr> = match &_plugin_deployment {
+            None => None,
+            Some(summary) => {
+                use common::apex::digest::{
+                    ArtifactDigestV1, ArtifactIdentityV1, DigestAlgorithmIdV1, DigestBytes32V1,
+                };
+                use common_net::msg::plugin_artifact::PluginArtifactRequestV1;
+                use common_state::plugin::artifact_cache::PluginArtifactCacheV1;
+                // APEX-T2.5.22 — schema/completeness refusals BEFORE any
+                // acquisition: every client-active ordinal must have
+                // exactly one requirement (an incomplete or duplicated
+                // set is a typed init error, never a partial bootstrap).
+                for ordinal in &summary.client_activations {
+                    let n = summary.requirements.iter().filter(|r| r.ordinal == *ordinal).count();
+                    if n != 1 {
+                        return Err(Error::Other(format!(
+                            "plugin deployment summary incomplete: ordinal {ordinal} has {n} requirements"
+                        )));
+                    }
+                }
+                // Wire bytes are never trusted as identity: the cache
+                // re-verifies size+digest on stage AND on read.
+                let reqs: Vec<(u32, ArtifactIdentityV1)> = summary
+                    .requirements
+                    .iter()
+                    .filter(|r| summary.client_activations.contains(&r.ordinal))
+                    .map(|r| {
+                        (r.ordinal, ArtifactIdentityV1 {
+                            digest: ArtifactDigestV1 {
+                                algorithm: DigestAlgorithmIdV1::Sha256,
+                                bytes: DigestBytes32V1::from_array(r.digest),
+                            },
+                            size_bytes: r.size_bytes,
+                        })
+                    })
+                    .collect();
+                let cache =
+                    PluginArtifactCacheV1::new(config_dir.join("plugin_artifact_cache_v1"), reqs.clone())
+                        .map_err(|e| Error::Other(format!("plugin artifact cache: {e:?}")))?;
+                let missing: Vec<u32> =
+                    reqs.iter().map(|(o, _)| *o).filter(|o| !cache.is_staged_verified(*o)).collect();
+                if !missing.is_empty() {
+                    tracing::info!(?missing, "requesting deployment artifacts before State");
+                    stream.send(ClientGeneral::RequestPluginArtifacts(PluginArtifactRequestV1 {
+                        deployment_root: summary.deployment_root,
+                        ordinals: missing.clone(),
+                    }))?;
+                    let mut outstanding: std::collections::BTreeSet<u32> = missing.into_iter().collect();
+                    let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+                    while !outstanding.is_empty() {
+                        let msg: ServerGeneral = tokio::select! {
+                            res = stream.recv() => res?,
+                            _ = ping_interval.tick() => { ping_stream.send(PingMsg::Ping)?; continue; },
+                            _ = tokio::time::sleep_until(deadline) => {
+                                return Err(Error::Other(format!(
+                                    "plugin artifact acquisition timed out; outstanding: {outstanding:?}"
+                                )));
+                            },
+                        };
+                        match msg {
+                            ServerGeneral::PluginArtifactData(resp) => {
+                                let ordinal = resp.descriptor.ordinal;
+                                cache.stage(ordinal, &resp.bytes).map_err(|e| {
+                                    Error::Other(format!("plugin artifact {ordinal} refused: {e:?}"))
+                                })?;
+                                outstanding.remove(&ordinal);
+                            },
+                            ServerGeneral::Disconnect(reason) => {
+                                return Err(Error::Other(format!(
+                                    "server disconnected during plugin acquisition: {reason:?}"
+                                )));
+                            },
+                            other => {
+                                // Disclosed .11 limitation: general-stream
+                                // traffic in this brief pre-State window is
+                                // dropped with a log (buffer-and-replay is
+                                // .12+ scope). Only entered when the server
+                                // opted into V1 deployments.
+                                tracing::warn!(
+                                    "dropping general message during plugin acquisition: {}",
+                                    core::any::type_name_of_val(&other)
+                                );
+                            },
+                        }
+                    }
+                }
+                let paths: Vec<(u32, PathBuf)> = reqs
+                    .iter()
+                    .map(|(o, _)| {
+                        cache
+                            .verified_path(*o)
+                            .map(|p| (*o, p))
+                            .map_err(|e| Error::Other(format!("plugin artifact {o} unavailable: {e:?}")))
+                    })
+                    .collect::<Result<_, _>>()?;
+                let expected: Vec<(u32, [u8; 32])> =
+                    reqs.iter().map(|(o, a)| (*o, *a.digest.bytes.as_array())).collect();
+                Some(
+                    common_state::plugin::PluginMgr::from_deployment_paths_v1(
+                        paths,
+                        &expected,
+                        summary.deployment_root,
+                        Some(common_state::plugin::module::PluginStoreLimitsV1 {
+                            max_linear_memory_bytes: summary.client_runtime_limits.max_linear_memory_bytes,
+                            max_fuel_per_event: summary.client_runtime_limits.max_fuel_per_event,
+                        }),
+                        Some(summary.client_runtime_limits.max_instances),
+                        Some(summary.command_owners.iter().cloned().collect()),
+                        Some(summary.skeleton_owners.iter().cloned().collect()),
+                    )
+                    .map_err(|e| Error::Other(format!("deployment plugin batch failed: {e:?}")))?,
+                )
+            },
+        };
+
         init_stage_update(ClientInitStage::StartingClient);
+        #[cfg(feature = "plugins")]
+        let deployment_governs = _plugin_deployment.is_some();
         // Spawn in a blocking thread (leaving the network thread free).  This is mostly
         // useful for bots.
         let mut task = tokio::task::spawn_blocking(move || {
@@ -778,16 +947,24 @@ impl Client {
                     add_local_systems(dispatch_builder);
                     add_foreign_systems(dispatch_builder);
                 },
+                // APEX-T2.5.11: a governed deployment supplies the fully
+                // verified manager; otherwise the legacy local-asset path
+                // runs exactly as before.
                 #[cfg(feature = "plugins")]
-                common_state::plugin::PluginMgr::from_asset_or_default(),
+                deployment_plugin_mgr
+                    .unwrap_or_else(common_state::plugin::PluginMgr::from_asset_or_default),
             );
 
             #[cfg_attr(not(feature = "plugins"), expect(unused_mut))]
             let mut missing_plugins: Vec<PluginHash> = Vec::new();
             #[cfg_attr(not(feature = "plugins"), expect(unused_mut))]
             let mut local_plugins: Vec<PathBuf> = Vec::new();
+            // APEX-T2.5.11: the legacy hash-list path runs ONLY when no
+            // deployment governs the session (RejectLocalPlugins + no
+            // late-load: a governed client's plugin set is exactly the
+            // verified deployment, already complete before State).
             #[cfg(feature = "plugins")]
-            {
+            if !deployment_governs {
                 let already_present = state.ecs().read_resource::<PluginMgr>().plugin_list();
                 for hash in _active_plugins.iter() {
                     if !already_present.contains(hash) {
@@ -1118,6 +1295,7 @@ impl Client {
             server_info,
             semantic_send_state: semantic_state_binding.map(common_net::msg::SemanticSendStateV1::new),
             semantic_receive_state: semantic_state_binding.map(common_net::msg::SemanticReceiveStateV1::new),
+            semantic_ingress_metrics: common_net::msg::envelope::SemanticIngressMetricsV1::new(),
             server_description: description,
             world_data: WorldData {
                 lod_base,
@@ -1293,6 +1471,220 @@ impl Client {
         }
     }
 
+    /// `APEX-T3.3.07`: envelope, digest, sequence, and send one
+    /// post-auth `ClientGeneral` over the negotiated `NetEnvelopeV1`
+    /// wire mode. Dormant in this tree today -- `register()` always
+    /// requests `Legacy` (`T3.3.05`'s own row status doc), so
+    /// `semantic_send_state` is always `None` and this is never actually
+    /// reached by the live client; built and tested against a
+    /// synthetically-attached state instead (this function's own test
+    /// module).
+    ///
+    /// Packet's own failure list ("No attachment, exhaustion, encode
+    /// failure, send failure after allocation"): the first three are
+    /// treated the same way this function's sibling
+    /// (`send_msg_err`'s existing `!verified` branch, just above the call
+    /// site) already treats a dropped message -- logged, message
+    /// silently not sent, connection not torn down for what is a local
+    /// bookkeeping problem, not a network fault. Only the underlying
+    /// `stream.send` failure -- a genuine transport-layer event -- is
+    /// propagated as `Err`, and only AFTER the sequence was already
+    /// consumed (packet: "sequence is consumed before send and never
+    /// reused after failure" -- `SemanticSendStateV1::allocate_sequence`
+    /// advances the cursor unconditionally before any encode/send is
+    /// attempted, so a failed send never gets retried with the same
+    /// sequence value).
+    fn send_semantic_v1(&mut self, msg: ClientGeneral) -> Result<(), network::StreamError> {
+        use common_net::msg::envelope::{SemanticRouteV1, encode_payload_v1, net_envelope_profile_root_v1, payload_digest_v1};
+
+        let Some(send_state) = self.semantic_send_state.as_mut() else {
+            warn!("send_semantic_v1 called with no active NetEnvelopeV1 attachment; dropping message: {msg:?}");
+            return Ok(());
+        };
+        let binding = send_state.binding();
+        let semantic_stream = msg.semantic_stream();
+        let payload_schema = msg.payload_schema();
+
+        // packet's `command_id` field is dormant until `T3.5` -- this
+        // sender never sets it (spec section 5.6: `Some` is rejected by
+        // the receiver anyway).
+        let sequence = match send_state.allocate_sequence(semantic_stream) {
+            Ok(seq) => seq,
+            Err(_exhausted) => {
+                warn!(?semantic_stream, "semantic send sequence exhausted (u64::MAX reached); dropping message");
+                return Ok(());
+            },
+        };
+
+        let payload_bytes = encode_payload_v1(&msg);
+        let profile_root = net_envelope_profile_root_v1();
+        let payload_encoding = common_net::msg::envelope::SemanticPayloadEncodingV1::Bincode2LegacySerde;
+        let payload_digest = payload_digest_v1(profile_root, payload_schema, payload_encoding, &payload_bytes);
+        let header = common_net::msg::envelope::NetEnvelopeHeaderV1 {
+            profile_root,
+            server_boot_id: binding.server_boot_id,
+            session_id: binding.session_id,
+            connection_epoch: binding.epoch,
+            direction: common_net::msg::envelope::SemanticDirectionV1::ClientToServer,
+            semantic_stream,
+            sequence,
+            causality: common_net::msg::envelope::SemanticCausalityV1 { producer_tick: None, snapshot: None },
+            payload_schema,
+            payload_encoding,
+            payload_len: payload_bytes.len() as u64,
+            payload_digest,
+            command_id: None,
+        };
+        let frame = common_net::msg::envelope::SemanticWireFrameV1 { header, payload_bytes };
+
+        let limits = common::apex::manifest::ManifestDecodeLimitsV1 {
+            max_input_bytes: 1 << 20,
+            max_depth: 8,
+            max_nodes: 64,
+            max_array_items: 16,
+            max_map_entries: 16,
+            max_machine_text_bytes: 256,
+            max_byte_string_bytes: 1 << 20,
+        };
+        let frame_bytes = common::apex::manifest::encode_manifest_v1(&frame, &limits)
+            .expect("frame construction above is always within limits and always well-formed");
+
+        // The T0.2-encoded frame bytes are carried as an opaque Vec<u8>
+        // through the EXISTING (bincode-legacy) stream framing, per
+        // packet section 7.3: "carried as an opaque byte vector through
+        // the existing stream framing" -- never a second, competing wire
+        // protocol.
+        let stream = match semantic_stream {
+            common_net::msg::envelope::SemanticStreamIdV1::CharacterScreen => &mut self.character_screen_stream,
+            common_net::msg::envelope::SemanticStreamIdV1::InGame => &mut self.in_game_stream,
+            common_net::msg::envelope::SemanticStreamIdV1::Terrain => &mut self.terrain_stream,
+            common_net::msg::envelope::SemanticStreamIdV1::General => &mut self.general_stream,
+            common_net::msg::envelope::SemanticStreamIdV1::Bootstrap => &mut self.register_stream,
+        };
+        stream.send(frame_bytes)
+    }
+
+    /// `T3.3.10`: client-side, server-to-client counterpart of the
+    /// server's own `validate_semantic_frame_v1`
+    /// (`server/src/sys/msg/mod.rs`) -- decodes and validates one raw
+    /// semantic wire frame BEFORE any local ECS/frontend mutation,
+    /// returning the fully checked payload. Pure: takes
+    /// `receive_state` by immutable reference, so it structurally cannot
+    /// itself commit the receive cursor (packet: "cursor does not
+    /// advance on validation failure; it advances before handler call").
+    /// Dormant in this tree today for the same reason `send_semantic_v1`
+    /// is -- `T3.3.05`'s negotiation always resolves `Legacy`.
+    ///
+    /// `T3.3.16`: genericized over the payload type (was hardcoded to
+    /// `ServerGeneral`) -- every check here (profile root, boot,
+    /// session, epoch, direction, stream route, sequence, payload
+    /// length, digest, command-id) is payload-independent, and
+    /// `ServerInit::GameSync` needs the identical validation this row's
+    /// own acceptance gate leans on ("no post-auth V1 payload is
+    /// accepted before correctly bound GameSync"). Existing call sites
+    /// keep working unchanged (`ServerGeneral` is still inferred from
+    /// their own surrounding context); only the direct unit tests below
+    /// needed an explicit turbofish once inference had nothing left to
+    /// pin the type from.
+    ///
+    /// `T3.3.17`: also returns the frame's own `SemanticCausalityV1`
+    /// alongside the decoded payload -- this function stays pure (takes
+    /// `receive_state` by `&`, never commits `highest_snapshot`, same
+    /// "cursor does not advance on validation failure" discipline the
+    /// sequence check already follows), so the caller needs the
+    /// causality back to call `SemanticReceiveStateV1::commit_snapshot`
+    /// itself, strictly after `advance_expected` succeeds (mirrors
+    /// exactly how the caller already commits the sequence cursor).
+    fn validate_semantic_frame_v1<T>(
+        raw: &[u8],
+        receive_state: &common_net::msg::envelope::SemanticReceiveStateV1,
+        expected_physical_stream: common_net::msg::envelope::SemanticStreamIdV1,
+    ) -> Result<(T, common_net::msg::envelope::SemanticCausalityV1), common_net::msg::envelope::SemanticEnvelopeRejectV1>
+    where
+        T: common_net::msg::envelope::SemanticRouteV1 + serde::de::DeserializeOwned,
+    {
+        use common_net::msg::envelope::{
+            NetEnvelopeHeaderV1, SemanticDirectionV1, SemanticEnvelopeRejectV1, SemanticWireFrameV1, decode_payload_exact_v1,
+            net_envelope_profile_root_v1, payload_digest_v1, production_causality_profile_v1, validate_causality_against_profile_v1,
+        };
+
+        let limits = common::apex::manifest::ManifestDecodeLimitsV1 {
+            max_input_bytes: 1 << 20,
+            max_depth: 8,
+            max_nodes: 64,
+            max_array_items: 16,
+            max_map_entries: 16,
+            max_machine_text_bytes: 256,
+            max_byte_string_bytes: 1 << 20,
+        };
+        let frame: SemanticWireFrameV1 = common::apex::manifest::decode_manifest_v1(raw, &limits)
+            .map_err(|_| SemanticEnvelopeRejectV1::EnvelopeDecodeFailure)?;
+        let header: &NetEnvelopeHeaderV1 = &frame.header;
+
+        if header.profile_root != net_envelope_profile_root_v1() {
+            return Err(SemanticEnvelopeRejectV1::UnsupportedProfile);
+        }
+        let binding = receive_state.binding();
+        if header.server_boot_id != binding.server_boot_id {
+            return Err(SemanticEnvelopeRejectV1::WrongBoot);
+        }
+        if header.session_id != binding.session_id {
+            return Err(SemanticEnvelopeRejectV1::WrongSession);
+        }
+        if header.connection_epoch != binding.epoch {
+            return Err(if header.connection_epoch.get() < binding.epoch.get() {
+                SemanticEnvelopeRejectV1::StaleEpoch
+            } else {
+                SemanticEnvelopeRejectV1::FutureEpoch
+            });
+        }
+        if header.direction != SemanticDirectionV1::ServerToClient {
+            return Err(SemanticEnvelopeRejectV1::WrongDirection);
+        }
+        if header.semantic_stream != expected_physical_stream {
+            return Err(SemanticEnvelopeRejectV1::StreamRouteMismatch);
+        }
+        let expected_seq = receive_state.next_expected_for(header.semantic_stream);
+        if header.sequence < expected_seq {
+            return Err(SemanticEnvelopeRejectV1::DuplicateSequence);
+        }
+        if header.sequence > expected_seq {
+            return Err(SemanticEnvelopeRejectV1::SequenceGap { expected: expected_seq.get(), received: header.sequence.get() });
+        }
+        if header.payload_len != frame.payload_bytes.len() as u64 {
+            return Err(SemanticEnvelopeRejectV1::PayloadLengthMismatch);
+        }
+        let recomputed_digest =
+            payload_digest_v1(header.profile_root, header.payload_schema, header.payload_encoding, &frame.payload_bytes);
+        if recomputed_digest.as_array() != header.payload_digest.as_array() {
+            return Err(SemanticEnvelopeRejectV1::PayloadDigestMismatch);
+        }
+        // Dormant until T3.5 (packet section 5.6): `Some` is
+        // unconditionally rejected today, never partially trusted.
+        if header.command_id.is_some() {
+            return Err(SemanticEnvelopeRejectV1::CommandIdUnsupported);
+        }
+        // `T3.3.17`: structural profile check (declared domain,
+        // schema's own requirement) first, THEN the session-local
+        // monotonicity check -- a frame naming an undeclared domain is
+        // rejected before this session's own history is even
+        // consulted. Both unreachable on real traffic today (production
+        // profile: no declared domains, every schema optional).
+        validate_causality_against_profile_v1(&header.causality, header.payload_schema, &production_causality_profile_v1())?;
+        if let Some(snapshot) = &header.causality.snapshot {
+            if !receive_state.snapshot_is_fresh(snapshot) {
+                return Err(SemanticEnvelopeRejectV1::StaleSnapshot);
+            }
+        }
+
+        let decoded: T = decode_payload_exact_v1(&frame.payload_bytes)?;
+        if decoded.semantic_stream() != header.semantic_stream || decoded.payload_schema() != header.payload_schema {
+            return Err(SemanticEnvelopeRejectV1::StreamRouteMismatch);
+        }
+
+        Ok((decoded, header.causality))
+    }
+
     fn send_msg_err<S>(&mut self, msg: S) -> Result<(), network::StreamError>
     where
         S: Into<ClientMsg>,
@@ -1320,6 +1712,15 @@ impl Client {
             ClientMsg::Type(msg) => self.register_stream.send(msg),
             ClientMsg::Register(msg) => self.register_stream.send(msg),
             ClientMsg::General(msg) => {
+                // APEX-T3.3.07: V1 routes/encodes/sequences/frames/sends
+                // through send_semantic_v1; Legacy falls through to the
+                // unchanged code below it (packet: "Legacy branch remains
+                // during rollout"). Checked first, before any of the
+                // existing physical-stream matching, so a V1 attachment
+                // never touches the legacy path at all.
+                if self.semantic_send_state.is_some() {
+                    return self.send_semantic_v1(msg);
+                }
                 #[cfg(feature = "tracy")]
                 let (mut ingame, mut terrain) = (0.0, 0.0);
                 let stream = match msg {
@@ -1372,7 +1773,8 @@ impl Client {
                     ClientGeneral::ChatMsg(_)
                     | ClientGeneral::Command(_, _)
                     | ClientGeneral::Terminate
-                    | ClientGeneral::RequestPlugins(_) => &mut self.general_stream,
+                    | ClientGeneral::RequestPlugins(_)
+                    | ClientGeneral::RequestPluginArtifacts(_) => &mut self.general_stream,
                 };
                 #[cfg(feature = "tracy")]
                 {
@@ -3134,6 +3536,15 @@ impl Client {
                 tracing::info!(?plugin_len, "plugin data");
                 frontend_events.push(Event::PluginDataReceived(d));
             },
+            // APEX-T2.5.10: typed artifact wire is defined but DORMANT
+            // until the .11 bootstrap consumes it through the verified
+            // collector. Ignore-with-warning, never panic on wire input.
+            ServerGeneral::PluginArtifactData(r) => {
+                tracing::warn!(
+                    ordinal = r.descriptor.ordinal,
+                    "PluginArtifactData before the T2.5.11 bootstrap path is active; ignoring"
+                );
+            },
             ServerGeneral::SetPlayerRole(role) => {
                 debug!(?role, "Updating client role");
                 self.role = role;
@@ -3493,42 +3904,168 @@ impl Client {
         Ok(())
     }
 
+    /// `T3.3.10`: V1/Legacy receive-helper selector for one semantic
+    /// stream, the client-side counterpart of the server's
+    /// `try_recv_all_dispatch` (`server/src/sys/msg/mod.rs`). Not a
+    /// generic free function taking a handler closure like the
+    /// server's: the client's streams AND its handler methods both live
+    /// on `self`, so a closure capturing `self` for the handler call
+    /// would conflict with the sibling `&mut self.<stream>` /
+    /// `&mut self.semantic_receive_state` borrows in the same call
+    /// expression. Draining into a `Vec` first (no handler calls while
+    /// `self`'s fields are borrowed), then handling each message
+    /// afterward, sidesteps that entirely -- `handle_messages` below
+    /// does the actual per-message dispatch to `self.handle_server_*`.
+    /// Cursor advance still happens strictly before this function
+    /// returns each frame to the caller (packet: "cursor does not
+    /// advance on validation failure; it advances before handler
+    /// call") -- only the RELATIVE ORDER of "handler runs for frame N"
+    /// vs. "cursor already advanced past frame N+1" changes from the
+    /// server's per-frame interleaving to a batch-then-handle split,
+    /// which only matters if a handler errors mid-batch; that error
+    /// tears down the whole connection either way (`Result<u64, Error>`
+    /// propagates out of `handle_messages` to the caller's disconnect
+    /// path), so a handful of already-validated-but-now-orphaned cursor
+    /// advances on a connection that's about to die are inert.
+    fn drain_semantic_stream_v1(
+        stream: &mut Stream,
+        receive_state: &mut Option<common_net::msg::envelope::SemanticReceiveStateV1>,
+        semantic_stream: common_net::msg::envelope::SemanticStreamIdV1,
+        metrics: &common_net::msg::envelope::SemanticIngressMetricsV1,
+    ) -> Result<Vec<ServerGeneral>, Error> {
+        let mut out = Vec::new();
+        while let Some(raw) = stream.try_recv::<Vec<u8>>()? {
+            let Some(state) = receive_state.as_ref() else {
+                warn!("received a semantic V1 frame with no active attachment; dropping");
+                continue;
+            };
+            match Self::validate_semantic_frame_v1(&raw, state, semantic_stream) {
+                Ok((decoded, causality)) => {
+                    let receive_state_mut = receive_state.as_mut().expect("checked Some above");
+                    let advance_result = receive_state_mut.advance_expected(semantic_stream);
+                    if advance_result.is_err() {
+                        warn!("semantic receive sequence exhausted; dropping message");
+                        metrics.record_terminal(
+                            common_net::msg::envelope::SemanticProtocolTerminalV1::SequenceExhausted,
+                            semantic_stream,
+                        );
+                        continue;
+                    }
+                    // `T3.3.17`: commit the snapshot watermark strictly
+                    // AFTER the sequence cursor advance succeeds, same
+                    // "cursor does not advance on validation failure; it
+                    // advances before handler call" ordering already
+                    // used for sequence.
+                    if let Some(snapshot) = causality.snapshot {
+                        receive_state_mut.commit_snapshot(snapshot);
+                    }
+                    out.push(decoded);
+                },
+                Err(reject) => {
+                    warn!(?reject, "semantic ingress rejected a frame");
+                    metrics.record_reject(&reject, semantic_stream);
+                },
+            }
+        }
+        Ok(out)
+    }
+
     fn handle_messages(&mut self, frontend_events: &mut Vec<Event>) -> Result<u64, Error> {
+        use common_net::msg::envelope::SemanticStreamIdV1;
+
         let mut cnt = 0;
         #[cfg(feature = "tracy")]
         let (mut terrain_cnt, mut ingame_cnt) = (0, 0);
         loop {
             let cnt_start = cnt;
 
-            while let Some(msg) = self.general_stream.try_recv()? {
-                cnt += 1;
-                self.handle_server_msg(frontend_events, msg)?;
+            if self.semantic_receive_state.is_some() {
+                for msg in Self::drain_semantic_stream_v1(
+                    &mut self.general_stream,
+                    &mut self.semantic_receive_state,
+                    SemanticStreamIdV1::General,
+                    &self.semantic_ingress_metrics,
+                )? {
+                    cnt += 1;
+                    self.handle_server_msg(frontend_events, msg)?;
+                }
+            } else {
+                while let Some(msg) = self.general_stream.try_recv()? {
+                    cnt += 1;
+                    self.handle_server_msg(frontend_events, msg)?;
+                }
             }
             while let Some(msg) = self.ping_stream.try_recv()? {
                 cnt += 1;
                 self.handle_ping_msg(msg)?;
             }
-            while let Some(msg) = self.character_screen_stream.try_recv()? {
-                cnt += 1;
-                self.handle_server_character_screen_msg(frontend_events, msg)?;
-            }
-            while let Some(msg) = self.in_game_stream.try_recv()? {
-                cnt += 1;
-                #[cfg(feature = "tracy")]
-                {
-                    ingame_cnt += 1;
+            if self.semantic_receive_state.is_some() {
+                for msg in Self::drain_semantic_stream_v1(
+                    &mut self.character_screen_stream,
+                    &mut self.semantic_receive_state,
+                    SemanticStreamIdV1::CharacterScreen,
+                    &self.semantic_ingress_metrics,
+                )? {
+                    cnt += 1;
+                    self.handle_server_character_screen_msg(frontend_events, msg)?;
                 }
-                self.handle_server_in_game_msg(frontend_events, msg)?;
+            } else {
+                while let Some(msg) = self.character_screen_stream.try_recv()? {
+                    cnt += 1;
+                    self.handle_server_character_screen_msg(frontend_events, msg)?;
+                }
             }
-            while let Some(msg) = self.terrain_stream.try_recv()? {
-                cnt += 1;
-                #[cfg(feature = "tracy")]
-                {
-                    if let ServerGeneral::TerrainChunkUpdate { chunk, .. } = &msg {
-                        terrain_cnt += chunk.as_ref().map(|x| x.approx_len()).unwrap_or(0);
+            if self.semantic_receive_state.is_some() {
+                for msg in Self::drain_semantic_stream_v1(
+                    &mut self.in_game_stream,
+                    &mut self.semantic_receive_state,
+                    SemanticStreamIdV1::InGame,
+                    &self.semantic_ingress_metrics,
+                )? {
+                    cnt += 1;
+                    #[cfg(feature = "tracy")]
+                    {
+                        ingame_cnt += 1;
                     }
+                    self.handle_server_in_game_msg(frontend_events, msg)?;
                 }
-                self.handle_server_terrain_msg(msg)?;
+            } else {
+                while let Some(msg) = self.in_game_stream.try_recv()? {
+                    cnt += 1;
+                    #[cfg(feature = "tracy")]
+                    {
+                        ingame_cnt += 1;
+                    }
+                    self.handle_server_in_game_msg(frontend_events, msg)?;
+                }
+            }
+            if self.semantic_receive_state.is_some() {
+                for msg in Self::drain_semantic_stream_v1(
+                    &mut self.terrain_stream,
+                    &mut self.semantic_receive_state,
+                    SemanticStreamIdV1::Terrain,
+                    &self.semantic_ingress_metrics,
+                )? {
+                    cnt += 1;
+                    #[cfg(feature = "tracy")]
+                    {
+                        if let ServerGeneral::TerrainChunkUpdate { chunk, .. } = &msg {
+                            terrain_cnt += chunk.as_ref().map(|x| x.approx_len()).unwrap_or(0);
+                        }
+                    }
+                    self.handle_server_terrain_msg(msg)?;
+                }
+            } else {
+                while let Some(msg) = self.terrain_stream.try_recv()? {
+                    cnt += 1;
+                    #[cfg(feature = "tracy")]
+                    {
+                        if let ServerGeneral::TerrainChunkUpdate { chunk, .. } = &msg {
+                            terrain_cnt += chunk.as_ref().map(|x| x.approx_len()).unwrap_or(0);
+                        }
+                    }
+                    self.handle_server_terrain_msg(msg)?;
+                }
             }
 
             if cnt_start == cnt {
@@ -3955,5 +4492,264 @@ mod tests {
             client.cleanup();
             clock.tick();
         });
+    }
+
+    // `T3.3.10`: `validate_semantic_frame_v1` is pure (no `Stream`
+    // needed), so it gets the same direct unit-test treatment as the
+    // server's own `validate_semantic_frame_v1` (T3.3.08). The stateful
+    // `drain_semantic_stream_v1` wrapper is NOT independently tested
+    // here, for the same reason `send_semantic_v1` (`T3.3.07`) never
+    // was: both need a live `Stream` backed by a real `network::
+    // Participant`, which this crate has no lightweight way to
+    // construct (`constant_api_test` above is the one place that tries,
+    // via a real TCP dial that's expected to fail without a listening
+    // server). Its own "no mutation on reject" guarantee is structural,
+    // not runtime-tested: `validate_semantic_frame_v1` takes
+    // `receive_state` by `&` (immutable) reference, so no code path
+    // through it, reject or accept, can touch cursor state.
+    //
+    // Packet's own test list ("Duplicate replication/terrain/inventory/
+    // Bastion, wrong route, old GameSync, handler error"): "old
+    // GameSync" is this tree's `StaleEpoch` check under a different
+    // name -- `ConnectionEpoch` IS the mechanism tied to when `GameSync`
+    // last ran (T3.2), so a stale epoch and a stale GameSync are the
+    // same rejection, not two. "Handler error" needs the live-`Stream`
+    // harness noted above and is deferred with it.
+    use common_net::msg::{
+        ServerGeneral,
+        envelope::{
+            ActiveSessionBindingV1, SemanticCausalityV1, SemanticEnvelopeRejectV1, SemanticPayloadEncodingV1,
+            SemanticReceiveStateV1, SemanticRouteV1, SemanticStreamIdV1, encode_payload_v1,
+        },
+    };
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+    use std::num::NonZeroU64;
+    use vek::Vec2;
+
+    fn recv_binding() -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([11; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([12; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(7).unwrap(),
+        }
+    }
+
+    fn recv_state() -> SemanticReceiveStateV1 { SemanticReceiveStateV1::new(recv_binding()) }
+
+    fn recv_frame_bytes(b: ActiveSessionBindingV1, sequence: u64, msg: &ServerGeneral) -> Vec<u8> {
+        let payload_bytes = encode_payload_v1(msg);
+        let profile_root = common_net::msg::envelope::net_envelope_profile_root_v1();
+        let payload_schema = msg.payload_schema();
+        let payload_encoding = SemanticPayloadEncodingV1::Bincode2LegacySerde;
+        let payload_digest = common_net::msg::envelope::payload_digest_v1(
+            profile_root,
+            payload_schema,
+            payload_encoding,
+            &payload_bytes,
+        );
+        let header = common_net::msg::envelope::NetEnvelopeHeaderV1 {
+            profile_root,
+            server_boot_id: b.server_boot_id,
+            session_id: b.session_id,
+            connection_epoch: b.epoch,
+            direction: common_net::msg::envelope::SemanticDirectionV1::ServerToClient,
+            semantic_stream: msg.semantic_stream(),
+            sequence: NonZeroU64::new(sequence).unwrap(),
+            causality: SemanticCausalityV1 { producer_tick: None, snapshot: None },
+            payload_schema,
+            payload_encoding,
+            payload_len: payload_bytes.len() as u64,
+            payload_digest,
+            command_id: None,
+        };
+        let frame = common_net::msg::envelope::SemanticWireFrameV1 { header, payload_bytes };
+        let limits = common::apex::manifest::ManifestDecodeLimitsV1 {
+            max_input_bytes: 1 << 20,
+            max_depth: 8,
+            max_nodes: 64,
+            max_array_items: 16,
+            max_map_entries: 16,
+            max_machine_text_bytes: 256,
+            max_byte_string_bytes: 1 << 20,
+        };
+        common::apex::manifest::encode_manifest_v1(&frame, &limits).unwrap()
+    }
+
+    /// One easy-to-construct representative `ServerGeneral` per stream,
+    /// matching the packet's own named example classes: General stands
+    /// in for "replication" traffic, InGame for "inventory/Bastion"
+    /// (both route InGame per `envelope.rs`'s own classification,
+    /// T3.3.04), Terrain and CharacterScreen for themselves.
+    fn representative_messages() -> [ServerGeneral; 4] {
+        [
+            ServerGeneral::UpdateRecipes,
+            ServerGeneral::CharacterSuccess,
+            ServerGeneral::ExitInGameSuccess,
+            ServerGeneral::TerrainChunkUpdate { key: Vec2::new(0, 0), chunk: Err(()) },
+        ]
+    }
+
+    #[test]
+    fn receive_semantic_v1_valid_frame_is_accepted_for_every_stream() {
+        let state = recv_state();
+        for msg in representative_messages() {
+            let raw = recv_frame_bytes(recv_binding(), 1, &msg);
+            let (decoded, _causality) = Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap();
+            assert_eq!(decoded.semantic_stream(), msg.semantic_stream());
+        }
+    }
+
+    #[test]
+    fn receive_semantic_v1_duplicate_sequence_is_rejected_for_every_stream() {
+        // "Duplicate replication/terrain/inventory/Bastion": duplicate-
+        // sequence rejection is stream-agnostic in this tree's
+        // validation pipeline, proven here across all four streams'
+        // representative message kinds rather than assumed from one.
+        for msg in representative_messages() {
+            let mut state = recv_state();
+            state.advance_expected(msg.semantic_stream()).unwrap(); // next_expected is now 2
+            let raw = recv_frame_bytes(recv_binding(), 1, &msg); // stale: already-consumed value
+            assert_eq!(
+                Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap_err(),
+                SemanticEnvelopeRejectV1::DuplicateSequence
+            );
+        }
+    }
+
+    #[test]
+    fn receive_semantic_v1_sequence_gap_is_rejected_with_exact_values() {
+        let state = recv_state();
+        let msg = ServerGeneral::UpdateRecipes;
+        let raw = recv_frame_bytes(recv_binding(), 5, &msg); // expected 1, received 5
+        assert_eq!(
+            Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap_err(),
+            SemanticEnvelopeRejectV1::SequenceGap { expected: 1, received: 5 }
+        );
+    }
+
+    #[test]
+    fn receive_semantic_v1_wrong_route_is_rejected() {
+        let state = recv_state();
+        let msg = ServerGeneral::UpdateRecipes; // declares InGame
+        let raw = recv_frame_bytes(recv_binding(), 1, &msg);
+        assert_eq!(
+            Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, SemanticStreamIdV1::Terrain).unwrap_err(),
+            SemanticEnvelopeRejectV1::StreamRouteMismatch
+        );
+    }
+
+    #[test]
+    fn receive_semantic_v1_old_game_sync_ie_stale_epoch_is_rejected() {
+        let state = recv_state(); // epoch 7
+        let mut stale = recv_binding();
+        stale.epoch = ConnectionEpoch::new(6).unwrap(); // frame from before the last GameSync-triggered epoch bump
+        let msg = ServerGeneral::UpdateRecipes;
+        let raw = recv_frame_bytes(stale, 1, &msg);
+        assert_eq!(
+            Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap_err(),
+            SemanticEnvelopeRejectV1::StaleEpoch
+        );
+    }
+
+    #[test]
+    fn receive_semantic_v1_wrong_direction_is_rejected() {
+        let state = recv_state();
+        let msg = ServerGeneral::UpdateRecipes;
+        let payload_bytes = encode_payload_v1(&msg);
+        let profile_root = common_net::msg::envelope::net_envelope_profile_root_v1();
+        let payload_schema = msg.payload_schema();
+        let payload_encoding = SemanticPayloadEncodingV1::Bincode2LegacySerde;
+        let payload_digest = common_net::msg::envelope::payload_digest_v1(
+            profile_root,
+            payload_schema,
+            payload_encoding,
+            &payload_bytes,
+        );
+        let b = recv_binding();
+        let header = common_net::msg::envelope::NetEnvelopeHeaderV1 {
+            profile_root,
+            server_boot_id: b.server_boot_id,
+            session_id: b.session_id,
+            connection_epoch: b.epoch,
+            direction: common_net::msg::envelope::SemanticDirectionV1::ClientToServer, // wrong: client is RECEIVING
+            semantic_stream: msg.semantic_stream(),
+            sequence: NonZeroU64::new(1).unwrap(),
+            causality: SemanticCausalityV1 { producer_tick: None, snapshot: None },
+            payload_schema,
+            payload_encoding,
+            payload_len: payload_bytes.len() as u64,
+            payload_digest,
+            command_id: None,
+        };
+        let frame = common_net::msg::envelope::SemanticWireFrameV1 { header, payload_bytes };
+        let limits = common::apex::manifest::ManifestDecodeLimitsV1 {
+            max_input_bytes: 1 << 20,
+            max_depth: 8,
+            max_nodes: 64,
+            max_array_items: 16,
+            max_map_entries: 16,
+            max_machine_text_bytes: 256,
+            max_byte_string_bytes: 1 << 20,
+        };
+        let raw = common::apex::manifest::encode_manifest_v1(&frame, &limits).unwrap();
+        assert_eq!(
+            Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap_err(),
+            SemanticEnvelopeRejectV1::WrongDirection
+        );
+    }
+
+    /// `T3.3.16`'s own "raw V1" test case: a V1-negotiated attachment
+    /// must never silently accept a raw (non-enveloped) frame as if it
+    /// were a valid semantic payload -- "mode mixing terminates". Raw
+    /// bincode-legacy bytes (exactly what a `Legacy` session would have
+    /// sent for the same payload instead) are not valid T0.2 manifest
+    /// bytes at all, so decode fails outright -- a pre-existing gap in
+    /// this generic function's own coverage (every other test here
+    /// exercises a validly-ENCODED-but-otherwise-wrong frame), closed
+    /// here since this row's packet names it explicitly.
+    #[test]
+    fn receive_semantic_v1_raw_legacy_bytes_are_rejected_not_silently_accepted() {
+        let state = recv_state();
+        let raw_legacy_bytes = encode_payload_v1(&ServerGeneral::UpdateRecipes);
+        assert_eq!(
+            Client::validate_semantic_frame_v1::<ServerGeneral>(&raw_legacy_bytes, &state, SemanticStreamIdV1::General).unwrap_err(),
+            SemanticEnvelopeRejectV1::EnvelopeDecodeFailure
+        );
+    }
+
+    /// `receive_semantic_no_mutation`: proves the structural guarantee
+    /// noted at the top of this section -- a rejected frame cannot have
+    /// advanced the cursor, because `validate_semantic_frame_v1` only
+    /// ever receives `receive_state` by immutable reference.
+    #[test]
+    fn receive_semantic_no_mutation_on_reject_leaves_cursor_unchanged() {
+        let state = recv_state();
+        let before = state.next_expected_for(SemanticStreamIdV1::General);
+        let msg = ServerGeneral::UpdateRecipes;
+        let raw = recv_frame_bytes(recv_binding(), 99, &msg); // a gap, guaranteed reject
+        assert!(Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).is_err());
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::General), before);
+    }
+
+    /// `APEX-T3.3.18` "redacted metrics" test (packet names `cargo test
+    /// -p veloren-client semantic_metrics_redaction`; same aspirational-
+    /// vs-actual module-path gap noted server-side -- this crate's
+    /// tests live in a flat `tests` module, not a `semantic_metrics`
+    /// one). Client-side twin of the server's `rejected_traffic_
+    /// liveness_and_redacted_metrics`: a real reject feeds
+    /// `SemanticIngressMetricsV1` with nothing but a code and a stream.
+    #[test]
+    fn client_rejected_traffic_liveness_and_redacted_metrics() {
+        let state = recv_state();
+        let metrics = common_net::msg::envelope::SemanticIngressMetricsV1::new();
+        let msg = ServerGeneral::UpdateRecipes; // routes InGame
+        let raw = recv_frame_bytes(recv_binding(), 99, &msg); // sequence gap
+        let Err(reject) = Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()) else {
+            panic!("fixture must reject (sequence gap)");
+        };
+        metrics.record_reject(&reject, msg.semantic_stream());
+
+        assert_eq!(state.next_expected_for(msg.semantic_stream()).get(), 1, "rejected traffic must not move the cursor");
+        assert_eq!(metrics.snapshot(), vec![("sequence_gap", SemanticStreamIdV1::InGame, 1)]);
     }
 }

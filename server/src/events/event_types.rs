@@ -18,6 +18,8 @@ pub use common::event::{
 
 #[cfg(feature = "plugins")]
 pub use common::event::RequestPluginsEvent;
+#[cfg(feature = "plugins")]
+pub use common::event::RequestPluginArtifactsEvent;
 
 /// X-macro that provides list of server events to the macro this is called
 /// with.
@@ -99,6 +101,7 @@ macro_rules! server_events {
         #[cfg(feature = "plugins")]
         $macro! {
             RequestPluginsEvent
+            RequestPluginArtifactsEvent
         }
     };
 }

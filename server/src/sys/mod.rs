@@ -10,6 +10,7 @@ pub mod msg;
 pub mod object;
 pub mod persistence;
 pub mod pets;
+pub mod semantic_egress;
 pub mod sentinel;
 pub mod server_info;
 pub mod subscription;
@@ -81,6 +82,14 @@ pub fn run_sync_systems(ecs: &mut specs::World) {
     // Sync
     run_now::<terrain_sync::Sys>(ecs);
     run_now::<entity_sync::Sys>(ecs);
+
+    // APEX-T3.3.15: the single canonical semantic egress owner, invoked
+    // explicitly last -- every current semantic producer (entity_sync,
+    // subscription) already ran above in this same strictly-sequential
+    // function; see semantic_egress.rs's own module doc for the one
+    // known future wrinkle (a rare post-flush terrain::Sys re-run
+    // elsewhere in the tick, inert until terrain.rs is migrated).
+    run_now::<semantic_egress::Sys>(ecs);
 }
 
 /// Used to schedule systems to run at an interval

@@ -36,7 +36,10 @@ use common::apex::digest::{
     hash_artifact_bytes_v1,
 };
 use common::apex::identity::{CommandId, ConnectionEpoch, ServerBootId, SessionId, SnapshotEpoch};
-use common::apex::manifest::MachineTextV1;
+use common::apex::manifest::{
+    CanonicalFieldMapV1, FieldIdV1, MachineTextV1, ManifestCodecErrorCodeV1, ManifestCodecErrorV1, ManifestDecodeV1,
+    ManifestEncodeV1, ManifestErrorV1, ManifestSchemaErrorV1, ManifestValueV1, StructFieldsV1,
+};
 use common::apex::scalar::SchemaVersion;
 use common::apex::subsystem::{SubsystemDescriptorV1, SubsystemSlotIdV1};
 
@@ -244,6 +247,199 @@ pub struct SemanticWireFrameV1 {
     pub payload_bytes: Vec<u8>,
 }
 
+// `T3.3.07`: canonical `BastionManifestEncodingV1` (T0.2) encoding for the
+// envelope frame -- packet section 7.3: "SemanticWireFrameV1 is encoded
+// with the already-required deterministic T0.2 codec". Built on
+// `T0.4.6`'s tagged opaque-identity codec (ServerBootId/SessionId/
+// ConnectionEpoch/CommandId) and reuses `DigestBytes32V1::try_from_slice`
+// (T0.3) for the two digest fields -- no bespoke byte handling here,
+// every primitive is the shared, already-tested one.
+
+fn digest32_to_value(d: &DigestBytes32V1) -> ManifestValueV1 { ManifestValueV1::Bytes(d.as_array().to_vec()) }
+
+fn digest32_from_value(value: ManifestValueV1) -> Result<DigestBytes32V1, ManifestSchemaErrorV1> {
+    let ManifestValueV1::Bytes(b) = value else {
+        return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("expected a 32-byte bytestring"));
+    };
+    DigestBytes32V1::try_from_slice(&b).map_err(|_| ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("digest must be exactly 32 bytes"))
+}
+
+impl ManifestEncodeV1 for SnapshotDomainId {
+    fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> { Ok(ManifestValueV1::Unsigned(self.0 as u64)) }
+}
+
+impl ManifestDecodeV1 for SnapshotDomainId {
+    fn from_manifest_value_v1(value: ManifestValueV1) -> Result<Self, ManifestSchemaErrorV1> {
+        match value {
+            ManifestValueV1::Unsigned(v) if v <= u32::MAX as u64 => Ok(Self(v as u32)),
+            _ => Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+        }
+    }
+}
+
+impl ManifestEncodeV1 for SemanticSnapshotRefV1 {
+    fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> {
+        let map = CanonicalFieldMapV1::try_from_entries(vec![
+            (FieldIdV1::new(1), self.domain.to_manifest_value_v1()?),
+            (FieldIdV1::new(2), self.epoch.to_manifest_value_v1()?),
+        ])?;
+        Ok(ManifestValueV1::Map(map))
+    }
+}
+
+impl ManifestDecodeV1 for SemanticSnapshotRefV1 {
+    fn from_manifest_value_v1(value: ManifestValueV1) -> Result<Self, ManifestSchemaErrorV1> {
+        let ManifestValueV1::Map(map) = value else { return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)) };
+        let mut fields = StructFieldsV1::new(map);
+        let domain = SnapshotDomainId::from_manifest_value_v1(fields.take_required(FieldIdV1::new(1))?)?;
+        let epoch = SnapshotEpoch::from_manifest_value_v1(fields.take_required(FieldIdV1::new(2))?)?;
+        fields.finish_no_unknown()?;
+        Ok(Self { domain, epoch })
+    }
+}
+
+impl ManifestEncodeV1 for SemanticCausalityV1 {
+    fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> {
+        let mut entries = Vec::new();
+        if let Some(tick) = self.producer_tick {
+            entries.push((FieldIdV1::new(1), ManifestValueV1::Unsigned(tick)));
+        }
+        if let Some(snapshot) = &self.snapshot {
+            entries.push((FieldIdV1::new(2), snapshot.to_manifest_value_v1()?));
+        }
+        let map = CanonicalFieldMapV1::try_from_entries(entries)?;
+        Ok(ManifestValueV1::Map(map))
+    }
+}
+
+impl ManifestDecodeV1 for SemanticCausalityV1 {
+    fn from_manifest_value_v1(value: ManifestValueV1) -> Result<Self, ManifestSchemaErrorV1> {
+        let ManifestValueV1::Map(map) = value else { return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)) };
+        let mut fields = StructFieldsV1::new(map);
+        let producer_tick = match fields.take_optional(FieldIdV1::new(1))? {
+            Some(ManifestValueV1::Unsigned(v)) => Some(v),
+            Some(_) => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+            None => None,
+        };
+        let snapshot = match fields.take_optional(FieldIdV1::new(2))? {
+            Some(v) => Some(SemanticSnapshotRefV1::from_manifest_value_v1(v)?),
+            None => None,
+        };
+        fields.finish_no_unknown()?;
+        Ok(Self { producer_tick, snapshot })
+    }
+}
+
+impl ManifestEncodeV1 for NetEnvelopeHeaderV1 {
+    fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> {
+        let mut entries = vec![
+            (FieldIdV1::new(1), digest32_to_value(&self.profile_root)),
+            (FieldIdV1::new(2), self.server_boot_id.to_manifest_value_v1()?),
+            (FieldIdV1::new(3), self.session_id.to_manifest_value_v1()?),
+            (FieldIdV1::new(4), self.connection_epoch.to_manifest_value_v1()?),
+            (FieldIdV1::new(5), ManifestValueV1::Unsigned(self.direction.as_u8() as u64)),
+            (FieldIdV1::new(6), ManifestValueV1::Unsigned(self.semantic_stream.as_u8() as u64)),
+            (FieldIdV1::new(7), ManifestValueV1::Unsigned(self.sequence.get())),
+            (FieldIdV1::new(8), self.causality.to_manifest_value_v1()?),
+            (FieldIdV1::new(9), ManifestValueV1::Unsigned(self.payload_schema.as_u16() as u64)),
+            (FieldIdV1::new(10), ManifestValueV1::Unsigned(self.payload_encoding.as_u8() as u64)),
+            (FieldIdV1::new(11), ManifestValueV1::Unsigned(self.payload_len)),
+            (FieldIdV1::new(12), digest32_to_value(&self.payload_digest)),
+        ];
+        if let Some(command_id) = &self.command_id {
+            entries.push((FieldIdV1::new(13), command_id.to_manifest_value_v1()?));
+        }
+        let map = CanonicalFieldMapV1::try_from_entries(entries)?;
+        Ok(ManifestValueV1::Map(map))
+    }
+}
+
+impl ManifestDecodeV1 for NetEnvelopeHeaderV1 {
+    fn from_manifest_value_v1(value: ManifestValueV1) -> Result<Self, ManifestSchemaErrorV1> {
+        let ManifestValueV1::Map(map) = value else { return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)) };
+        let mut fields = StructFieldsV1::new(map);
+        let profile_root = digest32_from_value(fields.take_required(FieldIdV1::new(1))?)?;
+        let server_boot_id = ServerBootId::from_manifest_value_v1(fields.take_required(FieldIdV1::new(2))?)?;
+        let session_id = SessionId::from_manifest_value_v1(fields.take_required(FieldIdV1::new(3))?)?;
+        let connection_epoch = ConnectionEpoch::from_manifest_value_v1(fields.take_required(FieldIdV1::new(4))?)?;
+        let direction = match fields.take_required(FieldIdV1::new(5))? {
+            ManifestValueV1::Unsigned(v) if v <= u8::MAX as u64 => SemanticDirectionV1::try_from_u8(v as u8)
+                .ok_or_else(|| ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("unknown direction tag"))?,
+            _ => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+        };
+        let semantic_stream = match fields.take_required(FieldIdV1::new(6))? {
+            ManifestValueV1::Unsigned(v) if v <= u8::MAX as u64 => SemanticStreamIdV1::try_from_u8(v as u8)
+                .ok_or_else(|| ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("unknown stream tag"))?,
+            _ => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+        };
+        let sequence = match fields.take_required(FieldIdV1::new(7))? {
+            ManifestValueV1::Unsigned(v) => {
+                NonZeroU64::new(v).ok_or_else(|| ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("sequence zero"))?
+            },
+            _ => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+        };
+        let causality = SemanticCausalityV1::from_manifest_value_v1(fields.take_required(FieldIdV1::new(8))?)?;
+        let payload_schema = match fields.take_required(FieldIdV1::new(9))? {
+            ManifestValueV1::Unsigned(v) if v <= u16::MAX as u64 => SemanticPayloadSchemaV1::try_from_u16(v as u16)
+                .ok_or_else(|| ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("unknown payload schema tag"))?,
+            _ => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+        };
+        let payload_encoding = match fields.take_required(FieldIdV1::new(10))? {
+            ManifestValueV1::Unsigned(v) if v <= u8::MAX as u64 => SemanticPayloadEncodingV1::try_from_u8(v as u8)
+                .ok_or_else(|| ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("unknown payload encoding tag"))?,
+            _ => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+        };
+        let payload_len = match fields.take_required(FieldIdV1::new(11))? {
+            ManifestValueV1::Unsigned(v) => v,
+            _ => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+        };
+        let payload_digest = digest32_from_value(fields.take_required(FieldIdV1::new(12))?)?;
+        let command_id = match fields.take_optional(FieldIdV1::new(13))? {
+            Some(v) => Some(CommandId::from_manifest_value_v1(v)?),
+            None => None,
+        };
+        fields.finish_no_unknown()?;
+        Ok(Self {
+            profile_root,
+            server_boot_id,
+            session_id,
+            connection_epoch,
+            direction,
+            semantic_stream,
+            sequence,
+            causality,
+            payload_schema,
+            payload_encoding,
+            payload_len,
+            payload_digest,
+            command_id,
+        })
+    }
+}
+
+impl ManifestEncodeV1 for SemanticWireFrameV1 {
+    fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> {
+        let map = CanonicalFieldMapV1::try_from_entries(vec![
+            (FieldIdV1::new(1), self.header.to_manifest_value_v1()?),
+            (FieldIdV1::new(2), ManifestValueV1::Bytes(self.payload_bytes.clone())),
+        ])?;
+        Ok(ManifestValueV1::Map(map))
+    }
+}
+
+impl ManifestDecodeV1 for SemanticWireFrameV1 {
+    fn from_manifest_value_v1(value: ManifestValueV1) -> Result<Self, ManifestSchemaErrorV1> {
+        let ManifestValueV1::Map(map) = value else { return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)) };
+        let mut fields = StructFieldsV1::new(map);
+        let header = NetEnvelopeHeaderV1::from_manifest_value_v1(fields.take_required(FieldIdV1::new(1))?)?;
+        let ManifestValueV1::Bytes(payload_bytes) = fields.take_required(FieldIdV1::new(2))? else {
+            return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("expected a bytestring payload"));
+        };
+        fields.finish_no_unknown()?;
+        Ok(Self { header, payload_bytes })
+    }
+}
+
 /// `T3.3.06`: the boot/session/epoch triple every semantic cursor is
 /// keyed to (packet's own repeated requirement: "all keys include
 /// boot/session/epoch/direction/stream"). Distinct from
@@ -284,6 +480,29 @@ impl SemanticSendStateV1 {
     pub fn binding(&self) -> ActiveSessionBindingV1 { self.binding }
 
     pub fn next_for(&self, stream: SemanticStreamIdV1) -> NonZeroU64 { self.next[stream_index(stream)] }
+
+    /// `T3.3.07`: consumes and returns this stream's current sequence,
+    /// advancing the cursor for next time -- packet's own ordering rule,
+    /// "sequence is consumed before send and never reused after failure":
+    /// the cursor already reflects the NEXT value the instant this
+    /// returns, regardless of whether the caller's subsequent encode/send
+    /// actually succeeds. `CounterAdvanceErrorV1::Exhausted` reuses
+    /// `T0.4`'s existing checked-counter error rather than a bespoke one.
+    pub fn allocate_sequence(&mut self, stream: SemanticStreamIdV1) -> Result<NonZeroU64, common::apex::identity::CounterAdvanceErrorV1> {
+        let idx = stream_index(stream);
+        let current = self.next[idx];
+        let advanced = current.checked_add(1).ok_or(common::apex::identity::CounterAdvanceErrorV1::Exhausted)?;
+        self.next[idx] = advanced;
+        Ok(current)
+    }
+
+    /// Test-only: constructs a state with an arbitrary starting cursor
+    /// per stream, so exhaustion at the real `u64::MAX` boundary can be
+    /// tested directly against `allocate_sequence` itself rather than
+    /// reasoned about indirectly (looping `u64::MAX` times is not a real
+    /// option).
+    #[cfg(test)]
+    fn with_cursors_for_test(binding: ActiveSessionBindingV1, next: [NonZeroU64; 5]) -> Self { Self { binding, next } }
 }
 
 /// Packet section 7.6. The receive-side twin of [`SemanticSendStateV1`].
@@ -306,6 +525,60 @@ impl SemanticReceiveStateV1 {
     pub fn binding(&self) -> ActiveSessionBindingV1 { self.binding }
 
     pub fn next_expected_for(&self, stream: SemanticStreamIdV1) -> NonZeroU64 { self.next_expected[stream_index(stream)] }
+
+    /// `T3.3.08`: commits acceptance of the sequence this stream was
+    /// expecting -- called only AFTER every other envelope/payload check
+    /// has already passed (packet: "cursor does not advance on
+    /// validation failure; it advances before handler call"). The
+    /// zero-gap MVP (packet section 5.4) means the caller has already
+    /// confirmed `received == next_expected_for(stream)` before calling
+    /// this; this method's own job is only to advance the cursor for
+    /// next time, which can itself exhaust at `u64::MAX` even though the
+    /// just-accepted value was valid.
+    pub fn advance_expected(&mut self, stream: SemanticStreamIdV1) -> Result<(), common::apex::identity::CounterAdvanceErrorV1> {
+        let idx = stream_index(stream);
+        let advanced = self.next_expected[idx].checked_add(1).ok_or(common::apex::identity::CounterAdvanceErrorV1::Exhausted)?;
+        self.next_expected[idx] = advanced;
+        Ok(())
+    }
+
+    /// `T3.3.17`: packet's own "lower same-stream/domain snapshots
+    /// reject" -- local monotonic non-decreasing constraint per domain
+    /// (`highest_snapshot` is keyed by domain only, shared across every
+    /// semantic stream this attachment carries -- T3.3.01's own doc
+    /// calls that shape frozen, so this uses it exactly as declared
+    /// rather than adding stream-scoping to the key). Equal is accepted
+    /// (non-decreasing, not strictly-increasing -- the packet says
+    /// "lower ... reject", not "equal ... reject"). A domain seen for
+    /// the first time always passes -- nothing to compare against yet.
+    /// Pure: mirrors `next_expected_for` (check) being separate from
+    /// `advance_expected`/`commit_snapshot` (commit) -- "cursor does
+    /// not advance on validation failure."
+    pub fn snapshot_is_fresh(&self, snapshot: &SemanticSnapshotRefV1) -> bool {
+        self.highest_snapshot.get(&snapshot.domain).is_none_or(|&highest| snapshot.epoch >= highest)
+    }
+
+    /// `T3.3.17`: commits acceptance of a snapshot ref -- called only
+    /// AFTER `snapshot_is_fresh` has already passed, same "advance only
+    /// after validation" discipline `advance_expected` follows for
+    /// sequence. Monotonic non-decreasing: only ever raises a domain's
+    /// watermark (an accepted EQUAL epoch is a correct no-op here).
+    pub fn commit_snapshot(&mut self, snapshot: SemanticSnapshotRefV1) {
+        self.highest_snapshot
+            .entry(snapshot.domain)
+            .and_modify(|highest| {
+                if snapshot.epoch > *highest {
+                    *highest = snapshot.epoch;
+                }
+            })
+            .or_insert(snapshot.epoch);
+    }
+
+    /// Test-only twin of `SemanticSendStateV1::with_cursors_for_test`.
+    #[cfg(test)]
+    fn with_cursors_for_test(binding: ActiveSessionBindingV1, next_expected: [NonZeroU64; 5]) -> Self {
+        Self { binding, next_expected, highest_snapshot: std::collections::BTreeMap::new(), terminal: None }
+    }
 }
 
 const fn stream_index(stream: SemanticStreamIdV1) -> usize {
@@ -331,6 +604,54 @@ pub enum SemanticProtocolTerminalV1 {
     ApplicationError,
     ProtocolViolation,
     SendFailedAfterSequenceAllocated,
+}
+
+impl SemanticProtocolTerminalV1 {
+    /// `T3.3.18`: stable, field-independent code -- the metrics label
+    /// and terminal-catalog artifact key. Every variant here is already
+    /// fieldless, but the code is a SEPARATE, deliberately-frozen string
+    /// (never `{:?}`) so a `Debug` reformatting elsewhere in this file
+    /// can never silently change a metrics label's cardinality/spelling.
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::ResyncRequired => "resync_required",
+            Self::SequenceExhausted => "sequence_exhausted",
+            Self::ApplicationError => "application_error",
+            Self::ProtocolViolation => "protocol_violation",
+            Self::SendFailedAfterSequenceAllocated => "send_failed_after_sequence_allocated",
+        }
+    }
+
+    pub const ALL: [SemanticProtocolTerminalV1; 5] = [
+        Self::ResyncRequired,
+        Self::SequenceExhausted,
+        Self::ApplicationError,
+        Self::ProtocolViolation,
+        Self::SendFailedAfterSequenceAllocated,
+    ];
+
+    /// `T3.3.18`: "add protocol disconnect mapping" -- every connection-
+    /// level terminal maps to exactly one EXISTING `DisconnectReason`
+    /// (no new variants invented; the row's own compatibility note says
+    /// "disconnect variants follow negotiated wire version", meaning
+    /// this mapping exists ALONGSIDE the untouched Legacy disconnect
+    /// paths, not replacing them). `ProtocolViolation` -- a client that
+    /// sent malformed/deliberately-invalid traffic -- maps to `Kicked`,
+    /// the same reason this codebase already uses for other deliberate-
+    /// misbehavior disconnects (`register.rs`'s own "logged in from
+    /// another location" kick). Every other terminal here is a
+    /// transient/resource condition, not evidence of bad faith, so it
+    /// maps to `NetworkError` (the existing catch-all this codebase
+    /// already uses for non-graceful, non-malicious disconnects).
+    pub const fn disconnect_reason(self) -> common::comp::DisconnectReason {
+        use common::comp::DisconnectReason as D;
+        match self {
+            Self::ProtocolViolation => D::Kicked,
+            Self::ResyncRequired | Self::SequenceExhausted | Self::ApplicationError | Self::SendFailedAfterSequenceAllocated => {
+                D::NetworkError
+            },
+        }
+    }
 }
 
 const PAYLOAD_DIGEST_MAGIC: &[u8] = b"bastion/net-payload/v1\0";
@@ -397,6 +718,186 @@ pub enum SemanticEnvelopeRejectV1 {
     StaleEgressBinding,
     DuplicateOrderKey,
     OrderKeyTooLarge,
+    /// `T3.3.15`: added when the egress owner's own encode step turned
+    /// out to be genuinely fallible (unlike `T3.3.07`'s client-side
+    /// `send_semantic_v1`, which treats its own encode as impossible-to-
+    /// fail-by-construction and `.expect()`s it -- that function has
+    /// exactly one, already-validated call shape; egress instead encodes
+    /// arbitrary payloads from many different producers, so a genuine
+    /// per-intent reject path is warranted here where it wasn't there).
+    EncodeFailure,
+    /// `T3.3.17`: `causality.snapshot`'s domain is not in the active
+    /// `NetEnvelopeCausalityProfileV1`'s declared set. Production
+    /// declares no domains ("leave snapshot absent until a producer has
+    /// defined epochs"), so this is unreachable on real traffic today --
+    /// only a test profile with a non-empty declared set exercises it.
+    UnknownDomain,
+    /// `T3.3.17`: the frame's causality does not satisfy its payload
+    /// schema's declared requirement in the active
+    /// `NetEnvelopeCausalityProfileV1` (e.g. a schema declared
+    /// tick-required arrived tickless). Production declares every
+    /// schema fully optional, so this is unreachable on real traffic
+    /// today -- only a test profile with a required field exercises it.
+    CausalityProfileMismatch,
+}
+
+impl SemanticEnvelopeRejectV1 {
+    /// `T3.3.18`: stable, field-independent code -- the metrics label
+    /// and terminal-catalog artifact key. `SequenceGap`'s own
+    /// `expected`/`received` values are per-frame data (unbounded
+    /// cardinality), never metrics cardinality -- every instance of it
+    /// shares this one code regardless of its fields.
+    pub const fn code(&self) -> &'static str {
+        match self {
+            Self::UnsupportedProfile => "unsupported_profile",
+            Self::WrongBoot => "wrong_boot",
+            Self::WrongSession => "wrong_session",
+            Self::StaleEpoch => "stale_epoch",
+            Self::FutureEpoch => "future_epoch",
+            Self::WrongDirection => "wrong_direction",
+            Self::UnknownStream => "unknown_stream",
+            Self::StreamRouteMismatch => "stream_route_mismatch",
+            Self::SequenceZero => "sequence_zero",
+            Self::DuplicateSequence => "duplicate_sequence",
+            Self::ReplaySequence => "replay_sequence",
+            Self::SequenceGap { .. } => "sequence_gap",
+            Self::SequenceExhausted => "sequence_exhausted",
+            Self::PayloadEncodingUnsupported => "payload_encoding_unsupported",
+            Self::PayloadSchemaUnsupported => "payload_schema_unsupported",
+            Self::PayloadLengthMismatch => "payload_length_mismatch",
+            Self::PayloadDigestMismatch => "payload_digest_mismatch",
+            Self::EnvelopeDecodeFailure => "envelope_decode_failure",
+            Self::EnvelopeTrailingBytes => "envelope_trailing_bytes",
+            Self::PayloadDecodeFailure => "payload_decode_failure",
+            Self::PayloadTrailingBytes => "payload_trailing_bytes",
+            Self::StaleSnapshot => "stale_snapshot",
+            Self::CommandIdUnsupported => "command_id_unsupported",
+            Self::NoActiveAttachment => "no_active_attachment",
+            Self::StaleEgressBinding => "stale_egress_binding",
+            Self::DuplicateOrderKey => "duplicate_order_key",
+            Self::OrderKeyTooLarge => "order_key_too_large",
+            Self::EncodeFailure => "encode_failure",
+            Self::UnknownDomain => "unknown_domain",
+            Self::CausalityProfileMismatch => "causality_profile_mismatch",
+        }
+    }
+
+    /// One representative instance per variant (`SequenceGap` gets
+    /// placeholder field values -- its own fields are not part of its
+    /// code's identity). Used for the terminal-catalog artifact and the
+    /// completeness/uniqueness tests below.
+    pub const ALL: [SemanticEnvelopeRejectV1; 30] = [
+        Self::UnsupportedProfile,
+        Self::WrongBoot,
+        Self::WrongSession,
+        Self::StaleEpoch,
+        Self::FutureEpoch,
+        Self::WrongDirection,
+        Self::UnknownStream,
+        Self::StreamRouteMismatch,
+        Self::SequenceZero,
+        Self::DuplicateSequence,
+        Self::ReplaySequence,
+        Self::SequenceGap { expected: 0, received: 0 },
+        Self::SequenceExhausted,
+        Self::PayloadEncodingUnsupported,
+        Self::PayloadSchemaUnsupported,
+        Self::PayloadLengthMismatch,
+        Self::PayloadDigestMismatch,
+        Self::EnvelopeDecodeFailure,
+        Self::EnvelopeTrailingBytes,
+        Self::PayloadDecodeFailure,
+        Self::PayloadTrailingBytes,
+        Self::StaleSnapshot,
+        Self::CommandIdUnsupported,
+        Self::NoActiveAttachment,
+        Self::StaleEgressBinding,
+        Self::DuplicateOrderKey,
+        Self::OrderKeyTooLarge,
+        Self::EncodeFailure,
+        Self::UnknownDomain,
+        Self::CausalityProfileMismatch,
+    ];
+}
+
+/// `T3.3.18`: "server/client counters keyed by reason/stream" --
+/// shared by both sides (this codebase's existing Prometheus-backed
+/// `PlayerMetrics`/`NetworkRequestMetrics` are server-only
+/// infrastructure the client has no equivalent of; this type is
+/// deliberately independent of that, usable identically on either
+/// side). Redacted BY CONSTRUCTION, not by discipline: the key is
+/// exactly `(&'static str, SemanticStreamIdV1)` -- a fixed, bounded-
+/// cardinality label pair that structurally cannot hold a payload
+/// byte, a token, a chat string, or a session/principal identifier
+/// (packet's own acceptance gate: "logs contain no token/chat/command/
+/// payload bytes"; this type can't violate that even if misused, there
+/// is no field to put one in).
+#[derive(Default)]
+pub struct SemanticIngressMetricsV1 {
+    counts: std::sync::Mutex<std::collections::HashMap<(&'static str, SemanticStreamIdV1), u64>>,
+}
+
+impl SemanticIngressMetricsV1 {
+    pub fn new() -> Self { Self::default() }
+
+    pub fn record_reject(&self, reject: &SemanticEnvelopeRejectV1, stream: SemanticStreamIdV1) {
+        self.record(reject.code(), stream);
+    }
+
+    pub fn record_terminal(&self, terminal: SemanticProtocolTerminalV1, stream: SemanticStreamIdV1) {
+        self.record(terminal.code(), stream);
+    }
+
+    fn record(&self, code: &'static str, stream: SemanticStreamIdV1) {
+        *self.counts.lock().expect("semantic ingress metrics mutex poisoned").entry((code, stream)).or_insert(0) += 1;
+    }
+
+    /// A point-in-time copy -- the "metrics snapshot" evidence artifact.
+    /// Sorted for deterministic output (never iteration-order-dependent
+    /// `HashMap` order).
+    pub fn snapshot(&self) -> Vec<(&'static str, SemanticStreamIdV1, u64)> {
+        let mut out: Vec<_> =
+            self.counts.lock().expect("semantic ingress metrics mutex poisoned").iter().map(|(&(code, stream), &n)| (code, stream, n)).collect();
+        out.sort_by_key(|&(code, stream, _)| (code, stream.as_u8()));
+        out
+    }
+}
+
+/// Packet section 7.10's own outcome classification for one evidence
+/// entry -- reuses the two ALREADY-frozen terminal vocabularies
+/// wholesale (`SemanticEnvelopeRejectV1` for per-frame rejects,
+/// `SemanticProtocolTerminalV1` for connection-level terminals) instead
+/// of inventing parallel variant names for the same concepts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SemanticFrameVerdictV1 {
+    Sent,
+    Rejected(SemanticEnvelopeRejectV1),
+    Terminal(SemanticProtocolTerminalV1),
+}
+
+/// Packet section 7.10. Added in `T3.3.15` -- described in the packet's
+/// own shared-vocabulary section 7 alongside every other type in this
+/// module, but never actually landed in `T3.3.01`'s "exact enums/structs
+/// from Section 7" pass; `T3.3.15`'s own "records evidence" step
+/// (algorithm step 9) is the first to actually need it, so it completes
+/// `T3.3.01`'s contract here rather than blocking on going back to that
+/// step. Same class of gap `T0.4.6` closed for `T0.4`.
+///
+/// "Do not record tokens, chat text, command arguments, or payload
+/// bytes in ordinary logs" (packet's own words) -- this shape has no
+/// field that could hold any of those; `payload_digest` is the only
+/// payload-derived value, and a digest is not the payload.
+#[derive(Clone, Copy, Debug)]
+pub struct SemanticFrameEvidenceV1 {
+    pub tick_observed: u64,
+    pub direction: SemanticDirectionV1,
+    pub stream: SemanticStreamIdV1,
+    pub session_id: SessionId,
+    pub connection_epoch: ConnectionEpoch,
+    pub sequence: u64,
+    pub payload_schema: SemanticPayloadSchemaV1,
+    pub payload_digest: DigestBytes32V1,
+    pub verdict: SemanticFrameVerdictV1,
 }
 
 /// Packet section 7.1/T3.3.03: encodes `payload` with the pinned
@@ -474,7 +975,14 @@ impl SemanticRouteV1 for ClientGeneral {
             | C::BastionInspect { .. }
             | C::SetBattleMode(_) => SemanticStreamIdV1::InGame,
             C::TerrainChunkRequest { .. } | C::LodZoneRequest { .. } => SemanticStreamIdV1::Terrain,
-            C::ChatMsg(_) | C::Command(_, _) | C::Terminate | C::RequestPlugins(_) => SemanticStreamIdV1::General,
+            // APEX MERGE: T2.5.10's RequestPluginArtifacts joins the
+            // General stream, mirroring client/src/lib.rs's own physical
+            // routing for it (the authoritative mapping this impl tracks).
+            C::ChatMsg(_)
+            | C::Command(_, _)
+            | C::Terminate
+            | C::RequestPlugins(_)
+            | C::RequestPluginArtifacts(_) => SemanticStreamIdV1::General,
         }
     }
 
@@ -535,7 +1043,11 @@ impl SemanticRouteV1 for ServerGeneral {
             | S::Disconnect(_)
             | S::Notification(_)
             | S::SetPlayerRole(_)
-            | S::PluginData(_) => SemanticStreamIdV1::General,
+            | S::PluginData(_)
+            // APEX MERGE: T2.5.10's PluginArtifactData joins the General
+            // stream, mirroring server/src/client.rs::prepare's own
+            // physical routing for it.
+            | S::PluginArtifactData(_) => SemanticStreamIdV1::General,
         }
     }
 
@@ -551,6 +1063,105 @@ impl SemanticRouteV1 for ServerInit {
     fn semantic_stream(&self) -> SemanticStreamIdV1 { SemanticStreamIdV1::Bootstrap }
 
     fn payload_schema(&self) -> SemanticPayloadSchemaV1 { SemanticPayloadSchemaV1::ServerInit }
+}
+
+/// `T3.3.17`: one payload schema's declared causality requirement --
+/// whether a receiver must reject a frame of this schema for lacking
+/// `producer_tick`/`snapshot`. Part of [`NetEnvelopeCausalityProfileV1`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CausalityRequirementV1 {
+    pub payload_schema: SemanticPayloadSchemaV1,
+    pub producer_tick_required: bool,
+    pub snapshot_required: bool,
+}
+
+/// `T3.3.17`: "snapshot-domain profiles" -- an EXTENSION of the
+/// existing `NET_ENVELOPE_PROFILE_V1` vocabulary (not new `T3.4`
+/// semantics; `T3.4` still fully owns snapshot PRODUCTION/watermark
+/// semantics under its own later profile root): the declared set of
+/// [`SnapshotDomainId`]s a receiver should accept in `causality.snapshot`,
+/// and each payload schema's causality requirement.
+/// [`production_causality_profile_v1`] is the ONE frozen instance the
+/// real live path ever uses (empty domain set, every schema fully
+/// optional -- both `UnknownDomain` and `CausalityProfileMismatch` are
+/// therefore unreachable on real traffic today, matching this row's own
+/// "leave snapshot absent until a producer has defined epochs"); tests
+/// construct their own instances directly to exercise both rejects and
+/// the profile-immutability guard without touching the frozen
+/// production values.
+#[derive(Clone, Debug)]
+pub struct NetEnvelopeCausalityProfileV1 {
+    pub declared_domains: Vec<SnapshotDomainId>,
+    pub requirements: Vec<CausalityRequirementV1>,
+}
+
+/// The frozen production instance -- encoded into
+/// `net_envelope_profile_table_bytes_v1` below (categories 5/6), so
+/// changing it without also changing the surrounding hashed table is
+/// impossible: the table IS the profile, and any edit to either
+/// category changes `net_envelope_profile_root_v1()`. Empty domain set,
+/// every schema optional -- the mechanism is real and tested, but
+/// nothing on real traffic can trip either of `T3.3.17`'s new rejects
+/// today.
+pub fn production_causality_profile_v1() -> NetEnvelopeCausalityProfileV1 {
+    NetEnvelopeCausalityProfileV1 {
+        declared_domains: Vec::new(),
+        requirements: SemanticPayloadSchemaV1::ALL
+            .map(|payload_schema| CausalityRequirementV1 { payload_schema, producer_tick_required: false, snapshot_required: false })
+            .to_vec(),
+    }
+}
+
+/// `T3.3.17`: checks one frame's causality against the active profile's
+/// declared vocabulary/requirements -- pure, and independent of any
+/// session-local monotonicity state (that's
+/// `SemanticReceiveStateV1::snapshot_is_fresh`, a SEPARATE, session-
+/// scoped check the caller applies afterward, never conflated with this
+/// structural, profile-level one). Order: domain membership first (a
+/// frame naming an undeclared domain is a profile violation, checked
+/// before anything session-local could even apply), then the schema's
+/// own requirement.
+pub fn validate_causality_against_profile_v1(
+    causality: &SemanticCausalityV1,
+    payload_schema: SemanticPayloadSchemaV1,
+    profile: &NetEnvelopeCausalityProfileV1,
+) -> Result<(), SemanticEnvelopeRejectV1> {
+    if let Some(snapshot) = &causality.snapshot {
+        if !profile.declared_domains.contains(&snapshot.domain) {
+            return Err(SemanticEnvelopeRejectV1::UnknownDomain);
+        }
+    }
+    if let Some(requirement) = profile.requirements.iter().find(|r| r.payload_schema == payload_schema) {
+        if requirement.producer_tick_required && causality.producer_tick.is_none() {
+            return Err(SemanticEnvelopeRejectV1::CausalityProfileMismatch);
+        }
+        if requirement.snapshot_required && causality.snapshot.is_none() {
+            return Err(SemanticEnvelopeRejectV1::CausalityProfileMismatch);
+        }
+    }
+    Ok(())
+}
+
+fn encode_domain_category(buf: &mut Vec<u8>, category: u8, domains: &[SnapshotDomainId]) {
+    buf.push(category);
+    buf.extend_from_slice(&(domains.len() as u16).to_be_bytes());
+    let mut sorted: Vec<u32> = domains.iter().map(|d| d.get()).collect();
+    sorted.sort_unstable();
+    for d in sorted {
+        buf.extend_from_slice(&d.to_be_bytes());
+    }
+}
+
+fn encode_causality_requirement_category(buf: &mut Vec<u8>, category: u8, requirements: &[CausalityRequirementV1]) {
+    buf.push(category);
+    buf.extend_from_slice(&(requirements.len() as u16).to_be_bytes());
+    let mut sorted = requirements.to_vec();
+    sorted.sort_by_key(|r| r.payload_schema.as_u16());
+    for r in sorted {
+        buf.extend_from_slice(&r.payload_schema.as_u16().to_be_bytes());
+        buf.push(r.producer_tick_required as u8);
+        buf.push(r.snapshot_required as u8);
+    }
 }
 
 fn encode_tag_category(buf: &mut Vec<u8>, category: u8, entries: &[(u16, &'static str)]) {
@@ -576,6 +1187,13 @@ fn net_envelope_profile_table_bytes_v1() -> Vec<u8> {
     encode_tag_category(&mut buf, 2, &SemanticStreamIdV1::ALL.map(|s| (s.as_u8() as u16, s.label())));
     encode_tag_category(&mut buf, 3, &SemanticPayloadSchemaV1::ALL.map(|s| (s.as_u16(), s.label())));
     encode_tag_category(&mut buf, 4, &SemanticPayloadEncodingV1::ALL.map(|e| (e.as_u8() as u16, e.label())));
+    // `T3.3.17`: categories 5/6 are the "snapshot-domain profiles" --
+    // the production `NetEnvelopeCausalityProfileV1` is part of this
+    // same frozen table, so changing it (declaring a domain, requiring
+    // a field) is impossible without also changing `profile_root`.
+    let causality_profile = production_causality_profile_v1();
+    encode_domain_category(&mut buf, 5, &causality_profile.declared_domains);
+    encode_causality_requirement_category(&mut buf, 6, &causality_profile.requirements);
     buf
 }
 
@@ -620,6 +1238,8 @@ pub fn net_envelope_profile_root_v1() -> DigestBytes32V1 {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+
+    use common::apex::manifest::{ManifestDecodeLimitsV1, decode_manifest_v1, encode_manifest_v1};
 
     use super::*;
 
@@ -711,7 +1331,7 @@ mod tests {
         assert_eq!(a.as_array(), b.as_array());
         assert_eq!(
             a.to_human_v1(),
-            "sha256:14a435666ca650d1e72e900196d3f6dbbdbf49da067fe87a47cfdc7a067a1cbb",
+            "sha256:f305a7c11e86a7173be40f67669e38deabaad6de5e6d66f376ac471bc0614488",
             "NET_ENVELOPE_PROFILE_V1 table changed -- recompute and update this golden vector deliberately, \
              it must never drift silently"
         );
@@ -1000,6 +1620,86 @@ mod tests {
         }
     }
 
+    // T3.3.07's own test list: independent cursors, max (exhaustion).
+    // "All routes" is T3.3.04's own SemanticRouteV1 coverage, reused
+    // rather than re-proven here. "Send failure"/"mixed mode" are
+    // structural guarantees of this row's code shape (send_semantic_v1
+    // mutates the cursor before any encode/send is attempted, so a
+    // failed send can never retry the same sequence; send_msg_err's V1
+    // check is a single is_some() branch, so one Client instance can
+    // never send SOME messages via Legacy and others via V1) rather than
+    // independently unit-tested against a full mock Client -- matching
+    // T3.3.06's own established scope (test the state types directly,
+    // not a full live Client fixture, for code nothing live reaches yet).
+
+    #[test]
+    fn allocate_sequence_advances_each_stream_independently() {
+        let mut state = SemanticSendStateV1::new(test_binding(1));
+        let first_ingame = state.allocate_sequence(SemanticStreamIdV1::InGame).unwrap();
+        assert_eq!(first_ingame.get(), 1);
+        // A different stream's cursor is untouched by the InGame allocation above.
+        assert_eq!(state.next_for(SemanticStreamIdV1::General).get(), 1);
+        assert_eq!(state.next_for(SemanticStreamIdV1::CharacterScreen).get(), 1);
+
+        let second_ingame = state.allocate_sequence(SemanticStreamIdV1::InGame).unwrap();
+        assert_eq!(second_ingame.get(), 2);
+        // Still untouched.
+        assert_eq!(state.next_for(SemanticStreamIdV1::General).get(), 1);
+
+        let first_general = state.allocate_sequence(SemanticStreamIdV1::General).unwrap();
+        assert_eq!(first_general.get(), 1);
+        // InGame's cursor is unaffected by General's own allocation.
+        assert_eq!(state.next_for(SemanticStreamIdV1::InGame).get(), 3);
+    }
+
+    #[test]
+    fn allocate_sequence_exhausts_at_u64_max() {
+        let max = NonZeroU64::new(u64::MAX).unwrap();
+        let mut state = SemanticSendStateV1::with_cursors_for_test(test_binding(1), [max; 5]);
+
+        // Exhaustion is per-stream: General is at MAX and fails...
+        assert_eq!(
+            state.allocate_sequence(SemanticStreamIdV1::General).unwrap_err(),
+            common::apex::identity::CounterAdvanceErrorV1::Exhausted
+        );
+        // ...never panics, and never silently wraps back to a reused
+        // value (the cursor stays at MAX, not 0 or 1).
+        assert_eq!(state.next_for(SemanticStreamIdV1::General), max);
+
+        // ...and every other stream, ALSO at MAX, independently fails
+        // too -- exhaustion isn't accidentally scoped to just the one
+        // stream tested above.
+        for stream in SemanticStreamIdV1::ALL {
+            assert!(state.allocate_sequence(stream).is_err());
+        }
+    }
+
+    // T3.3.08: SemanticReceiveStateV1::advance_expected -- receive-side
+    // twin of allocate_sequence's own independent-cursors/exhaustion tests.
+
+    #[test]
+    fn advance_expected_advances_each_stream_independently() {
+        let mut state = SemanticReceiveStateV1::new(test_binding(1));
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::InGame).get(), 1);
+        state.advance_expected(SemanticStreamIdV1::InGame).unwrap();
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::InGame).get(), 2);
+        // Other streams untouched.
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::General).get(), 1);
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::Terrain).get(), 1);
+    }
+
+    #[test]
+    fn advance_expected_exhausts_at_u64_max() {
+        let max = NonZeroU64::new(u64::MAX).unwrap();
+        let mut state = SemanticReceiveStateV1::with_cursors_for_test(test_binding(1), [max; 5]);
+        assert_eq!(
+            state.advance_expected(SemanticStreamIdV1::General).unwrap_err(),
+            common::apex::identity::CounterAdvanceErrorV1::Exhausted
+        );
+        // Never silently wraps.
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::General), max);
+    }
+
     /// "Old state inaccessible": nothing about `SemanticSendStateV1`
     /// exposes a way to recover a PRIOR reset's state from a NEW one --
     /// the type itself has no history, only the one `binding` it was
@@ -1014,6 +1714,7 @@ mod tests {
         // shared storage between two `SemanticSendStateV1` values a
         // caller could accidentally read stale data through.
         let mut slot = Some(a);
+        assert_eq!(slot.as_ref().unwrap().binding().epoch, a.binding().epoch);
         slot = Some(b);
         assert_eq!(slot.unwrap().binding().epoch, b.binding().epoch);
     }
@@ -1037,5 +1738,423 @@ mod tests {
         for i in &indices {
             assert!(*i < 5);
         }
+    }
+
+    // T3.3.07: `NetEnvelopeHeaderV1`/`SemanticWireFrameV1`'s canonical
+    // `BastionManifestEncodingV1` (T0.2) encoding -- packet section 7.3's
+    // "encoded with the already-required deterministic T0.2 codec"
+    // (`T0.4.6`'s tagged opaque-identity codec is what makes this
+    // possible; those fields round-trip through their own, separately
+    // tested, manifest codec).
+
+    fn wide_limits() -> ManifestDecodeLimitsV1 {
+        ManifestDecodeLimitsV1 {
+            max_input_bytes: 4096,
+            max_depth: 8,
+            max_nodes: 64,
+            max_array_items: 16,
+            max_map_entries: 16,
+            max_machine_text_bytes: 256,
+            max_byte_string_bytes: 256,
+        }
+    }
+
+    fn sample_header() -> NetEnvelopeHeaderV1 {
+        use common::apex::identity::FixedRandomBytesSourceV1;
+        NetEnvelopeHeaderV1 {
+            profile_root: net_envelope_profile_root_v1(),
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([0x11; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([0x22; 16])).unwrap(),
+            connection_epoch: ConnectionEpoch::new(7).unwrap(),
+            direction: SemanticDirectionV1::ClientToServer,
+            semantic_stream: SemanticStreamIdV1::General,
+            sequence: NonZeroU64::new(3).unwrap(),
+            causality: SemanticCausalityV1 { producer_tick: Some(42), snapshot: None },
+            payload_schema: SemanticPayloadSchemaV1::ClientGeneral,
+            payload_encoding: SemanticPayloadEncodingV1::Bincode2LegacySerde,
+            payload_len: 5,
+            payload_digest: payload_digest_v1(
+                net_envelope_profile_root_v1(),
+                SemanticPayloadSchemaV1::ClientGeneral,
+                SemanticPayloadEncodingV1::Bincode2LegacySerde,
+                b"hello",
+            ),
+            command_id: None,
+        }
+    }
+
+    #[test]
+    fn header_round_trips_through_canonical_encoding() {
+        let header = sample_header();
+        let bytes = encode_manifest_v1(&header, &wide_limits()).unwrap();
+        let decoded: NetEnvelopeHeaderV1 = decode_manifest_v1(&bytes, &wide_limits()).unwrap();
+        assert_eq!(decoded, header);
+    }
+
+    #[test]
+    fn frame_round_trips_through_canonical_encoding() {
+        let frame = SemanticWireFrameV1 { header: sample_header(), payload_bytes: b"hello".to_vec() };
+        let bytes = encode_manifest_v1(&frame, &wide_limits()).unwrap();
+        let decoded: SemanticWireFrameV1 = decode_manifest_v1(&bytes, &wide_limits()).unwrap();
+        assert_eq!(decoded, frame);
+    }
+
+    /// `command_id: Some(_)` round-trips too -- the optional 13th field is
+    /// exercised in both directions, not just its absence.
+    #[test]
+    fn header_with_some_command_id_round_trips() {
+        use common::apex::identity::FixedRandomBytesSourceV1;
+        let mut header = sample_header();
+        header.command_id = Some(CommandId::generate(&mut FixedRandomBytesSourceV1([0x33; 16])).unwrap());
+        let bytes = encode_manifest_v1(&header, &wide_limits()).unwrap();
+        let decoded: NetEnvelopeHeaderV1 = decode_manifest_v1(&bytes, &wide_limits()).unwrap();
+        assert_eq!(decoded, header);
+    }
+
+    /// `causality.snapshot: Some(_)` round-trips too.
+    #[test]
+    fn header_with_snapshot_causality_round_trips() {
+        let mut header = sample_header();
+        header.causality.snapshot =
+            Some(SemanticSnapshotRefV1 { domain: SnapshotDomainId::new(9), epoch: SnapshotEpoch::new(3) });
+        let bytes = encode_manifest_v1(&header, &wide_limits()).unwrap();
+        let decoded: NetEnvelopeHeaderV1 = decode_manifest_v1(&bytes, &wide_limits()).unwrap();
+        assert_eq!(decoded, header);
+    }
+
+    /// Every enum tag field (`direction`/`semantic_stream`/`payload_schema`/
+    /// `payload_encoding`) rejects an out-of-range value rather than
+    /// silently accepting or panicking. Targeted at the four tag fields
+    /// specifically -- NOT a blind whole-blob byte-flip: `profile_root`
+    /// and `payload_digest` are opaque 32-byte hashes with no internal
+    /// validity structure, so ANY byte value is legitimately valid for
+    /// them, and a byte-flip test across the whole encoding would
+    /// (correctly) find "different but still valid" headers there and
+    /// produce a false failure -- confirmed by actually hitting exactly
+    /// that false positive before narrowing this test's scope.
+    #[test]
+    fn unknown_tag_values_are_rejected_not_defaulted() {
+        fn with_field(base: &NetEnvelopeHeaderV1, field: u16, value: ManifestValueV1) -> Vec<u8> {
+            let ManifestValueV1::Map(map) = base.to_manifest_value_v1().unwrap() else { panic!("expected a map") };
+            let new_entries: Vec<_> = map
+                .into_entries()
+                .into_iter()
+                .map(|(id, v)| if id == FieldIdV1::new(field) { (id, value.clone()) } else { (id, v) })
+                .collect();
+            let mutated = CanonicalFieldMapV1::try_from_entries(new_entries).unwrap();
+            encode_manifest_v1(&RawWrapper(ManifestValueV1::Map(mutated)), &wide_limits()).unwrap()
+        }
+
+        let header = sample_header();
+        // direction (field 5): 0 and 3 are both outside {1, 2}.
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 5, ManifestValueV1::Unsigned(0)), &wide_limits()).is_err());
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 5, ManifestValueV1::Unsigned(3)), &wide_limits()).is_err());
+        // semantic_stream (field 6): 0 and 6 are both outside {1..=5}.
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 6, ManifestValueV1::Unsigned(0)), &wide_limits()).is_err());
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 6, ManifestValueV1::Unsigned(6)), &wide_limits()).is_err());
+        // payload_schema (field 9): 0 and 4 are both outside {1, 2, 3}.
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 9, ManifestValueV1::Unsigned(0)), &wide_limits()).is_err());
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 9, ManifestValueV1::Unsigned(4)), &wide_limits()).is_err());
+        // payload_encoding (field 10): 0 and 2 are both outside {1}.
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 10, ManifestValueV1::Unsigned(0)), &wide_limits()).is_err());
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 10, ManifestValueV1::Unsigned(2)), &wide_limits()).is_err());
+
+        // Sanity: the untouched header still decodes fine (proves
+        // with_field's own round-trip plumbing is correct, not just that
+        // every mutation happens to fail for an unrelated reason).
+        let good = encode_manifest_v1(&header, &wide_limits()).unwrap();
+        assert_eq!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&good, &wide_limits()).unwrap(), header);
+    }
+
+    /// Zero sequence is rejected -- the manifest path's own twin of
+    /// `NonZeroU64`'s type-level guarantee (packet's `SEQUENCE-ZERO`
+    /// terminal exists precisely because the wire form has no type-system
+    /// help; this decoder must supply the check by hand).
+    #[test]
+    fn zero_sequence_is_rejected() {
+        // Build a header value tree directly (bypassing NetEnvelopeHeaderV1's
+        // own always-valid constructor) with sequence forced to 0, proving
+        // the DECODER checks this, not just relying on callers never
+        // constructing a zero sequence.
+        let header = sample_header();
+        let value = header.to_manifest_value_v1().unwrap();
+        let ManifestValueV1::Map(map) = value else { panic!("expected a map") };
+        let new_entries: Vec<_> = map
+            .into_entries()
+            .into_iter()
+            .map(|(id, v)| if id == FieldIdV1::new(7) { (id, ManifestValueV1::Unsigned(0)) } else { (id, v) })
+            .collect();
+        let mutated_map = CanonicalFieldMapV1::try_from_entries(new_entries).unwrap();
+        let mutated_value = RawWrapper(ManifestValueV1::Map(mutated_map));
+        let bytes = encode_manifest_v1(&mutated_value, &wide_limits()).unwrap();
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&bytes, &wide_limits()).is_err());
+    }
+
+    /// Test-only pass-through wrapper (same pattern used throughout
+    /// `common/src/apex/`): lets a hostile test build an arbitrary
+    /// manifest value tree without going through the real checked
+    /// constructor.
+    struct RawWrapper(ManifestValueV1);
+    impl ManifestEncodeV1 for RawWrapper {
+        fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> { Ok(self.0.clone()) }
+    }
+
+    /// `APEX-T3.3.17` tests (`cargo test -p veloren-common-net
+    /// envelope::snapshot_monotonicity`). Packet's own test list:
+    /// "Absent/equal/increasing/decreasing/unrelated domain;
+    /// cross-stream reordering remains nonclosure."
+    fn snapshot_state() -> SemanticReceiveStateV1 {
+        SemanticReceiveStateV1::new(ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut common::apex::identity::FixedRandomBytesSourceV1([31; 16])).unwrap(),
+            session_id: SessionId::generate(&mut common::apex::identity::FixedRandomBytesSourceV1([32; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        })
+    }
+
+    fn snap(domain: u32, epoch: u64) -> SemanticSnapshotRefV1 {
+        SemanticSnapshotRefV1 { domain: SnapshotDomainId::new(domain), epoch: SnapshotEpoch::new(epoch) }
+    }
+
+    #[test]
+    fn snapshot_monotonicity_absent_domain_always_fresh() {
+        // "Absent": no producer has ever populated `snapshot` for this
+        // domain (or at all) -- a domain seen for the first time has
+        // nothing to compare against, so it always passes.
+        let state = snapshot_state();
+        assert!(state.snapshot_is_fresh(&snap(1, 0)));
+        assert!(state.snapshot_is_fresh(&snap(1, u64::MAX)));
+    }
+
+    #[test]
+    fn snapshot_monotonicity_equal_is_fresh_not_stale() {
+        // "Equal": the packet says "lower ... reject", not "equal ...
+        // reject" -- non-decreasing, not strictly-increasing.
+        let mut state = snapshot_state();
+        state.commit_snapshot(snap(1, 5));
+        assert!(state.snapshot_is_fresh(&snap(1, 5)));
+    }
+
+    #[test]
+    fn snapshot_monotonicity_increasing_is_fresh() {
+        let mut state = snapshot_state();
+        state.commit_snapshot(snap(1, 5));
+        assert!(state.snapshot_is_fresh(&snap(1, 6)));
+    }
+
+    #[test]
+    fn snapshot_monotonicity_decreasing_is_stale() {
+        let mut state = snapshot_state();
+        state.commit_snapshot(snap(1, 5));
+        assert!(!state.snapshot_is_fresh(&snap(1, 4)));
+    }
+
+    #[test]
+    fn snapshot_monotonicity_unrelated_domain_is_independent() {
+        // A different domain's own watermark never affects this one --
+        // `highest_snapshot` is keyed by domain, so domain 2 seeing
+        // epoch 100 must not make domain 1's epoch 1 look stale.
+        let mut state = snapshot_state();
+        state.commit_snapshot(snap(2, 100));
+        assert!(state.snapshot_is_fresh(&snap(1, 1)));
+    }
+
+    #[test]
+    fn snapshot_monotonicity_commit_only_ever_raises_the_watermark() {
+        // An accepted (fresh) EQUAL epoch must not lower/reset anything
+        // -- `commit_snapshot` itself is a no-op below the current high.
+        let mut state = snapshot_state();
+        state.commit_snapshot(snap(1, 5));
+        state.commit_snapshot(snap(1, 5));
+        assert!(!state.snapshot_is_fresh(&snap(1, 4)), "watermark must still be 5, not reset to 5 again from a lower path");
+    }
+
+    /// "Cross-stream reordering remains nonclosure" (packet's own test
+    /// name): `highest_snapshot` is keyed by domain ONLY (T3.3.01's own
+    /// frozen shape), shared across every semantic stream on this one
+    /// attachment -- proven here by committing a domain's watermark
+    /// while `next_expected_for` on a COMPLETELY DIFFERENT stream never
+    /// moves. This is the negative half of this row's acceptance gate
+    /// ("T3.3 never reports cross-stream checkpoint completeness"):
+    /// accepting a snapshot says nothing about, and never advances, any
+    /// OTHER stream's own independent sequence cursor -- the two axes
+    /// (per-stream sequence, per-domain snapshot epoch) are provably
+    /// orthogonal, not a disguised cross-stream watermark.
+    #[test]
+    fn snapshot_monotonicity_cross_stream_reordering_remains_nonclosure() {
+        let mut state = snapshot_state();
+        let general_seq_before = state.next_expected_for(SemanticStreamIdV1::General);
+        let terrain_seq_before = state.next_expected_for(SemanticStreamIdV1::Terrain);
+
+        state.commit_snapshot(snap(1, 9));
+
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::General), general_seq_before);
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::Terrain), terrain_seq_before);
+        // The domain watermark itself IS shared across streams (by
+        // construction, per T3.3.01's frozen key shape) -- a lower
+        // epoch is stale regardless of which stream would carry it.
+        // Sharing the watermark is not the same as reporting
+        // completeness: nothing here claims stream General having seen
+        // domain 1 means Terrain has "caught up" to anything.
+        assert!(!state.snapshot_is_fresh(&snap(1, 8)));
+    }
+
+    /// `APEX-T3.3.17` "snapshot-domain profiles" tests -- Fable's
+    /// resolution of the row's own ambiguous terms: `UnknownDomain` and
+    /// `CausalityProfileMismatch` are unreachable on real traffic today
+    /// (production declares no domains, every schema optional), so
+    /// these exercise them via test-constructed profiles, never the
+    /// frozen production one.
+
+    #[test]
+    fn production_causality_profile_declares_no_domains_and_is_fully_optional() {
+        let profile = production_causality_profile_v1();
+        assert!(profile.declared_domains.is_empty());
+        assert_eq!(profile.requirements.len(), SemanticPayloadSchemaV1::ALL.len());
+        assert!(profile.requirements.iter().all(|r| !r.producer_tick_required && !r.snapshot_required));
+    }
+
+    #[test]
+    fn production_profile_never_rejects_any_causality_shape() {
+        let profile = production_causality_profile_v1();
+        for schema in SemanticPayloadSchemaV1::ALL {
+            assert!(validate_causality_against_profile_v1(&SemanticCausalityV1 { producer_tick: None, snapshot: None }, schema, &profile).is_ok());
+            assert!(
+                validate_causality_against_profile_v1(&SemanticCausalityV1 { producer_tick: Some(1), snapshot: None }, schema, &profile).is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_domain_rejects_via_test_profile_never_via_production() {
+        // Production: no declared domains, so ANY snapshot's domain is
+        // "unknown" -- but production is never asked to validate a
+        // `Some(snapshot)` on real traffic (no producer sets one).
+        let declared = NetEnvelopeCausalityProfileV1 { declared_domains: vec![SnapshotDomainId::new(1)], requirements: Vec::new() };
+        let causality = SemanticCausalityV1 { producer_tick: None, snapshot: Some(snap(2, 0)) };
+        assert_eq!(
+            validate_causality_against_profile_v1(&causality, SemanticPayloadSchemaV1::ServerGeneral, &declared).unwrap_err(),
+            SemanticEnvelopeRejectV1::UnknownDomain
+        );
+        // The SAME domain, declared -- accepted (structurally; session-
+        // local monotonicity is a separate check, not exercised here).
+        let causality_declared_domain = SemanticCausalityV1 { producer_tick: None, snapshot: Some(snap(1, 0)) };
+        assert!(validate_causality_against_profile_v1(&causality_declared_domain, SemanticPayloadSchemaV1::ServerGeneral, &declared).is_ok());
+    }
+
+    #[test]
+    fn causality_profile_mismatch_rejects_when_a_required_field_is_missing() {
+        let profile = NetEnvelopeCausalityProfileV1 {
+            declared_domains: Vec::new(),
+            requirements: vec![CausalityRequirementV1 {
+                payload_schema: SemanticPayloadSchemaV1::ServerGeneral,
+                producer_tick_required: true,
+                snapshot_required: false,
+            }],
+        };
+        let tickless = SemanticCausalityV1 { producer_tick: None, snapshot: None };
+        assert_eq!(
+            validate_causality_against_profile_v1(&tickless, SemanticPayloadSchemaV1::ServerGeneral, &profile).unwrap_err(),
+            SemanticEnvelopeRejectV1::CausalityProfileMismatch
+        );
+        let ticked = SemanticCausalityV1 { producer_tick: Some(7), snapshot: None };
+        assert!(validate_causality_against_profile_v1(&ticked, SemanticPayloadSchemaV1::ServerGeneral, &profile).is_ok());
+        // A DIFFERENT schema with no declared requirement is unaffected.
+        assert!(validate_causality_against_profile_v1(&tickless, SemanticPayloadSchemaV1::ClientGeneral, &profile).is_ok());
+    }
+
+    /// "Causality profile changes without envelope profile change"
+    /// (Fable's canary framing): proves the requirement-category
+    /// encoding is content-sensitive, mirroring `different_tag_
+    /// orderings_would_produce_different_roots`'s own encode-function-
+    /// level pattern exactly -- since `net_envelope_profile_table_
+    /// bytes_v1` calls this same encoder on the production profile, a
+    /// changed requirement is structurally incapable of leaving
+    /// `profile_root` unchanged.
+    #[test]
+    fn causality_profile_change_is_encoded_so_profile_root_cannot_silently_drift() {
+        let unrequired = [CausalityRequirementV1 {
+            payload_schema: SemanticPayloadSchemaV1::ClientGeneral,
+            producer_tick_required: false,
+            snapshot_required: false,
+        }];
+        let required = [CausalityRequirementV1 {
+            payload_schema: SemanticPayloadSchemaV1::ClientGeneral,
+            producer_tick_required: true,
+            snapshot_required: false,
+        }];
+        let mut buf_a = Vec::new();
+        encode_causality_requirement_category(&mut buf_a, 6, &unrequired);
+        let mut buf_b = Vec::new();
+        encode_causality_requirement_category(&mut buf_b, 6, &required);
+        assert_ne!(buf_a, buf_b);
+
+        // Same proof for the declared-domain category.
+        let mut buf_c = Vec::new();
+        encode_domain_category(&mut buf_c, 5, &[]);
+        let mut buf_d = Vec::new();
+        encode_domain_category(&mut buf_d, 5, &[SnapshotDomainId::new(1)]);
+        assert_ne!(buf_c, buf_d);
+    }
+
+    /// `APEX-T3.3.18` tests (`cargo test -p veloren-common-net
+    /// envelope::terminal_codes`). Packet's own test list: "One per
+    /// terminal, redaction, rejected traffic liveness, application
+    /// error consumed sequence" -- the last two are ingress-pipeline
+    /// concerns, closed on the server/client sides where the pipeline
+    /// actually lives, not here.
+
+    #[test]
+    fn terminal_codes_are_unique_and_the_pinned_count_forces_this_test_to_be_touched_on_growth() {
+        let codes: HashSet<&str> = SemanticProtocolTerminalV1::ALL.iter().map(|t| t.code()).collect();
+        assert_eq!(codes.len(), SemanticProtocolTerminalV1::ALL.len());
+        assert_eq!(SemanticProtocolTerminalV1::ALL.len(), 5, "a new terminal variant needs its own disconnect_reason mapping too");
+    }
+
+    #[test]
+    fn reject_codes_are_unique_and_the_pinned_count_forces_this_test_to_be_touched_on_growth() {
+        let codes: HashSet<&str> = SemanticEnvelopeRejectV1::ALL.iter().map(|r| r.code()).collect();
+        assert_eq!(codes.len(), SemanticEnvelopeRejectV1::ALL.len());
+        assert_eq!(SemanticEnvelopeRejectV1::ALL.len(), 30);
+    }
+
+    /// "One per terminal": every `SemanticProtocolTerminalV1` maps to
+    /// exactly the `DisconnectReason` its own doc comment names.
+    #[test]
+    fn every_terminal_maps_to_its_documented_disconnect_reason() {
+        use common::comp::DisconnectReason as D;
+        assert!(matches!(SemanticProtocolTerminalV1::ResyncRequired.disconnect_reason(), D::NetworkError));
+        assert!(matches!(SemanticProtocolTerminalV1::SequenceExhausted.disconnect_reason(), D::NetworkError));
+        assert!(matches!(SemanticProtocolTerminalV1::ApplicationError.disconnect_reason(), D::NetworkError));
+        assert!(matches!(SemanticProtocolTerminalV1::ProtocolViolation.disconnect_reason(), D::Kicked));
+        assert!(matches!(SemanticProtocolTerminalV1::SendFailedAfterSequenceAllocated.disconnect_reason(), D::NetworkError));
+    }
+
+    #[test]
+    fn metrics_record_and_snapshot_roundtrip() {
+        let metrics = SemanticIngressMetricsV1::new();
+        metrics.record_reject(&SemanticEnvelopeRejectV1::StaleEpoch, SemanticStreamIdV1::General);
+        metrics.record_reject(&SemanticEnvelopeRejectV1::StaleEpoch, SemanticStreamIdV1::General);
+        metrics.record_reject(&SemanticEnvelopeRejectV1::SequenceGap { expected: 3, received: 9 }, SemanticStreamIdV1::Terrain);
+        metrics.record_terminal(SemanticProtocolTerminalV1::ProtocolViolation, SemanticStreamIdV1::General);
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot, vec![
+            ("protocol_violation", SemanticStreamIdV1::General, 1),
+            ("sequence_gap", SemanticStreamIdV1::Terrain, 1),
+            ("stale_epoch", SemanticStreamIdV1::General, 2),
+        ]);
+    }
+
+    /// `SequenceGap`'s own field values (arbitrary `u64`s, unbounded)
+    /// never leak into the metrics key -- two DIFFERENT `expected`/
+    /// `received` pairs collapse into the same one bucket, exactly the
+    /// "field values are per-frame data, never metrics cardinality"
+    /// guarantee `code()`'s own doc comment states.
+    #[test]
+    fn metrics_redaction_collapses_field_carrying_variants_to_one_bucket() {
+        let metrics = SemanticIngressMetricsV1::new();
+        metrics.record_reject(&SemanticEnvelopeRejectV1::SequenceGap { expected: 1, received: 2 }, SemanticStreamIdV1::General);
+        metrics.record_reject(&SemanticEnvelopeRejectV1::SequenceGap { expected: 999, received: 1_000_000 }, SemanticStreamIdV1::General);
+        assert_eq!(metrics.snapshot(), vec![("sequence_gap", SemanticStreamIdV1::General, 2)]);
     }
 }

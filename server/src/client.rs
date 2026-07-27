@@ -126,6 +126,57 @@ impl Client {
         self.semantic_receive_state = Some(SemanticReceiveStateV1::new(binding));
     }
 
+    /// `APEX-T3.3.08`: the ingress validation pipeline's own read/commit
+    /// access to receive-side cursor state -- `None` for `Legacy`
+    /// sessions and while detached, same lifecycle as `reset_semantic_state`.
+    pub(crate) fn semantic_receive_state(&self) -> Option<&SemanticReceiveStateV1> { self.semantic_receive_state.as_ref() }
+
+    pub(crate) fn semantic_receive_state_mut(&mut self) -> Option<&mut SemanticReceiveStateV1> {
+        self.semantic_receive_state.as_mut()
+    }
+
+    /// `APEX-T3.3.13`: a semantic-send producer's read-only access to the
+    /// current intended binding -- `None` for `Legacy` sessions and while
+    /// detached, same lifecycle as `reset_semantic_state`. Producers use
+    /// this only for `SemanticSendIntentV1::recipient`; sequence
+    /// allocation stays `SemanticSendStateV1`'s own cursor fields,
+    /// touched only by `T3.3.15`'s egress owner, never by a producer.
+    pub(crate) fn semantic_send_state(&self) -> Option<&SemanticSendStateV1> { self.semantic_send_state.as_ref() }
+
+    /// `APEX-T3.3.15`: the egress owner's own mutable access to the
+    /// send-side cursor -- the ONLY place `SemanticSendStateV1::
+    /// allocate_sequence` is ever called from, matching the packet's
+    /// own "allocate checked sequence" step (5 of the 9-step egress
+    /// algorithm). No producer touches this; producers only ever read
+    /// the binding via `semantic_send_state()` above.
+    pub(crate) fn semantic_send_state_mut(&mut self) -> Option<&mut SemanticSendStateV1> {
+        self.semantic_send_state.as_mut()
+    }
+
+    /// `APEX-T3.3.15`: sends one already-encoded `SemanticWireFrameV1`'s
+    /// bytes on the physical stream `semantic_stream` maps to -- the
+    /// server-side mirror of `client/src/lib.rs::send_semantic_v1`'s own
+    /// physical-stream match, which the client already established this
+    /// exact routing table for (T3.3.07). `Bootstrap` routes to the
+    /// register stream for structural completeness matching that
+    /// mirror, though nothing enqueues a `Bootstrap`-classified intent
+    /// yet -- `GameSync`'s own semantic envelope is `T3.3.16`'s job, not
+    /// this row's.
+    pub(crate) fn send_semantic_frame(
+        &self,
+        semantic_stream: common_net::msg::envelope::SemanticStreamIdV1,
+        frame_bytes: Vec<u8>,
+    ) -> Result<(), StreamError> {
+        use common_net::msg::envelope::SemanticStreamIdV1;
+        match semantic_stream {
+            SemanticStreamIdV1::Bootstrap => self.register_stream.send(frame_bytes),
+            SemanticStreamIdV1::CharacterScreen => self.character_screen_stream.send(frame_bytes),
+            SemanticStreamIdV1::InGame => self.in_game_stream.send(frame_bytes),
+            SemanticStreamIdV1::General => self.general_stream.send(frame_bytes),
+            SemanticStreamIdV1::Terrain => self.terrain_stream.send(frame_bytes),
+        }
+    }
+
     pub(crate) fn send<M: Into<ServerMsg>>(&self, msg: M) -> Result<(), StreamError> {
         // TODO: hack to avoid locking stream mutex while serializing the message,
         // remove this when the mutexes on the Streams are removed
@@ -263,7 +314,8 @@ impl Client {
                     | ServerGeneral::Disconnect(_)
                     | ServerGeneral::Notification(_)
                     | ServerGeneral::SetPlayerRole(_)
-                    | ServerGeneral::PluginData(_) => {
+                    | ServerGeneral::PluginData(_)
+                    | ServerGeneral::PluginArtifactData(_) => {
                         PreparedMsg::new(3, &g, &self.general_stream_params)
                     },
                 }

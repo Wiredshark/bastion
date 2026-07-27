@@ -1,0 +1,969 @@
+﻿{
+  "case_count": 160,
+  "cases": [
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-UNSUPPORTED-PROFILE",
+      "id": "ENV-001",
+      "mutation": "unsupported envelope profile"
+    },
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-WRONG-BOOT",
+      "id": "ENV-002",
+      "mutation": "wrong server boot id"
+    },
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-WRONG-SESSION",
+      "id": "ENV-003",
+      "mutation": "unknown session id"
+    },
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-STALE-EPOCH",
+      "id": "ENV-004",
+      "mutation": "stale connection epoch"
+    },
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-FUTURE-EPOCH",
+      "id": "ENV-005",
+      "mutation": "future connection epoch"
+    },
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-WRONG-DIRECTION",
+      "id": "ENV-006",
+      "mutation": "wrong direction"
+    },
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-STREAM-ROUTE-MISMATCH",
+      "id": "ENV-007",
+      "mutation": "declared semantic stream differs from physical route"
+    },
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-UNKNOWN-STREAM",
+      "id": "ENV-008",
+      "mutation": "zero semantic stream tag"
+    },
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-UNKNOWN-STREAM",
+      "id": "ENV-009",
+      "mutation": "reserved semantic stream tag"
+    },
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-PREAUTH-ENVELOPED",
+      "id": "ENV-010",
+      "mutation": "pre-auth ServerInfo wrapped as post-auth semantic frame"
+    },
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-PREAUTH-ENVELOPED",
+      "id": "ENV-011",
+      "mutation": "pre-auth ClientType wrapped as post-auth semantic frame"
+    },
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-PREAUTH-ENVELOPED",
+      "id": "ENV-012",
+      "mutation": "pre-auth ClientRegister wrapped as post-auth semantic frame"
+    },
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-LEGACY-AFTER-NEGOTIATION",
+      "id": "ENV-013",
+      "mutation": "raw post-auth ClientGeneral sent after V1 negotiation"
+    },
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-LEGACY-AFTER-NEGOTIATION",
+      "id": "ENV-014",
+      "mutation": "raw post-auth ServerGeneral sent after V1 negotiation"
+    },
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-STALE-EGRESS-BINDING",
+      "id": "ENV-015",
+      "mutation": "session binding changes after intent enqueue but before flush"
+    },
+    {
+      "category": "binding",
+      "expected_terminal": "REJECT-NO-ACTIVE-ATTACHMENT",
+      "id": "ENV-016",
+      "mutation": "detached session receives newly enqueued semantic payload"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-017",
+      "mutation": "first frame sequence is 1"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "REJECT-SEQUENCE-ZERO",
+      "id": "ENV-018",
+      "mutation": "sequence zero"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-019",
+      "mutation": "exact next sequence"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "REJECT-DUPLICATE-SEQUENCE",
+      "id": "ENV-020",
+      "mutation": "duplicate of last accepted sequence"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "REJECT-REPLAY-SEQUENCE",
+      "id": "ENV-021",
+      "mutation": "sequence below next expected by 2"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "REJECT-SEQUENCE-GAP",
+      "id": "ENV-022",
+      "mutation": "sequence one above next expected under zero-gap policy"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "REJECT-SEQUENCE-GAP",
+      "id": "ENV-023",
+      "mutation": "very large future sequence"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "ACCEPT-THEN-EXHAUST",
+      "id": "ENV-024",
+      "mutation": "u64::MAX accepted when expected"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "TERMINAL-SEQUENCE-EXHAUSTED",
+      "id": "ENV-025",
+      "mutation": "send cursor attempts to increment past u64::MAX"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-026",
+      "mutation": "new ConnectionEpoch resets every semantic stream cursor to 1"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-027",
+      "mutation": "one stream sequence advances without changing another stream"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-028",
+      "mutation": "same sequence value on different semantic streams"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-029",
+      "mutation": "same sequence value in opposite directions"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "REJECT-STALE-EPOCH",
+      "id": "ENV-030",
+      "mutation": "same sequence under old epoch after resume"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "REJECT-PAYLOAD-DIGEST",
+      "id": "ENV-031",
+      "mutation": "frame digest invalid; receive cursor must not advance"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "REJECT-PAYLOAD-DECODE",
+      "id": "ENV-032",
+      "mutation": "payload decode invalid; receive cursor must not advance"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "REJECT-STREAM-ROUTE-MISMATCH",
+      "id": "ENV-033",
+      "mutation": "route validation fails; receive cursor must not advance"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "TERMINAL-APPLICATION-ERROR-SEQUENCE-CONSUMED",
+      "id": "ENV-034",
+      "mutation": "valid frame accepted; application handler later errors"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "REJECT-DUPLICATE-SEQUENCE",
+      "id": "ENV-035",
+      "mutation": "retry handler-error frame with same sequence"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "SEND-FAILED-SEQUENCE-NOT-REUSED",
+      "id": "ENV-036",
+      "mutation": "send failure after sequence allocation"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "CANONICAL-OUTBOX-ORDER",
+      "id": "ENV-037",
+      "mutation": "two frames race for same client stream in parallel producer threads"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "CANARY-FAIL-NAIVE-ATOMIC-SEQUENCER",
+      "id": "ENV-038",
+      "mutation": "atomic fetch_add order differs across Rayon schedules"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "CANARY-FAIL-ENQUEUE-ORDER",
+      "id": "ENV-039",
+      "mutation": "sequence allocated at enqueue time instead of canonical flush"
+    },
+    {
+      "category": "sequence",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-040",
+      "mutation": "sequence allocated once after stable sort"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-OUTER-TRAILING-BYTES",
+      "id": "ENV-041",
+      "mutation": "outer frame has trailing bincode bytes"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-PAYLOAD-TRAILING-BYTES",
+      "id": "ENV-042",
+      "mutation": "inner payload has trailing bincode bytes"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-PAYLOAD-LENGTH",
+      "id": "ENV-043",
+      "mutation": "payload_len smaller than actual bytes"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-PAYLOAD-LENGTH",
+      "id": "ENV-044",
+      "mutation": "payload_len larger than actual bytes"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-PAYLOAD-DIGEST",
+      "id": "ENV-045",
+      "mutation": "payload digest differs by one bit"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-PAYLOAD-SCHEMA",
+      "id": "ENV-046",
+      "mutation": "payload schema tag is ClientGeneral but bytes decode as ServerGeneral"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-PAYLOAD-ENCODING",
+      "id": "ENV-047",
+      "mutation": "unknown payload encoding id"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-PAYLOAD-SCHEMA",
+      "id": "ENV-048",
+      "mutation": "unknown payload schema id"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "ACCEPT-SAME-SEMANTIC-IDENTITY",
+      "id": "ENV-049",
+      "mutation": "transport compression changes but canonical payload bytes do not"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "CANARY-FAIL-COMPRESSED-IDENTITY",
+      "id": "ENV-050",
+      "mutation": "payload digest computed over compressed bytes"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "CANARY-FAIL-DOMAIN-SUBSTITUTION",
+      "id": "ENV-051",
+      "mutation": "payload digest omits schema tag"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "CANARY-FAIL-AMBIGUOUS-FRAME",
+      "id": "ENV-052",
+      "mutation": "payload digest omits length framing"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "CANARY-FAIL-UNSTABLE-TAG",
+      "id": "ENV-053",
+      "mutation": "payload digest uses raw Rust enum discriminant"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-PROFILE-DIGEST-MISMATCH",
+      "id": "ENV-054",
+      "mutation": "payload digest domain label changed without profile change"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "ACCEPT-BYTE-IDENTITY-NOT-SEMANTIC-CLAIM",
+      "id": "ENV-055",
+      "mutation": "float payload contains NaN bit pattern and exact bytes are preserved"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "DETECT-DIFFERENT-PAYLOAD-DIGESTS",
+      "id": "ENV-056",
+      "mutation": "HashMap payload serialized in two insertion orders"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "CANARY-FAIL-SEMANTIC-OVERCLAIM",
+      "id": "ENV-057",
+      "mutation": "unordered payload gets declared semantically equivalent from digest alone"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-STREAM-LIMIT",
+      "id": "ENV-058",
+      "mutation": "payload bytes exceed existing stream output limit"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-NONCANONICAL-ENVELOPE",
+      "id": "ENV-059",
+      "mutation": "canonical envelope CBOR uses indefinite length"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-NONCANONICAL-ENVELOPE",
+      "id": "ENV-060",
+      "mutation": "canonical envelope CBOR has duplicate key"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-UNSUPPORTED-PROFILE",
+      "id": "ENV-061",
+      "mutation": "canonical envelope CBOR has unknown required field"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-NONCANONICAL-ENVELOPE",
+      "id": "ENV-062",
+      "mutation": "canonical envelope CBOR keys not deterministic order"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-PAYLOAD-DECODE",
+      "id": "ENV-063",
+      "mutation": "payload bytes are empty for nonempty schema"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-STREAM-ROUTE-MISMATCH",
+      "id": "ENV-064",
+      "mutation": "payload bytes decode but variant is forbidden on declared stream"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "CANARY-FAIL-AUTHENTICATION-OVERCLAIM",
+      "id": "ENV-065",
+      "mutation": "payload digest valid but is presented as message authentication"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "REJECT-COMMAND-ID-UNSUPPORTED",
+      "id": "ENV-066",
+      "mutation": "payload command_id Some before T3.5 is enabled"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-067",
+      "mutation": "payload command_id None under T3.3"
+    },
+    {
+      "category": "payload",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-068",
+      "mutation": "canonical payload digest same across outer bincode compression settings"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-069",
+      "mutation": "server replication carries source_tick equal to observed server Tick"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "ACCEPT-NONAUTHORITATIVE-TICK",
+      "id": "ENV-070",
+      "mutation": "client command carries producer tick for diagnostics only"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "CANARY-FAIL-CLIENT-TICK-AUTHORITY",
+      "id": "ENV-071",
+      "mutation": "client producer tick used as server acceptance chronology"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-072",
+      "mutation": "snapshot_epoch absent before T3.4 producer support"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-073",
+      "mutation": "snapshot_epoch present and equal to highest accepted"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-074",
+      "mutation": "snapshot_epoch present and greater than highest accepted"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "REJECT-STALE-SNAPSHOT",
+      "id": "ENV-075",
+      "mutation": "snapshot_epoch lower than highest accepted on same stream/domain"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "CANARY-FAIL-DOMAIN-MIX",
+      "id": "ENV-076",
+      "mutation": "snapshot epoch compared across unrelated domains"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "CANARY-FAIL-T3.4-OVERCLAIM",
+      "id": "ENV-077",
+      "mutation": "cross-stream snapshot readiness inferred in T3.3"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "ACCEPT-PER-STREAM-T3.4-NONCLOSURE",
+      "id": "ENV-078",
+      "mutation": "terrain stream epoch N arrives before in-game stream epoch N"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "ACCEPT-WITH-DIAGNOSTIC",
+      "id": "ENV-079",
+      "mutation": "source_tick decreases while sequence increases and no snapshot rule requires monotonic tick"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "CANARY-FAIL-STALE-STATE",
+      "id": "ENV-080",
+      "mutation": "source_tick decrease silently rewinds snapshot state"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-081",
+      "mutation": "external/character-screen message has no source tick"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-082",
+      "mutation": "GameSync bootstrap frame has session binding and stream sequence 1"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "REJECT-LEGACY-AFTER-NEGOTIATION",
+      "id": "ENV-083",
+      "mutation": "GameSync sent raw after V1 admission"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "REJECT-STALE-EPOCH",
+      "id": "ENV-084",
+      "mutation": "old bootstrap frame delivered after new connection epoch"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "CANARY-FAIL-NATIVE-WIDTH",
+      "id": "ENV-085",
+      "mutation": "snapshot epoch field uses native usize"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "CANARY-FAIL-WALL-TIME-AUTHORITY",
+      "id": "ENV-086",
+      "mutation": "source tick field uses wall-clock timestamp"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "CANARY-FAIL-TRANSPORT-ID-AUTHORITY",
+      "id": "ENV-087",
+      "mutation": "sequence is derived from transport Mid"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "CANARY-FAIL-TRANSPORT-ID-AUTHORITY",
+      "id": "ENV-088",
+      "mutation": "sequence is derived from transport Cid"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "ACCEPT-SAME-BINDING",
+      "id": "ENV-089",
+      "mutation": "QUIC path migration changes Cid but not connection epoch"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-090",
+      "mutation": "new transport attachment increments epoch and resets sequence"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "REJECT-WRONG-BOOT",
+      "id": "ENV-091",
+      "mutation": "server restart changes boot id"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "REJECT-WRONG-BOOT",
+      "id": "ENV-092",
+      "mutation": "same SessionId reused under different boot id"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "TERMINAL-SNAPSHOT-EPOCH-EXHAUSTED",
+      "id": "ENV-093",
+      "mutation": "snapshot epoch overflows"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "REJECT-CAUSALITY-PROFILE",
+      "id": "ENV-094",
+      "mutation": "source tick absent on entity replication after profile declares it required"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "REJECT-CAUSALITY-PROFILE",
+      "id": "ENV-095",
+      "mutation": "snapshot field present with unknown domain"
+    },
+    {
+      "category": "causality",
+      "expected_terminal": "REJECT-UNSUPPORTED-PROFILE",
+      "id": "ENV-096",
+      "mutation": "causality profile changes without envelope profile change"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "ACCEPT-SAME-SEQUENCE-TAPE",
+      "id": "ENV-097",
+      "mutation": "two region workers enqueue same client messages in opposite completion order"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "ACCEPT-SAME-SEQUENCE-TAPE",
+      "id": "ENV-098",
+      "mutation": "1-worker and 8-worker entity_sync produce same per-client stream tape"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "ACCEPT-SAME-SEQUENCE-TAPE",
+      "id": "ENV-099",
+      "mutation": "different HashMap/Rayon iteration changes enqueue order only"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "TERMINAL-DUPLICATE-ORDER-KEY",
+      "id": "ENV-100",
+      "mutation": "duplicate canonical egress order key"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "TERMINAL-DUPLICATE-ORDER-KEY",
+      "id": "ENV-101",
+      "mutation": "order key lacks stable subject and ties"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "CANARY-FAIL-ARRIVAL-AUTHORITY",
+      "id": "ENV-102",
+      "mutation": "order key falls back to insertion order"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "CANARY-FAIL-ADDRESS-AUTHORITY",
+      "id": "ENV-103",
+      "mutation": "order key falls back to pointer address"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "CANARY-FAIL-UNSTABLE-SUBJECT",
+      "id": "ENV-104",
+      "mutation": "order key falls back to Entity index without generation/UID semantics"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "REJECT-STALE-EGRESS-BINDING",
+      "id": "ENV-105",
+      "mutation": "outbox intent targets stale SessionId"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "REJECT-STALE-EGRESS-BINDING",
+      "id": "ENV-106",
+      "mutation": "outbox intent targets stale ConnectionEpoch"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "REJECT-NO-ACTIVE-ATTACHMENT",
+      "id": "ENV-107",
+      "mutation": "outbox intent has no current client entity"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "ACCEPT-INDEPENDENT-RECIPIENT-SEQUENCES",
+      "id": "ENV-108",
+      "mutation": "one payload fanout to two recipients"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-109",
+      "mutation": "same payload bytes receive different per-recipient envelope digests only at header root"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-110",
+      "mutation": "payload encoded once and reused for fanout"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "CANARY-FAIL-MUTABLE-INTENT",
+      "id": "ENV-111",
+      "mutation": "producer mutates payload object after enqueue"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-112",
+      "mutation": "outbox stores immutable owned payload"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "CANARY-FAIL-INCOMPLETE-OUTBOX",
+      "id": "ENV-113",
+      "mutation": "egress flush occurs before entity_sync producer finishes"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-114",
+      "mutation": "egress flush runs after dispatcher and run_sync_systems producers"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "CANARY-FAIL-DIRECT-SEND-BYPASS",
+      "id": "ENV-115",
+      "mutation": "semantic send bypass remains in migrated ServerGeneral callsite"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "ACCEPT-PREAUTH-EXCEPTION",
+      "id": "ENV-116",
+      "mutation": "pre-auth RegisterAnswer uses direct register stream"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "ACCEPT-PING-EXCEPTION",
+      "id": "ENV-117",
+      "mutation": "Ping uses direct ping stream"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "ACCEPT-TERMINAL-CONTROL",
+      "id": "ENV-118",
+      "mutation": "Disconnect protocol error sent after envelope failure"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "REJECT-STREAM-ROUTE-MISMATCH",
+      "id": "ENV-119",
+      "mutation": "prepared payload is sent on physical stream different from semantic stream map"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "CANARY-FAIL-CROSS-RECIPIENT-COUPLING",
+      "id": "ENV-120",
+      "mutation": "send failure on recipient A changes recipient B sequence allocation"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-121",
+      "mutation": "recipient sort order changes per-recipient sequence tape"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-122",
+      "mutation": "global outbox sort includes recipient SessionId before stream/order key"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "CANARY-FAIL-TICK-ORDER",
+      "id": "ENV-123",
+      "mutation": "intent produced in later tick but sorts before earlier tick"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "REJECT-UNKNOWN-PRODUCER",
+      "id": "ENV-124",
+      "mutation": "producer rank is missing from profile registry"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "REJECT-UNKNOWN-PAYLOAD-RANK",
+      "id": "ENV-125",
+      "mutation": "payload rank is missing from profile registry"
+    },
+    {
+      "category": "server-egress",
+      "expected_terminal": "REJECT-ORDER-KEY-TOO-LARGE",
+      "id": "ENV-126",
+      "mutation": "canonical subject key exceeds bound"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-127",
+      "mutation": "valid client General frame accepted before handler mutation"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "REJECT-STREAM-ROUTE-MISMATCH",
+      "id": "ENV-128",
+      "mutation": "wrong stream ClientGeneral variant reaches handler"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "REJECT-DUPLICATE-SEQUENCE-NO-MUTATION",
+      "id": "ENV-129",
+      "mutation": "duplicate BreakBlock frame"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "REJECT-DUPLICATE-SEQUENCE-NO-MUTATION",
+      "id": "ENV-130",
+      "mutation": "duplicate PlaceBlock frame"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "REJECT-DUPLICATE-SEQUENCE-NO-MUTATION",
+      "id": "ENV-131",
+      "mutation": "duplicate UnlockSkill frame"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "REJECT-DUPLICATE-SEQUENCE-NO-MUTATION",
+      "id": "ENV-132",
+      "mutation": "duplicate ControllerInputs frame"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "REJECT-DUPLICATE-SEQUENCE-NO-MUTATION",
+      "id": "ENV-133",
+      "mutation": "duplicate PlayerPhysics frame"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "REJECT-STALE-EPOCH-NO-EVENT",
+      "id": "ENV-134",
+      "mutation": "stale epoch ControlEvent"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "TERMINAL-RESYNC-REQUIRED",
+      "id": "ENV-135",
+      "mutation": "sequence gap on in-game stream"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "TERMINAL-RESYNC-REQUIRED",
+      "id": "ENV-136",
+      "mutation": "sequence gap on general stream"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "CANARY-FAIL-INVALID-TRAFFIC-LIVENESS",
+      "id": "ENV-137",
+      "mutation": "invalid frame increments last_ping"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-138",
+      "mutation": "accepted frame updates liveness"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "TERMINAL-APPLICATION-ERROR-SEQUENCE-CONSUMED",
+      "id": "ENV-139",
+      "mutation": "handler returns error after sequence commit"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "CANARY-FAIL-REPLAY-AFTER-PARTIAL",
+      "id": "ENV-140",
+      "mutation": "handler error frame is automatically replayed"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "CANARY-FAIL-DEBUG-ONLY-VALIDATION",
+      "id": "ENV-141",
+      "mutation": "release build omits route/state validation"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "CANARY-FAIL-CROSS-SESSION-STATE",
+      "id": "ENV-142",
+      "mutation": "server receive cursor is shared across sessions"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "CANARY-FAIL-CURSOR-NOT-RESET",
+      "id": "ENV-143",
+      "mutation": "client receive cursor survives new connection epoch"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "ACCEPT-T3.4-NONCLOSURE",
+      "id": "ENV-144",
+      "mutation": "client drains general before terrain but per-stream sequence remains valid"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "ACCEPT-NO-SECOND-APPLY",
+      "id": "ENV-145",
+      "mutation": "EntitySync duplicate create reuses existing UID mapping but frame duplicate is rejected first"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "APPLICATION-IGNORED-RECORDED",
+      "id": "ENV-146",
+      "mutation": "CompSync for unknown UID after sequence acceptance"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "REJECT-STALE-EPOCH",
+      "id": "ENV-147",
+      "mutation": "DeleteEntity old epoch after new create"
+    },
+    {
+      "category": "ingress",
+      "expected_terminal": "ACCEPT",
+      "id": "ENV-148",
+      "mutation": "server handler sees only decoded payload after envelope acceptance"
+    },
+    {
+      "category": "rollout",
+      "expected_terminal": "ACCEPT-V1",
+      "id": "ENV-149",
+      "mutation": "client and server negotiate V1 overlap"
+    },
+    {
+      "category": "rollout",
+      "expected_terminal": "REGISTER-INCOMPATIBLE-PROTOCOL",
+      "id": "ENV-150",
+      "mutation": "no common semantic protocol"
+    },
+    {
+      "category": "rollout",
+      "expected_terminal": "ACCEPT-LEGACY-NONCERTIFIED",
+      "id": "ENV-151",
+      "mutation": "legacy permitted in ordinary rollout mode"
+    },
+    {
+      "category": "rollout",
+      "expected_terminal": "REJECT-LEGACY-CERTIFIED",
+      "id": "ENV-152",
+      "mutation": "legacy attempted in certified mode"
+    },
+    {
+      "category": "rollout",
+      "expected_terminal": "ROLLBACK-SAFE",
+      "id": "ENV-153",
+      "mutation": "V1 disabled rollback before persisted semantic state exists"
+    },
+    {
+      "category": "rollout",
+      "expected_terminal": "REJECT-MIXED-PROTOCOL",
+      "id": "ENV-154",
+      "mutation": "mixed V1/legacy traffic on one attachment"
+    },
+    {
+      "category": "rollout",
+      "expected_terminal": "CANARY-FAIL-T3.4-OVERCLAIM",
+      "id": "ENV-155",
+      "mutation": "T3.3 claims cross-stream checkpoint determinism"
+    },
+    {
+      "category": "rollout",
+      "expected_terminal": "CANARY-FAIL-T3.5-OVERCLAIM",
+      "id": "ENV-156",
+      "mutation": "T3.3 claims exactly-once commands"
+    },
+    {
+      "category": "rollout",
+      "expected_terminal": "CANARY-FAIL-T3.6-T5-OVERCLAIM",
+      "id": "ENV-157",
+      "mutation": "T3.3 claims physics rollback correctness"
+    },
+    {
+      "category": "rollout",
+      "expected_terminal": "CANARY-FAIL-CONTENT-IDENTITY-OVERCLAIM",
+      "id": "ENV-158",
+      "mutation": "payload digest compared as semantic content root"
+    },
+    {
+      "category": "rollout",
+      "expected_terminal": "FAIL-DETERMINISM",
+      "id": "ENV-159",
+      "mutation": "per-stream accepted tape differs between worker counts"
+    },
+    {
+      "category": "rollout",
+      "expected_terminal": "MICROSTEP-ACCEPTANCE-PASS",
+      "id": "ENV-160",
+      "mutation": "all required canaries and source-scan bypass checks pass"
+    }
+  ],
+  "generated_at_utc": "2026-07-23T23:01:45Z",
+  "live_commit_basis": "f7b30de6d916930c96f181919160ff7839aa6d5b",
+  "profile": "bastion/net-envelope/v1",
+  "schema": "bastion.apex.t3.3-semantic-net-envelope-canaries/v1"
+}

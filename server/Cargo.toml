@@ -80,3 +80,6 @@ rusqlite = { workspace = true }
 refinery = { version = "0.9", features = ["rusqlite"] }
 
 schnellru = "0.2.1"
+
+[dev-dependencies]
+tempfile = "3.27.0"

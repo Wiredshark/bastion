@@ -586,6 +586,25 @@ struct Args {
     #[arg(long)]
     t3_1_17_scenario: bool,
 
+    /// APEX-T3.3.19: unit/integration/perturbation test ladder for the
+    /// semantic net envelope's server-side ingress pipeline. Injects
+    /// delay (out-of-order delivery), duplicate, gap (skipped
+    /// sequence), and reconnect (fresh attachment) perturbations
+    /// against the REAL `server::sys::msg::validate_semantic_frame_v1`
+    /// (not a reimplementation), records a per-frame JSONL tape and
+    /// `SemanticFrameEvidenceV1` records (T3.3.18's own folded-in
+    /// "emit evidence in harness/diagnostic mode" requirement), and
+    /// asserts per-axis non-vacuity (each injection actually produced
+    /// its expected typed outcome at least once). Client-side ingress
+    /// is NOT duplicated here -- already exhaustively covered by
+    /// `client/src/lib.rs`'s own unit tests (same "avoid a new
+    /// bastion-harness -> veloren-client dependency edge" precedent
+    /// `t3_1_17_scenario` established). Local pin-scale mechanism proof
+    /// only -- the full 160-companion-case / 1-2-8-worker / compression-
+    /// mode campaign is a separate VM execution leg, not run here.
+    #[arg(long)]
+    net_envelope_scenario: bool,
+
     /// bastion determinism fixture ESIM-01 (SPECIFIED_NOT_EVIDENCED): certifies
     /// DET-ESIM-011. Injects a deterministic set of death reports into a
     /// resident NPC's home-site `known_reports`, ticks so the site→NPC share
@@ -1216,6 +1235,69 @@ fn corpus_runner(args: &Args) -> ExitCode {
     }
 }
 
+/// APEX-T1.2.08 helper: recompute the DECLARED asset root's content
+/// identity in `SourceClosureRecordV1::asset_tree_root`'s own shape —
+/// entry paths are `assets/<rel>` exactly as the capture tool's git walk
+/// produces them, digested under `DigestDomainIdV1::SourceClosure`.
+///
+/// Disk recompute cannot see git modes, so entries assume the portable
+/// blob mode `100644` (every live asset is one). A record row with
+/// `100755` would therefore FAIL CLOSED here — the safe direction. This
+/// comparison also requires an eol-faithful checkout (`core.autocrlf`
+/// false — the certified nix lane's default; verified true of the dev
+/// checkout too).
+fn apex_recompute_asset_root() -> Result<String, String> {
+    use common::apex::manifest::{CanonicalPathV1, MachineTextV1};
+    use common::apex::source_closure::{ClosureTreeEntryV1, ClosureTreeV1};
+    use sha2::{Digest, Sha256};
+
+    let declared = std::env::var("VELOREN_ASSETS").map_err(|_| "VELOREN_ASSETS not declared".to_owned())?;
+    let mut root = std::path::PathBuf::from(&declared);
+    if !root.ends_with("assets") {
+        root = root.join("assets");
+    }
+
+    let mut files = Vec::new();
+    let mut stack = vec![root.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).map_err(|e| format!("read_dir {dir:?}: {e}"))? {
+            let entry = entry.map_err(|e| format!("dir entry under {dir:?}: {e}"))?;
+            let path = entry.path();
+            let kind = entry.file_type().map_err(|e| format!("file_type {path:?}: {e}"))?;
+            if kind.is_dir() {
+                stack.push(path);
+            } else if kind.is_file() {
+                files.push(path);
+            } else {
+                return Err(format!("{path:?}: not a regular file or directory (symlink?) — tree hazard"));
+            }
+        }
+    }
+
+    let mut entries = Vec::with_capacity(files.len());
+    for path in files {
+        let rel = path
+            .strip_prefix(&root)
+            .map_err(|_| format!("{path:?} escaped the declared root"))?
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
+        let bytes = std::fs::read(&path).map_err(|e| format!("read {path:?}: {e}"))?;
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        entries.push(ClosureTreeEntryV1 {
+            path: CanonicalPathV1::new(format!("assets/{rel}")).map_err(|e| format!("{rel}: {e}"))?,
+            git_mode: MachineTextV1::new("100644").expect("ASCII"),
+            size_bytes: bytes.len() as u64,
+            sha256: hasher.finalize().into(),
+        });
+    }
+    let tree = ClosureTreeV1::try_new(entries).map_err(|e| format!("tree hazard: {e}"))?;
+    let digest = tree.root().map_err(|e| format!("root digest: {e}"))?;
+    Ok(digest.bytes.as_array().iter().map(|b| format!("{b:02x}")).collect())
+}
+
 fn main() -> ExitCode {
     // Stderr, not stdout: JSON-line consumers stay untouched. BEFORE
     // Args::parse so even a --help/parse-error run identifies its exe.
@@ -1266,6 +1348,48 @@ fn main() -> ExitCode {
             }
         }
         std::env::set_var("BASTION_REQUIRE_EXPLICIT_ASSETS", "1");
+    }
+
+    // APEX-T1.2.08: certified-lane asset BINDING (spec section 4.7 + the
+    // section-7a runtime-startup extension). DET-AST-007 above pins WHICH
+    // root is used; these two checks bind that root to the closed set:
+    // (a) VELOREN_ASSETS_OVERRIDE is a per-file substitution channel
+    //     (common/assets/src/fs.rs) — a development affordance, never a
+    //     certified input. Set at all ⇒ typed block, before any content
+    //     loads.
+    // (b) BASTION_VERIFY_ASSET_ROOT=<64-lower-hex> — the expected
+    //     `asset_tree_root` from an emitted SourceClosureRecordV1. The
+    //     declared root's content identity is recomputed and compared
+    //     BEFORE simulation starts; mismatch is a typed pre-sim terminal
+    //     (the section-7a extension). Opt-in: the certified lane wires it
+    //     from the record; uncertified runs skip the 437 MB hash.
+    if std::env::var_os("VELOREN_ASSETS_OVERRIDE").is_some() {
+        eprintln!(
+            "APEX-T1.2.08: VELOREN_ASSETS_OVERRIDE is set — the override channel is a development \
+             affordance and can substitute arbitrary per-file content; a certified run must not have it"
+        );
+        println!("TERMINAL: T1.2-BLOCK-ASSET-OVERRIDE");
+        return ExitCode::from(41);
+    }
+    if let Ok(expected_hex) = std::env::var("BASTION_VERIFY_ASSET_ROOT") {
+        match apex_recompute_asset_root() {
+            Ok(actual_hex) if actual_hex == expected_hex.to_ascii_lowercase() => {
+                eprintln!("APEX-T1.2.08: asset root verified pre-sim ({actual_hex})");
+            },
+            Ok(actual_hex) => {
+                eprintln!(
+                    "APEX-T1.2.08: declared asset root recomputes to {actual_hex}, but the closure \
+                     record declares {expected_hex} — the runtime is NOT bound to the closed set"
+                );
+                println!("TERMINAL: T1.2-BLOCK-ASSET-ROOT-MISMATCH");
+                return ExitCode::from(42);
+            },
+            Err(e) => {
+                eprintln!("APEX-T1.2.08: asset-root recompute failed: {e}");
+                println!("TERMINAL: T1.2-BLOCK-ASSET-ROOT-MISMATCH");
+                return ExitCode::from(42);
+            },
+        }
     }
 
     // DETRNG (B8 root fix): EVERY harness run is deterministic — rtsim rule
@@ -1489,6 +1613,8 @@ fn main() -> ExitCode {
         per_scenario(&args)
     } else if args.t3_1_17_scenario {
         t3_1_17_scenario(&args)
+    } else if args.net_envelope_scenario {
+        net_envelope_scenario(&args)
     } else if args.esim_scenario {
         esim_scenario(&args)
     } else if args.ait_scenario {
@@ -13623,6 +13749,331 @@ fn t3_1_17_scenario(args: &Args) -> ExitCode {
     } else {
         for f in &failures {
             tracing::error!("t3.1.17: FAIL -- {f}");
+        }
+        ExitCode::FAILURE
+    }
+}
+
+/// `APEX-T3.3.19`: unit/integration/perturbation test ladder for the
+/// server-side semantic-net-envelope ingress pipeline. Injects four
+/// perturbation axes (delay, duplicate, gap, reconnect) against the
+/// REAL `server::sys::msg::validate_semantic_frame_v1` -- not a
+/// reimplementation, same principle `t3_1_17_scenario` established for
+/// `check_register_boot_scope`. Also folds in `T3.3.18`'s own "emit
+/// `SemanticFrameEvidenceV1` in harness/diagnostic mode" requirement
+/// (this scenario running IS that diagnostic mode -- the sink was
+/// deliberately left unbuilt at `.18` so it could be designed against
+/// this, its real consumer, per Fable's ruling). LOCAL PIN-SCALE proof
+/// only: each axis fires its expected typed outcome at least once
+/// (non-vacuity), plus a determinism smoke (the same scenario run
+/// twice must produce byte-identical tapes). The full 160-companion-
+/// case / 1-2-8-worker / compression-mode campaign is a separate VM
+/// execution leg (Opus's side), not run here.
+fn net_envelope_scenario(_args: &Args) -> ExitCode {
+    use common::apex::identity::{FixedRandomBytesSourceV1, ServerBootId, SessionId};
+    use common_net::msg::{
+        ClientGeneral,
+        envelope::{
+            ActiveSessionBindingV1, NetEnvelopeHeaderV1, SemanticCausalityV1, SemanticDirectionV1,
+            SemanticEnvelopeRejectV1, SemanticFrameEvidenceV1, SemanticFrameVerdictV1, SemanticPayloadEncodingV1,
+            SemanticPayloadSchemaV1, SemanticReceiveStateV1, SemanticRouteV1, SemanticStreamIdV1, SemanticWireFrameV1,
+            encode_payload_v1, net_envelope_profile_root_v1, payload_digest_v1,
+        },
+    };
+    use server::sys::msg::validate_semantic_frame_v1;
+    use std::num::NonZeroU64;
+
+    #[derive(serde::Serialize, Clone, PartialEq, Eq, Debug)]
+    struct FrameTapeEntry {
+        axis: &'static str,
+        arrival_index: usize,
+        claimed_sequence: u64,
+        outcome: String,
+    }
+
+    fn manifest_limits() -> common::apex::manifest::ManifestDecodeLimitsV1 {
+        common::apex::manifest::ManifestDecodeLimitsV1 {
+            max_input_bytes: 1 << 20,
+            max_depth: 8,
+            max_nodes: 64,
+            max_array_items: 16,
+            max_map_entries: 16,
+            max_machine_text_bytes: 256,
+            max_byte_string_bytes: 1 << 20,
+        }
+    }
+
+    fn binding(seed: u8) -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([seed; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([seed.wrapping_add(1); 16])).unwrap(),
+            epoch: common::apex::identity::ConnectionEpoch::new(1).unwrap(),
+        }
+    }
+
+    let sample_msg = ClientGeneral::Terminate;
+    let stream = sample_msg.semantic_stream();
+
+    let frame_bytes = |b: ActiveSessionBindingV1, sequence: u64| -> Vec<u8> {
+        let payload_bytes = encode_payload_v1(&sample_msg);
+        let profile_root = net_envelope_profile_root_v1();
+        let payload_schema = sample_msg.payload_schema();
+        let payload_encoding = SemanticPayloadEncodingV1::Bincode2LegacySerde;
+        let payload_digest = payload_digest_v1(profile_root, payload_schema, payload_encoding, &payload_bytes);
+        let header = NetEnvelopeHeaderV1 {
+            profile_root,
+            server_boot_id: b.server_boot_id,
+            session_id: b.session_id,
+            connection_epoch: b.epoch,
+            direction: SemanticDirectionV1::ClientToServer,
+            semantic_stream: stream,
+            sequence: NonZeroU64::new(sequence).unwrap(),
+            causality: SemanticCausalityV1 { producer_tick: None, snapshot: None },
+            payload_schema,
+            payload_encoding,
+            payload_len: payload_bytes.len() as u64,
+            payload_digest,
+            command_id: None,
+        };
+        let frame = SemanticWireFrameV1 { header, payload_bytes };
+        common::apex::manifest::encode_manifest_v1(&frame, &manifest_limits()).unwrap()
+    };
+
+    /// Feeds `arrivals` (claimed sequence numbers, in ARRIVAL order --
+    /// not necessarily numeric order, that's the whole point of the
+    /// perturbation axes) through a FRESH `SemanticReceiveStateV1`
+    /// against the real production validator, recording one tape entry
+    /// and one `SemanticFrameEvidenceV1` record per frame.
+    fn run_axis(
+        axis: &'static str,
+        b: ActiveSessionBindingV1,
+        stream: SemanticStreamIdV1,
+        arrivals: &[u64],
+        frame_bytes: &dyn Fn(ActiveSessionBindingV1, u64) -> Vec<u8>,
+    ) -> (Vec<FrameTapeEntry>, Vec<SemanticFrameEvidenceV1>) {
+        let mut state = SemanticReceiveStateV1::new(b);
+        let mut tape = Vec::new();
+        let mut evidence = Vec::new();
+        for (arrival_index, &claimed_sequence) in arrivals.iter().enumerate() {
+            let raw = frame_bytes(b, claimed_sequence);
+            let outcome = validate_semantic_frame_v1(&raw, &state, stream);
+            let (outcome_str, verdict) = match &outcome {
+                Ok(_) => ("accepted".to_string(), SemanticFrameVerdictV1::Sent),
+                Err(reject) => (format!("rejected:{}", reject.code()), SemanticFrameVerdictV1::Rejected(*reject)),
+            };
+            if outcome.is_ok() {
+                let _ = state.advance_expected(stream);
+            }
+            tape.push(FrameTapeEntry { axis, arrival_index, claimed_sequence, outcome: outcome_str });
+            evidence.push(SemanticFrameEvidenceV1 {
+                tick_observed: 0,
+                direction: SemanticDirectionV1::ClientToServer,
+                stream,
+                session_id: b.session_id,
+                connection_epoch: b.epoch,
+                sequence: claimed_sequence,
+                payload_schema: SemanticPayloadSchemaV1::ClientGeneral,
+                payload_digest: common::apex::digest::DigestBytes32V1::from_array([0; 32]),
+                verdict,
+            });
+        }
+        (tape, evidence)
+    }
+
+    /// Runs the whole 4-axis scenario once, returning the full tape +
+    /// evidence log. A pure function of nothing (no wall-clock, no
+    /// RNG) -- called twice below for the determinism smoke.
+    fn run_scenario_once(
+        stream: SemanticStreamIdV1,
+        frame_bytes: &dyn Fn(ActiveSessionBindingV1, u64) -> Vec<u8>,
+    ) -> (Vec<FrameTapeEntry>, Vec<SemanticFrameEvidenceV1>) {
+        let mut tape = Vec::new();
+        let mut evidence = Vec::new();
+
+        // Duplicate: 1, 2, 2 (again) -- the second `2` must reject.
+        let (t, e) = run_axis("duplicate", binding(1), stream, &[1, 2, 2], frame_bytes);
+        tape.extend(t);
+        evidence.extend(e);
+
+        // Gap: 1, 3 (2 never arrives) -- `3` must reject with the exact
+        // expected/received pair.
+        let (t, e) = run_axis("gap", binding(10), stream, &[1, 3], frame_bytes);
+        tape.extend(t);
+        evidence.extend(e);
+
+        // Delay: 2 arrives before 1 (pure reordering, not a permanent
+        // loss) -- `2` rejects (arrived too early), then `1` arrives
+        // and is accepted normally (self-healing once the actually-
+        // expected frame shows up), distinct from `gap`'s permanent
+        // miss even though both surface as `SequenceGap`.
+        let (t, e) = run_axis("delay", binding(20), stream, &[2, 1], frame_bytes);
+        tape.extend(t);
+        evidence.extend(e);
+
+        // Reconnect: the SAME session/server-boot (a real resume never
+        // changes either), but the epoch advances -- exactly T3.2's
+        // own "higher epoch replaces" resume semantics, not just "some
+        // unrelated binding". A frame still claiming the OLD epoch
+        // rejects (StaleEpoch specifically); a correctly-bound
+        // sequence-1 frame under the NEW epoch is accepted -- proves
+        // the fresh state is a genuinely independent, freshly-reset
+        // cursor, not a carried-over one.
+        let resume_boot = ServerBootId::generate(&mut FixedRandomBytesSourceV1([40; 16])).unwrap();
+        let resume_session = SessionId::generate(&mut FixedRandomBytesSourceV1([41; 16])).unwrap();
+        let stale = ActiveSessionBindingV1 {
+            server_boot_id: resume_boot,
+            session_id: resume_session,
+            epoch: common::apex::identity::ConnectionEpoch::new(1).unwrap(),
+        };
+        let fresh = ActiveSessionBindingV1 {
+            server_boot_id: resume_boot,
+            session_id: resume_session,
+            epoch: common::apex::identity::ConnectionEpoch::new(2).unwrap(),
+        };
+        let mut reconnect_state = SemanticReceiveStateV1::new(fresh);
+        let mut reconnect_tape = Vec::new();
+        let mut reconnect_evidence = Vec::new();
+        for (arrival_index, (b, claimed_sequence, label)) in
+            [(stale, 1u64, "stale_binding"), (fresh, 1u64, "fresh_binding")].into_iter().enumerate()
+        {
+            let raw = frame_bytes(b, claimed_sequence);
+            let outcome = validate_semantic_frame_v1(&raw, &reconnect_state, stream);
+            let (outcome_str, verdict) = match &outcome {
+                Ok(_) => ("accepted".to_string(), SemanticFrameVerdictV1::Sent),
+                Err(reject) => (format!("rejected:{}", reject.code()), SemanticFrameVerdictV1::Rejected(*reject)),
+            };
+            if outcome.is_ok() {
+                let _ = reconnect_state.advance_expected(stream);
+            }
+            reconnect_tape.push(FrameTapeEntry {
+                axis: "reconnect",
+                arrival_index,
+                claimed_sequence,
+                outcome: format!("{label}:{outcome_str}"),
+            });
+            reconnect_evidence.push(SemanticFrameEvidenceV1 {
+                tick_observed: 0,
+                direction: SemanticDirectionV1::ClientToServer,
+                stream,
+                session_id: b.session_id,
+                connection_epoch: b.epoch,
+                sequence: claimed_sequence,
+                payload_schema: SemanticPayloadSchemaV1::ClientGeneral,
+                payload_digest: common::apex::digest::DigestBytes32V1::from_array([0; 32]),
+                verdict,
+            });
+        }
+        tape.extend(reconnect_tape);
+        evidence.extend(reconnect_evidence);
+
+        (tape, evidence)
+    }
+
+    let (tape_a, evidence_a) = run_scenario_once(stream, &frame_bytes);
+
+    let mut failures: Vec<String> = Vec::new();
+
+    // Per-axis non-vacuity: each axis must produce AT LEAST ONE entry
+    // whose outcome is a reject (an injection that never actually
+    // diverges from "always accepted" would be a fake-green mechanism
+    // -- the class this program's own falsifier precedent exists to
+    // catch), except `reconnect`'s second entry, which must ACCEPT
+    // (the fresh attachment is not itself supposed to reject).
+    let axis_has_reject = |axis: &str| tape_a.iter().any(|e| e.axis == axis && e.outcome.starts_with("rejected:"));
+    for axis in ["duplicate", "gap", "delay"] {
+        if !axis_has_reject(axis) {
+            failures.push(format!("axis '{axis}' produced no reject -- injection did not fire (fake-green)"));
+        }
+    }
+    let expected_stale_epoch_outcome = format!("stale_binding:rejected:{}", SemanticEnvelopeRejectV1::StaleEpoch.code());
+    let reconnect_stale_rejects = tape_a.iter().any(|e| e.axis == "reconnect" && e.outcome == expected_stale_epoch_outcome);
+    let reconnect_fresh_accepts =
+        tape_a.iter().any(|e| e.axis == "reconnect" && e.outcome == "fresh_binding:accepted");
+    if !reconnect_stale_rejects {
+        failures.push("reconnect axis: stale binding was not rejected".to_string());
+    }
+    if !reconnect_fresh_accepts {
+        failures.push("reconnect axis: fresh binding's own sequence-1 frame was not accepted".to_string());
+    }
+    // Exact-value spot checks (not just "some reject happened").
+    let duplicate_reject_code = tape_a
+        .iter()
+        .find(|e| e.axis == "duplicate" && e.outcome.starts_with("rejected:"))
+        .map(|e| e.outcome.clone());
+    if duplicate_reject_code.as_deref() != Some(&format!("rejected:{}", SemanticEnvelopeRejectV1::DuplicateSequence.code())) {
+        failures.push(format!("duplicate axis: expected DuplicateSequence, got {duplicate_reject_code:?}"));
+    }
+    let gap_reject_code =
+        tape_a.iter().find(|e| e.axis == "gap" && e.outcome.starts_with("rejected:")).map(|e| e.outcome.clone());
+    let expected_gap_code = format!("rejected:{}", SemanticEnvelopeRejectV1::SequenceGap { expected: 0, received: 0 }.code());
+    if gap_reject_code.as_deref() != Some(&expected_gap_code) {
+        failures.push(format!("gap axis: expected SequenceGap, got {gap_reject_code:?}"));
+    }
+
+    // Determinism smoke (Fable's "quick 1/2-worker + 2-seed smoke",
+    // scoped to this scenario's own determinism -- it has no internal
+    // parallelism to vary by worker count, so the check is "run twice,
+    // byte-identical tapes", the same base guarantee every worker-
+    // count/schedule-seed comparison in this codebase ultimately rests
+    // on): a genuine first-divergence reporter, not just `assert_eq!`.
+    let (tape_b, _evidence_b) = run_scenario_once(stream, &frame_bytes);
+    let mut first_divergence: Option<usize> = None;
+    for (i, (a, b)) in tape_a.iter().zip(tape_b.iter()).enumerate() {
+        if a != b {
+            first_divergence = Some(i);
+            break;
+        }
+    }
+    if tape_a.len() != tape_b.len() && first_divergence.is_none() {
+        first_divergence = Some(tape_a.len().min(tape_b.len()));
+    }
+    if let Some(i) = first_divergence {
+        failures.push(format!(
+            "determinism smoke: tapes diverge at entry {i}: {:?} vs {:?}",
+            tape_a.get(i),
+            tape_b.get(i)
+        ));
+    }
+
+    println!("NETENV19-TAPE: {}", serde_json::to_string(&tape_a).unwrap_or_default());
+    // `T3.3.18`'s folded-in evidence emission: the harness/diagnostic
+    // sink is this JSONL line -- one record per frame, projected from
+    // the REAL `SemanticFrameEvidenceV1` (not a serde impl added to
+    // that shared production type, which was never designed to be
+    // wire-serialized -- its own doc names redaction as a structural
+    // property of its FIELD SHAPE, proven by construction here since
+    // this projection has no field left to smuggle a payload byte
+    // through even if it wanted to).
+    #[derive(serde::Serialize)]
+    struct EvidenceTapeEntry {
+        tick_observed: u64,
+        stream: &'static str,
+        sequence: u64,
+        verdict: String,
+    }
+    for record in &evidence_a {
+        let entry = EvidenceTapeEntry {
+            tick_observed: record.tick_observed,
+            stream: record.stream.label(),
+            sequence: record.sequence,
+            verdict: match record.verdict {
+                SemanticFrameVerdictV1::Sent => "sent".to_string(),
+                SemanticFrameVerdictV1::Rejected(reject) => format!("rejected:{}", reject.code()),
+                SemanticFrameVerdictV1::Terminal(terminal) => format!("terminal:{}", terminal.code()),
+            },
+        };
+        println!("NETENV19-EVIDENCE: {}", serde_json::to_string(&entry).unwrap_or_default());
+    }
+
+    if failures.is_empty() {
+        info!(
+            "net_envelope_scenario (T3.3.19): PASS -- all 4 injection axes fired their expected typed outcome via \
+             the real production validator, tapes deterministic across repeated runs"
+        );
+        ExitCode::SUCCESS
+    } else {
+        for f in &failures {
+            tracing::error!("net_envelope_scenario (T3.3.19): FAIL -- {f}");
         }
         ExitCode::FAILURE
     }
