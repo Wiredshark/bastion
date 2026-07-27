@@ -21,6 +21,16 @@ pub enum DigestDomainIdV1 {
     /// semantic root is a distinct object from `PluginActivationPlan` (ID 3,
     /// `APEX-T2.5`'s resolved *plan*) and must not reuse that domain.
     PluginManifest = 8,
+    // IDs 9 (SubsystemDescriptor) and 10 (CompatibilityProfile) are ALLOCATED
+    // to APEX-T0.5's in-flight build (row-order allocation rule, Fable-blessed;
+    // collision with SourceClosure caught + resolved at spec stage). Sonnet 5's
+    // T0.5 build adds those variants; do not reuse the numbers.
+    /// `APEX-T1.2` (fleet-authored spec, Fable-approved): the source-closure
+    /// record's roots (rust-source tree, asset tree, LFS report). A distinct
+    /// domain from `BuildManifest` (ID 5): the closure is an INPUT that
+    /// `APEX-T1.5`'s manifest embeds — separating inputs from the manifest
+    /// that embeds them is the point of domain separation.
+    SourceClosure = 11,
 }
 
 impl DigestDomainIdV1 {
@@ -39,10 +49,11 @@ impl DigestDomainIdV1 {
             Self::ExecutionEvidence => "bastion/execution-evidence/v1",
             Self::SemanticContent => "bastion/semantic-content/v1",
             Self::PluginManifest => "bastion/plugin-manifest/v1",
+            Self::SourceClosure => "bastion/source-closure/v1",
         }
     }
 
-    pub const ALL: [DigestDomainIdV1; 8] = [
+    pub const ALL: [DigestDomainIdV1; 9] = [
         Self::BootstrapManifest,
         Self::SaveUniverseManifest,
         Self::PluginActivationPlan,
@@ -51,6 +62,7 @@ impl DigestDomainIdV1 {
         Self::ExecutionEvidence,
         Self::SemanticContent,
         Self::PluginManifest,
+        Self::SourceClosure,
     ];
 }
 
@@ -92,5 +104,7 @@ mod tests {
         assert_eq!(DigestDomainIdV1::SemanticContent.label(), "bastion/semantic-content/v1");
         assert_eq!(DigestDomainIdV1::PluginManifest.as_u16(), 8);
         assert_eq!(DigestDomainIdV1::PluginManifest.label(), "bastion/plugin-manifest/v1");
+        assert_eq!(DigestDomainIdV1::SourceClosure.as_u16(), 11);
+        assert_eq!(DigestDomainIdV1::SourceClosure.label(), "bastion/source-closure/v1");
     }
 }
