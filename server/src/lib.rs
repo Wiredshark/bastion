@@ -363,20 +363,38 @@ impl Server {
             }
         }
 
-        // Load plugins before generating the world.
-        #[cfg(feature = "plugins")]
-        let plugin_mgr = PluginMgr::from_asset_or_default();
-
         // APEX-T2.5.11: strict deployment compile (policy-file opt-in).
         // Missing policy file = Legacy (byte-identical live behavior);
         // present-but-invalid policy or a failed compile REFUSES startup
         // (the .04a loader-trap rule: never fall back on a broken policy).
+        // MUST run before any plugin/asset publication: a Deployed state
+        // publishes through the ONE-TIME content generation (T2.5.12),
+        // which refuses to layer on prior legacy publication.
         #[cfg(feature = "plugins")]
         let plugin_deployment = {
             let mut plugins_dir = (*common::assets::ASSETS_PATH).clone();
             plugins_dir.push("plugins");
             crate::plugin_deployment_policy::init_plugin_deployment_v1(data_dir, &plugins_dir)
                 .map_err(|e| Error::Other(format!("plugin deployment init failed (fail-closed): {e:?}")))?
+        };
+
+        // Load plugins before generating the world. Deployed = the server's
+        // own manager is built from the SAME verified deployment artifacts
+        // through the one-time generation; Legacy = the exact old path.
+        #[cfg(feature = "plugins")]
+        let plugin_mgr = match &plugin_deployment {
+            crate::plugin_deployment_policy::PluginDeploymentStateV1::Deployed {
+                summary,
+                server_artifact_paths,
+                ..
+            } => PluginMgr::from_paths_v1(
+                server_artifact_paths.iter().map(|(_, p)| p.clone()).collect(),
+                summary.deployment_root,
+            )
+            .map_err(|e| Error::Other(format!("deployment plugin batch failed (fail-closed): {e:?}")))?,
+            crate::plugin_deployment_policy::PluginDeploymentStateV1::Legacy => {
+                PluginMgr::from_asset_or_default()
+            },
         };
 
         debug!("Generating world, seed: {}", settings.world_seed);

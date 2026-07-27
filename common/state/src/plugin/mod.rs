@@ -497,8 +497,35 @@ impl PreparedPluginBatch {
     /// write lock, then manager construction (canonical DET-AST-024/025 hash
     /// order preserved). Nothing fallible runs after the asset commit.
     fn commit_new_manager(self) -> Result<PluginMgr, PluginError> {
-        common::assets::commit_prepared_plugin_tars(self.asset_sources)
-            .map_err(|_| PluginAssetCommitError::RegistryLockPoisoned)?;
+        common::assets::commit_prepared_plugin_tars(self.asset_sources).map_err(|e| match e {
+            common::assets::CommitRejectedV1::LockPoisoned => PluginAssetCommitError::RegistryLockPoisoned,
+            common::assets::CommitRejectedV1::GenerationSealed => {
+                PluginAssetCommitError::GenerationRefused { detail: "generation sealed: incremental forbidden" }
+            },
+        })?;
+        let mut plugins = self.plugins;
+        canonical_plugin_order(&mut plugins, |p| p.hash);
+        Ok(PluginMgr { plugins })
+    }
+
+    /// APEX-T2.5.12 — publish the batch as THE one-time content generation
+    /// (governed deployment paths): install-exactly-once instead of the
+    /// incremental commit; everything else identical to
+    /// `commit_new_manager`.
+    fn commit_new_manager_as_generation(self, generation_token: [u8; 32]) -> Result<PluginMgr, PluginError> {
+        common::assets::install_plugin_content_generation_v1(generation_token, self.asset_sources).map_err(
+            |e| match e {
+                common::assets::ContentGenerationErrorV1::LockPoisoned => {
+                    PluginAssetCommitError::RegistryLockPoisoned
+                },
+                common::assets::ContentGenerationErrorV1::AlreadyInstalled { .. } => {
+                    PluginAssetCommitError::GenerationRefused { detail: "generation already installed" }
+                },
+                common::assets::ContentGenerationErrorV1::LegacyPublicationPresent { .. } => {
+                    PluginAssetCommitError::GenerationRefused { detail: "legacy publication present" }
+                },
+            },
+        )?;
         let mut plugins = self.plugins;
         canonical_plugin_order(&mut plugins, |p| p.hash);
         Ok(PluginMgr { plugins })
@@ -557,7 +584,7 @@ impl PluginMgr {
     /// one-commit batch as `from_dir`, but ordinals come from the given
     /// order (the deployment plan's canonical ordinals, not discovery),
     /// so no `DiscoveryOrderIsLegacy` warning is attached.
-    pub fn from_paths_v1(paths: Vec<PathBuf>) -> Result<Self, PluginError> {
+    pub fn from_paths_v1(paths: Vec<PathBuf>, generation_token: [u8; 32]) -> Result<Self, PluginError> {
         let inspected = paths
             .into_iter()
             .enumerate()
@@ -567,9 +594,12 @@ impl PluginMgr {
             })
             .collect::<Result<Vec<_>, PluginInspectionError>>()
             .inspect_err(|e| error!(?e, "Failed to inspect deployment plugin"))?;
+        // APEX-T2.5.12: governed deployments publish as THE one-time
+        // content generation (token = the deployment root) — the
+        // incremental path stays sealed off for the rest of the process.
         let mgr = PreparedPluginBatch::prepare(inspected)
             .inspect_err(|e| error!(?e, "Failed to prepare deployment plugin batch"))?
-            .commit_new_manager()?;
+            .commit_new_manager_as_generation(generation_token)?;
         for plugin in &mgr.plugins {
             info!("Loaded deployment plugin '{}' with {} module(s)", plugin.data.name, plugin.modules.len());
         }

@@ -25,10 +25,30 @@ impl PreparedPluginAssetSource {
     pub fn path(&self) -> &std::path::Path { &self.path }
 }
 
-/// APEX-T2.1.09 — typed commit failure: the registry write lock was poisoned;
-/// nothing was appended.
+/// APEX-T2.1.09 / T2.5.12 — typed commit refusal; nothing was appended.
 #[derive(Debug)]
-pub struct CommitLockPoisoned;
+pub enum CommitRejectedV1 {
+    /// The registry write lock was poisoned.
+    LockPoisoned,
+    /// A content generation is installed: incremental publication is
+    /// FORBIDDEN for the rest of the process
+    /// (`INCREMENTAL-PUBLICATION-FORBIDDEN`).
+    GenerationSealed,
+}
+
+/// APEX-T2.5.12 — typed one-time-install refusal.
+#[derive(Debug)]
+pub enum ContentGenerationErrorV1 {
+    /// Exactly-once: a generation is already installed and V1 forbids
+    /// authoritative replacement (`CONTENT-ALREADY-INSTALLED` /
+    /// `HOT-RELOAD-FORBIDDEN` — there is no uninstall API at all).
+    AlreadyInstalled { installed: [u8; 32] },
+    /// Legacy incremental publication already happened in this process;
+    /// a governed generation cannot layer on top of it
+    /// (`CONTENT-PUBLICATION-ABORTED`).
+    LegacyPublicationPresent { sources: usize },
+    LockPoisoned,
+}
 
 /// The location of this asset
 enum AssetSource {
@@ -45,6 +65,11 @@ struct SourceAndContents<'a>(AssetSource, FileContent<'a>);
 pub struct CombinedSource {
     fs: FileSystem,
     plugin_list: RwLock<Vec<PluginEntry>>,
+    /// APEX-T2.5.12: the one-time content-generation seal. `OnceLock` by
+    /// construction: once set there is NO API that clears or replaces it
+    /// — hot reload / authoritative replacement are unrepresentable, not
+    /// merely policed.
+    generation: std::sync::OnceLock<[u8; 32]>,
 }
 
 impl CombinedSource {
@@ -52,6 +77,7 @@ impl CombinedSource {
         Ok(Self {
             fs: FileSystem::new()?,
             plugin_list: RwLock::new(Vec::new()),
+            generation: std::sync::OnceLock::new(),
         })
     }
 }
@@ -211,10 +237,12 @@ impl CombinedCache {
     /// privately and commit once (`commit_prepared_tars`).
     pub fn register_tar(&self, path: PathBuf) -> std::io::Result<()> {
         let prepared = Self::prepare_tar(path)?;
-        self.commit_prepared_tars(vec![prepared])
-            .map_err(|CommitLockPoisoned| {
-                std::io::Error::other("plugin asset registry lock poisoned")
-            })
+        self.commit_prepared_tars(vec![prepared]).map_err(|e| match e {
+            CommitRejectedV1::LockPoisoned => std::io::Error::other("plugin asset registry lock poisoned"),
+            CommitRejectedV1::GenerationSealed => {
+                std::io::Error::other("content generation installed: incremental publication forbidden")
+            },
+        })
     }
 
     /// APEX-T2.1.08 — construct a tar-backed asset source PRIVATELY: this can
@@ -235,14 +263,14 @@ impl CombinedCache {
     pub fn commit_prepared_tars(
         &self,
         prepared: Vec<PreparedPluginAssetSource>,
-    ) -> Result<(), CommitLockPoisoned> {
-        let mut plugin_list = self
-            .0
-            .downcast_raw_source::<CombinedSource>()
-            .unwrap()
-            .plugin_list
-            .write()
-            .map_err(|_| CommitLockPoisoned)?;
+    ) -> Result<(), CommitRejectedV1> {
+        let source = self.0.downcast_raw_source::<CombinedSource>().unwrap();
+        // APEX-T2.5.12: once a generation is installed, the incremental
+        // path is closed for the rest of the process.
+        if source.generation.get().is_some() {
+            return Err(CommitRejectedV1::GenerationSealed);
+        }
+        let mut plugin_list = source.plugin_list.write().map_err(|_| CommitRejectedV1::LockPoisoned)?;
         plugin_list.extend(
             prepared
                 .into_iter()
@@ -261,6 +289,49 @@ impl CombinedCache {
         // T2.1 batch split; T2.4 owns any future canonical activation order.)
         plugin_list.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(())
+    }
+
+    /// APEX-T2.5.12 — install THE content generation: one complete batch,
+    /// exactly once per process, before any governed asset access.
+    /// `generation_token` is an opaque 32-byte identity supplied by the
+    /// caller (the deployment root — this crate deliberately has no digest
+    /// stack and never derives identity itself). Refusals change nothing:
+    /// already-installed, or legacy incremental publication present.
+    /// There is NO replace/uninstall counterpart in V1 by design.
+    pub fn install_content_generation_v1(
+        &self,
+        generation_token: [u8; 32],
+        prepared: Vec<PreparedPluginAssetSource>,
+    ) -> Result<(), ContentGenerationErrorV1> {
+        let source = self.0.downcast_raw_source::<CombinedSource>().unwrap();
+        let mut plugin_list = source.plugin_list.write().map_err(|_| ContentGenerationErrorV1::LockPoisoned)?;
+        if let Some(installed) = source.generation.get() {
+            return Err(ContentGenerationErrorV1::AlreadyInstalled { installed: *installed });
+        }
+        if !plugin_list.is_empty() {
+            return Err(ContentGenerationErrorV1::LegacyPublicationPresent { sources: plugin_list.len() });
+        }
+        plugin_list.extend(
+            prepared
+                .into_iter()
+                .map(|PreparedPluginAssetSource { path, cache }| PluginEntry { path, cache }),
+        );
+        // Same canonical fold order as the incremental path (DET-AST-034).
+        plugin_list.sort_by(|a, b| a.path.cmp(&b.path));
+        // Seal while still holding the write lock: concurrent installs
+        // serialize on the lock and the loser sees AlreadyInstalled above.
+        source
+            .generation
+            .set(generation_token)
+            .expect("seal race impossible under the registry write lock");
+        Ok(())
+    }
+
+    /// The installed generation token, if any (`None` = ungoverned legacy
+    /// process — callers that REQUIRE a governed generation treat this as
+    /// their CONTENT-NOT-INSTALLED terminal).
+    pub fn content_generation_v1(&self) -> Option<[u8; 32]> {
+        self.0.downcast_raw_source::<CombinedSource>().unwrap().generation.get().copied()
     }
 
     /// APEX-T2.1.15 — read-only test seam: the number of published plugin
@@ -409,5 +480,72 @@ mod two_phase_asset_tests {
         let mut sorted = paths.clone();
         sorted.sort();
         assert_eq!(paths, sorted, "plugin_list must stay path-sorted (DET-AST-034)");
+    }
+}
+
+/// `APEX-T2.5.12` — one-time content-generation canaries, same LOCAL-cache
+/// discipline as the T2.1 module above.
+#[cfg(test)]
+mod plugin_content_generation_v1 {
+    use super::*;
+
+    fn temp_tar(name: &str) -> PathBuf {
+        let mut b = tar::Builder::new(Vec::new());
+        let bytes: &[u8] = b"x = 1\n";
+        let mut h = tar::Header::new_gnu();
+        h.set_size(bytes.len() as u64);
+        h.set_mode(0o644);
+        h.set_cksum();
+        b.append_data(&mut h, "plugin.toml", bytes).unwrap();
+        let p = std::env::temp_dir().join(format!(
+            "apex-t2512-{}-{}-{name}.plugin.tar",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        std::fs::write(&p, b.into_inner().unwrap()).unwrap();
+        p
+    }
+
+    fn prepared(name: &str) -> PreparedPluginAssetSource {
+        CombinedCache::prepare_tar(temp_tar(name)).unwrap()
+    }
+
+    #[test]
+    fn generation_installs_exactly_once_and_seals_incremental_paths() {
+        let cache = CombinedCache::new().unwrap();
+        assert_eq!(cache.content_generation_v1(), None, "ungoverned until installed");
+
+        // Install once: complete batch, token readable.
+        cache.install_content_generation_v1([7; 32], vec![prepared("g1a"), prepared("g1b")]).unwrap();
+        assert_eq!(cache.plugin_source_count(), 2);
+        assert_eq!(cache.content_generation_v1(), Some([7; 32]));
+
+        // Second install refused — no replacement API exists in V1.
+        assert!(matches!(
+            cache.install_content_generation_v1([8; 32], vec![prepared("g2")]),
+            Err(ContentGenerationErrorV1::AlreadyInstalled { installed }) if installed == [7; 32]
+        ));
+        assert_eq!(cache.plugin_source_count(), 2, "refusal changes nothing");
+        assert_eq!(cache.content_generation_v1(), Some([7; 32]), "token untouched");
+
+        // Incremental publication is sealed for the rest of the process.
+        assert!(matches!(
+            cache.commit_prepared_tars(vec![prepared("late")]),
+            Err(CommitRejectedV1::GenerationSealed)
+        ));
+        assert!(cache.register_tar(temp_tar("late2")).is_err());
+        assert_eq!(cache.plugin_source_count(), 2, "sealed refusals change nothing");
+    }
+
+    #[test]
+    fn generation_refuses_to_layer_on_legacy_publication() {
+        let cache = CombinedCache::new().unwrap();
+        cache.commit_prepared_tars(vec![prepared("legacy")]).unwrap();
+        assert!(matches!(
+            cache.install_content_generation_v1([7; 32], vec![prepared("gov")]),
+            Err(ContentGenerationErrorV1::LegacyPublicationPresent { sources: 1 })
+        ));
+        assert_eq!(cache.plugin_source_count(), 1);
+        assert_eq!(cache.content_generation_v1(), None);
     }
 }

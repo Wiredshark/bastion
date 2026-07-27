@@ -826,7 +826,7 @@ impl Client {
                     })
                     .collect::<Result<_, _>>()?;
                 Some(
-                    common_state::plugin::PluginMgr::from_paths_v1(paths)
+                    common_state::plugin::PluginMgr::from_paths_v1(paths, summary.deployment_root)
                         .map_err(|e| Error::Other(format!("deployment plugin batch failed: {e:?}")))?,
                 )
             },

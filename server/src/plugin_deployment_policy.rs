@@ -374,6 +374,11 @@ pub enum PluginDeploymentStateV1 {
         summary: PluginDeploymentSummaryV1,
         /// Ordinal-sorted serving set.
         artifacts: Vec<(u32, std::sync::Arc<Vec<u8>>)>,
+        /// Ordinal-sorted on-disk paths of the SAME archives (joined by
+        /// recomputed artifact identity) — the server's own plugin
+        /// manager is built from these through the one-time content
+        /// generation (T2.5.12).
+        server_artifact_paths: Vec<(u32, std::path::PathBuf)>,
     },
 }
 
@@ -472,9 +477,26 @@ pub fn init_plugin_deployment_v1(
         client_activations: compiled.client_plan.activations.clone(),
         client_activation_root: *client_activation_root.bytes.as_array(),
     };
+    // Join each node ordinal back to its on-disk path by RECOMPUTED
+    // artifact identity (same rule as the compile itself: never by
+    // position).
+    let server_artifact_paths: Vec<(u32, std::path::PathBuf)> = compiled
+        .plan
+        .nodes
+        .iter()
+        .map(|n| {
+            paths
+                .iter()
+                .zip(&archives)
+                .find(|(_, bytes)| common::apex::digest::hash_artifact_bytes_v1(bytes) == n.artifact)
+                .map(|(p, _)| (n.ordinal, p.clone()))
+                .ok_or(E::Compile(PluginDeploymentCompileErrorV1::ArtifactUnmatched { ordinal: n.ordinal }))
+        })
+        .collect::<Result<_, _>>()?;
     Ok(PluginDeploymentStateV1::Deployed {
         summary,
         artifacts: compiled.artifacts.into_iter().map(|(o, b)| (o, std::sync::Arc::new(b))).collect(),
+        server_artifact_paths,
     })
 }
 

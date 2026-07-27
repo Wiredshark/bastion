@@ -43,7 +43,7 @@ pub fn register_tar(path: PathBuf) -> std::io::Result<()> { ASSETS.register_tar(
 // prepare ALL sources privately, then publish once; unit tests use a LOCAL
 // `CombinedCache` instead of these).
 #[cfg(feature = "plugins")]
-pub use plugin_cache::{CommitLockPoisoned, PreparedPluginAssetSource};
+pub use plugin_cache::{CommitRejectedV1, ContentGenerationErrorV1, PreparedPluginAssetSource};
 #[cfg(feature = "plugins")]
 pub fn prepare_plugin_tar(path: PathBuf) -> std::io::Result<PreparedPluginAssetSource> {
     plugin_cache::CombinedCache::prepare_tar(path)
@@ -51,9 +51,20 @@ pub fn prepare_plugin_tar(path: PathBuf) -> std::io::Result<PreparedPluginAssetS
 #[cfg(feature = "plugins")]
 pub fn commit_prepared_plugin_tars(
     prepared: Vec<PreparedPluginAssetSource>,
-) -> Result<(), CommitLockPoisoned> {
+) -> Result<(), CommitRejectedV1> {
     ASSETS.commit_prepared_tars(prepared)
 }
+/// APEX-T2.5.12 — install THE process content generation (exactly once,
+/// before any governed asset access; no replace/uninstall exists).
+#[cfg(feature = "plugins")]
+pub fn install_plugin_content_generation_v1(
+    generation_token: [u8; 32],
+    prepared: Vec<PreparedPluginAssetSource>,
+) -> Result<(), ContentGenerationErrorV1> {
+    ASSETS.install_content_generation_v1(generation_token, prepared)
+}
+#[cfg(feature = "plugins")]
+pub fn plugin_content_generation_v1() -> Option<[u8; 32]> { ASSETS.content_generation_v1() }
 
 pub type AssetHandle<T> = &'static assets_manager::Handle<T>;
 pub type AssetReadGuard<T> = assets_manager::AssetReadGuard<'static, T>;

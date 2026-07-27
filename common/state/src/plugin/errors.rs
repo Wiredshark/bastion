@@ -95,6 +95,10 @@ pub enum PluginAssetPreparationError {
 #[derive(Debug)]
 pub enum PluginAssetCommitError {
     RegistryLockPoisoned,
+    /// APEX-T2.5.12: the incremental commit was refused because a content
+    /// generation seals the registry, or the one-time generation install
+    /// itself was refused (already installed / legacy publication present).
+    GenerationRefused { detail: &'static str },
 }
 
 impl From<PluginInspectionError> for PluginError {
