@@ -140,6 +140,29 @@
         packages.bastion-harness = harnessOut.packages.verify;
         checks.bastion-harness-package = harnessOut.packages.verify;
 
+        # APEX-T1.3.02: the LOCAL-REPRO variant — same package, but the
+        # FINAL derivation must execute locally and can never be satisfied
+        # by substitution (packet policy 3: immutable dependency store
+        # reuse stays allowed; only the harness derivation itself is
+        # forced local). Locale/TZ frozen; sccache/incremental are already
+        # neutralized in the base derivation env (T1.1.03-.05).
+        packages.bastion-harness-repro = harnessOut.packages.verify.overrideAttrs (old: {
+          allowSubstitutes = false;
+          preferLocalBuild = true;
+          TZ = "UTC";
+          LC_ALL = "C";
+        });
+
+        # APEX-T1.3.11: known-good/known-bad reproducibility canary
+        # derivations. NEVER dependencies of any production output — they
+        # exist so the smoke's comparator provably detects representative
+        # nondeterminism (stable must pass `--rebuild`; the other three
+        # must each fail it for their own mechanism).
+        packages.apex-repro-canary-stable = (import ./nix/apex/repro-canaries.nix { inherit pkgs; }).stable;
+        packages.apex-repro-canary-time = (import ./nix/apex/repro-canaries.nix { inherit pkgs; }).time;
+        packages.apex-repro-canary-random = (import ./nix/apex/repro-canaries.nix { inherit pkgs; }).random;
+        packages.apex-repro-canary-tmppath = (import ./nix/apex/repro-canaries.nix { inherit pkgs; }).tmppath;
+
         devShells.default = config.nci.outputs."veloren".devShell.overrideAttrs (old: {
           VELOREN_ASSETS = "";
           shellHook = ''
