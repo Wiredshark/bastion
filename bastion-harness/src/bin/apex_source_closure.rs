@@ -191,6 +191,11 @@ struct BlobFacts {
     /// sha256 of the blob bytes (for LFS paths, of the POINTER text).
     sha256: [u8; 32],
     size_bytes: u64,
+    /// Whether the blob STARTS WITH the LFS pointer version line — the
+    /// content-based LFS classification (see the premise delta at the
+    /// `main` LFS section: attr-classification alone is falsified by the
+    /// live tree).
+    is_lfs_pointer_prefix: bool,
     /// Raw bytes retained only for paths the caller flagged (pins, LFS
     /// pointers) — 12k blobs would not all fit in patience, let alone RAM.
     bytes: Option<Vec<u8>>,
@@ -236,8 +241,15 @@ fn batch_blob_facts(
         let mut hasher = Sha256::new();
         hasher.update(&bytes);
         let sha256: [u8; 32] = hasher.finalize().into();
-        let keep = keep_bytes_for.contains(&entry.path);
-        facts.insert(entry.path.clone(), BlobFacts { sha256, size_bytes: size, bytes: keep.then_some(bytes) });
+        let is_lfs_pointer_prefix = bytes.starts_with(LFS_POINTER_VERSION_LINE.as_bytes());
+        // Pointer blobs are ~130 bytes; retain them even when the caller
+        // didn't flag the path so content-classified LFS files (pointer
+        // without attr) can still be parsed + verified.
+        let keep = keep_bytes_for.contains(&entry.path) || (is_lfs_pointer_prefix && size < 4096);
+        facts.insert(
+            entry.path.clone(),
+            BlobFacts { sha256, size_bytes: size, is_lfs_pointer_prefix, bytes: keep.then_some(bytes) },
+        );
     }
     writer.join().expect("cat-file writer thread");
     let _ = child.wait();
@@ -499,10 +511,23 @@ fn main() {
 
     // 5. LFS verification pass (T1.2.04): parse every pointer, prove the
     //    working tree holds the resolved object.
-    let mut lfs_report_entries = Vec::with_capacity(lfs_paths.len());
+    //
+    //    PREMISE DELTA (live-tree falsification, first live run): the spec
+    //    assumed attr-classified ⇒ pointer blob. The real tree has many
+    //    attr-LFS paths (e.g. `assets/common/voxel/**.vox`,
+    //    `assets/common/canary.canary`) whose tracked blob is a REGULAR
+    //    blob — committed un-migrated, upstream-inherited. Those files'
+    //    content is fully pinned by the commit tree itself, so integrity
+    //    is intact; the closure therefore classifies LFS BY BLOB CONTENT
+    //    (blob parses as a pointer ⇒ LFS, verified on disk) and reports
+    //    both mismatch directions in the evidence sidecar rather than
+    //    blocking on upstream's partial migration.
+    let pointer_paths: Vec<&String> =
+        all_paths.iter().filter(|p| facts[p.as_str()].is_lfs_pointer_prefix).collect();
+    let mut lfs_report_entries = Vec::with_capacity(pointer_paths.len());
     let mut lfs_resolved: BTreeMap<&str, LfsPointer> = BTreeMap::new();
-    for path in &lfs_paths {
-        let f = &facts[path];
+    for path in &pointer_paths {
+        let f = &facts[path.as_str()];
         let pointer_bytes = f.bytes.as_deref().expect("LFS pointer bytes retained");
         let pointer = parse_lfs_pointer(path, pointer_bytes);
         verify_lfs_on_disk(&repo_root, path, &pointer);
@@ -513,9 +538,17 @@ fn main() {
             oid_sha256: pointer.oid_sha256,
             size_bytes: pointer.size_bytes,
         });
-        lfs_resolved.insert(path, pointer);
+        lfs_resolved.insert(path.as_str(), pointer);
     }
-    println!("lfs: {} pointers parsed + disk-verified", lfs_report_entries.len());
+    let attr_lfs_not_pointer: Vec<&String> =
+        lfs_paths.iter().filter(|p| !facts[p.as_str()].is_lfs_pointer_prefix).collect();
+    let pointer_not_attr: Vec<&&String> = pointer_paths.iter().filter(|p| !lfs_paths.contains(p.as_str())).collect();
+    println!(
+        "lfs: {} pointers parsed + disk-verified; {} attr-classified-but-unmigrated (regular blobs, tree-pinned); {} pointer-without-attr",
+        lfs_report_entries.len(),
+        attr_lfs_not_pointer.len(),
+        pointer_not_attr.len()
+    );
 
     // 6. Closure scopes. Tree entries carry RESOLVED content identity for
     //    LFS files (verified pointer oid/size) and blob identity otherwise.
@@ -645,6 +678,12 @@ fn main() {
         "host_os": std::env::consts::OS,
         "host_arch": std::env::consts::ARCH,
         "captured_unix_time": started.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+        // Premise-delta visibility: attr/blob LFS classification mismatches
+        // (content identity of these files is pinned by the commit tree —
+        // this list is audit surface, not authority).
+        "lfs_attr_classified_count": lfs_paths.len(),
+        "lfs_attr_classified_but_unmigrated": attr_lfs_not_pointer.iter().map(|p| p.as_str()).collect::<Vec<_>>(),
+        "lfs_pointer_without_attr": pointer_not_attr.iter().map(|p| p.as_str()).collect::<Vec<_>>(),
     });
     write_atomic(
         &out_dir,
