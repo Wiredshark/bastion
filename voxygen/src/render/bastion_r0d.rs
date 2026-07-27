@@ -771,6 +771,8 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "presentation_resource_set_sha256"
         | "presentation_semantic_tape_sha256"
         | "figure_gpu_package_sha256"
+        | "figure_gpu_material_table_sha256"
+        | "figure_gpu_material_shader_interface_sha256"
         | "figure_gpu_assignment_sha256"
         | "figure_gpu_staged_sha256"
         | "figure_gpu_plan_sha256"
@@ -804,6 +806,8 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "figure_gpu_upload_windows"
         | "figure_gpu_upload_operations"
         | "figure_gpu_upload_bytes"
+        | "figure_gpu_material_entry_count"
+        | "figure_gpu_material_legacy_fallback_count"
         | "figure_batch_visible_figures"
         | "figure_batch_count"
         | "figure_batch_fallback_count"
@@ -1303,6 +1307,8 @@ fn request_one_capture(
                                         "presentation_resource_set_sha256={}\n",
                                         "presentation_semantic_tape_sha256={}\n",
                                         "figure_gpu_package_sha256={}\n",
+                                        "figure_gpu_material_table_sha256={}\n",
+                                        "figure_gpu_material_shader_interface_sha256={}\n",
                                         "figure_gpu_assignment_sha256={}\n",
                                         "figure_gpu_staged_sha256={}\n",
                                         "figure_gpu_plan_sha256={}\n",
@@ -1313,6 +1319,8 @@ fn request_one_capture(
                                         "figure_gpu_upload_windows={}\n",
                                         "figure_gpu_upload_operations={}\n",
                                         "figure_gpu_upload_bytes={}\n",
+                                        "figure_gpu_material_entry_count={}\n",
+                                        "figure_gpu_material_legacy_fallback_count={}\n",
                                         "figure_batch_visible_figures={}\n",
                                         "figure_batch_count={}\n",
                                         "figure_batch_fallback_count={}\n",
@@ -1401,6 +1409,8 @@ fn request_one_capture(
                                     hex_digest(&context.presentation.resource_set_digest),
                                     hex_digest(&context.presentation.semantic_tape_root),
                                     hex_digest(&figure_gpu.package_digest),
+                                    hex_digest(&figure_gpu.material_table_digest),
+                                    hex_digest(&figure_gpu.material_shader_interface_digest),
                                     hex_digest(&figure_gpu.assignment_digest),
                                     hex_digest(&figure_gpu.staged_digest),
                                     hex_digest(&figure_gpu.plan_digest),
@@ -1411,6 +1421,8 @@ fn request_one_capture(
                                     figure_gpu.upload_windows,
                                     figure_gpu.upload_operations,
                                     figure_gpu.upload_bytes,
+                                    figure_gpu.material_entry_count,
+                                    figure_gpu.material_legacy_fallback_count,
                                     figure_batch.visible_figures,
                                     figure_batch.batch_count,
                                     figure_batch.fallback_count,
@@ -1965,6 +1977,10 @@ mod tests {
             Some(CaptureMetadataFieldClassV1::Authority)
         );
         assert_eq!(
+            capture_metadata_field_class_v1("figure_gpu_material_table_sha256"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
             capture_metadata_field_class_v1("r1d_tier_decision_root_sha256"),
             Some(CaptureMetadataFieldClassV1::Authority)
         );
@@ -1974,6 +1990,10 @@ mod tests {
         );
         assert_eq!(
             capture_metadata_field_class_v1("figure_gpu_upload_bytes"),
+            Some(CaptureMetadataFieldClassV1::Evidence)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("figure_gpu_material_entry_count"),
             Some(CaptureMetadataFieldClassV1::Evidence)
         );
         assert_eq!(
