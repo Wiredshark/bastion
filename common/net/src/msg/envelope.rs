@@ -36,7 +36,10 @@ use common::apex::digest::{
     hash_artifact_bytes_v1,
 };
 use common::apex::identity::{CommandId, ConnectionEpoch, ServerBootId, SessionId, SnapshotEpoch};
-use common::apex::manifest::MachineTextV1;
+use common::apex::manifest::{
+    CanonicalFieldMapV1, FieldIdV1, MachineTextV1, ManifestCodecErrorCodeV1, ManifestCodecErrorV1, ManifestDecodeV1,
+    ManifestEncodeV1, ManifestErrorV1, ManifestSchemaErrorV1, ManifestValueV1, StructFieldsV1,
+};
 use common::apex::scalar::SchemaVersion;
 use common::apex::subsystem::{SubsystemDescriptorV1, SubsystemSlotIdV1};
 
@@ -242,6 +245,199 @@ pub struct NetEnvelopeHeaderV1 {
 pub struct SemanticWireFrameV1 {
     pub header: NetEnvelopeHeaderV1,
     pub payload_bytes: Vec<u8>,
+}
+
+// `T3.3.07`: canonical `BastionManifestEncodingV1` (T0.2) encoding for the
+// envelope frame -- packet section 7.3: "SemanticWireFrameV1 is encoded
+// with the already-required deterministic T0.2 codec". Built on
+// `T0.4.6`'s tagged opaque-identity codec (ServerBootId/SessionId/
+// ConnectionEpoch/CommandId) and reuses `DigestBytes32V1::try_from_slice`
+// (T0.3) for the two digest fields -- no bespoke byte handling here,
+// every primitive is the shared, already-tested one.
+
+fn digest32_to_value(d: &DigestBytes32V1) -> ManifestValueV1 { ManifestValueV1::Bytes(d.as_array().to_vec()) }
+
+fn digest32_from_value(value: ManifestValueV1) -> Result<DigestBytes32V1, ManifestSchemaErrorV1> {
+    let ManifestValueV1::Bytes(b) = value else {
+        return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("expected a 32-byte bytestring"));
+    };
+    DigestBytes32V1::try_from_slice(&b).map_err(|_| ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("digest must be exactly 32 bytes"))
+}
+
+impl ManifestEncodeV1 for SnapshotDomainId {
+    fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> { Ok(ManifestValueV1::Unsigned(self.0 as u64)) }
+}
+
+impl ManifestDecodeV1 for SnapshotDomainId {
+    fn from_manifest_value_v1(value: ManifestValueV1) -> Result<Self, ManifestSchemaErrorV1> {
+        match value {
+            ManifestValueV1::Unsigned(v) if v <= u32::MAX as u64 => Ok(Self(v as u32)),
+            _ => Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+        }
+    }
+}
+
+impl ManifestEncodeV1 for SemanticSnapshotRefV1 {
+    fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> {
+        let map = CanonicalFieldMapV1::try_from_entries(vec![
+            (FieldIdV1::new(1), self.domain.to_manifest_value_v1()?),
+            (FieldIdV1::new(2), self.epoch.to_manifest_value_v1()?),
+        ])?;
+        Ok(ManifestValueV1::Map(map))
+    }
+}
+
+impl ManifestDecodeV1 for SemanticSnapshotRefV1 {
+    fn from_manifest_value_v1(value: ManifestValueV1) -> Result<Self, ManifestSchemaErrorV1> {
+        let ManifestValueV1::Map(map) = value else { return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)) };
+        let mut fields = StructFieldsV1::new(map);
+        let domain = SnapshotDomainId::from_manifest_value_v1(fields.take_required(FieldIdV1::new(1))?)?;
+        let epoch = SnapshotEpoch::from_manifest_value_v1(fields.take_required(FieldIdV1::new(2))?)?;
+        fields.finish_no_unknown()?;
+        Ok(Self { domain, epoch })
+    }
+}
+
+impl ManifestEncodeV1 for SemanticCausalityV1 {
+    fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> {
+        let mut entries = Vec::new();
+        if let Some(tick) = self.producer_tick {
+            entries.push((FieldIdV1::new(1), ManifestValueV1::Unsigned(tick)));
+        }
+        if let Some(snapshot) = &self.snapshot {
+            entries.push((FieldIdV1::new(2), snapshot.to_manifest_value_v1()?));
+        }
+        let map = CanonicalFieldMapV1::try_from_entries(entries)?;
+        Ok(ManifestValueV1::Map(map))
+    }
+}
+
+impl ManifestDecodeV1 for SemanticCausalityV1 {
+    fn from_manifest_value_v1(value: ManifestValueV1) -> Result<Self, ManifestSchemaErrorV1> {
+        let ManifestValueV1::Map(map) = value else { return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)) };
+        let mut fields = StructFieldsV1::new(map);
+        let producer_tick = match fields.take_optional(FieldIdV1::new(1))? {
+            Some(ManifestValueV1::Unsigned(v)) => Some(v),
+            Some(_) => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+            None => None,
+        };
+        let snapshot = match fields.take_optional(FieldIdV1::new(2))? {
+            Some(v) => Some(SemanticSnapshotRefV1::from_manifest_value_v1(v)?),
+            None => None,
+        };
+        fields.finish_no_unknown()?;
+        Ok(Self { producer_tick, snapshot })
+    }
+}
+
+impl ManifestEncodeV1 for NetEnvelopeHeaderV1 {
+    fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> {
+        let mut entries = vec![
+            (FieldIdV1::new(1), digest32_to_value(&self.profile_root)),
+            (FieldIdV1::new(2), self.server_boot_id.to_manifest_value_v1()?),
+            (FieldIdV1::new(3), self.session_id.to_manifest_value_v1()?),
+            (FieldIdV1::new(4), self.connection_epoch.to_manifest_value_v1()?),
+            (FieldIdV1::new(5), ManifestValueV1::Unsigned(self.direction.as_u8() as u64)),
+            (FieldIdV1::new(6), ManifestValueV1::Unsigned(self.semantic_stream.as_u8() as u64)),
+            (FieldIdV1::new(7), ManifestValueV1::Unsigned(self.sequence.get())),
+            (FieldIdV1::new(8), self.causality.to_manifest_value_v1()?),
+            (FieldIdV1::new(9), ManifestValueV1::Unsigned(self.payload_schema.as_u16() as u64)),
+            (FieldIdV1::new(10), ManifestValueV1::Unsigned(self.payload_encoding.as_u8() as u64)),
+            (FieldIdV1::new(11), ManifestValueV1::Unsigned(self.payload_len)),
+            (FieldIdV1::new(12), digest32_to_value(&self.payload_digest)),
+        ];
+        if let Some(command_id) = &self.command_id {
+            entries.push((FieldIdV1::new(13), command_id.to_manifest_value_v1()?));
+        }
+        let map = CanonicalFieldMapV1::try_from_entries(entries)?;
+        Ok(ManifestValueV1::Map(map))
+    }
+}
+
+impl ManifestDecodeV1 for NetEnvelopeHeaderV1 {
+    fn from_manifest_value_v1(value: ManifestValueV1) -> Result<Self, ManifestSchemaErrorV1> {
+        let ManifestValueV1::Map(map) = value else { return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)) };
+        let mut fields = StructFieldsV1::new(map);
+        let profile_root = digest32_from_value(fields.take_required(FieldIdV1::new(1))?)?;
+        let server_boot_id = ServerBootId::from_manifest_value_v1(fields.take_required(FieldIdV1::new(2))?)?;
+        let session_id = SessionId::from_manifest_value_v1(fields.take_required(FieldIdV1::new(3))?)?;
+        let connection_epoch = ConnectionEpoch::from_manifest_value_v1(fields.take_required(FieldIdV1::new(4))?)?;
+        let direction = match fields.take_required(FieldIdV1::new(5))? {
+            ManifestValueV1::Unsigned(v) if v <= u8::MAX as u64 => SemanticDirectionV1::try_from_u8(v as u8)
+                .ok_or_else(|| ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("unknown direction tag"))?,
+            _ => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+        };
+        let semantic_stream = match fields.take_required(FieldIdV1::new(6))? {
+            ManifestValueV1::Unsigned(v) if v <= u8::MAX as u64 => SemanticStreamIdV1::try_from_u8(v as u8)
+                .ok_or_else(|| ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("unknown stream tag"))?,
+            _ => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+        };
+        let sequence = match fields.take_required(FieldIdV1::new(7))? {
+            ManifestValueV1::Unsigned(v) => {
+                NonZeroU64::new(v).ok_or_else(|| ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("sequence zero"))?
+            },
+            _ => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+        };
+        let causality = SemanticCausalityV1::from_manifest_value_v1(fields.take_required(FieldIdV1::new(8))?)?;
+        let payload_schema = match fields.take_required(FieldIdV1::new(9))? {
+            ManifestValueV1::Unsigned(v) if v <= u16::MAX as u64 => SemanticPayloadSchemaV1::try_from_u16(v as u16)
+                .ok_or_else(|| ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("unknown payload schema tag"))?,
+            _ => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+        };
+        let payload_encoding = match fields.take_required(FieldIdV1::new(10))? {
+            ManifestValueV1::Unsigned(v) if v <= u8::MAX as u64 => SemanticPayloadEncodingV1::try_from_u8(v as u8)
+                .ok_or_else(|| ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("unknown payload encoding tag"))?,
+            _ => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+        };
+        let payload_len = match fields.take_required(FieldIdV1::new(11))? {
+            ManifestValueV1::Unsigned(v) => v,
+            _ => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+        };
+        let payload_digest = digest32_from_value(fields.take_required(FieldIdV1::new(12))?)?;
+        let command_id = match fields.take_optional(FieldIdV1::new(13))? {
+            Some(v) => Some(CommandId::from_manifest_value_v1(v)?),
+            None => None,
+        };
+        fields.finish_no_unknown()?;
+        Ok(Self {
+            profile_root,
+            server_boot_id,
+            session_id,
+            connection_epoch,
+            direction,
+            semantic_stream,
+            sequence,
+            causality,
+            payload_schema,
+            payload_encoding,
+            payload_len,
+            payload_digest,
+            command_id,
+        })
+    }
+}
+
+impl ManifestEncodeV1 for SemanticWireFrameV1 {
+    fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> {
+        let map = CanonicalFieldMapV1::try_from_entries(vec![
+            (FieldIdV1::new(1), self.header.to_manifest_value_v1()?),
+            (FieldIdV1::new(2), ManifestValueV1::Bytes(self.payload_bytes.clone())),
+        ])?;
+        Ok(ManifestValueV1::Map(map))
+    }
+}
+
+impl ManifestDecodeV1 for SemanticWireFrameV1 {
+    fn from_manifest_value_v1(value: ManifestValueV1) -> Result<Self, ManifestSchemaErrorV1> {
+        let ManifestValueV1::Map(map) = value else { return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)) };
+        let mut fields = StructFieldsV1::new(map);
+        let header = NetEnvelopeHeaderV1::from_manifest_value_v1(fields.take_required(FieldIdV1::new(1))?)?;
+        let ManifestValueV1::Bytes(payload_bytes) = fields.take_required(FieldIdV1::new(2))? else {
+            return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("expected a bytestring payload"));
+        };
+        fields.finish_no_unknown()?;
+        Ok(Self { header, payload_bytes })
+    }
 }
 
 /// `T3.3.06`: the boot/session/epoch triple every semantic cursor is
@@ -620,6 +816,8 @@ pub fn net_envelope_profile_root_v1() -> DigestBytes32V1 {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+
+    use common::apex::manifest::{ManifestDecodeLimitsV1, decode_manifest_v1, encode_manifest_v1};
 
     use super::*;
 
@@ -1014,6 +1212,7 @@ mod tests {
         // shared storage between two `SemanticSendStateV1` values a
         // caller could accidentally read stale data through.
         let mut slot = Some(a);
+        assert_eq!(slot.as_ref().unwrap().binding().epoch, a.binding().epoch);
         slot = Some(b);
         assert_eq!(slot.unwrap().binding().epoch, b.binding().epoch);
     }
@@ -1037,5 +1236,164 @@ mod tests {
         for i in &indices {
             assert!(*i < 5);
         }
+    }
+
+    // T3.3.07: `NetEnvelopeHeaderV1`/`SemanticWireFrameV1`'s canonical
+    // `BastionManifestEncodingV1` (T0.2) encoding -- packet section 7.3's
+    // "encoded with the already-required deterministic T0.2 codec"
+    // (`T0.4.6`'s tagged opaque-identity codec is what makes this
+    // possible; those fields round-trip through their own, separately
+    // tested, manifest codec).
+
+    fn wide_limits() -> ManifestDecodeLimitsV1 {
+        ManifestDecodeLimitsV1 {
+            max_input_bytes: 4096,
+            max_depth: 8,
+            max_nodes: 64,
+            max_array_items: 16,
+            max_map_entries: 16,
+            max_machine_text_bytes: 256,
+            max_byte_string_bytes: 256,
+        }
+    }
+
+    fn sample_header() -> NetEnvelopeHeaderV1 {
+        use common::apex::identity::FixedRandomBytesSourceV1;
+        NetEnvelopeHeaderV1 {
+            profile_root: net_envelope_profile_root_v1(),
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([0x11; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([0x22; 16])).unwrap(),
+            connection_epoch: ConnectionEpoch::new(7).unwrap(),
+            direction: SemanticDirectionV1::ClientToServer,
+            semantic_stream: SemanticStreamIdV1::General,
+            sequence: NonZeroU64::new(3).unwrap(),
+            causality: SemanticCausalityV1 { producer_tick: Some(42), snapshot: None },
+            payload_schema: SemanticPayloadSchemaV1::ClientGeneral,
+            payload_encoding: SemanticPayloadEncodingV1::Bincode2LegacySerde,
+            payload_len: 5,
+            payload_digest: payload_digest_v1(
+                net_envelope_profile_root_v1(),
+                SemanticPayloadSchemaV1::ClientGeneral,
+                SemanticPayloadEncodingV1::Bincode2LegacySerde,
+                b"hello",
+            ),
+            command_id: None,
+        }
+    }
+
+    #[test]
+    fn header_round_trips_through_canonical_encoding() {
+        let header = sample_header();
+        let bytes = encode_manifest_v1(&header, &wide_limits()).unwrap();
+        let decoded: NetEnvelopeHeaderV1 = decode_manifest_v1(&bytes, &wide_limits()).unwrap();
+        assert_eq!(decoded, header);
+    }
+
+    #[test]
+    fn frame_round_trips_through_canonical_encoding() {
+        let frame = SemanticWireFrameV1 { header: sample_header(), payload_bytes: b"hello".to_vec() };
+        let bytes = encode_manifest_v1(&frame, &wide_limits()).unwrap();
+        let decoded: SemanticWireFrameV1 = decode_manifest_v1(&bytes, &wide_limits()).unwrap();
+        assert_eq!(decoded, frame);
+    }
+
+    /// `command_id: Some(_)` round-trips too -- the optional 13th field is
+    /// exercised in both directions, not just its absence.
+    #[test]
+    fn header_with_some_command_id_round_trips() {
+        use common::apex::identity::FixedRandomBytesSourceV1;
+        let mut header = sample_header();
+        header.command_id = Some(CommandId::generate(&mut FixedRandomBytesSourceV1([0x33; 16])).unwrap());
+        let bytes = encode_manifest_v1(&header, &wide_limits()).unwrap();
+        let decoded: NetEnvelopeHeaderV1 = decode_manifest_v1(&bytes, &wide_limits()).unwrap();
+        assert_eq!(decoded, header);
+    }
+
+    /// `causality.snapshot: Some(_)` round-trips too.
+    #[test]
+    fn header_with_snapshot_causality_round_trips() {
+        let mut header = sample_header();
+        header.causality.snapshot =
+            Some(SemanticSnapshotRefV1 { domain: SnapshotDomainId::new(9), epoch: SnapshotEpoch::new(3) });
+        let bytes = encode_manifest_v1(&header, &wide_limits()).unwrap();
+        let decoded: NetEnvelopeHeaderV1 = decode_manifest_v1(&bytes, &wide_limits()).unwrap();
+        assert_eq!(decoded, header);
+    }
+
+    /// Every enum tag field (`direction`/`semantic_stream`/`payload_schema`/
+    /// `payload_encoding`) rejects an out-of-range value rather than
+    /// silently accepting or panicking. Targeted at the four tag fields
+    /// specifically -- NOT a blind whole-blob byte-flip: `profile_root`
+    /// and `payload_digest` are opaque 32-byte hashes with no internal
+    /// validity structure, so ANY byte value is legitimately valid for
+    /// them, and a byte-flip test across the whole encoding would
+    /// (correctly) find "different but still valid" headers there and
+    /// produce a false failure -- confirmed by actually hitting exactly
+    /// that false positive before narrowing this test's scope.
+    #[test]
+    fn unknown_tag_values_are_rejected_not_defaulted() {
+        fn with_field(base: &NetEnvelopeHeaderV1, field: u16, value: ManifestValueV1) -> Vec<u8> {
+            let ManifestValueV1::Map(map) = base.to_manifest_value_v1().unwrap() else { panic!("expected a map") };
+            let new_entries: Vec<_> = map
+                .into_entries()
+                .into_iter()
+                .map(|(id, v)| if id == FieldIdV1::new(field) { (id, value.clone()) } else { (id, v) })
+                .collect();
+            let mutated = CanonicalFieldMapV1::try_from_entries(new_entries).unwrap();
+            encode_manifest_v1(&RawWrapper(ManifestValueV1::Map(mutated)), &wide_limits()).unwrap()
+        }
+
+        let header = sample_header();
+        // direction (field 5): 0 and 3 are both outside {1, 2}.
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 5, ManifestValueV1::Unsigned(0)), &wide_limits()).is_err());
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 5, ManifestValueV1::Unsigned(3)), &wide_limits()).is_err());
+        // semantic_stream (field 6): 0 and 6 are both outside {1..=5}.
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 6, ManifestValueV1::Unsigned(0)), &wide_limits()).is_err());
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 6, ManifestValueV1::Unsigned(6)), &wide_limits()).is_err());
+        // payload_schema (field 9): 0 and 4 are both outside {1, 2, 3}.
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 9, ManifestValueV1::Unsigned(0)), &wide_limits()).is_err());
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 9, ManifestValueV1::Unsigned(4)), &wide_limits()).is_err());
+        // payload_encoding (field 10): 0 and 2 are both outside {1}.
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 10, ManifestValueV1::Unsigned(0)), &wide_limits()).is_err());
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&with_field(&header, 10, ManifestValueV1::Unsigned(2)), &wide_limits()).is_err());
+
+        // Sanity: the untouched header still decodes fine (proves
+        // with_field's own round-trip plumbing is correct, not just that
+        // every mutation happens to fail for an unrelated reason).
+        let good = encode_manifest_v1(&header, &wide_limits()).unwrap();
+        assert_eq!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&good, &wide_limits()).unwrap(), header);
+    }
+
+    /// Zero sequence is rejected -- the manifest path's own twin of
+    /// `NonZeroU64`'s type-level guarantee (packet's `SEQUENCE-ZERO`
+    /// terminal exists precisely because the wire form has no type-system
+    /// help; this decoder must supply the check by hand).
+    #[test]
+    fn zero_sequence_is_rejected() {
+        // Build a header value tree directly (bypassing NetEnvelopeHeaderV1's
+        // own always-valid constructor) with sequence forced to 0, proving
+        // the DECODER checks this, not just relying on callers never
+        // constructing a zero sequence.
+        let header = sample_header();
+        let value = header.to_manifest_value_v1().unwrap();
+        let ManifestValueV1::Map(map) = value else { panic!("expected a map") };
+        let new_entries: Vec<_> = map
+            .into_entries()
+            .into_iter()
+            .map(|(id, v)| if id == FieldIdV1::new(7) { (id, ManifestValueV1::Unsigned(0)) } else { (id, v) })
+            .collect();
+        let mutated_map = CanonicalFieldMapV1::try_from_entries(new_entries).unwrap();
+        let mutated_value = RawWrapper(ManifestValueV1::Map(mutated_map));
+        let bytes = encode_manifest_v1(&mutated_value, &wide_limits()).unwrap();
+        assert!(decode_manifest_v1::<NetEnvelopeHeaderV1>(&bytes, &wide_limits()).is_err());
+    }
+
+    /// Test-only pass-through wrapper (same pattern used throughout
+    /// `common/src/apex/`): lets a hostile test build an arbitrary
+    /// manifest value tree without going through the real checked
+    /// constructor.
+    struct RawWrapper(ManifestValueV1);
+    impl ManifestEncodeV1 for RawWrapper {
+        fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> { Ok(self.0.clone()) }
     }
 }
