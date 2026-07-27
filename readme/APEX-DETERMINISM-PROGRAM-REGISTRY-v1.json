@@ -978,7 +978,7 @@
       "hard_dependencies": [
         "APEX-T3.1"
       ],
-      "packet_file": null,
+      "packet_file": "readme/apex/APEX-T3.2-FLEET-AUTHORED-SPEC-v1.md",
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T3.2",
@@ -989,10 +989,10 @@
         "deployment": "NOT_DEPLOYED",
         "implementation": "NOT_STARTED",
         "microstep_research": "MICROSTEP_RESEARCH_COMPLETE",
-        "specification": "SPECIFICATION_COMPLETE",
+        "specification": "FLEET_AUTHORED",
         "verification": "NOT_STARTED"
       },
-      "title": "Authenticated logical sessions / ConnectionEpoch"
+      "title": "Authenticated logical sessions / ConnectionEpoch (spec fleet-authored 2026-07-27 per Ben's order -- original prose packet was hallucinated, but its 128-case canary vector file is genuinely real (SHA-256/byte-count verified against the master order pin); DRAFT pending Opus spec-review + Fable approval before build)"
     },
     {
       "evidence_artifacts": [],
