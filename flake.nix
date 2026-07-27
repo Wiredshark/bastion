@@ -141,17 +141,28 @@
         checks.bastion-harness-package = harnessOut.packages.verify;
 
         # APEX-T1.3.02: the LOCAL-REPRO variant — same package, but the
-        # FINAL derivation must execute locally and can never be satisfied
-        # by substitution (packet policy 3: immutable dependency store
-        # reuse stays allowed; only the harness derivation itself is
-        # forced local). Locale/TZ frozen; sccache/incremental are already
-        # neutralized in the base derivation env (T1.1.03-.05).
-        packages.bastion-harness-repro = harnessOut.packages.verify.overrideAttrs (old: {
-          allowSubstitutes = false;
-          preferLocalBuild = true;
-          TZ = "UTC";
-          LC_ALL = "C";
-        });
+        # FINAL derivation can never be satisfied by substitution (packet
+        # policy 3: immutable dependency store reuse stays allowed; only
+        # the harness derivation itself is forced to execute). Locale/TZ
+        # frozen; sccache/incremental are already neutralized in the base
+        # derivation env (T1.1.03-.05). dream2nix packages carry no
+        # `overrideAttrs` (first-contact VM finding) — the module system's
+        # `extendModules` is the supported override path. Divergence from
+        # the T1.3 spec sketch, documented: `preferLocalBuild` is dropped
+        # (dream2nix declares it with a non-bool type); it is only a
+        # remote-builder scheduling HINT — `allowSubstitutes = false`
+        # carries the row's actual guarantee, and the certified lane has
+        # no remote builders configured.
+        packages.bastion-harness-repro =
+          ((harnessOut.packages.verify.extendModules {
+              modules = [
+                {
+                  mkDerivation.allowSubstitutes = false;
+                  env.TZ = "UTC";
+                  env.LC_ALL = "C";
+                }
+              ];
+            }).config.public);
 
         # APEX-T1.3.11: known-good/known-bad reproducibility canary
         # derivations. NEVER dependencies of any production output — they
