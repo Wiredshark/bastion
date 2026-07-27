@@ -510,28 +510,44 @@ a rejection path; it did not change what a normal successful connection
 experiences). Every touched file, exact delta, and what a real client
 observes:
 
-**`server/src/sys/msg/register.rs` (`max_players` check, lines ~134-250):**
-- **Before:** capacity is checked directly against `old_player_count +
-  guard.0.len() >= max_players` at admission time, with no concept of
-  same-principal replacement, detached sessions, or resume. A reconnecting
-  player counts as a brand-new slot consumer even if their old connection
-  is still technically present; two connections racing for the last slot
-  are decided by whatever order the existing loop processes them in
-  (today: an ordinary iteration order, not adversarially audited for this
-  row's determinism bar).
-- **After:** the same numeric threshold (`max_players`) is preserved
-  exactly, but capacity is evaluated *through* the new `SessionRegistry`
-  (policy 1): same-principal replacement is capacity-neutral (delta 0),
-  detached sessions don't count against the active limit, and contested
-  final-slot admission is resolved by the sorted commit pass (§2.2 item
-  5), not iteration order.
-- **Client-observable difference:** a legitimate reconnect (same
-  principal, valid resume) that previously might have been rejected as
-  "server full" (because the old session's slot wasn't recognized as
-  already theirs) now succeeds via `SessionAdmissionV1::Resumed`/`Replaced`.
-  A genuinely new player at capacity still gets rejected — same outcome,
-  now via a typed `ACTIVE-CAPACITY-UNAVAILABLE` `RegisterError` instead of
-  whatever generic path exists today. No previously-succeeding connection
+**`server/src/sys/msg/register.rs` (`max_players` check + reconnect
+replacement, lines 134-250 + 314-363) — the one edge Fable specifically
+flagged for a crisp, isolated before/after (traced by reading the actual
+current code, not inferred; this specific mechanism still needs an
+empirical test at build time, per SES-073/074, not just this static read):**
+- **Before, precisely:** `old_player_count` is captured once at line 183
+  (`player_list.len()`, before this tick's parallel registration loop
+  runs). Inside the `par_bridge()`-parallel per-client closure, the
+  capacity boolean is computed at line 250 as `old_player_count +
+  guard.0.len() >= max_players` — **before** the same-principal
+  reconnect/replacement resolution that happens later in the same
+  closure (the `old_player`/`new_players_by_uuid.entry(uuid)` dance at
+  lines 317-328, which is what actually kicks the old client with
+  "You have logged in from another location", line 349). So: if principal
+  P is already an active player (counted once inside `old_player_count`)
+  and reconnects this same tick, their reconnect attempt is *also*
+  counted toward `guard.0.len()` at the capacity checkpoint, before the
+  code has determined this is a replacement of P's own existing slot, not
+  a new slot consumer. At exactly `max_players` active connections, a
+  legitimate same-principal reconnect can be capacity-rejected purely
+  because of this ordering — a real double-count, matching what
+  SES-070/SES-074 name (`SESSION-REPLACED` should have capacity delta 0;
+  `BLOCK-DOUBLE-COUNT` is exactly "old and new attachments are both
+  counted after replacement").
+- **After:** the new `SessionRegistry`'s sorted commit pass (§2.2 item 5)
+  resolves same-principal replacement identity **before** evaluating
+  capacity, not after — a reconnect's delta is computed as 0 by
+  construction, never by first counting it as +1 and correcting later.
+  The same numeric threshold (`max_players`) is preserved exactly.
+- **Client-observable difference, precisely:** a same-principal reconnect
+  arriving while the server is at exactly `max_players` — today, per the
+  ordering above, this can be rejected as "server full" even though it is
+  replacing that principal's own existing slot, not consuming a new one;
+  after this row, it succeeds via `SessionAdmissionV1::Replaced`. A
+  genuinely new (different-principal) connection at capacity still gets
+  rejected either way — same outcome, now via a typed
+  `ACTIVE-CAPACITY-UNAVAILABLE` `RegisterError` instead of whatever
+  generic path exists today. No previously-succeeding connection
   attempt starts failing; no previously-failing one is silently masked
   (SES-082, `BLOCK-LIVE-BEHAVIOR-REGRESSION`, is this row's own named
   guard against exactly that risk — a hostile test asserts it directly).
