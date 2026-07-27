@@ -157,6 +157,16 @@ pub enum StreamError {
     #[cfg(feature = "compression")]
     Compression(DecodeError),
     Deserialize(Box<bincode::error::DecodeError>),
+    /// `APEX-T3.3.02`: bincode decoded a valid value but did not consume
+    /// the entire buffer -- a non-injective wire mapping (two distinct
+    /// byte sequences would decode to the same message) that
+    /// `DET-NET-017` already made `Message::deserialize` reject; this
+    /// variant gives that existing rejection its own typed terminal
+    /// (`consumed`/`total` byte counts) instead of a generic
+    /// string-wrapped `Deserialize(DecodeError::Other(..))`, so callers
+    /// that need to distinguish "trailing bytes" from "malformed bytes"
+    /// can pattern-match rather than string-compare.
+    TrailingBytes { consumed: usize, total: usize },
 }
 
 /// All Parameters of a Stream, can be used to generate RawMessages
@@ -1323,6 +1333,9 @@ impl core::fmt::Display for StreamError {
             #[cfg(feature = "compression")]
             StreamError::Compression(err) => write!(f, "compression error on message: {}", err),
             StreamError::Deserialize(err) => write!(f, "deserialize error on message: {}", err),
+            StreamError::TrailingBytes { consumed, total } => {
+                write!(f, "trailing bytes after message: consumed {consumed} of {total} bytes")
+            },
         }
     }
 }
@@ -1369,6 +1382,7 @@ impl PartialEq for StreamError {
                 #[cfg(feature = "compression")]
                 StreamError::Compression(_) => false,
                 StreamError::Deserialize(_) => false,
+                StreamError::TrailingBytes { .. } => false,
             },
             #[cfg(feature = "compression")]
             StreamError::Compression(err) => match other {
@@ -1376,12 +1390,23 @@ impl PartialEq for StreamError {
                 #[cfg(feature = "compression")]
                 StreamError::Compression(other_err) => err == other_err,
                 StreamError::Deserialize(_) => false,
+                StreamError::TrailingBytes { .. } => false,
             },
             StreamError::Deserialize(err) => match other {
                 StreamError::StreamClosed => false,
                 #[cfg(feature = "compression")]
                 StreamError::Compression(_) => false,
                 StreamError::Deserialize(other_err) => partial_eq_bincode(err, other_err),
+                StreamError::TrailingBytes { .. } => false,
+            },
+            StreamError::TrailingBytes { consumed, total } => match other {
+                StreamError::StreamClosed => false,
+                #[cfg(feature = "compression")]
+                StreamError::Compression(_) => false,
+                StreamError::Deserialize(_) => false,
+                StreamError::TrailingBytes { consumed: other_consumed, total: other_total } => {
+                    consumed == other_consumed && total == other_total
+                },
             },
         }
     }
