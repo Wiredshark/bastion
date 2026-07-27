@@ -115,6 +115,24 @@ pub enum ArchiveRejectV1 {
     EntrySizeLimit,
     OldHeaderInStrictV1,
     UnsupportedEntryType { type_flag: u8 },
+    // T2.2.04 — path identity rejects (raw UStar field bytes, never host
+    // PathBuf).
+    AbsolutePath,
+    RawBackslash,
+    Backslash,
+    NulInPath,
+    InvalidUtf8,
+    NonPortableCharacter { byte: u8 },
+    CurrentSegment,
+    ParentSegment,
+    EmptySegment,
+    RegularTrailingSlash,
+    PathTooLong,
+    UstarName101Boundary,
+    UstarPrefixOverflow,
+    NoncanonicalUstarSplit,
+    NonrepresentableUstarPath,
+    WriterPathTransformation,
 }
 
 impl ArchiveRejectV1 {
@@ -133,8 +151,160 @@ impl ArchiveRejectV1 {
             Self::EntrySizeLimit => "REJECT-ENTRY-SIZE-LIMIT",
             Self::OldHeaderInStrictV1 => "REJECT-OLD-HEADER-IN-STRICT-V1",
             Self::UnsupportedEntryType { .. } => "REJECT-UNSUPPORTED-ENTRY-TYPE",
+            Self::AbsolutePath => "REJECT-ABSOLUTE-PATH",
+            Self::RawBackslash => "REJECT-RAW-BACKSLASH",
+            Self::Backslash => "REJECT-BACKSLASH",
+            Self::NulInPath => "REJECT-NUL-IN-PATH",
+            Self::InvalidUtf8 => "REJECT-INVALID-UTF8",
+            Self::NonPortableCharacter { .. } => "REJECT-NON-PORTABLE-CHARACTER",
+            Self::CurrentSegment => "REJECT-CURRENT-SEGMENT",
+            Self::ParentSegment => "REJECT-PARENT-SEGMENT",
+            Self::EmptySegment => "REJECT-EMPTY-SEGMENT",
+            Self::RegularTrailingSlash => "REJECT-REGULAR-TRAILING-SLASH",
+            Self::PathTooLong => "REJECT-PATH-TOO-LONG",
+            Self::UstarName101Boundary => "REJECT-USTAR-NAME-101-BYTE-BOUNDARY",
+            Self::UstarPrefixOverflow => "REJECT-USTAR-PREFIX-OVERFLOW",
+            Self::NoncanonicalUstarSplit => "REJECT-NONCANONICAL-USTAR-SPLIT",
+            Self::NonrepresentableUstarPath => "REJECT-NONREPRESENTABLE-USTAR-PATH",
+            Self::WriterPathTransformation => "REJECT-WRITER-PATH-TRANSFORMATION",
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// T2.2.04 — path identity from raw UStar fields (frozen ASCII grammar,
+// portability key, canonical rightmost-valid-slash split).
+// ---------------------------------------------------------------------------
+
+/// V1 frozen portable character set (spec section 2.2): lowercase +
+/// uppercase ASCII letters, digits, `.`, `_`, `-`, and `/` as the sole
+/// separator. Everything else is `REJECT-NON-PORTABLE-CHARACTER`
+/// (backslash and NUL get their own sharper terminals first).
+fn portable_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/')
+}
+
+const USTAR_NAME_MAX: usize = 100;
+const USTAR_PREFIX_MAX: usize = 155;
+
+/// The canonical UStar split of a full path (spec policy 5): empty prefix
+/// whenever the whole path fits in `name` (<= 100 bytes); otherwise the
+/// RIGHTMOST slash split whose name-part fits 100 and prefix-part fits
+/// 155. `None` = not representable.
+fn canonical_split(full: &[u8]) -> Option<(usize, usize)> {
+    if full.len() <= USTAR_NAME_MAX {
+        return Some((0, full.len()));
+    }
+    // Rightmost slash such that name fits; then prefix must fit too.
+    let mut split = None;
+    for (i, &b) in full.iter().enumerate() {
+        if b == b'/' && full.len() - i - 1 <= USTAR_NAME_MAX && i <= USTAR_PREFIX_MAX {
+            split = Some(i);
+        }
+    }
+    split.map(|i| (i, full.len() - i - 1))
+}
+
+/// T2.2.04: assemble + validate one entry's path identity from the RAW
+/// UStar `name`/`prefix` field bytes. Returns the canonical path and its
+/// ASCII-lowercase portability key.
+pub fn assemble_ustar_path(entry: &ScannedEntryV1, limits: &ArchiveLimitsPolicyV1) -> Result<(CanonicalPathV1, MachineTextV1), ArchiveRejectV1> {
+    let name = &entry.raw_name;
+    let prefix = &entry.raw_prefix;
+
+    // Boundary grammar of the raw fields themselves (PAR-C26/C27/C29):
+    // trim_field already cut at NUL, but a FULL 100/155-byte field is
+    // legal; anything longer is impossible by construction. A name that
+    // was exactly at the field limit with content that clearly continued
+    // (writer needed 101 bytes) manifests as either a noncanonical split
+    // or a non-representable path below; the 101-boundary canary is the
+    // case where a writer emitted 100 name bytes and relied on silent
+    // truncation -- we cannot see the intent, but PAR-C27's fixture drives
+    // this via a prefix+name whose reassembly is not the canonical split.
+    if name.is_empty() {
+        return Err(ArchiveRejectV1::MalformedTar { detail: "empty name field" });
+    }
+
+    // Full path bytes: prefix + '/' + name per UStar; empty prefix = name.
+    let mut full: Vec<u8> = Vec::with_capacity(prefix.len() + 1 + name.len());
+    if !prefix.is_empty() {
+        full.extend_from_slice(prefix);
+        full.push(b'/');
+    }
+    full.extend_from_slice(name);
+
+    // Byte-level rejects, sharpest terminal first (raw bytes, before any
+    // UTF-8/host interpretation -- PAR-C15's point).
+    if full.contains(&0) {
+        return Err(ArchiveRejectV1::NulInPath);
+    }
+    if full.contains(&b'\\') {
+        // Raw backslash in the FIELD bytes (C15) vs backslash surviving
+        // into a decoded path (015) collapse to the same raw check here --
+        // the raw check fires first by construction, which is the
+        // stricter reading. Distinct terminals retained for the catalog:
+        // prefix field containing it is "raw".
+        return if entry.raw_prefix.contains(&b'\\') || entry.raw_name.contains(&b'\\') {
+            Err(ArchiveRejectV1::RawBackslash)
+        } else {
+            Err(ArchiveRejectV1::Backslash)
+        };
+    }
+    if std::str::from_utf8(&full).is_err() {
+        return Err(ArchiveRejectV1::InvalidUtf8);
+    }
+    if full[0] == b'/' {
+        return Err(ArchiveRejectV1::AbsolutePath);
+    }
+    if let Some(&bad) = full.iter().find(|&&b| !portable_byte(b)) {
+        return Err(ArchiveRejectV1::NonPortableCharacter { byte: bad });
+    }
+    if full.len() as u64 > limits.max_path_bytes {
+        return Err(ArchiveRejectV1::PathTooLong);
+    }
+    if full.last() == Some(&b'/') {
+        return Err(ArchiveRejectV1::RegularTrailingSlash);
+    }
+    for segment in full.split(|&b| b == b'/') {
+        match segment {
+            b"" => return Err(ArchiveRejectV1::EmptySegment),
+            b"." => return Err(ArchiveRejectV1::CurrentSegment),
+            b".." => return Err(ArchiveRejectV1::ParentSegment),
+            _ => {},
+        }
+    }
+
+    // Canonical-split policy (PAR-C16/C26/C27/C28/C29/C30/C21): the
+    // writer's actual (prefix, name) split must BE the canonical one.
+    match canonical_split(&full) {
+        None => return Err(ArchiveRejectV1::NonrepresentableUstarPath),
+        Some((canon_prefix_len, canon_name_len)) => {
+            let actual_prefix_len = if prefix.is_empty() { 0 } else { prefix.len() };
+            if actual_prefix_len != canon_prefix_len {
+                // Distinguish the two boundary-shaped wrong splits the
+                // catalog names: a name field that should have spilled at
+                // 101 (writer kept prefix empty for a >100 path is
+                // impossible -- field is 100 max -- so the observable form
+                // is a split at the WRONG slash) vs a prefix longer than
+                // canonical (overflow-shaped).
+                return if actual_prefix_len > USTAR_PREFIX_MAX {
+                    Err(ArchiveRejectV1::UstarPrefixOverflow)
+                } else if canon_prefix_len == 0 && actual_prefix_len > 0 && full.len() <= USTAR_NAME_MAX {
+                    // Path fits entirely in name but writer used a prefix.
+                    Err(ArchiveRejectV1::NoncanonicalUstarSplit)
+                } else if actual_prefix_len == 0 && name.len() == USTAR_NAME_MAX && canon_name_len < name.len() {
+                    Err(ArchiveRejectV1::UstarName101Boundary)
+                } else {
+                    Err(ArchiveRejectV1::NoncanonicalUstarSplit)
+                };
+            }
+        },
+    }
+
+    let full_str = std::str::from_utf8(&full).expect("checked above");
+    let path = CanonicalPathV1::new(full_str).map_err(|_| ArchiveRejectV1::MalformedTar { detail: "path grammar" })?;
+    let key = MachineTextV1::new(full_str.to_ascii_lowercase()).expect("ASCII by construction");
+    Ok((path, key))
 }
 
 const BLOCK: usize = 512;
@@ -495,6 +665,89 @@ mod tests {
         let long = terminated(ustar_entry("././@LongLink", b"", b'L'));
         let scan = scan_framing(&long, &test_limits()).unwrap();
         assert_eq!(scan.dialect, TarDialectV1::Gnu);
+    }
+
+    fn entry_with_path(name: &[u8], prefix: &[u8]) -> ScannedEntryV1 {
+        ScannedEntryV1 {
+            ordinal: 0,
+            raw_name: name.to_vec(),
+            raw_prefix: prefix.to_vec(),
+            type_flag: b'0',
+            declared_size: 0,
+            header_checksum_ok: true,
+            dialect: TarDialectV1::UstarStrict,
+            content_offset: 512,
+        }
+    }
+
+    #[test]
+    fn path_identity_accepts_and_keys() {
+        let limits = test_limits();
+        let (path, key) = assemble_ustar_path(&entry_with_path(b"Mod/A.wasm", b""), &limits).unwrap();
+        assert_eq!(path.as_str(), "Mod/A.wasm");
+        assert_eq!(key.as_str(), "mod/a.wasm", "portability key is ASCII-lowercase");
+
+        // PAR-C26: exactly-100-byte path in the name field alone.
+        let name100 = [b'a'; 100];
+        assert!(assemble_ustar_path(&entry_with_path(&name100, b""), &limits).is_ok());
+
+        // PAR-C16: >100-byte path with the canonical rightmost split.
+        let mut long = vec![b'd'; 60];
+        long.push(b'/');
+        long.extend([b'f'; 60]); // 121 bytes total, canonical split at the slash
+        let (prefix_part, name_part) = (&long[..60], &long[61..]);
+        let ok = assemble_ustar_path(&entry_with_path(name_part, prefix_part), &limits);
+        assert!(ok.is_ok(), "canonical prefix+name vector must be accepted: {ok:?}");
+    }
+
+    #[test]
+    fn path_identity_rejects_bite() {
+        let limits = test_limits();
+        let r = |name: &[u8], prefix: &[u8]| assemble_ustar_path(&entry_with_path(name, prefix), &limits).unwrap_err();
+
+        assert_eq!(r(b"/etc/passwd", b""), ArchiveRejectV1::AbsolutePath);
+        assert_eq!(r(b"a\\b.wasm", b""), ArchiveRejectV1::RawBackslash);
+        assert_eq!(r(b"a/../b", b""), ArchiveRejectV1::ParentSegment);
+        assert_eq!(r(b"./a", b""), ArchiveRejectV1::CurrentSegment);
+        assert_eq!(r(b"a//b", b""), ArchiveRejectV1::EmptySegment);
+        assert_eq!(r(b"dir/", b""), ArchiveRejectV1::RegularTrailingSlash);
+        assert_eq!(r(b"a b.wasm", b""), ArchiveRejectV1::NonPortableCharacter { byte: b' ' });
+        assert_eq!(r(&[b'a', 0xFF, b'b'], b""), ArchiveRejectV1::InvalidUtf8);
+        assert_eq!(r("caf\u{e9}.wasm".as_bytes(), b""), ArchiveRejectV1::NonPortableCharacter { byte: 0xC3 });
+
+        let mut tiny = limits.clone();
+        tiny.max_path_bytes = 4;
+        assert_eq!(
+            assemble_ustar_path(&entry_with_path(b"abcdef", b""), &tiny).unwrap_err(),
+            ArchiveRejectV1::PathTooLong
+        );
+
+        // PAR-C30: path fits entirely in name, but the writer split it.
+        assert_eq!(r(b"b.wasm", b"short"), ArchiveRejectV1::NoncanonicalUstarSplit);
+
+        // Wrong-slash split on a long path (canonical split exists
+        // elsewhere).
+        let mut seg = vec![b'x'; 40];
+        seg.push(b'/');
+        seg.extend([b'y'; 40]);
+        seg.push(b'/');
+        seg.extend([b'z'; 40]); // 122 bytes, canonical split at second slash
+        let wrong_prefix = &seg[..40]; // split at FIRST slash instead
+        let wrong_name = &seg[41..];
+        assert_eq!(
+            assemble_ustar_path(&entry_with_path(wrong_name, wrong_prefix), &limits).unwrap_err(),
+            ArchiveRejectV1::NoncanonicalUstarSplit
+        );
+
+        // PAR-C21 (NONREPRESENTABLE-USTAR-PATH) is deliberately NOT
+        // driven here: it is unreachable from scanned raw fields by
+        // construction — the UStar prefix/name join always inserts a
+        // slash, so no assembled path can contain a >100-byte segment.
+        // It is a PACKER-side terminal (a caller asks the canonical
+        // packer to pack such a path; the packer must reject rather than
+        // transform, cf. PAR-C31) — T2.2.09's suite drives it. The
+        // scanner-side `canonical_split == None` arm stays as defense in
+        // depth.
     }
 
     #[test]
