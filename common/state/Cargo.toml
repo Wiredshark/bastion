@@ -55,3 +55,5 @@ thread-priority = { workspace = true }
 [dev-dependencies]
 # APEX-T2.2.10 catalog acceptance runner (tests/apex_t2_2_catalog.rs).
 serde_json = { workspace = true }
+# APEX-T2.5.09 artifact-cache staging tests
+tempfile = "3.27.0"
