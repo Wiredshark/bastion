@@ -7,9 +7,9 @@ use common::{
     uid::Uid,
 };
 use common_ecs::{Job, Origin, Phase, System};
-use common_net::msg::{ClientGeneral, ServerGeneral};
+use common_net::msg::{ClientGeneral, ServerGeneral, envelope::{SemanticIngressMetricsV1, SemanticStreamIdV1}};
 use rayon::prelude::*;
-use specs::{Entities, LendJoin, ParJoin, Read, ReadStorage, WriteStorage};
+use specs::{Entities, LendJoin, ParJoin, Read, ReadExpect, ReadStorage, WriteStorage};
 use tracing::{debug, error, warn};
 
 event_emitters! {
@@ -109,6 +109,7 @@ impl<'a> System<'a> for Sys {
         ReadStorage<'a, Player>,
         ReadStorage<'a, Group>,
         WriteStorage<'a, Client>,
+        ReadExpect<'a, SemanticIngressMetricsV1>,
     );
 
     const NAME: &'static str = "msg::general";
@@ -117,14 +118,14 @@ impl<'a> System<'a> for Sys {
 
     fn run(
         _job: &mut Job<Self>,
-        (entities, events, program_time, uids, chat_modes, players, groups, mut clients): Self::SystemData,
+        (entities, events, program_time, uids, chat_modes, players, groups, mut clients, semantic_metrics): Self::SystemData,
     ) {
         (&entities, &mut clients, players.maybe())
             .par_join()
             .for_each_init(
                 || events.get_emitters(),
                 |emitters, (entity, client, player)| {
-                    let res = super::try_recv_all(client, 3, |client, msg| {
+                    let res = super::try_recv_all_dispatch(client, 3, SemanticStreamIdV1::General, &semantic_metrics, |client, msg| {
                         Self::handle_general_msg(
                             emitters,
                             entity,
@@ -143,5 +144,34 @@ impl<'a> System<'a> for Sys {
                     }
                 },
             );
+    }
+}
+
+/// `T3.3.09`: this system now selects V1/Legacy via
+/// `try_recv_all_dispatch(client, 3, SemanticStreamIdV1::General, ...)`.
+/// The full duplicate/gap/digest/epoch/wrong-boot/route validation
+/// matrix is already exhaustively covered once, system-agnostically, by
+/// `T3.3.08`'s `semantic_ingress_tests` (which exercise the exact same
+/// `validate_semantic_frame_v1` this dispatch reaches) -- re-deriving
+/// that matrix per system would duplicate coverage without adding any,
+/// since `try_recv_all_dispatch` itself adds no new logic beyond
+/// selecting between two already-tested functions. What IS new and
+/// worth a system-local test: that the `SemanticStreamIdV1::General`
+/// literal hardcoded at this call site actually matches what this
+/// handler's own match arms expect -- a copy-paste stream-ID mismatch
+/// here would silently reject 100% of this system's traffic the moment
+/// V1 negotiation goes live (T3.3.05), with no other test catching it.
+#[cfg(test)]
+mod semantic {
+    use super::*;
+    use common_net::msg::envelope::SemanticRouteV1;
+
+    #[test]
+    fn dispatch_stream_matches_handled_general_messages() {
+        assert_eq!(ClientGeneral::Terminate.semantic_stream(), SemanticStreamIdV1::General);
+        assert_eq!(
+            ClientGeneral::Command("test".to_string(), vec![]).semantic_stream(),
+            SemanticStreamIdV1::General
+        );
     }
 }

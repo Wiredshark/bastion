@@ -498,6 +498,52 @@ impl<'a> System<'a> for Sys {
     }
 }
 
+/// `APEX-T3.3.16`: builds and sends `ServerInit::GameSync` (the only
+/// caller, though genericized over the payload type the same way
+/// `build_semantic_frame_v1` is -- lets the pure wiring here get
+/// direct unit coverage with a lightweight `ServerGeneral` stand-in
+/// instead of constructing a full `ServerInit::GameSync`, which has no
+/// lightweight constructor in this crate) as a V1 envelope on the
+/// Bootstrap stream iff the client has a live V1 attachment -- called
+/// immediately after `reset_semantic_state`, so this is always the
+/// FIRST `allocate_sequence(Bootstrap)` call on this attachment and
+/// therefore always returns `1` ("Bootstrap sequence 1" falls out of
+/// that reset; no special-casing needed here). Returns `false` (never
+/// sent, no state mutated beyond the sequence allocation itself) for a
+/// `Legacy` session or on any allocation/encode/send failure -- the
+/// caller keeps its exact existing raw legacy send call as a fallback,
+/// same dual-path shape as every other `T3.3.13`/`.14a`
+/// producer. GameSync has no producer contention (one send per
+/// successful admission, never batched with anything else), so unlike
+/// `ServerGeneral` replication traffic this intentionally does NOT go
+/// through `ServerSemanticOutboxV1` -- `SemanticSendIntentV1::payload`
+/// is `Arc<ServerGeneral>` only (`server/src/semantic_net/outbox.rs`'s
+/// own `ServerSemanticPayloadV1` alias), and widening that shared type
+/// to carry `ServerInit` too would ripple into every existing producer
+/// for no benefit here.
+fn try_send_gamesync_v1<T>(client: &mut Client, payload: &T) -> bool
+where
+    T: common_net::msg::envelope::SemanticRouteV1 + serde::Serialize,
+{
+    use common_net::msg::envelope::SemanticCausalityV1;
+
+    let Some((binding, sequence)) = client.semantic_send_state_mut().and_then(|send_state| {
+        let binding = send_state.binding();
+        let stream = payload.semantic_stream();
+        send_state.allocate_sequence(stream).ok().map(|seq| (binding, seq))
+    }) else {
+        return false;
+    };
+    let causality = SemanticCausalityV1 { producer_tick: None, snapshot: None };
+    match crate::sys::semantic_egress::build_semantic_frame_v1(payload, binding, causality, sequence) {
+        Ok((_, _, frame_bytes)) => client.send_semantic_frame(payload.semantic_stream(), frame_bytes).is_ok(),
+        Err(e) => {
+            warn!(?e, "gamesync V1 encode failure");
+            false
+        },
+    }
+}
+
 /// Sends `RegisterAnswer`/`GameSync`/the initial player-list sync for a
 /// successfully-committed admission (any of `Created`/`Replaced`/
 /// `Resumed`) and stages the entity for the final `Player`-component
@@ -547,26 +593,28 @@ fn finalize_admission(
             epoch: session_binding.epoch,
         });
     }
-    if client
-        .send(ServerInit::GameSync {
-            server_boot_id: *read_data.server_boot_id,
-            entity_package: read_data.trackers.create_entity_package_with_uid(admission.entity, admission.uid, None, None, None),
-            role: admission.admin_role,
-            time_of_day: *read_data.time_of_day,
-            max_group_size: read_data.settings.max_player_group_size,
-            client_timeout: read_data.settings.client_timeout,
-            world_map: (*read_data.map).clone(),
-            recipe_book: (*read_data.recipe_book).clone(),
-            component_recipe_book: default_component_recipe_book().cloned(),
-            material_stats: (*read_data.material_stats).clone(),
-            ability_map: (*read_data.ability_map).clone(),
-            server_constants: ServerConstants { day_cycle_coefficient: read_data.settings.day_cycle_coefficient() },
-            description,
-            active_plugins,
-            session_binding,
-        })
-        .is_err()
-    {
+    let game_sync = ServerInit::GameSync {
+        server_boot_id: *read_data.server_boot_id,
+        entity_package: read_data.trackers.create_entity_package_with_uid(admission.entity, admission.uid, None, None, None),
+        role: admission.admin_role,
+        time_of_day: *read_data.time_of_day,
+        max_group_size: read_data.settings.max_player_group_size,
+        client_timeout: read_data.settings.client_timeout,
+        world_map: (*read_data.map).clone(),
+        recipe_book: (*read_data.recipe_book).clone(),
+        component_recipe_book: default_component_recipe_book().cloned(),
+        material_stats: (*read_data.material_stats).clone(),
+        ability_map: (*read_data.ability_map).clone(),
+        server_constants: ServerConstants { day_cycle_coefficient: read_data.settings.day_cycle_coefficient() },
+        description,
+        active_plugins,
+        session_binding,
+    };
+    // APEX-T3.3.16: V1-envelope GameSync iff this attachment is V1
+    // (the `reset_semantic_state` call above just made that true or
+    // stayed `None`) -- `Legacy` keeps the exact original raw send.
+    let sent_v1 = try_send_gamesync_v1(client, &game_sync);
+    if !sent_v1 && client.send(game_sync).is_err() {
         return;
     }
     debug!("Done initial sync with client.");
@@ -579,4 +627,176 @@ fn finalize_admission(
     )));
 
     new_players.insert(admission.principal, (admission.entity, admission.player, admission.admin_role, admission.player_list_update_msg));
+}
+
+/// `APEX-T3.3.16` tests for `try_send_gamesync_v1`'s own wiring
+/// (allocate sequence -> build frame -> send). Uses `ServerGeneral::
+/// UpdateRecipes` as a lightweight stand-in payload (the function is
+/// genericized exactly so this is possible -- `ServerInit::GameSync`
+/// has no lightweight constructor in this crate, matching the packet's
+/// own "no post-auth V1 payload accepted before correctly bound
+/// GameSync" gate being about the SEQUENCE/BINDING plumbing, not about
+/// this one payload type's own field values, which `build_semantic_
+/// frame_v1`'s own T3.3.15 integration test already proves end-to-end
+/// for real). Packet's own test list ("First sequence 1, duplicate,
+/// old epoch, raw V1, registration success plus send failure"): "old
+/// epoch"/"raw V1" are RECEIVE-side (client) concerns, closed by
+/// genericizing `Client::validate_semantic_frame_v1` in `client/src/
+/// lib.rs` instead (inherits its existing `StaleEpoch`/decode-failure
+/// coverage for any payload type, including `ServerInit`).
+#[cfg(test)]
+mod gamesync_v1_tests {
+    use common::apex::identity::{FixedRandomBytesSourceV1, ServerBootId};
+    use common_net::msg::{ClientType, ServerGeneral, envelope::ActiveSessionBindingV1};
+    use network::{ConnectAddr, ListenAddr, Network, Participant, Pid, Promises, Stream};
+    use tokio::runtime::Runtime;
+
+    use super::*;
+
+    fn boot_id() -> ServerBootId { ServerBootId::generate(&mut FixedRandomBytesSourceV1([21; 16])).unwrap() }
+
+    fn binding() -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: boot_id(),
+            session_id: common::apex::identity::SessionId::generate(&mut FixedRandomBytesSourceV1([22; 16])).unwrap(),
+            epoch: common::apex::identity::ConnectionEpoch::new(1).unwrap(),
+        }
+    }
+
+    /// Same shape as `sys/semantic_egress.rs`'s own `LiveClientHarness`
+    /// (a real `network::Participant` over an in-process `Mpsc`
+    /// transport, the exact 6 streams `connection_handler.rs` opens) --
+    /// duplicated rather than shared across the two files' `#[cfg(test)]`
+    /// modules, since this crate has no established shared-test-support
+    /// location yet and the two harnesses' needs already diverge slightly
+    /// (this one only ever reads back the `general`/`in_game` peer
+    /// stream, since the stand-in payload routes to `InGame`).
+    struct LiveClientHarness {
+        _server_net: Network,
+        _peer_net: Network,
+        _peer_participant: Participant,
+        _peer_general: Stream,
+        _peer_ping: Stream,
+        _peer_register: Stream,
+        _peer_character_screen: Stream,
+        peer_in_game: Stream,
+        _peer_terrain: Stream,
+        client: Option<Client>,
+    }
+
+    fn build_live_client_harness(mpsc_port: u64, runtime: &Runtime) -> LiveClientHarness {
+        let reliable = Promises::ORDERED | Promises::CONSISTENCY;
+        let reliablec = reliable | Promises::COMPRESSED;
+
+        runtime.block_on(async {
+            let mut server_net = Network::new(Pid::fake(0), runtime);
+            let peer_net = Network::new(Pid::fake(1), runtime);
+            server_net.listen(ListenAddr::Mpsc(mpsc_port)).await.unwrap();
+            let mut peer_participant = peer_net.connect(ConnectAddr::Mpsc(mpsc_port)).await.unwrap();
+            let server_participant = server_net.connected().await.unwrap();
+
+            let general_stream = server_participant.open(3, reliablec, 500).await.unwrap();
+            let ping_stream = server_participant.open(2, reliable, 500).await.unwrap();
+            let register_stream = server_participant.open(3, reliablec, 500).await.unwrap();
+            let character_screen_stream = server_participant.open(3, reliablec, 500).await.unwrap();
+            let in_game_stream = server_participant.open(3, reliablec, 100_000).await.unwrap();
+            let terrain_stream = server_participant.open(4, reliable, 20_000).await.unwrap();
+
+            let peer_general = peer_participant.opened().await.unwrap();
+            let peer_ping = peer_participant.opened().await.unwrap();
+            let peer_register = peer_participant.opened().await.unwrap();
+            let peer_character_screen = peer_participant.opened().await.unwrap();
+            let peer_in_game = peer_participant.opened().await.unwrap();
+            let peer_terrain = peer_participant.opened().await.unwrap();
+
+            let client = Client::new(
+                ClientType::Game,
+                server_participant,
+                ConnectAddr::Mpsc(mpsc_port),
+                0.0,
+                None,
+                general_stream,
+                ping_stream,
+                register_stream,
+                character_screen_stream,
+                in_game_stream,
+                terrain_stream,
+            );
+
+            LiveClientHarness {
+                _server_net: server_net,
+                _peer_net: peer_net,
+                _peer_participant: peer_participant,
+                _peer_general: peer_general,
+                _peer_ping: peer_ping,
+                _peer_register: peer_register,
+                _peer_character_screen: peer_character_screen,
+                peer_in_game,
+                _peer_terrain: peer_terrain,
+                client: Some(client),
+            }
+        })
+    }
+
+    #[test]
+    fn v1_session_sends_as_sequence_one_and_decodes() {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut harness = build_live_client_harness(45_201, &runtime);
+        let mut client = harness.client.take().unwrap();
+        client.reset_semantic_state(binding());
+
+        assert!(try_send_gamesync_v1(&mut client, &ServerGeneral::UpdateRecipes));
+
+        let frame_bytes: Vec<u8> = runtime.block_on(harness.peer_in_game.recv::<Vec<u8>>()).unwrap();
+        let limits = common::apex::manifest::ManifestDecodeLimitsV1 {
+            max_input_bytes: 1 << 20,
+            max_depth: 8,
+            max_nodes: 64,
+            max_array_items: 16,
+            max_map_entries: 16,
+            max_machine_text_bytes: 256,
+            max_byte_string_bytes: 1 << 20,
+        };
+        let frame: common_net::msg::envelope::SemanticWireFrameV1 =
+            common::apex::manifest::decode_manifest_v1(&frame_bytes, &limits).unwrap();
+        assert_eq!(frame.header.sequence.get(), 1);
+        assert_eq!(frame.header.session_id, binding().session_id);
+    }
+
+    #[test]
+    fn second_send_advances_to_sequence_two_not_a_duplicate() {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut harness = build_live_client_harness(45_202, &runtime);
+        let mut client = harness.client.take().unwrap();
+        client.reset_semantic_state(binding());
+
+        assert!(try_send_gamesync_v1(&mut client, &ServerGeneral::UpdateRecipes));
+        assert!(try_send_gamesync_v1(&mut client, &ServerGeneral::UpdateRecipes));
+
+        let limits = common::apex::manifest::ManifestDecodeLimitsV1 {
+            max_input_bytes: 1 << 20,
+            max_depth: 8,
+            max_nodes: 64,
+            max_array_items: 16,
+            max_map_entries: 16,
+            max_machine_text_bytes: 256,
+            max_byte_string_bytes: 1 << 20,
+        };
+        let first: Vec<u8> = runtime.block_on(harness.peer_in_game.recv::<Vec<u8>>()).unwrap();
+        let second: Vec<u8> = runtime.block_on(harness.peer_in_game.recv::<Vec<u8>>()).unwrap();
+        let first: common_net::msg::envelope::SemanticWireFrameV1 = common::apex::manifest::decode_manifest_v1(&first, &limits).unwrap();
+        let second: common_net::msg::envelope::SemanticWireFrameV1 = common::apex::manifest::decode_manifest_v1(&second, &limits).unwrap();
+        assert_eq!(first.header.sequence.get(), 1);
+        assert_eq!(second.header.sequence.get(), 2, "sequence must advance, never repeat/duplicate");
+    }
+
+    #[test]
+    fn legacy_session_never_sends_v1() {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut harness = build_live_client_harness(45_203, &runtime);
+        let mut client = harness.client.take().unwrap();
+        // No `reset_semantic_state` call -- `Legacy`, matching what
+        // `T3.3.05`'s negotiation always resolves today.
+        assert!(!try_send_gamesync_v1(&mut client, &ServerGeneral::UpdateRecipes));
+    }
 }
