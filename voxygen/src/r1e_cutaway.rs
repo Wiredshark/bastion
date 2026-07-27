@@ -82,6 +82,7 @@ static LATEST_EVIDENCE: Mutex<Option<CutawayCaptureEvidenceV1>> = Mutex::new(Non
 #[derive(Debug, Default)]
 pub struct CutawayFixtureStateV1 {
     last_stage: Option<CutawayCaptureStageV1>,
+    stage_anchor: Option<Vec3<f32>>,
     cap_shape: Option<DebugShapeId>,
     stable_frames: u16,
     latest_geometry: Option<CutawayGeometryV1>,
@@ -119,7 +120,20 @@ pub fn apply_fixture(
     }
     let stage = CutawayCaptureStageV1::for_requested_ordinal(requested_ordinal);
     let generation = frame.generation();
-    let expected_camera_token = camera_token(anchor, stage).map_err(|_| "camera token hash")?;
+    let source_authority_changed = state.latest_geometry.as_ref().is_some_and(|geometry| {
+        !geometry_matches_source_authority(
+            geometry,
+            generation.client_applied_generation,
+            frame.environment().terrain_root,
+            generation.simulation_tick,
+            u64::from(stage as u8),
+        )
+    });
+    let stage_changed = state.last_stage != Some(stage);
+    let stage_anchor =
+        state.latch_stage_anchor(stage, anchor, stage_changed || source_authority_changed);
+    let expected_camera_token =
+        camera_token(stage_anchor, stage).map_err(|_| "camera token hash")?;
     let authority_changed = state.latest_geometry.as_ref().is_some_and(|geometry| {
         !geometry_matches_authority(
             geometry,
@@ -130,14 +144,13 @@ pub fn apply_fixture(
             u64::from(stage as u8),
         )
     });
-    if state.last_stage != Some(stage) || authority_changed {
+    if stage_changed || authority_changed {
         if let Some(shape) = state.cap_shape.take() {
             scene.debug.remove_shape(shape);
         }
         state.stable_frames = 0;
         state.latest_geometry = None;
-        let geometry = build_geometry(frame, terrain, anchor, stage)?;
-        configure_scene(scene, stage, anchor, &geometry)?;
+        let geometry = build_geometry(frame, terrain, stage_anchor, stage)?;
         if stage == CutawayCaptureStageV1::Sliced {
             let triangles = cap_triangles(&geometry)?;
             if !triangles.is_empty() {
@@ -153,17 +166,21 @@ pub fn apply_fixture(
         state.latest_geometry = Some(geometry);
         state.last_stage = Some(stage);
     }
+    // Scene maintenance precedes this fixture hook. Reasserting the production
+    // state is idempotent and leaves the newly created cap shape intact until
+    // the next maintenance/render pass can produce its draw receipt.
+    let geometry = state
+        .latest_geometry
+        .as_ref()
+        .ok_or("cutaway geometry unavailable")?;
+    configure_scene(scene, stage, stage_anchor, geometry)?;
     state.stable_frames = state
         .stable_frames
         .checked_add(1)
         .ok_or("cutaway stability counter overflow")?
         .min(CUTAWAY_SETTLE_FRAMES_V1);
-    let geometry = state
-        .latest_geometry
-        .as_ref()
-        .ok_or("cutaway geometry unavailable")?;
     let authorized_cell_count = u32::try_from(
-        fixture_positions(anchor)
+        fixture_positions(stage_anchor)
             .map_err(|_| "cutaway fixture bounds invalid")?
             .len(),
     )
@@ -205,7 +222,7 @@ pub fn apply_fixture(
         production_target_count,
         roof_removal_count: geometry.roof_removals,
         wall_removal_count: geometry.wall_removals,
-        slice_z: slice_z(anchor, stage),
+        slice_z: slice_z(stage_anchor, stage),
         stable_frames: state.stable_frames,
         ready: state.stable_frames == CUTAWAY_SETTLE_FRAMES_V1
             && cap_draw_ready
@@ -216,6 +233,20 @@ pub fn apply_fixture(
         *latest = Some(evidence);
     }
     Ok(evidence)
+}
+
+impl CutawayFixtureStateV1 {
+    fn latch_stage_anchor(
+        &mut self,
+        stage: CutawayCaptureStageV1,
+        incoming: Vec3<f32>,
+        replace: bool,
+    ) -> Vec3<f32> {
+        if replace || self.last_stage != Some(stage) || self.stage_anchor.is_none() {
+            self.stage_anchor = Some(incoming);
+        }
+        self.stage_anchor.unwrap_or(incoming)
+    }
 }
 
 fn build_geometry(
@@ -440,6 +471,19 @@ fn geometry_matches_authority(
         && geometry.camera_sequence == camera_sequence
 }
 
+fn geometry_matches_source_authority(
+    geometry: &CutawayGeometryV1,
+    presentation_generation: u64,
+    terrain_generation: [u8; 32],
+    terrain_revision: u64,
+    camera_sequence: u64,
+) -> bool {
+    geometry.presentation_generation == presentation_generation
+        && geometry.terrain_generation == terrain_generation
+        && geometry.terrain_revision == terrain_revision
+        && geometry.camera_sequence == camera_sequence
+}
+
 fn slice_z(anchor: Vec3<f32>, stage: CutawayCaptureStageV1) -> Option<i32> {
     (stage == CutawayCaptureStageV1::Sliced)
         .then(|| anchor_cell(anchor).ok()?.z.checked_sub(1))
@@ -613,5 +657,36 @@ mod tests {
         assert!(!geometry_matches_authority(
             &geometry, 7, [1; 32], 9, [2; 32], 2
         ));
+    }
+
+    #[test]
+    fn client_interpolation_does_not_recreate_the_stage_receipt() {
+        let initial = Vec3::new(10.25, 20.5, 30.75);
+        let interpolated = Vec3::new(10.250_1, 20.499_9, 30.750_2);
+        let mut state = CutawayFixtureStateV1::default();
+
+        let latched = state.latch_stage_anchor(CutawayCaptureStageV1::Sliced, initial, true);
+        state.last_stage = Some(CutawayCaptureStageV1::Sliced);
+        let retained = state.latch_stage_anchor(CutawayCaptureStageV1::Sliced, interpolated, false);
+
+        assert_eq!(latched, initial);
+        assert_eq!(retained, initial);
+        assert_eq!(
+            camera_token(retained, CutawayCaptureStageV1::Sliced).unwrap(),
+            camera_token(initial, CutawayCaptureStageV1::Sliced).unwrap()
+        );
+    }
+
+    #[test]
+    fn source_or_stage_change_replaces_the_latched_anchor() {
+        let initial = Vec3::new(10.25, 20.5, 30.75);
+        let replacement = Vec3::new(11.0, 21.0, 31.0);
+        let mut state = CutawayFixtureStateV1::default();
+        state.latch_stage_anchor(CutawayCaptureStageV1::Surface, initial, true);
+        state.last_stage = Some(CutawayCaptureStageV1::Surface);
+
+        let latched = state.latch_stage_anchor(CutawayCaptureStageV1::Sliced, replacement, true);
+
+        assert_eq!(latched, replacement);
     }
 }
