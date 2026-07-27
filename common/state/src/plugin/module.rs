@@ -184,6 +184,8 @@ pub struct PluginModule {
     plugin: PluginWrapper,
     store: Mutex<wasmtime::Store<WasiHostCtx>>,
     name: String,
+    /// APEX-T2.5.14: per-event fuel budget (u64::MAX = legacy unlimited).
+    fuel_per_event: u64,
 }
 
 struct WasiHostCtx {
@@ -192,6 +194,20 @@ struct WasiHostCtx {
     ecs: Arc<EcsAccessManager>,
     registered_commands: HashSet<String>,
     registered_bodies: HashMap<String, types::BodyIndex>,
+    /// APEX-T2.5.14: per-store resource ceilings (memory/table growth),
+    /// from the deployment policy for governed modules; unlimited for
+    /// legacy modules (behavior-preserving).
+    limits: wasmtime::StoreLimits,
+}
+
+/// APEX-T2.5.14 — the per-store slice of the deployment policy's
+/// per-mode runtime limits. No `Default`: legacy modules pass `None`
+/// explicitly (recorded as unlimited), governed modules carry policy
+/// values.
+#[derive(Clone, Copy, Debug)]
+pub struct PluginStoreLimitsV1 {
+    pub max_linear_memory_bytes: u64,
+    pub max_fuel_per_event: u64,
 }
 
 impl WasiView for WasiHostCtx {
@@ -435,12 +451,17 @@ pub struct PluginRuntimeV1 {
 /// The explicit V1 config: component model ON; everything else is
 /// wasmtime's documented default, deliberately unmodified — recorded by
 /// this constant's existence rather than scattered per call site.
-pub const PLUGIN_RUNTIME_CONFIG_TAG_V1: &str = "bastion.plugin-runtime/v1:component-model";
+pub const PLUGIN_RUNTIME_CONFIG_TAG_V1: &str = "bastion.plugin-runtime/v1:component-model+fuel";
 
 impl PluginRuntimeV1 {
     fn new() -> Result<Self, wasmtime::Error> {
         let mut config = Config::new();
         config.wasm_component_model(true);
+        // APEX-T2.5.14: fuel metering is ON for every module (one engine,
+        // one config — no governed/legacy engine split). Legacy modules
+        // get u64::MAX fuel so their behavior is preserved; the metering
+        // overhead is the disclosed cost of a single shared engine.
+        config.consume_fuel(true);
         Ok(Self { engine: Engine::new(&config)? })
     }
 
@@ -459,8 +480,14 @@ pub fn plugin_runtime_v1() -> Result<&'static PluginRuntimeV1, PluginModuleError
 }
 
 impl PluginModule {
-    /// This function takes bytes from a WASM File and compile them
-    pub fn new(name: String, wasm_data: &[u8]) -> Result<Self, PluginModuleError> {
+    /// This function takes bytes from a WASM File and compile them.
+    /// `limits = None` = legacy/ungoverned (unlimited, recorded);
+    /// `Some` = the deployment policy's per-mode ceilings.
+    pub fn new(
+        name: String,
+        wasm_data: &[u8],
+        limits: Option<PluginStoreLimitsV1>,
+    ) -> Result<Self, PluginModuleError> {
         let ecs = Arc::new(EcsAccessManager::default());
 
         // APEX-T2.5.14: the SHARED engine — no per-module Config exists.
@@ -486,15 +513,27 @@ impl PluginModule {
             .wall_clock(DeterministicWallClock)
             .monotonic_clock(DeterministicMonotonicClock::new())
             .build();
+        let store_limits = match &limits {
+            Some(l) => wasmtime::StoreLimitsBuilder::new()
+                .memory_size(l.max_linear_memory_bytes as usize)
+                .build(),
+            None => wasmtime::StoreLimitsBuilder::new().build(), // unlimited (legacy)
+        };
         let host_ctx = WasiHostCtx {
             preview2_ctx: wasi,
             preview2_table: wasmtime_wasi::ResourceTable::new(),
             ecs: Arc::clone(&ecs),
             registered_commands: HashSet::new(),
             registered_bodies: HashMap::new(),
+            limits: store_limits,
         };
         // the store contains all data of a wasm instance
         let mut store = Store::new(&engine, host_ctx);
+        store.limiter(|ctx| &mut ctx.limits);
+        let fuel_per_event = limits.map_or(u64::MAX, |l| l.max_fuel_per_event);
+        store
+            .set_fuel(fuel_per_event)
+            .expect("fuel metering enabled by PluginRuntimeV1 construction");
 
         // load wasm from binary
         let module =
@@ -524,10 +563,23 @@ impl PluginModule {
             ecs,
             store: store.into(),
             name,
+            fuel_per_event,
         })
     }
 
     pub fn name(&self) -> &str { &self.name }
+
+    /// APEX-T2.5.14: `max_fuel_per_event` semantics — every host-invoked
+    /// event starts from a full per-event budget (a well-behaved event
+    /// can never be starved by an earlier one; a runaway event traps at
+    /// ITS OWN ceiling). Called at the head of every public entry point.
+    fn refuel(&mut self) {
+        self.store
+            .get_mut()
+            .unwrap()
+            .set_fuel(self.fuel_per_event)
+            .expect("fuel metering enabled by PluginRuntimeV1 construction");
+    }
 
     // Implementation of the commands called from veloren and provided in plugins
     pub fn load_event(
@@ -535,6 +587,7 @@ impl PluginModule {
         ecs: &EcsWorld,
         mode: common::resources::GameMode,
     ) -> Result<(), PluginModuleError> {
+        self.refuel();
         self.ecs
             .execute_with(ecs, || {
                 self.plugin.load_event(self.store.get_mut().unwrap(), mode)
@@ -549,6 +602,7 @@ impl PluginModule {
         args: &[String],
         player: common::uid::Uid,
     ) -> Result<Vec<String>, CommandResults> {
+        self.refuel();
         if !self
             .store
             .get_mut()
@@ -578,6 +632,7 @@ impl PluginModule {
         name: &str,
         uuid: common::uuid::Uuid,
     ) -> types::JoinResult {
+        self.refuel();
         self.ecs.execute_with(ecs, || {
             match self.plugin.player_join_event(
                 self.store.get_mut().unwrap(),
@@ -597,6 +652,7 @@ impl PluginModule {
     }
 
     pub fn create_body(&mut self, bodytype: &str) -> Option<animation::Body> {
+        self.refuel();
         let store = self.store.get_mut().unwrap();
         let bodytype = store.data().registered_bodies.get(bodytype).copied();
         bodytype.and_then(|bd| self.plugin.create_body(store, bd))
@@ -608,6 +664,7 @@ impl PluginModule {
         dep: &types::Dependency,
         time: f32,
     ) -> Option<types::Skeleton> {
+        self.refuel();
         self.plugin
             .update_skeleton(self.store.get_mut().unwrap(), *body, *dep, time)
     }

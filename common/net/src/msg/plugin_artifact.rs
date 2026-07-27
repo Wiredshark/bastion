@@ -39,6 +39,19 @@ pub struct PluginDeploymentSummaryV1 {
     /// activation root the client must reproduce.
     pub client_activations: Vec<u32>,
     pub client_activation_root: [u8; 32],
+    /// APEX-T2.5.14: the client-mode runtime ceilings from the operator
+    /// policy — every governed client runs its modules under EXACTLY
+    /// these (no client-local defaults).
+    pub client_runtime_limits: PluginRuntimeLimitsWireV1,
+}
+
+/// Scalar mirror of the policy's per-mode runtime limits (wire crate has
+/// no policy types on purpose).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginRuntimeLimitsWireV1 {
+    pub max_linear_memory_bytes: u64,
+    pub max_fuel_per_event: u64,
+    pub max_instances: u32,
 }
 
 /// Client → server: exact ordinals wanted for one deployment root.

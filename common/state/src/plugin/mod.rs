@@ -344,7 +344,10 @@ impl Plugin {
     /// `archive_bytes` into `Plugin.data_buf` (NO second `fs::read` — hash and
     /// stored bytes come from one buffer). Does NOT call `load_event`, does NOT
     /// register assets, does NOT insert into a manager.
-    fn instantiate(mut inspected: InspectedPluginArchive) -> Result<Self, PluginInstantiationError> {
+    fn instantiate(
+        mut inspected: InspectedPluginArchive,
+        limits: Option<module::PluginStoreLimitsV1>,
+    ) -> Result<Self, PluginInstantiationError> {
         let data = inspected.manifest;
         let modules = data
             .modules
@@ -354,7 +357,7 @@ impl Plugin {
                     .legacy_files
                     .remove(path)
                     .expect("inspection verified every declared module has bytes");
-                PluginModule::new(data.name.to_owned(), &wasm_data).map_err(|source| {
+                PluginModule::new(data.name.to_owned(), &wasm_data, limits).map_err(|source| {
                     PluginInstantiationError::Module {
                         plugin: data.name.to_owned(),
                         module: path.clone(),
@@ -454,7 +457,10 @@ impl PreparedPluginBatch {
     /// path-swap between revalidation and `Tar::open` is NAMED and deferred,
     /// packet §4.1). Any failure drops the whole private batch: zero manager
     /// and zero global-asset delta.
-    fn prepare(inspected: Vec<InspectedPluginArchive>) -> Result<Self, PluginError> {
+    fn prepare(
+        inspected: Vec<InspectedPluginArchive>,
+        limits: Option<module::PluginStoreLimitsV1>,
+    ) -> Result<Self, PluginError> {
         // Digest + path pairs survive instantiation (which consumes the recs).
         let sources: Vec<(PathBuf, PluginHash)> = inspected
             .iter()
@@ -462,7 +468,7 @@ impl PreparedPluginBatch {
             .collect();
         let plugins = inspected
             .into_iter()
-            .map(Plugin::instantiate)
+            .map(|i| Plugin::instantiate(i, limits))
             .collect::<Result<Vec<_>, _>>()?;
         let asset_sources = sources
             .into_iter()
@@ -584,7 +590,11 @@ impl PluginMgr {
     /// one-commit batch as `from_dir`, but ordinals come from the given
     /// order (the deployment plan's canonical ordinals, not discovery),
     /// so no `DiscoveryOrderIsLegacy` warning is attached.
-    pub fn from_paths_v1(paths: Vec<PathBuf>, generation_token: [u8; 32]) -> Result<Self, PluginError> {
+    pub fn from_paths_v1(
+        paths: Vec<PathBuf>,
+        generation_token: [u8; 32],
+        limits: Option<module::PluginStoreLimitsV1>,
+    ) -> Result<Self, PluginError> {
         let inspected = paths
             .into_iter()
             .enumerate()
@@ -597,7 +607,7 @@ impl PluginMgr {
         // APEX-T2.5.12: governed deployments publish as THE one-time
         // content generation (token = the deployment root) — the
         // incremental path stays sealed off for the rest of the process.
-        let mgr = PreparedPluginBatch::prepare(inspected)
+        let mgr = PreparedPluginBatch::prepare(inspected, limits)
             .inspect_err(|e| error!(?e, "Failed to prepare deployment plugin batch"))?
             .commit_new_manager_as_generation(generation_token)?;
         for plugin in &mgr.plugins {
@@ -662,7 +672,7 @@ impl PluginMgr {
         // Instantiate all + prepare all asset sources privately, then commit
         // once. Canonical DET-AST-024/025 hash order is applied at manager
         // construction (see `PreparedPluginBatch::commit_new_manager`).
-        let mgr = PreparedPluginBatch::prepare(inspected)
+        let mgr = PreparedPluginBatch::prepare(inspected, None)
             .inspect_err(|e| error!(?e, "Failed to prepare plugin batch"))?
             .commit_new_manager()?;
 
@@ -713,7 +723,7 @@ impl PluginMgr {
         if self.plugins.iter().any(|p| p.hash == hash) {
             return Ok(hash);
         }
-        let mut batch = PreparedPluginBatch::prepare(vec![inspected])?;
+        let mut batch = PreparedPluginBatch::prepare(vec![inspected], None)?;
         let plugin = batch
             .plugins
             .first_mut()
@@ -962,7 +972,7 @@ mod two_phase_tests {
             ("bad.wasm", b"definitely not wasm".as_slice()),
         ])
         .expect("PLG2P-006: invalid wasm must inspect successfully");
-        match Plugin::instantiate(i) {
+        match Plugin::instantiate(i, None) {
             Err(PluginInstantiationError::Module { plugin, module, .. }) => {
                 assert_eq!(plugin, "canary");
                 assert_eq!(module, PathBuf::from("bad.wasm"));
@@ -982,7 +992,7 @@ mod two_phase_tests {
         )
         .unwrap();
         let hash = i.artifact_hash;
-        let plugin = Plugin::instantiate(i).unwrap();
+        let plugin = Plugin::instantiate(i, None).unwrap();
         assert_eq!(plugin.data_buf(), bytes.as_slice());
         assert_eq!(plugin.hash, hash);
         assert_eq!(hash, compute_hash(&bytes));
@@ -1041,7 +1051,7 @@ mod two_phase_tests {
             ]),
         )
         .unwrap();
-        match PreparedPluginBatch::prepare(vec![good, bad]) {
+        match PreparedPluginBatch::prepare(vec![good, bad], None) {
             Err(PluginError::Instantiation(PluginInstantiationError::Module {
                 plugin, ..
             })) => assert_eq!(plugin, "bad"),
@@ -1061,7 +1071,7 @@ mod two_phase_tests {
             tar_bytes(&[("plugin.toml", TOML_EMPTY), ("x.txt", b"swap".as_slice())]),
         )
         .unwrap();
-        match PreparedPluginBatch::prepare(vec![inspected]) {
+        match PreparedPluginBatch::prepare(vec![inspected], None) {
             Err(PluginError::AssetPreparation(
                 PluginAssetPreparationError::ArchiveChangedAfterInspection { .. },
             )) => (),
@@ -1083,14 +1093,14 @@ mod two_phase_tests {
         let m1 = PreparedPluginBatch::prepare(vec![
             InspectedPluginArchive::inspect_path(pa.clone(), 0).unwrap(),
             InspectedPluginArchive::inspect_path(pb.clone(), 1).unwrap(),
-        ])
+        ], None)
         .unwrap()
         .commit_new_manager()
         .unwrap();
         let m2 = PreparedPluginBatch::prepare(vec![
             InspectedPluginArchive::inspect_path(pb.clone(), 0).unwrap(),
             InspectedPluginArchive::inspect_path(pa.clone(), 1).unwrap(),
-        ])
+        ], None)
         .unwrap()
         .commit_new_manager()
         .unwrap();

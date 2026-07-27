@@ -396,11 +396,16 @@ impl Server {
         let plugin_mgr = match &plugin_deployment {
             crate::plugin_deployment_policy::PluginDeploymentStateV1::Deployed {
                 summary,
+                server_runtime_limits,
                 server_artifact_paths,
                 ..
             } => PluginMgr::from_paths_v1(
                 server_artifact_paths.iter().map(|(_, p)| p.clone()).collect(),
                 summary.deployment_root,
+                Some(common_state::plugin::module::PluginStoreLimitsV1 {
+                    max_linear_memory_bytes: server_runtime_limits.max_linear_memory_bytes,
+                    max_fuel_per_event: server_runtime_limits.max_fuel_per_event,
+                }),
             )
             .map_err(|e| Error::Other(format!("deployment plugin batch failed (fail-closed): {e:?}")))?,
             crate::plugin_deployment_policy::PluginDeploymentStateV1::Legacy => {

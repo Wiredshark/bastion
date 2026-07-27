@@ -362,7 +362,7 @@ mod tests {
 // APEX-T2.5.11 — the server's live deployment state + startup init.
 // ---------------------------------------------------------------------------
 
-use common_net::msg::plugin_artifact::{PluginArtifactDescriptorV1, PluginDeploymentSummaryV1};
+use common_net::msg::plugin_artifact::{PluginArtifactDescriptorV1, PluginDeploymentSummaryV1, PluginRuntimeLimitsWireV1};
 use common_state::plugin::deployment::{PluginDeploymentCompileErrorV1, compile_deployment_from_archives_v1};
 
 /// The compiled deployment as an ECS resource. `Legacy` = no policy file
@@ -372,6 +372,9 @@ pub enum PluginDeploymentStateV1 {
     Legacy,
     Deployed {
         summary: PluginDeploymentSummaryV1,
+        /// The Server-mode runtime ceilings from the policy (the server's
+        /// own modules run under exactly these).
+        server_runtime_limits: PluginRuntimeLimitsWireV1,
         /// Ordinal-sorted serving set.
         artifacts: Vec<(u32, std::sync::Arc<Vec<u8>>)>,
         /// Ordinal-sorted on-disk paths of the SAME archives (joined by
@@ -411,6 +414,10 @@ pub enum PluginDeploymentInitErrorV1 {
     Policy(PluginPolicyLoadErrorV1),
     ArchiveDirUnreadable { detail: String },
     Compile(PluginDeploymentCompileErrorV1),
+    /// APEX-T2.5.14: a deployment serving clients must carry explicit
+    /// Client-mode runtime limits in its policy — no derivation, no
+    /// default.
+    MissingModeRuntimeLimits { mode: &'static str },
 }
 
 /// Startup init. Missing policy file = `Legacy` (byte-identical live
@@ -471,11 +478,30 @@ pub fn init_plugin_deployment_v1(
         .client_plan
         .activation_root()
         .map_err(|e| E::Compile(PluginDeploymentCompileErrorV1::ActivationError(e)))?;
+    let mode_limits = |mode: common_state::plugin::activation_plan::PluginActivationModeV1,
+                       name: &'static str|
+     -> Result<PluginRuntimeLimitsWireV1, PluginDeploymentInitErrorV1> {
+        policy
+            .runtime_limits_by_mode
+            .iter()
+            .find(|l| l.mode == mode)
+            .map(|l| PluginRuntimeLimitsWireV1 {
+                max_linear_memory_bytes: l.max_linear_memory_bytes,
+                max_fuel_per_event: l.max_fuel_per_event,
+                max_instances: l.max_instances,
+            })
+            .ok_or(PluginDeploymentInitErrorV1::MissingModeRuntimeLimits { mode: name })
+    };
+    let client_runtime_limits =
+        mode_limits(common_state::plugin::activation_plan::PluginActivationModeV1::Client, "client")?;
+    let server_runtime_limits =
+        mode_limits(common_state::plugin::activation_plan::PluginActivationModeV1::Server, "server")?;
     let summary = PluginDeploymentSummaryV1 {
         deployment_root: *compiled.deployment_root.bytes.as_array(),
         requirements,
         client_activations: compiled.client_plan.activations.clone(),
         client_activation_root: *client_activation_root.bytes.as_array(),
+        client_runtime_limits,
     };
     // Join each node ordinal back to its on-disk path by RECOMPUTED
     // artifact identity (same rule as the compile itself: never by
@@ -495,6 +521,7 @@ pub fn init_plugin_deployment_v1(
         .collect::<Result<_, _>>()?;
     Ok(PluginDeploymentStateV1::Deployed {
         summary,
+        server_runtime_limits,
         artifacts: compiled.artifacts.into_iter().map(|(o, b)| (o, std::sync::Arc::new(b))).collect(),
         server_artifact_paths,
     })

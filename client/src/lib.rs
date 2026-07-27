@@ -826,8 +826,15 @@ impl Client {
                     })
                     .collect::<Result<_, _>>()?;
                 Some(
-                    common_state::plugin::PluginMgr::from_paths_v1(paths, summary.deployment_root)
-                        .map_err(|e| Error::Other(format!("deployment plugin batch failed: {e:?}")))?,
+                    common_state::plugin::PluginMgr::from_paths_v1(
+                        paths,
+                        summary.deployment_root,
+                        Some(common_state::plugin::module::PluginStoreLimitsV1 {
+                            max_linear_memory_bytes: summary.client_runtime_limits.max_linear_memory_bytes,
+                            max_fuel_per_event: summary.client_runtime_limits.max_fuel_per_event,
+                        }),
+                    )
+                    .map_err(|e| Error::Other(format!("deployment plugin batch failed: {e:?}")))?,
                 )
             },
         };
