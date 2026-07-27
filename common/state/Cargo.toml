@@ -9,7 +9,7 @@ workspace = true
 
 [features]
 simd = ["vek/platform_intrinsics"]
-plugins = ["common-assets/plugins", "toml", "wasmtime", "wasmtime-wasi", "tokio", "tar", "bincode", "serde", "dep:sha2", "dep:hex", "dep:atomic_refcell"]
+plugins = ["common-assets/plugins", "toml", "wasmtime", "wasmtime-wasi", "tokio", "tar", "semver", "bincode", "serde", "dep:sha2", "dep:hex", "dep:atomic_refcell"]
 
 default = ["simd"]
 
@@ -37,6 +37,7 @@ scopeguard = "1.1.0"
 serde = { workspace = true, optional = true }
 toml = { version = "1", optional = true }
 tar = { version = "0.4.37", optional = true }
+semver = { version = "1", optional = true }
 bincode = { workspace = true, optional = true }
 timer-queue = "0.1.0"
 wasmtime = { version = "45", optional = true , features = ["component-model", "async"] }
