@@ -1,11 +1,12 @@
-//! Semantic network envelope: protocol tags and the frozen
-//! `NET_ENVELOPE_PROFILE_V1` vocabulary (`APEX-T3.3`, step `T3.3.01`).
+//! Semantic network envelope: protocol tags, the frozen
+//! `NET_ENVELOPE_PROFILE_V1` vocabulary, and pinned payload codec/digest
+//! (`APEX-T3.3`, steps `T3.3.01`-`T3.3.03`).
 //!
-//! This step adds the shared protocol-visible vocabulary only -- no send,
-//! receive, sequencing, or cross-stream barrier lands here (packet
-//! section 8, `T3.3.01`'s own explicit non-goals). Nothing in the live
-//! client/server call graph constructs these types yet; they are inert
-//! until a later `T3.3.0x` step wires them in.
+//! These steps add the shared protocol-visible vocabulary and payload
+//! codec only -- no send, receive, sequencing, or cross-stream barrier
+//! lands here (packet section 8's non-goals for both steps). Nothing in
+//! the live client/server call graph constructs or calls these yet; they
+//! are inert until a later `T3.3.0x` step wires them in.
 //!
 //! Determinism story: every protocol-visible tag uses an explicit integer
 //! discriminant frozen by this module (never a Rust enum's implicit
@@ -14,10 +15,20 @@
 //! registered through `APEX-T0.5`'s subsystem-descriptor machinery
 //! (`SubsystemSlotIdV1::NetEnvelope`) -- the same content-identity
 //! discipline every other subsystem root in this program uses, not a
-//! bespoke one-off hash.
+//! bespoke one-off hash. Payload bytes are encoded exactly once with the
+//! pinned `bincode::config::legacy()` (`SemanticPayloadEncodingV1::Bincode2LegacySerde`,
+//! matching the existing wire codec's own pin in `network/src/message.rs`)
+//! and decoded with the same exact-consume discipline `T3.3.02` gave the
+//! outer frame -- payload byte identity, never semantic equivalence
+//! (packet section 5.5's own disclaimer, proven false-if-untrue by this
+//! module's `unordered_map_payloads_are_not_byte_stable` negative test).
 
 use std::num::NonZeroU64;
 
+use bincode::config::legacy;
+use bincode::serde::{decode_from_slice, encode_to_vec};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use sha2::{Digest as _, Sha256};
 
 use common::apex::digest::{
@@ -221,6 +232,66 @@ pub fn payload_digest_v1(
     DigestBytes32V1::from_array(out)
 }
 
+/// Packet section 7.9. Typed rejection reasons a receiver can name for a
+/// semantic frame. Frozen vocabulary, added in full now (matching the
+/// tag-enum pattern above) even though most variants are unreachable
+/// until later `T3.3.0x` steps wire in ingress validation -- every
+/// variant is exported, so nothing here is genuinely dead code, and later
+/// steps get one already-agreed set of terminal names instead of each
+/// inventing its own subset piecemeal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SemanticEnvelopeRejectV1 {
+    UnsupportedProfile,
+    WrongBoot,
+    WrongSession,
+    StaleEpoch,
+    FutureEpoch,
+    WrongDirection,
+    UnknownStream,
+    StreamRouteMismatch,
+    SequenceZero,
+    DuplicateSequence,
+    ReplaySequence,
+    SequenceGap { expected: u64, received: u64 },
+    SequenceExhausted,
+    PayloadEncodingUnsupported,
+    PayloadSchemaUnsupported,
+    PayloadLengthMismatch,
+    PayloadDigestMismatch,
+    EnvelopeDecodeFailure,
+    EnvelopeTrailingBytes,
+    PayloadDecodeFailure,
+    PayloadTrailingBytes,
+    StaleSnapshot,
+    CommandIdUnsupported,
+    NoActiveAttachment,
+    StaleEgressBinding,
+    DuplicateOrderKey,
+    OrderKeyTooLarge,
+}
+
+/// Packet section 7.1/T3.3.03: encodes `payload` with the pinned
+/// `SemanticPayloadEncodingV1::Bincode2LegacySerde` codec -- the exact
+/// same `bincode::config::legacy()` pin `network/src/message.rs` already
+/// uses for the outer frame, reused rather than reinvented so payload
+/// bytes and outer-frame bytes never silently drift onto different
+/// codecs.
+pub fn encode_payload_v1<T: Serialize>(payload: &T) -> Vec<u8> {
+    encode_to_vec(payload, legacy()).expect("bincode legacy serde encoding of an owned value is infallible")
+}
+
+/// `T3.3.03`: the payload-level twin of `T3.3.02`'s outer exact-consume
+/// decode -- bincode decodes exactly one value and reports how many bytes
+/// it consumed; a short consume (trailing bytes) is a distinct typed
+/// rejection from a decode failure, never silently accepted.
+pub fn decode_payload_exact_v1<T: DeserializeOwned>(payload_bytes: &[u8]) -> Result<T, SemanticEnvelopeRejectV1> {
+    match decode_from_slice(payload_bytes, legacy()) {
+        Ok((value, consumed)) if consumed == payload_bytes.len() => Ok(value),
+        Ok(_) => Err(SemanticEnvelopeRejectV1::PayloadTrailingBytes),
+        Err(_) => Err(SemanticEnvelopeRejectV1::PayloadDecodeFailure),
+    }
+}
+
 fn encode_tag_category(buf: &mut Vec<u8>, category: u8, entries: &[(u16, &'static str)]) {
     buf.push(category);
     buf.extend_from_slice(&(entries.len() as u16).to_be_bytes());
@@ -328,7 +399,7 @@ mod tests {
 
     #[test]
     fn all_labels_are_ascii_and_unique_within_their_category() {
-        let mut check = |labels: Vec<&str>| {
+        let check = |labels: Vec<&str>| {
             assert!(labels.iter().all(|l| l.is_ascii()));
             let set: HashSet<&str> = labels.iter().copied().collect();
             assert_eq!(set.len(), labels.len(), "duplicate label in {labels:?}");
@@ -420,5 +491,130 @@ mod tests {
         // Different payload bytes -> different digest.
         let d = payload_digest_v1(root, SemanticPayloadSchemaV1::ClientGeneral, SemanticPayloadEncodingV1::Bincode2LegacySerde, b"different payload!");
         assert_ne!(a.as_array(), d.as_array());
+    }
+
+    // T3.3.03's own test list: one-bit mutation, schema substitution,
+    // length ambiguity, compression independence, float bit preservation,
+    // unordered-map byte drift.
+
+    #[test]
+    fn payload_round_trips_exactly() {
+        let bytes = encode_payload_v1(&("abc".to_string(), 42u32, -7i64));
+        let decoded: (String, u32, i64) = decode_payload_exact_v1(&bytes).unwrap();
+        assert_eq!(decoded, ("abc".to_string(), 42u32, -7i64));
+    }
+
+    /// One-bit mutation: flipping a single payload bit must change the
+    /// digest (never leave it, or the whole point of the digest is moot).
+    #[test]
+    fn one_bit_payload_mutation_changes_digest() {
+        let root = net_envelope_profile_root_v1();
+        let bytes = encode_payload_v1(&"abc".to_string());
+        let a = payload_digest_v1(root, SemanticPayloadSchemaV1::ClientGeneral, SemanticPayloadEncodingV1::Bincode2LegacySerde, &bytes);
+        let mut mutated = bytes.clone();
+        let last = mutated.len() - 1;
+        mutated[last] ^= 0x01;
+        let b = payload_digest_v1(root, SemanticPayloadSchemaV1::ClientGeneral, SemanticPayloadEncodingV1::Bincode2LegacySerde, &mutated);
+        assert_ne!(a.as_array(), b.as_array());
+    }
+
+    /// Schema substitution: identical bytes under a different declared
+    /// `SemanticPayloadSchemaV1` must digest differently -- a receiver
+    /// cannot be tricked into accepting bytes meant for one payload enum
+    /// as if they were another just because the raw bytes happen to match.
+    #[test]
+    fn schema_substitution_with_identical_bytes_changes_digest() {
+        let root = net_envelope_profile_root_v1();
+        let bytes = encode_payload_v1(&"abc".to_string());
+        let as_client = payload_digest_v1(root, SemanticPayloadSchemaV1::ClientGeneral, SemanticPayloadEncodingV1::Bincode2LegacySerde, &bytes);
+        let as_server = payload_digest_v1(root, SemanticPayloadSchemaV1::ServerGeneral, SemanticPayloadEncodingV1::Bincode2LegacySerde, &bytes);
+        assert_ne!(as_client.as_array(), as_server.as_array());
+    }
+
+    /// Length ambiguity: `decode_payload_exact_v1` is the payload-level
+    /// twin of `T3.3.02`'s outer exact-consume decode -- short or long
+    /// buffers around a valid encoding must be rejected, not silently
+    /// truncated/padded.
+    #[test]
+    fn payload_length_ambiguity_is_rejected() {
+        let bytes = encode_payload_v1(&"abc".to_string());
+
+        let mut with_trailing = bytes.clone();
+        with_trailing.push(0xFF);
+        assert_eq!(decode_payload_exact_v1::<String>(&with_trailing), Err(SemanticEnvelopeRejectV1::PayloadTrailingBytes));
+
+        let truncated = &bytes[..bytes.len() - 1];
+        assert_eq!(decode_payload_exact_v1::<String>(truncated), Err(SemanticEnvelopeRejectV1::PayloadDecodeFailure));
+    }
+
+    /// Compression independence: `encode_payload_v1`/`payload_digest_v1`
+    /// never compress -- calling either twice on the same input is
+    /// byte-for-byte deterministic regardless of what a later transport
+    /// stage does to the bytes afterward.
+    #[test]
+    fn encoding_and_digest_are_compression_independent_and_deterministic() {
+        let payload = vec![0u8; 10_000]; // Highly compressible, deliberately.
+        let a = encode_payload_v1(&payload);
+        let b = encode_payload_v1(&payload);
+        assert_eq!(a, b);
+        let root = net_envelope_profile_root_v1();
+        let digest_a = payload_digest_v1(root, SemanticPayloadSchemaV1::ClientGeneral, SemanticPayloadEncodingV1::Bincode2LegacySerde, &a);
+        let digest_b = payload_digest_v1(root, SemanticPayloadSchemaV1::ClientGeneral, SemanticPayloadEncodingV1::Bincode2LegacySerde, &b);
+        assert_eq!(digest_a.as_array(), digest_b.as_array());
+    }
+
+    /// Float bit preservation: the pinned legacy Bincode/Serde codec must
+    /// round-trip raw IEEE-754 bits exactly, including a NaN payload whose
+    /// bit pattern would NOT compare equal under plain `==` -- this test
+    /// compares `to_bits()`, not the float values themselves, so it would
+    /// fail honestly rather than passing by accident on a NaN that never
+    /// actually got checked.
+    #[test]
+    fn float_bit_patterns_round_trip_exactly() {
+        let values: [f64; 4] = [0.0, -0.0, f64::NAN, f64::INFINITY];
+        for v in values {
+            let bytes = encode_payload_v1(&v);
+            let decoded: f64 = decode_payload_exact_v1(&bytes).unwrap();
+            assert_eq!(decoded.to_bits(), v.to_bits(), "bit pattern mismatch for {v}");
+        }
+    }
+
+    /// Unordered-map byte drift: this is a NEGATIVE test proving packet
+    /// section 5.5's own disclaimer is real, not just written down --
+    /// payload byte identity does NOT prove semantic equivalence for a
+    /// `HashMap`-backed payload, because std `HashMap` iteration order is
+    /// not canonicalized by this codec. Two structurally-identical maps
+    /// CAN encode to different bytes; this module makes no claim
+    /// otherwise, and this test is the falsifiable proof of that.
+    #[test]
+    fn unordered_map_payloads_are_not_byte_stable() {
+        use std::collections::HashMap;
+        // A HashMap large enough, with keys spread across enough hash
+        // buckets, that RandomState's per-process random seed makes
+        // insertion/iteration order vary run-to-run in practice -- the
+        // same non-determinism axis packet section 5.5 disclaims.
+        let mut map: HashMap<u32, u32> = HashMap::new();
+        for i in 0..64u32 {
+            map.insert(i, i * 7);
+        }
+        let a = encode_payload_v1(&map);
+        // Same logical content, independently rebuilt -- a fresh HashMap
+        // instance gets its own random iteration order.
+        let mut map2: HashMap<u32, u32> = HashMap::new();
+        for i in 0..64u32 {
+            map2.insert(i, i * 7);
+        }
+        let b = encode_payload_v1(&map2);
+        // Two independently-seeded HashMaps with 64 entries have a
+        // negligible (not zero, but astronomically small) chance of
+        // sharing an iteration order -- this is the actual "byte drift"
+        // the packet's test name asks for, demonstrated rather than
+        // merely asserted in a doc comment.
+        assert_ne!(a, b, "two independently-built HashMaps coincidentally encoded identically (extremely unlikely -- rerun to confirm before treating as a real regression)");
+        // The invariant this module actually guarantees, despite the byte
+        // drift above: semantically-equal content still decodes equal.
+        let decoded_a: HashMap<u32, u32> = decode_payload_exact_v1(&a).unwrap();
+        let decoded_b: HashMap<u32, u32> = decode_payload_exact_v1(&b).unwrap();
+        assert_eq!(decoded_a, decoded_b, "semantically equal maps must still decode equal regardless of byte order");
     }
 }
