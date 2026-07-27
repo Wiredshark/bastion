@@ -582,7 +582,19 @@ impl State {
             // Legacy managers keep the exact old fallback behavior.
             let mut plugin_mgr = plugin_mgr;
             match plugin_mgr.activate_v1(&ecs_world, game_mode) {
-                Ok(()) => plugin_mgr,
+                Ok(()) => {
+                    // APEX-T2.5.19: governed sessions validate ACTUAL
+                    // registrations against declared manifest claims —
+                    // an undeclared registration aborts initialization.
+                    if plugin_mgr.is_governed() {
+                        if let Err(e) = plugin_mgr.registration_receipt_input_v1() {
+                            panic!(
+                                "APEX-T2.5.19 undeclared plugin registration (fail-closed): {e:?}"
+                            );
+                        }
+                    }
+                    plugin_mgr
+                },
                 Err(e) if plugin_mgr.is_governed() => {
                     // Startup abort (packet: no active-game rollback). On
                     // the client this unwinds through spawn_blocking as a

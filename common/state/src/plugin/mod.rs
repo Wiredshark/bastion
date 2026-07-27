@@ -143,6 +143,60 @@ pub fn extract_declared_worlds_v1(
     Some(worlds)
 }
 
+/// APEX-T2.5.19 — declared COMMAND claims from a V1 manifest's raw bytes
+/// (union across runtime modes; `None` = legacy manifest = observation
+/// only, no enforcement). Same recompute-from-verified-bytes discipline
+/// as `extract_declared_worlds_v1`.
+pub fn extract_declared_commands_v1(manifest_bytes: &[u8]) -> Option<std::collections::BTreeSet<String>> {
+    let text = std::str::from_utf8(manifest_bytes).ok()?;
+    let raw: toml::Value = toml::de::from_str(text).ok()?;
+    if !matches!(raw.get("manifest_version"), Some(toml::Value::Integer(_))) {
+        return None;
+    }
+    let mut commands = std::collections::BTreeSet::new();
+    if let Some(claims) = raw.get("claims") {
+        if let Some(runtime) = claims.get("runtime").and_then(|r| r.as_array()) {
+            for mode in runtime {
+                if let Some(cmds) = mode.get("commands").and_then(|c| c.as_array()) {
+                    for c in cmds {
+                        commands.insert(c.as_str()?.to_owned());
+                    }
+                }
+            }
+        }
+    }
+    Some(commands)
+}
+
+/// APEX-T2.5.19 — a registration outside the manifest's declared claims:
+/// the ceiling violation that ABORTS initialization on governed sessions.
+#[derive(Debug)]
+pub struct UndeclaredRegistrationV1 {
+    pub plugin: String,
+    pub command: String,
+}
+
+/// APEX-T2.5.19 — pure subset validation: every ACTUAL command
+/// registration must appear in the DECLARED claim set. Bodies/skeletons
+/// have no claim vocabulary in the V1 manifest (packet: asset/animation
+/// claims are per-mode animation lists — enforcement joins when .20/.21
+/// ownership lands); commands are the enforced family here.
+pub fn validate_registrations_v1(
+    plugin: &str,
+    actual_commands: &[String],
+    declared: Option<&std::collections::BTreeSet<String>>,
+) -> Result<(), UndeclaredRegistrationV1> {
+    let Some(declared) = declared else {
+        return Ok(()); // legacy manifest: observation only
+    };
+    for command in actual_commands {
+        if !declared.contains(command) {
+            return Err(UndeclaredRegistrationV1 { plugin: plugin.to_owned(), command: command.clone() });
+        }
+    }
+    Ok(())
+}
+
 /// APEX-T2.1.02 — one sequentially-observed tar entry (observation only; T2.2
 /// decides canonical acceptance). Raw path bytes, type byte, size, and file
 /// position are retained so T2.2 can apply canonical path/type policy without
@@ -915,6 +969,53 @@ impl PluginMgr {
         Ok(())
     }
 
+    /// APEX-T2.5.19 — collect every plugin's ACTUAL registrations
+    /// (canonical order, deduped across its modules) and validate the
+    /// command set against the plugin's OWN manifest claims (recomputed
+    /// from the verified archive bytes; legacy manifests = observation
+    /// only). Returns the ordered receipt input; the first undeclared
+    /// registration is the typed violation.
+    pub fn registration_receipt_input_v1(
+        &mut self,
+    ) -> Result<Vec<(String, Vec<String>, Vec<String>)>, UndeclaredRegistrationV1> {
+        let mut out = Vec::with_capacity(self.plugins.len());
+        for plugin in self.plugins.iter_mut() {
+            // plugin.toml bytes re-read from the retained archive buffer.
+            let manifest_bytes = {
+                let mut found = None;
+                let mut ar = tar::Archive::new(plugin.data_buf.as_slice());
+                if let Ok(entries) = ar.entries() {
+                    for entry in entries.flatten() {
+                        if entry.path().ok().as_deref() == Some(Path::new("plugin.toml")) {
+                            let mut bytes = Vec::new();
+                            let mut entry = entry;
+                            if entry.read_to_end(&mut bytes).is_ok() {
+                                found = Some(bytes);
+                            }
+                            break;
+                        }
+                    }
+                }
+                found
+            };
+            let declared = manifest_bytes.as_deref().and_then(extract_declared_commands_v1);
+            let mut commands = Vec::new();
+            let mut bodies = Vec::new();
+            for module in plugin.modules.iter_mut() {
+                let (c, b) = module.actual_registrations_v1();
+                commands.extend(c);
+                bodies.extend(b);
+            }
+            commands.sort_unstable();
+            commands.dedup();
+            bodies.sort_unstable();
+            bodies.dedup();
+            validate_registrations_v1(&plugin.data.name, &commands, declared.as_ref())?;
+            out.push((plugin.data.name.clone(), commands, bodies));
+        }
+        Ok(out)
+    }
+
     pub fn command_event(
         &mut self,
         ecs: &EcsWorld,
@@ -1394,5 +1495,42 @@ mod plugin_lifecycle_activation_v1 {
             ));
             assert_eq!(failed.lifecycle(), PluginLifecycleStateV1::Failed);
         });
+    }
+}
+
+/// `APEX-T2.5.19` — registration-receipt canaries (pure validation +
+/// claim extraction; live wasm-registration fixtures live in the VM
+/// lane on top of this mechanism).
+#[cfg(test)]
+mod plugin_registration_receipt_v1 {
+    use super::*;
+
+    #[test]
+    fn subset_validation_and_claim_extraction() {
+        let declared: std::collections::BTreeSet<String> =
+            ["hello".to_owned(), "wave".to_owned()].into_iter().collect();
+        let ok = |cmds: &[&str]| {
+            validate_registrations_v1("p", &cmds.iter().map(|s| s.to_string()).collect::<Vec<_>>(), Some(&declared))
+        };
+        // Exact and strict-subset registrations pass.
+        assert!(ok(&["hello", "wave"]).is_ok());
+        assert!(ok(&["hello"]).is_ok());
+        assert!(ok(&[]).is_ok());
+        // Outside the claim set: typed violation naming plugin+command.
+        let err = ok(&["hello", "sudo"]).unwrap_err();
+        assert_eq!(err.plugin, "p");
+        assert_eq!(err.command, "sudo");
+        // Legacy manifest (no declaration): observation only.
+        assert!(
+            validate_registrations_v1("p", &["anything".to_owned()], None).is_ok()
+        );
+
+        // Extraction: union across runtime modes; legacy => None.
+        let v1 = b"manifest_version = 1\n[claims]\nasset_roots = []\n\n\
+                   [[claims.runtime]]\nmode = \"server\"\ncommands = [\"a\", \"b\"]\nanimations = []\n\n\
+                   [[claims.runtime]]\nmode = \"client\"\ncommands = [\"c\"]\nanimations = []\n";
+        let cmds = extract_declared_commands_v1(v1).unwrap();
+        assert_eq!(cmds.into_iter().collect::<Vec<_>>(), vec!["a", "b", "c"]);
+        assert!(extract_declared_commands_v1(b"name = \"old\"\n").is_none());
     }
 }

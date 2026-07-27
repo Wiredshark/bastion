@@ -650,6 +650,18 @@ impl PluginModule {
 
     pub fn name(&self) -> &str { &self.name }
 
+    /// APEX-T2.5.19 — the ACTUAL registrations this module's load hooks
+    /// made, as canonical sorted sets (receipt input; compared against
+    /// the manifest's declared claims).
+    pub fn actual_registrations_v1(&mut self) -> (Vec<String>, Vec<String>) {
+        let store = self.store.get_mut().unwrap();
+        let mut commands: Vec<String> = store.data().registered_commands.iter().cloned().collect();
+        commands.sort_unstable();
+        let mut bodies: Vec<String> = store.data().registered_bodies.keys().cloned().collect();
+        bodies.sort_unstable();
+        (commands, bodies)
+    }
+
     /// APEX-T2.5.14: `max_fuel_per_event` semantics — every host-invoked
     /// event starts from a full per-event budget (a well-behaved event
     /// can never be starved by an earlier one; a runaway event traps at
