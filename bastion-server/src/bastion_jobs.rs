@@ -784,6 +784,22 @@ pub(crate) fn cap_for_skill(climbing_level: u16) -> i32 {
     3 * (i32::from(climbing_level) + 1)
 }
 
+/// T3.52 (E3, Fable-ruled 2026-07-27): the flee-preemption Drive
+/// transition, extracted as its own pure decision. `Some(new_drive)` =
+/// preempt to Flee this tick; `None` = no transition (already fleeing,
+/// or no flee signal). This function's signature cannot mention
+/// `ActiveJob`/`JobBoard`/a job claim at all — a STRUCTURAL guarantee
+/// that "flee preemption never touches the job claim" (survival YIELDS,
+/// SUSPENDS the lease, never cancel-and-reclaim) holds regardless of
+/// what the caller does with the job around this call, not just a
+/// runtime behavior a future edit could silently regress.
+pub(crate) fn flee_preempt_transition(
+    flee_sig: bool,
+    current: comp::bastion::Drive,
+) -> Option<comp::bastion::Drive> {
+    (flee_sig && current != comp::bastion::Drive::Flee).then_some(comp::bastion::Drive::Flee)
+}
+
 /// FREE-CLIMB CAP decision (pure; unit-pinned U1-U5). `true` = the ascent is
 /// allowed. NOTE the deliberate ABSENCE of any climb_free parameter — the
 /// trapped-machinery grant exempts ENERGY only, never the cap; keeping it out
@@ -7778,7 +7794,6 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         )
                 });
             let mut switches = 0u64;
-            let mut flee_preempts: Vec<specs::Entity> = Vec::new();
             // AUTON-3 (row 51): personality for the urgency modulation
             // rides the same rtsim read guard the mood/preempt passes
             // use — zero new coupling — and, CRITICALLY, at the SAME
@@ -7847,8 +7862,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     continue;
                 };
                 // PER-TICK higher-tier preemption.
-                if flee_sig && arb.current != comp::bastion::Drive::Flee {
-                    arb.current = comp::bastion::Drive::Flee;
+                if let Some(new_drive) = flee_preempt_transition(flee_sig, arb.current) {
+                    arb.current = new_drive;
                     arb.committed_until = time.0 + ARB_COMMIT_SECS;
                     // AUTON-3: the recorded scores are the MODULATED
                     // ones (what UI-4 will show); the floor guard keeps
@@ -7865,11 +7880,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         intr,
                     );
                     switches += 1;
-                    if active_jobs.contains(entity) {
-                        // The 3-step clear = the release seam (the
-                        // claim sweep self-heals the claim <=15t).
-                        flee_preempts.push(entity);
-                    }
+                    // T3.52 (E3, Fable-ruled 2026-07-27): survival YIELDS
+                    // to combat/flee but SUSPENDS the job claim rather
+                    // than cancel-and-reclaim — was pushed to
+                    // `flee_preempts`/`to_release` here, which fully
+                    // released the claim (`job.claimed_by = None`) AND
+                    // destroyed `ActiveJob` (travel watchdog progress,
+                    // stance), so a flee always cost the colonist their
+                    // place in line even for a job someone else could
+                    // just as easily finish. `auton_travel_ok` (this
+                    // file, the per-active-job travel loop) already
+                    // gates job-travel Goto issuance on
+                    // `arb.current == Drive::Work`, so simply NOT
+                    // releasing here is sufficient for "yield": the
+                    // colonist stops moving toward the job the moment
+                    // Drive flips to Flee, and resumes toward the SAME
+                    // still-claimed job once Drive flips back to Work —
+                    // "resume after", not a fresh claim.
                     info!("bastion: FLEE — drive preempts work (per-tick)");
                     continue;
                 }
@@ -7921,9 +7948,6 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }
             }
             board.drive_switches += switches;
-            for e in flee_preempts {
-                to_release.push(e);
-            }
         }
         // ── FARM/PROD-2 (row 46): the farm pass — growth clock + the
         // state-driven job trigger, ONE bounded scan (O(Σ plot area) at
@@ -14868,6 +14892,25 @@ fn duplicate_reservations(
 mod tests {
     use super::*;
     use std::num::NonZeroU64;
+
+    /// T3.52 (E3, Fable-ruled 2026-07-27): entering Flee transitions
+    /// Drive, full stop — the extracted function's signature cannot even
+    /// NAME a job/claim, so "flee never releases the job" is provable
+    /// from the type alone, not just this test's behavior. This test
+    /// pins the transition SHAPE the caller relies on: a fresh flee
+    /// signal preempts, a repeated one (already fleeing) is a no-op.
+    #[test]
+    fn flee_preempt_transition_shape() {
+        use comp::bastion::Drive;
+        assert_eq!(flee_preempt_transition(true, Drive::Work), Some(Drive::Flee));
+        assert_eq!(flee_preempt_transition(true, Drive::Idle), Some(Drive::Flee));
+        assert_eq!(
+            flee_preempt_transition(true, Drive::Flee),
+            None,
+            "already fleeing — not a fresh preemption"
+        );
+        assert_eq!(flee_preempt_transition(false, Drive::Work), None, "no flee signal, no transition");
+    }
 
     /// MOOD-01 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof): DET-MOOD-003 —
     /// canonical_thought_drain_order sorts queued thoughts by (source NPC id,
