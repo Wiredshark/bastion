@@ -133,6 +133,11 @@ pub enum ArchiveRejectV1 {
     NoncanonicalUstarSplit,
     NonrepresentableUstarPath,
     WriterPathTransformation,
+    // T2.2.05 — namespace rejects.
+    DuplicateCanonicalPath,
+    PortableCaseCollision,
+    PathKindCollision,
+    ExplicitDirectoryInStrictV1,
 }
 
 impl ArchiveRejectV1 {
@@ -167,8 +172,81 @@ impl ArchiveRejectV1 {
             Self::NoncanonicalUstarSplit => "REJECT-NONCANONICAL-USTAR-SPLIT",
             Self::NonrepresentableUstarPath => "REJECT-NONREPRESENTABLE-USTAR-PATH",
             Self::WriterPathTransformation => "REJECT-WRITER-PATH-TRANSFORMATION",
+            Self::DuplicateCanonicalPath => "REJECT-DUPLICATE-CANONICAL-PATH",
+            Self::PortableCaseCollision => "REJECT-PORTABLE-CASE-COLLISION",
+            Self::PathKindCollision => "REJECT-PATH-KIND-COLLISION",
+            Self::ExplicitDirectoryInStrictV1 => "REJECT-EXPLICIT-DIRECTORY-IN-STRICT-V1",
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// T2.2.05 — duplicate-safe regular-file namespace index.
+// ---------------------------------------------------------------------------
+
+/// Builds the strict namespace from per-entry identities. Rejections make
+/// last-entry-wins UNREPRESENTABLE (spec policy 3): exact duplicates,
+/// ASCII-case-fold collisions, and file-vs-implied-directory collisions
+/// each die on their own catalog terminal; output is path-byte sorted.
+pub fn build_namespace(entries: Vec<CanonicalEntryV1>) -> Result<Vec<CanonicalEntryV1>, ArchiveRejectV1> {
+    let mut sorted = entries;
+    sorted.sort_by(|a, b| a.path.as_str().as_bytes().cmp(b.path.as_str().as_bytes()));
+
+    // Exact duplicates (adjacent after sort).
+    for pair in sorted.windows(2) {
+        if pair[0].path.as_str() == pair[1].path.as_str() {
+            return Err(ArchiveRejectV1::DuplicateCanonicalPath);
+        }
+    }
+    // Case-fold collisions on the portability key.
+    let mut keys: Vec<&str> = sorted.iter().map(|e| e.portability_key.as_str()).collect();
+    keys.sort_unstable();
+    for pair in keys.windows(2) {
+        if pair[0] == pair[1] {
+            return Err(ArchiveRejectV1::PortableCaseCollision);
+        }
+    }
+    // File-vs-implied-directory collisions: a regular file's full path
+    // must never also be a directory prefix of another entry (checked on
+    // the CASE-FOLDED namespace — a collision across case is still a
+    // collision on portable filesystems).
+    let folded: std::collections::BTreeSet<String> =
+        sorted.iter().map(|e| e.portability_key.as_str().to_owned()).collect();
+    for entry in &sorted {
+        let key = entry.portability_key.as_str();
+        let mut prefix = String::new();
+        for segment in key.split('/') {
+            if !prefix.is_empty() {
+                if folded.contains(&prefix) {
+                    return Err(ArchiveRejectV1::PathKindCollision);
+                }
+                prefix.push('/');
+            }
+            prefix.push_str(segment);
+        }
+    }
+    Ok(sorted)
+}
+
+/// The implied-directory namespace of a built namespace (spec policy 6 /
+/// `CANONICAL-ROOT-INCLUDES-DIRECTORY-NAMESPACE` PAR-C10): every proper
+/// ancestor path, sorted + deduped. Explicit directory RECORDS are
+/// rejected in strict mode; the STRUCTURE the paths imply is part of the
+/// semantic root (T2.2.07 embeds this list).
+pub fn implied_directories(namespace: &[CanonicalEntryV1]) -> Vec<String> {
+    let mut dirs = std::collections::BTreeSet::new();
+    for entry in namespace {
+        let path = entry.path.as_str();
+        let mut prefix = String::new();
+        for segment in path.split('/') {
+            if !prefix.is_empty() {
+                dirs.insert(prefix.clone());
+                prefix.push('/');
+            }
+            prefix.push_str(segment);
+        }
+    }
+    dirs.into_iter().collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -748,6 +826,42 @@ mod tests {
         // transform, cf. PAR-C31) — T2.2.09's suite drives it. The
         // scanner-side `canonical_split == None` arm stays as defense in
         // depth.
+    }
+
+    fn centry(path: &str, byte: u8) -> CanonicalEntryV1 {
+        CanonicalEntryV1 {
+            path: CanonicalPathV1::new(path).unwrap(),
+            portability_key: MachineTextV1::new(path.to_ascii_lowercase()).unwrap(),
+            size_bytes: 1,
+            content_sha256: [byte; 32],
+        }
+    }
+
+    #[test]
+    fn namespace_collisions_bite_and_output_is_sorted() {
+        // Sorted output regardless of input order.
+        let ns = build_namespace(vec![centry("z/f.wasm", 1), centry("a/f.wasm", 2)]).unwrap();
+        assert_eq!(ns[0].path.as_str(), "a/f.wasm");
+
+        assert_eq!(
+            build_namespace(vec![centry("a/f.wasm", 1), centry("a/f.wasm", 1)]).unwrap_err(),
+            ArchiveRejectV1::DuplicateCanonicalPath
+        );
+        assert_eq!(
+            build_namespace(vec![centry("a/File.wasm", 1), centry("a/file.wasm", 2)]).unwrap_err(),
+            ArchiveRejectV1::PortableCaseCollision
+        );
+        // File at a path that is also an implied directory (across case).
+        assert_eq!(
+            build_namespace(vec![centry("a/b", 1), centry("A/B/c.wasm", 2)]).unwrap_err(),
+            ArchiveRejectV1::PathKindCollision
+        );
+    }
+
+    #[test]
+    fn implied_directory_namespace() {
+        let ns = build_namespace(vec![centry("a/b/c.wasm", 1), centry("a/d.wasm", 2), centry("top.toml", 3)]).unwrap();
+        assert_eq!(implied_directories(&ns), vec!["a".to_string(), "a/b".to_string()]);
     }
 
     #[test]
