@@ -1,0 +1,968 @@
+﻿{
+  "schema": "bastion.apex.t3.4-cross-stream-checkpoint-canaries/v1",
+  "generated_at_utc": "2026-07-24T00:05:22Z",
+  "live_source_commit": "f7b30de6d916930c96f181919160ff7839aa6d5b",
+  "case_count": 160,
+  "cases": [
+    {
+      "id": "CKPT-001",
+      "group": "descriptor",
+      "mutation": "matching descriptor on all five streams",
+      "expected_terminal": "ACCEPT-DESCRIPTOR"
+    },
+    {
+      "id": "CKPT-002",
+      "group": "descriptor",
+      "mutation": "descriptor root differs on one stream",
+      "expected_terminal": "REJECT-DESCRIPTOR-ROOT-MISMATCH"
+    },
+    {
+      "id": "CKPT-003",
+      "group": "descriptor",
+      "mutation": "descriptor bytes differ but root copied",
+      "expected_terminal": "REJECT-DESCRIPTOR-DIGEST"
+    },
+    {
+      "id": "CKPT-004",
+      "group": "descriptor",
+      "mutation": "unknown checkpoint schema",
+      "expected_terminal": "REJECT-UNSUPPORTED-CHECKPOINT-SCHEMA"
+    },
+    {
+      "id": "CKPT-005",
+      "group": "descriptor",
+      "mutation": "unknown required descriptor field",
+      "expected_terminal": "REJECT-UNKNOWN-REQUIRED-FIELD"
+    },
+    {
+      "id": "CKPT-006",
+      "group": "descriptor",
+      "mutation": "duplicate descriptor field",
+      "expected_terminal": "REJECT-NONCANONICAL-DESCRIPTOR"
+    },
+    {
+      "id": "CKPT-007",
+      "group": "descriptor",
+      "mutation": "indefinite-length descriptor encoding",
+      "expected_terminal": "REJECT-NONCANONICAL-DESCRIPTOR"
+    },
+    {
+      "id": "CKPT-008",
+      "group": "descriptor",
+      "mutation": "required stream set omits Terrain",
+      "expected_terminal": "REJECT-REQUIRED-STREAM-SET"
+    },
+    {
+      "id": "CKPT-009",
+      "group": "descriptor",
+      "mutation": "required stream set includes Ping",
+      "expected_terminal": "REJECT-REQUIRED-STREAM-SET"
+    },
+    {
+      "id": "CKPT-010",
+      "group": "descriptor",
+      "mutation": "required stream set contains duplicate stream",
+      "expected_terminal": "REJECT-REQUIRED-STREAM-SET"
+    },
+    {
+      "id": "CKPT-011",
+      "group": "descriptor",
+      "mutation": "all five semantic streams present",
+      "expected_terminal": "ACCEPT-REQUIRED-STREAM-SET"
+    },
+    {
+      "id": "CKPT-012",
+      "group": "descriptor",
+      "mutation": "resource profile id absent",
+      "expected_terminal": "REJECT-RESOURCE-PROFILE"
+    },
+    {
+      "id": "CKPT-013",
+      "group": "descriptor",
+      "mutation": "apply policy root absent",
+      "expected_terminal": "REJECT-APPLY-POLICY"
+    },
+    {
+      "id": "CKPT-014",
+      "group": "descriptor",
+      "mutation": "egress order policy root absent",
+      "expected_terminal": "REJECT-EGRESS-ORDER-POLICY"
+    },
+    {
+      "id": "CKPT-015",
+      "group": "descriptor",
+      "mutation": "global transcript root absent for nonempty checkpoint",
+      "expected_terminal": "REJECT-DESCRIPTOR-INCOMPLETE"
+    },
+    {
+      "id": "CKPT-016",
+      "group": "descriptor",
+      "mutation": "empty checkpoint with empty-root definition",
+      "expected_terminal": "ACCEPT-EMPTY-CHECKPOINT"
+    },
+    {
+      "id": "CKPT-017",
+      "group": "descriptor",
+      "mutation": "declared record count differs from ordinal max",
+      "expected_terminal": "REJECT-DESCRIPTOR-INVARIANT"
+    },
+    {
+      "id": "CKPT-018",
+      "group": "descriptor",
+      "mutation": "per-stream plans not sorted by semantic stream id",
+      "expected_terminal": "REJECT-NONCANONICAL-DESCRIPTOR"
+    },
+    {
+      "id": "CKPT-019",
+      "group": "descriptor",
+      "mutation": "stream plan references unrequired stream",
+      "expected_terminal": "REJECT-DESCRIPTOR-INVARIANT"
+    },
+    {
+      "id": "CKPT-020",
+      "group": "descriptor",
+      "mutation": "descriptor binding differs from T3.2 binding",
+      "expected_terminal": "REJECT-SESSION-BINDING"
+    },
+    {
+      "id": "CKPT-021",
+      "group": "epoch_parent",
+      "mutation": "first checkpoint epoch is 1 and parent is 0",
+      "expected_terminal": "ACCEPT-EPOCH"
+    },
+    {
+      "id": "CKPT-022",
+      "group": "epoch_parent",
+      "mutation": "first checkpoint epoch is 0",
+      "expected_terminal": "REJECT-EPOCH-ZERO"
+    },
+    {
+      "id": "CKPT-023",
+      "group": "epoch_parent",
+      "mutation": "next epoch increments by one",
+      "expected_terminal": "ACCEPT-EPOCH"
+    },
+    {
+      "id": "CKPT-024",
+      "group": "epoch_parent",
+      "mutation": "next epoch skips one",
+      "expected_terminal": "REJECT-EPOCH-GAP"
+    },
+    {
+      "id": "CKPT-025",
+      "group": "epoch_parent",
+      "mutation": "epoch repeats after commit",
+      "expected_terminal": "REJECT-STALE-EPOCH"
+    },
+    {
+      "id": "CKPT-026",
+      "group": "epoch_parent",
+      "mutation": "parent equals last committed epoch",
+      "expected_terminal": "ACCEPT-PARENT"
+    },
+    {
+      "id": "CKPT-027",
+      "group": "epoch_parent",
+      "mutation": "parent older than last committed epoch",
+      "expected_terminal": "REJECT-PARENT"
+    },
+    {
+      "id": "CKPT-028",
+      "group": "epoch_parent",
+      "mutation": "parent newer than last committed epoch",
+      "expected_terminal": "REJECT-PARENT"
+    },
+    {
+      "id": "CKPT-029",
+      "group": "epoch_parent",
+      "mutation": "checkpoint from old connection epoch",
+      "expected_terminal": "REJECT-STALE-CONNECTION-EPOCH"
+    },
+    {
+      "id": "CKPT-030",
+      "group": "epoch_parent",
+      "mutation": "checkpoint from old server boot",
+      "expected_terminal": "REJECT-WRONG-BOOT"
+    },
+    {
+      "id": "CKPT-031",
+      "group": "epoch_parent",
+      "mutation": "two active checkpoint epochs on one stream",
+      "expected_terminal": "REJECT-OVERLAPPING-EPOCH"
+    },
+    {
+      "id": "CKPT-032",
+      "group": "epoch_parent",
+      "mutation": "same active epoch begins twice on same stream",
+      "expected_terminal": "REJECT-DUPLICATE-BEGIN"
+    },
+    {
+      "id": "CKPT-033",
+      "group": "epoch_parent",
+      "mutation": "same active epoch begins once on each stream",
+      "expected_terminal": "ACCEPT-BEGIN-SET"
+    },
+    {
+      "id": "CKPT-034",
+      "group": "epoch_parent",
+      "mutation": "next epoch bytes arrive after current barrier",
+      "expected_terminal": "BLOCK-IN-TRANSPORT-UNTIL-COMMIT"
+    },
+    {
+      "id": "CKPT-035",
+      "group": "epoch_parent",
+      "mutation": "future begin is consumed before current commit",
+      "expected_terminal": "CANARY-ALIGNMENT-BYPASS"
+    },
+    {
+      "id": "CKPT-036",
+      "group": "epoch_parent",
+      "mutation": "resync resets epoch under new connection epoch",
+      "expected_terminal": "ACCEPT-NEW-BINDING-EPOCH-ONE"
+    },
+    {
+      "id": "CKPT-037",
+      "group": "stream_begin_barrier",
+      "mutation": "Begin is first checkpoint record on stream",
+      "expected_terminal": "ACCEPT-BEGIN"
+    },
+    {
+      "id": "CKPT-038",
+      "group": "stream_begin_barrier",
+      "mutation": "data record before Begin",
+      "expected_terminal": "REJECT-DATA-BEFORE-BEGIN"
+    },
+    {
+      "id": "CKPT-039",
+      "group": "stream_begin_barrier",
+      "mutation": "Barrier after all declared data records",
+      "expected_terminal": "ACCEPT-BARRIER"
+    },
+    {
+      "id": "CKPT-040",
+      "group": "stream_begin_barrier",
+      "mutation": "Barrier before declared data count",
+      "expected_terminal": "REJECT-EARLY-BARRIER"
+    },
+    {
+      "id": "CKPT-041",
+      "group": "stream_begin_barrier",
+      "mutation": "data after Barrier consumed before commit",
+      "expected_terminal": "CANARY-BLOCKED-STREAM-POLL"
+    },
+    {
+      "id": "CKPT-042",
+      "group": "stream_begin_barrier",
+      "mutation": "duplicate Barrier",
+      "expected_terminal": "REJECT-DUPLICATE-BARRIER"
+    },
+    {
+      "id": "CKPT-043",
+      "group": "stream_begin_barrier",
+      "mutation": "Barrier semantic stream disagrees with physical route",
+      "expected_terminal": "REJECT-STREAM-BARRIER"
+    },
+    {
+      "id": "CKPT-044",
+      "group": "stream_begin_barrier",
+      "mutation": "Barrier descriptor root mismatch",
+      "expected_terminal": "REJECT-DESCRIPTOR-ROOT-MISMATCH"
+    },
+    {
+      "id": "CKPT-045",
+      "group": "stream_begin_barrier",
+      "mutation": "Barrier epoch mismatch",
+      "expected_terminal": "REJECT-EPOCH-MISMATCH"
+    },
+    {
+      "id": "CKPT-046",
+      "group": "stream_begin_barrier",
+      "mutation": "Barrier last data sequence mismatch",
+      "expected_terminal": "REJECT-STREAM-WATERMARK"
+    },
+    {
+      "id": "CKPT-047",
+      "group": "stream_begin_barrier",
+      "mutation": "Barrier record count mismatch",
+      "expected_terminal": "REJECT-STREAM-WATERMARK"
+    },
+    {
+      "id": "CKPT-048",
+      "group": "stream_begin_barrier",
+      "mutation": "Barrier payload byte count mismatch",
+      "expected_terminal": "REJECT-STREAM-WATERMARK"
+    },
+    {
+      "id": "CKPT-049",
+      "group": "stream_begin_barrier",
+      "mutation": "Barrier stream root mismatch",
+      "expected_terminal": "REJECT-STREAM-ROOT"
+    },
+    {
+      "id": "CKPT-050",
+      "group": "stream_begin_barrier",
+      "mutation": "zero-data stream Begin then Barrier",
+      "expected_terminal": "ACCEPT-EMPTY-STREAM"
+    },
+    {
+      "id": "CKPT-051",
+      "group": "stream_begin_barrier",
+      "mutation": "missing Bootstrap Barrier",
+      "expected_terminal": "CHECKPOINT-INCOMPLETE"
+    },
+    {
+      "id": "CKPT-052",
+      "group": "stream_begin_barrier",
+      "mutation": "missing Character Barrier",
+      "expected_terminal": "CHECKPOINT-INCOMPLETE"
+    },
+    {
+      "id": "CKPT-053",
+      "group": "stream_begin_barrier",
+      "mutation": "missing InGame Barrier",
+      "expected_terminal": "CHECKPOINT-INCOMPLETE"
+    },
+    {
+      "id": "CKPT-054",
+      "group": "stream_begin_barrier",
+      "mutation": "missing General Barrier",
+      "expected_terminal": "CHECKPOINT-INCOMPLETE"
+    },
+    {
+      "id": "CKPT-055",
+      "group": "stream_begin_barrier",
+      "mutation": "missing Terrain Barrier",
+      "expected_terminal": "CHECKPOINT-INCOMPLETE"
+    },
+    {
+      "id": "CKPT-056",
+      "group": "stream_begin_barrier",
+      "mutation": "all barriers received in reverse stream order",
+      "expected_terminal": "ACCEPT-SAME-CHECKPOINT"
+    },
+    {
+      "id": "CKPT-057",
+      "group": "sequence_watermark",
+      "mutation": "stream data sequences contiguous between Begin and Barrier",
+      "expected_terminal": "ACCEPT-STREAM-RANGE"
+    },
+    {
+      "id": "CKPT-058",
+      "group": "sequence_watermark",
+      "mutation": "one stream data sequence gap",
+      "expected_terminal": "REJECT-T3.3-SEQUENCE-GAP"
+    },
+    {
+      "id": "CKPT-059",
+      "group": "sequence_watermark",
+      "mutation": "duplicate stream data sequence",
+      "expected_terminal": "REJECT-T3.3-DUPLICATE"
+    },
+    {
+      "id": "CKPT-060",
+      "group": "sequence_watermark",
+      "mutation": "last sequence includes Barrier rather than last data",
+      "expected_terminal": "REJECT-STREAM-WATERMARK"
+    },
+    {
+      "id": "CKPT-061",
+      "group": "sequence_watermark",
+      "mutation": "Begin sequence not declared",
+      "expected_terminal": "REJECT-STREAM-PLAN"
+    },
+    {
+      "id": "CKPT-062",
+      "group": "sequence_watermark",
+      "mutation": "Barrier sequence not declared",
+      "expected_terminal": "REJECT-STREAM-PLAN"
+    },
+    {
+      "id": "CKPT-063",
+      "group": "sequence_watermark",
+      "mutation": "data sequence outside declared range",
+      "expected_terminal": "REJECT-STREAM-PLAN"
+    },
+    {
+      "id": "CKPT-064",
+      "group": "sequence_watermark",
+      "mutation": "stream with no data declares no first/last data sequence",
+      "expected_terminal": "ACCEPT-EMPTY-STREAM"
+    },
+    {
+      "id": "CKPT-065",
+      "group": "sequence_watermark",
+      "mutation": "stream with no data declares a data sequence",
+      "expected_terminal": "REJECT-STREAM-PLAN"
+    },
+    {
+      "id": "CKPT-066",
+      "group": "sequence_watermark",
+      "mutation": "checkpoint data crosses T3.3 connection-epoch reset",
+      "expected_terminal": "REJECT-SESSION-BINDING"
+    },
+    {
+      "id": "CKPT-067",
+      "group": "sequence_watermark",
+      "mutation": "same semantic sequence appears on different streams",
+      "expected_terminal": "ACCEPT-STREAM-LOCAL-SEQUENCE"
+    },
+    {
+      "id": "CKPT-068",
+      "group": "sequence_watermark",
+      "mutation": "same sequence appears in opposite direction",
+      "expected_terminal": "ACCEPT-DIRECTION-LOCAL-SEQUENCE"
+    },
+    {
+      "id": "CKPT-069",
+      "group": "sequence_watermark",
+      "mutation": "watermark accepts old T3.3 sequence",
+      "expected_terminal": "CANARY-T3.3-BYPASS"
+    },
+    {
+      "id": "CKPT-070",
+      "group": "sequence_watermark",
+      "mutation": "watermark sequence reaches u64::MAX",
+      "expected_terminal": "ACCEPT-THEN-SEQUENCE-EXHAUSTED"
+    },
+    {
+      "id": "CKPT-071",
+      "group": "sequence_watermark",
+      "mutation": "next checkpoint would wrap T3.3 sequence",
+      "expected_terminal": "REJECT-SEQUENCE-EXHAUSTED"
+    },
+    {
+      "id": "CKPT-072",
+      "group": "sequence_watermark",
+      "mutation": "stream root includes Begin control payload",
+      "expected_terminal": "REJECT-ROOT-PROFILE"
+    },
+    {
+      "id": "CKPT-073",
+      "group": "ordinal",
+      "mutation": "global ordinals contiguous 1..N",
+      "expected_terminal": "ACCEPT-ORDINALS"
+    },
+    {
+      "id": "CKPT-074",
+      "group": "ordinal",
+      "mutation": "ordinal zero",
+      "expected_terminal": "REJECT-ORDINAL-ZERO"
+    },
+    {
+      "id": "CKPT-075",
+      "group": "ordinal",
+      "mutation": "duplicate ordinal across streams",
+      "expected_terminal": "REJECT-DUPLICATE-ORDINAL"
+    },
+    {
+      "id": "CKPT-076",
+      "group": "ordinal",
+      "mutation": "missing ordinal",
+      "expected_terminal": "REJECT-ORDINAL-GAP"
+    },
+    {
+      "id": "CKPT-077",
+      "group": "ordinal",
+      "mutation": "future ordinal beyond declared max",
+      "expected_terminal": "REJECT-ORDINAL-RANGE"
+    },
+    {
+      "id": "CKPT-078",
+      "group": "ordinal",
+      "mutation": "data record omits ordinal",
+      "expected_terminal": "REJECT-CHECKPOINT-CONTEXT"
+    },
+    {
+      "id": "CKPT-079",
+      "group": "ordinal",
+      "mutation": "Begin control record carries data ordinal",
+      "expected_terminal": "REJECT-CONTROL-ORDINAL"
+    },
+    {
+      "id": "CKPT-080",
+      "group": "ordinal",
+      "mutation": "Barrier control record carries data ordinal",
+      "expected_terminal": "REJECT-CONTROL-ORDINAL"
+    },
+    {
+      "id": "CKPT-081",
+      "group": "ordinal",
+      "mutation": "arrival order permuted but ordinal set equal",
+      "expected_terminal": "ACCEPT-SAME-APPLY-TAPE"
+    },
+    {
+      "id": "CKPT-082",
+      "group": "ordinal",
+      "mutation": "physical stream polling order permuted",
+      "expected_terminal": "ACCEPT-SAME-APPLY-TAPE"
+    },
+    {
+      "id": "CKPT-083",
+      "group": "ordinal",
+      "mutation": "server worker count changes intent completion order",
+      "expected_terminal": "ACCEPT-SAME-ORDINAL-TAPE"
+    },
+    {
+      "id": "CKPT-084",
+      "group": "ordinal",
+      "mutation": "canonical egress policy root changes",
+      "expected_terminal": "REJECT-EGRESS-ORDER-POLICY"
+    },
+    {
+      "id": "CKPT-085",
+      "group": "ordinal",
+      "mutation": "server assigns ordinal before canonical sort",
+      "expected_terminal": "CANARY-NONDETERMINISTIC-EGRESS"
+    },
+    {
+      "id": "CKPT-086",
+      "group": "ordinal",
+      "mutation": "ordinal order violates registered apply phase",
+      "expected_terminal": "REJECT-APPLY-ORDER"
+    },
+    {
+      "id": "CKPT-087",
+      "group": "ordinal",
+      "mutation": "two payloads have equal canonical egress key",
+      "expected_terminal": "REJECT-DUPLICATE-EGRESS-KEY"
+    },
+    {
+      "id": "CKPT-088",
+      "group": "ordinal",
+      "mutation": "empty checkpoint ordinal max is zero",
+      "expected_terminal": "ACCEPT-EMPTY-CHECKPOINT"
+    },
+    {
+      "id": "CKPT-089",
+      "group": "ordinal",
+      "mutation": "empty checkpoint ordinal max is one",
+      "expected_terminal": "REJECT-DESCRIPTOR-INVARIANT"
+    },
+    {
+      "id": "CKPT-090",
+      "group": "ordinal",
+      "mutation": "ordinal transcript differs only by stream arrival",
+      "expected_terminal": "ACCEPT-SAME-GLOBAL-ROOT"
+    },
+    {
+      "id": "CKPT-091",
+      "group": "ordinal",
+      "mutation": "ordinal transcript payload digest differs",
+      "expected_terminal": "REJECT-GLOBAL-ROOT"
+    },
+    {
+      "id": "CKPT-092",
+      "group": "ordinal",
+      "mutation": "ordinal transcript payload kind differs",
+      "expected_terminal": "REJECT-GLOBAL-ROOT"
+    },
+    {
+      "id": "CKPT-093",
+      "group": "roots_counts",
+      "mutation": "per-stream root matches ordered records",
+      "expected_terminal": "ACCEPT-STREAM-ROOT"
+    },
+    {
+      "id": "CKPT-094",
+      "group": "roots_counts",
+      "mutation": "one payload digest bit flips",
+      "expected_terminal": "REJECT-STREAM-ROOT"
+    },
+    {
+      "id": "CKPT-095",
+      "group": "roots_counts",
+      "mutation": "same records in different order",
+      "expected_terminal": "REJECT-STREAM-ROOT"
+    },
+    {
+      "id": "CKPT-096",
+      "group": "roots_counts",
+      "mutation": "global root matches ordinal transcript",
+      "expected_terminal": "ACCEPT-GLOBAL-ROOT"
+    },
+    {
+      "id": "CKPT-097",
+      "group": "roots_counts",
+      "mutation": "global root built in stream order instead of ordinal order",
+      "expected_terminal": "REJECT-GLOBAL-ROOT"
+    },
+    {
+      "id": "CKPT-098",
+      "group": "roots_counts",
+      "mutation": "record count exact",
+      "expected_terminal": "ACCEPT-COUNT"
+    },
+    {
+      "id": "CKPT-099",
+      "group": "roots_counts",
+      "mutation": "record count too small",
+      "expected_terminal": "REJECT-COUNT"
+    },
+    {
+      "id": "CKPT-100",
+      "group": "roots_counts",
+      "mutation": "record count too large",
+      "expected_terminal": "REJECT-COUNT"
+    },
+    {
+      "id": "CKPT-101",
+      "group": "roots_counts",
+      "mutation": "total payload bytes exact",
+      "expected_terminal": "ACCEPT-BYTE-COUNT"
+    },
+    {
+      "id": "CKPT-102",
+      "group": "roots_counts",
+      "mutation": "total payload bytes too small",
+      "expected_terminal": "REJECT-BYTE-COUNT"
+    },
+    {
+      "id": "CKPT-103",
+      "group": "roots_counts",
+      "mutation": "total payload bytes too large",
+      "expected_terminal": "REJECT-BYTE-COUNT"
+    },
+    {
+      "id": "CKPT-104",
+      "group": "roots_counts",
+      "mutation": "stream payload bytes exact",
+      "expected_terminal": "ACCEPT-BYTE-COUNT"
+    },
+    {
+      "id": "CKPT-105",
+      "group": "roots_counts",
+      "mutation": "stream payload bytes mismatch",
+      "expected_terminal": "REJECT-BYTE-COUNT"
+    },
+    {
+      "id": "CKPT-106",
+      "group": "roots_counts",
+      "mutation": "root domain label from T3.3 substituted",
+      "expected_terminal": "REJECT-ROOT-DOMAIN"
+    },
+    {
+      "id": "CKPT-107",
+      "group": "roots_counts",
+      "mutation": "checkpoint descriptor root substituted for global transcript root",
+      "expected_terminal": "REJECT-ROOT-DOMAIN"
+    },
+    {
+      "id": "CKPT-108",
+      "group": "roots_counts",
+      "mutation": "empty stream root uses typed empty definition",
+      "expected_terminal": "ACCEPT-EMPTY-STREAM-ROOT"
+    },
+    {
+      "id": "CKPT-109",
+      "group": "roots_counts",
+      "mutation": "generic zero digest used for empty stream",
+      "expected_terminal": "REJECT-EMPTY-ROOT"
+    },
+    {
+      "id": "CKPT-110",
+      "group": "roots_counts",
+      "mutation": "same payload digest reused under another ordinal",
+      "expected_terminal": "REJECT-GLOBAL-ROOT"
+    },
+    {
+      "id": "CKPT-111",
+      "group": "roots_counts",
+      "mutation": "same payload appears twice at distinct ordinals and descriptor declares both",
+      "expected_terminal": "ACCEPT-EXPLICIT-DUPLICATE-PAYLOAD"
+    },
+    {
+      "id": "CKPT-112",
+      "group": "roots_counts",
+      "mutation": "unindexed staged record exists",
+      "expected_terminal": "REJECT-STAGING-INVENTORY"
+    },
+    {
+      "id": "CKPT-113",
+      "group": "staging_prepare_commit",
+      "mutation": "accepted data is staged without handler mutation",
+      "expected_terminal": "ACCEPT-STAGED"
+    },
+    {
+      "id": "CKPT-114",
+      "group": "staging_prepare_commit",
+      "mutation": "handler mutates live state before all barriers",
+      "expected_terminal": "CANARY-PREMATURE-MUTATION"
+    },
+    {
+      "id": "CKPT-115",
+      "group": "staging_prepare_commit",
+      "mutation": "all barriers then preflight succeeds",
+      "expected_terminal": "PREPARE-CHECKPOINT"
+    },
+    {
+      "id": "CKPT-116",
+      "group": "staging_prepare_commit",
+      "mutation": "preflight finds missing referenced UID",
+      "expected_terminal": "REJECT-PREPARE"
+    },
+    {
+      "id": "CKPT-117",
+      "group": "staging_prepare_commit",
+      "mutation": "preflight finds duplicate entity create",
+      "expected_terminal": "REJECT-PREPARE"
+    },
+    {
+      "id": "CKPT-118",
+      "group": "staging_prepare_commit",
+      "mutation": "preflight resolves create before SetPlayerEntity by ordinal",
+      "expected_terminal": "PREPARE-CHECKPOINT"
+    },
+    {
+      "id": "CKPT-119",
+      "group": "staging_prepare_commit",
+      "mutation": "preflight sees SetPlayerEntity before create",
+      "expected_terminal": "REJECT-APPLY-ORDER"
+    },
+    {
+      "id": "CKPT-120",
+      "group": "staging_prepare_commit",
+      "mutation": "preflight terrain delta before base chunk",
+      "expected_terminal": "REJECT-APPLY-ORDER"
+    },
+    {
+      "id": "CKPT-121",
+      "group": "staging_prepare_commit",
+      "mutation": "preflight stages frontend events",
+      "expected_terminal": "ACCEPT-STAGED-EVENTS"
+    },
+    {
+      "id": "CKPT-122",
+      "group": "staging_prepare_commit",
+      "mutation": "frontend event emitted before commit",
+      "expected_terminal": "CANARY-PREMATURE-EVENT"
+    },
+    {
+      "id": "CKPT-123",
+      "group": "staging_prepare_commit",
+      "mutation": "commit runs before client local State::tick",
+      "expected_terminal": "ACCEPT-COMMIT-PHASE"
+    },
+    {
+      "id": "CKPT-124",
+      "group": "staging_prepare_commit",
+      "mutation": "client local State::tick runs before checkpoint commit",
+      "expected_terminal": "CANARY-COMMIT-PHASE"
+    },
+    {
+      "id": "CKPT-125",
+      "group": "staging_prepare_commit",
+      "mutation": "commit function returns recoverable error after first mutation",
+      "expected_terminal": "CANARY-FALLIBLE-COMMIT"
+    },
+    {
+      "id": "CKPT-126",
+      "group": "staging_prepare_commit",
+      "mutation": "all recoverable failures occur in prepare phase",
+      "expected_terminal": "ACCEPT-NONFALLIBLE-COMMIT"
+    },
+    {
+      "id": "CKPT-127",
+      "group": "staging_prepare_commit",
+      "mutation": "entity generation changes between prepare and commit",
+      "expected_terminal": "FATAL-INVARIANT-VIOLATION"
+    },
+    {
+      "id": "CKPT-128",
+      "group": "staging_prepare_commit",
+      "mutation": "allocation panic during commit",
+      "expected_terminal": "PROCESS-ABORT-NO-CONTINUE"
+    },
+    {
+      "id": "CKPT-129",
+      "group": "staging_prepare_commit",
+      "mutation": "commit succeeds then staged events release",
+      "expected_terminal": "ACCEPT-COMMIT"
+    },
+    {
+      "id": "CKPT-130",
+      "group": "staging_prepare_commit",
+      "mutation": "commit root differs from descriptor expected state root when present",
+      "expected_terminal": "REJECT-POSTCOMMIT-ROOT"
+    },
+    {
+      "id": "CKPT-131",
+      "group": "staging_prepare_commit",
+      "mutation": "checkpoint rejected leaves committed state root unchanged",
+      "expected_terminal": "ACCEPT-ROLLBACK-BY-NONMUTATION"
+    },
+    {
+      "id": "CKPT-132",
+      "group": "staging_prepare_commit",
+      "mutation": "checkpoint commit increments committed epoch once",
+      "expected_terminal": "ACCEPT-EPOCH-COMMIT"
+    },
+    {
+      "id": "CKPT-133",
+      "group": "alignment_polling",
+      "mutation": "first barrier blocks only its stream",
+      "expected_terminal": "ACCEPT-ALIGNED-BLOCK"
+    },
+    {
+      "id": "CKPT-134",
+      "group": "alignment_polling",
+      "mutation": "unblocked streams continue until their barriers",
+      "expected_terminal": "ACCEPT-ALIGNMENT"
+    },
+    {
+      "id": "CKPT-135",
+      "group": "alignment_polling",
+      "mutation": "blocked stream is polled again before commit",
+      "expected_terminal": "CANARY-ALIGNMENT-BYPASS"
+    },
+    {
+      "id": "CKPT-136",
+      "group": "alignment_polling",
+      "mutation": "post-barrier next-epoch data remains in transport",
+      "expected_terminal": "ACCEPT-TRANSPORT-BACKPRESSURE"
+    },
+    {
+      "id": "CKPT-137",
+      "group": "alignment_polling",
+      "mutation": "all barriers unblock all required streams after commit",
+      "expected_terminal": "ACCEPT-UNBLOCK"
+    },
+    {
+      "id": "CKPT-138",
+      "group": "alignment_polling",
+      "mutation": "checkpoint rejection unblocks by disconnect/resync only",
+      "expected_terminal": "ACCEPT-FAIL-CLOSED"
+    },
+    {
+      "id": "CKPT-139",
+      "group": "alignment_polling",
+      "mutation": "ping continues while semantic streams align",
+      "expected_terminal": "ACCEPT-DIAGNOSTIC-PING"
+    },
+    {
+      "id": "CKPT-140",
+      "group": "alignment_polling",
+      "mutation": "ping changes checkpoint roots",
+      "expected_terminal": "CANARY-PING-AUTHORITY"
+    },
+    {
+      "id": "CKPT-141",
+      "group": "alignment_polling",
+      "mutation": "general barrier arrives first",
+      "expected_terminal": "ACCEPT-SAME-CHECKPOINT"
+    },
+    {
+      "id": "CKPT-142",
+      "group": "alignment_polling",
+      "mutation": "terrain barrier arrives first",
+      "expected_terminal": "ACCEPT-SAME-CHECKPOINT"
+    },
+    {
+      "id": "CKPT-143",
+      "group": "alignment_polling",
+      "mutation": "bootstrap barrier arrives last",
+      "expected_terminal": "ACCEPT-SAME-CHECKPOINT"
+    },
+    {
+      "id": "CKPT-144",
+      "group": "alignment_polling",
+      "mutation": "one stream never reaches barrier",
+      "expected_terminal": "CHECKPOINT-INCOMPLETE-NO-PARTIAL-COMMIT"
+    },
+    {
+      "id": "CKPT-145",
+      "group": "alignment_polling",
+      "mutation": "transport timeout fires",
+      "expected_terminal": "ABORT-AND-RESYNC-NO-PARTIAL-COMMIT"
+    },
+    {
+      "id": "CKPT-146",
+      "group": "alignment_polling",
+      "mutation": "timeout duration differs across machines",
+      "expected_terminal": "SAME-COMMITTED-STATE-OR-NO-COMMIT"
+    },
+    {
+      "id": "CKPT-147",
+      "group": "alignment_polling",
+      "mutation": "test logical budget ends before final barrier",
+      "expected_terminal": "CHECKPOINT-TEST-BUDGET-EXHAUSTED"
+    },
+    {
+      "id": "CKPT-148",
+      "group": "alignment_polling",
+      "mutation": "next epoch Begin buffered in transport on blocked stream",
+      "expected_terminal": "ACCEPT-ALIGNED-BACKPRESSURE"
+    },
+    {
+      "id": "CKPT-149",
+      "group": "resource_profile",
+      "mutation": "declared records within equality-critical resource profile",
+      "expected_terminal": "ACCEPT-RESOURCE-PLAN"
+    },
+    {
+      "id": "CKPT-150",
+      "group": "resource_profile",
+      "mutation": "declared records exceed hard cap",
+      "expected_terminal": "REJECT-RESOURCE-PLAN"
+    },
+    {
+      "id": "CKPT-151",
+      "group": "resource_profile",
+      "mutation": "declared bytes exceed checkpoint cap",
+      "expected_terminal": "REJECT-RESOURCE-PLAN"
+    },
+    {
+      "id": "CKPT-152",
+      "group": "resource_profile",
+      "mutation": "declared stream bytes exceed stream cap",
+      "expected_terminal": "REJECT-RESOURCE-PLAN"
+    },
+    {
+      "id": "CKPT-153",
+      "group": "resource_profile",
+      "mutation": "declared staged events exceed cap",
+      "expected_terminal": "REJECT-RESOURCE-PLAN"
+    },
+    {
+      "id": "CKPT-154",
+      "group": "resource_profile",
+      "mutation": "server and client resource profile roots differ",
+      "expected_terminal": "REJECT-RESOURCE-PROFILE"
+    },
+    {
+      "id": "CKPT-155",
+      "group": "resource_profile",
+      "mutation": "production profile missing",
+      "expected_terminal": "REJECT-PRODUCTION-ADMISSION"
+    },
+    {
+      "id": "CKPT-156",
+      "group": "resource_profile",
+      "mutation": "test profile explicitly selected",
+      "expected_terminal": "ACCEPT-TEST-PROFILE"
+    },
+    {
+      "id": "CKPT-157",
+      "group": "resource_profile",
+      "mutation": "allocation occurs before descriptor limit validation",
+      "expected_terminal": "CANARY-RESOURCE-PREFLIGHT"
+    },
+    {
+      "id": "CKPT-158",
+      "group": "resource_profile",
+      "mutation": "actual staged bytes exceed declaration",
+      "expected_terminal": "REJECT-BYTE-COUNT"
+    },
+    {
+      "id": "CKPT-159",
+      "group": "resource_profile",
+      "mutation": "actual staged records exceed declaration",
+      "expected_terminal": "REJECT-COUNT"
+    },
+    {
+      "id": "CKPT-160",
+      "group": "resource_profile",
+      "mutation": "post-barrier future data consumed into application buffer",
+      "expected_terminal": "CANARY-UNBOUNDED-FUTURE-BUFFER"
+    }
+  ]
+}

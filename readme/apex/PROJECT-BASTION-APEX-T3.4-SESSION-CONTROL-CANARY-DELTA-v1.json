@@ -1,0 +1,89 @@
+﻿{
+  "schema": "bastion.apex.t3.4-checkpoint-session-control-canary-delta/v1",
+  "extends": "PROJECT-BASTION-APEX-T3.4-CROSS-STREAM-CHECKPOINT-CANARIES-v1.json",
+  "base_case_count": 160,
+  "delta_case_count": 16,
+  "logical_case_count": 176,
+  "cases": [
+    {
+      "id": "CKPT-161",
+      "expected_terminal": "BLOCK-LEGACY-DISCONNECT-CHECKPOINTED",
+      "mutation": "Legacy ServerGeneral::Disconnect enters checkpointed General stream."
+    },
+    {
+      "id": "CKPT-162",
+      "expected_terminal": "SESSION-TERMINATED",
+      "mutation": "Valid SessionTerminate while checkpoint aligner is idle."
+    },
+    {
+      "id": "CKPT-163",
+      "expected_terminal": "SESSION-TERMINATED-DISCARD-ALIGNING",
+      "mutation": "SessionTerminate after one semantic Barrier."
+    },
+    {
+      "id": "CKPT-164",
+      "expected_terminal": "SESSION-TERMINATED-DISCARD-ALIGNING",
+      "mutation": "SessionTerminate after all records staged but before prepare."
+    },
+    {
+      "id": "CKPT-165",
+      "expected_terminal": "SESSION-TERMINATED-DISCARD-PREPARED",
+      "mutation": "SessionTerminate after prepare but before commit."
+    },
+    {
+      "id": "CKPT-166",
+      "expected_terminal": "SESSION-TERMINATED-AFTER-COMMIT",
+      "mutation": "SessionTerminate after prior checkpoint commit; committed epoch remains."
+    },
+    {
+      "id": "CKPT-167",
+      "expected_terminal": "CONTROL-WRONG-BINDING",
+      "mutation": "SessionTerminate carries wrong boot/session/connection epoch."
+    },
+    {
+      "id": "CKPT-168",
+      "expected_terminal": "CONTROL-STALE-OR-REPLAY",
+      "mutation": "Replay a previously accepted control sequence."
+    },
+    {
+      "id": "CKPT-169",
+      "expected_terminal": "CONTROL-SEQUENCE-GAP",
+      "mutation": "Skip the next required control sequence."
+    },
+    {
+      "id": "CKPT-170",
+      "expected_terminal": "SESSION-TERMINATED-IDEMPOTENT",
+      "mutation": "Deliver exact duplicate terminal frame after terminal state."
+    },
+    {
+      "id": "CKPT-171",
+      "expected_terminal": "CONTROL-SEQUENCE-CONFLICT",
+      "mutation": "Reuse sequence with a different termination payload."
+    },
+    {
+      "id": "CKPT-172",
+      "expected_terminal": "BLOCK-DIAGNOSTIC-IN-ROOT",
+      "mutation": "Ping/Pong changes checkpoint count, bytes, or roots."
+    },
+    {
+      "id": "CKPT-173",
+      "expected_terminal": "BLOCK-CONTROL-LANE-ALIGNED",
+      "mutation": "Control lane is blocked after a semantic Barrier."
+    },
+    {
+      "id": "CKPT-174",
+      "expected_terminal": "BLOCK-LEGACY-DISCONNECT-SOURCE",
+      "mutation": "Production source still sends ServerGeneral::Disconnect."
+    },
+    {
+      "id": "CKPT-175",
+      "expected_terminal": "SESSION-TERMINATED-TRANSPORT-CLOSED",
+      "mutation": "Transport closes without a human-readable reason."
+    },
+    {
+      "id": "CKPT-176",
+      "expected_terminal": "BLOCK-REASON-AS-AUTHORITY",
+      "mutation": "Reason frame arrives but T3.2 session registry remains active."
+    }
+  ]
+}
