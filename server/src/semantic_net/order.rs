@@ -58,7 +58,11 @@ impl SemanticProducerV1 {
 
 /// `payload_rank`. Section 6: "Separate payload ranks preserve create/
 /// delete/entity-sync/comp-sync order within one stream" -- variant
-/// order below IS that listed order.
+/// order below IS that listed order. `InventoryUpdate`/`Outcomes`/
+/// `TimeOfDay` added in `T3.3.14a` (entity_sync.rs's remaining three
+/// send sites, migrated after the original four) -- no ordering
+/// relationship to the first four is implied by continuing the
+/// numbering, just distinct, explicitly-assigned ranks.
 #[repr(u16)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum SemanticPayloadRankV1 {
@@ -66,6 +70,9 @@ pub enum SemanticPayloadRankV1 {
     Delete = 1,
     EntitySync = 2,
     CompSync = 3,
+    InventoryUpdate = 4,
+    Outcomes = 5,
+    TimeOfDay = 6,
 }
 
 impl SemanticPayloadRankV1 {

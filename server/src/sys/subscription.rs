@@ -1,7 +1,12 @@
 use super::sentinel::{DeletedEntities, TrackedStorages};
 use crate::{
+    Tick,
     client::Client,
     presence::{self, RegionSubscription},
+    semantic_net::{
+        order::{SemanticPayloadRankV1, SemanticProducerV1, phase_rank},
+        outbox::{CanonicalSubjectKeyV1, ServerSemanticOutboxV1},
+    },
 };
 use common::{
     comp::{Ori, Pos, Presence, Vel},
@@ -11,13 +16,49 @@ use common::{
     vol::RectVolSize,
 };
 use common_ecs::{Job, Origin, Phase, System};
-use common_net::msg::ServerGeneral;
+use common_net::msg::{ServerGeneral, envelope::ActiveSessionBindingV1};
 use specs::{
     Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, SystemData, World, WorldExt,
     WriteStorage,
 };
 use tracing::{debug, error};
 use vek::*;
+
+/// `APEX-T3.3.14a`: `subscription.rs`'s own thin wrapper over
+/// `ServerSemanticOutboxV1::try_enqueue_if_v1`, mirroring
+/// `entity_sync.rs`'s -- Fable's sequencing ruling groups this file
+/// into the same "replication family" as `entity_sync.rs`, so it
+/// shares that file's `SemanticProducerV1::EntitySync` producer and
+/// `Phase::Create` phase rank rather than inventing a new producer for
+/// what is, semantically, the same replication work living in a
+/// second file.
+/// `T3.3.14a`: every `CreateEntity`/`DeleteEntity` subject in this file
+/// is `for_uid(the created/deleted entity)`, unique per (client, tick)
+/// by construction (same reasoning as `entity_sync.rs`'s own
+/// `ordinals::CREATE_OR_DELETE_ENTITY`) -- no sibling to disambiguate
+/// against, so a constant `0` is safe.
+const CREATE_OR_DELETE_ORDINAL: u32 = 0;
+
+fn try_enqueue_subscription_intent(
+    outbox: &ServerSemanticOutboxV1,
+    recipient_binding: Option<ActiveSessionBindingV1>,
+    payload: ServerGeneral,
+    source_tick: u64,
+    payload_rank: SemanticPayloadRankV1,
+    subject: CanonicalSubjectKeyV1,
+    local_ordinal: u32,
+) -> bool {
+    outbox.try_enqueue_if_v1(
+        recipient_binding,
+        payload,
+        source_tick,
+        phase_rank(Phase::Create),
+        SemanticProducerV1::EntitySync.producer_rank(),
+        payload_rank.payload_rank(),
+        subject,
+        local_ordinal,
+    )
+}
 
 /// This system will update region subscriptions based on client positions
 #[derive(Default)]
@@ -35,6 +76,8 @@ impl<'a> System<'a> for Sys {
         WriteStorage<'a, RegionSubscription>,
         Read<'a, DeletedEntities>,
         TrackedStorages<'a>,
+        Read<'a, Tick>,
+        ReadExpect<'a, ServerSemanticOutboxV1>,
     );
 
     const NAME: &'static str = "subscription";
@@ -55,8 +98,11 @@ impl<'a> System<'a> for Sys {
             mut subscriptions,
             deleted_entities,
             tracked_comps,
+            tick,
+            semantic_outbox,
         ): Self::SystemData,
     ) {
+        let tick = tick.0;
         // To update subscriptions
         // 1. Iterate through clients
         // 2. Calculate current chunk position
@@ -153,20 +199,53 @@ impl<'a> System<'a> for Sys {
                                             .map(|key| subscription.regions.contains(key))
                                             .unwrap_or(false)
                                     {
-                                        client.send_fallible(ServerGeneral::DeleteEntity(uid));
+                                        let msg = ServerGeneral::DeleteEntity(uid);
+                                        if !try_enqueue_subscription_intent(
+                                            &semantic_outbox,
+                                            client.semantic_send_state().map(|s| s.binding()),
+                                            msg.clone(),
+                                            tick,
+                                            SemanticPayloadRankV1::Delete,
+                                            CanonicalSubjectKeyV1::for_uid(uid),
+                                            CREATE_OR_DELETE_ORDINAL,
+                                        ) {
+                                            client.send_fallible(msg);
+                                        }
                                     }
                                 },
                             }
                         }
                         // Tell client to delete entities in the region
                         for (&uid, _) in (&uids, region.entities()).join() {
-                            client.send_fallible(ServerGeneral::DeleteEntity(uid));
+                            let msg = ServerGeneral::DeleteEntity(uid);
+                            if !try_enqueue_subscription_intent(
+                                &semantic_outbox,
+                                client.semantic_send_state().map(|s| s.binding()),
+                                msg.clone(),
+                                tick,
+                                SemanticPayloadRankV1::Delete,
+                                CanonicalSubjectKeyV1::for_uid(uid),
+                                CREATE_OR_DELETE_ORDINAL,
+                            ) {
+                                client.send_fallible(msg);
+                            }
                         }
                     }
                     // Send deleted entities since they won't be processed for this client
                     // in entity sync
-                    for uid in deleted_entities.get_deleted_in_region(key).iter() {
-                        client.send_fallible(ServerGeneral::DeleteEntity(*uid));
+                    for &uid in deleted_entities.get_deleted_in_region(key).iter() {
+                        let msg = ServerGeneral::DeleteEntity(uid);
+                        if !try_enqueue_subscription_intent(
+                            &semantic_outbox,
+                            client.semantic_send_state().map(|s| s.binding()),
+                            msg.clone(),
+                            tick,
+                            SemanticPayloadRankV1::Delete,
+                            CanonicalSubjectKeyV1::for_uid(uid),
+                            CREATE_OR_DELETE_ORDINAL,
+                        ) {
+                            client.send_fallible(msg);
+                        }
                     }
                 }
 
@@ -195,13 +274,24 @@ impl<'a> System<'a> for Sys {
                                         Some(*pos),
                                         vel.copied(),
                                         ori.copied(),
-                                    )
+                                    ).zip(uids.get(entity).copied())
                                 })
                                 // TODO: batch this into a single message
-                                .for_each(|msg| {
+                                .for_each(|(msg, uid)| {
                                     // Send message to create entity and tracked components and
                                     // physics components
-                                    client.send_fallible(ServerGeneral::CreateEntity(msg));
+                                    let msg = ServerGeneral::CreateEntity(msg);
+                                    if !try_enqueue_subscription_intent(
+                                        &semantic_outbox,
+                                        client.semantic_send_state().map(|s| s.binding()),
+                                        msg.clone(),
+                                        tick,
+                                        SemanticPayloadRankV1::Create,
+                                        CanonicalSubjectKeyV1::for_uid(uid),
+                                        CREATE_OR_DELETE_ORDINAL,
+                                    ) {
+                                        client.send_fallible(msg);
+                                    }
                                 })
                     }
                 }
@@ -229,6 +319,9 @@ pub fn initialize_region_subscription(world: &World, entity: specs::Entity) {
 
         let region_map = world.read_resource::<RegionMap>();
         let tracked_comps = TrackedStorages::fetch(world);
+        let uids = world.read_storage::<Uid>();
+        let semantic_outbox = world.read_resource::<ServerSemanticOutboxV1>();
+        let tick = world.read_resource::<Tick>().0;
         for key in &regions {
             if let Some(region) = region_map.get(*key) {
                 (
@@ -247,11 +340,22 @@ pub fn initialize_region_subscription(world: &World, entity: specs::Entity) {
                         Some(*pos),
                         vel.copied(),
                         ori.copied(),
-                    )
+                    ).zip(uids.get(entity).copied())
                 )
-                .for_each(|msg| {
+                .for_each(|(msg, uid)| {
                     // Send message to create entity and tracked components and physics components
-                    client.send_fallible(ServerGeneral::CreateEntity(msg));
+                    let msg = ServerGeneral::CreateEntity(msg);
+                    if !try_enqueue_subscription_intent(
+                        &semantic_outbox,
+                        client.semantic_send_state().map(|s| s.binding()),
+                        msg.clone(),
+                        tick,
+                        SemanticPayloadRankV1::Create,
+                        CanonicalSubjectKeyV1::for_uid(uid),
+                        CREATE_OR_DELETE_ORDINAL,
+                    ) {
+                        client.send_fallible(msg);
+                    }
                 });
             }
         }
@@ -263,7 +367,21 @@ pub fn initialize_region_subscription(world: &World, entity: specs::Entity) {
             world.read_storage().get(entity).copied(),
             world.read_storage().get(entity).copied(),
         ) {
-            client.send_fallible(ServerGeneral::CreateEntity(pkg));
+            let msg = ServerGeneral::CreateEntity(pkg);
+            let enqueued = uids.get(entity).copied().is_some_and(|uid| {
+                try_enqueue_subscription_intent(
+                    &semantic_outbox,
+                    client.semantic_send_state().map(|s| s.binding()),
+                    msg.clone(),
+                    tick,
+                    SemanticPayloadRankV1::Create,
+                    CanonicalSubjectKeyV1::for_uid(uid),
+                    CREATE_OR_DELETE_ORDINAL,
+                )
+            });
+            if !enqueued {
+                client.send_fallible(msg);
+            }
         }
 
         if let Err(e) = world.write_storage().insert(entity, RegionSubscription {
@@ -279,5 +397,62 @@ pub fn initialize_region_subscription(world: &World, entity: specs::Entity) {
             "Failed to initialize region subscription. Couldn't retrieve all the neccesary \
              components on the provided entity"
         );
+    }
+}
+
+/// `APEX-T3.3.14a`, middle-tier discipline (Fable's sequencing ruling):
+/// `try_enqueue_subscription_intent` is a thin wrapper reusing the
+/// EXACT mechanism `entity_sync.rs`'s own extensively-tested
+/// `semantic_intents` suite already proves (same
+/// `ServerSemanticOutboxV1::try_enqueue_if_v1` underneath) -- this file
+/// only needs to confirm its own wiring (producer/phase constants,
+/// no-binding fallthrough), not re-derive that suite's own coverage.
+#[cfg(test)]
+mod semantic_intents {
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+
+    use super::*;
+
+    #[test]
+    fn no_binding_does_not_enqueue() {
+        let outbox = ServerSemanticOutboxV1::new();
+        let enqueued = try_enqueue_subscription_intent(
+            &outbox,
+            None,
+            ServerGeneral::DeleteEntity(Uid(std::num::NonZeroU64::new(1).unwrap())),
+            1,
+            SemanticPayloadRankV1::Delete,
+            CanonicalSubjectKeyV1::for_uid(Uid(std::num::NonZeroU64::new(1).unwrap())),
+            CREATE_OR_DELETE_ORDINAL,
+        );
+        assert!(!enqueued);
+        assert!(outbox.take_pending().is_empty());
+    }
+
+    #[test]
+    fn some_binding_enqueues_with_this_files_own_producer_and_phase() {
+        let outbox = ServerSemanticOutboxV1::new();
+        let b = ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([2; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        };
+        let uid = Uid(std::num::NonZeroU64::new(9).unwrap());
+        let enqueued = try_enqueue_subscription_intent(
+            &outbox,
+            Some(b),
+            ServerGeneral::CreateEntity(common_net::sync::EntityPackage { uid, comps: vec![] }),
+            7,
+            SemanticPayloadRankV1::Create,
+            CanonicalSubjectKeyV1::for_uid(uid),
+            CREATE_OR_DELETE_ORDINAL,
+        );
+        assert!(enqueued);
+        let pending = outbox.take_pending();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].recipient, b);
+        assert_eq!(pending[0].order_key.phase_rank, phase_rank(Phase::Create));
+        assert_eq!(pending[0].order_key.producer_rank, SemanticProducerV1::EntitySync.producer_rank());
+        assert_eq!(pending[0].order_key.payload_rank, SemanticPayloadRankV1::Create.payload_rank());
     }
 }

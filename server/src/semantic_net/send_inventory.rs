@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn post_auth_candidate_count_matches_this_rows_inventory() {
         let n = SEND_SITE_CATALOG.iter().filter(|&&(_, _, _, c)| c == PostAuthCandidate).count();
-        assert_eq!(n, 132, "PostAuthCandidate count drifted -- update this row's own commit-message accounting if the change is intentional");
+        assert_eq!(n, 133, "PostAuthCandidate count drifted -- update this row's own commit-message accounting if the change is intentional");
     }
 
     #[test]

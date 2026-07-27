@@ -181,6 +181,51 @@ impl ServerSemanticOutboxV1 {
     pub fn take_pending(&self) -> Vec<SemanticSendIntentV1> {
         std::mem::take(&mut *self.pending.lock().expect("semantic outbox mutex poisoned"))
     }
+
+    /// `APEX-T3.3.14a`: the shared build+enqueue-iff-V1 primitive every
+    /// producer in the "replication family" (`entity_sync.rs`,
+    /// `subscription.rs`, and onward) calls through -- extracted from
+    /// `entity_sync.rs`'s own original `try_enqueue_entity_sync_intent`
+    /// (`T3.3.13`) once a second file needed the identical logic.
+    /// Builds one [`SemanticSendIntentV1`] and enqueues it iff
+    /// `recipient_binding` is `Some` (the client has a live V1
+    /// attachment) -- Legacy clients (the ONLY kind possible today,
+    /// `T3.3.05`'s negotiation always resolves `Legacy`) get `false`
+    /// back and the caller keeps using its existing direct-send call.
+    ///
+    /// Deliberately takes `Option<ActiveSessionBindingV1>`, not
+    /// `&Client`: no lightweight way to construct a live `Client` for a
+    /// unit test in this crate (`Client::new` needs a real
+    /// `network::Participant` + 6 real `Stream`s), matching the exact
+    /// reason `T3.3.10`'s `send_semantic_v1` was never directly unit-
+    /// tested either. Callers pass
+    /// `client.semantic_send_state().map(|s| s.binding())`.
+    pub fn try_enqueue_if_v1(
+        &self,
+        recipient_binding: Option<common_net::msg::envelope::ActiveSessionBindingV1>,
+        payload: common_net::msg::ServerGeneral,
+        source_tick: u64,
+        phase_rank: u16,
+        producer_rank: u16,
+        payload_rank: u16,
+        subject: CanonicalSubjectKeyV1,
+        local_ordinal: u32,
+    ) -> bool {
+        use common_net::msg::envelope::{SemanticCausalityV1, SemanticRouteV1};
+
+        let Some(recipient) = recipient_binding else {
+            return false;
+        };
+        let semantic_stream = payload.semantic_stream();
+        self.enqueue(SemanticSendIntentV1 {
+            recipient,
+            semantic_stream,
+            causality: SemanticCausalityV1 { producer_tick: Some(source_tick), snapshot: None },
+            order_key: ServerSemanticOrderKeyV1 { source_tick, phase_rank, producer_rank, payload_rank, subject, local_ordinal },
+            payload: Arc::new(payload),
+        });
+        true
+    }
 }
 
 #[cfg(test)]

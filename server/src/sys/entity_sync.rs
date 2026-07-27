@@ -5,7 +5,7 @@ use crate::{
     presence::RegionSubscription,
     semantic_net::{
         order::{SemanticPayloadRankV1, SemanticProducerV1, phase_rank},
-        outbox::{CanonicalSubjectKeyV1, SemanticSendIntentV1, ServerSemanticOrderKeyV1, ServerSemanticOutboxV1},
+        outbox::{CanonicalSubjectKeyV1, ServerSemanticOutboxV1},
     },
 };
 use common::{
@@ -27,15 +27,11 @@ use common::{
 use common_base::dev_panic;
 use common_ecs::{Job, Origin, Phase, System};
 use common_net::{
-    msg::{
-        ServerGeneral,
-        envelope::{SemanticCausalityV1, SemanticRouteV1},
-    },
+    msg::ServerGeneral,
     sync::CompSyncPackage,
 };
 use itertools::Either;
 use specs::{Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, Write, WriteStorage};
-use std::sync::Arc;
 use vek::*;
 
 /// `APEX-T3.3.13`/`.14`: this file's own `local_ordinal` conventions,
@@ -77,6 +73,18 @@ pub(crate) mod ordinals {
     /// entity)`, NOT the spectated target -- the recipient is what the
     /// subject key names). Disambiguated against [`OWN_ENTITY_COMPSYNC`].
     pub(crate) const SPECTATOR_COMPSYNC: u32 = 1;
+    /// `T3.3.14a`. `InventoryUpdate` (subject: `for_uid(client's own
+    /// entity)`): at most one such message per (client, tick) -- no
+    /// sibling to disambiguate against.
+    pub(crate) const INVENTORY_UPDATE: u32 = 0;
+    /// `T3.3.14a`. `Outcomes` (subject: `for_singleton("outcomes")`,
+    /// shared across every recipient -- safe because the total-sort
+    /// collision rule is scoped per-recipient, and each client's own
+    /// intent carries its own `recipient`): no sibling.
+    pub(crate) const OUTCOMES: u32 = 0;
+    /// `T3.3.14a`. `TimeOfDay` (subject: `for_singleton("time_of_day")`,
+    /// same per-recipient reasoning as [`OUTCOMES`]): no sibling.
+    pub(crate) const TIME_OF_DAY: u32 = 0;
 }
 
 /// `APEX-T3.3.13`: builds one `SemanticSendIntentV1` for `payload` and
@@ -100,7 +108,11 @@ pub(crate) mod ordinals {
 /// `phase_rank`/`producer_rank` are fixed to this system's own values
 /// (`Phase::Create`, `SemanticProducerV1::EntitySync`) -- every call
 /// site in this file shares them; only `payload_rank`/`subject`/
-/// `local_ordinal` vary per call site.
+/// `local_ordinal` vary per call site. `T3.3.14a`: now a thin wrapper
+/// over [`ServerSemanticOutboxV1::try_enqueue_if_v1`], the shared
+/// primitive `subscription.rs` (and onward, the rest of the
+/// "replication family") also calls -- this file's own signature is
+/// unchanged so none of its existing call sites or tests needed to move.
 fn try_enqueue_entity_sync_intent(
     outbox: &ServerSemanticOutboxV1,
     recipient_binding: Option<common_net::msg::envelope::ActiveSessionBindingV1>,
@@ -110,25 +122,16 @@ fn try_enqueue_entity_sync_intent(
     subject: CanonicalSubjectKeyV1,
     local_ordinal: u32,
 ) -> bool {
-    let Some(recipient) = recipient_binding else {
-        return false;
-    };
-    let semantic_stream = payload.semantic_stream();
-    outbox.enqueue(SemanticSendIntentV1 {
-        recipient,
-        semantic_stream,
-        causality: SemanticCausalityV1 { producer_tick: Some(source_tick), snapshot: None },
-        order_key: ServerSemanticOrderKeyV1 {
-            source_tick,
-            phase_rank: phase_rank(Phase::Create),
-            producer_rank: SemanticProducerV1::EntitySync.producer_rank(),
-            payload_rank: payload_rank.payload_rank(),
-            subject,
-            local_ordinal,
-        },
-        payload: Arc::new(payload),
-    });
-    true
+    outbox.try_enqueue_if_v1(
+        recipient_binding,
+        payload,
+        source_tick,
+        phase_rank(Phase::Create),
+        SemanticProducerV1::EntitySync.producer_rank(),
+        payload_rank.payload_rank(),
+        subject,
+        local_ordinal,
+    )
 }
 
 /// This system will send physics updates to the client
@@ -702,7 +705,26 @@ impl<'a> System<'a> for Sys {
 
             let events = buf.take_events();
             if !events.is_empty() {
-                client.send_fallible(ServerGeneral::InventoryUpdate(inventory.clone(), events));
+                // APEX-T3.3.14a: subject = the receiving client's own
+                // entity uid -- an inventory update is inherently
+                // "sync this entity's own inventory to itself", so
+                // there is at most one such message per (client, tick)
+                // and no sibling to disambiguate against.
+                let msg = ServerGeneral::InventoryUpdate(inventory.clone(), events);
+                let enqueued = uids.get(entity).is_some_and(|&uid| {
+                    try_enqueue_entity_sync_intent(
+                        &semantic_outbox,
+                        client.semantic_send_state().map(|s| s.binding()),
+                        msg.clone(),
+                        tick,
+                        SemanticPayloadRankV1::InventoryUpdate,
+                        CanonicalSubjectKeyV1::for_uid(uid),
+                        ordinals::INVENTORY_UPDATE,
+                    )
+                });
+                if !enqueued {
+                    client.send_fallible(msg);
+                }
             }
         }
 
@@ -733,7 +755,25 @@ impl<'a> System<'a> for Sys {
                 .collect::<Vec<_>>();
 
             if !outcomes.is_empty() {
-                client.send_fallible(ServerGeneral::Outcomes(outcomes));
+                // APEX-T3.3.14a: subject = a fixed singleton label, not
+                // per-entity -- outcomes are miscellaneous world events,
+                // not owned by any one entity. Safe to share across every
+                // recipient in the same tick: the "no duplicate order
+                // key" rule is scoped per-recipient (each client's own
+                // intent carries its own `recipient`), so identical
+                // subject/ordinal for DIFFERENT clients never collides.
+                let msg = ServerGeneral::Outcomes(outcomes);
+                if !try_enqueue_entity_sync_intent(
+                    &semantic_outbox,
+                    client.semantic_send_state().map(|s| s.binding()),
+                    msg.clone(),
+                    tick,
+                    SemanticPayloadRankV1::Outcomes,
+                    CanonicalSubjectKeyV1::for_singleton("outcomes"),
+                    ordinals::OUTCOMES,
+                ) {
+                    client.send_fallible(msg);
+                }
             }
         }
 
@@ -747,16 +787,31 @@ impl<'a> System<'a> for Sys {
         // system?)
         const TOD_SYNC_FREQ: u64 = 100;
         if tick % TOD_SYNC_FREQ == 0 {
+            // APEX-T3.3.14a: TimeOfDay is identical for every recipient
+            // (no per-client field, unlike CompSync's force-update
+            // counter), so building the owned ServerGeneral value once
+            // and cloning it per V1 client is exact-content-equivalent
+            // to Legacy's own prepare/send_prepared byte-sharing --
+            // same content reaches everyone either way, only WHICH
+            // clients still use the lazy-prepared-bytes optimization
+            // changes (V1 clients no longer do, matching every other
+            // migrated site in this file).
+            let tod_msg = ServerGeneral::TimeOfDay(*time_of_day, (*calendar).clone(), *time, *time_scale);
+            let tod_subject = CanonicalSubjectKeyV1::for_singleton("time_of_day");
             let mut tod_lazymsg = None;
             for client in (&clients).join() {
-                let msg = tod_lazymsg.unwrap_or_else(|| {
-                    client.prepare(ServerGeneral::TimeOfDay(
-                        *time_of_day,
-                        (*calendar).clone(),
-                        *time,
-                        *time_scale,
-                    ))
-                });
+                if try_enqueue_entity_sync_intent(
+                    &semantic_outbox,
+                    client.semantic_send_state().map(|s| s.binding()),
+                    tod_msg.clone(),
+                    tick,
+                    SemanticPayloadRankV1::TimeOfDay,
+                    tod_subject.clone(),
+                    ordinals::TIME_OF_DAY,
+                ) {
+                    continue;
+                }
+                let msg = tod_lazymsg.unwrap_or_else(|| client.prepare(tod_msg.clone()));
                 // We don't care much about stream errors here since they could just represent
                 // network disconnection, which is handled elsewhere.
                 let _ = client.send_prepared(&msg);
@@ -992,8 +1047,8 @@ mod semantic_intents {
 mod semantic_intents_parallel {
     use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
     use common_net::msg::envelope::{
-        ActiveSessionBindingV1, SemanticPayloadEncodingV1, encode_payload_v1, net_envelope_profile_root_v1,
-        payload_digest_v1,
+        ActiveSessionBindingV1, SemanticPayloadEncodingV1, SemanticRouteV1, encode_payload_v1,
+        net_envelope_profile_root_v1, payload_digest_v1,
     };
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
