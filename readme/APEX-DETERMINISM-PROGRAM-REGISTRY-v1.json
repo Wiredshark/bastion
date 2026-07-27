@@ -632,12 +632,12 @@
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
         "deployment": "NOT_DEPLOYED",
-        "implementation": "NOT_STARTED",
+        "implementation": "IMPLEMENTED",
         "microstep_research": "MICROSTEP_RESEARCH_COMPLETE",
         "specification": "SPECIFICATION_COMPLETE",
-        "verification": "NOT_STARTED"
+        "verification": "VERIFIED"
       },
-      "title": "Authoritative lifecycle-identity foundations"
+      "title": "Authoritative lifecycle-identity foundations (opaque UUIDv4 identities + scoped monotonic counters, common/src/apex/identity/; landed pre-session, registry bookkeeping was simply stale). T0.4.6 completion substep this session (specification=FLEET_AUTHORED referencing this row's own governing packet, section 7.8, per Fable's ruling -- no new spec cycle): closed the CBOR-path anti-substitution gap the packet's 'tagged canonical encodings' promise implied but the original build left open -- ServerBootId/SessionId/CommandId/UniverseBranchId's canonical BastionManifestEncodingV1 form was a bare 16-byte bytestring with no embedded type marker, so any one opaque type's encoded bytes would silently decode as any other (all are equally valid UUIDv4 byte strings). Fixed by wrapping each in a tagged 2-field map {tag: IdentityKindV1, bytes}; decode now rejects a tag/type mismatch. Deliberate wire-shape break, done now rather than later since T0.4 has zero live consumers yet (own doc: 'no live issuance, transport integration, or subsystem wiring happens here') -- the pre-fix bare-bytestring shape is retained as a hostile canary (bare_bytestring_without_tag_is_rejected) that must now fail, not just documented as changed. ConnectionEpoch needed no tag (Unsigned vs Map is already CBOR-major-type-distinct from every opaque identity, verified directly). Self-caught process note: the premise that led here was initially WRONG -- a prior session's grep for the literal expanded text 'ManifestEncodeV1 for ServerBootId' found nothing and concluded the codec didn't exist at all, a false negative since the real impls are macro_rules!-generated (impl_opaque_manifest_codec!(ServerBootId)) and never appear as that literal text in source. Corrected by grepping for the macro invocation and IdentityKindV1 usage instead, which found the codec already fully built/tested and located the real (much narrower) gap. Evidence: common/src/apex/identity/codec.rs's own test module -- exact_tagged_identity_cbor_vector (golden vector), wrong_tag_cross_decode_is_rejected (pairwise anti-substitution across all four opaque types), bare_bytestring_without_tag_is_rejected (hostile canary), one_bit_tag_mutation_is_rejected, connection_epoch_is_structurally_distinct_from_opaque_identities. veloren-common lib 362/363 (one pre-existing unrelated i18n failure, not touched), cargo check --workspace --all-targets clean.)"
     },
     {
       "evidence_artifacts": [],

@@ -163,7 +163,14 @@ opaque_lifecycle_id!(
 
 /// Generic evidence-envelope tag for contexts where the static Rust type
 /// is unavailable (registry/evidence records). Never used in gameplay
-/// APIs — those always use the concrete typed identity.
+/// APIs — those always use the concrete typed identity. `APEX-T0.4.6`
+/// (completing T0.4's own "tagged canonical encodings" contract, Opus 5's
+/// boundary-review finding): also the embedded type discriminant in each
+/// opaque identity's canonical `BastionManifestEncodingV1` form, closing
+/// the cross-type substitution hole a bare 16-byte bytestring left open
+/// (a `ServerBootId`'s encoded bytes could not otherwise be distinguished
+/// from a `SessionId`'s at decode time, since both are valid UUIDv4 byte
+/// strings).
 #[repr(u16)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IdentityKindV1 {
@@ -173,9 +180,33 @@ pub enum IdentityKindV1 {
     UniverseBranch = 4,
 }
 
+impl IdentityKindV1 {
+    pub const fn as_u16(self) -> u16 { self as u16 }
+
+    pub const ALL: [IdentityKindV1; 4] = [Self::ServerBoot, Self::Session, Self::Command, Self::UniverseBranch];
+
+    pub fn try_from_u16(raw: u16) -> Option<Self> { Self::ALL.into_iter().find(|k| k.as_u16() == raw) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn identity_kind_ids_are_unique_and_round_trip() {
+        use std::collections::HashSet;
+        let ids: HashSet<u16> = IdentityKindV1::ALL.iter().map(|k| k.as_u16()).collect();
+        assert_eq!(ids.len(), IdentityKindV1::ALL.len());
+        assert_eq!(IdentityKindV1::ServerBoot.as_u16(), 1);
+        assert_eq!(IdentityKindV1::Session.as_u16(), 2);
+        assert_eq!(IdentityKindV1::Command.as_u16(), 3);
+        assert_eq!(IdentityKindV1::UniverseBranch.as_u16(), 4);
+        for k in IdentityKindV1::ALL {
+            assert_eq!(IdentityKindV1::try_from_u16(k.as_u16()), Some(k));
+        }
+        assert_eq!(IdentityKindV1::try_from_u16(0), None);
+        assert_eq!(IdentityKindV1::try_from_u16(5), None);
+    }
 
     fn hex_to_16(s: &str) -> [u8; 16] {
         let v: Vec<u8> = (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect();
