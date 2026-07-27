@@ -143,6 +143,31 @@ cross-review actually happening (author ≠ reviewer at both the spec-review
 and build-approval layers) — this is process discipline, not yet a
 validator-enforced invariant.
 
+## 6b. `T1.1-INCOMPLETE-NEEDS-NIX-LANE` — partial-implementation sentinel (2026-07-27)
+
+`status.implementation`'s frozen vocabulary (section 2) has no value for
+"some of this row's sub-steps have real landed code, but the row as a
+whole is not done" — every prior row either used `NOT_STARTED` (even once
+built, a known, program-wide bookkeeping gap this program has generally
+deferred rather than fixed inline) or, once genuinely complete, would use
+`IMPLEMENTED`. `APEX-T1.1` is a real, concrete case of the middle state:
+`T1.1.02` (environment-first build-identity stamping) is landed and
+verified (`bastion-harness/build.rs`, live on `bastion/apex`, doc-tagged
+`APEX-T1.1.02` in the code itself) — real code, not a stub — but the row
+as a whole is not complete (the Nix harness package / source-neutral VM
+lane it also specifies has not landed). Recording this row as
+`NOT_STARTED` would be simply false (T1.1.02 is used as a load-bearing
+prerequisite by `APEX-T1.2`'s own build-identity stamping); recording it
+as `IMPLEMENTED` would overclaim work that has not happened. Per Fable's
+ruling: `status.implementation = "T1.1-INCOMPLETE-NEEDS-NIX-LANE"` names
+the honest aggregate — landed-but-partial, nix-gate-pending — rather than
+force-fitting either frozen-vocabulary extreme. This is a
+row-specific sentinel (unlike `FLEET_AUTHORED`/`CONFIRMED_PHANTOM`, which
+are general patterns other rows may reuse); it is expected to be
+superseded by `IMPLEMENTED` once `T1.3`/`T1.4`'s reproducibility work
+(which depends on the Nix lane) completes, at which point this row
+updates again at that boundary, not before.
+
 ## 7. Temporary serialization
 
 Before `APEX-T0.2` lands: UTF-8 JSON, object keys sorted, arrays in

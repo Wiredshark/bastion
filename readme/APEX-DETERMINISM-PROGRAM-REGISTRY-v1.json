@@ -667,9 +667,11 @@
       "title": "Subsystem descriptor / compatibility-profile registry (spec fleet-authored 2026-07-27 per Ben's order -- original packet/vectors were hallucinated; Opus 5 spec-reviewed + Fable build-authorized 2026-07-27, readme/apex/APEX-T0.5-FLEET-AUTHORED-SPEC-v1.md)"
     },
     {
-      "evidence_artifacts": [],
+      "evidence_artifacts": [
+        "bastion-harness/build.rs"
+      ],
       "evidence_commands": [],
-      "evidence_status": "PENDING_ROW_PACKET",
+      "evidence_status": "VERIFIED",
       "finding_ids": [
         "DET-BLD-032"
       ],
@@ -685,24 +687,30 @@
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
         "deployment": "NOT_DEPLOYED",
-        "implementation": "NOT_STARTED",
+        "implementation": "T1.1-INCOMPLETE-NEEDS-NIX-LANE",
         "microstep_research": "MICROSTEP_RESEARCH_COMPLETE",
         "specification": "SPECIFICATION_COMPLETE",
         "verification": "NOT_STARTED"
       },
-      "title": "Nix harness package, source-neutral VM"
+      "title": "Nix harness package, source-neutral VM (T1.1.02 env-first build-identity stamping landed and verified in bastion-harness/build.rs; Nix package/VM lane itself not yet landed -- status.implementation = T1.1-INCOMPLETE-NEEDS-NIX-LANE per schema doc section 6b)"
     },
     {
-      "evidence_artifacts": [],
-      "evidence_commands": [],
-      "evidence_status": "PENDING_ROW_PACKET",
+      "evidence_artifacts": [
+        "common/src/apex/source_closure.rs",
+        "bastion-harness/src/bin/apex_source_closure.rs",
+        "tools/apex-t1-2-closure-canaries.sh"
+      ],
+      "evidence_commands": [
+        "tools/apex-t1-2-closure-canaries.sh"
+      ],
+      "evidence_status": "VERIFIED",
       "finding_ids": [
         "DET-BLD-032"
       ],
       "hard_dependencies": [
         "APEX-A.3"
       ],
-      "packet_file": null,
+      "packet_file": "readme/apex/APEX-T1.2-DECLARED-SOURCE-ASSET-CLOSURE-FLEET-v1.md",
       "rollback_plan": null,
       "rollback_plan_status": "PENDING_ROW_PACKET",
       "row_id": "APEX-T1.2",
@@ -711,12 +719,12 @@
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
         "deployment": "NOT_DEPLOYED",
-        "implementation": "NOT_STARTED",
+        "implementation": "IMPLEMENTED",
         "microstep_research": "MICROSTEP_RESEARCH_COMPLETE",
-        "specification": "SPECIFICATION_COMPLETE",
-        "verification": "NOT_STARTED"
+        "specification": "FLEET_AUTHORED",
+        "verification": "VERIFIED"
       },
-      "title": "Declared source/asset closure"
+      "title": "Declared source/asset closure (built by Opus 5, bastion/apex-t1t2 tip 15bf21b865; independently re-verified by Sonnet 5 on a fresh separate build: 26/26 canaries green, TERMINAL: T1.2-CLOSURE-READY reproduced with matching asset_tree_root, both build-time premise deltas confirmed against raw git blobs)"
     },
     {
       "evidence_artifacts": [],
