@@ -19,6 +19,7 @@ use bastion_renderer_r0d::{
         FigureGpuBoneV1, FigureGpuBufferKindV1, FigureGpuEntityInputV1, FigureGpuPoolConfigV1,
         FigureGpuPoolV1, SubmissionIdentityV1, UploadReceiptV1,
     },
+    material::MaterialTableV1,
     presentation::PresentationFrameV1,
 };
 
@@ -26,6 +27,8 @@ use bastion_renderer_r0d::{
 pub struct FigureGpuProductionEvidenceV1 {
     pub generation: u64,
     pub package_digest: [u8; 32],
+    pub material_table_digest: [u8; 32],
+    pub material_shader_interface_digest: [u8; 32],
     pub frame_digest: [u8; 32],
     pub resource_set_digest: [u8; 32],
     pub assignment_digest: [u8; 32],
@@ -38,6 +41,8 @@ pub struct FigureGpuProductionEvidenceV1 {
     pub upload_windows: u16,
     pub upload_operations: u32,
     pub upload_bytes: u64,
+    pub material_entry_count: u16,
+    pub material_legacy_fallback_count: u16,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -46,6 +51,7 @@ pub enum FigureGpuRuntimeErrorV1 {
     Hash,
     Core(String),
     Backend(String),
+    Material(String),
     CounterOverflow,
 }
 
@@ -144,7 +150,10 @@ impl FigureGpuRuntimeV1 {
             return Ok(receipt.clone());
         }
 
-        let inputs = entity_inputs(frame, package)?;
+        let material_table =
+            crate::r1f_materials::compile_figure_material_table(generation, package)
+                .map_err(|error| FigureGpuRuntimeErrorV1::Material(format!("{error:?}")))?;
+        let inputs = entity_inputs(frame, package, &material_table)?;
         let staged = self
             .pool
             .begin_generation(frame, package, package_receipt, inputs)
@@ -228,9 +237,13 @@ impl FigureGpuRuntimeV1 {
         };
         let upload_windows = u16::try_from(staged.plan.windows.len())
             .map_err(|_| FigureGpuRuntimeErrorV1::CounterOverflow)?;
+        let material_evidence = crate::r1f_materials::record_completed_table(&material_table)
+            .map_err(|error| FigureGpuRuntimeErrorV1::Material(format!("{error:?}")))?;
         let evidence = FigureGpuProductionEvidenceV1 {
             generation,
             package_digest: receipt.package_digest,
+            material_table_digest: material_evidence.table_digest,
+            material_shader_interface_digest: material_evidence.shader_interface_digest,
             frame_digest: receipt.frame_digest,
             resource_set_digest: receipt.resource_set_digest,
             assignment_digest: receipt.assignment_digest,
@@ -243,6 +256,8 @@ impl FigureGpuRuntimeV1 {
             upload_windows,
             upload_operations,
             upload_bytes,
+            material_entry_count: material_evidence.entry_count,
+            material_legacy_fallback_count: material_evidence.legacy_fallback_count,
         };
         let draw_plan = staged.plan.clone();
         drop(staged);
@@ -283,6 +298,7 @@ impl FigureGpuRuntimeV1 {
             upload_bytes,
             submission_sequence = submission.sequence,
             package_sha256 = %hex(&receipt.package_digest),
+            material_table_sha256 = %hex(&material_evidence.table_digest),
             staged_sha256 = %hex(&receipt.staged_digest),
             "persistent figure GPU generation completed"
         );
@@ -293,6 +309,7 @@ impl FigureGpuRuntimeV1 {
 fn entity_inputs(
     frame: &PresentationFrameV1,
     package: &CompiledFigurePackageV1,
+    material_table: &MaterialTableV1,
 ) -> Result<Vec<FigureGpuEntityInputV1>, FigureGpuRuntimeErrorV1> {
     if frame.entities().is_empty() {
         return Err(FigureGpuRuntimeErrorV1::InvalidPresentation);
@@ -305,7 +322,20 @@ fn entity_inputs(
     {
         return Err(FigureGpuRuntimeErrorV1::InvalidPresentation);
     }
-    let palette_digest = hash("bastion/r1bc/gpu-palette", &package.authority_digest())?;
+    material_table
+        .validate_package(package.package_digest(), package.authority_digest())
+        .map_err(|error| FigureGpuRuntimeErrorV1::Material(format!("{error:?}")))?;
+    if material_table.generation() != frame.generation().client_applied_generation {
+        return Err(FigureGpuRuntimeErrorV1::Material(
+            "material table generation does not match presentation generation".to_owned(),
+        ));
+    }
+    let primary_material = crate::r1f_materials::primary_material_slot(material_table)
+        .map_err(|error| FigureGpuRuntimeErrorV1::Material(format!("{error:?}")))?;
+    let mut palette_authority = Vec::with_capacity(64);
+    palette_authority.extend_from_slice(&package.authority_digest());
+    palette_authority.extend_from_slice(&material_table.table_digest());
+    let palette_digest = hash("bastion/r1bc/gpu-palette", &palette_authority)?;
     frame
         .entities()
         .iter()
@@ -338,7 +368,7 @@ fn entity_inputs(
                 pose_digest,
                 lod_level: 0,
                 section_id: 1,
-                material_id: 1,
+                material_id: primary_material,
                 flags: 0,
                 bones: vec![FigureGpuBoneV1 {
                     matrix_q20: [1 << 20, 0, 0, 0, 0, 1 << 20, 0, 0, 0, 0, 1 << 20, 0],
@@ -448,20 +478,23 @@ mod tests {
     #[test]
     fn production_entity_record_is_stable_and_every_transform_change_is_bound() {
         let package = package();
-        let first = entity_inputs(&frame(&package, 1), &package).unwrap();
-        let repeated = entity_inputs(&frame(&package, 1), &package).unwrap();
-        let changed = entity_inputs(&frame(&package, 2), &package).unwrap();
+        let materials = crate::r1f_materials::compile_figure_material_table(1, &package).unwrap();
+        let first = entity_inputs(&frame(&package, 1), &package, &materials).unwrap();
+        let repeated = entity_inputs(&frame(&package, 1), &package, &materials).unwrap();
+        let changed = entity_inputs(&frame(&package, 2), &package, &materials).unwrap();
         assert_eq!(first, repeated);
         assert_eq!(first.len(), 1);
         assert_eq!(changed.len(), 1);
         assert_ne!(first[0].transform_digest, changed[0].transform_digest);
         assert_eq!(first[0].package_digest, package.package_digest());
+        assert_eq!(first[0].material_id, 1);
         assert_eq!(first[0].bones.len(), 1);
     }
 
     #[test]
     fn missing_or_wrong_package_entity_fails_closed() {
         let package = package();
+        let materials = crate::r1f_materials::compile_figure_material_table(1, &package).unwrap();
         let empty = PresentationFrameDraftV1 {
             generation: PresentationGenerationV1 {
                 run_epoch: 1,
@@ -496,8 +529,25 @@ mod tests {
         .seal()
         .unwrap();
         assert_eq!(
-            entity_inputs(&empty, &package),
+            entity_inputs(&empty, &package, &materials),
             Err(FigureGpuRuntimeErrorV1::InvalidPresentation)
         );
+    }
+
+    #[test]
+    fn material_table_provenance_is_bound_into_gpu_palette_authority() {
+        let package_value = package();
+        let frame = frame(&package_value, 1);
+        let materials =
+            crate::r1f_materials::compile_figure_material_table(1, &package_value).unwrap();
+        let first = entity_inputs(&frame, &package_value, &materials).unwrap();
+
+        let other = package();
+        let mismatched = crate::r1f_materials::compile_figure_material_table(2, &other).unwrap();
+        assert!(matches!(
+            entity_inputs(&frame, &package_value, &mismatched),
+            Err(FigureGpuRuntimeErrorV1::Material(_))
+        ));
+        assert_ne!(first[0].palette_digest, package_value.authority_digest());
     }
 }
