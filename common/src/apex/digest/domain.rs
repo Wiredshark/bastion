@@ -45,6 +45,12 @@ pub enum DigestDomainIdV1 {
     FreshBuilderRun = 14,
     FreshRebuildPair = 15,
     FreshRebuildCanaryCampaign = 16,
+    /// `APEX-T2.2` (fleet spec section 4.8, cross-review-resolved): the
+    /// plugin archive's SEMANTIC root — content identity over the sorted
+    /// regular-file namespace, an INPUT to both `PluginManifest` (8,
+    /// T2.3) and `PluginActivationPlan` (3, T2.5), domain-separated from
+    /// both for the SourceClosure-vs-BuildManifest reason.
+    PluginArchive = 17,
 }
 
 impl DigestDomainIdV1 {
@@ -69,10 +75,11 @@ impl DigestDomainIdV1 {
             Self::FreshBuilderRun => "bastion/fresh-builder-run/v1",
             Self::FreshRebuildPair => "bastion/fresh-rebuild-pair/v1",
             Self::FreshRebuildCanaryCampaign => "bastion/fresh-rebuild-canary-campaign/v1",
+            Self::PluginArchive => "bastion/plugin-archive/v1",
         }
     }
 
-    pub const ALL: [DigestDomainIdV1; 14] = [
+    pub const ALL: [DigestDomainIdV1; 15] = [
         Self::BootstrapManifest,
         Self::SaveUniverseManifest,
         Self::PluginActivationPlan,
@@ -87,6 +94,7 @@ impl DigestDomainIdV1 {
         Self::FreshBuilderRun,
         Self::FreshRebuildPair,
         Self::FreshRebuildCanaryCampaign,
+        Self::PluginArchive,
     ];
 }
 
@@ -140,5 +148,7 @@ mod tests {
         assert_eq!(DigestDomainIdV1::FreshRebuildPair.label(), "bastion/fresh-rebuild-pair/v1");
         assert_eq!(DigestDomainIdV1::FreshRebuildCanaryCampaign.as_u16(), 16);
         assert_eq!(DigestDomainIdV1::FreshRebuildCanaryCampaign.label(), "bastion/fresh-rebuild-canary-campaign/v1");
+        assert_eq!(DigestDomainIdV1::PluginArchive.as_u16(), 17);
+        assert_eq!(DigestDomainIdV1::PluginArchive.label(), "bastion/plugin-archive/v1");
     }
 }

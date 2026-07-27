@@ -1,3 +1,4 @@
+pub mod archive_profile;
 pub mod errors;
 pub mod memory_manager;
 pub mod module;
