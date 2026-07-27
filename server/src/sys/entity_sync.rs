@@ -1,5 +1,13 @@
 use super::sentinel::{DeletedEntities, TrackedStorages, UpdateTrackers};
-use crate::{EditableSettings, Tick, client::Client, presence::RegionSubscription};
+use crate::{
+    EditableSettings, Tick,
+    client::Client,
+    presence::RegionSubscription,
+    semantic_net::{
+        order::{SemanticPayloadRankV1, SemanticProducerV1, phase_rank},
+        outbox::{CanonicalSubjectKeyV1, SemanticSendIntentV1, ServerSemanticOrderKeyV1, ServerSemanticOutboxV1},
+    },
+};
 use common::{
     calendar::Calendar,
     comp::{
@@ -18,10 +26,69 @@ use common::{
 };
 use common_base::dev_panic;
 use common_ecs::{Job, Origin, Phase, System};
-use common_net::{msg::ServerGeneral, sync::CompSyncPackage};
+use common_net::{
+    msg::{
+        ServerGeneral,
+        envelope::{SemanticCausalityV1, SemanticRouteV1},
+    },
+    sync::CompSyncPackage,
+};
 use itertools::Either;
 use specs::{Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, Write, WriteStorage};
+use std::sync::Arc;
 use vek::*;
+
+/// `APEX-T3.3.13`: builds one `SemanticSendIntentV1` for `payload` and
+/// enqueues it, iff `recipient_binding` is `Some` (the client has a live
+/// V1 attachment) -- Legacy clients (the ONLY kind possible today,
+/// `T3.3.05`'s negotiation always resolves `Legacy`) fall through
+/// untouched and the caller keeps using its existing direct-send call
+/// for them. Returns `true` iff it enqueued (so the caller knows
+/// whether it still needs the Legacy fallback for this client).
+///
+/// Deliberately takes `Option<ActiveSessionBindingV1>`, not `&Client`:
+/// this crate has no lightweight way to construct a live `Client`
+/// (`Client::new` needs a real `network::Participant` + 6 real
+/// `Stream`s) for a unit test, matching the exact reason `T3.3.10`'s
+/// `send_semantic_v1` was never directly unit-tested either -- pulling
+/// "extract the binding from a client" out of "build+enqueue the
+/// intent" keeps the second half (all the actual logic worth testing)
+/// fully pure and testable without one. Call sites pass
+/// `client.semantic_send_state().map(|s| s.binding())`.
+///
+/// `phase_rank`/`producer_rank` are fixed to this system's own values
+/// (`Phase::Create`, `SemanticProducerV1::EntitySync`) -- every call
+/// site in this file shares them; only `payload_rank`/`subject`/
+/// `local_ordinal` vary per call site.
+fn try_enqueue_entity_sync_intent(
+    outbox: &ServerSemanticOutboxV1,
+    recipient_binding: Option<common_net::msg::envelope::ActiveSessionBindingV1>,
+    payload: ServerGeneral,
+    source_tick: u64,
+    payload_rank: SemanticPayloadRankV1,
+    subject: CanonicalSubjectKeyV1,
+    local_ordinal: u32,
+) -> bool {
+    let Some(recipient) = recipient_binding else {
+        return false;
+    };
+    let semantic_stream = payload.semantic_stream();
+    outbox.enqueue(SemanticSendIntentV1 {
+        recipient,
+        semantic_stream,
+        causality: SemanticCausalityV1 { producer_tick: Some(source_tick), snapshot: None },
+        order_key: ServerSemanticOrderKeyV1 {
+            source_tick,
+            phase_rank: phase_rank(Phase::Create),
+            producer_rank: SemanticProducerV1::EntitySync.producer_rank(),
+            payload_rank: payload_rank.payload_rank(),
+            subject,
+            local_ordinal,
+        },
+        payload: Arc::new(payload),
+    });
+    true
+}
 
 /// This system will send physics updates to the client
 #[derive(Default)]
@@ -42,6 +109,7 @@ impl<'a> System<'a> for Sys {
         Write<'a, DeletedEntities>,
         Read<'a, EventBus<Outcome>>,
         ReadExpect<'a, EditableSettings>,
+        ReadExpect<'a, ServerSemanticOutboxV1>,
         (
             ReadStorage<'a, Pos>,
             ReadStorage<'a, Vel>,
@@ -79,6 +147,7 @@ impl<'a> System<'a> for Sys {
             mut deleted_entities,
             outcomes,
             editable_settings,
+            semantic_outbox,
             (
                 positions,
                 velocities,
@@ -182,6 +251,12 @@ impl<'a> System<'a> for Sys {
                                 })
                             {
                                 let create_msg = ServerGeneral::CreateEntity(pkg);
+                                // APEX-T3.3.13: subject = the CREATED entity's own uid --
+                                // unique per (client, region, tick) by construction (an
+                                // entity has exactly one Entered event per actual creation
+                                // in this region), so local_ordinal stays a constant 0.
+                                let create_subject =
+                                    uids.get(entity).map(|&uid| CanonicalSubjectKeyV1::for_uid(uid));
                                 for (client, regions, client_entity, _) in &mut subscribers {
                                     if maybe_key
                                     .as_ref()
@@ -190,7 +265,20 @@ impl<'a> System<'a> for Sys {
                                     // Client doesn't need to know about itself
                                     && *client_entity != entity
                                     {
-                                        client.send_fallible(create_msg.clone());
+                                        let enqueued = create_subject.clone().is_some_and(|subject| {
+                                            try_enqueue_entity_sync_intent(
+                                                &semantic_outbox,
+                                                client.semantic_send_state().map(|s| s.binding()),
+                                                create_msg.clone(),
+                                                tick,
+                                                SemanticPayloadRankV1::Create,
+                                                subject,
+                                                0,
+                                            )
+                                        });
+                                        if !enqueued {
+                                            client.send_fallible(create_msg.clone());
+                                        }
                                     }
                                 }
                             }
@@ -207,7 +295,21 @@ impl<'a> System<'a> for Sys {
                                         // TODO: I suspect it would be more efficient (in terms of
                                         // bandwidth) to batch messages like this (same in
                                         // subscription.rs).
-                                        client.send_fallible(ServerGeneral::DeleteEntity(uid));
+                                        // APEX-T3.3.13: subject = the DELETED entity's own
+                                        // uid; local_ordinal constant 0, same reasoning as
+                                        // the Create case above.
+                                        let enqueued = try_enqueue_entity_sync_intent(
+                                            &semantic_outbox,
+                                            client.semantic_send_state().map(|s| s.binding()),
+                                            ServerGeneral::DeleteEntity(uid),
+                                            tick,
+                                            SemanticPayloadRankV1::Delete,
+                                            CanonicalSubjectKeyV1::for_uid(uid),
+                                            0,
+                                        );
+                                        if !enqueued {
+                                            client.send_fallible(ServerGeneral::DeleteEntity(uid));
+                                        }
                                     }
                                 }
                             }
@@ -227,10 +329,45 @@ impl<'a> System<'a> for Sys {
                 // the client can align packages across streams by tick.
                 entity_sync_package.sync_tick = tick;
                 comp_sync_package.sync_tick = tick;
+                // APEX-T3.3.13: V1-attached clients (none reachable live today,
+                // T3.3.05) never reach the lazy prepare/send_prepared machinery
+                // below at all -- they get their own owned EntitySync/CompSync
+                // ServerGeneral values enqueued as intents instead. Cloning
+                // entity_sync_package/comp_sync_package here (once, not per
+                // client) is what lets the ORIGINAL values still feed the
+                // untouched Legacy lazy-prepare path exactly as before.
+                let entity_sync_package_for_v1 = entity_sync_package.clone();
+                let comp_sync_package_for_v1 = comp_sync_package.clone();
+                let region_subject = CanonicalSubjectKeyV1::for_region(key);
                 // We lazily initialize the the synchronization messages in case there are no
                 // clients.
                 let mut entity_comp_sync = Either::Left((entity_sync_package, comp_sync_package));
                 for (client, _, client_entity, _) in &mut subscribers {
+                    let recipient_binding = client.semantic_send_state().map(|s| s.binding());
+                    if try_enqueue_entity_sync_intent(
+                        &semantic_outbox,
+                        recipient_binding,
+                        ServerGeneral::EntitySync(entity_sync_package_for_v1.clone()),
+                        tick,
+                        SemanticPayloadRankV1::EntitySync,
+                        region_subject.clone(),
+                        0,
+                    ) {
+                        try_enqueue_entity_sync_intent(
+                            &semantic_outbox,
+                            recipient_binding,
+                            ServerGeneral::CompSync(
+                                comp_sync_package_for_v1.clone(),
+                                force_updates.get(*client_entity).map_or(0, |f| f.counter()),
+                            ),
+                            tick,
+                            SemanticPayloadRankV1::CompSync,
+                            region_subject.clone(),
+                            0,
+                        );
+                        continue;
+                    }
+
                     let msg = entity_comp_sync.right_or_else(
                         |(entity_sync_package, comp_sync_package)| {
                             (
@@ -320,10 +457,28 @@ impl<'a> System<'a> for Sys {
                     // optionally sending it since individual messages may have a bandwidth
                     // overhead), however, here we send it potentially 2 times per subscribed
                     // region by including it in the `CompSync` message.
-                    client.send_fallible(ServerGeneral::CompSync(
+                    let comp_sync_msg = ServerGeneral::CompSync(
                         comp_sync_package,
                         force_updates.get(*client_entity).map_or(0, |f| f.counter()),
-                    ));
+                    );
+                    // APEX-T3.3.13: same region subject as the paired block above,
+                    // local_ordinal 1 (not 0) -- this is a SECOND, distinct CompSync
+                    // send for the same (recipient, region, tick), and the packet's
+                    // own rule ("two intents with the same recipient, stream, and
+                    // order key are a terminal producer bug") means it needs its own
+                    // slot in the order key, not a collision with the paired block's
+                    // CompSync at local_ordinal 0.
+                    if !try_enqueue_entity_sync_intent(
+                        &semantic_outbox,
+                        client.semantic_send_state().map(|s| s.binding()),
+                        comp_sync_msg.clone(),
+                        tick,
+                        SemanticPayloadRankV1::CompSync,
+                        CanonicalSubjectKeyV1::for_region(key),
+                        1,
+                    ) {
+                        client.send_fallible(comp_sync_msg);
+                    }
                 }
             },
         );
@@ -601,5 +756,346 @@ fn add_physics_components(
         } else if send_now {
             comp_sync_package.comp_modified(uid, *o);
         }
+    }
+}
+
+/// `APEX-T3.3.13` tests: `try_enqueue_entity_sync_intent`'s own
+/// direct unit coverage. It's a pure function of its explicit
+/// arguments (no `&Client`, see its own doc comment for why), so it
+/// gets the same direct-unit-test treatment T3.3.08/10's pure
+/// validation functions did -- no live `Client`/ECS harness needed.
+#[cfg(test)]
+mod semantic_intents {
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+    use common_net::msg::envelope::ActiveSessionBindingV1;
+
+    use super::*;
+
+    fn binding(seed: u8) -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([seed; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([seed.wrapping_add(1); 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        }
+    }
+
+    #[test]
+    fn no_binding_does_not_enqueue() {
+        let outbox = ServerSemanticOutboxV1::new();
+        let enqueued = try_enqueue_entity_sync_intent(
+            &outbox,
+            None,
+            ServerGeneral::UpdateRecipes,
+            1,
+            SemanticPayloadRankV1::Create,
+            CanonicalSubjectKeyV1::for_singleton("x"),
+            0,
+        );
+        assert!(!enqueued);
+        assert!(outbox.take_pending().is_empty());
+    }
+
+    #[test]
+    fn some_binding_enqueues_with_expected_order_key() {
+        let outbox = ServerSemanticOutboxV1::new();
+        let b = binding(1);
+        let enqueued = try_enqueue_entity_sync_intent(
+            &outbox,
+            Some(b),
+            ServerGeneral::DeleteEntity(Uid(std::num::NonZeroU64::new(7).unwrap())),
+            42,
+            SemanticPayloadRankV1::Delete,
+            CanonicalSubjectKeyV1::for_uid(Uid(std::num::NonZeroU64::new(7).unwrap())),
+            0,
+        );
+        assert!(enqueued);
+        let pending = outbox.take_pending();
+        assert_eq!(pending.len(), 1);
+        let intent = &pending[0];
+        assert_eq!(intent.recipient, b);
+        assert_eq!(intent.semantic_stream, common_net::msg::envelope::SemanticStreamIdV1::General);
+        assert_eq!(intent.order_key.source_tick, 42);
+        assert_eq!(intent.order_key.phase_rank, phase_rank(Phase::Create));
+        assert_eq!(intent.order_key.producer_rank, SemanticProducerV1::EntitySync.producer_rank());
+        assert_eq!(intent.order_key.payload_rank, SemanticPayloadRankV1::Delete.payload_rank());
+        assert_eq!(intent.order_key.local_ordinal, 0);
+    }
+
+    /// Create and Delete both use local_ordinal 0 -- proves that's safe
+    /// because their DIFFERENT payload_rank already keeps the order keys
+    /// distinct even for the same subject (same entity created-then-
+    /// deleted would share a uid, hypothetically).
+    #[test]
+    fn create_and_delete_for_the_same_uid_do_not_collide() {
+        let outbox = ServerSemanticOutboxV1::new();
+        let b = binding(1);
+        let uid = Uid(std::num::NonZeroU64::new(3).unwrap());
+        try_enqueue_entity_sync_intent(
+            &outbox,
+            Some(b),
+            ServerGeneral::DeleteEntity(uid),
+            1,
+            SemanticPayloadRankV1::Create,
+            CanonicalSubjectKeyV1::for_uid(uid),
+            0,
+        );
+        try_enqueue_entity_sync_intent(
+            &outbox,
+            Some(b),
+            ServerGeneral::DeleteEntity(uid),
+            1,
+            SemanticPayloadRankV1::Delete,
+            CanonicalSubjectKeyV1::for_uid(uid),
+            0,
+        );
+        let mut pending = outbox.take_pending();
+        pending.sort_by(|a, b| a.total_sort_key().cmp(&b.total_sort_key()));
+        assert_ne!(pending[0].order_key, pending[1].order_key, "must not collide despite identical subject");
+    }
+
+    /// The paired block's CompSync (local_ordinal 0) and the physics-
+    /// throttle block's CompSync (local_ordinal 1) target the same
+    /// recipient/stream/payload_rank/subject in the real code -- proves
+    /// the local_ordinal split is what keeps them from colliding.
+    #[test]
+    fn paired_and_throttle_compsync_do_not_collide() {
+        let outbox = ServerSemanticOutboxV1::new();
+        let b = binding(1);
+        let subject = CanonicalSubjectKeyV1::for_region(Vec2::new(0, 0));
+        for local_ordinal in [0u32, 1u32] {
+            try_enqueue_entity_sync_intent(
+                &outbox,
+                Some(b),
+                ServerGeneral::CompSync(CompSyncPackage::new(), 0),
+                1,
+                SemanticPayloadRankV1::CompSync,
+                subject.clone(),
+                local_ordinal,
+            );
+        }
+        let mut pending = outbox.take_pending();
+        pending.sort_by(|a, b| a.total_sort_key().cmp(&b.total_sort_key()));
+        assert_ne!(pending[0].order_key, pending[1].order_key);
+    }
+}
+
+/// `APEX-T3.3.13` requirement 4 (Fable's elevated-gate ruling): prove
+/// entity_sync's intent construction produces byte-identical, order-
+/// independent results regardless of how many rayon workers process the
+/// regions, or what order the regions are visited in. Exercises the
+/// EXACT SAME `try_enqueue_entity_sync_intent` the real system calls
+/// (not a re-implementation) -- driven by synthetic per-region fixture
+/// data instead of a live `specs::World`, for the same reason
+/// `semantic_intents` above skips a `Client` (no lightweight way to
+/// build one here). This is a faithful test of the real concurrency
+/// pattern entity_sync now uses (rayon `par_iter` over regions, each
+/// producing intents into one shared `Mutex`-backed outbox) even though
+/// it doesn't invoke `Sys::run` itself.
+#[cfg(test)]
+mod semantic_intents_parallel {
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+    use common_net::msg::envelope::{
+        ActiveSessionBindingV1, SemanticPayloadEncodingV1, encode_payload_v1, net_envelope_profile_root_v1,
+        payload_digest_v1,
+    };
+    use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
+    use super::*;
+
+    fn fixture_binding() -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([9; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([10; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        }
+    }
+
+    /// One "region" of fixture work: a create + a delete + a paired-
+    /// style CompSync + a throttle-style CompSync, exactly the four
+    /// call-site shapes the real per-region closure produces, using the
+    /// SAME subject/payload_rank/local_ordinal conventions as the real
+    /// code.
+    fn produce_region_intents(outbox: &ServerSemanticOutboxV1, binding: ActiveSessionBindingV1, region_key: Vec2<i32>, tick: u64) {
+        let region_ord = (region_key.x.unsigned_abs() as u64) * 1000 + region_key.y.unsigned_abs() as u64;
+        let created_uid = Uid(std::num::NonZeroU64::new(region_ord * 2 + 1).unwrap());
+        let deleted_uid = Uid(std::num::NonZeroU64::new(region_ord * 2 + 2).unwrap());
+        let region_subject = CanonicalSubjectKeyV1::for_region(region_key);
+
+        try_enqueue_entity_sync_intent(
+            outbox,
+            Some(binding),
+            ServerGeneral::DeleteEntity(created_uid), // stand-in payload; only the header fields matter for the tape
+            tick,
+            SemanticPayloadRankV1::Create,
+            CanonicalSubjectKeyV1::for_uid(created_uid),
+            0,
+        );
+        try_enqueue_entity_sync_intent(
+            outbox,
+            Some(binding),
+            ServerGeneral::DeleteEntity(deleted_uid),
+            tick,
+            SemanticPayloadRankV1::Delete,
+            CanonicalSubjectKeyV1::for_uid(deleted_uid),
+            0,
+        );
+        try_enqueue_entity_sync_intent(
+            outbox,
+            Some(binding),
+            ServerGeneral::CompSync(CompSyncPackage::new(), 0),
+            tick,
+            SemanticPayloadRankV1::CompSync,
+            region_subject.clone(),
+            0,
+        );
+        try_enqueue_entity_sync_intent(
+            outbox,
+            Some(binding),
+            ServerGeneral::CompSync(CompSyncPackage::new(), 0),
+            tick,
+            SemanticPayloadRankV1::CompSync,
+            region_subject,
+            1,
+        );
+    }
+
+    type TapeEntry = (Vec<u8>, u64, u16, u16, u16, u32, [u8; 32]);
+
+    fn tape_of(outbox: &ServerSemanticOutboxV1) -> Vec<TapeEntry> {
+        let mut pending = outbox.take_pending();
+        pending.sort_by(|a, b| a.total_sort_key().cmp(&b.total_sort_key()));
+        pending
+            .into_iter()
+            .map(|intent| {
+                let payload_bytes = encode_payload_v1(&*intent.payload);
+                let digest = payload_digest_v1(
+                    net_envelope_profile_root_v1(),
+                    intent.payload.payload_schema(),
+                    SemanticPayloadEncodingV1::Bincode2LegacySerde,
+                    &payload_bytes,
+                );
+                (
+                    intent.order_key.subject.as_bytes().to_vec(),
+                    intent.order_key.source_tick,
+                    intent.order_key.phase_rank,
+                    intent.order_key.producer_rank,
+                    intent.order_key.payload_rank,
+                    intent.order_key.local_ordinal,
+                    *digest.as_array(),
+                )
+            })
+            .collect()
+    }
+
+    fn run_with_pool_size(regions: &[Vec2<i32>], workers: usize) -> Vec<TapeEntry> {
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(workers).build().unwrap();
+        let outbox = ServerSemanticOutboxV1::new();
+        let binding = fixture_binding();
+        pool.install(|| {
+            regions.to_vec().into_par_iter().for_each(|region_key| {
+                produce_region_intents(&outbox, binding, region_key, 7);
+            });
+        });
+        tape_of(&outbox)
+    }
+
+    fn fixture_regions() -> Vec<Vec2<i32>> { (0..12).map(|i| Vec2::new(i, -i)).collect() }
+
+    #[test]
+    fn byte_identical_tape_across_worker_counts() {
+        let regions = fixture_regions();
+        let tape_1 = run_with_pool_size(&regions, 1);
+        let tape_2 = run_with_pool_size(&regions, 2);
+        let tape_8 = run_with_pool_size(&regions, 8);
+        assert_eq!(tape_1, tape_2);
+        assert_eq!(tape_1, tape_8);
+    }
+
+    #[test]
+    fn byte_identical_tape_under_region_permutation() {
+        let mut regions = fixture_regions();
+        let forward = run_with_pool_size(&regions, 8);
+        regions.reverse();
+        let reversed = run_with_pool_size(&regions, 8);
+        regions.rotate_left(5);
+        let rotated = run_with_pool_size(&regions, 8);
+        assert_eq!(forward, reversed);
+        assert_eq!(forward, rotated);
+    }
+
+    /// Non-vacuity (Fable's elevated-gate requirement 4): the harness
+    /// technique above must be able to FAIL, not just always pass.
+    /// Deliberately deterministic (not a real thread race, which turned
+    /// out not to reliably manifest with this fixture's cheap per-item
+    /// work -- observed directly: an earlier `AtomicU32`-race version of
+    /// this test occasionally produced IDENTICAL tapes across worker
+    /// counts by luck, exactly the kind of flaky non-proof this
+    /// campaign's own culture rejects). Instead this directly compares
+    /// two DIFFERENT, both individually-deterministic assignments of
+    /// `local_ordinal` -- one mirroring the real per-call-site-constant
+    /// scheme, one mirroring a plausible-but-wrong "arrival index"
+    /// scheme -- proving the tape/comparison TECHNIQUE itself can tell
+    /// two genuinely different constructions apart, which is the actual
+    /// property non-vacuity needs: not "did a race happen to fire this
+    /// run" but "can the check discriminate a real divergence at all."
+    #[test]
+    fn falsifier_arrival_index_local_ordinal_diverges_from_the_real_construction() {
+        fn produce_region_intent_broken(outbox: &ServerSemanticOutboxV1, binding: ActiveSessionBindingV1, region_key: Vec2<i32>, tick: u64, arrival_index: u32) {
+            // Deliberately broken: local_ordinal is the region's ARRIVAL
+            // INDEX in whatever order it happened to be processed,
+            // instead of the real code's fixed per-call-site constant
+            // (0 for the paired block's CompSync, 1 for the throttle
+            // block's) -- a realistic "leaking knob" bug class
+            // (accidentally keying off iteration/arrival order instead
+            // of call-site identity).
+            try_enqueue_entity_sync_intent(
+                outbox,
+                Some(binding),
+                ServerGeneral::CompSync(CompSyncPackage::new(), 0),
+                tick,
+                SemanticPayloadRankV1::CompSync,
+                CanonicalSubjectKeyV1::for_region(region_key),
+                arrival_index,
+            );
+        }
+
+        fn run_broken(regions: &[Vec2<i32>]) -> Vec<TapeEntry> {
+            let outbox = ServerSemanticOutboxV1::new();
+            let binding = fixture_binding();
+            for (i, &region_key) in regions.iter().enumerate() {
+                produce_region_intent_broken(&outbox, binding, region_key, 7, i as u32);
+            }
+            tape_of(&outbox)
+        }
+
+        let regions = fixture_regions();
+        // The real construction's single-CompSync-per-region tape (same
+        // shape as run_with_pool_size's fixture, but with only ONE
+        // CompSync per region so the ordinals line up 1:1 against the
+        // broken variant's ONE-per-region arrival index for a fair,
+        // directly comparable pair).
+        fn run_real_single_compsync(regions: &[Vec2<i32>]) -> Vec<TapeEntry> {
+            let outbox = ServerSemanticOutboxV1::new();
+            let binding = fixture_binding();
+            for &region_key in regions {
+                try_enqueue_entity_sync_intent(
+                    &outbox,
+                    Some(binding),
+                    ServerGeneral::CompSync(CompSyncPackage::new(), 0),
+                    7,
+                    SemanticPayloadRankV1::CompSync,
+                    CanonicalSubjectKeyV1::for_region(region_key),
+                    0, // the real per-call-site constant
+                );
+            }
+            tape_of(&outbox)
+        }
+
+        let real_tape = run_real_single_compsync(&regions);
+        let broken_tape = run_broken(&regions);
+        assert_ne!(
+            real_tape, broken_tape,
+            "arrival-index-derived local_ordinal must diverge from the real fixed-constant construction -- proves the tape comparison technique is not vacuously green"
+        );
     }
 }

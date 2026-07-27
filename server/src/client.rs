@@ -135,6 +135,14 @@ impl Client {
         self.semantic_receive_state.as_mut()
     }
 
+    /// `APEX-T3.3.13`: a semantic-send producer's read-only access to the
+    /// current intended binding -- `None` for `Legacy` sessions and while
+    /// detached, same lifecycle as `reset_semantic_state`. Producers use
+    /// this only for `SemanticSendIntentV1::recipient`; sequence
+    /// allocation stays `SemanticSendStateV1`'s own cursor fields,
+    /// touched only by `T3.3.15`'s egress owner, never by a producer.
+    pub(crate) fn semantic_send_state(&self) -> Option<&SemanticSendStateV1> { self.semantic_send_state.as_ref() }
+
     pub(crate) fn send<M: Into<ServerMsg>>(&self, msg: M) -> Result<(), StreamError> {
         // TODO: hack to avoid locking stream mutex while serializing the message,
         // remove this when the mutexes on the Streams are removed
