@@ -12,7 +12,7 @@ use std::{
 
 use super::{
     CommandResults,
-    errors::PluginModuleError,
+    errors::{PluginModuleError, PluginPreflightErrorV1},
     memory_manager::{EcsAccessManager, EcsWorld},
 };
 use hashbrown::{HashMap, HashSet};
@@ -184,6 +184,8 @@ pub struct PluginModule {
     plugin: PluginWrapper,
     store: Mutex<wasmtime::Store<WasiHostCtx>>,
     name: String,
+    /// APEX-T2.5.14: per-event fuel budget (u64::MAX = legacy unlimited).
+    fuel_per_event: u64,
 }
 
 struct WasiHostCtx {
@@ -192,6 +194,20 @@ struct WasiHostCtx {
     ecs: Arc<EcsAccessManager>,
     registered_commands: HashSet<String>,
     registered_bodies: HashMap<String, types::BodyIndex>,
+    /// APEX-T2.5.14: per-store resource ceilings (memory/table growth),
+    /// from the deployment policy for governed modules; unlimited for
+    /// legacy modules (behavior-preserving).
+    limits: wasmtime::StoreLimits,
+}
+
+/// APEX-T2.5.14 — the per-store slice of the deployment policy's
+/// per-mode runtime limits. No `Default`: legacy modules pass `None`
+/// explicitly (recorded as unlimited), governed modules carry policy
+/// values.
+#[derive(Clone, Copy, Debug)]
+pub struct PluginStoreLimitsV1 {
+    pub max_linear_memory_bytes: u64,
+    pub max_fuel_per_event: u64,
 }
 
 impl WasiView for WasiHostCtx {
@@ -421,16 +437,118 @@ impl HostMonotonicClock for DeterministicMonotonicClock {
     }
 }
 
-impl PluginModule {
-    /// This function takes bytes from a WASM File and compile them
-    pub fn new(name: String, wasm_data: &[u8]) -> Result<Self, PluginModuleError> {
-        let ecs = Arc::new(EcsAccessManager::default());
+/// `APEX-T2.5.14` — THE process Wasmtime runtime: one explicitly
+/// configured `Engine` shared by every module, replacing the old
+/// engine-per-module construction whose `Config` defaults were
+/// unrecorded. Every non-default knob lives HERE, in one auditable
+/// place; per-module code can no longer make config decisions at all.
+/// (`Engine` is `Send + Sync` and internally shared by design —
+/// wasmtime documents cross-store engine sharing as the intended use.)
+pub struct PluginRuntimeV1 {
+    engine: Engine,
+}
 
-        // configure the wasm runtime
+/// The explicit V1 config: component model ON; everything else is
+/// wasmtime's documented default, deliberately unmodified — recorded by
+/// this constant's existence rather than scattered per call site.
+pub const PLUGIN_RUNTIME_CONFIG_TAG_V1: &str = "bastion.plugin-runtime/v1:component-model+fuel";
+
+impl PluginRuntimeV1 {
+    fn new() -> Result<Self, wasmtime::Error> {
         let mut config = Config::new();
         config.wasm_component_model(true);
+        // APEX-T2.5.14: fuel metering is ON for every module (one engine,
+        // one config — no governed/legacy engine split). Legacy modules
+        // get u64::MAX fuel so their behavior is preserved; the metering
+        // overhead is the disclosed cost of a single shared engine.
+        config.consume_fuel(true);
+        Ok(Self { engine: Engine::new(&config)? })
+    }
 
-        let engine = Engine::new(&config).map_err(PluginModuleError::Wasmtime)?;
+    pub fn engine(&self) -> &Engine { &self.engine }
+}
+
+/// The one runtime, constructed on first use. A construction failure is
+/// remembered (typed) — every subsequent module creation fails the same
+/// way rather than retrying its own private engine.
+pub fn plugin_runtime_v1() -> Result<&'static PluginRuntimeV1, PluginModuleError> {
+    static RUNTIME: std::sync::OnceLock<Result<PluginRuntimeV1, String>> = std::sync::OnceLock::new();
+    RUNTIME
+        .get_or_init(|| PluginRuntimeV1::new().map_err(|e| e.to_string()))
+        .as_ref()
+        .map_err(|e| PluginModuleError::RuntimeUnavailable { detail: e.clone() })
+}
+
+/// `APEX-T2.5.15` — a component that has passed the FULL preflight:
+/// compiled, host linker built, and every import resolved/typechecked
+/// via `instantiate_pre`. Holding one has no side effects; actual
+/// instantiation, wrapper construction, and load hooks remain separate
+/// fallible stages.
+pub struct PreparedPluginModuleV1 {
+    name: String,
+    instance_pre: wasmtime::component::InstancePre<WasiHostCtx>,
+}
+
+impl PreparedPluginModuleV1 {
+    pub fn name(&self) -> &str { &self.name }
+}
+
+/// `APEX-T2.5.15` — the preflight: exact bytes → component → import
+/// resolution/typecheck, each stage a distinct typed terminal. Runs
+/// BEFORE any store, instance, wrapper, or publication exists.
+pub fn preflight_component_v1(
+    name: &str,
+    wasm_data: &[u8],
+) -> Result<PreparedPluginModuleV1, PluginPreflightErrorV1> {
+    let engine = plugin_runtime_v1()
+        .map_err(|e| PluginPreflightErrorV1::RuntimeUnavailable { detail: format!("{e:?}") })?
+        .engine();
+    let component = Component::from_binary(engine, wasm_data).map_err(|e| {
+        PluginPreflightErrorV1::CompileFailed { module: name.to_owned(), detail: e.to_string() }
+    })?;
+    let mut linker: Linker<WasiHostCtx> = Linker::new(engine);
+    wasmtime_wasi::p2::add_to_linker_sync(&mut linker).map_err(|e| {
+        PluginPreflightErrorV1::LinkerSetupFailed { module: name.to_owned(), detail: e.to_string() }
+    })?;
+    Plugin::add_to_linker::<_, HasSelf<_>>(&mut linker, |x| x).map_err(|e| {
+        PluginPreflightErrorV1::LinkerSetupFailed { module: name.to_owned(), detail: e.to_string() }
+    })?;
+    let instance_pre = linker.instantiate_pre(&component).map_err(|e| {
+        PluginPreflightErrorV1::ImportResolutionFailed { module: name.to_owned(), detail: e.to_string() }
+    })?;
+    Ok(PreparedPluginModuleV1 { name: name.to_owned(), instance_pre })
+}
+
+impl PluginModule {
+    /// This function takes bytes from a WASM File and compile them.
+    /// `limits = None` = legacy/ungoverned (unlimited, recorded);
+    /// `Some` = the deployment policy's per-mode ceilings.
+    pub fn new(
+        name: String,
+        wasm_data: &[u8],
+        limits: Option<PluginStoreLimitsV1>,
+    ) -> Result<Self, PluginModuleError> {
+        // APEX-T2.5.15: even the single-module path goes through the
+        // full preflight — there is no instantiate-without-preflight.
+        // (Legacy path: no declared world, probing preserved.)
+        let prepared = preflight_component_v1(&name, wasm_data).map_err(PluginModuleError::Preflight)?;
+        Self::new_from_prepared(&prepared, limits, None)
+    }
+
+    /// `APEX-T2.5.15/.16` — instantiate from a PREFLIGHTED component:
+    /// store setup + `InstancePre::instantiate` + declared-world wrapper
+    /// selection (`expected_world = None` = legacy probing). Compile and
+    /// import failures are impossible here by construction.
+    pub fn new_from_prepared(
+        prepared: &PreparedPluginModuleV1,
+        limits: Option<PluginStoreLimitsV1>,
+        expected_world: Option<super::manifest::PluginModuleWorldV1>,
+    ) -> Result<Self, PluginModuleError> {
+        let name = prepared.name.clone();
+        let ecs = Arc::new(EcsAccessManager::default());
+
+        // APEX-T2.5.14: the SHARED engine — no per-module Config exists.
+        let engine = plugin_runtime_v1()?.engine().clone();
         // create a WASI environment (std implementing system calls)
         // RNG-P3-001 (determinism audit): seed the WASI *insecure* random
         // deterministically by plugin identity. WASI's own contract splits
@@ -452,48 +570,109 @@ impl PluginModule {
             .wall_clock(DeterministicWallClock)
             .monotonic_clock(DeterministicMonotonicClock::new())
             .build();
+        let store_limits = match &limits {
+            Some(l) => wasmtime::StoreLimitsBuilder::new()
+                .memory_size(l.max_linear_memory_bytes as usize)
+                .build(),
+            None => wasmtime::StoreLimitsBuilder::new().build(), // unlimited (legacy)
+        };
         let host_ctx = WasiHostCtx {
             preview2_ctx: wasi,
             preview2_table: wasmtime_wasi::ResourceTable::new(),
             ecs: Arc::clone(&ecs),
             registered_commands: HashSet::new(),
             registered_bodies: HashMap::new(),
+            limits: store_limits,
         };
         // the store contains all data of a wasm instance
         let mut store = Store::new(&engine, host_ctx);
+        store.limiter(|ctx| &mut ctx.limits);
+        let fuel_per_event = limits.map_or(u64::MAX, |l| l.max_fuel_per_event);
+        store
+            .set_fuel(fuel_per_event)
+            .expect("fuel metering enabled by PluginRuntimeV1 construction");
 
-        // load wasm from binary
-        let module =
-            Component::from_binary(&engine, wasm_data).map_err(PluginModuleError::Wasmtime)?;
+        // APEX-T2.5.15: instantiate from the PREFLIGHTED InstancePre —
+        // compile and import resolution already happened before any
+        // store existed; only instantiation itself can fail here.
+        let instance =
+            prepared.instance_pre.instantiate(&mut store).map_err(PluginModuleError::Wasmtime)?;
 
-        // register WASI and Veloren methods with the runtime
-        let mut linker = Linker::new(&engine);
-        wasmtime_wasi::p2::add_to_linker_sync(&mut linker).map_err(PluginModuleError::Wasmtime)?;
-        Plugin::add_to_linker::<_, HasSelf<_>>(&mut linker, |x| x)
-            .map_err(PluginModuleError::Wasmtime)?;
-
-        let instance_fut = linker.instantiate(&mut store, &module);
-        let instance = (instance_fut).map_err(PluginModuleError::Wasmtime)?;
-
-        let plugin = match Plugin::new(&mut store, &instance) {
-            Ok(pl) => Ok(PluginWrapper::Full(pl)),
-            Err(_) => match animation_plugin::AnimationPlugin::new(&mut store, &instance) {
-                Ok(pl) => Ok(PluginWrapper::Animation(pl)),
-                Err(_) => server_plugin::ServerPlugin::new(&mut store, &instance)
-                    .map(PluginWrapper::Server),
+        // APEX-T2.5.16: a module whose manifest DECLARED a world gets
+        // exactly that wrapper — a missing/mismatched export is a typed
+        // terminal, never a silent fallback to a different world.
+        // Probing survives ONLY for legacy manifests (no declaration).
+        let plugin = match expected_world {
+            Some(super::manifest::PluginModuleWorldV1::Plugin) => Plugin::new(&mut store, &instance)
+                .map(PluginWrapper::Full)
+                .map_err(|e| PluginModuleError::WorldMismatch {
+                    module: name.clone(),
+                    declared: "plugin",
+                    detail: e.to_string(),
+                })?,
+            Some(super::manifest::PluginModuleWorldV1::AnimationPlugin) => {
+                animation_plugin::AnimationPlugin::new(&mut store, &instance)
+                    .map(PluginWrapper::Animation)
+                    .map_err(|e| PluginModuleError::WorldMismatch {
+                        module: name.clone(),
+                        declared: "animation-plugin",
+                        detail: e.to_string(),
+                    })?
             },
-        }
-        .map_err(PluginModuleError::Wasmtime)?;
+            Some(super::manifest::PluginModuleWorldV1::ServerPlugin) => {
+                server_plugin::ServerPlugin::new(&mut store, &instance)
+                    .map(PluginWrapper::Server)
+                    .map_err(|e| PluginModuleError::WorldMismatch {
+                        module: name.clone(),
+                        declared: "server-plugin",
+                        detail: e.to_string(),
+                    })?
+            },
+            None => match Plugin::new(&mut store, &instance) {
+                Ok(pl) => Ok(PluginWrapper::Full(pl)),
+                Err(_) => match animation_plugin::AnimationPlugin::new(&mut store, &instance) {
+                    Ok(pl) => Ok(PluginWrapper::Animation(pl)),
+                    Err(_) => server_plugin::ServerPlugin::new(&mut store, &instance)
+                        .map(PluginWrapper::Server),
+                },
+            }
+            .map_err(PluginModuleError::Wasmtime)?,
+        };
 
         Ok(Self {
             plugin,
             ecs,
             store: store.into(),
             name,
+            fuel_per_event,
         })
     }
 
     pub fn name(&self) -> &str { &self.name }
+
+    /// APEX-T2.5.19 — the ACTUAL registrations this module's load hooks
+    /// made, as canonical sorted sets (receipt input; compared against
+    /// the manifest's declared claims).
+    pub fn actual_registrations_v1(&mut self) -> (Vec<String>, Vec<String>) {
+        let store = self.store.get_mut().unwrap();
+        let mut commands: Vec<String> = store.data().registered_commands.iter().cloned().collect();
+        commands.sort_unstable();
+        let mut bodies: Vec<String> = store.data().registered_bodies.keys().cloned().collect();
+        bodies.sort_unstable();
+        (commands, bodies)
+    }
+
+    /// APEX-T2.5.14: `max_fuel_per_event` semantics — every host-invoked
+    /// event starts from a full per-event budget (a well-behaved event
+    /// can never be starved by an earlier one; a runaway event traps at
+    /// ITS OWN ceiling). Called at the head of every public entry point.
+    fn refuel(&mut self) {
+        self.store
+            .get_mut()
+            .unwrap()
+            .set_fuel(self.fuel_per_event)
+            .expect("fuel metering enabled by PluginRuntimeV1 construction");
+    }
 
     // Implementation of the commands called from veloren and provided in plugins
     pub fn load_event(
@@ -501,6 +680,7 @@ impl PluginModule {
         ecs: &EcsWorld,
         mode: common::resources::GameMode,
     ) -> Result<(), PluginModuleError> {
+        self.refuel();
         self.ecs
             .execute_with(ecs, || {
                 self.plugin.load_event(self.store.get_mut().unwrap(), mode)
@@ -515,6 +695,7 @@ impl PluginModule {
         args: &[String],
         player: common::uid::Uid,
     ) -> Result<Vec<String>, CommandResults> {
+        self.refuel();
         if !self
             .store
             .get_mut()
@@ -544,6 +725,7 @@ impl PluginModule {
         name: &str,
         uuid: common::uuid::Uuid,
     ) -> types::JoinResult {
+        self.refuel();
         self.ecs.execute_with(ecs, || {
             match self.plugin.player_join_event(
                 self.store.get_mut().unwrap(),
@@ -563,6 +745,7 @@ impl PluginModule {
     }
 
     pub fn create_body(&mut self, bodytype: &str) -> Option<animation::Body> {
+        self.refuel();
         let store = self.store.get_mut().unwrap();
         let bodytype = store.data().registered_bodies.get(bodytype).copied();
         bodytype.and_then(|bd| self.plugin.create_body(store, bd))
@@ -574,7 +757,96 @@ impl PluginModule {
         dep: &types::Dependency,
         time: f32,
     ) -> Option<types::Skeleton> {
+        self.refuel();
         self.plugin
             .update_skeleton(self.store.get_mut().unwrap(), *body, *dep, time)
+    }
+}
+
+/// `APEX-T2.5.15` — component preflight canaries: each stage's terminal
+/// driven with a real (wat-built) fixture; no store or instance exists
+/// at any point in these tests.
+#[cfg(test)]
+mod plugin_component_preflight_v1 {
+    use super::*;
+
+    #[test]
+    fn preflight_stages_produce_their_own_terminals() {
+        // Malformed bytes: compile terminal.
+        assert!(matches!(
+            preflight_component_v1("junk", b"not wasm at all"),
+            Err(PluginPreflightErrorV1::CompileFailed { .. })
+        ));
+
+        // A valid but EMPTY component (no imports, no exports): preflight
+        // PASSES — imports resolve trivially. (Missing exports are the
+        // wrapper stage's business, .16.)
+        let empty = wat::parse_str("(component)").unwrap();
+        assert!(preflight_component_v1("empty", &empty).is_ok());
+
+        // Core wasm module (not a component): compile-stage refusal under
+        // the component-model config.
+        let core = wat::parse_str("(module)").unwrap();
+        assert!(matches!(
+            preflight_component_v1("core", &core),
+            Err(PluginPreflightErrorV1::CompileFailed { .. })
+        ));
+
+        // Unknown import: instantiate_pre resolution terminal — the
+        // exact class that used to surface only at live instantiation.
+        // NB: an EMPTY instance import is trivially satisfiable (observed
+        // directly — wasmtime provides it implicitly), so the fixture
+        // must import real content for resolution to have work to do.
+        let unknown_import = wat::parse_str(
+            r#"(component (import "nonexistent:pkg/iface@0.0.1" (instance (export "f" (func)))))"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            preflight_component_v1("ghost", &unknown_import),
+            Err(PluginPreflightErrorV1::ImportResolutionFailed { .. })
+        ));
+    }
+}
+
+/// `APEX-T2.5.16` — declared-world enforcement canaries.
+#[cfg(test)]
+mod plugin_declared_world_v1 {
+    use super::*;
+
+    #[test]
+    fn declared_world_is_enforced_and_legacy_probes() {
+        let empty = wat::parse_str("(component)").unwrap();
+        let prepared = preflight_component_v1("w", &empty).unwrap();
+
+        // Declared world + missing exports = the typed mismatch terminal,
+        // for every world — never a fallback to another wrapper.
+        for world in [
+            super::super::manifest::PluginModuleWorldV1::Plugin,
+            super::super::manifest::PluginModuleWorldV1::ServerPlugin,
+            super::super::manifest::PluginModuleWorldV1::AnimationPlugin,
+        ] {
+            assert!(matches!(
+                PluginModule::new_from_prepared(&prepared, None, Some(world)),
+                Err(PluginModuleError::WorldMismatch { .. })
+            ));
+        }
+        // Legacy (no declaration): probing path, generic wasmtime error —
+        // byte-compatible with the old behavior class.
+        assert!(matches!(
+            PluginModule::new_from_prepared(&prepared, None, None),
+            Err(PluginModuleError::Wasmtime(_))
+        ));
+    }
+
+    #[test]
+    fn world_extraction_reads_v1_and_ignores_legacy() {
+        let v1 = b"manifest_version = 1\n[[modules]]\npath = \"m.wasm\"\nworld = \"server-plugin\"\n";
+        let worlds = super::super::extract_declared_worlds_v1(v1).unwrap();
+        assert_eq!(
+            worlds.get(std::path::Path::new("m.wasm")),
+            Some(&super::super::manifest::PluginModuleWorldV1::ServerPlugin)
+        );
+        assert!(super::super::extract_declared_worlds_v1(b"name = \"old\"\nmodules = []\n").is_none());
+        assert!(super::super::extract_declared_worlds_v1(b"\xff\xfe not utf8").is_none());
     }
 }

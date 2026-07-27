@@ -17,7 +17,7 @@ use super::SendSiteClassV1::{
     V1EgressMechanism,
 };
 
-pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 194] = [
+pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 195] = [
     ("weather/tick.rs", "lazy_msg = Some(client.prepare(ServerGeneral::WeatherUpdate(", 0, PostAuthCandidate),
     ("weather/tick.rs", "lazy_msg.as_ref().map(|msg| client.send_prepared(msg));", 0, PostAuthCandidate),
     ("weather/tick.rs", "let _ = weather_tx.send((grid, lightning_cells, sim));", 0, NotAClientSend),
@@ -133,6 +133,16 @@ pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 194] = 
     ("events/information.rs", "client.send_fallible(msg);", 0, PostAuthCandidate),
     ("events/information.rs", "client.send_fallible(msg);", 1, PostAuthCandidate),
     ("events/information.rs", ".send(ServerGeneral::PluginData(buf))", 0, PostAuthCandidate),
+    // APEX MERGE (T2.5.11 joins T3.3's frozen catalog): the typed
+    // artifact-serving send, sibling of the legacy PluginData send above
+    // and classified identically — post-auth, migration-eligible when the
+    // .14b-e adoption families reach the events/information.rs family.
+    (
+        "events/information.rs",
+        ".send(common_net::msg::ServerGeneral::PluginArtifactData(response))",
+        0,
+        PostAuthCandidate,
+    ),
     ("persistence/character_updater.rs", ".send(CharacterUpdaterMessage::DatabaseBatchCompletion(batch_id))", 0, NotAClientSend),
     ("persistence/character_updater.rs", "if let Err(e) = response_tx.send(response) {", 0, NotAClientSend),
     ("persistence/character_updater.rs", "if let Err(e) = response_tx.send(response) {", 1, NotAClientSend),

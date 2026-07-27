@@ -30,6 +30,8 @@ serde = { workspace = true, optional = true }
 walkdir = "2.3.2"
 serde = { workspace = true }
 tempfile = "3.27.0"
+# APEX-T2.1.16: build in-memory plugin tars for the two-phase canaries
+tar = "0.4.37"
 
 [features]
 hot-reloading = ["assets_manager/hot-reloading"]

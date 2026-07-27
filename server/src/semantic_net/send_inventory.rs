@@ -204,7 +204,11 @@ mod tests {
     #[test]
     fn post_auth_candidate_count_matches_this_rows_inventory() {
         let n = SEND_SITE_CATALOG.iter().filter(|&&(_, _, _, c)| c == PostAuthCandidate).count();
-        assert_eq!(n, 133, "PostAuthCandidate count drifted -- update this row's own commit-message accounting if the change is intentional");
+        // APEX MERGE: 133 -> 134. T2.5.11's typed artifact-serving send
+        // (events/information.rs, PluginArtifactData) joined the tree from
+        // the other lane and is classified PostAuthCandidate exactly like
+        // its legacy PluginData sibling. INTENTIONAL, accounted here.
+        assert_eq!(n, 134, "PostAuthCandidate count drifted -- update this row's own commit-message accounting if the change is intentional");
     }
 
     #[test]

@@ -16,6 +16,8 @@ pub(super) fn register_event_systems(builder: &mut DispatcherBuilder) {
     event_dispatch::<RequestSiteInfoEvent>(builder, &[]);
     #[cfg(feature = "plugins")]
     event_dispatch::<common::event::RequestPluginsEvent>(builder, &[]);
+    #[cfg(feature = "plugins")]
+    event_dispatch::<common::event::RequestPluginArtifactsEvent>(builder, &[]);
 }
 
 #[cfg(not(feature = "worldgen"))]
@@ -68,6 +70,58 @@ impl ServerEvent for RequestSiteInfoEvent {
                 };
                 let msg = ServerGeneral::SiteEconomy(info);
                 client.send_fallible(msg);
+            }
+        }
+    }
+}
+
+/// APEX-T2.5.11: serve typed artifacts from the compiled deployment.
+/// Every refusal path is silent-drop-free: a request against a stale
+/// root or an unknown ordinal is logged and NOT answered — the client's
+/// collector reports the missing artifact as its own typed terminal
+/// (nothing degrades to wrong bytes).
+#[cfg(feature = "plugins")]
+impl ServerEvent for common::event::RequestPluginArtifactsEvent {
+    type SystemData<'a> = (
+        ReadExpect<'a, crate::plugin_deployment_policy::PluginDeploymentStateV1>,
+        ReadStorage<'a, Client>,
+    );
+
+    fn handle(
+        events: impl ExactSizeIterator<Item = Self>,
+        (deployment, clients): Self::SystemData<'_>,
+    ) {
+        use common_net::msg::plugin_artifact::{PluginArtifactDescriptorV1, PluginArtifactResponseV1};
+        for ev in events {
+            let Some(client) = clients.get(ev.entity) else {
+                continue;
+            };
+            let Some(root) = deployment.deployment_root_bytes() else {
+                tracing::warn!("artifact request while in Legacy deployment state; ignoring");
+                continue;
+            };
+            if ev.deployment_root != root {
+                tracing::warn!("artifact request against a stale deployment root; ignoring");
+                continue;
+            }
+            for ordinal in &ev.ordinals {
+                let Some(bytes) = deployment.artifact(*ordinal) else {
+                    tracing::warn!(ordinal, "artifact request for unknown ordinal; ignoring");
+                    continue;
+                };
+                let identity = common::apex::digest::hash_artifact_bytes_v1(bytes);
+                let response = PluginArtifactResponseV1 {
+                    descriptor: PluginArtifactDescriptorV1 {
+                        deployment_root: root,
+                        ordinal: *ordinal,
+                        digest: *identity.digest.bytes.as_array(),
+                        size_bytes: bytes.len() as u64,
+                    },
+                    bytes: (**bytes).clone(),
+                };
+                client
+                    .send(common_net::msg::ServerGeneral::PluginArtifactData(response))
+                    .unwrap_or_else(|e| tracing::warn!("Error {e} sending plugin artifact {ordinal}"));
             }
         }
     }

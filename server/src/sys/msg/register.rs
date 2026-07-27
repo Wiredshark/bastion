@@ -123,6 +123,8 @@ pub struct ReadData<'a> {
     trackers: TrackedStorages<'a>,
     #[cfg(feature = "plugins")]
     plugin_mgr: Read<'a, PluginMgr>,
+    #[cfg(feature = "plugins")]
+    plugin_deployment: ReadExpect<'a, crate::plugin_deployment_policy::PluginDeploymentStateV1>,
     data_dir: ReadExpect<'a, crate::DataDir>,
 }
 
@@ -568,7 +570,15 @@ fn finalize_admission(
     }
 
     #[cfg(feature = "plugins")]
-    let active_plugins = read_data.plugin_mgr.plugin_list();
+    // APEX-T2.5.22: on a GOVERNED deployment the hash vector carries NO
+    // bootstrap authority — the summary's roots + requirements are the
+    // whole contract, so the legacy vector goes out EMPTY (structural,
+    // not merely unread). Legacy sessions keep the exact old hash list.
+    let active_plugins = if read_data.plugin_deployment.summary().is_some() {
+        Vec::new()
+    } else {
+        read_data.plugin_mgr.plugin_list()
+    };
     #[cfg(not(feature = "plugins"))]
     let active_plugins = Vec::default();
 
@@ -608,6 +618,12 @@ fn finalize_admission(
         server_constants: ServerConstants { day_cycle_coefficient: read_data.settings.day_cycle_coefficient() },
         description,
         active_plugins,
+        // APEX-T2.5.11: Some only when a strict deployment compiled at
+        // startup (policy-file opt-in); Legacy state = None = old path.
+        #[cfg(feature = "plugins")]
+        plugin_deployment: read_data.plugin_deployment.summary(),
+        #[cfg(not(feature = "plugins"))]
+        plugin_deployment: None,
         session_binding,
     };
     // APEX-T3.3.16: V1-envelope GameSync iff this attachment is V1

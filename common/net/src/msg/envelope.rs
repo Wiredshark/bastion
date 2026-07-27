@@ -975,7 +975,14 @@ impl SemanticRouteV1 for ClientGeneral {
             | C::BastionInspect { .. }
             | C::SetBattleMode(_) => SemanticStreamIdV1::InGame,
             C::TerrainChunkRequest { .. } | C::LodZoneRequest { .. } => SemanticStreamIdV1::Terrain,
-            C::ChatMsg(_) | C::Command(_, _) | C::Terminate | C::RequestPlugins(_) => SemanticStreamIdV1::General,
+            // APEX MERGE: T2.5.10's RequestPluginArtifacts joins the
+            // General stream, mirroring client/src/lib.rs's own physical
+            // routing for it (the authoritative mapping this impl tracks).
+            C::ChatMsg(_)
+            | C::Command(_, _)
+            | C::Terminate
+            | C::RequestPlugins(_)
+            | C::RequestPluginArtifacts(_) => SemanticStreamIdV1::General,
         }
     }
 
@@ -1036,7 +1043,11 @@ impl SemanticRouteV1 for ServerGeneral {
             | S::Disconnect(_)
             | S::Notification(_)
             | S::SetPlayerRole(_)
-            | S::PluginData(_) => SemanticStreamIdV1::General,
+            | S::PluginData(_)
+            // APEX MERGE: T2.5.10's PluginArtifactData joins the General
+            // stream, mirroring server/src/client.rs::prepare's own
+            // physical routing for it.
+            | S::PluginArtifactData(_) => SemanticStreamIdV1::General,
         }
     }
 

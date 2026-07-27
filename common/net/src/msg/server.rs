@@ -103,6 +103,11 @@ pub enum ServerInit {
         /// pattern `server_boot_id` above already establishes (spec
         /// section 3.5, canaries SES-045/046).
         session_binding: SessionBindingV1,
+        /// APEX-T2.5.11 wire half: the typed deployment summary. `None` =
+        /// explicit legacy mode (the `active_plugins` hash path). The
+        /// acquisition-before-State client flow consumes this when the
+        /// .11 bootstrap lands; until then servers send `None`.
+        plugin_deployment: Option<crate::msg::plugin_artifact::PluginDeploymentSummaryV1>,
     },
 }
 
@@ -289,6 +294,10 @@ pub enum ServerGeneral {
     SpectatePosition(Vec3<f32>),
     /// Plugin data requested from the server
     PluginData(Vec<u8>),
+    /// APEX-T2.5.10: one typed artifact (root/ordinal/digest/size +
+    /// bytes); transport order carries no meaning. `PluginData` remains
+    /// for explicit legacy mode only.
+    PluginArtifactData(crate::msg::plugin_artifact::PluginArtifactResponseV1),
     /// Update the list of available recipes. Usually called after a new recipe
     /// is acquired
     UpdateRecipes,
@@ -571,6 +580,7 @@ impl ServerMsg {
                         | ServerGeneral::SetPlayerRole(_)
                         | ServerGeneral::LodZoneUpdate { .. } => true,
                         ServerGeneral::PluginData(_) => true,
+                        ServerGeneral::PluginArtifactData(_) => true,
                     }
             },
             ServerMsg::Ping(_) => true,
