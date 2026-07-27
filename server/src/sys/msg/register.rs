@@ -437,6 +437,9 @@ impl<'a> System<'a> for Sys {
                             },
                             description,
                             active_plugins,
+                            // APEX-T2.5.11: legacy mode until the server
+                            // deployment-compile path lands.
+                            plugin_deployment: None,
                         })?;
                         debug!("Done initial sync with client.");
 

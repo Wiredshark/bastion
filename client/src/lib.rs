@@ -714,6 +714,10 @@ impl Client {
             server_constants,
             description,
             active_plugins: _active_plugins,
+            // APEX-T2.5.11: consumed by the acquisition-before-State flow
+            // when it lands; a Some from a newer server is noted, not an
+            // error (legacy hash path still runs).
+            plugin_deployment: _plugin_deployment,
             role,
         } = loop {
             tokio::select! {

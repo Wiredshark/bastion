@@ -25,6 +25,22 @@ pub struct PluginArtifactDescriptorV1 {
     pub size_bytes: u64,
 }
 
+/// The deployment as `ServerInit::GameSync` carries it: everything a
+/// client needs to acquire and verify artifacts BEFORE constructing
+/// State. `None` in GameSync = explicit legacy mode (hash-list path).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginDeploymentSummaryV1 {
+    pub deployment_root: [u8; 32],
+    /// Every artifact in the deployment (ordinal-complete, not
+    /// client-filtered: filtering is the client projection's job and the
+    /// summary must stay byte-identical for every client).
+    pub requirements: Vec<PluginArtifactDescriptorV1>,
+    /// The client-mode projection: ordinals active on clients, plus the
+    /// activation root the client must reproduce.
+    pub client_activations: Vec<u32>,
+    pub client_activation_root: [u8; 32],
+}
+
 /// Client → server: exact ordinals wanted for one deployment root.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginArtifactRequestV1 {

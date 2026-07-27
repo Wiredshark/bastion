@@ -91,6 +91,11 @@ pub enum ServerInit {
         server_constants: ServerConstants,
         description: ServerDescription,
         active_plugins: Vec<PluginHash>,
+        /// APEX-T2.5.11 wire half: the typed deployment summary. `None` =
+        /// explicit legacy mode (the `active_plugins` hash path). The
+        /// acquisition-before-State client flow consumes this when the
+        /// .11 bootstrap lands; until then servers send `None`.
+        plugin_deployment: Option<crate::msg::plugin_artifact::PluginDeploymentSummaryV1>,
     },
 }
 
