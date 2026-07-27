@@ -636,35 +636,76 @@ impl PluginMgr {
     /// leaves ZERO plugin asset sources committed by this batch (the old
     /// per-plugin `register_tar`-inside-the-loop could pollute the global
     /// combined source with earlier plugins after a later one failed).
-    /// APEX-T2.5.11 — construct from an EXPLICIT verified path list (the
-    /// client's deployment-acquisition cache): same inspect → prepare →
-    /// one-commit batch as `from_dir`, but ordinals come from the given
-    /// order (the deployment plan's canonical ordinals, not discovery),
-    /// so no `DiscoveryOrderIsLegacy` warning is attached.
-    pub fn from_paths_v1(
-        paths: Vec<PathBuf>,
+    /// APEX-T2.5.11/.17 — construct the COMPLETE, ordinal-owned manager
+    /// from a deployment: every expected ordinal present exactly once,
+    /// every archive's RECOMPUTED identity equal to the plan's artifact
+    /// for that ordinal (a file that changed between deployment compile
+    /// and manager build is a typed WrongOwner refusal, not a silent
+    /// swap), full private batch (T2.1) — the public manager exists only
+    /// complete or not at all.
+    pub fn from_deployment_paths_v1(
+        paths: Vec<(u32, PathBuf)>,
+        expected_artifacts: &[(u32, [u8; 32])],
         generation_token: [u8; 32],
         limits: Option<module::PluginStoreLimitsV1>,
-    ) -> Result<Self, PluginError> {
+    ) -> Result<Self, errors::PreparedManagerErrorV1> {
+        let batch = Self::verified_deployment_batch_v1(paths, expected_artifacts, limits)?;
+        batch
+            .commit_new_manager_as_generation(generation_token)
+            .map_err(errors::PreparedManagerErrorV1::Plugin)
+    }
+
+    /// The commit-free half of `from_deployment_paths_v1` (ordinal
+    /// ownership + identity verification + full private prepare) — split
+    /// out so it is testable without touching the PROCESS-GLOBAL asset
+    /// registry (whose one-time generation seal makes global-commit tests
+    /// mutually exclusive within one test process).
+    fn verified_deployment_batch_v1(
+        paths: Vec<(u32, PathBuf)>,
+        expected_artifacts: &[(u32, [u8; 32])],
+        limits: Option<module::PluginStoreLimitsV1>,
+    ) -> Result<PreparedPluginBatch, errors::PreparedManagerErrorV1> {
+        use errors::PreparedManagerErrorV1 as E;
+        let mut have: Vec<u32> = paths.iter().map(|(o, _)| *o).collect();
+        have.sort_unstable();
+        let mut want: Vec<u32> = expected_artifacts.iter().map(|(o, _)| *o).collect();
+        want.sort_unstable();
+        if have != want {
+            return Err(E::OrdinalSetMismatch {
+                missing: want.iter().filter(|o| !have.contains(o)).copied().collect(),
+                unexpected: have.iter().filter(|o| !want.contains(o)).copied().collect(),
+            });
+        }
         let inspected = paths
             .into_iter()
-            .enumerate()
-            .map(|(i, path)| {
-                info!("Inspecting deployment plugin at {:?}", path);
-                InspectedPluginArchive::inspect_path(path, i as u32)
+            .map(|(ordinal, path)| {
+                info!("Inspecting deployment plugin ordinal {ordinal} at {:?}", path);
+                let rec = InspectedPluginArchive::inspect_path(path, ordinal)
+                    .map_err(|e| E::Plugin(PluginError::Inspection(e)))?;
+                let expected = expected_artifacts
+                    .iter()
+                    .find(|(o, _)| *o == ordinal)
+                    .map(|(_, d)| d)
+                    .expect("set equality checked above");
+                // Ownership: the RECOMPUTED archive identity must be the
+                // plan's artifact for this ordinal.
+                if rec.artifact_hash != *expected {
+                    return Err(E::WrongOwner { ordinal });
+                }
+                Ok(rec)
             })
-            .collect::<Result<Vec<_>, PluginInspectionError>>()
-            .inspect_err(|e| error!(?e, "Failed to inspect deployment plugin"))?;
+            .collect::<Result<Vec<_>, E>>()
+            .inspect_err(|e| error!(?e, "deployment manager build refused"))?;
         // APEX-T2.5.12: governed deployments publish as THE one-time
         // content generation (token = the deployment root) — the
         // incremental path stays sealed off for the rest of the process.
-        let mgr = PreparedPluginBatch::prepare(inspected, limits)
-            .inspect_err(|e| error!(?e, "Failed to prepare deployment plugin batch"))?
-            .commit_new_manager_as_generation(generation_token)?;
-        for plugin in &mgr.plugins {
-            info!("Loaded deployment plugin '{}' with {} module(s)", plugin.data.name, plugin.modules.len());
+        let batch = PreparedPluginBatch::prepare(inspected, limits)
+            .map_err(errors::PreparedManagerErrorV1::Plugin)
+            .inspect_err(|e| error!(?e, "Failed to prepare deployment plugin batch"))?;
+        for plugin in &batch.plugins {
+            info!("Prepared deployment plugin '{}' with {} module(s)", plugin.data.name, plugin.modules.len());
         }
-        Ok(mgr)
+        Ok(batch)
     }
 
     fn from_dir(path: &Path) -> Result<Self, PluginError> {
@@ -1161,5 +1202,84 @@ mod two_phase_tests {
         assert_eq!(m1.plugin_list(), sorted);
         let _ = std::fs::remove_file(&pa);
         let _ = std::fs::remove_file(&pb);
+    }
+}
+
+/// `APEX-T2.5.17` — ordinal-owned deployment-manager canaries.
+#[cfg(test)]
+mod prepared_plugin_manager_v1 {
+    use super::*;
+
+    fn temp_tar(name: &str) -> (PathBuf, [u8; 32]) {
+        let mut b = tar::Builder::new(Vec::new());
+        let toml = format!("name = \"{name}\"\nmodules = []\ndependencies = []\n");
+        let mut h = tar::Header::new_gnu();
+        h.set_size(toml.len() as u64);
+        h.set_mode(0o644);
+        h.set_cksum();
+        b.append_data(&mut h, "plugin.toml", toml.as_bytes()).unwrap();
+        let bytes = b.into_inner().unwrap();
+        let digest = compute_hash(&bytes);
+        let p = std::env::temp_dir().join(format!(
+            "apex-t2517-{}-{}-{name}.plugin.tar",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        fs::write(&p, bytes).unwrap();
+        (p, digest)
+    }
+
+    #[test]
+    fn manager_is_ordinal_owned_and_input_order_free() {
+        let (pa, da) = temp_tar("a");
+        let (pb, db) = temp_tar("b");
+        let expected = [(0u32, da), (1u32, db)];
+
+        // All assertions drive the COMMIT-FREE seam — the process-global
+        // registry (one-time generation seal) is never touched, so this
+        // test cannot fight the legacy-commit tests over global state.
+        // Install semantics live on a LOCAL cache in
+        // common-assets::plugin_content_generation_v1.
+
+        // Wrong owner: swap the digests.
+        let swapped = [(0u32, db), (1u32, da)];
+        assert!(matches!(
+            PluginMgr::verified_deployment_batch_v1(
+                vec![(0, pa.clone()), (1, pb.clone())],
+                &swapped,
+                None
+            ),
+            Err(errors::PreparedManagerErrorV1::WrongOwner { ordinal: 0 })
+        ));
+        // Gapped/extra ordinals.
+        assert!(matches!(
+            PluginMgr::verified_deployment_batch_v1(vec![(0, pa.clone())], &expected, None),
+            Err(errors::PreparedManagerErrorV1::OrdinalSetMismatch { missing, .. }) if missing == vec![1]
+        ));
+        assert!(matches!(
+            PluginMgr::verified_deployment_batch_v1(
+                vec![(0, pa.clone()), (1, pb.clone()), (7, pa.clone())],
+                &expected,
+                None
+            ),
+            Err(errors::PreparedManagerErrorV1::OrdinalSetMismatch { unexpected, .. }) if unexpected == vec![7]
+        ));
+
+        // Happy path, permuted input: the private batch carries exactly
+        // the expected plugin set (canonical hash order applies at
+        // manager construction; the batch content is what .17 owns).
+        let batch = PluginMgr::verified_deployment_batch_v1(
+            vec![(1, pb.clone()), (0, pa.clone())], // permuted
+            &expected,
+            None,
+        )
+        .unwrap();
+        let mut hashes: Vec<_> = batch.plugins.iter().map(|p| p.hash).collect();
+        hashes.sort_unstable();
+        assert_eq!(hashes, {
+            let mut h = vec![da, db];
+            h.sort_unstable();
+            h
+        });
     }
 }

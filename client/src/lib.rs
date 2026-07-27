@@ -817,17 +817,21 @@ impl Client {
                         }
                     }
                 }
-                let paths: Vec<PathBuf> = reqs
+                let paths: Vec<(u32, PathBuf)> = reqs
                     .iter()
                     .map(|(o, _)| {
                         cache
                             .verified_path(*o)
+                            .map(|p| (*o, p))
                             .map_err(|e| Error::Other(format!("plugin artifact {o} unavailable: {e:?}")))
                     })
                     .collect::<Result<_, _>>()?;
+                let expected: Vec<(u32, [u8; 32])> =
+                    reqs.iter().map(|(o, a)| (*o, *a.digest.bytes.as_array())).collect();
                 Some(
-                    common_state::plugin::PluginMgr::from_paths_v1(
+                    common_state::plugin::PluginMgr::from_deployment_paths_v1(
                         paths,
+                        &expected,
                         summary.deployment_root,
                         Some(common_state::plugin::module::PluginStoreLimitsV1 {
                             max_linear_memory_bytes: summary.client_runtime_limits.max_linear_memory_bytes,

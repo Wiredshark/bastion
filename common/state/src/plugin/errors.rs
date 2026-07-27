@@ -35,6 +35,17 @@ pub enum PluginModuleError {
     WorldMismatch { module: String, declared: &'static str, detail: String },
 }
 
+/// APEX-T2.5.17 — deployment-manager build refusals: the manager is
+/// ordinal-OWNED (missing/gapped/extra ordinals typed) and every
+/// archive's recomputed identity must be the plan's artifact for its
+/// ordinal (WrongOwner). The manager exists complete or not at all.
+#[derive(Debug)]
+pub enum PreparedManagerErrorV1 {
+    OrdinalSetMismatch { missing: Vec<u32>, unexpected: Vec<u32> },
+    WrongOwner { ordinal: u32 },
+    Plugin(PluginError),
+}
+
 /// APEX-T2.5.15 — per-module preflight terminals, classified BY STAGE
 /// (compile → host-linker setup → import resolution/typecheck). Engine
 /// mismatch is unrepresentable since .14's single shared engine.

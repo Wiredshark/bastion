@@ -399,8 +399,9 @@ impl Server {
                 server_runtime_limits,
                 server_artifact_paths,
                 ..
-            } => PluginMgr::from_paths_v1(
-                server_artifact_paths.iter().map(|(_, p)| p.clone()).collect(),
+            } => PluginMgr::from_deployment_paths_v1(
+                server_artifact_paths.clone(),
+                &summary.requirements.iter().map(|r| (r.ordinal, r.digest)).collect::<Vec<_>>(),
                 summary.deployment_root,
                 Some(common_state::plugin::module::PluginStoreLimitsV1 {
                     max_linear_memory_bytes: server_runtime_limits.max_linear_memory_bytes,
