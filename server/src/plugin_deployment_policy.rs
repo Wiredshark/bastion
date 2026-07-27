@@ -512,6 +512,7 @@ pub fn init_plugin_deployment_v1(
         client_activations: compiled.client_plan.activations.clone(),
         client_activation_root: *client_activation_root.bytes.as_array(),
         client_runtime_limits,
+        command_owners: compiled.command_owners.clone(),
     };
     // Join each node ordinal back to its on-disk path by RECOMPUTED
     // artifact identity (same rule as the compile itself: never by

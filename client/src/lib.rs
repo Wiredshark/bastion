@@ -838,6 +838,7 @@ impl Client {
                             max_fuel_per_event: summary.client_runtime_limits.max_fuel_per_event,
                         }),
                         Some(summary.client_runtime_limits.max_instances),
+                        Some(summary.command_owners.iter().cloned().collect()),
                     )
                     .map_err(|e| Error::Other(format!("deployment plugin batch failed: {e:?}")))?,
                 )

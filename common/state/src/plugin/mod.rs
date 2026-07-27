@@ -616,7 +616,7 @@ impl PreparedPluginBatch {
         })?;
         let mut plugins = self.plugins;
         canonical_plugin_order(&mut plugins, |p| p.hash);
-        Ok(PluginMgr { plugins, governed: false, lifecycle: PluginLifecycleStateV1::NotActivated })
+        Ok(PluginMgr { plugins, governed: false, lifecycle: PluginLifecycleStateV1::NotActivated, command_owners: None })
     }
 
     /// APEX-T2.5.12 — publish the batch as THE one-time content generation
@@ -639,7 +639,7 @@ impl PreparedPluginBatch {
         )?;
         let mut plugins = self.plugins;
         canonical_plugin_order(&mut plugins, |p| p.hash);
-        Ok(PluginMgr { plugins, governed: true, lifecycle: PluginLifecycleStateV1::NotActivated })
+        Ok(PluginMgr { plugins, governed: true, lifecycle: PluginLifecycleStateV1::NotActivated, command_owners: None })
     }
 
     /// APEX-T2.1.14 — publish the batch INTO an existing manager (late
@@ -675,6 +675,10 @@ pub struct PluginMgr {
     governed: bool,
     /// APEX-T2.5.18: exactly-once activation tracking.
     lifecycle: PluginLifecycleStateV1,
+    /// APEX-T2.5.20: the compiled command→owner map (governed
+    /// deployments): dispatch is ONE lookup, never a provider scan.
+    /// `None` = legacy manager = the old scan.
+    command_owners: Option<HashMap<String, PluginHash>>,
 }
 
 impl PluginMgr {
@@ -718,11 +722,14 @@ impl PluginMgr {
         generation_token: [u8; 32],
         limits: Option<module::PluginStoreLimitsV1>,
         max_instances: Option<u32>,
+        command_owners: Option<HashMap<String, PluginHash>>,
     ) -> Result<Self, errors::PreparedManagerErrorV1> {
         let batch = Self::verified_deployment_batch_v1(paths, expected_artifacts, limits, max_instances)?;
-        batch
+        let mut mgr = batch
             .commit_new_manager_as_generation(generation_token)
-            .map_err(errors::PreparedManagerErrorV1::Plugin)
+            .map_err(errors::PreparedManagerErrorV1::Plugin)?;
+        mgr.command_owners = command_owners;
+        Ok(mgr)
     }
 
     /// The commit-free half of `from_deployment_paths_v1` (ordinal
@@ -1023,12 +1030,28 @@ impl PluginMgr {
         args: &[String],
         player: Uid,
     ) -> Result<Vec<String>, CommandResults> {
+        // APEX-T2.5.20 — GOVERNED dispatch: ONE owner lookup, no provider
+        // scan. The owner map is compiled from claims + operator decisions
+        // at deployment compile; a command outside the map is a
+        // deterministic UnknownCommand (unused-ceiling rule), never a
+        // probe of every plugin.
+        if let Some(owners) = &self.command_owners {
+            let Some(owner_hash) = owners.get(name).copied() else {
+                return Err(CommandResults::UnknownCommand);
+            };
+            let Some(plugin) = self.plugins.iter_mut().find(|p| p.hash == owner_hash) else {
+                // Missing/inactive owner: typed, deterministic.
+                return Err(CommandResults::UnknownCommand);
+            };
+            return plugin.command_event(ecs, name, args, player);
+        }
         // DET-AST-023 (v6 deep-pass, declared policy): LAST-registered
         // handler wins, in the canonical plugin order. That order is a pure
         // function of the plugin set because `self.plugins` is kept sorted by
         // content hash (DET-AST-024/025 at the `from_dir` / `load_server_plugin`
         // write sites). Multiple handlers for one command are an AMBIGUITY —
-        // witnessed loudly below rather than silent.
+        // witnessed loudly below rather than silent. (LEGACY managers only
+        // — governed managers take the owner-map path above.)
         let mut handlers = 0u32;
         let mut result = Err(CommandResults::UnknownCommand);
         self.plugins.iter_mut().for_each(|plugin| {

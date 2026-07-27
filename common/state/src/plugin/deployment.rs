@@ -60,6 +60,10 @@ pub struct CompiledDeploymentV1 {
     /// resolution (empty for collision-free deployments) — the dispatch
     /// ownership record.
     pub resolved_collisions: Vec<PluginResolvedCollisionV1>,
+    /// APEX-T2.5.20: EVERY declared command → its owner's archive digest
+    /// (sole claimant, or the ExclusiveOwner ruling). Sorted by command;
+    /// the manager's one-lookup dispatch map.
+    pub command_owners: Vec<(String, [u8; 32])>,
 }
 
 fn manifest_bytes_of(archive: &[u8], manifest_path: &str) -> Option<Vec<u8>> {
@@ -198,6 +202,23 @@ pub fn compile_deployment_from_archives_v1(
     let resolved_collisions =
         resolve_claim_conflicts_v1(&claims, base_resources, &policy.conflict_decisions).map_err(E::ConflictError)?;
 
+    // APEX-T2.5.20 — the command owner map: sole claimant owns an
+    // uncontested command; a contested command's owner is the operator's
+    // ExclusiveOwner ruling (Reject already refused the deployment above;
+    // OrderedConcatenate has no meaning for commands and is refused
+    // here). Owners are recorded by ARCHIVE DIGEST via the claimant key,
+    // resolved after plan compilation below.
+    let mut command_claimants: std::collections::BTreeMap<String, Vec<super::resolver::PluginNodeKeyV1>> =
+        std::collections::BTreeMap::new();
+    for c in &claims {
+        if matches!(c.resource.kind, PluginResourceKindV1::Command) {
+            let entry = command_claimants.entry(c.resource.name.as_str().to_owned()).or_default();
+            if !entry.contains(&c.claimant) {
+                entry.push(c.claimant.clone());
+            }
+        }
+    }
+
     let graph = match resolve_plugin_graph_v1(admissions, &resolver_policy_for(&policy_root)?) {
         PluginResolutionTerminalV1::Resolved(g) => g,
         PluginResolutionTerminalV1::Rejected(report) => return Err(E::ResolutionRejected { report: *report }),
@@ -222,7 +243,51 @@ pub fn compile_deployment_from_archives_v1(
     }
     artifacts.sort_by_key(|(o, _)| *o);
 
-    Ok(CompiledDeploymentV1 { plan, deployment_root, server_plan, client_plan, artifacts, resolved_collisions })
+    let digest_of_key = |key: &super::resolver::PluginNodeKeyV1| -> Result<[u8; 32], PluginDeploymentCompileErrorV1> {
+        plan.nodes
+            .iter()
+            .find(|n| n.key == *key)
+            .map(|n| *n.artifact.digest.bytes.as_array())
+            .ok_or(E::CanonicalizationFailure)
+    };
+    let mut command_owners: Vec<(String, [u8; 32])> = Vec::with_capacity(command_claimants.len());
+    for (command, claimants) in &command_claimants {
+        let owner_key = if claimants.len() == 1 {
+            &claimants[0]
+        } else {
+            match resolved_collisions.iter().find(|r| {
+                matches!(r.resource.kind, PluginResourceKindV1::Command) && r.resource.name.as_str() == command
+            }) {
+                Some(PluginResolvedCollisionV1 {
+                    resolution: PluginConflictResolutionV1::ExclusiveOwner { owner, .. },
+                    ..
+                }) => owner,
+                // Reject was refused upstream; OrderedConcatenate has no
+                // command semantics (UNSUPPORTED-COMBINE-SEMANTICS).
+                _ => {
+                    return Err(E::ConflictError(PluginConflictErrorV1::DecisionResolutionInvalid {
+                        resource: PluginResourceKeyV1 {
+                            kind: PluginResourceKindV1::Command,
+                            name: common::apex::manifest::MachineTextV1::new(command)
+                                .map_err(|_| E::CanonicalizationFailure)?,
+                        },
+                        detail: "commands cannot concatenate: only ExclusiveOwner resolves a command collision",
+                    }));
+                },
+            }
+        };
+        command_owners.push((command.clone(), digest_of_key(owner_key)?));
+    }
+
+    Ok(CompiledDeploymentV1 {
+        plan,
+        deployment_root,
+        server_plan,
+        client_plan,
+        artifacts,
+        resolved_collisions,
+        command_owners,
+    })
 }
 
 #[cfg(test)]

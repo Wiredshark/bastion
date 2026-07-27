@@ -43,6 +43,10 @@ pub struct PluginDeploymentSummaryV1 {
     /// policy — every governed client runs its modules under EXACTLY
     /// these (no client-local defaults).
     pub client_runtime_limits: PluginRuntimeLimitsWireV1,
+    /// APEX-T2.5.20: command -> owning archive digest (sole claimant or
+    /// the operator's ExclusiveOwner ruling), command-sorted — the
+    /// client's one-lookup dispatch map mirrors the server's exactly.
+    pub command_owners: Vec<(String, [u8; 32])>,
 }
 
 /// Scalar mirror of the policy's per-mode runtime limits (wire crate has
