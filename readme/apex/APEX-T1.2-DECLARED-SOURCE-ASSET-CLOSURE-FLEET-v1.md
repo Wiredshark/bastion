@@ -123,6 +123,20 @@ toolchain/config file bytes)**. Specifically:
    `BuildManifest = 5`: the closure is an input to T1.5's manifest, and
    domain-separating inputs from the manifest that embeds them is the whole
    point of domain separation.
+7. **Certified-lane runtime asset BINDING** (amendment; grounded in the REAL
+   T1.3 packet §2's revalidation list, which records that T1.2's intent
+   includes runtime-asset binding, + live seams verified:
+   `common/assets/src/lib.rs:361-392` ASSETS_PATH multi-location search with
+   the existing DET-AST-007 `BASTION_REQUIRE_EXPLICIT_ASSETS` strictness gate;
+   `common/assets/src/fs.rs:10-27` `VELOREN_ASSETS_OVERRIDE` per-file
+   substitution source). A closure that digests `assets/` but lets the runtime
+   load from an arbitrary path or override channel does not bind the binary to
+   the closed set. Policy: in the certified lane (a) `VELOREN_ASSETS` MUST be
+   declared and its content identity MUST match `asset_tree_root` — enforced
+   by REUSING the DET-AST-007 gate (`BASTION_REQUIRE_EXPLICIT_ASSETS=1`), not
+   a second mechanism; (b) `VELOREN_ASSETS_OVERRIDE` set in the certified lane
+   is a typed block (`T1.2-BLOCK-ASSET-OVERRIDE`) — the override channel is a
+   development affordance, never a certified input.
 
 ## 5. Exact data contract
 
@@ -165,6 +179,7 @@ Resolved-evidence sidecar (JSON, non-authoritative, NOT in any root):
 | `T1.2-BLOCK-TOOLCHAIN-DRIFT` | resolved toolchain ≠ rust-toolchain file channel |
 | `T1.2-BLOCK-SCOPE-ESCAPE` | absolute path / non-repo path in any manifest |
 | `T1.2-BLOCK-EMIT` | partial/failed atomic emission |
+| `T1.2-BLOCK-ASSET-OVERRIDE` | VELOREN_ASSETS_OVERRIDE set in the certified lane |
 
 ## 7. Minute steps
 
@@ -175,7 +190,8 @@ Resolved-evidence sidecar (JSON, non-authoritative, NOT in any root):
 - **T1.2.05** Asset-tree + rust-source roots (canonical walk, T0.2 encode, T0.3 digest). Gate: byte-flip canary flips the root; path-order canary (same set, shuffled walk) does NOT.
 - **T1.2.06** Checkout-path independence proof: capture from TWO worktrees of the same commit at different absolute paths → byte-identical canonical records. Gate: this IS T1.3's precondition; must pass locally before T1.3 runs.
 - **T1.2.07** Atomic emission (CBOR authoritative + sha256 + JSON mirror) + `vm-apex-nix-build.sh` integration (closure capture precedes `nix build`; record travels with package evidence). Gate: kill-before-rename leaves no record.
-- **T1.2.08** Canary suite `tools/apex-t1-2-closure-canaries.sh` (~22 cases; every Section-6 terminal + mutation-hardening: weaken any guard → its canary REDs).
+- **T1.2.08** Certified-lane asset-binding gate: reuse the DET-AST-007 explicit-assets mechanism; declared-root content identity vs asset_tree_root; override-env typed block. Gate: override-set canary bites; declared-root-mismatch canary bites.
+- **T1.2.09** Canary suite `tools/apex-t1-2-closure-canaries.sh` (~24 cases; every Section-6 terminal + mutation-hardening: weaken any guard → its canary REDs).
 
 ## 8. Non-goals
 Rebuild equality (T1.3/T1.4); runnable asset bundling; signing/attestation
