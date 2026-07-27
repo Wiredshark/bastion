@@ -1,0 +1,269 @@
+﻿{
+  "schema": "bastion.apex.t2.2-plugin-archive-profile-canaries/v1",
+  "generated_at_utc": "2026-07-23T14:42:00Z",
+  "live_commit": "f7b30de6d916930c96f181919160ff7839aa6d5b",
+  "profile_candidate": {
+    "archive_format": "USTAR_OR_OLD_NO_EXTENSION_ENTRIES",
+    "allowed_logical_entry_types": [
+      "regular",
+      "directory"
+    ],
+    "path_character_policy": "PORTABLE_ASCII_V1_PROPOSED",
+    "canonical_separator": "/",
+    "portable_collision_key": "ASCII_LOWERCASE",
+    "production_resource_limits": "NEEDS_DESIGN"
+  },
+  "case_count": 50,
+  "cases": [
+    {
+      "id": "PAR-001",
+      "expected_terminal": "ACCEPT",
+      "mutation": "Minimal UStar archive with one regular plugin.toml and one declared regular module."
+    },
+    {
+      "id": "PAR-002",
+      "expected_terminal": "ACCEPT",
+      "mutation": "Explicit directory entries precede valid files."
+    },
+    {
+      "id": "PAR-003",
+      "expected_terminal": "ACCEPT-SAME-SEMANTIC-ROOT",
+      "mutation": "Same valid regular files in a different archive order."
+    },
+    {
+      "id": "PAR-004",
+      "expected_terminal": "ACCEPT-SAME-SEMANTIC-ROOT-DIFFERENT-ARTIFACT",
+      "mutation": "Only uid/gid/mode/uname/gname/mtime differ."
+    },
+    {
+      "id": "PAR-005",
+      "expected_terminal": "ACCEPT",
+      "mutation": "Regular file uses backward-compatible NUL typeflag."
+    },
+    {
+      "id": "PAR-006",
+      "expected_terminal": "ACCEPT",
+      "mutation": "UStar prefix+name resolves to a 255-byte portable ASCII path."
+    },
+    {
+      "id": "PAR-007",
+      "expected_terminal": "REJECT-MISSING-MANIFEST",
+      "mutation": "No root plugin.toml regular entry."
+    },
+    {
+      "id": "PAR-008",
+      "expected_terminal": "REJECT-DUPLICATE-MANIFEST",
+      "mutation": "Two exact root plugin.toml entries."
+    },
+    {
+      "id": "PAR-009",
+      "expected_terminal": "REJECT-MANIFEST-NOT-REGULAR",
+      "mutation": "plugin.toml is a directory."
+    },
+    {
+      "id": "PAR-010",
+      "expected_terminal": "REJECT-PORTABLE-CASE-COLLISION",
+      "mutation": "plugin.toml and Plugin.toml coexist."
+    },
+    {
+      "id": "PAR-011",
+      "expected_terminal": "REJECT-DUPLICATE-CANONICAL-PATH",
+      "mutation": "Two regular entries have the same canonical path."
+    },
+    {
+      "id": "PAR-012",
+      "expected_terminal": "REJECT-PORTABLE-CASE-COLLISION",
+      "mutation": "assets/Foo.ron and assets/foo.ron coexist."
+    },
+    {
+      "id": "PAR-013",
+      "expected_terminal": "REJECT-PATH-KIND-COLLISION",
+      "mutation": "Directory and regular file resolve to one canonical path."
+    },
+    {
+      "id": "PAR-014",
+      "expected_terminal": "REJECT-ABSOLUTE-PATH",
+      "mutation": "Path starts with slash."
+    },
+    {
+      "id": "PAR-015",
+      "expected_terminal": "REJECT-BACKSLASH",
+      "mutation": "Raw path contains backslash before tar-library conversion."
+    },
+    {
+      "id": "PAR-016",
+      "expected_terminal": "REJECT-PARENT-SEGMENT",
+      "mutation": "Path contains .. segment."
+    },
+    {
+      "id": "PAR-017",
+      "expected_terminal": "REJECT-CURRENT-SEGMENT",
+      "mutation": "Path contains . segment."
+    },
+    {
+      "id": "PAR-018",
+      "expected_terminal": "REJECT-EMPTY-SEGMENT",
+      "mutation": "Path contains repeated slash."
+    },
+    {
+      "id": "PAR-019",
+      "expected_terminal": "REJECT-REGULAR-TRAILING-SLASH",
+      "mutation": "Regular path ends with slash."
+    },
+    {
+      "id": "PAR-020",
+      "expected_terminal": "REJECT-NUL-IN-PATH",
+      "mutation": "Logical path contains embedded NUL."
+    },
+    {
+      "id": "PAR-021",
+      "expected_terminal": "REJECT-INVALID-UTF8",
+      "mutation": "Path is not valid UTF-8."
+    },
+    {
+      "id": "PAR-022",
+      "expected_terminal": "REJECT-NON-PORTABLE-CHARACTER",
+      "mutation": "Candidate ASCII profile receives non-ASCII path."
+    },
+    {
+      "id": "PAR-023",
+      "expected_terminal": "REJECT-NON-PORTABLE-CHARACTER",
+      "mutation": "Candidate ASCII profile receives colon/control/disallowed punctuation."
+    },
+    {
+      "id": "PAR-024",
+      "expected_terminal": "REJECT-PATH-TOO-LONG",
+      "mutation": "Resolved UStar path exceeds 255 bytes."
+    },
+    {
+      "id": "PAR-025",
+      "expected_terminal": "REJECT-UNSUPPORTED-ENTRY-TYPE",
+      "mutation": "Symlink."
+    },
+    {
+      "id": "PAR-026",
+      "expected_terminal": "REJECT-UNSUPPORTED-ENTRY-TYPE",
+      "mutation": "Hard link."
+    },
+    {
+      "id": "PAR-027",
+      "expected_terminal": "REJECT-UNSUPPORTED-ENTRY-TYPE",
+      "mutation": "Character device."
+    },
+    {
+      "id": "PAR-028",
+      "expected_terminal": "REJECT-UNSUPPORTED-ENTRY-TYPE",
+      "mutation": "Block device."
+    },
+    {
+      "id": "PAR-029",
+      "expected_terminal": "REJECT-UNSUPPORTED-ENTRY-TYPE",
+      "mutation": "FIFO."
+    },
+    {
+      "id": "PAR-030",
+      "expected_terminal": "REJECT-UNSUPPORTED-ENTRY-TYPE",
+      "mutation": "Continuous record."
+    },
+    {
+      "id": "PAR-031",
+      "expected_terminal": "REJECT-UNSUPPORTED-ENTRY-TYPE",
+      "mutation": "GNU sparse record."
+    },
+    {
+      "id": "PAR-032",
+      "expected_terminal": "REJECT-EXTENSION-POLICY",
+      "mutation": "GNU long-name record under strict UStar candidate."
+    },
+    {
+      "id": "PAR-033",
+      "expected_terminal": "REJECT-EXTENSION-POLICY",
+      "mutation": "GNU long-link record under strict UStar candidate."
+    },
+    {
+      "id": "PAR-034",
+      "expected_terminal": "REJECT-EXTENSION-POLICY",
+      "mutation": "Per-entry PAX header under strict UStar candidate."
+    },
+    {
+      "id": "PAR-035",
+      "expected_terminal": "REJECT-EXTENSION-POLICY",
+      "mutation": "Global PAX header under strict UStar candidate."
+    },
+    {
+      "id": "PAR-036",
+      "expected_terminal": "REJECT-UNSUPPORTED-ENTRY-TYPE",
+      "mutation": "Unknown typeflag."
+    },
+    {
+      "id": "PAR-037",
+      "expected_terminal": "REJECT-MALFORMED-TAR",
+      "mutation": "Invalid header checksum."
+    },
+    {
+      "id": "PAR-038",
+      "expected_terminal": "REJECT-TRUNCATED-ARCHIVE",
+      "mutation": "Data shorter than declared size/padding."
+    },
+    {
+      "id": "PAR-039",
+      "expected_terminal": "REJECT-MISSING-TERMINATOR",
+      "mutation": "Missing candidate-profile zero-block terminator."
+    },
+    {
+      "id": "PAR-040",
+      "expected_terminal": "REJECT-TRAILING-DATA",
+      "mutation": "Non-zero bytes after terminator."
+    },
+    {
+      "id": "PAR-041",
+      "expected_terminal": "REJECT-ENTRY-COUNT-LIMIT",
+      "mutation": "Injected test entry-count limit exceeded."
+    },
+    {
+      "id": "PAR-042",
+      "expected_terminal": "REJECT-ARCHIVE-SIZE-LIMIT",
+      "mutation": "Injected test archive-byte limit exceeded."
+    },
+    {
+      "id": "PAR-043",
+      "expected_terminal": "REJECT-ENTRY-SIZE-LIMIT",
+      "mutation": "Injected test regular-entry limit exceeded."
+    },
+    {
+      "id": "PAR-044",
+      "expected_terminal": "REJECT-MANIFEST-SIZE-LIMIT",
+      "mutation": "Injected test manifest-byte limit exceeded."
+    },
+    {
+      "id": "PAR-045",
+      "expected_terminal": "REJECT-DECLARED-MODULE-MISSING",
+      "mutation": "Legacy manifest module absent from index."
+    },
+    {
+      "id": "PAR-046",
+      "expected_terminal": "REJECT-DECLARED-MODULE-NOT-REGULAR",
+      "mutation": "Legacy manifest module resolves to directory."
+    },
+    {
+      "id": "PAR-047",
+      "expected_terminal": "REJECT-DECLARED-MODULE-ALIAS",
+      "mutation": "Two declarations share portability collision key."
+    },
+    {
+      "id": "PAR-048",
+      "expected_terminal": "REJECT-DECLARED-MODULE-PATH",
+      "mutation": "Legacy declaration violates path grammar."
+    },
+    {
+      "id": "PAR-049",
+      "expected_terminal": "ACCEPT-DIFFERENT-SEMANTIC-ROOT",
+      "mutation": "Regular-file content changes."
+    },
+    {
+      "id": "PAR-050",
+      "expected_terminal": "ACCEPT-SAME-SEMANTIC-ROOT",
+      "mutation": "Only directory-entry presence/order changes."
+    }
+  ]
+}

@@ -7,11 +7,13 @@
 //! packets; this module implements `APEX-T0.1`.
 
 pub mod boundary;
+pub mod build;
 pub mod digest;
 pub mod identity;
 pub mod manifest;
 pub mod scalar;
 pub mod subsystem;
+pub mod source_closure;
 
 pub use boundary::AuthoritativeBoundaryKindV1;
 pub use scalar::{

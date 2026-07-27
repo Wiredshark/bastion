@@ -1,0 +1,81 @@
+﻿{
+  "schema": "bastion.apex.t2.2-plugin-archive-profile-correction-canaries/v1",
+  "generated_at_utc": "2026-07-23T14:45:46-04:00",
+  "live_commit": "f7b30de6d916930c96f181919160ff7839aa6d5b",
+  "base_canary_drive_id": "1fZgZka8QHsWQUqZAfHN6D8_XteUyK0R8",
+  "base_case_count": 50,
+  "correction_case_count": 14,
+  "total_logical_case_count": 64,
+  "cases": [
+    {
+      "id": "PAR-C01",
+      "expected_terminal": "OBSERVE-LEGACY-GNU-DIALECT",
+      "mutation": "Archive produced by documented generic `tar -cvf` workflow uses GNU dialect with short names; Observe records dialect and Strict does not claim canonicality."
+    },
+    {
+      "id": "PAR-C02",
+      "expected_terminal": "OBSERVE-LEGACY-GNU-LONGNAME",
+      "mutation": "GNU long-name extension is retained in raw extension chain; Strict canonical profile rejects."
+    },
+    {
+      "id": "PAR-C03",
+      "expected_terminal": "OBSERVE-LEGACY-PAX",
+      "mutation": "PAX local/global extension is retained and bounded; Strict canonical profile rejects until compatibility policy exists."
+    },
+    {
+      "id": "PAR-C04",
+      "expected_terminal": "BLOCK-TAR-RS-FRAMING-SUBSTITUTION",
+      "mutation": "Custom framing scanner is removed and validation relies only on tar::Entries::raw(true); terminator/trailing-data canary must fail."
+    },
+    {
+      "id": "PAR-C05",
+      "expected_terminal": "REJECT-MISSING-CANONICAL-TERMINATOR",
+      "mutation": "Strict canonical archive omits required two-zero-block terminator."
+    },
+    {
+      "id": "PAR-C06",
+      "expected_terminal": "OBSERVE-LEGACY-MISSING-TERMINATOR",
+      "mutation": "Legacy archive reaches exact EOF without terminator; report noncanonical framing instead of certifying."
+    },
+    {
+      "id": "PAR-C07",
+      "expected_terminal": "REJECT-NONZERO-TRAILING-DATA",
+      "mutation": "Nonzero data or a concatenated archive follows canonical end marker."
+    },
+    {
+      "id": "PAR-C08",
+      "expected_terminal": "REJECT-PARSER-IDENTITY-MISMATCH",
+      "mutation": "Evidence parser version/source/checksum differs from exact Cargo.lock resolution."
+    },
+    {
+      "id": "PAR-C09",
+      "expected_terminal": "OBSERVE-NO-HIDDEN-DEFAULT-LIMITS",
+      "mutation": "No production limits are supplied; Observe measures but Strict cannot run using undocumented defaults."
+    },
+    {
+      "id": "PAR-C10",
+      "expected_terminal": "CANONICAL-ROOT-INCLUDES-DIRECTORY-NAMESPACE",
+      "mutation": "Directory namespace record changes and semantic root must change."
+    },
+    {
+      "id": "PAR-C11",
+      "expected_terminal": "CANONICAL-ROOT-EXCLUDES-ARCHIVE-ORDINAL",
+      "mutation": "Only raw archive ordinal changes and semantic root must remain equal."
+    },
+    {
+      "id": "PAR-C12",
+      "expected_terminal": "OBSERVE-LEGACY-MODULE-ORDER",
+      "mutation": "Legacy PluginData.modules remains HashSet; T2.2 reports no canonical execution-order claim."
+    },
+    {
+      "id": "PAR-C13",
+      "expected_terminal": "CANONICAL-PACKER-REPRODUCIBLE",
+      "mutation": "Repository-owned packer emits byte-identical archive and roots across repeated runs."
+    },
+    {
+      "id": "PAR-C14",
+      "expected_terminal": "BLOCK-STRICT-ROLLOUT-POLICY-MISSING",
+      "mutation": "Strict production rollout attempted without archive inventory, approved limits, path/case policy, and legacy migration decision."
+    }
+  ]
+}

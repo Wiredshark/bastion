@@ -290,6 +290,16 @@ pub struct RequestPluginsEvent {
     pub plugins: Vec<PluginHash>,
 }
 
+/// APEX-T2.5.11: the typed artifact request (root + exact ordinals),
+/// served from the server's compiled deployment. Sibling of the legacy
+/// `RequestPluginsEvent`, which remains for explicit legacy mode.
+#[cfg(feature = "plugins")]
+pub struct RequestPluginArtifactsEvent {
+    pub entity: EcsEntity,
+    pub deployment_root: [u8; 32],
+    pub ordinals: Vec<u32>,
+}
+
 pub struct SetBattleModeEvent {
     pub entity: EcsEntity,
     pub battle_mode: BattleMode,

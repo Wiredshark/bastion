@@ -38,6 +38,7 @@ pub mod login_provider;
 pub mod metrics;
 pub mod persistence;
 mod pet;
+pub mod plugin_deployment_policy;
 pub mod presence;
 pub mod rtsim;
 pub mod semantic_net;
@@ -364,9 +365,59 @@ impl Server {
             }
         }
 
-        // Load plugins before generating the world.
+        // APEX-T2.5.11: strict deployment compile (policy-file opt-in).
+        // Missing policy file = Legacy (byte-identical live behavior);
+        // present-but-invalid policy or a failed compile REFUSES startup
+        // (the .04a loader-trap rule: never fall back on a broken policy).
+        // MUST run before any plugin/asset publication: a Deployed state
+        // publishes through the ONE-TIME content generation (T2.5.12),
+        // which refuses to layer on prior legacy publication.
         #[cfg(feature = "plugins")]
-        let plugin_mgr = PluginMgr::from_asset_or_default();
+        let plugin_deployment = {
+            let mut plugins_dir = (*common::assets::ASSETS_PATH).clone();
+            plugins_dir.push("plugins");
+            crate::plugin_deployment_policy::init_plugin_deployment_v1(data_dir, &plugins_dir)
+                .map_err(|e| Error::Other(format!("plugin deployment init failed (fail-closed): {e:?}")))?
+        };
+
+        // Load plugins before generating the world. Deployed = the server's
+        // own manager is built from the SAME verified deployment artifacts
+        // through the one-time generation; Legacy = the exact old path.
+        //
+        // APEX-T2.5.13: this ordering IS the step's contract — in Deployed
+        // mode the complete plan is compiled and the sealed content
+        // generation installed BEFORE `World::generate` runs below, and any
+        // failure aborts startup. Worldgen therefore always observes a
+        // frozen, complete content generation, never a prefix (permutation
+        // invariance of the compile itself is proven in
+        // common-state::plugin::deployment tests; the canonical fold order
+        // is DET-AST-034's sort). The world-baseline fixture ("discovery
+        // permutations yield same world baseline") belongs to the VM
+        // fixture lane.
+        #[cfg(feature = "plugins")]
+        let plugin_mgr = match &plugin_deployment {
+            crate::plugin_deployment_policy::PluginDeploymentStateV1::Deployed {
+                summary,
+                server_runtime_limits,
+                server_artifact_paths,
+                ..
+            } => PluginMgr::from_deployment_paths_v1(
+                server_artifact_paths.clone(),
+                &summary.requirements.iter().map(|r| (r.ordinal, r.digest)).collect::<Vec<_>>(),
+                summary.deployment_root,
+                Some(common_state::plugin::module::PluginStoreLimitsV1 {
+                    max_linear_memory_bytes: server_runtime_limits.max_linear_memory_bytes,
+                    max_fuel_per_event: server_runtime_limits.max_fuel_per_event,
+                }),
+                Some(server_runtime_limits.max_instances),
+                Some(summary.command_owners.iter().cloned().collect()),
+                Some(summary.skeleton_owners.iter().cloned().collect()),
+            )
+            .map_err(|e| Error::Other(format!("deployment plugin batch failed (fail-closed): {e:?}")))?,
+            crate::plugin_deployment_policy::PluginDeploymentStateV1::Legacy => {
+                PluginMgr::from_asset_or_default()
+            },
+        };
 
         debug!("Generating world, seed: {}", settings.world_seed);
         #[cfg(feature = "worldgen")]
@@ -437,6 +488,7 @@ impl Server {
         // once here and never mutated afterward (systems read it via
         // ReadExpect<ServerBootId>, never write it).
         state.ecs_mut().insert(server_boot_id);
+<<<<<<< C:/Users/q/AppData/Local/Temp/server_src_lib.rs.ours
         // APEX-T3.2: memory-only, empty on every fresh process (canary
         // SES-105) -- inserted once here alongside ServerBootId, never
         // persisted/reloaded from a save.
@@ -450,6 +502,10 @@ impl Server {
         // counters (keyed by (terminal/reject code, physical stream)
         // only) -- process lifetime, never persisted.
         state.ecs_mut().insert(common_net::msg::envelope::SemanticIngressMetricsV1::new());
+=======
+        #[cfg(feature = "plugins")]
+        state.ecs_mut().insert(plugin_deployment);
+>>>>>>> C:/Users/q/AppData/Local/Temp/server_src_lib.rs.theirs
         state.ecs_mut().insert(battlemode_buffer);
         state.ecs_mut().insert(RecentClientIPs::default());
         state.ecs_mut().insert(settings.clone());

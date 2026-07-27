@@ -37,6 +37,41 @@ pub enum DigestDomainIdV1 {
     /// proactively skipping to `12` here rather than colliding at merge
     /// time and losing the tiebreak anyway.
     NetEnvelopeProfile = 12,
+    // IDs 9 (SubsystemDescriptor) and 10 (CompatibilityProfile) are ALLOCATED
+    // to APEX-T0.5's in-flight build (row-order allocation rule, Fable-blessed;
+    // collision with SourceClosure caught + resolved at spec stage). Sonnet 5's
+    // T0.5 build adds those variants; do not reuse the numbers.
+    /// `APEX-T1.2` (fleet-authored spec, Fable-approved): the source-closure
+    /// record's roots (rust-source tree, asset tree, LFS report). A distinct
+    /// domain from `BuildManifest` (ID 5): the closure is an INPUT that
+    /// `APEX-T1.5`'s manifest embeds — separating inputs from the manifest
+    /// that embeds them is the point of domain separation.
+    SourceClosure = 11,
+    /// `APEX-T1.3` (real packet, section 7): the local reproducibility
+    /// smoke's canonical evidence record — same-worker exact-output
+    /// rebuild + host-path impurity smoke. Distinct from `BuildManifest`
+    /// (ID 5, T1.5's manifest) for the same input-vs-embedding reason as
+    /// `SourceClosure`.
+    LocalReproSmoke = 12,
+    /// `APEX-T1.4` (real packet, section 8.1/8.6): the four fresh-rebuild
+    /// evidence namespaces, row-order allocated 13-16 (T1.4 precedes
+    /// T2.2, whose plugin-archive domain is therefore 17 — resolved in
+    /// the T2.2 fleet spec section 4.8).
+    FreshBuilderProfile = 13,
+    FreshBuilderRun = 14,
+    FreshRebuildPair = 15,
+    FreshRebuildCanaryCampaign = 16,
+    /// `APEX-T2.2` (fleet spec section 4.8, cross-review-resolved): the
+    /// plugin archive's SEMANTIC root — content identity over the sorted
+    /// regular-file namespace, an INPUT to both `PluginManifest` (8,
+    /// T2.3) and `PluginActivationPlan` (3, T2.5), domain-separated from
+    /// both for the SourceClosure-vs-BuildManifest reason.
+    PluginArchive = 17,
+    /// `APEX-T2.4` (real packet, section 9.1/9.5): the resolver's two
+    /// evidence namespaces — the admitted candidate set and the resolved
+    /// graph. The T2.5 activation-plan root remains domain 3.
+    PluginCandidateSet = 18,
+    PluginResolvedGraph = 19,
 }
 
 impl DigestDomainIdV1 {
@@ -58,10 +93,19 @@ impl DigestDomainIdV1 {
             Self::SubsystemDescriptor => "bastion/subsystem-descriptor/v1",
             Self::CompatibilityProfile => "bastion/compatibility-profile/v1",
             Self::NetEnvelopeProfile => "bastion/net-envelope-profile/v1",
+            Self::SourceClosure => "bastion/source-closure/v1",
+            Self::LocalReproSmoke => "bastion/build/local-repro-smoke/v1",
+            Self::FreshBuilderProfile => "bastion/fresh-builder-profile/v1",
+            Self::FreshBuilderRun => "bastion/fresh-builder-run/v1",
+            Self::FreshRebuildPair => "bastion/fresh-rebuild-pair/v1",
+            Self::FreshRebuildCanaryCampaign => "bastion/fresh-rebuild-canary-campaign/v1",
+            Self::PluginArchive => "bastion/plugin-archive/v1",
+            Self::PluginCandidateSet => "bastion/plugin-candidate-set/v1",
+            Self::PluginResolvedGraph => "bastion/plugin-resolved-graph/v1",
         }
     }
 
-    pub const ALL: [DigestDomainIdV1; 11] = [
+    pub const ALL: [DigestDomainIdV1; 20] = [
         Self::BootstrapManifest,
         Self::SaveUniverseManifest,
         Self::PluginActivationPlan,
@@ -73,6 +117,15 @@ impl DigestDomainIdV1 {
         Self::SubsystemDescriptor,
         Self::CompatibilityProfile,
         Self::NetEnvelopeProfile,
+        Self::SourceClosure,
+        Self::LocalReproSmoke,
+        Self::FreshBuilderProfile,
+        Self::FreshBuilderRun,
+        Self::FreshRebuildPair,
+        Self::FreshRebuildCanaryCampaign,
+        Self::PluginArchive,
+        Self::PluginCandidateSet,
+        Self::PluginResolvedGraph,
     ];
 }
 
@@ -120,5 +173,23 @@ mod tests {
         assert_eq!(DigestDomainIdV1::CompatibilityProfile.label(), "bastion/compatibility-profile/v1");
         assert_eq!(DigestDomainIdV1::NetEnvelopeProfile.as_u16(), 12);
         assert_eq!(DigestDomainIdV1::NetEnvelopeProfile.label(), "bastion/net-envelope-profile/v1");
+        assert_eq!(DigestDomainIdV1::SourceClosure.as_u16(), 11);
+        assert_eq!(DigestDomainIdV1::SourceClosure.label(), "bastion/source-closure/v1");
+        assert_eq!(DigestDomainIdV1::LocalReproSmoke.as_u16(), 12);
+        assert_eq!(DigestDomainIdV1::LocalReproSmoke.label(), "bastion/build/local-repro-smoke/v1");
+        assert_eq!(DigestDomainIdV1::FreshBuilderProfile.as_u16(), 13);
+        assert_eq!(DigestDomainIdV1::FreshBuilderProfile.label(), "bastion/fresh-builder-profile/v1");
+        assert_eq!(DigestDomainIdV1::FreshBuilderRun.as_u16(), 14);
+        assert_eq!(DigestDomainIdV1::FreshBuilderRun.label(), "bastion/fresh-builder-run/v1");
+        assert_eq!(DigestDomainIdV1::FreshRebuildPair.as_u16(), 15);
+        assert_eq!(DigestDomainIdV1::FreshRebuildPair.label(), "bastion/fresh-rebuild-pair/v1");
+        assert_eq!(DigestDomainIdV1::FreshRebuildCanaryCampaign.as_u16(), 16);
+        assert_eq!(DigestDomainIdV1::FreshRebuildCanaryCampaign.label(), "bastion/fresh-rebuild-canary-campaign/v1");
+        assert_eq!(DigestDomainIdV1::PluginArchive.as_u16(), 17);
+        assert_eq!(DigestDomainIdV1::PluginArchive.label(), "bastion/plugin-archive/v1");
+        assert_eq!(DigestDomainIdV1::PluginCandidateSet.as_u16(), 18);
+        assert_eq!(DigestDomainIdV1::PluginCandidateSet.label(), "bastion/plugin-candidate-set/v1");
+        assert_eq!(DigestDomainIdV1::PluginResolvedGraph.as_u16(), 19);
+        assert_eq!(DigestDomainIdV1::PluginResolvedGraph.label(), "bastion/plugin-resolved-graph/v1");
     }
 }

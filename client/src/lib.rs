@@ -672,7 +672,8 @@ impl Client {
             ConnectionArgs::Mpsc(id) => network.connect(ConnectAddr::Mpsc(id)).await?,
         };
 
-        let stream = participant.opened().await?;
+        #[cfg_attr(not(feature = "plugins"), expect(unused_mut))]
+        let mut stream = participant.opened().await?;
         let ping_stream = participant.opened().await?;
         let mut register_stream = participant.opened().await?;
         let character_screen_stream = participant.opened().await?;
@@ -768,6 +769,10 @@ impl Client {
             server_constants,
             description,
             active_plugins: _active_plugins,
+            // APEX-T2.5.11: consumed by the acquisition-before-State flow
+            // when it lands; a Some from a newer server is noted, not an
+            // error (legacy hash path still runs).
+            plugin_deployment: _plugin_deployment,
             role,
             session_binding: game_sync_session_binding,
         } = game_sync;
@@ -793,7 +798,132 @@ impl Client {
                 epoch: game_sync_session_binding.epoch,
             });
 
+        // APEX-T2.5.11 — acquisition BEFORE State: when the server sent a
+        // typed deployment summary, every client-active artifact is
+        // verified into the cache and the plugin manager is built from
+        // those verified files BEFORE `State::client` exists. No
+        // `load_server_plugin` after State on this path — and per
+        // `RejectLocalPlugins`, local extra plugins are NOT loaded when a
+        // deployment governs the session.
+        #[cfg(feature = "plugins")]
+        let deployment_plugin_mgr: Option<common_state::plugin::PluginMgr> = match &_plugin_deployment {
+            None => None,
+            Some(summary) => {
+                use common::apex::digest::{
+                    ArtifactDigestV1, ArtifactIdentityV1, DigestAlgorithmIdV1, DigestBytes32V1,
+                };
+                use common_net::msg::plugin_artifact::PluginArtifactRequestV1;
+                use common_state::plugin::artifact_cache::PluginArtifactCacheV1;
+                // APEX-T2.5.22 — schema/completeness refusals BEFORE any
+                // acquisition: every client-active ordinal must have
+                // exactly one requirement (an incomplete or duplicated
+                // set is a typed init error, never a partial bootstrap).
+                for ordinal in &summary.client_activations {
+                    let n = summary.requirements.iter().filter(|r| r.ordinal == *ordinal).count();
+                    if n != 1 {
+                        return Err(Error::Other(format!(
+                            "plugin deployment summary incomplete: ordinal {ordinal} has {n} requirements"
+                        )));
+                    }
+                }
+                // Wire bytes are never trusted as identity: the cache
+                // re-verifies size+digest on stage AND on read.
+                let reqs: Vec<(u32, ArtifactIdentityV1)> = summary
+                    .requirements
+                    .iter()
+                    .filter(|r| summary.client_activations.contains(&r.ordinal))
+                    .map(|r| {
+                        (r.ordinal, ArtifactIdentityV1 {
+                            digest: ArtifactDigestV1 {
+                                algorithm: DigestAlgorithmIdV1::Sha256,
+                                bytes: DigestBytes32V1::from_array(r.digest),
+                            },
+                            size_bytes: r.size_bytes,
+                        })
+                    })
+                    .collect();
+                let cache =
+                    PluginArtifactCacheV1::new(config_dir.join("plugin_artifact_cache_v1"), reqs.clone())
+                        .map_err(|e| Error::Other(format!("plugin artifact cache: {e:?}")))?;
+                let missing: Vec<u32> =
+                    reqs.iter().map(|(o, _)| *o).filter(|o| !cache.is_staged_verified(*o)).collect();
+                if !missing.is_empty() {
+                    tracing::info!(?missing, "requesting deployment artifacts before State");
+                    stream.send(ClientGeneral::RequestPluginArtifacts(PluginArtifactRequestV1 {
+                        deployment_root: summary.deployment_root,
+                        ordinals: missing.clone(),
+                    }))?;
+                    let mut outstanding: std::collections::BTreeSet<u32> = missing.into_iter().collect();
+                    let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+                    while !outstanding.is_empty() {
+                        let msg: ServerGeneral = tokio::select! {
+                            res = stream.recv() => res?,
+                            _ = ping_interval.tick() => { ping_stream.send(PingMsg::Ping)?; continue; },
+                            _ = tokio::time::sleep_until(deadline) => {
+                                return Err(Error::Other(format!(
+                                    "plugin artifact acquisition timed out; outstanding: {outstanding:?}"
+                                )));
+                            },
+                        };
+                        match msg {
+                            ServerGeneral::PluginArtifactData(resp) => {
+                                let ordinal = resp.descriptor.ordinal;
+                                cache.stage(ordinal, &resp.bytes).map_err(|e| {
+                                    Error::Other(format!("plugin artifact {ordinal} refused: {e:?}"))
+                                })?;
+                                outstanding.remove(&ordinal);
+                            },
+                            ServerGeneral::Disconnect(reason) => {
+                                return Err(Error::Other(format!(
+                                    "server disconnected during plugin acquisition: {reason:?}"
+                                )));
+                            },
+                            other => {
+                                // Disclosed .11 limitation: general-stream
+                                // traffic in this brief pre-State window is
+                                // dropped with a log (buffer-and-replay is
+                                // .12+ scope). Only entered when the server
+                                // opted into V1 deployments.
+                                tracing::warn!(
+                                    "dropping general message during plugin acquisition: {}",
+                                    core::any::type_name_of_val(&other)
+                                );
+                            },
+                        }
+                    }
+                }
+                let paths: Vec<(u32, PathBuf)> = reqs
+                    .iter()
+                    .map(|(o, _)| {
+                        cache
+                            .verified_path(*o)
+                            .map(|p| (*o, p))
+                            .map_err(|e| Error::Other(format!("plugin artifact {o} unavailable: {e:?}")))
+                    })
+                    .collect::<Result<_, _>>()?;
+                let expected: Vec<(u32, [u8; 32])> =
+                    reqs.iter().map(|(o, a)| (*o, *a.digest.bytes.as_array())).collect();
+                Some(
+                    common_state::plugin::PluginMgr::from_deployment_paths_v1(
+                        paths,
+                        &expected,
+                        summary.deployment_root,
+                        Some(common_state::plugin::module::PluginStoreLimitsV1 {
+                            max_linear_memory_bytes: summary.client_runtime_limits.max_linear_memory_bytes,
+                            max_fuel_per_event: summary.client_runtime_limits.max_fuel_per_event,
+                        }),
+                        Some(summary.client_runtime_limits.max_instances),
+                        Some(summary.command_owners.iter().cloned().collect()),
+                        Some(summary.skeleton_owners.iter().cloned().collect()),
+                    )
+                    .map_err(|e| Error::Other(format!("deployment plugin batch failed: {e:?}")))?,
+                )
+            },
+        };
+
         init_stage_update(ClientInitStage::StartingClient);
+        #[cfg(feature = "plugins")]
+        let deployment_governs = _plugin_deployment.is_some();
         // Spawn in a blocking thread (leaving the network thread free).  This is mostly
         // useful for bots.
         let mut task = tokio::task::spawn_blocking(move || {
@@ -817,16 +947,24 @@ impl Client {
                     add_local_systems(dispatch_builder);
                     add_foreign_systems(dispatch_builder);
                 },
+                // APEX-T2.5.11: a governed deployment supplies the fully
+                // verified manager; otherwise the legacy local-asset path
+                // runs exactly as before.
                 #[cfg(feature = "plugins")]
-                common_state::plugin::PluginMgr::from_asset_or_default(),
+                deployment_plugin_mgr
+                    .unwrap_or_else(common_state::plugin::PluginMgr::from_asset_or_default),
             );
 
             #[cfg_attr(not(feature = "plugins"), expect(unused_mut))]
             let mut missing_plugins: Vec<PluginHash> = Vec::new();
             #[cfg_attr(not(feature = "plugins"), expect(unused_mut))]
             let mut local_plugins: Vec<PathBuf> = Vec::new();
+            // APEX-T2.5.11: the legacy hash-list path runs ONLY when no
+            // deployment governs the session (RejectLocalPlugins + no
+            // late-load: a governed client's plugin set is exactly the
+            // verified deployment, already complete before State).
             #[cfg(feature = "plugins")]
-            {
+            if !deployment_governs {
                 let already_present = state.ecs().read_resource::<PluginMgr>().plugin_list();
                 for hash in _active_plugins.iter() {
                     if !already_present.contains(hash) {
@@ -1635,7 +1773,8 @@ impl Client {
                     ClientGeneral::ChatMsg(_)
                     | ClientGeneral::Command(_, _)
                     | ClientGeneral::Terminate
-                    | ClientGeneral::RequestPlugins(_) => &mut self.general_stream,
+                    | ClientGeneral::RequestPlugins(_)
+                    | ClientGeneral::RequestPluginArtifacts(_) => &mut self.general_stream,
                 };
                 #[cfg(feature = "tracy")]
                 {
@@ -3396,6 +3535,15 @@ impl Client {
                 let plugin_len = d.len();
                 tracing::info!(?plugin_len, "plugin data");
                 frontend_events.push(Event::PluginDataReceived(d));
+            },
+            // APEX-T2.5.10: typed artifact wire is defined but DORMANT
+            // until the .11 bootstrap consumes it through the verified
+            // collector. Ignore-with-warning, never panic on wire input.
+            ServerGeneral::PluginArtifactData(r) => {
+                tracing::warn!(
+                    ordinal = r.descriptor.ordinal,
+                    "PluginArtifactData before the T2.5.11 bootstrap path is active; ignoring"
+                );
             },
             ServerGeneral::SetPlayerRole(role) => {
                 debug!(?role, "Updating client role");

@@ -1,0 +1,357 @@
+﻿{
+  "schema": "bastion.apex.t2.3-plugin-manifest-v1-canaries/v1",
+  "profile": "PluginManifestV1/StrictStaticContract",
+  "generated_at_utc": "2026-07-23T16:45:50Z",
+  "cases": [
+    {
+      "id": "PMV1-001",
+      "expected_terminal": "VALIDATED-V1",
+      "mutation": "Minimal V1 manifest with one server-plugin module and empty claims/dependencies."
+    },
+    {
+      "id": "PMV1-002",
+      "expected_terminal": "VALIDATED-V1",
+      "mutation": "Full V1 manifest with three module worlds, exact dependencies, claims, and prerelease plugin/API versions."
+    },
+    {
+      "id": "PMV1-003",
+      "expected_terminal": "VALIDATED-V1",
+      "mutation": "Equivalent TOML field order and array order canonicalize to the same typed manifest root."
+    },
+    {
+      "id": "PMV1-004",
+      "expected_terminal": "VALIDATED-V1",
+      "mutation": "Content-only plugin with zero modules, zero command/animation claims, and one asset root."
+    },
+    {
+      "id": "PMV1-005",
+      "expected_terminal": "OBSERVED-LEGACY-V0",
+      "mutation": "manifest_version absent in ObserveLegacy mode; legacy arrays remain lossless ordered observations."
+    },
+    {
+      "id": "PMV1-006",
+      "expected_terminal": "LEGACY-MANIFEST-REJECTED",
+      "mutation": "manifest_version absent in StrictV1 mode."
+    },
+    {
+      "id": "PMV1-007",
+      "expected_terminal": "MISSING-MANIFEST-VERSION",
+      "mutation": "V1-shaped document omits manifest_version and fallback to V1 is forbidden."
+    },
+    {
+      "id": "PMV1-008",
+      "expected_terminal": "INVALID-MANIFEST-VERSION-TYPE",
+      "mutation": "manifest_version is a string."
+    },
+    {
+      "id": "PMV1-009",
+      "expected_terminal": "UNSUPPORTED-MANIFEST-VERSION",
+      "mutation": "manifest_version is 0."
+    },
+    {
+      "id": "PMV1-010",
+      "expected_terminal": "UNSUPPORTED-MANIFEST-VERSION",
+      "mutation": "manifest_version is 2."
+    },
+    {
+      "id": "PMV1-011",
+      "expected_terminal": "INVALID-MANIFEST-VERSION",
+      "mutation": "manifest_version is negative or exceeds u32."
+    },
+    {
+      "id": "PMV1-012",
+      "expected_terminal": "TOML-DECODE-ERROR",
+      "mutation": "Manifest bytes are invalid UTF-8."
+    },
+    {
+      "id": "PMV1-013",
+      "expected_terminal": "TOML-DECODE-ERROR",
+      "mutation": "TOML defines the same key twice."
+    },
+    {
+      "id": "PMV1-014",
+      "expected_terminal": "TOML-DECODE-ERROR",
+      "mutation": "TOML redefines a table or array-of-tables inconsistently."
+    },
+    {
+      "id": "PMV1-015",
+      "expected_terminal": "UNKNOWN-FIELD",
+      "mutation": "Unknown top-level field is present."
+    },
+    {
+      "id": "PMV1-016",
+      "expected_terminal": "UNKNOWN-FIELD",
+      "mutation": "Unknown field exists inside [plugin]."
+    },
+    {
+      "id": "PMV1-017",
+      "expected_terminal": "UNKNOWN-FIELD",
+      "mutation": "Unknown field exists inside [[modules]]."
+    },
+    {
+      "id": "PMV1-018",
+      "expected_terminal": "UNKNOWN-FIELD",
+      "mutation": "Unknown field exists inside [[dependencies]]."
+    },
+    {
+      "id": "PMV1-019",
+      "expected_terminal": "UNKNOWN-FIELD",
+      "mutation": "Unknown field exists inside [claims]."
+    },
+    {
+      "id": "PMV1-020",
+      "expected_terminal": "INVALID-PLUGIN-ID",
+      "mutation": "Plugin ID lacks namespace separator."
+    },
+    {
+      "id": "PMV1-021",
+      "expected_terminal": "INVALID-PLUGIN-ID",
+      "mutation": "Plugin ID contains uppercase ASCII."
+    },
+    {
+      "id": "PMV1-022",
+      "expected_terminal": "INVALID-PLUGIN-ID",
+      "mutation": "Plugin ID contains Unicode, underscore, empty segment, or repeated separator."
+    },
+    {
+      "id": "PMV1-023",
+      "expected_terminal": "INVALID-PLUGIN-ID",
+      "mutation": "Plugin ID namespace or name exceeds the frozen byte limit."
+    },
+    {
+      "id": "PMV1-024",
+      "expected_terminal": "INVALID-DISPLAY-NAME",
+      "mutation": "Optional display name contains NUL/control characters or exceeds its limit."
+    },
+    {
+      "id": "PMV1-025",
+      "expected_terminal": "INVALID-PLUGIN-VERSION",
+      "mutation": "Plugin version omits major/minor/patch."
+    },
+    {
+      "id": "PMV1-026",
+      "expected_terminal": "INVALID-PLUGIN-VERSION",
+      "mutation": "Plugin version contains a numeric prerelease identifier with a leading zero."
+    },
+    {
+      "id": "PMV1-027",
+      "expected_terminal": "PLUGIN-VERSION-BUILD-METADATA-FORBIDDEN",
+      "mutation": "Plugin version contains SemVer build metadata under StrictV1."
+    },
+    {
+      "id": "PMV1-028",
+      "expected_terminal": "VALIDATED-V1",
+      "mutation": "Plugin version contains valid prerelease identifiers."
+    },
+    {
+      "id": "PMV1-029",
+      "expected_terminal": "INVALID-HOST-API",
+      "mutation": "host_api omits the WIT package version."
+    },
+    {
+      "id": "PMV1-030",
+      "expected_terminal": "INVALID-HOST-API",
+      "mutation": "host_api names a package other than veloren:plugin."
+    },
+    {
+      "id": "PMV1-031",
+      "expected_terminal": "INVALID-HOST-API",
+      "mutation": "host_api has invalid full SemVer."
+    },
+    {
+      "id": "PMV1-032",
+      "expected_terminal": "VALIDATED-V1",
+      "mutation": "host_api is syntactically valid veloren:plugin@0.0.2; compatibility is deferred to T2.5."
+    },
+    {
+      "id": "PMV1-033",
+      "expected_terminal": "MISSING-CLAIMS-TABLE",
+      "mutation": "Strict V1 omits [claims]."
+    },
+    {
+      "id": "PMV1-034",
+      "expected_terminal": "DUPLICATE-MODULE-PATH",
+      "mutation": "Same canonical module path appears twice with same world."
+    },
+    {
+      "id": "PMV1-035",
+      "expected_terminal": "DUPLICATE-MODULE-PATH",
+      "mutation": "Same canonical module path appears twice with different worlds."
+    },
+    {
+      "id": "PMV1-036",
+      "expected_terminal": "INVALID-MODULE-WORLD",
+      "mutation": "Module world is not plugin, server-plugin, or animation-plugin."
+    },
+    {
+      "id": "PMV1-037",
+      "expected_terminal": "MISSING-MODULE-ENTRY",
+      "mutation": "Declared module path does not resolve in the T2.2 index."
+    },
+    {
+      "id": "PMV1-038",
+      "expected_terminal": "NONREGULAR-MODULE-ENTRY",
+      "mutation": "Declared module resolves to a directory or nonregular entry."
+    },
+    {
+      "id": "PMV1-039",
+      "expected_terminal": "MODULE-PATH-ALIASES-MANIFEST",
+      "mutation": "Module path aliases root plugin.toml."
+    },
+    {
+      "id": "PMV1-040",
+      "expected_terminal": "VALIDATED-V1",
+      "mutation": "Unsorted module declarations canonicalize by canonical archive-path bytes."
+    },
+    {
+      "id": "PMV1-041",
+      "expected_terminal": "DUPLICATE-DEPENDENCY",
+      "mutation": "Same dependency ID and version is declared twice."
+    },
+    {
+      "id": "PMV1-042",
+      "expected_terminal": "CONFLICTING-DEPENDENCY-VERSIONS",
+      "mutation": "Same dependency ID is declared with two exact versions."
+    },
+    {
+      "id": "PMV1-043",
+      "expected_terminal": "SELF-DEPENDENCY",
+      "mutation": "Plugin depends on its own canonical ID."
+    },
+    {
+      "id": "PMV1-044",
+      "expected_terminal": "INVALID-DEPENDENCY-ID",
+      "mutation": "Dependency ID violates canonical plugin-ID grammar."
+    },
+    {
+      "id": "PMV1-045",
+      "expected_terminal": "INVALID-DEPENDENCY-VERSION",
+      "mutation": "Dependency version is not exact full SemVer."
+    },
+    {
+      "id": "PMV1-046",
+      "expected_terminal": "DEPENDENCY-VERSION-BUILD-METADATA-FORBIDDEN",
+      "mutation": "Dependency version contains build metadata."
+    },
+    {
+      "id": "PMV1-047",
+      "expected_terminal": "VALIDATED-V1",
+      "mutation": "Unsorted exact dependencies canonicalize by ID then version."
+    },
+    {
+      "id": "PMV1-048",
+      "expected_terminal": "DUPLICATE-COMMAND-CLAIM",
+      "mutation": "Same command claim appears twice."
+    },
+    {
+      "id": "PMV1-049",
+      "expected_terminal": "INVALID-COMMAND-CLAIM",
+      "mutation": "Command claim is empty, begins with slash, contains control/whitespace, or exceeds limit."
+    },
+    {
+      "id": "PMV1-050",
+      "expected_terminal": "DUPLICATE-ANIMATION-CLAIM",
+      "mutation": "Same animation/body claim appears twice."
+    },
+    {
+      "id": "PMV1-051",
+      "expected_terminal": "INVALID-ANIMATION-CLAIM",
+      "mutation": "Animation/body claim violates frozen runtime-key grammar."
+    },
+    {
+      "id": "PMV1-052",
+      "expected_terminal": "DUPLICATE-ASSET-ROOT",
+      "mutation": "Same canonical asset root appears twice."
+    },
+    {
+      "id": "PMV1-053",
+      "expected_terminal": "OVERLAPPING-ASSET-ROOT",
+      "mutation": "One declared asset root contains another declared root."
+    },
+    {
+      "id": "PMV1-054",
+      "expected_terminal": "MISSING-ASSET-ROOT",
+      "mutation": "Declared asset root has no regular file or directory prefix in the archive index."
+    },
+    {
+      "id": "PMV1-055",
+      "expected_terminal": "INVALID-ASSET-ROOT",
+      "mutation": "Asset root points at plugin.toml or a module file rather than an asset namespace."
+    },
+    {
+      "id": "PMV1-056",
+      "expected_terminal": "VALIDATED-V1",
+      "mutation": "Claim arrays in arbitrary input order canonicalize by exact bytes."
+    },
+    {
+      "id": "PMV1-057",
+      "expected_terminal": "SEMANTIC-ROOT-MISMATCH",
+      "mutation": "Changing plugin ID, version, host API, module world, dependency, or claim changes manifest root."
+    },
+    {
+      "id": "PMV1-058",
+      "expected_terminal": "SEMANTIC-ROOT-EQUAL",
+      "mutation": "Whitespace, comments, TOML table order, and declaration order changes preserve the manifest root."
+    },
+    {
+      "id": "PMV1-059",
+      "expected_terminal": "ARTIFACT-DIGEST-DIFFERENT",
+      "mutation": "Raw TOML bytes differ while typed semantic root remains equal; archive artifact digest still differs."
+    },
+    {
+      "id": "PMV1-060",
+      "expected_terminal": "MALFORMED-V1-NO-LEGACY-FALLBACK",
+      "mutation": "manifest_version=1 with an invalid V1 field cannot fall back to legacy."
+    },
+    {
+      "id": "PMV1-061",
+      "expected_terminal": "LEGACY-DUPLICATE-PRESERVED",
+      "mutation": "Legacy duplicate module/dependency strings are preserved as observations rather than collapsed into sets."
+    },
+    {
+      "id": "PMV1-062",
+      "expected_terminal": "LEGACY-NONCANONICAL-OBSERVED",
+      "mutation": "Legacy path/name syntax that V1 forbids is reported in ObserveLegacy without becoming ValidatedV1."
+    },
+    {
+      "id": "PMV1-063",
+      "expected_terminal": "SIDE-EFFECT-CANARY-PASS",
+      "mutation": "Manifest validation performs zero Wasmtime compilation/instantiation, guest hooks, ECS access, cache writes, or global asset registration."
+    },
+    {
+      "id": "PMV1-064",
+      "expected_terminal": "DEFERRED-COMPONENT-WORLD-CHECK",
+      "mutation": "Manifest world declaration is stored, but actual Wasm component world/API compatibility is explicitly deferred to T2.5 pre-instantiation."
+    },
+    {
+      "id": "PMV1-065",
+      "expected_terminal": "DEFERRED-RUNTIME-CLAIM-CHECK",
+      "mutation": "Static command/animation claims are stored, but guest registration equality/subset enforcement is deferred to T2.5."
+    },
+    {
+      "id": "PMV1-066",
+      "expected_terminal": "DEFERRED-DEPENDENCY-GRAPH",
+      "mutation": "Exact dependency declarations are normalized, but missing-node/cycle/topological resolution is deferred to T2.4."
+    },
+    {
+      "id": "PMV1-067",
+      "expected_terminal": "DEFERRED-CONFLICT-POLICY",
+      "mutation": "Claims are normalized, but collision winner/override policy is deferred to T2.5."
+    },
+    {
+      "id": "PMV1-068",
+      "expected_terminal": "INVALID-ROOT-BOUNDARY",
+      "mutation": "Manifest root uses the wrong digest domain or omits schema/profile identity."
+    },
+    {
+      "id": "PMV1-069",
+      "expected_terminal": "INVALID-CANONICAL-ORDER",
+      "mutation": "Manifest root changes when only input declaration order changes."
+    },
+    {
+      "id": "PMV1-070",
+      "expected_terminal": "INVALID-LEGACY-DISPATCH",
+      "mutation": "Parser attempts V1 then silently interprets failure as legacy V0."
+    }
+  ]
+}

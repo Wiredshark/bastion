@@ -123,6 +123,8 @@ pub struct ReadData<'a> {
     trackers: TrackedStorages<'a>,
     #[cfg(feature = "plugins")]
     plugin_mgr: Read<'a, PluginMgr>,
+    #[cfg(feature = "plugins")]
+    plugin_deployment: ReadExpect<'a, crate::plugin_deployment_policy::PluginDeploymentStateV1>,
     data_dir: ReadExpect<'a, crate::DataDir>,
 }
 
@@ -353,6 +355,7 @@ impl<'a> System<'a> for Sys {
                             }
                             collected.lock().push(CollectedAdmissionV1 {
                                 entity,
+<<<<<<< C:/Users/q/AppData/Local/Temp/server_src_sys_msg_register.rs.ours
                                 uid: *uid,
                                 principal: uuid,
                                 intent: AuthenticatedIntentV1 {
@@ -372,6 +375,175 @@ impl<'a> System<'a> for Sys {
                                 player_list_update_msg,
                             });
                         },
+=======
+                                common::comp::DisconnectReason::InvalidClientType,
+                            ));
+                            return Ok(());
+                        }
+
+                        let (new_players_by_uuid, retries, finished_pending) =
+                            &mut *new_players_guard;
+                        finished_pending.push(entity);
+                        // Check if the user logged in before us during this tick (this is why we
+                        // need the lock held).
+                        let uuid = player.uuid();
+                        let old_player = old_player.map_or_else(
+                            move || match new_players_by_uuid.entry(uuid) {
+                                // We don't actually extract the client yet, to avoid doing extra
+                                // work with the lock held.
+                                hash_map::Entry::Occupied(o) => Either::Left((o.get().0, None)),
+                                hash_map::Entry::Vacant(v) => Either::Right(v),
+                            },
+                            Either::Left,
+                        );
+                        let vacant_player = match old_player {
+                            Either::Left((old_entity, old_client)) => {
+                                if matches!(old_client, None | Some(Some(_))) {
+                                    // We can't login the new client right now as the
+                                    // removal of the old client and player occurs later in
+                                    // the tick, so we instead setup the new login to be
+                                    // processed in the next tick
+                                    // Create "fake" successful pending auth and mark it to
+                                    // be inserted into pending_logins at the end of this
+                                    // run.
+                                    retries.push((entity, pending_login));
+                                    drop(new_players_guard);
+                                    let old_client = old_client
+                                        .flatten()
+                                        .or_else(|| clients.get(old_entity))
+                                        .expect(
+                                            "All entries in the new player list were explicitly \
+                                             joining on client",
+                                        );
+                                    let _ = old_client.send(ServerGeneral::Disconnect(
+                                        DisconnectReason::Kicked(String::from(
+                                            "You have logged in from another location.",
+                                        )),
+                                    ));
+                                } else {
+                                    drop(new_players_guard);
+                                    // A player without a client is strange, so we don't really want
+                                    // to retry.  Warn about this case and hope that trying to
+                                    // perform the disconnect process removes the invalid player
+                                    // entry.
+                                    warn!(
+                                        "Player without client detected for entity {:?}",
+                                        old_entity
+                                    );
+                                }
+                                // Remove old client
+                                client_disconnect_emitter.emit(ClientDisconnectEvent(
+                                    old_entity,
+                                    common::comp::DisconnectReason::NewerLogin,
+                                ));
+                                return Ok(());
+                            },
+                            Either::Right(v) => v,
+                        };
+
+                        let Some(player_login_msg) = player_list_update_msg else {
+                            drop(new_players_guard);
+                            // Invalid player
+                            client.send(Err(RegisterError::InvalidCharacter))?;
+                            return Ok(());
+                        };
+
+                        // We know the player list didn't already contain this entity because we
+                        // joined on !players, so we can assume from here that we'll definitely be
+                        // adding a new player.
+
+                        // Add to list to notify all clients of the new player
+                        vacant_player.insert((
+                            entity,
+                            player,
+                            admin,
+                            client
+                                .client_type
+                                .emit_login_events()
+                                .then_some(player_login_msg),
+                        ));
+                        drop(new_players_guard);
+                        read_data.player_metrics.players_connected.inc();
+
+                        // Tell the client its request was successful.
+                        client.send(Ok(()))?;
+
+                        // APEX-T2.5.22: on a GOVERNED deployment the hash
+                        // vector carries NO bootstrap authority — the
+                        // summary's roots + requirements are the whole
+                        // contract, and the legacy vector is sent EMPTY
+                        // (a governed client never reads it; an empty
+                        // vector makes that structural, not behavioral).
+                        // Legacy sessions keep the exact old hash list.
+                        #[cfg(feature = "plugins")]
+                        let active_plugins = if read_data.plugin_deployment.summary().is_some() {
+                            Vec::new()
+                        } else {
+                            read_data.plugin_mgr.plugin_list()
+                        };
+                        #[cfg(not(feature = "plugins"))]
+                        let active_plugins = Vec::default();
+
+                        let server_descriptions = &editable_settings.server_description;
+                        let description = ServerDescription {
+                            motd: server_descriptions
+                                .get(client.locale.as_deref())
+                                .map(|d| d.motd.clone())
+                                .unwrap_or_default(),
+                            rules: server_descriptions
+                                .get_rules(client.locale.as_deref())
+                                .map(str::to_string),
+                        };
+
+                        // Send client all the tracked components currently attached to its entity
+                        // as well as synced resources (currently only `TimeOfDay`)
+                        debug!("Starting initial sync with client.");
+                        client.send(ServerInit::GameSync {
+                            server_boot_id: *read_data.server_boot_id,
+                            // Send client their entity
+                            entity_package: read_data
+                                .trackers
+                                .create_entity_package_with_uid(entity, *uid, None, None, None),
+                            role: admin.map(|admin| admin.role.into()),
+                            time_of_day: *read_data.time_of_day,
+                            max_group_size: read_data.settings.max_player_group_size,
+                            client_timeout: read_data.settings.client_timeout,
+                            world_map: (*read_data.map).clone(),
+                            recipe_book: (*read_data.recipe_book).clone(),
+                            component_recipe_book: default_component_recipe_book().cloned(),
+                            material_stats: (*read_data.material_stats).clone(),
+                            ability_map: (*read_data.ability_map).clone(),
+                            server_constants: ServerConstants {
+                                day_cycle_coefficient: read_data.settings.day_cycle_coefficient(),
+                            },
+                            description,
+                            active_plugins,
+                            // APEX-T2.5.11: Some only when a strict
+                            // deployment compiled at startup (policy-file
+                            // opt-in); Legacy state = None = today's path.
+                            #[cfg(feature = "plugins")]
+                            plugin_deployment: read_data.plugin_deployment.summary(),
+                            #[cfg(not(feature = "plugins"))]
+                            plugin_deployment: None,
+                        })?;
+                        debug!("Done initial sync with client.");
+
+                        // Send initial player list.
+                        // DET-NET-015: build Init through the canonical helper so
+                        // the wire bytes are Uid-sorted (player_list is a HashMap
+                        // built in ECS join order) and the client initializes
+                        // deterministically. The ordering contract is unit-tested
+                        // in common_net (det_net_015_tests).
+                        client.send(ServerGeneral::PlayerListUpdate(
+                            PlayerListUpdate::init_canonical(
+                                player_list.iter().map(|(uid, info)| (*uid, info.clone())),
+                            ),
+                        ))?;
+
+                        Ok(())
+                    }() {
+                        trace!(?e, "failed to process register");
+>>>>>>> C:/Users/q/AppData/Local/Temp/server_src_sys_msg_register.rs.theirs
                     }
                 },
             );
