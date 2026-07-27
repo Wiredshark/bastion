@@ -4,3 +4,4 @@
 
 pub mod order;
 pub mod outbox;
+pub(crate) mod send_inventory;
