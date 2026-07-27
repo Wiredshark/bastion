@@ -1233,6 +1233,11 @@ impl Client {
             // harness independent of this client ever sending it (spec
             // section 5's own scope note).
             session_request: SessionRequestV1::New,
+            // APEX-T3.3.05: no V1 sender exists yet (lands in T3.3.07) --
+            // always Legacy for now, matching every real server this
+            // client talks to advertising Legacy in its supported set
+            // (row status doc requirement 2: golden path unaffected).
+            requested_semantic_protocol: common_net::msg::envelope::SemanticProtocolIdV1::Legacy,
             token_or_username,
             locale,
         })?;
@@ -1258,6 +1263,8 @@ impl Client {
                 Err(Error::SessionClientTypeMismatch { session, requested })
             },
             Err(RegisterError::OlderAttemptSuperseded) => Err(Error::OlderAttemptSuperseded),
+            Err(RegisterError::IncompatibleSemanticProtocol) => Err(Error::IncompatibleSemanticProtocol),
+            Err(RegisterError::SemanticProtocolModeSwitch) => Err(Error::SemanticProtocolModeSwitch),
             Ok(admission) => {
                 debug!("Client registered successfully.");
                 Ok(admission.binding())

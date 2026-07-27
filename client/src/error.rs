@@ -75,6 +75,10 @@ pub enum Error {
     /// (e.g. a rapid double-click reconnect) -- not a credential/capacity
     /// failure, just a stale loser. The caller should typically retry.
     OlderAttemptSuperseded,
+    /// APEX-T3.3.05 (`INCOMPATIBLE-SEMANTIC-PROTOCOL`).
+    IncompatibleSemanticProtocol,
+    /// APEX-T3.3.05 (`SEMANTIC-PROTOCOL-MODE-SWITCH`).
+    SemanticProtocolModeSwitch,
 }
 
 impl From<SpecsError> for Error {
@@ -159,6 +163,7 @@ mod tests {
         SessionBindingV1 {
             session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([seed; 16])).unwrap(),
             epoch: ConnectionEpoch::new(epoch).unwrap(),
+            selected_semantic_protocol: common_net::msg::envelope::SemanticProtocolIdV1::Legacy,
         }
     }
 

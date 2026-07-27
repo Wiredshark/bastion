@@ -27,7 +27,7 @@ use std::num::NonZeroU64;
 
 use bincode::config::legacy;
 use bincode::serde::{decode_from_slice, encode_to_vec};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use sha2::{Digest as _, Sha256};
 
@@ -145,6 +145,43 @@ impl SemanticPayloadEncodingV1 {
     pub const ALL: [SemanticPayloadEncodingV1; 1] = [Self::Bincode2LegacySerde];
 
     pub fn try_from_u8(raw: u8) -> Option<Self> { Self::ALL.into_iter().find(|e| e.as_u8() == raw) }
+}
+
+/// Packet section 5.9/`T3.3.05`: the narrow post-auth wire mode one
+/// attachment selects at registration. `T4.1`'s `BootstrapManifestV1`
+/// later subsumes this into a fuller negotiation; until then this is
+/// deliberately small -- exactly the two modes that exist.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum SemanticProtocolIdV1 {
+    Legacy = 1,
+    NetEnvelopeV1 = 2,
+}
+
+impl SemanticProtocolIdV1 {
+    pub const fn as_u8(self) -> u8 { self as u8 }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Legacy => "bastion/net-envelope/semantic-protocol/legacy/v1",
+            Self::NetEnvelopeV1 => "bastion/net-envelope/semantic-protocol/net-envelope-v1/v1",
+        }
+    }
+
+    pub const ALL: [SemanticProtocolIdV1; 2] = [Self::Legacy, Self::NetEnvelopeV1];
+
+    pub fn try_from_u8(raw: u8) -> Option<Self> { Self::ALL.into_iter().find(|p| p.as_u8() == raw) }
+}
+
+/// The server's currently-fixed advertised set, always sorted ascending
+/// by tag. `T3.3.05` builds the negotiation mechanism, not a
+/// certified-mode config surface (packet section 5.9: "`T4.1` later
+/// subsumes this narrow negotiation") -- both modes are always
+/// advertised today, so `IncompatibleSemanticProtocol` is a real,
+/// tested, but currently-dormant rejection (no live client requests
+/// anything but `Legacy` until `T3.3.07`).
+pub fn server_supported_semantic_protocols_v1() -> Vec<SemanticProtocolIdV1> {
+    vec![SemanticProtocolIdV1::Legacy, SemanticProtocolIdV1::NetEnvelopeV1]
 }
 
 /// Dormant per packet sections 5.7/7.2: `APEX-T3.4` fully owns
@@ -799,4 +836,33 @@ mod tests {
     /// `cargo check` compiling the impl's `SemanticStreamIdV1::Bootstrap`
     /// body is the actual proof here, not a runtime assertion.
     const _: fn(&ServerInit) -> SemanticStreamIdV1 = <ServerInit as SemanticRouteV1>::semantic_stream;
+
+    // T3.3.05: SemanticProtocolIdV1 tag registry + the server's fixed
+    // advertised set.
+
+    #[test]
+    fn semantic_protocol_tags_are_unique_and_explicit() {
+        let ids: HashSet<u8> = SemanticProtocolIdV1::ALL.iter().map(|p| p.as_u8()).collect();
+        assert_eq!(ids.len(), SemanticProtocolIdV1::ALL.len());
+        assert_eq!(SemanticProtocolIdV1::Legacy.as_u8(), 1);
+        assert_eq!(SemanticProtocolIdV1::NetEnvelopeV1.as_u8(), 2);
+        for p in SemanticProtocolIdV1::ALL {
+            assert_eq!(SemanticProtocolIdV1::try_from_u8(p.as_u8()), Some(p));
+        }
+        assert_eq!(SemanticProtocolIdV1::try_from_u8(0), None);
+        assert_eq!(SemanticProtocolIdV1::try_from_u8(3), None);
+    }
+
+    #[test]
+    fn supported_protocols_are_sorted_and_include_legacy() {
+        let supported = server_supported_semantic_protocols_v1();
+        let mut sorted = supported.clone();
+        sorted.sort();
+        assert_eq!(supported, sorted, "advertised set must already be sorted ascending");
+        // Row status doc requirement 2 (before/after wire-compat delta):
+        // Legacy must stay advertised until a real certified-mode config
+        // surface exists (T4.1), or the live client (which always
+        // requests Legacy today) would start failing to register.
+        assert!(supported.contains(&SemanticProtocolIdV1::Legacy));
+    }
 }

@@ -61,6 +61,11 @@ pub struct ServerInfo {
     pub git_hash: u32,
     pub git_timestamp: i64,
     pub auth_provider: Option<String>,
+    /// `APEX-T3.3.05`: the semantic-protocol modes this server currently
+    /// accepts, always sorted ascending by tag
+    /// (`server_supported_semantic_protocols_v1()`). A client echoes one
+    /// of these back in `ClientRegister.requested_semantic_protocol`.
+    pub supported_semantic_protocols: Vec<crate::msg::envelope::SemanticProtocolIdV1>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -107,6 +112,13 @@ pub enum ServerInit {
 pub struct SessionBindingV1 {
     pub session_id: SessionId,
     pub epoch: ConnectionEpoch,
+    /// `APEX-T3.3.05`: the semantic protocol this session negotiated at
+    /// admission, fixed for the session's lifetime (a `Resume` requesting
+    /// a different one is rejected -- `RegisterError::SemanticProtocolModeSwitch`).
+    /// Reuses `T3.2`'s existing `RegisterAnswer`/`GameSync` binding-echo
+    /// equality check for free -- no new equality code was written for
+    /// this field.
+    pub selected_semantic_protocol: crate::msg::envelope::SemanticProtocolIdV1,
 }
 
 /// APEX-T3.2: `RegisterAnswer`'s success payload -- distinguishes a
@@ -477,6 +489,18 @@ pub enum RegisterError {
     /// one); this is two intents racing within the *same* phase, neither
     /// of which had committed yet when the race was resolved.
     OlderAttemptSuperseded,
+    /// `APEX-T3.3.05`: `ClientRegister.requested_semantic_protocol` is not
+    /// in this server's currently-advertised set. Currently dormant in
+    /// live traffic (this tree's client always requests `Legacy`, this
+    /// tree's server always advertises both `Legacy` and
+    /// `NetEnvelopeV1`) -- real and tested, not reachable by the live
+    /// client/server pair today.
+    IncompatibleSemanticProtocol,
+    /// `APEX-T3.3.05`: a `Resume` requested a different
+    /// `SemanticProtocolIdV1` than the session was originally negotiated
+    /// with. Packet section 5.9: "one attachment may never mix modes" --
+    /// the semantic-protocol twin of `SessionClientTypeMismatch` above.
+    SemanticProtocolModeSwitch,
 }
 
 impl ServerMsg {
@@ -717,6 +741,7 @@ mod apex_t3_1_wire_tests {
             git_hash: 0,
             git_timestamp: 0,
             auth_provider: None,
+            supported_semantic_protocols: crate::msg::server_supported_semantic_protocols_v1(),
         };
         let bytes = bincode::serde::encode_to_vec(&info, bincode::config::legacy()).unwrap();
         let (decoded, _): (ServerInfo, usize) = bincode::serde::decode_from_slice(&bytes, bincode::config::legacy()).unwrap();

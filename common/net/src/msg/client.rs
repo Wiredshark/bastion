@@ -91,6 +91,12 @@ pub struct ClientRegister {
     /// this client process actually holds in memory (never across a
     /// restart -- spec section 5, canaries SES-122/123).
     pub session_request: SessionRequestV1,
+    /// `APEX-T3.3.05`: the semantic-protocol mode this client requests,
+    /// echoed from one of `ServerInfo.supported_semantic_protocols`. This
+    /// tree's live client always sends `Legacy` (no V1 sender exists
+    /// until `T3.3.07`) -- see `readme/apex/APEX-T3.3.05-ROW-STATUS-v1.md`
+    /// requirement 2 for the full before/after wire-compat argument.
+    pub requested_semantic_protocol: crate::msg::envelope::SemanticProtocolIdV1,
     pub token_or_username: String,
     pub locale: Option<String>,
 }
@@ -312,6 +318,7 @@ mod apex_t3_1_wire_tests {
         let msg = ClientRegister {
             expected_server_boot_id: boot_id,
             session_request: SessionRequestV1::New,
+            requested_semantic_protocol: crate::msg::envelope::SemanticProtocolIdV1::Legacy,
             token_or_username: "player".into(),
             locale: Some("en".into()),
         };
@@ -333,6 +340,7 @@ mod apex_t3_1_wire_tests {
         let msg = ClientRegister {
             expected_server_boot_id: boot_id,
             session_request: SessionRequestV1::Resume { locator, expected_epoch },
+            requested_semantic_protocol: crate::msg::envelope::SemanticProtocolIdV1::Legacy,
             token_or_username: "player".into(),
             locale: None,
         };

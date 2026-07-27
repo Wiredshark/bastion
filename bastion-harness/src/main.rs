@@ -13537,6 +13537,7 @@ fn t3_1_17_scenario(args: &Args) -> ExitCode {
     let stale_register = ClientRegister {
         expected_server_boot_id: boot_id_a,
         session_request: common_net::msg::client::SessionRequestV1::New,
+        requested_semantic_protocol: common_net::msg::envelope::SemanticProtocolIdV1::Legacy,
         token_or_username: "t3117-stale-player".into(),
         locale: None,
     };

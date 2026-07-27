@@ -34,11 +34,61 @@ pub fn check_register_boot_scope(
         Ok(())
     }
 }
+
+/// `APEX-T3.3.05`: the phase-1 "requested protocol is server-supported"
+/// check (row status doc requirement 1's first insertion point). Extracted
+/// to a free function for the same reason `check_register_boot_scope`
+/// above is -- directly unit-testable without a full ECS harness, and a
+/// single production code path instead of an inline comparison a test
+/// would have to re-derive.
+pub fn check_semantic_protocol_supported(
+    requested: common_net::msg::envelope::SemanticProtocolIdV1,
+    supported: &[common_net::msg::envelope::SemanticProtocolIdV1],
+) -> Result<(), RegisterError> {
+    if supported.contains(&requested) {
+        Ok(())
+    } else {
+        Err(RegisterError::IncompatibleSemanticProtocol)
+    }
+}
+
+#[cfg(test)]
+mod semantic_protocol_negotiation_tests {
+    use common_net::msg::envelope::SemanticProtocolIdV1;
+    use common_net::msg::server_supported_semantic_protocols_v1;
+
+    use super::check_semantic_protocol_supported;
+    use common_net::msg::RegisterError;
+
+    /// Packet section 5.9's own test list: "Legacy ordinary" and "V1".
+    #[test]
+    fn requested_protocol_in_supported_set_is_accepted() {
+        let supported = server_supported_semantic_protocols_v1();
+        assert!(check_semantic_protocol_supported(SemanticProtocolIdV1::Legacy, &supported).is_ok());
+        assert!(check_semantic_protocol_supported(SemanticProtocolIdV1::NetEnvelopeV1, &supported).is_ok());
+    }
+
+    /// Packet section 5.9's own test list: "no-overlap".
+    #[test]
+    fn requested_protocol_outside_supported_set_is_rejected() {
+        // A server operator restricting to certified-only (NetEnvelopeV1
+        // alone) is exactly the "certified mode requires V1" policy the
+        // packet describes -- expressed here as a supported-set value,
+        // not a separate config toggle (see row status doc's note that
+        // T4.1 owns the real config surface).
+        let certified_only = vec![SemanticProtocolIdV1::NetEnvelopeV1];
+        assert_eq!(
+            check_semantic_protocol_supported(SemanticProtocolIdV1::Legacy, &certified_only),
+            Err(RegisterError::IncompatibleSemanticProtocol)
+        );
+        assert!(check_semantic_protocol_supported(SemanticProtocolIdV1::NetEnvelopeV1, &certified_only).is_ok());
+    }
+}
 use common_ecs::{Job, Origin, Phase, System};
 use common_net::msg::{
     CharacterInfo, ClientRegister, DisconnectReason, PlayerInfo, PlayerListUpdate,
     RegisterError, ServerGeneral, ServerInit, SessionAdmissionV1, WorldMapMsg,
-    server::ServerDescription,
+    server::ServerDescription, server_supported_semantic_protocols_v1,
 };
 use hashbrown::HashMap;
 use rayon::prelude::*;
@@ -183,11 +233,40 @@ impl<'a> System<'a> for Sys {
                 let current = *read_data.server_boot_id;
                 if let Err(err) = check_register_boot_scope(msg.expected_server_boot_id, current) {
                     debug!("Rejecting ClientRegister: server boot ID mismatch (client observed a prior server process)");
-                    let pending = crate::login_provider::PendingLogin::new_failure(err, msg.session_request, attempt_seq);
+                    let pending = crate::login_provider::PendingLogin::new_failure(
+                        err,
+                        msg.session_request,
+                        attempt_seq,
+                        msg.requested_semantic_protocol,
+                    );
                     let _ = pending_logins.insert(entity, pending);
                     return Ok(());
                 }
-                let pending = read_data.login_provider.verify(&msg.token_or_username, msg.session_request, attempt_seq);
+                // APEX-T3.3.05: sequential-phase-confinement requirement 1
+                // (row status doc, readme/apex/APEX-T3.3.05-ROW-STATUS-v1.md)
+                // -- this check reads only the just-drained message against
+                // a fixed constant set, no shared mutable state, placed as
+                // a sibling to the boot-scope check above and before
+                // `login_provider.verify` is ever invoked, same as it is.
+                if let Err(err) =
+                    check_semantic_protocol_supported(msg.requested_semantic_protocol, &server_supported_semantic_protocols_v1())
+                {
+                    debug!(?msg.requested_semantic_protocol, "Rejecting ClientRegister: unsupported semantic protocol");
+                    let pending = crate::login_provider::PendingLogin::new_failure(
+                        err,
+                        msg.session_request,
+                        attempt_seq,
+                        msg.requested_semantic_protocol,
+                    );
+                    let _ = pending_logins.insert(entity, pending);
+                    return Ok(());
+                }
+                let pending = read_data.login_provider.verify(
+                    &msg.token_or_username,
+                    msg.session_request,
+                    attempt_seq,
+                    msg.requested_semantic_protocol,
+                );
                 locale = msg.locale;
                 let _ = pending_logins.insert(entity, pending);
                 Ok(())
@@ -282,6 +361,11 @@ impl<'a> System<'a> for Sys {
                                     attempt_seq: pending.attempt_seq,
                                     request: pending.session_request,
                                     capacity_exempt: admin.is_some(),
+                                    // APEX-T3.3.05: already validated against
+                                    // the server's advertised set in phase 1
+                                    // above; this parallel phase only carries
+                                    // it forward, deciding nothing new with it.
+                                    requested_semantic_protocol: pending.requested_semantic_protocol,
                                 },
                                 player,
                                 admin_role: admin.map(|a| a.role.into()),
