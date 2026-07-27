@@ -730,12 +730,17 @@ impl Client {
                     _ = ping_interval.tick() => ping_stream.send(PingMsg::Ping)?,
                 }
             };
+            // The causality half is discarded here -- this `receive_state`
+            // is a throwaway, local-to-bootstrap value (the real,
+            // persistent one is built later once `Client` exists), so
+            // committing a snapshot watermark to it would be pointless.
             Self::validate_semantic_frame_v1::<ServerInit>(
                 &raw,
                 &receive_state,
                 common_net::msg::envelope::SemanticStreamIdV1::Bootstrap,
             )
             .map_err(|reject| Error::Other(format!("semantic V1 GameSync envelope rejected: {reject:?}")))?
+            .0
         } else {
             loop {
                 tokio::select! {
@@ -1437,17 +1442,26 @@ impl Client {
     /// their own surrounding context); only the direct unit tests below
     /// needed an explicit turbofish once inference had nothing left to
     /// pin the type from.
+    ///
+    /// `T3.3.17`: also returns the frame's own `SemanticCausalityV1`
+    /// alongside the decoded payload -- this function stays pure (takes
+    /// `receive_state` by `&`, never commits `highest_snapshot`, same
+    /// "cursor does not advance on validation failure" discipline the
+    /// sequence check already follows), so the caller needs the
+    /// causality back to call `SemanticReceiveStateV1::commit_snapshot`
+    /// itself, strictly after `advance_expected` succeeds (mirrors
+    /// exactly how the caller already commits the sequence cursor).
     fn validate_semantic_frame_v1<T>(
         raw: &[u8],
         receive_state: &common_net::msg::envelope::SemanticReceiveStateV1,
         expected_physical_stream: common_net::msg::envelope::SemanticStreamIdV1,
-    ) -> Result<T, common_net::msg::envelope::SemanticEnvelopeRejectV1>
+    ) -> Result<(T, common_net::msg::envelope::SemanticCausalityV1), common_net::msg::envelope::SemanticEnvelopeRejectV1>
     where
         T: common_net::msg::envelope::SemanticRouteV1 + serde::de::DeserializeOwned,
     {
         use common_net::msg::envelope::{
             NetEnvelopeHeaderV1, SemanticDirectionV1, SemanticEnvelopeRejectV1, SemanticWireFrameV1, decode_payload_exact_v1,
-            net_envelope_profile_root_v1, payload_digest_v1,
+            net_envelope_profile_root_v1, payload_digest_v1, production_causality_profile_v1, validate_causality_against_profile_v1,
         };
 
         let limits = common::apex::manifest::ManifestDecodeLimitsV1 {
@@ -1506,13 +1520,25 @@ impl Client {
         if header.command_id.is_some() {
             return Err(SemanticEnvelopeRejectV1::CommandIdUnsupported);
         }
+        // `T3.3.17`: structural profile check (declared domain,
+        // schema's own requirement) first, THEN the session-local
+        // monotonicity check -- a frame naming an undeclared domain is
+        // rejected before this session's own history is even
+        // consulted. Both unreachable on real traffic today (production
+        // profile: no declared domains, every schema optional).
+        validate_causality_against_profile_v1(&header.causality, header.payload_schema, &production_causality_profile_v1())?;
+        if let Some(snapshot) = &header.causality.snapshot {
+            if !receive_state.snapshot_is_fresh(snapshot) {
+                return Err(SemanticEnvelopeRejectV1::StaleSnapshot);
+            }
+        }
 
         let decoded: T = decode_payload_exact_v1(&frame.payload_bytes)?;
         if decoded.semantic_stream() != header.semantic_stream || decoded.payload_schema() != header.payload_schema {
             return Err(SemanticEnvelopeRejectV1::StreamRouteMismatch);
         }
 
-        Ok(decoded)
+        Ok((decoded, header.causality))
     }
 
     fn send_msg_err<S>(&mut self, msg: S) -> Result<(), network::StreamError>
@@ -3759,12 +3785,20 @@ impl Client {
                 continue;
             };
             match Self::validate_semantic_frame_v1(&raw, state, semantic_stream) {
-                Ok(decoded) => {
-                    let advance_result =
-                        receive_state.as_mut().expect("checked Some above").advance_expected(semantic_stream);
+                Ok((decoded, causality)) => {
+                    let receive_state_mut = receive_state.as_mut().expect("checked Some above");
+                    let advance_result = receive_state_mut.advance_expected(semantic_stream);
                     if advance_result.is_err() {
                         warn!("semantic receive sequence exhausted; dropping message");
                         continue;
+                    }
+                    // `T3.3.17`: commit the snapshot watermark strictly
+                    // AFTER the sequence cursor advance succeeds, same
+                    // "cursor does not advance on validation failure; it
+                    // advances before handler call" ordering already
+                    // used for sequence.
+                    if let Some(snapshot) = causality.snapshot {
+                        receive_state_mut.commit_snapshot(snapshot);
                     }
                     out.push(decoded);
                 },
@@ -4396,7 +4430,7 @@ mod tests {
         let state = recv_state();
         for msg in representative_messages() {
             let raw = recv_frame_bytes(recv_binding(), 1, &msg);
-            let decoded = Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap();
+            let (decoded, _causality) = Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap();
             assert_eq!(decoded.semantic_stream(), msg.semantic_stream());
         }
     }

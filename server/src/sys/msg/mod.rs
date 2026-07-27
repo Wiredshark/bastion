@@ -15,8 +15,9 @@ use common_ecs::{System, dispatch};
 use common_net::msg::{
     ClientGeneral,
     envelope::{
-        NetEnvelopeHeaderV1, SemanticDirectionV1, SemanticEnvelopeRejectV1, SemanticReceiveStateV1, SemanticRouteV1,
-        SemanticStreamIdV1, SemanticWireFrameV1, decode_payload_exact_v1, net_envelope_profile_root_v1, payload_digest_v1,
+        NetEnvelopeHeaderV1, SemanticCausalityV1, SemanticDirectionV1, SemanticEnvelopeRejectV1, SemanticReceiveStateV1,
+        SemanticRouteV1, SemanticStreamIdV1, SemanticWireFrameV1, decode_payload_exact_v1, net_envelope_profile_root_v1,
+        payload_digest_v1, production_causality_profile_v1, validate_causality_against_profile_v1,
     },
 };
 use serde::de::DeserializeOwned;
@@ -86,7 +87,7 @@ pub(crate) fn validate_semantic_frame_v1(
     raw: &[u8],
     receive_state: &SemanticReceiveStateV1,
     expected_physical_stream: SemanticStreamIdV1,
-) -> Result<ClientGeneral, SemanticEnvelopeRejectV1> {
+) -> Result<(ClientGeneral, SemanticCausalityV1), SemanticEnvelopeRejectV1> {
     let frame: SemanticWireFrameV1 = common::apex::manifest::decode_manifest_v1(raw, &semantic_manifest_limits())
         .map_err(|_| SemanticEnvelopeRejectV1::EnvelopeDecodeFailure)?;
     let header: &NetEnvelopeHeaderV1 = &frame.header;
@@ -143,6 +144,17 @@ pub(crate) fn validate_semantic_frame_v1(
     if header.command_id.is_some() {
         return Err(SemanticEnvelopeRejectV1::CommandIdUnsupported);
     }
+    // `T3.3.17`: structural profile check (declared domain, schema's
+    // own requirement) first, THEN the session-local monotonicity
+    // check -- same ordering as the client-side counterpart. Both
+    // unreachable on real traffic today (production profile: no
+    // declared domains, every schema optional).
+    validate_causality_against_profile_v1(&header.causality, header.payload_schema, &production_causality_profile_v1())?;
+    if let Some(snapshot) = &header.causality.snapshot {
+        if !receive_state.snapshot_is_fresh(snapshot) {
+            return Err(SemanticEnvelopeRejectV1::StaleSnapshot);
+        }
+    }
 
     let decoded: ClientGeneral = decode_payload_exact_v1(&frame.payload_bytes)?;
     // "Verify shared route": the DECODED payload's own SemanticRouteV1
@@ -153,7 +165,7 @@ pub(crate) fn validate_semantic_frame_v1(
         return Err(SemanticEnvelopeRejectV1::StreamRouteMismatch);
     }
 
-    Ok(decoded)
+    Ok((decoded, header.causality))
 }
 
 /// `APEX-T3.3.08`: "one reusable pre-mutation gate" -- validates and
@@ -194,14 +206,20 @@ where
             continue;
         };
         match validate_semantic_frame_v1(&raw, receive_state, expected_semantic_stream) {
-            Ok(decoded) => {
-                let advance_result = client
+            Ok((decoded, causality)) => {
+                let receive_state_mut = client
                     .semantic_receive_state_mut()
-                    .expect("checked Some above; nothing else can clear this state mid-loop")
-                    .advance_expected(expected_semantic_stream);
+                    .expect("checked Some above; nothing else can clear this state mid-loop");
+                let advance_result = receive_state_mut.advance_expected(expected_semantic_stream);
                 if advance_result.is_err() {
                     warn!("semantic receive sequence exhausted; dropping message");
                     continue;
+                }
+                // `T3.3.17`: commit strictly AFTER the sequence cursor
+                // advance succeeds, same ordering as the client-side
+                // counterpart.
+                if let Some(snapshot) = causality.snapshot {
+                    receive_state_mut.commit_snapshot(snapshot);
                 }
                 if let Err(e) = handler(client, decoded) {
                     break Err(e);
@@ -297,7 +315,7 @@ mod semantic_ingress_tests {
     fn valid_frame_is_accepted_and_decodes_to_the_original_message() {
         let state = receive_state();
         let raw = valid_frame_bytes(binding(), 1);
-        let decoded = validate_semantic_frame_v1(&raw, &state, SemanticStreamIdV1::General).unwrap();
+        let (decoded, _causality) = validate_semantic_frame_v1(&raw, &state, SemanticStreamIdV1::General).unwrap();
         assert!(matches!(decoded, ClientGeneral::Terminate));
     }
 

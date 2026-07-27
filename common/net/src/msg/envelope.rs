@@ -542,6 +542,38 @@ impl SemanticReceiveStateV1 {
         Ok(())
     }
 
+    /// `T3.3.17`: packet's own "lower same-stream/domain snapshots
+    /// reject" -- local monotonic non-decreasing constraint per domain
+    /// (`highest_snapshot` is keyed by domain only, shared across every
+    /// semantic stream this attachment carries -- T3.3.01's own doc
+    /// calls that shape frozen, so this uses it exactly as declared
+    /// rather than adding stream-scoping to the key). Equal is accepted
+    /// (non-decreasing, not strictly-increasing -- the packet says
+    /// "lower ... reject", not "equal ... reject"). A domain seen for
+    /// the first time always passes -- nothing to compare against yet.
+    /// Pure: mirrors `next_expected_for` (check) being separate from
+    /// `advance_expected`/`commit_snapshot` (commit) -- "cursor does
+    /// not advance on validation failure."
+    pub fn snapshot_is_fresh(&self, snapshot: &SemanticSnapshotRefV1) -> bool {
+        self.highest_snapshot.get(&snapshot.domain).is_none_or(|&highest| snapshot.epoch >= highest)
+    }
+
+    /// `T3.3.17`: commits acceptance of a snapshot ref -- called only
+    /// AFTER `snapshot_is_fresh` has already passed, same "advance only
+    /// after validation" discipline `advance_expected` follows for
+    /// sequence. Monotonic non-decreasing: only ever raises a domain's
+    /// watermark (an accepted EQUAL epoch is a correct no-op here).
+    pub fn commit_snapshot(&mut self, snapshot: SemanticSnapshotRefV1) {
+        self.highest_snapshot
+            .entry(snapshot.domain)
+            .and_modify(|highest| {
+                if snapshot.epoch > *highest {
+                    *highest = snapshot.epoch;
+                }
+            })
+            .or_insert(snapshot.epoch);
+    }
+
     /// Test-only twin of `SemanticSendStateV1::with_cursors_for_test`.
     #[cfg(test)]
     fn with_cursors_for_test(binding: ActiveSessionBindingV1, next_expected: [NonZeroU64; 5]) -> Self {
@@ -646,6 +678,19 @@ pub enum SemanticEnvelopeRejectV1 {
     /// arbitrary payloads from many different producers, so a genuine
     /// per-intent reject path is warranted here where it wasn't there).
     EncodeFailure,
+    /// `T3.3.17`: `causality.snapshot`'s domain is not in the active
+    /// `NetEnvelopeCausalityProfileV1`'s declared set. Production
+    /// declares no domains ("leave snapshot absent until a producer has
+    /// defined epochs"), so this is unreachable on real traffic today --
+    /// only a test profile with a non-empty declared set exercises it.
+    UnknownDomain,
+    /// `T3.3.17`: the frame's causality does not satisfy its payload
+    /// schema's declared requirement in the active
+    /// `NetEnvelopeCausalityProfileV1` (e.g. a schema declared
+    /// tick-required arrived tickless). Production declares every
+    /// schema fully optional, so this is unreachable on real traffic
+    /// today -- only a test profile with a required field exercises it.
+    CausalityProfileMismatch,
 }
 
 /// Packet section 7.10's own outcome classification for one evidence
@@ -839,6 +884,105 @@ impl SemanticRouteV1 for ServerInit {
     fn payload_schema(&self) -> SemanticPayloadSchemaV1 { SemanticPayloadSchemaV1::ServerInit }
 }
 
+/// `T3.3.17`: one payload schema's declared causality requirement --
+/// whether a receiver must reject a frame of this schema for lacking
+/// `producer_tick`/`snapshot`. Part of [`NetEnvelopeCausalityProfileV1`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CausalityRequirementV1 {
+    pub payload_schema: SemanticPayloadSchemaV1,
+    pub producer_tick_required: bool,
+    pub snapshot_required: bool,
+}
+
+/// `T3.3.17`: "snapshot-domain profiles" -- an EXTENSION of the
+/// existing `NET_ENVELOPE_PROFILE_V1` vocabulary (not new `T3.4`
+/// semantics; `T3.4` still fully owns snapshot PRODUCTION/watermark
+/// semantics under its own later profile root): the declared set of
+/// [`SnapshotDomainId`]s a receiver should accept in `causality.snapshot`,
+/// and each payload schema's causality requirement.
+/// [`production_causality_profile_v1`] is the ONE frozen instance the
+/// real live path ever uses (empty domain set, every schema fully
+/// optional -- both `UnknownDomain` and `CausalityProfileMismatch` are
+/// therefore unreachable on real traffic today, matching this row's own
+/// "leave snapshot absent until a producer has defined epochs"); tests
+/// construct their own instances directly to exercise both rejects and
+/// the profile-immutability guard without touching the frozen
+/// production values.
+#[derive(Clone, Debug)]
+pub struct NetEnvelopeCausalityProfileV1 {
+    pub declared_domains: Vec<SnapshotDomainId>,
+    pub requirements: Vec<CausalityRequirementV1>,
+}
+
+/// The frozen production instance -- encoded into
+/// `net_envelope_profile_table_bytes_v1` below (categories 5/6), so
+/// changing it without also changing the surrounding hashed table is
+/// impossible: the table IS the profile, and any edit to either
+/// category changes `net_envelope_profile_root_v1()`. Empty domain set,
+/// every schema optional -- the mechanism is real and tested, but
+/// nothing on real traffic can trip either of `T3.3.17`'s new rejects
+/// today.
+pub fn production_causality_profile_v1() -> NetEnvelopeCausalityProfileV1 {
+    NetEnvelopeCausalityProfileV1 {
+        declared_domains: Vec::new(),
+        requirements: SemanticPayloadSchemaV1::ALL
+            .map(|payload_schema| CausalityRequirementV1 { payload_schema, producer_tick_required: false, snapshot_required: false })
+            .to_vec(),
+    }
+}
+
+/// `T3.3.17`: checks one frame's causality against the active profile's
+/// declared vocabulary/requirements -- pure, and independent of any
+/// session-local monotonicity state (that's
+/// `SemanticReceiveStateV1::snapshot_is_fresh`, a SEPARATE, session-
+/// scoped check the caller applies afterward, never conflated with this
+/// structural, profile-level one). Order: domain membership first (a
+/// frame naming an undeclared domain is a profile violation, checked
+/// before anything session-local could even apply), then the schema's
+/// own requirement.
+pub fn validate_causality_against_profile_v1(
+    causality: &SemanticCausalityV1,
+    payload_schema: SemanticPayloadSchemaV1,
+    profile: &NetEnvelopeCausalityProfileV1,
+) -> Result<(), SemanticEnvelopeRejectV1> {
+    if let Some(snapshot) = &causality.snapshot {
+        if !profile.declared_domains.contains(&snapshot.domain) {
+            return Err(SemanticEnvelopeRejectV1::UnknownDomain);
+        }
+    }
+    if let Some(requirement) = profile.requirements.iter().find(|r| r.payload_schema == payload_schema) {
+        if requirement.producer_tick_required && causality.producer_tick.is_none() {
+            return Err(SemanticEnvelopeRejectV1::CausalityProfileMismatch);
+        }
+        if requirement.snapshot_required && causality.snapshot.is_none() {
+            return Err(SemanticEnvelopeRejectV1::CausalityProfileMismatch);
+        }
+    }
+    Ok(())
+}
+
+fn encode_domain_category(buf: &mut Vec<u8>, category: u8, domains: &[SnapshotDomainId]) {
+    buf.push(category);
+    buf.extend_from_slice(&(domains.len() as u16).to_be_bytes());
+    let mut sorted: Vec<u32> = domains.iter().map(|d| d.get()).collect();
+    sorted.sort_unstable();
+    for d in sorted {
+        buf.extend_from_slice(&d.to_be_bytes());
+    }
+}
+
+fn encode_causality_requirement_category(buf: &mut Vec<u8>, category: u8, requirements: &[CausalityRequirementV1]) {
+    buf.push(category);
+    buf.extend_from_slice(&(requirements.len() as u16).to_be_bytes());
+    let mut sorted = requirements.to_vec();
+    sorted.sort_by_key(|r| r.payload_schema.as_u16());
+    for r in sorted {
+        buf.extend_from_slice(&r.payload_schema.as_u16().to_be_bytes());
+        buf.push(r.producer_tick_required as u8);
+        buf.push(r.snapshot_required as u8);
+    }
+}
+
 fn encode_tag_category(buf: &mut Vec<u8>, category: u8, entries: &[(u16, &'static str)]) {
     buf.push(category);
     buf.extend_from_slice(&(entries.len() as u16).to_be_bytes());
@@ -862,6 +1006,13 @@ fn net_envelope_profile_table_bytes_v1() -> Vec<u8> {
     encode_tag_category(&mut buf, 2, &SemanticStreamIdV1::ALL.map(|s| (s.as_u8() as u16, s.label())));
     encode_tag_category(&mut buf, 3, &SemanticPayloadSchemaV1::ALL.map(|s| (s.as_u16(), s.label())));
     encode_tag_category(&mut buf, 4, &SemanticPayloadEncodingV1::ALL.map(|e| (e.as_u8() as u16, e.label())));
+    // `T3.3.17`: categories 5/6 are the "snapshot-domain profiles" --
+    // the production `NetEnvelopeCausalityProfileV1` is part of this
+    // same frozen table, so changing it (declaring a domain, requiring
+    // a field) is impossible without also changing `profile_root`.
+    let causality_profile = production_causality_profile_v1();
+    encode_domain_category(&mut buf, 5, &causality_profile.declared_domains);
+    encode_causality_requirement_category(&mut buf, 6, &causality_profile.requirements);
     buf
 }
 
@@ -999,7 +1150,7 @@ mod tests {
         assert_eq!(a.as_array(), b.as_array());
         assert_eq!(
             a.to_human_v1(),
-            "sha256:14a435666ca650d1e72e900196d3f6dbbdbf49da067fe87a47cfdc7a067a1cbb",
+            "sha256:f305a7c11e86a7173be40f67669e38deabaad6de5e6d66f376ac471bc0614488",
             "NET_ENVELOPE_PROFILE_V1 table changed -- recompute and update this golden vector deliberately, \
              it must never drift silently"
         );
@@ -1565,5 +1716,202 @@ mod tests {
     struct RawWrapper(ManifestValueV1);
     impl ManifestEncodeV1 for RawWrapper {
         fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> { Ok(self.0.clone()) }
+    }
+
+    /// `APEX-T3.3.17` tests (`cargo test -p veloren-common-net
+    /// envelope::snapshot_monotonicity`). Packet's own test list:
+    /// "Absent/equal/increasing/decreasing/unrelated domain;
+    /// cross-stream reordering remains nonclosure."
+    fn snapshot_state() -> SemanticReceiveStateV1 {
+        SemanticReceiveStateV1::new(ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut common::apex::identity::FixedRandomBytesSourceV1([31; 16])).unwrap(),
+            session_id: SessionId::generate(&mut common::apex::identity::FixedRandomBytesSourceV1([32; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        })
+    }
+
+    fn snap(domain: u32, epoch: u64) -> SemanticSnapshotRefV1 {
+        SemanticSnapshotRefV1 { domain: SnapshotDomainId::new(domain), epoch: SnapshotEpoch::new(epoch) }
+    }
+
+    #[test]
+    fn snapshot_monotonicity_absent_domain_always_fresh() {
+        // "Absent": no producer has ever populated `snapshot` for this
+        // domain (or at all) -- a domain seen for the first time has
+        // nothing to compare against, so it always passes.
+        let state = snapshot_state();
+        assert!(state.snapshot_is_fresh(&snap(1, 0)));
+        assert!(state.snapshot_is_fresh(&snap(1, u64::MAX)));
+    }
+
+    #[test]
+    fn snapshot_monotonicity_equal_is_fresh_not_stale() {
+        // "Equal": the packet says "lower ... reject", not "equal ...
+        // reject" -- non-decreasing, not strictly-increasing.
+        let mut state = snapshot_state();
+        state.commit_snapshot(snap(1, 5));
+        assert!(state.snapshot_is_fresh(&snap(1, 5)));
+    }
+
+    #[test]
+    fn snapshot_monotonicity_increasing_is_fresh() {
+        let mut state = snapshot_state();
+        state.commit_snapshot(snap(1, 5));
+        assert!(state.snapshot_is_fresh(&snap(1, 6)));
+    }
+
+    #[test]
+    fn snapshot_monotonicity_decreasing_is_stale() {
+        let mut state = snapshot_state();
+        state.commit_snapshot(snap(1, 5));
+        assert!(!state.snapshot_is_fresh(&snap(1, 4)));
+    }
+
+    #[test]
+    fn snapshot_monotonicity_unrelated_domain_is_independent() {
+        // A different domain's own watermark never affects this one --
+        // `highest_snapshot` is keyed by domain, so domain 2 seeing
+        // epoch 100 must not make domain 1's epoch 1 look stale.
+        let mut state = snapshot_state();
+        state.commit_snapshot(snap(2, 100));
+        assert!(state.snapshot_is_fresh(&snap(1, 1)));
+    }
+
+    #[test]
+    fn snapshot_monotonicity_commit_only_ever_raises_the_watermark() {
+        // An accepted (fresh) EQUAL epoch must not lower/reset anything
+        // -- `commit_snapshot` itself is a no-op below the current high.
+        let mut state = snapshot_state();
+        state.commit_snapshot(snap(1, 5));
+        state.commit_snapshot(snap(1, 5));
+        assert!(!state.snapshot_is_fresh(&snap(1, 4)), "watermark must still be 5, not reset to 5 again from a lower path");
+    }
+
+    /// "Cross-stream reordering remains nonclosure" (packet's own test
+    /// name): `highest_snapshot` is keyed by domain ONLY (T3.3.01's own
+    /// frozen shape), shared across every semantic stream on this one
+    /// attachment -- proven here by committing a domain's watermark
+    /// while `next_expected_for` on a COMPLETELY DIFFERENT stream never
+    /// moves. This is the negative half of this row's acceptance gate
+    /// ("T3.3 never reports cross-stream checkpoint completeness"):
+    /// accepting a snapshot says nothing about, and never advances, any
+    /// OTHER stream's own independent sequence cursor -- the two axes
+    /// (per-stream sequence, per-domain snapshot epoch) are provably
+    /// orthogonal, not a disguised cross-stream watermark.
+    #[test]
+    fn snapshot_monotonicity_cross_stream_reordering_remains_nonclosure() {
+        let mut state = snapshot_state();
+        let general_seq_before = state.next_expected_for(SemanticStreamIdV1::General);
+        let terrain_seq_before = state.next_expected_for(SemanticStreamIdV1::Terrain);
+
+        state.commit_snapshot(snap(1, 9));
+
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::General), general_seq_before);
+        assert_eq!(state.next_expected_for(SemanticStreamIdV1::Terrain), terrain_seq_before);
+        // The domain watermark itself IS shared across streams (by
+        // construction, per T3.3.01's frozen key shape) -- a lower
+        // epoch is stale regardless of which stream would carry it.
+        // Sharing the watermark is not the same as reporting
+        // completeness: nothing here claims stream General having seen
+        // domain 1 means Terrain has "caught up" to anything.
+        assert!(!state.snapshot_is_fresh(&snap(1, 8)));
+    }
+
+    /// `APEX-T3.3.17` "snapshot-domain profiles" tests -- Fable's
+    /// resolution of the row's own ambiguous terms: `UnknownDomain` and
+    /// `CausalityProfileMismatch` are unreachable on real traffic today
+    /// (production declares no domains, every schema optional), so
+    /// these exercise them via test-constructed profiles, never the
+    /// frozen production one.
+
+    #[test]
+    fn production_causality_profile_declares_no_domains_and_is_fully_optional() {
+        let profile = production_causality_profile_v1();
+        assert!(profile.declared_domains.is_empty());
+        assert_eq!(profile.requirements.len(), SemanticPayloadSchemaV1::ALL.len());
+        assert!(profile.requirements.iter().all(|r| !r.producer_tick_required && !r.snapshot_required));
+    }
+
+    #[test]
+    fn production_profile_never_rejects_any_causality_shape() {
+        let profile = production_causality_profile_v1();
+        for schema in SemanticPayloadSchemaV1::ALL {
+            assert!(validate_causality_against_profile_v1(&SemanticCausalityV1 { producer_tick: None, snapshot: None }, schema, &profile).is_ok());
+            assert!(
+                validate_causality_against_profile_v1(&SemanticCausalityV1 { producer_tick: Some(1), snapshot: None }, schema, &profile).is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_domain_rejects_via_test_profile_never_via_production() {
+        // Production: no declared domains, so ANY snapshot's domain is
+        // "unknown" -- but production is never asked to validate a
+        // `Some(snapshot)` on real traffic (no producer sets one).
+        let declared = NetEnvelopeCausalityProfileV1 { declared_domains: vec![SnapshotDomainId::new(1)], requirements: Vec::new() };
+        let causality = SemanticCausalityV1 { producer_tick: None, snapshot: Some(snap(2, 0)) };
+        assert_eq!(
+            validate_causality_against_profile_v1(&causality, SemanticPayloadSchemaV1::ServerGeneral, &declared).unwrap_err(),
+            SemanticEnvelopeRejectV1::UnknownDomain
+        );
+        // The SAME domain, declared -- accepted (structurally; session-
+        // local monotonicity is a separate check, not exercised here).
+        let causality_declared_domain = SemanticCausalityV1 { producer_tick: None, snapshot: Some(snap(1, 0)) };
+        assert!(validate_causality_against_profile_v1(&causality_declared_domain, SemanticPayloadSchemaV1::ServerGeneral, &declared).is_ok());
+    }
+
+    #[test]
+    fn causality_profile_mismatch_rejects_when_a_required_field_is_missing() {
+        let profile = NetEnvelopeCausalityProfileV1 {
+            declared_domains: Vec::new(),
+            requirements: vec![CausalityRequirementV1 {
+                payload_schema: SemanticPayloadSchemaV1::ServerGeneral,
+                producer_tick_required: true,
+                snapshot_required: false,
+            }],
+        };
+        let tickless = SemanticCausalityV1 { producer_tick: None, snapshot: None };
+        assert_eq!(
+            validate_causality_against_profile_v1(&tickless, SemanticPayloadSchemaV1::ServerGeneral, &profile).unwrap_err(),
+            SemanticEnvelopeRejectV1::CausalityProfileMismatch
+        );
+        let ticked = SemanticCausalityV1 { producer_tick: Some(7), snapshot: None };
+        assert!(validate_causality_against_profile_v1(&ticked, SemanticPayloadSchemaV1::ServerGeneral, &profile).is_ok());
+        // A DIFFERENT schema with no declared requirement is unaffected.
+        assert!(validate_causality_against_profile_v1(&tickless, SemanticPayloadSchemaV1::ClientGeneral, &profile).is_ok());
+    }
+
+    /// "Causality profile changes without envelope profile change"
+    /// (Fable's canary framing): proves the requirement-category
+    /// encoding is content-sensitive, mirroring `different_tag_
+    /// orderings_would_produce_different_roots`'s own encode-function-
+    /// level pattern exactly -- since `net_envelope_profile_table_
+    /// bytes_v1` calls this same encoder on the production profile, a
+    /// changed requirement is structurally incapable of leaving
+    /// `profile_root` unchanged.
+    #[test]
+    fn causality_profile_change_is_encoded_so_profile_root_cannot_silently_drift() {
+        let unrequired = [CausalityRequirementV1 {
+            payload_schema: SemanticPayloadSchemaV1::ClientGeneral,
+            producer_tick_required: false,
+            snapshot_required: false,
+        }];
+        let required = [CausalityRequirementV1 {
+            payload_schema: SemanticPayloadSchemaV1::ClientGeneral,
+            producer_tick_required: true,
+            snapshot_required: false,
+        }];
+        let mut buf_a = Vec::new();
+        encode_causality_requirement_category(&mut buf_a, 6, &unrequired);
+        let mut buf_b = Vec::new();
+        encode_causality_requirement_category(&mut buf_b, 6, &required);
+        assert_ne!(buf_a, buf_b);
+
+        // Same proof for the declared-domain category.
+        let mut buf_c = Vec::new();
+        encode_domain_category(&mut buf_c, 5, &[]);
+        let mut buf_d = Vec::new();
+        encode_domain_category(&mut buf_d, 5, &[SnapshotDomainId::new(1)]);
+        assert_ne!(buf_c, buf_d);
     }
 }
