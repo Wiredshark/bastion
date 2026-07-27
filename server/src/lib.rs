@@ -40,6 +40,7 @@ pub mod persistence;
 mod pet;
 pub mod presence;
 pub mod rtsim;
+pub mod semantic_net;
 pub mod session_registry;
 pub mod settings;
 pub mod state_ext;
@@ -440,6 +441,11 @@ impl Server {
         // SES-105) -- inserted once here alongside ServerBootId, never
         // persisted/reloaded from a save.
         state.ecs_mut().insert(crate::session_registry::SessionRegistry::new());
+        // APEX-T3.3.11: memory-only outbox, empty on every fresh process --
+        // nothing enqueues into it yet (no producer migration has happened;
+        // T3.3.13/14) and nothing drains it yet (no SemanticEgressSysV1;
+        // T3.3.15).
+        state.ecs_mut().insert(crate::semantic_net::outbox::ServerSemanticOutboxV1::new());
         state.ecs_mut().insert(battlemode_buffer);
         state.ecs_mut().insert(RecentClientIPs::default());
         state.ecs_mut().insert(settings.clone());
