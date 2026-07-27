@@ -35,6 +35,12 @@ pub enum PluginDeploymentCompileErrorV1 {
     ResolutionRejected { report: PluginResolutionReportV1 },
     /// Plan compilation / root derivation failure.
     ActivationError(PluginActivationErrorV1),
+    /// APEX-T2.5.20: claim-conflict compilation refused the deployment
+    /// (unresolved collision, base shadowing, stale/duplicate/mismatched
+    /// decision — .07's typed family, now LIVE at deployment compile).
+    ConflictError(PluginConflictErrorV1),
+    /// APEX-T2.5.20: asset-root claims could not expand to exact keys.
+    AssetKeyError { index: usize, detail: String },
     /// A resolved node's artifact matched none of the input archives —
     /// impossible unless the pipeline is broken; refuse loudly.
     ArtifactUnmatched { ordinal: u32 },
@@ -50,6 +56,10 @@ pub struct CompiledDeploymentV1 {
     pub client_plan: PluginActivationPlanV1,
     /// Ordinal-sorted `(ordinal, archive bytes)` — the serving set.
     pub artifacts: Vec<(u32, Vec<u8>)>,
+    /// APEX-T2.5.20: every ≥2-claimant resource with its operator
+    /// resolution (empty for collision-free deployments) — the dispatch
+    /// ownership record.
+    pub resolved_collisions: Vec<PluginResolvedCollisionV1>,
 }
 
 fn manifest_bytes_of(archive: &[u8], manifest_path: &str) -> Option<Vec<u8>> {
@@ -100,12 +110,14 @@ pub fn compile_deployment_from_archives_v1(
     archives: &[Vec<u8>],
     policy: &PluginDeploymentAdmissionPolicyV1,
     base_content_root: ProtocolDigestV1,
+    base_resources: &[PluginResourceKeyV1],
 ) -> Result<CompiledDeploymentV1, PluginDeploymentCompileErrorV1> {
     use PluginDeploymentCompileErrorV1 as E;
     let policy_root = policy.policy_root().map_err(E::ActivationError)?;
 
     let mut admissions: Vec<PluginManifestAdmissionV1> = Vec::with_capacity(archives.len());
     let mut validated: Vec<ValidatedPluginManifestV1> = Vec::with_capacity(archives.len());
+    let mut namespaces: Vec<Vec<super::archive_profile::CanonicalEntryV1>> = Vec::with_capacity(archives.len());
     for (index, bytes) in archives.iter().enumerate() {
         // PAR-C14 closure: the rollout policy value is the operator
         // policy's archive policy id.
@@ -131,8 +143,60 @@ pub fn compile_deployment_from_archives_v1(
             PluginManifestAdmissionV1::ValidatedV1(v) => validated.push((**v).clone()),
             _ => return Err(E::LegacyManifestInStrictDeployment { index }),
         }
+        namespaces.push(strict.namespace.clone());
         admissions.push(admission);
     }
+
+    // APEX-T2.5.20 — the claim inventory, expanded to EXACT resources:
+    // per-plugin commands + animations from validated claims, asset keys
+    // via the .06 expansion over each archive's admitted namespace. Then
+    // .07's conflict compiler runs LIVE: any ≥2-claimant resource needs
+    // an exact operator decision or the whole deployment is refused.
+    let mut claims: Vec<PluginClaimV1> = Vec::new();
+    for (index, v) in validated.iter().enumerate() {
+        let claimant = super::resolver::PluginNodeKeyV1 {
+            plugin_id: v.plugin_id.clone(),
+            plugin_version: v.plugin_version.clone(),
+        };
+        for mode in &v.claims.runtime {
+            for c in &mode.commands {
+                claims.push(PluginClaimV1 {
+                    resource: PluginResourceKeyV1 {
+                        kind: PluginResourceKindV1::Command,
+                        name: common::apex::manifest::MachineTextV1::new(c)
+                            .map_err(|_| E::AssetKeyError { index, detail: format!("non-ASCII command {c:?}") })?,
+                    },
+                    claimant: claimant.clone(),
+                });
+            }
+            for a in &mode.animations {
+                claims.push(PluginClaimV1 {
+                    resource: PluginResourceKeyV1 {
+                        kind: PluginResourceKindV1::Skeleton,
+                        name: common::apex::manifest::MachineTextV1::new(a)
+                            .map_err(|_| E::AssetKeyError { index, detail: format!("non-ASCII animation {a:?}") })?,
+                    },
+                    claimant: claimant.clone(),
+                });
+            }
+        }
+        let roots: Vec<&str> = v.claims.asset_roots.iter().map(|r| r.as_str()).collect();
+        let entry_paths: Vec<&str> = namespaces[index].iter().map(|e| e.path.as_str()).collect();
+        let keys = common::assets::plugin_asset_keys::plugin_asset_keys_v1(&roots, &entry_paths)
+            .map_err(|e| E::AssetKeyError { index, detail: format!("{e:?}") })?;
+        for key in keys {
+            claims.push(PluginClaimV1 {
+                resource: PluginResourceKeyV1 {
+                    kind: PluginResourceKindV1::AssetKey,
+                    name: common::apex::manifest::MachineTextV1::new(&key.asset_id)
+                        .map_err(|_| E::AssetKeyError { index, detail: format!("non-ASCII key {:?}", key.asset_id) })?,
+                },
+                claimant: claimant.clone(),
+            });
+        }
+    }
+    let resolved_collisions =
+        resolve_claim_conflicts_v1(&claims, base_resources, &policy.conflict_decisions).map_err(E::ConflictError)?;
 
     let graph = match resolve_plugin_graph_v1(admissions, &resolver_policy_for(&policy_root)?) {
         PluginResolutionTerminalV1::Resolved(g) => g,
@@ -158,7 +222,7 @@ pub fn compile_deployment_from_archives_v1(
     }
     artifacts.sort_by_key(|(o, _)| *o);
 
-    Ok(CompiledDeploymentV1 { plan, deployment_root, server_plan, client_plan, artifacts })
+    Ok(CompiledDeploymentV1 { plan, deployment_root, server_plan, client_plan, artifacts, resolved_collisions })
 }
 
 #[cfg(test)]
@@ -208,11 +272,14 @@ mod tests {
         }
     }
 
-    fn fixture_archive(id: &str, world: &str) -> Vec<u8> {
+    fn fixture_archive(id: &str, world: &str) -> Vec<u8> { fixture_archive_with_commands(id, world, &[]) }
+
+    fn fixture_archive_with_commands(id: &str, world: &str, commands: &[&str]) -> Vec<u8> {
+        let cmds = commands.iter().map(|c| format!("\"{c}\"")).collect::<Vec<_>>().join(", ");
         let toml = format!(
             "manifest_version = 1\ndependencies = []\n\n[plugin]\nid = \"{id}\"\nversion = \"1.0.0\"\n\
              host_api = \"veloren:plugin@0.0.1\"\n\n[[modules]]\npath = \"modules/m.wasm\"\nworld = \"{world}\"\n\n\
-             [claims]\nasset_roots = []\n\n[[claims.runtime]]\nmode = \"server\"\ncommands = []\nanimations = []\n"
+             [claims]\nasset_roots = []\n\n[[claims.runtime]]\nmode = \"server\"\ncommands = [{cmds}]\nanimations = []\n"
         );
         pack_canonical(
             &[
@@ -228,7 +295,7 @@ mod tests {
     fn strict_pipeline_compiles_real_archives_end_to_end() {
         let base = digest_canonical_bytes_v1(DigestDomainIdV1::PluginActivationPlan, b"base", 1 << 20).unwrap();
         let archives = vec![fixture_archive("x:srv", "server-plugin"), fixture_archive("x:both", "plugin")];
-        let compiled = compile_deployment_from_archives_v1(&archives, &fixture_policy(), base.clone()).unwrap();
+        let compiled = compile_deployment_from_archives_v1(&archives, &fixture_policy(), base.clone(), &[]).unwrap();
         assert_eq!(compiled.plan.nodes.len(), 2);
         assert_eq!(compiled.artifacts.len(), 2);
         // Server sees both, client only the shared-world plugin.
@@ -237,22 +304,75 @@ mod tests {
         // Deterministic: recompile (archives permuted) => identical root
         // and identical serving set.
         let permuted = vec![archives[1].clone(), archives[0].clone()];
-        let again = compile_deployment_from_archives_v1(&permuted, &fixture_policy(), base.clone()).unwrap();
+        let again = compile_deployment_from_archives_v1(&permuted, &fixture_policy(), base.clone(), &[]).unwrap();
         assert_eq!(compiled.deployment_root, again.deployment_root, "archive input order can never move the root");
         assert_eq!(compiled.artifacts, again.artifacts);
 
         // A policy change moves the deployment root.
         let mut policy2 = fixture_policy();
         policy2.policy_revision = 2;
-        let moved = compile_deployment_from_archives_v1(&archives, &policy2, base).unwrap();
+        let moved = compile_deployment_from_archives_v1(&archives, &policy2, base, &[]).unwrap();
         assert_ne!(compiled.deployment_root, moved.deployment_root);
 
         // Garbage archive is a typed refusal naming the input.
         let mut broken = archives.clone();
         broken.push(b"not a tar at all".to_vec());
         assert!(matches!(
-            compile_deployment_from_archives_v1(&broken, &fixture_policy(), digest_canonical_bytes_v1(DigestDomainIdV1::PluginActivationPlan, b"base", 1 << 20).unwrap()),
+            compile_deployment_from_archives_v1(&broken, &fixture_policy(), digest_canonical_bytes_v1(DigestDomainIdV1::PluginActivationPlan, b"base", 1 << 20).unwrap(), &[]),
             Err(PluginDeploymentCompileErrorV1::ArchiveRejected { index: 2, .. })
         ));
     }
+
+    /// APEX-T2.5.20 — .07's conflict compiler is LIVE at deployment
+    /// compile: same-command claims refuse without an exact operator
+    /// decision and compile WITH one; base shadowing refuses outright.
+    #[test]
+    fn command_collisions_are_operator_decided_at_compile() {
+        let base = digest_canonical_bytes_v1(DigestDomainIdV1::PluginActivationPlan, b"base", 1 << 20).unwrap();
+        let archives = vec![
+            fixture_archive_with_commands("x:one", "server-plugin", &["hello"]),
+            fixture_archive_with_commands("x:two", "server-plugin", &["hello"]),
+        ];
+        // No decision: refused with the .07 terminal.
+        assert!(matches!(
+            compile_deployment_from_archives_v1(&archives, &fixture_policy(), base.clone(), &[]),
+            Err(PluginDeploymentCompileErrorV1::ConflictError(PluginConflictErrorV1::UnresolvedCollision { .. }))
+        ));
+
+        // Exact ExclusiveOwner decision: compiles, ownership recorded.
+        let key = |id: &str| super::super::resolver::PluginNodeKeyV1 {
+            plugin_id: super::super::manifest::CanonicalPluginIdV1::parse(id, &fixture_policy().manifest_limits)
+                .unwrap(),
+            plugin_version: super::super::manifest::PluginVersionV1::parse("1.0.0").unwrap(),
+        };
+        let mut policy = fixture_policy();
+        policy.conflict_decisions = vec![PluginConflictDecisionV1 {
+            resource: PluginResourceKeyV1 {
+                kind: PluginResourceKindV1::Command,
+                name: common::apex::manifest::MachineTextV1::new("hello").unwrap(),
+            },
+            claimants: vec![key("x:one"), key("x:two")],
+            resolution: PluginConflictResolutionV1::ExclusiveOwner {
+                owner: key("x:one"),
+                displaced: vec![key("x:two")],
+            },
+            policy_version: 1,
+        }];
+        let compiled = compile_deployment_from_archives_v1(&archives, &policy, base.clone(), &[]).unwrap();
+        assert_eq!(compiled.resolved_collisions.len(), 1);
+        assert_eq!(compiled.resolved_collisions[0].resource.name.as_str(), "hello");
+
+        // Base shadowing: no decision can authorize it.
+        let base_cmd = PluginResourceKeyV1 {
+            kind: PluginResourceKindV1::Command,
+            name: common::apex::manifest::MachineTextV1::new("hello").unwrap(),
+        };
+        assert!(matches!(
+            compile_deployment_from_archives_v1(&archives, &policy, base, std::slice::from_ref(&base_cmd)),
+            Err(PluginDeploymentCompileErrorV1::ConflictError(
+                PluginConflictErrorV1::BaseResourceShadowingForbidden { .. }
+            ))
+        ));
+    }
 }
+

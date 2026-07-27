@@ -461,7 +461,17 @@ pub fn init_plugin_deployment_v1(
         E::Compile(PluginDeploymentCompileErrorV1::ActivationError(e))
     })?;
     let compiled =
-        compile_deployment_from_archives_v1(&archives, &policy, base_content_root).map_err(E::Compile)?;
+        compile_deployment_from_archives_v1(
+        &archives,
+        &policy,
+        base_content_root,
+        // APEX-T2.5.20: the base-game resource inventory (commands the
+        // server itself owns) is NEEDS-DEPLOYMENT-EVIDENCE alongside the
+        // .04b family — empty means base-shadow refusal is armed but has
+        // nothing to defend yet (disclosed).
+        &[],
+    )
+    .map_err(E::Compile)?;
 
     let requirements: Vec<PluginArtifactDescriptorV1> = compiled
         .plan
