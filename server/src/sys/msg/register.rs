@@ -440,10 +440,10 @@ impl<'a> System<'a> for Sys {
                         }
                         read_data.client_disconnect_events.emitter().emit(ClientDisconnectEvent(old_entity, common::comp::DisconnectReason::NewerLogin));
                     }
-                    finalize_admission(&read_data, &clients, &editable_settings, &player_list, &mut new_players, admission, admitted);
+                    finalize_admission(&read_data, &mut clients, &editable_settings, &player_list, &mut new_players, admission, admitted);
                 },
                 Ok(admitted @ SessionAdmissionV1::Created { .. }) => {
-                    finalize_admission(&read_data, &clients, &editable_settings, &player_list, &mut new_players, admission, admitted);
+                    finalize_admission(&read_data, &mut clients, &editable_settings, &player_list, &mut new_players, admission, admitted);
                 },
             }
         }
@@ -506,14 +506,14 @@ impl<'a> System<'a> for Sys {
 /// payloads themselves are new.
 fn finalize_admission(
     read_data: &ReadData,
-    clients: &WriteStorage<Client>,
+    clients: &mut WriteStorage<Client>,
     editable_settings: &EditableSettings,
     player_list: &HashMap<Uid, PlayerInfo>,
     new_players: &mut HashMap<Uuid, (Entity, Player, Option<AdminRole>, Option<crate::client::PreparedMsg>)>,
     admission: CollectedAdmissionV1,
     admitted: SessionAdmissionV1,
 ) {
-    let Some(client) = clients.get(admission.entity) else { return };
+    let Some(client) = clients.get_mut(admission.entity) else { return };
     read_data.player_metrics.players_connected.inc();
 
     // Tell the client its request was successful.
@@ -536,6 +536,17 @@ fn finalize_admission(
     // entity as well as synced resources (currently only `TimeOfDay`).
     debug!("Starting initial sync with client.");
     let session_binding = admitted.binding();
+    // APEX-T3.3.06: "accepted binding initializes; higher epoch replaces"
+    // -- a fresh reset via the constructor every time admission succeeds,
+    // never a partial update. Legacy carries no V1 state (packet's own
+    // words), so this only fires for a NetEnvelopeV1 selection.
+    if session_binding.selected_semantic_protocol == common_net::msg::SemanticProtocolIdV1::NetEnvelopeV1 {
+        client.reset_semantic_state(common_net::msg::ActiveSessionBindingV1 {
+            server_boot_id: *read_data.server_boot_id,
+            session_id: session_binding.session_id,
+            epoch: session_binding.epoch,
+        });
+    }
     if client
         .send(ServerInit::GameSync {
             server_boot_id: *read_data.server_boot_id,

@@ -244,6 +244,95 @@ pub struct SemanticWireFrameV1 {
     pub payload_bytes: Vec<u8>,
 }
 
+/// `T3.3.06`: the boot/session/epoch triple every semantic cursor is
+/// keyed to (packet's own repeated requirement: "all keys include
+/// boot/session/epoch/direction/stream"). Distinct from
+/// `server::SessionBindingV1` -- that type is the wire-echoed admission
+/// binding (T3.2); this one additionally carries `server_boot_id` because
+/// a cursor must never survive a server restart even if `session_id`
+/// somehow collided across boot incarnations (it can't, opaque UUIDv4,
+/// but the key is defense in depth per the packet's own phrasing, not
+/// this row inventing new paranoia).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ActiveSessionBindingV1 {
+    pub server_boot_id: ServerBootId,
+    pub session_id: SessionId,
+    pub epoch: ConnectionEpoch,
+}
+
+const FIRST_SEQUENCE: NonZeroU64 = NonZeroU64::new(1).expect("1 is nonzero");
+
+/// Packet section 7.6. One send cursor per semantic stream (`[General,
+/// Bootstrap, CharacterScreen, InGame, Terrain]` in `SemanticStreamIdV1`
+/// tag order), owned by whichever side is sending in this direction.
+/// `T3.3.06` only creates this and its reset constructor -- no sender
+/// exists yet that consumes/advances it (`T3.3.07`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SemanticSendStateV1 {
+    pub binding: ActiveSessionBindingV1,
+    next: [NonZeroU64; 5],
+}
+
+impl SemanticSendStateV1 {
+    /// `T3.3.06`'s "reset constructor keyed by `ActiveSessionBindingV1`":
+    /// every one of the five per-stream cursors starts at `1` (packet
+    /// section 8: "Five cursor domains per direction start at one").
+    /// Called on a freshly-accepted binding and again whenever the epoch
+    /// advances ("higher epoch replaces") -- never partially reset.
+    pub fn new(binding: ActiveSessionBindingV1) -> Self { Self { binding, next: [FIRST_SEQUENCE; 5] } }
+
+    pub fn binding(&self) -> ActiveSessionBindingV1 { self.binding }
+
+    pub fn next_for(&self, stream: SemanticStreamIdV1) -> NonZeroU64 { self.next[stream_index(stream)] }
+}
+
+/// Packet section 7.6. The receive-side twin of [`SemanticSendStateV1`].
+/// `highest_snapshot`/`terminal` are dormant per sections 5.7/T3.4 and
+/// T3.3.08+ respectively -- carried now so the reset shape is frozen,
+/// never written to by this step.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SemanticReceiveStateV1 {
+    pub binding: ActiveSessionBindingV1,
+    next_expected: [NonZeroU64; 5],
+    pub highest_snapshot: std::collections::BTreeMap<SnapshotDomainId, SnapshotEpoch>,
+    pub terminal: Option<SemanticProtocolTerminalV1>,
+}
+
+impl SemanticReceiveStateV1 {
+    pub fn new(binding: ActiveSessionBindingV1) -> Self {
+        Self { binding, next_expected: [FIRST_SEQUENCE; 5], highest_snapshot: std::collections::BTreeMap::new(), terminal: None }
+    }
+
+    pub fn binding(&self) -> ActiveSessionBindingV1 { self.binding }
+
+    pub fn next_expected_for(&self, stream: SemanticStreamIdV1) -> NonZeroU64 { self.next_expected[stream_index(stream)] }
+}
+
+const fn stream_index(stream: SemanticStreamIdV1) -> usize {
+    match stream {
+        SemanticStreamIdV1::Bootstrap => 0,
+        SemanticStreamIdV1::CharacterScreen => 1,
+        SemanticStreamIdV1::InGame => 2,
+        SemanticStreamIdV1::General => 3,
+        SemanticStreamIdV1::Terrain => 4,
+    }
+}
+
+/// Packet section 7.9's connection-level terminal outcomes (as opposed to
+/// `SemanticEnvelopeRejectV1`'s per-frame rejection reasons). Dormant
+/// until `T3.3.08`'s ingress validation actually sets `.terminal` on a
+/// `SemanticReceiveStateV1` -- added now, in full, for the same reason
+/// `SemanticEnvelopeRejectV1` was: one frozen name set for every later
+/// step to reference, not each inventing its own subset.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SemanticProtocolTerminalV1 {
+    ResyncRequired,
+    SequenceExhausted,
+    ApplicationError,
+    ProtocolViolation,
+    SendFailedAfterSequenceAllocated,
+}
+
 const PAYLOAD_DIGEST_MAGIC: &[u8] = b"bastion/net-payload/v1\0";
 
 /// Packet section 7.4:
@@ -864,5 +953,89 @@ mod tests {
         // surface exists (T4.1), or the live client (which always
         // requests Legacy today) would start failing to register.
         assert!(supported.contains(&SemanticProtocolIdV1::Legacy));
+    }
+
+    // T3.3.06's own test list: initial state, epoch reset, old state
+    // inaccessible, max sequence.
+
+    fn test_binding(epoch: u64) -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut common::apex::identity::FixedRandomBytesSourceV1([1; 16])).unwrap(),
+            session_id: SessionId::generate(&mut common::apex::identity::FixedRandomBytesSourceV1([2; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(epoch).unwrap(),
+        }
+    }
+
+    #[test]
+    fn initial_state_starts_every_stream_at_one() {
+        let binding = test_binding(1);
+        let send = SemanticSendStateV1::new(binding);
+        let recv = SemanticReceiveStateV1::new(binding);
+        for stream in SemanticStreamIdV1::ALL {
+            assert_eq!(send.next_for(stream).get(), 1);
+            assert_eq!(recv.next_expected_for(stream).get(), 1);
+        }
+        assert_eq!(send.binding(), binding);
+        assert_eq!(recv.binding(), binding);
+        assert!(recv.highest_snapshot.is_empty());
+        assert!(recv.terminal.is_none());
+    }
+
+    /// "Higher epoch replaces": a fresh reset at a higher epoch is a
+    /// full, independent state -- never derived from or merged with
+    /// whatever the previous epoch's state happened to hold.
+    #[test]
+    fn epoch_reset_produces_independent_fresh_state() {
+        let epoch1_binding = test_binding(1);
+        let epoch1_state = SemanticSendStateV1::new(epoch1_binding);
+
+        let epoch2_binding = test_binding(2);
+        let epoch2_state = SemanticSendStateV1::new(epoch2_binding);
+
+        assert_ne!(epoch1_state.binding().epoch, epoch2_state.binding().epoch);
+        // Both start at 1 regardless of epoch value -- "per-attachment"
+        // (this row's own title), not a running total across epochs.
+        for stream in SemanticStreamIdV1::ALL {
+            assert_eq!(epoch1_state.next_for(stream), epoch2_state.next_for(stream));
+        }
+    }
+
+    /// "Old state inaccessible": nothing about `SemanticSendStateV1`
+    /// exposes a way to recover a PRIOR reset's state from a NEW one --
+    /// the type itself has no history, only the one `binding` it was
+    /// constructed with. This is a structural proof (the type has no such
+    /// field/method), not a runtime one.
+    #[test]
+    fn state_carries_no_history_beyond_its_own_binding() {
+        let a = SemanticSendStateV1::new(test_binding(1));
+        let b = SemanticSendStateV1::new(test_binding(2));
+        // Overwriting `a` with `b` (the live wiring's actual `Option<..> =
+        // Some(new_state)` pattern) drops `a` entirely -- there is no
+        // shared storage between two `SemanticSendStateV1` values a
+        // caller could accidentally read stale data through.
+        let mut slot = Some(a);
+        slot = Some(b);
+        assert_eq!(slot.unwrap().binding().epoch, b.binding().epoch);
+    }
+
+    /// "Max sequence": `NonZeroU64` (not `u64`) is the cursor type
+    /// specifically so `u64::MAX` is a representable, valid cursor value
+    /// -- exhaustion is a real, checkable condition (`T3.3.07`+'s
+    /// `SequenceExhausted` terminal), not a type-level impossibility this
+    /// row would need extra machinery to detect.
+    #[test]
+    fn cursor_type_can_represent_max_sequence() {
+        let max = NonZeroU64::new(u64::MAX).expect("u64::MAX is nonzero");
+        assert_eq!(max.get(), u64::MAX);
+        assert_eq!(FIRST_SEQUENCE.get(), 1);
+    }
+
+    #[test]
+    fn stream_index_is_injective_over_all_five_streams() {
+        let indices: HashSet<usize> = SemanticStreamIdV1::ALL.iter().map(|s| stream_index(*s)).collect();
+        assert_eq!(indices.len(), SemanticStreamIdV1::ALL.len());
+        for i in &indices {
+            assert!(*i < 5);
+        }
     }
 }
