@@ -1216,6 +1216,69 @@ fn corpus_runner(args: &Args) -> ExitCode {
     }
 }
 
+/// APEX-T1.2.08 helper: recompute the DECLARED asset root's content
+/// identity in `SourceClosureRecordV1::asset_tree_root`'s own shape —
+/// entry paths are `assets/<rel>` exactly as the capture tool's git walk
+/// produces them, digested under `DigestDomainIdV1::SourceClosure`.
+///
+/// Disk recompute cannot see git modes, so entries assume the portable
+/// blob mode `100644` (every live asset is one). A record row with
+/// `100755` would therefore FAIL CLOSED here — the safe direction. This
+/// comparison also requires an eol-faithful checkout (`core.autocrlf`
+/// false — the certified nix lane's default; verified true of the dev
+/// checkout too).
+fn apex_recompute_asset_root() -> Result<String, String> {
+    use common::apex::manifest::{CanonicalPathV1, MachineTextV1};
+    use common::apex::source_closure::{ClosureTreeEntryV1, ClosureTreeV1};
+    use sha2::{Digest, Sha256};
+
+    let declared = std::env::var("VELOREN_ASSETS").map_err(|_| "VELOREN_ASSETS not declared".to_owned())?;
+    let mut root = std::path::PathBuf::from(&declared);
+    if !root.ends_with("assets") {
+        root = root.join("assets");
+    }
+
+    let mut files = Vec::new();
+    let mut stack = vec![root.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).map_err(|e| format!("read_dir {dir:?}: {e}"))? {
+            let entry = entry.map_err(|e| format!("dir entry under {dir:?}: {e}"))?;
+            let path = entry.path();
+            let kind = entry.file_type().map_err(|e| format!("file_type {path:?}: {e}"))?;
+            if kind.is_dir() {
+                stack.push(path);
+            } else if kind.is_file() {
+                files.push(path);
+            } else {
+                return Err(format!("{path:?}: not a regular file or directory (symlink?) — tree hazard"));
+            }
+        }
+    }
+
+    let mut entries = Vec::with_capacity(files.len());
+    for path in files {
+        let rel = path
+            .strip_prefix(&root)
+            .map_err(|_| format!("{path:?} escaped the declared root"))?
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
+        let bytes = std::fs::read(&path).map_err(|e| format!("read {path:?}: {e}"))?;
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        entries.push(ClosureTreeEntryV1 {
+            path: CanonicalPathV1::new(format!("assets/{rel}")).map_err(|e| format!("{rel}: {e}"))?,
+            git_mode: MachineTextV1::new("100644").expect("ASCII"),
+            size_bytes: bytes.len() as u64,
+            sha256: hasher.finalize().into(),
+        });
+    }
+    let tree = ClosureTreeV1::try_new(entries).map_err(|e| format!("tree hazard: {e}"))?;
+    let digest = tree.root().map_err(|e| format!("root digest: {e}"))?;
+    Ok(digest.bytes.as_array().iter().map(|b| format!("{b:02x}")).collect())
+}
+
 fn main() -> ExitCode {
     // Stderr, not stdout: JSON-line consumers stay untouched. BEFORE
     // Args::parse so even a --help/parse-error run identifies its exe.
@@ -1266,6 +1329,48 @@ fn main() -> ExitCode {
             }
         }
         std::env::set_var("BASTION_REQUIRE_EXPLICIT_ASSETS", "1");
+    }
+
+    // APEX-T1.2.08: certified-lane asset BINDING (spec section 4.7 + the
+    // section-7a runtime-startup extension). DET-AST-007 above pins WHICH
+    // root is used; these two checks bind that root to the closed set:
+    // (a) VELOREN_ASSETS_OVERRIDE is a per-file substitution channel
+    //     (common/assets/src/fs.rs) — a development affordance, never a
+    //     certified input. Set at all ⇒ typed block, before any content
+    //     loads.
+    // (b) BASTION_VERIFY_ASSET_ROOT=<64-lower-hex> — the expected
+    //     `asset_tree_root` from an emitted SourceClosureRecordV1. The
+    //     declared root's content identity is recomputed and compared
+    //     BEFORE simulation starts; mismatch is a typed pre-sim terminal
+    //     (the section-7a extension). Opt-in: the certified lane wires it
+    //     from the record; uncertified runs skip the 437 MB hash.
+    if std::env::var_os("VELOREN_ASSETS_OVERRIDE").is_some() {
+        eprintln!(
+            "APEX-T1.2.08: VELOREN_ASSETS_OVERRIDE is set — the override channel is a development \
+             affordance and can substitute arbitrary per-file content; a certified run must not have it"
+        );
+        println!("TERMINAL: T1.2-BLOCK-ASSET-OVERRIDE");
+        return ExitCode::from(41);
+    }
+    if let Ok(expected_hex) = std::env::var("BASTION_VERIFY_ASSET_ROOT") {
+        match apex_recompute_asset_root() {
+            Ok(actual_hex) if actual_hex == expected_hex.to_ascii_lowercase() => {
+                eprintln!("APEX-T1.2.08: asset root verified pre-sim ({actual_hex})");
+            },
+            Ok(actual_hex) => {
+                eprintln!(
+                    "APEX-T1.2.08: declared asset root recomputes to {actual_hex}, but the closure \
+                     record declares {expected_hex} — the runtime is NOT bound to the closed set"
+                );
+                println!("TERMINAL: T1.2-BLOCK-ASSET-ROOT-MISMATCH");
+                return ExitCode::from(42);
+            },
+            Err(e) => {
+                eprintln!("APEX-T1.2.08: asset-root recompute failed: {e}");
+                println!("TERMINAL: T1.2-BLOCK-ASSET-ROOT-MISMATCH");
+                return ExitCode::from(42);
+            },
+        }
     }
 
     // DETRNG (B8 root fix): EVERY harness run is deterministic — rtsim rule

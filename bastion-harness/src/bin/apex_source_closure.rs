@@ -380,8 +380,10 @@ fn pin_artifact(facts: &BTreeMap<String, BlobFacts>, path: &str) -> ArtifactIden
 // Toolchain drift (T1.2's BLOCK-TOOLCHAIN-DRIFT)
 // ---------------------------------------------------------------------------
 
-fn check_toolchain_drift(declared_channel: &str) -> String {
-    let out = Command::new("rustup").args(["show", "active-toolchain"]).output();
+fn check_toolchain_drift(repo_root: &Path, declared_channel: &str) -> String {
+    // cwd = the CAPTURED repo, so rustup resolves THAT checkout's
+    // `rust-toolchain` override, not the invoking shell's.
+    let out = Command::new("rustup").args(["show", "active-toolchain"]).current_dir(repo_root).output();
     match out {
         Ok(o) if o.status.success() => {
             let active = String::from_utf8_lossy(&o.stdout).trim().to_owned();
@@ -394,10 +396,20 @@ fn check_toolchain_drift(declared_channel: &str) -> String {
             }
             format!("verified: active {active:?} matches declared {declared_channel:?}")
         },
+        // rustup EXISTS but cannot resolve the declared channel (not
+        // installed / broken override) — that IS drift, not a skip.
+        Ok(o) => die(
+            "T1.2-BLOCK-TOOLCHAIN-DRIFT",
+            14,
+            &format!(
+                "rustup cannot resolve declared channel {declared_channel:?}: {}",
+                String::from_utf8_lossy(&o.stderr)
+            ),
+        ),
         // The nix lane has no rustup — the flake itself pins the compiler
         // there, and the resolved `rustc -Vv` still lands in the evidence
         // sidecar. Only rustup-managed hosts can drift THIS way.
-        _ => "skipped: rustup not available (nix-lane pinning applies)".to_owned(),
+        Err(_) => "skipped: rustup not available (nix-lane pinning applies)".to_owned(),
     }
 }
 
@@ -482,8 +494,20 @@ fn main() {
     let admission_terminal = admission_gate(&repo_root, &expected_repository, &remote, &head);
     println!("admission: {admission_terminal} ({head})");
 
-    // 2. Commit tree inventory + LFS classification.
+    // 2. Commit tree inventory + LFS classification. Forbidden modes are
+    //    rejected HERE, before the blob batch — a gitlink's oid is not in
+    //    the object database, so reaching cat-file with one would die as a
+    //    read error instead of the typed hazard it actually is.
     let raw_entries = list_tree(&repo_root, &head);
+    for e in &raw_entries {
+        if e.mode != "100644" && e.mode != "100755" {
+            die(
+                "T1.2-BLOCK-TREE-HAZARD",
+                19,
+                &format!("{}: git mode {} (symlink/gitlink/device — not a portable blob)", e.path, e.mode),
+            );
+        }
+    }
     let all_paths: Vec<String> = raw_entries.iter().map(|e| e.path.clone()).collect();
     let lfs_paths = lfs_path_set(&repo_root, &all_paths);
     println!("tree: {} entries, {} LFS-classified", raw_entries.len(), lfs_paths.len());
@@ -613,7 +637,7 @@ fn main() {
         .and_then(|f| f.bytes.as_deref())
         .unwrap_or_else(|| die_emit("rust-toolchain missing from commit tree"));
     let declared_channel = String::from_utf8_lossy(toolchain_bytes).trim().to_owned();
-    let toolchain_note = check_toolchain_drift(&declared_channel);
+    let toolchain_note = check_toolchain_drift(&repo_root, &declared_channel);
     println!("toolchain: {toolchain_note}");
 
     // 9. Assemble + self-check + emit.
@@ -665,6 +689,7 @@ fn main() {
 
     let rustc_vv = Command::new("rustc")
         .arg("-Vv")
+        .current_dir(&repo_root)
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
         .unwrap_or_else(|e| format!("<rustc unavailable: {e}>"));

@@ -52,3 +52,27 @@ if [ "${STAMP%%+*}" != "$EXPECT" ]; then
 fi
 echo "package_stamp=$STAMP admitted_prefix=$EXPECT"
 echo "TERMINAL: T1.1-PACKAGE-READY"
+
+# ── APEX-T1.2.07: source-closure record travels with package evidence ────────
+# The capture tool is itself a build product, so capture runs AFTER the nix
+# build (spec sequencing adapted, divergence documented in the T1.2 spec):
+# the record is COMMIT-PURE (git content only), so build order cannot change
+# its bytes — the HEAD-unchanged assertion below closes the only window that
+# mattered (source mutation between admission and capture).
+HEAD_POST_BUILD=$(git rev-parse HEAD)
+[ "$HEAD_POST_BUILD" = "$ADMITTED_COMMIT" ] || { echo "TERMINAL: T1.2-BLOCK-ADMISSION (HEAD moved during build: $HEAD_POST_BUILD)"; exit 10; }
+[ -x "$OUT/bin/apex_source_closure" ] || { echo "TERMINAL: T1.2-BLOCK-EMIT (package has no apex_source_closure bin)"; exit 16; }
+CLOSURE_OUT="$WORKDIR/target/apex-source-closure"
+"$OUT/bin/apex_source_closure" \
+  --repo-root "$WORKDIR" \
+  --out-dir "$CLOSURE_OUT" \
+  --remote origin \
+  --expected-repository "${EXPECTED_REPOSITORY:-bastion}" \
+  || { echo "TERMINAL: T1.2-BLOCK-EMIT (closure capture failed — see terminal above)"; exit 16; }
+RECORD="$CLOSURE_OUT/apex-source-closure-${ADMITTED_COMMIT}.cbor"
+[ -f "$RECORD" ] || { echo "TERMINAL: T1.2-BLOCK-EMIT (no record at $RECORD)"; exit 16; }
+# Sidecar names the bare basename — verify from inside the out dir.
+( cd "$CLOSURE_OUT" && sha256sum -c "apex-source-closure-${ADMITTED_COMMIT}.cbor.sha256" ) \
+  || { echo "TERMINAL: T1.2-BLOCK-EMIT (record sidecar mismatch)"; exit 16; }
+echo "closure_record=$RECORD"
+echo "TERMINAL: T1.2-CLOSURE-READY"
