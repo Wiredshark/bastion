@@ -37,6 +37,14 @@ pub enum DigestDomainIdV1 {
     /// (ID 5, T1.5's manifest) for the same input-vs-embedding reason as
     /// `SourceClosure`.
     LocalReproSmoke = 12,
+    /// `APEX-T1.4` (real packet, section 8.1/8.6): the four fresh-rebuild
+    /// evidence namespaces, row-order allocated 13-16 (T1.4 precedes
+    /// T2.2, whose plugin-archive domain is therefore 17 — resolved in
+    /// the T2.2 fleet spec section 4.8).
+    FreshBuilderProfile = 13,
+    FreshBuilderRun = 14,
+    FreshRebuildPair = 15,
+    FreshRebuildCanaryCampaign = 16,
 }
 
 impl DigestDomainIdV1 {
@@ -57,10 +65,14 @@ impl DigestDomainIdV1 {
             Self::PluginManifest => "bastion/plugin-manifest/v1",
             Self::SourceClosure => "bastion/source-closure/v1",
             Self::LocalReproSmoke => "bastion/build/local-repro-smoke/v1",
+            Self::FreshBuilderProfile => "bastion/fresh-builder-profile/v1",
+            Self::FreshBuilderRun => "bastion/fresh-builder-run/v1",
+            Self::FreshRebuildPair => "bastion/fresh-rebuild-pair/v1",
+            Self::FreshRebuildCanaryCampaign => "bastion/fresh-rebuild-canary-campaign/v1",
         }
     }
 
-    pub const ALL: [DigestDomainIdV1; 10] = [
+    pub const ALL: [DigestDomainIdV1; 14] = [
         Self::BootstrapManifest,
         Self::SaveUniverseManifest,
         Self::PluginActivationPlan,
@@ -71,6 +83,10 @@ impl DigestDomainIdV1 {
         Self::PluginManifest,
         Self::SourceClosure,
         Self::LocalReproSmoke,
+        Self::FreshBuilderProfile,
+        Self::FreshBuilderRun,
+        Self::FreshRebuildPair,
+        Self::FreshRebuildCanaryCampaign,
     ];
 }
 
@@ -116,5 +132,13 @@ mod tests {
         assert_eq!(DigestDomainIdV1::SourceClosure.label(), "bastion/source-closure/v1");
         assert_eq!(DigestDomainIdV1::LocalReproSmoke.as_u16(), 12);
         assert_eq!(DigestDomainIdV1::LocalReproSmoke.label(), "bastion/build/local-repro-smoke/v1");
+        assert_eq!(DigestDomainIdV1::FreshBuilderProfile.as_u16(), 13);
+        assert_eq!(DigestDomainIdV1::FreshBuilderProfile.label(), "bastion/fresh-builder-profile/v1");
+        assert_eq!(DigestDomainIdV1::FreshBuilderRun.as_u16(), 14);
+        assert_eq!(DigestDomainIdV1::FreshBuilderRun.label(), "bastion/fresh-builder-run/v1");
+        assert_eq!(DigestDomainIdV1::FreshRebuildPair.as_u16(), 15);
+        assert_eq!(DigestDomainIdV1::FreshRebuildPair.label(), "bastion/fresh-rebuild-pair/v1");
+        assert_eq!(DigestDomainIdV1::FreshRebuildCanaryCampaign.as_u16(), 16);
+        assert_eq!(DigestDomainIdV1::FreshRebuildCanaryCampaign.label(), "bastion/fresh-rebuild-canary-campaign/v1");
     }
 }

@@ -27,6 +27,16 @@ if [ ! -d "$WORKDIR/.git" ]; then
   git clone --no-checkout "$REPO_URL" "$WORKDIR"
 fi
 cd "$WORKDIR"
+# LFS-filter neutralization (T1.2 spec §7b operational consequence): this
+# tree carries its full content as RAW git blobs (zero pointer blobs), so
+# any host-level git-lfs clean filter re-pointerizes 6,412 files in
+# `git status` and the A.1 admission gate reads a lying DIRTY tree
+# (observed live: Debian's git-lfs package installs system-wide filters).
+# Repo-local config outrules system config; the filters become identity.
+git config filter.lfs.clean cat
+git config filter.lfs.smudge cat
+git config filter.lfs.process ""
+git config filter.lfs.required false
 git fetch origin "$ADMITTED_COMMIT" || git fetch origin
 git -c advice.detachedHead=false checkout --detach "$ADMITTED_COMMIT"
 HEAD_NOW=$(git rev-parse HEAD)
