@@ -751,6 +751,18 @@ impl Client {
                 };
                 use common_net::msg::plugin_artifact::PluginArtifactRequestV1;
                 use common_state::plugin::artifact_cache::PluginArtifactCacheV1;
+                // APEX-T2.5.22 — schema/completeness refusals BEFORE any
+                // acquisition: every client-active ordinal must have
+                // exactly one requirement (an incomplete or duplicated
+                // set is a typed init error, never a partial bootstrap).
+                for ordinal in &summary.client_activations {
+                    let n = summary.requirements.iter().filter(|r| r.ordinal == *ordinal).count();
+                    if n != 1 {
+                        return Err(Error::Other(format!(
+                            "plugin deployment summary incomplete: ordinal {ordinal} has {n} requirements"
+                        )));
+                    }
+                }
                 // Wire bytes are never trusted as identity: the cache
                 // re-verifies size+digest on stage AND on read.
                 let reqs: Vec<(u32, ArtifactIdentityV1)> = summary

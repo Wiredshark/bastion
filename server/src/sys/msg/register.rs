@@ -400,8 +400,19 @@ impl<'a> System<'a> for Sys {
                         // Tell the client its request was successful.
                         client.send(Ok(()))?;
 
+                        // APEX-T2.5.22: on a GOVERNED deployment the hash
+                        // vector carries NO bootstrap authority — the
+                        // summary's roots + requirements are the whole
+                        // contract, and the legacy vector is sent EMPTY
+                        // (a governed client never reads it; an empty
+                        // vector makes that structural, not behavioral).
+                        // Legacy sessions keep the exact old hash list.
                         #[cfg(feature = "plugins")]
-                        let active_plugins = read_data.plugin_mgr.plugin_list();
+                        let active_plugins = if read_data.plugin_deployment.summary().is_some() {
+                            Vec::new()
+                        } else {
+                            read_data.plugin_mgr.plugin_list()
+                        };
                         #[cfg(not(feature = "plugins"))]
                         let active_plugins = Vec::default();
 
