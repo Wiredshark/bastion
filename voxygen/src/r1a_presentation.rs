@@ -38,6 +38,16 @@ pub struct ProductionPresentationGroupInputV1 {
     pub source_capability_digest: [u8; 32],
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ProductionRenderIslandInputV1 {
+    pub parent_uid: u64,
+    pub parent_island_uid: Option<u64>,
+    pub parent_transform: bastion_renderer_r0d::island::RenderIslandTransformV1,
+    pub member_uids: Vec<u64>,
+    /// The current production source publishes no portal-cell authority.
+    pub portal_cells: Vec<[i32; 3]>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProductionPresentationInputV1 {
     pub simulation_tick: u64,
@@ -53,6 +63,9 @@ pub struct ProductionPresentationInputV1 {
     /// Explicit authoritative or packet-fixture membership. Empty means the
     /// current production source has no bound group capability.
     pub groups: Vec<ProductionPresentationGroupInputV1>,
+    /// Authoritative visible entity-volume memberships sampled in the same
+    /// coherent ECS read as the presentation entities.
+    pub render_islands: Vec<ProductionRenderIslandInputV1>,
     pub terrain_resource: [u8; 32],
     pub environment_digest: [u8; 32],
     pub cloud_milli: u16,
@@ -436,6 +449,35 @@ fn coherent_snapshot_root(
             return Err(ProductionPresentationErrorV1::InvalidAnchor);
         }
     }
+    let mut render_islands = input.render_islands.clone();
+    render_islands.sort();
+    if render_islands != input.render_islands
+        || render_islands.len() > bastion_renderer_r0d::island::MAX_RENDER_ISLANDS_V1
+        || render_islands
+            .windows(2)
+            .any(|pair| pair[0].parent_uid == pair[1].parent_uid)
+    {
+        return Err(ProductionPresentationErrorV1::InvalidAnchor);
+    }
+    let mut island_members = std::collections::BTreeSet::new();
+    for island in &input.render_islands {
+        let mut members = island.member_uids.clone();
+        members.sort_unstable();
+        if island.parent_uid == 0
+            || island
+                .parent_island_uid
+                .is_some_and(|parent| parent == 0 || parent == island.parent_uid)
+            || members != island.member_uids
+            || members.is_empty()
+            || members.windows(2).any(|pair| pair[0] == pair[1])
+            || !island.portal_cells.is_empty()
+            || members
+                .iter()
+                .any(|member| !entity_uids.contains(member) || !island_members.insert(*member))
+        {
+            return Err(ProductionPresentationErrorV1::InvalidAnchor);
+        }
+    }
     let body_len =
         u64::try_from(input.anchor_body.len()).map_err(|_| ProductionPresentationErrorV1::Hash)?;
     let mut payload = Vec::with_capacity(8 + 8 + 24 + input.anchor_body.len() + 96);
@@ -489,6 +531,36 @@ fn coherent_snapshot_root(
                 .to_le_bytes(),
         );
         for member in &group.protected_member_uids {
+            payload.extend_from_slice(&member.to_le_bytes());
+        }
+    }
+    payload.extend_from_slice(
+        &u64::try_from(input.render_islands.len())
+            .map_err(|_| ProductionPresentationErrorV1::Hash)?
+            .to_le_bytes(),
+    );
+    for island in &input.render_islands {
+        payload.extend_from_slice(&island.parent_uid.to_le_bytes());
+        match island.parent_island_uid {
+            None => payload.push(0),
+            Some(parent) => {
+                payload.push(1);
+                payload.extend_from_slice(&parent.to_le_bytes());
+            },
+        }
+        for value in island.parent_transform.translation_mm {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in island.parent_transform.orientation_q30 {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.extend_from_slice(&island.parent_transform.scale_milli.to_le_bytes());
+        payload.extend_from_slice(
+            &u64::try_from(island.member_uids.len())
+                .map_err(|_| ProductionPresentationErrorV1::Hash)?
+                .to_le_bytes(),
+        );
+        for member in &island.member_uids {
             payload.extend_from_slice(&member.to_le_bytes());
         }
     }
@@ -555,6 +627,7 @@ mod tests {
                 position_mm: [1_000, 2_000, 3_000],
             }],
             groups: Vec::new(),
+            render_islands: Vec::new(),
             terrain_resource: digest(1),
             environment_digest: digest(2),
             cloud_milli: 100,
@@ -572,6 +645,33 @@ mod tests {
                 flashing_lights_enabled: false,
             },
         }
+    }
+
+    #[test]
+    fn render_island_authority_is_part_of_the_coherent_snapshot() {
+        let base = input(300);
+        let base_root = coherent_snapshot_root(&base).unwrap();
+        let mut with_island = base.clone();
+        with_island
+            .render_islands
+            .push(ProductionRenderIslandInputV1 {
+                parent_uid: 100,
+                parent_island_uid: None,
+                parent_transform: bastion_renderer_r0d::island::RenderIslandTransformV1 {
+                    translation_mm: [1, 2, 3],
+                    orientation_q30: [0, 0, 0, bastion_renderer_r0d::island::Q30_ONE_V1],
+                    scale_milli: 1_000,
+                },
+                member_uids: vec![2],
+                portal_cells: Vec::new(),
+            });
+        let island_root = coherent_snapshot_root(&with_island).unwrap();
+        assert_ne!(base_root, island_root);
+        with_island.render_islands[0].member_uids.push(2);
+        assert_eq!(
+            coherent_snapshot_root(&with_island),
+            Err(ProductionPresentationErrorV1::InvalidAnchor)
+        );
     }
 
     fn complete() -> RendererResourceEvidenceV1 {

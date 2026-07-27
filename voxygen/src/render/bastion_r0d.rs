@@ -1113,6 +1113,7 @@ fn request_one_capture(
     let group_protected_uids = crate::r1d_groups::protected_uid_csv();
     let cutaway = crate::r1e_cutaway::latest_evidence();
     let interiors = crate::r1e_interiors::latest_evidence();
+    let islands = crate::r1e_islands::latest_evidence();
     renderer.create_screenshot(move |result| {
         match result {
             Ok(image) => {
@@ -1580,6 +1581,35 @@ fn request_one_capture(
                                     ));
                                 } else {
                                     metadata.push_str("r1e_interiors_enabled=false\n");
+                                }
+                                if let Some(islands) = islands {
+                                    metadata.push_str(&format!(
+                                        concat!(
+                                            "r1e_islands_enabled=true\n",
+                                            "r1e_islands_source_capability={}\n",
+                                            "r1e_islands_unavailable_portal_authority={}\n",
+                                            "r1e_islands_presentation_generation={}\n",
+                                            "r1e_islands_generation={}\n",
+                                            "r1e_islands_publication_sequence={}\n",
+                                            "r1e_islands_snapshot_sha256={}\n",
+                                            "r1e_islands_island_count={}\n",
+                                            "r1e_islands_member_count={}\n",
+                                            "r1e_islands_portal_count={}\n",
+                                            "r1e_islands_active={}\n",
+                                        ),
+                                        islands.source_capability,
+                                        islands.unavailable_portal_authority,
+                                        islands.presentation_generation,
+                                        islands.island_generation,
+                                        islands.publication_sequence,
+                                        hex_digest(&islands.snapshot_digest),
+                                        islands.island_count,
+                                        islands.member_count,
+                                        islands.portal_count,
+                                        islands.active,
+                                    ));
+                                } else {
+                                    metadata.push_str("r1e_islands_enabled=false\n");
                                 }
                                 write_atomic(&metadata_path, metadata.as_bytes())
                             });

@@ -270,6 +270,9 @@ impl InteriorVisibilitySnapshotV1 {
     #[must_use]
     pub const fn snapshot_digest(&self) -> InteriorDigestV1 { self.snapshot_digest }
 
+    #[must_use]
+    pub const fn cutaway_policy_digest(&self) -> InteriorDigestV1 { self.cutaway_policy_digest }
+
     pub fn decide(
         &self,
         subject: InteriorSubjectV1,
