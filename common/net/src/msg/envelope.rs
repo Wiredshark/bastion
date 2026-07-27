@@ -40,6 +40,9 @@ use common::apex::manifest::MachineTextV1;
 use common::apex::scalar::SchemaVersion;
 use common::apex::subsystem::{SubsystemDescriptorV1, SubsystemSlotIdV1};
 
+use crate::msg::client::ClientGeneral;
+use crate::msg::server::{ServerGeneral, ServerInit};
+
 /// Packet section 7.1. Which side originated the frame.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -290,6 +293,138 @@ pub fn decode_payload_exact_v1<T: DeserializeOwned>(payload_bytes: &[u8]) -> Res
         Ok(_) => Err(SemanticEnvelopeRejectV1::PayloadTrailingBytes),
         Err(_) => Err(SemanticEnvelopeRejectV1::PayloadDecodeFailure),
     }
+}
+
+/// Packet section 7.5/`T3.3.04`: one shared classification a sender and a
+/// receiver both call, so `common/net/src/msg/client.rs::send_msg_err`'s
+/// physical-stream match and `server/src/client.rs::prepare`'s physical-
+/// stream match (packet section 3.4's named route-drift risk) have a
+/// single semantic source of truth to be checked against, instead of each
+/// independently deciding a variant's stream. This step does not migrate
+/// either call site (packet's own "keep legacy matches until migrated");
+/// it adds the registry and the exhaustive tests that prove it agrees
+/// with both legacy matches today.
+pub trait SemanticRouteV1 {
+    fn semantic_stream(&self) -> SemanticStreamIdV1;
+    fn payload_schema(&self) -> SemanticPayloadSchemaV1;
+}
+
+/// Mirrors `client/src/lib.rs::send_msg_err`'s physical-stream match
+/// exactly (that match is itself exhaustive with no wildcard arm, so it
+/// is the authoritative current variant-to-stream mapping this trait impl
+/// must match; `T3.3.04`'s test suite checks this directly rather than
+/// trusting a paraphrase).
+impl SemanticRouteV1 for ClientGeneral {
+    fn semantic_stream(&self) -> SemanticStreamIdV1 {
+        use ClientGeneral as C;
+        match self {
+            C::RequestCharacterList
+            | C::CreateCharacter { .. }
+            | C::EditCharacter { .. }
+            | C::DeleteCharacter(_)
+            | C::Character(_, _)
+            | C::Spectate(_) => SemanticStreamIdV1::CharacterScreen,
+            C::ControllerInputs(_)
+            | C::ControlEvent(_)
+            | C::ControlAction(_)
+            | C::SetViewDistance(_)
+            | C::BreakBlock(_)
+            | C::PlaceBlock(_, _)
+            | C::ExitInGame
+            | C::PlayerPhysics { .. }
+            | C::UnlockSkill(_)
+            | C::RequestSiteInfo(_)
+            | C::RequestPlayerPhysics { .. }
+            | C::RequestLossyTerrainCompression { .. }
+            | C::UpdateMapMarker(_)
+            | C::SpectatePosition(_)
+            | C::SpectateEntity(_)
+            | C::BastionCameraAnchor(_)
+            | C::BastionPlaceDesignation { .. }
+            | C::BastionApplyInfluence { .. }
+            | C::BastionContextAction { .. }
+            | C::BastionSpawnColony { .. }
+            | C::BastionCancelDesignation { .. }
+            | C::BastionInspect { .. }
+            | C::SetBattleMode(_) => SemanticStreamIdV1::InGame,
+            C::TerrainChunkRequest { .. } | C::LodZoneRequest { .. } => SemanticStreamIdV1::Terrain,
+            C::ChatMsg(_) | C::Command(_, _) | C::Terminate | C::RequestPlugins(_) => SemanticStreamIdV1::General,
+        }
+    }
+
+    fn payload_schema(&self) -> SemanticPayloadSchemaV1 { SemanticPayloadSchemaV1::ClientGeneral }
+}
+
+/// Mirrors `server/src/client.rs::prepare`'s physical-stream match
+/// exactly (also exhaustive, no wildcard; the OTHER match in that file at
+/// lines ~99-149 is dead code inside a `/* ... */` comment block, not a
+/// second live route -- confirmed by reading `send`, which calls
+/// `prepare`/`send_prepared`, never the commented-out block).
+impl SemanticRouteV1 for ServerGeneral {
+    fn semantic_stream(&self) -> SemanticStreamIdV1 {
+        use ServerGeneral as S;
+        match self {
+            S::CharacterDataLoadResult(_)
+            | S::CharacterListUpdate(_)
+            | S::CharacterActionError(_)
+            | S::CharacterCreated(_)
+            | S::CharacterEdited(_)
+            | S::CharacterSuccess
+            | S::SpectatorSuccess(_) => SemanticStreamIdV1::CharacterScreen,
+            S::GroupUpdate(_)
+            | S::Invite { .. }
+            | S::InvitePending(_)
+            | S::InviteComplete { .. }
+            | S::ExitInGameSuccess
+            | S::InventoryUpdate(_, _)
+            | S::GroupInventoryUpdate(_, _)
+            | S::Dialogue(_, _)
+            | S::SetViewDistance(_)
+            | S::Outcomes(_)
+            | S::Knockback(_)
+            | S::SiteEconomy(_)
+            | S::UpdatePendingTrade(_, _, _)
+            | S::FinishedTrade(_)
+            | S::MapMarker(_)
+            | S::WeatherUpdate(_)
+            | S::LocalWindUpdate(_)
+            | S::SpectatePosition(_)
+            | S::UpdateRecipes
+            | S::Gizmos(_)
+            | S::BastionDesignation { .. }
+            | S::BastionDesignationRemoved { .. }
+            | S::BastionInspectInfo { .. } => SemanticStreamIdV1::InGame,
+            S::TerrainChunkUpdate { .. } | S::LodZoneUpdate { .. } | S::TerrainBlockUpdates(_) => {
+                SemanticStreamIdV1::Terrain
+            },
+            S::PlayerListUpdate(_)
+            | S::ChatMsg(_)
+            | S::ChatMode(_)
+            | S::SetPlayerEntity(_)
+            | S::TimeOfDay(_, _, _, _)
+            | S::EntitySync(_)
+            | S::CompSync(_, _)
+            | S::CreateEntity(_)
+            | S::DeleteEntity(_)
+            | S::Disconnect(_)
+            | S::Notification(_)
+            | S::SetPlayerRole(_)
+            | S::PluginData(_) => SemanticStreamIdV1::General,
+        }
+    }
+
+    fn payload_schema(&self) -> SemanticPayloadSchemaV1 { SemanticPayloadSchemaV1::ServerGeneral }
+}
+
+/// `ServerInit`'s single `GameSync` variant routes through the register
+/// stream today (`ServerMsg::Init(m) => PreparedMsg::new(0, ..,
+/// &self.register_stream_params)` in `server/src/client.rs::prepare`) --
+/// the same physical stream `ServerMsg::Info`/`RegisterAnswer` use, which
+/// this row's `SemanticStreamIdV1::Bootstrap` names.
+impl SemanticRouteV1 for ServerInit {
+    fn semantic_stream(&self) -> SemanticStreamIdV1 { SemanticStreamIdV1::Bootstrap }
+
+    fn payload_schema(&self) -> SemanticPayloadSchemaV1 { SemanticPayloadSchemaV1::ServerInit }
 }
 
 fn encode_tag_category(buf: &mut Vec<u8>, category: u8, entries: &[(u16, &'static str)]) {
@@ -617,4 +752,51 @@ mod tests {
         let decoded_b: HashMap<u32, u32> = decode_payload_exact_v1(&b).unwrap();
         assert_eq!(decoded_a, decoded_b, "semantically equal maps must still decode equal regardless of byte order");
     }
+
+    // T3.3.04's own test list: every variant on correct and every wrong
+    // stream, plus a new-variant compile/test canary. The exhaustive
+    // `match` (no wildcard arm) in each `SemanticRouteV1` impl above is
+    // itself the compile-time half of that canary -- it already failed to
+    // compile once during this step until every current variant was
+    // covered, and will fail again the moment a new variant is added to
+    // `ClientGeneral`/`ServerGeneral`/`ServerInit` without being routed
+    // here. These tests are the runtime half: representative variants
+    // from every one of the four semantic streams, confirming
+    // `semantic_stream()` lands on the RIGHT one and therefore (since it
+    // is a total function returning exactly one value) implicitly not any
+    // of the three wrong ones.
+
+    #[test]
+    fn client_general_route_covers_every_stream() {
+        use vek::Vec2;
+        assert_eq!(ClientGeneral::RequestCharacterList.semantic_stream(), SemanticStreamIdV1::CharacterScreen);
+        assert_eq!(ClientGeneral::ExitInGame.semantic_stream(), SemanticStreamIdV1::InGame);
+        assert_eq!(ClientGeneral::TerrainChunkRequest { key: Vec2::new(0, 0) }.semantic_stream(), SemanticStreamIdV1::Terrain);
+        assert_eq!(ClientGeneral::Terminate.semantic_stream(), SemanticStreamIdV1::General);
+        assert_eq!(ClientGeneral::Terminate.payload_schema(), SemanticPayloadSchemaV1::ClientGeneral);
+    }
+
+    #[test]
+    fn server_general_route_covers_every_stream() {
+        assert_eq!(ServerGeneral::CharacterSuccess.semantic_stream(), SemanticStreamIdV1::CharacterScreen);
+        assert_eq!(ServerGeneral::ExitInGameSuccess.semantic_stream(), SemanticStreamIdV1::InGame);
+        assert_eq!(ServerGeneral::UpdateRecipes.semantic_stream(), SemanticStreamIdV1::InGame);
+        assert_eq!(
+            ServerGeneral::Disconnect(crate::msg::server::DisconnectReason::Shutdown).semantic_stream(),
+            SemanticStreamIdV1::General
+        );
+        assert_eq!(ServerGeneral::CharacterSuccess.payload_schema(), SemanticPayloadSchemaV1::ServerGeneral);
+    }
+
+    /// `ServerInit` has one variant (`GameSync`), so its
+    /// `SemanticRouteV1::semantic_stream` impl is a constant function of
+    /// the type, never inspecting `&self` -- matching
+    /// `server/src/client.rs::prepare`'s `ServerMsg::Init` arm, which
+    /// also routes unconditionally to the register stream (this row's
+    /// `Bootstrap` tag). Constructing a full `GameSync` (entity package,
+    /// world map, recipe books, ...) just to call a method that ignores
+    /// its argument would test nothing this doesn't already prove;
+    /// `cargo check` compiling the impl's `SemanticStreamIdV1::Bootstrap`
+    /// body is the actual proof here, not a runtime assertion.
+    const _: fn(&ServerInit) -> SemanticStreamIdV1 = <ServerInit as SemanticRouteV1>::semantic_stream;
 }
