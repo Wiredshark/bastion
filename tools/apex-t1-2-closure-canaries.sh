@@ -29,6 +29,7 @@ report() { # report <name> <ok:0/1> <detail>
 # expect_terminal <name> <expected-exit> <expected-terminal> <workdir> [extra args...]
 run_tool() { # <workdir> [args...] -> stdout file $WORK/out.txt, returns exit
   local wd="$1"; shift
+  rm -rf "$wd/closure-out"   # records are per-commit; stale ones poison globs
   "$TOOL" --repo-root "$wd" --out-dir "$wd/closure-out" \
     --remote origin --expected-repository fixture-closure "$@" \
     > "$WORK/out.txt" 2> "$WORK/err.txt"
@@ -92,16 +93,21 @@ FLAKE
   # Green LFS state: pointer committed as the blob, resolved content on
   # disk, index told to trust the (deliberately divergent) worktree.
   printf 'version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %s\n' "$LFS_OID" "$LFS_SIZE" > assets/big.bin
-  mkdir -p tools
+  # A.1's own outputs (target/) and the closure's (closure-out/) must be
+  # ignored or the admission tool's own record trips the untracked check.
+  printf 'target/\nclosure-out/\n' > .gitignore
+  mkdir -p tools readme
   cp "$REPO_ROOT/tools/apex-source-admission.sh" tools/
   cp "$REPO_ROOT/tools/apex_source_admission_helper.py" tools/
+  cp "$REPO_ROOT/readme/APEX-SOURCE-IMPACT-POLICY-v1.toml" readme/
   gitf add -A
   gitf commit -qm fixture
   printf '%s' "$LFS_CONTENT" > assets/big.bin
   git update-index --assume-unchanged assets/big.bin
-  # Local bare "origin" whose URL contains the expected repository name.
-  git init -q --bare ../fixture-closure.git
-  git remote add origin ../fixture-closure.git
+  # Per-fixture bare "origin" whose URL contains the expected repository
+  # name (shared bare repos cross-reject pushes between fixtures).
+  git init -q --bare "../$(basename "$d")-fixture-closure.git"
+  git remote add origin "../$(basename "$d")-fixture-closure.git"
   git push -q origin main
   cd - >/dev/null || exit 2
 }
@@ -119,7 +125,15 @@ run_tool "$FX"
 SHA2=$(sha256sum "$CBOR1" | cut -d' ' -f1)
 [ "$SHA1" = "$SHA2" ] && report "re-run is byte-identical" 0 "" || report "re-run is byte-identical" 1 "$SHA1 vs $SHA2"
 
-( cd "$FX" && git worktree add --detach ../fx-other-path -q HEAD )
+# Baseline roots from the green re-run's own stdout (BEFORE any other case
+# overwrites out.txt).
+ROOT_RUST1=$(grep -o 'rust_source_root=[0-9a-f]*' "$WORK/out.txt")
+ROOT_ASSET1=$(grep -o 'asset_tree_root=[0-9a-f]*' "$WORK/out.txt")
+
+# The machine-global git-lfs smudge filter would fail this checkout (no
+# objects in .git/lfs) — neutralize it for the worktree add.
+( cd "$FX" && git -c filter.lfs.smudge=cat -c filter.lfs.process= -c filter.lfs.required=false \
+    worktree add --detach ../fx-other-path -q HEAD )
 # The second worktree needs the same divergent-but-trusted LFS state.
 ( cd "$WORK/fx-other-path" && printf '%s' "$LFS_CONTENT" > assets/big.bin && git update-index --assume-unchanged assets/big.bin )
 run_tool "$WORK/fx-other-path"
@@ -130,9 +144,6 @@ else
   report "cross-checkout records byte-identical (T1.2.06)" 1 "records differ or missing"
 fi
 ( cd "$FX" && git worktree remove --force ../fx-other-path )
-
-ROOT_RUST1=$(grep -o 'rust_source_root=[0-9a-f]*' "$WORK/out.txt")
-ROOT_ASSET1=$(grep -o 'asset_tree_root=[0-9a-f]*' "$WORK/out.txt")
 
 # ── 4-7: sensitivity — each mutated input flips the record ──────────────────
 printf 'fn main() { let _x = 1; }\n' > "$FX/src/main.rs"; commit_all "$FX" "rust flip"
@@ -186,6 +197,9 @@ FXM="$WORK/fxm"; make_fixture "$FXM"
 printf 'version https://git-lfs.github.com/spec/v1\noid sha256:NOT-HEX\nsize 5\n' > "$FXM/assets/big.bin"
 ( cd "$FXM" && git update-index --no-assume-unchanged assets/big.bin )
 commit_all "$FXM" "malformed pointer"
+# Re-trust the worktree: the global lfs clean filter would re-pointerize
+# the malformed text in status and report DIRTY.
+( cd "$FXM" && git update-index --assume-unchanged assets/big.bin )
 expect_terminal "malformed pointer blocks" 13 "T1.2-BLOCK-LFS-OID-MISMATCH" "$FXM"
 
 # ── 14-16: tree hazards (plumbing-committed; worktree stays A.1-clean) ──────
@@ -204,7 +218,8 @@ expect_terminal "symlink entry blocks" 19 "T1.2-BLOCK-TREE-HAZARD" "$FXH"
 FXG="$WORK/fxg"; make_fixture "$FXG"
 ( cd "$FXG" \
   && git update-index --add --cacheinfo "160000,$(git rev-parse HEAD),vendored-sub" \
-  && gitf commit -qm gitlink )
+  && git update-index --assume-unchanged vendored-sub 2>/dev/null; \
+     cd "$FXG" && gitf commit -qm gitlink )
 expect_terminal "gitlink entry blocks" 19 "T1.2-BLOCK-TREE-HAZARD" "$FXG"
 
 FXC="$WORK/fxc"; make_fixture "$FXC"
@@ -233,6 +248,9 @@ FXU="$WORK/fxu"; make_fixture "$FXU"
 printf '*.dat filter=lfs diff=lfs merge=lfs -text\n' >> "$FXU/.gitattributes"
 printf 'real content, never migrated' > "$FXU/assets/plain.dat"
 commit_all "$FXU" "unmigrated attr file"
+# The blob is the RAW content (committed with filters neutralized) — the
+# global lfs clean filter would re-pointerize it in status: re-trust.
+( cd "$FXU" && git update-index --assume-unchanged assets/plain.dat )
 run_tool "$FXU"; got=$?
 if [ "$got" = 0 ] && grep -q 'assets/plain.dat' "$FXU"/closure-out/*.evidence.json; then
   report "unmigrated attr-LFS file: READY + evidence-listed (premise delta)" 0 ""
@@ -246,14 +264,17 @@ if ! ls "$FXH"/closure-out/*.cbor >/dev/null 2>&1 && ! ls "$FXH"/closure-out/*.t
 else
   report "blocked run leaves NO record and NO .tmp (atomicity)" 1 "partial output exists"
 fi
+# Fresh green emission first — the admission-block cases above cleared
+# FX's closure-out on their way in.
+run_tool "$FX"
 ( cd "$FX/closure-out" && sha256sum -c ./*.cbor.sha256 >/dev/null 2>&1 ) \
   && report "sha256 sidecar verifies the canonical bytes" 0 "" \
   || report "sha256 sidecar verifies the canonical bytes" 1 "sidecar mismatch"
 MIRROR_ASSET=$(grep -o '"asset_tree_root": "[0-9a-f]*"' "$FX"/closure-out/*.json | grep -o '[0-9a-f]\{64\}')
-run_tool "$FX"
 STDOUT_ASSET=$(grep -o 'asset_tree_root=[0-9a-f]*' "$WORK/out.txt" | cut -d= -f2)
-[ "$MIRROR_ASSET" = "$STDOUT_ASSET" ] && report "JSON mirror agrees with canonical roots" 0 "" \
-  || report "JSON mirror agrees with canonical roots" 1 "$MIRROR_ASSET vs $STDOUT_ASSET"
+{ [ -n "$MIRROR_ASSET" ] && [ "$MIRROR_ASSET" = "$STDOUT_ASSET" ]; } \
+  && report "JSON mirror agrees with canonical roots" 0 "" \
+  || report "JSON mirror agrees with canonical roots" 1 "'$MIRROR_ASSET' vs '$STDOUT_ASSET'"
 
 # ── 24-26: T1.2.08 runtime binding gate (real harness bin, real repo) ───────
 if [ -x "$HARNESS" ] || [ -x "$HARNESS.exe" ]; then
