@@ -511,8 +511,37 @@ pub fn resolve_manifest(
     let content = entry_content(archive, entry);
     let toml_str =
         std::str::from_utf8(content).map_err(|_| ArchiveRejectV1::ManifestParse { detail: "manifest not UTF-8" })?;
-    let raw: LegacyManifestRawV1 =
-        toml::de::from_str(toml_str).map_err(|_| ArchiveRejectV1::ManifestParse { detail: "legacy TOML parse" })?;
+    // APEX-T2.5.11 closes T2.2's interim legacy-only parse: probe the
+    // schema first (same rule as T2.3's probe — the probe runs on the RAW
+    // value so a malformed V1 can never fall back to legacy). Admission
+    // only needs the DECLARED MODULE PATHS for the namespace gate; full
+    // V1 validation stays T2.3's job downstream in the pipeline.
+    let raw_value: toml::Value =
+        toml::de::from_str(toml_str).map_err(|_| ArchiveRejectV1::ManifestParse { detail: "TOML parse" })?;
+    let is_v1 = matches!(raw_value.get("manifest_version"), Some(toml::Value::Integer(_)));
+    let (declared_module_paths, raw_dependency_names): (Vec<String>, Vec<String>) = if is_v1 {
+        let modules = match raw_value.get("modules") {
+            None => Vec::new(),
+            Some(toml::Value::Array(arr)) => arr
+                .iter()
+                .map(|m| {
+                    m.get("path")
+                        .and_then(|p| p.as_str())
+                        .map(str::to_owned)
+                        .ok_or(ArchiveRejectV1::ManifestParse { detail: "v1 module entry missing string path" })
+                })
+                .collect::<Result<_, _>>()?,
+            Some(_) => return Err(ArchiveRejectV1::ManifestParse { detail: "v1 modules not an array" }),
+        };
+        // V1 dependencies are typed (id+version); duplicate detection for
+        // them is T2.3/T2.4 semantics, not this raw legacy-observation aid.
+        (modules, Vec::new())
+    } else {
+        let raw: LegacyManifestRawV1 = raw_value
+            .try_into()
+            .map_err(|_| ArchiveRejectV1::ManifestParse { detail: "legacy TOML parse" })?;
+        (raw.modules, raw.dependencies)
+    };
 
     // Module resolution through the canonical path/index gate.
     let exact: std::collections::BTreeSet<&str> = namespace.iter().map(|e| e.path.as_str()).collect();
@@ -525,8 +554,8 @@ pub fn resolve_manifest(
 
     let mut seen_raw = std::collections::BTreeSet::new();
     let mut seen_keys = std::collections::BTreeSet::new();
-    let mut modules = Vec::with_capacity(raw.modules.len());
-    for declared in &raw.modules {
+    let mut modules = Vec::with_capacity(declared_module_paths.len());
+    for declared in &declared_module_paths {
         if !seen_raw.insert(declared.clone()) {
             return Err(ArchiveRejectV1::DuplicateRawModuleDeclaration);
         }
@@ -552,7 +581,7 @@ pub fn resolve_manifest(
 
     let mut dep_seen = std::collections::BTreeSet::new();
     let raw_duplicate_dependencies: Vec<String> =
-        raw.dependencies.iter().filter(|d| !dep_seen.insert((*d).clone())).cloned().collect();
+        raw_dependency_names.iter().filter(|d| !dep_seen.insert((*d).clone())).cloned().collect();
 
     Ok(ManifestResolutionV1 {
         manifest_path: assembled[idx].0.clone(),
