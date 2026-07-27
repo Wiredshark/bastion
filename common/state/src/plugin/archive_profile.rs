@@ -215,6 +215,103 @@ impl ArchiveRejectV1 {
 }
 
 // ---------------------------------------------------------------------------
+// T2.2.09 — repository-owned deterministic canonical packer.
+// ---------------------------------------------------------------------------
+
+/// Packs a file set into a canonical StrictCanonicalV1 archive:
+/// path-byte-sorted entries, FIXED UStar metadata (mode 0644, uid/gid 0,
+/// mtime 0, empty uname/gname — `CANONICAL-PACKER-HOST-METADATA-
+/// INDEPENDENT` PAR-C22 holds by construction, `ACCEPT-FIXED-USTAR-
+/// METADATA` PAR-C32 is its read side), NO directory records (PAR-C33),
+/// canonical prefix/name split for long paths, exactly-two-zero-block
+/// terminator. The packer NEVER transforms a path it cannot represent —
+/// it rejects (`REJECT-WRITER-PATH-TRANSFORMATION` PAR-C31 is the guard
+/// this refuses to violate; `REJECT-NONREPRESENTABLE-USTAR-PATH` PAR-C21
+/// lives HERE, its only reachable side). Inspect-after-pack: the output
+/// is re-scanned and re-assembled and must round-trip the input set
+/// exactly (`CANONICAL-PACKER-REPRODUCIBLE` PAR-C13 follows from this
+/// being a pure function of the sorted input).
+pub fn pack_canonical(files: &[(CanonicalPathV1, &[u8])], limits: &ArchiveLimitsPolicyV1) -> Result<Vec<u8>, ArchiveRejectV1> {
+    // Validate + sort (input order must not matter).
+    let mut sorted: Vec<&(CanonicalPathV1, &[u8])> = files.iter().collect();
+    sorted.sort_by(|a, b| a.0.as_str().as_bytes().cmp(b.0.as_str().as_bytes()));
+    for pair in sorted.windows(2) {
+        if pair[0].0.as_str() == pair[1].0.as_str() {
+            return Err(ArchiveRejectV1::DuplicateCanonicalPath);
+        }
+    }
+    let mut keys: Vec<String> = sorted.iter().map(|(p, _)| p.as_str().to_ascii_lowercase()).collect();
+    keys.sort_unstable();
+    for pair in keys.windows(2) {
+        if pair[0] == pair[1] {
+            return Err(ArchiveRejectV1::PortableCaseCollision);
+        }
+    }
+
+    let mut out = Vec::new();
+    for (path, content) in sorted {
+        let bytes = path.as_str().as_bytes();
+        if !bytes.iter().all(|&b| portable_byte(b)) {
+            return Err(ArchiveRejectV1::NonPortableCharacter {
+                byte: *bytes.iter().find(|&&b| !portable_byte(b)).expect("checked"),
+            });
+        }
+        if bytes.len() as u64 > limits.max_path_bytes {
+            return Err(ArchiveRejectV1::PathTooLong);
+        }
+        if content.len() as u64 > limits.max_entry_bytes {
+            return Err(ArchiveRejectV1::EntrySizeLimit);
+        }
+        // Canonical split — reject rather than transform (C21/C31).
+        let (prefix_len, name_len) = canonical_split(bytes).ok_or(ArchiveRejectV1::NonrepresentableUstarPath)?;
+        let (prefix, name) = if prefix_len == 0 {
+            (&b""[..], bytes)
+        } else {
+            (&bytes[..prefix_len], &bytes[bytes.len() - name_len..])
+        };
+
+        let mut header = [0u8; BLOCK];
+        header[..name.len()].copy_from_slice(name);
+        header[100..108].copy_from_slice(b"0000644\0");
+        header[108..116].copy_from_slice(b"0000000\0");
+        header[116..124].copy_from_slice(b"0000000\0");
+        let size_field = format!("{:011o}\0", content.len());
+        header[124..136].copy_from_slice(size_field.as_bytes());
+        header[136..148].copy_from_slice(b"00000000000\0");
+        header[156] = b'0';
+        header[257..263].copy_from_slice(b"ustar\0");
+        header[263..265].copy_from_slice(b"00");
+        header[345..345 + prefix.len()].copy_from_slice(prefix);
+        header[148..156].copy_from_slice(b"        ");
+        let sum: u64 = header.iter().map(|&b| b as u64).sum();
+        header[148..156].copy_from_slice(format!("{:06o}\0 ", sum).as_bytes());
+
+        out.extend_from_slice(&header);
+        out.extend_from_slice(content);
+        let pad = (BLOCK - content.len() % BLOCK) % BLOCK;
+        out.extend(std::iter::repeat_n(0u8, pad));
+    }
+    out.extend(std::iter::repeat_n(0u8, 2 * BLOCK));
+
+    // Inspect-after-pack: our own scanner + path assembly must round-trip
+    // the exact input set (never trust the writer, even our own).
+    let scan = scan_framing(&out, limits)?;
+    if scan.dialect != TarDialectV1::UstarStrict || !scan.canonical_terminator || scan.entries.len() != files.len() {
+        return Err(ArchiveRejectV1::MalformedTar { detail: "inspect-after-pack: framing shape" });
+    }
+    let mut expect: Vec<&str> = files.iter().map(|(p, _)| p.as_str()).collect();
+    expect.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+    for (entry, want) in scan.entries.iter().zip(expect) {
+        let (got, _) = assemble_ustar_path(entry, limits)?;
+        if got.as_str() != want || entry.type_flag != b'0' {
+            return Err(ArchiveRejectV1::WriterPathTransformation);
+        }
+    }
+    reconcile_tar_rs(&out, &scan.entries)?;
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
 // T2.2.06 — bounded root manifest + legacy module resolution.
 // ---------------------------------------------------------------------------
 
@@ -1241,6 +1338,55 @@ mod tests {
         assert_eq!(
             resolve_manifest(&archive, &scanned, &assembled, &ns, &small).unwrap_err(),
             ArchiveRejectV1::ManifestSizeLimit
+        );
+    }
+
+    #[test]
+    fn packer_is_canonical_and_rejects_rather_than_transforms() {
+        let limits = test_limits();
+        let p = |s: &str| CanonicalPathV1::new(s).unwrap();
+
+        // Deterministic + input-order independent.
+        let a = pack_canonical(&[(p("b/two.wasm"), b"2"), (p("a/one.wasm"), b"1"), (p("plugin.toml"), b"t")], &limits).unwrap();
+        let b = pack_canonical(&[(p("plugin.toml"), b"t"), (p("a/one.wasm"), b"1"), (p("b/two.wasm"), b"2")], &limits).unwrap();
+        assert_eq!(a, b, "packer output is a pure function of the SET (PAR-C13)");
+
+        // Output survives our own strict read: scan + assemble round-trip,
+        // strict dialect, no directory records (PAR-C33), fixed metadata
+        // readable (PAR-C32 read side).
+        let scan = scan_framing(&a, &limits).unwrap();
+        assert_eq!(scan.dialect, TarDialectV1::UstarStrict);
+        assert!(scan.entries.iter().all(|e| e.type_flag == b'0'), "no directory records");
+
+        // Long path gets the canonical split and round-trips.
+        let mut long = String::new();
+        for _ in 0..6 {
+            long.push_str("segment-abcdefghij/");
+        }
+        long.push_str("leaf.wasm"); // >100 bytes, slash-rich
+        let mut generous = limits.clone();
+        generous.max_path_bytes = 255;
+        let packed = pack_canonical(&[(p(&long), b"L")], &generous).unwrap();
+        let scan = scan_framing(&packed, &generous).unwrap();
+        let (got, _) = assemble_ustar_path(&scan.entries[0], &generous).unwrap();
+        assert_eq!(got.as_str(), long);
+
+        // PAR-C21 lives here: a >100-byte single segment is not
+        // representable — REJECT, never transform (PAR-C31).
+        let big_segment = "q".repeat(160);
+        assert_eq!(
+            pack_canonical(&[(p(&big_segment), b"x")], &generous).unwrap_err(),
+            ArchiveRejectV1::NonrepresentableUstarPath
+        );
+
+        // Packer-side collision rejects.
+        assert_eq!(
+            pack_canonical(&[(p("a.wasm"), b"1"), (p("a.wasm"), b"2")], &limits).unwrap_err(),
+            ArchiveRejectV1::DuplicateCanonicalPath
+        );
+        assert_eq!(
+            pack_canonical(&[(p("A.wasm"), b"1"), (p("a.wasm"), b"2")], &limits).unwrap_err(),
+            ArchiveRejectV1::PortableCaseCollision
         );
     }
 
