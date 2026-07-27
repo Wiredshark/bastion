@@ -122,7 +122,7 @@ toolchain/config file bytes)**. Specifically:
    RESOLVED evidence, excluded from the pure-function root — resolver output
    is machine-fact, not source-fact; it lives in a separate evidence field so
    the ROOT stays commit-pure).
-6. **One new digest domain** (`SourceClosure = 9`) — not reusing
+6. **One new digest domain** (`SourceClosure = 11`) — not reusing
    `BuildManifest = 5`: the closure is an input to T1.5's manifest, and
    domain-separating inputs from the manifest that embeds them is the whole
    point of domain separation.
