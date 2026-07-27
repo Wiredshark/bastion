@@ -327,6 +327,79 @@ pub fn resolve_manifest(
 }
 
 // ---------------------------------------------------------------------------
+// T2.2.07 — separated artifact and semantic identities.
+// ---------------------------------------------------------------------------
+
+pub const PLUGIN_ARCHIVE_SEMANTIC_SCHEMA_V1: &str = "bastion.plugin-archive-semantic/v1";
+
+/// Own limits for the semantic-root manifest (T0.2 has no Default).
+pub const fn plugin_archive_limits_v1() -> common::apex::manifest::ManifestDecodeLimitsV1 {
+    common::apex::manifest::ManifestDecodeLimitsV1 {
+        max_input_bytes: 16 << 20,
+        max_depth: 8,
+        max_nodes: 1 << 18,
+        max_array_items: 1 << 15,
+        max_map_entries: 16,
+        max_machine_text_bytes: 4096,
+        max_byte_string_bytes: 4096,
+    }
+}
+
+/// The archive's EXACT artifact identity: moves with ANY byte of the
+/// archive (`ACCEPT-SAME-SEMANTIC-ROOT-DIFFERENT-ARTIFACT` PAR-004 is the
+/// separation proof against [`semantic_root`]).
+pub fn artifact_identity(archive: &[u8]) -> ArtifactIdentityV1 {
+    common::apex::digest::hash_artifact_bytes_v1(archive)
+}
+
+/// The archive's SEMANTIC root under `PluginArchive` (= 17): schema tag +
+/// path-sorted regular-file (path, kind, size, content) records + the
+/// implied-directory namespace (PAR-C10) — and NOTHING else: no raw
+/// ordinal, no tar metadata (PAR-C11, `CANONICAL-PACKER-HOST-METADATA-
+/// INDEPENDENT` follows from this exclusion by construction).
+pub fn semantic_root(namespace: &[CanonicalEntryV1]) -> Result<ProtocolDigestV1, ArchiveRejectV1> {
+    use common::apex::manifest::{
+        CanonicalFieldMapV1, FieldIdV1, MachineTextV1 as MT, ManifestEncodeV1, ManifestValueV1,
+    };
+    struct Wrapper(ManifestValueV1);
+    impl ManifestEncodeV1 for Wrapper {
+        fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, common::apex::manifest::ManifestCodecErrorV1> {
+            Ok(self.0.clone())
+        }
+    }
+    let err = |_| ArchiveRejectV1::MalformedTar { detail: "semantic root encoding" };
+    let entries: Vec<ManifestValueV1> = namespace
+        .iter()
+        .map(|e| {
+            let map = CanonicalFieldMapV1::try_from_entries(vec![
+                (FieldIdV1::new(0), ManifestValueV1::MachineText(MT::new(e.path.as_str()).map_err(err)?)),
+                (FieldIdV1::new(1), ManifestValueV1::MachineText(MT::new("file").map_err(err)?)),
+                (FieldIdV1::new(2), ManifestValueV1::Unsigned(e.size_bytes)),
+                (FieldIdV1::new(3), ManifestValueV1::Bytes(e.content_sha256.to_vec())),
+            ])
+            .map_err(err)?;
+            Ok(ManifestValueV1::Map(map))
+        })
+        .collect::<Result<_, ArchiveRejectV1>>()?;
+    let dirs: Vec<ManifestValueV1> = implied_directories(namespace)
+        .into_iter()
+        .map(|d| Ok(ManifestValueV1::MachineText(MT::new(d).map_err(err)?)))
+        .collect::<Result<_, ArchiveRejectV1>>()?;
+    let top = CanonicalFieldMapV1::try_from_entries(vec![
+        (FieldIdV1::new(0), ManifestValueV1::MachineText(MT::new(PLUGIN_ARCHIVE_SEMANTIC_SCHEMA_V1).map_err(err)?)),
+        (FieldIdV1::new(1), ManifestValueV1::Array(entries)),
+        (FieldIdV1::new(2), ManifestValueV1::Array(dirs)),
+    ])
+    .map_err(err)?;
+    common::apex::digest::digest_manifest_value_v1(
+        common::apex::digest::DigestDomainIdV1::PluginArchive,
+        &Wrapper(ManifestValueV1::Map(top)),
+        &plugin_archive_limits_v1(),
+    )
+    .map_err(|_| ArchiveRejectV1::MalformedTar { detail: "semantic root digest" })
+}
+
+// ---------------------------------------------------------------------------
 // T2.2.05 — duplicate-safe regular-file namespace index.
 // ---------------------------------------------------------------------------
 
@@ -1107,6 +1180,36 @@ mod tests {
             resolve_manifest(&archive, &scanned, &assembled, &ns, &small).unwrap_err(),
             ArchiveRejectV1::ManifestSizeLimit
         );
+    }
+
+    #[test]
+    fn identities_separate_and_semantic_root_semantics() {
+        // Same content set, two different packings (entry order swapped in
+        // the ARCHIVE) => same semantic root, different artifact identity
+        // (PAR-003/004, C11: ordinal excluded by construction).
+        let a1 = terminated({
+            let mut b = ustar_entry("a.wasm", b"A", b'0');
+            b.extend(ustar_entry("b.wasm", b"B", b'0'));
+            b
+        });
+        let a2 = terminated({
+            let mut b = ustar_entry("b.wasm", b"B", b'0');
+            b.extend(ustar_entry("a.wasm", b"A", b'0'));
+            b
+        });
+        let ns = build_namespace(vec![centry("a.wasm", 1), centry("b.wasm", 2)]).unwrap();
+        assert_ne!(artifact_identity(&a1), artifact_identity(&a2), "artifact identity moves with packing");
+        // Namespace is content-derived, identical for both packings:
+        assert_eq!(semantic_root(&ns).unwrap(), semantic_root(&ns).unwrap());
+
+        // Content flip moves the root (PAR-049).
+        let ns_flip = build_namespace(vec![centry("a.wasm", 9), centry("b.wasm", 2)]).unwrap();
+        assert_ne!(semantic_root(&ns).unwrap(), semantic_root(&ns_flip).unwrap());
+
+        // PAR-C10: same file bytes in a different implied directory moves
+        // the root (directory namespace IS identity).
+        let ns_moved = build_namespace(vec![centry("d/a.wasm", 1), centry("b.wasm", 2)]).unwrap();
+        assert_ne!(semantic_root(&ns).unwrap(), semantic_root(&ns_moved).unwrap());
     }
 
     #[test]
