@@ -8,6 +8,10 @@
 /// register their own domain, owned by their schema; this module does not
 /// expose a generic untyped Merkle API.
 #[repr(u16)]
+/// ID ALLOCATION (standing rule): numbering is blocked per program.
+/// <=20 pre-split shared history, frozen. 21-39 ENGINE. 40-99 APEX.
+/// A new lane requests a block before its first allocation; two lanes
+/// allocating from one range is how ids 12 and 21/22 collided.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum DigestDomainIdV1 {
     BootstrapManifest = 1,
@@ -45,9 +49,9 @@ pub enum DigestDomainIdV1 {
     /// recomputes it (no literal digest is pinned anywhere for it), whereas
     /// T1.3/T1.4's evidence records literal roots derived under 12.
     NetEnvelopeProfile = 20,
-    CheckpointStreamTranscript = 21,
-    CheckpointGlobalTranscript = 22,
-    CheckpointDescriptor = 23,
+    CheckpointStreamTranscript = 40,
+    CheckpointGlobalTranscript = 41,
+    CheckpointDescriptor = 42,
     // IDs 9 (SubsystemDescriptor) and 10 (CompatibilityProfile) are ALLOCATED
     // to APEX-T0.5's in-flight build (row-order allocation rule, Fable-blessed;
     // collision with SourceClosure caught + resolved at spec stage). Sonnet 5's
@@ -208,11 +212,11 @@ mod tests {
         assert_eq!(DigestDomainIdV1::PluginCandidateSet.label(), "bastion/plugin-candidate-set/v1");
         assert_eq!(DigestDomainIdV1::PluginResolvedGraph.as_u16(), 19);
         assert_eq!(DigestDomainIdV1::PluginResolvedGraph.label(), "bastion/plugin-resolved-graph/v1");
-        assert_eq!(DigestDomainIdV1::CheckpointStreamTranscript.as_u16(), 21);
+        assert_eq!(DigestDomainIdV1::CheckpointStreamTranscript.as_u16(), 40);
         assert_eq!(DigestDomainIdV1::CheckpointStreamTranscript.label(), "bastion/checkpoint-stream/v1");
-        assert_eq!(DigestDomainIdV1::CheckpointGlobalTranscript.as_u16(), 22);
+        assert_eq!(DigestDomainIdV1::CheckpointGlobalTranscript.as_u16(), 41);
         assert_eq!(DigestDomainIdV1::CheckpointGlobalTranscript.label(), "bastion/checkpoint-global/v1");
-        assert_eq!(DigestDomainIdV1::CheckpointDescriptor.as_u16(), 23);
+        assert_eq!(DigestDomainIdV1::CheckpointDescriptor.as_u16(), 42);
         assert_eq!(DigestDomainIdV1::CheckpointDescriptor.label(), "bastion/checkpoint-descriptor/v1");
     }
 }
