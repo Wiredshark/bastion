@@ -187,7 +187,7 @@ Resolved-evidence sidecar (JSON, non-authoritative, NOT in any root):
 ## 7. Minute steps
 
 - **T1.2.01** Schema doc + this packet reviewed; field IDs frozen. Gate: cross-review sign-off.
-- **T1.2.02** Register `DigestDomainIdV1::SourceClosure = 9` (+label, +ALL list, +domain doc). Gate: apex digest tests extended, green.
+- **T1.2.02** Register `DigestDomainIdV1::SourceClosure = 11` (+label, +ALL list, +domain doc; 9/10 = T0.5's). Gate: apex digest tests extended, green.
 - **T1.2.03** `tools/apex-source-closure.sh` (or a small Rust bin `apex-source-closure` in bastion-harness/tools if NUL-safe hashing in shell gets unwieldy — implementer's call, mirroring A.1's helper precedent): entry gate = A.1 `--check-worktree` reuse; then capture per Sections 4–5. Gate: runs on the live repo → `T1.2-CLOSURE-READY`.
 - **T1.2.04** LFS verification pass (pointer parse → oid compare, per file; distinct terminals). Gate: canaries for stub/missing/mismatch each bite.
 - **T1.2.05** Asset-tree + rust-source roots (canonical walk, T0.2 encode, T0.3 digest). Gate: byte-flip canary flips the root; path-order canary (same set, shuffled walk) does NOT.
