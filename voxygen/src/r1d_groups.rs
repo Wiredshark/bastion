@@ -130,9 +130,12 @@ pub fn update(
             source_capability_digest: group.source_capability_digest,
         });
     }
-    let plan = GroupRepresentationPlanV1::build(
+    let policy_tick = crate::r1d_scale::current_policy_tick(input.simulation_tick)
+        .map_err(|_| GroupRepresentationErrorV1::LengthOverflow)?;
+    let plan = GroupRepresentationPlanV1::build_with_policy_tick(
         frame,
         &individual,
+        policy_tick,
         input.camera_position_mm,
         GroupPolicyV1::PRODUCTION,
         GroupBudgetV1::PRODUCTION,

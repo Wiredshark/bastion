@@ -74,7 +74,8 @@ pub fn update(
 ) -> Result<ProductionTierEvidenceV1, IndividualTierErrorV1> {
     let generation = frame.generation().client_applied_generation;
     let frame_digest = frame.frame_digest();
-    let tick = input.simulation_tick;
+    let tick = crate::r1d_scale::current_policy_tick(input.simulation_tick)
+        .map_err(|_| IndividualTierErrorV1::LengthOverflow)?;
     let prior = state().lock().ok().and_then(|state| state.plan.clone());
     let mut by_semantic = BTreeMap::new();
     if let Some(plan) = prior {

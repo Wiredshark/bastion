@@ -717,6 +717,13 @@ static SETTLED_TRACE_GATE: Mutex<SettledTraceGateV1> = Mutex::new(SettledTraceGa
     open_anchor_uid: None,
 });
 
+/// Number of capture commands synchronously accepted by the renderer.
+///
+/// This counter advances before asynchronous readback begins, so callback
+/// completion order cannot select a deterministic camera-script sample.
+#[must_use]
+pub fn capture_requested_ordinal_v1() -> u64 { CAPTURE_STATE.lock().map_or(0, |state| state.1) }
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CaptureAnchorEvidenceV1 {
     pub uid: u64,
@@ -776,6 +783,11 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r1d_group_frame_sha256"
         | "r1d_group_individual_plan_sha256"
         | "r1d_group_plan_sha256"
+        | "r1d_scale_sample_ordinal"
+        | "r1d_scale_policy_tick"
+        | "r1d_scale_camera_distance_mm"
+        | "r1d_scale_member_set_sha256"
+        | "r1d_scale_sample_sha256"
         | "anchor_uid"
         | "anchor_selected_non_client_colonist"
         | "ordinal" => Some(CaptureMetadataFieldClassV1::Authority),
@@ -839,6 +851,8 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r1d_group_wedge_count"
         | "r1d_group_grid_count"
         | "r1d_group_procession_count"
+        | "r1d_scale_enabled"
+        | "r1d_scale_population_count"
         | "width"
         | "height"
         | "pixel_format"
@@ -933,6 +947,13 @@ pub fn drive_capture(
     let Some((output, warmup, count)) = capture_config() else {
         return false;
     };
+    if crate::r1d_scale::enabled() && count != crate::r1d_scale::SCALE_CAPTURE_COUNT_V1 {
+        write_capture_fault(
+            &output,
+            "FAULT-TERMINAL R1D_SCALE_INVALID_CAPTURE_COUNT expected=5\n",
+        );
+        return true;
+    }
     let (frames, requested, completed) = match CAPTURE_STATE.lock() {
         Ok(mut state) => {
             let Some(next_frame) = state.0.checked_add(1) else {
@@ -1077,6 +1098,7 @@ fn request_one_capture(
     let figure_gpu = super::figure_gpu::latest_evidence();
     let figure_batch = super::figure_batch::latest_evidence();
     let individual_tiers = crate::r1d_tiers::latest_evidence();
+    let individual_tier_plan = crate::r1d_tiers::latest_plan();
     let group_representations = crate::r1d_groups::latest_evidence();
     let group_protected_uids = crate::r1d_groups::protected_uid_csv();
     renderer.create_screenshot(move |result| {
@@ -1145,7 +1167,8 @@ fn request_one_capture(
                                         && value.individual_plan_root
                                             == individual_tiers.decision_root
                                 });
-                                if std::env::var_os("BASTION_R1D_GROUP_SMOKE").is_some()
+                                if (std::env::var_os("BASTION_R1D_GROUP_SMOKE").is_some()
+                                    || crate::r1d_scale::enabled())
                                     && group_representations.is_none()
                                 {
                                     return Err(std::io::Error::new(
@@ -1155,7 +1178,69 @@ fn request_one_capture(
                                 }
                                 let group_representations =
                                     group_representations.unwrap_or_default();
-                                let metadata = format!(
+                                let scale_evidence = if crate::r1d_scale::enabled() {
+                                    let plan = individual_tier_plan.as_ref().ok_or_else(|| {
+                                        std::io::Error::new(
+                                            std::io::ErrorKind::InvalidData,
+                                            "scale individual plan absent",
+                                        )
+                                    })?;
+                                    let member_set_digest =
+                                        crate::r1d_scale::canonical_member_set_digest_v1(
+                                            plan.decisions
+                                                .iter()
+                                                .map(|decision| decision.semantic_entity),
+                                        )
+                                        .map_err(
+                                            |error| {
+                                                std::io::Error::new(
+                                                    std::io::ErrorKind::InvalidData,
+                                                    format!("scale member set {error:?}"),
+                                                )
+                                            },
+                                        )?;
+                                    let sample =
+                                        crate::r1d_scale::camera_sample_for_request_ordinal(
+                                            ordinal,
+                                        );
+                                    let record = crate::r1d_scale::ScaleSampleRecordV1 {
+                                        ordinal,
+                                        policy_tick: plan.tick,
+                                        camera_distance_mm: sample.distance_mm,
+                                        population_count: u32::try_from(plan.decisions.len())
+                                            .map_err(|_| {
+                                                std::io::Error::new(
+                                                    std::io::ErrorKind::InvalidData,
+                                                    "scale population overflow",
+                                                )
+                                            })?,
+                                        member_set_digest,
+                                        tier_root: individual_tiers.decision_root,
+                                        full_count: individual_tiers.full_count,
+                                        reduced_count: individual_tiers.reduced_count,
+                                        lod_count: individual_tiers.lod_count,
+                                        impostor_count: individual_tiers.impostor_count,
+                                        culled_count: individual_tiers.culled_count,
+                                        group_root: group_representations.group_plan_root,
+                                        group_count: group_representations.group_count,
+                                        group_member_count: group_representations.member_count,
+                                        protected_member_count: group_representations
+                                            .protected_member_count,
+                                        tier_transition_count: individual_tiers.transition_count,
+                                        group_transition_count: group_representations
+                                            .transition_count,
+                                    };
+                                    let digest = record.digest().map_err(|error| {
+                                        std::io::Error::new(
+                                            std::io::ErrorKind::InvalidData,
+                                            format!("scale record {error:?}"),
+                                        )
+                                    })?;
+                                    Some((record, digest))
+                                } else {
+                                    None
+                                };
+                                let mut metadata = format!(
                                     concat!(
                                         "schema=RendererCaptureEvidenceV1\n",
                                         "ordinal={}\n",
@@ -1354,6 +1439,27 @@ fn request_one_capture(
                                     context.semantic_trace.record_count,
                                     hex_digest(&context.semantic_trace.digest),
                                 );
+                                if let Some((scale, scale_digest)) = scale_evidence {
+                                    metadata.push_str(&format!(
+                                        concat!(
+                                            "r1d_scale_enabled=true\n",
+                                            "r1d_scale_sample_ordinal={}\n",
+                                            "r1d_scale_policy_tick={}\n",
+                                            "r1d_scale_camera_distance_mm={}\n",
+                                            "r1d_scale_population_count={}\n",
+                                            "r1d_scale_member_set_sha256={}\n",
+                                            "r1d_scale_sample_sha256={}\n",
+                                        ),
+                                        scale.ordinal,
+                                        scale.policy_tick,
+                                        scale.camera_distance_mm,
+                                        scale.population_count,
+                                        hex_digest(&scale.member_set_digest),
+                                        hex_digest(&scale_digest),
+                                    ));
+                                } else {
+                                    metadata.push_str("r1d_scale_enabled=false\n");
+                                }
                                 write_atomic(&metadata_path, metadata.as_bytes())
                             });
                         if let Err(error) = result {

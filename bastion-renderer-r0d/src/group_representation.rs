@@ -316,13 +316,41 @@ impl GroupRepresentationPlanV1 {
         declarations: Vec<GroupDeclarationV1>,
         prior: &[GroupPriorStateV1],
     ) -> Result<Self, GroupRepresentationErrorV1> {
+        Self::build_with_policy_tick(
+            frame,
+            individual_plan,
+            frame.generation().simulation_tick,
+            camera_position_mm,
+            policy,
+            budget,
+            declarations,
+            prior,
+        )
+    }
+
+    /// Builds a renderer representation plan using an explicit deterministic
+    /// policy tick. Production normally uses the presentation simulation tick;
+    /// bounded certification scripts may advance this renderer-only policy
+    /// clock while the authoritative fixture is frozen.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_with_policy_tick(
+        frame: &PresentationFrameV1,
+        individual_plan: &IndividualTierPlanV1,
+        policy_tick: u64,
+        camera_position_mm: [i64; 3],
+        policy: GroupPolicyV1,
+        budget: GroupBudgetV1,
+        declarations: Vec<GroupDeclarationV1>,
+        prior: &[GroupPriorStateV1],
+    ) -> Result<Self, GroupRepresentationErrorV1> {
         let policy = policy.validate()?;
         let budget = budget.validate()?;
         let generation = frame.generation().client_applied_generation;
-        let tick = frame.generation().simulation_tick;
+        let tick = policy_tick;
         if generation == 0
             || individual_plan.generation != generation
             || individual_plan.frame_digest != frame.frame_digest()
+            || tick < frame.generation().simulation_tick
         {
             return Err(GroupRepresentationErrorV1::StaleGeneration);
         }

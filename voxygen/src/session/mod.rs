@@ -436,7 +436,59 @@ impl SessionState {
         // certification path has no bound authoritative group feed today, so
         // the explicit R1D smoke flag declares exactly two packet-owned groups
         // over the already coherent, canonically ordered fixture entities.
-        let mut presentation_groups = if std::env::var_os("BASTION_R1D_GROUP_SMOKE").is_some()
+        let mut presentation_groups = if crate::r1d_scale::enabled()
+            && presentation_entities.len()
+                == usize::try_from(crate::r1d_scale::SCALE_VISIBLE_COUNT_V1).ok()?
+        {
+            let source_capability_digest = bastion_renderer_r0d::domain_hash_v1(
+                "bastion/r1d/group-source-capability",
+                1,
+                0,
+                b"R1D-SCALE-004:flat-arena-explicit-sixteen-group-fixture",
+            )
+            .ok()?;
+            let mut groups =
+                Vec::with_capacity(usize::try_from(crate::r1d_scale::SCALE_GROUP_COUNT_V1).ok()?);
+            for (ordinal, members) in presentation_entities
+                .chunks_exact(crate::r1d_scale::SCALE_GROUP_SIZE_V1)
+                .enumerate()
+            {
+                let ordinal_u32 = u32::try_from(ordinal).ok()?;
+                let semantic_id = bastion_renderer_r0d::domain_hash_v1(
+                    "bastion/r1d/scale-fixture-group",
+                    1,
+                    0,
+                    &ordinal_u32.to_le_bytes(),
+                )
+                .ok()?;
+                let member_uids = members.iter().map(|member| member.uid).collect::<Vec<_>>();
+                let leader_uid = *member_uids.first()?;
+                let protected_member_uids = member_uids
+                    .binary_search(&anchor.uid)
+                    .is_ok()
+                    .then_some(vec![anchor.uid])
+                    .unwrap_or_default();
+                let formation = match ordinal % 4 {
+                    0 => bastion_renderer_r0d::group_representation::FormationKindV1::Wedge,
+                    1 => bastion_renderer_r0d::group_representation::FormationKindV1::Grid,
+                    2 => bastion_renderer_r0d::group_representation::FormationKindV1::Line,
+                    _ => bastion_renderer_r0d::group_representation::FormationKindV1::Column,
+                };
+                groups.push(crate::r1a_presentation::ProductionPresentationGroupInputV1 {
+                    semantic_id,
+                    kind_tag:
+                        bastion_renderer_r0d::group_representation::GroupKindV1::Formation as u16,
+                    member_uids,
+                    leader_uid,
+                    protected_member_uids,
+                    formation,
+                    source_provenance: bastion_renderer_r0d::group_representation::
+                        GroupSourceProvenanceV1::DeclaredPacketFixture,
+                    source_capability_digest,
+                });
+            }
+            groups
+        } else if std::env::var_os("BASTION_R1D_GROUP_SMOKE").is_some()
             && presentation_entities.len() >= 4
         {
             let split = presentation_entities.len() / 2;
@@ -3468,7 +3520,11 @@ impl PlayState for SessionState {
                     crate::render::bastion_r0d::set_capture_anchor(anchor);
                     let camera = self.scene.camera_mut();
                     camera.set_mode(CameraMode::Freefly);
-                    camera.set_distance(6.0);
+                    if let Some(sample) = crate::r1d_scale::current_camera_sample() {
+                        camera.set_distance_instant(sample.distance_mm as f32 / 1_000.0);
+                    } else {
+                        camera.set_distance(6.0);
+                    }
                     camera.set_orientation_instant(Vec3::new(
                         core::f32::consts::FRAC_PI_4,
                         0.3,

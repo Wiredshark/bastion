@@ -340,14 +340,15 @@ impl SingleplayerState {
                     Ok(mut server) => {
                         let center = server.bastion_world_center_wpos();
                         let fixture_position = server::bastion_flat_arena::spawn_wpos(center);
-                        // Reuse the existing bounded colony fixture for the
-                        // R1BC population proof. Normal certification remains
-                        // one figure; an explicit test lane may request up to
-                        // 64 without creating a different gameplay fixture.
+                        let r1d_scale_smoke = std::env::var_os("BASTION_R1D_SCALE_SMOKE").is_some();
+                        // Normal certification remains bounded to 64. The
+                        // explicit R1D closure lane may request the already
+                        // accepted 512-visible policy ceiling.
+                        let maximum_figure_count = if r1d_scale_smoke { 512 } else { 64 };
                         let figure_count = std::env::var("BASTION_R1BC_FIGURE_COUNT")
                             .ok()
-                            .and_then(|value| value.parse::<u8>().ok())
-                            .filter(|count| (1..=64).contains(count))
+                            .and_then(|value| value.parse::<u16>().ok())
+                            .filter(|count| (1..=maximum_figure_count).contains(count))
                             .unwrap_or(1);
                         let r1d_tier_smoke = std::env::var_os("BASTION_R1D_TIER_SMOKE").is_some();
                         let r1d_group_smoke = std::env::var_os("BASTION_R1D_GROUP_SMOKE").is_some();
@@ -360,10 +361,19 @@ impl SingleplayerState {
                             // preserves the same deterministic body/equipment
                             // source while giving every figure a distinct
                             // world position and server identity.
-                            let width = 8_u8;
+                            let width = if r1d_scale_smoke { 32_u16 } else { 8_u16 };
                             (0..figure_count)
                                 .flat_map(|ordinal| {
-                                    let (x, y) = if r1d_group_smoke {
+                                    let (x, y) = if r1d_scale_smoke {
+                                        // Sixteen explicit rows of 32 people.
+                                        // Presentation declarations, not these
+                                        // positions, own group membership.
+                                        let row = ordinal / width;
+                                        let column = ordinal % width;
+                                        let depth = f32::from(row) * 6.0;
+                                        let lateral = (f32::from(column) - 15.5) * 2.0;
+                                        (depth + lateral, depth - lateral)
+                                    } else if r1d_group_smoke {
                                         // Two declared fixture-owned groups:
                                         // a near wedge and a middle-distance
                                         // four-column grid. Membership comes
@@ -418,6 +428,7 @@ impl SingleplayerState {
                             figure_count,
                             r1d_tier_smoke,
                             r1d_group_smoke,
+                            r1d_scale_smoke,
                             world_seed = 1337,
                             ?fixture_position,
                             "bastion: capture flat-arena fixture declared"
