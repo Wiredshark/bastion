@@ -437,3 +437,303 @@ mod checkpoint_egress_order_v1 {
         ));
     }
 }
+
+/// `APEX-T3.4.04/.05` — descriptor + transcript roots.
+use common::apex::digest::{DigestDomainIdV1, ProtocolDigestV1, digest_canonical_bytes_v1};
+
+const ROOT_INPUT_LIMIT: u64 = 1 << 22;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamCheckpointPlanV1 {
+    pub stream: SemanticStreamIdV1,
+    pub begin_sequence: u64,
+    pub first_data_sequence: Option<u64>,
+    pub last_data_sequence: Option<u64>,
+    pub barrier_sequence: u64,
+    pub data_record_count: u32,
+    pub payload_bytes: u64,
+    pub stream_transcript_root: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckpointDescriptorV1 {
+    pub schema_version: u32,
+    pub binding: super::envelope::ActiveSessionBindingV1,
+    pub epoch: u64,
+    pub parent_epoch: u64,
+    pub resource_profile_root: [u8; 32],
+    pub apply_policy_root: [u8; 32],
+    pub egress_order_policy_root: [u8; 32],
+    pub data_record_count: u32,
+    pub ordinal_max: u64,
+    pub payload_bytes: u64,
+    pub global_transcript_root: [u8; 32],
+    /// One plan per required stream, in REQUIRED_CHECKPOINT_STREAMS_V1 order.
+    pub streams: [StreamCheckpointPlanV1; 5],
+    pub bootstrap_manifest_root: Option<[u8; 32]>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointDescriptorErrorV1 {
+    DescriptorIncomplete,
+    DescriptorInvariant,
+    NonCanonical,
+    PolicyMismatch,
+    StreamRootMismatch,
+    GlobalRootMismatch,
+}
+
+/// One data record's transcript entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TranscriptEntryV1 {
+    pub sequence: u64,
+    pub ordinal: CheckpointOrdinalV1,
+    pub payload_kind: u16,
+    pub payload_digest: [u8; 32],
+}
+
+fn root_of(domain: DigestDomainIdV1, preimage: &[u8]) -> Result<[u8; 32], CheckpointDescriptorErrorV1> {
+    digest_canonical_bytes_v1(domain, preimage, ROOT_INPUT_LIMIT)
+        .map(|d: ProtocolDigestV1| *d.bytes.as_array())
+        .map_err(|_| CheckpointDescriptorErrorV1::NonCanonical)
+}
+
+/// Stream root over (sequence, ordinal, kind, digest), sequence-ordered.
+/// An empty stream has a typed empty root, never an absent one.
+pub fn stream_transcript_root_v1(
+    binding: &super::envelope::ActiveSessionBindingV1,
+    epoch: u64,
+    stream: SemanticStreamIdV1,
+    entries: &[TranscriptEntryV1],
+) -> Result<[u8; 32], CheckpointDescriptorErrorV1> {
+    let mut sorted = entries.to_vec();
+    sorted.sort_by_key(|e| e.sequence);
+    let mut p = Vec::with_capacity(64 + sorted.len() * 56);
+    p.extend_from_slice(binding.session_id.as_uuid().as_bytes());
+    p.extend_from_slice(&binding.epoch.get().to_be_bytes());
+    p.extend_from_slice(&epoch.to_be_bytes());
+    p.push(stream.as_u8());
+    p.extend_from_slice(&(sorted.len() as u64).to_be_bytes());
+    for e in &sorted {
+        p.extend_from_slice(&e.sequence.to_be_bytes());
+        p.extend_from_slice(&e.ordinal.0.to_be_bytes());
+        p.extend_from_slice(&e.payload_kind.to_be_bytes());
+        p.extend_from_slice(&e.payload_digest);
+    }
+    root_of(DigestDomainIdV1::CheckpointStreamTranscript, &p)
+}
+
+/// Global root over the whole epoch's records, ordinal-ordered.
+pub fn global_transcript_root_v1(
+    binding: &super::envelope::ActiveSessionBindingV1,
+    epoch: u64,
+    entries: &[TranscriptEntryV1],
+) -> Result<[u8; 32], CheckpointDescriptorErrorV1> {
+    let mut sorted = entries.to_vec();
+    sorted.sort_by_key(|e| e.ordinal.0);
+    let mut p = Vec::with_capacity(64 + sorted.len() * 48);
+    p.extend_from_slice(binding.session_id.as_uuid().as_bytes());
+    p.extend_from_slice(&binding.epoch.get().to_be_bytes());
+    p.extend_from_slice(&epoch.to_be_bytes());
+    p.extend_from_slice(&(sorted.len() as u64).to_be_bytes());
+    for e in &sorted {
+        p.extend_from_slice(&e.ordinal.0.to_be_bytes());
+        p.extend_from_slice(&e.payload_kind.to_be_bytes());
+        p.extend_from_slice(&e.payload_digest);
+    }
+    root_of(DigestDomainIdV1::CheckpointGlobalTranscript, &p)
+}
+
+impl CheckpointDescriptorV1 {
+    /// Structural completeness: all five streams present in canonical
+    /// order, per-stream counts/bytes summing to the global figures,
+    /// barrier after begin, ordinal_max matching the record count.
+    pub fn validate_v1(&self) -> Result<(), CheckpointDescriptorErrorV1> {
+        use CheckpointDescriptorErrorV1 as E;
+        let order: Vec<u8> = self.streams.iter().map(|s| s.stream.as_u8()).collect();
+        let want: Vec<u8> = REQUIRED_CHECKPOINT_STREAMS_V1.iter().map(|s| s.as_u8()).collect();
+        if order != want {
+            return Err(E::DescriptorIncomplete);
+        }
+        let mut records = 0u64;
+        let mut bytes = 0u64;
+        for s in &self.streams {
+            if s.barrier_sequence <= s.begin_sequence {
+                return Err(E::DescriptorInvariant);
+            }
+            match (s.first_data_sequence, s.last_data_sequence, s.data_record_count) {
+                (None, None, 0) => {},
+                (Some(f), Some(l), n) if n > 0 && f <= l && f > s.begin_sequence && l < s.barrier_sequence => {},
+                _ => return Err(E::DescriptorInvariant),
+            }
+            records += s.data_record_count as u64;
+            bytes += s.payload_bytes;
+        }
+        if records != self.data_record_count as u64 || bytes != self.payload_bytes {
+            return Err(E::DescriptorInvariant);
+        }
+        if self.ordinal_max != records {
+            return Err(E::DescriptorInvariant);
+        }
+        if self.epoch == 0 || self.parent_epoch + 1 != self.epoch {
+            return Err(E::DescriptorInvariant);
+        }
+        Ok(())
+    }
+
+    pub fn descriptor_root_v1(&self) -> Result<[u8; 32], CheckpointDescriptorErrorV1> {
+        self.validate_v1()?;
+        let mut p = Vec::with_capacity(512);
+        p.extend_from_slice(&self.schema_version.to_be_bytes());
+        p.extend_from_slice(self.binding.session_id.as_uuid().as_bytes());
+        p.extend_from_slice(&self.binding.epoch.get().to_be_bytes());
+        p.extend_from_slice(&self.epoch.to_be_bytes());
+        p.extend_from_slice(&self.parent_epoch.to_be_bytes());
+        p.extend_from_slice(&self.resource_profile_root);
+        p.extend_from_slice(&self.apply_policy_root);
+        p.extend_from_slice(&self.egress_order_policy_root);
+        p.extend_from_slice(&self.data_record_count.to_be_bytes());
+        p.extend_from_slice(&self.ordinal_max.to_be_bytes());
+        p.extend_from_slice(&self.payload_bytes.to_be_bytes());
+        p.extend_from_slice(&self.global_transcript_root);
+        for s in &self.streams {
+            p.push(s.stream.as_u8());
+            p.extend_from_slice(&s.begin_sequence.to_be_bytes());
+            p.extend_from_slice(&s.first_data_sequence.unwrap_or(0).to_be_bytes());
+            p.extend_from_slice(&s.last_data_sequence.unwrap_or(0).to_be_bytes());
+            p.extend_from_slice(&s.barrier_sequence.to_be_bytes());
+            p.extend_from_slice(&s.data_record_count.to_be_bytes());
+            p.extend_from_slice(&s.payload_bytes.to_be_bytes());
+            p.extend_from_slice(&s.stream_transcript_root);
+        }
+        match self.bootstrap_manifest_root {
+            Some(r) => {
+                p.push(1);
+                p.extend_from_slice(&r);
+            },
+            None => p.push(0),
+        }
+        root_of(DigestDomainIdV1::CheckpointDescriptor, &p)
+    }
+}
+
+#[cfg(test)]
+mod checkpoint_descriptor_v1 {
+    use super::*;
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+
+    fn binding() -> super::super::envelope::ActiveSessionBindingV1 {
+        super::super::envelope::ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([2; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        }
+    }
+
+    fn entry(seq: u64, ord: u64) -> TranscriptEntryV1 {
+        TranscriptEntryV1 { sequence: seq, ordinal: CheckpointOrdinalV1(ord), payload_kind: 7, payload_digest: [ord as u8; 32] }
+    }
+
+    fn plan(stream: SemanticStreamIdV1, n: u32, root: [u8; 32]) -> StreamCheckpointPlanV1 {
+        StreamCheckpointPlanV1 {
+            stream,
+            begin_sequence: 1,
+            first_data_sequence: if n > 0 { Some(2) } else { None },
+            last_data_sequence: if n > 0 { Some(1 + n as u64) } else { None },
+            barrier_sequence: 2 + n as u64,
+            data_record_count: n,
+            payload_bytes: n as u64 * 10,
+            stream_transcript_root: root,
+        }
+    }
+
+    fn descriptor(counts: [u32; 5]) -> CheckpointDescriptorV1 {
+        let total: u32 = counts.iter().sum();
+        let streams: Vec<StreamCheckpointPlanV1> = REQUIRED_CHECKPOINT_STREAMS_V1
+            .iter()
+            .zip(counts)
+            .map(|(s, n)| plan(*s, n, [0; 32]))
+            .collect();
+        CheckpointDescriptorV1 {
+            schema_version: 1,
+            binding: binding(),
+            epoch: 1,
+            parent_epoch: 0,
+            resource_profile_root: [1; 32],
+            apply_policy_root: [2; 32],
+            egress_order_policy_root: [3; 32],
+            data_record_count: total,
+            ordinal_max: total as u64,
+            payload_bytes: total as u64 * 10,
+            global_transcript_root: [4; 32],
+            streams: streams.try_into().unwrap(),
+            bootstrap_manifest_root: None,
+        }
+    }
+
+    #[test]
+    fn roots_are_permutation_invariant_and_mutation_sensitive() {
+        let b = binding();
+        let entries = vec![entry(2, 1), entry(3, 2), entry(4, 3)];
+        let mut shuffled = entries.clone();
+        shuffled.reverse();
+        let s1 = stream_transcript_root_v1(&b, 1, SemanticStreamIdV1::InGame, &entries).unwrap();
+        let s2 = stream_transcript_root_v1(&b, 1, SemanticStreamIdV1::InGame, &shuffled).unwrap();
+        assert_eq!(s1, s2, "input order must not move the stream root");
+
+        // omission, duplication, and stream identity all move it
+        assert_ne!(s1, stream_transcript_root_v1(&b, 1, SemanticStreamIdV1::InGame, &entries[..2]).unwrap());
+        let mut dup = entries.clone();
+        dup.push(entry(4, 3));
+        assert_ne!(s1, stream_transcript_root_v1(&b, 1, SemanticStreamIdV1::InGame, &dup).unwrap());
+        assert_ne!(s1, stream_transcript_root_v1(&b, 1, SemanticStreamIdV1::Terrain, &entries).unwrap());
+        // empty stream has a typed root, not an absent one
+        assert!(stream_transcript_root_v1(&b, 1, SemanticStreamIdV1::Terrain, &[]).is_ok());
+
+        let g1 = global_transcript_root_v1(&b, 1, &entries).unwrap();
+        assert_eq!(g1, global_transcript_root_v1(&b, 1, &shuffled).unwrap());
+        assert_ne!(g1, s1, "domain separation: global root != stream root");
+        assert_ne!(g1, global_transcript_root_v1(&b, 2, &entries).unwrap());
+    }
+
+    #[test]
+    fn descriptor_validates_completeness_and_roots_bind_every_field() {
+        use CheckpointDescriptorErrorV1 as E;
+        let d = descriptor([1, 0, 2, 0, 1]);
+        d.validate_v1().unwrap();
+        let root = d.descriptor_root_v1().unwrap();
+
+        // every scalar field moves the root
+        for mutate in [
+            (|x: &mut CheckpointDescriptorV1| x.payload_bytes += 1) as fn(&mut CheckpointDescriptorV1),
+            |x| x.global_transcript_root[0] ^= 1,
+            |x| x.apply_policy_root[0] ^= 1,
+            |x| x.resource_profile_root[0] ^= 1,
+            |x| x.egress_order_policy_root[0] ^= 1,
+            |x| x.streams[0].stream_transcript_root[0] ^= 1,
+            |x| x.bootstrap_manifest_root = Some([9; 32]),
+        ] {
+            let mut m = d.clone();
+            mutate(&mut m);
+            // payload_bytes mutation breaks the invariant; the rest re-root
+            match m.descriptor_root_v1() {
+                Ok(r) => assert_ne!(r, root),
+                Err(E::DescriptorInvariant) => {},
+                Err(e) => panic!("{e:?}"),
+            }
+        }
+
+        // wrong stream order = incomplete
+        let mut bad = d.clone();
+        bad.streams.swap(0, 1);
+        assert_eq!(bad.validate_v1(), Err(E::DescriptorIncomplete));
+        // counts must sum
+        let mut bad2 = d.clone();
+        bad2.data_record_count += 1;
+        assert_eq!(bad2.validate_v1(), Err(E::DescriptorInvariant));
+        // epoch chain
+        let mut bad3 = d.clone();
+        bad3.parent_epoch = 5;
+        assert_eq!(bad3.validate_v1(), Err(E::DescriptorInvariant));
+    }
+}
