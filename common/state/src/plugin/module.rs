@@ -530,16 +530,19 @@ impl PluginModule {
     ) -> Result<Self, PluginModuleError> {
         // APEX-T2.5.15: even the single-module path goes through the
         // full preflight — there is no instantiate-without-preflight.
+        // (Legacy path: no declared world, probing preserved.)
         let prepared = preflight_component_v1(&name, wasm_data).map_err(PluginModuleError::Preflight)?;
-        Self::new_from_prepared(&prepared, limits)
+        Self::new_from_prepared(&prepared, limits, None)
     }
 
-    /// `APEX-T2.5.15` — instantiate from a PREFLIGHTED component: store
-    /// setup + `InstancePre::instantiate` + wrapper probing. Compile and
+    /// `APEX-T2.5.15/.16` — instantiate from a PREFLIGHTED component:
+    /// store setup + `InstancePre::instantiate` + declared-world wrapper
+    /// selection (`expected_world = None` = legacy probing). Compile and
     /// import failures are impossible here by construction.
     pub fn new_from_prepared(
         prepared: &PreparedPluginModuleV1,
         limits: Option<PluginStoreLimitsV1>,
+        expected_world: Option<super::manifest::PluginModuleWorldV1>,
     ) -> Result<Self, PluginModuleError> {
         let name = prepared.name.clone();
         let ecs = Arc::new(EcsAccessManager::default());
@@ -595,15 +598,46 @@ impl PluginModule {
         let instance =
             prepared.instance_pre.instantiate(&mut store).map_err(PluginModuleError::Wasmtime)?;
 
-        let plugin = match Plugin::new(&mut store, &instance) {
-            Ok(pl) => Ok(PluginWrapper::Full(pl)),
-            Err(_) => match animation_plugin::AnimationPlugin::new(&mut store, &instance) {
-                Ok(pl) => Ok(PluginWrapper::Animation(pl)),
-                Err(_) => server_plugin::ServerPlugin::new(&mut store, &instance)
-                    .map(PluginWrapper::Server),
+        // APEX-T2.5.16: a module whose manifest DECLARED a world gets
+        // exactly that wrapper — a missing/mismatched export is a typed
+        // terminal, never a silent fallback to a different world.
+        // Probing survives ONLY for legacy manifests (no declaration).
+        let plugin = match expected_world {
+            Some(super::manifest::PluginModuleWorldV1::Plugin) => Plugin::new(&mut store, &instance)
+                .map(PluginWrapper::Full)
+                .map_err(|e| PluginModuleError::WorldMismatch {
+                    module: name.clone(),
+                    declared: "plugin",
+                    detail: e.to_string(),
+                })?,
+            Some(super::manifest::PluginModuleWorldV1::AnimationPlugin) => {
+                animation_plugin::AnimationPlugin::new(&mut store, &instance)
+                    .map(PluginWrapper::Animation)
+                    .map_err(|e| PluginModuleError::WorldMismatch {
+                        module: name.clone(),
+                        declared: "animation-plugin",
+                        detail: e.to_string(),
+                    })?
             },
-        }
-        .map_err(PluginModuleError::Wasmtime)?;
+            Some(super::manifest::PluginModuleWorldV1::ServerPlugin) => {
+                server_plugin::ServerPlugin::new(&mut store, &instance)
+                    .map(PluginWrapper::Server)
+                    .map_err(|e| PluginModuleError::WorldMismatch {
+                        module: name.clone(),
+                        declared: "server-plugin",
+                        detail: e.to_string(),
+                    })?
+            },
+            None => match Plugin::new(&mut store, &instance) {
+                Ok(pl) => Ok(PluginWrapper::Full(pl)),
+                Err(_) => match animation_plugin::AnimationPlugin::new(&mut store, &instance) {
+                    Ok(pl) => Ok(PluginWrapper::Animation(pl)),
+                    Err(_) => server_plugin::ServerPlugin::new(&mut store, &instance)
+                        .map(PluginWrapper::Server),
+                },
+            }
+            .map_err(PluginModuleError::Wasmtime)?,
+        };
 
         Ok(Self {
             plugin,
@@ -759,5 +793,48 @@ mod plugin_component_preflight_v1 {
             preflight_component_v1("ghost", &unknown_import),
             Err(PluginPreflightErrorV1::ImportResolutionFailed { .. })
         ));
+    }
+}
+
+/// `APEX-T2.5.16` — declared-world enforcement canaries.
+#[cfg(test)]
+mod plugin_declared_world_v1 {
+    use super::*;
+
+    #[test]
+    fn declared_world_is_enforced_and_legacy_probes() {
+        let empty = wat::parse_str("(component)").unwrap();
+        let prepared = preflight_component_v1("w", &empty).unwrap();
+
+        // Declared world + missing exports = the typed mismatch terminal,
+        // for every world — never a fallback to another wrapper.
+        for world in [
+            super::super::manifest::PluginModuleWorldV1::Plugin,
+            super::super::manifest::PluginModuleWorldV1::ServerPlugin,
+            super::super::manifest::PluginModuleWorldV1::AnimationPlugin,
+        ] {
+            assert!(matches!(
+                PluginModule::new_from_prepared(&prepared, None, Some(world)),
+                Err(PluginModuleError::WorldMismatch { .. })
+            ));
+        }
+        // Legacy (no declaration): probing path, generic wasmtime error —
+        // byte-compatible with the old behavior class.
+        assert!(matches!(
+            PluginModule::new_from_prepared(&prepared, None, None),
+            Err(PluginModuleError::Wasmtime(_))
+        ));
+    }
+
+    #[test]
+    fn world_extraction_reads_v1_and_ignores_legacy() {
+        let v1 = b"manifest_version = 1\n[[modules]]\npath = \"m.wasm\"\nworld = \"server-plugin\"\n";
+        let worlds = super::super::extract_declared_worlds_v1(v1).unwrap();
+        assert_eq!(
+            worlds.get(std::path::Path::new("m.wasm")),
+            Some(&super::super::manifest::PluginModuleWorldV1::ServerPlugin)
+        );
+        assert!(super::super::extract_declared_worlds_v1(b"name = \"old\"\nmodules = []\n").is_none());
+        assert!(super::super::extract_declared_worlds_v1(b"\xff\xfe not utf8").is_none());
     }
 }

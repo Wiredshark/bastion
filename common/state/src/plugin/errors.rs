@@ -29,6 +29,10 @@ pub enum PluginModuleError {
     RuntimeUnavailable { detail: String },
     /// APEX-T2.5.15: the module failed component preflight.
     Preflight(PluginPreflightErrorV1),
+    /// APEX-T2.5.16: the component does not export the interface its
+    /// manifest DECLARED (`PLUGIN-WORLD-MISMATCH`). Probing other worlds
+    /// is not attempted for declared modules.
+    WorldMismatch { module: String, declared: &'static str, detail: String },
 }
 
 /// APEX-T2.5.15 — per-module preflight terminals, classified BY STAGE

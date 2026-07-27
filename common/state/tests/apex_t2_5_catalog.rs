@@ -508,8 +508,8 @@ const CLAIMED: &[(&str, &str)] = &[
     ("UNSUPPORTED-DIGEST-PROFILE", "DigestAlgorithmIdV1/DigestDomainIdV1 are sealed T0.2/T0.3 enums: an unknown algorithm or domain tag fails decode in the substrate before any T2.5 code runs"),
     // mode / client lifecycle: .10-.11.
     ("LOCAL-EXTRA-PLUGIN-REJECTED", ".11 client bootstrap: MultiplayerLocalPluginPolicyV1::RejectLocalPlugins is the only constructible V1 policy value; the enforcement point is client State assembly"),
-    ("INVALID-MODE-INSTANTIATION", ".14 Wasmtime runtime: instantiation is not implemented on this branch yet"),
-    ("PLUGIN-WORLD-MISMATCH", ".16 WIT world enforcement at instantiation"),
+    ("INVALID-MODE-INSTANTIATION", "mode-gated instantiation checks land with .18 lifecycle (instantiation itself + limits are live: .14/.15)"),
+    ("PLUGIN-WORLD-MISMATCH", "LANDED .16: declared world selects exactly one wrapper, mismatch typed for all three worlds; legacy manifests keep probing (module.rs plugin_declared_world_v1 tests)"),
     // artifact wire: .10.
     ("ARTIFACT-ROOT-MISMATCH", ".10 typed wire collector: response deployment-root check precedes cache staging"),
     ("INVALID-ARTIFACT-REQUEST", ".10 typed wire messages: request validation against the deployment requirement set"),
@@ -556,20 +556,20 @@ const CLAIMED: &[(&str, &str)] = &[
     ("PLUGIN-LIFECYCLE-DUPLICATE", ".18 exactly-once lifecycle"),
     ("REGISTRATION-OUTSIDE-CEILING", ".19: within_ceiling is a typed receipt field (landed); enforcement lands with the lifecycle"),
     // runtime limits / Wasmtime: .14-.16.
-    ("RUNTIME-POLICY-PASS", ".14 Wasmtime runtime policy application"),
-    ("RUNTIME-POLICY-MISMATCH", ".14"),
-    ("PLUGIN-RUNTIME-LIMIT", ".14"),
-    ("PLUGIN-FUEL-EXHAUSTED", ".14 fuel metering"),
+    ("RUNTIME-POLICY-PASS", "LANDED .14: per-mode policy ceilings applied per store (memory limiter + per-event fuel), threaded policy->wire->both consumers; live-trap fixture deferred to .18/VM"),
+    ("RUNTIME-POLICY-MISMATCH", ".18/.19: receipt-level comparison of applied vs policy limits (application itself landed .14)"),
+    ("PLUGIN-RUNTIME-LIMIT", "LANDED .14 mechanism: StoreLimits memory ceiling live; trapping fixture deferred to .18/VM"),
+    ("PLUGIN-FUEL-EXHAUSTED", "LANDED .14 mechanism: fuel ON at the one engine, per-event refuel at every entry; burn-loop fixture deferred to .18/VM"),
     ("PLUGIN-INTERRUPTED", ".14"),
     ("AUTO-TUNING-FORBIDDEN", "PluginModeRuntimeLimitsV1 has no Default and no derivation path: limits exist only as explicit policy fields bound into policy_root (driven by POLICY-ROOT-MISMATCH: a limit change moves the root)"),
     ("UNROOTED-RUNTIME-DEFAULT", "same no-Default construction: a runtime limit that is not in the rooted policy cannot exist"),
-    ("PLUGIN-COMPILE-FAILED", ".15 compile+instantiate_pre preflight"),
-    ("PLUGIN-IMPORT-FAILED", ".15/.16"),
-    ("PLUGIN-INSTANTIATE-FAILED", ".15"),
-    ("PLUGIN-LINKER-CONFLICT", ".15"),
-    ("PLUGIN-PREFLIGHT-PASS", ".15"),
-    ("PREFLIGHT-ROOT-STABLE", ".15"),
-    ("PREFLIGHT-SIDE-EFFECT", ".15: preflight is constructed pure (compile-only, no host imports invoked)"),
+    ("PLUGIN-COMPILE-FAILED", "LANDED .15: malformed bytes + core-module-not-component both hit the typed compile terminal (plugin_component_preflight_v1)"),
+    ("PLUGIN-IMPORT-FAILED", "LANDED .15: unknown import hits the typed instantiate_pre resolution terminal (with the documented empty-instance-import subtlety)"),
+    ("PLUGIN-INSTANTIATE-FAILED", "LANDED .15: instantiation isolated in new_from_prepared (compile/import impossible there by construction); failure class exercised by the declared-world tests"),
+    ("PLUGIN-LINKER-CONFLICT", "LANDED .15 stage: LinkerSetupFailed terminal exists at host-API registration; a genuine collision is not externally constructible with one linker per preflight"),
+    ("PLUGIN-PREFLIGHT-PASS", "LANDED .15: empty component passes preflight; every T2.1 canary module now flows through it"),
+    ("PREFLIGHT-ROOT-STABLE", "preflight is pure per bytes+engine (.15); a recorded preflight ROOT artifact lands with .19 receipts"),
+    ("PREFLIGHT-SIDE-EFFECT", "LANDED .15 by construction: preflight_component_v1 creates no store/instance/wrapper; nothing host-visible exists before instantiation"),
 ];
 
 #[test]

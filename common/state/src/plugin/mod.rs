@@ -116,6 +116,33 @@ pub struct Plugin {
     data_buf: Vec<u8>,
 }
 
+/// APEX-T2.5.16 — declared module worlds from a V1 manifest's raw bytes
+/// (`None` = legacy manifest / unparseable = the probing path). Pure and
+/// derivable by EVERY consumer from the verified archive bytes — world
+/// enforcement needs no wire field and no side channel. Full validation
+/// stays T2.3's job; this reads exactly the `[[modules]]` world tags.
+pub fn extract_declared_worlds_v1(
+    manifest_bytes: &[u8],
+) -> Option<HashMap<PathBuf, manifest::PluginModuleWorldV1>> {
+    let text = std::str::from_utf8(manifest_bytes).ok()?;
+    let raw: toml::Value = toml::de::from_str(text).ok()?;
+    if !matches!(raw.get("manifest_version"), Some(toml::Value::Integer(_))) {
+        return None; // legacy manifest: no declaration, probing preserved
+    }
+    let mut worlds = HashMap::new();
+    for m in raw.get("modules")?.as_array()? {
+        let path = m.get("path")?.as_str()?;
+        let world = match m.get("world")?.as_str()? {
+            "plugin" => manifest::PluginModuleWorldV1::Plugin,
+            "server-plugin" => manifest::PluginModuleWorldV1::ServerPlugin,
+            "animation-plugin" => manifest::PluginModuleWorldV1::AnimationPlugin,
+            _ => return None, // unknown world: T2.3 validation owns the refusal
+        };
+        worlds.insert(PathBuf::from(path), world);
+    }
+    Some(worlds)
+}
+
 /// APEX-T2.1.02 — one sequentially-observed tar entry (observation only; T2.2
 /// decides canonical acceptance). Raw path bytes, type byte, size, and file
 /// position are retained so T2.2 can apply canonical path/type policy without
@@ -161,7 +188,8 @@ pub(crate) struct InspectedPluginArchive {
     /// inspection, module-byte extraction, and later `Plugin.data_buf`.
     pub archive_bytes: Vec<u8>,
     pub manifest: PluginData,
-    #[expect(dead_code, reason = "retained for APEX-T2.3's canonical-manifest revalidation")]
+    /// APEX-T2.5.16 consumes this for declared-world extraction (was
+    /// retained since T2.1 for exactly this class of revalidation).
     pub manifest_bytes: Vec<u8>,
     #[expect(dead_code, reason = "retained for APEX-T2.2's canonical-profile revalidation")]
     pub entry_inventory: Vec<LegacyArchiveEntryRecordV1>,
@@ -349,6 +377,11 @@ impl Plugin {
         limits: Option<module::PluginStoreLimitsV1>,
     ) -> Result<Self, PluginInstantiationError> {
         let data = inspected.manifest;
+        // APEX-T2.5.16: declared worlds from the archive's OWN manifest
+        // (V1 manifests only; legacy manifests yield None = probing).
+        // Derived identically on every consumer from the verified bytes —
+        // no side channel, no wire field.
+        let declared_worlds = extract_declared_worlds_v1(&inspected.manifest_bytes);
         // APEX-T2.5.15: COMPLETE preflight (compile + import
         // resolution/typecheck) of EVERY module before ANY instantiation
         // — a failure in the last module surfaces before the first
@@ -374,7 +407,8 @@ impl Plugin {
         let modules = preflighted
             .iter()
             .map(|(path, prepared)| {
-                PluginModule::new_from_prepared(prepared, limits).map_err(|source| {
+                let expected_world = declared_worlds.as_ref().and_then(|m| m.get(path).copied());
+                PluginModule::new_from_prepared(prepared, limits, expected_world).map_err(|source| {
                     PluginInstantiationError::Module {
                         plugin: data.name.to_owned(),
                         module: path.clone(),
