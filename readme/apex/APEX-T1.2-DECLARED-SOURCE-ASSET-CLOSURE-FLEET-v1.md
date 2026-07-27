@@ -266,3 +266,34 @@ ownership lands in T1.5's BuildManifestV1).
 4. The record's roots verify via `digest_canonical_bytes_v1` recomputation.
 5. A.1 reused for admission (no second dirty-detector in the tree).
 6. `T1.2-CLOSURE-READY` emitted on the live repo at the current apex tip.
+
+## 7b. Build-time premise deltas (first live run + canary hardening; disclosed at batch)
+
+1. **LFS classification is BY BLOB CONTENT, not attr.** The section-4.2
+   premise (attr-classified ⇒ pointer blob) is falsified by the live tree:
+   6,412 attr-classified paths, ZERO pointer blobs — this fork carries its
+   full asset content as regular git blobs (no LFS acquisition dependency
+   at all; T1.4's offline story strengthens). A path is LFS iff its
+   tracked blob parses as a pointer (those are disk-verified exactly as
+   specified); both mismatch directions (attr-but-unmigrated,
+   pointer-without-attr) are counted on stdout and listed in the evidence
+   sidecar. `file_counts.lfs_files` counts pointer files (0 at the live
+   tip).
+2. **Field IDs 14/15 appended** (`.gitattributes`, workspace `Cargo.toml`
+   pins — the section-7a adopted pins had no home in the frozen 0-13
+   layout). Frozen means never renumbered; no emitted record predates the
+   addition.
+3. **`T1.2-BLOCK-ASSET-ROOT-MISMATCH`** is the name of the section-7a
+   extended runtime terminal (declared-root recompute ≠ record's
+   `asset_tree_root`, pre-sim, exit 42; `T1.2-BLOCK-ASSET-OVERRIDE` =
+   exit 41). Cross-construction proof: the runtime DISK recompute equals
+   the capture tool's GIT-content root on the live tree (`b925cf1d…`).
+4. **T1.2.07 sequencing adapted:** the capture tool is itself a build
+   product, so the nix-lane script captures AFTER the locked build using
+   the built package's own bin; the record is commit-pure so ordering
+   cannot move its bytes, and a HEAD-unchanged assertion closes the
+   source-mutation window the original ordering guarded.
+5. **`T1.2-BLOCK-ASSET-FALLBACK` is structurally closed** by landed
+   DET-AST-007 (certified lane skips the ambient search entirely — no
+   fallback path exists to canary); documented here rather than shipping
+   a dead canary.
