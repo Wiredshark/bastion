@@ -78,25 +78,41 @@ validator enforces:
 - No row is orphaned from the guide (every `row_order` entry has a record and
   vice versa).
 
-## 6. `GUIDE_MISSING_ROW` — resolved via architect ruling (2026-07-26)
+## 6. `APEX-T5.5` — `GUIDE_MISSING_ROW` (2026-07-26) → `CONFIRMED_PHANTOM` terminal (2026-07-26)
 
 `APEX-A.2`'s finding matrix cited `APEX-T5.5` as a replacement row for
 `DET-WTH-010`, `DET-PRD-008`, and `DET-PRD-011`, but no `APEX-T5.5` row
 existed anywhere in the canonical guide (Tier 5 only defines `T5.1`–`T5.4`).
-Fable ruled: add `APEX-T5.5` as a frozen `GUIDE_MISSING_ROW` placeholder —
-reserved ID, empty `hard_dependencies`, fixed title stating no packet
-exists, **no fabricated content**. Content recovery is routed to the
-guide's author via Ben; a builder must never reconstruct it.
+Fable's first ruling: add `APEX-T5.5` as a frozen `GUIDE_MISSING_ROW`
+placeholder — reserved ID, empty `hard_dependencies`, fixed title stating no
+packet exists, **no fabricated content**. Content recovery was routed to the
+guide's author via Ben; a builder was never to reconstruct it.
 
-A `GUIDE_MISSING_ROW` is not a normal implementable row and is not itself a
-validator error, but its frozen fields (`status.specification ==
-"GUIDE_MISSING_ROW"`, exact title, empty deps) are checked on every
-validation run (`check_guide_missing_row_fingerprints`,
-`tools/validate-apex-program-registry.py`) — this is the M3A-style
-tracked-red pattern: expected-and-frozen, not silently ignored. If those
-fields ever drift (content appears, deps get added, title changes) without
-an explicit registry-edit commit, the validator fails with
-`GUIDE_MISSING_ROW_FINGERPRINT_DRIFT`.
+That placeholder was itself a tracked-red (M3A-style): its frozen fields
+were checked on every validation run so that content silently
+appearing/disappearing on a "reserved, pending recovery" row would be
+caught, not silently accepted.
+
+**Terminal ruling, same day:** Ben confirmed the ChatGPT-routed artifacts
+that were supposed to carry the recovery were hallucinated — there is
+nothing upstream to recover. Fable ruled `APEX-T5.5` `CONFIRMED_PHANTOM`
+(terminal, `status.specification == "CONFIRMED_PHANTOM"`): the row will
+never gain a packet, its `finding_ids` and `hard_dependencies` are now both
+frozen empty by construction (no live finding may cite it, nothing may
+depend on it), and the three findings that used to include it in an `AllOf`
+closure rule had that citation voided and re-derived from their remaining
+real replacement rows (`readme/apex/APEX-FINDING-STATUS-MATRIX-v1.csv`).
+
+The old per-row `GUIDE_MISSING_ROW` fingerprint-drift check
+(`check_guide_missing_row_fingerprints`) is retired — a row confirmed to
+never have existed and never recur has nothing left to drift-watch for.
+`tools/validate-apex-program-registry.py` instead carries a general
+`check_confirmed_phantom_invariants`: any row with
+`status.specification == "CONFIRMED_PHANTOM"` must have empty
+`hard_dependencies`, empty `finding_ids`, and no other row may hard-depend
+on it. This is the same tracked-red spirit generalized past one hardcoded
+row — the thing worth catching was never "T5.5's title changed," it was
+"a phantom row silently grew a live reference."
 
 Similarly, `APEX-T4.3`'s `ORDER_VIOLATION` (it depended on `APEX-T6.2`,
 which the guide documents after `APEX-T4.3`'s own tier) was resolved by
@@ -104,7 +120,10 @@ which the guide documents after `APEX-T4.3`'s own tier) was resolved by
 depends only on `T0.5`) and `APEX-T4.3b` (re-sequenced to after Tier 6,
 depends on `T6.2`) — see `readme/APEX-DETERMINISM-PROGRAM-REGISTRY.md` for
 the full rationale, including why `APEX-T4.5` was re-scoped to depend on
-`T4.3a` alone rather than both halves.
+`T4.3a` alone rather than both halves. **Final, 2026-07-26:** same as
+`APEX-T5.5` above, this split was never going back upstream for
+ratification against a canonical guide revision — Fable's ruling is the
+final word, `T4.3a`/`T4.3b` are locally-canonical row IDs going forward.
 
 ## 7. Temporary serialization
 

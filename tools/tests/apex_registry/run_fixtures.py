@@ -127,26 +127,45 @@ r14 = [base_row("R1", 1)]
 check("negative: row_order references nonexistent row", minimal_registry(r14, row_order=["R1", "GHOST"]), "ROW_ORDER_ORPHAN")
 
 # 15. real registry: fully clean after Fable's ruling folded in the T4.3
-# split (resolves the ORDER_VIOLATION) and the T5.5 GUIDE_MISSING_ROW
-# placeholder (resolves the UNRESOLVED_ROW_REFERENCE). Both original findings
-# are proven fixed, not just re-labeled: this asserts zero issues, not "the
-# same two issues with different codes".
+# split (resolves the ORDER_VIOLATION) and the T5.5 CONFIRMED_PHANTOM
+# terminal disposition (resolves the UNRESOLVED_ROW_REFERENCE). Both original
+# findings are proven fixed, not just re-labeled: this asserts zero issues,
+# not "the same two issues with different codes".
 import json
 real_path = Path(__file__).resolve().parents[3] / "readme" / "APEX-DETERMINISM-PROGRAM-REGISTRY-v1.json"
 with open(real_path, encoding="utf-8") as f:
     real_reg = json.load(f)
 real_issues = apex_validator.validate(real_reg)
 ok = real_issues == []
-(PASS if ok else FAIL).append(("real registry: zero issues after the T4.3 split and T5.5 placeholder", real_issues))
+(PASS if ok else FAIL).append(("real registry: zero issues after the T4.3 split and T5.5 CONFIRMED_PHANTOM disposition", real_issues))
 
-# 16. negative: GUIDE_MISSING_ROW fingerprint drift is caught (non-vacuity
-# for the fingerprint check itself -- mutate the real, on-disk T5.5 row's
-# title and confirm the validator flags it).
-import copy
-drifted_reg = copy.deepcopy(real_reg)
-t55 = next(r for r in drifted_reg["rows"] if r["row_id"] == "APEX-T5.5")
-t55["title"] = "some content quietly appeared here"
-check("negative: GUIDE_MISSING_ROW fingerprint drift is caught", drifted_reg, "GUIDE_MISSING_ROW_FINGERPRINT_DRIFT")
+# 16-18. negative: CONFIRMED_PHANTOM terminal invariants (non-vacuity for
+# check_confirmed_phantom_invariants -- a terminal-phantom row that gains a
+# live dependent is exactly the false-green class this check exists to catch,
+# now that the old per-row GUIDE_MISSING_ROW fingerprint drift-watch has been
+# retired as no-longer-meaningful for a row confirmed to never recur).
+r16 = [base_row("R0", 1), base_row("R1", 2, deps=["R0"])]
+r16[1]["status"]["specification"] = "CONFIRMED_PHANTOM"
+check("negative: CONFIRMED_PHANTOM row with hard_dependencies", minimal_registry(r16), "CONFIRMED_PHANTOM_HAS_DEPENDENCIES")
+
+r17 = [base_row("R1", 1, finding_ids=["F1"])]
+r17[0]["status"]["specification"] = "CONFIRMED_PHANTOM"
+f17 = [{"finding_id": "F1", "originating_package": "test", "live_status": "OPEN",
+        "closure_rule": {"kind": "Row", "row": "R1"}, "source_anchors": [], "last_live_commit_checked": "0" * 40}]
+check("negative: CONFIRMED_PHANTOM row with finding_ids", minimal_registry(r17, f17), "CONFIRMED_PHANTOM_HAS_FINDING_CITATIONS")
+
+r18a = base_row("R1", 1)
+r18a["status"]["specification"] = "CONFIRMED_PHANTOM"
+r18b = base_row("R2", 2, deps=["R1"])
+check("negative: a live row depends on a CONFIRMED_PHANTOM row", minimal_registry([r18a, r18b]), "CONFIRMED_PHANTOM_IS_A_DEPENDENCY")
+
+# 19. positive control: a CONFIRMED_PHANTOM row with no dependents and no
+# finding citations is issue-free -- terminal-phantom status alone is not an
+# error, only live references to one are.
+r19 = [base_row("R1", 1)]
+r19[0]["status"]["specification"] = "CONFIRMED_PHANTOM"
+r19_issues = apex_validator.validate(minimal_registry(r19))
+(PASS if r19_issues == [] else FAIL).append(("positive: isolated CONFIRMED_PHANTOM row is issue-free", r19_issues))
 
 print(f"PASS: {len(PASS)}  FAIL: {len(FAIL)}")
 for name, issues in FAIL:

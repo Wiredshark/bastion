@@ -133,40 +133,29 @@ def check_findings(reg, rows_by_id, issues):
     return seen_finding_ids
 
 
-# GUIDE_MISSING_ROW fingerprint: the M3A-style tracked-red pattern (see
-# readme/m3a-floor-tracked-red.md convention) -- a placeholder row for
-# content that doesn't exist in the canonical guide is expected to stay
-# frozen. It is not itself a validator error, but if its frozen fields ever
-# drift without going through an explicit registry-edit commit, that IS an
-# error: silent content appearing/disappearing on a "reserved" row is
-# exactly the kind of false-green the registry exists to prevent.
-GUIDE_MISSING_ROW_FINGERPRINTS = {
-    "APEX-T5.5": {
-        "title": "RESERVED (GUIDE_MISSING_ROW) -- no APEX-T5.5 packet exists in the canonical guide; "
-                  "content TBD from source, routed to guide author",
-        "hard_dependencies": [],
-    },
-}
-
-
-def check_guide_missing_row_fingerprints(reg, rows_by_id, issues):
-    # Only meaningful against the real Bastion registry -- a synthetic
-    # minimal registry built for an unrelated fixture (e.g. a two-row
-    # cycle-detection test) was never expected to carry T5.5 at all, so it
-    # must not fail this check just because it isn't the real registry.
-    if reg.get("canonical_guide") != "PROJECT-BASTION-APEX-DETERMINISM-STEP-BY-STEP-MASTER-BUILD-ORDER.md":
-        return
-    for row_id, expected in GUIDE_MISSING_ROW_FINGERPRINTS.items():
-        row = rows_by_id.get(row_id)
-        if row is None:
-            issues.append(f"GUIDE_MISSING_ROW_FINGERPRINT_MISSING: {row_id} expected but not present in registry")
+# CONFIRMED_PHANTOM terminal invariant. History: APEX-T5.5 was originally a
+# GUIDE_MISSING_ROW placeholder (content recovery routed to the guide's
+# author via Ben) and carried a per-row fingerprint-drift check here, since
+# a "reserved, pending recovery" row silently gaining content or dependents
+# would have been exactly the false-green the registry exists to prevent.
+# Ben confirmed 2026-07-26 the routed ChatGPT-recovery artifacts were
+# hallucinated -- no recovery is coming, so Fable ruled T5.5 CONFIRMED_PHANTOM
+# (terminal). A terminal-phantom row has nothing left to drift-watch for (no
+# future recovery could silently land), so the old per-row fingerprint
+# dictionary is retired in favor of one general invariant: a confirmed-
+# phantom row must never carry live dependents -- if it did, that would mean
+# something now depends on content that was proven to never have existed.
+def check_confirmed_phantom_invariants(reg, issues):
+    for r in reg["rows"]:
+        if r["status"]["specification"] != "CONFIRMED_PHANTOM":
             continue
-        if row["status"]["specification"] != "GUIDE_MISSING_ROW":
-            issues.append(f"GUIDE_MISSING_ROW_FINGERPRINT_DRIFT: {row_id} status.specification changed to {row['status']['specification']!r}")
-        if row["title"] != expected["title"]:
-            issues.append(f"GUIDE_MISSING_ROW_FINGERPRINT_DRIFT: {row_id} title changed")
-        if row["hard_dependencies"] != expected["hard_dependencies"]:
-            issues.append(f"GUIDE_MISSING_ROW_FINGERPRINT_DRIFT: {row_id} hard_dependencies changed to {row['hard_dependencies']}")
+        if r["hard_dependencies"]:
+            issues.append(f"CONFIRMED_PHANTOM_HAS_DEPENDENCIES: {r['row_id']} hard_dependencies={r['hard_dependencies']}")
+        if r["finding_ids"]:
+            issues.append(f"CONFIRMED_PHANTOM_HAS_FINDING_CITATIONS: {r['row_id']} finding_ids={r['finding_ids']}")
+        for other in reg["rows"]:
+            if other["row_id"] != r["row_id"] and r["row_id"] in other["hard_dependencies"]:
+                issues.append(f"CONFIRMED_PHANTOM_IS_A_DEPENDENCY: {other['row_id']} depends on phantom row {r['row_id']}")
 
 
 def check_terminal_invariants(reg, issues):
@@ -187,7 +176,7 @@ def validate(reg):
     check_dependency_graph(reg, rows_by_id, issues)
     check_findings(reg, rows_by_id, issues)
     check_terminal_invariants(reg, issues)
-    check_guide_missing_row_fingerprints(reg, rows_by_id, issues)
+    check_confirmed_phantom_invariants(reg, issues)
     return issues
 
 

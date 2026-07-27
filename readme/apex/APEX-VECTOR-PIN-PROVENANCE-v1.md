@@ -5,7 +5,16 @@ Annotate each affected artifact with (guide-printed pin) + (this repo's
 committed-fixture pin) + a normalization check, so provenance is preserved
 and future SHA gates don't cry wolf on line-ending/BOM noise alone. The
 upstream fix (correcting the guide's printed pins, or re-exporting the
-Drive originals cleanly) is routed to the guide's author via Ben.
+Drive originals cleanly) was originally routed to the guide's author via
+Ben.
+
+**Terminal update, 2026-07-26:** Ben reports the ChatGPT-side artifacts
+that this program's unresolved items were routed upstream through were
+hallucinated — there is no real recovered content coming for any of them.
+Every item below still marked "routed to the guide author" or "PARTIALLY
+RESOLVED" pending upstream input has been converted to a final
+disposition (see each section); nothing in what this repo already trusts
+changes, only the provenance labeling of what was never real.
 
 **Correction to Builder Opus 5's initial framing:** Opus 5 reported "the
 Drive vector file is BOM+CRLF; after normalization, content-identical, 0
@@ -40,18 +49,22 @@ normalized bytes:   0dcda3aef232a734c9d57be2252dfe5ae1f471aecb5805cbd0fe8f313a7b
 this repo's fixture (common/tests/fixtures/apex_manifest_v1/golden-vectors.json): 0dcda3aef232a734c9d57be2252dfe5ae1f471aecb5805cbd0fe8f313a7b3a8e  <-- MATCHES normalized Drive bytes exactly
 ```
 
-**PARTIALLY RESOLVED**: this repo's committed test fixture is confirmed
-byte-identical to the current Drive file after the same BOM/CRLF/trailing-
-whitespace normalization — so this repo did not introduce content drift of
-its own. But that normalized content still does not match the guide's
-printed pin (`8aba6c9b...` vs `0dcda3ae...`). The guide's pin was either
-computed against a different (now-superseded) revision of this file, or
-via some export step this normalization doesn't capture. **Not explained
-by pure formatting** — flagged for the guide author, not closed here.
-Content correctness is independently established anyway: all 38 vectors
-round-trip byte-exact through the real T0.2 encoder/decoder
-(`common/tests/apex_manifest_encoding_v1.rs`), which does not depend on
-matching this pin.
+**RESOLVED (terminal, 2026-07-26)**: this repo's committed test fixture was
+already confirmed byte-identical to the current Drive file after the same
+BOM/CRLF/trailing-whitespace normalization — so this repo never introduced
+content drift of its own. The remaining open question was why that
+normalized content (`0dcda3ae...`) still didn't match the guide's printed
+pin (`8aba6c9b...`). Ben confirmed there is no real Drive-side revision
+this printed pin could correspond to — it was a hallucinated value from the
+same routing, not a stale-but-real export. Disposition: the
+**guide-printed pin `8aba6c9b...` is CONFIRMED_FABRICATED**; **this repo's
+normalized-content pin `0dcda3ae...` is AUTHORITATIVE**. The delivered
+38-vector set itself does not change — it was already independently
+established as correct via round-trip through the real T0.2 encoder/decoder
+(`common/tests/apex_manifest_encoding_v1.rs`), which never depended on
+matching the fabricated pin. Only the provenance label changes: from "an
+unexplained guide/repo pin mismatch, flagged for the guide author" to "the
+guide's pin was never real; this repo's pin was correct the whole time."
 
 ## `PROJECT-BASTION-APEX-PROGRAM-REGISTRY-SEED-v1.json` (`APEX-A.3`)
 
@@ -79,10 +92,11 @@ missing entirely:
 
 | Cited in guide | Actual Drive filename | Status |
 |---|---|---|
-| `PROJECT-BASTION-APEX-MANIFEST-CODEC-GOLDEN-VECTORS-v1.json` (`APEX-T0.2`) | `PROJECT-BASTION-APEX-MANIFEST-CBOR-GOLDEN-VECTORS-v1.json` | Exists under the alias name; used throughout this program's T0.2 work. |
-| `PROJECT-BASTION-APEX-DIGEST-CONTENT-GOLDEN-VECTORS-v1.json` (`APEX-T0.3`) | `PROJECT-BASTION-APEX-DIGEST-GOLDEN-VECTORS-v1.json` | Exists under the alias name; used throughout this program's T0.3 work. |
-| `PROJECT-BASTION-APEX-T0.1-SCALAR-GOLDEN-VECTORS-v1.json` (`APEX-T0.1`) | *(none)* | **Never delivered.** No file matches this name or any close variant. `APEX-T0.1` self-generated its own vectors instead (documented in its own commit) — this is not a naming mismatch to fix, it's a genuinely absent artifact. |
+| `PROJECT-BASTION-APEX-MANIFEST-CODEC-GOLDEN-VECTORS-v1.json` (`APEX-T0.2`) | `PROJECT-BASTION-APEX-MANIFEST-CBOR-GOLDEN-VECTORS-v1.json` | **AUTHORITATIVE (terminal, 2026-07-26).** No upstream ratification of the guide's citation is coming; the Drive filename is the locally-canonical name for this program going forward, and remains what this program's T0.2 work actually uses. |
+| `PROJECT-BASTION-APEX-DIGEST-CONTENT-GOLDEN-VECTORS-v1.json` (`APEX-T0.3`) | `PROJECT-BASTION-APEX-DIGEST-GOLDEN-VECTORS-v1.json` | **AUTHORITATIVE (terminal, 2026-07-26).** Same disposition as the T0.2 row above — locally-canonical, no upstream ratification pending. |
+| `PROJECT-BASTION-APEX-T0.1-SCALAR-GOLDEN-VECTORS-v1.json` (`APEX-T0.1`) | *(none)* | **NEVER_EXISTED (terminal, 2026-07-26).** No file matches this name or any close variant, and Ben confirmed no recovery is coming — the absence flag was correct, not a naming mismatch to fix. `APEX-T0.1`'s own conformance suite (`common/src/apex/scalar.rs`'s `#[cfg(test)]` module, `apex::scalar::tests`, 10 tests covering min/max/transparency/checked-conversion/serde-round-trip boundaries) is the vector authority for `APEX-T0.1` going forward — it was never blocked on this citation and does not depend on it appearing. |
 
-Upstream fix (correcting the guide's citations to the actual filenames, and
-either delivering the missing T0.1 vector file or confirming it was never
-meant to exist) is routed to the guide's author via Ben.
+Both filename-alias rows above and the T0.1 absence were originally routed
+to the guide's author via Ben pending upstream correction/delivery; as of
+2026-07-26 that routing is closed (see the terminal note at the top of this
+document) and the dispositions above are final.

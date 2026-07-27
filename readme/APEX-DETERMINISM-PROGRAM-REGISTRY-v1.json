@@ -312,7 +312,6 @@
         "rows": [
           "APEX-T5.1",
           "APEX-T5.2",
-          "APEX-T5.5",
           "APEX-T7.1"
         ]
       },
@@ -328,7 +327,6 @@
       "closure_rule": {
         "kind": "AllOf",
         "rows": [
-          "APEX-T5.5",
           "APEX-T6.6",
           "APEX-T7.1"
         ]
@@ -399,8 +397,7 @@
         "kind": "AllOf",
         "rows": [
           "APEX-T5.1",
-          "APEX-T5.4",
-          "APEX-T5.5"
+          "APEX-T5.4"
         ]
       },
       "finding_id": "DET-WTH-010",
@@ -1364,28 +1361,24 @@
     {
       "evidence_artifacts": [],
       "evidence_commands": [],
-      "evidence_status": "PENDING_ROW_PACKET",
-      "finding_ids": [
-        "DET-PRD-008",
-        "DET-PRD-011",
-        "DET-WTH-010"
-      ],
+      "evidence_status": "NOT_APPLICABLE_WITH_RATIONALE",
+      "finding_ids": [],
       "hard_dependencies": [],
       "packet_file": null,
       "rollback_plan": null,
-      "rollback_plan_status": "PENDING_ROW_PACKET",
+      "rollback_plan_status": "NOT_APPLICABLE_WITH_RATIONALE",
       "row_id": "APEX-T5.5",
       "sequence_index": 34,
       "source_surfaces": [],
-      "source_surfaces_status": "PENDING_ROW_PACKET",
+      "source_surfaces_status": "NOT_APPLICABLE_WITH_RATIONALE",
       "status": {
         "deployment": "NOT_DEPLOYED",
-        "implementation": "BLOCKED_ON_MISSING_SPEC",
+        "implementation": "NOT_APPLICABLE_TERMINAL",
         "microstep_research": "NOT_APPLICABLE",
-        "specification": "GUIDE_MISSING_ROW",
-        "verification": "NOT_STARTED"
+        "specification": "CONFIRMED_PHANTOM",
+        "verification": "NOT_APPLICABLE_TERMINAL"
       },
-      "title": "RESERVED (GUIDE_MISSING_ROW) -- no APEX-T5.5 packet exists in the canonical guide; content TBD from source, routed to guide author"
+      "title": "TERMINAL (CONFIRMED_PHANTOM) -- no APEX-T5.5 packet ever existed in the canonical guide; Ben confirmed 2026-07-26 the routed ChatGPT-recovery artifacts were hallucinated and no content is coming. Formerly cited by DET-WTH-010/DET-PRD-008/DET-PRD-011 as one of several AllOf closure rows; that citation was voided and each finding re-pointed to its remaining real replacement rows (see APEX-FINDING-STATUS-MATRIX-v1)."
     },
     {
       "evidence_artifacts": [],
