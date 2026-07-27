@@ -160,7 +160,23 @@ impl<'a> System<'a> for Sys {
 
             let _ = super::try_recv_all(client, 0, |_, msg: ClientRegister| {
                 trace!(?msg.token_or_username, "defer auth lockup");
-                let attempt_seq = session_registry.allocate_attempt_seq().unwrap_or_default();
+                // Opus 5's T3.2 boundary-review finding: never default a
+                // failed allocation -- a defaulted attempt_seq is
+                // indistinguishable from a real `0`, which would let two
+                // same-principal registrations in one pass collide on the
+                // exact attempt_seq value `admit_sorted`'s own doc comment
+                // requires the caller to prevent (`BLOCK-AMBIGUOUS-ATTEMPT`).
+                // `Exhausted` here means this process has issued
+                // `u64::MAX` registration attempts since it started (this
+                // counter is process-lifetime, never persisted or
+                // restored) -- unreachable in practice, and by the time it
+                // happens process state has far bigger problems than one
+                // rejected login, so a loud panic is correct: there is no
+                // well-formed `RegisterError` response to build without a
+                // valid attempt_seq to build it from.
+                let attempt_seq = session_registry
+                    .allocate_attempt_seq()
+                    .expect("SessionAttemptSeqV1 (u64, process-lifetime) exhausted -- process state is unrecoverable");
                 // APEX-T3.1.09: compare before authentication -- a stale
                 // registration from a client that observed a prior server
                 // process's ServerInfo must never reach login_provider.verify.

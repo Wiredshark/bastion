@@ -20,7 +20,16 @@ use std::time::{Duration, Instant};
 /// message-receipt time (single-threaded, before the awaited auth race
 /// begins -- spec section 2.2 item 1). Not part of any canonical digest;
 /// pure admission-ordering machinery.
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
+/// Deliberately not `Default`: a defaulted `SessionAttemptSeqV1` is
+/// indistinguishable from a real allocation of `0`, and `.unwrap_or_default()`
+/// on a failed [`SessionRegistry::allocate_attempt_seq`] call would manufacture
+/// exactly the same-principal attempt_seq collision `admit_sorted`'s own doc
+/// comment names as the caller's responsibility to prevent
+/// (`BLOCK-AMBIGUOUS-ATTEMPT`) -- Opus 5's T3.2 boundary-review finding.
+/// `SessionRegistry`'s own need for an initial value is served by
+/// `SessionAttemptSeqV1::INITIAL` in its hand-written `Default` impl below,
+/// not by this type deriving one.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct SessionAttemptSeqV1(u64);
 
 impl SessionAttemptSeqV1 {
@@ -76,13 +85,18 @@ pub const DETACHED_RETENTION_GRACE: Duration = Duration::from_secs(60);
 /// of `max_active` (spec section 4 policy 4, canaries SES-095-098).
 pub const DEFAULT_DETACHED_RETENTION_CAP: usize = 64;
 
-#[derive(Default)]
 pub struct SessionRegistry {
     records: HashMap<SessionId, SessionRecordV1>,
     /// Exactly one current record per principal -- a principal transitions
     /// between `Active`/`Detached` on the same record, never holds two.
     by_principal: HashMap<Uuid, SessionId>,
     next_attempt_seq: SessionAttemptSeqV1,
+}
+
+impl Default for SessionRegistry {
+    fn default() -> Self {
+        Self { records: HashMap::new(), by_principal: HashMap::new(), next_attempt_seq: SessionAttemptSeqV1::INITIAL }
+    }
 }
 
 impl SessionRegistry {
