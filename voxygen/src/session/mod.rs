@@ -183,6 +183,9 @@ pub struct SessionState {
     /// bastion (B5.6a): force a designation-overlay rebuild next frame (set
     /// when the visuals mode toggles, since that isn't captured by rev/slice).
     bastion_designation_dirty: bool,
+    /// R1E: packet-scoped cutaway fixture state. The feature flag is required;
+    /// ordinary sessions retain the existing occlusion path unchanged.
+    r1e_cutaway: crate::r1e_cutaway::CutawayFixtureStateV1,
 }
 
 /// bastion: state of an overseer grab-drag.
@@ -283,6 +286,7 @@ impl SessionState {
         crate::r1a_presentation::reset();
         crate::r1d_groups::reset();
         crate::r1d_tiers::reset();
+        crate::r1e_cutaway::reset();
         if let Err(error) = global_state.window.renderer_mut().reset_r1bc_figure_gpu() {
             tracing::warn!(
                 target: "bastion_r1bc_gpu",
@@ -338,6 +342,7 @@ impl SessionState {
             bastion_designation_slice: None,
             bastion_visuals: crate::bastion::tools::VisualsMode::default(),
             bastion_designation_dirty: false,
+            r1e_cutaway: crate::r1e_cutaway::CutawayFixtureStateV1::default(),
         }
     }
 
@@ -3580,6 +3585,28 @@ impl PlayState for SessionState {
                         0.0,
                     ));
                     camera.force_focus_pos(Vec3::new(target.x, target.y, target.z + 1.0));
+                    if crate::r1e_cutaway::enabled()
+                        && let Some(frame) = crate::r1a_presentation::current_frame_v1()
+                    {
+                        let client = self.client.borrow();
+                        if let Err(error) = crate::r1e_cutaway::apply_fixture(
+                            &mut self.r1e_cutaway,
+                            &mut self.scene,
+                            &client.state().terrain(),
+                            &frame,
+                            target,
+                            crate::render::bastion_r0d::capture_requested_ordinal_v1(),
+                        ) {
+                            self.scene.bastion_occlusion_mut().view_mode =
+                                crate::bastion::occlusion::ViewMode::Solid;
+                            self.scene.set_bastion_slice_z(None);
+                            tracing::warn!(
+                                target: "bastion_r1e_cutaway",
+                                %error,
+                                "cutaway fixture failed closed to ordinary surface rendering"
+                            );
+                        }
+                    }
                     self.bastion_sync_context(global_state);
                 } else {
                     crate::render::bastion_r0d::clear_capture_anchor();

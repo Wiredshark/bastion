@@ -954,6 +954,16 @@ pub fn drive_capture(
         );
         return true;
     }
+    if crate::r1e_cutaway::enabled() && count != crate::r1e_cutaway::CUTAWAY_CAPTURE_COUNT_V1 {
+        write_capture_fault(
+            &output,
+            "FAULT-TERMINAL R1E_CUTAWAY_INVALID_CAPTURE_COUNT expected=3\n",
+        );
+        return true;
+    }
+    if crate::r1e_cutaway::enabled() && !crate::r1e_cutaway::ready_for_capture() {
+        return false;
+    }
     let (frames, requested, completed) = match CAPTURE_STATE.lock() {
         Ok(mut state) => {
             let Some(next_frame) = state.0.checked_add(1) else {
@@ -1101,6 +1111,7 @@ fn request_one_capture(
     let individual_tier_plan = crate::r1d_tiers::latest_plan();
     let group_representations = crate::r1d_groups::latest_evidence();
     let group_protected_uids = crate::r1d_groups::protected_uid_csv();
+    let cutaway = crate::r1e_cutaway::latest_evidence();
     renderer.create_screenshot(move |result| {
         match result {
             Ok(image) => {
@@ -1178,6 +1189,32 @@ fn request_one_capture(
                                 }
                                 let group_representations =
                                     group_representations.unwrap_or_default();
+                                let cutaway = if crate::r1e_cutaway::enabled() {
+                                    let value = cutaway.ok_or_else(|| {
+                                        std::io::Error::new(
+                                            std::io::ErrorKind::InvalidData,
+                                            "cutaway evidence absent",
+                                        )
+                                    })?;
+                                    if !value.ready
+                                        || u64::from(value.stage as u8) != ordinal
+                                        || value.presentation_generation
+                                            != context.presentation.client_applied_generation
+                                        || value.terrain_generation == [0; 32]
+                                        || value.policy_digest == [0; 32]
+                                        || value.geometry_digest == [0; 32]
+                                        || value.reveal_authority == [0; 32]
+                                        || !value.fixture_owned
+                                    {
+                                        return Err(std::io::Error::new(
+                                            std::io::ErrorKind::InvalidData,
+                                            "cutaway evidence mismatch",
+                                        ));
+                                    }
+                                    Some(value)
+                                } else {
+                                    None
+                                };
                                 let scale_evidence = if crate::r1d_scale::enabled() {
                                     let plan = individual_tier_plan.as_ref().ok_or_else(|| {
                                         std::io::Error::new(
@@ -1459,6 +1496,52 @@ fn request_one_capture(
                                     ));
                                 } else {
                                     metadata.push_str("r1d_scale_enabled=false\n");
+                                }
+                                if let Some(cutaway) = cutaway {
+                                    metadata.push_str(&format!(
+                                        concat!(
+                                            "r1e_cutaway_enabled=true\n",
+                                            "r1e_cutaway_stage={}\n",
+                                            "r1e_cutaway_presentation_generation={}\n",
+                                            "r1e_cutaway_terrain_generation_sha256={}\n",
+                                            "r1e_cutaway_terrain_revision={}\n",
+                                            "r1e_cutaway_camera_token_sha256={}\n",
+                                            "r1e_cutaway_policy_sha256={}\n",
+                                            "r1e_cutaway_terrain_root_sha256={}\n",
+                                            "r1e_cutaway_geometry_sha256={}\n",
+                                            "r1e_cutaway_reveal_authority_sha256={}\n",
+                                            "r1e_cutaway_authorized_cell_count={}\n",
+                                            "r1e_cutaway_removed_cell_count={}\n",
+                                            "r1e_cutaway_cap_face_count={}\n",
+                                            "r1e_cutaway_cap_triangle_count={}\n",
+                                            "r1e_cutaway_roof_removal_count={}\n",
+                                            "r1e_cutaway_wall_removal_count={}\n",
+                                            "r1e_cutaway_slice_z={}\n",
+                                            "r1e_cutaway_stable_frames={}\n",
+                                            "r1e_cutaway_fixture_owned=true\n",
+                                        ),
+                                        cutaway.stage.label(),
+                                        cutaway.presentation_generation,
+                                        hex_digest(&cutaway.terrain_generation),
+                                        cutaway.terrain_revision,
+                                        hex_digest(&cutaway.camera_token),
+                                        hex_digest(&cutaway.policy_digest),
+                                        hex_digest(&cutaway.terrain_root),
+                                        hex_digest(&cutaway.geometry_digest),
+                                        hex_digest(&cutaway.reveal_authority),
+                                        cutaway.authorized_cell_count,
+                                        cutaway.removed_cell_count,
+                                        cutaway.cap_face_count,
+                                        cutaway.cap_triangle_count,
+                                        cutaway.roof_removal_count,
+                                        cutaway.wall_removal_count,
+                                        cutaway
+                                            .slice_z
+                                            .map_or_else(|| "none".to_owned(), |z| z.to_string()),
+                                        cutaway.stable_frames,
+                                    ));
+                                } else {
+                                    metadata.push_str("r1e_cutaway_enabled=false\n");
                                 }
                                 write_atomic(&metadata_path, metadata.as_bytes())
                             });
