@@ -12,9 +12,11 @@
 //! snippet appearing more than once in one file (confirmed real:
 //! sys/subscription.rs has two identical CreateEntity lines).
 
-use super::SendSiteClassV1::{self, LegacyMechanism, NotAClientSend, Ping, PostAuthCandidate, PreAuth, Terminal};
+use super::SendSiteClassV1::{
+    self, LegacyMechanism, NotAClientSend, Ping, PostAuthCandidate, PreAuth, Terminal, V1EgressMechanism,
+};
 
-pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 188] = [
+pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 194] = [
     ("weather/tick.rs", "lazy_msg = Some(client.prepare(ServerGeneral::WeatherUpdate(", 0, PostAuthCandidate),
     ("weather/tick.rs", "lazy_msg.as_ref().map(|msg| client.send_prepared(msg));", 0, PostAuthCandidate),
     ("weather/tick.rs", "let _ = weather_tx.send((grid, lightning_cells, sim));", 0, NotAClientSend),
@@ -39,6 +41,12 @@ pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 188] = 
     ("client.rs", "ServerMsg::Ping(m) => self.ping_stream.lock().unwrap().send(m),", 0, LegacyMechanism),
     ("client.rs", "pub(crate) fn send_fallible<M: Into<ServerMsg>>(&self, msg: M) { let _ = self.send(msg); }", 0, LegacyMechanism),
     ("client.rs", "pub(crate) fn send_prepared(&self, msg: &PreparedMsg) -> Result<(), StreamError> {", 0, LegacyMechanism),
+    ("client.rs", "SemanticStreamIdV1::Bootstrap => self.register_stream.send(frame_bytes),", 0, V1EgressMechanism),
+    ("client.rs", "SemanticStreamIdV1::CharacterScreen => self.character_screen_stream.send(frame_bytes),", 0, V1EgressMechanism),
+    ("client.rs", "SemanticStreamIdV1::InGame => self.in_game_stream.send(frame_bytes),", 0, V1EgressMechanism),
+    ("client.rs", "SemanticStreamIdV1::General => self.general_stream.send(frame_bytes),", 0, V1EgressMechanism),
+    ("client.rs", "SemanticStreamIdV1::Terrain => self.terrain_stream.send(frame_bytes),", 0, V1EgressMechanism),
+    ("sys/semantic_egress.rs", "// a send can fail (`send_fallible` silently discards", 0, NotAClientSend),
     ("state_ext.rs", "client.send_fallible(ServerGeneral::CharacterSuccess);", 0, PostAuthCandidate),
     ("state_ext.rs", "client.send_fallible(ServerGeneral::SpectatorSuccess(spawn_point));", 0, PostAuthCandidate),
     ("state_ext.rs", "let _ = client.send(ServerGeneral::server_msg(", 0, PostAuthCandidate),

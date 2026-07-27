@@ -638,6 +638,51 @@ pub enum SemanticEnvelopeRejectV1 {
     StaleEgressBinding,
     DuplicateOrderKey,
     OrderKeyTooLarge,
+    /// `T3.3.15`: added when the egress owner's own encode step turned
+    /// out to be genuinely fallible (unlike `T3.3.07`'s client-side
+    /// `send_semantic_v1`, which treats its own encode as impossible-to-
+    /// fail-by-construction and `.expect()`s it -- that function has
+    /// exactly one, already-validated call shape; egress instead encodes
+    /// arbitrary payloads from many different producers, so a genuine
+    /// per-intent reject path is warranted here where it wasn't there).
+    EncodeFailure,
+}
+
+/// Packet section 7.10's own outcome classification for one evidence
+/// entry -- reuses the two ALREADY-frozen terminal vocabularies
+/// wholesale (`SemanticEnvelopeRejectV1` for per-frame rejects,
+/// `SemanticProtocolTerminalV1` for connection-level terminals) instead
+/// of inventing parallel variant names for the same concepts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SemanticFrameVerdictV1 {
+    Sent,
+    Rejected(SemanticEnvelopeRejectV1),
+    Terminal(SemanticProtocolTerminalV1),
+}
+
+/// Packet section 7.10. Added in `T3.3.15` -- described in the packet's
+/// own shared-vocabulary section 7 alongside every other type in this
+/// module, but never actually landed in `T3.3.01`'s "exact enums/structs
+/// from Section 7" pass; `T3.3.15`'s own "records evidence" step
+/// (algorithm step 9) is the first to actually need it, so it completes
+/// `T3.3.01`'s contract here rather than blocking on going back to that
+/// step. Same class of gap `T0.4.6` closed for `T0.4`.
+///
+/// "Do not record tokens, chat text, command arguments, or payload
+/// bytes in ordinary logs" (packet's own words) -- this shape has no
+/// field that could hold any of those; `payload_digest` is the only
+/// payload-derived value, and a digest is not the payload.
+#[derive(Clone, Copy, Debug)]
+pub struct SemanticFrameEvidenceV1 {
+    pub tick_observed: u64,
+    pub direction: SemanticDirectionV1,
+    pub stream: SemanticStreamIdV1,
+    pub session_id: SessionId,
+    pub connection_epoch: ConnectionEpoch,
+    pub sequence: u64,
+    pub payload_schema: SemanticPayloadSchemaV1,
+    pub payload_digest: DigestBytes32V1,
+    pub verdict: SemanticFrameVerdictV1,
 }
 
 /// Packet section 7.1/T3.3.03: encodes `payload` with the pinned

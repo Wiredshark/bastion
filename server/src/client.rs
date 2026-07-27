@@ -143,6 +143,40 @@ impl Client {
     /// touched only by `T3.3.15`'s egress owner, never by a producer.
     pub(crate) fn semantic_send_state(&self) -> Option<&SemanticSendStateV1> { self.semantic_send_state.as_ref() }
 
+    /// `APEX-T3.3.15`: the egress owner's own mutable access to the
+    /// send-side cursor -- the ONLY place `SemanticSendStateV1::
+    /// allocate_sequence` is ever called from, matching the packet's
+    /// own "allocate checked sequence" step (5 of the 9-step egress
+    /// algorithm). No producer touches this; producers only ever read
+    /// the binding via `semantic_send_state()` above.
+    pub(crate) fn semantic_send_state_mut(&mut self) -> Option<&mut SemanticSendStateV1> {
+        self.semantic_send_state.as_mut()
+    }
+
+    /// `APEX-T3.3.15`: sends one already-encoded `SemanticWireFrameV1`'s
+    /// bytes on the physical stream `semantic_stream` maps to -- the
+    /// server-side mirror of `client/src/lib.rs::send_semantic_v1`'s own
+    /// physical-stream match, which the client already established this
+    /// exact routing table for (T3.3.07). `Bootstrap` routes to the
+    /// register stream for structural completeness matching that
+    /// mirror, though nothing enqueues a `Bootstrap`-classified intent
+    /// yet -- `GameSync`'s own semantic envelope is `T3.3.16`'s job, not
+    /// this row's.
+    pub(crate) fn send_semantic_frame(
+        &self,
+        semantic_stream: common_net::msg::envelope::SemanticStreamIdV1,
+        frame_bytes: Vec<u8>,
+    ) -> Result<(), StreamError> {
+        use common_net::msg::envelope::SemanticStreamIdV1;
+        match semantic_stream {
+            SemanticStreamIdV1::Bootstrap => self.register_stream.send(frame_bytes),
+            SemanticStreamIdV1::CharacterScreen => self.character_screen_stream.send(frame_bytes),
+            SemanticStreamIdV1::InGame => self.in_game_stream.send(frame_bytes),
+            SemanticStreamIdV1::General => self.general_stream.send(frame_bytes),
+            SemanticStreamIdV1::Terrain => self.terrain_stream.send(frame_bytes),
+        }
+    }
+
     pub(crate) fn send<M: Into<ServerMsg>>(&self, msg: M) -> Result<(), StreamError> {
         // TODO: hack to avoid locking stream mutex while serializing the message,
         // remove this when the mutexes on the Streams are removed

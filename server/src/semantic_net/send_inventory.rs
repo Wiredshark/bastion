@@ -48,6 +48,11 @@ pub(crate) enum SendSiteClassV1 {
     /// row's own after-state ("V1 post-auth semantic output enters only
     /// the outbox") targets -- not yet migrated.
     PostAuthCandidate,
+    /// `T3.3.15`: `Client::send_semantic_frame`'s own physical-stream
+    /// dispatch match arms -- the V1 egress mechanism itself (the
+    /// analogue of `LegacyMechanism`, but for the path migrated
+    /// producers now target instead of bypass).
+    V1EgressMechanism,
 }
 
 /// Re-scans `server/src` right now, with the exact same pattern the
