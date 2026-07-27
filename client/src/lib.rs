@@ -293,6 +293,14 @@ pub struct Client {
     presence: Option<PresenceKind>,
     runtime: Arc<Runtime>,
     server_info: ServerInfo,
+    /// `APEX-T3.3.06`: `Some` only while a `NetEnvelopeV1` attachment is
+    /// active -- mirrors the server-side `Client::semantic_send_state`
+    /// (client-to-server direction: this client sending `ClientGeneral`
+    /// to the server). Dormant: nothing advances this yet (`T3.3.07`).
+    semantic_send_state: Option<common_net::msg::SemanticSendStateV1>,
+    /// Server-to-client direction (receiving `ServerGeneral`/`ServerInit`
+    /// from the server). Dormant: nothing advances this yet (`T3.3.10`).
+    semantic_receive_state: Option<common_net::msg::SemanticReceiveStateV1>,
     /// Localized server motd and rules
     server_description: ServerDescription,
     world_data: WorldData,
@@ -734,6 +742,17 @@ impl Client {
         // must carry the identical SessionBindingV1, checked before
         // constructing State (spec section 3.5, canaries SES-045/046).
         crate::error::check_session_binding_equality(register_session_binding, game_sync_session_binding)?;
+        // APEX-T3.3.06: "accepted binding initializes" -- mirrors
+        // server/src/sys/msg/register.rs::finalize_admission's own reset,
+        // computed from the just-verified GameSync binding (identical to
+        // register_session_binding per the equality check above).
+        let semantic_state_binding = (game_sync_session_binding.selected_semantic_protocol
+            == common_net::msg::SemanticProtocolIdV1::NetEnvelopeV1)
+            .then(|| common_net::msg::ActiveSessionBindingV1 {
+                server_boot_id: game_sync_server_boot_id,
+                session_id: game_sync_session_binding.session_id,
+                epoch: game_sync_session_binding.epoch,
+            });
 
         init_stage_update(ClientInitStage::StartingClient);
         // Spawn in a blocking thread (leaving the network thread free).  This is mostly
@@ -1097,6 +1116,8 @@ impl Client {
             presence: None,
             runtime,
             server_info,
+            semantic_send_state: semantic_state_binding.map(common_net::msg::SemanticSendStateV1::new),
+            semantic_receive_state: semantic_state_binding.map(common_net::msg::SemanticReceiveStateV1::new),
             server_description: description,
             world_data: WorldData {
                 lod_base,
@@ -1233,6 +1254,11 @@ impl Client {
             // harness independent of this client ever sending it (spec
             // section 5's own scope note).
             session_request: SessionRequestV1::New,
+            // APEX-T3.3.05: no V1 sender exists yet (lands in T3.3.07) --
+            // always Legacy for now, matching every real server this
+            // client talks to advertising Legacy in its supported set
+            // (row status doc requirement 2: golden path unaffected).
+            requested_semantic_protocol: common_net::msg::envelope::SemanticProtocolIdV1::Legacy,
             token_or_username,
             locale,
         })?;
@@ -1258,6 +1284,8 @@ impl Client {
                 Err(Error::SessionClientTypeMismatch { session, requested })
             },
             Err(RegisterError::OlderAttemptSuperseded) => Err(Error::OlderAttemptSuperseded),
+            Err(RegisterError::IncompatibleSemanticProtocol) => Err(Error::IncompatibleSemanticProtocol),
+            Err(RegisterError::SemanticProtocolModeSwitch) => Err(Error::SemanticProtocolModeSwitch),
             Ok(admission) => {
                 debug!("Client registered successfully.");
                 Ok(admission.binding())

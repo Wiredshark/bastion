@@ -226,14 +226,18 @@ mod tests {
         assert_eq!(r2.unwrap(), Err(InitProtocolError::Custom(())));
     }
 
-    /// APEX-T3.1.15: a pre-T3.1 peer advertising the old minor version
-    /// (`[0, 6, 0]`) is rejected -- proves the live `VELOREN_NETWORK_VERSION`
-    /// bump (0.6.0 -> 0.7.0) actually takes effect in the handshake, not
-    /// just that the generic mismatch path works for an arbitrary version.
+    /// APEX-T3.2/T3.3.05 (Opus 5's boundary-review finding): a pre-T3.2
+    /// peer advertising the old minor version (`[0, 7, 0]`) is rejected --
+    /// proves the live `VELOREN_NETWORK_VERSION` bump (0.7.0 -> 0.8.0,
+    /// covering T3.2's and T3.3.05's cumulative wire changes) actually
+    /// takes effect in the handshake, not just that the generic mismatch
+    /// path works for an arbitrary version. Was T3.1.15's own 0.6.0->0.7.0
+    /// bump test before this finding; this test's own tripwire assertion
+    /// below is what caught the missed bump in the first place.
     #[tokio::test]
     async fn handshake_old_minor_version_rejected() {
-        assert_eq!(VELOREN_NETWORK_VERSION, [0, 7, 0], "update this test's OLD_VERSION constant alongside any future bump");
-        const OLD_VERSION: [u32; 3] = [0, 6, 0];
+        assert_eq!(VELOREN_NETWORK_VERSION, [0, 8, 0], "update this test's OLD_VERSION constant alongside any future bump");
+        const OLD_VERSION: [u32; 3] = [0, 7, 0];
         let [mut p1, mut p2] = ac_bound(10, None);
         let r1 = tokio::spawn(async move { p1.initialize(true, Pid::fake(2), 1337).await });
         let r2 = tokio::spawn(async move {

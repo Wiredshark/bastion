@@ -11,7 +11,7 @@
 
 use authc::Uuid;
 use common::apex::identity::{ConnectionEpoch, CounterAdvanceErrorV1, IdRandomBytesSourceV1, SessionId};
-use common_net::msg::{ClientType, SessionRequestV1};
+use common_net::msg::{ClientType, SemanticProtocolIdV1, SessionRequestV1};
 use common_net::msg::server::{RegisterError, SessionAdmissionV1, SessionBindingV1};
 use hashbrown::HashMap;
 use std::time::{Duration, Instant};
@@ -55,10 +55,16 @@ pub struct SessionRecordV1 {
     /// while `Active` (an active session has no expiry; only a detached
     /// one does).
     pub expires_at: Option<Instant>,
+    /// `APEX-T3.3.05`: fixed for the session's lifetime once admitted
+    /// (`admit_new`) -- `admit_resume` rejects a `Resume` that requests a
+    /// different one (`RegisterError::SemanticProtocolModeSwitch`).
+    pub semantic_protocol: SemanticProtocolIdV1,
 }
 
 impl SessionRecordV1 {
-    fn binding(&self) -> SessionBindingV1 { SessionBindingV1 { session_id: self.session_id, epoch: self.epoch } }
+    fn binding(&self) -> SessionBindingV1 {
+        SessionBindingV1 { session_id: self.session_id, epoch: self.epoch, selected_semantic_protocol: self.semantic_protocol }
+    }
 }
 
 /// One authenticated registration intent, ready for the sorted commit
@@ -75,6 +81,11 @@ pub struct AuthenticatedIntentV1 {
     /// same `admin` lookup the existing login flow already performs;
     /// this module does not know about roles.
     pub capacity_exempt: bool,
+    /// `APEX-T3.3.05`: already validated against the server's advertised
+    /// set in `register.rs`'s sequential phase 1 (`register.rs`'s job,
+    /// not this module's) -- this pass only stores it (`New`) or checks
+    /// it against the existing record's stored value (`Resume`).
+    pub requested_semantic_protocol: SemanticProtocolIdV1,
 }
 
 /// How long a detached session's slot is retained before it expires
@@ -241,6 +252,13 @@ impl SessionRegistry {
             record.epoch = epoch;
             record.state = SessionStateV1::Active;
             record.expires_at = None;
+            // A `New`-triggered replacement is a NEW attachment (the old
+            // one is kicked, T3.1/T3.2 semantics) -- it is free to pick
+            // its own protocol, same as it is free to pick its own
+            // client_type above. This is not the "mode switch" packet
+            // section 5.9 forbids; that applies to `Resume` continuing
+            // the SAME attachment (checked in admit_resume below).
+            record.semantic_protocol = intent.requested_semantic_protocol;
             let binding = record.binding();
             if !was_active {
                 *active_count += 1;
@@ -260,6 +278,7 @@ impl SessionRegistry {
             epoch: ConnectionEpoch::FIRST,
             state: SessionStateV1::Active,
             expires_at: None,
+            semantic_protocol: intent.requested_semantic_protocol,
         };
         let binding = record.binding();
         self.records.insert(session_id, record);
@@ -284,6 +303,14 @@ impl SessionRegistry {
         }
         if record.client_type != intent.client_type {
             return Err(RegisterError::SessionClientTypeMismatch { session: record.client_type, requested: intent.client_type });
+        }
+        // `APEX-T3.3.05`: "one attachment may never mix modes" (packet
+        // section 5.9) -- a Resume continuing this SAME attachment must
+        // request the protocol it was originally admitted with. Checked
+        // here, inside the sequential commit pass, per this row's
+        // sequential-phase-confinement requirement.
+        if record.semantic_protocol != intent.requested_semantic_protocol {
+            return Err(RegisterError::SemanticProtocolModeSwitch);
         }
         match record.state {
             SessionStateV1::Detached => {
@@ -388,7 +415,16 @@ mod tests {
     fn principal(seed: u8) -> Uuid { Uuid::from_bytes([seed; 16]) }
 
     fn intent(principal: Uuid, attempt_seq: SessionAttemptSeqV1, request: SessionRequestV1) -> AuthenticatedIntentV1 {
-        AuthenticatedIntentV1 { principal, client_type: ClientType::Game, attempt_seq, request, capacity_exempt: false }
+        intent_with_protocol(principal, attempt_seq, request, SemanticProtocolIdV1::Legacy)
+    }
+
+    fn intent_with_protocol(
+        principal: Uuid,
+        attempt_seq: SessionAttemptSeqV1,
+        request: SessionRequestV1,
+        requested_semantic_protocol: SemanticProtocolIdV1,
+    ) -> AuthenticatedIntentV1 {
+        AuthenticatedIntentV1 { principal, client_type: ClientType::Game, attempt_seq, request, capacity_exempt: false, requested_semantic_protocol }
     }
 
     fn source(seed: u8) -> FixedRandomBytesSourceV1 { FixedRandomBytesSourceV1([seed; 16]) }
@@ -683,5 +719,139 @@ mod tests {
         assert!(reg.record(binding.session_id).is_none());
         reg.close(binding.session_id); // idempotent: already gone
         assert!(reg.record(binding.session_id).is_none());
+    }
+
+    // T3.3.05: semantic-protocol negotiation, sequential-commit-pass half
+    // (row status doc requirement 1's second insertion point -- the
+    // "requested is server-supported" check itself lives in register.rs
+    // phase 1, outside this module's scope; this module only stores the
+    // already-validated value and enforces "no mode switch on resume").
+
+    #[test]
+    fn new_admission_records_requested_protocol_both_modes() {
+        let mut reg = SessionRegistry::new();
+        let mut src1 = source(1);
+        let seq0 = reg.allocate_attempt_seq().unwrap();
+        let out = reg.admit_sorted(
+            vec![((), intent_with_protocol(principal(1), seq0, SessionRequestV1::New, SemanticProtocolIdV1::Legacy))],
+            10,
+            now(),
+            64,
+            &mut src1,
+        );
+        let binding = match &out[0].1 {
+            Ok(SessionAdmissionV1::Created { binding }) => *binding,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(binding.selected_semantic_protocol, SemanticProtocolIdV1::Legacy);
+
+        let mut src2 = source(2);
+        let seq1 = reg.allocate_attempt_seq().unwrap();
+        let out = reg.admit_sorted(
+            vec![((), intent_with_protocol(principal(2), seq1, SessionRequestV1::New, SemanticProtocolIdV1::NetEnvelopeV1))],
+            10,
+            now(),
+            64,
+            &mut src2,
+        );
+        let binding2 = match &out[0].1 {
+            Ok(SessionAdmissionV1::Created { binding }) => *binding,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(binding2.selected_semantic_protocol, SemanticProtocolIdV1::NetEnvelopeV1);
+    }
+
+    /// Packet section 5.9: "one attachment may never mix modes" -- a
+    /// `Resume` requesting a different protocol than the session was
+    /// originally admitted with is rejected, not silently switched.
+    #[test]
+    fn resume_with_different_protocol_is_rejected_as_mode_switch() {
+        let mut reg = SessionRegistry::new();
+        let mut src = source(1);
+        let seq0 = reg.allocate_attempt_seq().unwrap();
+        let created = reg.admit_sorted(
+            vec![((), intent_with_protocol(principal(1), seq0, SessionRequestV1::New, SemanticProtocolIdV1::Legacy))],
+            10,
+            now(),
+            64,
+            &mut src,
+        );
+        let binding = match &created[0].1 {
+            Ok(SessionAdmissionV1::Created { binding }) => *binding,
+            other => panic!("{other:?}"),
+        };
+        reg.detach(binding.session_id, now(), Duration::from_secs(60), 64);
+
+        let seq1 = reg.allocate_attempt_seq().unwrap();
+        let out = reg.admit_sorted(
+            vec![(
+                (),
+                intent_with_protocol(
+                    principal(1),
+                    seq1,
+                    SessionRequestV1::Resume { locator: binding.session_id, expected_epoch: binding.epoch },
+                    SemanticProtocolIdV1::NetEnvelopeV1,
+                ),
+            )],
+            10,
+            now(),
+            64,
+            &mut src,
+        );
+        assert_eq!(out[0].1, Err(RegisterError::SemanticProtocolModeSwitch));
+        // The record must survive the rejection, same discipline as every
+        // other rejected-resume case in this module.
+        assert!(reg.record(binding.session_id).is_some());
+
+        // Same protocol resumes cleanly, proving the rejection above was
+        // actually about the mismatch and not something else.
+        let seq2 = reg.allocate_attempt_seq().unwrap();
+        let out = reg.admit_sorted(
+            vec![(
+                (),
+                intent_with_protocol(
+                    principal(1),
+                    seq2,
+                    SessionRequestV1::Resume { locator: binding.session_id, expected_epoch: binding.epoch },
+                    SemanticProtocolIdV1::Legacy,
+                ),
+            )],
+            10,
+            now(),
+            64,
+            &mut src,
+        );
+        assert!(matches!(out[0].1, Ok(SessionAdmissionV1::Resumed { .. })));
+    }
+
+    /// A `New`-triggered same-principal replacement is a NEW attachment,
+    /// not a continuation -- it is free to pick its own protocol, same as
+    /// it is already free to pick its own `client_type`.
+    #[test]
+    fn new_triggered_replacement_may_pick_a_different_protocol() {
+        let mut reg = SessionRegistry::new();
+        let mut src = source(1);
+        let seq0 = reg.allocate_attempt_seq().unwrap();
+        reg.admit_sorted(
+            vec![((), intent_with_protocol(principal(1), seq0, SessionRequestV1::New, SemanticProtocolIdV1::Legacy))],
+            10,
+            now(),
+            64,
+            &mut src,
+        );
+
+        let seq1 = reg.allocate_attempt_seq().unwrap();
+        let out = reg.admit_sorted(
+            vec![((), intent_with_protocol(principal(1), seq1, SessionRequestV1::New, SemanticProtocolIdV1::NetEnvelopeV1))],
+            10,
+            now(),
+            64,
+            &mut src,
+        );
+        let binding = match &out[0].1 {
+            Ok(SessionAdmissionV1::Replaced { binding }) => *binding,
+            other => panic!("expected Replaced, got {other:?}"),
+        };
+        assert_eq!(binding.selected_semantic_protocol, SemanticProtocolIdV1::NetEnvelopeV1);
     }
 }

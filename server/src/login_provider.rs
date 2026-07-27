@@ -6,7 +6,7 @@ use crate::{
 use authc::{AuthClient, AuthClientError, AuthToken, Uuid};
 use chrono::Utc;
 use common::comp::AdminRole;
-use common_net::msg::{RegisterError, SessionRequestV1};
+use common_net::msg::{RegisterError, SemanticProtocolIdV1, SessionRequestV1};
 use hashbrown::HashMap;
 use specs::Component;
 use std::{str::FromStr, sync::Arc};
@@ -58,6 +58,12 @@ pub struct PendingLogin {
     /// docs for why that ordering is what makes admission-commit order
     /// insensitive to real auth-completion timing.
     pub attempt_seq: SessionAttemptSeqV1,
+    /// `APEX-T3.3.05`: already validated against the server's advertised
+    /// set in `register.rs`'s sequential phase 1 before this `PendingLogin`
+    /// is even constructed -- carried alongside auth so it reaches the
+    /// sequential commit pass without a second per-entity lookup, same
+    /// pattern as `session_request`/`attempt_seq` above.
+    pub requested_semantic_protocol: SemanticProtocolIdV1,
 }
 
 impl PendingLogin {
@@ -67,12 +73,20 @@ impl PendingLogin {
     /// boot ID, so a stale post-restart registration never reaches auth.
     /// `session_request`/`attempt_seq` are irrelevant here (this path
     /// never reaches session admission) but still required so every
-    /// `PendingLogin` carries the same shape.
-    pub(crate) fn new_failure(err: RegisterError, session_request: SessionRequestV1, attempt_seq: SessionAttemptSeqV1) -> Self {
+    /// `PendingLogin` carries the same shape. Also used by `APEX-T3.3.05`'s
+    /// own phase-1 "requested protocol is server-supported" rejection,
+    /// where `requested_semantic_protocol` genuinely is the field that
+    /// caused the failure.
+    pub(crate) fn new_failure(
+        err: RegisterError,
+        session_request: SessionRequestV1,
+        attempt_seq: SessionAttemptSeqV1,
+        requested_semantic_protocol: SemanticProtocolIdV1,
+    ) -> Self {
         let (pending_s, pending_r) = oneshot::channel();
         let _ = pending_s.send(Err(err));
 
-        Self { pending_r, session_request, attempt_seq }
+        Self { pending_r, session_request, attempt_seq, requested_semantic_protocol }
     }
 }
 
@@ -108,7 +122,13 @@ impl LoginProvider {
         }
     }
 
-    pub fn verify(&self, username_or_token: &str, session_request: SessionRequestV1, attempt_seq: SessionAttemptSeqV1) -> PendingLogin {
+    pub fn verify(
+        &self,
+        username_or_token: &str,
+        session_request: SessionRequestV1,
+        attempt_seq: SessionAttemptSeqV1,
+        requested_semantic_protocol: SemanticProtocolIdV1,
+    ) -> PendingLogin {
         let (pending_s, pending_r) = oneshot::channel();
 
         match &self.auth_server {
@@ -128,7 +148,7 @@ impl LoginProvider {
             },
         }
 
-        PendingLogin { pending_r, session_request, attempt_seq }
+        PendingLogin { pending_r, session_request, attempt_seq, requested_semantic_protocol }
     }
 
     pub(crate) fn login<R>(

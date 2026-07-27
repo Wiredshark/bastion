@@ -746,12 +746,12 @@
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
         "deployment": "NOT_DEPLOYED",
-        "implementation": "NOT_STARTED",
+        "implementation": "IMPLEMENTED",
         "microstep_research": "MICROSTEP_RESEARCH_COMPLETE",
         "specification": "SPECIFICATION_COMPLETE",
-        "verification": "NOT_STARTED"
+        "verification": "VERIFIED"
       },
-      "title": "Local reproducibility smoke test"
+      "title": "Local reproducibility smoke test (built by Opus 5, bastion/apex-t1t2: contract+domain-12 6064a1565e, substrate a01987a3b9, dream2nix override fix 504d3d1881; T1.3-LOCAL-REPRO-SMOKE-PASS reproduced twice -- initial run at 5adb450dd0 and an archival rerun via the preexisting-baseline path with two rebuild checks, canonical CBOR d0f5eb81.., record_root 499fd181..; comparator liveness confirmed against three known-bad canaries, each failed --rebuild as expected. Commit citations checked reachable and message-consistent by Sonnet 5, not independently rebuilt this pass)"
     },
     {
       "evidence_artifacts": [],
@@ -773,12 +773,12 @@
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
         "deployment": "NOT_DEPLOYED",
-        "implementation": "NOT_STARTED",
+        "implementation": "IMPLEMENTED",
         "microstep_research": "MICROSTEP_RESEARCH_COMPLETE",
         "specification": "SPECIFICATION_COMPLETE",
-        "verification": "NOT_STARTED"
+        "verification": "VERIFIED"
       },
-      "title": "Fresh-environment rebuild pair"
+      "title": "Fresh-environment rebuild pair (built by Opus 5, bastion/apex-t1t2, contract commit 5adb450dd0 -- domains 13-16, fresh_rebuild.rs 5/5; PairPassSameTrustDomain proved on two fresh VMs, identical drv 5q9ia6.., cold asserts both, all six required fields byte-identical incl. exact NAR e51babaa..; isolation confirmed via distinct boot+instance IDs -- one caveat logged, not a correctness gap: shared machine-id is a golden-image clone artifact, /etc/machine-id should be cleared at next image bake (now noted at the bake seam itself, commit 52e17382f1). Canonical FreshRebuildPairV1 EMITTED (emitter + first record, commit 5da456256c on apex-t1t2): terminal PairPassSameTrustDomain, record_root 2044fd5709.., cbor sha b1d21ad83c.. -- chain fully closed. Commit citations checked reachable and message-consistent by Sonnet 5, not independently rebuilt this pass -- a two-fresh-VM cross-machine proof isn't practically re-derivable from this worktree)"
     },
     {
       "evidence_artifacts": [],

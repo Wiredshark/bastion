@@ -762,6 +762,12 @@ pub(crate) fn get_client_msg_error(
         Error::OlderAttemptSuperseded => {
             format!("{}: registration attempt superseded, please retry", localization.get_msg("common-error"))
         },
+        Error::IncompatibleSemanticProtocol => {
+            format!("{}: incompatible semantic protocol", localization.get_msg("common-error"))
+        },
+        Error::SemanticProtocolModeSwitch => {
+            format!("{}: semantic protocol mode switch rejected", localization.get_msg("common-error"))
+        },
     }
 }
 

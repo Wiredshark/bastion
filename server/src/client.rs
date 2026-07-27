@@ -1,4 +1,4 @@
-use common_net::msg::{ClientType, ServerGeneral, ServerMsg};
+use common_net::msg::{ActiveSessionBindingV1, ClientType, SemanticReceiveStateV1, SemanticSendStateV1, ServerGeneral, ServerMsg};
 use network::{ConnectAddr, Message, Participant, Stream, StreamError, StreamParams};
 use serde::{Serialize, de::DeserializeOwned};
 use specs::Component;
@@ -35,6 +35,18 @@ pub struct Client {
     character_screen_stream_params: StreamParams,
     in_game_stream_params: StreamParams,
     terrain_stream_params: StreamParams,
+
+    /// `APEX-T3.3.06`: `Some` only while a `NetEnvelopeV1` attachment is
+    /// active -- `None` for `Legacy` sessions (packet: "Legacy carries no
+    /// V1 state") and while detached (packet: "detach disables semantic
+    /// access"). Server-to-client direction (this server sending
+    /// `ServerGeneral`/`ServerInit` to this client). Dormant: nothing
+    /// reads or advances this yet (`T3.3.11`+ owns that).
+    semantic_send_state: Option<SemanticSendStateV1>,
+    /// Client-to-server direction (this client sending `ClientGeneral` to
+    /// this server). Same lifecycle as `semantic_send_state` above.
+    /// Dormant: nothing reads or advances this yet (`T3.3.08`+ owns that).
+    semantic_receive_state: Option<SemanticReceiveStateV1>,
 }
 
 pub struct PreparedMsg {
@@ -86,10 +98,33 @@ impl Client {
             character_screen_stream_params,
             in_game_stream_params,
             terrain_stream_params,
+            semantic_send_state: None,
+            semantic_receive_state: None,
         }
     }
 
     pub(crate) fn connected_from_addr(&self) -> &ConnectAddr { &self.connected_from_addr }
+
+    /// `APEX-T3.3.06`: called on a freshly-accepted `NetEnvelopeV1`
+    /// binding, and again whenever the epoch advances ("higher epoch
+    /// replaces") -- always a full reset via the reset constructors,
+    /// never a partial update. Never called for a `Legacy` selection
+    /// (caller's job to gate on `SessionBindingV1.selected_semantic_protocol`
+    /// -- this method itself doesn't know about negotiation). "Detach
+    /// disables semantic access" (the packet's third case) needs no
+    /// separate clear here: `events/player.rs::handle_client_disconnect`
+    /// already removes the whole `Client` component (owning this state)
+    /// from ECS storage on every disconnect reason, detach included --
+    /// confirmed by reading that function, not assumed. A resumed
+    /// connection gets a brand-new `Client` component (`semantic_*_state:
+    /// None` from `Client::new`) and this method resets it fresh via
+    /// `finalize_admission`, matching "per-attachment" (this row's own
+    /// title): cursor state is scoped to one epoch's live attachment,
+    /// never carried across a detach/reattach.
+    pub(crate) fn reset_semantic_state(&mut self, binding: ActiveSessionBindingV1) {
+        self.semantic_send_state = Some(SemanticSendStateV1::new(binding));
+        self.semantic_receive_state = Some(SemanticReceiveStateV1::new(binding));
+    }
 
     pub(crate) fn send<M: Into<ServerMsg>>(&self, msg: M) -> Result<(), StreamError> {
         // TODO: hack to avoid locking stream mutex while serializing the message,

@@ -135,9 +135,7 @@ impl Message {
         // invariant; a short consume is a malformed frame and fails closed.
         match decode_from_slice(&uncompressed_data, legacy()) {
             Ok((m, consumed)) if consumed == uncompressed_data.len() => Ok(m),
-            Ok(_) => Err(StreamError::Deserialize(Box::new(DecodeError::Other(
-                "trailing bytes after message",
-            )))),
+            Ok((_, consumed)) => Err(StreamError::TrailingBytes { consumed, total: uncompressed_data.len() }),
             Err(e) => Err(StreamError::Deserialize(Box::new(e))),
         }
     }
@@ -329,5 +327,86 @@ mod tests {
         }
         let msg = Message::serialize(&msg, stub_stream(true));
         assert_eq!(msg.data.len(), 1331);
+    }
+
+    // APEX-T3.3.02's own test list: valid exact, one trailing byte,
+    // compressed trailing bytes, empty, output-limit edge. `DET-NET-017`
+    // already made the general-purpose `Message::deserialize` reject
+    // trailing bytes for every caller; this step's actual gap was giving
+    // that rejection a typed `StreamError::TrailingBytes` terminal instead
+    // of a generic string-wrapped one, so these tests exercise that
+    // terminal directly rather than re-adding a parallel `deserialize_exact`
+    // method the codebase does not need.
+
+    #[test]
+    fn deserialize_valid_exact_consume_succeeds() {
+        let msg = Message::serialize("abc", stub_stream(false));
+        assert_eq!(msg.deserialize::<String>(1 << 20).unwrap(), "abc");
+    }
+
+    #[test]
+    fn deserialize_rejects_one_trailing_byte() {
+        let mut msg = Message::serialize("abc", stub_stream(false));
+        let consumed = msg.data.len();
+        let mut data = msg.data.to_vec();
+        data.push(0xFFu8);
+        msg.data = Bytes::from(data);
+        match msg.deserialize::<String>(1 << 20) {
+            Err(StreamError::TrailingBytes { consumed: c, total }) => {
+                assert_eq!(c, consumed);
+                assert_eq!(total, consumed + 1);
+            },
+            other => panic!("expected TrailingBytes, got {other:?}"),
+        }
+    }
+
+    #[cfg(feature = "compression")]
+    #[test]
+    fn deserialize_rejects_trailing_bytes_after_decompression() {
+        // Serialize, append a trailing byte BEFORE compression, so the
+        // decompressed buffer (not just the compressed one) carries the
+        // trailing byte -- the exact scenario this row's typed terminal
+        // must catch on the compressed path, not only the uncompressed one.
+        let uncompressed = Message::serialize("abc", stub_stream(false));
+        let consumed = uncompressed.data.len();
+        let mut padded = uncompressed.data.to_vec();
+        padded.push(0xFFu8);
+
+        let mut compressed_data = Vec::with_capacity(padded.len());
+        let mut table = lz_fear::raw::U32Table::default();
+        lz_fear::raw::compress2(&padded, 0, &mut table, &mut compressed_data).unwrap();
+
+        let msg = Message { data: Bytes::from(compressed_data), compressed: true };
+        match msg.deserialize::<String>(1 << 20) {
+            Err(StreamError::TrailingBytes { consumed: c, total }) => {
+                assert_eq!(c, consumed);
+                assert_eq!(total, consumed + 1);
+            },
+            other => panic!("expected TrailingBytes, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deserialize_empty_buffer_is_a_decode_error_not_trailing_bytes() {
+        let msg = Message { data: Bytes::new(), #[cfg(feature = "compression")] compressed: false };
+        match msg.deserialize::<String>(1 << 20) {
+            Err(StreamError::Deserialize(_)) => (),
+            other => panic!("expected Deserialize (UnexpectedEnd), got {other:?}"),
+        }
+    }
+
+    #[cfg(feature = "compression")]
+    #[test]
+    fn deserialize_output_limit_edge_rejects_oversized_decompression() {
+        let msg = Message::serialize(&vec![0u8; 10_000], stub_stream(true));
+        assert!(msg.compressed);
+        // Exact decompressed size is well over this tiny limit.
+        let capped = Message { data: msg.data.clone(), compressed: true };
+        match capped.deserialize::<Vec<u8>>(8) {
+            Err(StreamError::Compression(_)) => (),
+            other => panic!("expected Compression (output-limit exceeded), got {other:?}"),
+        }
+        // A generous limit still succeeds.
+        assert_eq!(msg.deserialize::<Vec<u8>>(1 << 20).unwrap(), vec![0u8; 10_000]);
     }
 }

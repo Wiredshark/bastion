@@ -28,6 +28,15 @@ pub enum DigestDomainIdV1 {
     /// `T1.2` in the registry's `sequence_index`, so `T0.5` keeps `9`/`10`
     /// and `T1.2`'s `SourceClosure` domain is `11`.
     CompatibilityProfile = 10,
+    /// `APEX-T3.3`: `NET_ENVELOPE_PROFILE_V1` frozen protocol-tag
+    /// vocabulary content root (packet section 7.1/8, step `T3.3.01`).
+    /// Row-order allocation (fleet standing rule): `T1.2` (registry
+    /// `sequence_index=10`) precedes `T3.3` (`sequence_index=21`) and is
+    /// building on a separate lane (`bastion/apex-t1t2`) that has almost
+    /// certainly already claimed `11` for its own `SourceClosure` domain --
+    /// proactively skipping to `12` here rather than colliding at merge
+    /// time and losing the tiebreak anyway.
+    NetEnvelopeProfile = 12,
 }
 
 impl DigestDomainIdV1 {
@@ -48,10 +57,11 @@ impl DigestDomainIdV1 {
             Self::PluginManifest => "bastion/plugin-manifest/v1",
             Self::SubsystemDescriptor => "bastion/subsystem-descriptor/v1",
             Self::CompatibilityProfile => "bastion/compatibility-profile/v1",
+            Self::NetEnvelopeProfile => "bastion/net-envelope-profile/v1",
         }
     }
 
-    pub const ALL: [DigestDomainIdV1; 10] = [
+    pub const ALL: [DigestDomainIdV1; 11] = [
         Self::BootstrapManifest,
         Self::SaveUniverseManifest,
         Self::PluginActivationPlan,
@@ -62,6 +72,7 @@ impl DigestDomainIdV1 {
         Self::PluginManifest,
         Self::SubsystemDescriptor,
         Self::CompatibilityProfile,
+        Self::NetEnvelopeProfile,
     ];
 }
 
@@ -107,5 +118,7 @@ mod tests {
         assert_eq!(DigestDomainIdV1::SubsystemDescriptor.label(), "bastion/subsystem-descriptor/v1");
         assert_eq!(DigestDomainIdV1::CompatibilityProfile.as_u16(), 10);
         assert_eq!(DigestDomainIdV1::CompatibilityProfile.label(), "bastion/compatibility-profile/v1");
+        assert_eq!(DigestDomainIdV1::NetEnvelopeProfile.as_u16(), 12);
+        assert_eq!(DigestDomainIdV1::NetEnvelopeProfile.label(), "bastion/net-envelope-profile/v1");
     }
 }

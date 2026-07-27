@@ -838,6 +838,7 @@ impl Server {
             git_hash: *common::util::GIT_HASH,
             git_timestamp: *common::util::GIT_TIMESTAMP,
             auth_provider: settings.auth_server_address.clone(),
+            supported_semantic_protocols: common_net::msg::server_supported_semantic_protocols_v1(),
         }
     }
 
