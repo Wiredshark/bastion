@@ -21,7 +21,7 @@ APEX-T1.1 (verify-profile package + env-first stamping + lane scripts).
 half), supporting DET-BLD-019/023/029 residuals (ambient inputs the closure must
 declare), A.1 §12.8 residual (ignored/untracked build inputs), T1.1 unknowns
 #3/#5 (installer/base-image manifest ownership; workspace build-script inventory).
-**Canary catalog:** `tools/apex-t1-2-closure-canaries.sh`, ~22 typed cases
+**Canary catalog:** `tools/apex-t1-2-closure-canaries.sh`, ~26 typed cases (categories per the inline master-order block's step 13: source-byte, LFS, symlink/case/path hazard, override/fallback, lock/toolchain/profile, ambient build-script input, branch movement, cross-checkout equality)
 (fleet-authored alongside the row; every negative must bite a specific terminal).
 
 ---
@@ -183,6 +183,8 @@ Resolved-evidence sidecar (JSON, non-authoritative, NOT in any root):
 | `T1.2-BLOCK-SCOPE-ESCAPE` | absolute path / non-repo path in any manifest |
 | `T1.2-BLOCK-EMIT` | partial/failed atomic emission |
 | `T1.2-BLOCK-ASSET-OVERRIDE` | VELOREN_ASSETS_OVERRIDE set in the certified lane |
+| `T1.2-BLOCK-ASSET-FALLBACK` | certified lane resolved assets via cwd/executable/system fallback instead of the declared root |
+| `T1.2-BLOCK-TREE-HAZARD` | absolute/parent path, case collision, symlink, or device entry in a closure tree |
 
 ## 7. Minute steps
 
@@ -195,6 +197,53 @@ Resolved-evidence sidecar (JSON, non-authoritative, NOT in any root):
 - **T1.2.07** Atomic emission (CBOR authoritative + sha256 + JSON mirror) + `vm-apex-nix-build.sh` integration (closure capture precedes `nix build`; record travels with package evidence). Gate: kill-before-rename leaves no record.
 - **T1.2.08** Certified-lane asset-binding gate: reuse the DET-AST-007 explicit-assets mechanism; declared-root content identity vs asset_tree_root; override-env typed block. Gate: override-set canary bites; declared-root-mismatch canary bites.
 - **T1.2.09** Canary suite `tools/apex-t1-2-closure-canaries.sh` (~24 cases; every Section-6 terminal + mutation-hardening: weaken any guard → its canary REDs).
+
+## 7a. Reconciliation with the inline master-order T1.2 block (Fable's admissibility ruling)
+
+An inline T1.2 detail block (status header, 14-step atomic build sequence,
+acceptance text) exists in the master build order's padded span — ADMISSIBLE
+GROUNDING, not inherited authority (same author as the fabricated pin; its
+named canary file `PROJECT-BASTION-APEX-SOURCE-CLOSURE-CANARIES-v1.json` +
+pin `a61a5163…` is itself a `.gdoc`-only hallucination-class artifact,
+verified). Every adopted item below was premise-checked; conflicts resolve
+toward LANDED code. This fleet spec remains the authority of record.
+
+**ADOPTED (sharpen this spec):**
+- Asset/rust tree entries carry `(path, git_mode, type, size_bytes, sha256)`
+  — mode/type = GIT-recorded values (100644/100755/type), never filesystem
+  bits (deterministic cross-OS; the determinism-law resolution of the inline
+  block's "mode" requirement).
+- Tree-hazard rejection: absolute/parent paths, case-fold collisions,
+  symlinks, device entries → `T1.2-BLOCK-TREE-HAZARD` (canonical trees must
+  be portable and unambiguous on every filesystem).
+- SINGLE-FILESET rule: the exported `rust_source_scope` inventory is derived
+  FROM the same Nix fileset expression the derivation consumes — no parallel
+  handwritten include list to drift.
+- Pinned artifacts extended: `.gitattributes` (the LFS classification is a
+  closure input) + every workspace member `Cargo.toml`.
+- Certified lane kills ALL asset-path fallback (cwd/executable/system), not
+  only the override env: declared root or typed block
+  (`T1.2-BLOCK-ASSET-FALLBACK`).
+- Runtime STARTUP check: the certified harness verifies declared-asset-root
+  identity against `asset_tree_root` BEFORE simulation starts; mismatch = a
+  typed terminal pre-sim (minute step T1.2.08 extended).
+- `cargo metadata`/build preflight with `--locked` now; `--frozen` deferred
+  to T1.4's offline store discipline.
+- Build-script discipline: undeclared filesystem/env/time/network reads in
+  any workspace `build.rs` block closure (static review canary per script;
+  the T1.1.02 env-first stamping already closed the harness's own instance).
+- A.3 registry integration: the closure root lands in the program registry
+  row evidence on emission.
+
+**RESOLVED TOWARD LANDED CODE (documented divergence):**
+- Inline steps 2/6 imply materializing asset bytes into the derivation
+  fileset. LANDED T1.1 (Fable-accepted) deliberately exports the UNWRAPPED
+  package with `filteredSource` EXCLUDING `assets/`. This spec keeps that:
+  the closure inventories BOTH scopes and binds the runtime via the declared
+  root + startup identity check — equivalent guarantee, no 437 MB store
+  copy, zero churn to the accepted T1.1 design.
+- Inline step 9 (env-first stamping) is ALREADY LANDED as T1.1.02 —
+  referenced, not re-specified.
 
 ## 8. Non-goals
 Rebuild equality (T1.3/T1.4); runnable asset bundling; signing/attestation
