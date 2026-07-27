@@ -108,6 +108,14 @@ impl PluginArtifactCacheV1 {
     pub fn is_staged_verified(&self, ordinal: u32) -> bool {
         self.open_verified(ordinal).is_ok()
     }
+
+    /// The final path of a staged artifact, VERIFIED on the way out (the
+    /// same corrupt-hit rule as `open_verified` — a path to unverified
+    /// bytes is never handed to a loader).
+    pub fn verified_path(&self, ordinal: u32) -> Result<PathBuf, ArtifactCacheErrorV1> {
+        self.open_verified(ordinal)?;
+        Ok(self.final_path(self.requirement(ordinal)?))
+    }
 }
 
 #[cfg(test)]

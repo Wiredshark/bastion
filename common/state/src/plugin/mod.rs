@@ -552,6 +552,30 @@ impl PluginMgr {
     /// leaves ZERO plugin asset sources committed by this batch (the old
     /// per-plugin `register_tar`-inside-the-loop could pollute the global
     /// combined source with earlier plugins after a later one failed).
+    /// APEX-T2.5.11 — construct from an EXPLICIT verified path list (the
+    /// client's deployment-acquisition cache): same inspect → prepare →
+    /// one-commit batch as `from_dir`, but ordinals come from the given
+    /// order (the deployment plan's canonical ordinals, not discovery),
+    /// so no `DiscoveryOrderIsLegacy` warning is attached.
+    pub fn from_paths_v1(paths: Vec<PathBuf>) -> Result<Self, PluginError> {
+        let inspected = paths
+            .into_iter()
+            .enumerate()
+            .map(|(i, path)| {
+                info!("Inspecting deployment plugin at {:?}", path);
+                InspectedPluginArchive::inspect_path(path, i as u32)
+            })
+            .collect::<Result<Vec<_>, PluginInspectionError>>()
+            .inspect_err(|e| error!(?e, "Failed to inspect deployment plugin"))?;
+        let mgr = PreparedPluginBatch::prepare(inspected)
+            .inspect_err(|e| error!(?e, "Failed to prepare deployment plugin batch"))?
+            .commit_new_manager()?;
+        for plugin in &mgr.plugins {
+            info!("Loaded deployment plugin '{}' with {} module(s)", plugin.data.name, plugin.modules.len());
+        }
+        Ok(mgr)
+    }
+
     fn from_dir(path: &Path) -> Result<Self, PluginError> {
         // APEX-T2.1.04: no silent `filter_map(e.ok())` — every directory entry
         // yields a path or a typed `DirectoryEntry` terminal.
