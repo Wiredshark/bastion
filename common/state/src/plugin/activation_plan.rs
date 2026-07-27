@@ -482,6 +482,58 @@ pub fn compile_mode_activation_plan_v1(
     Ok(PluginActivationPlanV1 { mode, deployment_root: plan.deployment_root()?, activations })
 }
 
+/// Consumer-side refusals for RECEIVED plans (.11's client acceptance and
+/// the catalog's structural cases): a plan is checked, never trusted.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PluginPlanValidationErrorV1 {
+    UnsupportedPlanSchema { got: u32 },
+    /// Node ordinals must be strictly increasing (canonical resolver
+    /// order); duplicates/reordering are refusals, not repairs.
+    InvalidActivationPlanOrdinals,
+    /// Two conflict decisions naming one resource.
+    InvalidActivationPlanDecisions,
+    /// A received mode projection whose activation set is not exactly the
+    /// recompute from the shared deployment plan.
+    InvalidModeProjection { mode: PluginActivationModeV1 },
+    RootRecomputeFailure,
+    /// The received projection's deployment root is not this deployment's.
+    ModeProjectionRootMismatch,
+}
+
+/// Structural validation of a received deployment plan.
+pub fn validate_deployment_plan_v1(plan: &PluginDeploymentPlanV1) -> Result<(), PluginPlanValidationErrorV1> {
+    if plan.schema_version != PLUGIN_ACTIVATION_SCHEMA_VERSION_V1 {
+        return Err(PluginPlanValidationErrorV1::UnsupportedPlanSchema { got: plan.schema_version });
+    }
+    if !plan.nodes.windows(2).all(|w| w[0].ordinal < w[1].ordinal) {
+        return Err(PluginPlanValidationErrorV1::InvalidActivationPlanOrdinals);
+    }
+    let mut resources: Vec<&PluginResourceKeyV1> = plan.conflict_decisions.iter().map(|d| &d.resource).collect();
+    resources.sort();
+    if resources.windows(2).any(|w| w[0] == w[1]) {
+        return Err(PluginPlanValidationErrorV1::InvalidActivationPlanDecisions);
+    }
+    Ok(())
+}
+
+/// Recompute-don't-trust for a received mode projection: it must be
+/// root-equal to the projection THIS deployment compiles.
+pub fn validate_mode_activation_plan_v1(
+    received: &PluginActivationPlanV1,
+    deployment: &PluginDeploymentPlanV1,
+) -> Result<(), PluginPlanValidationErrorV1> {
+    validate_deployment_plan_v1(deployment)?;
+    let expected = compile_mode_activation_plan_v1(deployment, received.mode)
+        .map_err(|_| PluginPlanValidationErrorV1::RootRecomputeFailure)?;
+    if received.deployment_root != expected.deployment_root {
+        return Err(PluginPlanValidationErrorV1::ModeProjectionRootMismatch);
+    }
+    if received.activations != expected.activations {
+        return Err(PluginPlanValidationErrorV1::InvalidModeProjection { mode: received.mode });
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // .07 — operator-owned conflict compilation. Claims arrive pre-expanded
 // to exact resource keys (.06 for assets, manifest runtime claims for
