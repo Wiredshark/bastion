@@ -737,3 +737,203 @@ mod checkpoint_descriptor_v1 {
         assert_eq!(bad3.validate_v1(), Err(E::DescriptorInvariant));
     }
 }
+
+/// `APEX-T3.4.06` — in-line stream boundaries: every required stream
+/// carries Begin then Data* then Barrier, so an empty stream is
+/// explicitly fenced rather than ambiguously absent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckpointBeginV1 {
+    pub epoch: u64,
+    pub stream: SemanticStreamIdV1,
+    pub descriptor_root: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckpointBarrierV1 {
+    pub epoch: u64,
+    pub stream: SemanticStreamIdV1,
+    pub descriptor_root: [u8; 32],
+    pub data_record_count: u32,
+    pub payload_bytes: u64,
+    pub last_data_sequence: Option<u64>,
+    pub stream_transcript_root: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamSegmentEventV1 {
+    Begin(CheckpointBeginV1),
+    Data { sequence: u64, ordinal: CheckpointOrdinalV1, payload_bytes: u64 },
+    Barrier(CheckpointBarrierV1),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamSegmentErrorV1 {
+    DataBeforeBegin,
+    DuplicateBegin,
+    EarlyBarrier,
+    DuplicateBarrier,
+    BarrierPlanMismatch,
+    DescriptorRootMismatch,
+    WrongStream,
+    EpochMismatch,
+}
+
+/// Per-stream FIFO segmenter, one per (epoch, stream). Arrival order on a
+/// fenced stream is send order.
+#[derive(Debug, Clone)]
+pub struct StreamSegmenterV1 {
+    epoch: u64,
+    stream: SemanticStreamIdV1,
+    descriptor_root: [u8; 32],
+    begun: bool,
+    sealed: bool,
+    records: u32,
+    bytes: u64,
+    last_sequence: Option<u64>,
+}
+
+impl StreamSegmenterV1 {
+    pub fn new(epoch: u64, stream: SemanticStreamIdV1, descriptor_root: [u8; 32]) -> Self {
+        Self { epoch, stream, descriptor_root, begun: false, sealed: false, records: 0, bytes: 0, last_sequence: None }
+    }
+
+    pub fn is_sealed(&self) -> bool { self.sealed }
+
+    pub fn observed(&self) -> (u32, u64, Option<u64>) { (self.records, self.bytes, self.last_sequence) }
+
+    pub fn accept_v1(&mut self, event: &StreamSegmentEventV1) -> Result<(), StreamSegmentErrorV1> {
+        use StreamSegmentErrorV1 as E;
+        match event {
+            StreamSegmentEventV1::Begin(b) => {
+                if b.stream != self.stream {
+                    return Err(E::WrongStream);
+                }
+                if b.epoch != self.epoch {
+                    return Err(E::EpochMismatch);
+                }
+                if b.descriptor_root != self.descriptor_root {
+                    return Err(E::DescriptorRootMismatch);
+                }
+                if self.begun {
+                    return Err(E::DuplicateBegin);
+                }
+                self.begun = true;
+                Ok(())
+            },
+            StreamSegmentEventV1::Data { sequence, payload_bytes, .. } => {
+                if !self.begun {
+                    return Err(E::DataBeforeBegin);
+                }
+                if self.sealed {
+                    return Err(E::DuplicateBarrier);
+                }
+                self.records += 1;
+                self.bytes += payload_bytes;
+                self.last_sequence = Some(*sequence);
+                Ok(())
+            },
+            StreamSegmentEventV1::Barrier(b) => {
+                if b.stream != self.stream {
+                    return Err(E::WrongStream);
+                }
+                if b.epoch != self.epoch {
+                    return Err(E::EpochMismatch);
+                }
+                if b.descriptor_root != self.descriptor_root {
+                    return Err(E::DescriptorRootMismatch);
+                }
+                if !self.begun {
+                    return Err(E::EarlyBarrier);
+                }
+                if self.sealed {
+                    return Err(E::DuplicateBarrier);
+                }
+                // Barrier must match what actually crossed this stream.
+                if b.data_record_count != self.records
+                    || b.payload_bytes != self.bytes
+                    || b.last_data_sequence != self.last_sequence
+                {
+                    return Err(E::BarrierPlanMismatch);
+                }
+                self.sealed = true;
+                Ok(())
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod checkpoint_controls_v1 {
+    use super::*;
+
+    fn begin(stream: SemanticStreamIdV1) -> StreamSegmentEventV1 {
+        StreamSegmentEventV1::Begin(CheckpointBeginV1 { epoch: 1, stream, descriptor_root: [5; 32] })
+    }
+
+    fn data(seq: u64, ord: u64) -> StreamSegmentEventV1 {
+        StreamSegmentEventV1::Data { sequence: seq, ordinal: CheckpointOrdinalV1(ord), payload_bytes: 10 }
+    }
+
+    fn barrier(stream: SemanticStreamIdV1, n: u32, bytes: u64, last: Option<u64>) -> StreamSegmentEventV1 {
+        StreamSegmentEventV1::Barrier(CheckpointBarrierV1 {
+            epoch: 1,
+            stream,
+            descriptor_root: [5; 32],
+            data_record_count: n,
+            payload_bytes: bytes,
+            last_data_sequence: last,
+            stream_transcript_root: [6; 32],
+        })
+    }
+
+    #[test]
+    fn every_stream_including_empty_is_fenced() {
+        for stream in REQUIRED_CHECKPOINT_STREAMS_V1 {
+            let mut seg = StreamSegmenterV1::new(1, stream, [5; 32]);
+            seg.accept_v1(&begin(stream)).unwrap();
+            seg.accept_v1(&data(2, 1)).unwrap();
+            seg.accept_v1(&data(3, 2)).unwrap();
+            seg.accept_v1(&barrier(stream, 2, 20, Some(3))).unwrap();
+            assert!(seg.is_sealed());
+
+            let mut empty = StreamSegmenterV1::new(1, stream, [5; 32]);
+            empty.accept_v1(&begin(stream)).unwrap();
+            empty.accept_v1(&barrier(stream, 0, 0, None)).unwrap();
+            assert!(empty.is_sealed());
+            assert_eq!(empty.observed(), (0, 0, None));
+        }
+    }
+
+    #[test]
+    fn segment_violations_are_typed() {
+        use StreamSegmentErrorV1 as E;
+        let s = SemanticStreamIdV1::InGame;
+        let mut a = StreamSegmenterV1::new(1, s, [5; 32]);
+        assert_eq!(a.accept_v1(&data(2, 1)), Err(E::DataBeforeBegin));
+
+        let mut b = StreamSegmenterV1::new(1, s, [5; 32]);
+        b.accept_v1(&begin(s)).unwrap();
+        assert_eq!(b.accept_v1(&begin(s)), Err(E::DuplicateBegin));
+
+        let mut c = StreamSegmenterV1::new(1, s, [5; 32]);
+        assert_eq!(c.accept_v1(&barrier(s, 0, 0, None)), Err(E::EarlyBarrier));
+
+        let mut d = StreamSegmenterV1::new(1, s, [5; 32]);
+        d.accept_v1(&begin(s)).unwrap();
+        d.accept_v1(&barrier(s, 0, 0, None)).unwrap();
+        assert_eq!(d.accept_v1(&barrier(s, 0, 0, None)), Err(E::DuplicateBarrier));
+        assert_eq!(d.accept_v1(&data(2, 1)), Err(E::DuplicateBarrier));
+
+        let mut e = StreamSegmenterV1::new(1, s, [5; 32]);
+        e.accept_v1(&begin(s)).unwrap();
+        e.accept_v1(&data(2, 1)).unwrap();
+        assert_eq!(e.accept_v1(&barrier(s, 5, 50, Some(9))), Err(E::BarrierPlanMismatch));
+
+        let mut f = StreamSegmenterV1::new(1, s, [5; 32]);
+        assert_eq!(f.accept_v1(&begin(SemanticStreamIdV1::Terrain)), Err(E::WrongStream));
+        let mut g = StreamSegmenterV1::new(2, s, [5; 32]);
+        assert_eq!(g.accept_v1(&begin(s)), Err(E::EpochMismatch));
+        let mut h = StreamSegmenterV1::new(1, s, [9; 32]);
+        assert_eq!(h.accept_v1(&begin(s)), Err(E::DescriptorRootMismatch));
+    }
+}
