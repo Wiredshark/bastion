@@ -854,12 +854,12 @@
       "source_surfaces_status": "PENDING_ROW_PACKET",
       "status": {
         "deployment": "NOT_DEPLOYED",
-        "implementation": "NOT_STARTED",
+        "implementation": "IMPLEMENTED",
         "microstep_research": "MICROSTEP_RESEARCH_COMPLETE",
         "specification": "SPECIFICATION_COMPLETE",
-        "verification": "NOT_STARTED"
+        "verification": "VERIFIED"
       },
-      "title": "Canonical plugin archive profile"
+      "title": "Canonical plugin archive profile (built by Opus 5, bastion/apex-t1t2, all ten T2.2.01-.10 minute steps, tip c3a98af050; 90-case catalog acceptance runner GREEN, full plugin module 26/26). Sonnet 5 lean boundary pass (Fable's named focus points, all independently verified against live code/data, not just the commit message): (1) total-coverage-audit mutation check -- built a throwaway detached worktree at c3a98af050, ran the runner clean (baseline pass), removed \"ACCEPT\" from the UNIT_PROVEN claim list, reran -- the suite genuinely failed with panic message 'catalog terminals with NO fixture and NO named unit proof: [\"ACCEPT\"]', confirming the audit actually bites rather than trusting the commit message's claim about catching PAR-C40 during development; (2) PAR-039/PAR-C05 name-collapse equivalence spot-verified against the real catalog case texts -- PAR-039 (\"Missing candidate-profile zero-block terminator\") and PAR-C05 (\"Strict canonical archive omits required two-zero-block terminator\") do describe the same underlying byte condition across catalog generations; (3) PAR-C18 (raw-Vec manifest mirror vs live BTreeSet dedupe) verified end to end against both archive_profile.rs's LegacyManifestRawV1 (modules: Vec<String>, explicitly documented as NOT the live struct's BTreeSet) and the live plugin/mod.rs::PluginData.modules field (confirmed genuinely BTreeSet<PathBuf>, DET-AST-017) -- the comparison the catalog mutation text claims is real, not asserted; (4) REJECT-MANIFEST-PARSE-INTERIM's catalog absence checked against source -- it is a real, reachable, unit-tested terminal (ArchiveRejectV1::ManifestParse), deliberately left unclaimed by the 90-case catalog because its own name and the surrounding \"T2.3 owns V1\" scoping comments mark it as a provisional legacy-schema-only terminal expected to be superseded once T2.3's manifest schema lands, not an oversight. Pins re-verified: the runner's own sha256 checks against all three catalog files passed on both the baseline and mutated runs. Throwaway verification worktree removed after use, no changes pushed to apex-t1t2.)"
     },
     {
       "evidence_artifacts": [],
