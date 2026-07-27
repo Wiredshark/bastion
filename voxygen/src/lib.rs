@@ -30,6 +30,7 @@ pub mod r0p_observer;
 mod r1a_presentation;
 pub mod r1bc_figure_package;
 mod r1d_groups;
+mod r1d_scale;
 mod r1d_tiers;
 pub mod render;
 pub mod run;
