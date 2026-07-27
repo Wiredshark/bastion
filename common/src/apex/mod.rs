@@ -11,6 +11,7 @@ pub mod digest;
 pub mod identity;
 pub mod manifest;
 pub mod scalar;
+pub mod subsystem;
 
 pub use boundary::AuthoritativeBoundaryKindV1;
 pub use scalar::{

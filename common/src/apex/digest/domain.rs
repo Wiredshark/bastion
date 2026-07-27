@@ -21,6 +21,13 @@ pub enum DigestDomainIdV1 {
     /// semantic root is a distinct object from `PluginActivationPlan` (ID 3,
     /// `APEX-T2.5`'s resolved *plan*) and must not reuse that domain.
     PluginManifest = 8,
+    /// `APEX-T0.5`: `SubsystemDescriptorV1` content identity.
+    SubsystemDescriptor = 9,
+    /// `APEX-T0.5`: `CompatibilityProfileV1` content identity. Row-order
+    /// allocation (fleet standing rule, 2026-07-27): `T0.5` precedes
+    /// `T1.2` in the registry's `sequence_index`, so `T0.5` keeps `9`/`10`
+    /// and `T1.2`'s `SourceClosure` domain is `11`.
+    CompatibilityProfile = 10,
 }
 
 impl DigestDomainIdV1 {
@@ -39,10 +46,12 @@ impl DigestDomainIdV1 {
             Self::ExecutionEvidence => "bastion/execution-evidence/v1",
             Self::SemanticContent => "bastion/semantic-content/v1",
             Self::PluginManifest => "bastion/plugin-manifest/v1",
+            Self::SubsystemDescriptor => "bastion/subsystem-descriptor/v1",
+            Self::CompatibilityProfile => "bastion/compatibility-profile/v1",
         }
     }
 
-    pub const ALL: [DigestDomainIdV1; 8] = [
+    pub const ALL: [DigestDomainIdV1; 10] = [
         Self::BootstrapManifest,
         Self::SaveUniverseManifest,
         Self::PluginActivationPlan,
@@ -51,6 +60,8 @@ impl DigestDomainIdV1 {
         Self::ExecutionEvidence,
         Self::SemanticContent,
         Self::PluginManifest,
+        Self::SubsystemDescriptor,
+        Self::CompatibilityProfile,
     ];
 }
 
@@ -92,5 +103,9 @@ mod tests {
         assert_eq!(DigestDomainIdV1::SemanticContent.label(), "bastion/semantic-content/v1");
         assert_eq!(DigestDomainIdV1::PluginManifest.as_u16(), 8);
         assert_eq!(DigestDomainIdV1::PluginManifest.label(), "bastion/plugin-manifest/v1");
+        assert_eq!(DigestDomainIdV1::SubsystemDescriptor.as_u16(), 9);
+        assert_eq!(DigestDomainIdV1::SubsystemDescriptor.label(), "bastion/subsystem-descriptor/v1");
+        assert_eq!(DigestDomainIdV1::CompatibilityProfile.as_u16(), 10);
+        assert_eq!(DigestDomainIdV1::CompatibilityProfile.label(), "bastion/compatibility-profile/v1");
     }
 }
