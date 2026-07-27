@@ -770,7 +770,7 @@ pub fn implied_directories(namespace: &[CanonicalEntryV1]) -> Vec<String> {
 /// uppercase ASCII letters, digits, `.`, `_`, `-`, and `/` as the sole
 /// separator. Everything else is `REJECT-NON-PORTABLE-CHARACTER`
 /// (backslash and NUL get their own sharper terminals first).
-fn portable_byte(b: u8) -> bool {
+pub(crate) fn portable_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/')
 }
 
