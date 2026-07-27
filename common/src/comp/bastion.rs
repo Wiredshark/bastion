@@ -253,6 +253,123 @@ pub fn mood_formula(cfg: &crate::bastion::MoodConfig, needs: &Needs, thought_sum
         .clamp(0.0, 1.0)
 }
 
+/// engine-list T3.54 (mood explainability): the 3 need IDs
+/// [`mood_formula`] weighs — a fixed sort key for [`MoodExplanationV1`],
+/// not a new needs system (do not confuse with [`crate::bastion::Need`],
+/// the unrelated FOCUS-scorer personal-need vocabulary).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum MoodNeedId {
+    Hunger,
+    Rest,
+    Recreation,
+}
+
+/// One need's penalty subtotal, recomputed (not cached) so display can
+/// never drift from the authoritative formula.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct NeedPenaltyV1 {
+    pub need: MoodNeedId,
+    pub value: f32,
+    pub comfort: f32,
+    pub weight: f32,
+    /// `weight * shortfall(value, comfort)` — the exact term `mood_formula`
+    /// sums.
+    pub penalty: f32,
+}
+
+/// One thought's decayed, care-scaled contribution — one row per
+/// qualifying [`rtsim::data::ChronicleEvent`] `thought_sum` folds in,
+/// kept individually here instead of pre-summed.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ThoughtContributionV1 {
+    /// [`rtsim::data::ChronicleEvent::seq`] — the source event id.
+    pub source_event_id: u64,
+    /// The `ChronicleKind` discriminant driving this thought (common
+    /// cannot name `rtsim::data::ChronicleKind` directly — cross-crate
+    /// boundary `thought_sum` already has; carried as its stable u32
+    /// wire tag instead).
+    pub thought_id: u32,
+    pub base_magnitude: f32,
+    pub care_multiplier: f32,
+    /// The final decayed, care-scaled term this thought adds to the sum.
+    pub contribution: f32,
+}
+
+/// One threshold `mood_formula` reads — the comfort bands, surfaced so
+/// "why is this colonist unhappy" reads the same numbers the formula
+/// does, not a paraphrase.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MoodThresholdV1 {
+    pub need: MoodNeedId,
+    pub comfort: f32,
+}
+
+/// engine-list T3.54: `MoodExplanationV1` — per-need penalties, active
+/// thoughts, care multipliers (folded into each
+/// [`ThoughtContributionV1`], not a separate list — a multiplier without
+/// its thought is meaningless), and thresholds. Canonically sorted per
+/// field (needs by [`MoodNeedId`], thoughts by
+/// `(source_event_id, thought_id)`, thresholds by [`MoodNeedId`]) so two
+/// independent constructions of the same input are byte-identical.
+/// Diagnostic-only: nothing here is authoritative state — `mood_formula`
+/// alone remains the source of truth, this is its own working shown.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MoodExplanationV1 {
+    pub snapshot_tick: u64,
+    pub actor: crate::rtsim::Actor,
+    pub needs: Vec<NeedPenaltyV1>,
+    pub thoughts: Vec<ThoughtContributionV1>,
+    pub thresholds: Vec<MoodThresholdV1>,
+    /// The formula's own output, recomputed from `needs`/`thoughts` at
+    /// construction time (never cached) so display and authority cannot
+    /// diverge silently.
+    pub total_mood: f32,
+}
+
+impl MoodExplanationV1 {
+    /// Builds the needs/thresholds halves and recomputes `total_mood` via
+    /// the real [`mood_formula`] fed the caller's `thought_sum` — the SAME
+    /// value `mood_formula` was actually driven with, never re-derived by
+    /// summing `thoughts` (that sum lacks `thought_sum`'s Neumaier
+    /// compensation and could drift a ULP; diagnostic fields must never be
+    /// able to move the authoritative number). The thoughts half
+    /// (chronicle-dependent) is server-only; callers pass it in already
+    /// built (`bastion-server::bastion_mood::thought_contributions`) —
+    /// this function still re-sorts it, since sort order is part of the
+    /// DTO's own contract, not the caller's to guarantee.
+    pub fn build(
+        snapshot_tick: u64,
+        actor: crate::rtsim::Actor,
+        cfg: &crate::bastion::MoodConfig,
+        needs: &Needs,
+        thought_sum: f32,
+        mut thoughts: Vec<ThoughtContributionV1>,
+    ) -> Self {
+        thoughts.sort_by_key(|t| (t.source_event_id, t.thought_id));
+        let need_penalty = |need: MoodNeedId, value: f32, comfort: f32, weight: f32| NeedPenaltyV1 {
+            need,
+            value,
+            comfort,
+            weight,
+            penalty: weight * shortfall(value, comfort),
+        };
+        let mut needs_out = vec![
+            need_penalty(MoodNeedId::Hunger, needs.hunger, cfg.hunger.comfort, cfg.hunger.weight),
+            need_penalty(MoodNeedId::Rest, needs.rest, cfg.rest.comfort, cfg.rest.weight),
+            need_penalty(MoodNeedId::Recreation, needs.recreation, cfg.recreation.comfort, cfg.recreation.weight),
+        ];
+        needs_out.sort_by_key(|n| n.need);
+        let mut thresholds = vec![
+            MoodThresholdV1 { need: MoodNeedId::Hunger, comfort: cfg.hunger.comfort },
+            MoodThresholdV1 { need: MoodNeedId::Rest, comfort: cfg.rest.comfort },
+            MoodThresholdV1 { need: MoodNeedId::Recreation, comfort: cfg.recreation.comfort },
+        ];
+        thresholds.sort_by_key(|t| t.need);
+        let total_mood = mood_formula(cfg, needs, thought_sum);
+        Self { snapshot_tick, actor, needs: needs_out, thoughts, thresholds, total_mood }
+    }
+}
+
 /// bastion (B-AG3 slice 1): the care multiplier is CLAMPED — a stack of
 /// scorned values can mute a thought to a quarter, never erase it; a
 /// stack of held values can quadruple it, never explode it.
@@ -405,6 +522,9 @@ pub struct BastionInspectPayload {
     /// with `None` here is the genuine-bug tell the four indistinguishable
     /// pit states needed. Tail-appended per the wire discipline.
     pub status: Option<BastionColonistStatus>,
+    /// engine-list T3.54: mood explainability breakdown, or `None` if not
+    /// requested/available. Tail-appended per the wire discipline.
+    pub mood_explanation: Option<MoodExplanationV1>,
 }
 
 /// bastion (STATUS-SURFACE): the inspector's colonist status line — the
@@ -800,6 +920,101 @@ mod bastion_b70_tests {
             saw_low |= w == 0.5;
         }
         assert!(saw_high && saw_low, "seeded sample must span the gate");
+    }
+
+    /// T3.54: exact derived DTO order — needs by [`MoodNeedId`], thoughts
+    /// by `(source_event_id, thought_id)` regardless of input order,
+    /// thresholds by [`MoodNeedId`]. Also pins `total_mood` to the same
+    /// value [`mood_formula`] returns for identical inputs.
+    #[test]
+    fn mood_explanation_v1_exact_evidence_order() {
+        let cfg = crate::bastion::MoodConfig::default();
+        let needs = Needs { hunger: 0.4, rest: 0.6, recreation: 0.9 };
+        let thought_sum = 0.05f32;
+        // Deliberately unsorted input — the DTO must sort it, not trust it.
+        let thoughts = vec![
+            ThoughtContributionV1 {
+                source_event_id: 5,
+                thought_id: 2,
+                base_magnitude: 0.1,
+                care_multiplier: 1.0,
+                contribution: 0.1,
+            },
+            ThoughtContributionV1 {
+                source_event_id: 1,
+                thought_id: 9,
+                base_magnitude: 0.2,
+                care_multiplier: 1.0,
+                contribution: 0.2,
+            },
+            ThoughtContributionV1 {
+                source_event_id: 1,
+                thought_id: 3,
+                base_magnitude: -0.05,
+                care_multiplier: 1.0,
+                contribution: -0.05,
+            },
+        ];
+        let actor = crate::rtsim::Actor::Character(crate::character::CharacterId(7));
+        let explanation =
+            MoodExplanationV1::build(42, actor, &cfg, &needs, thought_sum, thoughts);
+
+        assert_eq!(
+            explanation.needs.iter().map(|n| n.need).collect::<Vec<_>>(),
+            vec![MoodNeedId::Hunger, MoodNeedId::Rest, MoodNeedId::Recreation]
+        );
+        assert_eq!(
+            explanation
+                .thoughts
+                .iter()
+                .map(|t| (t.source_event_id, t.thought_id))
+                .collect::<Vec<_>>(),
+            vec![(1, 3), (1, 9), (5, 2)]
+        );
+        assert_eq!(
+            explanation.thresholds.iter().map(|t| t.need).collect::<Vec<_>>(),
+            vec![MoodNeedId::Hunger, MoodNeedId::Rest, MoodNeedId::Recreation]
+        );
+        assert_eq!(
+            explanation.total_mood,
+            mood_formula(&cfg, &needs, thought_sum)
+        );
+    }
+
+    /// T3.54: diagnostic/presentation fields (per-thought `base_magnitude`/
+    /// `care_multiplier`, and the whole `thoughts`/`needs`/`thresholds`
+    /// breakdown) must never move `total_mood` — it is driven ONLY by the
+    /// caller's `thought_sum`, never re-derived from the vector.
+    #[test]
+    fn mood_explanation_v1_diagnostic_fields_do_not_move_authoritative_hash() {
+        let cfg = crate::bastion::MoodConfig::default();
+        let needs = Needs { hunger: 0.3, rest: 0.5, recreation: 0.7 };
+        let thought_sum = 0.2f32;
+        let actor = crate::rtsim::Actor::Character(crate::character::CharacterId(1));
+
+        let real = ThoughtContributionV1 {
+            source_event_id: 1,
+            thought_id: 1,
+            base_magnitude: 0.4,
+            care_multiplier: 0.5,
+            contribution: 0.2,
+        };
+        // A diagnostically-different row (different magnitude/care/id) that
+        // still sums to the SAME `contribution` — irrelevant, since
+        // `total_mood` never reads the vector at all.
+        let relabeled = ThoughtContributionV1 {
+            source_event_id: 99,
+            thought_id: 42,
+            base_magnitude: 999.0,
+            care_multiplier: -3.0,
+            contribution: 0.2,
+        };
+
+        let a = MoodExplanationV1::build(1, actor, &cfg, &needs, thought_sum, vec![real]);
+        let b = MoodExplanationV1::build(1, actor, &cfg, &needs, thought_sum, vec![relabeled]);
+        assert_eq!(a.total_mood, b.total_mood);
+        assert_eq!(a.total_mood, mood_formula(&cfg, &needs, thought_sum));
+        assert_ne!(a.thoughts, b.thoughts, "the diagnostic rows must actually differ");
     }
 }
 

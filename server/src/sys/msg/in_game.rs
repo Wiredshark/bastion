@@ -1265,6 +1265,46 @@ impl<'a> System<'a> for Sys {
                                                 false,
                                             ));
                                         let arb = insp_arbiters.get(e);
+                                        // engine-list T3.54: mood
+                                        // explainability — same tables +
+                                        // Actor the B7-0 mood tick reads,
+                                        // assembled fresh at request
+                                        // cadence (never cached; the
+                                        // inspector's own no-drift rule).
+                                        let mood_explanation = insp_rtsim_entities.get(e).map(|re| {
+                                            let mood_cfg = common::bastion::MoodConfig::current();
+                                            let table = bastion_server::bastion_mood::ThoughtTable::current();
+                                            let affinities =
+                                                bastion_server::bastion_mood::ValueAffinityTable::current();
+                                            let data = rtsim.state().data();
+                                            let actor = common::rtsim::Actor::Npc(*re);
+                                            let thoughts = bastion_server::bastion_mood::thought_contributions(
+                                                &data.chronicle,
+                                                &table,
+                                                &affinities,
+                                                actor,
+                                                data.time_of_day.0,
+                                                &colonist.0.values,
+                                                neur,
+                                            );
+                                            let thought_sum = bastion_server::bastion_mood::thought_sum(
+                                                &data.chronicle,
+                                                &table,
+                                                &affinities,
+                                                actor,
+                                                data.time_of_day.0,
+                                                &colonist.0.values,
+                                                neur,
+                                            );
+                                            common::comp::bastion::MoodExplanationV1::build(
+                                                insp_tick.0,
+                                                actor,
+                                                &mood_cfg,
+                                                needs,
+                                                thought_sum,
+                                                thoughts,
+                                            )
+                                        });
                                         Some(common::comp::bastion::BastionInspectPayload {
                                             name: colonist.0.name.clone(),
                                             hunger: needs.hunger,
@@ -1296,6 +1336,7 @@ impl<'a> System<'a> for Sys {
                                                 uid,
                                                 insp_tick.0,
                                             ),
+                                            mood_explanation,
                                         })
                                     })
                                     .map(BastionInspectKind::Colonist),
