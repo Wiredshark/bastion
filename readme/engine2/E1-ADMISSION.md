@@ -83,10 +83,15 @@ re-verified before being counted as still-blocked in the full sweep.
   live+test), not a claim that every individual RNG/algorithm seam in the engine is audited —
   that's the ongoing T0.32-42-class work, tracked separately, already substantially DONE per this
   same document.
-- **T0.74 — NOT CLOSED, stays fully open.** Corrected from my own first-draft overclaim (see 1a
-  table above): `apex/scalar.rs` explicitly EXCLUDES floats by design (compile-fail proof at line
-  266). Cross-platform float computation determinism (the actual ask — physics/path/worldgen
-  floats, a Box2D-style contract) is untouched by APEX. Real, undiscounted Tier-0 work.
+- **T0.74 — NOT CLOSED, stays fully open, AND reclassified `UNBLOCKS-VIA-APEX-T6` /
+  cross-program-duplicate (Fable's own addition).** Corrected from my own first-draft overclaim
+  (see 1a table above): `apex/scalar.rs` explicitly EXCLUDES floats by design (compile-fail proof
+  at line 266). Cross-platform float computation determinism (the actual ask —
+  physics/path/worldgen floats, a Box2D-style contract) is untouched by APEX today, BUT it is
+  exactly apex T6's own declared territory (T6.1 transcendental inventory, T6.2 dual bit/semantic
+  probes, T6.4 `NumericProfileV1`, T6.5 deterministic kernels) — this row IS apex-T6 work seen
+  from the engine side, not a separate build. Recorded here so neither lane builds it twice; joins
+  the four mechanism clusters below as the fifth convergence-map entry.
 - **T0.84 — PARTIALLY CLOSED, one concrete named gap.** `apex/scalar.rs` + `apex/identity/`
   satisfy persisted/network IDs, binary/hash inputs, and protocol DTOs. Still open: `world_seed`
   (`server/src/settings/mod.rs:184`) is a plain `u32`, not an apex-style fixed-width newtype with
@@ -95,11 +100,20 @@ re-verified before being counted as still-blocked in the full sweep.
 
 ## 1d. Cross-program disposition note (Fable's own ruling)
 
-The four mechanism clusters confirmed genuinely still-absent in section 1b (`CanonicalScheduleV1`/
-`OperationKey`, `CanonicalPhysicsV1`/`ContactKey`, `CanonicalPersistenceV1`/`PersistenceOpKey`/
-`SaveUniverseEnvelopeV1`, `CapturedInputEventV1`/`InputFrameV1`) map almost exactly onto Opus's
-remaining APEX frontier (T4 saves/persistence, T5 input frames, T6 physics ordering). Any Tier
-1–3 row blocked on one of these should be dispositioned **`UNBLOCKS-VIA-APEX-T4/T5/T6`** in the
+The five-entry convergence map (four mechanism clusters + T0.74's own float contract):
+
+| Absent mechanism / row | Maps onto |
+|---|---|
+| `CanonicalScheduleV1` / `OperationKey` | Opus's APEX frontier, scheduling-adjacent tiers |
+| `CanonicalPhysicsV1` / `ContactKey` / `StablePairKey` | apex T6 (physics ordering) |
+| `CanonicalPersistenceV1` / `PersistenceOpKey` / `SaveUniverseEnvelopeV1` | apex T4 (saves/persistence) |
+| `CapturedInputEventV1` / `InputFrameV1` | apex T5 (input frames) |
+| T0.74's float computation contract | apex T6 (T6.1 transcendental inventory, T6.2 dual bit/semantic probes, T6.4 `NumericProfileV1`, T6.5 deterministic kernels) |
+
+The four mechanism clusters confirmed genuinely still-absent in section 1b map almost exactly onto
+Opus's remaining APEX frontier (T4 saves/persistence, T5 input frames, T6 physics ordering), and
+T0.74 itself is apex-T6 territory seen from the engine side. Any Tier 1–3 row blocked on one of
+these five should be dispositioned **`UNBLOCKS-VIA-APEX-T4/T5/T6`** in the
 full sweep below, not `BLOCKED, needs build` — these clusters unblock progressively as APEX
 advances, with no engine-side construction required. This changes their disposition from WORK to
 WAITING and keeps the two programs' sequencing coupled honestly (Fable's own framing). Applied
