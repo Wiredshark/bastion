@@ -138,6 +138,18 @@ pub enum ArchiveRejectV1 {
     PortableCaseCollision,
     PathKindCollision,
     ExplicitDirectoryInStrictV1,
+    // T2.2.06 — root-manifest + module-resolution rejects.
+    MissingManifest,
+    DuplicateManifest,
+    ManifestNotRegular,
+    ManifestSizeLimit,
+    ManifestParse { detail: &'static str },
+    DeclaredModuleMissing,
+    DeclaredModuleAlias,
+    DeclaredModuleNotRegular,
+    DeclaredModulePath,
+    DuplicateRawModuleDeclaration,
+    DuplicateCanonicalModuleDeclaration,
 }
 
 impl ArchiveRejectV1 {
@@ -176,8 +188,142 @@ impl ArchiveRejectV1 {
             Self::PortableCaseCollision => "REJECT-PORTABLE-CASE-COLLISION",
             Self::PathKindCollision => "REJECT-PATH-KIND-COLLISION",
             Self::ExplicitDirectoryInStrictV1 => "REJECT-EXPLICIT-DIRECTORY-IN-STRICT-V1",
+            Self::MissingManifest => "REJECT-MISSING-MANIFEST",
+            Self::DuplicateManifest => "REJECT-DUPLICATE-MANIFEST",
+            Self::ManifestNotRegular => "REJECT-MANIFEST-NOT-REGULAR",
+            Self::ManifestSizeLimit => "REJECT-MANIFEST-SIZE-LIMIT",
+            // NOT a catalog name (the only deliberate exception): the
+            // 90-case catalog has no unparseable-manifest terminal —
+            // T2.1's legacy loader already rejects bad TOML upstream of
+            // strict admission for every archive. Interim name pending
+            // the T2.2.10 catalog-fixture arbitration; remapped there if
+            // a fixture assigns one.
+            Self::ManifestParse { .. } => "REJECT-MANIFEST-PARSE-INTERIM",
+            Self::DeclaredModuleMissing => "REJECT-DECLARED-MODULE-MISSING",
+            Self::DeclaredModuleAlias => "REJECT-DECLARED-MODULE-ALIAS",
+            Self::DeclaredModuleNotRegular => "REJECT-DECLARED-MODULE-NOT-REGULAR",
+            Self::DeclaredModulePath => "REJECT-DECLARED-MODULE-PATH",
+            Self::DuplicateRawModuleDeclaration => "REJECT-DUPLICATE-RAW-MODULE-DECLARATION",
+            Self::DuplicateCanonicalModuleDeclaration => "REJECT-DUPLICATE-CANONICAL-MODULE-DECLARATION",
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// T2.2.06 — bounded root manifest + legacy module resolution.
+// ---------------------------------------------------------------------------
+
+/// Raw-shape mirror of the live legacy `PluginData` (`plugin/mod.rs`):
+/// `Vec`, NOT the live struct's `BTreeSet` — the set silently dedupes,
+/// and PAR-C18 requires raw duplicate declarations to be OBSERVED.
+#[derive(serde::Deserialize)]
+struct LegacyManifestRawV1 {
+    #[allow(dead_code)]
+    name: String,
+    #[serde(default)]
+    modules: Vec<String>,
+    #[serde(default)]
+    dependencies: Vec<String>,
+}
+
+/// T2.2.06 result: the resolved module set in RAW DECLARATION ORDER, with
+/// the order explicitly marked unfrozen (`OBSERVE-LEGACY-MODULE-ORDER`
+/// PAR-C12 — T2.4 owns freezing it), plus observed-not-rejected raw
+/// duplicate dependency declarations (PAR-C20).
+#[derive(Clone, Debug)]
+pub struct ManifestResolutionV1 {
+    pub manifest_path: CanonicalPathV1,
+    pub modules: Vec<CanonicalPathV1>,
+    /// Always true for the legacy schema.
+    pub module_order_unfrozen: bool,
+    pub raw_duplicate_dependencies: Vec<String>,
+}
+
+/// Exactly one bounded regular root `plugin.toml`, parsed as the CURRENT
+/// legacy schema only (spec policy 4; T2.3 owns V1), with every declared
+/// module resolved through the canonical namespace gate.
+pub fn resolve_manifest(
+    archive: &[u8],
+    scanned: &[ScannedEntryV1],
+    assembled: &[(CanonicalPathV1, MachineTextV1)],
+    namespace: &[CanonicalEntryV1],
+    limits: &ArchiveLimitsPolicyV1,
+) -> Result<ManifestResolutionV1, ArchiveRejectV1> {
+    assert_eq!(scanned.len(), assembled.len(), "assembled must be index-parallel with scanned");
+
+    // Locate the root manifest among RAW entries (pre-dedup: a duplicated
+    // plugin.toml is DUPLICATE-MANIFEST PAR-008, not the generic path
+    // collision).
+    let mut manifest_idx = None;
+    for (i, (path, _)) in assembled.iter().enumerate() {
+        if path.as_str() == "plugin.toml" {
+            if manifest_idx.is_some() {
+                return Err(ArchiveRejectV1::DuplicateManifest);
+            }
+            manifest_idx = Some(i);
+        }
+    }
+    let idx = manifest_idx.ok_or(ArchiveRejectV1::MissingManifest)?;
+    let entry = &scanned[idx];
+    if !matches!(entry.type_flag, b'0' | 0) {
+        return Err(ArchiveRejectV1::ManifestNotRegular);
+    }
+    if entry.declared_size > limits.max_manifest_bytes {
+        return Err(ArchiveRejectV1::ManifestSizeLimit);
+    }
+
+    let content = entry_content(archive, entry);
+    let toml_str =
+        std::str::from_utf8(content).map_err(|_| ArchiveRejectV1::ManifestParse { detail: "manifest not UTF-8" })?;
+    let raw: LegacyManifestRawV1 =
+        toml::de::from_str(toml_str).map_err(|_| ArchiveRejectV1::ManifestParse { detail: "legacy TOML parse" })?;
+
+    // Module resolution through the canonical path/index gate.
+    let exact: std::collections::BTreeSet<&str> = namespace.iter().map(|e| e.path.as_str()).collect();
+    let folded: std::collections::BTreeSet<String> =
+        namespace.iter().map(|e| e.portability_key.as_str().to_owned()).collect();
+    let implied: std::collections::BTreeSet<String> = implied_directories(namespace)
+        .into_iter()
+        .map(|d| d.to_ascii_lowercase())
+        .collect();
+
+    let mut seen_raw = std::collections::BTreeSet::new();
+    let mut seen_keys = std::collections::BTreeSet::new();
+    let mut modules = Vec::with_capacity(raw.modules.len());
+    for declared in &raw.modules {
+        if !seen_raw.insert(declared.clone()) {
+            return Err(ArchiveRejectV1::DuplicateRawModuleDeclaration);
+        }
+        // Grammar first: a declared module must itself be a canonical
+        // portable path (PAR-048 covers host-form/relative-form strings).
+        if !declared.bytes().all(portable_byte) || CanonicalPathV1::new(declared.as_str()).is_err() {
+            return Err(ArchiveRejectV1::DeclaredModulePath);
+        }
+        let key = declared.to_ascii_lowercase();
+        if !seen_keys.insert(key.clone()) {
+            return Err(ArchiveRejectV1::DuplicateCanonicalModuleDeclaration);
+        }
+        if exact.contains(declared.as_str()) {
+            modules.push(CanonicalPathV1::new(declared.as_str()).expect("checked"));
+        } else if implied.contains(&key) {
+            return Err(ArchiveRejectV1::DeclaredModuleNotRegular);
+        } else if folded.contains(&key) {
+            return Err(ArchiveRejectV1::DeclaredModuleAlias);
+        } else {
+            return Err(ArchiveRejectV1::DeclaredModuleMissing);
+        }
+    }
+
+    let mut dep_seen = std::collections::BTreeSet::new();
+    let raw_duplicate_dependencies: Vec<String> =
+        raw.dependencies.iter().filter(|d| !dep_seen.insert((*d).clone())).cloned().collect();
+
+    Ok(ManifestResolutionV1 {
+        manifest_path: assembled[idx].0.clone(),
+        modules,
+        module_order_unfrozen: true,
+        raw_duplicate_dependencies,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -862,6 +1008,105 @@ mod tests {
     fn implied_directory_namespace() {
         let ns = build_namespace(vec![centry("a/b/c.wasm", 1), centry("a/d.wasm", 2), centry("top.toml", 3)]).unwrap();
         assert_eq!(implied_directories(&ns), vec!["a".to_string(), "a/b".to_string()]);
+    }
+
+    fn manifest_fixture(toml: &str, extra: &[(&str, &[u8])]) -> (Vec<u8>, Vec<ScannedEntryV1>, Vec<(CanonicalPathV1, MachineTextV1)>, Vec<CanonicalEntryV1>) {
+        let mut body = ustar_entry("plugin.toml", toml.as_bytes(), b'0');
+        for (name, content) in extra {
+            body.extend(ustar_entry(name, content, b'0'));
+        }
+        let archive = terminated(body);
+        let scan = scan_framing(&archive, &test_limits()).unwrap();
+        let limits = test_limits();
+        let assembled: Vec<_> = scan.entries.iter().map(|e| assemble_ustar_path(e, &limits).unwrap()).collect();
+        let entries: Vec<_> = scan
+            .entries
+            .iter()
+            .zip(&assembled)
+            .map(|(e, (p, k))| CanonicalEntryV1 {
+                path: p.clone(),
+                portability_key: k.clone(),
+                size_bytes: e.declared_size,
+                content_sha256: [0; 32],
+            })
+            .collect();
+        let namespace = build_namespace(entries).unwrap();
+        (archive, scan.entries, assembled, namespace)
+    }
+
+    #[test]
+    fn manifest_gate_accepts_and_resolves_in_declaration_order() {
+        let toml = "name = \"p\"\nmodules = [\"z.wasm\", \"a.wasm\"]\ndependencies = [\"d\", \"d\"]\n";
+        let (archive, scanned, assembled, ns) =
+            manifest_fixture(toml, &[("a.wasm", b"A"), ("z.wasm", b"Z")]);
+        let res = resolve_manifest(&archive, &scanned, &assembled, &ns, &test_limits()).unwrap();
+        let order: Vec<&str> = res.modules.iter().map(|m| m.as_str()).collect();
+        assert_eq!(order, vec!["z.wasm", "a.wasm"], "raw declaration order preserved (unfrozen)");
+        assert!(res.module_order_unfrozen);
+        assert_eq!(res.raw_duplicate_dependencies, vec!["d".to_string()], "raw dup dependency OBSERVED, not rejected");
+    }
+
+    #[test]
+    fn manifest_gate_rejects_bite() {
+        let limits = test_limits();
+        let go = |toml: &str, extra: &[(&str, &[u8])]| {
+            let (archive, scanned, assembled, ns) = manifest_fixture(toml, extra);
+            resolve_manifest(&archive, &scanned, &assembled, &ns, &limits).unwrap_err()
+        };
+
+        // Missing manifest entirely.
+        let body = ustar_entry("a.wasm", b"A", b'0');
+        let archive = terminated(body);
+        let scan = scan_framing(&archive, &limits).unwrap();
+        let assembled: Vec<_> = scan.entries.iter().map(|e| assemble_ustar_path(e, &limits).unwrap()).collect();
+        let ns = build_namespace(
+            scan.entries
+                .iter()
+                .zip(&assembled)
+                .map(|(e, (p, k))| CanonicalEntryV1 {
+                    path: p.clone(),
+                    portability_key: k.clone(),
+                    size_bytes: e.declared_size,
+                    content_sha256: [0; 32],
+                })
+                .collect(),
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_manifest(&archive, &scan.entries, &assembled, &ns, &limits).unwrap_err(),
+            ArchiveRejectV1::MissingManifest
+        );
+
+        assert_eq!(go("name = \"p\"\nmodules = [\"gone.wasm\"]\n", &[]), ArchiveRejectV1::DeclaredModuleMissing);
+        assert_eq!(
+            go("name = \"p\"\nmodules = [\"A.wasm\"]\n", &[("a.wasm", b"A")]),
+            ArchiveRejectV1::DeclaredModuleAlias
+        );
+        assert_eq!(
+            go("name = \"p\"\nmodules = [\"dir\"]\n", &[("dir/x.wasm", b"X")]),
+            ArchiveRejectV1::DeclaredModuleNotRegular
+        );
+        assert_eq!(
+            go("name = \"p\"\nmodules = [\"../esc.wasm\"]\n", &[]),
+            ArchiveRejectV1::DeclaredModulePath
+        );
+        assert_eq!(
+            go("name = \"p\"\nmodules = [\"a.wasm\", \"a.wasm\"]\n", &[("a.wasm", b"A")]),
+            ArchiveRejectV1::DuplicateRawModuleDeclaration
+        );
+        assert_eq!(
+            go("name = \"p\"\nmodules = [\"a.wasm\", \"A.wasm\"]\n", &[("a.wasm", b"A"), ("b.wasm", b"B")]),
+            ArchiveRejectV1::DuplicateCanonicalModuleDeclaration
+        );
+        assert!(matches!(go("not = = toml", &[]), ArchiveRejectV1::ManifestParse { .. }));
+
+        let mut small = limits.clone();
+        small.max_manifest_bytes = 2;
+        let (archive, scanned, assembled, ns) = manifest_fixture("name = \"p\"\n", &[]);
+        assert_eq!(
+            resolve_manifest(&archive, &scanned, &assembled, &ns, &small).unwrap_err(),
+            ArchiveRejectV1::ManifestSizeLimit
+        );
     }
 
     #[test]
