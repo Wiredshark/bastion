@@ -381,6 +381,17 @@ impl Server {
         // Load plugins before generating the world. Deployed = the server's
         // own manager is built from the SAME verified deployment artifacts
         // through the one-time generation; Legacy = the exact old path.
+        //
+        // APEX-T2.5.13: this ordering IS the step's contract — in Deployed
+        // mode the complete plan is compiled and the sealed content
+        // generation installed BEFORE `World::generate` runs below, and any
+        // failure aborts startup. Worldgen therefore always observes a
+        // frozen, complete content generation, never a prefix (permutation
+        // invariance of the compile itself is proven in
+        // common-state::plugin::deployment tests; the canonical fold order
+        // is DET-AST-034's sort). The world-baseline fixture ("discovery
+        // permutations yield same world baseline") belongs to the VM
+        // fixture lane.
         #[cfg(feature = "plugins")]
         let plugin_mgr = match &plugin_deployment {
             crate::plugin_deployment_policy::PluginDeploymentStateV1::Deployed {
