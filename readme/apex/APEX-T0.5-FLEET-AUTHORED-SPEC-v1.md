@@ -1,11 +1,29 @@
 # APEX-T0.5 — Fleet-authored spec: shared subsystem descriptors and compatibility profiles
 
-> **STATUS: DRAFT — pending cross-review.** Author: Builder Sonnet 5, 2026-07-27.
-> Not build-authorized. Per Ben's order (routed via Fable): author → Opus 5
-> spec-review → Fable approval → **then** build starts. Registry disposition
-> for `APEX-T0.5` stays `specification=FLEET_AUTHORED` (not
-> `SPECIFICATION_COMPLETE`) until Fable signs off; do not treat this
-> document as a green light to implement.
+> **STATUS: APPROVED, BUILD-AUTHORIZED.** Author: Builder Sonnet 5,
+> 2026-07-27. Opus 5 spec-reviewed (verdict: approved with one domain-ID
+> coordination fix, already resolved — see §4 note — and one clarification,
+> folded into §3.7/§6 below). Fable granted build authorization
+> conditional on that clarification landing, self-attested in the
+> implementing commit. Domain-ID collision with `APEX-T1.2`'s
+> `SourceClosure` domain resolved by row-order allocation (`T0.5`
+> `sequence_index=8` precedes `T1.2` `sequence_index=10`): `T0.5` keeps
+> `9`/`10`, `T1.2`'s moved to `11`. This is now the fleet's standing
+> collision rule for future domain-ID additions.
+>
+> **Grounding trust posture (Fable's standing ruling, 2026-07-27,
+> applies retroactively to this document and to all future
+> fleet-authored specs):** inline master-order row content is admissible
+> grounding, never inherited authority — the same document that grounded
+> `T0.1`–`T0.4` cleanly also contains the fabricated `8aba6c9b` pin and
+> three phantom filenames, so no code-facing claim rides in on a quote
+> unchecked. This document already followed that posture in practice
+> (every T0.1–T0.4 symbol cited in §0.3 was verified against the actual
+> landed source, not read off the master-order's prose, e.g.
+> `ProtocolVersion` — not the master order's own casual
+> `ProtocolVersionV1` naming — because that is what `T0.1` actually
+> shipped); recorded here explicitly now that it is a named standing
+> rule rather than an implicit practice.
 
 ## 0. Provenance (read this before the rest)
 
@@ -316,6 +334,41 @@ raw tag/payload is still carried in the report's evidence (never dropped
 silently) so a human/log reviewing the report can see an extension was
 present and ignored, not infer it from an absent field.
 
+**Known-variant, invalid wire content (clarification requested in spec
+review, folded in — Opus 5, 2026-07-27):** `Unknown` covers a variant
+*this build's enum cannot name at all*. A different case is a variant it
+*does* name — `AcceptRange`, `AcceptSet` — arriving over the wire with
+content that violates that variant's own construction invariant (`min >
+max`, an empty `schemas` list): content a local caller could never
+produce (the checked constructors in §3.4 make it locally
+unrepresentable) but a decoder must still be able to meet, because it is
+reading peer-supplied bytes, not calling the constructor. Resolution:
+this is a **decode-time failure, not an evaluation-time
+`InvalidInput`**. `CompatibilityRuleV1`'s `ManifestDecodeV1` impl
+reconstructs each variant through the *same* checked constructor
+`AcceptRange::new`/`AcceptSet::new` (§3.4) uses locally; when that
+constructor rejects the decoded fields, decode returns
+`Err(ManifestDecodeErrorV1)` for the whole rule, which — because
+`CompatibilityProfileV1::ManifestDecodeV1` decodes its rule list
+strictly, one entry at a time, propagating the first error — fails the
+*entire profile's* decode. No partial `CompatibilityReportV1` is ever
+produced from a profile that failed to decode; evaluation never runs
+against it. This keeps the fail-closed policy from §3.4 ("invalid field
+combinations must be unrepresentable") consistent end-to-end: they are
+unrepresentable **in memory** by construction, and unrepresentable **on
+the wire** by decode failure — never silently accepted as some other
+in-memory shape and only caught later as a soft `InvalidInput` report
+entry. `CompatibilityOutcomeV1::InvalidInput` stays reserved for what it
+already covers: a *structurally well-formed, successfully decoded* rule
+whose semantics the evaluator cannot resolve in context (for example, a
+rule slot with no matching descriptor supplied to the evaluator at all —
+malformed input at the evaluation call boundary, not malformed wire
+bytes). This mirrors T0.2's own existing decode philosophy exactly — "a
+decoder must never call [the checked constructor] to 'fix up'
+noncanonical received bytes" (`CanonicalFieldMapV1::try_from_entries`'s
+doc comment) applies equally here: decode either produces a value that
+already satisfies every local invariant, or it fails; it never repairs.
+
 ## 4. Encoding
 
 New `DigestDomainIdV1` variants (T0.3, appended non-destructively — same
@@ -325,6 +378,12 @@ pattern as `PluginManifest = 8`'s own addition):
 SubsystemDescriptor  = 9    // digest domain for SubsystemDescriptorV1 content identity
 CompatibilityProfile = 10   // digest domain for CompatibilityProfileV1 content identity
 ```
+
+9/10 allocated here; `APEX-T1.2`'s `SourceClosure` domain is `11` (cross-lane
+collision on `9` caught in spec review, resolved by row-order allocation —
+`T0.5` `sequence_index=8` precedes `T1.2` `sequence_index=10` in the
+registry; the earlier row keeps the lower numbers. Fable adopted this as
+the fleet's standing collision rule for future domain-ID additions.)
 
 `SubsystemDescriptorV1`, `CompatibilityProfileV1`, `CompatibilityReportV1`,
 and every nested type implement `ManifestEncodeV1`/`ManifestDecodeV1`
@@ -402,11 +461,22 @@ honestly here rather than silently skipped).
   fallback to one side's algorithm.
 - Unauthorized transform: a `DirectTransform` rule whose `TransformKeyV1`
   is absent from the registry → `Incompatible`, not panic/`Ok`.
-- `InvalidInput` vs `Incompatible` boundary: malformed input (e.g. an
-  `AcceptRange` that could not have been constructed locally but arrives
-  over the wire with `min > max` via direct struct injection in the test)
-  → `InvalidInput`; a well-formed rule that is simply not satisfied →
-  `Incompatible`. These must never be conflated.
+- `InvalidInput` vs `Incompatible` vs decode-failure boundary (§3.7
+  clarification): a rule slot with no matching descriptor supplied to the
+  evaluator → `InvalidInput` (structurally fine, semantically
+  unresolvable at the call boundary); a well-formed rule that is simply
+  not satisfied → `Incompatible`. Corrected from an earlier draft of this
+  test plan: a wire-crafted `AcceptRange` with `min > max` (or an empty
+  `AcceptSet`) — content that could not have been constructed locally at
+  all — is **not** an `InvalidInput` report entry. Decoding
+  `CompatibilityRuleV1` runs the same checked constructor decode-side;
+  feed `decode_manifest_v1::<CompatibilityRuleV1>` bytes encoding
+  `min > max` directly (bypassing `AcceptRange::new`) and assert
+  `Err(ManifestDecodeErrorV1)`, then assert that embedding those same
+  bytes as one rule inside an otherwise-valid multi-rule profile fails
+  the *whole profile's* decode (`Err`, not a report with 3-of-4 entries
+  and one `InvalidInput`) — one poisoned rule poisons the whole decode,
+  never a partial report built from partially-untrusted input.
 - Extension handling: one `Critical` `Unknown` entry → whole report
   contains an `Incompatible` for that slot; one `Noncritical` `Unknown`
   entry → `Compatible` for that slot with the raw entry preserved in the

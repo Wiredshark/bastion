@@ -664,7 +664,7 @@
         "specification": "FLEET_AUTHORED",
         "verification": "NOT_STARTED"
       },
-      "title": "Subsystem descriptor / compatibility-profile registry (spec fleet-authored 2026-07-27 per Ben's order -- original packet/vectors were hallucinated; DRAFT pending Opus spec-review + Fable approval before build)"
+      "title": "Subsystem descriptor / compatibility-profile registry (spec fleet-authored 2026-07-27 per Ben's order -- original packet/vectors were hallucinated; Opus 5 spec-reviewed + Fable build-authorized 2026-07-27, readme/apex/APEX-T0.5-FLEET-AUTHORED-SPEC-v1.md)"
     },
     {
       "evidence_artifacts": [],
