@@ -549,12 +549,12 @@ const CLAIMED: &[(&str, &str)] = &[
     ("LEGACY-OVERLAY-INCOMPLETE", "same legacy-migration deferral"),
     ("RUNTIME-MIGRATION-FORBIDDEN", ".23: late-load/migration APIs are removed rather than policed"),
     // lifecycle/receipt: .17-.19.
-    ("ACTIVATION-RECEIPT-PASS", ".17-.19 exactly-once lifecycle + receipt validation (receipt TYPES and root are landed and driven under ROOTS-PASS/BLOCK-ROOT-DOMAIN-MISMATCH)"),
+    ("ACTIVATION-RECEIPT-PASS", "receipt types+root landed (.02/.03, driven under ROOTS-PASS); .19 landed the validated receipt INPUT (registration_receipt_input_v1); full receipt assembly binding deployment_root at the init site is the remaining consumer wiring"),
     ("INVALID-ACTIVATION-RECEIPT", ".19"),
     ("RECEIPT-PLAN-MISMATCH", ".19 (the receipt root binds deployment_root + mode: driven root separation already proves substitution cannot verify)"),
-    ("PLUGIN-LIFECYCLE-ABORTED", ".18"),
-    ("PLUGIN-LIFECYCLE-DUPLICATE", ".18 exactly-once lifecycle"),
-    ("REGISTRATION-OUTSIDE-CEILING", ".19: within_ceiling is a typed receipt field (landed); enforcement lands with the lifecycle"),
+    ("PLUGIN-LIFECYCLE-ABORTED", "LANDED .18: first hook failure aborts the ordered sequence naming the plugin and poisons the manager; trap-ordering fixture VM-lane"),
+    ("PLUGIN-LIFECYCLE-DUPLICATE", "LANDED .18: DuplicateActivation typed + tested; poisoned-manager retry its own typed refusal"),
+    ("REGISTRATION-OUTSIDE-CEILING", "LANDED .18/.19: instance ceiling at batch verification (InstanceCeilingExceeded) + undeclared command registration typed (UndeclaredRegistrationV1) with governed-init abort; live wasm fixture VM-lane"),
     // runtime limits / Wasmtime: .14-.16.
     ("RUNTIME-POLICY-PASS", "LANDED .14: per-mode policy ceilings applied per store (memory limiter + per-event fuel), threaded policy->wire->both consumers; live-trap fixture deferred to .18/VM"),
     ("RUNTIME-POLICY-MISMATCH", ".18/.19: receipt-level comparison of applied vs policy limits (application itself landed .14)"),
