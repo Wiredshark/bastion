@@ -35,6 +35,21 @@ pub enum PluginModuleError {
     WorldMismatch { module: String, declared: &'static str, detail: String },
 }
 
+/// APEX-T2.5.18 — exactly-once lifecycle terminals.
+#[derive(Debug)]
+pub enum PluginLifecycleErrorV1 {
+    /// The lifecycle already ran (`PLUGIN-LIFECYCLE-DUPLICATE` /
+    /// `LATE-ACTIVATION-FORBIDDEN`): activation is exactly-once per
+    /// manager, ever.
+    DuplicateActivation,
+    /// A previous activation FAILED; the manager is poisoned — retry is
+    /// forbidden (no partial-hook-state reuse).
+    ActivationAfterFailure,
+    /// An ordered load hook failed; `plugin` names the exact position in
+    /// the canonical sequence where the abort happened.
+    HookFailed { plugin: String, source: Box<PluginModuleError> },
+}
+
 /// APEX-T2.5.17 — deployment-manager build refusals: the manager is
 /// ordinal-OWNED (missing/gapped/extra ordinals typed) and every
 /// archive's recomputed identity must be the plan's artifact for its
@@ -43,6 +58,9 @@ pub enum PluginModuleError {
 pub enum PreparedManagerErrorV1 {
     OrdinalSetMismatch { missing: Vec<u32>, unexpected: Vec<u32> },
     WrongOwner { ordinal: u32 },
+    /// APEX-T2.5.18: total module (instance) count exceeds the policy's
+    /// per-mode `max_instances` ceiling.
+    InstanceCeilingExceeded { instances: usize, max_instances: u32 },
     Plugin(PluginError),
 }
 

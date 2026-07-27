@@ -837,6 +837,7 @@ impl Client {
                             max_linear_memory_bytes: summary.client_runtime_limits.max_linear_memory_bytes,
                             max_fuel_per_event: summary.client_runtime_limits.max_fuel_per_event,
                         }),
+                        Some(summary.client_runtime_limits.max_instances),
                     )
                     .map_err(|e| Error::Other(format!("deployment plugin batch failed: {e:?}")))?,
                 )

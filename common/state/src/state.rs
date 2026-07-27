@@ -575,12 +575,25 @@ impl State {
                 id_maps: &ecs.read_resource::<IdMaps>().into(),
                 player: ecs.read_component().into(),
             };
-            if let Err(e) = plugin_mgr.load_event(&ecs_world, game_mode) {
-                tracing::debug!(?e, "Failed to run plugin init");
-                tracing::info!("Plugins disabled, enable debug logging for more information.");
-                PluginMgr::default()
-            } else {
-                plugin_mgr
+            // APEX-T2.5.18: exactly-once ORDERED activation. Governed
+            // managers are fail-closed — a hook failure ABORTS State
+            // construction (the log-and-empty fallback is gone on that
+            // path; a governed session never silently runs pluginless).
+            // Legacy managers keep the exact old fallback behavior.
+            let mut plugin_mgr = plugin_mgr;
+            match plugin_mgr.activate_v1(&ecs_world, game_mode) {
+                Ok(()) => plugin_mgr,
+                Err(e) if plugin_mgr.is_governed() => {
+                    // Startup abort (packet: no active-game rollback). On
+                    // the client this unwinds through spawn_blocking as a
+                    // typed JoinError; on the server it kills startup.
+                    panic!("APEX-T2.5.18 governed plugin activation failed (fail-closed): {e:?}");
+                },
+                Err(e) => {
+                    tracing::debug!(?e, "Failed to run plugin init");
+                    tracing::info!("Plugins disabled, enable debug logging for more information.");
+                    PluginMgr::default()
+                },
             }
         });
 

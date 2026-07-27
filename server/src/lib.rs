@@ -407,6 +407,7 @@ impl Server {
                     max_linear_memory_bytes: server_runtime_limits.max_linear_memory_bytes,
                     max_fuel_per_event: server_runtime_limits.max_fuel_per_event,
                 }),
+                Some(server_runtime_limits.max_instances),
             )
             .map_err(|e| Error::Other(format!("deployment plugin batch failed (fail-closed): {e:?}")))?,
             crate::plugin_deployment_policy::PluginDeploymentStateV1::Legacy => {

@@ -562,7 +562,7 @@ impl PreparedPluginBatch {
         })?;
         let mut plugins = self.plugins;
         canonical_plugin_order(&mut plugins, |p| p.hash);
-        Ok(PluginMgr { plugins })
+        Ok(PluginMgr { plugins, governed: false, lifecycle: PluginLifecycleStateV1::NotActivated })
     }
 
     /// APEX-T2.5.12 — publish the batch as THE one-time content generation
@@ -585,7 +585,7 @@ impl PreparedPluginBatch {
         )?;
         let mut plugins = self.plugins;
         canonical_plugin_order(&mut plugins, |p| p.hash);
-        Ok(PluginMgr { plugins })
+        Ok(PluginMgr { plugins, governed: true, lifecycle: PluginLifecycleStateV1::NotActivated })
     }
 
     /// APEX-T2.1.14 — publish the batch INTO an existing manager (late
@@ -603,9 +603,24 @@ impl PreparedPluginBatch {
     }
 }
 
+/// APEX-T2.5.18 — the manager's exactly-once lifecycle state. `Failed`
+/// poisons the manager: partial-hook state is never reusable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PluginLifecycleStateV1 {
+    #[default]
+    NotActivated,
+    Activated,
+    Failed,
+}
+
 #[derive(Default)]
 pub struct PluginMgr {
     plugins: Vec<Plugin>,
+    /// APEX-T2.5.17: built from a verified deployment (fail-closed
+    /// lifecycle) vs legacy discovery (byte-preserved fallback behavior).
+    governed: bool,
+    /// APEX-T2.5.18: exactly-once activation tracking.
+    lifecycle: PluginLifecycleStateV1,
 }
 
 impl PluginMgr {
@@ -648,8 +663,9 @@ impl PluginMgr {
         expected_artifacts: &[(u32, [u8; 32])],
         generation_token: [u8; 32],
         limits: Option<module::PluginStoreLimitsV1>,
+        max_instances: Option<u32>,
     ) -> Result<Self, errors::PreparedManagerErrorV1> {
-        let batch = Self::verified_deployment_batch_v1(paths, expected_artifacts, limits)?;
+        let batch = Self::verified_deployment_batch_v1(paths, expected_artifacts, limits, max_instances)?;
         batch
             .commit_new_manager_as_generation(generation_token)
             .map_err(errors::PreparedManagerErrorV1::Plugin)
@@ -664,6 +680,7 @@ impl PluginMgr {
         paths: Vec<(u32, PathBuf)>,
         expected_artifacts: &[(u32, [u8; 32])],
         limits: Option<module::PluginStoreLimitsV1>,
+        max_instances: Option<u32>,
     ) -> Result<PreparedPluginBatch, errors::PreparedManagerErrorV1> {
         use errors::PreparedManagerErrorV1 as E;
         let mut have: Vec<u32> = paths.iter().map(|(o, _)| *o).collect();
@@ -702,6 +719,14 @@ impl PluginMgr {
         let batch = PreparedPluginBatch::prepare(inspected, limits)
             .map_err(errors::PreparedManagerErrorV1::Plugin)
             .inspect_err(|e| error!(?e, "Failed to prepare deployment plugin batch"))?;
+        // APEX-T2.5.18: the policy's per-mode instance ceiling is a
+        // MANAGER-level count (total instantiated modules).
+        if let Some(ceiling) = max_instances {
+            let instances: usize = batch.plugins.iter().map(|p| p.modules.len()).sum();
+            if instances > ceiling as usize {
+                return Err(E::InstanceCeilingExceeded { instances, max_instances: ceiling });
+            }
+        }
         for plugin in &batch.plugins {
             info!("Prepared deployment plugin '{}' with {} module(s)", plugin.data.name, plugin.modules.len());
         }
@@ -858,6 +883,36 @@ impl PluginMgr {
         self.plugins
             .iter_mut()
             .try_for_each(|plugin| plugin.load_event(ecs, mode))
+    }
+
+    pub fn is_governed(&self) -> bool { self.governed }
+
+    pub fn lifecycle(&self) -> PluginLifecycleStateV1 { self.lifecycle }
+
+    /// APEX-T2.5.18 — THE exactly-once ordered lifecycle: every plugin's
+    /// load hooks run once, in canonical (content-hash) order; the FIRST
+    /// failure aborts the sequence, names the plugin, and POISONS the
+    /// manager (partial hook state is never reusable — a later retry is
+    /// its own typed refusal, not a rerun).
+    pub fn activate_v1(
+        &mut self,
+        ecs: &EcsWorld,
+        mode: common::resources::GameMode,
+    ) -> Result<(), errors::PluginLifecycleErrorV1> {
+        use errors::PluginLifecycleErrorV1 as E;
+        match self.lifecycle {
+            PluginLifecycleStateV1::Activated => return Err(E::DuplicateActivation),
+            PluginLifecycleStateV1::Failed => return Err(E::ActivationAfterFailure),
+            PluginLifecycleStateV1::NotActivated => {},
+        }
+        for plugin in self.plugins.iter_mut() {
+            if let Err(source) = plugin.load_event(ecs, mode) {
+                self.lifecycle = PluginLifecycleStateV1::Failed;
+                return Err(E::HookFailed { plugin: plugin.data.name.clone(), source: Box::new(source) });
+            }
+        }
+        self.lifecycle = PluginLifecycleStateV1::Activated;
+        Ok(())
     }
 
     pub fn command_event(
@@ -1247,19 +1302,21 @@ mod prepared_plugin_manager_v1 {
             PluginMgr::verified_deployment_batch_v1(
                 vec![(0, pa.clone()), (1, pb.clone())],
                 &swapped,
+                None,
                 None
             ),
             Err(errors::PreparedManagerErrorV1::WrongOwner { ordinal: 0 })
         ));
         // Gapped/extra ordinals.
         assert!(matches!(
-            PluginMgr::verified_deployment_batch_v1(vec![(0, pa.clone())], &expected, None),
+            PluginMgr::verified_deployment_batch_v1(vec![(0, pa.clone())], &expected, None, None),
             Err(errors::PreparedManagerErrorV1::OrdinalSetMismatch { missing, .. }) if missing == vec![1]
         ));
         assert!(matches!(
             PluginMgr::verified_deployment_batch_v1(
                 vec![(0, pa.clone()), (1, pb.clone()), (7, pa.clone())],
                 &expected,
+                None,
                 None
             ),
             Err(errors::PreparedManagerErrorV1::OrdinalSetMismatch { unexpected, .. }) if unexpected == vec![7]
@@ -1272,6 +1329,7 @@ mod prepared_plugin_manager_v1 {
             vec![(1, pb.clone()), (0, pa.clone())], // permuted
             &expected,
             None,
+            None,
         )
         .unwrap();
         let mut hashes: Vec<_> = batch.plugins.iter().map(|p| p.hash).collect();
@@ -1280,6 +1338,61 @@ mod prepared_plugin_manager_v1 {
             let mut h = vec![da, db];
             h.sort_unstable();
             h
+        });
+    }
+}
+
+/// `APEX-T2.5.18` — exactly-once lifecycle canaries (vacuous-hook
+/// managers: ordering/trap fixtures with real trapping wasm live in the
+/// VM lane; the STATE MACHINE is fully provable here).
+#[cfg(test)]
+mod plugin_lifecycle_activation_v1 {
+    use super::*;
+    use specs::WorldExt;
+
+    fn with_ecs(f: impl FnOnce(&EcsWorld)) {
+        let mut world = specs::World::new();
+        world.register::<common::comp::Health>();
+        world.register::<common::comp::Player>();
+        world.register::<Uid>();
+        world.insert(common::uid::IdMaps::default());
+        let entities = world.entities();
+        let id_maps: specs::Read<common::uid::IdMaps> =
+            world.read_resource::<common::uid::IdMaps>().into();
+        let ecs = EcsWorld {
+            entities: &entities,
+            health: world.read_component::<common::comp::Health>().into(),
+            uid: world.read_component::<Uid>().into(),
+            player: world.read_component::<common::comp::Player>().into(),
+            id_maps: &id_maps,
+        };
+        f(&ecs);
+    }
+
+    #[test]
+    fn activation_is_exactly_once_and_poisons_on_failure() {
+        with_ecs(|ecs| {
+            // Empty manager: hooks vacuous, activation succeeds ONCE.
+            let mut mgr = PluginMgr::default();
+            assert_eq!(mgr.lifecycle(), PluginLifecycleStateV1::NotActivated);
+            assert!(!mgr.is_governed());
+            mgr.activate_v1(ecs, common::resources::GameMode::Server).unwrap();
+            assert_eq!(mgr.lifecycle(), PluginLifecycleStateV1::Activated);
+            // Second activation: typed duplicate, state unchanged.
+            assert!(matches!(
+                mgr.activate_v1(ecs, common::resources::GameMode::Server),
+                Err(errors::PluginLifecycleErrorV1::DuplicateActivation)
+            ));
+            assert_eq!(mgr.lifecycle(), PluginLifecycleStateV1::Activated);
+
+            // Poisoned manager: retry is its own typed refusal, not a rerun.
+            let mut failed = PluginMgr::default();
+            failed.lifecycle = PluginLifecycleStateV1::Failed;
+            assert!(matches!(
+                failed.activate_v1(ecs, common::resources::GameMode::Server),
+                Err(errors::PluginLifecycleErrorV1::ActivationAfterFailure)
+            ));
+            assert_eq!(failed.lifecycle(), PluginLifecycleStateV1::Failed);
         });
     }
 }
