@@ -1293,6 +1293,99 @@ impl Client {
         }
     }
 
+    /// `APEX-T3.3.07`: envelope, digest, sequence, and send one
+    /// post-auth `ClientGeneral` over the negotiated `NetEnvelopeV1`
+    /// wire mode. Dormant in this tree today -- `register()` always
+    /// requests `Legacy` (`T3.3.05`'s own row status doc), so
+    /// `semantic_send_state` is always `None` and this is never actually
+    /// reached by the live client; built and tested against a
+    /// synthetically-attached state instead (this function's own test
+    /// module).
+    ///
+    /// Packet's own failure list ("No attachment, exhaustion, encode
+    /// failure, send failure after allocation"): the first three are
+    /// treated the same way this function's sibling
+    /// (`send_msg_err`'s existing `!verified` branch, just above the call
+    /// site) already treats a dropped message -- logged, message
+    /// silently not sent, connection not torn down for what is a local
+    /// bookkeeping problem, not a network fault. Only the underlying
+    /// `stream.send` failure -- a genuine transport-layer event -- is
+    /// propagated as `Err`, and only AFTER the sequence was already
+    /// consumed (packet: "sequence is consumed before send and never
+    /// reused after failure" -- `SemanticSendStateV1::allocate_sequence`
+    /// advances the cursor unconditionally before any encode/send is
+    /// attempted, so a failed send never gets retried with the same
+    /// sequence value).
+    fn send_semantic_v1(&mut self, msg: ClientGeneral) -> Result<(), network::StreamError> {
+        use common_net::msg::envelope::{SemanticRouteV1, encode_payload_v1, net_envelope_profile_root_v1, payload_digest_v1};
+
+        let Some(send_state) = self.semantic_send_state.as_mut() else {
+            warn!("send_semantic_v1 called with no active NetEnvelopeV1 attachment; dropping message: {msg:?}");
+            return Ok(());
+        };
+        let binding = send_state.binding();
+        let semantic_stream = msg.semantic_stream();
+        let payload_schema = msg.payload_schema();
+
+        // packet's `command_id` field is dormant until `T3.5` -- this
+        // sender never sets it (spec section 5.6: `Some` is rejected by
+        // the receiver anyway).
+        let sequence = match send_state.allocate_sequence(semantic_stream) {
+            Ok(seq) => seq,
+            Err(_exhausted) => {
+                warn!(?semantic_stream, "semantic send sequence exhausted (u64::MAX reached); dropping message");
+                return Ok(());
+            },
+        };
+
+        let payload_bytes = encode_payload_v1(&msg);
+        let profile_root = net_envelope_profile_root_v1();
+        let payload_encoding = common_net::msg::envelope::SemanticPayloadEncodingV1::Bincode2LegacySerde;
+        let payload_digest = payload_digest_v1(profile_root, payload_schema, payload_encoding, &payload_bytes);
+        let header = common_net::msg::envelope::NetEnvelopeHeaderV1 {
+            profile_root,
+            server_boot_id: binding.server_boot_id,
+            session_id: binding.session_id,
+            connection_epoch: binding.epoch,
+            direction: common_net::msg::envelope::SemanticDirectionV1::ClientToServer,
+            semantic_stream,
+            sequence,
+            causality: common_net::msg::envelope::SemanticCausalityV1 { producer_tick: None, snapshot: None },
+            payload_schema,
+            payload_encoding,
+            payload_len: payload_bytes.len() as u64,
+            payload_digest,
+            command_id: None,
+        };
+        let frame = common_net::msg::envelope::SemanticWireFrameV1 { header, payload_bytes };
+
+        let limits = common::apex::manifest::ManifestDecodeLimitsV1 {
+            max_input_bytes: 1 << 20,
+            max_depth: 8,
+            max_nodes: 64,
+            max_array_items: 16,
+            max_map_entries: 16,
+            max_machine_text_bytes: 256,
+            max_byte_string_bytes: 1 << 20,
+        };
+        let frame_bytes = common::apex::manifest::encode_manifest_v1(&frame, &limits)
+            .expect("frame construction above is always within limits and always well-formed");
+
+        // The T0.2-encoded frame bytes are carried as an opaque Vec<u8>
+        // through the EXISTING (bincode-legacy) stream framing, per
+        // packet section 7.3: "carried as an opaque byte vector through
+        // the existing stream framing" -- never a second, competing wire
+        // protocol.
+        let stream = match semantic_stream {
+            common_net::msg::envelope::SemanticStreamIdV1::CharacterScreen => &mut self.character_screen_stream,
+            common_net::msg::envelope::SemanticStreamIdV1::InGame => &mut self.in_game_stream,
+            common_net::msg::envelope::SemanticStreamIdV1::Terrain => &mut self.terrain_stream,
+            common_net::msg::envelope::SemanticStreamIdV1::General => &mut self.general_stream,
+            common_net::msg::envelope::SemanticStreamIdV1::Bootstrap => &mut self.register_stream,
+        };
+        stream.send(frame_bytes)
+    }
+
     fn send_msg_err<S>(&mut self, msg: S) -> Result<(), network::StreamError>
     where
         S: Into<ClientMsg>,
@@ -1320,6 +1413,15 @@ impl Client {
             ClientMsg::Type(msg) => self.register_stream.send(msg),
             ClientMsg::Register(msg) => self.register_stream.send(msg),
             ClientMsg::General(msg) => {
+                // APEX-T3.3.07: V1 routes/encodes/sequences/frames/sends
+                // through send_semantic_v1; Legacy falls through to the
+                // unchanged code below it (packet: "Legacy branch remains
+                // during rollout"). Checked first, before any of the
+                // existing physical-stream matching, so a V1 attachment
+                // never touches the legacy path at all.
+                if self.semantic_send_state.is_some() {
+                    return self.send_semantic_v1(msg);
+                }
                 #[cfg(feature = "tracy")]
                 let (mut ingame, mut terrain) = (0.0, 0.0);
                 let stream = match msg {

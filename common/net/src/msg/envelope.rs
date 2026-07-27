@@ -480,6 +480,29 @@ impl SemanticSendStateV1 {
     pub fn binding(&self) -> ActiveSessionBindingV1 { self.binding }
 
     pub fn next_for(&self, stream: SemanticStreamIdV1) -> NonZeroU64 { self.next[stream_index(stream)] }
+
+    /// `T3.3.07`: consumes and returns this stream's current sequence,
+    /// advancing the cursor for next time -- packet's own ordering rule,
+    /// "sequence is consumed before send and never reused after failure":
+    /// the cursor already reflects the NEXT value the instant this
+    /// returns, regardless of whether the caller's subsequent encode/send
+    /// actually succeeds. `CounterAdvanceErrorV1::Exhausted` reuses
+    /// `T0.4`'s existing checked-counter error rather than a bespoke one.
+    pub fn allocate_sequence(&mut self, stream: SemanticStreamIdV1) -> Result<NonZeroU64, common::apex::identity::CounterAdvanceErrorV1> {
+        let idx = stream_index(stream);
+        let current = self.next[idx];
+        let advanced = current.checked_add(1).ok_or(common::apex::identity::CounterAdvanceErrorV1::Exhausted)?;
+        self.next[idx] = advanced;
+        Ok(current)
+    }
+
+    /// Test-only: constructs a state with an arbitrary starting cursor
+    /// per stream, so exhaustion at the real `u64::MAX` boundary can be
+    /// tested directly against `allocate_sequence` itself rather than
+    /// reasoned about indirectly (looping `u64::MAX` times is not a real
+    /// option).
+    #[cfg(test)]
+    fn with_cursors_for_test(binding: ActiveSessionBindingV1, next: [NonZeroU64; 5]) -> Self { Self { binding, next } }
 }
 
 /// Packet section 7.6. The receive-side twin of [`SemanticSendStateV1`].
@@ -1195,6 +1218,60 @@ mod tests {
         // (this row's own title), not a running total across epochs.
         for stream in SemanticStreamIdV1::ALL {
             assert_eq!(epoch1_state.next_for(stream), epoch2_state.next_for(stream));
+        }
+    }
+
+    // T3.3.07's own test list: independent cursors, max (exhaustion).
+    // "All routes" is T3.3.04's own SemanticRouteV1 coverage, reused
+    // rather than re-proven here. "Send failure"/"mixed mode" are
+    // structural guarantees of this row's code shape (send_semantic_v1
+    // mutates the cursor before any encode/send is attempted, so a
+    // failed send can never retry the same sequence; send_msg_err's V1
+    // check is a single is_some() branch, so one Client instance can
+    // never send SOME messages via Legacy and others via V1) rather than
+    // independently unit-tested against a full mock Client -- matching
+    // T3.3.06's own established scope (test the state types directly,
+    // not a full live Client fixture, for code nothing live reaches yet).
+
+    #[test]
+    fn allocate_sequence_advances_each_stream_independently() {
+        let mut state = SemanticSendStateV1::new(test_binding(1));
+        let first_ingame = state.allocate_sequence(SemanticStreamIdV1::InGame).unwrap();
+        assert_eq!(first_ingame.get(), 1);
+        // A different stream's cursor is untouched by the InGame allocation above.
+        assert_eq!(state.next_for(SemanticStreamIdV1::General).get(), 1);
+        assert_eq!(state.next_for(SemanticStreamIdV1::CharacterScreen).get(), 1);
+
+        let second_ingame = state.allocate_sequence(SemanticStreamIdV1::InGame).unwrap();
+        assert_eq!(second_ingame.get(), 2);
+        // Still untouched.
+        assert_eq!(state.next_for(SemanticStreamIdV1::General).get(), 1);
+
+        let first_general = state.allocate_sequence(SemanticStreamIdV1::General).unwrap();
+        assert_eq!(first_general.get(), 1);
+        // InGame's cursor is unaffected by General's own allocation.
+        assert_eq!(state.next_for(SemanticStreamIdV1::InGame).get(), 3);
+    }
+
+    #[test]
+    fn allocate_sequence_exhausts_at_u64_max() {
+        let max = NonZeroU64::new(u64::MAX).unwrap();
+        let mut state = SemanticSendStateV1::with_cursors_for_test(test_binding(1), [max; 5]);
+
+        // Exhaustion is per-stream: General is at MAX and fails...
+        assert_eq!(
+            state.allocate_sequence(SemanticStreamIdV1::General).unwrap_err(),
+            common::apex::identity::CounterAdvanceErrorV1::Exhausted
+        );
+        // ...never panics, and never silently wraps back to a reused
+        // value (the cursor stays at MAX, not 0 or 1).
+        assert_eq!(state.next_for(SemanticStreamIdV1::General), max);
+
+        // ...and every other stream, ALSO at MAX, independently fails
+        // too -- exhaustion isn't accidentally scoped to just the one
+        // stream tested above.
+        for stream in SemanticStreamIdV1::ALL {
+            assert!(state.allocate_sequence(stream).is_err());
         }
     }
 
