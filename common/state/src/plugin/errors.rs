@@ -23,6 +23,10 @@ pub enum PluginError {
 #[derive(Debug)]
 pub enum PluginModuleError {
     Wasmtime(wasmtime::Error),
+    /// APEX-T2.5.14: the one shared runtime failed to construct; the
+    /// original failure is replayed for every later module (no module
+    /// ever falls back to a private engine).
+    RuntimeUnavailable { detail: String },
 }
 
 /// APEX-T2.1.01 — inspection-phase failures (archive/config/manifest reading;

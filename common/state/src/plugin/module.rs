@@ -421,16 +421,50 @@ impl HostMonotonicClock for DeterministicMonotonicClock {
     }
 }
 
+/// `APEX-T2.5.14` — THE process Wasmtime runtime: one explicitly
+/// configured `Engine` shared by every module, replacing the old
+/// engine-per-module construction whose `Config` defaults were
+/// unrecorded. Every non-default knob lives HERE, in one auditable
+/// place; per-module code can no longer make config decisions at all.
+/// (`Engine` is `Send + Sync` and internally shared by design —
+/// wasmtime documents cross-store engine sharing as the intended use.)
+pub struct PluginRuntimeV1 {
+    engine: Engine,
+}
+
+/// The explicit V1 config: component model ON; everything else is
+/// wasmtime's documented default, deliberately unmodified — recorded by
+/// this constant's existence rather than scattered per call site.
+pub const PLUGIN_RUNTIME_CONFIG_TAG_V1: &str = "bastion.plugin-runtime/v1:component-model";
+
+impl PluginRuntimeV1 {
+    fn new() -> Result<Self, wasmtime::Error> {
+        let mut config = Config::new();
+        config.wasm_component_model(true);
+        Ok(Self { engine: Engine::new(&config)? })
+    }
+
+    pub fn engine(&self) -> &Engine { &self.engine }
+}
+
+/// The one runtime, constructed on first use. A construction failure is
+/// remembered (typed) — every subsequent module creation fails the same
+/// way rather than retrying its own private engine.
+pub fn plugin_runtime_v1() -> Result<&'static PluginRuntimeV1, PluginModuleError> {
+    static RUNTIME: std::sync::OnceLock<Result<PluginRuntimeV1, String>> = std::sync::OnceLock::new();
+    RUNTIME
+        .get_or_init(|| PluginRuntimeV1::new().map_err(|e| e.to_string()))
+        .as_ref()
+        .map_err(|e| PluginModuleError::RuntimeUnavailable { detail: e.clone() })
+}
+
 impl PluginModule {
     /// This function takes bytes from a WASM File and compile them
     pub fn new(name: String, wasm_data: &[u8]) -> Result<Self, PluginModuleError> {
         let ecs = Arc::new(EcsAccessManager::default());
 
-        // configure the wasm runtime
-        let mut config = Config::new();
-        config.wasm_component_model(true);
-
-        let engine = Engine::new(&config).map_err(PluginModuleError::Wasmtime)?;
+        // APEX-T2.5.14: the SHARED engine — no per-module Config exists.
+        let engine = plugin_runtime_v1()?.engine().clone();
         // create a WASI environment (std implementing system calls)
         // RNG-P3-001 (determinism audit): seed the WASI *insecure* random
         // deterministically by plugin identity. WASI's own contract splits
