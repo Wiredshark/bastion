@@ -177,16 +177,19 @@ struct ArchiveObservationV1 {           // per-archive result, both modes
    duplicates raw + canonical: PAR-C18/C19); legacy module ORDER is
    observed and reported `LegacyModuleOrderUnfrozen` (PAR-C12) — T2.4
    owns freezing it.
-8. **Domain allocation**: the semantic root's label is FROZEN here as
-   `bastion/plugin-archive/v1`; the NUMBER is resolved at registration
-   time per the row-order rule — T1.4's real packet is checked for a
-   domain claim first (T1.4 precedes T2.2); if it claims none, T2.2
-   takes the next free ID after `LocalReproSmoke = 12`. Not
-   `PluginManifest = 8` (that is T2.3's manifest-semantic root) and not
-   `PluginActivationPlan = 3` (T2.5's plan) — the archive's content
-   identity is an INPUT to both, and inputs are domain-separated from
-   the things that embed them (SourceClosure-vs-BuildManifest
-   precedent).
+8. **Domain allocation — RESOLVED** (premise-checked against the REAL
+   T1.4 packet, this session): T1.4 claims FOUR domains
+   (`bastion/fresh-builder-profile/v1` at its section 7 contract, plus
+   `fresh-builder-run`/`fresh-rebuild-pair`/`fresh-rebuild-canary-
+   campaign` at its evidence-namespace list) — by the row-order rule
+   those take 13/14/15/16, so T2.2's semantic root registers as
+   **`bastion/plugin-archive/v1` = 17**. Not `PluginManifest = 8` (that
+   is T2.3's manifest-semantic root) and not `PluginActivationPlan = 3`
+   (T2.5's plan) — the archive's content identity is an INPUT to both,
+   and inputs are domain-separated from the things that embed them
+   (SourceClosure-vs-BuildManifest precedent). If T1.4's build lands
+   fewer domains than its packet claims, the registration commit
+   re-derives the number at that time; the LABEL is frozen either way.
 
 ## 5. Live wire integration (concrete, landed-code seams)
 
