@@ -50,3 +50,7 @@ thread-priority = { workspace = true }
 
 # Tweak running code
 #inline_tweak = { version = "1.0.8", features = ["release_tweak"] }
+
+[dev-dependencies]
+# APEX-T2.2.10 catalog acceptance runner (tests/apex_t2_2_catalog.rs).
+serde_json = { workspace = true }
