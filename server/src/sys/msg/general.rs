@@ -20,6 +20,8 @@ event_emitters! {
 
         #[cfg(feature = "plugins")]
         plugins: event::RequestPluginsEvent,
+        #[cfg(feature = "plugins")]
+        plugin_artifacts: event::RequestPluginArtifactsEvent,
     }
 }
 
@@ -84,16 +86,20 @@ impl Sys {
                 #[cfg(feature = "plugins")]
                 emitters.emit(event::RequestPluginsEvent { entity, plugins });
             },
-            // APEX-T2.5.10: typed artifact wire is defined but DORMANT —
-            // the server serves it only once the .11 deployment path
-            // lands. Until then the request is refused (fail closed), with
-            // an explicit log so it is never mistaken for misbehavior.
+            // APEX-T2.5.11: typed artifact request, served from the
+            // compiled deployment (the handler validates root/ordinals
+            // against the deployment state and never serves unverified
+            // bytes; Legacy deployment state ignores with a log).
+            #[cfg(feature = "plugins")]
             ClientGeneral::RequestPluginArtifacts(req) => {
-                tracing::warn!(
-                    root = ?req.deployment_root,
-                    ordinals = ?req.ordinals,
-                    "RequestPluginArtifacts before the T2.5.11 serving path is active; disconnecting"
-                );
+                emitters.emit(event::RequestPluginArtifactsEvent {
+                    entity,
+                    deployment_root: req.deployment_root,
+                    ordinals: req.ordinals,
+                });
+            },
+            #[cfg(not(feature = "plugins"))]
+            ClientGeneral::RequestPluginArtifacts(_) => {
                 emitters.emit(event::ClientDisconnectEvent(
                     entity,
                     common::comp::DisconnectReason::NetworkError,

@@ -71,6 +71,8 @@ pub struct ReadData<'a> {
     trackers: TrackedStorages<'a>,
     #[cfg(feature = "plugins")]
     plugin_mgr: Read<'a, PluginMgr>,
+    #[cfg(feature = "plugins")]
+    plugin_deployment: ReadExpect<'a, crate::plugin_deployment_policy::PluginDeploymentStateV1>,
     data_dir: ReadExpect<'a, crate::DataDir>,
 }
 
@@ -437,8 +439,12 @@ impl<'a> System<'a> for Sys {
                             },
                             description,
                             active_plugins,
-                            // APEX-T2.5.11: legacy mode until the server
-                            // deployment-compile path lands.
+                            // APEX-T2.5.11: Some only when a strict
+                            // deployment compiled at startup (policy-file
+                            // opt-in); Legacy state = None = today's path.
+                            #[cfg(feature = "plugins")]
+                            plugin_deployment: read_data.plugin_deployment.summary(),
+                            #[cfg(not(feature = "plugins"))]
                             plugin_deployment: None,
                         })?;
                         debug!("Done initial sync with client.");

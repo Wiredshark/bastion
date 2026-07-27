@@ -357,3 +357,147 @@ mod tests {
         ));
     }
 }
+
+// ---------------------------------------------------------------------------
+// APEX-T2.5.11 — the server's live deployment state + startup init.
+// ---------------------------------------------------------------------------
+
+use common_net::msg::plugin_artifact::{PluginArtifactDescriptorV1, PluginDeploymentSummaryV1};
+use common_state::plugin::deployment::{PluginDeploymentCompileErrorV1, compile_deployment_from_archives_v1};
+
+/// The compiled deployment as an ECS resource. `Legacy` = no policy file
+/// (today's behavior, GameSync sends `None`); `Deployed` = a strict
+/// compile succeeded at startup.
+pub enum PluginDeploymentStateV1 {
+    Legacy,
+    Deployed {
+        summary: PluginDeploymentSummaryV1,
+        /// Ordinal-sorted serving set.
+        artifacts: Vec<(u32, std::sync::Arc<Vec<u8>>)>,
+    },
+}
+
+impl PluginDeploymentStateV1 {
+    pub fn summary(&self) -> Option<PluginDeploymentSummaryV1> {
+        match self {
+            Self::Legacy => None,
+            Self::Deployed { summary, .. } => Some(summary.clone()),
+        }
+    }
+
+    pub fn artifact(&self, ordinal: u32) -> Option<&std::sync::Arc<Vec<u8>>> {
+        match self {
+            Self::Legacy => None,
+            Self::Deployed { artifacts, .. } => {
+                artifacts.iter().find(|(o, _)| *o == ordinal).map(|(_, bytes)| bytes)
+            },
+        }
+    }
+
+    pub fn deployment_root_bytes(&self) -> Option<[u8; 32]> {
+        self.summary().map(|s| s.deployment_root)
+    }
+}
+
+#[derive(Debug)]
+pub enum PluginDeploymentInitErrorV1 {
+    /// Policy file present but unusable — NEVER falls back to legacy
+    /// (the .04a loader-trap rule); the server must refuse to start.
+    Policy(PluginPolicyLoadErrorV1),
+    ArchiveDirUnreadable { detail: String },
+    Compile(PluginDeploymentCompileErrorV1),
+}
+
+/// Startup init. Missing policy file = `Legacy` (byte-identical live
+/// behavior); present-but-invalid policy or any compile failure = HARD
+/// startup error. `plugins_dir` is the same directory `PluginMgr`
+/// discovers from (`<assets>/plugins/*.plugin.tar`).
+pub fn init_plugin_deployment_v1(
+    data_dir: &Path,
+    plugins_dir: &Path,
+) -> Result<PluginDeploymentStateV1, PluginDeploymentInitErrorV1> {
+    use PluginDeploymentInitErrorV1 as E;
+    let policy = match load_plugin_deployment_policy_strict_v1(data_dir) {
+        Err(PluginPolicyLoadErrorV1::PolicyFileMissing { .. }) => return Ok(PluginDeploymentStateV1::Legacy),
+        Err(other) => return Err(E::Policy(other)),
+        Ok(policy) => policy,
+    };
+
+    // Collect archive bytes, filename-sorted for reproducible refusal
+    // messages (the compile itself is input-order-invariant, proven).
+    let mut paths: Vec<std::path::PathBuf> = Vec::new();
+    if plugins_dir.is_dir() {
+        for entry in std::fs::read_dir(plugins_dir).map_err(|e| E::ArchiveDirUnreadable { detail: e.to_string() })? {
+            let entry = entry.map_err(|e| E::ArchiveDirUnreadable { detail: e.to_string() })?;
+            let path = entry.path();
+            if path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.ends_with(".plugin.tar")) {
+                paths.push(path);
+            }
+        }
+    }
+    paths.sort();
+    let archives: Vec<Vec<u8>> = paths
+        .iter()
+        .map(|p| std::fs::read(p).map_err(|e| E::ArchiveDirUnreadable { detail: format!("{}: {e}", p.display()) }))
+        .collect::<Result<_, _>>()?;
+
+    // Base content root: V1 uses the policy root as the stand-in until a
+    // real base-content identity exists (recorded NEEDS-DEPLOYMENT-
+    // EVIDENCE with the .04b family) — deliberate, disclosed, and it
+    // still moves the deployment root whenever the policy moves.
+    let base_content_root = policy.policy_root().map_err(|e| {
+        E::Compile(PluginDeploymentCompileErrorV1::ActivationError(e))
+    })?;
+    let compiled =
+        compile_deployment_from_archives_v1(&archives, &policy, base_content_root).map_err(E::Compile)?;
+
+    let requirements: Vec<PluginArtifactDescriptorV1> = compiled
+        .plan
+        .nodes
+        .iter()
+        .map(|n| PluginArtifactDescriptorV1 {
+            deployment_root: *compiled.deployment_root.bytes.as_array(),
+            ordinal: n.ordinal,
+            digest: *n.artifact.digest.bytes.as_array(),
+            size_bytes: n.artifact.size_bytes,
+        })
+        .collect();
+    let client_activation_root = compiled
+        .client_plan
+        .activation_root()
+        .map_err(|e| E::Compile(PluginDeploymentCompileErrorV1::ActivationError(e)))?;
+    let summary = PluginDeploymentSummaryV1 {
+        deployment_root: *compiled.deployment_root.bytes.as_array(),
+        requirements,
+        client_activations: compiled.client_plan.activations.clone(),
+        client_activation_root: *client_activation_root.bytes.as_array(),
+    };
+    Ok(PluginDeploymentStateV1::Deployed {
+        summary,
+        artifacts: compiled.artifacts.into_iter().map(|(o, b)| (o, std::sync::Arc::new(b))).collect(),
+    })
+}
+
+#[cfg(test)]
+mod deployment_state_tests {
+    use super::*;
+
+    #[test]
+    fn missing_policy_is_legacy_and_invalid_policy_is_hard_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugins = dir.path().join("plugins");
+        // No policy file at all => Legacy, summary None.
+        let state = init_plugin_deployment_v1(dir.path(), &plugins).unwrap();
+        assert!(matches!(state, PluginDeploymentStateV1::Legacy));
+        assert!(state.summary().is_none());
+
+        // Present-but-broken policy => HARD error, never Legacy.
+        let p = dir.path().join(POLICY_FILE);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, "((((not ron").unwrap();
+        assert!(matches!(
+            init_plugin_deployment_v1(dir.path(), &plugins),
+            Err(PluginDeploymentInitErrorV1::Policy(PluginPolicyLoadErrorV1::PolicyParse { .. }))
+        ));
+    }
+}

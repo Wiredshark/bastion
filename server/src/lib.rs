@@ -367,6 +367,18 @@ impl Server {
         #[cfg(feature = "plugins")]
         let plugin_mgr = PluginMgr::from_asset_or_default();
 
+        // APEX-T2.5.11: strict deployment compile (policy-file opt-in).
+        // Missing policy file = Legacy (byte-identical live behavior);
+        // present-but-invalid policy or a failed compile REFUSES startup
+        // (the .04a loader-trap rule: never fall back on a broken policy).
+        #[cfg(feature = "plugins")]
+        let plugin_deployment = {
+            let mut plugins_dir = (*common::assets::ASSETS_PATH).clone();
+            plugins_dir.push("plugins");
+            crate::plugin_deployment_policy::init_plugin_deployment_v1(data_dir, &plugins_dir)
+                .map_err(|e| Error::Other(format!("plugin deployment init failed (fail-closed): {e:?}")))?
+        };
+
         debug!("Generating world, seed: {}", settings.world_seed);
         #[cfg(feature = "worldgen")]
         let (world, index) = World::generate(
@@ -436,6 +448,8 @@ impl Server {
         // once here and never mutated afterward (systems read it via
         // ReadExpect<ServerBootId>, never write it).
         state.ecs_mut().insert(server_boot_id);
+        #[cfg(feature = "plugins")]
+        state.ecs_mut().insert(plugin_deployment);
         state.ecs_mut().insert(battlemode_buffer);
         state.ecs_mut().insert(RecentClientIPs::default());
         state.ecs_mut().insert(settings.clone());
