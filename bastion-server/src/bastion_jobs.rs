@@ -10117,6 +10117,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         } else {
                             pos.0.distance(steer)
                         };
+                        // T3.52b (E3, Fable-ruled 2026-07-27): FREEZE this
+                        // whole watchdog update (best_dist/stuck_time and
+                        // every downstream consequence — soft-collision
+                        // grace, queue release, carve/unreachable
+                        // escalation) while `!auton_travel_ok` — never
+                        // RESET. Stuck-measurement is meaningless while
+                        // not attempting job travel (T3.52's flee-yield
+                        // means no Goto is even issued this tick); a
+                        // brief interruption (e.g. a flee) must not
+                        // silently burn through STUCK_TIMEOUT and
+                        // independently release the "suspended" claim
+                        // T3.52 just stopped releasing. Pure insertion —
+                        // the wrapped body below is byte-identical to
+                        // before this row; no release-path/escalation
+                        // logic inside it changed.
+                        if auton_travel_ok {
                         if sdist + STUCK_EPSILON < active.best_dist {
                             active.best_dist = sdist;
                             // R3 fix-1 HYSTERESIS: zero the stall clock
@@ -10361,6 +10377,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 to_release.push(entity);
                             }
                         }
+                        } // T3.52b: end auton_travel_ok freeze guard
                     }
                 },
                 ActiveJobState::Waiting => {
