@@ -790,6 +790,9 @@ impl<'a> System<'a> for Sys {
             // STATUS-SURFACE: energy meter + the tick for status-stamp TTL.
             ReadStorage<'a, common::comp::Energy>,
             specs::Read<'a, crate::Tick>,
+            // engine-list T3.58: the colonist's current job assignment,
+            // for the InspectorOwnershipV1 evidence key.
+            ReadStorage<'a, common::comp::bastion::ActiveJob>,
         ),
     );
 
@@ -839,6 +842,7 @@ impl<'a> System<'a> for Sys {
                 insp_pickup_items,
                 insp_energies,
                 insp_tick,
+                insp_active_jobs,
             ),
         ): Self::SystemData,
     ) {
@@ -1305,6 +1309,23 @@ impl<'a> System<'a> for Sys {
                                                 thoughts,
                                             )
                                         });
+                                        // engine-list T3.58: job ownership +
+                                        // Drive telemetry — same ActiveJob
+                                        // lookup the FailsafeTeleportEvent
+                                        // diagnostic uses.
+                                        let active_job = insp_active_jobs.get(e);
+                                        let looked_up_job =
+                                            active_job.and_then(|a| job_board.jobs.get(&a.job));
+                                        let ownership = Some(
+                                            common::comp::bastion::InspectorOwnershipV1::build(
+                                                insp_tick.0,
+                                                uid,
+                                                active_job,
+                                                looked_up_job.map(|j| &j.kind),
+                                                looked_up_job.and_then(|j| j.claimed_by),
+                                                arb,
+                                            ),
+                                        );
                                         Some(common::comp::bastion::BastionInspectPayload {
                                             name: colonist.0.name.clone(),
                                             hunger: needs.hunger,
@@ -1337,6 +1358,7 @@ impl<'a> System<'a> for Sys {
                                                 insp_tick.0,
                                             ),
                                             mood_explanation,
+                                            ownership,
                                         })
                                     })
                                     .map(BastionInspectKind::Colonist),
