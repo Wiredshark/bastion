@@ -287,6 +287,51 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
         variant: "SetPlayerRole",
         digest_hex: "sha256:fb9cca3fa5fafbd354aa4284804a0239a730dcbdd6459cddd0be75649a1a8dd5",
     },
+    // WSG-2 chunk 4 (Sonnet lane): the remaining unit/single-simple-field
+    // shapes -- picked from the 42-item remainder after confirming each
+    // one's inner type by reading its definition first (Skill and
+    // Content, both multi-crate enums, deliberately deferred rather than
+    // guessed at).
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "ControlAction",
+        digest_hex: "sha256:1f6f4b0d2ba528a06eb08eeb78503461eb4ac68a19abec2e33cd5bea1255f040",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "ControlEvent",
+        digest_hex: "sha256:aae89fc0f03e2959ae4d701a80cc3915918c950b159f6abb6c92c1433b1a8534",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "UpdateMapMarker",
+        digest_hex: "sha256:c4b0abe54ae451ca314522244a354d1ceca4772379b7a566e241b29c6d301bdc",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "GroupUpdate",
+        digest_hex: "sha256:04b37e303aab5f9b4a180ace8b192b9123431e203b06864fa0eddfe7a1e63650",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "ChatMode",
+        digest_hex: "sha256:449498db0a357e972ff02bc0a1c339f8493c59b77d27e2251136fe5e9ed93eaf",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "Disconnect",
+        digest_hex: "sha256:74b4dda3624aed85d808e91d84b08aad88563b02fe290e0d327865c33d2bafbd",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "MapMarker",
+        digest_hex: "sha256:76d25faac67d849dc025fd6cad30b7d377431bfddf5c2d998cda3d5feeee3b5d",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "CreateEntity",
+        digest_hex: "sha256:2d073538b2f92f89df9bda81ecadbb8ff22ff79000e79968501c9e4fd145eec0",
+    },
 ];
 
 include!("wire_shape_uncovered.rs");
@@ -305,7 +350,7 @@ pub fn golden_digest_v1<T: serde::Serialize>(value: &T) -> String {
 mod wire_shape_goldens_v1 {
     use super::*;
     use crate::msg::{
-        ClientGeneral, ServerGeneral,
+        ClientGeneral, DisconnectReason, ServerGeneral,
         input_receipt_wire::{CorrectionReasonWireV1, InputReceiptWireV1, SequenceStateWireV1},
     };
     use common::apex::weather_snapshot::WeatherSnapshotIdV1;
@@ -521,6 +566,36 @@ mod wire_shape_goldens_v1 {
 
     fn client_request_plugins() -> ClientGeneral { ClientGeneral::RequestPlugins(Vec::new()) }
 
+    // WSG-2 chunk 4 fixtures.
+
+    fn client_control_action() -> ClientGeneral {
+        ClientGeneral::ControlAction(common::comp::ControlAction::Stand)
+    }
+
+    fn client_control_event() -> ClientGeneral {
+        ClientGeneral::ControlEvent(common::comp::ControlEvent::EnableLantern)
+    }
+
+    fn client_update_map_marker() -> ClientGeneral {
+        ClientGeneral::UpdateMapMarker(common::comp::MapMarkerChange::Remove)
+    }
+
+    fn server_group_update() -> ServerGeneral {
+        ServerGeneral::GroupUpdate(common::comp::group::ChangeNotification::NoGroup)
+    }
+
+    fn server_chat_mode() -> ServerGeneral { ServerGeneral::ChatMode(common::comp::ChatMode::Say) }
+
+    fn server_disconnect() -> ServerGeneral { ServerGeneral::Disconnect(DisconnectReason::Shutdown) }
+
+    fn server_map_marker() -> ServerGeneral {
+        ServerGeneral::MapMarker(common::comp::MapMarkerUpdate::ClearGroup)
+    }
+
+    fn server_create_entity() -> ServerGeneral {
+        ServerGeneral::CreateEntity(crate::sync::EntityPackage { uid: uid(113), comps: Vec::new() })
+    }
+
     fn actual(schema: &str, variant: &str) -> String {
         match (schema, variant) {
             ("ClientGeneral", "PlayerPhysics") => golden_digest_v1(&client_player_physics()),
@@ -569,6 +644,14 @@ mod wire_shape_goldens_v1 {
             ("ServerGeneral", "ExitInGameSuccess") => golden_digest_v1(&server_exit_in_game_success()),
             ("ServerGeneral", "UpdateRecipes") => golden_digest_v1(&server_update_recipes()),
             ("ServerGeneral", "SetPlayerRole") => golden_digest_v1(&server_set_player_role()),
+            ("ClientGeneral", "ControlAction") => golden_digest_v1(&client_control_action()),
+            ("ClientGeneral", "ControlEvent") => golden_digest_v1(&client_control_event()),
+            ("ClientGeneral", "UpdateMapMarker") => golden_digest_v1(&client_update_map_marker()),
+            ("ServerGeneral", "GroupUpdate") => golden_digest_v1(&server_group_update()),
+            ("ServerGeneral", "ChatMode") => golden_digest_v1(&server_chat_mode()),
+            ("ServerGeneral", "Disconnect") => golden_digest_v1(&server_disconnect()),
+            ("ServerGeneral", "MapMarker") => golden_digest_v1(&server_map_marker()),
+            ("ServerGeneral", "CreateEntity") => golden_digest_v1(&server_create_entity()),
             (schema, other) => panic!("{schema}::{other} has a golden entry but no representative instance"),
         }
     }
@@ -595,9 +678,9 @@ mod wire_shape_goldens_v1 {
     /// counts pinned so neither list can drift silently.
     #[test]
     fn coverage_is_a_pinned_open_set() {
-        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 46, "the covered set changed");
-        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 16);
-        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 26);
+        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 54, "the covered set changed");
+        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 13);
+        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 21);
         // 1 + 36 = 37 ClientGeneral, 3 + 48 = 51 ServerGeneral, counted
         // from the enums at 71b1c87ca7.
         let covered_client =
@@ -688,6 +771,26 @@ mod wire_shape_goldens_v1 {
             51,
             "ServerGeneral gained or lost a variant. Add it to WIRE_SHAPE_GOLDENS or to \
              UNCOVERED_SERVERGENERAL_V1."
+        );
+    }
+
+    /// WSG-2 chunk 4's falsifier: a perturbation of one of this chunk's
+    /// new fixtures reaches the golden and moves the digest, proven
+    /// against a `ServerGeneral` variant this chunk added (`CreateEntity`,
+    /// the one with actual field structure rather than a bare unit
+    /// enum-of-enums) rather than the pre-existing `LocalWindUpdate`
+    /// example.
+    #[test]
+    fn chunk_4_fixture_perturbation_moves_the_digest() {
+        let base = golden_digest_v1(&server_create_entity());
+        let perturbed = golden_digest_v1(&ServerGeneral::CreateEntity(crate::sync::EntityPackage {
+            uid: uid(114),
+            comps: Vec::new(),
+        }));
+        assert_ne!(
+            base, perturbed,
+            "changing CreateEntity's uid did not move the digest -- the golden mechanism is \
+             blind to this chunk's payload"
         );
     }
 
