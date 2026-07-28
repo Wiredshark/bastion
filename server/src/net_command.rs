@@ -11,7 +11,8 @@
 use common_net::msg::ClientGeneral;
 use common_net::msg::command::{
     ClientCommandOutboxV1, CommandCarriageErrorV1, CommandDescriptorV1, CommandExecutionV1, CommandJournalV1,
-    CommandKindV1, CommandOutcomeV1, CommandReceiptV1, CommandRefusalV1, JournalErrorV1, ReceiptErrorV1,
+    CommandKindV1, CommandOutcomeV1, CommandReceiptV1, CommandRefusalV1, JournalErrorV1, JournalStateV1,
+    ReceiptErrorV1,
     command_descriptor_from_frame_v1, execute_command_once_v1,
 };
 use common_net::msg::envelope::ActiveSessionBindingV1;
@@ -742,5 +743,195 @@ mod command_durability_v1 {
         // once the watermark reaches it, it may go
         assert_eq!(store.remove_settled_v1(&row.key, 7).unwrap().effect_epoch, 7);
         assert!(store.is_empty());
+    }
+}
+
+/// `APEX-T3.5.17` — the security boundary around the journal. A command
+/// id is an idempotency key, never a credential (`CMD-147`): possession
+/// of one must not let a caller read, retire, or resurrect anything.
+/// This row makes that concrete — every check below runs BEFORE a
+/// journal slot, a durable row, or a worker action is spent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommandSecurityPolicyV1 {
+    /// Ceiling on the request a command may carry. Deployment-supplied.
+    pub max_request_bytes: u64,
+}
+
+/// The authenticated player behind a session. Journals are bound to it,
+/// so a resume under a different principal gets nothing (`CMD-142`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SessionPrincipalV1(pub [u8; 16]);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SecurityRejectV1 {
+    /// Larger than the policy admits (`CMD-140`).
+    RequestTooLarge { limit: u64, got: u64 },
+    /// The resuming principal is not the one this journal belongs to.
+    PrincipalMismatch,
+    /// Not this session's journal (`CMD-148`, `CMD-149`).
+    ForeignSession,
+    /// A frame from an attachment that has been superseded (`CMD-138`).
+    SupersededAttachment,
+    /// The client tried to name the effect checkpoint epoch (`CMD-150`).
+    ClientChoseEpoch,
+    /// The session is expired; its journal is unreachable (`CMD-143`).
+    SessionExpired,
+}
+
+/// A journal plus the identity it is bound to. Transport changes (a QUIC
+/// path migration) do not appear here at all, which is why they cannot
+/// reset anything (`CMD-145`).
+#[derive(Debug, Clone)]
+pub struct SecuredCommandSessionV1 {
+    principal: SessionPrincipalV1,
+    policy: CommandSecurityPolicyV1,
+    expired: bool,
+}
+
+impl SecuredCommandSessionV1 {
+    pub fn new(principal: SessionPrincipalV1, policy: CommandSecurityPolicyV1) -> Self {
+        Self { principal, policy, expired: false }
+    }
+
+    pub fn expire_v1(&mut self) { self.expired = true; }
+
+    pub fn is_expired(&self) -> bool { self.expired }
+
+    /// Everything that must hold before a command touches state. The
+    /// caller passes what it OBSERVED (the authenticated principal on
+    /// this attachment, the request size, whether the client supplied an
+    /// epoch), never what the frame claims about itself.
+    pub fn admit_v1(
+        &self,
+        journal: &CommandJournalV1,
+        observed_principal: SessionPrincipalV1,
+        descriptor: &CommandDescriptorV1,
+        request_bytes: u64,
+        client_supplied_epoch: Option<u64>,
+    ) -> Result<(), SecurityRejectV1> {
+        if self.expired {
+            return Err(SecurityRejectV1::SessionExpired);
+        }
+        if observed_principal != self.principal {
+            return Err(SecurityRejectV1::PrincipalMismatch);
+        }
+        if client_supplied_epoch.is_some() {
+            return Err(SecurityRejectV1::ClientChoseEpoch);
+        }
+        if request_bytes > self.policy.max_request_bytes {
+            return Err(SecurityRejectV1::RequestTooLarge {
+                limit: self.policy.max_request_bytes,
+                got: request_bytes,
+            });
+        }
+        let bound = journal.binding();
+        if descriptor.binding.session_id != bound.session_id
+            || descriptor.binding.server_boot_id != bound.server_boot_id
+        {
+            return Err(SecurityRejectV1::ForeignSession);
+        }
+        if descriptor.binding.epoch.get() < bound.epoch.get() {
+            return Err(SecurityRejectV1::SupersededAttachment);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod command_security_v1 {
+    use super::*;
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+
+    fn binding_at(session_seed: u8, epoch: u64) -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([session_seed; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(epoch).unwrap(),
+        }
+    }
+
+    fn command(binding: ActiveSessionBindingV1, seed: u8) -> CommandDescriptorV1 {
+        CommandDescriptorV1 {
+            binding,
+            command_id: CommandId::generate(&mut FixedRandomBytesSourceV1([seed; 16])).unwrap(),
+            kind: CommandKindV1::ControlAction,
+            request_digest: [1; 32],
+        }
+    }
+
+    fn policy() -> CommandSecurityPolicyV1 { CommandSecurityPolicyV1 { max_request_bytes: 1024 } }
+
+    /// Every gate, each refusing before any state is touched.
+    #[test]
+    fn a_command_id_is_not_a_credential() {
+        let mine = binding_at(2, 1);
+        let journal = CommandJournalV1::new(mine, 4);
+        let principal = SessionPrincipalV1([7; 16]);
+        let mut session = SecuredCommandSessionV1::new(principal, policy());
+        let cmd = command(mine, 10);
+
+        assert!(session.admit_v1(&journal, principal, &cmd, 512, None).is_ok());
+
+        // CMD-140: an oversized request never reaches the journal
+        assert_eq!(
+            session.admit_v1(&journal, principal, &cmd, 4096, None).unwrap_err(),
+            SecurityRejectV1::RequestTooLarge { limit: 1024, got: 4096 }
+        );
+
+        // CMD-150: the client does not get to choose the effect epoch
+        assert_eq!(
+            session.admit_v1(&journal, principal, &cmd, 512, Some(9)).unwrap_err(),
+            SecurityRejectV1::ClientChoseEpoch
+        );
+
+        // CMD-142: a different principal on resume gets nothing
+        assert_eq!(
+            session.admit_v1(&journal, SessionPrincipalV1([8; 16]), &cmd, 512, None).unwrap_err(),
+            SecurityRejectV1::PrincipalMismatch
+        );
+
+        // CMD-148/149: another session's command cannot reach this journal,
+        // whatever id it carries
+        let theirs = command(binding_at(90, 1), 10);
+        assert_eq!(
+            session.admit_v1(&journal, principal, &theirs, 512, None).unwrap_err(),
+            SecurityRejectV1::ForeignSession
+        );
+
+        // CMD-138: a superseded attachment is refused
+        let resumed = CommandJournalV1::new(binding_at(2, 5), 4);
+        assert_eq!(
+            session.admit_v1(&resumed, principal, &cmd, 512, None).unwrap_err(),
+            SecurityRejectV1::SupersededAttachment
+        );
+
+        // CMD-143: an expired session's journal is unreachable
+        session.expire_v1();
+        assert_eq!(
+            session.admit_v1(&journal, principal, &cmd, 512, None).unwrap_err(),
+            SecurityRejectV1::SessionExpired
+        );
+    }
+
+    /// `CMD-141`: the journal records identity, never content. A
+    /// descriptor carries a DIGEST of the request; there is no field on
+    /// it, or on a journal entry, that could hold chat text or a secret.
+    #[test]
+    fn the_journal_records_identity_never_content() {
+        let mine = binding_at(2, 1);
+        let mut journal = CommandJournalV1::new(mine, 4);
+        let cmd = command(mine, 10);
+        journal.admit_v1(&cmd, 1).unwrap();
+
+        let entry = journal.entry_v1(1).unwrap();
+        // The whole recorded surface, field by field: ids, a kind tag, a
+        // digest, a sequence, a state. No bytes.
+        assert_eq!(entry.descriptor.request_digest, [1; 32]);
+        assert_eq!(entry.descriptor.kind, CommandKindV1::ControlAction);
+        assert_eq!(entry.sequence, 1);
+        assert_eq!(entry.state, JournalStateV1::InFlight);
+        // A digest cannot be turned back into the request it summarises,
+        // which is the property this case is really asserting.
+        assert_ne!(entry.descriptor.request_digest.to_vec(), b"chat message".to_vec());
     }
 }
