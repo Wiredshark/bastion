@@ -65,6 +65,7 @@ pub mod causal_record;
 pub mod command_protocol;
 pub mod conservation_saga;
 pub mod content_manifest;
+pub mod host_input_manifest;
 pub mod run_equivalence;
 pub mod rng_source_registry;
 pub mod state_hash;

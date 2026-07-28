@@ -159,6 +159,11 @@ struct RecorderMetadata {
     max_samples: usize,
     max_events: usize,
     compiled_git_hash: String,
+    /// T0.89: which attestation-relevant (non-diagnostic) environment
+    /// overrides were actually live for this run -- so a divergence
+    /// between two recordings can be checked against a real cause
+    /// (BASTION_TIGHTDIG, BASTION_FLAT_ARENA, ...) instead of guessed at.
+    host_input_manifest: Vec<(&'static str, bool)>,
 }
 
 #[derive(Clone, Debug)]
@@ -259,6 +264,8 @@ impl Recorder {
             max_samples: config.max_samples,
             max_events: config.max_events,
             compiled_git_hash: format!("{:x}", *common::util::GIT_HASH),
+            host_input_manifest: common::host_input_manifest::HostInputManifestV1::capture()
+                .present,
         };
         serde_json::to_writer_pretty(File::create(config.dir.join("metadata.json"))?, &metadata)?;
         Ok(Self {
