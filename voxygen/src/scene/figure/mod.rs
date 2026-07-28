@@ -7210,13 +7210,21 @@ impl FigureMgr {
                 .get(entity)
                 .zip(uids.get(entity))
                 .and_then(|(_, uid)| crate::r1d_tiers::decision_for_uid(uid.0.get()));
+            let shadow_allowed = uids
+                .get(entity)
+                .and_then(|uid| crate::r1f_shadows::should_render_uid(uid.0.get(), tick))
+                .unwrap_or_else(|| {
+                    tier_decision.is_none_or(|decision| {
+                        decision.shadow
+                            != bastion_renderer_r0d::individual_tier::IndividualShadowTierV1::None
+                    })
+                });
             if tier_decision.is_some_and(|decision| {
                 decision.representation
                     == bastion_renderer_r0d::individual_tier::RepresentationTierV1::Culled
-                    || (pass == bastion_renderer_r0d::figure_batch::FigurePassV1::Shadow
-                        && decision.shadow
-                            == bastion_renderer_r0d::individual_tier::IndividualShadowTierV1::None)
-            }) {
+            }) || (pass == bastion_renderer_r0d::figure_batch::FigurePassV1::Shadow
+                && !shadow_allowed)
+            {
                 continue;
             }
             if let Some((bound, model, _)) = self.get_model_for_render(
