@@ -36,6 +36,7 @@ pub mod location;
 pub mod lod;
 pub mod login_provider;
 pub mod metrics;
+pub mod net_checkpoint;
 pub mod persistence;
 mod pet;
 pub mod plugin_deployment_policy;
