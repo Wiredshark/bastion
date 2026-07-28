@@ -36,6 +36,38 @@
 //!    is what separates the two protocol statuses, and it is derived from
 //!    the operation rather than asserted per site — see
 //!    [`NumericOpV1::protocol_v1`].
+//!
+//! **`T6.1c` — re-derived and widened, and the completeness marker on
+//! `T6.1b` is retired with it.** `T6.1b` said its widened pattern list
+//! closed the gap. It did not, and the second reader found two things
+//! that a third might not have:
+//!
+//! 1. **`powi` was missing** — 359 lines across 54 files. It is the
+//!    operation this game reaches for whenever it compares a squared
+//!    distance against a squared radius, which is to say most of the hit
+//!    and range predicates in the tree. `exp2`, `mul_add` and the inverse
+//!    hyperbolics went in with it.
+//! 2. **The ROOT SET was as wrong as the pattern list had been.** The
+//!    scanner walked `common/src` and `common/systems/src` only, so
+//!    `server/agent/src/attack.rs` — 191 squared-distance predicates
+//!    choosing NPC combat behaviour — was never even opened. No amount of
+//!    pattern widening would have revealed it. `server/agent/src` is now
+//!    scanned; [`UNSCANNED_AUTHORITATIVE_ROOTS`] names what still is not,
+//!    so the next gap is a decision rather than an oversight.
+//!
+//! The surface moved 26 → 42 authoritative files and 10 → 29
+//! branch-driving sites across nine owners. **What this row does NOT
+//! claim is that the list is now complete.** It has been wrong twice;
+//! the falsification below shows exactly where its edge still is.
+//!
+//! **Falsified, both directions.** A file using a LISTED operation and no
+//! classification fails `every_numeric_surface_file_is_classified` (a
+//! planted `x.powi(3)` was rejected by name, then removed). A file using
+//! an operation family the list does NOT name — a planted
+//! `x.to_radians().recip()` — passes silently. That second result is the
+//! honest limit and is recorded rather than left for a fourth reader to
+//! discover: **this scanner catches growth of a known surface, not
+//! discovery of an unknown one.**
 
 use std::{fs, path::Path};
 
@@ -62,6 +94,23 @@ pub(crate) enum NumericRoleV1 {
 /// trigonometric operation, with what it is and why.
 pub(crate) const NUMERIC_SURFACE_ROLES: &[(&str, NumericRoleV1, &str)] = &[
     ("common/src/apex/numeric_profile.rs", NumericRoleV1::PresentationOrTooling, "T6.4 evidence tooling; its only root operation is the sqrt inside #[cfg(test)] golden vectors, which never runs in a simulation build and computes no simulation state"),
+    ("common/src/bin/csv_export.rs", NumericRoleV1::PresentationOrTooling, "a CSV export binary for offline analysis; it never runs inside a simulation build and computes no simulation state"),
+    ("common/src/comp/body/object.rs", NumericRoleV1::Authoritative, "object body volume feeds density, which feeds the fluid-dynamics force sum"),
+    ("common/src/comp/body/ship.rs", NumericRoleV1::Authoritative, "ship hull volume feeds density and buoyancy"),
+    ("common/src/interaction.rs", NumericRoleV1::Authoritative, "MAX_INTERACT_RANGE/MAX_MOUNT_RANGE squared-distance predicates decide whether an interaction is allowed"),
+    ("common/src/states/climb.rs", NumericRoleV1::Authoritative, "climb energy cost and movement speed reach velocity"),
+    ("common/src/states/glide.rs", NumericRoleV1::Authoritative, "glider aspect ratio and the ground-speed gate; T5.4's wind reaches this file"),
+    ("common/src/states/interact.rs", NumericRoleV1::Authoritative, "interaction range predicate"),
+    ("common/src/weather.rs", NumericRoleV1::Authoritative, "wind-magnitude threshold classifies weather, which reaches physics"),
+    ("common/systems/src/arcing.rs", NumericRoleV1::Authoritative, "arc hit predicate decides who is struck"),
+    ("common/systems/src/aura.rs", NumericRoleV1::Authoritative, "aura radius predicate decides who is affected"),
+    ("common/systems/src/beam.rs", NumericRoleV1::Authoritative, "beam hit predicate decides who is struck"),
+    ("common/systems/src/buff.rs", NumericRoleV1::Authoritative, "aura-radius predicate decides who keeps a buff"),
+    ("common/systems/src/pool.rs", NumericRoleV1::Authoritative, "damage-pool radius predicate decides who is hit"),
+    ("server/agent/src/action_nodes.rs", NumericRoleV1::Authoritative, "NPC action selection: ranges and speeds that decide which behaviour runs"),
+    ("server/agent/src/attack.rs", NumericRoleV1::Authoritative, "NPC combat decisions; 191 squared-distance predicates choosing attacks and positioning"),
+    ("server/agent/src/data.rs", NumericRoleV1::Authoritative, "agent range/threat helpers consumed by the decision predicates"),
+    ("server/agent/src/util.rs", NumericRoleV1::Authoritative, "agent distance helpers consumed by the decision predicates"),
     ("common/src/combat.rs", NumericRoleV1::Authoritative, "damage/knockback scaling reaches health and physics"),
     ("common/src/comp/ability.rs", NumericRoleV1::Authoritative, "ability scaling feeds combat"),
     ("common/src/comp/buff.rs", NumericRoleV1::Authoritative, "buff strength curve (powf) feeds combat and movement"),
@@ -98,10 +147,15 @@ pub(crate) const NUMERIC_SURFACE_ROLES: &[(&str, NumericRoleV1, &str)] = &[
 /// arbitrary-base `log` were absent, so two files and seven sites sat
 /// outside an inventory that claimed to be complete. A pattern list is a
 /// coverage CLAIM, and this one was wrong.
-pub(crate) const NUMERIC_SURFACE_PATTERNS: [&str; 21] = [
+pub(crate) const NUMERIC_SURFACE_PATTERNS: [&str; 27] = [
     "powf", "sqrt()", ".sin()", ".cos()", ".ln()", "hypot", ".acos()", ".asin()", ".atan()",
     ".atan2(", ".tan()", ".exp()", ".cbrt()", ".log(", ".log2()", ".log10()", ".exp_m1()",
     ".ln_1p()", ".sinh()", ".cosh()", ".tanh()",
+    // T6.1c: the second widening. `powi` alone was 359 lines across 54
+    // files, and it is the operation the game reaches for whenever it
+    // compares a squared distance against a squared radius -- which is to
+    // say, most of the hit and range predicates in the tree.
+    ".powi(", ".exp2()", ".mul_add(", ".asinh()", ".acosh()", ".atanh()",
 ];
 
 /// Branch-driving `powf` call sites, seeded from the T6 tier spec's own
@@ -113,6 +167,41 @@ pub(crate) const BRANCH_DRIVING_SEED: &[(&str, &str)] = &[
     ("common/src/comp/fluid_dynamics.rs", "(PI/6 * dim).powf(2.0/3.0)"),
     ("common/src/states/utils.rs", "scale.powf(13.0).powf(0.25) movement scaling"),
     ("common/src/comp/buff.rs", "f32::powf(1.0 - nn_scaling(strength), 1.1)"),
+];
+
+/// The directory roots the surface is scanned from.
+///
+/// `T6.1c` added `server/agent/src`. Until then the scanner's ROOT SET
+/// was as wrong as its pattern list had been: `server/agent/src/attack.rs`
+/// alone holds 191 lines of squared-distance combat predicates, and not
+/// one of them was inside a surface that claimed to cover authoritative
+/// simulation. Widening the patterns would never have revealed it,
+/// because the file was never walked.
+///
+/// Still NOT scanned, named so the gap is a decision rather than an
+/// oversight: `server/src` (outside the agent), `rtsim/src` and
+/// `world/src`. Each is authoritative in its own way and each is a
+/// larger classification job than one row; see
+/// [`UNSCANNED_AUTHORITATIVE_ROOTS`].
+pub(crate) const SCANNED_ROOTS: [&str; 3] =
+    ["common/src", "common/systems/src", "server/agent/src"];
+
+/// Authoritative code the scanner still does not walk, with why it is
+/// out of scope for now. An inventory that simply stopped at its own
+/// root set would read as complete.
+pub(crate) const UNSCANNED_AUTHORITATIVE_ROOTS: [(&str, &str); 3] = [
+    (
+        "server/src",
+        "server-side simulation outside the agent crate; a separate classification pass, and the          one most likely to hold further branch-driving predicates",
+    ),
+    (
+        "rtsim/src",
+        "rtsim advances persisted NPC state; its numeric surface is real but its consumers are          the rtsim rules rather than the tick, so the reach argument differs",
+    ),
+    (
+        "world/src",
+        "worldgen runs once per world rather than per tick; divergence there is a different          failure mode (a different world, not a drifting one) and wants its own row",
+    ),
 ];
 
 /// Matching non-comment lines in `text`.
@@ -145,8 +234,18 @@ pub(crate) enum NumericOpV1 {
     /// `cbrt` and `hypot` are libm functions with no such requirement and
     /// must NOT be classified here — they are [`NumericOpV1::Power`].
     SquareRoot,
-    /// `powf`, `exp`, `cbrt`, `hypot` — the platform libm's.
+    /// `powf`, `exp`, `exp2`, `cbrt`, `hypot` — the platform libm's.
     Power,
+    /// `powi` — NOT libm. The compiler expands it to a multiply chain, so
+    /// there is no implementation-defined library behind it. It is not in
+    /// [`Self::SquareRoot`]'s class either: the chain's ASSOCIATION is the
+    /// compiler's choice, so a different compiler can produce different
+    /// bits for a large exponent. `T6.4`'s build tuple is what pins that,
+    /// which is exactly why the tuple records the rustc and LLVM version.
+    IntegerPower,
+    /// `mul_add` — IEEE 754 fused multiply-add, specified to round once.
+    /// Correctly rounded, so it belongs with `sqrt` and not with libm.
+    FusedMultiplyAdd,
     /// `sin`/`cos`/`tan` and the inverses — the platform libm's.
     Trig,
     /// `ln`/`log`/`log2`/`log10` — the platform libm's.
@@ -184,7 +283,11 @@ impl NumericOpV1 {
     /// operation decides.
     pub(crate) const fn protocol_v1(self) -> ProtocolStatusV1 {
         match self {
-            Self::SquareRoot => ProtocolStatusV1::SameBuildOnly,
+            // Correctly rounded (sqrt, fma) or compiler-expanded with no
+            // library behind it (powi): no kernel to substitute.
+            Self::SquareRoot | Self::FusedMultiplyAdd | Self::IntegerPower => {
+                ProtocolStatusV1::SameBuildOnly
+            },
             Self::Power | Self::Trig | Self::Log => ProtocolStatusV1::KernelCandidate,
         }
     }
@@ -206,12 +309,17 @@ pub(crate) enum NumericOwnerV1 {
     Spawning,
     WorldSync,
     TimeOfDay,
+    /// NPC decision-making in the agent crate. Its own owner because its
+    /// numerics decide BEHAVIOUR rather than state: a flipped comparison
+    /// makes an NPC choose a different action, which is visible long
+    /// before any position drift would be.
+    AgentDecision,
 }
 
 impl NumericOwnerV1 {
     /// Every owner. An owner with no sites is a naming exercise, and the
     /// test below says so.
-    pub(crate) const ALL: [Self; 12] = [
+    pub(crate) const ALL: [Self; 13] = [
         Self::Combat,
         Self::Movement,
         Self::Orientation,
@@ -224,6 +332,7 @@ impl NumericOwnerV1 {
         Self::Spawning,
         Self::WorldSync,
         Self::TimeOfDay,
+        Self::AgentDecision,
     ];
 }
 
@@ -284,7 +393,7 @@ const fn site(
 /// Every site in every `Authoritative` file. The `lines` column sums, per
 /// file, to what the scanner finds — so a new site fails the build.
 pub(crate) const NUMERIC_SITES: &[NumericSiteV1] = {
-    use NumericOpV1::{Log, Power, SquareRoot, Trig};
+    use NumericOpV1::{IntegerPower, Log, Power, SquareRoot, Trig};
     use NumericOwnerV1::*;
     use NumericReachV1::{BranchCondition, CarriedAcrossTicks, NoLiveConsumer};
     &[
@@ -398,6 +507,72 @@ pub(crate) const NUMERIC_SITES: &[NumericSiteV1] = {
              "disk-intersection points defining the shockwave arc, which decides who is inside it"),
         site("common/systems/src/shockwave.rs", "(d.radius / dist).asin()", 1, Trig, AreaOfEffect, BranchCondition,
              "angular half-width of a target disk, compared against the shockwave's angular extent"),
+        site("common/src/comp/ability.rs", "modifiers.speed.powi(level.into())", 13, IntegerPower, Combat, CarriedAcrossTicks,
+             "ability modifiers raised to the skill level; the IMMEDIATE consumer multiplies a damage/speed/regen value, it does not compare one, so this is carried state rather than a branch"),
+        site("common/src/comp/fluid_dynamics.rs", "x.powi(2)", 1, IntegerPower, FlightAndFluid, CarriedAcrossTicks,
+             "aspect-ratio term inside the finite-wing lift slope"),
+        site("common/src/comp/projectile.rs", "u_sqrd.powi(2)", 3, IntegerPower, Projectiles, CarriedAcrossTicks,
+             "ballistic discriminant terms in aim_projectile"),
+        site("common/src/path.rs", "linear_eccentricity.powi(2)", 10, IntegerPower, Pathfinding, CarriedAcrossTicks,
+             "spheroid axis terms and squared magnitudes in the waypoint sampler"),
+        site("common/src/region.rs", "vd_extended.powi(2)", 1, IntegerPower, WorldSync, BranchCondition,
+             "the squared view distance the region membership test compares against; this is the other half of the sync decision the sqrt entry above computes"),
+        site("common/src/states/utils.rs", "modifiers.speed.powi(level.into())", 3, IntegerPower, Movement, CarriedAcrossTicks,
+             "level-scaled swim acceleration, the body-scaler jump term, and the submersion clamp — all applied to velocity"),
+        site("common/src/states/utils.rs", "MAX_MOUNT_RANGE.powi(2)", 2, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared mount range and squared block-interaction range, each compared against squared distance to decide whether the action is permitted at all"),
+        site("common/systems/src/melee.rs", "MAX_PICKUP_RANGE.powi(2)", 2, IntegerPower, Combat, BranchCondition,
+             "the squared reach the melee predicate compares distance against; the atan entry above is the angular half of the same decision"),
+        site("common/systems/src/phys/collision.rs", "new_longitudinal_squared", 4, IntegerPower, PhysicsTick, CarriedAcrossTicks,
+             "squared-speed terms in the friction and restitution arithmetic"),
+        site("common/systems/src/phys/mod.rs", "collision_boundary.powi(2)", 2, IntegerPower, PhysicsTick, BranchCondition,
+             "the squared broad-phase boundary at :512 that decides which entity pairs are collision candidates at all"),
+        site("common/systems/src/projectile.rs", "target_radius.powi(2)", 2, IntegerPower, Projectiles, BranchCondition,
+             "squared target radius compared against squared distance to decide whether the projectile hits"),
+        site("common/systems/src/shockwave.rs", "dist.powi(2)", 1, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared distance term in the disk-intersection test that decides who the shockwave reaches"),
+        site("common/src/comp/body/object.rs", "self.dimensions().x.powi(3)", 1, IntegerPower, FlightAndFluid, CarriedAcrossTicks,
+             "object volume feeding density, which feeds the aerodynamic force sum"),
+        site("common/src/comp/body/ship.rs", "equat_d.powi(2)", 2, IntegerPower, FlightAndFluid, CarriedAcrossTicks,
+             "ship hull volume feeding density and buoyancy"),
+        site("common/src/interaction.rs", "MAX_INTERACT_RANGE.powi(2)", 2, IntegerPower, AreaOfEffect, BranchCondition,
+             "the squared interact and mount ranges compared against squared distance; these two lines decide whether a player may interact or mount at all"),
+        site("common/src/states/climb.rs", "modifiers.energy_cost.powi(level.into())", 3, IntegerPower, Movement, CarriedAcrossTicks,
+             "level-scaled climb cost and speed, plus the squared movement speed applied to velocity"),
+        site("common/src/states/glide.rs", "span_length.powi(2)", 2, IntegerPower, FlightAndFluid, CarriedAcrossTicks,
+             "glider aspect ratio and the squared airflow magnitude used to scale control authority"),
+        site("common/src/states/glide.rs", "ground_vel).magnitude_squared() < 2_f32.powi(2)", 1, IntegerPower, FlightAndFluid, BranchCondition,
+             "the squared ground-speed gate that decides whether a glide may start; T5.4's wind reaches this same file"),
+        site("common/src/states/interact.rs", "MAX_INTERACT_RANGE.powi(2)", 1, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared interact range compared against squared distance to decide whether the interaction continues"),
+        site("common/src/weather.rs", "24.5f32.powi(2)", 1, IntegerPower, FlightAndFluid, BranchCondition,
+             "squared wind-magnitude threshold that classifies the weather, and the classification reaches physics"),
+        site("common/systems/src/arcing.rs", "arc_rad + rad_b).powi(2)", 2, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared arc reach compared against squared distance to decide who is struck"),
+        site("common/systems/src/aura.rs", "aura.radius.powi(2)", 1, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared aura radius compared against squared distance to decide who is inside the aura"),
+        site("common/systems/src/beam.rs", "bezier_rad + rad_b).powi(2)", 1, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared beam radius compared against squared distance to decide who the beam hits"),
+        site("common/systems/src/buff.rs", "aura.radius.powi(2)", 1, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared aura radius compared against squared distance to decide who keeps the buff"),
+        site("common/systems/src/pool.rs", "pool.properties.radius + rad_b).powi(2)", 1, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared damage-pool radius compared against squared distance to decide who is damaged"),
+        site("server/agent/src/attack.rs", "attack_data.dist_sqrd <", 191, IntegerPower, AgentDecision, BranchCondition,
+             "191 squared-distance and squared-radius predicates choosing which attack an NPC uses and where it stands; a flipped comparison here changes BEHAVIOUR, which is visible long before any position drift would be"),
+        site("server/agent/src/attack.rs", "sqrt()", 3, SquareRoot, AgentDecision, CarriedAcrossTicks,
+             "distance and speed magnitudes feeding those predicates"),
+        site("server/agent/src/action_nodes.rs", "powf", 5, Power, AgentDecision, CarriedAcrossTicks,
+             "libm power terms in NPC speed and timing curves"),
+        site("server/agent/src/action_nodes.rs", ".powi(", 7, IntegerPower, AgentDecision, BranchCondition,
+             "squared ranges compared against squared distance to select an action node"),
+        site("server/agent/src/action_nodes.rs", "sqrt()", 2, SquareRoot, AgentDecision, CarriedAcrossTicks,
+             "magnitudes feeding those range comparisons"),
+        site("server/agent/src/data.rs", ".powi(", 6, IntegerPower, AgentDecision, BranchCondition,
+             "squared range helpers the decision predicates compare against"),
+        site("server/agent/src/data.rs", "sqrt()", 2, SquareRoot, AgentDecision, CarriedAcrossTicks,
+             "distance magnitudes feeding those helpers"),
+        site("server/agent/src/util.rs", ".powi(", 6, IntegerPower, AgentDecision, BranchCondition,
+             "squared distance thresholds deciding whether an NPC engages, flees, or holds"),
     ]
 };
 
@@ -415,8 +590,9 @@ pub(crate) fn scan_numeric_surface_v1(root: &Path) -> Vec<String> {
     }
 
     let mut files = Vec::new();
-    walk(&root.join("common/src"), &mut files);
-    walk(&root.join("common/systems/src"), &mut files);
+    for relative in SCANNED_ROOTS {
+        walk(&root.join(relative), &mut files);
+    }
 
     let mut hits: Vec<String> = files
         .into_iter()
@@ -487,9 +663,9 @@ mod numeric_surface_v1 {
             .iter()
             .filter(|(_, role, _)| *role == NumericRoleV1::Authoritative)
             .count();
-        // 24 at T6.1a; 26 once T6.1b widened the pattern list and the
-        // inverse trigonometrics pulled in tool.rs and melee.rs.
-        assert_eq!(authoritative, 26, "the authoritative surface changed — re-derive T6.1b's owners");
+        // 24 at T6.1a; 26 once T6.1b widened the pattern list; 42 once
+        // T6.1c added powi/exp2/mul_add and the server/agent root.
+        assert_eq!(authoritative, 42, "the authoritative surface changed — re-derive T6.1b's owners");
         assert!(
             NUMERIC_SURFACE_ROLES.iter().any(|(f, role, _)| *f == "common/systems/src/phys/mod.rs"
                 && *role == NumericRoleV1::Authoritative),
@@ -616,6 +792,21 @@ mod numeric_surface_v1 {
                     s.key
                 );
                 assert_eq!(s.op.protocol_v1(), ProtocolStatusV1::SameBuildOnly);
+            } else if matches!(
+                s.op,
+                NumericOpV1::IntegerPower | NumericOpV1::FusedMultiplyAdd
+            ) {
+                // T6.1c: neither is libm. `powi` is a compiler-expanded
+                // multiply chain and `mul_add` is IEEE-754 fma, so there
+                // is no kernel to substitute for either — the build tuple
+                // is what pins them.
+                assert_eq!(
+                    s.op.protocol_v1(),
+                    ProtocolStatusV1::SameBuildOnly,
+                    "{} / {:?} is not a libm call and must not be a kernel candidate",
+                    s.file,
+                    s.key
+                );
             } else {
                 assert_eq!(
                     s.op.protocol_v1(),
@@ -654,7 +845,7 @@ mod numeric_surface_v1 {
             .collect();
         assert_eq!(
             branch.len(),
-            10,
+            29,
             "the branch-driving set changed; these are the sites where one ulp becomes a \
              different code path:\n{branch:#?}"
         );
@@ -669,7 +860,7 @@ mod numeric_surface_v1 {
     }
 
     /// Every owner owns something, and the branch-driving sites — the
-    /// ones where an ulp becomes a code path — are spread across six
+    /// ones where an ulp becomes a code path — are spread across nine
     /// subsystems rather than concentrated in physics. That is the fact
     /// T6.5 has to plan around: there is no single owner to hand the
     /// tier to.
@@ -691,7 +882,7 @@ mod numeric_surface_v1 {
         branch_owners.dedup();
         assert_eq!(
             branch_owners.len(),
-            6,
+            9,
             "the branch-driving sites' owner spread changed: {branch_owners:?}"
         );
     }
