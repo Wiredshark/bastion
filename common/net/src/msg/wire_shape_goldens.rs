@@ -376,6 +376,47 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
         variant: "InviteComplete",
         digest_hex: "sha256:ab8b19515d90969149f91829ea114691d40e4e41c2b1be1f1e0b9ed3bd339a77",
     },
+    // WSG-2 chunk 6 (Sonnet lane): the Bastion cluster -- all seven
+    // remaining Bastion variants at once, since Region/DesignationKind/
+    // InfluenceKind/ContextTarget/ContextVerb/BastionInspectTarget are
+    // all small enums or plain structs once read, and
+    // BastionInspectKind's variants all wrap complex payloads that
+    // `payload: None` avoids needing to construct at all.
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "BastionPlaceDesignation",
+        digest_hex: "sha256:fcc1f63e0572110e743c0e9ff427f9ade12216a50d4743189cc2e907751756d2",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "BastionApplyInfluence",
+        digest_hex: "sha256:904aa691bb97cca28899c8ceed6cb8b5dcd6b16c7dce8e83ed629ef6978a3843",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "BastionContextAction",
+        digest_hex: "sha256:e01f756a5374f037e7b536fc778a91ea6064c3b2e0a9b1c0360d3330ddd1a4bd",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "BastionInspect",
+        digest_hex: "sha256:ba9ddffe6a58fc41ea6e156e9f8b2c9ed5a1a7c2215f0b0f5f01304bfb1b4634",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "BastionDesignation",
+        digest_hex: "sha256:3b51d462c438fe4a1a7f16f98b563238f2651f0fdcaf2c9ef90513c9903c5053",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "BastionDesignationRemoved",
+        digest_hex: "sha256:2423fa1c035e2855a60008f5e8f7a18d9cb44066837dfaca03b94960fd764294",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "BastionInspectInfo",
+        digest_hex: "sha256:fb7a8e0ac12bfddf5ccf533e2fe75f14b7ea383ef4452a7a44efe7c5497c7c8f",
+    },
 ];
 
 include!("wire_shape_uncovered.rs");
@@ -700,6 +741,63 @@ mod wire_shape_goldens_v1 {
         }
     }
 
+    // WSG-2 chunk 6 fixtures: the Bastion cluster.
+
+    fn region() -> common::bastion::Region {
+        common::bastion::Region { min: Vec2::new(0, 0).with_z(0), max: Vec2::new(1, 1).with_z(1) }
+    }
+
+    fn client_bastion_place_designation() -> ClientGeneral {
+        ClientGeneral::BastionPlaceDesignation {
+            region: region(),
+            kind: common::bastion::DesignationKind::Mine,
+            z_extent: None,
+        }
+    }
+
+    fn client_bastion_apply_influence() -> ClientGeneral {
+        ClientGeneral::BastionApplyInfluence {
+            target: Vec2::new(20.0, 21.0).with_z(22.0),
+            kind: common::bastion::InfluenceKind::Bless,
+        }
+    }
+
+    fn client_bastion_context_action() -> ClientGeneral {
+        ClientGeneral::BastionContextAction {
+            target: common::bastion::ContextTarget::Block(Vec2::new(23, 24).with_z(25)),
+            verb: common::bastion::ContextVerb::Mine,
+        }
+    }
+
+    fn client_bastion_inspect() -> ClientGeneral {
+        ClientGeneral::BastionInspect {
+            target: common::comp::bastion::BastionInspectTarget::Cell(
+                Vec2::new(26, 27).with_z(28),
+            ),
+        }
+    }
+
+    fn server_bastion_designation() -> ServerGeneral {
+        ServerGeneral::BastionDesignation {
+            region: region(),
+            kind: common::bastion::DesignationKind::Chop,
+            z_extent: None,
+        }
+    }
+
+    fn server_bastion_designation_removed() -> ServerGeneral {
+        ServerGeneral::BastionDesignationRemoved { region: region() }
+    }
+
+    fn server_bastion_inspect_info() -> ServerGeneral {
+        ServerGeneral::BastionInspectInfo {
+            target: common::comp::bastion::BastionInspectTarget::Cell(
+                Vec2::new(29, 30).with_z(31),
+            ),
+            payload: None,
+        }
+    }
+
     fn actual(schema: &str, variant: &str) -> String {
         match (schema, variant) {
             ("ClientGeneral", "PlayerPhysics") => golden_digest_v1(&client_player_physics()),
@@ -766,6 +864,21 @@ mod wire_shape_goldens_v1 {
             ("ServerGeneral", "TimeOfDay") => golden_digest_v1(&server_time_of_day()),
             ("ServerGeneral", "Invite") => golden_digest_v1(&server_invite()),
             ("ServerGeneral", "InviteComplete") => golden_digest_v1(&server_invite_complete()),
+            ("ClientGeneral", "BastionPlaceDesignation") => {
+                golden_digest_v1(&client_bastion_place_designation())
+            },
+            ("ClientGeneral", "BastionApplyInfluence") => {
+                golden_digest_v1(&client_bastion_apply_influence())
+            },
+            ("ClientGeneral", "BastionContextAction") => {
+                golden_digest_v1(&client_bastion_context_action())
+            },
+            ("ClientGeneral", "BastionInspect") => golden_digest_v1(&client_bastion_inspect()),
+            ("ServerGeneral", "BastionDesignation") => golden_digest_v1(&server_bastion_designation()),
+            ("ServerGeneral", "BastionDesignationRemoved") => {
+                golden_digest_v1(&server_bastion_designation_removed())
+            },
+            ("ServerGeneral", "BastionInspectInfo") => golden_digest_v1(&server_bastion_inspect_info()),
             (schema, other) => panic!("{schema}::{other} has a golden entry but no representative instance"),
         }
     }
@@ -792,9 +905,9 @@ mod wire_shape_goldens_v1 {
     /// counts pinned so neither list can drift silently.
     #[test]
     fn coverage_is_a_pinned_open_set() {
-        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 62, "the covered set changed");
-        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 10);
-        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 16);
+        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 69, "the covered set changed");
+        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 6);
+        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 13);
         // 1 + 36 = 37 ClientGeneral, 3 + 48 = 51 ServerGeneral, counted
         // from the enums at 71b1c87ca7.
         let covered_client =
@@ -906,6 +1019,27 @@ mod wire_shape_goldens_v1 {
             base, perturbed,
             "changing TimeOfDay's Calendar field did not move the digest -- the golden \
              mechanism is blind to this chunk's payload"
+        );
+    }
+
+    /// WSG-2 chunk 6's falsifier: perturbing `BastionPlaceDesignation`'s
+    /// `Region.max` (a nested struct field, not a top-level scalar) proves
+    /// the mechanism sees a change buried inside a chunk-added payload.
+    #[test]
+    fn chunk_6_fixture_perturbation_moves_the_digest() {
+        let base = golden_digest_v1(&client_bastion_place_designation());
+        let perturbed = golden_digest_v1(&ClientGeneral::BastionPlaceDesignation {
+            region: common::bastion::Region {
+                min: Vec2::new(0, 0).with_z(0),
+                max: Vec2::new(9, 9).with_z(9),
+            },
+            kind: common::bastion::DesignationKind::Mine,
+            z_extent: None,
+        });
+        assert_ne!(
+            base, perturbed,
+            "changing BastionPlaceDesignation's region.max did not move the digest -- the \
+             golden mechanism is blind to this chunk's payload"
         );
     }
 
