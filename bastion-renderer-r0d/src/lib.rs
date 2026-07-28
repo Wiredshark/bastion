@@ -11,6 +11,7 @@ pub mod capture;
 pub mod cbor;
 pub mod cosmetic_rng;
 pub mod cutaway;
+pub mod environment;
 pub mod extract;
 pub mod figure_asset;
 pub mod figure_batch;

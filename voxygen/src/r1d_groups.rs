@@ -325,6 +325,19 @@ mod tests {
             rain_milli: 0,
             wind_mm_s: [0, 0],
             daylight_milli: 500,
+            environment_sample: crate::r1f_environment::sample_from_production(
+                300,
+                100_000.0,
+                160.0,
+                common::weather::WeatherKind::Clear,
+                0.0,
+                0.0,
+                [0.0, 0.0],
+                0.0,
+                16,
+                16,
+            )
+            .unwrap(),
             policy: PresentationVisualPolicyV1 {
                 policy_digest: digest(4),
                 terrain_view_distance: 16,

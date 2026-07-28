@@ -303,6 +303,7 @@ impl SessionState {
         crate::r1e_cutaway::reset();
         crate::r1e_interiors::reset();
         crate::r1e_islands::reset();
+        crate::r1f_environment::reset();
         if let Err(error) = global_state.window.renderer_mut().reset_r1bc_figure_gpu() {
             tracing::warn!(
                 target: "bastion_r1bc_gpu",
@@ -505,8 +506,28 @@ impl SessionState {
             asset_identity.as_bytes(),
         )
         .ok()?;
-        let mut environment_bytes = Vec::with_capacity(48);
+        let time_of_day_seconds = ecs.read_resource::<common::resources::TimeOfDay>().0;
+        let season_days_in_year = common::time::SeasonConfig::current().days_in_year;
+        // Semantic environment authority uses the newest complete server
+        // snapshot. The existing wall-clock interpolation remains visual-only.
+        let weather = client.latest_server_weather_at_player();
+        let temperature = client.current_chunk()?.meta().temp();
+        let environment_sample = crate::r1f_environment::sample_from_production(
+            presentation_tick,
+            time_of_day_seconds,
+            season_days_in_year,
+            weather.get_kind(),
+            weather.cloud,
+            weather.rain,
+            [weather.wind.x, weather.wind.y],
+            temperature,
+            terrain_distance,
+            entity_distance,
+        )
+        .ok()?;
+        let mut environment_bytes = Vec::with_capacity(96);
         environment_bytes.extend_from_slice(&terrain_resource);
+        environment_bytes.extend_from_slice(&environment_sample.renderer_environment_identity);
         environment_bytes.extend_from_slice(&presentation_tick.to_le_bytes());
         environment_bytes.extend_from_slice(&anchor.uid.to_le_bytes());
         let environment_digest = bastion_renderer_r0d::domain_hash_v1(
@@ -640,10 +661,11 @@ impl SessionState {
             render_islands,
             terrain_resource,
             environment_digest,
-            cloud_milli: 0,
-            rain_milli: 0,
-            wind_mm_s: [0, 0],
+            cloud_milli: environment_sample.cloud_milli,
+            rain_milli: environment_sample.rain_milli,
+            wind_mm_s: environment_sample.wind_mm_s,
             daylight_milli: 500,
+            environment_sample,
             policy: bastion_renderer_r0d::presentation::PresentationVisualPolicyV1 {
                 policy_digest,
                 terrain_view_distance: terrain_distance,
@@ -4658,6 +4680,16 @@ impl PlayState for SessionState {
                             package.package_digest(),
                         ) {
                             Ok(frame) => {
+                                if let Err(error) = crate::r1f_environment::stage(
+                                    &frame,
+                                    input.environment_sample.clone(),
+                                ) {
+                                    tracing::warn!(
+                                        target: "bastion_r1f_environment",
+                                        ?error,
+                                        "coherent environment projection staging rejected"
+                                    );
+                                }
                                 if let Some(interior) = crate::r1e_interiors::latest_evidence()
                                     && interior.presentation_generation
                                         == frame.generation().client_applied_generation

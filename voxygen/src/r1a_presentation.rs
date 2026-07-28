@@ -72,6 +72,9 @@ pub struct ProductionPresentationInputV1 {
     pub rain_milli: u16,
     pub wind_mm_s: [i32; 2],
     pub daylight_milli: u16,
+    /// One bounded client-applied environment sample. Its exact material-table
+    /// binding is completed only after the generation's table is compiled.
+    pub environment_sample: crate::r1f_environment::ProductionEnvironmentSampleV1,
     pub policy: PresentationVisualPolicyV1,
 }
 
@@ -634,6 +637,19 @@ mod tests {
             rain_milli: 0,
             wind_mm_s: [0, 0],
             daylight_milli: 800,
+            environment_sample: crate::r1f_environment::sample_from_production(
+                tick,
+                100_000.0,
+                160.0,
+                common::weather::WeatherKind::Clear,
+                0.1,
+                0.0,
+                [0.0, 0.0],
+                0.0,
+                16,
+                16,
+            )
+            .unwrap(),
             policy: PresentationVisualPolicyV1 {
                 policy_digest: digest(3),
                 terrain_view_distance: 16,
