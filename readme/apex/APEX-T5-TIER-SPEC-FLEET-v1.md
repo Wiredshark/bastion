@@ -148,6 +148,15 @@ exact state probe. **Two** probes, kept structurally distinct:
   asking nicely: distinct types, no `From` between them, no comparison
   operator that accepts one against the other.
 
+  *Lineage, so the next reader knows this is a pattern rather than an
+  accident:* this is the same move as T3.5's commit sink, whose methods
+  return unit so a recoverable mid-commit failure is unrepresentable, and
+  T3.4's `production_checkpoint_profile_v1`, which returns an error
+  because there is no production profile to invent. The program's
+  standing preference is that a rule the code cannot break beats a rule
+  the documentation asks for politely. Write new invariants that way by
+  default.
+
 Store client and server records; report the **first component mismatch**,
 not a count — the same discipline T3.5.20's perturbation harness follows
 (`first_divergence`), because the first mismatch explains the rest.
@@ -218,6 +227,10 @@ attributable", never "X is now faster".
 **Composition with T3.6, stated once so it is not re-derived three
 times.** Generation decides which frames are *eligible*; the T5.2 input
 sequence orders eligible frames; T3.5's `LatestState` class decides which
-of several eligible frames *wins*. Three mechanisms with three jobs. Any
+of several eligible frames *wins*. Three mechanisms with three jobs.
+
+Per-row re-derivation is how three-mechanism systems drift into two, so
+it is stated here once and cited from the rows rather than repeated. Any
 row that collapses two of them has introduced a bug that will present as
-"prediction is occasionally wrong under load".
+"prediction is occasionally wrong under load" — the kind of bug that gets
+misattributed to netcode for months.

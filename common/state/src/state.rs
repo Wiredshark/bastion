@@ -186,6 +186,35 @@ pub enum StateConstructionErrorV1 {
     GovernedRegistrationRejected(String),
 }
 
+/// `APEX` (feature-invariance rule): the plugin manager as a CONSTRUCTOR
+/// SIGNATURE sees it. `plugins` gates behaviour, never arity — a public
+/// constructor whose argument count changes with a feature breaks the
+/// moment cargo unifies features across a workspace, which is exactly
+/// how `State::client` came to be called with the wrong number of
+/// arguments in a combined server+client build.
+///
+/// With `plugins` on this carries a real `PluginMgr`; with it off it is
+/// an empty value that still occupies the argument position.
+#[derive(Debug, Default)]
+pub struct StatePluginsV1 {
+    #[cfg(feature = "plugins")]
+    mgr: PluginMgr,
+}
+
+impl StatePluginsV1 {
+    /// Available in BOTH configurations: a caller with no manager to
+    /// supply (the client's legacy path) writes this unconditionally,
+    /// with no `cfg` of its own.
+    pub fn none() -> Self { Self::default() }
+
+    /// Only meaningful where a real manager exists.
+    #[cfg(feature = "plugins")]
+    pub fn new(mgr: PluginMgr) -> Self { Self { mgr } }
+
+    #[cfg(feature = "plugins")]
+    fn into_mgr(self) -> PluginMgr { self.mgr }
+}
+
 impl State {
     pub fn pools(game_mode: GameMode) -> Pools {
         Self::pools_with_mode(game_mode, ExecutionMode::Parallel)
@@ -288,7 +317,7 @@ impl State {
         map_size_lg: MapSizeLg,
         default_chunk: Arc<TerrainChunk>,
         add_systems: impl Fn(&mut DispatcherBuilder),
-        #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
+        plugins: StatePluginsV1,
     ) -> Result<Self, StateConstructionErrorV1> {
         Self::new(
             GameMode::Client,
@@ -296,8 +325,7 @@ impl State {
             map_size_lg,
             default_chunk,
             add_systems,
-            #[cfg(feature = "plugins")]
-            plugin_mgr,
+            plugins,
         )
     }
 
@@ -307,7 +335,7 @@ impl State {
         map_size_lg: MapSizeLg,
         default_chunk: Arc<TerrainChunk>,
         add_systems: impl Fn(&mut DispatcherBuilder),
-        #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
+        plugins: StatePluginsV1,
     ) -> Result<Self, StateConstructionErrorV1> {
         Self::server_with_mode(
             pools,
@@ -315,8 +343,7 @@ impl State {
             default_chunk,
             ExecutionMode::Parallel,
             add_systems,
-            #[cfg(feature = "plugins")]
-            plugin_mgr,
+            plugins,
         )
     }
 
@@ -329,7 +356,7 @@ impl State {
         default_chunk: Arc<TerrainChunk>,
         execution_mode: ExecutionMode,
         add_systems: impl Fn(&mut DispatcherBuilder),
-        #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
+        plugins: StatePluginsV1,
     ) -> Result<Self, StateConstructionErrorV1> {
         Self::new_with_mode(
             GameMode::Server,
@@ -338,8 +365,7 @@ impl State {
             default_chunk,
             execution_mode,
             add_systems,
-            #[cfg(feature = "plugins")]
-            plugin_mgr,
+            plugins,
         )
     }
 
@@ -349,7 +375,7 @@ impl State {
         map_size_lg: MapSizeLg,
         default_chunk: Arc<TerrainChunk>,
         add_systems: impl Fn(&mut DispatcherBuilder),
-        #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
+        plugins: StatePluginsV1,
     ) -> Result<Self, StateConstructionErrorV1> {
         Self::new_with_mode(
             game_mode,
@@ -358,8 +384,7 @@ impl State {
             default_chunk,
             ExecutionMode::Parallel,
             add_systems,
-            #[cfg(feature = "plugins")]
-            plugin_mgr,
+            plugins,
         )
     }
 
@@ -370,7 +395,7 @@ impl State {
         default_chunk: Arc<TerrainChunk>,
         execution_mode: ExecutionMode,
         add_systems: impl Fn(&mut DispatcherBuilder),
-        #[cfg(feature = "plugins")] plugin_mgr: PluginMgr,
+        plugins: StatePluginsV1,
     ) -> Result<Self, StateConstructionErrorV1> {
         prof_span!(guard, "create dispatcher");
         // DET-ECS-007: new dispatcher = new phase-barrier schedule.
@@ -392,8 +417,7 @@ impl State {
                 map_size_lg,
                 default_chunk,
                 execution_mode,
-                #[cfg(feature = "plugins")]
-                plugin_mgr,
+                plugins,
             )?,
             thread_pool: pools,
             dispatcher,
@@ -410,7 +434,7 @@ impl State {
         map_size_lg: MapSizeLg,
         default_chunk: Arc<TerrainChunk>,
         execution_mode: ExecutionMode,
-        #[cfg(feature = "plugins")] mut plugin_mgr: PluginMgr,
+        plugins: StatePluginsV1,
     ) -> Result<specs::World, StateConstructionErrorV1> {
         prof_span!("State::setup_ecs_world");
         let mut ecs = specs::World::new();
@@ -588,7 +612,8 @@ impl State {
             // sessions are fail-closed via a TYPED error (this workspace
             // builds panic = "abort", so a panic here would kill the
             // process, not unwind). Legacy keeps the old fallback.
-            let mut plugin_mgr = plugin_mgr;
+            // The feature-invariant wrapper carries the real manager here.
+            let mut plugin_mgr = plugins.into_mgr();
             let governed = plugin_mgr.is_governed();
             match plugin_mgr.activate_v1(&ecs_world, game_mode) {
                 Ok(()) => {
