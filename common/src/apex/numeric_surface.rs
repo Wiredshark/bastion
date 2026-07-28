@@ -117,6 +117,7 @@ pub(crate) enum NumericRoleV1 {
 /// trigonometric operation, with what it is and why.
 pub(crate) const NUMERIC_SURFACE_ROLES: &[(&str, NumericRoleV1, &str)] = &[
     ("common/src/apex/numeric_profile.rs", NumericRoleV1::PresentationOrTooling, "T6.4 evidence tooling; its only root operation is the sqrt inside #[cfg(test)] golden vectors, which never runs in a simulation build and computes no simulation state"),
+    ("common/src/apex/reconciliation_metric.rs", NumericRoleV1::Authoritative, "T7.3c divergence metric: decides whether client-predicted and server-authoritative state agree, gating whether a client's prediction history survives a CompSync or gets replayed/snapped"),
     ("rtsim/src/ai/mod.rs", NumericRoleV1::Authoritative, "NPC behaviour-tree weighting; feeds the action an npc takes next tick"),
     ("rtsim/src/data/sentiment.rs", NumericRoleV1::Authoritative, "sentiment decay and magnitude, persisted in rtsim data across sessions"),
     ("rtsim/src/rule/npc_ai/airship_ai.rs", NumericRoleV1::Authoritative, "squared-distance gates deciding airship approach, docking and departure phases"),
@@ -930,6 +931,8 @@ pub(crate) const NUMERIC_SITES: &[NumericSiteV1] = {
              "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
         site("world/src/util/mod.rs", "powf", 1, Power, Worldgen, WorldGeneration,
              "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("common/src/apex/reconciliation_metric.rs", "ori_dot.clamp(-1.0, 1.0).acos()", 1, Trig, Orientation, BranchCondition,
+             "T7.3c divergence metric: the angle between look directions is compared against ORI_TOLERANCE_V1 to decide whether a client's replayed orientation agrees with the server's authoritative one"),
     ]
 };
 
@@ -1021,8 +1024,9 @@ mod numeric_surface_v1 {
             .filter(|(_, role, _)| *role == NumericRoleV1::Authoritative)
             .count();
         // 24 at T6.1a; 26 once T6.1b widened the pattern list; 42 once
-        // T6.1c added powi/exp2/mul_add and the server/agent root.
-        assert_eq!(authoritative, 113, "the authoritative surface changed — re-derive T6.1b's owners");
+        // T6.1c added powi/exp2/mul_add and the server/agent root; 114
+        // once T7.3c added reconciliation_metric.rs's one acos() site.
+        assert_eq!(authoritative, 114, "the authoritative surface changed — re-derive T6.1b's owners");
         assert!(
             NUMERIC_SURFACE_ROLES.iter().any(|(f, role, _)| *f == "common/systems/src/phys/mod.rs"
                 && *role == NumericRoleV1::Authoritative),
@@ -1202,7 +1206,7 @@ mod numeric_surface_v1 {
             .collect();
         assert_eq!(
             branch.len(),
-            52,
+            53,
             "the branch-driving set changed; these are the sites where one ulp becomes a \
              different code path:\n{branch:#?}"
         );
@@ -1217,10 +1221,11 @@ mod numeric_surface_v1 {
     }
 
     /// Every owner owns something, and the branch-driving sites — the
-    /// ones where an ulp becomes a code path — are spread across nine
-    /// subsystems rather than concentrated in physics. That is the fact
-    /// T6.5 has to plan around: there is no single owner to hand the
-    /// tier to.
+    /// ones where an ulp becomes a code path — are spread across ten
+    /// subsystems (nine at `T6.1c`; `T7.3c` added `Orientation` via the
+    /// reconciliation metric's own branch-driving comparison) rather
+    /// than concentrated in physics. That is the fact T6.5 has to plan
+    /// around: there is no single owner to hand the tier to.
     #[test]
     fn every_owner_owns_at_least_one_site() {
         for owner in NumericOwnerV1::ALL {
@@ -1239,7 +1244,7 @@ mod numeric_surface_v1 {
         branch_owners.dedup();
         assert_eq!(
             branch_owners.len(),
-            9,
+            10,
             "the branch-driving sites' owner spread changed: {branch_owners:?}"
         );
     }

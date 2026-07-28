@@ -300,7 +300,34 @@ pub fn compare_sample_sets_v1(
 /// Nothing in this module ships a default spec for that reason: a
 /// convenient default is how an unreviewed policy becomes the one
 /// everybody uses.
-pub const QUANTIZATION_POLICY_REVIEWED: bool = false;
+///
+/// **RULED 2026-07-28** (`APEX-T6.2`, doubling as `APEX-T7.3c`'s
+/// divergence-metric spec -- one ruling, two consumers). The law and
+/// its ruling are recorded beside the flag they flip, resolution-
+/// policies style (`server::save_migration::RESOLUTION_LAW_V1`): a
+/// ruling without its question is an instruction nobody can re-derive.
+pub const QUANTIZATION_LAW_V1: &str = "quantization decides WHETHER states agree -- never WHAT \
+     gets written; a correction always applies the authoritative values verbatim, no quantized \
+     value ever feeds state";
+
+/// The three field classes the law resolves into, and the non-finite
+/// rule that applies across all of them.
+pub const QUANTIZATION_RULING_V1: &str = "\
+    (1) DISCRETE/SEMANTIC fields (CharacterState variant/kind, stance, wield, mount state): \
+    EXACT equality, any mismatch is a divergence -- branch-driving discrete state has no \
+    meaningful tolerance. \
+    (2) CONTINUOUS physics (position/velocity/orientation): quantized comparison against named, \
+    reviewed tolerance constants (apex::reconciliation_metric::{POS,VEL,ORI}_TOLERANCE_V1), \
+    chosen below player perception AND below gameplay effect. \
+    (3) ACCUMULATORS (energy/health-family): exact if integer-backed, tolerance at display \
+    precision (0.01) if float. \
+    NON-FINITE: any NaN/inf in a compared field is its own divergence reason -- never \
+    quantized, never sentinel-mapped; the non-reflexivity trap this module's own semantic \
+    probe closes for the determinism-audit case stays closed here too. \
+    SEMANTICS: diverged iff any exact-class field differs OR any quantized-class field exceeds \
+    tolerance; the FIRST differing field is recorded, not a count.";
+
+pub const QUANTIZATION_POLICY_REVIEWED: bool = true;
 
 #[cfg(test)]
 mod numeric_probe_v1 {
@@ -499,14 +526,34 @@ mod numeric_probe_v1 {
         );
     }
 
-    /// The row's process requirement is a value, not a comment: no
-    /// default spec ships, and the flag says the policy is unreviewed.
+    /// The row's process requirement is a value, not a comment: the flag
+    /// says the policy HAS been reviewed, and the ruling is recorded
+    /// beside it, not left implicit. This test previously asserted the
+    /// opposite (`!QUANTIZATION_POLICY_REVIEWED`) — inverted by hand on
+    /// the ruling landing, exactly as that assertion said to when it
+    /// still held.
     #[test]
-    fn the_quantization_policy_is_not_yet_reviewed() {
+    fn the_quantization_policy_is_reviewed_and_its_ruling_is_recorded() {
         assert!(
-            !QUANTIZATION_POLICY_REVIEWED,
-            "if the policy has been separately reviewed, record WHO reviewed it and what they \
-             ruled — the row makes this a process requirement, not a numerics detail"
+            QUANTIZATION_POLICY_REVIEWED,
+            "flip this back only if the ruling below is retracted, not merely loosened"
+        );
+        assert!(QUANTIZATION_LAW_V1.len() > 40, "the governing law is too vague to rule from");
+        assert!(
+            QUANTIZATION_RULING_V1.contains("DISCRETE"),
+            "the ruling must cover the discrete/semantic class"
+        );
+        assert!(
+            QUANTIZATION_RULING_V1.contains("CONTINUOUS"),
+            "the ruling must cover the continuous-physics class"
+        );
+        assert!(
+            QUANTIZATION_RULING_V1.contains("ACCUMULATOR"),
+            "the ruling must cover the accumulator class"
+        );
+        assert!(
+            QUANTIZATION_RULING_V1.contains("NON-FINITE"),
+            "the ruling must cover the non-finite rule"
         );
     }
 
