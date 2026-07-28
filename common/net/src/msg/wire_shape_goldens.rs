@@ -332,6 +332,50 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
         variant: "CreateEntity",
         digest_hex: "sha256:2d073538b2f92f89df9bda81ecadbb8ff22ff79000e79968501c9e4fd145eec0",
     },
+    // WSG-2 chunk 5 (Sonnet lane): PlaceBlock/ControllerInputs (simple
+    // wrapper types already used elsewhere in this file), the invite
+    // pair (InviteKind/InviteAnswer are both plain small enums), a
+    // Bastion region variant, and the calendar/time tuple.
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "PlaceBlock",
+        digest_hex: "sha256:e00ce9a7cb9c0b819aa9cbf2cda616c2343f8fa0b372d647fcbf57511f7659b9",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "ControllerInputs",
+        digest_hex: "sha256:b84359184b258e2805e81ec0a26a833d93aa222a1584a438f8b17d3a982ffd99",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "BastionCancelDesignation",
+        digest_hex: "sha256:744d534cc11ac7ed083f292af2d313ef6987afc9234be0e003375d6b53fb904d",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "Notification",
+        digest_hex: "sha256:1a4347f9664b7dbc5262b69f3dc1ba49c40b42ba3bf662af6bd475ac39e52eb2",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "FinishedTrade",
+        digest_hex: "sha256:dd3168a635e962767dc4501dcef1d88bdfd9825d9c5a55d01dff715e7da9b5ec",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "TimeOfDay",
+        digest_hex: "sha256:3f8b8591cc5cd792125bcbb873bc632eb76f38cb58de593997e9e7e5b1ce4cba",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "Invite",
+        digest_hex: "sha256:a2a56ce3829f51202d577a34f6c4ee05f08f48daf7d9e1de7c51c4f3ee874779",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "InviteComplete",
+        digest_hex: "sha256:ab8b19515d90969149f91829ea114691d40e4e41c2b1be1f1e0b9ed3bd339a77",
+    },
 ];
 
 include!("wire_shape_uncovered.rs");
@@ -596,6 +640,66 @@ mod wire_shape_goldens_v1 {
         ServerGeneral::CreateEntity(crate::sync::EntityPackage { uid: uid(113), comps: Vec::new() })
     }
 
+    // WSG-2 chunk 5 fixtures.
+
+    fn client_place_block() -> ClientGeneral {
+        ClientGeneral::PlaceBlock(
+            Vec2::new(17, 18).with_z(19),
+            common::terrain::Block::new(
+                common::terrain::BlockKind::Air,
+                vek::Rgb::new(0u8, 0u8, 0u8),
+            ),
+        )
+    }
+
+    fn client_controller_inputs() -> ClientGeneral {
+        ClientGeneral::ControllerInputs(Box::new(common::comp::ControllerInputs::default()))
+    }
+
+    fn client_bastion_cancel_designation() -> ClientGeneral {
+        ClientGeneral::BastionCancelDesignation {
+            region: common::bastion::Region {
+                min: Vec2::new(0, 0).with_z(0),
+                max: Vec2::new(1, 1).with_z(1),
+            },
+        }
+    }
+
+    fn server_notification() -> ServerGeneral {
+        ServerGeneral::Notification(crate::msg::Notification::WaypointSaved {
+            location_name: "wsg5".to_owned(),
+        })
+    }
+
+    fn server_finished_trade() -> ServerGeneral {
+        ServerGeneral::FinishedTrade(common::trade::TradeResult::Completed)
+    }
+
+    fn server_time_of_day() -> ServerGeneral {
+        ServerGeneral::TimeOfDay(
+            common::resources::TimeOfDay::new(100.0),
+            common::calendar::Calendar::default(),
+            common::resources::Time(50.0),
+            common::resources::TimeScale(1.0),
+        )
+    }
+
+    fn server_invite() -> ServerGeneral {
+        ServerGeneral::Invite {
+            inviter: uid(119),
+            timeout: std::time::Duration::from_secs(30),
+            kind: common::comp::invite::InviteKind::Group,
+        }
+    }
+
+    fn server_invite_complete() -> ServerGeneral {
+        ServerGeneral::InviteComplete {
+            target: uid(127),
+            answer: crate::msg::InviteAnswer::Accepted,
+            kind: common::comp::invite::InviteKind::Trade,
+        }
+    }
+
     fn actual(schema: &str, variant: &str) -> String {
         match (schema, variant) {
             ("ClientGeneral", "PlayerPhysics") => golden_digest_v1(&client_player_physics()),
@@ -652,6 +756,16 @@ mod wire_shape_goldens_v1 {
             ("ServerGeneral", "Disconnect") => golden_digest_v1(&server_disconnect()),
             ("ServerGeneral", "MapMarker") => golden_digest_v1(&server_map_marker()),
             ("ServerGeneral", "CreateEntity") => golden_digest_v1(&server_create_entity()),
+            ("ClientGeneral", "PlaceBlock") => golden_digest_v1(&client_place_block()),
+            ("ClientGeneral", "ControllerInputs") => golden_digest_v1(&client_controller_inputs()),
+            ("ClientGeneral", "BastionCancelDesignation") => {
+                golden_digest_v1(&client_bastion_cancel_designation())
+            },
+            ("ServerGeneral", "Notification") => golden_digest_v1(&server_notification()),
+            ("ServerGeneral", "FinishedTrade") => golden_digest_v1(&server_finished_trade()),
+            ("ServerGeneral", "TimeOfDay") => golden_digest_v1(&server_time_of_day()),
+            ("ServerGeneral", "Invite") => golden_digest_v1(&server_invite()),
+            ("ServerGeneral", "InviteComplete") => golden_digest_v1(&server_invite_complete()),
             (schema, other) => panic!("{schema}::{other} has a golden entry but no representative instance"),
         }
     }
@@ -678,9 +792,9 @@ mod wire_shape_goldens_v1 {
     /// counts pinned so neither list can drift silently.
     #[test]
     fn coverage_is_a_pinned_open_set() {
-        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 54, "the covered set changed");
-        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 13);
-        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 21);
+        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 62, "the covered set changed");
+        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 10);
+        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 16);
         // 1 + 36 = 37 ClientGeneral, 3 + 48 = 51 ServerGeneral, counted
         // from the enums at 71b1c87ca7.
         let covered_client =
@@ -771,6 +885,27 @@ mod wire_shape_goldens_v1 {
             51,
             "ServerGeneral gained or lost a variant. Add it to WIRE_SHAPE_GOLDENS or to \
              UNCOVERED_SERVERGENERAL_V1."
+        );
+    }
+
+    /// WSG-2 chunk 5's falsifier: `TimeOfDay` has four fields, the
+    /// richest shape this chunk added -- perturbing the second (a whole
+    /// different type, `Calendar`, not just a numeric tweak) proves the
+    /// mechanism sees a change anywhere in a multi-field tuple, not just
+    /// the first field.
+    #[test]
+    fn chunk_5_fixture_perturbation_moves_the_digest() {
+        let base = golden_digest_v1(&server_time_of_day());
+        let perturbed = golden_digest_v1(&ServerGeneral::TimeOfDay(
+            common::resources::TimeOfDay::new(100.0),
+            common::calendar::Calendar::from_events(vec![common::calendar::CalendarEvent::Easter]),
+            common::resources::Time(50.0),
+            common::resources::TimeScale(1.0),
+        ));
+        assert_ne!(
+            base, perturbed,
+            "changing TimeOfDay's Calendar field did not move the digest -- the golden \
+             mechanism is blind to this chunk's payload"
         );
     }
 
