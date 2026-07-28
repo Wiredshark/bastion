@@ -2248,16 +2248,6 @@ impl PlayState for SessionState {
                 self.client.borrow_mut().send_chat(cmd.to_string());
             }
         }
-        if let Some((command, arguments)) = crate::r1f_weather::certification_fixture_command() {
-            self.client
-                .borrow_mut()
-                .send_command(command.to_owned(), arguments);
-            tracing::info!(
-                target: "bastion_r1f_weather",
-                "declared flat-arena weather fixture submitted through authoritative weather_zone command"
-            );
-        }
-
         #[cfg(feature = "discord")]
         {
             // Update the Discord activity on client initialization
@@ -4752,6 +4742,7 @@ impl PlayState for SessionState {
             }
 
             let r0d_capture_ready = crate::r1a_presentation::ready_for_capture_measurement()
+                && crate::r1f_weather::certification_fixture_ready_for_capture()
                 && (!crate::render::bastion_r0d::capture_waits_for_pause_v1(
                     std::env::var_os("BASTION_FLAT_ARENA").is_some(),
                     crate::render::bastion_r0d::absolute_time_capture_selected(),

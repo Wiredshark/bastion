@@ -24,6 +24,8 @@ pub mod bastion_path;
 pub mod bastion_piles;
 pub mod bastion_traversal;
 pub mod bastion_traversal_tooling;
+#[cfg(feature = "worldgen")]
+pub mod bastion_weather_fixture;
 mod character_creator;
 pub mod chat;
 pub mod chunk_generator;

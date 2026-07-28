@@ -478,6 +478,22 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
     if certification_freeze_tick.is_some() {
         crate::render::bastion_r0d::reset_certification_server_latch_v1();
     }
+    let mut certification_weather_fixture =
+        match crate::r1f_weather::certification_fixture_declaration() {
+            crate::r1f_weather::CertificationFixtureDeclarationV1::Disabled => None,
+            crate::r1f_weather::CertificationFixtureDeclarationV1::Requested(kind) => {
+                Some((kind, None, false))
+            },
+            crate::r1f_weather::CertificationFixtureDeclarationV1::Invalid => {
+                let fault = "R1F_WEATHER_FIXTURE_INVALID_DECLARATION";
+                crate::render::bastion_r0d::record_certification_fixture_fault_v1(fault);
+                error!(
+                    fault,
+                    "bastion: invalid flat-arena weather fixture declaration"
+                );
+                return;
+            },
+        };
     let mut completed_ticks = 0_u64;
 
     loop {
@@ -512,12 +528,87 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
 
         // Clean up the server after a tick.
         server.cleanup();
+        if let Some((kind, requested_zone_generation, acknowledged)) =
+            &mut certification_weather_fixture
+            && !*acknowledged
+        {
+            use server::bastion_weather_fixture::{
+                BastionWeatherFixtureKindV1, BastionWeatherFixtureStepV1,
+            };
+            let server_kind = match *kind {
+                crate::r1f_weather::CertificationFixtureKindV1::Clear => {
+                    BastionWeatherFixtureKindV1::Clear
+                },
+                crate::r1f_weather::CertificationFixtureKindV1::Rain => {
+                    BastionWeatherFixtureKindV1::Rain
+                },
+                crate::r1f_weather::CertificationFixtureKindV1::Storm => {
+                    BastionWeatherFixtureKindV1::Storm
+                },
+            };
+            match server.bastion_weather_fixture_step_v1(server_kind, *requested_zone_generation) {
+                BastionWeatherFixtureStepV1::WaitingForWeatherJob => {},
+                BastionWeatherFixtureStepV1::Queued { zone_generation } => {
+                    *requested_zone_generation = Some(zone_generation);
+                    info!(
+                        ?kind,
+                        zone_generation, "bastion: authoritative flat-arena weather fixture queued"
+                    );
+                },
+                BastionWeatherFixtureStepV1::QueueGenerationOverflow => {
+                    let fault = "R1F_WEATHER_FIXTURE_QUEUE_GENERATION_OVERFLOW";
+                    crate::render::bastion_r0d::record_certification_fixture_fault_v1(fault);
+                    error!(fault, "bastion: weather fixture queue generation overflow");
+                    break;
+                },
+                BastionWeatherFixtureStepV1::WaitingForAuthoritativeSnapshot {
+                    requested_zone_generation,
+                    completed_zone_generation,
+                    observed_kind,
+                    observed_rain,
+                } => {
+                    trace!(
+                        ?kind,
+                        requested_zone_generation,
+                        completed_zone_generation,
+                        ?observed_kind,
+                        observed_rain,
+                        "bastion: awaiting authoritative flat-arena weather snapshot"
+                    );
+                },
+                BastionWeatherFixtureStepV1::Acknowledged {
+                    observed_kind,
+                    observed_rain,
+                } => {
+                    *acknowledged = true;
+                    info!(
+                        ?kind,
+                        ?observed_kind,
+                        observed_rain,
+                        "bastion: authoritative flat-arena weather fixture acknowledged"
+                    );
+                },
+            }
+        }
         let Some(next_completed_tick) = completed_ticks.checked_add(1) else {
             error!("bastion: renderer certification server tick overflow");
             break;
         };
         completed_ticks = next_completed_tick;
         if certification_freeze_tick == Some(completed_ticks) {
+            if certification_weather_fixture
+                .as_ref()
+                .is_some_and(|(_, _, acknowledged)| !acknowledged)
+            {
+                let fault = "R1F_WEATHER_FIXTURE_ACK_MISSING_BEFORE_FREEZE";
+                crate::render::bastion_r0d::record_certification_fixture_fault_v1(fault);
+                error!(
+                    fault,
+                    completed_ticks,
+                    "bastion: weather fixture was not authoritative before certification freeze"
+                );
+                break;
+            }
             paused.store(true, Ordering::SeqCst);
             info!(
                 completed_ticks,
