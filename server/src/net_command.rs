@@ -1,4 +1,4 @@
-//! `APEX-T3.5.08` — the server side of command idempotency: one ledger
+//! `APEX-T3.5.08` — the server side of command idempotency: one journal
 //! per session, the carriage check, and the exactly-once execution seam
 //! wired into a single admission call the ingress path will make once
 //! the command path is activated.
@@ -10,8 +10,8 @@
 
 use common_net::msg::ClientGeneral;
 use common_net::msg::command::{
-    ClientCommandOutboxV1, CommandCarriageErrorV1, CommandDescriptorV1, CommandExecutionV1, CommandLedgerErrorV1,
-    CommandLedgerV1, CommandOutcomeV1, CommandReceiptV1, ReceiptErrorV1, command_descriptor_from_frame_v1,
+    ClientCommandOutboxV1, CommandCarriageErrorV1, CommandDescriptorV1, CommandExecutionV1, CommandJournalV1,
+    CommandOutcomeV1, CommandReceiptV1, JournalErrorV1, ReceiptErrorV1, command_descriptor_from_frame_v1,
     execute_command_once_v1,
 };
 use common_net::msg::envelope::ActiveSessionBindingV1;
@@ -31,35 +31,39 @@ pub enum CommandIngressV1 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandIngressErrorV1 {
     Carriage(CommandCarriageErrorV1),
-    Ledger(CommandLedgerErrorV1),
+    Journal(JournalErrorV1),
     Receipt(ReceiptErrorV1),
 }
 
 /// One session's command state. Created only when the deployment
-/// supplies a ledger capacity — the same "no invented production value"
+/// supplies a journal capacity — the same "no invented production value"
 /// rule the checkpoint profile follows.
 #[derive(Debug, Clone)]
 pub struct SessionCommandRuntimeV1 {
-    ledger: CommandLedgerV1,
+    journal: CommandJournalV1,
 }
 
 impl SessionCommandRuntimeV1 {
-    pub fn new(binding: ActiveSessionBindingV1, ledger_capacity: usize) -> Self {
-        Self { ledger: CommandLedgerV1::new(binding, ledger_capacity) }
+    pub fn new(binding: ActiveSessionBindingV1, journal_capacity: usize) -> Self {
+        Self { journal: CommandJournalV1::new(binding, journal_capacity) }
     }
 
-    pub fn binding(&self) -> ActiveSessionBindingV1 { self.ledger.binding() }
+    pub fn binding(&self) -> ActiveSessionBindingV1 { self.journal.binding() }
 
-    pub fn outstanding_outcome_v1(&self, command_id: &CommandId) -> Option<CommandOutcomeV1> {
-        self.ledger.outcome_of_v1(command_id)
+    pub fn retired_floor(&self) -> u64 { self.journal.retired_floor() }
+
+    /// Retires a command once the client acknowledges its terminal.
+    pub fn retire_v1(&mut self, sequence: u64) -> Result<u64, CommandIngressErrorV1> {
+        self.journal.retire_v1(sequence).map_err(CommandIngressErrorV1::Journal)
     }
 
     /// Admits one already-envelope-validated frame. The carriage check
     /// runs FIRST, so a command id on a query is refused before any
-    /// ledger slot is spent, and the work runs at most once ever.
+    /// journal slot is spent, and the work runs at most once ever.
     pub fn admit_frame_v1<F>(
         &mut self,
         command_id: Option<CommandId>,
+        sequence: u64,
         payload: &ClientGeneral,
         payload_digest: [u8; 32],
         execute: F,
@@ -67,15 +71,16 @@ impl SessionCommandRuntimeV1 {
     where
         F: FnOnce(&CommandDescriptorV1) -> CommandOutcomeV1,
     {
-        let binding = self.ledger.binding();
+        let binding = self.journal.binding();
         let descriptor = command_descriptor_from_frame_v1(binding, command_id, payload, payload_digest)
             .map_err(CommandIngressErrorV1::Carriage)?;
         let Some(descriptor) = descriptor else {
             return Ok(CommandIngressV1::NotACommand);
         };
 
-        let execution = execute_command_once_v1(&mut self.ledger, &descriptor, || execute(&descriptor))
-            .map_err(CommandIngressErrorV1::Ledger)?;
+        let execution =
+            execute_command_once_v1(&mut self.journal, &descriptor, sequence, || execute(&descriptor))
+                .map_err(CommandIngressErrorV1::Journal)?;
         let receipt = CommandReceiptV1::for_command_v1(&descriptor, execution.outcome())
             .map_err(CommandIngressErrorV1::Receipt)?;
         Ok(CommandIngressV1::Handled {
@@ -89,7 +94,7 @@ impl SessionCommandRuntimeV1 {
 /// same shape `T3.4.24` uses: every blocker is named, not just the first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandActivationBlockerV1 {
-    /// No deployment-supplied ledger capacity or retry budget.
+    /// No deployment-supplied journal capacity or retry budget.
     NoProductionCommandProfile,
     /// The checkpoint tier this rides on is not activatable either.
     CheckpointPathInactive,
@@ -142,7 +147,7 @@ mod command_ingress_v1 {
     /// outbox — the whole loop through the real seams of both sides.
     #[test]
     fn the_round_trip_executes_once_and_clears_the_outbox() {
-        let mut outbox = ClientCommandOutboxV1::new(binding(), 4, 4);
+        let mut outbox = ClientCommandOutboxV1::new(binding(), 4);
         let mut server = SessionCommandRuntimeV1::new(binding(), 8);
         let runs = Cell::new(0u32);
 
@@ -153,7 +158,7 @@ mod command_ingress_v1 {
         let mut receipts = Vec::new();
         for _ in 0..3 {
             let handled = server
-                .admit_frame_v1(Some(sent.command_id), &payload, digest, |_| {
+                .admit_frame_v1(Some(sent.descriptor.command_id), sent.sequence, &payload, digest, |_| {
                     runs.set(runs.get() + 1);
                     CommandOutcomeV1::Applied { result_digest: [5; 32] }
                 })
@@ -165,7 +170,7 @@ mod command_ingress_v1 {
                 CommandIngressV1::NotACommand => panic!("Terminate is a command"),
             }
             // the client resends the SAME descriptor while unacknowledged
-            let _ = outbox.retry_v1(&sent.command_id);
+            let _ = outbox.retry_v1(&sent.descriptor.command_id);
         }
         assert_eq!(runs.get(), 1, "three deliveries, one execution");
         assert_eq!(receipts.iter().filter(|(_, executed)| *executed).count(), 1);
@@ -180,9 +185,9 @@ mod command_ingress_v1 {
         assert_eq!(outbox.pending_len(), 0);
     }
 
-    /// Carriage errors are caught before a ledger slot is spent.
+    /// Carriage errors are caught before a journal slot is spent.
     #[test]
-    fn a_query_carrying_a_command_id_never_reaches_the_ledger() {
+    fn a_query_carrying_a_command_id_never_reaches_the_journal() {
         let mut server = SessionCommandRuntimeV1::new(binding(), 1);
         let runs = Cell::new(0u32);
         let work = |_: &CommandDescriptorV1| {
@@ -193,25 +198,25 @@ mod command_ingress_v1 {
         let id = common_net::msg::command::DerivedCommandIdSourceV1::id_for_ordinal_v1(&binding(), 1).unwrap();
         assert_eq!(
             server
-                .admit_frame_v1(Some(id), &ClientGeneral::RequestCharacterList, [1; 32], work)
+                .admit_frame_v1(Some(id), 1, &ClientGeneral::RequestCharacterList, [1; 32], work)
                 .unwrap_err(),
             CommandIngressErrorV1::Carriage(CommandCarriageErrorV1::UnexpectedCommandId)
         );
         assert_eq!(
-            server.admit_frame_v1(None, &ClientGeneral::Terminate, [1; 32], work).unwrap_err(),
+            server.admit_frame_v1(None, 1, &ClientGeneral::Terminate, [1; 32], work).unwrap_err(),
             CommandIngressErrorV1::Carriage(CommandCarriageErrorV1::MissingCommandId)
         );
         assert_eq!(runs.get(), 0);
 
         // ...and a plain query passes straight through
         assert_eq!(
-            server.admit_frame_v1(None, &ClientGeneral::RequestCharacterList, [1; 32], work).unwrap(),
+            server.admit_frame_v1(None, 1, &ClientGeneral::RequestCharacterList, [1; 32], work).unwrap(),
             CommandIngressV1::NotACommand
         );
         assert_eq!(runs.get(), 0);
-        // the ledger slot is still free for a real command
+        // the journal slot is still free for a real command
         assert!(matches!(
-            server.admit_frame_v1(Some(id), &ClientGeneral::Terminate, [1; 32], work).unwrap(),
+            server.admit_frame_v1(Some(id), 1, &ClientGeneral::Terminate, [1; 32], work).unwrap(),
             CommandIngressV1::Handled { executed: true, .. }
         ));
         assert_eq!(runs.get(), 1);

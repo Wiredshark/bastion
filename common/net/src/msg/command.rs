@@ -197,12 +197,9 @@ mod command_identity_v1 {
     }
 }
 
-/// `APEX-T3.5.02` — per-session command ledger. Exactly-once, not
-/// at-least-once: a resolved command replays its ORIGINAL outcome, and
-/// the ledger never forgets an id it has admitted. It is bounded, and
-/// exhaustion is a typed refusal rather than an eviction — evicting a
-/// resolved entry would silently downgrade the guarantee, because a
-/// later replay of the forgotten id would read as fresh and apply twice.
+/// Terminal outcomes a command can reach. `CommandOutcomeV1` is the
+/// value a replay reproduces byte for byte (`CMD-075`), so it carries
+/// a result DIGEST rather than free text (`CMD-100`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CommandOutcomeV1 {
     Applied { result_digest: [u8; 32] },
@@ -214,187 +211,6 @@ pub enum CommandRefusalV1 {
     NotPermitted,
     Unprocessable,
     PreconditionFailed,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommandAdmitV1 {
-    /// Never seen: the caller may execute it.
-    Fresh,
-    /// Admitted earlier and still executing — the caller must not start
-    /// a second execution.
-    InFlight,
-    /// Already resolved: the caller returns THIS outcome, unchanged.
-    Resolved(CommandOutcomeV1),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommandLedgerErrorV1 {
-    BindingMismatch,
-    /// The id is known but the command is not the same command.
-    Conflict(CommandIdentityErrorV1),
-    /// The bounded window is full.
-    WindowExhausted,
-    UnknownCommand,
-    AlreadyResolved,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct LedgerEntryV1 {
-    descriptor: CommandDescriptorV1,
-    outcome: Option<CommandOutcomeV1>,
-}
-
-#[derive(Debug, Clone)]
-pub struct CommandLedgerV1 {
-    binding: ActiveSessionBindingV1,
-    capacity: usize,
-    entries: std::collections::BTreeMap<CommandId, LedgerEntryV1>,
-}
-
-impl CommandLedgerV1 {
-    /// `capacity` is deployment-supplied, like every other limit in this
-    /// program — there is no invented default.
-    pub fn new(binding: ActiveSessionBindingV1, capacity: usize) -> Self {
-        Self { binding, capacity, entries: std::collections::BTreeMap::new() }
-    }
-
-    pub fn binding(&self) -> ActiveSessionBindingV1 { self.binding }
-
-    pub fn len(&self) -> usize { self.entries.len() }
-
-    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
-
-    pub fn resolved_count(&self) -> usize { self.entries.values().filter(|e| e.outcome.is_some()).count() }
-
-    /// Classifies a command against everything this session has seen.
-    /// Admitting a fresh command RESERVES its id, so a concurrent
-    /// duplicate cannot also read as fresh.
-    pub fn admit_v1(&mut self, descriptor: &CommandDescriptorV1) -> Result<CommandAdmitV1, CommandLedgerErrorV1> {
-        if descriptor.binding != self.binding {
-            return Err(CommandLedgerErrorV1::BindingMismatch);
-        }
-        if let Some(entry) = self.entries.get(&descriptor.command_id) {
-            entry.descriptor.is_replay_of_v1(descriptor).map_err(CommandLedgerErrorV1::Conflict)?;
-            return Ok(match entry.outcome {
-                Some(outcome) => CommandAdmitV1::Resolved(outcome),
-                None => CommandAdmitV1::InFlight,
-            });
-        }
-        if self.entries.len() >= self.capacity {
-            return Err(CommandLedgerErrorV1::WindowExhausted);
-        }
-        self.entries.insert(descriptor.command_id, LedgerEntryV1 { descriptor: *descriptor, outcome: None });
-        Ok(CommandAdmitV1::Fresh)
-    }
-
-    /// Records the outcome of a command admitted as `Fresh`. Resolving
-    /// twice is refused: an outcome is written once and then only read.
-    pub fn resolve_v1(
-        &mut self,
-        command_id: CommandId,
-        outcome: CommandOutcomeV1,
-    ) -> Result<(), CommandLedgerErrorV1> {
-        let entry = self.entries.get_mut(&command_id).ok_or(CommandLedgerErrorV1::UnknownCommand)?;
-        if entry.outcome.is_some() {
-            return Err(CommandLedgerErrorV1::AlreadyResolved);
-        }
-        entry.outcome = Some(outcome);
-        Ok(())
-    }
-
-    pub fn outcome_of_v1(&self, command_id: &CommandId) -> Option<CommandOutcomeV1> {
-        self.entries.get(command_id).and_then(|e| e.outcome)
-    }
-}
-
-#[cfg(test)]
-mod command_ledger_v1 {
-    use super::*;
-    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
-
-    fn binding(seed: u8) -> ActiveSessionBindingV1 {
-        ActiveSessionBindingV1 {
-            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([seed; 16])).unwrap(),
-            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([seed + 1; 16])).unwrap(),
-            epoch: ConnectionEpoch::new(1).unwrap(),
-        }
-    }
-
-    fn command(seed: u8, request: u8) -> CommandDescriptorV1 {
-        CommandDescriptorV1 {
-            binding: binding(1),
-            command_id: CommandId::generate(&mut FixedRandomBytesSourceV1([seed; 16])).unwrap(),
-            kind: CommandKindV1::ControlAction,
-            request_digest: [request; 32],
-        }
-    }
-
-    /// The whole guarantee: a replay never executes twice, and reads back
-    /// the ORIGINAL outcome.
-    #[test]
-    fn a_resolved_command_replays_its_original_outcome() {
-        let mut ledger = CommandLedgerV1::new(binding(1), 4);
-        let cmd = command(10, 1);
-
-        assert_eq!(ledger.admit_v1(&cmd).unwrap(), CommandAdmitV1::Fresh);
-        // reserved immediately: a concurrent duplicate must not also be Fresh
-        assert_eq!(ledger.admit_v1(&cmd).unwrap(), CommandAdmitV1::InFlight);
-
-        let outcome = CommandOutcomeV1::Applied { result_digest: [3; 32] };
-        ledger.resolve_v1(cmd.command_id, outcome).unwrap();
-        assert_eq!(ledger.admit_v1(&cmd).unwrap(), CommandAdmitV1::Resolved(outcome));
-        assert_eq!(ledger.outcome_of_v1(&cmd.command_id), Some(outcome));
-
-        // an outcome is written once, then only read
-        assert_eq!(
-            ledger
-                .resolve_v1(cmd.command_id, CommandOutcomeV1::Refused { reason: CommandRefusalV1::NotPermitted })
-                .unwrap_err(),
-            CommandLedgerErrorV1::AlreadyResolved
-        );
-        assert_eq!(ledger.admit_v1(&cmd).unwrap(), CommandAdmitV1::Resolved(outcome), "the outcome must not move");
-    }
-
-    #[test]
-    fn conflicts_binding_and_exhaustion_are_typed() {
-        let mut ledger = CommandLedgerV1::new(binding(1), 2);
-        let cmd = command(10, 1);
-        ledger.admit_v1(&cmd).unwrap();
-
-        // same id, different request bytes
-        let mut forged = cmd;
-        forged.request_digest = [2; 32];
-        assert_eq!(
-            ledger.admit_v1(&forged).unwrap_err(),
-            CommandLedgerErrorV1::Conflict(CommandIdentityErrorV1::RequestMismatch)
-        );
-
-        // a command bound to a different session
-        let mut foreign = command(11, 1);
-        foreign.binding = binding(50);
-        assert_eq!(ledger.admit_v1(&foreign).unwrap_err(), CommandLedgerErrorV1::BindingMismatch);
-
-        // resolving something never admitted
-        assert_eq!(
-            ledger
-                .resolve_v1(command(99, 1).command_id, CommandOutcomeV1::Applied { result_digest: [0; 32] })
-                .unwrap_err(),
-            CommandLedgerErrorV1::UnknownCommand
-        );
-
-        // the window is bounded and fails CLOSED -- it never forgets an
-        // id to make room, which would let a replay read as fresh
-        ledger.admit_v1(&command(11, 1)).unwrap();
-        ledger.resolve_v1(command(10, 1).command_id, CommandOutcomeV1::Applied { result_digest: [1; 32] }).unwrap();
-        ledger.resolve_v1(command(11, 1).command_id, CommandOutcomeV1::Applied { result_digest: [2; 32] }).unwrap();
-        assert_eq!(ledger.admit_v1(&command(12, 1)).unwrap_err(), CommandLedgerErrorV1::WindowExhausted);
-        assert_eq!(ledger.resolved_count(), 2);
-        // ...and the oldest resolved command is still remembered exactly
-        assert_eq!(
-            ledger.admit_v1(&command(10, 1)).unwrap(),
-            CommandAdmitV1::Resolved(CommandOutcomeV1::Applied { result_digest: [1; 32] })
-        );
-    }
 }
 
 /// `APEX-T3.5.03`, corrected in `.09` against the imported canary
@@ -656,7 +472,7 @@ mod command_carriage_v1 {
     }
 }
 
-/// `APEX-T3.5.04` — the exactly-once execution seam. The ledger alone
+/// `APEX-T3.5.04` — the exactly-once execution seam. The journal alone
 /// can be misused (admit, then forget to resolve, or execute on a
 /// `Resolved`); this wraps both into one call so double execution is
 /// unrepresentable at the API: the work is an `FnOnce` the function
@@ -678,26 +494,27 @@ impl CommandExecutionV1 {
     }
 }
 
-/// Runs `execute` at most once per command identity, ever.
+/// Runs `execute` at most once per (command identity, sequence), ever.
 ///
-/// `InFlight` is an error rather than a wait: this seam is single
-/// threaded per session, so seeing an unresolved entry here means a
+/// `InProgress` is an error rather than a wait: this seam is single
+/// threaded per session, so seeing an unresolved record here means a
 /// previous call panicked or a caller re-entered — either way the
 /// command must not run a second time.
 pub fn execute_command_once_v1<F>(
-    ledger: &mut CommandLedgerV1,
+    journal: &mut CommandJournalV1,
     descriptor: &CommandDescriptorV1,
+    sequence: u64,
     execute: F,
-) -> Result<CommandExecutionV1, CommandLedgerErrorV1>
+) -> Result<CommandExecutionV1, JournalErrorV1>
 where
     F: FnOnce() -> CommandOutcomeV1,
 {
-    match ledger.admit_v1(descriptor)? {
-        CommandAdmitV1::Resolved(outcome) => Ok(CommandExecutionV1::Replayed(outcome)),
-        CommandAdmitV1::InFlight => Err(CommandLedgerErrorV1::AlreadyResolved),
-        CommandAdmitV1::Fresh => {
+    match journal.admit_v1(descriptor, sequence)? {
+        CommandDispositionV1::Terminal(outcome) => Ok(CommandExecutionV1::Replayed(outcome)),
+        CommandDispositionV1::InProgress => Err(JournalErrorV1::ReentrantDispatch),
+        CommandDispositionV1::Dispatch => {
             let outcome = execute();
-            ledger.resolve_v1(descriptor.command_id, outcome)?;
+            journal.resolve_v1(sequence, outcome)?;
             Ok(CommandExecutionV1::Executed(outcome))
         },
     }
@@ -730,11 +547,11 @@ mod command_execution_v1 {
     /// same command produce exactly ONE execution.
     #[test]
     fn a_command_delivered_many_times_executes_exactly_once() {
-        let mut ledger = CommandLedgerV1::new(binding(), 8);
+        let mut journal = CommandJournalV1::new(binding(), 8);
         let cmd = command(10, 1);
         let runs = Cell::new(0u32);
 
-        let first = execute_command_once_v1(&mut ledger, &cmd, || {
+        let first = execute_command_once_v1(&mut journal, &cmd, 1, || {
             runs.set(runs.get() + 1);
             CommandOutcomeV1::Applied { result_digest: [5; 32] }
         })
@@ -742,7 +559,7 @@ mod command_execution_v1 {
         assert_eq!(first, CommandExecutionV1::Executed(CommandOutcomeV1::Applied { result_digest: [5; 32] }));
 
         for _ in 0..16 {
-            let again = execute_command_once_v1(&mut ledger, &cmd, || {
+            let again = execute_command_once_v1(&mut journal, &cmd, 1, || {
                 runs.set(runs.get() + 1);
                 CommandOutcomeV1::Applied { result_digest: [99; 32] }
             })
@@ -760,7 +577,7 @@ mod command_execution_v1 {
     /// client cannot retry its way past a refusal.
     #[test]
     fn a_refusal_is_recorded_and_replayed_like_any_other_outcome() {
-        let mut ledger = CommandLedgerV1::new(binding(), 8);
+        let mut journal = CommandJournalV1::new(binding(), 8);
         let cmd = command(11, 1);
         let runs = Cell::new(0u32);
         let refuse = || {
@@ -769,46 +586,53 @@ mod command_execution_v1 {
         };
 
         assert_eq!(
-            execute_command_once_v1(&mut ledger, &cmd, refuse).unwrap(),
+            execute_command_once_v1(&mut journal, &cmd, 1, refuse).unwrap(),
             CommandExecutionV1::Executed(CommandOutcomeV1::Refused { reason: CommandRefusalV1::NotPermitted })
         );
         assert_eq!(
-            execute_command_once_v1(&mut ledger, &cmd, refuse).unwrap(),
+            execute_command_once_v1(&mut journal, &cmd, 1, refuse).unwrap(),
             CommandExecutionV1::Replayed(CommandOutcomeV1::Refused { reason: CommandRefusalV1::NotPermitted })
         );
         assert_eq!(runs.get(), 1, "a retried refusal must not re-run the check");
 
-        // ...and a DIFFERENT command still runs
+        // ...and the NEXT command runs, once its predecessor is retired
+        journal.retire_v1(1).unwrap();
         let other = command(12, 1);
         assert!(matches!(
-            execute_command_once_v1(&mut ledger, &other, refuse).unwrap(),
+            execute_command_once_v1(&mut journal, &other, 2, refuse).unwrap(),
             CommandExecutionV1::Executed(_)
         ));
         assert_eq!(runs.get(), 2);
     }
 
-    /// The work never runs for a command the ledger refuses.
+    /// The work never runs for a command the journal refuses.
     #[test]
     fn a_refused_admission_never_reaches_the_work() {
-        let mut ledger = CommandLedgerV1::new(binding(), 1);
+        let mut journal = CommandJournalV1::new(binding(), 4);
         let runs = Cell::new(0u32);
         let work = || {
             runs.set(runs.get() + 1);
             CommandOutcomeV1::Applied { result_digest: [0; 32] }
         };
 
-        execute_command_once_v1(&mut ledger, &command(20, 1), work).unwrap();
+        execute_command_once_v1(&mut journal, &command(20, 1), 1, work).unwrap();
         assert_eq!(runs.get(), 1);
 
-        // window full
+        // a gap in the sequence
+        assert!(matches!(
+            execute_command_once_v1(&mut journal, &command(21, 1), 9, work).unwrap_err(),
+            JournalErrorV1::SequenceGap { .. }
+        ));
+        // same sequence, same id, different request bytes
         assert_eq!(
-            execute_command_once_v1(&mut ledger, &command(21, 1), work).unwrap_err(),
-            CommandLedgerErrorV1::WindowExhausted
+            execute_command_once_v1(&mut journal, &command(20, 2), 1, work).unwrap_err(),
+            JournalErrorV1::IdentityMismatch(CommandIdentityErrorV1::RequestMismatch)
         );
-        // same id, different request bytes
+        // a retired sequence
+        journal.retire_v1(1).unwrap();
         assert_eq!(
-            execute_command_once_v1(&mut ledger, &command(20, 2), work).unwrap_err(),
-            CommandLedgerErrorV1::Conflict(CommandIdentityErrorV1::RequestMismatch)
+            execute_command_once_v1(&mut journal, &command(20, 1), 1, work).unwrap_err(),
+            JournalErrorV1::Retired
         );
         assert_eq!(runs.get(), 1, "no refused admission may reach the work");
     }
@@ -823,7 +647,7 @@ mod command_execution_v1 {
 ///
 /// The result is still an opaque UUIDv4-shaped id — no structure is
 /// readable from it — but it is a pure function of (binding, ordinal),
-/// so a replay of the same run issues the same id and the ledger
+/// so a replay of the same run issues the same id and the journal
 /// recognises it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DerivedCommandIdSourceV1 {
@@ -931,22 +755,27 @@ mod command_id_source_v1 {
     }
 }
 
-/// `APEX-T3.5.06` — the client side of exactly-once: an outbox that
-/// retries a command with the SAME identity. A retry that re-derived its
-/// id would arrive as a new command and apply twice, so the outbox
-/// hands back the original descriptor unchanged and only counts the
-/// attempt. Retries are budgeted, because an unbounded retry loop is how
-/// an idempotent protocol still takes a server down.
+/// `APEX-T3.5.06`, migrated onto the journal model in `.11` — the client
+/// side of exactly-once. A retry resends the SAME identity AND the same
+/// sequence (`CMD-057`, `CMD-058`): re-deriving either would arrive as a
+/// new command and apply twice. One command is in flight at a time
+/// (`CMD-060`), the next sequence advances only when a terminal is
+/// acknowledged (`CMD-059`), and session control is never auto-retried
+/// (`CMD-065`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PendingCommandV1 {
     pub descriptor: CommandDescriptorV1,
+    pub sequence: u64,
     pub attempts: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutboxErrorV1 {
-    CapacityExhausted,
+    /// One command in flight at a time.
+    AlreadyInFlight,
     RetryBudgetExhausted,
+    /// This kind must never be resent on the client's own initiative.
+    NotAutoRetryable,
     UnknownCommand,
     IdSource(CommandIdSourceErrorV1),
 }
@@ -954,61 +783,77 @@ pub enum OutboxErrorV1 {
 #[derive(Debug, Clone)]
 pub struct ClientCommandOutboxV1 {
     source: DerivedCommandIdSourceV1,
-    pending: std::collections::BTreeMap<CommandId, PendingCommandV1>,
-    capacity: usize,
+    pending: Option<PendingCommandV1>,
+    next_sequence: u64,
     retry_budget: u32,
 }
 
 impl ClientCommandOutboxV1 {
-    /// Both bounds are deployment-supplied; neither is invented here.
-    pub fn new(binding: ActiveSessionBindingV1, capacity: usize, retry_budget: u32) -> Self {
+    /// The retry budget is deployment-supplied; nothing is invented here.
+    pub fn new(binding: ActiveSessionBindingV1, retry_budget: u32) -> Self {
         Self {
             source: DerivedCommandIdSourceV1::new(binding),
-            pending: std::collections::BTreeMap::new(),
-            capacity,
+            pending: None,
+            next_sequence: 1,
             retry_budget,
         }
     }
 
-    pub fn pending_len(&self) -> usize { self.pending.len() }
+    pub fn pending_len(&self) -> usize { usize::from(self.pending.is_some()) }
+
+    pub fn next_sequence(&self) -> u64 { self.next_sequence }
 
     pub fn pending_v1(&self, command_id: &CommandId) -> Option<PendingCommandV1> {
-        self.pending.get(command_id).copied()
+        self.pending.filter(|p| p.descriptor.command_id == *command_id)
     }
 
-    /// Issues a NEW command: a fresh derived id, one attempt recorded.
+    /// Issues a NEW command at the next sequence. The sequence does NOT
+    /// advance here: it advances when the terminal is acknowledged, so a
+    /// reconnect mid-flight resends the same sequence rather than
+    /// skipping one.
     pub fn issue_v1(
         &mut self,
         kind: CommandKindV1,
         request_digest: [u8; 32],
-    ) -> Result<CommandDescriptorV1, OutboxErrorV1> {
-        if self.pending.len() >= self.capacity {
-            return Err(OutboxErrorV1::CapacityExhausted);
+    ) -> Result<PendingCommandV1, OutboxErrorV1> {
+        if self.pending.is_some() {
+            return Err(OutboxErrorV1::AlreadyInFlight);
         }
         let command_id = self.source.issue_v1().map_err(OutboxErrorV1::IdSource)?;
         let descriptor =
             CommandDescriptorV1 { binding: self.source.binding_v1(), command_id, kind, request_digest };
-        self.pending.insert(command_id, PendingCommandV1 { descriptor, attempts: 1 });
-        Ok(descriptor)
+        let pending = PendingCommandV1 { descriptor, sequence: self.next_sequence, attempts: 1 };
+        self.pending = Some(pending);
+        Ok(pending)
     }
 
-    /// Resends an outstanding command. The descriptor returned is the
-    /// ORIGINAL, unchanged — same id, same request digest — so the
-    /// server's ledger sees a replay rather than a new command.
-    pub fn retry_v1(&mut self, command_id: &CommandId) -> Result<CommandDescriptorV1, OutboxErrorV1> {
-        let entry = self.pending.get_mut(command_id).ok_or(OutboxErrorV1::UnknownCommand)?;
-        if entry.attempts >= self.retry_budget {
+    /// Resends the outstanding command, unchanged in identity and
+    /// sequence. Only the attempt count moves.
+    pub fn retry_v1(&mut self, command_id: &CommandId) -> Result<PendingCommandV1, OutboxErrorV1> {
+        let pending = self.pending.as_mut().ok_or(OutboxErrorV1::UnknownCommand)?;
+        if pending.descriptor.command_id != *command_id {
+            return Err(OutboxErrorV1::UnknownCommand);
+        }
+        if pending.descriptor.kind == CommandKindV1::SessionControl {
+            return Err(OutboxErrorV1::NotAutoRetryable);
+        }
+        if pending.attempts >= self.retry_budget {
             return Err(OutboxErrorV1::RetryBudgetExhausted);
         }
-        entry.attempts += 1;
-        Ok(entry.descriptor)
+        pending.attempts += 1;
+        Ok(*pending)
     }
 
-    /// Clears a command once its outcome is known. Acknowledging one
-    /// that is not outstanding is a typed error, not a silent no-op:
-    /// it means the client and server disagree about what is in flight.
+    /// Clears the outstanding command and advances the sequence. Called
+    /// only once a terminal outcome is known.
     pub fn acknowledge_v1(&mut self, command_id: &CommandId) -> Result<PendingCommandV1, OutboxErrorV1> {
-        self.pending.remove(command_id).ok_or(OutboxErrorV1::UnknownCommand)
+        let pending = self.pending.ok_or(OutboxErrorV1::UnknownCommand)?;
+        if pending.descriptor.command_id != *command_id {
+            return Err(OutboxErrorV1::UnknownCommand);
+        }
+        self.pending = None;
+        self.next_sequence = pending.sequence + 1;
+        Ok(pending)
     }
 }
 
@@ -1030,22 +875,25 @@ mod command_outbox_v1 {
     /// executes once. Both halves driven together.
     #[test]
     fn retries_carry_the_same_identity_and_execute_once_end_to_end() {
-        let mut outbox = ClientCommandOutboxV1::new(binding(), 4, 5);
-        let mut ledger = CommandLedgerV1::new(binding(), 8);
+        let mut outbox = ClientCommandOutboxV1::new(binding(), 5);
+        let mut journal = CommandJournalV1::new(binding(), 8);
         let runs = Cell::new(0u32);
 
         let first = outbox.issue_v1(CommandKindV1::ControlAction, [7; 32]).unwrap();
         let mut deliveries = vec![first];
         for _ in 0..4 {
-            deliveries.push(outbox.retry_v1(&first.command_id).unwrap());
+            deliveries.push(outbox.retry_v1(&first.descriptor.command_id).unwrap());
         }
-        assert!(deliveries.iter().all(|d| *d == first), "a retry must not change the command's identity");
-        assert_eq!(outbox.pending_v1(&first.command_id).unwrap().attempts, 5);
+        assert!(
+            deliveries.iter().all(|d| d.descriptor == first.descriptor && d.sequence == first.sequence),
+            "a retry must not change the command's identity OR its sequence"
+        );
+        assert_eq!(outbox.pending_v1(&first.descriptor.command_id).unwrap().attempts, 5);
 
         let mut outcomes = Vec::new();
         for delivery in &deliveries {
             outcomes.push(
-                execute_command_once_v1(&mut ledger, delivery, || {
+                execute_command_once_v1(&mut journal, &delivery.descriptor, delivery.sequence, || {
                     runs.set(runs.get() + 1);
                     CommandOutcomeV1::Applied { result_digest: [3; 32] }
                 })
@@ -1057,33 +905,46 @@ mod command_outbox_v1 {
         assert!(outcomes.iter().all(|o| *o == CommandOutcomeV1::Applied { result_digest: [3; 32] }));
 
         // the budget is real
-        assert_eq!(outbox.retry_v1(&first.command_id).unwrap_err(), OutboxErrorV1::RetryBudgetExhausted);
+        assert_eq!(
+            outbox.retry_v1(&first.descriptor.command_id).unwrap_err(),
+            OutboxErrorV1::RetryBudgetExhausted
+        );
 
-        // acknowledging clears it, and a second ack is a typed error
-        assert_eq!(outbox.acknowledge_v1(&first.command_id).unwrap().attempts, 5);
+        // acknowledging clears it and advances the sequence exactly once
+        assert_eq!(outbox.next_sequence(), 1, "the sequence must not advance before the terminal ack");
+        assert_eq!(outbox.acknowledge_v1(&first.descriptor.command_id).unwrap().attempts, 5);
         assert_eq!(outbox.pending_len(), 0);
-        assert_eq!(outbox.acknowledge_v1(&first.command_id).unwrap_err(), OutboxErrorV1::UnknownCommand);
+        assert_eq!(outbox.next_sequence(), 2);
+        assert_eq!(
+            outbox.acknowledge_v1(&first.descriptor.command_id).unwrap_err(),
+            OutboxErrorV1::UnknownCommand
+        );
     }
 
-    /// A DIFFERENT command gets a different id, and the outbox is bounded.
+    /// One in flight at a time, distinct ids per issue, and session
+    /// control never auto-retried.
     #[test]
-    fn distinct_commands_get_distinct_ids_and_the_outbox_is_bounded() {
-        let mut outbox = ClientCommandOutboxV1::new(binding(), 2, 3);
+    fn one_in_flight_distinct_ids_and_no_auto_retry_of_session_control() {
+        let mut outbox = ClientCommandOutboxV1::new(binding(), 3);
         let a = outbox.issue_v1(CommandKindV1::ControlAction, [1; 32]).unwrap();
-        let b = outbox.issue_v1(CommandKindV1::ControlAction, [1; 32]).unwrap();
-        assert_ne!(a.command_id, b.command_id, "two issues are two commands even with identical content");
-
         assert_eq!(
-            outbox.issue_v1(CommandKindV1::ControlAction, [2; 32]).unwrap_err(),
-            OutboxErrorV1::CapacityExhausted
+            outbox.issue_v1(CommandKindV1::ControlAction, [1; 32]).unwrap_err(),
+            OutboxErrorV1::AlreadyInFlight
         );
-        outbox.acknowledge_v1(&a.command_id).unwrap();
-        // ...and the freed slot never reissues a used id
-        let c = outbox.issue_v1(CommandKindV1::ControlAction, [3; 32]).unwrap();
-        assert_ne!(c.command_id, a.command_id);
-        assert_ne!(c.command_id, b.command_id);
 
-        assert_eq!(outbox.retry_v1(&a.command_id).unwrap_err(), OutboxErrorV1::UnknownCommand);
+        outbox.acknowledge_v1(&a.descriptor.command_id).unwrap();
+        let b = outbox.issue_v1(CommandKindV1::ControlAction, [1; 32]).unwrap();
+        assert_ne!(a.descriptor.command_id, b.descriptor.command_id, "two issues are two commands");
+        assert_eq!(b.sequence, a.sequence + 1);
+        assert_eq!(outbox.retry_v1(&a.descriptor.command_id).unwrap_err(), OutboxErrorV1::UnknownCommand);
+        outbox.acknowledge_v1(&b.descriptor.command_id).unwrap();
+
+        // CMD-032/CMD-065: a terminate is journaled but never auto-resent
+        let terminate = outbox.issue_v1(CommandKindV1::SessionControl, [9; 32]).unwrap();
+        assert_eq!(
+            outbox.retry_v1(&terminate.descriptor.command_id).unwrap_err(),
+            OutboxErrorV1::NotAutoRetryable
+        );
     }
 }
 
@@ -1156,20 +1017,20 @@ mod command_receipt_v1 {
     /// verified against the client's own copy of the command.
     #[test]
     fn a_receipt_clears_only_the_command_it_actually_names() {
-        let mut outbox = ClientCommandOutboxV1::new(binding(), 4, 4);
-        let mut ledger = CommandLedgerV1::new(binding(), 8);
+        let mut outbox = ClientCommandOutboxV1::new(binding(), 4);
+        let mut journal = CommandJournalV1::new(binding(), 8);
         let runs = Cell::new(0u32);
 
         let cmd = outbox.issue_v1(CommandKindV1::ControlAction, [7; 32]).unwrap();
-        let resent = outbox.retry_v1(&cmd.command_id).unwrap();
-        let executed = execute_command_once_v1(&mut ledger, &resent, || {
+        let resent = outbox.retry_v1(&cmd.descriptor.command_id).unwrap();
+        let executed = execute_command_once_v1(&mut journal, &resent.descriptor, resent.sequence, || {
             runs.set(runs.get() + 1);
             CommandOutcomeV1::Applied { result_digest: [9; 32] }
         })
         .unwrap();
         assert_eq!(runs.get(), 1);
 
-        let receipt = CommandReceiptV1::for_command_v1(&resent, executed.outcome()).unwrap();
+        let receipt = CommandReceiptV1::for_command_v1(&resent.descriptor, executed.outcome()).unwrap();
 
         // a receipt whose root does not reproduce is refused, and the
         // command stays outstanding
@@ -1191,7 +1052,7 @@ mod command_receipt_v1 {
     /// its id happens to be one this client would issue later.
     #[test]
     fn a_receipt_for_an_unsent_command_is_refused() {
-        let mut outbox = ClientCommandOutboxV1::new(binding(), 4, 4);
+        let mut outbox = ClientCommandOutboxV1::new(binding(), 4);
         let future_id = DerivedCommandIdSourceV1::id_for_ordinal_v1(&binding(), 1).unwrap();
         let descriptor = CommandDescriptorV1 {
             binding: binding(),
@@ -1207,7 +1068,10 @@ mod command_receipt_v1 {
         // once the client DOES issue that ordinal, a receipt for a
         // different request under the same id is still refused
         let issued = outbox.issue_v1(CommandKindV1::ControlAction, [8; 32]).unwrap();
-        assert_eq!(issued.command_id, future_id, "ids are derived, so the ordinal is predictable by construction");
+        assert_eq!(
+            issued.descriptor.command_id, future_id,
+            "ids are derived, so the ordinal is predictable by construction"
+        );
         assert_eq!(outbox.accept_receipt_v1(&receipt).unwrap_err(), ReceiptErrorV1::IdentityMismatch);
         assert_eq!(outbox.pending_len(), 1);
     }
@@ -1273,6 +1137,9 @@ pub enum JournalErrorV1 {
     /// Acking something that is not the floor's successor, or is not
     /// terminal (`CMD-080`, `CMD-081`).
     NotAckable,
+    /// The execution seam was re-entered while a record was still
+    /// unresolved; the command must not run a second time.
+    ReentrantDispatch,
 }
 
 #[derive(Debug, Clone)]
