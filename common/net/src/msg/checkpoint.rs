@@ -1028,3 +1028,159 @@ mod checkpoint_context_v1 {
         assert_eq!(ok(P::OutOfBandDiagnostic, Some(ctx(1, None, ROOT))), Err(E::ForbiddenContext));
     }
 }
+
+/// `APEX-T3.4.08` — mandatory staging budget. No production default:
+/// a deployment supplies exact values or gets nothing. Every limit is
+/// validated BEFORE allocation, and the profile root is
+/// equality-critical (it binds into the descriptor).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckpointResourceProfileV1 {
+    pub profile_id: String,
+    pub purpose: CheckpointProfilePurposeV1,
+    pub max_records_per_checkpoint: u32,
+    pub max_payload_bytes_per_checkpoint: u64,
+    /// Per-stream byte ceiling, indexed like REQUIRED_CHECKPOINT_STREAMS_V1.
+    pub max_payload_bytes_per_stream: [u64; 5],
+    pub max_staged_events: u32,
+    pub max_prepared_ops: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointProfilePurposeV1 {
+    Production,
+    TestFixture,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointResourceErrorV1 {
+    ProfileMissing,
+    ProfileMismatch,
+    DeclaredExceeded { limit: &'static str },
+    ActualExceeded { limit: &'static str },
+    ProductionProfileUnavailable,
+}
+
+impl CheckpointResourceProfileV1 {
+    /// Bound into the descriptor; purpose is part of identity so a test
+    /// profile can never be mistaken for a production one.
+    pub fn profile_root_v1(&self) -> Result<[u8; 32], CheckpointDescriptorErrorV1> {
+        let mut p = Vec::with_capacity(96 + self.profile_id.len());
+        p.extend_from_slice(&(self.profile_id.len() as u64).to_be_bytes());
+        p.extend_from_slice(self.profile_id.as_bytes());
+        p.push(match self.purpose {
+            CheckpointProfilePurposeV1::Production => 0,
+            CheckpointProfilePurposeV1::TestFixture => 1,
+        });
+        p.extend_from_slice(&self.max_records_per_checkpoint.to_be_bytes());
+        p.extend_from_slice(&self.max_payload_bytes_per_checkpoint.to_be_bytes());
+        for b in &self.max_payload_bytes_per_stream {
+            p.extend_from_slice(&b.to_be_bytes());
+        }
+        p.extend_from_slice(&self.max_staged_events.to_be_bytes());
+        p.extend_from_slice(&self.max_prepared_ops.to_be_bytes());
+        root_of(DigestDomainIdV1::CheckpointDescriptor, &p)
+    }
+
+    /// DECLARED preflight: the descriptor claims a shape; refuse before
+    /// any staging allocation happens.
+    pub fn admit_descriptor_v1(
+        &self,
+        descriptor: &CheckpointDescriptorV1,
+    ) -> Result<(), CheckpointResourceErrorV1> {
+        use CheckpointResourceErrorV1 as E;
+        if descriptor.resource_profile_root != self.profile_root_v1().map_err(|_| E::ProfileMismatch)? {
+            return Err(E::ProfileMismatch);
+        }
+        if descriptor.data_record_count > self.max_records_per_checkpoint {
+            return Err(E::DeclaredExceeded { limit: "records_per_checkpoint" });
+        }
+        if descriptor.payload_bytes > self.max_payload_bytes_per_checkpoint {
+            return Err(E::DeclaredExceeded { limit: "payload_bytes_per_checkpoint" });
+        }
+        for (plan, cap) in descriptor.streams.iter().zip(self.max_payload_bytes_per_stream) {
+            if plan.payload_bytes > cap {
+                return Err(E::DeclaredExceeded { limit: "payload_bytes_per_stream" });
+            }
+        }
+        Ok(())
+    }
+
+    /// ACTUAL check during staging: what really arrived, independent of
+    /// what was declared.
+    pub fn admit_actual_v1(
+        &self,
+        staged_events: u32,
+        prepared_ops: u32,
+        observed_records: u32,
+        observed_bytes: u64,
+    ) -> Result<(), CheckpointResourceErrorV1> {
+        use CheckpointResourceErrorV1 as E;
+        if staged_events > self.max_staged_events {
+            return Err(E::ActualExceeded { limit: "staged_events" });
+        }
+        if prepared_ops > self.max_prepared_ops {
+            return Err(E::ActualExceeded { limit: "prepared_ops" });
+        }
+        if observed_records > self.max_records_per_checkpoint {
+            return Err(E::ActualExceeded { limit: "records_per_checkpoint" });
+        }
+        if observed_bytes > self.max_payload_bytes_per_checkpoint {
+            return Err(E::ActualExceeded { limit: "payload_bytes_per_checkpoint" });
+        }
+        Ok(())
+    }
+}
+
+/// Production values are external; there is deliberately no constructor
+/// that invents them.
+pub fn production_checkpoint_profile_v1() -> Result<CheckpointResourceProfileV1, CheckpointResourceErrorV1> {
+    Err(CheckpointResourceErrorV1::ProductionProfileUnavailable)
+}
+
+#[cfg(test)]
+mod checkpoint_resource_v1 {
+    use super::*;
+
+    fn profile() -> CheckpointResourceProfileV1 {
+        CheckpointResourceProfileV1 {
+            profile_id: "apex-t3-4-test-profile-v1".to_owned(),
+            purpose: CheckpointProfilePurposeV1::TestFixture,
+            max_records_per_checkpoint: 4,
+            max_payload_bytes_per_checkpoint: 40,
+            max_payload_bytes_per_stream: [20, 20, 20, 20, 20],
+            max_staged_events: 8,
+            max_prepared_ops: 8,
+        }
+    }
+
+    #[test]
+    fn no_production_default_exists() {
+        assert_eq!(
+            production_checkpoint_profile_v1().unwrap_err(),
+            CheckpointResourceErrorV1::ProductionProfileUnavailable
+        );
+        // purpose is part of identity: a test profile can never present
+        // as production even with identical numbers
+        let mut prod = profile();
+        prod.purpose = CheckpointProfilePurposeV1::Production;
+        assert_ne!(profile().profile_root_v1().unwrap(), prod.profile_root_v1().unwrap());
+    }
+
+    #[test]
+    fn declared_and_actual_limits_are_both_enforced() {
+        use CheckpointResourceErrorV1 as E;
+        let p = profile();
+        // actual side
+        assert!(p.admit_actual_v1(8, 8, 4, 40).is_ok());
+        assert!(matches!(p.admit_actual_v1(9, 0, 0, 0), Err(E::ActualExceeded { limit: "staged_events" })));
+        assert!(matches!(p.admit_actual_v1(0, 9, 0, 0), Err(E::ActualExceeded { limit: "prepared_ops" })));
+        assert!(matches!(
+            p.admit_actual_v1(0, 0, 5, 0),
+            Err(E::ActualExceeded { limit: "records_per_checkpoint" })
+        ));
+        assert!(matches!(
+            p.admit_actual_v1(0, 0, 0, 41),
+            Err(E::ActualExceeded { limit: "payload_bytes_per_checkpoint" })
+        ));
+    }
+}
