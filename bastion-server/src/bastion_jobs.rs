@@ -800,6 +800,34 @@ pub(crate) fn flee_preempt_transition(
     (flee_sig && current != comp::bastion::Drive::Flee).then_some(comp::bastion::Drive::Flee)
 }
 
+/// T3.53 (E3, Fable-ruled 2026-07-27): the self-job kinds GUARD 6 holds a
+/// colonist out of Work/Flee/Idle selection for — the mechanism that
+/// makes "labor refusal continuously in force" true for RestAt/EatFrom/
+/// Despond UNIFORMLY, not something T3.53's eat/sleep carve-out had to
+/// add: it was already true for all three before this row.
+pub(crate) fn is_labor_hold_self_job(kind: &common::bastion::JobKind) -> bool {
+    matches!(
+        kind,
+        common::bastion::JobKind::RestAt { .. }
+            | common::bastion::JobKind::EatFrom { .. }
+            | common::bastion::JobKind::Despond { .. }
+    )
+}
+
+/// T3.53 (E3, Fable-ruled 2026-07-27): the eat/sleep carve-out's own
+/// decision — same `NeedTuning.interrupt` threshold non-Despond
+/// colonists use (E3 ruling #5(b), no new knob), extracted as a pure
+/// predicate so the exact condition is unit-testable without the ECS
+/// loop it's called from.
+pub(crate) fn despond_carve_out_past_interrupt(
+    needs_rest: f32,
+    needs_hunger: f32,
+    rest_interrupt: f32,
+    hunger_interrupt: f32,
+) -> bool {
+    needs_rest < rest_interrupt || needs_hunger < hunger_interrupt
+}
+
 /// FREE-CLIMB CAP decision (pure; unit-pinned U1-U5). `true` = the ascent is
 /// allowed. NOTE the deliberate ABSENCE of any climb_free parameter — the
 /// trapped-machinery grant exempts ENERGY only, never the cap; keeping it out
@@ -7834,14 +7862,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }
                 // GUARD 6: self-job occupancy — step around.
                 if active_jobs.get(entity).is_some_and(|aj| {
-                    board.jobs.get(&aj.job).is_some_and(|j| {
-                        matches!(
-                            j.kind,
-                            common::bastion::JobKind::RestAt { .. }
-                                | common::bastion::JobKind::EatFrom { .. }
-                                | common::bastion::JobKind::Despond { .. }
-                        )
-                    })
+                    board.jobs.get(&aj.job).is_some_and(|j| is_labor_hold_self_job(&j.kind))
                 }) {
                     continue;
                 }
@@ -8137,24 +8158,89 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 ) else {
                     continue;
                 };
-                // B7-3: an already-despondent colonist HOLDS — the break
-                // is TOP-tier (even needs don't preempt it out; its own
-                // clock in the Arrived arm lifts it).
+                // B7-3 + T3.53 (E3 ruling #5, eat/sleep carve-out, labor
+                // hold UNCHANGED): an already-despondent colonist HOLDS
+                // against LABOR — the break is TOP-tier for Work (GUARD 6
+                // keeps refusing it the whole time this colonist occupies
+                // ANY self-job, RestAt/EatFrom included, so there is never
+                // a window where Work could slip in) — but "autonomous
+                // survival... REMAINS" carves out eat/sleep: a need past
+                // the SAME NeedTuning.interrupt threshold non-Despond
+                // colonists use may still preempt into an eat/sleep
+                // self-job. Despond's own state (its `until` timer, the
+                // mood-driven cause) is untouched by this — the carve-out
+                // falls through to the EXISTING need-preemption code
+                // below, unmodified; if mood is still bad after eating,
+                // the breakdown-roll arm just below can re-fire and put
+                // them back into a FRESH Despond — an emergent
+                // consequence of reusing existing machinery, never an
+                // explicit resume (no state suspend/lease machinery
+                // exists or is needed here).
                 use rand::RngExt;
-                if active_jobs.get(entity).is_some_and(|aj| {
+                let already_despondent = active_jobs.get(entity).is_some_and(|aj| {
                     board
                         .jobs
                         .get(&aj.job)
                         .is_some_and(|j| matches!(j.kind, common::bastion::JobKind::Despond { .. }))
-                }) {
-                    continue;
+                });
+                if already_despondent {
+                    let (consc, neur) = rtsim_entities
+                        .get(entity)
+                        .and_then(|re| stagger_data.npcs.get(*re))
+                        .map_or((false, false), |npc| {
+                            (
+                                npc.personality.is(common::rtsim::PersonalityTrait::Conscientious),
+                                npc.personality.is(common::rtsim::PersonalityTrait::Neurotic),
+                            )
+                        });
+                    let rest_interrupt = comp::bastion::stagger_interrupt(
+                        mood_cfg.rest.interrupt,
+                        &colonist.0.values,
+                        consc,
+                        neur,
+                    );
+                    let hunger_interrupt = comp::bastion::stagger_interrupt(
+                        mood_cfg.hunger.interrupt,
+                        &colonist.0.values,
+                        consc,
+                        neur,
+                    );
+                    if !despond_carve_out_past_interrupt(
+                        needs.rest,
+                        needs.hunger,
+                        rest_interrupt,
+                        hunger_interrupt,
+                    ) {
+                        continue;
+                    }
+                    // This SPECIFIC Despond instance concludes here (its
+                    // dangling board.jobs entry is removed so it never
+                    // leaks unclaimed and unvisited — nothing else ever
+                    // revisits an orphaned job with no ActiveJob pointing
+                    // at it) — the underlying CONDITION that caused it
+                    // (mood still below break_minor) is left completely
+                    // untouched, so the breakdown-roll arm immediately
+                    // below can re-fire a FRESH Despond next pass if
+                    // still warranted. That is the whole of "nothing
+                    // resumes": there is nothing to resume, only a
+                    // possible fresh recurrence via the SAME mechanism
+                    // that created the first one.
+                    if let Some(aj) = active_jobs.get(entity) {
+                        board.remove_job(aj.job);
+                    }
+                    // Fall through to the need-ranking section below,
+                    // SKIPPING the breakdown-roll arm immediately below
+                    // via its own `!already_despondent` guard (added at
+                    // that arm's condition) — re-rolling a fresh
+                    // breakdown in the SAME pass that just cleared one
+                    // would be redundant.
                 }
                 // B7-3 BREAKDOWN arm (before the need path — a break
                 // outranks a need preempt in the same pass): mood
                 // SUSTAINED below break_minor -> a per-cadence roll ->
                 // a Despond self-job at own feet. Shares the preempt
                 // cooldown (one break attempt per window).
-                if let Some(mood) = moods.get(entity) {
+                if !already_despondent && let Some(mood) = moods.get(entity) {
                     if mood.0 < mood_cfg.break_minor {
                         let since = *board.mood_below_since.entry(*uid).or_insert(time.0);
                         if mood_cfg.break_sustain_secs.has_elapsed(since, *time)
@@ -14927,6 +15013,52 @@ mod tests {
             "already fleeing — not a fresh preemption"
         );
         assert_eq!(flee_preempt_transition(false, Drive::Work), None, "no flee signal, no transition");
+    }
+
+    /// T3.53 (E3, Fable-ruled 2026-07-27): the eat/sleep carve-out fires
+    /// exactly at the SAME NeedTuning.interrupt threshold non-Despond
+    /// colonists use (E3 ruling #5(b)) — past it on EITHER need, not just
+    /// below it.
+    #[test]
+    fn despond_carve_out_fires_past_interrupt_threshold() {
+        // Neither need past its threshold: no carve-out.
+        assert!(!despond_carve_out_past_interrupt(0.6, 0.6, 0.5, 0.5));
+        // Rest alone past threshold.
+        assert!(despond_carve_out_past_interrupt(0.4, 0.6, 0.5, 0.5));
+        // Hunger alone past threshold.
+        assert!(despond_carve_out_past_interrupt(0.6, 0.4, 0.5, 0.5));
+        // Both past threshold.
+        assert!(despond_carve_out_past_interrupt(0.4, 0.4, 0.5, 0.5));
+    }
+
+    /// T3.53: the carve-out must NOT fire below the threshold — a
+    /// Despond colonist with adequate needs stays held, exactly like
+    /// before this row.
+    #[test]
+    fn despond_carve_out_does_not_fire_below_interrupt_threshold() {
+        assert!(!despond_carve_out_past_interrupt(0.9, 0.9, 0.5, 0.5));
+        // Exactly AT the threshold is not past it (strict `<`, matching
+        // the non-Despond need-preempt code this carve-out mirrors).
+        assert!(!despond_carve_out_past_interrupt(0.5, 0.5, 0.5, 0.5));
+    }
+
+    /// T3.53: labor refusal provably persists during an active need-
+    /// interrupt — RestAt/EatFrom (what the carve-out routes a
+    /// despondent colonist INTO) are held by the exact SAME predicate as
+    /// Despond itself, so GUARD 6 never has a gap where Work could slip
+    /// in during the eat/sleep detour.
+    #[test]
+    fn labor_hold_covers_despond_and_its_carve_out_destinations_uniformly() {
+        use common::bastion::JobKind;
+        assert!(is_labor_hold_self_job(&JobKind::Despond { until: 0.0 }));
+        assert!(is_labor_hold_self_job(&JobKind::RestAt { bed_pos: Vec3::zero() }));
+        assert!(is_labor_hold_self_job(&JobKind::EatFrom {
+            item: common::uid::Uid(NonZeroU64::new(1).unwrap())
+        }));
+        // A Designated job is real colony labor — must NOT be held.
+        assert!(!is_labor_hold_self_job(&JobKind::Designated(
+            common::bastion::DesignationKind::Mine
+        )));
     }
 
     /// MOOD-01 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof): DET-MOOD-003 —
