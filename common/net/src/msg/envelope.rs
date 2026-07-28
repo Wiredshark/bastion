@@ -1002,7 +1002,10 @@ impl SemanticRouteV1 for ClientGeneral {
             | C::Command(_, _)
             | C::Terminate
             | C::RequestPlugins(_)
-            | C::RequestPluginArtifacts(_) => SemanticStreamIdV1::General,
+            | C::RequestPluginArtifacts(_)
+            // T3.4.19: the commit ack rides the General stream, which is
+            // never itself blocked by a checkpoint's own data fence.
+            | C::CheckpointCommitAck(_) => SemanticStreamIdV1::General,
         }
     }
 
@@ -1351,7 +1354,10 @@ mod tests {
         assert_eq!(a.as_array(), b.as_array());
         assert_eq!(
             a.to_human_v1(),
-            "sha256:f305a7c11e86a7173be40f67669e38deabaad6de5e6d66f376ac471bc0614488",
+            // Recomputed at the APEX merge: `DigestDomainIdV1::NetEnvelopeProfile`
+            // moved 12 -> 20 to settle a cross-lane collision, and the domain
+            // id is part of the canonical preimage, so the root moved with it.
+            "sha256:dbf446ce54419af3233d5ed61a2d0528e20b669aa20a77b858b6fe6471d5cddb",
             "NET_ENVELOPE_PROFILE_V1 table changed -- recompute and update this golden vector deliberately, \
              it must never drift silently"
         );
