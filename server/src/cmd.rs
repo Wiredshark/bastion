@@ -1785,13 +1785,20 @@ fn handle_health(
             .get_mut(target)
         {
             let time = server.state.ecs().read_resource::<Time>();
+            let target_uid = server.state.ecs().read_storage::<Uid>().get(target).copied();
             let change = comp::HealthChange {
                 amount: hp - health.current(),
                 by: None,
                 cause: None,
                 precise: false,
                 time: *time,
-                instance: common::combat::next_attack_instance(),
+                // T0.85 (E5-B): world-scoped derivation instead of the old
+                // process-global counter. No target uid (shouldn't happen
+                // for a live entity) falls back to 0 -- see health.rs's
+                // "no real event" sentinel for the same reasoning.
+                instance: target_uid.map_or(0, |uid| {
+                    common::combat::derive_attack_instance(None, uid, *time, 0)
+                }),
             };
             health.change_by(change);
             Ok(())

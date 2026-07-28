@@ -1638,9 +1638,10 @@ impl Server {
     pub fn bastion_emit_damage(&mut self, name: &str, amount: f32) -> bool {
         use specs::Join;
         let ecs = self.state.ecs();
-        let (entity, time) = {
+        let (entity, time, uid) = {
             let colonists = ecs.read_storage::<comp::Colonist>();
             let entities = ecs.entities();
+            let uids = ecs.read_storage::<common::uid::Uid>();
             let time = *ecs.read_resource::<common::resources::Time>();
             let Some(entity) = (&entities, &colonists)
                 .join()
@@ -1649,7 +1650,7 @@ impl Server {
             else {
                 return false;
             };
-            (entity, time)
+            (entity, time, uids.get(entity).copied())
         };
         ecs.read_resource::<common::event::EventBus<common::event::HealthChangeEvent>>()
             .emit_now(common::event::HealthChangeEvent {
@@ -1660,9 +1661,18 @@ impl Server {
                     cause: Some(common::DamageSource::Falling),
                     time,
                     precise: false,
-                    // Fixed instance: common::combat::next_attack_instance() made N6 nondeterministic
-                    // across identical runs (the x2 comparator caught it).
-                    instance: 0xBA57_10D4,
+                    // T0.85 (E5-B): the root-cause fix retires the
+                    // hardcoded constant this comment used to explain --
+                    // common::combat::next_attack_instance() (a process-
+                    // global counter) made N6 nondeterministic across
+                    // identical runs (the x2 comparator caught it), worked
+                    // around here with a fixed value instead of fixing the
+                    // counter itself. Now genuinely deterministic
+                    // (world-scoped derivation from the target's own uid +
+                    // sim time), so the workaround is no longer needed.
+                    instance: uid.map_or(0, |uid| {
+                        common::combat::derive_attack_instance(None, uid, time, 0)
+                    }),
                 },
             });
         true

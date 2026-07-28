@@ -771,6 +771,13 @@ impl ServerEvent for DestroyEvent {
                         },
                     };
 
+                    // T0.85 (E5-B): shared inputs for this block's
+                    // derive_attack_instance calls below (world-scoped,
+                    // deterministic -- replaces the old process-global
+                    // next_attack_instance() counter).
+                    let effect_attacker_uid = other_entity.and_then(|e| data.uids.get(e)).copied();
+                    let effect_target_uid = data.uids.get(effect_target).copied();
+
                     let requirements_met = effect.requirements().all(|req| {
                         req.requirement_met(
                             (
@@ -863,7 +870,14 @@ impl ServerEvent for DestroyEvent {
                                     cause: None,
                                     time: *data.time,
                                     precise: false,
-                                    instance: common::combat::next_attack_instance(),
+                                    instance: effect_target_uid.map_or(0, |uid| {
+                                        common::combat::derive_attack_instance(
+                                            effect_attacker_uid,
+                                            uid,
+                                            *data.time,
+                                            1,
+                                        )
+                                    }),
                                 };
                                 if change.amount.abs() > Health::HEALTH_EPSILON {
                                     emitters.emit(HealthChangeEvent {
@@ -905,7 +919,14 @@ impl ServerEvent for DestroyEvent {
                                     cause: None,
                                     time: *data.time,
                                     precise: false,
-                                    instance: common::combat::next_attack_instance(),
+                                    instance: effect_target_uid.map_or(0, |uid| {
+                                        common::combat::derive_attack_instance(
+                                            effect_attacker_uid,
+                                            uid,
+                                            *data.time,
+                                            2,
+                                        )
+                                    }),
                                 };
                                 if change.amount.abs() > Health::HEALTH_EPSILON {
                                     emitters.emit(HealthChangeEvent {
@@ -932,7 +953,14 @@ impl ServerEvent for DestroyEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: common::combat::next_attack_instance(),
+                                        instance: effect_target_uid.map_or(0, |uid| {
+                                            common::combat::derive_attack_instance(
+                                                effect_attacker_uid,
+                                                uid,
+                                                *data.time,
+                                                3,
+                                            )
+                                        }),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -960,7 +988,14 @@ impl ServerEvent for DestroyEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: common::combat::next_attack_instance(),
+                                        instance: effect_target_uid.map_or(0, |uid| {
+                                            common::combat::derive_attack_instance(
+                                                effect_attacker_uid,
+                                                uid,
+                                                *data.time,
+                                                4,
+                                            )
+                                        }),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -980,7 +1015,14 @@ impl ServerEvent for DestroyEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: common::combat::next_attack_instance(),
+                                        instance: effect_target_uid.map_or(0, |uid| {
+                                            common::combat::derive_attack_instance(
+                                                effect_attacker_uid,
+                                                uid,
+                                                *data.time,
+                                                5,
+                                            )
+                                        }),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -1082,7 +1124,14 @@ impl ServerEvent for DestroyEvent {
                                             cause: Some(DamageSource::Other),
                                             time: *data.time,
                                             precise: false,
-                                            instance: common::combat::next_attack_instance(),
+                                            instance: effect_target_uid.map_or(0, |uid| {
+                                                common::combat::derive_attack_instance(
+                                                    effect_attacker_uid,
+                                                    uid,
+                                                    *data.time,
+                                                    6,
+                                                )
+                                            }),
                                         };
                                         emitters.emit(HealthChangeEvent {
                                             entity: effect_target,
@@ -2986,6 +3035,11 @@ impl ServerEvent for EntityAttackedHookEvent {
                         DamageContributor::new(*uid, data.groups.get(ev.entity).copied())
                     });
 
+                    // T0.85 (E5-B): shared inputs for this block's
+                    // derive_attack_instance calls below.
+                    let effect_attacker_uid = other_entity.and_then(|e| data.uids.get(e)).copied();
+                    let effect_target_uid = data.uids.get(effect_target).copied();
+
                     let requirements_met = effect.requirements().all(|req| {
                         req.requirement_met(
                             (
@@ -3078,7 +3132,14 @@ impl ServerEvent for EntityAttackedHookEvent {
                                     cause: None,
                                     time: *data.time,
                                     precise: false,
-                                    instance: common::combat::next_attack_instance(),
+                                    instance: effect_target_uid.map_or(0, |uid| {
+                                        common::combat::derive_attack_instance(
+                                            effect_attacker_uid,
+                                            uid,
+                                            *data.time,
+                                            7,
+                                        )
+                                    }),
                                 };
                                 if change.amount.abs() > Health::HEALTH_EPSILON {
                                     emitters.emit(HealthChangeEvent {
@@ -3120,7 +3181,14 @@ impl ServerEvent for EntityAttackedHookEvent {
                                     cause: None,
                                     time: *data.time,
                                     precise: false,
-                                    instance: common::combat::next_attack_instance(),
+                                    instance: effect_target_uid.map_or(0, |uid| {
+                                        common::combat::derive_attack_instance(
+                                            effect_attacker_uid,
+                                            uid,
+                                            *data.time,
+                                            8,
+                                        )
+                                    }),
                                 };
                                 if change.amount.abs() > Health::HEALTH_EPSILON {
                                     emitters.emit(HealthChangeEvent {
@@ -3147,7 +3215,14 @@ impl ServerEvent for EntityAttackedHookEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: common::combat::next_attack_instance(),
+                                        instance: effect_target_uid.map_or(0, |uid| {
+                                            common::combat::derive_attack_instance(
+                                                effect_attacker_uid,
+                                                uid,
+                                                *data.time,
+                                                9,
+                                            )
+                                        }),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -3175,7 +3250,14 @@ impl ServerEvent for EntityAttackedHookEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: common::combat::next_attack_instance(),
+                                        instance: effect_target_uid.map_or(0, |uid| {
+                                            common::combat::derive_attack_instance(
+                                                effect_attacker_uid,
+                                                uid,
+                                                *data.time,
+                                                10,
+                                            )
+                                        }),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -3195,7 +3277,14 @@ impl ServerEvent for EntityAttackedHookEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: common::combat::next_attack_instance(),
+                                        instance: effect_target_uid.map_or(0, |uid| {
+                                            common::combat::derive_attack_instance(
+                                                effect_attacker_uid,
+                                                uid,
+                                                *data.time,
+                                                11,
+                                            )
+                                        }),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -3294,7 +3383,14 @@ impl ServerEvent for EntityAttackedHookEvent {
                                             cause: Some(DamageSource::Other),
                                             time: *data.time,
                                             precise: false,
-                                            instance: common::combat::next_attack_instance(),
+                                            instance: effect_target_uid.map_or(0, |uid| {
+                                                common::combat::derive_attack_instance(
+                                                    effect_attacker_uid,
+                                                    uid,
+                                                    *data.time,
+                                                    12,
+                                                )
+                                            }),
                                         };
                                         emitters.emit(HealthChangeEvent {
                                             entity: effect_target,
@@ -3578,11 +3674,12 @@ impl ServerEvent for RegrowHeadEvent {
         Read<'a, Time>,
         WriteStorage<'a, Heads>,
         ReadStorage<'a, Health>,
+        ReadStorage<'a, Uid>,
     );
 
     fn handle(
         events: impl ExactSizeIterator<Item = Self>,
-        (health_change_events, time, mut heads, healths): Self::SystemData<'_>,
+        (health_change_events, time, mut heads, healths, uids): Self::SystemData<'_>,
     ) {
         let mut health_change_emitter = health_change_events.emitter();
         for ev in events {
@@ -3599,7 +3696,11 @@ impl ServerEvent for RegrowHeadEvent {
                         cause: Some(DamageSource::Other),
                         time: *time,
                         precise: false,
-                        instance: common::combat::next_attack_instance(),
+                        // T0.85 (E5-B): world-scoped derivation instead of
+                        // the old process-global counter.
+                        instance: uids.get(ev.entity).map_or(0, |uid| {
+                            common::combat::derive_attack_instance(None, *uid, *time, 0)
+                        }),
                     },
                 })
             }

@@ -30,16 +30,45 @@ use crate::{
 };
 use rand::RngExt;
 
-/// RNG-P3-040 / combat instance ids (determinism audit): a process-monotonic
+/// `T0.85` (E5-B, Fable-ruled 2026-07-28): a world-scoped, deterministic
 /// attack/health-change instance id. These ids only group/dedup health
-/// changes from one attack (networked correlation identity — never balance,
-/// never persistence), so uniqueness is the whole contract. A counter is
-/// deterministic given deterministic event order; `rand::random()` (OS
-/// entropy) was not.
-pub fn next_attack_instance() -> u64 {
-    use core::sync::atomic::{AtomicU64, Ordering};
-    static NEXT: AtomicU64 = AtomicU64::new(1);
-    NEXT.fetch_add(1, Ordering::Relaxed)
+/// changes from one attack (networked correlation identity — never
+/// balance, never persistence), so uniqueness is the whole contract.
+///
+/// RNG-P3-040 (determinism audit) already replaced the ORIGINAL
+/// `rand::random()` (OS entropy, non-deterministic) with a process-
+/// monotonic `AtomicU64` counter -- deterministic ONLY under a fixed,
+/// serial event order. But combat effects are applied from MULTIPLE
+/// specs systems (melee/projectile/beam/shockwave/arcing/pool +
+/// `entity_manipulation`'s explosion/DoT/buff-tick handlers) that specs'
+/// dispatcher can run concurrently on separate threads -- thread arrival
+/// still assigned identity, the same defect class DET-ESIM-020 fixed for
+/// `QuestId`. Confirmed live: `server/src/lib.rs`'s `bastion_emit_damage`
+/// harness probe carries its own comment recording a real N6 x2
+/// comparator catching this exact counter causing cross-run
+/// nondeterminism, worked around there with a hardcoded constant instead
+/// of a root-cause fix (until this row).
+///
+/// Derives from the causal identity of the health-change event instead of
+/// counting: `(attacker, target, sim time, a caller-supplied ordinal --
+/// disambiguates multiple instances from the SAME attacker/target/time,
+/// e.g. a wide swing's simultaneous hits, or Lifesteal vs Heal firing off
+/// the same attack)` through the shared `DomainHasher`, the same pattern
+/// `create_quest`/dialogue-tag/`TradeId` all use. `attacker_uid: None`
+/// covers environmental/ownerless damage sources.
+pub fn derive_attack_instance(
+    attacker_uid: Option<Uid>,
+    target_uid: Uid,
+    time: Time,
+    ordinal: u64,
+) -> u64 {
+    let mut h =
+        crate::state_hash::DomainHasher::new("bastion/domain/attack-instance/v1/sha256");
+    h.field(&attacker_uid.map_or(0, |u| u.0.get()).to_le_bytes());
+    h.field(&target_uid.0.get().to_le_bytes());
+    h.field(&time.0.to_bits().to_le_bytes());
+    h.field(&ordinal.to_le_bytes());
+    u64::from_le_bytes(h.finish().0[..8].try_into().expect("sha256 >= 8 bytes"))
 }
 use serde::{Deserialize, Serialize};
 use specs::{Entity as EcsEntity, ReadStorage};
@@ -599,7 +628,12 @@ impl Attack {
                                     cause: None,
                                     time,
                                     precise: false,
-                                    instance: next_attack_instance(),
+                                    instance: derive_attack_instance(
+                                        attacker.map(|a| a.uid),
+                                        target.uid,
+                                        time,
+                                        1,
+                                    ),
                                 };
                                 if change.amount.abs() > Health::HEALTH_EPSILON {
                                     emitters.emit(HealthChangeEvent {
@@ -641,7 +675,12 @@ impl Attack {
                                 cause: None,
                                 time,
                                 precise: false,
-                                instance: next_attack_instance(),
+                                instance: derive_attack_instance(
+                                    attacker.map(|a| a.uid),
+                                    target.uid,
+                                    time,
+                                    2,
+                                ),
                             };
                             if change.amount.abs() > Health::HEALTH_EPSILON {
                                 emitters.emit(HealthChangeEvent {
@@ -898,7 +937,12 @@ impl Attack {
                                 cause: None,
                                 time,
                                 precise: false,
-                                instance: next_attack_instance(),
+                                instance: derive_attack_instance(
+                                    attacker.map(|a| a.uid),
+                                    target.uid,
+                                    time,
+                                    3,
+                                ),
                             };
                             if change.amount.abs() > Health::HEALTH_EPSILON {
                                 emitters.emit(HealthChangeEvent {
@@ -940,7 +984,12 @@ impl Attack {
                             cause: None,
                             time,
                             precise: false,
-                            instance: next_attack_instance(),
+                            instance: derive_attack_instance(
+                                attacker.map(|a| a.uid),
+                                target.uid,
+                                time,
+                                4,
+                            ),
                         };
                         if change.amount.abs() > Health::HEALTH_EPSILON {
                             emitters.emit(HealthChangeEvent {
@@ -968,7 +1017,12 @@ impl Attack {
                                 cause: Some(DamageSource::from(attack_source)),
                                 time,
                                 precise: precision_mult.is_some(),
-                                instance: next_attack_instance(),
+                                instance: derive_attack_instance(
+                                    attacker.map(|a| a.uid),
+                                    target.uid,
+                                    time,
+                                    5,
+                                ),
                             };
                             emitters.emit(HealthChangeEvent {
                                 entity: target.entity,
@@ -992,7 +1046,12 @@ impl Attack {
                                 cause: Some(DamageSource::from(attack_source)),
                                 time,
                                 precise: precision_mult.is_some(),
-                                instance: next_attack_instance(),
+                                instance: derive_attack_instance(
+                                    attacker.map(|a| a.uid),
+                                    target.uid,
+                                    time,
+                                    6,
+                                ),
                             };
                             emitters.emit(HealthChangeEvent {
                                 entity: target.entity,
@@ -1008,7 +1067,12 @@ impl Attack {
                                 cause: Some(DamageSource::from(attack_source)),
                                 time,
                                 precise: precision_mult.is_some(),
-                                instance: next_attack_instance(),
+                                instance: derive_attack_instance(
+                                    attacker.map(|a| a.uid),
+                                    target.uid,
+                                    time,
+                                    7,
+                                ),
                             };
                             emitters.emit(HealthChangeEvent {
                                 entity: target.entity,
@@ -1099,7 +1163,12 @@ impl Attack {
                                     cause: Some(DamageSource::from(attack_source)),
                                     time,
                                     precise: precision_mult.is_some(),
-                                    instance: next_attack_instance(),
+                                    instance: derive_attack_instance(
+                                        attacker.map(|a| a.uid),
+                                        target.uid,
+                                        time,
+                                        8,
+                                    ),
                                 };
                                 emitters.emit(HealthChangeEvent {
                                     entity: target.entity,
@@ -2506,4 +2575,76 @@ pub fn get_equip_slot_by_block_priority(inventory: Option<&Inventory>) -> EquipS
                 (None, None) => EquipSlot::ActiveMainhand,
             },
         )
+}
+
+// T0.85 (E5-B): non-vacuity for derive_attack_instance -- the fix this
+// row exists for is exactly "thread arrival order must not decide this
+// value", which a pure function of its inputs guarantees BY
+// CONSTRUCTION; these tests pin that property directly rather than
+// requiring a full parallel-dispatch harness run to observe it.
+#[cfg(test)]
+mod derive_attack_instance_tests {
+    use super::*;
+    use std::num::NonZeroU64;
+
+    fn uid(n: u64) -> Uid { Uid(NonZeroU64::new(n).unwrap()) }
+
+    /// The property this whole row exists to guarantee: identical inputs
+    /// always produce the identical instance id, regardless of WHEN or in
+    /// what THREAD the call happens -- unlike the old process-global
+    /// counter, there is no hidden dependency on call order at all.
+    #[test]
+    fn same_inputs_always_derive_the_same_instance() {
+        let a = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 0);
+        let b = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 0);
+        assert_eq!(a, b);
+    }
+
+    /// Different attackers, otherwise identical, must not collide --
+    /// otherwise two unrelated attacks on the same target at the same
+    /// moment would be wrongly grouped as one.
+    #[test]
+    fn different_attacker_derives_a_different_instance() {
+        let a = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 0);
+        let b = derive_attack_instance(Some(uid(3)), uid(2), Time(10.0), 0);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn different_target_derives_a_different_instance() {
+        let a = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 0);
+        let b = derive_attack_instance(Some(uid(1)), uid(4), Time(10.0), 0);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn different_time_derives_a_different_instance() {
+        let a = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 0);
+        let b = derive_attack_instance(Some(uid(1)), uid(2), Time(11.0), 0);
+        assert_ne!(a, b);
+    }
+
+    /// The ordinal is what lets multiple effects from the SAME
+    /// attacker/target/time (e.g. apply_attack's Lifesteal vs Heal, or a
+    /// wide swing's simultaneous hits) get distinct instance ids instead
+    /// of colliding.
+    #[test]
+    fn different_ordinal_derives_a_different_instance() {
+        let a = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 1);
+        let b = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 2);
+        assert_ne!(a, b);
+    }
+
+    /// No attacker (environmental damage) is a distinct, valid input --
+    /// not treated as equivalent to "attacker uid 0" (which can't exist;
+    /// `Uid` wraps a `NonZeroU64`) or to any real attacker.
+    #[test]
+    fn no_attacker_derives_deterministically_and_differs_from_a_real_attacker() {
+        let no_attacker = derive_attack_instance(None, uid(2), Time(10.0), 0);
+        let no_attacker_again = derive_attack_instance(None, uid(2), Time(10.0), 0);
+        assert_eq!(no_attacker, no_attacker_again);
+
+        let with_attacker = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 0);
+        assert_ne!(no_attacker, with_attacker);
+    }
 }
