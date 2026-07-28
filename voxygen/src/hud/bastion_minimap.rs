@@ -68,6 +68,53 @@ const EVICT_MARGIN: i32 = 4;
 /// resolution target — the texel is 1/block; display upscales it).
 const ZOOM_MAX: f64 = 4.0;
 
+/// The weather lens shares the minimap's existing top control row. Keep the
+/// badge between the left zoom controls and the right-side controls instead
+/// of placing it over the map image, where the image's clipping hid the text.
+const LENS_BADGE_RESERVED_HEADER_WIDTH: f64 = 68.0;
+const LENS_BADGE_HEIGHT: f64 = 18.0;
+const LENS_BADGE_FONT_SIZE: u32 = 8;
+const LENS_BADGE_MAX_GLYPHS: usize = 32;
+
+#[derive(Clone, Debug, PartialEq)]
+struct LensBadgeDrawPlanV1 {
+    label: String,
+    glyph_count: usize,
+    width: f64,
+    height: f64,
+    top_margin: f64,
+    font_size: u32,
+}
+
+/// Produce the exact bounded text draw consumed by the real minimap widget.
+/// `None` means that no lens glyph/background widgets may be submitted.
+fn lens_badge_draw_plan_v1(
+    label: Option<&str>,
+    map_width: f64,
+    scale: f64,
+) -> Option<LensBadgeDrawPlanV1> {
+    let label = label?.trim();
+    let glyph_count = label.chars().count();
+    if label.is_empty()
+        || !label.is_ascii()
+        || glyph_count > LENS_BADGE_MAX_GLYPHS
+        || !map_width.is_finite()
+        || !scale.is_finite()
+        || scale <= 0.0
+    {
+        return None;
+    }
+    let width = map_width - LENS_BADGE_RESERVED_HEADER_WIDTH * scale;
+    (width >= 48.0 * scale).then_some(LensBadgeDrawPlanV1 {
+        label: label.to_owned(),
+        glyph_count,
+        width,
+        height: LENS_BADGE_HEIGHT * scale,
+        top_margin: 0.0,
+        font_size: LENS_BADGE_FONT_SIZE,
+    })
+}
+
 /// One cached chunk tile: per-block top color + the z it was sampled at
 /// (the height field that drives hillshading).
 struct Tile {
@@ -1033,24 +1080,28 @@ impl Widget for BastionMiniMap<'_> {
         // R1G: one real, bounded lens on the existing map surface. The frame
         // is already camera/selection/generation-bound by the production
         // adapter; this widget only visualizes its canonical label.
-        if self.tiles.layers.weather
+        let lens_badge_plan = if self.tiles.layers.weather
             && let Some(lens) = crate::r1g_lens::latest_frame()
             && lens.mode() == bastion_renderer_r0d::lens::LensModeV1::Weather
             && let Some(datum) = lens.datums().first()
         {
+            lens_badge_draw_plan_v1(Some(&datum.label), map_size.x, scale)
+        } else {
+            None
+        };
+        if let Some(plan) = lens_badge_plan {
+            debug_assert!(plan.glyph_count > 0);
             Rectangle::fill_with(
-                [map_size.x - 14.0 * scale, 22.0 * scale],
-                Color::Rgba(0.02, 0.05, 0.08, 0.82),
+                [plan.width, plan.height],
+                Color::Rgba(0.015, 0.035, 0.06, 0.96),
             )
-            .mid_bottom_with_margin_on(state.ids.map_bg, 7.0 * scale)
-            .graphics_for(state.ids.map_bg)
+            .mid_top_with_margin_on(state.ids.frame, plan.top_margin)
             .set(state.ids.lens_bg, ui);
-            Text::new(&datum.label)
+            Text::new(&plan.label)
                 .middle_of(state.ids.lens_bg)
-                .font_size(self.fonts.cyri.scale(9 + scale as u32))
+                .font_size(self.fonts.cyri.scale(plan.font_size))
                 .font_id(self.fonts.cyri.conrod_id)
-                .color(Color::Rgba(0.72, 0.90, 1.0, 1.0))
-                .graphics_for(state.ids.map_bg)
+                .color(Color::Rgba(0.82, 0.94, 1.0, 1.0))
                 .set(state.ids.lens_text, ui);
         }
 
@@ -1123,5 +1174,38 @@ impl Widget for BastionMiniMap<'_> {
         }
 
         events
+    }
+}
+
+#[cfg(test)]
+mod r1g_lens_badge_tests {
+    use super::{LENS_BADGE_MAX_GLYPHS, lens_badge_draw_plan_v1};
+
+    #[test]
+    fn weather_label_submits_bounded_header_glyphs() {
+        let label = "CLEAR 0% WIND 3.2m/s";
+        let plan = lens_badge_draw_plan_v1(Some(label), 175.0, 1.0)
+            .expect("the production weather label must submit a header draw");
+
+        assert_eq!(plan.label, label);
+        assert_eq!(plan.glyph_count, label.chars().count());
+        assert!(plan.glyph_count > 0);
+        assert_eq!(plan.width, 107.0);
+        assert_eq!(plan.height, 18.0);
+        assert_eq!(plan.top_margin, 0.0);
+        assert_eq!(plan.font_size, 8);
+        assert!(plan.width <= 175.0);
+    }
+
+    #[test]
+    fn off_or_invalid_label_submits_no_badge_widgets() {
+        assert!(lens_badge_draw_plan_v1(None, 175.0, 1.0).is_none());
+        assert!(lens_badge_draw_plan_v1(Some(""), 175.0, 1.0).is_none());
+        assert!(lens_badge_draw_plan_v1(Some("RAIN \u{2602}"), 175.0, 1.0).is_none());
+        assert!(
+            lens_badge_draw_plan_v1(Some(&"X".repeat(LENS_BADGE_MAX_GLYPHS + 1)), 175.0, 1.0)
+                .is_none()
+        );
+        assert!(lens_badge_draw_plan_v1(Some("CLEAR"), 60.0, 1.0).is_none());
     }
 }
