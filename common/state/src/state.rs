@@ -195,7 +195,10 @@ pub enum StateConstructionErrorV1 {
 ///
 /// With `plugins` on this carries a real `PluginMgr`; with it off it is
 /// an empty value that still occupies the argument position.
-#[derive(Debug, Default)]
+// No `Debug`: `PluginMgr` does not implement it, and deriving here would
+// make the wrapper's trait surface depend on the feature — the exact
+// class of problem this type exists to remove.
+#[derive(Default)]
 pub struct StatePluginsV1 {
     #[cfg(feature = "plugins")]
     mgr: PluginMgr,

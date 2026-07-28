@@ -485,8 +485,18 @@ impl Server {
                     weather::add_server_systems(dispatcher_builder);
                 }
             },
-            #[cfg(feature = "plugins")]
-            plugin_mgr,
+            // APEX (feature-invariance): the argument is unconditional;
+            // only its value is feature-gated.
+            {
+                #[cfg(feature = "plugins")]
+                {
+                    common_state::StatePluginsV1::new(plugin_mgr)
+                }
+                #[cfg(not(feature = "plugins"))]
+                {
+                    common_state::StatePluginsV1::none()
+                }
+            },
         )
         .map_err(|e| Error::Other(format!("state construction failed: {e:?}")))?;
         events::register_event_busses(state.ecs_mut());

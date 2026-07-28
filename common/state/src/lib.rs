@@ -7,5 +7,6 @@ mod state;
 // TODO: breakup state module and remove glob
 pub use special_areas::*;
 pub use state::{
-    BlockChange, BlockDiff, ExecutionMode, ScheduledBlockChange, State, TerrainChanges,
+    BlockChange, BlockDiff, ExecutionMode, ScheduledBlockChange, State, StateConstructionErrorV1,
+    StatePluginsV1, TerrainChanges,
 };

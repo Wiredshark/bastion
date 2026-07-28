@@ -999,9 +999,26 @@ impl Client {
                 // APEX-T2.5.11: a governed deployment supplies the fully
                 // verified manager; otherwise the legacy local-asset path
                 // runs exactly as before.
-                #[cfg(feature = "plugins")]
-                deployment_plugin_mgr
-                    .unwrap_or_else(common_state::plugin::PluginMgr::from_asset_or_default),
+                //
+                // APEX (feature-invariance): the ARGUMENT is unconditional —
+                // only its VALUE is feature-gated. A `#[cfg]` on the argument
+                // itself made this call's arity depend on a feature, which
+                // broke the moment cargo unified features across a combined
+                // server+client build.
+                {
+                    #[cfg(feature = "plugins")]
+                    {
+                        common_state::StatePluginsV1::new(
+                            deployment_plugin_mgr.unwrap_or_else(
+                                common_state::plugin::PluginMgr::from_asset_or_default,
+                            ),
+                        )
+                    }
+                    #[cfg(not(feature = "plugins"))]
+                    {
+                        common_state::StatePluginsV1::none()
+                    }
+                },
             )
             .map_err(|e| Error::Other(format!("state construction failed: {e:?}")))?;
 
