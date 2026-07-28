@@ -22,11 +22,21 @@
 //! SQLite is the opposite case: refinery applies ordered numbered steps
 //! automatically, so its epochs are genuinely `Migratable`.
 //!
-//! **Deliberately not decided here.** The tombstone, alias, content and
-//! world-resolution policies (the row's step 5) are judgement calls about
-//! player data. The row says they must be declared *before* code, and a
-//! builder should not be making them mid-implementation — so they are
-//! carried as stated questions in [`RESOLUTION_POLICIES`], not answered.
+//! **Step 5 — RULED 2026-07-28.** The tombstone, alias, content and
+//! world-resolution policies were carried here as stated QUESTIONS
+//! rather than answered, because they are judgement calls about player
+//! data and the row says a builder should not make them
+//! mid-implementation. They have now been ruled, on one governing law
+//! rather than four separate calls:
+//!
+//! > [`RESOLUTION_LAW_V1`]: an identity is never silently substituted;
+//! > loss is recorded, substitution requires declaration, refusal is the
+//! > last resort.
+//!
+//! Three of the four fall directly out of it; only the world policy
+//! needed a separate cost judgement. Questions are kept verbatim beside
+//! their rulings in [`RESOLUTION_POLICIES`] — a ruling without its
+//! question is an instruction nobody can re-derive.
 
 use common::apex::digest::{ArtifactIdentityV1, hash_artifact_bytes_v1};
 
@@ -261,41 +271,79 @@ pub enum PolicyStatusV1 {
     PendingRuling,
 }
 
-/// The four policies, and their status.
+/// The governing law all four rulings fall out of, ruled 2026-07-28.
 ///
-/// All four are `PendingRuling` on purpose. Each is a judgement call
-/// about player data — what happens to a character that no longer has a
-/// valid item, whether a renamed asset silently becomes its successor —
-/// and the row itself says a builder should not be making them
-/// mid-implementation. Recording the QUESTION is the deliverable; an
-/// answer invented here would be indistinguishable from a ruling.
-pub const RESOLUTION_POLICIES: &[(&str, PolicyStatusV1, &str)] = &[
-    (
-        "tombstone",
-        PolicyStatusV1::PendingRuling,
-        "when a save references an entity/site/npc that no longer exists in this build, is the \
-         reference dropped, preserved as an inert tombstone, or does the save become \
-         ExplicitRecoveryOnly?",
-    ),
-    (
-        "alias",
-        PolicyStatusV1::PendingRuling,
-        "when an asset is renamed, does the old name silently resolve to the new one (player \
-         keeps the item, identity quietly changes) or fail loudly (player loses it, identity is \
-         never wrong)?",
-    ),
-    (
-        "content",
-        PolicyStatusV1::PendingRuling,
-        "when content a save depends on is removed outright, is the dependent object deleted, \
-         replaced with a declared substitute, or is the whole save refused?",
-    ),
-    (
-        "world",
-        PolicyStatusV1::PendingRuling,
-        "when worldgen changes such that a persisted position is no longer valid terrain, is the \
-         entity moved, suspended, or is the save declared incompatible with this worldgen epoch?",
-    ),
+/// Stated once because ruling the PRINCIPLE is what collapsed four
+/// separate judgement calls into one: three of the four follow from it
+/// directly, and only the world policy needed a separate cost judgement.
+pub const RESOLUTION_LAW_V1: &str =
+    "an identity is never silently substituted; loss is recorded, substitution requires \
+     declaration, refusal is the last resort";
+
+/// One policy: the question as it was asked, and the ruling as it was
+/// given.
+///
+/// Both are kept. A ruling without its question is an instruction nobody
+/// can re-derive; a question without its ruling is what this table was
+/// before 2026-07-28.
+pub struct ResolutionPolicyV1 {
+    pub name: &'static str,
+    pub status: PolicyStatusV1,
+    /// Verbatim, unchanged since it was asked.
+    pub question: &'static str,
+    /// Empty iff `PendingRuling`. Enforced below.
+    pub ruling: &'static str,
+}
+
+/// The four policies. **RULED 2026-07-28** on [`RESOLUTION_LAW_V1`];
+/// questions unchanged, rulings recorded beneath each.
+pub const RESOLUTION_POLICIES: &[ResolutionPolicyV1] = &[
+    ResolutionPolicyV1 {
+        name: "tombstone",
+        status: PolicyStatusV1::Declared,
+        question: "when a save references an entity/site/npc that no longer exists in this \
+                   build, is the reference dropped, preserved as an inert tombstone, or does the \
+                   save become ExplicitRecoveryOnly?",
+        ruling: "INERT TOMBSTONE. Dropping makes the loss undiscoverable — nothing looks broken, \
+                 so nobody reports it. ExplicitRecoveryOnly lets one dead NPC hold a whole world \
+                 hostage. A tombstone tells the player someone is no longer here: true, visible, \
+                 and it does not brick the save.",
+    },
+    ResolutionPolicyV1 {
+        name: "alias",
+        status: PolicyStatusV1::Declared,
+        question: "when an asset is renamed, does the old name silently resolve to the new one \
+                   (player keeps the item, identity quietly changes) or fail loudly (player \
+                   loses it, identity is never wrong)?",
+        ruling: "FAIL LOUDLY. A DECLARED alias table is the only path to resolution: a rename \
+                 that IS the same thing gets an explicit entry, one that is not fails. An \
+                 identity that can silently change is not an identity — this is where the \
+                 program's own subject decides its answer.",
+    },
+    ResolutionPolicyV1 {
+        name: "content",
+        status: PolicyStatusV1::Declared,
+        question: "when content a save depends on is removed outright, is the dependent object \
+                   deleted, replaced with a declared substitute, or is the whole save refused?",
+        ruling: "DELETE AND RECORD, through the tombstone mechanism the first policy defines — \
+                 ONE mechanism, two triggers, built once. An undeclared substitute is silent \
+                 aliasing one level up: a player's greatsword becomes a different weapon and \
+                 their character changes without a word.",
+    },
+    ResolutionPolicyV1 {
+        name: "world",
+        status: PolicyStatusV1::Declared,
+        question: "when worldgen changes such that a persisted position is no longer valid \
+                   terrain, is the entity moved, suspended, or is the save declared incompatible \
+                   with this worldgen epoch?",
+        ruling: "INCOMPATIBLE-WITH-EPOCH by default, with an escape hatch MIRRORING the alias \
+                 rule: a worldgen change may ship a DECLARED terrain-migration entry making \
+                 prior epochs loadable; undeclared changes are incompatible. In development \
+                 epochs bump freely and dev saves regenerate; toward release, changing the world \
+                 means declaring what happens to the people living in it. SUSPENDED is rejected \
+                 — a third state every consumer must handle is a tax on the whole codebase to \
+                 avoid writing a declaration.",
+    },
 ];
 
 /// The row's sequencing rule (its step 7), stated as a value so `T4.6`
@@ -472,23 +520,52 @@ mod save_migration_v1 {
         assert_eq!(character_db_support_v1(71, 70), SaveSupportV1::Unsupported);
     }
 
-    /// Every resolution policy states its question, and none is answered
-    /// here. If one becomes `Declared` this test fails, which is the
-    /// point: a policy about player data should not change without
-    /// somebody noticing.
+    /// Every policy keeps its question AND carries its ruling.
+    ///
+    /// This test previously asserted every policy was `PendingRuling`,
+    /// and said "if it has been ruled, record the ruling and update this
+    /// test deliberately". That is exactly what happened on 2026-07-28:
+    /// all four were ruled on `RESOLUTION_LAW_V1` and this assertion was
+    /// INVERTED BY HAND rather than relaxed. The guard is the same in
+    /// spirit — a policy about player data cannot change status without
+    /// somebody editing this test on purpose.
     #[test]
-    fn every_resolution_policy_is_an_open_question_with_its_question_stated() {
+    fn every_resolution_policy_states_its_question_and_carries_its_ruling() {
         assert_eq!(RESOLUTION_POLICIES.len(), 4);
-        for (name, status, question) in RESOLUTION_POLICIES {
-            assert_eq!(
-                *status,
-                PolicyStatusV1::PendingRuling,
-                "{name} was decided in code. The row says these are declared BEFORE code and are \
-                 not a builder's call; if it has been ruled, record the ruling and update this \
-                 test deliberately"
+        assert!(RESOLUTION_LAW_V1.len() > 60, "the governing law is too vague to rule from");
+        for policy in RESOLUTION_POLICIES {
+            let name = policy.name;
+            assert!(
+                policy.question.contains('?'),
+                "{name} does not state a question: {:?}",
+                policy.question
             );
-            assert!(question.contains('?'), "{name} does not state a question: {question:?}");
-            assert!(question.len() > 60, "{name}'s question is too vague to answer: {question:?}");
+            assert!(policy.question.len() > 60, "{name}'s question is too vague to answer");
+            match policy.status {
+                PolicyStatusV1::Declared => assert!(
+                    policy.ruling.len() > 60,
+                    "{name} is Declared but its ruling says nothing; a ruling nobody can \
+                     re-derive is an instruction, not a decision"
+                ),
+                PolicyStatusV1::PendingRuling => assert!(
+                    policy.ruling.is_empty(),
+                    "{name} is PendingRuling but carries a ruling — one of the two is wrong"
+                ),
+            }
+        }
+    }
+
+    /// All four are ruled. A revert to `PendingRuling` should be as
+    /// visible as the ruling was.
+    #[test]
+    fn all_four_policies_are_ruled() {
+        for policy in RESOLUTION_POLICIES {
+            assert_eq!(
+                policy.status,
+                PolicyStatusV1::Declared,
+                "{} reverted to PendingRuling",
+                policy.name
+            );
         }
     }
 

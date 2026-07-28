@@ -1,3 +1,4 @@
+pub mod input_receipt_wire;
 pub mod checkpoint;
 pub mod command;
 pub mod session_control;

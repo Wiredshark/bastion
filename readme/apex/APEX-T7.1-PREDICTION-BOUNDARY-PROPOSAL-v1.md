@@ -1,6 +1,63 @@
 # APEX-T7.1 — prediction-state boundary: PROPOSAL (v1)
 
-**Status: PROPOSAL. Not approved, and not approvable by its author.**
+**Status: APPROVED 2026-07-28** by the orchestrator, after independent
+review by Builder 5b. This document is now the boundary `T7.2`–`T7.5`
+build against, not a proposal. The header below is kept as written
+because how a boundary was arrived at is part of what it means.
+
+**Both self-flagged low-confidence items were resolved in the
+proposal's favour by the independent review, and neither on my say-so:**
+
+- **`energy` as a transition input is PROVABLE, not a guess.** The
+  review traced the `StateUpdate` `From` impl chain —
+  `behavior.rs:153` → `character_state.rs:94` value copy →
+  `requirements_paid` boolean. Closed as settled; the "first thing I'd
+  want a second reader on" got a second reader and held.
+- **The per-frame chunk-key cost is measured, so its gate is REMOVED.**
+  Computed from the real `Spiral2d::new().take(9)`: ~1.05 KiB per client,
+  **1.6% of Decision 5's own 64 KiB budget**. The measurement gate and the
+  coarser fallback are struck; Decision 2 stands exactly as proposed.
+
+**The three items I deliberately did not decide are now ruled**, and the
+rulings are recorded in place beneath each one.
+
+---
+
+## AMENDMENT 1 — 2026-07-28, found while implementing this boundary
+
+**Decision 1 was incomplete, and the arithmetic said so in the approved
+text.** It listed **14** transition inputs and **22** ambient fields, and
+called `JoinData` **38** fields wide. 14 + 22 = 36. The gap sat in an
+approved document through its author *and* an independent reviewer.
+
+The two missing fields are **`entity`** and **`uid`**. They appear in the
+struct and in neither list, because they are neither: they are
+**identity** — WHO is transitioning. Fixed for the whole of a history,
+never replayed from it, never re-read from ambient authority, because a
+replay of a different entity is not a replay of the same frame.
+
+A fourth role is therefore added: **`Identity`**, pinned at exactly two
+members. Final split: **14 transition inputs · 21 ambient · 1 write
+channel · 2 identity = 38.** (The proposal's "22 ambient" counted
+`updater`, which Decision 1 already separates as a write channel.)
+
+**Why this is recorded as an amendment rather than a silent fix.** An
+approved boundary that quietly matches its implementation is worse than
+one that shows its repair: the next reader cannot tell which parts were
+reviewed and which were adjusted afterwards. The approval above stands
+unedited; this is what changed after it.
+
+**The transferable part.** The hole fell out the moment the
+classification stopped being prose and became a testable constant — the
+count assertion failed on the first run. `entity` and `uid` were omitted
+precisely *because* they are obvious, and **"too obvious to write down"
+is how a boundary acquires a hole.** Prose boundaries carry holes
+forward; typed boundaries surface them.
+
+---
+
+**Original status line, kept verbatim:** *PROPOSAL. Not approved, and not
+approvable by its author.*
 
 T7.1 is a decision row whose deliverable is a *reviewed* boundary. This
 document is the thing to review, not the review. Nothing in T7.2–T7.5
@@ -131,6 +188,13 @@ common and mounting is not, so a no-prediction rule for carriers is felt
 by more players more often. This is a gameplay/latency trade, not a
 determinism question, and it is not mine to make.
 
+> **RULED: carried entities get NO prediction in v1, in the mount rule's
+> shape — with a NAMED REVISIT CONDITION.** If carry-latency feel
+> complaints emerge, it becomes a `T5.1`-cohort experiment. That
+> infrastructure exists for exactly this: a treatment cohort, disjoint
+> from moderation, with per-cohort metrics. The revisit is a measurement,
+> not a re-argument.
+
 ---
 
 ## Decision 4 — Predicted side-effect scope
@@ -169,6 +233,11 @@ a sword swing twice under latency is worse than hearing it late; but
 that is a judgement about feel, not about correctness, and reasonable
 people will disagree.
 
+> **RULED: presentation namespace, DEDUPLICATED — late beats double.**
+> The reason given is better than mine: a doubled sound asserts that TWO
+> EVENTS HAPPENED, which is a false fact about the world. A late sound is
+> merely late, and honest. Correctness argument, not a feel argument.
+
 ---
 
 ## Decision 5 — History duration, memory budget, and fallback
@@ -206,6 +275,12 @@ corrected than state a principle that cannot be tested. If the ruling is
 "measure first", that is a legitimate answer and the row's real blocker
 is a measurement, not a decision.
 
+> **RULED: adopted as reasoned NAMED CONSTS, tuned later from `T5`'s
+> cohort metrics.** `T7` does not gate on a measurement programme that
+> `T5` produces anyway — waiting would have serialised two tiers for a
+> number that arrives on its own. Named constants so the later tuning
+> edits one place with a visible diff.
+
 ---
 
 ## What I am NOT proposing
@@ -223,8 +298,8 @@ is a measurement, not a decision.
 
 | # | Decision | State |
 |---|---|---|
-| 1 | Predicted components and replay-legal transitions | Proposed; `energy` classification low-confidence |
-| 2 | World revision requirements and chunk-unload invalidation | Proposed; per-frame chunk-key cost unmeasured |
-| 3 | Ridden/mounted ownership | Proposed (not predicted); **carried entities RULING NEEDED** |
-| 4 | Predicted side-effect scope | Proposed as three classes; **sound classification RULING NEEDED** |
-| 5 | Duration, budget, fallback | Proposed with concrete numbers; numbers are reasoned, not measured |
+| 1 | Predicted components and replay-legal transitions | **APPROVED**, then **AMENDED** (see Amendment 1): `energy` proved from the StateUpdate From chain; `entity`/`uid` added as a fourth `Identity` role — 14 input · 21 ambient · 1 write channel · 2 identity |
+| 2 | World revision requirements and chunk-unload invalidation | **APPROVED as proposed**; chunk-key cost measured at ~1.05 KiB/client (1.6% of budget), gate and fallback removed |
+| 3 | Ridden/mounted ownership | **RULED** — no prediction for riders or carriers in v1; carry revisits as a T5.1-cohort experiment if feel complaints emerge |
+| 4 | Predicted side-effect scope | **RULED** — three classes as proposed; ability sounds deduplicated, late beats double |
+| 5 | Duration, budget, fallback | **RULED** — adopted as named consts, tuned later from T5 cohort metrics |

@@ -139,8 +139,15 @@ impl<'a> System<'a> for Sys {
                 let mut lazy_msg = None;
                 for client in clients.join() {
                     if lazy_msg.is_none() {
+                        // APEX-T5.2: name the snapshot. The id is T0.87's
+                        // adoption epoch, read here rather than minted —
+                        // a second counter for the same snapshot would be
+                        // two identities for one thing.
                         lazy_msg = Some(client.prepare(ServerGeneral::WeatherUpdate(
                             SharedWeatherGrid::from(&*grid),
+                            common::apex::weather_snapshot::WeatherSnapshotIdV1::from_sequence_v1(
+                                weather_job.epoch(),
+                            ),
                         )));
                     }
                     lazy_msg.as_ref().map(|msg| client.send_prepared(msg));
@@ -191,10 +198,19 @@ impl<'a> System<'a> for Sys {
             });
         }
 
+        // APEX-T5.2: the live snapshot id, read once outside the send
+        // loop. 0 before the first job exists, which is a real state
+        // (no snapshot yet) rather than a guess at one.
+        let epoch = weather_job.as_ref().map_or(0, |job| job.epoch());
         for (entity, client, pos) in (&entities, &clients, &positions).join() {
             if entity.id() as u64 % 30 == tick.0 % 30 {
                 let weather = grid.get_interpolated(pos.0.xy());
-                client.send_fallible(ServerGeneral::LocalWindUpdate(weather.wind));
+                // APEX-T5.2: the same snapshot id the grid was sent under,
+                // so a client can tell which snapshot this wind belongs to.
+                client.send_fallible(ServerGeneral::LocalWindUpdate(
+                    weather.wind,
+                    common::apex::weather_snapshot::WeatherSnapshotIdV1::from_sequence_v1(epoch),
+                ));
             }
         }
     }

@@ -14,6 +14,9 @@ pub use specs::{
 
 use crate::addr::ConnectionArgs;
 use byteorder::{ByteOrder, LittleEndian};
+use common::apex::weather_snapshot::{
+    PredictionWindSourceV1, WeatherSnapshotIdV1, WeatherSnapshotStoreV1,
+};
 use common::{
     character::{CharacterId, CharacterItem},
     comp::{
@@ -216,12 +219,39 @@ struct WeatherLerp {
     new: (SharedWeatherGrid, Instant),
     old_local_wind: (Vec2<f32>, Instant),
     new_local_wind: (Vec2<f32>, Instant),
+    /// `APEX-T5.4`: PRESENTATION wind. Receipt-time interpolated, exactly
+    /// as before, and now barred from the prediction path — nothing that
+    /// predicts reads this field.
     local_wind: Vec2<f32>,
+    /// `APEX-T5.4`: the authoritative snapshots, keyed by `T0.87`'s
+    /// weather epoch. This is what prediction reads.
+    snapshots: WeatherSnapshotStoreV1,
+    /// The most recent snapshot the server has named.
+    latest_snapshot: Option<WeatherSnapshotIdV1>,
 }
 
 impl WeatherLerp {
-    fn local_wind_update(&mut self, wind: Vec2<f32>) {
+    fn local_wind_update(&mut self, wind: Vec2<f32>, snapshot: WeatherSnapshotIdV1) {
+        // The authoritative record first: it is keyed by the snapshot the
+        // server named, and carries no arrival time at all.
+        self.snapshots.record_v1(snapshot, wind);
+        self.latest_snapshot = Some(snapshot);
+        // Then the presentation record, which is the only thing that
+        // knows what time the packet arrived.
         self.old_local_wind = mem::replace(&mut self.new_local_wind, (wind, Instant::now()));
+    }
+
+    /// `APEX-T5.4`: the wind a predicted frame may use.
+    ///
+    /// `PredictionWindSourceV1::Unavailable` when the snapshot is gone —
+    /// the caller snaps rather than extrapolating, because an
+    /// extrapolation's input is elapsed wall-clock time, which is the
+    /// dependency this whole split removes.
+    fn prediction_wind(&self) -> PredictionWindSourceV1 {
+        match self.latest_snapshot {
+            Some(id) => self.snapshots.wind_at_v1(id),
+            None => PredictionWindSourceV1::Unavailable,
+        }
     }
 
     fn update_local_wind(&mut self) {
@@ -237,7 +267,8 @@ impl WeatherLerp {
         self.local_wind = Vec2::lerp_unclamped(self.old_local_wind.0, self.new_local_wind.0, t);
     }
 
-    fn weather_update(&mut self, weather: SharedWeatherGrid) {
+    fn weather_update(&mut self, weather: SharedWeatherGrid, snapshot: WeatherSnapshotIdV1) {
+        self.latest_snapshot = Some(snapshot);
         self.old = mem::replace(&mut self.new, (weather, Instant::now()));
     }
 
@@ -265,9 +296,18 @@ impl WeatherLerp {
                 .zip(old.iter().zip(new.iter()))
                 .for_each(|((_, current), ((_, old), (_, new)))| {
                     *current = CompressedWeather::lerp_unclamped(old, new, t);
-                    // `local_wind` is set for all weather cells on the client,
-                    // which will still be inaccurate outside the "local" area
-                    current.wind = self.local_wind;
+                    // `APEX-T5.4`: the grid is what physics and glider
+                    // prediction read, so it gets the AUTHORITATIVE
+                    // snapshot wind, not the receipt-time lerp. When no
+                    // snapshot is retained the previous value stands —
+                    // a snap — rather than an extrapolation, which is how
+                    // the wall-clock dependency would get back in.
+                    //
+                    // The receipt-time value survives as `local_wind` for
+                    // presentation only; see `Client::presentation_wind`.
+                    if let Some(authoritative) = self.prediction_wind().wind_v1() {
+                        current.wind = authoritative;
+                    }
                 });
         }
     }
@@ -283,6 +323,11 @@ impl Default for WeatherLerp {
             old_local_wind: (Vec2::zero(), old),
             new_local_wind: (Vec2::zero(), new),
             local_wind: Vec2::zero(),
+            // 64 snapshots at the weather cadence is minutes of history:
+            // far more than any replay window, and bounded so a long
+            // disconnect cannot replay against a snapshot nobody has.
+            snapshots: WeatherSnapshotStoreV1::new_v1(64),
+            latest_snapshot: None,
         }
     }
 }
@@ -3184,6 +3229,14 @@ impl Client {
                 vel,
                 ori,
                 physics_generation: self.force_update_generation,
+                // APEX-T5.2: the snapshot this frame was predicted under.
+                // Unknown before the first weather packet, which is a
+                // real state and is reported as snapshot 0 rather than
+                // as a guess.
+                weather_snapshot: self
+                    .weather
+                    .latest_snapshot
+                    .unwrap_or(WeatherSnapshotIdV1::from_sequence_v1(0)),
             })?;
         }
 
@@ -3835,11 +3888,11 @@ impl Client {
             ServerGeneral::MapMarker(event) => {
                 frontend_events.push(Event::MapMarker(event));
             },
-            ServerGeneral::WeatherUpdate(weather) => {
-                self.weather.weather_update(weather);
+            ServerGeneral::WeatherUpdate(weather, snapshot) => {
+                self.weather.weather_update(weather, snapshot);
             },
-            ServerGeneral::LocalWindUpdate(wind) => {
-                self.weather.local_wind_update(wind);
+            ServerGeneral::LocalWindUpdate(wind, snapshot) => {
+                self.weather.local_wind_update(wind, snapshot);
             },
             ServerGeneral::SpectatePosition(pos) => {
                 frontend_events.push(Event::SpectatePosition(pos));
@@ -5310,4 +5363,90 @@ mod tests {
         }
     }
 
+}
+
+#[cfg(test)]
+mod weather_prediction_split_v1 {
+    use super::*;
+
+    fn lerp_with(snapshot: u64, wind: Vec2<f32>) -> WeatherLerp {
+        let mut lerp = WeatherLerp::default();
+        // Two arrivals, so the presentation lerp has a real interval to
+        // interpolate over rather than dividing by zero.
+        lerp.local_wind_update(Vec2::zero(), WeatherSnapshotIdV1::from_sequence_v1(snapshot - 1));
+        lerp.local_wind_update(wind, WeatherSnapshotIdV1::from_sequence_v1(snapshot));
+        lerp
+    }
+
+    /// **`T5.4`'s acceptance criterion, on the live type.** Receipt
+    /// timing varies; the prediction input does not.
+    ///
+    /// The two `update_local_wind` calls are separated by real elapsed
+    /// time, which is what moves the presentation lerp. The test asserts
+    /// the presentation value ACTUALLY moved, so it cannot pass by the
+    /// delay having had no effect — and asserts the prediction wind did
+    /// not.
+    #[test]
+    fn receipt_timing_moves_presentation_wind_and_never_prediction_wind() {
+        let mut lerp = lerp_with(7, Vec2::new(3.0, -1.0));
+
+        let prediction_before = lerp.prediction_wind().wind_v1();
+        lerp.update_local_wind();
+        let presentation_before = lerp.local_wind;
+
+        std::thread::sleep(std::time::Duration::from_millis(40));
+
+        lerp.update_local_wind();
+        let presentation_after = lerp.local_wind;
+        let prediction_after = lerp.prediction_wind().wind_v1();
+
+        assert_ne!(
+            presentation_before, presentation_after,
+            "the elapsed time had no effect on presentation wind, so this test would pass              against a broken split"
+        );
+        assert_eq!(
+            prediction_before, prediction_after,
+            "receipt timing reached the prediction input"
+        );
+        assert_eq!(prediction_after, Some(Vec2::new(3.0, -1.0)), "prediction wind is the snapshot's own value");
+    }
+
+    /// The glider reads the WeatherGrid, so the grid is what must carry
+    /// authoritative wind. This is the reroute itself, asserted.
+    #[test]
+    fn the_simulation_grid_receives_snapshot_wind_not_the_lerp() {
+        let mut lerp = lerp_with(4, Vec2::new(9.0, 0.0));
+        lerp.weather_update(
+            SharedWeatherGrid::new(Vec2::new(2, 2)),
+            WeatherSnapshotIdV1::from_sequence_v1(4),
+        );
+        lerp.old = lerp.new.clone();
+
+        let mut grid = WeatherGrid::new(Vec2::new(2, 2));
+        lerp.update(&mut grid);
+
+        for (_, cell) in grid.iter() {
+            assert_eq!(
+                cell.wind,
+                Vec2::new(9.0, 0.0),
+                "the grid carries the receipt-time lerp instead of the snapshot's wind"
+            );
+        }
+        // NOT asserting that presentation differs here: once the lerp
+        // reaches t=1.0 the two legitimately coincide. Asserting a
+        // coincidence would make this test fail for a correct reason.
+        // The property under test is that the GRID takes the snapshot
+        // value, and that is asserted above; the timing independence is
+        // the previous test's job.
+    }
+
+    /// With no snapshot retained the previous grid value stands — a snap.
+    /// Never an extrapolation, whose input would be elapsed wall-clock
+    /// time and would put the dependency straight back.
+    #[test]
+    fn a_missing_snapshot_snaps_rather_than_extrapolating() {
+        let lerp = WeatherLerp::default();
+        assert_eq!(lerp.prediction_wind(), PredictionWindSourceV1::Unavailable);
+        assert_eq!(lerp.prediction_wind().wind_v1(), None);
+    }
 }

@@ -210,7 +210,7 @@ impl Client {
                     | ServerGeneral::Knockback(_)
                     | ServerGeneral::UpdatePendingTrade(_, _, _)
                     | ServerGeneral::FinishedTrade(_)
-                    | ServerGeneral::WeatherUpdate(_) => {
+                    | ServerGeneral::WeatherUpdate(..) => {
                         self.in_game_stream.lock().unwrap().send(g)
                     },
                     //Ingame related, terrain
@@ -303,8 +303,11 @@ impl Client {
                     | ServerGeneral::UpdatePendingTrade(_, _, _)
                     | ServerGeneral::FinishedTrade(_)
                     | ServerGeneral::MapMarker(_)
-                    | ServerGeneral::WeatherUpdate(_)
-                    | ServerGeneral::LocalWindUpdate(_)
+                    | ServerGeneral::WeatherUpdate(..)
+                    | ServerGeneral::LocalWindUpdate(..)
+                    // APEX-T5.3: receipts ride the in-game stream with the
+                    // frames they are receipts for.
+                    | ServerGeneral::InputReceipt(_)
                     | ServerGeneral::SpectatePosition(_)
                     | ServerGeneral::UpdateRecipes
                     | ServerGeneral::Gizmos(_)

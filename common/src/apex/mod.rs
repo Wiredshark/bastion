@@ -6,6 +6,7 @@
 //! order into authoritative state. See `readme/apex/` for the program's
 //! packets; this module implements `APEX-T0.1`.
 
+pub mod prediction_boundary;
 pub mod numeric_probe;
 pub mod numeric_profile;
 // T6.1's inventory is a build-time tripwire whose only consumers are its

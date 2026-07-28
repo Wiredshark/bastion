@@ -437,6 +437,7 @@ mod command_carriage_v1 {
                 vel: common::comp::Vel(Vec3::zero()),
                 ori: common::comp::Ori::default(),
                 physics_generation: common::apex::physics_generation::PhysicsGenerationV1::NEVER_CORRECTED,
+                weather_snapshot: common::apex::weather_snapshot::WeatherSnapshotIdV1::from_sequence_v1(0),
             },
         ] {
             assert_eq!(continuous.admission_class_v1(), CommandAdmissionClassV1::LatestState);

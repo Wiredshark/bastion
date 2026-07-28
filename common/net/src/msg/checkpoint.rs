@@ -99,8 +99,11 @@ impl CheckpointParticipantV1 for ServerGeneral {
             | S::UpdatePendingTrade(_, _, _)
             | S::FinishedTrade(_)
             | S::MapMarker(_)
-            | S::WeatherUpdate(_)
-            | S::LocalWindUpdate(_)
+            | S::WeatherUpdate(..)
+            | S::LocalWindUpdate(..)
+            // APEX-T5.3: a receipt is data about a frame already sent,
+            // classified with the rest of the in-game data stream.
+            | S::InputReceipt(_)
             | S::SpectatePosition(_)
             | S::UpdateRecipes
             | S::Gizmos(_)
@@ -2271,8 +2274,11 @@ impl CheckpointEntityRefsV1 for ServerGeneral {
             | S::UpdatePendingTrade(_, _, _)
             | S::FinishedTrade(_)
             | S::MapMarker(_)
-            | S::WeatherUpdate(_)
-            | S::LocalWindUpdate(_)
+            | S::WeatherUpdate(..)
+            | S::LocalWindUpdate(..)
+            // APEX-T5.3: a receipt is data about a frame already sent,
+            // classified with the rest of the in-game data stream.
+            | S::InputReceipt(_)
             | S::SpectatePosition(_)
             | S::UpdateRecipes
             | S::Gizmos(_)

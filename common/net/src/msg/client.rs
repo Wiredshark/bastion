@@ -135,6 +135,12 @@ pub enum ClientGeneral {
         pos: comp::Pos,
         vel: comp::Vel,
         ori: comp::Ori,
+        /// `APEX-T5.2`/`T5.4`: the weather snapshot this report was
+        /// computed under. Without it the server cannot tell a report
+        /// predicted against current wind from one predicted against
+        /// wind two snapshots old, and "prediction disagreed" stops
+        /// being attributable.
+        weather_snapshot: common::apex::weather_snapshot::WeatherSnapshotIdV1,
         /// `APEX-T3.6`: the physics correction generation this report was
         /// computed under. Typed rather than a bare `u64` so a stale
         /// report cannot compare equal to a live one by arithmetic

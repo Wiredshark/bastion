@@ -155,7 +155,11 @@ pub struct JoinData<'a> {
     pub body: &'a Body,
     pub physics: &'a PhysicsState,
     pub melee_attack: Option<&'a Melee>,
-    pub updater: &'a LazyUpdate,
+    /// `APEX-T7.2` Decision 1/4: NOT public. This is a WRITE CHANNEL,
+    /// not state, and a predicted frame that reaches it is emitting a
+    /// side effect. Reach it through [`JoinData::updater_v1`], which
+    /// requires a capability `ReplayContextV1` does not have.
+    updater: &'a LazyUpdate,
     pub stats: &'a Stats,
     pub skill_set: &'a SkillSet,
     pub active_abilities: Option<&'a ActiveAbilities>,
@@ -211,6 +215,31 @@ pub struct JoinStruct<'a> {
 }
 
 impl<'a> JoinData<'a> {
+    /// `APEX-T7.2`: the component write channel, available only to a
+    /// context that may insert components.
+    ///
+    /// The capability is a TRAIT BOUND, so a replay holding
+    /// `ReplayContextV1` cannot obtain a `LazyUpdate` at all. That is the
+    /// difference between "must not call" and "cannot reach", and it is
+    /// why this is an accessor on the channel rather than a generic on
+    /// `CharacterBehavior`.
+    ///
+    /// **Row-sizing note, for whoever sizes the next one.** `T7.2` was
+    /// specified as threading a capability through `CharacterBehavior`
+    /// and its 47 impls. Reading the code found 16 uses of this field in
+    /// all of `common/src`, and one constructor. Guarding the channel
+    /// touches those 16 and makes each one visibly declare a live-path
+    /// write; guarding the caller would have touched 47 files that were
+    /// never the hazard. **Third instance this tier of the same thing:
+    /// the spec named a category, and the code had a narrower thing in
+    /// it.** Size rows against the code, not against the category.
+    pub fn updater_v1<C: crate::apex::prediction_boundary::MayInsertComponentsV1>(
+        &self,
+        _capability: C,
+    ) -> &'a LazyUpdate {
+        self.updater
+    }
+
     pub fn new(
         j: &'a JoinStruct<'a>,
         updater: &'a LazyUpdate,

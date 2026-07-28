@@ -1948,7 +1948,7 @@ pub fn end_ability(data: &JoinData<'_>, update: &mut StateUpdate) {
 
 pub fn end_melee_ability(data: &JoinData<'_>, update: &mut StateUpdate) {
     end_ability(data, update);
-    data.updater.remove::<Melee>(data.entity);
+    data.updater_v1(crate::apex::prediction_boundary::LiveContextV1).remove::<Melee>(data.entity);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

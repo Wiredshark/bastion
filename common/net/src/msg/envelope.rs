@@ -131,8 +131,22 @@ impl SemanticPayloadSchemaV1 {
 
     pub const fn label(self) -> &'static str {
         match self {
-            Self::ClientGeneral => "bastion/net-envelope/payload-schema/client-general/v1",
-            Self::ServerGeneral => "bastion/net-envelope/payload-schema/server-general/v1",
+            // APEX-T5.2 (the T5 tier's single wire bump): both payload
+            // schemas CHANGED — `ClientGeneral::PlayerPhysics` gained a
+            // weather-snapshot reference, `ServerGeneral`'s weather
+            // messages gained the snapshot id they belong to, and
+            // `ServerGeneral::InputReceipt` is new. The label is where a
+            // payload schema's version lives, so it moves here and the
+            // frozen table moves with it.
+            //
+            // FOUND WHILE DOING THIS, and worth more than the bump: the
+            // frozen table digests the TAG VOCABULARY, not the payload
+            // CONTENTS. Changing a variant's shape does not move
+            // `profile_root` on its own — this label bump is what makes
+            // the change visible, and nothing forces a future author to
+            // remember it. See `payload_schema_labels_carry_the_wire_version`.
+            Self::ClientGeneral => "bastion/net-envelope/payload-schema/client-general/v2",
+            Self::ServerGeneral => "bastion/net-envelope/payload-schema/server-general/v2",
             Self::ServerInit => "bastion/net-envelope/payload-schema/server-init/v1",
         }
     }
@@ -1118,8 +1132,11 @@ impl SemanticRouteV1 for ServerGeneral {
             | S::UpdatePendingTrade(_, _, _)
             | S::FinishedTrade(_)
             | S::MapMarker(_)
-            | S::WeatherUpdate(_)
-            | S::LocalWindUpdate(_)
+            | S::WeatherUpdate(..)
+            | S::LocalWindUpdate(..)
+            // APEX-T5.3: a receipt is data about a frame already sent,
+            // classified with the rest of the in-game data stream.
+            | S::InputReceipt(_)
             | S::SpectatePosition(_)
             | S::UpdateRecipes
             | S::Gizmos(_)
@@ -1432,10 +1449,48 @@ mod tests {
             // Recomputed at the APEX merge: `DigestDomainIdV1::NetEnvelopeProfile`
             // moved 12 -> 20 to settle a cross-lane collision, and the domain
             // id is part of the canonical preimage, so the root moved with it.
-            "sha256:dbf446ce54419af3233d5ed61a2d0528e20b669aa20a77b858b6fe6471d5cddb",
+            //
+            // Recomputed again for APEX-T5.2, the T5 tier's single wire bump:
+            // both payload-schema labels moved v1 -> v2 because both payload
+            // schemas changed (PlayerPhysics gained a weather-snapshot
+            // reference; the weather messages gained the snapshot id they
+            // belong to; ServerGeneral::InputReceipt is new). One recompute,
+            // one reason, spent once for the whole tier.
+            "sha256:0f1bb6139b9c18cd286991d43528daa3252297c07d1e6f52347a01883e551746",
             "NET_ENVELOPE_PROFILE_V1 table changed -- recompute and update this golden vector deliberately, \
              it must never drift silently"
         );
+    }
+
+    /// `APEX-T5.2` finding, recorded as a test because a comment would
+    /// not survive the next author.
+    ///
+    /// The frozen table digests the TAG VOCABULARY. It does NOT digest
+    /// the payload schemas' CONTENTS — `ClientGeneral` and
+    /// `ServerGeneral` are opaque to it. So adding a field to a message,
+    /// or a variant to an enum, does not move `profile_root` by itself.
+    /// The payload-schema LABEL is the only place a payload version is
+    /// recorded, which makes bumping it the whole of the wire-version
+    /// mechanism — and nothing forces a future author to remember.
+    ///
+    /// This test pins the labels so that a payload change made WITHOUT a
+    /// label bump still leaves this assertion describing v2 while the
+    /// messages have moved on. It narrows the gap; it does not close it,
+    /// and saying so is the point.
+    #[test]
+    fn payload_schema_labels_carry_the_wire_version() {
+        assert!(
+            SemanticPayloadSchemaV1::ClientGeneral.label().ends_with("/v2"),
+            "ClientGeneral's payload schema label is the wire version for every client message;              if the payload changed, this label must change with it"
+        );
+        assert!(
+            SemanticPayloadSchemaV1::ServerGeneral.label().ends_with("/v2"),
+            "ServerGeneral's payload schema label is the wire version for every server message"
+        );
+        // ServerInit did not change in T5.2 and must not be bumped along
+        // for the ride — a version that moves without a reason teaches
+        // readers that versions are noise.
+        assert!(SemanticPayloadSchemaV1::ServerInit.label().ends_with("/v1"));
     }
 
     #[test]
