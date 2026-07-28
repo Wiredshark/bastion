@@ -14,7 +14,7 @@
 //! wiring (116/125/152), server-side session teardown (084), snapshot
 //! staleness (136).
 
-pub(crate) const OPEN_CASE_COUNT: usize = 10;
+pub(crate) const OPEN_CASE_COUNT: usize = 9;
 
 pub(crate) const CASE_COVERAGE: &[(&str, &str)] = &[
     ("CMD-001", "structural: admission_class_v1 matches ClientGeneral exhaustively with NO wildcard arm, so a new variant fails the build rather than defaulting to a class (veloren_server::net_command::command_rollout_v1::enforce_has_no_unclassified_variant_to_admit)"),
@@ -100,7 +100,7 @@ pub(crate) const CASE_COVERAGE: &[(&str, &str)] = &[
     ("CMD-081", "veloren_common_net::msg::command::command_journal_v1::a_retired_sequence_is_refused_not_re_executed"),
     ("CMD-082", "veloren_common_net::msg::command::command_journal_v1::a_retired_sequence_is_refused_not_re_executed"),
     ("CMD-083", "veloren_common_net::msg::command::command_journal_v1::the_journal_survives_a_resume_and_refuses_foreign_or_stale_attachments"),
-    ("CMD-084", "OPEN: session closure should drop the journal; nothing yet owns that lifecycle on the server side"),
+    ("CMD-084", "veloren_common_net::msg::session_control::session_termination_v1::a_frame_is_a_request_and_the_registry_is_the_authority"),
     ("CMD-085", "structural: the journal is bound to a ServerBootId and refuses a descriptor carrying another, so it cannot cross a boot (veloren_common_net::msg::command::command_journal_v1::the_journal_survives_a_resume_and_refuses_foreign_or_stale_attachments)"),
     ("CMD-086", "veloren_common_net::msg::command::command_journal_v1::the_journal_survives_a_resume_and_refuses_foreign_or_stale_attachments"),
     ("CMD-087", "veloren_server::net_command::command_security_v1::a_command_id_is_not_a_credential"),

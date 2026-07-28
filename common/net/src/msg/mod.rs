@@ -1,5 +1,6 @@
 pub mod checkpoint;
 pub mod command;
+pub mod session_control;
 pub mod client;
 pub mod compression;
 pub mod ecs_packet;

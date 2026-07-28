@@ -17,7 +17,13 @@
 //! referential preflight (116/117/127), the commit-vs-tick ordering pin
 //! (121/123/124/130), and session control (036/162-171/173-176).
 //!
-//! RE-PINNED after T3.5 closed (2026-07-28), and the count did NOT move.
+//! RE-PINNED TWICE. First after T3.5 closed (2026-07-28), when the count
+//! did NOT move; then again once `T3.6.01` actually built the frames,
+//! which took it 22 -> 10. The history is kept because the first re-pin
+//! is the honest part: a prediction that cases would close is not a
+//! closure.
+//!
+//! First re-pin, verbatim:
 //! This row originally said the session-control cases "need frames T3.5
 //! introduces". T3.5 shipped session-control IDENTITY — a journaled,
 //! never-auto-retried `CommandKindV1::SessionControl`, and a journal
@@ -26,8 +32,16 @@
 //! the reason they were always open, and the prediction that they would
 //! close was wrong rather than the work being incomplete. The frames are
 //! their own row.
+//!
+//! Second re-pin: `T3.6.01` built `SessionTerminateV1` and its control
+//! lane, closing `CKPT-162`..`CKPT-171`, `CKPT-175` and `CKPT-176`.
+//! `CKPT-173` (control lane blocked behind a semantic Barrier) and
+//! `CKPT-174` (production still sends `ServerGeneral::Disconnect`) stay
+//! open: the first needs the control lane wired to the egress gate, the
+//! second is a migration of live send sites. Neither was built, so
+//! neither is claimed.
 
-pub(crate) const OPEN_CASE_COUNT: usize = 22;
+pub(crate) const OPEN_CASE_COUNT: usize = 10;
 
 pub(crate) const CASE_COVERAGE: &[(&str, &str)] = &[
     ("CKPT-001", "veloren_server::net_checkpoint::checkpoint_planner_v1::a_plan_aligns_end_to_end_and_tampering_does_not"),
@@ -191,21 +205,21 @@ pub(crate) const CASE_COVERAGE: &[(&str, &str)] = &[
     ("CKPT-159", "veloren_common_net::msg::checkpoint::checkpoint_prepare_commit_v1::prepare_rejects_and_commit_applies_the_whole_set"),
     ("CKPT-160", "structural: post-barrier data is refused by the sealed segmenter rather than buffered; the receiver has no future-epoch buffer to grow"),
     ("CKPT-161", "veloren_common_net::msg::checkpoint::checkpoint_profile_v1::participation_and_phases_are_total_and_ordered"),
-    ("CKPT-162", "OPEN: there is no SessionTerminate frame in this tree yet -- session-control termination lands with T3.5"),
-    ("CKPT-163", "OPEN: same missing SessionTerminate frame (discard-while-aligning)"),
-    ("CKPT-164", "OPEN: same missing SessionTerminate frame (discard after staging, before prepare)"),
-    ("CKPT-165", "OPEN: same missing SessionTerminate frame (discard after prepare)"),
-    ("CKPT-166", "OPEN: same missing SessionTerminate frame (committed epoch survives termination)"),
-    ("CKPT-167", "OPEN: same missing SessionTerminate frame (wrong binding)"),
-    ("CKPT-168", "OPEN: control-lane replay needs the T3.5 command-idempotency work"),
-    ("CKPT-169", "OPEN: control-lane sequence gap, same T3.5 dependency"),
-    ("CKPT-170", "OPEN: terminal-frame idempotency, same T3.5 dependency"),
-    ("CKPT-171", "OPEN: control-sequence conflict, same T3.5 dependency"),
+    ("CKPT-162", "veloren_common_net::msg::session_control::session_termination_v1::termination_discards_in_flight_work_and_spares_committed_checkpoints"),
+    ("CKPT-163", "veloren_common_net::msg::session_control::session_termination_v1::termination_discards_in_flight_work_and_spares_committed_checkpoints"),
+    ("CKPT-164", "veloren_common_net::msg::session_control::session_termination_v1::termination_discards_in_flight_work_and_spares_committed_checkpoints"),
+    ("CKPT-165", "veloren_common_net::msg::session_control::session_termination_v1::termination_discards_in_flight_work_and_spares_committed_checkpoints"),
+    ("CKPT-166", "veloren_common_net::msg::session_control::session_termination_v1::a_frame_is_a_request_and_the_registry_is_the_authority"),
+    ("CKPT-167", "veloren_common_net::msg::session_control::session_termination_v1::control_lane_rejects_are_typed_and_a_repeat_is_idempotent"),
+    ("CKPT-168", "veloren_common_net::msg::session_control::session_termination_v1::control_lane_rejects_are_typed_and_a_repeat_is_idempotent"),
+    ("CKPT-169", "veloren_common_net::msg::session_control::session_termination_v1::control_lane_rejects_are_typed_and_a_repeat_is_idempotent"),
+    ("CKPT-170", "veloren_common_net::msg::session_control::session_termination_v1::control_lane_rejects_are_typed_and_a_repeat_is_idempotent"),
+    ("CKPT-171", "veloren_common_net::msg::session_control::session_termination_v1::control_lane_rejects_are_typed_and_a_repeat_is_idempotent"),
     ("CKPT-172", "structural: ping carries no CheckpointParticipantV1 impl and never enters a transcript entry -- the same construction CKPT-140 rests on"),
     ("CKPT-173", "OPEN: there is no separate control lane yet; fences ride the stream they name"),
     ("CKPT-174", "OPEN: an audit row -- production still sends ServerGeneral::Disconnect, and retiring it belongs with the T3.5 session-control work"),
-    ("CKPT-175", "OPEN: transport close without a reason has no checkpoint-side handling yet"),
-    ("CKPT-176", "OPEN: reason-as-authority needs the T3.2 session registry interaction the session-control rows introduce"),
+    ("CKPT-175", "veloren_common_net::msg::session_control::session_termination_v1::a_frame_is_a_request_and_the_registry_is_the_authority"),
+    ("CKPT-176", "veloren_common_net::msg::session_control::session_termination_v1::a_frame_is_a_request_and_the_registry_is_the_authority"),
 ];
 
 #[cfg(test)]
