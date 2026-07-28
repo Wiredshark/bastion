@@ -280,6 +280,12 @@ pub enum ServerGeneral {
     CreateEntity(sync::EntityPackage<EcsCompPacket>),
     DeleteEntity(Uid),
     Disconnect(DisconnectReason),
+    /// `APEX-T3.4.20b`: opens this stream's fenced segment for a
+    /// checkpoint epoch. Control, never data: it carries no ordinal.
+    CheckpointBegin(super::checkpoint::CheckpointBeginV1),
+    /// `APEX-T3.4.20b`: seals it, declaring exactly what crossed so the
+    /// receiver can check its own transcript against the claim.
+    CheckpointBarrier(super::checkpoint::CheckpointBarrierV1),
     /// Send a popup notification such as "Waypoint Saved"
     Notification(Notification),
     UpdatePendingTrade(TradeId, PendingTrade, Option<SitePrices>),
@@ -580,6 +586,10 @@ impl ServerMsg {
                         | ServerGeneral::SetPlayerRole(_)
                         | ServerGeneral::LodZoneUpdate { .. } => true,
                         ServerGeneral::PluginData(_) => true,
+                        // T3.4.20b: fences are session-scoped, not
+                        // presence-scoped -- a checkpoint can span the
+                        // character screen as readily as in-game.
+                        ServerGeneral::CheckpointBegin(_) | ServerGeneral::CheckpointBarrier(_) => true,
                         ServerGeneral::PluginArtifactData(_) => true,
                     }
             },

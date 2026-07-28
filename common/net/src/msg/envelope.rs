@@ -74,13 +74,29 @@ impl SemanticDirectionV1 {
 /// (packet section 10.4's named attack: physical stream IDs must never be
 /// mistaken for semantic stream identity).
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+// T3.4.20b: serialized as its FROZEN tag, never as a variant index -- a
+// wire payload carrying a stream must move with `as_u8`, not with
+// declaration order.
+#[serde(into = "u8", try_from = "u8")]
 pub enum SemanticStreamIdV1 {
     Bootstrap = 1,
     CharacterScreen = 2,
     InGame = 3,
     General = 4,
     Terrain = 5,
+}
+
+impl From<SemanticStreamIdV1> for u8 {
+    fn from(s: SemanticStreamIdV1) -> u8 { s.as_u8() }
+}
+
+impl TryFrom<u8> for SemanticStreamIdV1 {
+    type Error = &'static str;
+
+    fn try_from(raw: u8) -> Result<Self, Self::Error> {
+        Self::try_from_u8(raw).ok_or("unknown semantic stream tag")
+    }
 }
 
 impl SemanticStreamIdV1 {
@@ -1073,6 +1089,10 @@ impl SemanticRouteV1 for ServerGeneral {
     fn semantic_stream(&self) -> SemanticStreamIdV1 {
         use ServerGeneral as S;
         match self {
+            // T3.4.20b: a fence belongs to the stream it names, not to a
+            // fixed one -- all five streams carry their own Begin/Barrier.
+            S::CheckpointBegin(b) => b.stream,
+            S::CheckpointBarrier(b) => b.stream,
             S::CharacterDataLoadResult(_)
             | S::CharacterListUpdate(_)
             | S::CharacterActionError(_)

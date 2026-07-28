@@ -253,12 +253,30 @@ impl Client {
     }
 
     pub(crate) fn prepare<M: Into<ServerMsg>>(&self, msg: M) -> PreparedMsg {
+        use common_net::msg::envelope::SemanticStreamIdV1;
         match msg.into() {
             ServerMsg::Info(m) => PreparedMsg::new(0, &m, &self.register_stream_params),
             ServerMsg::Init(m) => PreparedMsg::new(0, &m, &self.register_stream_params),
             ServerMsg::RegisterAnswer(m) => PreparedMsg::new(0, &m, &self.register_stream_params),
             ServerMsg::General(g) => {
                 match g {
+                    // T3.4.20b: a fence rides the physical stream its own
+                    // semantic stream maps to (`send_semantic_frame_v1`'s
+                    // routing table), not a fixed one.
+                    ServerGeneral::CheckpointBegin(ref b) => match b.stream {
+                        SemanticStreamIdV1::Bootstrap => PreparedMsg::new(0, &g, &self.register_stream_params),
+                        SemanticStreamIdV1::CharacterScreen => PreparedMsg::new(1, &g, &self.character_screen_stream_params),
+                        SemanticStreamIdV1::InGame => PreparedMsg::new(2, &g, &self.in_game_stream_params),
+                        SemanticStreamIdV1::General => PreparedMsg::new(3, &g, &self.general_stream_params),
+                        SemanticStreamIdV1::Terrain => PreparedMsg::new(5, &g, &self.terrain_stream_params),
+                    },
+                    ServerGeneral::CheckpointBarrier(ref b) => match b.stream {
+                        SemanticStreamIdV1::Bootstrap => PreparedMsg::new(0, &g, &self.register_stream_params),
+                        SemanticStreamIdV1::CharacterScreen => PreparedMsg::new(1, &g, &self.character_screen_stream_params),
+                        SemanticStreamIdV1::InGame => PreparedMsg::new(2, &g, &self.in_game_stream_params),
+                        SemanticStreamIdV1::General => PreparedMsg::new(3, &g, &self.general_stream_params),
+                        SemanticStreamIdV1::Terrain => PreparedMsg::new(5, &g, &self.terrain_stream_params),
+                    },
                     // Character Screen related
                     ServerGeneral::CharacterDataLoadResult(_)
                     | ServerGeneral::CharacterListUpdate(_)

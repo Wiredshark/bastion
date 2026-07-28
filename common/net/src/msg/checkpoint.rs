@@ -114,7 +114,7 @@ impl CheckpointParticipantV1 for ServerGeneral {
             | S::BastionDesignation { .. }
             | S::BastionDesignationRemoved { .. }
             | S::BastionInspectInfo { .. } => P::CheckpointedData,
-            S::Disconnect(_) => P::CheckpointControl,
+            S::Disconnect(_) | S::CheckpointBegin(_) | S::CheckpointBarrier(_) => P::CheckpointControl,
         }
     }
 
@@ -137,7 +137,7 @@ impl CheckpointParticipantV1 for ServerGeneral {
             S::Outcomes(_) | S::ChatMsg(_) | S::Notification(_) | S::Knockback(_) | S::Dialogue(_, _) => {
                 Ph::OrderedEvent
             },
-            S::Disconnect(_) => return None,
+            S::Disconnect(_) | S::CheckpointBegin(_) | S::CheckpointBarrier(_) => return None,
             _ => Ph::InGameState,
         })
     }
@@ -741,14 +741,14 @@ mod checkpoint_descriptor_v1 {
 /// `APEX-T3.4.06` — in-line stream boundaries: every required stream
 /// carries Begin then Data* then Barrier, so an empty stream is
 /// explicitly fenced rather than ambiguously absent.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CheckpointBeginV1 {
     pub epoch: u64,
     pub stream: SemanticStreamIdV1,
     pub descriptor_root: [u8; 32],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CheckpointBarrierV1 {
     pub epoch: u64,
     pub stream: SemanticStreamIdV1,
