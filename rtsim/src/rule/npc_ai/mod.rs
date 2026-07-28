@@ -883,6 +883,102 @@ fn archetype_gate(ctx: &mut NpcCtx, activity: &str) -> bool {
         })
 }
 
+/// T3.27 (E3-W2, characterization-first, mandatory per the handoff):
+/// which of [`villager`]'s three `consider.important(...)` branches
+/// (mod.rs:923 migrate-home, :944 seek-house-at-night, :983 seek-
+/// shelter-in-rain) wins under TODAY's `Consider::action` semantics --
+/// first true condition wins by DECLARATION ORDER, not judged urgency
+/// (`Consider::action`'s own doc explains why: with every real candidate
+/// scored 0.0, the fixed hysteresis bonus makes whichever registers
+/// first unbeatable by an equal-tier later candidate). This is a
+/// hand-maintained mirror of the three conditions' ORDER and GUARD
+/// EXEMPTIONS, not a live `NpcCtx` simulation of `villager()` itself
+/// (which needs one) -- it pins the EMERGENT DECISION as a pure function
+/// of the gating booleans, so a future migration's behavior diff is
+/// explicit and reviewable rather than blind. Keep this in lockstep with
+/// villager()'s actual branch order/guard-exemptions if either changes;
+/// `migrate_eligible`'s own (unrelated, complex) eligibility computation
+/// is an opaque input here, not re-derived.
+///
+/// Scope note, disclosed: only the three `important()`-tier branches are
+/// characterized (the specific bug the handoff names). The `casual()`-
+/// tier "fun activities" section below them (mod.rs:1080+) and any
+/// further behavior are out of scope for this pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(dead_code, reason = "consumed by E3-W2's migration follow-up; live in the tree now so the characterization tests below can pin today's baseline first")]
+enum VillagerImportantBranchV1 {
+    MigrateHome,
+    SeekHouseAtNight,
+    SeekShelterInRain,
+    None,
+}
+
+#[expect(dead_code, reason = "consumed by E3-W2's migration follow-up; live in the tree now so the characterization tests below can pin today's baseline first")]
+fn villager_important_branch_today(
+    migrate_eligible: bool,
+    is_dark: bool,
+    is_raining: bool,
+    is_guard: bool,
+) -> VillagerImportantBranchV1 {
+    if migrate_eligible {
+        return VillagerImportantBranchV1::MigrateHome;
+    }
+    if is_dark && !is_guard {
+        return VillagerImportantBranchV1::SeekHouseAtNight;
+    }
+    if is_raining && !is_guard {
+        return VillagerImportantBranchV1::SeekShelterInRain;
+    }
+    VillagerImportantBranchV1::None
+}
+
+#[cfg(test)]
+mod villager_important_branch_characterization {
+    use super::{VillagerImportantBranchV1::*, villager_important_branch_today as branch};
+
+    /// The confirmed live bug the handoff names: dark AND raining
+    /// simultaneously always picks "seek house at night" over "seek
+    /// shelter from rain" -- an accident of source order (dark is
+    /// checked at mod.rs:941, before rain at mod.rs:982), not a judgment
+    /// that night shelter matters more than rain shelter. Pinned here so
+    /// a future fix's diff is explicit against this documented baseline.
+    #[test]
+    fn dark_and_raining_picks_night_shelter_not_rain_shelter() {
+        assert_eq!(branch(false, true, true, false), SeekHouseAtNight);
+    }
+
+    #[test]
+    fn dark_only_picks_night_shelter() {
+        assert_eq!(branch(false, true, false, false), SeekHouseAtNight);
+    }
+
+    #[test]
+    fn rain_only_picks_rain_shelter() {
+        assert_eq!(branch(false, false, true, false), SeekShelterInRain);
+    }
+
+    #[test]
+    fn neither_dark_nor_raining_picks_nothing() {
+        assert_eq!(branch(false, false, false, false), None);
+    }
+
+    /// Guards are exempted from both shelter branches (mod.rs:942,:982),
+    /// even under conditions that would otherwise trigger them.
+    #[test]
+    fn guard_is_exempt_from_both_shelter_branches_even_dark_and_raining() {
+        assert_eq!(branch(false, true, true, true), None);
+    }
+
+    /// Migrate-home is checked first (mod.rs:889) and, when eligible,
+    /// always wins over dark/rain regardless of guard status -- migrate
+    /// eligibility has no guard exemption in the real code.
+    #[test]
+    fn migrate_eligible_wins_over_dark_and_rain_regardless_of_guard() {
+        assert_eq!(branch(true, true, true, false), MigrateHome);
+        assert_eq!(branch(true, true, true, true), MigrateHome);
+    }
+}
+
 fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
     choose(move |ctx, state: &mut DefaultState, consider| {
         // Consider moving home if the home site gets too full
