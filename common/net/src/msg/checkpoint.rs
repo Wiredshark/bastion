@@ -1602,3 +1602,314 @@ mod checkpoint_aligner_v1 {
         assert!(CheckpointAlignerV1::open_v1(descriptor.clone(), [0; 32]).is_err());
     }
 }
+
+/// `APEX-T3.4.15` — prepare is PURE and fallible: every check that can
+/// reject a checkpoint happens here, against staged records only, with
+/// nothing applied to game state. What survives is a `PreparedCheckpointV1`,
+/// which `T3.4.16` commits without any further way to fail.
+#[derive(Debug, Clone)]
+pub struct PreparedOpV1 {
+    pub ordinal: CheckpointOrdinalV1,
+    pub phase: CheckpointApplyPhaseV1,
+    pub stream: SemanticStreamIdV1,
+    pub payload: std::sync::Arc<ServerGeneral>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PreparedCheckpointV1 {
+    epoch: u64,
+    parent_epoch: u64,
+    descriptor_root: [u8; 32],
+    ops: Vec<PreparedOpV1>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrepareErrorV1 {
+    Order(CheckpointOrderErrorV1),
+    Chronology(CheckpointChronologyErrorV1),
+    Resource(CheckpointResourceErrorV1),
+    RecordCountMismatch,
+    NotCheckpointedData,
+    MissingApplyPhase,
+    PhaseDisagreesWithPayload,
+}
+
+impl PreparedCheckpointV1 {
+    pub fn epoch(&self) -> u64 { self.epoch }
+
+    pub fn parent_epoch(&self) -> u64 { self.parent_epoch }
+
+    pub fn descriptor_root(&self) -> [u8; 32] { self.descriptor_root }
+
+    pub fn ops(&self) -> &[PreparedOpV1] { &self.ops }
+}
+
+/// Prepares an aligner's apply set against the descriptor it was aligned
+/// under. Pure: it reads `staged` and the profile and touches nothing
+/// else, so a rejection here costs the checkpoint and nothing more.
+/// `staged_events` is the receiver's own count of accepted frames — the
+/// actual-resource check must not infer it from the record set.
+pub fn prepare_checkpoint_v1(
+    descriptor: &CheckpointDescriptorV1,
+    descriptor_root: [u8; 32],
+    staged: Vec<StagedRecordV1>,
+    staged_events: u32,
+    profile: &CheckpointResourceProfileV1,
+    chronology: &CheckpointChronologyV1,
+) -> Result<PreparedCheckpointV1, PrepareErrorV1> {
+    use PrepareErrorV1 as E;
+
+    chronology
+        .validate_epoch_v1(descriptor.epoch, descriptor.parent_epoch)
+        .map_err(E::Chronology)?;
+    if staged.len() as u32 != descriptor.data_record_count {
+        return Err(E::RecordCountMismatch);
+    }
+
+    let mut ordinals: Vec<CheckpointOrdinalV1> = staged.iter().map(|r| r.ordinal).collect();
+    ordinals.sort_by_key(|o| o.0);
+    validate_ordinals_v1(&ordinals).map_err(E::Chronology)?;
+
+    let mut observed_bytes = 0u64;
+    for record in &staged {
+        if record.payload.participation_v1() != CheckpointParticipationV1::CheckpointedData {
+            return Err(E::NotCheckpointedData);
+        }
+        // The staged phase must still be the payload's OWN phase: a
+        // record cannot be re-phased between alignment and prepare.
+        match record.payload.apply_phase_v1() {
+            None => return Err(E::MissingApplyPhase),
+            Some(phase) if phase != record.phase => return Err(E::PhaseDisagreesWithPayload),
+            Some(_) => {},
+        }
+        observed_bytes += super::envelope::encode_payload_v1(&*record.payload).len() as u64;
+    }
+
+    let mut ops: Vec<PreparedOpV1> = staged
+        .into_iter()
+        .map(|r| PreparedOpV1 { ordinal: r.ordinal, phase: r.phase, stream: r.stream, payload: r.payload })
+        .collect();
+    ops.sort_by_key(|op| (op.phase.rank(), op.ordinal.0));
+    let order: Vec<(CheckpointOrdinalV1, CheckpointApplyPhaseV1)> = ops.iter().map(|op| (op.ordinal, op.phase)).collect();
+    validate_apply_order_v1(&order).map_err(E::Order)?;
+
+    // ACTUAL admission: what really arrived, not what was declared.
+    profile
+        .admit_actual_v1(staged_events, ops.len() as u32, ops.len() as u32, observed_bytes)
+        .map_err(E::Resource)?;
+
+    Ok(PreparedCheckpointV1 {
+        epoch: descriptor.epoch,
+        parent_epoch: descriptor.parent_epoch,
+        descriptor_root,
+        ops,
+    })
+}
+
+/// `APEX-T3.4.16` — commit cannot fail. The sink's methods return unit,
+/// so there is no error path to leave a checkpoint half-applied; every
+/// way to refuse one lives in `prepare_checkpoint_v1`. The prepared
+/// checkpoint is consumed by value, so it commits exactly once.
+pub trait CheckpointApplySinkV1 {
+    /// Applied in canonical phase/ordinal order.
+    fn apply_record_v1(&mut self, op: &PreparedOpV1);
+
+    /// Called once, after every record of the checkpoint has been
+    /// applied — never on a partial set.
+    fn checkpoint_committed_v1(&mut self, epoch: u64, descriptor_root: [u8; 32]);
+}
+
+/// Commits a prepared checkpoint and advances the chronology. Infallible
+/// by signature: the only outcome is a fully applied checkpoint.
+pub fn commit_checkpoint_v1(
+    prepared: PreparedCheckpointV1,
+    chronology: &mut CheckpointChronologyV1,
+    sink: &mut impl CheckpointApplySinkV1,
+) -> CheckpointCommitReceiptV1 {
+    for op in &prepared.ops {
+        sink.apply_record_v1(op);
+    }
+    sink.checkpoint_committed_v1(prepared.epoch, prepared.descriptor_root);
+    chronology.commit_epoch_v1(prepared.epoch);
+    CheckpointCommitReceiptV1 {
+        epoch: prepared.epoch,
+        parent_epoch: prepared.parent_epoch,
+        descriptor_root: prepared.descriptor_root,
+        applied_records: prepared.ops.len() as u32,
+    }
+}
+
+/// What the client can acknowledge back: proof of which checkpoint it
+/// committed, not merely that it received one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CheckpointCommitReceiptV1 {
+    pub epoch: u64,
+    pub parent_epoch: u64,
+    pub descriptor_root: [u8; 32],
+    pub applied_records: u32,
+}
+
+#[cfg(test)]
+mod checkpoint_prepare_commit_v1 {
+    use super::*;
+    use std::sync::Arc;
+
+    #[derive(Default)]
+    struct RecordingSink {
+        applied: Vec<(u64, CheckpointApplyPhaseV1)>,
+        committed: Option<(u64, [u8; 32])>,
+    }
+
+    impl CheckpointApplySinkV1 for RecordingSink {
+        fn apply_record_v1(&mut self, op: &PreparedOpV1) {
+            assert!(self.committed.is_none(), "records must never be applied after the commit call");
+            self.applied.push((op.ordinal.0, op.phase));
+        }
+
+        fn checkpoint_committed_v1(&mut self, epoch: u64, descriptor_root: [u8; 32]) {
+            self.committed = Some((epoch, descriptor_root));
+        }
+    }
+
+    fn staged(ordinal: u64, payload: ServerGeneral) -> StagedRecordV1 {
+        StagedRecordV1 {
+            ordinal: CheckpointOrdinalV1(ordinal),
+            stream: SemanticStreamIdV1::InGame,
+            sequence: ordinal + 1,
+            phase: payload.apply_phase_v1().unwrap(),
+            payload: Arc::new(payload),
+        }
+    }
+
+    fn profile() -> CheckpointResourceProfileV1 {
+        CheckpointResourceProfileV1 {
+            profile_id: "apex-t3-4-prepare-test-v1".to_owned(),
+            purpose: CheckpointProfilePurposeV1::TestFixture,
+            max_records_per_checkpoint: 8,
+            max_payload_bytes_per_checkpoint: 4096,
+            max_payload_bytes_per_stream: [4096; 5],
+            max_staged_events: 32,
+            max_prepared_ops: 8,
+        }
+    }
+
+    fn descriptor(records: u32) -> CheckpointDescriptorV1 {
+        use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+        let binding = super::super::envelope::ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([2; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        };
+        let streams: Vec<StreamCheckpointPlanV1> = REQUIRED_CHECKPOINT_STREAMS_V1
+            .into_iter()
+            .map(|stream| StreamCheckpointPlanV1 {
+                stream,
+                begin_sequence: 1,
+                first_data_sequence: None,
+                last_data_sequence: None,
+                barrier_sequence: 2,
+                data_record_count: 0,
+                payload_bytes: 0,
+                stream_transcript_root: [0; 32],
+            })
+            .collect();
+        CheckpointDescriptorV1 {
+            schema_version: 1,
+            binding,
+            epoch: 1,
+            parent_epoch: 0,
+            resource_profile_root: [1; 32],
+            apply_policy_root: [2; 32],
+            egress_order_policy_root: [3; 32],
+            data_record_count: records,
+            ordinal_max: records as u64,
+            payload_bytes: 0,
+            global_transcript_root: [4; 32],
+            streams: streams.try_into().unwrap(),
+            bootstrap_manifest_root: None,
+        }
+    }
+
+    /// Prepare holds every refusal; commit has no way to refuse.
+    #[test]
+    fn prepare_rejects_and_commit_applies_the_whole_set() {
+        let d = descriptor(3);
+        let chronology = CheckpointChronologyV1::new();
+        let set = || {
+            vec![
+                staged(1, ServerGeneral::CharacterSuccess),
+                staged(2, ServerGeneral::UpdateRecipes),
+                staged(3, ServerGeneral::ExitInGameSuccess),
+            ]
+        };
+
+        // a record re-phased away from its payload's own phase
+        let mut lying = set();
+        lying[1].phase = CheckpointApplyPhaseV1::IdentityLifecycle;
+        assert_eq!(
+            prepare_checkpoint_v1(&d, [9; 32], lying, 13, &profile(), &chronology).unwrap_err(),
+            PrepareErrorV1::PhaseDisagreesWithPayload
+        );
+
+        // a control payload staged as data
+        let mut control = set();
+        control[2].payload = Arc::new(ServerGeneral::Disconnect(super::super::server::DisconnectReason::Shutdown));
+        assert_eq!(
+            prepare_checkpoint_v1(&d, [9; 32], control, 13, &profile(), &chronology).unwrap_err(),
+            PrepareErrorV1::NotCheckpointedData
+        );
+
+        // a missing record
+        assert_eq!(
+            prepare_checkpoint_v1(&d, [9; 32], set()[..2].to_vec(), 13, &profile(), &chronology).unwrap_err(),
+            PrepareErrorV1::RecordCountMismatch
+        );
+
+        // more frames than the profile admits, with the same record set
+        assert!(matches!(
+            prepare_checkpoint_v1(&d, [9; 32], set(), 33, &profile(), &chronology),
+            Err(PrepareErrorV1::Resource(CheckpointResourceErrorV1::ActualExceeded { limit: "staged_events" }))
+        ));
+
+        // an epoch that does not follow the committed one
+        let mut ahead = CheckpointChronologyV1::new();
+        ahead.commit_epoch_v1(5);
+        assert!(matches!(
+            prepare_checkpoint_v1(&d, [9; 32], set(), 13, &profile(), &ahead),
+            Err(PrepareErrorV1::Chronology(_))
+        ));
+
+        // ...and the good set prepares, then commits whole
+        let mut chronology = CheckpointChronologyV1::new();
+        let prepared = prepare_checkpoint_v1(&d, [9; 32], set(), 13, &profile(), &chronology).unwrap();
+        assert_eq!(prepared.ops().len(), 3);
+        let mut sink = RecordingSink::default();
+        let receipt = commit_checkpoint_v1(prepared, &mut chronology, &mut sink);
+        assert_eq!(
+            sink.applied,
+            vec![
+                (1, CheckpointApplyPhaseV1::CharacterState),
+                (2, CheckpointApplyPhaseV1::InGameState),
+                (3, CheckpointApplyPhaseV1::InGameState),
+            ]
+        );
+        assert_eq!(sink.committed, Some((1, [9; 32])));
+        assert_eq!(receipt.applied_records, 3);
+        assert_eq!(receipt.epoch, 1);
+        assert_eq!(chronology.committed_epoch(), 1, "commit advances the chronology");
+    }
+
+    /// An empty checkpoint is a real checkpoint: it commits, advancing the
+    /// epoch with no records applied.
+    #[test]
+    fn an_empty_checkpoint_still_commits() {
+        let mut chronology = CheckpointChronologyV1::new();
+        let prepared = prepare_checkpoint_v1(&descriptor(0), [7; 32], vec![], 10, &profile(), &chronology).unwrap();
+        let mut sink = RecordingSink::default();
+        let receipt = commit_checkpoint_v1(prepared, &mut chronology, &mut sink);
+        assert!(sink.applied.is_empty());
+        assert_eq!(sink.committed, Some((1, [7; 32])));
+        assert_eq!(receipt.applied_records, 0);
+        assert_eq!(chronology.committed_epoch(), 1);
+    }
+}
