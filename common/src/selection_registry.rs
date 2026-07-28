@@ -27,7 +27,7 @@
 //! raw catalog only; classifying them is future work, not a claim this
 //! row makes.
 
-use std::{collections::HashMap, fs, path::Path};
+use std::path::Path;
 
 /// What's known about a selection site's tiebreak behavior.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -134,47 +134,12 @@ const CATALOG: &[SelectionSiteV1] = &[
 
 const PATTERNS: [&str; 4] = [".min_by_key(", ".max_by_key(", ".min_by(", ".max_by("];
 
-/// Re-scans the given directories right now for `.min_by_key(`/
-/// `.max_by_key(`/`.min_by(`/`.max_by(` call sites, returning `(file
-/// relative to `workspace_root`, trimmed line text, 0-based occurrence
-/// index)` triples.
+/// T0.83: delegates to the shared [`crate::scanner_framework`] walk/
+/// match/occurrence-index primitive rather than hand-rolling it a fourth
+/// time (this module, `host_input_manifest`, and `rng_source_registry`
+/// each wrote the same walk before this row unified it).
 pub fn scan_live_selection_sites(workspace_root: &Path, dirs: &[&Path]) -> Vec<(String, String, u32)> {
-    let mut out = Vec::new();
-    for dir in dirs {
-        scan_dir(workspace_root, dir, &mut out);
-    }
-    out.sort();
-    out
-}
-
-fn scan_dir(base: &Path, dir: &Path, out: &mut Vec<(String, String, u32)>) {
-    let Ok(entries) = fs::read_dir(dir) else { return };
-    let mut paths: Vec<_> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
-    paths.sort();
-    for path in paths {
-        if path.is_dir() {
-            scan_dir(base, &path, out);
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            scan_file(base, &path, out);
-        }
-    }
-}
-
-fn scan_file(base: &Path, path: &Path, out: &mut Vec<(String, String, u32)>) {
-    let Ok(contents) = fs::read_to_string(path) else { return };
-    let rel = path.strip_prefix(base).unwrap_or(path).to_string_lossy().replace('\\', "/");
-    if rel.ends_with("selection_registry.rs") {
-        return;
-    }
-    let mut occurrence: HashMap<String, u32> = HashMap::new();
-    for line in contents.lines() {
-        if PATTERNS.iter().any(|p| line.contains(p)) {
-            let snippet = line.trim().to_string();
-            let idx = occurrence.entry(snippet.clone()).or_insert(0);
-            out.push((rel.clone(), snippet, *idx));
-            *idx += 1;
-        }
-    }
+    crate::scanner_framework::scan_lines_matching(workspace_root, dirs, &PATTERNS, "selection_registry.rs")
 }
 
 #[cfg(test)]
@@ -182,15 +147,12 @@ mod tests {
     use super::*;
 
     fn workspace_root() -> std::path::PathBuf {
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .canonicalize()
-            .expect("workspace root must resolve")
+        crate::scanner_framework::workspace_root_from_manifest_dir(env!("CARGO_MANIFEST_DIR"))
     }
 
     fn scan_roots() -> Vec<std::path::PathBuf> {
         let root = workspace_root();
-        ["common/src", "server/src", "rtsim/src", "bastion-server/src", "world/src"]
+        crate::scanner_framework::AUTHORITATIVE_SCAN_ROOTS
             .iter()
             .map(|p| root.join(p))
             .collect()

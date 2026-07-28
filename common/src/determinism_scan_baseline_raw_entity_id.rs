@@ -1,0 +1,17 @@
+[
+    ("bastion-server/src/bastion_jobs.rs", "entity: entity.id(),", 0),
+    ("common/src/region.rs", "let id = entity.id();", 0),
+    ("common/src/region.rs", "self.tracked_entities.contains(entity.id())", 0),
+    ("server/src/events/entity_manipulation.rs", "entity.id() as u64,", 0),
+    ("server/src/events/inventory_manip.rs", "item_entity = item_entity.id(),", 0),
+    ("server/src/events/inventory_manip.rs", "picker_entity = entity.id(),", 0),
+    ("server/src/lib.rs", ".map(|(entity, item, pos, _)| (entity.id(), item.amount() as u64, pos.0))", 0),
+    ("server/src/lib.rs", "entity.id(),", 0),
+    ("server/src/state_ext.rs", "entity = entity.id(),", 0),
+    ("server/src/sys/entity_sync.rs", "let id_staggered_tick = tick + entity.id() as u64;", 0),
+    ("server/src/sys/msg/in_game.rs", "entity.id(),", 0),
+    ("server/src/sys/object.rs", "entity = entity.id(),", 0),
+    ("server/src/sys/sentinel.rs", "let force_sync = self.spectating_entity.modified().contains(for_entity.id())", 0),
+    ("server/src/sys/sentinel.rs", "|| self.spectating_entity.inserted().contains(for_entity.id());", 0),
+    ("server/src/weather/tick.rs", "if entity.id() as u64 % 30 == tick.0 % 30 {", 0),
+]

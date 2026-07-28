@@ -1,0 +1,18 @@
+[
+    ("bastion-server/src/bastion_assets.rs", "match std::fs::read_dir(&vox_dir) {", 0),
+    ("bastion-server/src/bastion_traversal_tooling.rs", "for entry in fs::read_dir(root).unwrap() {", 0),
+    ("bastion-server/src/bastion_traversal_tooling.rs", "for entry in std::fs::read_dir(repo_root().join(\"rtsim/src/data\")).unwrap() {", 0),
+    ("bastion-server/src/bastion_traversal_tooling.rs", "for entry in std::fs::read_dir(repo_root().join(\"server/src/events\")).unwrap() {", 0),
+    ("common/src/apex/numeric_surface.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
+    ("common/src/host_input_manifest.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
+    ("common/src/rng_source_registry.rs", "let Ok(entries) = std::fs::read_dir(dir) else { return };", 0),
+    ("common/src/scanner_framework.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
+    ("server/src/net_checkpoint_disconnect.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
+    ("server/src/net_command_bypass.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
+    ("server/src/plugin_deployment_policy.rs", "for entry in std::fs::read_dir(plugins_dir).map_err(|e| E::ArchiveDirUnreadable { detail: e.to_string() })? {", 0),
+    ("server/src/save_inventory.rs", "if let Ok(entries) = fs::read_dir(&rtsim_dir) {", 0),
+    ("server/src/save_inventory.rs", "if let Ok(entries) = fs::read_dir(&terrain_dir) {", 0),
+    ("server/src/save_inventory.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
+    ("server/src/semantic_net/receive_inventory.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
+    ("server/src/semantic_net/send_inventory.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
+]
