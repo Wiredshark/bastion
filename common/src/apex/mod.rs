@@ -9,6 +9,7 @@
 pub mod prediction_boundary;
 pub mod numeric_probe;
 pub mod numeric_profile;
+pub mod reconciliation_metric;
 // T6.1's inventory is a build-time tripwire whose only consumers are its
 // own assertions; outside `cfg(test)` every item in it is dead. Gating it
 // here is what the module actually is, and it silences 17 dead-code
