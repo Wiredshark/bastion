@@ -7,10 +7,12 @@ use common::apex::digest::DigestBytes32V1;
 use common_net::msg::ServerGeneral;
 use common_net::msg::checkpoint::{
     CheckpointApplyPhaseV1, CheckpointDescriptorV1, CheckpointOrdinalV1, CheckpointParticipantV1,
-    CheckpointParticipationV1, CheckpointResourceProfileV1, CheckpointedEnvelopeContextV1,
+    CheckpointBarrierV1, CheckpointBeginV1, CheckpointParticipationV1, CheckpointResourceProfileV1,
+    CheckpointedEnvelopeContextV1,
     REQUIRED_CHECKPOINT_STREAMS_V1, StreamCheckpointPlanV1, TranscriptEntryV1,
     global_transcript_root_v1, stream_transcript_root_v1, validate_checkpoint_context_v1,
 };
+use common_net::msg::checkpoint::{AlignErrorV1, CheckpointAlignerV1};
 use common_net::msg::envelope::{ActiveSessionBindingV1, SemanticRouteV1, SemanticSendStateV1, SemanticStreamIdV1};
 use crate::semantic_net::outbox::SemanticSendIntentV1;
 use std::num::NonZeroU64;
@@ -250,6 +252,7 @@ pub enum CheckpointFrameV1 {
         stream: SemanticStreamIdV1,
         sequence: u64,
         context: CheckpointedEnvelopeContextV1,
+        control: CheckpointBeginV1,
     },
     Data {
         stream: SemanticStreamIdV1,
@@ -262,6 +265,7 @@ pub enum CheckpointFrameV1 {
         stream: SemanticStreamIdV1,
         sequence: u64,
         context: CheckpointedEnvelopeContextV1,
+        control: CheckpointBarrierV1,
     },
 }
 
@@ -306,7 +310,12 @@ pub fn checkpoint_frames_v1(plan: &RecipientCheckpointPlanV1) -> Result<Vec<Chec
 
     for stream_plan in plan.descriptor.streams.iter() {
         let stream = stream_plan.stream;
-        frames.push(CheckpointFrameV1::Begin { stream, sequence: stream_plan.begin_sequence, context: control });
+        frames.push(CheckpointFrameV1::Begin {
+            stream,
+            sequence: stream_plan.begin_sequence,
+            context: control,
+            control: CheckpointBeginV1 { epoch, stream, descriptor_root: plan.descriptor_root },
+        });
         for (ordinal, record_stream, sequence) in plan.records.iter().filter(|(_, s, _)| *s == stream) {
             let intent = plan
                 .intents
@@ -325,7 +334,20 @@ pub fn checkpoint_frames_v1(plan: &RecipientCheckpointPlanV1) -> Result<Vec<Chec
                 payload: Arc::clone(&intent.payload),
             });
         }
-        frames.push(CheckpointFrameV1::Barrier { stream, sequence: stream_plan.barrier_sequence, context: control });
+        frames.push(CheckpointFrameV1::Barrier {
+            stream,
+            sequence: stream_plan.barrier_sequence,
+            context: control,
+            control: CheckpointBarrierV1 {
+                epoch,
+                stream,
+                descriptor_root: plan.descriptor_root,
+                data_record_count: stream_plan.data_record_count,
+                payload_bytes: stream_plan.payload_bytes,
+                last_data_sequence: stream_plan.last_data_sequence,
+                stream_transcript_root: stream_plan.stream_transcript_root,
+            },
+        });
     }
 
     for frame in &frames {
@@ -338,6 +360,45 @@ pub fn checkpoint_frames_v1(plan: &RecipientCheckpointPlanV1) -> Result<Vec<Chec
 /// Unused import guard: the descriptor root is a raw 32-byte value here,
 /// converted at the T0.3 boundary by callers that need a typed digest.
 pub fn descriptor_root_bytes_v1(root: [u8; 32]) -> DigestBytes32V1 { DigestBytes32V1::from_array(root) }
+
+/// `APEX-T3.4.14` — what a plan's own frames prove when driven through a
+/// real receiver.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckpointCompletenessV1 {
+    pub descriptor_root: [u8; 32],
+    pub frames: usize,
+    pub apply_order: Vec<(CheckpointOrdinalV1, CheckpointApplyPhaseV1)>,
+}
+
+/// `T3.4.14`: completeness is verified by RECEIVING, not by inspecting.
+/// The plan's frames are driven through a fresh aligner, which recomputes
+/// every root from the payloads themselves and refuses to yield anything
+/// until all five streams are fenced. A plan that cannot be aligned is
+/// not a checkpoint.
+pub fn verify_plan_completeness_v1(
+    plan: &RecipientCheckpointPlanV1,
+) -> Result<CheckpointCompletenessV1, AlignErrorV1> {
+    let frames = checkpoint_frames_v1(plan).map_err(|_| AlignErrorV1::Incomplete)?;
+    let mut aligner = CheckpointAlignerV1::open_v1(plan.descriptor.clone(), plan.descriptor_root)?;
+    for frame in &frames {
+        match frame {
+            CheckpointFrameV1::Begin { control, .. } => aligner.accept_begin_v1(control)?,
+            CheckpointFrameV1::Data { stream, sequence, context, payload, .. } => {
+                aligner.accept_data_v1(*stream, *sequence, context, Arc::clone(payload))?
+            },
+            CheckpointFrameV1::Barrier { control, .. } => aligner.accept_barrier_v1(control)?,
+        }
+    }
+    if !aligner.is_complete() {
+        return Err(AlignErrorV1::Incomplete);
+    }
+    let applied = aligner.take_apply_sequence_v1()?;
+    Ok(CheckpointCompletenessV1 {
+        descriptor_root: plan.descriptor_root,
+        frames: frames.len(),
+        apply_order: applied.iter().map(|r| (r.ordinal, r.phase)).collect(),
+    })
+}
 
 
 /// `APEX-T3.4.13` — while a checkpoint is in flight, a stream carries
@@ -473,6 +534,10 @@ mod checkpoint_planner_v1 {
     }
 
     fn intent(stream: SemanticStreamIdV1, local_ordinal: u32) -> SemanticSendIntentV1 {
+        intent_payload(stream, local_ordinal, ServerGeneral::UpdateRecipes)
+    }
+
+    fn intent_payload(stream: SemanticStreamIdV1, local_ordinal: u32, payload: ServerGeneral) -> SemanticSendIntentV1 {
         SemanticSendIntentV1 {
             recipient: binding(),
             semantic_stream: stream,
@@ -485,7 +550,7 @@ mod checkpoint_planner_v1 {
                 subject: CanonicalSubjectKeyV1::for_singleton("planner-test"),
                 local_ordinal,
             },
-            payload: Arc::new(ServerGeneral::UpdateRecipes),
+            payload: Arc::new(payload),
         }
     }
 
@@ -644,6 +709,59 @@ mod checkpoint_planner_v1 {
                 assert!(frame.context().ordinal.is_none(), "control frames carry no ordinal");
             }
         }
+    }
+
+    /// `T3.4.14`: completeness proven by RECEIVING the plan's own frames.
+    #[test]
+    fn a_plan_aligns_end_to_end_and_tampering_does_not() {
+        use common_net::msg::checkpoint::CheckpointApplyPhaseV1 as Ph;
+
+        let mut state = SemanticSendStateV1::new(binding());
+        let mut plan = reserve_and_plan_recipient_checkpoint_v1(
+            &mut state,
+            5,
+            4,
+            vec![
+                intent_payload(SemanticStreamIdV1::InGame, 1, ServerGeneral::CharacterSuccess),
+                intent_payload(SemanticStreamIdV1::InGame, 2, ServerGeneral::UpdateRecipes),
+                intent_payload(SemanticStreamIdV1::Terrain, 3, ServerGeneral::ExitInGameSuccess),
+            ],
+            &profile(),
+            [1; 32],
+            [2; 32],
+        )
+        .unwrap();
+
+        let proof = verify_plan_completeness_v1(&plan).unwrap();
+        assert_eq!(proof.descriptor_root, plan.descriptor_root);
+        assert_eq!(proof.frames, 13);
+        assert_eq!(
+            proof.apply_order,
+            vec![
+                (CheckpointOrdinalV1(1), Ph::CharacterState),
+                (CheckpointOrdinalV1(2), Ph::InGameState),
+                (CheckpointOrdinalV1(3), Ph::InGameState),
+            ]
+        );
+
+        // A payload swapped after planning keeps every count and sequence
+        // the descriptor declares -- only the recomputed transcript moves.
+        plan.intents[1].payload = Arc::new(ServerGeneral::ExitInGameSuccess);
+        assert_eq!(verify_plan_completeness_v1(&plan), Err(AlignErrorV1::StreamRootMismatch));
+
+        // And a descriptor edited away from its own root cannot even open.
+        let mut retampered = reserve_and_plan_recipient_checkpoint_v1(
+            &mut state,
+            6,
+            5,
+            vec![intent_payload(SemanticStreamIdV1::InGame, 1, ServerGeneral::CharacterSuccess)],
+            &profile(),
+            [1; 32],
+            [2; 32],
+        )
+        .unwrap();
+        retampered.descriptor.streams[2].stream_transcript_root = [0xEE; 32];
+        assert!(verify_plan_completeness_v1(&retampered).is_err());
     }
 
     /// `T3.4.13`: a fenced stream carries its checkpoint and nothing
