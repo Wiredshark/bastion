@@ -5607,8 +5607,17 @@ mod weather_prediction_split_v1 {
     fn lerp_with(snapshot: u64, wind: Vec2<f32>) -> WeatherLerp {
         let mut lerp = WeatherLerp::default();
         // Two arrivals, so the presentation lerp has a real interval to
-        // interpolate over rather than dividing by zero.
+        // interpolate over rather than dividing by zero. The two calls
+        // must be separated by a REAL sleep, not just consecutive
+        // statements: back-to-back Instant::now() calls can register a
+        // near-zero (or exactly zero) calibration duration, which makes
+        // `update_local_wind`'s ratio saturate its `.clamp(0.0, 1.0)` to
+        // 1.0 on the very first call -- the presentation value would
+        // already sit at the endpoint before any test-body timing even
+        // runs, silently defeating the "moves after elapsed time"
+        // assertion below regardless of what it measures afterward.
         lerp.local_wind_update(Vec2::zero(), WeatherSnapshotIdV1::from_sequence_v1(snapshot - 1));
+        std::thread::sleep(std::time::Duration::from_millis(5));
         lerp.local_wind_update(wind, WeatherSnapshotIdV1::from_sequence_v1(snapshot));
         lerp
     }
