@@ -167,6 +167,20 @@ impl<T> PredictionHistoryV1<T> {
     /// makes the whole buffer untrustworthy at once, as opposed to
     /// `adopt_generation_v1`'s per-generation invalidation.
     pub fn clear_v1(&mut self) { self.entries.clear(); }
+
+    /// `APEX-T7.3c-ii`: drops every entry for which `keep` returns
+    /// `false`, keeping the current generation -- unlike
+    /// `adopt_generation_v1` (which invalidates by GENERATION, an
+    /// all-or-nothing correction boundary) and `clear_v1` (which drops
+    /// everything), this is a per-entry filter for a caller that knows
+    /// something finer-grained about individual entries, such as
+    /// baseline-stamping's "acknowledged by implication" trim. Returns
+    /// how many were dropped.
+    pub fn retain_v1(&mut self, mut keep: impl FnMut(&T) -> bool) -> usize {
+        let before = self.entries.len();
+        self.entries.retain(|(_, entry)| keep(entry));
+        before - self.entries.len()
+    }
 }
 
 #[cfg(test)]

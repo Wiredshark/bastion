@@ -85,7 +85,7 @@ use network::{ConnectAddr, Network, Participant, Pid, Stream};
 use num::traits::FloatConst;
 use rayon::prelude::*;
 use rustls::client::danger::ServerCertVerified;
-use specs::Component;
+use specs::{Component, SystemData};
 use std::{
     collections::{BTreeMap, VecDeque},
     fmt::Debug,
@@ -629,6 +629,66 @@ async fn connect_quic(
         ConnectAddr::Quic(a, config.clone(), hostname.clone())
     })
     .await
+}
+
+/// `APEX-T7.3c-ii`: read the seven `RollingStateV1` fields directly from
+/// `state`'s live ECS storages for `entity`. `None` if any is missing —
+/// a predicted entity is expected to carry all seven (the same
+/// components `character_behavior::Sys`'s live join and
+/// `replay_predicted_frame_v1` both require).
+fn read_rolling_state_v1(
+    state: &common_state::State,
+    entity: specs::Entity,
+) -> Option<common_systems::character_behavior::RollingStateV1> {
+    Some(common_systems::character_behavior::RollingStateV1 {
+        char_state: state.read_storage::<comp::CharacterState>().get(entity)?.clone(),
+        character_activity: state.read_storage::<comp::CharacterActivity>().get(entity)?.clone(),
+        pos: *state.read_storage::<comp::Pos>().get(entity)?,
+        vel: *state.read_storage::<comp::Vel>().get(entity)?,
+        ori: *state.read_storage::<comp::Ori>().get(entity)?,
+        density: *state.read_storage::<comp::Density>().get(entity)?,
+        energy: *state.read_storage::<comp::Energy>().get(entity)?,
+    })
+}
+
+/// `APEX-T7.3c-ii`: write a replayed `RollingStateV1` back into `state`'s
+/// live ECS storages for `entity` — superseding the raw authoritative
+/// snapshot `apply_comp_sync_package` already wrote verbatim (the LAW's
+/// write-verbatim half, satisfied before this ever runs) with the
+/// client's own not-yet-acknowledged inputs re-applied on top of it.
+fn write_rolling_state_v1(
+    state: &common_state::State,
+    entity: specs::Entity,
+    rolling: &common_systems::character_behavior::RollingStateV1,
+) {
+    // `CharacterState`/`CharacterActivity`/`Density`/`Energy` use
+    // flagged storage (`DerefFlaggedStorage`) -- `get_mut` returns a
+    // `FlaggedAccessMut`, not a plain `&mut T`, and writing through its
+    // `DerefMut` needs the LOCAL BINDING itself to be `mut` (this is the
+    // exact same storage-flagging `T7.3b`'s `JoinFieldMut` finding
+    // covers: these are the same four fields). `Pos`/`Vel`/`Ori` are
+    // plain storage and don't need it.
+    if let Some(mut c) = state.ecs().write_storage::<comp::CharacterState>().get_mut(entity) {
+        *c = rolling.char_state.clone();
+    }
+    if let Some(mut c) = state.ecs().write_storage::<comp::CharacterActivity>().get_mut(entity) {
+        *c = rolling.character_activity.clone();
+    }
+    if let Some(c) = state.ecs().write_storage::<comp::Pos>().get_mut(entity) {
+        *c = rolling.pos;
+    }
+    if let Some(c) = state.ecs().write_storage::<comp::Vel>().get_mut(entity) {
+        *c = rolling.vel;
+    }
+    if let Some(c) = state.ecs().write_storage::<comp::Ori>().get_mut(entity) {
+        *c = rolling.ori;
+    }
+    if let Some(mut c) = state.ecs().write_storage::<comp::Density>().get_mut(entity) {
+        *c = rolling.density;
+    }
+    if let Some(mut c) = state.ecs().write_storage::<comp::Energy>().get_mut(entity) {
+        *c = rolling.energy;
+    }
 }
 
 impl Client {
@@ -3291,8 +3351,24 @@ impl Client {
                     .unwrap_or_default();
                 let world_revision =
                     common::apex::prediction_boundary::WorldRevisionV1 { weather, touched_chunks };
+                // `APEX-T7.3c-ii`: baseline-stamping, read at the same
+                // moment as everything else this frame captures.
+                // `last_server_sync_tick` and `tick` are both already
+                // maintained by this client for other reasons (DET-NET-011/
+                // 012's chronology witness, and the tick counter itself) --
+                // this costs two extra reads, no new bookkeeping.
+                let alignment = common::apex::prediction_boundary::FrameAlignmentV1 {
+                    baseline_sync_tick: self.last_server_sync_tick,
+                    ordinal: self.tick,
+                };
                 let outcome = self.prediction_buffer.push_v1(
-                    common::apex::prediction_boundary::PredictedFrameV1 { controller, dt, time, world_revision },
+                    common::apex::prediction_boundary::PredictedFrameV1 {
+                        controller,
+                        dt,
+                        time,
+                        world_revision,
+                        alignment,
+                    },
                 );
                 if let common::apex::prediction_boundary::PushOutcomeV1::BudgetExceeded {
                     attempted_bytes,
@@ -3745,21 +3821,70 @@ impl Client {
             },
             ServerGeneral::CompSync(comp_sync_package, physics_generation) => {
                 // DET-NET-012 (v6, stage 1): same chronology witness.
-                if comp_sync_package.sync_tick != 0 {
-                    if comp_sync_package.sync_tick < self.last_server_sync_tick {
+                let sync_tick = comp_sync_package.sync_tick;
+                if sync_tick != 0 {
+                    if sync_tick < self.last_server_sync_tick {
                         tracing::warn!(
-                            got = comp_sync_package.sync_tick,
+                            got = sync_tick,
                             newest = self.last_server_sync_tick,
                             "DET-NET-012: CompSync arrived with a regressed server tick"
                         );
                     }
-                    self.last_server_sync_tick =
-                        self.last_server_sync_tick.max(comp_sync_package.sync_tick);
+                    self.last_server_sync_tick = self.last_server_sync_tick.max(sync_tick);
                 }
                 self.force_update_generation = physics_generation;
+
+                // `APEX-T7.3c-ii`: snapshot the client's OWN current
+                // belief BEFORE the authoritative write below overwrites
+                // it -- reconciliation needs both "what I believed" and
+                // "what the server just said" for the same tick, and
+                // this is the only point at which the first of those is
+                // still readable.
+                let own_entity_touched = self
+                    .uid()
+                    .is_some_and(|uid| comp_sync_package.comp_updates.iter().any(|(u, _)| *u == uid.0));
+                let pre_sync_rolling = (own_entity_touched && self.presence.is_some())
+                    .then(|| read_rolling_state_v1(&self.state, self.entity()))
+                    .flatten();
+
                 self.state
                     .ecs_mut()
                     .apply_comp_sync_package(comp_sync_package);
+
+                if let Some(current) = pre_sync_rolling {
+                    let entity = self.entity();
+                    if let Some(authoritative) = read_rolling_state_v1(&self.state, entity) {
+                        let outcome = {
+                            let read_data =
+                                common_systems::character_behavior::ReadData::fetch(self.state.ecs());
+                            let id_maps = specs::Read::<IdMaps>::fetch(self.state.ecs());
+                            common_systems::reconciliation::reconcile_v1(
+                                &read_data,
+                                &id_maps,
+                                entity,
+                                &mut self.prediction_buffer,
+                                &current,
+                                &authoritative,
+                                sync_tick,
+                                |chunk| self.state.terrain().get_key_arc(chunk).is_some(),
+                                |snapshot| {
+                                    matches!(
+                                        self.weather.snapshots.wind_at_v1(snapshot),
+                                        common::apex::weather_snapshot::PredictionWindSourceV1::Snapshot(_)
+                                    )
+                                },
+                            )
+                        };
+                        match outcome {
+                            common_systems::reconciliation::ReconciliationOutcomeV1::Agreed { .. } => {},
+                            common_systems::reconciliation::ReconciliationOutcomeV1::Replayed {
+                                final_rolling,
+                                ..
+                            } => write_rolling_state_v1(&self.state, entity, &final_rolling),
+                            common_systems::reconciliation::ReconciliationOutcomeV1::Snapped { .. } => {},
+                        }
+                    }
+                }
             },
             ServerGeneral::CreateEntity(entity_package) => {
                 self.state.ecs_mut().apply_entity_package(entity_package);

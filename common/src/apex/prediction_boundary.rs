@@ -257,6 +257,9 @@ pub struct PredictedFrameV1 {
     pub dt: DeltaTime,
     pub time: Time,
     pub world_revision: WorldRevisionV1,
+    /// `APEX-T7.3c-ii`: baseline-stamping for reconciliation-frame
+    /// selection. See [`FrameAlignmentV1`].
+    pub alignment: FrameAlignmentV1,
 }
 
 impl PredictedFrameV1 {
@@ -274,7 +277,43 @@ impl PredictedFrameV1 {
             + std::mem::size_of::<Time>()
             + std::mem::size_of::<WeatherSnapshotIdV1>()
             + self.world_revision.touched_chunks.len() * std::mem::size_of::<Vec2<i32>>()
+            + std::mem::size_of::<FrameAlignmentV1>()
     }
+}
+
+/// `APEX-T7.3c-ii`: baseline-stamping, ruled by the architect over a raw
+/// sequence number. `baseline_sync_tick`: the newest authoritative
+/// server tick (`CompSyncPackage::sync_tick`) the client had ADOPTED
+/// before THIS frame was captured -- what the frame's prediction was
+/// built on top of. `ordinal`: a client-local monotonic counter read at
+/// the same moment, ordering frames that share a baseline.
+///
+/// Both are read at capture time from fields the client already
+/// maintains (`last_server_sync_tick`, `tick`) -- this schema addition
+/// costs no new client-side bookkeeping, only two extra reads at the
+/// existing capture site. Verified before this was written, not
+/// assumed: `sync_tick` is a single global resource
+/// (`bastion_server::Tick`), incremented by exactly 1 as the literal
+/// first line of `Server::tick()`, and the identical value is stamped
+/// onto every `EntitySync`/`CompSync` package built that same server
+/// tick -- a clean monotonic baseline with no gaps and no per-entity
+/// variance.
+///
+/// Deliberately NOT derived from `time`/`dt` via `SIM_TPS` or any other
+/// cross-domain conversion -- `baseline_sync_tick` is stamped directly
+/// from the server's own tick domain. Converting between the sim-clock
+/// domain and the tick domain is exactly the class of thing `T0.10`'s
+/// typed clocks exist to forbid.
+///
+/// On `CompSync(N)`: frames with `baseline_sync_tick < N` are
+/// acknowledged BY IMPLICATION -- their inputs are already reflected in
+/// N, so they are trimmed. Frames with `baseline_sync_tick >= N` are
+/// unacknowledged replay candidates, taken in `ordinal` order on top of
+/// N's fresh, verbatim authoritative baseline.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct FrameAlignmentV1 {
+    pub baseline_sync_tick: u64,
+    pub ordinal: u64,
 }
 
 /// Why a push into the buffer was refused.
@@ -353,6 +392,26 @@ impl ClientPredictionBufferV1 {
     /// The entries still eligible to replay -- see
     /// [`PredictionHistoryV1::replayable_v1`]. `T7.3b`'s consumer.
     pub fn replayable_v1(&self) -> impl Iterator<Item = &PredictedFrameV1> { self.history.replayable_v1() }
+
+    /// `APEX-T7.3c-ii`: drops every entry whose `alignment.baseline_
+    /// sync_tick` is older than `sync_tick` -- the frame's inputs are
+    /// already reflected in that server tick's own snapshot, so
+    /// replaying it again would double-apply an input the server has
+    /// already accounted for. Returns how many were dropped.
+    pub fn trim_acknowledged_v1(&mut self, sync_tick: u64) -> usize {
+        self.history.retain_v1(|frame| frame.alignment.baseline_sync_tick >= sync_tick)
+    }
+
+    /// `APEX-T7.3c-ii`: the entries still eligible to replay AND not yet
+    /// acknowledged by `sync_tick` -- `replayable_v1` filtered to
+    /// `alignment.baseline_sync_tick >= sync_tick`. Iteration order is
+    /// insertion order (`PredictionHistoryV1`'s `VecDeque`), which is
+    /// `ordinal` order by construction: frames are pushed strictly in
+    /// capture order, one per client tick, so no separate sort is
+    /// needed to replay them in the order the ruling specifies.
+    pub fn unacknowledged_v1(&self, sync_tick: u64) -> impl Iterator<Item = &PredictedFrameV1> {
+        self.replayable_v1().filter(move |frame| frame.alignment.baseline_sync_tick >= sync_tick)
+    }
 }
 
 #[cfg(test)]
@@ -535,6 +594,7 @@ mod client_prediction_buffer_v1 {
                 weather: WeatherSnapshotIdV1::from_sequence_v1(0),
                 touched_chunks: Vec::new(),
             },
+            alignment: FrameAlignmentV1 { baseline_sync_tick: 0, ordinal: 0 },
         }
     }
 

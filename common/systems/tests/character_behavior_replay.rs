@@ -115,6 +115,10 @@ mod tests {
                 weather: WeatherSnapshotIdV1::from_sequence_v1(0),
                 touched_chunks: Vec::new(),
             },
+            alignment: common::apex::prediction_boundary::FrameAlignmentV1 {
+                baseline_sync_tick: 0,
+                ordinal: 0,
+            },
         }
     }
 

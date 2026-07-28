@@ -5,6 +5,7 @@ mod aura;
 mod beam;
 mod buff;
 pub mod character_behavior;
+pub mod reconciliation;
 pub mod controller;
 mod interpolation;
 pub mod melee;
