@@ -193,6 +193,46 @@ probes match and the raw probes differ**. If that case cannot be
 constructed, the two probes are not independent and the semantic one is
 decorative.
 
+**BUILT — `common/src/apex/numeric_probe.rs`, 11 tests.** It shares
+`T5.3`'s types exactly as the row asks: `ExactProbeV1` is the raw probe,
+`QuantizedProbeV1` the semantic one, with the same
+no-`From`/no-cross-comparison prohibition already pinned by
+`compile_fail` doctests. What this module adds is how the bytes going in
+are produced.
+
+- **Step 5's canary is built and asserts both halves of its own
+  premise:** the raw bits really differ, the quantised observations
+  really agree. It reports `HiddenRawDrift` plus the first differing
+  field.
+- **`RawSampleV1` is constructed from a float, never from a word,** so a
+  caller cannot hand it a number it did not derive from one. The
+  `-0.0`-vs-`0.0` case is tested directly against the premise that the
+  two compare *equal* as floats.
+- **`NonFinitePolicyV1` has no `Passthrough` variant.** A NaN reaching a
+  quantiser unchanged compares unequal to itself, which makes a semantic
+  probe non-reflexive — it would report a run as diverging from itself.
+  There is a test for exactly that, and the two infinities are kept
+  distinct from NaN and from each other.
+- **A phase is part of a sample set's identity**, and it also enters the
+  digest, so a caller who ignores the `PhaseMismatch` report still cannot
+  conclude agreement.
+- **An unstable field order is reported as such**, not diagnosed as a
+  divergence about whichever field happened to move.
+- **A spec is validated, not trusted:** a non-positive scale (every value
+  in one bucket — a probe that always matches looks like evidence) and a
+  saturation bound reaching the reserved sentinels (a finite value
+  quantising to "NaN") are both rejected.
+- **Nothing returns a semantic VALUE** — only digests and a
+  first-difference report. There is no accessor a caller could feed back
+  into simulation, which is what keeps the probe from becoming the thing
+  it measures.
+
+**The row's process requirement is a value, not a comment.** No default
+spec ships, and `QUANTIZATION_POLICY_REVIEWED = false`: a convenient
+default is how an unreviewed tolerance policy becomes the one everybody
+uses. The quantisation is a gameplay judgement and still needs its
+separate review.
+
 ---
 
 ## T6.3 — Ordered PHY-008 contributions

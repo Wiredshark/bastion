@@ -11,6 +11,7 @@
 // here is what the module actually is, and it silences 17 dead-code
 // warnings that would otherwise train the eye to ignore this file.
 #[cfg(test)]
+pub mod numeric_probe;
 pub mod numeric_surface;
 pub mod physics_generation;
 pub mod boundary;
