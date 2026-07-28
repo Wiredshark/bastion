@@ -75,7 +75,7 @@ impl SessionCommandRuntimeV1 {
         F: FnOnce(&CommandDescriptorV1) -> CommandOutcomeV1,
     {
         let binding = self.journal.binding();
-        let descriptor = command_descriptor_from_frame_v1(binding, command_id, payload, payload_digest)
+        let descriptor = command_descriptor_from_frame_v1(binding, command_id, sequence, payload, payload_digest)
             .map_err(CommandIngressErrorV1::Carriage)?;
         let Some(descriptor) = descriptor else {
             return Ok(CommandIngressV1::NotACommand);
@@ -242,6 +242,7 @@ mod command_ingress_v1 {
             binding: binding(),
             command_id: common::apex::identity::CommandId::generate(&mut FixedRandomBytesSourceV1([5; 16]))
                 .unwrap(),
+            sequence: 1,
             kind: CommandKindV1::ControlAction,
             request_digest: [1; 32],
         };
@@ -418,6 +419,7 @@ mod command_workflow_v1 {
         CommandDescriptorV1 {
             binding: binding(),
             command_id: CommandId::generate(&mut FixedRandomBytesSourceV1([seed; 16])).unwrap(),
+            sequence: 1,
             kind: CommandKindV1::CharacterLifecycle,
             request_digest: [1; 32],
         }
@@ -655,6 +657,7 @@ mod command_durability_v1 {
         CommandDescriptorV1 {
             binding: binding(1),
             command_id: CommandId::generate(&mut FixedRandomBytesSourceV1([9; 16])).unwrap(),
+            sequence: 1,
             kind: CommandKindV1::CharacterLifecycle,
             request_digest: [request; 32],
         }
@@ -855,6 +858,7 @@ mod command_security_v1 {
         CommandDescriptorV1 {
             binding,
             command_id: CommandId::generate(&mut FixedRandomBytesSourceV1([seed; 16])).unwrap(),
+            sequence: 1,
             kind: CommandKindV1::ControlAction,
             request_digest: [1; 32],
         }
@@ -1112,6 +1116,7 @@ pub fn drive_perturbed_commands_v1(
     let command = |b: ActiveSessionBindingV1, n: u32| CommandDescriptorV1 {
         binding: b,
         command_id: CommandId::generate(&mut FixedRandomBytesSourceV1([n as u8; 16])).unwrap(),
+        sequence: 1,
         kind: CommandKindV1::ControlAction,
         request_digest: [n as u8; 32],
     };

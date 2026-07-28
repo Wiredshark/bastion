@@ -73,6 +73,7 @@ impl TryFrom<u16> for CommandKindV1 {
 pub enum CommandIdentityErrorV1 {
     NonCanonical,
     BindingMismatch,
+    SequenceMismatch,
     KindMismatch,
     RequestMismatch,
 }
@@ -84,6 +85,12 @@ pub enum CommandIdentityErrorV1 {
 pub struct CommandDescriptorV1 {
     pub binding: ActiveSessionBindingV1,
     pub command_id: CommandId,
+    /// Part of IDENTITY, not a separate coordinate. The catalog treats
+    /// (id, sequence, digest) as one thing: `CMD-045` and `CMD-046` are
+    /// two of its three pairwise mismatches, and `CMD-074` — the same id
+    /// reappearing under a later sequence — is only unrepresentable if
+    /// the sequence is inside the identity root.
+    pub sequence: u64,
     pub kind: CommandKindV1,
     pub request_digest: [u8; 32],
 }
@@ -97,6 +104,7 @@ impl CommandDescriptorV1 {
         p.extend_from_slice(&self.binding.epoch.get().to_be_bytes());
         p.extend_from_slice(self.binding.server_boot_id.as_uuid().as_bytes());
         p.extend_from_slice(self.command_id.as_uuid().as_bytes());
+        p.extend_from_slice(&self.sequence.to_be_bytes());
         p.extend_from_slice(&self.kind.as_u16().to_be_bytes());
         p.extend_from_slice(&self.request_digest);
         digest_canonical_bytes_v1(DigestDomainIdV1::CommandDescriptor, &p, COMMAND_ROOT_INPUT_LIMIT)
@@ -111,6 +119,9 @@ impl CommandDescriptorV1 {
     pub fn is_replay_of_v1(&self, other: &Self) -> Result<(), CommandIdentityErrorV1> {
         if self.binding != other.binding {
             return Err(CommandIdentityErrorV1::BindingMismatch);
+        }
+        if self.sequence != other.sequence {
+            return Err(CommandIdentityErrorV1::SequenceMismatch);
         }
         if self.kind != other.kind {
             return Err(CommandIdentityErrorV1::KindMismatch);
@@ -139,6 +150,7 @@ mod command_identity_v1 {
         CommandDescriptorV1 {
             binding: binding(1),
             command_id: CommandId::generate(&mut FixedRandomBytesSourceV1([9; 16])).unwrap(),
+            sequence: 1,
             kind: CommandKindV1::ControlAction,
             request_digest: [7; 32],
         }
@@ -324,12 +336,13 @@ pub enum CommandCarriageErrorV1 {
 pub fn command_descriptor_from_frame_v1(
     binding: ActiveSessionBindingV1,
     command_id: Option<CommandId>,
+    sequence: u64,
     payload: &super::ClientGeneral,
     payload_digest: [u8; 32],
 ) -> Result<Option<CommandDescriptorV1>, CommandCarriageErrorV1> {
     match (payload.command_kind_v1(), command_id) {
         (Some(kind), Some(command_id)) => {
-            Ok(Some(CommandDescriptorV1 { binding, command_id, kind, request_digest: payload_digest }))
+            Ok(Some(CommandDescriptorV1 { binding, command_id, sequence, kind, request_digest: payload_digest }))
         },
         (Some(_), None) => Err(CommandCarriageErrorV1::MissingCommandId),
         (None, Some(_)) => Err(CommandCarriageErrorV1::UnexpectedCommandId),
@@ -363,20 +376,20 @@ mod command_carriage_v1 {
         assert_eq!(mutating.command_kind_v1(), Some(CommandKindV1::SessionControl));
         assert_eq!(query.command_kind_v1(), None);
 
-        let descriptor = command_descriptor_from_frame_v1(binding(), Some(id()), &mutating, [4; 32]).unwrap().unwrap();
+        let descriptor = command_descriptor_from_frame_v1(binding(), Some(id()), 1, &mutating, [4; 32]).unwrap().unwrap();
         assert_eq!(descriptor.kind, CommandKindV1::SessionControl);
         // identity is over the bytes that arrived, not a separate claim
         assert_eq!(descriptor.request_digest, [4; 32]);
 
         assert_eq!(
-            command_descriptor_from_frame_v1(binding(), None, &mutating, [4; 32]).unwrap_err(),
+            command_descriptor_from_frame_v1(binding(), None, 1, &mutating, [4; 32]).unwrap_err(),
             CommandCarriageErrorV1::MissingCommandId
         );
         assert_eq!(
-            command_descriptor_from_frame_v1(binding(), Some(id()), &query, [4; 32]).unwrap_err(),
+            command_descriptor_from_frame_v1(binding(), Some(id()), 1, &query, [4; 32]).unwrap_err(),
             CommandCarriageErrorV1::UnexpectedCommandId
         );
-        assert_eq!(command_descriptor_from_frame_v1(binding(), None, &query, [4; 32]).unwrap(), None);
+        assert_eq!(command_descriptor_from_frame_v1(binding(), None, 1, &query, [4; 32]).unwrap(), None);
     }
 
     /// `.09`: the classes the imported catalog names, asserted against
@@ -403,7 +416,7 @@ mod command_carriage_v1 {
             assert_eq!(continuous.command_kind_v1(), None);
             assert!(!continuous.auto_retryable_v1());
             assert_eq!(
-                command_descriptor_from_frame_v1(binding(), Some(id()), &continuous, [1; 32]).unwrap_err(),
+                command_descriptor_from_frame_v1(binding(), Some(id()), 1, &continuous, [1; 32]).unwrap_err(),
                 CommandCarriageErrorV1::UnexpectedCommandId
             );
         }
@@ -538,6 +551,7 @@ mod command_execution_v1 {
         CommandDescriptorV1 {
             binding: binding(),
             command_id: CommandId::generate(&mut FixedRandomBytesSourceV1([seed; 16])).unwrap(),
+            sequence: 1,
             kind: CommandKindV1::ControlAction,
             request_digest: [request; 32],
         }
@@ -836,7 +850,13 @@ impl ClientCommandOutboxV1 {
         }
         let command_id = self.source.issue_v1().map_err(OutboxErrorV1::IdSource)?;
         let descriptor =
-            CommandDescriptorV1 { binding: self.source.binding_v1(), command_id, kind, request_digest };
+            CommandDescriptorV1 {
+                binding: self.source.binding_v1(),
+                command_id,
+                sequence: self.next_sequence,
+                kind,
+                request_digest,
+            };
         let pending = PendingCommandV1 { descriptor, sequence: self.next_sequence, attempts: 1 };
         self.pending = Some(pending);
         Ok(pending)
@@ -1078,6 +1098,7 @@ mod command_receipt_v1 {
         let descriptor = CommandDescriptorV1 {
             binding: binding(),
             command_id: future_id,
+            sequence: 1,
             kind: CommandKindV1::ControlAction,
             request_digest: [7; 32],
         };
@@ -1181,8 +1202,11 @@ impl CommandJournalV1 {
     pub fn retired_floor(&self) -> u64 { self.retired_floor }
 
     /// The next sequence this journal will accept as new.
+    /// Saturating at `u64::MAX`: a journal that reached the top admits
+    /// nothing further rather than wrapping into retired territory
+    /// (`CMD-038`).
     pub fn next_expected_v1(&self) -> u64 {
-        self.active.keys().next_back().copied().unwrap_or(self.retired_floor) + 1
+        self.active.keys().next_back().copied().unwrap_or(self.retired_floor).saturating_add(1)
     }
 
     pub fn entry_v1(&self, sequence: u64) -> Option<JournalEntryV1> { self.active.get(&sequence).copied() }
@@ -1239,6 +1263,9 @@ impl CommandJournalV1 {
         }
 
         let expected = self.next_expected_v1();
+        if expected == u64::MAX && sequence == u64::MAX && self.retired_floor == u64::MAX {
+            return Err(JournalErrorV1::Retired);
+        }
         if sequence != expected {
             return Err(JournalErrorV1::SequenceGap { expected, got: sequence });
         }
@@ -1250,7 +1277,10 @@ impl CommandJournalV1 {
         if self.active.len() >= self.capacity {
             return Err(JournalErrorV1::Capacity);
         }
-        // A command id may not appear under two sequences.
+        // The sequence is inside the identity root, so an id reappearing
+        // under another sequence is already a different command and
+        // cannot replay. This stays as a cheap early reject for the
+        // in-flight window.
         if self.active.values().any(|e| e.descriptor.command_id == descriptor.command_id) {
             return Err(JournalErrorV1::IdReusedUnderAnotherSequence);
         }
@@ -1308,6 +1338,7 @@ mod command_journal_v1 {
         CommandDescriptorV1 {
             binding,
             command_id: CommandId::generate(&mut FixedRandomBytesSourceV1([seed; 16])).unwrap(),
+            sequence: 1,
             kind: CommandKindV1::ControlAction,
             request_digest: [request; 32],
         }
@@ -1550,6 +1581,7 @@ mod command_publication_v1 {
         let descriptor = CommandDescriptorV1 {
             binding: binding(),
             command_id: CommandId::generate(&mut FixedRandomBytesSourceV1([5; 16])).unwrap(),
+            sequence: 1,
             kind: CommandKindV1::ControlAction,
             request_digest: [1; 32],
         };
@@ -1689,6 +1721,7 @@ mod command_result_intake_v1 {
         let foreign = CommandDescriptorV1 {
             binding: foreign_binding,
             command_id: sent.descriptor.command_id,
+            sequence: sent.descriptor.sequence,
             kind: sent.descriptor.kind,
             request_digest: sent.descriptor.request_digest,
         };
