@@ -1913,3 +1913,163 @@ mod checkpoint_prepare_commit_v1 {
         assert_eq!(chronology.committed_epoch(), 1);
     }
 }
+
+/// `APEX-T3.4.17/.18` — the receiver's checkpoint phase, and its
+/// liveness. While a checkpoint is aligning, direct application is
+/// forbidden: that is the whole point of the fence. A checkpoint that
+/// never completes must not wedge the receiver either, so alignment
+/// carries an explicit budget and fails with a typed terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClientCheckpointPhaseV1 {
+    /// No checkpoint in flight — legacy/unfenced traffic applies directly.
+    Idle,
+    Aligning { epoch: u64 },
+    Prepared { epoch: u64 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointPhaseErrorV1 {
+    AlreadyAligning,
+    NotAligning,
+    NotPrepared,
+    EpochMismatch,
+    AlignmentBudgetExhausted,
+}
+
+/// `T3.4.18`: alignment is bounded. `budget_ticks` is supplied by the
+/// deployment — there is no invented default, for the same reason there
+/// is no production resource profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClientCheckpointStateV1 {
+    phase: ClientCheckpointPhaseV1,
+    budget_ticks: u32,
+    elapsed_ticks: u32,
+}
+
+impl ClientCheckpointStateV1 {
+    pub fn new(budget_ticks: u32) -> Self {
+        Self { phase: ClientCheckpointPhaseV1::Idle, budget_ticks, elapsed_ticks: 0 }
+    }
+
+    pub fn phase(&self) -> ClientCheckpointPhaseV1 { self.phase }
+
+    pub fn elapsed_ticks(&self) -> u32 { self.elapsed_ticks }
+
+    /// Direct application is legal only outside a checkpoint.
+    pub fn may_apply_directly_v1(&self) -> bool { self.phase == ClientCheckpointPhaseV1::Idle }
+
+    pub fn begin_alignment_v1(&mut self, epoch: u64) -> Result<(), CheckpointPhaseErrorV1> {
+        match self.phase {
+            ClientCheckpointPhaseV1::Idle => {
+                self.phase = ClientCheckpointPhaseV1::Aligning { epoch };
+                self.elapsed_ticks = 0;
+                Ok(())
+            },
+            _ => Err(CheckpointPhaseErrorV1::AlreadyAligning),
+        }
+    }
+
+    pub fn mark_prepared_v1(&mut self, epoch: u64) -> Result<(), CheckpointPhaseErrorV1> {
+        match self.phase {
+            ClientCheckpointPhaseV1::Aligning { epoch: open } if open == epoch => {
+                self.phase = ClientCheckpointPhaseV1::Prepared { epoch };
+                Ok(())
+            },
+            ClientCheckpointPhaseV1::Aligning { .. } => Err(CheckpointPhaseErrorV1::EpochMismatch),
+            _ => Err(CheckpointPhaseErrorV1::NotAligning),
+        }
+    }
+
+    /// Returns to Idle. Only a PREPARED checkpoint may be committed —
+    /// commit itself cannot fail, so this is where the ordering is held.
+    pub fn mark_committed_v1(&mut self, epoch: u64) -> Result<(), CheckpointPhaseErrorV1> {
+        match self.phase {
+            ClientCheckpointPhaseV1::Prepared { epoch: open } if open == epoch => {
+                self.phase = ClientCheckpointPhaseV1::Idle;
+                self.elapsed_ticks = 0;
+                Ok(())
+            },
+            ClientCheckpointPhaseV1::Prepared { .. } => Err(CheckpointPhaseErrorV1::EpochMismatch),
+            _ => Err(CheckpointPhaseErrorV1::NotPrepared),
+        }
+    }
+
+    /// One tick of alignment budget. Idle and Prepared do not age: only
+    /// waiting on the network is bounded, not the receiver's own work.
+    pub fn on_tick_v1(&mut self) -> Result<(), CheckpointPhaseErrorV1> {
+        if let ClientCheckpointPhaseV1::Aligning { .. } = self.phase {
+            self.elapsed_ticks = self.elapsed_ticks.saturating_add(1);
+            if self.elapsed_ticks > self.budget_ticks {
+                return Err(CheckpointPhaseErrorV1::AlignmentBudgetExhausted);
+            }
+        }
+        Ok(())
+    }
+
+    /// Abandons an unfinished alignment. The staged set is dropped by its
+    /// owner; nothing was applied, so there is nothing to roll back.
+    pub fn abandon_v1(&mut self) {
+        self.phase = ClientCheckpointPhaseV1::Idle;
+        self.elapsed_ticks = 0;
+    }
+}
+
+#[cfg(test)]
+mod checkpoint_client_phase_v1 {
+    use super::*;
+
+    #[test]
+    fn direct_application_is_illegal_while_a_checkpoint_aligns() {
+        let mut st = ClientCheckpointStateV1::new(3);
+        assert!(st.may_apply_directly_v1());
+
+        st.begin_alignment_v1(4).unwrap();
+        assert!(!st.may_apply_directly_v1());
+        assert_eq!(st.begin_alignment_v1(5).unwrap_err(), CheckpointPhaseErrorV1::AlreadyAligning);
+
+        // commit cannot jump the prepare step
+        assert_eq!(st.mark_committed_v1(4).unwrap_err(), CheckpointPhaseErrorV1::NotPrepared);
+        assert_eq!(st.mark_prepared_v1(5).unwrap_err(), CheckpointPhaseErrorV1::EpochMismatch);
+
+        st.mark_prepared_v1(4).unwrap();
+        // still fenced: prepared is not applied
+        assert!(!st.may_apply_directly_v1());
+        assert_eq!(st.mark_committed_v1(9).unwrap_err(), CheckpointPhaseErrorV1::EpochMismatch);
+        st.mark_committed_v1(4).unwrap();
+        assert!(st.may_apply_directly_v1());
+        assert_eq!(st.phase(), ClientCheckpointPhaseV1::Idle);
+    }
+
+    #[test]
+    fn alignment_is_bounded_but_idle_and_prepared_do_not_age() {
+        let mut st = ClientCheckpointStateV1::new(2);
+        for _ in 0..100 {
+            st.on_tick_v1().unwrap();
+        }
+        assert_eq!(st.elapsed_ticks(), 0, "an idle receiver never ages toward a timeout");
+
+        st.begin_alignment_v1(1).unwrap();
+        st.on_tick_v1().unwrap();
+        st.on_tick_v1().unwrap();
+        assert_eq!(st.elapsed_ticks(), 2);
+        assert_eq!(st.on_tick_v1().unwrap_err(), CheckpointPhaseErrorV1::AlignmentBudgetExhausted);
+
+        // a prepared checkpoint is the receiver's own work, not the wire's
+        let mut st = ClientCheckpointStateV1::new(1);
+        st.begin_alignment_v1(2).unwrap();
+        st.mark_prepared_v1(2).unwrap();
+        for _ in 0..50 {
+            st.on_tick_v1().unwrap();
+        }
+        st.mark_committed_v1(2).unwrap();
+
+        // abandoning an alignment returns a clean Idle receiver
+        let mut st = ClientCheckpointStateV1::new(1);
+        st.begin_alignment_v1(3).unwrap();
+        st.on_tick_v1().unwrap();
+        st.abandon_v1();
+        assert!(st.may_apply_directly_v1());
+        assert_eq!(st.elapsed_ticks(), 0);
+        st.begin_alignment_v1(4).unwrap();
+    }
+}
