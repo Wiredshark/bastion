@@ -103,6 +103,8 @@ pub enum CommandActivationBlockerV1 {
     CheckpointPathInactive,
     /// Ingress still refuses every command id by construction.
     IngressRefusesCommandIds,
+    /// The canary coverage map still has cases this tier does not cover.
+    UncoveredCanaryCases(usize),
 }
 
 /// Refuses activation and says why. `IngressRefusesCommandIds` is the
@@ -116,6 +118,14 @@ pub fn admit_command_activation_v1(
         CommandActivationBlockerV1::NoProductionCommandProfile,
         CommandActivationBlockerV1::IngressRefusesCommandIds,
     ];
+    // The coverage map is load-bearing here, exactly as T3.4's is: an
+    // uncovered case blocks activation by construction, so honesty in
+    // the map is not cosmetic.
+    if crate::net_command_canaries::OPEN_CASE_COUNT > 0 {
+        blockers.push(CommandActivationBlockerV1::UncoveredCanaryCases(
+            crate::net_command_canaries::OPEN_CASE_COUNT,
+        ));
+    }
     if crate::net_checkpoint::admit_checkpoint_activation_v1(client_type).is_err() {
         blockers.push(CommandActivationBlockerV1::CheckpointPathInactive);
     }
@@ -284,6 +294,12 @@ mod command_ingress_v1 {
             let blockers = admit_command_activation_v1(client_type).unwrap_err();
             assert!(blockers.contains(&CommandActivationBlockerV1::NoProductionCommandProfile));
             assert!(blockers.contains(&CommandActivationBlockerV1::IngressRefusesCommandIds));
+            assert!(
+                blockers
+                    .iter()
+                    .any(|b| matches!(b, CommandActivationBlockerV1::UncoveredCanaryCases(n) if *n > 0)),
+                "{client_type:?}: an uncovered canary set must block activation"
+            );
             assert!(
                 blockers.contains(&CommandActivationBlockerV1::CheckpointPathInactive),
                 "{client_type:?}: the command path cannot outrun the checkpoint path it rides on"

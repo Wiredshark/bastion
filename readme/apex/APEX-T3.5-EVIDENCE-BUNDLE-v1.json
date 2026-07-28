@@ -1,0 +1,192 @@
+{
+  "schema": "bastion/apex/t3.5-evidence/v1",
+  "tier": "APEX-T3.5 command idempotency",
+  "branch": "bastion/apex-t34",
+  "tip": "109455d149e4bdddf672ba752f88f13c678d78f6",
+  "network_version": "0.11.0",
+  "digest_domains": {
+    "CommandDescriptor": 43
+  },
+  "canary_catalog": {
+    "path": "readme/apex/PROJECT-BASTION-APEX-T3.5-COMMAND-IDEMPOTENCY-CANARIES-v1.json",
+    "sha256": "01d280e7f215f8315b5b1d79c1229e0eaeed2ba591042cb5eca1d72a579a888e",
+    "size_bytes": 11308,
+    "case_count": 162
+  },
+  "coverage": {
+    "total": 162,
+    "covered": 152,
+    "open": 10
+  },
+  "open_cases": [
+    {
+      "id": "CMD-055",
+      "reason": "the outbox has no reconnect handling yet \u2014 a boot change should drop pending commands, and nothing enforces that"
+    },
+    {
+      "id": "CMD-056",
+      "reason": "same missing reconnect handling for a SessionId change"
+    },
+    {
+      "id": "CMD-061",
+      "reason": "same-session reconnect must preserve the pending command; the outbox does not model reconnect at all yet"
+    },
+    {
+      "id": "CMD-062",
+      "reason": "an explicit logout should clear the outbox, which needs the same missing reconnect/lifecycle seam"
+    },
+    {
+      "id": "CMD-067",
+      "reason": "client-side durable retry state across a process restart is not built; the outbox is in-memory"
+    },
+    {
+      "id": "CMD-084",
+      "reason": "session closure should drop the journal; nothing yet owns that lifecycle on the server side"
+    },
+    {
+      "id": "CMD-116",
+      "reason": "ordering the async terminal against the persistence response needs the live character-worker wiring, which is a later live-path row"
+    },
+    {
+      "id": "CMD-125",
+      "reason": "the real SQLite migration and its uniqueness constraint are a later live-path row; the reference store fixes what that migration must guarantee, and claims nothing about the schema itself"
+    },
+    {
+      "id": "CMD-136",
+      "reason": "results do not carry a SnapshotEpoch yet; the T3.3 causality field is still dormant, so there is nothing to check staleness against"
+    },
+    {
+      "id": "CMD-152",
+      "reason": "a restart cannot currently distinguish failed-before-effect from unknown; that needs the durable row to be consulted on boot, which is the live wiring row CMD-125 also waits on"
+    }
+  ],
+  "activation": {
+    "state": "REFUSED",
+    "blockers": [
+      "NoProductionCommandProfile",
+      "IngressRefusesCommandIds",
+      "CheckpointPathInactive",
+      "UncoveredCanaryCases"
+    ]
+  },
+  "verification": {
+    "command": "cargo test -p veloren-common-net --all-targets; cargo test -p veloren-server --all-targets; cargo test -p veloren-client --all-targets",
+    "command_tests": [
+      "veloren-common-net::msg::command::command_carriage_v1::command_id_carriage_is_required_exactly_on_commands",
+      "veloren-common-net::msg::command::command_carriage_v1::continuous_input_is_not_journaled_and_chat_is",
+      "veloren-common-net::msg::command::command_carriage_v1::every_command_kind_has_a_real_payload",
+      "veloren-common-net::msg::command::command_execution_v1::a_command_delivered_many_times_executes_exactly_once",
+      "veloren-common-net::msg::command::command_execution_v1::a_refusal_is_recorded_and_replayed_like_any_other_outcome",
+      "veloren-common-net::msg::command::command_execution_v1::a_refused_admission_never_reaches_the_work",
+      "veloren-common-net::msg::command::command_id_source_v1::deriving_an_ordinal_does_not_consume_it",
+      "veloren-common-net::msg::command::command_id_source_v1::ids_are_derived_not_drawn_and_never_collide_across_sessions",
+      "veloren-common-net::msg::command::command_identity_v1::a_reused_id_with_different_content_is_a_conflict_not_a_duplicate",
+      "veloren-common-net::msg::command::command_identity_v1::command_kind_tags_are_explicit_and_total",
+      "veloren-common-net::msg::command::command_identity_v1::identity_root_binds_binding_id_kind_and_request",
+      "veloren-common-net::msg::command::command_journal_v1::a_retired_sequence_is_refused_not_re_executed",
+      "veloren-common-net::msg::command::command_journal_v1::sequence_gaps_reuse_and_unacked_terminals_are_all_typed",
+      "veloren-common-net::msg::command::command_journal_v1::the_journal_survives_a_resume_and_refuses_foreign_or_stale_attachments",
+      "veloren-common-net::msg::command::command_outbox_v1::one_in_flight_distinct_ids_and_no_auto_retry_of_session_control",
+      "veloren-common-net::msg::command::command_outbox_v1::retries_carry_the_same_identity_and_execute_once_end_to_end",
+      "veloren-common-net::msg::command::command_publication_v1::a_result_is_not_real_until_its_checkpoint_commits",
+      "veloren-common-net::msg::command::command_publication_v1::a_result_without_a_real_effect_epoch_is_refused",
+      "veloren-common-net::msg::command::command_receipt_v1::a_receipt_clears_only_the_command_it_actually_names",
+      "veloren-common-net::msg::command::command_receipt_v1::a_receipt_for_an_unsent_command_is_refused",
+      "veloren-common-net::msg::command::command_result_intake_v1::a_duplicate_result_is_recognised_not_surfaced_twice",
+      "veloren-common-net::msg::command::command_result_intake_v1::a_result_from_another_session_is_refused",
+      "veloren-common-net::msg::envelope::tests::header_with_some_command_id_round_trips",
+      "veloren-server::net_command::command_durability_v1::a_rolled_back_effect_writes_no_row",
+      "veloren-server::net_command::command_durability_v1::identity_conflicts_and_the_row_survives_a_new_boot",
+      "veloren-server::net_command::command_durability_v1::only_persistence_backed_kinds_are_durable_and_retention_spares_unsettled_rows",
+      "veloren-server::net_command::command_ingress_v1::a_command_result_is_checkpointed_data_that_applies_after_its_effect",
+      "veloren-server::net_command::command_ingress_v1::a_query_carrying_a_command_id_never_reaches_the_journal",
+      "veloren-server::net_command::command_ingress_v1::command_activation_is_refused_with_named_blockers",
+      "veloren-server::net_command::command_ingress_v1::the_round_trip_executes_once_and_clears_the_outbox",
+      "veloren-server::net_command::command_perturbation_v1::exactly_once_holds_under_every_perturbation_and_seed",
+      "veloren-server::net_command::command_perturbation_v1::the_control_run_diverges_and_names_its_first_divergence",
+      "veloren-server::net_command::command_rollout_v1::enforce_has_no_unclassified_variant_to_admit",
+      "veloren-server::net_command::command_rollout_v1::every_payload_takes_exactly_one_path_and_observe_never_journals",
+      "veloren-server::net_command::command_security_v1::a_command_id_is_not_a_credential",
+      "veloren-server::net_command::command_security_v1::the_journal_records_identity_never_content",
+      "veloren-server::net_command::command_workflow_v1::a_retry_does_not_queue_a_second_worker_action",
+      "veloren-server::net_command::command_workflow_v1::an_in_flight_workflow_is_not_dropped_by_session_close",
+      "veloren-server::net_command::command_workflow_v1::every_worker_answer_terminates_and_none_invents_success",
+      "veloren-server::net_command_bypass::command_bypass_scan_v1::all_three_named_surfaces_are_scanned",
+      "veloren-server::net_command_bypass::command_bypass_scan_v1::every_bypass_surface_file_is_classified",
+      "veloren-server::net_command_bypass::command_bypass_scan_v1::the_command_owned_set_is_pinned",
+      "veloren-server::net_command_canaries::tests::claims_are_substantive_and_the_open_set_is_pinned",
+      "veloren-server::net_command_canaries::tests::every_case_id_has_exactly_one_claim",
+      "veloren-server::net_command_canaries::tests::the_catalog_this_map_covers_is_the_pinned_file"
+    ]
+  },
+  "rows": [
+    {
+      "commit": "7412c69ef4",
+      "subject": "APEX-T3.5.07: command receipts carry identity, not just an id"
+    },
+    {
+      "commit": "ff1414df6c",
+      "subject": "APEX-T3.5.08: server command ingress seam"
+    },
+    {
+      "commit": "22e3fcb87e",
+      "subject": "APEX-T3.5: import pin-verified command-idempotency canary catalog"
+    },
+    {
+      "commit": "4e2339e3a6",
+      "subject": "APEX-T3.5.09: correct the admission classes against the imported catalog"
+    },
+    {
+      "commit": "fde9f228db",
+      "subject": "APEX-T3.5.10: sequence-and-floor command journal"
+    },
+    {
+      "commit": "6df064e04e",
+      "subject": "APEX-T3.5.11: one model \u00e2\u20ac\u201d everything on the journal, ledger deleted"
+    },
+    {
+      "commit": "e96b8a4bf6",
+      "subject": "APEX-T3.5.12: a result is not real until its checkpoint commits"
+    },
+    {
+      "commit": "4847b1a76b",
+      "subject": "APEX-T3.5.13: CommandResult on the canonical egress, inside a checkpoint"
+    },
+    {
+      "commit": "b7609e7a9b",
+      "subject": "APEX-T3.5.14: idempotent client intake for published results"
+    },
+    {
+      "commit": "4671a6fe86",
+      "subject": "APEX-T3.5.15: CommandContext for async workflows"
+    },
+    {
+      "commit": "535ca3f6e5",
+      "subject": "APEX-T3.5.16: durable command rows \u00e2\u20ac\u201d the contract and a reference store"
+    },
+    {
+      "commit": "8a48f186e5",
+      "subject": "APEX-T3.5.17: a command id is an idempotency key, not a credential"
+    },
+    {
+      "commit": "6387ca1147",
+      "subject": "APEX-T3.5.18: rollout modes with one-path-only by construction"
+    },
+    {
+      "commit": "cc7740c004",
+      "subject": "APEX-T3.5.19: bypass scanner over the three named mutation surfaces"
+    },
+    {
+      "commit": "cdb5e8cde7",
+      "subject": "APEX-T3.5.20: runtime perturbation harness for commands"
+    },
+    {
+      "commit": "019ded75b2",
+      "subject": "APEX-T3.5.21: the sequence is part of identity, not a coordinate beside it"
+    },
+    {
+      "commit": "109455d149",
+      "subject": "APEX-T3.5.22: canary coverage map over the real 162"
+    }
+  ]
+}

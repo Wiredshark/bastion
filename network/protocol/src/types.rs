@@ -81,7 +81,7 @@ pub(crate) const VELOREN_MAGIC_NUMBER: [u8; 7] = *b"VELOREN";
 /// (T3.2/T3.3.05 session+protocol fields; T2.5.10/.11 plugin-artifact
 /// wire + GameSync deployment summary), so the merged wire is neither
 /// lane's 0.8 -- one cumulative bump covers the union, as pre-agreed.
-pub const VELOREN_NETWORK_VERSION: [u32; 3] = [0, 10, 0];
+pub const VELOREN_NETWORK_VERSION: [u32; 3] = [0, 11, 0];
 pub(crate) const STREAM_ID_OFFSET1: Sid = Sid::new(0);
 pub(crate) const STREAM_ID_OFFSET2: Sid = Sid::new(u64::MAX / 2);
 /// Maximal possible Prio to choose (for performance reasons)

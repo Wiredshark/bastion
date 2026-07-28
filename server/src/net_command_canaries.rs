@@ -12,9 +12,9 @@
 //! The OPEN set is concentrated where it should be: client reconnect
 //! lifecycle (055/056/061/062/067), the live SQLite and character-worker
 //! wiring (116/125/152), server-side session teardown (084), snapshot
-//! staleness (136), and the evidence row itself (159).
+//! staleness (136).
 
-pub(crate) const OPEN_CASE_COUNT: usize = 11;
+pub(crate) const OPEN_CASE_COUNT: usize = 10;
 
 pub(crate) const CASE_COVERAGE: &[(&str, &str)] = &[
     ("CMD-001", "structural: admission_class_v1 matches ClientGeneral exhaustively with NO wildcard arm, so a new variant fails the build rather than defaulting to a class (veloren_server::net_command::command_rollout_v1::enforce_has_no_unclassified_variant_to_admit)"),
@@ -175,7 +175,7 @@ pub(crate) const CASE_COVERAGE: &[(&str, &str)] = &[
     ("CMD-156", "veloren_server::net_command_bypass::command_bypass_scan_v1::every_bypass_surface_file_is_classified"),
     ("CMD-157", "veloren_server::net_command_bypass::command_bypass_scan_v1::every_bypass_surface_file_is_classified"),
     ("CMD-158", "veloren_server::net_command_bypass::command_bypass_scan_v1::all_three_named_surfaces_are_scanned"),
-    ("CMD-159", "OPEN: binding the catalog hash into the evidence bundle lands with the tier's evidence row, which is not written yet"),
+    ("CMD-159", "structural: readme/apex/APEX-T3.5-EVIDENCE-BUNDLE-v1.json carries the catalog's sha256 and byte count in its canary_catalog block, and net_command_canaries::tests::the_catalog_this_map_covers_is_the_pinned_file fails if either moves"),
     ("CMD-160", "veloren_server::net_command::command_perturbation_v1::exactly_once_holds_under_every_perturbation_and_seed"),
     ("CMD-161", "veloren_server::net_command::command_perturbation_v1::exactly_once_holds_under_every_perturbation_and_seed"),
     ("CMD-162", "veloren_server::net_command::command_perturbation_v1::the_control_run_diverges_and_names_its_first_divergence"),
