@@ -468,6 +468,22 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
         variant: "CommandResult",
         digest_hex: "sha256:a6c0dec0b9b3ebed6d7044aa8191c667b174bb8fdf470c2aa48d98a7fddc9bf4",
     },
+    // WSG-2 chunk 9 (Sonnet lane): PluginArtifactData is a small
+    // self-describing struct (no asset dependency); GroupInventoryUpdate
+    // is the one variant in this pass needing the asset-manager-backed
+    // FrontendItem (Item::new_from_asset_expect + AbilityMap::load() +
+    // MaterialStatManifest::load(), the same pattern common's own
+    // test_assets_items uses).
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "PluginArtifactData",
+        digest_hex: "sha256:30caf704bf9df7ef32de4304136d54b38d698e7eb39eda7f1519b60df4ff5218",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "GroupInventoryUpdate",
+        digest_hex: "sha256:edb5fe6e3ebc25e1177110c254bbe8bfc5562efe5d8b4c6c60e981c9e1be98f7",
+    },
 ];
 
 include!("wire_shape_uncovered.rs");
@@ -955,6 +971,28 @@ mod wire_shape_goldens_v1 {
         })
     }
 
+    // WSG-2 chunk 9 fixtures.
+
+    fn server_plugin_artifact_data() -> ServerGeneral {
+        ServerGeneral::PluginArtifactData(crate::msg::plugin_artifact::PluginArtifactResponseV1 {
+            descriptor: crate::msg::plugin_artifact::PluginArtifactDescriptorV1 {
+                deployment_root: [53u8; 32],
+                ordinal: 54,
+                digest: [55u8; 32],
+                size_bytes: 56,
+            },
+            bytes: vec![57, 58, 59],
+        })
+    }
+
+    fn server_group_inventory_update() -> ServerGeneral {
+        let item = common::comp::Item::new_from_asset_expect("common.items.weapons.empty.empty");
+        let ability_map = common::comp::inventory::item::AbilityMap::load();
+        let msm = common::comp::inventory::item::MaterialStatManifest::load();
+        let frontend_item = item.frontend_item(&ability_map.read(), &msm.read());
+        ServerGeneral::GroupInventoryUpdate(frontend_item, uid(146))
+    }
+
     fn actual(schema: &str, variant: &str) -> String {
         match (schema, variant) {
             ("ClientGeneral", "PlayerPhysics") => golden_digest_v1(&client_player_physics()),
@@ -1046,6 +1084,8 @@ mod wire_shape_goldens_v1 {
             ("ServerGeneral", "TerrainBlockUpdates") => golden_digest_v1(&server_terrain_block_updates()),
             ("ServerGeneral", "CheckpointBarrier") => golden_digest_v1(&server_checkpoint_barrier()),
             ("ServerGeneral", "CommandResult") => golden_digest_v1(&server_command_result()),
+            ("ServerGeneral", "PluginArtifactData") => golden_digest_v1(&server_plugin_artifact_data()),
+            ("ServerGeneral", "GroupInventoryUpdate") => golden_digest_v1(&server_group_inventory_update()),
             (schema, other) => panic!("{schema}::{other} has a golden entry but no representative instance"),
         }
     }
@@ -1072,9 +1112,9 @@ mod wire_shape_goldens_v1 {
     /// counts pinned so neither list can drift silently.
     #[test]
     fn coverage_is_a_pinned_open_set() {
-        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 77, "the covered set changed");
+        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 79, "the covered set changed");
         assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 2);
-        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 9);
+        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 7);
         // 1 + 36 = 37 ClientGeneral, 3 + 48 = 51 ServerGeneral, counted
         // from the enums at 71b1c87ca7.
         let covered_client =
@@ -1261,6 +1301,30 @@ mod wire_shape_goldens_v1 {
             base, perturbed,
             "changing CommandResult's nested result_digest did not move the digest -- the \
              golden mechanism is blind to this chunk's payload"
+        );
+    }
+
+    /// WSG-2 chunk 9's falsifier: perturbing `PluginArtifactData`'s
+    /// `bytes` payload proves the mechanism sees a change in the raw
+    /// `Vec<u8>` field, not just the descriptor's fixed-size fields.
+    #[test]
+    fn chunk_9_fixture_perturbation_moves_the_digest() {
+        let base = golden_digest_v1(&server_plugin_artifact_data());
+        let perturbed = golden_digest_v1(&ServerGeneral::PluginArtifactData(
+            crate::msg::plugin_artifact::PluginArtifactResponseV1 {
+                descriptor: crate::msg::plugin_artifact::PluginArtifactDescriptorV1 {
+                    deployment_root: [53u8; 32],
+                    ordinal: 54,
+                    digest: [55u8; 32],
+                    size_bytes: 56,
+                },
+                bytes: vec![57, 58, 60],
+            },
+        ));
+        assert_ne!(
+            base, perturbed,
+            "changing PluginArtifactData's bytes payload did not move the digest -- the golden \
+             mechanism is blind to this chunk's payload"
         );
     }
 
