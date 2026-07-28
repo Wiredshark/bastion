@@ -182,13 +182,28 @@ pub fn loot_attempt_decision(
 /// reproduced while cadence changes no longer distort AI behavior rates.
 /// Per-DECISION draws (one-shot choices like `can_sense_directly_near`'s
 /// jitter or the jump-vs-roll pick) are deliberately NOT hazards and keep
-/// raw draws; `unstuck_if`'s helper-stream gate remains per-tick debt until
-/// dt is plumbed to it.
-fn hazard(rng: &mut impl Rng, dt: f32, rate_per_second: f64) -> bool {
+/// raw draws. `unstuck_if`'s OUTER gate ("attempt an unstuck action this
+/// tick") WAS this per-tick debt (E7 Stage 3, T0.79: fixed, routed through
+/// `hazard_chance` below via `UNSTUCK_ATTEMPT_RATE`); its INNER jump-vs-
+/// roll pick is a one-shot decision GIVEN the outer gate already fired,
+/// not a recurring hazard, and correctly stays a flat draw -- scaling a
+/// discrete either/or choice by dt would be wrong, not merely unconverted.
+/// E7 Stage 3 (T0.79): the chance computation, pulled out of `hazard` so
+/// `unstuck_if` (whose gate historically drew `self.helper_random_bool`
+/// via the Option-gated deterministic/live rng resolution, not a raw
+/// `rng: &mut impl Rng` param) can reuse the SAME formula without also
+/// having to restructure its rng source.
+fn hazard_chance(dt: f32, rate_per_second: f64) -> f64 {
     let survival = (1.0 - rate_per_second.clamp(0.0, 1.0)).max(0.0);
-    rng.random_bool((1.0 - survival.powf(f64::from(dt))).clamp(0.0, 1.0))
+    (1.0 - survival.powf(f64::from(dt))).clamp(0.0, 1.0)
 }
 
+fn hazard(rng: &mut impl Rng, dt: f32, rate_per_second: f64) -> bool {
+    rng.random_bool(hazard_chance(dt, rate_per_second))
+}
+
+/// 0.05 per tick @30tps: attempt an unstuck action (jump/roll) this tick.
+const UNSTUCK_ATTEMPT_RATE: f64 = 0.785_361_236_057_062_8;
 /// 0.1 per tick @30tps: put away a wielded weapon while idling.
 const UNWIELD_IDLE_RATE: f64 = 0.957_608_841_724_783_8;
 /// 0.1 per tick @30tps: re-pick a hunting target.
@@ -203,6 +218,77 @@ const PET_MOUNT_RATE: f64 = 0.260_299_626_611_719_8;
 const IDLE_UTTERANCE_RATE: f64 = 0.044_034_814_837_612_07;
 /// 0.0035 per tick @30tps: idle sit-down.
 const IDLE_SIT_RATE: f64 = 0.099_841_283_805_460_65;
+
+/// E7 Stage 3 (T0.79): `unstuck_if`'s outer gate, converted per Fable's
+/// ruling -- same exact-inversion-preserves-today's-behavior discipline
+/// as the sentiment decay fix (T0.79 Stage 2). `unstuck_if` runs every
+/// tick directly (no analogous NPC_SENTIMENT_TICK_SKIP), so the
+/// calibration reference is dt = 1 TICK (1/30s @ SIM_TPS), not 1 second --
+/// `hazard_chance` at that dt must reproduce the original raw 0.05
+/// per-tick probability exactly.
+#[cfg(test)]
+mod unstuck_if_hazard_conversion_tests {
+    use super::{UNSTUCK_ATTEMPT_RATE, hazard_chance};
+
+    const SIM_TPS: f32 = 30.0;
+
+    /// T0.32-style exact-to-1-ulp equivalence pin: at dt = one tick (the
+    /// only cadence unstuck_if has ever actually run at), the converted
+    /// hazard must reproduce the original raw per-tick constant (0.05)
+    /// exactly -- proof, not assertion, that the conversion changes zero
+    /// observable behavior today.
+    #[test]
+    fn hazard_chance_matches_pre_fix_probability_at_one_tick() {
+        let dt = 1.0 / SIM_TPS;
+        let chance = hazard_chance(dt, UNSTUCK_ATTEMPT_RATE);
+        // Tolerance is f32-dt/f64-powf precision scale (UNWIELD_IDLE_RATE
+        // and friends use the identical inversion at the identical 30tps
+        // reference and are only pinned to their literal's own precision
+        // too), not a loose approximation.
+        assert!(
+            (chance - 0.05).abs() <= 1e-7,
+            "hazard_chance at dt=1 tick must reproduce the original raw 0.05 per-tick \
+             probability: got {chance}"
+        );
+    }
+
+    /// The property the raw per-tick constant never had: checking twice
+    /// as often (half the dt) should NOT roughly double the per-tick
+    /// probability -- a correct hazard's checks-per-second * chance-per-
+    /// check stays close to constant across a cadence sweep near 1 tick.
+    /// Swept narrowly (half-tick to double-tick, not the wider sweep
+    /// sentiment.rs used): UNSTUCK_ATTEMPT_RATE (0.785/s) is a much larger
+    /// rate than sentiment's, so discrete_chance's compounding curve is
+    /// measurably non-linear even a few ticks out -- that is the actual
+    /// math of a large-rate hazard, not a bug, and out of scope for this
+    /// pin the same way sentiment's saturation regime was.
+    #[test]
+    fn hazard_chance_is_cadence_invariant_near_one_tick() {
+        let decays_per_second = |dt: f64| -> f64 {
+            (1.0 / dt) * hazard_chance(dt as f32, UNSTUCK_ATTEMPT_RATE)
+        };
+        let baseline = decays_per_second(1.0 / SIM_TPS as f64);
+        for dt in [1.0 / 32.0, 1.0 / 30.0, 1.0 / 28.0] {
+            let observed = decays_per_second(dt);
+            let ratio = observed / baseline;
+            assert!(
+                (ratio - 1.0).abs() < 0.01,
+                "expected decays-per-real-second to stay near the 1-tick baseline \
+                 ({baseline}) across a narrow cadence sweep, but dt={dt} gave {observed} \
+                 (ratio \
+                 {ratio})"
+            );
+        }
+    }
+
+    /// Sanity: the gate is a genuine per-tick probability, not saturated
+    /// to 0 or 1 at the cadence it actually runs at.
+    #[test]
+    fn hazard_chance_is_a_genuine_probability_at_one_tick() {
+        let chance = hazard_chance(1.0 / SIM_TPS, UNSTUCK_ATTEMPT_RATE);
+        assert!(chance > 0.0 && chance < 1.0, "chance={chance} is not a genuine probability");
+    }
+}
 
 impl AgentData<'_> {
     ////////////////////////////////////////
@@ -373,7 +459,7 @@ impl AgentData<'_> {
             );
         }
         if let Some((bearing, speed, stuck)) = chase_result {
-            self.unstuck_if(stuck, controller);
+            self.unstuck_if(stuck, read_data.dt.0, controller);
             self.traverse(controller, bearing, speed * speed_multiplier);
             if writer_diag {
                 tracing::info!(
@@ -421,8 +507,15 @@ impl AgentData<'_> {
         controller.inputs.move_z = bearing.z;
     }
 
-    pub fn unstuck_if(&self, condition: bool, controller: &mut Controller) {
-        if condition && self.helper_random_bool(0.05) {
+    /// `dt` (E7 Stage 3, T0.79): the OUTER gate ("attempt an unstuck
+    /// action this tick") is a per-time hazard, routed through the same
+    /// `hazard_chance` the other T0.7 gates use -- was a raw per-tick
+    /// 0.05 that silently sped up or slowed down with tick-rate changes.
+    /// The INNER jump-vs-roll pick stays a flat one-shot draw (see the
+    /// module doc comment): it fires once GIVEN the outer gate already
+    /// fired, not on every tick, so it isn't a hazard to begin with.
+    pub fn unstuck_if(&self, condition: bool, dt: f32, controller: &mut Controller) {
+        if condition && self.helper_random_bool(hazard_chance(dt, UNSTUCK_ATTEMPT_RATE)) {
             if matches!(self.char_state, CharacterState::Climb(_)) || self.helper_random_bool(0.5) {
                 controller.push_basic_input(InputKind::Jump);
             } else {
@@ -1096,7 +1189,7 @@ impl AgentData<'_> {
             },
             &read_data.time,
         ) {
-            self.unstuck_if(stuck, controller);
+            self.unstuck_if(stuck, read_data.dt.0, controller);
             let dist_sqrd = self.pos.0.distance_squared(tgt_pos.0);
             self.traverse(
                 controller,
@@ -1165,7 +1258,7 @@ impl AgentData<'_> {
             },
             &read_data.time,
         ) {
-            self.unstuck_if(stuck, controller);
+            self.unstuck_if(stuck, read_data.dt.0, controller);
             self.traverse(controller, bearing, speed.min(MAX_FLEE_SPEED));
         }
     }
