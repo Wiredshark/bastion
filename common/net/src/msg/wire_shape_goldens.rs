@@ -503,6 +503,21 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
         variant: "ChatMsg",
         digest_hex: "sha256:f376fb99c30adf28e49b56dd8a0994484505cdc7deffa859469a73d8164e0a66",
     },
+    // WSG-2 chunk 11 (Sonnet lane): UpdatePendingTrade and SiteEconomy.
+    // TradeId's inner field is private outside common::trade -- a
+    // bincode roundtrip through the same newtype-transparent encoding
+    // golden_digest_v1 itself uses builds one from an external crate
+    // without exposing the field.
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "UpdatePendingTrade",
+        digest_hex: "sha256:d1a606dac9ee281ea856271948e6dfef68948b40f6283508057bfbf16b992f70",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "SiteEconomy",
+        digest_hex: "sha256:06fda32836156e704143736fd84f56b4ac1b8b59119282e000a7296c5ee241c2",
+    },
 ];
 
 include!("wire_shape_uncovered.rs");
@@ -1031,6 +1046,42 @@ mod wire_shape_goldens_v1 {
         ))
     }
 
+    // WSG-2 chunk 11 fixtures.
+
+    fn trade_id(n: usize) -> common::trade::TradeId {
+        let bytes =
+            bincode::serde::encode_to_vec(&n, bincode::config::legacy()).expect("encode usize");
+        bincode::serde::decode_from_slice(&bytes, bincode::config::legacy())
+            .expect("decode as TradeId (newtype-transparent)")
+            .0
+    }
+
+    fn server_update_pending_trade() -> ServerGeneral {
+        ServerGeneral::UpdatePendingTrade(
+            trade_id(60),
+            common::trade::PendingTrade {
+                parties: [uid(61), uid(62)],
+                offers: [hashbrown::HashMap::new(), hashbrown::HashMap::new()],
+                phase: common::trade::TradePhase::Mutate,
+                accept_flags: [false, false],
+            },
+            None,
+        )
+    }
+
+    fn server_site_economy() -> ServerGeneral {
+        ServerGeneral::SiteEconomy(crate::msg::world_msg::EconomyInfo {
+            id: 63,
+            population: 64,
+            stock: std::collections::HashMap::new(),
+            labor_values: std::collections::HashMap::new(),
+            values: std::collections::HashMap::new(),
+            labors: Vec::new(),
+            last_exports: std::collections::HashMap::new(),
+            resources: std::collections::HashMap::new(),
+        })
+    }
+
     fn actual(schema: &str, variant: &str) -> String {
         match (schema, variant) {
             ("ClientGeneral", "PlayerPhysics") => golden_digest_v1(&client_player_physics()),
@@ -1127,6 +1178,8 @@ mod wire_shape_goldens_v1 {
             ("ClientGeneral", "UnlockSkill") => golden_digest_v1(&client_unlock_skill()),
             ("ClientGeneral", "ChatMsg") => golden_digest_v1(&client_chat_msg()),
             ("ServerGeneral", "ChatMsg") => golden_digest_v1(&server_chat_msg()),
+            ("ServerGeneral", "UpdatePendingTrade") => golden_digest_v1(&server_update_pending_trade()),
+            ("ServerGeneral", "SiteEconomy") => golden_digest_v1(&server_site_economy()),
             (schema, other) => panic!("{schema}::{other} has a golden entry but no representative instance"),
         }
     }
@@ -1153,9 +1206,9 @@ mod wire_shape_goldens_v1 {
     /// counts pinned so neither list can drift silently.
     #[test]
     fn coverage_is_a_pinned_open_set() {
-        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 82, "the covered set changed");
+        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 84, "the covered set changed");
         assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 0);
-        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 6);
+        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 4);
         // 1 + 36 = 37 ClientGeneral, 3 + 48 = 51 ServerGeneral, counted
         // from the enums at 71b1c87ca7.
         let covered_client =
@@ -1382,6 +1435,30 @@ mod wire_shape_goldens_v1 {
         assert_ne!(
             base, perturbed,
             "changing UnlockSkill's inner SwordSkill did not move the digest -- the golden \
+             mechanism is blind to this chunk's payload"
+        );
+    }
+
+    /// WSG-2 chunk 11's falsifier: perturbing `UpdatePendingTrade`'s
+    /// `phase` field (the tuple's middle element, inside the nested
+    /// `PendingTrade` struct) proves the mechanism sees a change in a
+    /// multi-arity tuple variant's non-first field.
+    #[test]
+    fn chunk_11_fixture_perturbation_moves_the_digest() {
+        let base = golden_digest_v1(&server_update_pending_trade());
+        let perturbed = golden_digest_v1(&ServerGeneral::UpdatePendingTrade(
+            trade_id(60),
+            common::trade::PendingTrade {
+                parties: [uid(61), uid(62)],
+                offers: [hashbrown::HashMap::new(), hashbrown::HashMap::new()],
+                phase: common::trade::TradePhase::Review,
+                accept_flags: [false, false],
+            },
+            None,
+        ));
+        assert_ne!(
+            base, perturbed,
+            "changing UpdatePendingTrade's phase did not move the digest -- the golden \
              mechanism is blind to this chunk's payload"
         );
     }
