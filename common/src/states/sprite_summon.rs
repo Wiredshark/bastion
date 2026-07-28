@@ -1,4 +1,5 @@
 use crate::{
+    combat,
     comp::{CharacterState, StateUpdate, character_state::OutputEvents},
     event::{CreateSpriteEvent, LocalEvent},
     outcome::Outcome,
@@ -238,7 +239,18 @@ pub fn create_sprites(
                 .angle_between(point.as_())
                 .to_degrees()
                 <= (angle / 2.0)
-                && !rng().random_bool(sparseness)
+                // E5-C (determinism audit, scanner-gap find): was bare
+                // rng() via an unqualified import -- which grid points get
+                // a sprite is authoritative world state, keyed on caster
+                // uid + cast time + the point's own coordinates (this
+                // fires once per spiral point per call, all in the same
+                // tick).
+                && !combat::seed_ability_rng(
+                    &format!("states/sprite_summon/{}/{}", point.x, point.y),
+                    *data.uid,
+                    *data.time,
+                )
+                .random_bool(sparseness)
             {
                 // The coordinates of where the sprite is created
                 let sprite_pos = Vec3::new(

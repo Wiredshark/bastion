@@ -64,7 +64,10 @@ fn effect_healing_value(effect: &Effect) -> (f32, f32) {
         Effect::Health(HealthChange { amount, .. }) => value += *amount,
         Effect::Buff(BuffEffect { kind, data, .. }) => {
             if let Some(duration) = data.duration {
-                for effect in kind.effects(data, None) {
+                // Evaluation only (aggregating projected healing value, not
+                // applying a buff), so the instance id this derives is
+                // discarded -- any Time value is fine.
+                for effect in kind.effects(data, None, common::resources::Time::default()) {
                     match effect {
                         comp::BuffEffect::HealthChangeOverTime { rate, kind, .. } => {
                             value += match kind {
@@ -1182,7 +1185,13 @@ impl AgentData<'_> {
             buffs.iter_active().flatten().any(|buff| {
                 // We don't care about seeing the optional combat requirements that can be
                 // tacked onto buff effects, so we'll just pass in None to this
-                buff.kind.effects(&buff.data, None).iter().any(|effect| {
+                // Inspection only (checking effect shape, not applying a
+                // buff), so the instance id this derives is discarded --
+                // any Time value is fine.
+                buff.kind
+                    .effects(&buff.data, None, common::resources::Time::default())
+                    .iter()
+                    .any(|effect| {
                     if let comp::BuffEffect::HealthChangeOverTime { rate, .. } = effect
                         && *rate > 0.0
                     {

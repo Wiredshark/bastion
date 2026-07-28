@@ -468,6 +468,13 @@ fn decide_quest_terminal_commits(
         let (winner_npc, winner_intent) = &npc_intents[winner_idx];
         commits.push((quest_id, *winner_npc, winner_intent.outcome));
     }
+    // Cross-review (Opus F2, CONFIRMED): quest_intents is a HashMap, so the
+    // iteration above runs in run-varying order. An NPC winning TWO quests
+    // in the same tick would get its receipts pushed in that varying order
+    // -- the same DET-ESIM-015 law npc_inputs' canonical_npc_input_order
+    // already enforces a few lines below, missed here. Sort by the stable
+    // QuestId key before returning.
+    commits.sort_by_key(|(quest_id, _, _)| quest_id.0);
     commits
 }
 
@@ -518,6 +525,31 @@ mod decide_quest_terminal_commits_tests {
         ]);
         let commits_reversed = decide_quest_terminal_commits(&reversed, |_| true);
         assert_eq!(commits_reversed, vec![(quest_id, npc(2), CompletedPreDeadline)]);
+    }
+
+    /// Cross-review (Opus F2, CONFIRMED): quest_intents is a HashMap, so
+    /// commits used to come out in run-varying order -- an NPC winning
+    /// several quests in one tick would have its receipts pushed in that
+    /// varying order. Multiple quests (HashMap iteration order is not
+    /// insertion order in Rust, so this doesn't merely restate insertion
+    /// order) must always come out sorted by QuestId, regardless of what
+    /// order the map happens to iterate in.
+    #[test]
+    fn multiple_quest_commits_are_returned_in_stable_quest_id_order() {
+        use QuestTerminalOutcome::*;
+        let mut quest_intents = HashMap::new();
+        // Deliberately inserted out of QuestId order.
+        for id in [5u64, 1, 3, 2, 4] {
+            quest_intents.insert(QuestId(id), vec![(npc(id), intent(CompletedPreDeadline, id))]);
+        }
+
+        let commits = decide_quest_terminal_commits(&quest_intents, |_| true);
+        let ids: Vec<u64> = commits.iter().map(|(q, _, _)| q.0).collect();
+        assert_eq!(
+            ids,
+            vec![1, 2, 3, 4, 5],
+            "commits must be sorted by QuestId regardless of HashMap iteration order"
+        );
     }
 
     #[test]

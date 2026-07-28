@@ -1,6 +1,7 @@
 use common::{
     comp::{Body, LightEmitter, PhysicsState, Pos, ProjectileConstructor, object},
     event::{EmitExt, ShootEvent},
+    resources::Time,
     terrain::{Block, TerrainChunkSize},
     util::Dir,
     vol::RectVolSize,
@@ -166,6 +167,7 @@ impl WiringAction {
         pos: Option<&Pos>,
         block_change: &mut BlockChange,
         mut light_emitter: Option<&mut LightEmitter>,
+        time: Time,
     ) {
         self.effects
             .iter()
@@ -189,7 +191,7 @@ impl WiringAction {
                             pos,
                             dir: Dir::forward(),
                             body: Body::Object(object::Body::Arrow),
-                            projectile: constr.clone().create_projectile(None, 1.0, None),
+                            projectile: constr.clone().create_projectile(None, 1.0, None, time),
                             light: None,
                             speed: 5.0,
                             object: None,

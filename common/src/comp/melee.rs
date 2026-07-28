@@ -105,11 +105,17 @@ pub struct CustomCombo {
 }
 
 impl MeleeConstructor {
+    /// E5-C (determinism audit): `caster_uid`/`time` key the instance id
+    /// (was bare `rand::random()`) via `combat::derive_ability_instance` --
+    /// this constructs the swing at ability-cast time, before a target
+    /// exists, so it can't use `derive_attack_instance`'s signature.
     pub fn create_melee(
         self,
         precision_mult: f32,
         tool_stats: Stats,
         ability_info: AbilityInfo,
+        caster_uid: crate::uid::Uid,
+        time: crate::resources::Time,
     ) -> Melee {
         if self.scaled.is_some() {
             dev_panic!(
@@ -118,7 +124,7 @@ impl MeleeConstructor {
             )
         }
 
-        let instance = rand::random();
+        let instance = crate::combat::derive_ability_instance("comp/melee", caster_uid, time, 1);
         let attack = match self.kind {
             MeleeConstructorKind::Slash {
                 damage,

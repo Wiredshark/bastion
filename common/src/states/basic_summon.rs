@@ -1,5 +1,5 @@
 use crate::{
-    combat::{AttackTarget, CombatEffect},
+    combat::{AttackTarget, CombatEffect, derive_ability_instance},
     comp::{
         self, Behavior, BehaviorCapability, Body, CharacterState, Object, Ori, PidController, Pos,
         Projectile, StateUpdate, Stats, Vel,
@@ -116,18 +116,27 @@ impl CharacterBehavior for Data {
                                 use_npc_name,
                                 duration,
                             } => {
+                                // E5-C (determinism audit): the RNG-P3
+                                // comment below made this stream visible but
+                                // never actually keyed it -- one stream for
+                                // the whole summon act (preset, distance,
+                                // orientation), keyed on caster uid + time +
+                                // summon_count (this ability can summon more
+                                // than once, each with its own draws).
+                                let mut rng = {
+                                    use rand::SeedableRng;
+                                    rand_chacha::ChaChaRng::seed_from_u64(derive_ability_instance("states/basic_summon", 
+                                        *data.uid,
+                                        *data.time,
+                                        self.summon_count as u64,
+                                    ))
+                                };
                                 let loadout = {
                                     let loadout_builder =
                                         LoadoutBuilder::empty().with_default_maintool(body);
                                     // If preset is none, use default equipment
                                     if let Some(preset) = loadout_config {
-                                        // RNG-P3 threading: ambient stream made
-                                        // VISIBLE at this combat site (was
-                                        // hidden inside with_preset) — keying
-                                        // it is the combat pass's job.
-                                        loadout_builder
-                                            .with_preset(*preset, &mut rand::rng())
-                                            .build()
+                                        loadout_builder.with_preset(*preset, &mut rng).build()
                                     } else {
                                         loadout_builder.with_default_equipment(body).build()
                                     }
@@ -164,7 +173,7 @@ impl CharacterBehavior for Data {
                                 let summon_frac = self.summon_count as f32 / summon_amount as f32;
 
                                 let length =
-                                    rand::rng().random_range(summon_distance.0..=summon_distance.1);
+                                    rng.random_range(summon_distance.0..=summon_distance.1);
                                 let extra_height = if *body == Body::Object(FieryTornado) {
                                     15.0
                                 } else {
@@ -226,7 +235,6 @@ impl CharacterBehavior for Data {
                                     override_collider: None,
                                 });
 
-                                let mut rng = rand::rng();
                                 // Send server event to create npc
                                 output_events.emit_server(CreateNpcEvent {
                                     pos: comp::Pos(collision_vector - Vec3::unit_z() * obstacle_z),

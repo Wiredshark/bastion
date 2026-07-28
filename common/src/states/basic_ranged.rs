@@ -140,6 +140,7 @@ impl CharacterBehavior for Data {
                         Some(*data.uid),
                         precision_mult,
                         Some(self.static_data.ability_info),
+                        *data.time,
                     );
                     // Shoots all projectiles simultaneously
                     let num_projectiles = self
@@ -147,7 +148,13 @@ impl CharacterBehavior for Data {
                         .num_projectiles
                         .compute(data.heads.map_or(1, |heads| heads.amount() as u32));
 
-                    let mut rng = rng();
+                    // E5-C (determinism audit, found via the scanner-gap
+                    // fix -- was bare `rng()`, an unqualified `rand::rng`
+                    // import evading the ambient-entropy scan): projectile
+                    // spread is authoritative (affects who gets hit), keyed
+                    // on caster uid + cast time.
+                    let mut rng =
+                        combat::seed_ability_rng("states/basic_ranged", *data.uid, *data.time);
 
                     let aim_dir = if self.static_data.ori_modifier.buildup.is_some() {
                         data.inputs.look_dir.merge_z(data.ori.look_dir())

@@ -515,12 +515,24 @@ impl ServerEvent for InventoryManipEvent {
                             }
 
                             let sprite_cfg = data.terrain.sprite_cfg_at(sprite_pos);
-                            // E6 (determinism audit): reuses the per-event
-                            // (uid, time)-keyed stream declared above
-                            // (DET-RNG-006) instead of to_items()'s old
-                            // internal OS-entropy draw.
+                            // Cross-review (Opus F1, CONFIRMED): the outer
+                            // rng above is keyed on (uid, time) only, so two
+                            // Collects by the same player in the same tick
+                            // would draw an IDENTICAL loot roll. Folds in
+                            // sprite_pos (the collected block, in scope
+                            // here) so distinct events never share a seed.
+                            let mut loot_rng = {
+                                use rand::SeedableRng;
+                                rand::rngs::StdRng::seed_from_u64(common::lottery::seed_loot_roll(&[
+                                    &uid.0.get().to_le_bytes(),
+                                    &sprite_pos.x.to_le_bytes(),
+                                    &sprite_pos.y.to_le_bytes(),
+                                    &sprite_pos.z.to_le_bytes(),
+                                    &data.time.0.to_bits().to_le_bytes(),
+                                ]))
+                            };
                             if let Some(items) =
-                                comp::Item::try_reclaim_from_block(block, sprite_cfg, &mut rng)
+                                comp::Item::try_reclaim_from_block(block, sprite_cfg, &mut loot_rng)
                             {
                                 for item in
                                     flatten_counted_items(&items, &data.ability_map, &data.msm)
@@ -873,7 +885,21 @@ impl ServerEvent for InventoryManipEvent {
                     if let Some(effects) = maybe_effect {
                         match effects {
                             item::Effects::Any(effects) => {
-                                if let Some(effect) = effects.into_iter().choose(&mut rng) {
+                                // Cross-review (Opus F1 note, same latent
+                                // shape as the Collect fix above): the outer
+                                // rng is keyed on (uid, time) only, so two
+                                // Use events by the same player in the same
+                                // tick would pick the SAME random effect.
+                                // Folds in the used slot.
+                                let mut use_rng = {
+                                    use rand::SeedableRng;
+                                    rand::rngs::StdRng::seed_from_u64(common::lottery::seed_loot_roll(&[
+                                        &uid.0.get().to_le_bytes(),
+                                        format!("{slot:?}").as_bytes(),
+                                        &data.time.0.to_bits().to_le_bytes(),
+                                    ]))
+                                };
+                                if let Some(effect) = effects.into_iter().choose(&mut use_rng) {
                                     emit_effect_events(
                                         &mut emitters,
                                         *data.time,

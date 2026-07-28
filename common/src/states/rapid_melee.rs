@@ -91,9 +91,11 @@ impl CharacterBehavior for Data {
                     data.updater.insert(
                         data.entity,
                         self.static_data.melee_constructor.clone().create_melee(
-                            precision_mult,
-                            tool_stats,
-                            self.static_data.ability_info,
+                        precision_mult,
+                        tool_stats,
+                        self.static_data.ability_info,
+                        *data.uid,
+                        *data.time,
                         ),
                     );
                 } else if self.timer < self.static_data.swing_duration {
@@ -118,7 +120,11 @@ impl CharacterBehavior for Data {
                                 value: 10.0,
                             },
                             Some(GroupTarget::OutOfGroup),
-                            rand::random(),
+                            combat::derive_ability_instance("states/rapid_melee", 
+                                *data.uid,
+                                *data.time,
+                                self.current_strike as u64,
+                            ),
                         );
                         let attack =
                             Attack::new(Some(self.static_data.ability_info)).with_damage(damage);

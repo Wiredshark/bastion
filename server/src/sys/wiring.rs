@@ -2,7 +2,7 @@ use crate::wiring::{Circuit, WiringElement};
 use common::{
     comp::{LightEmitter, PhysicsState, Pos},
     event, event_emitters,
-    resources::EntitiesDiedLastTick,
+    resources::{EntitiesDiedLastTick, Time},
 };
 use common_ecs::{Job, Origin, Phase, System};
 use common_state::BlockChange;
@@ -18,6 +18,7 @@ pub struct ReadData<'a> {
     pos: ReadStorage<'a, Pos>,
     physics_states: ReadStorage<'a, PhysicsState>,
     entities_died_last_tick: Read<'a, EntitiesDiedLastTick>,
+    time: Read<'a, Time>,
 }
 
 event_emitters! {
@@ -138,6 +139,7 @@ impl<'a> System<'a> for Sys {
                                 pos,
                                 &mut block_change,
                                 light_emitter.as_deref_mut(),
+                                *read_data.time,
                             );
                         })
                 },

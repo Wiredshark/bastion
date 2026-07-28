@@ -1,6 +1,6 @@
 use crate::{
     Damage, DamageKind, Explosion, GroupTarget, Knockback, RadiusEffect,
-    combat::{Attack, AttackDamage, AttackEffect, CombatEffect, CombatRequirement},
+    combat::{Attack, AttackDamage, AttackEffect, CombatEffect, CombatRequirement, derive_ability_instance},
     comp::{
         CharacterState, StateUpdate, ability::Dodgeable, character_state::OutputEvents,
         item::Reagent,
@@ -124,7 +124,7 @@ impl CharacterBehavior for Data {
                                     value: self.static_data.damage,
                                 },
                                 Some(GroupTarget::OutOfGroup),
-                                rand::random(),
+                                derive_ability_instance("states/explosion", *data.uid, *data.time, 1),
                             ))
                             .with_effect(
                                 AttackEffect::new(

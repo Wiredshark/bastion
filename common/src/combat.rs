@@ -56,7 +56,15 @@ use rand::RngExt;
 /// the same attack)` through the shared `DomainHasher`, the same pattern
 /// `create_quest`/dialogue-tag/`TradeId` all use. `attacker_uid: None`
 /// covers environmental/ownerless damage sources.
+/// `site` (Opus F3, RULED UNCONDITIONAL): a short, per-call-context tag
+/// (e.g. `"combat/apply_attack/damage-loop"`) hashed in alongside the
+/// ordinal. Ordinals are only locally unique WITHIN one call site (combat.rs
+/// uses 1-8, entity_manipulation.rs's two effect blocks each reuse 1-12) --
+/// without `site`, two different call sites sharing (attacker, target, time)
+/// could collide on the same ordinal. `site` makes every (site, ordinal)
+/// pair distinct by construction, not by convention.
 pub fn derive_attack_instance(
+    site: &str,
     attacker_uid: Option<Uid>,
     target_uid: Uid,
     time: Time,
@@ -64,11 +72,57 @@ pub fn derive_attack_instance(
 ) -> u64 {
     let mut h =
         crate::state_hash::DomainHasher::new("bastion/domain/attack-instance/v1/sha256");
+    h.field(site.as_bytes());
     h.field(&attacker_uid.map_or(0, |u| u.0.get()).to_le_bytes());
     h.field(&target_uid.0.get().to_le_bytes());
     h.field(&time.0.to_bits().to_le_bytes());
     h.field(&ordinal.to_le_bytes());
     u64::from_le_bytes(h.finish().0[..8].try_into().expect("sha256 >= 8 bytes"))
+}
+
+/// E5-C (determinism audit): `AttackDamage`/`BuffEffect`'s `instance` field
+/// is stamped at ABILITY-CAST time, before a target exists -- so it can't
+/// use [`derive_attack_instance`]'s (attacker, target, time, ordinal)
+/// signature. Every construction site used bare `rand::random()` instead,
+/// an unfixed OS-entropy gap `derive_attack_instance` never reached. Keyed
+/// on the caster's own identity + cast time + a source-fixed ordinal that
+/// disambiguates multiple instances stamped in the SAME behavior() call
+/// (e.g. leap_shockwave's IceSpikes secondary damage).
+/// `site` carries the same F3 collision-freedom requirement as
+/// [`derive_attack_instance`]'s -- one per calling file/module.
+pub fn derive_ability_instance(
+    site: &str,
+    caster_uid: impl Into<Option<Uid>>,
+    time: Time,
+    ordinal: u64,
+) -> u64 {
+    let mut h = crate::state_hash::DomainHasher::new("bastion/domain/ability-instance/v1/sha256");
+    h.field(site.as_bytes());
+    h.field(&caster_uid.into().map_or(0, |u| u.0.get()).to_le_bytes());
+    h.field(&time.0.to_bits().to_le_bytes());
+    h.field(&ordinal.to_le_bytes());
+    u64::from_le_bytes(h.finish().0[..8].try_into().expect("sha256 >= 8 bytes"))
+}
+
+/// E5-C (found via the scanner-gap fix): sites needing a full keyed RNG
+/// STREAM (multi-projectile spread, repeated draws), not a single instance
+/// id -- all discovered using bare `rng()` via an unqualified `use
+/// rand::rng` import, which evaded the original ambient-entropy sweep
+/// entirely (a plain `.contains("rand::rng()")` scan never saw them).
+/// Same key shape as [`derive_ability_instance`] (caster uid + cast time +
+/// site tag), just seeding a stream instead of a scalar.
+pub fn seed_ability_rng(
+    site: &str,
+    caster_uid: impl Into<Option<Uid>>,
+    time: Time,
+) -> rand_chacha::ChaChaRng {
+    use rand::SeedableRng;
+    let mut h = crate::state_hash::DomainHasher::new("bastion/domain/ability-instance/v1/sha256");
+    h.field(site.as_bytes());
+    h.field(&caster_uid.into().map_or(0, |u| u.0.get()).to_le_bytes());
+    h.field(&time.0.to_bits().to_le_bytes());
+    let seed = u64::from_le_bytes(h.finish().0[..8].try_into().expect("sha256 >= 8 bytes"));
+    rand_chacha::ChaChaRng::seed_from_u64(seed)
 }
 use serde::{Deserialize, Serialize};
 use specs::{Entity as EcsEntity, ReadStorage};
@@ -628,7 +682,7 @@ impl Attack {
                                     cause: None,
                                     time,
                                     precise: false,
-                                    instance: derive_attack_instance(
+                                    instance: derive_attack_instance("combat/apply_attack", 
                                         attacker.map(|a| a.uid),
                                         target.uid,
                                         time,
@@ -675,7 +729,7 @@ impl Attack {
                                 cause: None,
                                 time,
                                 precise: false,
-                                instance: derive_attack_instance(
+                                instance: derive_attack_instance("combat/apply_attack", 
                                     attacker.map(|a| a.uid),
                                     target.uid,
                                     time,
@@ -937,7 +991,7 @@ impl Attack {
                                 cause: None,
                                 time,
                                 precise: false,
-                                instance: derive_attack_instance(
+                                instance: derive_attack_instance("combat/apply_attack", 
                                     attacker.map(|a| a.uid),
                                     target.uid,
                                     time,
@@ -984,7 +1038,7 @@ impl Attack {
                             cause: None,
                             time,
                             precise: false,
-                            instance: derive_attack_instance(
+                            instance: derive_attack_instance("combat/apply_attack", 
                                 attacker.map(|a| a.uid),
                                 target.uid,
                                 time,
@@ -1017,7 +1071,7 @@ impl Attack {
                                 cause: Some(DamageSource::from(attack_source)),
                                 time,
                                 precise: precision_mult.is_some(),
-                                instance: derive_attack_instance(
+                                instance: derive_attack_instance("combat/apply_attack", 
                                     attacker.map(|a| a.uid),
                                     target.uid,
                                     time,
@@ -1046,7 +1100,7 @@ impl Attack {
                                 cause: Some(DamageSource::from(attack_source)),
                                 time,
                                 precise: precision_mult.is_some(),
-                                instance: derive_attack_instance(
+                                instance: derive_attack_instance("combat/apply_attack", 
                                     attacker.map(|a| a.uid),
                                     target.uid,
                                     time,
@@ -1067,7 +1121,7 @@ impl Attack {
                                 cause: Some(DamageSource::from(attack_source)),
                                 time,
                                 precise: precision_mult.is_some(),
-                                instance: derive_attack_instance(
+                                instance: derive_attack_instance("combat/apply_attack", 
                                     attacker.map(|a| a.uid),
                                     target.uid,
                                     time,
@@ -1163,7 +1217,7 @@ impl Attack {
                                     cause: Some(DamageSource::from(attack_source)),
                                     time,
                                     precise: precision_mult.is_some(),
-                                    instance: derive_attack_instance(
+                                    instance: derive_attack_instance("combat/apply_attack", 
                                         attacker.map(|a| a.uid),
                                         target.uid,
                                         time,
@@ -2595,8 +2649,8 @@ mod derive_attack_instance_tests {
     /// counter, there is no hidden dependency on call order at all.
     #[test]
     fn same_inputs_always_derive_the_same_instance() {
-        let a = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 0);
-        let b = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 0);
+        let a = derive_attack_instance("test/site", Some(uid(1)), uid(2), Time(10.0), 0);
+        let b = derive_attack_instance("test/site", Some(uid(1)), uid(2), Time(10.0), 0);
         assert_eq!(a, b);
     }
 
@@ -2605,22 +2659,22 @@ mod derive_attack_instance_tests {
     /// moment would be wrongly grouped as one.
     #[test]
     fn different_attacker_derives_a_different_instance() {
-        let a = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 0);
-        let b = derive_attack_instance(Some(uid(3)), uid(2), Time(10.0), 0);
+        let a = derive_attack_instance("test/site", Some(uid(1)), uid(2), Time(10.0), 0);
+        let b = derive_attack_instance("test/site", Some(uid(3)), uid(2), Time(10.0), 0);
         assert_ne!(a, b);
     }
 
     #[test]
     fn different_target_derives_a_different_instance() {
-        let a = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 0);
-        let b = derive_attack_instance(Some(uid(1)), uid(4), Time(10.0), 0);
+        let a = derive_attack_instance("test/site", Some(uid(1)), uid(2), Time(10.0), 0);
+        let b = derive_attack_instance("test/site", Some(uid(1)), uid(4), Time(10.0), 0);
         assert_ne!(a, b);
     }
 
     #[test]
     fn different_time_derives_a_different_instance() {
-        let a = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 0);
-        let b = derive_attack_instance(Some(uid(1)), uid(2), Time(11.0), 0);
+        let a = derive_attack_instance("test/site", Some(uid(1)), uid(2), Time(10.0), 0);
+        let b = derive_attack_instance("test/site", Some(uid(1)), uid(2), Time(11.0), 0);
         assert_ne!(a, b);
     }
 
@@ -2630,8 +2684,8 @@ mod derive_attack_instance_tests {
     /// of colliding.
     #[test]
     fn different_ordinal_derives_a_different_instance() {
-        let a = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 1);
-        let b = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 2);
+        let a = derive_attack_instance("test/site", Some(uid(1)), uid(2), Time(10.0), 1);
+        let b = derive_attack_instance("test/site", Some(uid(1)), uid(2), Time(10.0), 2);
         assert_ne!(a, b);
     }
 
@@ -2640,11 +2694,23 @@ mod derive_attack_instance_tests {
     /// `Uid` wraps a `NonZeroU64`) or to any real attacker.
     #[test]
     fn no_attacker_derives_deterministically_and_differs_from_a_real_attacker() {
-        let no_attacker = derive_attack_instance(None, uid(2), Time(10.0), 0);
-        let no_attacker_again = derive_attack_instance(None, uid(2), Time(10.0), 0);
+        let no_attacker = derive_attack_instance("test/site", None, uid(2), Time(10.0), 0);
+        let no_attacker_again = derive_attack_instance("test/site", None, uid(2), Time(10.0), 0);
         assert_eq!(no_attacker, no_attacker_again);
 
-        let with_attacker = derive_attack_instance(Some(uid(1)), uid(2), Time(10.0), 0);
+        let with_attacker = derive_attack_instance("test/site", Some(uid(1)), uid(2), Time(10.0), 0);
         assert_ne!(no_attacker, with_attacker);
+    }
+
+    /// Cross-review (Opus F3, RULED UNCONDITIONAL): ordinals are only
+    /// locally unique WITHIN one call site -- two different sites sharing
+    /// (attacker, target, time, ordinal) must not collide, or an unrelated
+    /// combat.rs effect and an entity_manipulation.rs effect firing on the
+    /// same attack could get the same instance id.
+    #[test]
+    fn different_site_derives_a_different_instance_even_with_identical_ordinal() {
+        let a = derive_attack_instance("combat/apply_attack", Some(uid(1)), uid(2), Time(10.0), 1);
+        let b = derive_attack_instance("entity_manip/effect-block-1", Some(uid(1)), uid(2), Time(10.0), 1);
+        assert_ne!(a, b, "different sites collided on the same (attacker, target, time, ordinal)");
     }
 }

@@ -109,6 +109,7 @@ impl CharacterBehavior for Data {
                             Some(*data.uid),
                             precision_mult,
                             Some(self.static_data.ability_info),
+                            *data.time,
                         );
 
                     let num_projectiles = self
@@ -116,7 +117,11 @@ impl CharacterBehavior for Data {
                         .num_projectiles
                         .compute(data.heads.map_or(1, |heads| heads.amount() as u32));
 
-                    let mut rng = rng();
+                    // E5-C (determinism audit, scanner-gap find): was bare
+                    // `rng()` via an unqualified import -- projectile spread
+                    // is authoritative, keyed on caster uid + cast time.
+                    let mut rng =
+                        combat::seed_ability_rng("states/charged_ranged", *data.uid, *data.time);
                     let dirs = if let Some(spread) = self.static_data.projectile_spread {
                         Either::Left(spread.compute_directions(
                             data.inputs.look_dir,

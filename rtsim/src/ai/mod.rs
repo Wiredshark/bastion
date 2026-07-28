@@ -100,7 +100,11 @@ pub struct NpcCtx<'a, 'd> {
     pub current_action_class: ActionClassV1,
 }
 
-fn discrete_chance(dt: f64, chance_per_second: f64) -> f64 {
+/// E7 Stage 2 (T0.79): made `pub(crate)` so `data::sentiment`'s decay law
+/// (a per-second hazard converted from an inverted dt-in-denominator bug)
+/// can reuse the SAME canonical per-second-hazard formula `NpcCtx::chance`
+/// already uses, rather than hand-rolling a second one.
+pub(crate) fn discrete_chance(dt: f64, chance_per_second: f64) -> f64 {
     if dt <= 1.0 {
         (dt * chance_per_second).clamp(0.0, 1.0)
     } else {

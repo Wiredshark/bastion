@@ -1671,7 +1671,7 @@ impl Server {
                     // (world-scoped derivation from the target's own uid +
                     // sim time), so the workaround is no longer needed.
                     instance: uid.map_or(0, |uid| {
-                        common::combat::derive_attack_instance(None, uid, time, 0)
+                        common::combat::derive_attack_instance("server/bastion-emit-damage", None, uid, time, 0)
                     }),
                 },
             });

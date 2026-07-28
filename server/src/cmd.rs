@@ -1797,7 +1797,7 @@ fn handle_health(
                 // for a live entity) falls back to 0 -- see health.rs's
                 // "no real event" sentinel for the same reasoning.
                 instance: target_uid.map_or(0, |uid| {
-                    common::combat::derive_attack_instance(None, uid, *time, 0)
+                    common::combat::derive_attack_instance("server/cmd/handle-health", None, uid, *time, 0)
                 }),
             };
             health.change_by(change);

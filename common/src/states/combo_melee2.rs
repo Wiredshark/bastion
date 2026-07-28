@@ -191,9 +191,11 @@ impl CharacterBehavior for Data {
                             .clone()
                             .custom_combo(strike_data.custom_combo)
                             .create_melee(
-                                precision_mult,
-                                tool_stats,
-                                self.static_data.ability_info,
+                            precision_mult,
+                            tool_stats,
+                            self.static_data.ability_info,
+                            *data.uid,
+                            *data.time,
                             ),
                     );
                 } else if self.timer < strike_data.swing_duration {
@@ -209,7 +211,7 @@ impl CharacterBehavior for Data {
                                 value: 10.0,
                             },
                             Some(GroupTarget::OutOfGroup),
-                            rand::random(),
+                            combat::derive_ability_instance("states/combo_melee2", *data.uid, *data.time, 1),
                         );
                         let attack =
                             Attack::new(Some(self.static_data.ability_info)).with_damage(damage);

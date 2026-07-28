@@ -304,11 +304,16 @@ impl ServerEvent for MineBlockEvent {
             // draws attached to events in arrival order. Per-event stream
             // keyed by (mined cell, sim-time): deterministic and
             // order-independent.
+            //
+            // Cross-review (Opus F1, CONFIRMED): (pos, time) alone collides
+            // when two DIFFERENT miners hit the SAME block in the same tick
+            // (a race) -- folds in the miner's own uid (if any) too.
             let mut rng = rand::rngs::StdRng::seed_from_u64(
                 (ev.pos.x as u32 as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
                     ^ (ev.pos.y as u32 as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
                     ^ (ev.pos.z as u32 as u64).wrapping_mul(0x1656_67B1_9E37_79F9)
                     ^ time.0.to_bits()
+                    ^ uids.get(ev.entity).map_or(0, |u| u.0.get()).wrapping_mul(0xFF51_AFD7_ED55_8CCD)
                     ^ 0x313E_0021,
             );
             if block_change.can_set_block(ev.pos) {
@@ -557,11 +562,20 @@ impl ServerEvent for CreateSpriteEvent {
                         // timeout jitter was an OS-entropy draw (rand::rng()).
                         // Key it by (sprite world position, sim-time) so the
                         // scheduled removal is deterministic/replayable.
+                        //
+                        // Cross-review (Opus F1 note, same latent shape):
+                        // CreateSpriteEvent carries no actor identity to
+                        // fold in (unlike MineBlockEvent's miner uid), so
+                        // this keys on the sprite kind too -- two DIFFERENT
+                        // sprites created at the same pos in the same tick
+                        // no longer share a seed; two IDENTICAL requests
+                        // producing the same result is not a bug.
                         let mut rng = rand::rngs::StdRng::seed_from_u64(
                             (ev.pos.x as u32 as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
                                 ^ (ev.pos.y as u32 as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
                                 ^ (ev.pos.z as u32 as u64).wrapping_mul(0x1656_67B1_9E37_79F9)
-                                ^ time.0.to_bits(),
+                                ^ time.0.to_bits()
+                                ^ (ev.sprite as u64).wrapping_mul(0x2545_F491_4F6C_DD1D),
                         );
                         let offset = rng.random_range(0.0..del_offset);
                         let current_time: f64 = time.0;
