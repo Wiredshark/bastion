@@ -919,6 +919,56 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
     }
 }
 
+fn append_lighting_metadata_v1(
+    metadata: &mut String,
+    lighting: Option<crate::r1f_lighting::LightingProductionEvidenceV1>,
+    expected_generation: u64,
+) {
+    let Some(lighting) =
+        lighting.filter(|lighting| lighting.presentation_generation == expected_generation)
+    else {
+        metadata.push_str("r1f_lighting_enabled=false\n");
+        return;
+    };
+    metadata.push_str(&format!(
+        concat!(
+            "r1f_lighting_enabled=true\n",
+            "r1f_lighting_presentation_generation={}\n",
+            "r1f_lighting_simulation_tick={}\n",
+            "r1f_lighting_environment_projection_sha256={}\n",
+            "r1f_lighting_material_table_sha256={}\n",
+            "r1f_lighting_camera_token_sha256={}\n",
+            "r1f_lighting_policy_sha256={}\n",
+            "r1f_lighting_weather_kind={}\n",
+            "r1f_lighting_mode={}\n",
+            "r1f_lighting_time_of_day_millis={}\n",
+            "r1f_lighting_sun_milli={}\n",
+            "r1f_lighting_moon_milli={}\n",
+            "r1f_lighting_weather_attenuation_milli={}\n",
+            "r1f_lighting_exposure_scale_milli={}\n",
+            "r1f_lighting_ambient_scale_milli={}\n",
+            "r1f_lighting_local_light_budget_legacy_diagnostic={}\n",
+            "r1f_lighting_divine_corrupted_overgod_available={}\n",
+        ),
+        lighting.presentation_generation,
+        lighting.simulation_tick,
+        hex_digest(&lighting.environment_projection_digest),
+        hex_digest(&lighting.material_table_digest),
+        hex_digest(&lighting.camera_token_digest),
+        hex_digest(&lighting.policy_digest),
+        lighting.weather_tag,
+        lighting.mode as u8,
+        lighting.time_of_day_millis,
+        lighting.sun_milli,
+        lighting.moon_milli,
+        lighting.weather_attenuation_milli,
+        lighting.exposure_scale_milli,
+        lighting.ambient_scale_milli,
+        lighting.local_light_budget_is_legacy_diagnostic,
+        lighting.divine_corrupted_overgod_available,
+    ));
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CaptureRequestContextV1 {
     authoritative_server_tick: u64,
@@ -1754,52 +1804,11 @@ fn request_one_capture(
                                 } else {
                                     metadata.push_str("r1f_fog_enabled=false\n");
                                 }
-                                if let Some(lighting) = lighting.filter(|lighting| {
-                                    lighting.presentation_generation
-                                        == context.presentation.client_applied_generation
-                                }) {
-                                    metadata.push_str(&format!(
-                                        concat!(
-                                            "r1f_lighting_enabled=true\n",
-                                            "r1f_lighting_presentation_generation={}\n",
-                                            "r1f_lighting_simulation_tick={}\n",
-                                            "r1f_lighting_environment_projection_sha256={}\n",
-                                            "r1f_lighting_material_table_sha256={}\n",
-                                            "r1f_lighting_camera_token_sha256={}\n",
-                                            "r1f_lighting_policy_sha256={}\n",
-                                            "r1f_lighting_weather_kind={}\n",
-                                            "r1f_lighting_mode={}\n",
-                                            "r1f_lighting_time_of_day_millis={}\n",
-                                            "r1f_lighting_sun_milli={}\n",
-                                            "r1f_lighting_moon_milli={}\n",
-                                            "r1f_lighting_weather_attenuation_milli={}\n",
-                                            "r1f_lighting_exposure_scale_milli={}\n",
-                                            "r1f_lighting_ambient_scale_milli={}\n",
-                                            "r1f_lighting_local_light_budget_legacy_diagnostic={}\\
-                                             \
-                                             n",
-                                            "r1f_lighting_divine_corrupted_overgod_available={}\n",
-                                        ),
-                                        lighting.presentation_generation,
-                                        lighting.simulation_tick,
-                                        hex_digest(&lighting.environment_projection_digest),
-                                        hex_digest(&lighting.material_table_digest),
-                                        hex_digest(&lighting.camera_token_digest),
-                                        hex_digest(&lighting.policy_digest),
-                                        lighting.weather_tag,
-                                        lighting.mode as u8,
-                                        lighting.time_of_day_millis,
-                                        lighting.sun_milli,
-                                        lighting.moon_milli,
-                                        lighting.weather_attenuation_milli,
-                                        lighting.exposure_scale_milli,
-                                        lighting.ambient_scale_milli,
-                                        lighting.local_light_budget_is_legacy_diagnostic,
-                                        lighting.divine_corrupted_overgod_available,
-                                    ));
-                                } else {
-                                    metadata.push_str("r1f_lighting_enabled=false\n");
-                                }
+                                append_lighting_metadata_v1(
+                                    &mut metadata,
+                                    lighting,
+                                    context.presentation.client_applied_generation,
+                                );
                                 if let Some(weather) = weather.filter(|weather| {
                                     weather.presentation_generation
                                         == context.presentation.client_applied_generation
@@ -2254,6 +2263,49 @@ mod tests {
             capture_metadata_field_class_v1("simulation_time_bits"),
             None
         );
+    }
+
+    #[test]
+    fn lighting_metadata_emits_real_line_boundaries() {
+        let mut metadata = String::new();
+        append_lighting_metadata_v1(
+            &mut metadata,
+            Some(crate::r1f_lighting::LightingProductionEvidenceV1 {
+                presentation_generation: 7,
+                simulation_tick: 300,
+                environment_projection_digest: [1; 32],
+                material_table_digest: [2; 32],
+                camera_token_digest: [3; 32],
+                policy_digest: [4; 32],
+                weather_tag: 3,
+                mode: bastion_renderer_r0d::lighting::LightingModeV1::Outdoor,
+                time_of_day_millis: 43_200_000,
+                sun_milli: 1_000,
+                moon_milli: 0,
+                weather_attenuation_milli: 820,
+                exposure_scale_milli: 820,
+                ambient_scale_milli: 820,
+                local_light_budget_is_legacy_diagnostic: true,
+                divine_corrupted_overgod_available: false,
+            }),
+            7,
+        );
+        assert!(!metadata.contains("\\n"));
+        assert_eq!(metadata.lines().count(), 17);
+        let parsed = metadata
+            .lines()
+            .map(|line| line.split_once('=').expect("metadata record has key=value"))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(parsed.len(), 17);
+        assert_eq!(
+            parsed.get("r1f_lighting_local_light_budget_legacy_diagnostic"),
+            Some(&"true")
+        );
+        assert_eq!(
+            parsed.get("r1f_lighting_divine_corrupted_overgod_available"),
+            Some(&"false")
+        );
+        assert!(!parsed.keys().any(|key| key.starts_with('n')));
     }
 
     #[test]
