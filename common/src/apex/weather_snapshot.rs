@@ -34,6 +34,7 @@
 //! as saying the live glider path is fixed — it is not, and the canary
 //! says where it still leaks.
 
+use serde::{Deserialize, Serialize};
 use vek::Vec2;
 
 /// Identity of one authoritative weather snapshot.
@@ -41,7 +42,8 @@ use vek::Vec2;
 /// Server-issued and monotone. Opaque: there is no arithmetic on it,
 /// because "the snapshot two before this one" is not a thing a consumer
 /// is entitled to compute — it either has the snapshot or it does not.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct WeatherSnapshotIdV1(u64);
 
 impl WeatherSnapshotIdV1 {

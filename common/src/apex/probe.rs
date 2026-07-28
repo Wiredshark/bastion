@@ -44,6 +44,14 @@ impl ExactProbeV1 {
     }
 
     pub const fn digest_v1(&self) -> &DigestBytes32V1 { &self.0 }
+
+    /// `T5.3` transport: rebuild from digest bytes that arrived over the
+    /// wire. Named `from_digest_bytes` rather than `from_wire` because
+    /// nothing about the bytes' origin is trusted here — the caller is
+    /// asserting these are the digest it computed or verified.
+    pub const fn from_digest_bytes_v1(bytes: [u8; 32]) -> Self {
+        Self(DigestBytes32V1::from_array(bytes))
+    }
 }
 
 /// Which tolerance policy a quantised probe was taken under.
@@ -100,6 +108,14 @@ impl QuantizedProbeV1 {
     pub const fn policy_v1(&self) -> QuantizationPolicyV1 { self.policy }
 
     pub const fn digest_v1(&self) -> &DigestBytes32V1 { &self.digest }
+
+    /// `T5.3` transport: rebuild from a policy and digest bytes. The
+    /// policy is a separate argument on purpose — a quantised probe
+    /// without one is not a measurement, and this constructor will not
+    /// let a caller omit it.
+    pub const fn from_digest_bytes_v1(policy: QuantizationPolicyV1, bytes: [u8; 32]) -> Self {
+        Self { policy, digest: DigestBytes32V1::from_array(bytes) }
+    }
 }
 
 /// What a probe pair says about two runs.

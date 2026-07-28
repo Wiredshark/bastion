@@ -300,8 +300,20 @@ pub enum ServerGeneral {
     /// Economic information about sites
     SiteEconomy(EconomyInfo),
     MapMarker(comp::MapMarkerUpdate),
-    WeatherUpdate(SharedWeatherGrid),
-    LocalWindUpdate(Vec2<f32>),
+    /// `APEX-T5.2`: the grid PLUS the identity of the snapshot it is.
+    /// The id is `T0.87`'s weather generation epoch — the counter
+    /// incremented exactly once at the single named adoption point — not
+    /// a second counter minted for the wire. Two identities for one
+    /// snapshot is the confusion this program exists to prevent.
+    WeatherUpdate(SharedWeatherGrid, common::apex::weather_snapshot::WeatherSnapshotIdV1),
+    /// `APEX-T5.2`: local wind plus the snapshot it belongs to. A client
+    /// that cannot name the snapshot a wind came from cannot replay
+    /// against it, which is `T5.4`'s whole point.
+    LocalWindUpdate(Vec2<f32>, common::apex::weather_snapshot::WeatherSnapshotIdV1),
+    /// `APEX-T5.3`: the server's receipt for one input frame, in wire
+    /// form. The client rebuilds the typed receipt rather than receiving
+    /// one already typed.
+    InputReceipt(crate::msg::input_receipt_wire::InputReceiptWireV1),
     /// Suggest the client to spectate a position. Called after client has
     /// requested teleport etc.
     SpectatePosition(Vec3<f32>),
@@ -568,8 +580,9 @@ impl ServerMsg {
                         | ServerGeneral::FinishedTrade(_)
                         | ServerGeneral::SiteEconomy(_)
                         | ServerGeneral::MapMarker(_)
-                        | ServerGeneral::WeatherUpdate(_)
-                        | ServerGeneral::LocalWindUpdate(_)
+                        | ServerGeneral::WeatherUpdate(..)
+                        | ServerGeneral::LocalWindUpdate(..)
+                        | ServerGeneral::InputReceipt(_)
                         | ServerGeneral::SpectatePosition(_)
                         | ServerGeneral::UpdateRecipes
                         | ServerGeneral::Gizmos(_)

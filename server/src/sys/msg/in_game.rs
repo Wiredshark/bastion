@@ -193,6 +193,11 @@ impl Sys {
                 vel,
                 ori,
                 physics_generation,
+                // APEX-T5.2: named so the destructure fails if the field is
+                // removed, but deliberately unused HERE — admitting a
+                // report is T3.6's generation decision, and mixing the
+                // weather snapshot into it would make one gate two rules.
+                weather_snapshot: _,
             } => {
                 // APEX-T3.6 step 2/3: the report is admitted through the
                 // typed generation gate, which distinguishes a STALE

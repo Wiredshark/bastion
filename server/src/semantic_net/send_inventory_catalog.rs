@@ -30,7 +30,7 @@ pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 200] = 
     ("net_checkpoint_disconnect.rs", "let is_send = context.contains(\".send(\")", 0, NotAClientSend),
     ("net_checkpoint_disconnect.rs", "|| context.contains(\"send_fallible(\")", 0, NotAClientSend),
     ("weather/tick.rs", "let _ = weather_tx.send((grid, lightning_cells, sim));", 0, NotAClientSend),
-    ("weather/tick.rs", "client.send_fallible(ServerGeneral::LocalWindUpdate(weather.wind));", 0, PostAuthCandidate),
+    ("weather/tick.rs", "client.send_fallible(ServerGeneral::LocalWindUpdate(", 0, PostAuthCandidate),
     ("weather/tick.rs", "let _ = tx.send(42u32);", 0, NotAClientSend),
     ("weather/tick.rs", "let _ = tx.send(42u32);", 1, NotAClientSend),
     ("chunk_generator.rs", "let _ = chunk_tx.send((key, payload));", 0, NotAClientSend),
