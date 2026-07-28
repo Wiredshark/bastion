@@ -1,16 +1,23 @@
 use crate::{
     RtState, Rule, RuleError,
-    data::{Sentiment, npc::SimulationMode},
+    data::{
+        Sentiment,
+        npc::SimulationMode,
+        quest::{QuestTerminalOutcome, QuestTerminalPolicy},
+    },
     event::{EventCtx, OnHealthChange, OnHelped, OnMountVolume, OnTick},
 };
 use common::{
     comp::{self, Body, agent::FlightMode},
+    command_protocol::IdempotencyKey,
     mounting::{Volume, VolumePos},
-    rtsim::{Actor, NpcAction, NpcActivity, NpcInput},
+    rtsim::{Actor, NpcAction, NpcActivity, NpcId, NpcInput, QuestId},
+    terminal_arbitration::{TerminalIntent, TerminalReceipt, commit_terminal_intents},
     terrain::{CoordinateConversions, TerrainChunkSize},
     vol::RectVolSize,
 };
-use slotmap::SecondaryMap;
+use hashbrown::HashMap;
+use slotmap::{Key, SecondaryMap};
 use vek::{Clamp, Vec2};
 
 pub struct SimulateNpcs;
@@ -116,6 +123,14 @@ fn on_tick(ctx: EventCtx<SimulateNpcs, OnTick>) {
     }
 
     let mut npc_inputs = Vec::new();
+
+    // `T0.86`/`E5-A`: collected across ALL npcs before any of them are
+    // arbitrated -- mirrors `quests_to_create`'s own buffer-then-commit
+    // shape (drained per-npc below, but a quest's competing intents can
+    // come from MULTIPLE different npcs' controllers, so committing needs
+    // to see the whole tick's set before picking a winner).
+    let mut quest_intents: HashMap<QuestId, Vec<(NpcId, TerminalIntent<QuestTerminalOutcome>)>> =
+        HashMap::new();
 
     for (npc_id, npc) in data.npcs.npcs.iter_mut().filter(|(_, npc)| !npc.is_dead()) {
         npc.controller.actions.retain(|action| match action {
@@ -349,8 +364,59 @@ fn on_tick(ctx: EventCtx<SimulateNpcs, OnTick>) {
             data.quests.create(id, quest);
         }
 
+        // T0.86/E5-A: collect this npc's quest terminal intents --
+        // arbitrated together with every other npc's, below, after this
+        // whole per-npc loop finishes (a quest's competing intents can
+        // come from different npcs, so they can't be committed one npc at
+        // a time the way quests_to_create is).
+        for (i, (quest_id, outcome)) in
+            core::mem::take(&mut npc.controller.quest_terminal_intents)
+                .into_iter()
+                .enumerate()
+        {
+            quest_intents.entry(quest_id).or_default().push((
+                npc_id,
+                TerminalIntent {
+                    observed_version: 0,
+                    outcome,
+                    reason: "quest terminal intent",
+                    effective_tick: 0,
+                    causation: IdempotencyKey(0),
+                    stable_producer: npc_id.data().as_ffi(),
+                    producer_sequence: i as u64,
+                },
+            ));
+        }
+
         // Set job status
         npc.job = npc.controller.job.clone();
+    }
+
+    // T0.86/E5-A: the named commit phase -- arbitrate each quest's
+    // competing intents (if any) and commit exactly one via
+    // `Quest::resolve`, now genuinely race-free since this whole phase is
+    // serial (NPC AI's own parallel tick, where these intents were
+    // submitted, has already finished by this point). The winning
+    // submitter's own `Controller` gets the receipt (deposit included) to
+    // claim on a later tick; everyone else just observes
+    // `Quest::resolution()` go `Some` without a personal receipt --
+    // see `npc_ai::quest::poll_quest_terminal`'s doc for why that's
+    // sufficient (duplicates/losers get no new side effects either way).
+    for (quest_id, winner_npc, outcome) in decide_quest_terminal_commits(&quest_intents, |id| {
+        data.quests.get(id).is_some_and(|q| q.resolution().is_none())
+    }) {
+        let Some(quest) = data.quests.get(quest_id) else {
+            continue;
+        };
+        let success = outcome.as_success_bool();
+        if let Some(resolved) = quest.resolve(quest.arbiter, success)
+            && let Some(winner) = data.npcs.npcs.get_mut(winner_npc)
+        {
+            winner
+                .controller
+                .quest_terminal_receipts
+                .push((quest_id, success, resolved.deposit));
+        }
     }
 
     // DET-ESIM-015 (v8 rtsim-economy, High): deliver NPC-to-NPC messages to each
@@ -364,6 +430,132 @@ fn on_tick(ctx: EventCtx<SimulateNpcs, OnTick>) {
         if let Some(npc) = data.npcs.get_mut(npc_id) {
             npc.inbox.push_back(input);
         }
+    }
+}
+
+/// `T0.86`/`E5-A`: pure decision half of the quest-terminal commit phase
+/// (`on_tick`'s own I/O -- looking up `Quest::resolve`, writing the
+/// winner's receipt -- stays there; this only DECIDES who wins). Pure so
+/// it's directly unit-testable without a live `Data`/`Npcs` fixture: takes
+/// this tick's collected intents plus an `is_unresolved` predicate the
+/// caller supplies, returns `(quest_id, winning_npc, winning_outcome)` for
+/// every quest that actually committed this tick.
+fn decide_quest_terminal_commits(
+    quest_intents: &HashMap<QuestId, Vec<(NpcId, TerminalIntent<QuestTerminalOutcome>)>>,
+    is_unresolved: impl Fn(QuestId) -> bool,
+) -> Vec<(QuestId, NpcId, QuestTerminalOutcome)> {
+    let mut commits = Vec::new();
+    for (&quest_id, npc_intents) in quest_intents {
+        if !is_unresolved(quest_id) {
+            // Already resolved (e.g. by a prior tick's commit); nothing to
+            // arbitrate.
+            continue;
+        }
+        let intents = npc_intents
+            .iter()
+            .map(|(_, intent)| intent.clone())
+            .collect::<Vec<_>>();
+        let receipts = commit_terminal_intents(0, &intents, &QuestTerminalPolicy);
+        let Some(winner_idx) = receipts
+            .iter()
+            .position(|r| matches!(r, TerminalReceipt::Committed))
+        else {
+            // Every intent was stale (shouldn't happen -- quests aren't
+            // versioned yet, so observed_version always matches) or the
+            // top rank was a genuine conflict; nothing commits this tick.
+            continue;
+        };
+        let (winner_npc, winner_intent) = &npc_intents[winner_idx];
+        commits.push((quest_id, *winner_npc, winner_intent.outcome));
+    }
+    commits
+}
+
+#[cfg(test)]
+mod decide_quest_terminal_commits_tests {
+    use super::*;
+    use slotmap::KeyData;
+
+    fn npc(raw: u64) -> NpcId { NpcId::from(KeyData::from_ffi(raw)) }
+
+    fn intent(outcome: QuestTerminalOutcome, seq: u64) -> TerminalIntent<QuestTerminalOutcome> {
+        TerminalIntent {
+            observed_version: 0,
+            outcome,
+            reason: "test",
+            effective_tick: 0,
+            causation: IdempotencyKey(seq),
+            stable_producer: seq,
+            producer_sequence: seq,
+        }
+    }
+
+    /// The required non-vacuity case (Fable-ruled): two DIFFERENT npcs
+    /// submit competing intents for the SAME quest in the SAME tick --
+    /// the domain policy picks the winner, not which npc happened to be
+    /// collected first. Also proves the LOSER gets no commit entry at all
+    /// (its own poll must fall back to `resolution().is_some()`, per
+    /// `poll_quest_terminal`'s doc).
+    #[test]
+    fn competing_intents_from_two_different_npcs_resolve_by_policy_not_arrival_order() {
+        use QuestTerminalOutcome::*;
+        let quest_id = QuestId(1);
+        let mut quest_intents = HashMap::new();
+        quest_intents.insert(quest_id, vec![
+            (npc(1), intent(TimedOut, 0)),
+            (npc(2), intent(CompletedPreDeadline, 1)),
+        ]);
+
+        let commits = decide_quest_terminal_commits(&quest_intents, |_| true);
+        assert_eq!(commits, vec![(quest_id, npc(2), CompletedPreDeadline)]);
+
+        // Order-independence: swapping which npc submitted first doesn't
+        // change the winner.
+        let mut reversed = HashMap::new();
+        reversed.insert(quest_id, vec![
+            (npc(2), intent(CompletedPreDeadline, 0)),
+            (npc(1), intent(TimedOut, 1)),
+        ]);
+        let commits_reversed = decide_quest_terminal_commits(&reversed, |_| true);
+        assert_eq!(commits_reversed, vec![(quest_id, npc(2), CompletedPreDeadline)]);
+    }
+
+    #[test]
+    fn no_intents_for_a_quest_is_no_commit() {
+        let commits = decide_quest_terminal_commits(&HashMap::new(), |_| true);
+        assert!(commits.is_empty());
+    }
+
+    /// Already-resolved quests (per the caller's `is_unresolved`
+    /// predicate) are skipped entirely, even with pending intents --
+    /// prevents re-arbitrating/re-committing a quest a prior tick already
+    /// settled.
+    #[test]
+    fn already_resolved_quest_is_skipped_even_with_pending_intents() {
+        let quest_id = QuestId(1);
+        let mut quest_intents = HashMap::new();
+        quest_intents.insert(quest_id, vec![(npc(1), intent(QuestTerminalOutcome::TimedOut, 0))]);
+
+        let commits = decide_quest_terminal_commits(&quest_intents, |_| false);
+        assert!(commits.is_empty());
+    }
+
+    /// Two quests in the same tick are arbitrated independently.
+    #[test]
+    fn multiple_quests_in_one_tick_are_arbitrated_independently() {
+        use QuestTerminalOutcome::*;
+        let q1 = QuestId(1);
+        let q2 = QuestId(2);
+        let mut quest_intents = HashMap::new();
+        quest_intents.insert(q1, vec![(npc(1), intent(TimedOut, 0))]);
+        quest_intents.insert(q2, vec![(npc(2), intent(CompletedPreDeadline, 0))]);
+
+        let mut commits = decide_quest_terminal_commits(&quest_intents, |_| true);
+        commits.sort_by_key(|(id, ..)| id.0);
+        assert_eq!(commits, vec![
+            (q1, npc(1), TimedOut),
+            (q2, npc(2), CompletedPreDeadline),
+        ]);
     }
 }
 

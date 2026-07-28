@@ -118,10 +118,20 @@ pub fn general<S: State>(tgt: Actor, session: DialogueSession) -> impl Action<S>
                             )),
                             session
                                 .say_statement(Content::localized("npc-response-quest-slay-thanks"))
-                                .then(now(move |ctx, _| {
-                                    if let Ok(deposit) =
-                                        quest::resolve_take_deposit(ctx, quest_id, true)
-                                    {
+                                // T0.86/E5-A: submit-then-poll instead of
+                                // resolving directly -- see
+                                // `quest::submit_quest_completion`'s doc.
+                                .then(just(move |ctx, _| {
+                                    quest::submit_quest_completion(ctx, quest_id);
+                                }))
+                                .then(until(move |ctx, _| {
+                                    match quest::poll_quest_terminal(ctx, quest_id) {
+                                        Some(result) => ControlFlow::Break(result),
+                                        None => ControlFlow::Continue(idle()),
+                                    }
+                                }))
+                                .and_then(move |result| {
+                                    if let Ok(deposit) = result {
                                         session
                                             .say_statement_with_gift(
                                                 Content::localized("npc-response-quest-reward"),
@@ -131,7 +141,7 @@ pub fn general<S: State>(tgt: Actor, session: DialogueSession) -> impl Action<S>
                                     } else {
                                         finish().boxed()
                                     }
-                                }))
+                                })
                                 .boxed(),
                         ));
                     }
@@ -165,21 +175,49 @@ pub fn general<S: State>(tgt: Actor, session: DialogueSession) -> impl Action<S>
                                 Response::from(claim),
                                 session
                                     .say_statement(thanks)
-                                    .then(now(move |ctx, _| {
-                                        if quest::finalize_courier_task(ctx, quest_id, false)
-                                            && let Ok(deposit) =
-                                                quest::resolve_take_deposit(ctx, quest_id, true)
-                                        {
-                                            session
-                                                .say_statement_with_gift(
-                                                    Content::localized("npc-response-quest-reward"),
-                                                    deposit,
-                                                )
-                                                .boxed()
+                                    // T0.86/E5-A: submit-then-poll instead
+                                    // of resolving directly -- see
+                                    // `quest::submit_quest_completion`'s
+                                    // doc. `finalize_courier_task`'s own
+                                    // inventory check/consume is unrelated
+                                    // to the cross-NPC resolution race
+                                    // (it's this npc's own inventory) and
+                                    // stays a plain precondition.
+                                    .then(just(move |ctx, _| {
+                                        let has_items =
+                                            quest::finalize_courier_task(ctx, quest_id, false);
+                                        if has_items {
+                                            quest::submit_quest_completion(ctx, quest_id);
+                                        }
+                                        has_items
+                                    }))
+                                    .and_then(move |has_items| {
+                                        if has_items {
+                                            until(move |ctx, _| {
+                                                match quest::poll_quest_terminal(ctx, quest_id) {
+                                                    Some(result) => ControlFlow::Break(result),
+                                                    None => ControlFlow::Continue(idle()),
+                                                }
+                                            })
+                                            .and_then(move |result| {
+                                                if let Ok(deposit) = result {
+                                                    session
+                                                        .say_statement_with_gift(
+                                                            Content::localized(
+                                                                "npc-response-quest-reward",
+                                                            ),
+                                                            deposit,
+                                                        )
+                                                        .boxed()
+                                                } else {
+                                                    session.say_statement(quest.lacks_items()).boxed()
+                                                }
+                                            })
+                                            .boxed()
                                         } else {
                                             session.say_statement(quest.lacks_items()).boxed()
                                         }
-                                    }))
+                                    })
                                     .boxed(),
                             ));
                         }

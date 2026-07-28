@@ -1,6 +1,6 @@
 use crate::{
     ai::Action,
-    data::{KnownReports, Reports, Sentiments, quest::Quest},
+    data::{KnownReports, Reports, Sentiments, quest::{Quest, QuestTerminalOutcome}},
     generate::name,
 };
 pub use common::rtsim::{NpcId, Profession};
@@ -11,8 +11,9 @@ use common::{
     map::Marker,
     resources::{Time, TimeOfDay},
     rtsim::{
-        Actor, Dialogue, DialogueId, DialogueKind, FactionId, NpcAction, NpcActivity, NpcInput,
-        NpcMsg, Personality, QuestId, Response, Role, SiteId, TerrainResource,
+        Actor, Dialogue, DialogueId, DialogueKind, FactionId, ItemResource, NpcAction,
+        NpcActivity, NpcInput, NpcMsg, Personality, QuestId, Response, Role, SiteId,
+        TerrainResource,
     },
     store::Id,
     terrain::CoordinateConversions,
@@ -66,6 +67,24 @@ pub struct Controller {
     pub look_dir: Option<Dir>,
     pub job: Option<Job>,
     pub quests_to_create: Vec<(QuestId, Quest)>,
+
+    /// `T0.86`/`E5-A`: terminal-resolution intents this NPC wants to
+    /// submit this tick (e.g. "I observed this quest complete", "I
+    /// observed this quest time out"). Collected across ALL npcs and
+    /// arbitrated serially in `simulate_npcs.rs`'s post-parallel commit
+    /// phase -- mirrors `quests_to_create`'s own creation-time buffer,
+    /// same reason: NPC AI runs under `par_iter_mut`, so calling
+    /// `Quest::resolve` directly from here would race exactly like
+    /// `Quests::register`'s old `fetch_add` did.
+    pub quest_terminal_intents: Vec<(QuestId, QuestTerminalOutcome)>,
+    /// Populated ONLY by that same serial commit phase, for whichever
+    /// npc(s) submitted the winning intent for a quest this tick:
+    /// `(quest_id, success, deposit)`. A subsequent tick's poll removes
+    /// its own entry by `quest_id` -- exactly-once by construction (a
+    /// single-writer `Vec` on this NPC's own `Controller`, no cross-NPC
+    /// contention; a `Vec` rather than a single slot because one NPC can
+    /// be related to more than one quest resolving in the same tick).
+    pub quest_terminal_receipts: Vec<(QuestId, bool, Option<(ItemResource, f32)>)>,
 
     /// Each pilot gets assigned to a route, and as the server ticks onward, the
     /// current leg of each pilot's assigned route increments. This gets
