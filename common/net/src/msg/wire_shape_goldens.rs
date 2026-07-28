@@ -16,13 +16,22 @@
 //! encode vector per variant, through the real encoder, so a changed
 //! field type or order fails a test that names the variant.
 //!
-//! **Coverage is a PINNED OPEN SET, not a red build.** WSG-1 lands the
-//! mechanism plus the four variants `T5.2` touched and could not detect;
-//! the remaining variants are NAMED with a pinned count. A variant in
-//! neither list fails immediately, so the set cannot grow silently, but
-//! the interim is honest rather than noisy — a build left red from WSG-1
-//! until WSG-2 closes would teach everyone to ignore it. WSG-2 burns the
-//! uncovered count to zero and flips the assertion to all-covered.
+//! **Coverage started as a PINNED OPEN SET, not a red build.** WSG-1
+//! landed the mechanism plus the four variants `T5.2` touched and could
+//! not detect; the remaining variants were NAMED with a pinned count. A
+//! variant in neither list failed immediately, so the set could not grow
+//! silently, but the interim was honest rather than noisy — a build left
+//! red from WSG-1 until WSG-2 closed would have taught everyone to ignore
+//! it.
+//!
+//! **WSG-2 is CLOSED.** Both `UNCOVERED_CLIENTGENERAL_V1` and
+//! `UNCOVERED_SERVERGENERAL_V1` are now empty — every `ClientGeneral` and
+//! `ServerGeneral` variant has a golden. `coverage_is_all_covered` asserts
+//! this directly; `a_new_variant_in_neither_list_fails_immediately` is the
+//! ongoing tripwire that keeps it that way — a variant added to either
+//! enum without a matching golden now fails immediately rather than
+//! silently joining an "uncovered" list, because there is no longer an
+//! uncovered list for it to join.
 
 use common::apex::digest::hash_artifact_bytes_v1;
 
@@ -517,6 +526,35 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
         payload_schema: "ServerGeneral",
         variant: "SiteEconomy",
         digest_hex: "sha256:06fda32836156e704143736fd84f56b4ac1b8b59119282e000a7296c5ee241c2",
+    },
+    // WSG-2 chunk 12 (Sonnet lane): the final four -- closes WSG-2.
+    // Dialogue wraps a small rtsim::Dialogue<true>. TerrainChunkUpdate
+    // uses `chunk: Err(())`, the wire's own explicit "chunk unavailable"
+    // case, avoiding SerializedTerrainChunk construction entirely.
+    // PlayerListUpdate::Remove(Uid) is the simplest of its eight variants.
+    // CheckpointBegin needs the full CheckpointDescriptorV1 tree, built
+    // field-by-field from its own definition (5-stream plan array,
+    // ActiveSessionBindingV1 via the established FixedRandomBytesSourceV1
+    // deterministic-generate pattern).
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "Dialogue",
+        digest_hex: "sha256:d62ea8b0a2c9fcbf99991501d396e5333aa90f25d7ac12e90e56c755c6ab4717",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "TerrainChunkUpdate",
+        digest_hex: "sha256:7a5886f5fb4b7943cfa43e13a90d97aab4c506287ab64a88b8e4636f70a1da8e",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "PlayerListUpdate",
+        digest_hex: "sha256:634e4859d1bde17fd638fe1ff1ed58e6329f742bff84fbb6c188b66660c5bca7",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "CheckpointBegin",
+        digest_hex: "sha256:4e9beeec9db3a10c7b1fdffda4a43501cf2669688b943c856cc8f507a26c4adc",
     },
 ];
 
@@ -1082,6 +1120,81 @@ mod wire_shape_goldens_v1 {
         })
     }
 
+    // WSG-2 chunk 12 fixtures.
+
+    fn server_dialogue() -> ServerGeneral {
+        ServerGeneral::Dialogue(
+            uid(148),
+            common::rtsim::Dialogue::<true> {
+                id: common::rtsim::DialogueId(149),
+                kind: common::rtsim::DialogueKind::Start,
+            },
+        )
+    }
+
+    fn server_terrain_chunk_update() -> ServerGeneral {
+        ServerGeneral::TerrainChunkUpdate { key: Vec2::new(150, 151), chunk: Err(()) }
+    }
+
+    fn server_player_list_update() -> ServerGeneral {
+        ServerGeneral::PlayerListUpdate(crate::msg::server::PlayerListUpdate::Remove(uid(152)))
+    }
+
+    fn stream_plan(stream: crate::msg::envelope::SemanticStreamIdV1) -> crate::msg::checkpoint::StreamCheckpointPlanV1 {
+        crate::msg::checkpoint::StreamCheckpointPlanV1 {
+            stream,
+            begin_sequence: 1,
+            first_data_sequence: None,
+            last_data_sequence: None,
+            barrier_sequence: 2,
+            data_record_count: 0,
+            payload_bytes: 0,
+            stream_transcript_root: [153u8; 32],
+        }
+    }
+
+    fn server_checkpoint_begin() -> ServerGeneral {
+        let binding = crate::msg::envelope::ActiveSessionBindingV1 {
+            server_boot_id: common::apex::identity::ServerBootId::generate(
+                &mut common::apex::identity::FixedRandomBytesSourceV1([154; 16]),
+            )
+            .unwrap(),
+            session_id: common::apex::identity::SessionId::generate(
+                &mut common::apex::identity::FixedRandomBytesSourceV1([155; 16]),
+            )
+            .unwrap(),
+            epoch: common::apex::identity::ConnectionEpoch::FIRST,
+        };
+        ServerGeneral::CheckpointBegin(Box::new(crate::msg::checkpoint::CheckpointStreamOpenV1 {
+            begin: crate::msg::checkpoint::CheckpointBeginV1 {
+                epoch: 156,
+                stream: crate::msg::envelope::SemanticStreamIdV1::General,
+                descriptor_root: [157u8; 32],
+            },
+            descriptor: crate::msg::checkpoint::CheckpointDescriptorV1 {
+                schema_version: 1,
+                binding,
+                epoch: 156,
+                parent_epoch: 155,
+                resource_profile_root: [158u8; 32],
+                apply_policy_root: [159u8; 32],
+                egress_order_policy_root: [160u8; 32],
+                data_record_count: 0,
+                ordinal_max: 0,
+                payload_bytes: 0,
+                global_transcript_root: [161u8; 32],
+                streams: [
+                    stream_plan(crate::msg::envelope::SemanticStreamIdV1::Bootstrap),
+                    stream_plan(crate::msg::envelope::SemanticStreamIdV1::CharacterScreen),
+                    stream_plan(crate::msg::envelope::SemanticStreamIdV1::InGame),
+                    stream_plan(crate::msg::envelope::SemanticStreamIdV1::General),
+                    stream_plan(crate::msg::envelope::SemanticStreamIdV1::Terrain),
+                ],
+                bootstrap_manifest_root: None,
+            },
+        }))
+    }
+
     fn actual(schema: &str, variant: &str) -> String {
         match (schema, variant) {
             ("ClientGeneral", "PlayerPhysics") => golden_digest_v1(&client_player_physics()),
@@ -1180,6 +1293,10 @@ mod wire_shape_goldens_v1 {
             ("ServerGeneral", "ChatMsg") => golden_digest_v1(&server_chat_msg()),
             ("ServerGeneral", "UpdatePendingTrade") => golden_digest_v1(&server_update_pending_trade()),
             ("ServerGeneral", "SiteEconomy") => golden_digest_v1(&server_site_economy()),
+            ("ServerGeneral", "Dialogue") => golden_digest_v1(&server_dialogue()),
+            ("ServerGeneral", "TerrainChunkUpdate") => golden_digest_v1(&server_terrain_chunk_update()),
+            ("ServerGeneral", "PlayerListUpdate") => golden_digest_v1(&server_player_list_update()),
+            ("ServerGeneral", "CheckpointBegin") => golden_digest_v1(&server_checkpoint_begin()),
             (schema, other) => panic!("{schema}::{other} has a golden entry but no representative instance"),
         }
     }
@@ -1202,21 +1319,22 @@ mod wire_shape_goldens_v1 {
         }
     }
 
-    /// Coverage is a pinned OPEN set: 4 covered, the rest named, and the
-    /// counts pinned so neither list can drift silently.
+    /// WSG-2 CLOSED: coverage is no longer an open set. Every
+    /// `ClientGeneral` and `ServerGeneral` variant has a golden -- both
+    /// uncovered lists are pinned empty, and the covered count is pinned
+    /// against the enums' own real variant totals (37 ClientGeneral, 51
+    /// ServerGeneral, counted from the enums at 71b1c87ca7).
     #[test]
-    fn coverage_is_a_pinned_open_set() {
-        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 84, "the covered set changed");
-        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 0);
-        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 4);
-        // 1 + 36 = 37 ClientGeneral, 3 + 48 = 51 ServerGeneral, counted
-        // from the enums at 71b1c87ca7.
+    fn coverage_is_all_covered() {
+        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 88, "the covered set changed");
+        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 0, "WSG-2 closed this at zero");
+        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 0, "WSG-2 closed this at zero");
         let covered_client =
             WIRE_SHAPE_GOLDENS.iter().filter(|g| g.payload_schema == "ClientGeneral").count();
         let covered_server =
             WIRE_SHAPE_GOLDENS.iter().filter(|g| g.payload_schema == "ServerGeneral").count();
-        assert_eq!(covered_client + UNCOVERED_CLIENTGENERAL_V1.len(), 37);
-        assert_eq!(covered_server + UNCOVERED_SERVERGENERAL_V1.len(), 51);
+        assert_eq!(covered_client, 37, "every ClientGeneral variant must have a golden");
+        assert_eq!(covered_server, 51, "every ServerGeneral variant must have a golden");
     }
 
     /// A variant may not be in BOTH lists, and the uncovered lists carry
@@ -1460,6 +1578,65 @@ mod wire_shape_goldens_v1 {
             base, perturbed,
             "changing UpdatePendingTrade's phase did not move the digest -- the golden \
              mechanism is blind to this chunk's payload"
+        );
+    }
+
+    /// WSG-2 chunk 12's falsifier (the closing chunk): perturbing
+    /// `CheckpointBegin`'s `streams` array -- one entry three levels deep
+    /// inside `Box<CheckpointStreamOpenV1> -> CheckpointDescriptorV1 ->
+    /// [StreamCheckpointPlanV1; 5]` -- proves the mechanism sees a change
+    /// at the bottom of the deepest payload WSG-2 covers.
+    #[test]
+    fn chunk_12_fixture_perturbation_moves_the_digest() {
+        let base = golden_digest_v1(&server_checkpoint_begin());
+        let binding = crate::msg::envelope::ActiveSessionBindingV1 {
+            server_boot_id: common::apex::identity::ServerBootId::generate(
+                &mut common::apex::identity::FixedRandomBytesSourceV1([154; 16]),
+            )
+            .unwrap(),
+            session_id: common::apex::identity::SessionId::generate(
+                &mut common::apex::identity::FixedRandomBytesSourceV1([155; 16]),
+            )
+            .unwrap(),
+            epoch: common::apex::identity::ConnectionEpoch::FIRST,
+        };
+        let mut perturbed_terrain_plan =
+            stream_plan(crate::msg::envelope::SemanticStreamIdV1::Terrain);
+        perturbed_terrain_plan.data_record_count = 99;
+        let perturbed = golden_digest_v1(&ServerGeneral::CheckpointBegin(Box::new(
+            crate::msg::checkpoint::CheckpointStreamOpenV1 {
+                begin: crate::msg::checkpoint::CheckpointBeginV1 {
+                    epoch: 156,
+                    stream: crate::msg::envelope::SemanticStreamIdV1::General,
+                    descriptor_root: [157u8; 32],
+                },
+                descriptor: crate::msg::checkpoint::CheckpointDescriptorV1 {
+                    schema_version: 1,
+                    binding,
+                    epoch: 156,
+                    parent_epoch: 155,
+                    resource_profile_root: [158u8; 32],
+                    apply_policy_root: [159u8; 32],
+                    egress_order_policy_root: [160u8; 32],
+                    data_record_count: 0,
+                    ordinal_max: 0,
+                    payload_bytes: 0,
+                    global_transcript_root: [161u8; 32],
+                    streams: [
+                        stream_plan(crate::msg::envelope::SemanticStreamIdV1::Bootstrap),
+                        stream_plan(crate::msg::envelope::SemanticStreamIdV1::CharacterScreen),
+                        stream_plan(crate::msg::envelope::SemanticStreamIdV1::InGame),
+                        stream_plan(crate::msg::envelope::SemanticStreamIdV1::General),
+                        perturbed_terrain_plan,
+                    ],
+                    bootstrap_manifest_root: None,
+                },
+            },
+        )));
+        assert_ne!(
+            base, perturbed,
+            "changing CheckpointBegin's nested streams[Terrain].data_record_count did not move \
+             the digest -- the golden mechanism is blind to this chunk's payload"
         );
     }
 
