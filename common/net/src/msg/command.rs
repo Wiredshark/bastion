@@ -717,3 +717,118 @@ mod command_execution_v1 {
         assert_eq!(runs.get(), 1, "no refused admission may reach the work");
     }
 }
+
+/// `APEX-T3.5.05` — where command ids come from. A client that draws
+/// them from OS entropy makes two runs of the same scenario emit
+/// different ids, which is exactly the class of nondeterminism this
+/// program exists to remove. Ids are DERIVED instead: from the session
+/// binding and a monotone per-session counter, through the same
+/// domain-separated digest everything else in this program uses.
+///
+/// The result is still an opaque UUIDv4-shaped id — no structure is
+/// readable from it — but it is a pure function of (binding, ordinal),
+/// so a replay of the same run issues the same id and the ledger
+/// recognises it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DerivedCommandIdSourceV1 {
+    binding: ActiveSessionBindingV1,
+    next_ordinal: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandIdSourceErrorV1 {
+    Exhausted,
+    NonCanonical,
+}
+
+impl DerivedCommandIdSourceV1 {
+    /// Ordinals start at 1: zero is reserved for "no command issued",
+    /// the same convention the checkpoint epoch chain uses.
+    pub fn new(binding: ActiveSessionBindingV1) -> Self { Self { binding, next_ordinal: 1 } }
+
+    pub fn next_ordinal(&self) -> u64 { self.next_ordinal }
+
+    /// Derives the id for an ordinal WITHOUT consuming it — the pure
+    /// core, so a test (or a replaying client) can ask what the id for
+    /// ordinal N is without moving the counter.
+    pub fn id_for_ordinal_v1(
+        binding: &ActiveSessionBindingV1,
+        ordinal: u64,
+    ) -> Result<CommandId, CommandIdSourceErrorV1> {
+        let mut p = Vec::with_capacity(64);
+        p.extend_from_slice(binding.server_boot_id.as_uuid().as_bytes());
+        p.extend_from_slice(binding.session_id.as_uuid().as_bytes());
+        p.extend_from_slice(&binding.epoch.get().to_be_bytes());
+        p.extend_from_slice(&ordinal.to_be_bytes());
+        let digest = digest_canonical_bytes_v1(DigestDomainIdV1::CommandDescriptor, &p, COMMAND_ROOT_INPUT_LIMIT)
+            .map(|d: ProtocolDigestV1| *d.bytes.as_array())
+            .map_err(|_| CommandIdSourceErrorV1::NonCanonical)?;
+        let mut seed = [0u8; 16];
+        seed.copy_from_slice(&digest[..16]);
+        CommandId::generate(&mut common::apex::identity::FixedRandomBytesSourceV1(seed))
+            .map_err(|_| CommandIdSourceErrorV1::NonCanonical)
+    }
+
+    /// Consumes the next ordinal and returns its id.
+    pub fn issue_v1(&mut self) -> Result<CommandId, CommandIdSourceErrorV1> {
+        let ordinal = self.next_ordinal;
+        let id = Self::id_for_ordinal_v1(&self.binding, ordinal)?;
+        self.next_ordinal = ordinal.checked_add(1).ok_or(CommandIdSourceErrorV1::Exhausted)?;
+        Ok(id)
+    }
+}
+
+#[cfg(test)]
+mod command_id_source_v1 {
+    use super::*;
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+
+    fn binding(seed: u8, epoch: u64) -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([seed; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([seed + 1; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(epoch).unwrap(),
+        }
+    }
+
+    /// Determinism story, stated as a test: the same run issues the same
+    /// ids, and no two sessions or epochs share one.
+    #[test]
+    fn ids_are_derived_not_drawn_and_never_collide_across_sessions() {
+        let mut a = DerivedCommandIdSourceV1::new(binding(1, 1));
+        let mut b = DerivedCommandIdSourceV1::new(binding(1, 1));
+        let run_a: Vec<CommandId> = (0..8).map(|_| a.issue_v1().unwrap()).collect();
+        let run_b: Vec<CommandId> = (0..8).map(|_| b.issue_v1().unwrap()).collect();
+        assert_eq!(run_a, run_b, "two runs of the same session must issue the same ids");
+
+        // distinct within a session
+        let unique: std::collections::BTreeSet<&CommandId> = run_a.iter().collect();
+        assert_eq!(unique.len(), run_a.len());
+
+        // a different connection epoch of the SAME session shares none
+        let mut later = DerivedCommandIdSourceV1::new(binding(1, 2));
+        let run_later: Vec<CommandId> = (0..8).map(|_| later.issue_v1().unwrap()).collect();
+        assert!(run_a.iter().all(|id| !run_later.contains(id)), "a new epoch must not reissue an old epoch's ids");
+
+        // ...and so does a different session
+        let mut other = DerivedCommandIdSourceV1::new(binding(40, 1));
+        let run_other: Vec<CommandId> = (0..8).map(|_| other.issue_v1().unwrap()).collect();
+        assert!(run_a.iter().all(|id| !run_other.contains(id)));
+    }
+
+    /// The counter is the only state: asking for ordinal N never moves it.
+    #[test]
+    fn deriving_an_ordinal_does_not_consume_it() {
+        let b = binding(1, 1);
+        let mut source = DerivedCommandIdSourceV1::new(b);
+        assert_eq!(source.next_ordinal(), 1);
+
+        let peeked = DerivedCommandIdSourceV1::id_for_ordinal_v1(&b, 1).unwrap();
+        assert_eq!(source.next_ordinal(), 1, "peeking must not consume");
+        assert_eq!(source.issue_v1().unwrap(), peeked);
+        assert_eq!(source.next_ordinal(), 2);
+
+        // a replaying client re-derives the id of a command it already sent
+        assert_eq!(DerivedCommandIdSourceV1::id_for_ordinal_v1(&b, 1).unwrap(), peeked);
+    }
+}
