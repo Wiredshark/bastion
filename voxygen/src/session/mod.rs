@@ -306,6 +306,7 @@ impl SessionState {
         crate::r1f_environment::reset();
         crate::r1f_fog::reset();
         crate::r1f_lighting::reset();
+        crate::r1f_shadows::reset();
         crate::r1f_weather::reset();
         if let Err(error) = global_state.window.renderer_mut().reset_r1bc_figure_gpu() {
             tracing::warn!(
@@ -4674,7 +4675,22 @@ impl PlayState for SessionState {
                                 } else {
                                     false
                                 };
-                                if group_plan_accepted
+                                let shadow_plan_accepted = if group_plan_accepted {
+                                    match crate::r1f_shadows::update(&frame, &input) {
+                                        Ok(_) => true,
+                                        Err(error) => {
+                                            tracing::warn!(
+                                                target: "bastion_r1f_shadows",
+                                                ?error,
+                                                "deterministic shadow plan rejected"
+                                            );
+                                            false
+                                        },
+                                    }
+                                } else {
+                                    false
+                                };
+                                if shadow_plan_accepted
                                     && crate::r1a_presentation::upload_required(&frame)
                                 {
                                     match crate::r1bc_figure_package::production_package_for_frame(

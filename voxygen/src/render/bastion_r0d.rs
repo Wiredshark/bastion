@@ -338,6 +338,29 @@ fn draw_tape_snapshot(records: &[(u16, u32, u32)]) -> Option<(usize, [u8; 32])> 
             payload.extend_from_slice(&count.to_le_bytes());
         }
     }
+    if let Some(shadows) = crate::r1f_shadows::latest_evidence() {
+        payload.extend_from_slice(b"R1FS");
+        payload.extend_from_slice(&shadows.presentation_generation.to_le_bytes());
+        payload.extend_from_slice(&shadows.simulation_tick.to_le_bytes());
+        payload.extend_from_slice(&shadows.frame_digest);
+        payload.extend_from_slice(&shadows.decision_root);
+        for count in [
+            shadows.detailed_count,
+            shadows.proxy_count,
+            shadows.reduced_frequency_count,
+            shadows.group_contact_count,
+            shadows.none_count,
+            shadows.fallback_count,
+            shadows.protected_detailed_count,
+            shadows.proxy_unavailable_fallbacks,
+            shadows.reduced_frequency_unavailable_fallbacks,
+            shadows.group_contact_unavailable_fallbacks,
+            shadows.detailed_budget_fallbacks,
+            shadows.max_detailed,
+        ] {
+            payload.extend_from_slice(&count.to_le_bytes());
+        }
+    }
     if let Some(groups) = crate::r1d_groups::latest_evidence() {
         payload.extend_from_slice(b"R1DG");
         payload.extend_from_slice(&groups.generation.to_le_bytes());
@@ -829,6 +852,11 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r1f_lighting_exposure_scale_milli"
         | "r1f_lighting_ambient_scale_milli"
         | "r1f_lighting_divine_corrupted_overgod_available"
+        | "r1f_shadow_enabled"
+        | "r1f_shadow_presentation_generation"
+        | "r1f_shadow_simulation_tick"
+        | "r1f_shadow_frame_sha256"
+        | "r1f_shadow_decision_root_sha256"
         | "r1f_weather_presentation_generation"
         | "r1f_weather_simulation_tick"
         | "r1f_weather_environment_projection_sha256"
@@ -911,6 +939,18 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r1d_group_procession_count"
         | "r1d_scale_enabled"
         | "r1d_scale_population_count"
+        | "r1f_shadow_detailed_count"
+        | "r1f_shadow_proxy_count"
+        | "r1f_shadow_reduced_frequency_count"
+        | "r1f_shadow_group_contact_count"
+        | "r1f_shadow_none_count"
+        | "r1f_shadow_fallback_count"
+        | "r1f_shadow_protected_detailed_count"
+        | "r1f_shadow_proxy_unavailable_fallbacks"
+        | "r1f_shadow_reduced_frequency_unavailable_fallbacks"
+        | "r1f_shadow_group_contact_unavailable_fallbacks"
+        | "r1f_shadow_detailed_budget_fallbacks"
+        | "r1f_shadow_max_detailed"
         | "width"
         | "height"
         | "pixel_format"
@@ -966,6 +1006,56 @@ fn append_lighting_metadata_v1(
         lighting.ambient_scale_milli,
         lighting.local_light_budget_is_legacy_diagnostic,
         lighting.divine_corrupted_overgod_available,
+    ));
+}
+
+fn append_shadow_metadata_v1(
+    metadata: &mut String,
+    shadows: Option<crate::r1f_shadows::ShadowProductionEvidenceV1>,
+    expected_generation: u64,
+) {
+    let Some(shadows) =
+        shadows.filter(|shadows| shadows.presentation_generation == expected_generation)
+    else {
+        metadata.push_str("r1f_shadow_enabled=false\n");
+        return;
+    };
+    metadata.push_str(&format!(
+        concat!(
+            "r1f_shadow_enabled=true\n",
+            "r1f_shadow_presentation_generation={}\n",
+            "r1f_shadow_simulation_tick={}\n",
+            "r1f_shadow_frame_sha256={}\n",
+            "r1f_shadow_decision_root_sha256={}\n",
+            "r1f_shadow_detailed_count={}\n",
+            "r1f_shadow_proxy_count={}\n",
+            "r1f_shadow_reduced_frequency_count={}\n",
+            "r1f_shadow_group_contact_count={}\n",
+            "r1f_shadow_none_count={}\n",
+            "r1f_shadow_fallback_count={}\n",
+            "r1f_shadow_protected_detailed_count={}\n",
+            "r1f_shadow_proxy_unavailable_fallbacks={}\n",
+            "r1f_shadow_reduced_frequency_unavailable_fallbacks={}\n",
+            "r1f_shadow_group_contact_unavailable_fallbacks={}\n",
+            "r1f_shadow_detailed_budget_fallbacks={}\n",
+            "r1f_shadow_max_detailed={}\n",
+        ),
+        shadows.presentation_generation,
+        shadows.simulation_tick,
+        hex_digest(&shadows.frame_digest),
+        hex_digest(&shadows.decision_root),
+        shadows.detailed_count,
+        shadows.proxy_count,
+        shadows.reduced_frequency_count,
+        shadows.group_contact_count,
+        shadows.none_count,
+        shadows.fallback_count,
+        shadows.protected_detailed_count,
+        shadows.proxy_unavailable_fallbacks,
+        shadows.reduced_frequency_unavailable_fallbacks,
+        shadows.group_contact_unavailable_fallbacks,
+        shadows.detailed_budget_fallbacks,
+        shadows.max_detailed,
     ));
 }
 
@@ -1231,6 +1321,7 @@ fn request_one_capture(
     let environment = crate::r1f_environment::latest_evidence();
     let fog = crate::r1f_fog::latest_evidence();
     let lighting = crate::r1f_lighting::latest_evidence();
+    let shadows = crate::r1f_shadows::latest_evidence();
     let weather = crate::r1f_weather::latest_evidence();
     renderer.create_screenshot(move |result| {
         match result {
@@ -1809,6 +1900,11 @@ fn request_one_capture(
                                     lighting,
                                     context.presentation.client_applied_generation,
                                 );
+                                append_shadow_metadata_v1(
+                                    &mut metadata,
+                                    shadows,
+                                    context.presentation.client_applied_generation,
+                                );
                                 if let Some(weather) = weather.filter(|weather| {
                                     weather.presentation_generation
                                         == context.presentation.client_applied_generation
@@ -2231,6 +2327,14 @@ mod tests {
             Some(CaptureMetadataFieldClassV1::Diagnostic)
         );
         assert_eq!(
+            capture_metadata_field_class_v1("r1f_shadow_decision_root_sha256"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("r1f_shadow_fallback_count"),
+            Some(CaptureMetadataFieldClassV1::Evidence)
+        );
+        assert_eq!(
             capture_metadata_field_class_v1("r1d_tier_decision_root_sha256"),
             Some(CaptureMetadataFieldClassV1::Authority)
         );
@@ -2306,6 +2410,46 @@ mod tests {
             Some(&"false")
         );
         assert!(!parsed.keys().any(|key| key.starts_with('n')));
+    }
+
+    #[test]
+    fn shadow_metadata_binds_generation_root_and_census() {
+        let mut metadata = String::new();
+        append_shadow_metadata_v1(
+            &mut metadata,
+            Some(crate::r1f_shadows::ShadowProductionEvidenceV1 {
+                presentation_generation: 7,
+                simulation_tick: 300,
+                frame_digest: [1; 32],
+                decision_root: [2; 32],
+                detailed_count: 12,
+                proxy_count: 0,
+                reduced_frequency_count: 0,
+                group_contact_count: 0,
+                none_count: 8,
+                fallback_count: 8,
+                protected_detailed_count: 1,
+                proxy_unavailable_fallbacks: 3,
+                reduced_frequency_unavailable_fallbacks: 3,
+                group_contact_unavailable_fallbacks: 2,
+                detailed_budget_fallbacks: 0,
+                max_detailed: 64,
+            }),
+            7,
+        );
+        let parsed = metadata
+            .lines()
+            .map(|line| line.split_once('=').expect("shadow metadata key=value"))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(parsed.len(), 17);
+        assert_eq!(parsed.get("r1f_shadow_enabled"), Some(&"true"));
+        assert_eq!(parsed.get("r1f_shadow_detailed_count"), Some(&"12"));
+        assert_eq!(
+            parsed.get("r1f_shadow_protected_detailed_count"),
+            Some(&"1")
+        );
+        assert_eq!(parsed.get("r1f_shadow_max_detailed"), Some(&"64"));
+        assert!(!metadata.contains("\\n"));
     }
 
     #[test]

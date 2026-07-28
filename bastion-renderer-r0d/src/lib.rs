@@ -32,6 +32,7 @@ pub mod publication;
 pub mod readiness;
 pub mod replay;
 pub mod selection;
+pub mod shadow;
 pub mod shared_adapter;
 pub mod shutdown;
 pub mod tape;
