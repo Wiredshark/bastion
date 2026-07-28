@@ -66,6 +66,40 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
         variant: "InputReceipt",
         digest_hex: "sha256:5d3eec1882c6064e2f508bb44a01dca36978d79e3c0a046e05f25233d4981b78",
     },
+    // WSG-2 chunk 3: the empty-collection and byte-payload tail — the
+    // variants whose representative instance needs no type exploration.
+    // Taken as a deliberately small chunk against a tight capacity gate
+    // rather than a large one taken on optimism.
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "PluginData",
+        digest_hex: "sha256:9c5928befe60cf973f2e36b8fc1e247ffcf561177fe2c395c0a61d81b10ff587",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "Outcomes",
+        digest_hex: "sha256:92ee0b61bd440fd8cd31a7b58b3a591d5f088e9bc165200777a958dbb18c520e",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "Gizmos",
+        digest_hex: "sha256:f2ba5375533463b6340cb716006f2a57fa64a3702f1ba01bf1cb5a8df81de8ca",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "CharacterListUpdate",
+        digest_hex: "sha256:ca888f40c3caca805b37a5434c75de5550616e0795e7602fb91156f22dd90851",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "CharacterDataLoadResult",
+        digest_hex: "sha256:c4a5fe46107c963b2596af886c3b6f5241e1f0e035d9dd63b54a1438dcd20cc0",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "RequestPlugins",
+        digest_hex: "sha256:6c9c17b5859fc171b4c361e705f5623506b1690c5fb8b246ed91de7c545cb520",
+    },
     // WSG-2 chunk 2: InventoryUpdate (the deferred priority payload)
     // plus the client request surface — every one of these is a message
     // the SERVER decodes, so a shape drift is a server mis-parse of
@@ -471,12 +505,34 @@ mod wire_shape_goldens_v1 {
     /// in BOTH enums. Dispatching on the name alone silently returns the
     /// wrong enum's fixture — the same duplicate-name hazard that broke
     /// the uncovered list in chunk 1, biting the DISPATCH this time.
+    fn server_plugin_data() -> ServerGeneral { ServerGeneral::PluginData(vec![7, 8, 9]) }
+
+    fn server_outcomes() -> ServerGeneral { ServerGeneral::Outcomes(Vec::new()) }
+
+    fn server_gizmos() -> ServerGeneral { ServerGeneral::Gizmos(Vec::new()) }
+
+    fn server_character_list_update() -> ServerGeneral {
+        ServerGeneral::CharacterListUpdate(Vec::new())
+    }
+
+    fn server_character_data_load_result() -> ServerGeneral {
+        ServerGeneral::CharacterDataLoadResult(Err("wsg-3 fixture".to_owned()))
+    }
+
+    fn client_request_plugins() -> ClientGeneral { ClientGeneral::RequestPlugins(Vec::new()) }
+
     fn actual(schema: &str, variant: &str) -> String {
         match (schema, variant) {
             ("ClientGeneral", "PlayerPhysics") => golden_digest_v1(&client_player_physics()),
             ("ServerGeneral", "WeatherUpdate") => golden_digest_v1(&server_weather_update()),
             ("ServerGeneral", "LocalWindUpdate") => golden_digest_v1(&server_local_wind_update()),
             ("ServerGeneral", "InputReceipt") => golden_digest_v1(&server_input_receipt()),
+            ("ServerGeneral", "PluginData") => golden_digest_v1(&server_plugin_data()),
+            ("ServerGeneral", "Outcomes") => golden_digest_v1(&server_outcomes()),
+            ("ServerGeneral", "Gizmos") => golden_digest_v1(&server_gizmos()),
+            ("ServerGeneral", "CharacterListUpdate") => golden_digest_v1(&server_character_list_update()),
+            ("ServerGeneral", "CharacterDataLoadResult") => golden_digest_v1(&server_character_data_load_result()),
+            ("ClientGeneral", "RequestPlugins") => golden_digest_v1(&client_request_plugins()),
             ("ServerGeneral", "InventoryUpdate") => golden_digest_v1(&server_inventory_update()),
             ("ClientGeneral", "RequestCharacterList") => golden_digest_v1(&client_request_character_list()),
             ("ClientGeneral", "DeleteCharacter") => golden_digest_v1(&client_delete_character()),
@@ -539,9 +595,9 @@ mod wire_shape_goldens_v1 {
     /// counts pinned so neither list can drift silently.
     #[test]
     fn coverage_is_a_pinned_open_set() {
-        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 40, "the covered set changed");
-        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 17);
-        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 31);
+        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 46, "the covered set changed");
+        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 16);
+        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 26);
         // 1 + 36 = 37 ClientGeneral, 3 + 48 = 51 ServerGeneral, counted
         // from the enums at 71b1c87ca7.
         let covered_client =
