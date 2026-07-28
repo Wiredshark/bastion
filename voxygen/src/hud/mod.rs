@@ -6081,6 +6081,18 @@ impl Hud {
             .is_some_and(|id| id != ui.window)
     }
 
+    /// R1G lens selection reuses the existing Overseer minimap layer state.
+    /// Certification may override this through the adapter's explicit
+    /// `BASTION_R1G_LENS` declaration, but ordinary gameplay uses this toggle.
+    #[must_use]
+    pub fn bastion_weather_lens_enabled(&self) -> bool {
+        self.bastion.active
+            && self
+                .bastion_minimap
+                .layers
+                .get(bastion_minimap::MinimapLayer::Weather)
+    }
+
     /// bastion (B2a): the session mirrors its interaction state each frame.
     /// (B-MAP1 adds `slice_z` so the minimap tiles can follow the Z-slice;
     /// B5.6b-2 adds the depth-selection label for the tool panel stepper.)

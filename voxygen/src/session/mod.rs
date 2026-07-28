@@ -308,6 +308,7 @@ impl SessionState {
         crate::r1f_lighting::reset();
         crate::r1f_shadows::reset();
         crate::r1f_weather::reset();
+        crate::r1g_lens::reset();
         if let Err(error) = global_state.window.renderer_mut().reset_r1bc_figure_gpu() {
             tracing::warn!(
                 target: "bastion_r1bc_gpu",
@@ -4757,12 +4758,64 @@ impl PlayState for SessionState {
                 ) {
                     tracing::warn!(target: "bastion_r1a", ?error, "presentation handoff rejected");
                 }
+                if let (Some(frame), Some(environment)) = (
+                    crate::r1a_presentation::current_frame_v1(),
+                    crate::r1f_environment::latest_projection(),
+                ) {
+                    let camera_position_mm = {
+                        let camera = self.scene.camera();
+                        let position =
+                            camera.dependents().cam_pos + camera.get_focus_pos().map(f32::trunc);
+                        [
+                            fixed_mm(position.x),
+                            fixed_mm(position.y),
+                            fixed_mm(position.z),
+                        ]
+                        .into_iter()
+                        .collect::<Option<Vec<_>>>()
+                        .and_then(|values| values.try_into().ok())
+                    };
+                    let selected_semantic_ids = {
+                        let client = self.client.borrow();
+                        self.bastion_selected
+                            .iter()
+                            .filter_map(|entity| client.state().ecs().uid_from_entity(*entity))
+                            .map(|uid| {
+                                crate::r1a_presentation::production_entity_semantic_id(uid.0.get())
+                            })
+                            .collect::<Result<Vec<_>, _>>()
+                    };
+                    let mode =
+                        crate::r1g_lens::requested_mode(self.hud.bastion_weather_lens_enabled());
+                    match (camera_position_mm, selected_semantic_ids, mode) {
+                        (Some(camera_position_mm), Ok(selected_semantic_ids), Ok(mode)) => {
+                            if let Err(error) = crate::r1g_lens::update(
+                                &frame,
+                                &environment,
+                                camera_position_mm,
+                                selected_semantic_ids,
+                                mode,
+                            ) {
+                                tracing::warn!(
+                                    target: "bastion_r1g_lens",
+                                    ?error,
+                                    "world-lens publication rejected"
+                                );
+                            }
+                        },
+                        _ => tracing::warn!(
+                            target: "bastion_r1g_lens",
+                            "world-lens production inputs rejected"
+                        ),
+                    }
+                }
             }
 
             let r0d_capture_ready = crate::r1a_presentation::ready_for_capture_measurement()
                 && crate::r1f_weather::certification_fixture_ready_for_capture()
                 && crate::r1f_fog::certification_fixture_ready_for_capture()
                 && crate::r1f_lighting::certification_fixture_ready_for_capture()
+                && crate::r1g_lens::certification_fixture_ready_for_capture()
                 && (!crate::render::bastion_r0d::capture_waits_for_pause_v1(
                     std::env::var_os("BASTION_FLAT_ARENA").is_some(),
                     crate::render::bastion_r0d::absolute_time_capture_selected(),

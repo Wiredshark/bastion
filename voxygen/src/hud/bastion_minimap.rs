@@ -133,15 +133,17 @@ pub enum MinimapLayer {
     Piles,
     Frustum,
     Alerts,
+    Weather,
 }
 
 impl MinimapLayer {
-    pub const ALL: [MinimapLayer; 5] = [
+    pub const ALL: [MinimapLayer; 6] = [
         MinimapLayer::Colonists,
         MinimapLayer::Zones,
         MinimapLayer::Piles,
         MinimapLayer::Frustum,
         MinimapLayer::Alerts,
+        MinimapLayer::Weather,
     ];
 
     /// One-letter chip label (icon art is a backlog item for the asset lab).
@@ -152,6 +154,7 @@ impl MinimapLayer {
             MinimapLayer::Piles => "P",
             MinimapLayer::Frustum => "F",
             MinimapLayer::Alerts => "!",
+            MinimapLayer::Weather => "W",
         }
     }
 }
@@ -166,6 +169,7 @@ pub struct LayerFlags {
     pub piles: bool,
     pub frustum: bool,
     pub alerts: bool,
+    pub weather: bool,
 }
 
 impl Default for LayerFlags {
@@ -176,6 +180,7 @@ impl Default for LayerFlags {
             piles: true,
             frustum: true,
             alerts: true,
+            weather: true,
         }
     }
 }
@@ -188,6 +193,7 @@ impl LayerFlags {
             MinimapLayer::Piles => self.piles,
             MinimapLayer::Frustum => self.frustum,
             MinimapLayer::Alerts => self.alerts,
+            MinimapLayer::Weather => self.weather,
         }
     }
 
@@ -198,6 +204,7 @@ impl LayerFlags {
             MinimapLayer::Piles => self.piles = !self.piles,
             MinimapLayer::Frustum => self.frustum = !self.frustum,
             MinimapLayer::Alerts => self.alerts = !self.alerts,
+            MinimapLayer::Weather => self.weather = !self.weather,
         }
     }
 }
@@ -500,6 +507,8 @@ widget_ids! {
         size_btn,
         level_text,
         north_text,
+        lens_bg,
+        lens_text,
         toggle_btn,
     }
 }
@@ -1020,6 +1029,30 @@ impl Widget for BastionMiniMap<'_> {
             .color(Color::Rgba(0.75, 0.0, 0.0, 0.9))
             .graphics_for(state.ids.map_bg)
             .set(state.ids.north_text, ui);
+
+        // R1G: one real, bounded lens on the existing map surface. The frame
+        // is already camera/selection/generation-bound by the production
+        // adapter; this widget only visualizes its canonical label.
+        if self.tiles.layers.weather
+            && let Some(lens) = crate::r1g_lens::latest_frame()
+            && lens.mode() == bastion_renderer_r0d::lens::LensModeV1::Weather
+            && let Some(datum) = lens.datums().first()
+        {
+            Rectangle::fill_with(
+                [map_size.x - 14.0 * scale, 22.0 * scale],
+                Color::Rgba(0.02, 0.05, 0.08, 0.82),
+            )
+            .mid_bottom_with_margin_on(state.ids.map_bg, 7.0 * scale)
+            .graphics_for(state.ids.map_bg)
+            .set(state.ids.lens_bg, ui);
+            Text::new(&datum.label)
+                .middle_of(state.ids.lens_bg)
+                .font_size(self.fonts.cyri.scale(9 + scale as u32))
+                .font_id(self.fonts.cyri.conrod_id)
+                .color(Color::Rgba(0.72, 0.90, 1.0, 1.0))
+                .graphics_for(state.ids.map_bg)
+                .set(state.ids.lens_text, ui);
+        }
 
         // ---- Layer chips ---------------------------------------------------
         if state.ids.layer_chips.len() < MinimapLayer::ALL.len() {

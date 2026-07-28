@@ -870,6 +870,21 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r1f_weather_effect_record_count"
         | "r1f_weather_effect_instance_count"
         | "r1f_weather_presentation_sha256"
+        | "r1g_lens_enabled"
+        | "r1g_lens_presentation_generation"
+        | "r1g_lens_publication_sequence"
+        | "r1g_lens_simulation_tick"
+        | "r1g_lens_frame_sha256"
+        | "r1g_lens_presentation_frame_sha256"
+        | "r1g_lens_environment_projection_sha256"
+        | "r1g_lens_camera_token_sha256"
+        | "r1g_lens_selection_sha256"
+        | "r1g_lens_mode"
+        | "r1g_lens_datum_count"
+        | "r1g_lens_weather_kind"
+        | "r1g_lens_weather_cloud_milli"
+        | "r1g_lens_weather_rain_milli"
+        | "r1g_lens_weather_wind_speed_mm_s"
         | "anchor_uid"
         | "anchor_selected_non_client_colonist"
         | "ordinal" => Some(CaptureMetadataFieldClassV1::Authority),
@@ -951,6 +966,11 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r1f_shadow_group_contact_unavailable_fallbacks"
         | "r1f_shadow_detailed_budget_fallbacks"
         | "r1f_shadow_max_detailed"
+        | "r1g_lens_label"
+        | "r1g_lens_weather_source_capability"
+        | "r1g_lens_threat_source_capability"
+        | "r1g_lens_underground_source_capability"
+        | "r1g_lens_site_activity_source_capability"
         | "width"
         | "height"
         | "pixel_format"
@@ -1056,6 +1076,61 @@ fn append_shadow_metadata_v1(
         shadows.group_contact_unavailable_fallbacks,
         shadows.detailed_budget_fallbacks,
         shadows.max_detailed,
+    ));
+}
+
+fn append_lens_metadata_v1(
+    metadata: &mut String,
+    lens: Option<crate::r1g_lens::LensProductionEvidenceV1>,
+    expected_generation: u64,
+) {
+    let Some(lens) = lens.filter(|lens| lens.presentation_generation == expected_generation) else {
+        metadata.push_str("r1g_lens_enabled=false\n");
+        return;
+    };
+    metadata.push_str(&format!(
+        concat!(
+            "r1g_lens_enabled={}\n",
+            "r1g_lens_presentation_generation={}\n",
+            "r1g_lens_publication_sequence={}\n",
+            "r1g_lens_simulation_tick={}\n",
+            "r1g_lens_frame_sha256={}\n",
+            "r1g_lens_presentation_frame_sha256={}\n",
+            "r1g_lens_environment_projection_sha256={}\n",
+            "r1g_lens_camera_token_sha256={}\n",
+            "r1g_lens_selection_sha256={}\n",
+            "r1g_lens_mode={}\n",
+            "r1g_lens_datum_count={}\n",
+            "r1g_lens_weather_kind={}\n",
+            "r1g_lens_weather_cloud_milli={}\n",
+            "r1g_lens_weather_rain_milli={}\n",
+            "r1g_lens_weather_wind_speed_mm_s={}\n",
+            "r1g_lens_label={}\n",
+            "r1g_lens_weather_source_capability={}\n",
+            "r1g_lens_threat_source_capability={}\n",
+            "r1g_lens_underground_source_capability={}\n",
+            "r1g_lens_site_activity_source_capability={}\n",
+        ),
+        lens.mode != bastion_renderer_r0d::lens::LensModeV1::Off,
+        lens.presentation_generation,
+        lens.publication_sequence,
+        lens.simulation_tick,
+        hex_digest(&lens.frame_digest),
+        hex_digest(&lens.presentation_frame_digest),
+        hex_digest(&lens.environment_projection_digest),
+        hex_digest(&lens.camera_token),
+        hex_digest(&lens.selection_digest),
+        lens.mode as u8,
+        lens.datum_count,
+        lens.weather_kind,
+        lens.weather_cloud_milli,
+        lens.weather_rain_milli,
+        lens.weather_wind_speed_mm_s,
+        lens.label,
+        crate::r1g_lens::WEATHER_SOURCE_CAPABILITY_V1,
+        crate::r1g_lens::THREAT_SOURCE_CAPABILITY_V1,
+        crate::r1g_lens::UNDERGROUND_SOURCE_CAPABILITY_V1,
+        crate::r1g_lens::SITE_ACTIVITY_SOURCE_CAPABILITY_V1,
     ));
 }
 
@@ -1323,6 +1398,7 @@ fn request_one_capture(
     let lighting = crate::r1f_lighting::latest_evidence();
     let shadows = crate::r1f_shadows::latest_evidence();
     let weather = crate::r1f_weather::latest_evidence();
+    let lens = crate::r1g_lens::latest_evidence();
     renderer.create_screenshot(move |result| {
         match result {
             Ok(image) => {
@@ -1945,6 +2021,11 @@ fn request_one_capture(
                                 } else {
                                     metadata.push_str("r1f_weather_enabled=false\n");
                                 }
+                                append_lens_metadata_v1(
+                                    &mut metadata,
+                                    lens,
+                                    context.presentation.client_applied_generation,
+                                );
                                 write_atomic(&metadata_path, metadata.as_bytes())
                             });
                         if let Err(error) = result {
@@ -2450,6 +2531,50 @@ mod tests {
         );
         assert_eq!(parsed.get("r1f_shadow_max_detailed"), Some(&"64"));
         assert!(!metadata.contains("\\n"));
+    }
+
+    #[test]
+    fn lens_metadata_binds_authority_capability_and_off_state() {
+        let mut metadata = String::new();
+        append_lens_metadata_v1(
+            &mut metadata,
+            Some(crate::r1g_lens::LensProductionEvidenceV1 {
+                presentation_generation: 7,
+                publication_sequence: 1,
+                simulation_tick: 300,
+                frame_digest: [1; 32],
+                presentation_frame_digest: [2; 32],
+                environment_projection_digest: [3; 32],
+                camera_token: [4; 32],
+                selection_digest: [5; 32],
+                mode: bastion_renderer_r0d::lens::LensModeV1::Weather,
+                datum_count: 1,
+                weather_kind: 3,
+                weather_cloud_milli: 500,
+                weather_rain_milli: 400,
+                weather_wind_speed_mm_s: 2_500,
+                label: "RAIN 40% WIND 2.5m/s".to_owned(),
+            }),
+            7,
+        );
+        let parsed = metadata
+            .lines()
+            .map(|line| line.split_once('=').expect("lens metadata key=value"))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(parsed.len(), 20);
+        assert_eq!(parsed.get("r1g_lens_enabled"), Some(&"true"));
+        assert_eq!(parsed.get("r1g_lens_datum_count"), Some(&"1"));
+        assert_eq!(
+            parsed.get("r1g_lens_weather_source_capability"),
+            Some(&crate::r1g_lens::WEATHER_SOURCE_CAPABILITY_V1)
+        );
+        assert_eq!(
+            parsed.get("r1g_lens_threat_source_capability"),
+            Some(&crate::r1g_lens::THREAT_SOURCE_CAPABILITY_V1)
+        );
+        let mut off = String::new();
+        append_lens_metadata_v1(&mut off, None, 7);
+        assert_eq!(off, "r1g_lens_enabled=false\n");
     }
 
     #[test]
