@@ -3935,3 +3935,16 @@ onto either active lane.
 No master-list row (a test-infrastructure QA sweep, not a build block).
 Sonnet-curated registry entries (B37 correction, B47/B48 appends, B49-B53
 new) committed alongside this run-log entry.
+
+**Opus re-pin + T3.6.01** (tip 5b6bd0de69): honest NO-OP re-pin kept
+verbatim ("a prediction of closure is not a closure"), then
+SessionTerminateV1 frames — frame is a REQUEST, registry decides
+(CKPT-176 trap avoided); committed checkpoints survive termination;
+typed rejects; vanished transport terminates through the same
+registry step. Maps: T3.4 22→10 OPEN, T3.5 10→9; 173/174 honestly
+held. **T3.6 BRIEF sent** (fleet-authored, premises verified on
+Opus's tip): physics correction generations — typed PhysicsGeneration
+over force_counter (real wrapping_add at phys.rs:250 dies), generation
+on frames/reports/corrections/probes/history, old-generation rejection,
+reconnect tests; composes as OUTER guard around T3.5's LatestState.
+Interim: named-OPEN closures in map order (CKPT-173 → ECS preflight).

@@ -476,6 +476,14 @@ impl CheckpointEgressGateV1 {
         }
     }
 
+    /// `T3.6`/`CKPT-173`: the session-control lane is NEVER fenced. A
+    /// checkpoint that stalls must still be tearable down, so a
+    /// termination request cannot be made to wait behind a Barrier —
+    /// blocking it is how a stuck alignment becomes a stuck session.
+    /// This is a different lane from the per-stream Begin/Barrier
+    /// controls, which ARE part of a checkpoint and do wait.
+    pub fn admit_session_control_v1(&self) -> EgressAdmitV1 { EgressAdmitV1::Send }
+
     /// Everything else the server wants to send while the fence is up.
     /// Diagnostics are out-of-band by construction and always pass;
     /// checkpointed data waits; a foreign control frame is a bug.
@@ -1211,6 +1219,36 @@ mod checkpoint_planner_v1 {
         .unwrap();
         retampered.descriptor.streams[2].stream_transcript_root = [0xEE; 32];
         assert!(verify_plan_completeness_v1(&retampered).is_err());
+    }
+
+    /// `CKPT-173`: the session-control lane is never fenced, even with
+    /// every stream blocked mid-checkpoint.
+    #[test]
+    fn the_session_control_lane_is_never_blocked_by_a_fence() {
+        let mut state = SemanticSendStateV1::new(binding());
+        let plan = reserve_and_plan_recipient_checkpoint_v1(
+            &mut state,
+            3,
+            2,
+            vec![intent(SemanticStreamIdV1::InGame, 1)],
+            &profile(),
+            [1; 32],
+            [2; 32],
+        )
+        .unwrap();
+
+        let mut gate = CheckpointEgressGateV1::new();
+        assert_eq!(gate.admit_session_control_v1(), EgressAdmitV1::Send);
+
+        gate.open_for_plan_v1(&plan).unwrap();
+        // every stream is fenced and ordinary data is held...
+        for stream in REQUIRED_CHECKPOINT_STREAMS_V1 {
+            assert_eq!(gate.admit_other_v1(stream, &ServerGeneral::UpdateRecipes), EgressAdmitV1::Hold);
+        }
+        // ...and the control lane still goes out, which is what makes a
+        // stalled checkpoint recoverable instead of terminal.
+        assert_eq!(gate.admit_session_control_v1(), EgressAdmitV1::Send);
+        assert!(!gate.is_quiescent(), "the fence really is up while that holds");
     }
 
     /// `T3.4.13`: a fenced stream carries its checkpoint and nothing

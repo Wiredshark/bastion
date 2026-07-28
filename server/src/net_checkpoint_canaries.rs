@@ -35,13 +35,12 @@
 //!
 //! Second re-pin: `T3.6.01` built `SessionTerminateV1` and its control
 //! lane, closing `CKPT-162`..`CKPT-171`, `CKPT-175` and `CKPT-176`.
-//! `CKPT-173` (control lane blocked behind a semantic Barrier) and
-//! `CKPT-174` (production still sends `ServerGeneral::Disconnect`) stay
-//! open: the first needs the control lane wired to the egress gate, the
-//! second is a migration of live send sites. Neither was built, so
-//! neither is claimed.
+//! `CKPT-173` was closed straight after by wiring the control lane to
+//! the egress gate. `CKPT-174` (production still sends
+//! `ServerGeneral::Disconnect`) stays open: it is a migration of live
+//! send sites, not a mechanism, and nothing was built for it.
 
-pub(crate) const OPEN_CASE_COUNT: usize = 10;
+pub(crate) const OPEN_CASE_COUNT: usize = 9;
 
 pub(crate) const CASE_COVERAGE: &[(&str, &str)] = &[
     ("CKPT-001", "veloren_server::net_checkpoint::checkpoint_planner_v1::a_plan_aligns_end_to_end_and_tampering_does_not"),
@@ -216,7 +215,7 @@ pub(crate) const CASE_COVERAGE: &[(&str, &str)] = &[
     ("CKPT-170", "veloren_common_net::msg::session_control::session_termination_v1::control_lane_rejects_are_typed_and_a_repeat_is_idempotent"),
     ("CKPT-171", "veloren_common_net::msg::session_control::session_termination_v1::control_lane_rejects_are_typed_and_a_repeat_is_idempotent"),
     ("CKPT-172", "structural: ping carries no CheckpointParticipantV1 impl and never enters a transcript entry -- the same construction CKPT-140 rests on"),
-    ("CKPT-173", "OPEN: there is no separate control lane yet; fences ride the stream they name"),
+    ("CKPT-173", "veloren_server::net_checkpoint::checkpoint_planner_v1::the_session_control_lane_is_never_blocked_by_a_fence"),
     ("CKPT-174", "OPEN: an audit row -- production still sends ServerGeneral::Disconnect, and retiring it belongs with the T3.5 session-control work"),
     ("CKPT-175", "veloren_common_net::msg::session_control::session_termination_v1::a_frame_is_a_request_and_the_registry_is_the_authority"),
     ("CKPT-176", "veloren_common_net::msg::session_control::session_termination_v1::a_frame_is_a_request_and_the_registry_is_the_authority"),
