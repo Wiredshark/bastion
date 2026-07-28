@@ -417,6 +417,42 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
         variant: "BastionInspectInfo",
         digest_hex: "sha256:fb7a8e0ac12bfddf5ccf533e2fe75f14b7ea383ef4452a7a44efe7c5497c7c8f",
     },
+    // WSG-2 chunk 7 (Sonnet lane): the character-creation pair, the two
+    // small self-describing client acks/requests, and the two simplest
+    // remaining server payloads (LodZoneUpdate wraps an empty-vec Zone,
+    // TerrainBlockUpdates wraps an empty-vec CompressedData -- both
+    // constructible without touching the asset-manager or the checkpoint
+    // identity machinery).
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "CreateCharacter",
+        digest_hex: "sha256:7a296fe72321ce4b7973c57c476c6977076ec6e9091a7c3554f0c05c7fd91893",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "EditCharacter",
+        digest_hex: "sha256:0dd3205a6bd76540697c8e012fb8acb5a65c33e8a68d89d7e824693807d2e61f",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "CheckpointCommitAck",
+        digest_hex: "sha256:f21ae366e93ddd9c1ae1b460bcae2fb2c9a81f07c868fbf151912d01b9db691f",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "RequestPluginArtifacts",
+        digest_hex: "sha256:01fbc944f1ba49e09446b214c05238b9e2e28342f12475ae68ab5e6db9de4af3",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "LodZoneUpdate",
+        digest_hex: "sha256:781d556993f0e12cdf186679b7e44297a858dcb9a92253413cc01e113123e79f",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "TerrainBlockUpdates",
+        digest_hex: "sha256:15ce278a47bfeec9447ac5bf9183cf122d31a3b635f3423a1f9c88151552c3a0",
+    },
 ];
 
 include!("wire_shape_uncovered.rs");
@@ -798,6 +834,82 @@ mod wire_shape_goldens_v1 {
         }
     }
 
+    // WSG-2 chunk 7 fixtures.
+
+    fn client_create_character() -> ClientGeneral {
+        ClientGeneral::CreateCharacter {
+            alias: "chunk7".to_string(),
+            mainhand: None,
+            offhand: None,
+            body: common::comp::Body::Humanoid(common::comp::body::humanoid::Body {
+                species: common::comp::body::humanoid::Species::Human,
+                body_type: common::comp::body::humanoid::BodyType::Male,
+                hair_style: 0,
+                beard: 0,
+                eyes: 0,
+                accessory: 0,
+                hair_color: 0,
+                skin: 0,
+                eye_color: 0,
+                height_scale: 0,
+            }),
+            hardcore: false,
+            start_site: None,
+        }
+    }
+
+    fn client_edit_character() -> ClientGeneral {
+        ClientGeneral::EditCharacter {
+            id: common::character::CharacterId(32),
+            alias: "chunk7-edit".to_string(),
+            body: common::comp::Body::Humanoid(common::comp::body::humanoid::Body {
+                species: common::comp::body::humanoid::Species::Dwarf,
+                body_type: common::comp::body::humanoid::BodyType::Female,
+                hair_style: 1,
+                beard: 1,
+                eyes: 1,
+                accessory: 1,
+                hair_color: 1,
+                skin: 1,
+                eye_color: 1,
+                height_scale: 1,
+            }),
+        }
+    }
+
+    fn client_checkpoint_commit_ack() -> ClientGeneral {
+        ClientGeneral::CheckpointCommitAck(crate::msg::checkpoint::CheckpointCommitReceiptV1 {
+            epoch: 33,
+            parent_epoch: 32,
+            descriptor_root: [34u8; 32],
+            applied_records: 35,
+        })
+    }
+
+    fn client_request_plugin_artifacts() -> ClientGeneral {
+        ClientGeneral::RequestPluginArtifacts(crate::msg::plugin_artifact::PluginArtifactRequestV1 {
+            deployment_root: [36u8; 32],
+            ordinals: vec![1, 2, 3],
+        })
+    }
+
+    fn server_lod_zone_update() -> ServerGeneral {
+        ServerGeneral::LodZoneUpdate {
+            key: Vec2::new(37, 38),
+            zone: common::lod::Zone { objects: Vec::new() },
+        }
+    }
+
+    fn server_terrain_block_updates() -> ServerGeneral {
+        ServerGeneral::TerrainBlockUpdates(crate::msg::compression::CompressedData::compress(
+            &vec![(
+                Vec2::new(39, 40).with_z(41),
+                common::terrain::Block::air(common::terrain::SpriteKind::Empty),
+            )],
+            1,
+        ))
+    }
+
     fn actual(schema: &str, variant: &str) -> String {
         match (schema, variant) {
             ("ClientGeneral", "PlayerPhysics") => golden_digest_v1(&client_player_physics()),
@@ -879,6 +991,14 @@ mod wire_shape_goldens_v1 {
                 golden_digest_v1(&server_bastion_designation_removed())
             },
             ("ServerGeneral", "BastionInspectInfo") => golden_digest_v1(&server_bastion_inspect_info()),
+            ("ClientGeneral", "CreateCharacter") => golden_digest_v1(&client_create_character()),
+            ("ClientGeneral", "EditCharacter") => golden_digest_v1(&client_edit_character()),
+            ("ClientGeneral", "CheckpointCommitAck") => golden_digest_v1(&client_checkpoint_commit_ack()),
+            ("ClientGeneral", "RequestPluginArtifacts") => {
+                golden_digest_v1(&client_request_plugin_artifacts())
+            },
+            ("ServerGeneral", "LodZoneUpdate") => golden_digest_v1(&server_lod_zone_update()),
+            ("ServerGeneral", "TerrainBlockUpdates") => golden_digest_v1(&server_terrain_block_updates()),
             (schema, other) => panic!("{schema}::{other} has a golden entry but no representative instance"),
         }
     }
@@ -905,9 +1025,9 @@ mod wire_shape_goldens_v1 {
     /// counts pinned so neither list can drift silently.
     #[test]
     fn coverage_is_a_pinned_open_set() {
-        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 69, "the covered set changed");
-        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 6);
-        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 13);
+        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 75, "the covered set changed");
+        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 2);
+        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 11);
         // 1 + 36 = 37 ClientGeneral, 3 + 48 = 51 ServerGeneral, counted
         // from the enums at 71b1c87ca7.
         let covered_client =
@@ -1040,6 +1160,29 @@ mod wire_shape_goldens_v1 {
             base, perturbed,
             "changing BastionPlaceDesignation's region.max did not move the digest -- the \
              golden mechanism is blind to this chunk's payload"
+        );
+    }
+
+    /// WSG-2 chunk 7's falsifier: perturbing `TerrainBlockUpdates`'s inner
+    /// block content proves the mechanism sees a change inside a
+    /// `CompressedData<T>` payload -- not just T's own top-level fields,
+    /// but the compressed bytes derived from them.
+    #[test]
+    fn chunk_7_fixture_perturbation_moves_the_digest() {
+        let base = golden_digest_v1(&server_terrain_block_updates());
+        let perturbed = golden_digest_v1(&ServerGeneral::TerrainBlockUpdates(
+            crate::msg::compression::CompressedData::compress(
+                &vec![(
+                    Vec2::new(39, 40).with_z(41),
+                    common::terrain::Block::new(common::terrain::BlockKind::Rock, vek::Rgb::new(1, 2, 3)),
+                )],
+                1,
+            ),
+        ));
+        assert_ne!(
+            base, perturbed,
+            "changing TerrainBlockUpdates's inner block did not move the digest -- the golden \
+             mechanism is blind to this chunk's payload"
         );
     }
 
