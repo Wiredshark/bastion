@@ -4042,6 +4042,7 @@ impl Client {
     #[expect(clippy::type_complexity)]
     fn checkpoint_step_v1(
         rt: &mut ClientCheckpointRuntimeV1,
+        expected_binding: common_net::msg::envelope::ActiveSessionBindingV1,
         stream: common_net::msg::envelope::SemanticStreamIdV1,
         frame: DrainedFrameV1,
     ) -> Result<
@@ -4062,6 +4063,11 @@ impl Client {
             ServerGeneral::CheckpointBegin(open) => {
                 let context = frame.checkpoint.ok_or_else(|| fail("Begin without checkpoint context"))?;
                 if rt.aligner.is_none() {
+                    // The descriptor names the session it belongs to; a
+                    // checkpoint for another binding is not ours to align.
+                    if open.descriptor.binding != expected_binding {
+                        return Err(fail("descriptor binding is not this session"));
+                    }
                     let root = open
                         .descriptor
                         .descriptor_root_v1()
@@ -4178,7 +4184,11 @@ impl Client {
             }
             return Ok(vec![(stream, frame.msg)]);
         };
-        let stepped = Self::checkpoint_step_v1(&mut rt, stream, frame);
+        let Some(expected_binding) = self.semantic_receive_state.as_ref().map(|state| state.binding()) else {
+            self.checkpoint_runtime = Some(rt);
+            return Err(Error::Other("checkpoint: no active attachment to bind a checkpoint to".to_owned()));
+        };
+        let stepped = Self::checkpoint_step_v1(&mut rt, expected_binding, stream, frame);
         self.checkpoint_runtime = Some(rt);
         let (out, ack) = stepped?;
         if let Some(receipt) = ack {
@@ -5146,6 +5156,34 @@ mod tests {
             assert_eq!(none, None);
         }
 
+        /// `CKPT-020`: a descriptor names the session it belongs to, and
+        /// a checkpoint planned for another binding is not ours to align.
+        #[test]
+        fn a_descriptor_for_another_session_is_refused() {
+            let descriptor = descriptor();
+            let root = descriptor.descriptor_root_v1().unwrap();
+            let mut rt = runtime();
+            let other = ActiveSessionBindingV1 {
+                server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([90; 16])).unwrap(),
+                session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([91; 16])).unwrap(),
+                epoch: ConnectionEpoch::new(7).unwrap(),
+            };
+            let open = CheckpointStreamOpenV1 {
+                begin: CheckpointBeginV1 { epoch: EPOCH, stream: SemanticStreamIdV1::General, descriptor_root: root },
+                descriptor,
+            };
+            assert!(
+                Client::checkpoint_step_v1(
+                    &mut rt,
+                    other,
+                    SemanticStreamIdV1::General,
+                    frame(ServerGeneral::CheckpointBegin(Box::new(open)), Some(ctx(root, None)), 1),
+                )
+                .is_err()
+            );
+            assert!(rt.aligner.is_none(), "a refused descriptor must not open an aligner");
+        }
+
         /// The whole point: the client applies NOTHING until the last
         /// stream is fenced, then applies the set in canonical order.
         #[test]
@@ -5161,6 +5199,7 @@ mod tests {
                 };
                 let (out, ack) = Client::checkpoint_step_v1(
                     &mut rt,
+                    recv_binding(),
                     stream,
                     frame(ServerGeneral::CheckpointBegin(Box::new(open)), Some(ctx(root, None)), 1),
                 )
@@ -5172,9 +5211,13 @@ mod tests {
                 let mut sequence = 1;
                 for (_, ordinal, msg) in records().into_iter().filter(|(s, _, _)| *s == stream) {
                     sequence += 1;
-                    let (out, ack) =
-                        Client::checkpoint_step_v1(&mut rt, stream, frame(msg, Some(ctx(root, Some(ordinal))), sequence))
-                            .unwrap();
+                    let (out, ack) = Client::checkpoint_step_v1(
+                        &mut rt,
+                        recv_binding(),
+                        stream,
+                        frame(msg, Some(ctx(root, Some(ordinal))), sequence),
+                    )
+                    .unwrap();
                     assert!(out.is_empty() && ack.is_none(), "staged, never applied");
                 }
             }
@@ -5184,6 +5227,7 @@ mod tests {
             assert!(
                 Client::checkpoint_step_v1(
                     &mut rt,
+                    recv_binding(),
                     SemanticStreamIdV1::General,
                     frame(ServerGeneral::UpdateRecipes, None, 99)
                 )
@@ -5204,6 +5248,7 @@ mod tests {
                 };
                 let (out, ack) = Client::checkpoint_step_v1(
                     &mut rt,
+                    recv_binding(),
                     plan.stream,
                     frame(ServerGeneral::CheckpointBarrier(barrier), Some(ctx(root, None)), plan.barrier_sequence),
                 )
@@ -5235,6 +5280,7 @@ mod tests {
             // ...and the receiver is Idle again, so ordinary traffic flows
             let (out, _) = Client::checkpoint_step_v1(
                 &mut rt,
+                recv_binding(),
                 SemanticStreamIdV1::General,
                 frame(ServerGeneral::UpdateRecipes, None, 100),
             )
