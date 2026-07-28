@@ -453,6 +453,21 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
         variant: "TerrainBlockUpdates",
         digest_hex: "sha256:15ce278a47bfeec9447ac5bf9183cf122d31a3b635f3423a1f9c88151552c3a0",
     },
+    // WSG-2 chunk 8 (Sonnet lane): CheckpointBarrier is a self-contained
+    // struct (no CheckpointDescriptorV1 dependency, unlike CheckpointBegin);
+    // CommandResult needs only CommandPublicationV1's receipt+sequence,
+    // built via the same FixedRandomBytesSourceV1 deterministic-generate
+    // pattern command.rs's own tests already use for CommandId.
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "CheckpointBarrier",
+        digest_hex: "sha256:e52653806d67b65733d298fcd7703ec077e8632dd40b34c2f35daefb7c593d94",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "CommandResult",
+        digest_hex: "sha256:a6c0dec0b9b3ebed6d7044aa8191c667b174bb8fdf470c2aa48d98a7fddc9bf4",
+    },
 ];
 
 include!("wire_shape_uncovered.rs");
@@ -910,6 +925,36 @@ mod wire_shape_goldens_v1 {
         ))
     }
 
+    // WSG-2 chunk 8 fixtures.
+
+    fn server_checkpoint_barrier() -> ServerGeneral {
+        ServerGeneral::CheckpointBarrier(crate::msg::checkpoint::CheckpointBarrierV1 {
+            epoch: 42,
+            stream: crate::msg::envelope::SemanticStreamIdV1::General,
+            descriptor_root: [43u8; 32],
+            data_record_count: 44,
+            payload_bytes: 45,
+            last_data_sequence: Some(46),
+            stream_transcript_root: [47u8; 32],
+        })
+    }
+
+    fn server_command_result() -> ServerGeneral {
+        let command_id = common::apex::identity::CommandId::generate(
+            &mut common::apex::identity::FixedRandomBytesSourceV1([48; 16]),
+        )
+        .unwrap();
+        ServerGeneral::CommandResult(crate::msg::command::CommandPublicationV1 {
+            receipt: crate::msg::command::CommandReceiptV1 {
+                command_id,
+                identity_root: [49u8; 32],
+                outcome: crate::msg::command::CommandOutcomeV1::Applied { result_digest: [50u8; 32] },
+                effect_epoch: 51,
+            },
+            sequence: 52,
+        })
+    }
+
     fn actual(schema: &str, variant: &str) -> String {
         match (schema, variant) {
             ("ClientGeneral", "PlayerPhysics") => golden_digest_v1(&client_player_physics()),
@@ -999,6 +1044,8 @@ mod wire_shape_goldens_v1 {
             },
             ("ServerGeneral", "LodZoneUpdate") => golden_digest_v1(&server_lod_zone_update()),
             ("ServerGeneral", "TerrainBlockUpdates") => golden_digest_v1(&server_terrain_block_updates()),
+            ("ServerGeneral", "CheckpointBarrier") => golden_digest_v1(&server_checkpoint_barrier()),
+            ("ServerGeneral", "CommandResult") => golden_digest_v1(&server_command_result()),
             (schema, other) => panic!("{schema}::{other} has a golden entry but no representative instance"),
         }
     }
@@ -1025,9 +1072,9 @@ mod wire_shape_goldens_v1 {
     /// counts pinned so neither list can drift silently.
     #[test]
     fn coverage_is_a_pinned_open_set() {
-        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 75, "the covered set changed");
+        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 77, "the covered set changed");
         assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 2);
-        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 11);
+        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 9);
         // 1 + 36 = 37 ClientGeneral, 3 + 48 = 51 ServerGeneral, counted
         // from the enums at 71b1c87ca7.
         let covered_client =
@@ -1183,6 +1230,37 @@ mod wire_shape_goldens_v1 {
             base, perturbed,
             "changing TerrainBlockUpdates's inner block did not move the digest -- the golden \
              mechanism is blind to this chunk's payload"
+        );
+    }
+
+    /// WSG-2 chunk 8's falsifier: perturbing `CommandResult`'s outcome
+    /// digest (a field inside the nested `CommandReceiptV1` inside
+    /// `CommandPublicationV1`, two levels deep) proves the mechanism sees
+    /// a change buried past a struct-in-struct boundary.
+    #[test]
+    fn chunk_8_fixture_perturbation_moves_the_digest() {
+        let base = golden_digest_v1(&server_command_result());
+        let command_id = common::apex::identity::CommandId::generate(
+            &mut common::apex::identity::FixedRandomBytesSourceV1([48; 16]),
+        )
+        .unwrap();
+        let perturbed = golden_digest_v1(&ServerGeneral::CommandResult(
+            crate::msg::command::CommandPublicationV1 {
+                receipt: crate::msg::command::CommandReceiptV1 {
+                    command_id,
+                    identity_root: [49u8; 32],
+                    outcome: crate::msg::command::CommandOutcomeV1::Applied {
+                        result_digest: [99u8; 32],
+                    },
+                    effect_epoch: 51,
+                },
+                sequence: 52,
+            },
+        ));
+        assert_ne!(
+            base, perturbed,
+            "changing CommandResult's nested result_digest did not move the digest -- the \
+             golden mechanism is blind to this chunk's payload"
         );
     }
 
