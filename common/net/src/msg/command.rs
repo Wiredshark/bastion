@@ -1212,3 +1212,323 @@ mod command_receipt_v1 {
         assert_eq!(outbox.pending_len(), 1);
     }
 }
+
+/// `APEX-T3.5.10` — the sequence-and-floor journal the imported catalog
+/// actually specifies. `CommandLedgerV1` (.02) keyed on `CommandId`
+/// alone and so had to fail closed when full: with no ordering it cannot
+/// tell "never seen" from "seen and forgotten". A monotone per-session
+/// SEQUENCE fixes that — everything at or below the retired floor is
+/// known-terminal, so records can be dropped without ever letting a
+/// replay read as fresh (`CMD-070`, `CMD-082`).
+///
+/// Scope, exactly as the catalog draws it: the journal belongs to one
+/// (`ServerBootId`, `SessionId`). It SURVIVES a connection-epoch
+/// increment, carrying its floor across a resume (`CMD-083`, `CMD-086`),
+/// and it dies with the session and with the boot (`CMD-084`, `CMD-085`,
+/// `CMD-144`) — a new session never inherits a floor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JournalStateV1 {
+    InFlight,
+    Terminal(CommandOutcomeV1),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JournalEntryV1 {
+    pub descriptor: CommandDescriptorV1,
+    pub sequence: u64,
+    pub state: JournalStateV1,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandDispositionV1 {
+    /// Never seen: execute it.
+    Dispatch,
+    /// Seen, still executing: do NOT dispatch again (`CMD-076`).
+    InProgress,
+    /// Seen and finished: replay these terminal bytes (`CMD-075`).
+    Terminal(CommandOutcomeV1),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JournalErrorV1 {
+    /// Sequence zero is not a sequence (`CMD-037`).
+    SequenceZero,
+    /// At or below the retired floor — already terminal and acked.
+    Retired,
+    /// Beyond the next expected sequence (`CMD-069`).
+    SequenceGap { expected: u64, got: u64 },
+    /// The sequence is known but names a different command (`CMD-073`).
+    IdentityMismatch(CommandIdentityErrorV1),
+    /// This command id is already journaled under another sequence
+    /// (`CMD-074`).
+    IdReusedUnderAnotherSequence,
+    /// One command in flight at a time; a prior terminal is still
+    /// unacked (`CMD-077`).
+    PriorTerminalUnacked,
+    /// The frame comes from a superseded attachment (`CMD-087`).
+    SupersededAttachment,
+    /// Not this session's journal at all.
+    ForeignSession,
+    Capacity,
+    /// Acking something that is not the floor's successor, or is not
+    /// terminal (`CMD-080`, `CMD-081`).
+    NotAckable,
+}
+
+#[derive(Debug, Clone)]
+pub struct CommandJournalV1 {
+    binding: ActiveSessionBindingV1,
+    retired_floor: u64,
+    active: std::collections::BTreeMap<u64, JournalEntryV1>,
+    capacity: usize,
+}
+
+impl CommandJournalV1 {
+    pub fn new(binding: ActiveSessionBindingV1, capacity: usize) -> Self {
+        Self { binding, retired_floor: 0, active: std::collections::BTreeMap::new(), capacity }
+    }
+
+    pub fn binding(&self) -> ActiveSessionBindingV1 { self.binding }
+
+    pub fn retired_floor(&self) -> u64 { self.retired_floor }
+
+    /// The next sequence this journal will accept as new.
+    pub fn next_expected_v1(&self) -> u64 {
+        self.active.keys().next_back().copied().unwrap_or(self.retired_floor) + 1
+    }
+
+    pub fn entry_v1(&self, sequence: u64) -> Option<JournalEntryV1> { self.active.get(&sequence).copied() }
+
+    /// A resume keeps the journal: same session, later connection epoch.
+    /// The floor and every active record survive, so a command issued
+    /// before the reconnect cannot re-execute after it (`CMD-086`).
+    pub fn rebind_epoch_v1(
+        &mut self,
+        binding: ActiveSessionBindingV1,
+    ) -> Result<(), JournalErrorV1> {
+        if binding.server_boot_id != self.binding.server_boot_id || binding.session_id != self.binding.session_id {
+            return Err(JournalErrorV1::ForeignSession);
+        }
+        if binding.epoch.get() < self.binding.epoch.get() {
+            return Err(JournalErrorV1::SupersededAttachment);
+        }
+        self.binding = binding;
+        Ok(())
+    }
+
+    /// Classifies a command frame. Pure: nothing is dispatched here, and
+    /// only a genuinely new sequence reserves a record.
+    pub fn admit_v1(
+        &mut self,
+        descriptor: &CommandDescriptorV1,
+        sequence: u64,
+    ) -> Result<CommandDispositionV1, JournalErrorV1> {
+        if descriptor.binding.server_boot_id != self.binding.server_boot_id
+            || descriptor.binding.session_id != self.binding.session_id
+        {
+            return Err(JournalErrorV1::ForeignSession);
+        }
+        if descriptor.binding.epoch.get() < self.binding.epoch.get() {
+            return Err(JournalErrorV1::SupersededAttachment);
+        }
+        if sequence == 0 {
+            return Err(JournalErrorV1::SequenceZero);
+        }
+        if sequence <= self.retired_floor {
+            return Err(JournalErrorV1::Retired);
+        }
+
+        if let Some(entry) = self.active.get(&sequence) {
+            // Known sequence: it must be the SAME command, in every field.
+            if entry.descriptor.command_id != descriptor.command_id {
+                return Err(JournalErrorV1::IdentityMismatch(CommandIdentityErrorV1::RequestMismatch));
+            }
+            entry.descriptor.is_replay_of_v1(descriptor).map_err(JournalErrorV1::IdentityMismatch)?;
+            return Ok(match entry.state {
+                JournalStateV1::InFlight => CommandDispositionV1::InProgress,
+                JournalStateV1::Terminal(outcome) => CommandDispositionV1::Terminal(outcome),
+            });
+        }
+
+        let expected = self.next_expected_v1();
+        if sequence != expected {
+            return Err(JournalErrorV1::SequenceGap { expected, got: sequence });
+        }
+        // One in flight at a time, and a finished command must be acked
+        // before the next is admitted.
+        if !self.active.is_empty() {
+            return Err(JournalErrorV1::PriorTerminalUnacked);
+        }
+        if self.active.len() >= self.capacity {
+            return Err(JournalErrorV1::Capacity);
+        }
+        // A command id may not appear under two sequences.
+        if self.active.values().any(|e| e.descriptor.command_id == descriptor.command_id) {
+            return Err(JournalErrorV1::IdReusedUnderAnotherSequence);
+        }
+        self.active.insert(
+            sequence,
+            JournalEntryV1 { descriptor: *descriptor, sequence, state: JournalStateV1::InFlight },
+        );
+        Ok(CommandDispositionV1::Dispatch)
+    }
+
+    /// Records the terminal outcome of an in-flight command.
+    pub fn resolve_v1(&mut self, sequence: u64, outcome: CommandOutcomeV1) -> Result<(), JournalErrorV1> {
+        let entry = self.active.get_mut(&sequence).ok_or(JournalErrorV1::NotAckable)?;
+        match entry.state {
+            JournalStateV1::InFlight => {
+                entry.state = JournalStateV1::Terminal(outcome);
+                Ok(())
+            },
+            JournalStateV1::Terminal(_) => Err(JournalErrorV1::NotAckable),
+        }
+    }
+
+    /// Retires a terminal command once the client has acknowledged it.
+    /// Only the floor's immediate successor may retire, so a duplicate
+    /// ack cannot advance the floor twice and an ack for an unknown
+    /// sequence cannot advance it at all (`CMD-080`, `CMD-081`).
+    pub fn retire_v1(&mut self, sequence: u64) -> Result<u64, JournalErrorV1> {
+        if sequence != self.retired_floor + 1 {
+            return Err(JournalErrorV1::NotAckable);
+        }
+        let entry = self.active.get(&sequence).ok_or(JournalErrorV1::NotAckable)?;
+        if !matches!(entry.state, JournalStateV1::Terminal(_)) {
+            return Err(JournalErrorV1::NotAckable);
+        }
+        self.active.remove(&sequence);
+        self.retired_floor = sequence;
+        Ok(self.retired_floor)
+    }
+}
+
+#[cfg(test)]
+mod command_journal_v1 {
+    use super::*;
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+
+    fn binding_at(epoch: u64) -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([2; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(epoch).unwrap(),
+        }
+    }
+
+    fn command_at(binding: ActiveSessionBindingV1, seed: u8, request: u8) -> CommandDescriptorV1 {
+        CommandDescriptorV1 {
+            binding,
+            command_id: CommandId::generate(&mut FixedRandomBytesSourceV1([seed; 16])).unwrap(),
+            kind: CommandKindV1::ControlAction,
+            request_digest: [request; 32],
+        }
+    }
+
+    /// The floor is what makes bounded retention safe: a retired
+    /// sequence is recognisably retired, never mistaken for fresh.
+    #[test]
+    fn a_retired_sequence_is_refused_not_re_executed() {
+        let b = binding_at(1);
+        let mut journal = CommandJournalV1::new(b, 4);
+        let first = command_at(b, 10, 1);
+
+        assert_eq!(journal.next_expected_v1(), 1);
+        assert_eq!(journal.admit_v1(&first, 1).unwrap(), CommandDispositionV1::Dispatch);
+        // in flight: a duplicate must not dispatch again
+        assert_eq!(journal.admit_v1(&first, 1).unwrap(), CommandDispositionV1::InProgress);
+
+        let outcome = CommandOutcomeV1::Applied { result_digest: [5; 32] };
+        journal.resolve_v1(1, outcome).unwrap();
+        // terminal: a duplicate replays the terminal bytes
+        assert_eq!(journal.admit_v1(&first, 1).unwrap(), CommandDispositionV1::Terminal(outcome));
+
+        // ...and once retired, the record is gone but the sequence is not
+        assert_eq!(journal.retire_v1(1).unwrap(), 1);
+        assert_eq!(journal.entry_v1(1), None, "the record is dropped");
+        assert_eq!(journal.admit_v1(&first, 1).unwrap_err(), JournalErrorV1::Retired);
+
+        // a duplicate ack cannot advance the floor twice
+        assert_eq!(journal.retire_v1(1).unwrap_err(), JournalErrorV1::NotAckable);
+        assert_eq!(journal.retired_floor(), 1);
+        // nor can an ack for something never journaled
+        assert_eq!(journal.retire_v1(9).unwrap_err(), JournalErrorV1::NotAckable);
+        assert_eq!(journal.retired_floor(), 1);
+    }
+
+    #[test]
+    fn sequence_gaps_reuse_and_unacked_terminals_are_all_typed() {
+        let b = binding_at(1);
+        let mut journal = CommandJournalV1::new(b, 4);
+        let first = command_at(b, 10, 1);
+
+        assert_eq!(journal.admit_v1(&first, 0).unwrap_err(), JournalErrorV1::SequenceZero);
+        assert_eq!(
+            journal.admit_v1(&first, 5).unwrap_err(),
+            JournalErrorV1::SequenceGap { expected: 1, got: 5 }
+        );
+
+        journal.admit_v1(&first, 1).unwrap();
+        // same sequence, different command
+        let other = command_at(b, 11, 1);
+        assert!(matches!(journal.admit_v1(&other, 1).unwrap_err(), JournalErrorV1::IdentityMismatch(_)));
+        // same sequence, same id, different request bytes
+        let tampered = command_at(b, 10, 2);
+        assert_eq!(
+            journal.admit_v1(&tampered, 1).unwrap_err(),
+            JournalErrorV1::IdentityMismatch(CommandIdentityErrorV1::RequestMismatch)
+        );
+
+        // one in flight at a time
+        assert_eq!(journal.admit_v1(&other, 2).unwrap_err(), JournalErrorV1::PriorTerminalUnacked);
+        // ...and still one while its terminal is unacked
+        journal.resolve_v1(1, CommandOutcomeV1::Applied { result_digest: [1; 32] }).unwrap();
+        assert_eq!(journal.admit_v1(&other, 2).unwrap_err(), JournalErrorV1::PriorTerminalUnacked);
+        // once retired, the next sequence flows
+        journal.retire_v1(1).unwrap();
+        assert_eq!(journal.admit_v1(&other, 2).unwrap(), CommandDispositionV1::Dispatch);
+
+        // resolving twice is refused
+        journal.resolve_v1(2, CommandOutcomeV1::Applied { result_digest: [2; 32] }).unwrap();
+        assert_eq!(
+            journal.resolve_v1(2, CommandOutcomeV1::Applied { result_digest: [3; 32] }).unwrap_err(),
+            JournalErrorV1::NotAckable
+        );
+    }
+
+    /// Scope: a resume keeps the floor; another session or an older
+    /// attachment gets nothing.
+    #[test]
+    fn the_journal_survives_a_resume_and_refuses_foreign_or_stale_attachments() {
+        let first_epoch = binding_at(1);
+        let mut journal = CommandJournalV1::new(first_epoch, 4);
+        let cmd = command_at(first_epoch, 10, 1);
+        journal.admit_v1(&cmd, 1).unwrap();
+        journal.resolve_v1(1, CommandOutcomeV1::Applied { result_digest: [7; 32] }).unwrap();
+        journal.retire_v1(1).unwrap();
+
+        // resume under a later connection epoch: the floor survives
+        let resumed = binding_at(2);
+        journal.rebind_epoch_v1(resumed).unwrap();
+        assert_eq!(journal.retired_floor(), 1, "a resume must not lose the retired floor");
+        let replayed = command_at(resumed, 10, 1);
+        assert_eq!(journal.admit_v1(&replayed, 1).unwrap_err(), JournalErrorV1::Retired);
+
+        // a frame from the superseded attachment is refused
+        let stale = command_at(first_epoch, 12, 1);
+        assert_eq!(journal.admit_v1(&stale, 2).unwrap_err(), JournalErrorV1::SupersededAttachment);
+        // ...as is rebinding backwards
+        assert_eq!(journal.rebind_epoch_v1(first_epoch).unwrap_err(), JournalErrorV1::SupersededAttachment);
+
+        // another session shares nothing
+        let foreign = ActiveSessionBindingV1 {
+            server_boot_id: resumed.server_boot_id,
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([90; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(2).unwrap(),
+        };
+        assert_eq!(journal.rebind_epoch_v1(foreign).unwrap_err(), JournalErrorV1::ForeignSession);
+        assert_eq!(journal.admit_v1(&command_at(foreign, 13, 1), 2).unwrap_err(), JournalErrorV1::ForeignSession);
+        // and a fresh session starts with no floor at all
+        assert_eq!(CommandJournalV1::new(foreign, 4).retired_floor(), 0);
+    }
+}
