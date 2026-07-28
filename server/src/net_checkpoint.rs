@@ -4,14 +4,17 @@
 //! activation, like the T3.3 V1 path it builds on.
 
 use common::apex::digest::DigestBytes32V1;
+use common_net::msg::ServerGeneral;
 use common_net::msg::checkpoint::{
     CheckpointApplyPhaseV1, CheckpointDescriptorV1, CheckpointOrdinalV1, CheckpointParticipantV1,
-    CheckpointParticipationV1, CheckpointResourceProfileV1, REQUIRED_CHECKPOINT_STREAMS_V1,
-    StreamCheckpointPlanV1, TranscriptEntryV1, global_transcript_root_v1, stream_transcript_root_v1,
+    CheckpointParticipationV1, CheckpointResourceProfileV1, CheckpointedEnvelopeContextV1,
+    REQUIRED_CHECKPOINT_STREAMS_V1, StreamCheckpointPlanV1, TranscriptEntryV1,
+    global_transcript_root_v1, stream_transcript_root_v1, validate_checkpoint_context_v1,
 };
 use common_net::msg::envelope::{ActiveSessionBindingV1, SemanticRouteV1, SemanticSendStateV1, SemanticStreamIdV1};
 use crate::semantic_net::outbox::SemanticSendIntentV1;
 use std::num::NonZeroU64;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum CheckpointPlanErrorV1 {
@@ -32,6 +35,9 @@ pub struct RecipientCheckpointPlanV1 {
     pub descriptor_root: [u8; 32],
     /// (ordinal, stream, sequence) in ordinal order.
     pub records: Vec<(CheckpointOrdinalV1, SemanticStreamIdV1, u64)>,
+    /// The admitted intents in ordinal order: index `n` is ordinal `n+1`,
+    /// so frames are derivable from the plan alone.
+    pub intents: Vec<SemanticSendIntentV1>,
 }
 
 fn payload_digest_of(intent: &SemanticSendIntentV1) -> [u8; 32] {
@@ -227,12 +233,106 @@ pub fn plan_recipient_checkpoint_v1(
         .map_err(|_| E::ResourceExceeded("declared preflight"))?;
     let descriptor_root = descriptor.descriptor_root_v1().map_err(|_| E::RootFailure)?;
 
-    Ok(RecipientCheckpointPlanV1 { recipient, descriptor, descriptor_root, records })
+    Ok(RecipientCheckpointPlanV1 { recipient, descriptor, descriptor_root, records, intents })
 }
 
 /// The apply phase of a planned record, for the client-side aligner.
 pub fn record_apply_phase_v1(intent: &SemanticSendIntentV1) -> Option<CheckpointApplyPhaseV1> {
     intent.payload.apply_phase_v1()
+}
+
+/// `T3.4.11` — one emitted frame of a recipient's checkpoint. Every
+/// frame carries its checkpoint context, so an unbound checkpoint frame
+/// is unrepresentable; only Data carries an ordinal.
+#[derive(Debug, Clone)]
+pub enum CheckpointFrameV1 {
+    Begin {
+        stream: SemanticStreamIdV1,
+        sequence: u64,
+        context: CheckpointedEnvelopeContextV1,
+    },
+    Data {
+        stream: SemanticStreamIdV1,
+        sequence: u64,
+        context: CheckpointedEnvelopeContextV1,
+        apply_phase: CheckpointApplyPhaseV1,
+        payload: Arc<ServerGeneral>,
+    },
+    Barrier {
+        stream: SemanticStreamIdV1,
+        sequence: u64,
+        context: CheckpointedEnvelopeContextV1,
+    },
+}
+
+impl CheckpointFrameV1 {
+    pub fn stream(&self) -> SemanticStreamIdV1 {
+        match self {
+            Self::Begin { stream, .. } | Self::Data { stream, .. } | Self::Barrier { stream, .. } => *stream,
+        }
+    }
+
+    pub fn sequence(&self) -> u64 {
+        match self {
+            Self::Begin { sequence, .. } | Self::Data { sequence, .. } | Self::Barrier { sequence, .. } => *sequence,
+        }
+    }
+
+    pub fn context(&self) -> &CheckpointedEnvelopeContextV1 {
+        match self {
+            Self::Begin { context, .. } | Self::Data { context, .. } | Self::Barrier { context, .. } => context,
+        }
+    }
+
+    pub fn participation(&self) -> CheckpointParticipationV1 {
+        match self {
+            Self::Data { .. } => CheckpointParticipationV1::CheckpointedData,
+            _ => CheckpointParticipationV1::CheckpointControl,
+        }
+    }
+}
+
+/// `T3.4.11`: expand a plan into its send-ordered frames — stream by
+/// stream in canonical order, and within a stream Begin, its data in
+/// ordinal order, Barrier. Each frame's context is validated against
+/// the plan's own epoch and descriptor root before it is emitted, so
+/// emission cannot produce a frame the receiver would have to reject.
+pub fn checkpoint_frames_v1(plan: &RecipientCheckpointPlanV1) -> Result<Vec<CheckpointFrameV1>, CheckpointPlanErrorV1> {
+    use CheckpointPlanErrorV1 as E;
+
+    let epoch = plan.descriptor.epoch;
+    let control = CheckpointedEnvelopeContextV1 { epoch, ordinal: None, descriptor_root: plan.descriptor_root };
+    let mut frames = Vec::with_capacity(plan.records.len() + 10);
+
+    for stream_plan in plan.descriptor.streams.iter() {
+        let stream = stream_plan.stream;
+        frames.push(CheckpointFrameV1::Begin { stream, sequence: stream_plan.begin_sequence, context: control });
+        for (ordinal, record_stream, sequence) in plan.records.iter().filter(|(_, s, _)| *s == stream) {
+            let intent = plan
+                .intents
+                .get(ordinal.0 as usize - 1)
+                .ok_or(E::PlanInvariant("record ordinal has no intent"))?;
+            if intent.semantic_stream != *record_stream {
+                return Err(E::PlanInvariant("record stream disagrees with its intent"));
+            }
+            frames.push(CheckpointFrameV1::Data {
+                stream,
+                sequence: *sequence,
+                context: CheckpointedEnvelopeContextV1 { epoch, ordinal: Some(*ordinal), descriptor_root: plan.descriptor_root },
+                // Data participation is already proven by admission, so a
+                // missing phase here is a broken classification, not input.
+                apply_phase: record_apply_phase_v1(intent).ok_or(E::PlanInvariant("checkpointed data without an apply phase"))?,
+                payload: Arc::clone(&intent.payload),
+            });
+        }
+        frames.push(CheckpointFrameV1::Barrier { stream, sequence: stream_plan.barrier_sequence, context: control });
+    }
+
+    for frame in &frames {
+        validate_checkpoint_context_v1(frame.participation(), Some(frame.context()), epoch, plan.descriptor_root)
+            .map_err(|_| E::PlanInvariant("emitted frame failed its own context validation"))?;
+    }
+    Ok(frames)
 }
 
 /// Unused import guard: the descriptor root is a raw 32-byte value here,
@@ -246,10 +346,8 @@ mod checkpoint_planner_v1 {
     use crate::semantic_net::outbox::{CanonicalSubjectKeyV1, ServerSemanticOrderKeyV1};
     use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
     use common_ecs::Phase;
-    use common_net::msg::ServerGeneral;
     use common_net::msg::checkpoint::CheckpointProfilePurposeV1;
     use common_net::msg::envelope::SemanticCausalityV1;
-    use std::sync::Arc;
 
     fn binding() -> ActiveSessionBindingV1 {
         ActiveSessionBindingV1 {
@@ -387,6 +485,62 @@ mod checkpoint_planner_v1 {
             Err(CheckpointPlanErrorV1::SequenceExhausted)
         ));
         assert_eq!(cursors(&edge), [1, 1, u64::MAX, 1, 1]);
+    }
+
+    /// `T3.4.11`: emission is fenced, ordered, and self-validating.
+    #[test]
+    fn frames_fence_every_stream_and_carry_bound_context() {
+        let mut state = SemanticSendStateV1::new(binding());
+        let plan = reserve_and_plan_recipient_checkpoint_v1(
+            &mut state,
+            4,
+            3,
+            vec![intent(SemanticStreamIdV1::InGame, 1), intent(SemanticStreamIdV1::Terrain, 2), intent(SemanticStreamIdV1::InGame, 0)],
+            &profile(),
+            [1; 32],
+            [2; 32],
+        )
+        .unwrap();
+        let frames = checkpoint_frames_v1(&plan).unwrap();
+
+        assert_eq!(frames.len(), 13, "5 Begins + 5 Barriers + 3 data");
+        // stream-canonical order, and within a stream Begin < data < Barrier
+        let stream_order: Vec<SemanticStreamIdV1> = frames.iter().map(|f| f.stream()).collect();
+        let mut seen: Vec<SemanticStreamIdV1> = Vec::new();
+        for stream in &stream_order {
+            if seen.last() != Some(stream) {
+                assert!(!seen.contains(stream), "a stream's frames must not be interleaved");
+                seen.push(*stream);
+            }
+        }
+        assert_eq!(seen, REQUIRED_CHECKPOINT_STREAMS_V1.to_vec());
+        for stream in REQUIRED_CHECKPOINT_STREAMS_V1 {
+            let of: Vec<&CheckpointFrameV1> = frames.iter().filter(|f| f.stream() == stream).collect();
+            assert!(matches!(of.first().unwrap(), CheckpointFrameV1::Begin { .. }));
+            assert!(matches!(of.last().unwrap(), CheckpointFrameV1::Barrier { .. }));
+            let seqs: Vec<u64> = of.iter().map(|f| f.sequence()).collect();
+            assert!(seqs.windows(2).all(|w| w[1] == w[0] + 1), "sequences must be contiguous within a stream");
+            assert!(of[1..of.len() - 1].iter().all(|f| matches!(f, CheckpointFrameV1::Data { .. })));
+        }
+
+        // context binding: data carries its ordinal, control never does,
+        // and every frame is bound to this epoch and descriptor root
+        let ordinals: Vec<u64> = frames
+            .iter()
+            .filter_map(|f| match f {
+                CheckpointFrameV1::Data { context, .. } => Some(context.ordinal.unwrap().0),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ordinals.len(), 3);
+        assert_eq!(ordinals.iter().copied().collect::<std::collections::BTreeSet<_>>(), [1, 2, 3].into());
+        for frame in &frames {
+            assert_eq!(frame.context().epoch, 4);
+            assert_eq!(frame.context().descriptor_root, plan.descriptor_root);
+            if !matches!(frame, CheckpointFrameV1::Data { .. }) {
+                assert!(frame.context().ordinal.is_none(), "control frames carry no ordinal");
+            }
+        }
     }
 
     /// The cursor array's slot order and `REQUIRED_CHECKPOINT_STREAMS_V1`
