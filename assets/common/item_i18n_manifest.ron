@@ -1,6 +1,12 @@
 (
     map: {
         Simple(
+            "common.items.bastion.wheat",
+        ): "common-items-bastion-wheat",
+        Simple(
+            "common.items.bastion.wheat_seeds",
+        ): "common-items-bastion-wheat_seeds",
+        Simple(
             "common.items.testing.test_bag_18_slot",
         ): "common-items-testing-test_bag_18_slot",
         Simple(

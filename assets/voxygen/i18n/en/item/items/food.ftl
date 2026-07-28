@@ -90,3 +90,9 @@ sprite-spore-corruption_spore = Spore of Corruption
         You feel an evil force pulsating within.
         
         It may be unwise to hold on to it for too long...
+
+common-items-bastion-wheat = Wheat
+    .desc = Harvested grain, ready to be milled or replanted.
+
+common-items-bastion-wheat_seeds = Wheat Seeds
+    .desc = Sow these on tilled soil to grow wheat.
