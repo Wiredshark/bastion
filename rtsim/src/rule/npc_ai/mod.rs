@@ -883,6 +883,24 @@ fn archetype_gate(ctx: &mut NpcCtx, activity: &str) -> bool {
         })
 }
 
+/// `T3.27` (E3-W2, Fable-ruled 2026-07-28): villager()'s three shelter/
+/// migrate branches all stay at `ActionClassV1::AssignedJob` (same tier
+/// as today), scored via `Consider::action_scored` instead of the bare
+/// `.important()`. Rain-shelter's score is the REAL rain intensity read
+/// from the weather grid (0..1, same `wpos + (512, 512)` offset
+/// convention `WeatherGrid::is_raining` itself uses -- weather.rs:266-
+/// 271). `NIGHT_SHELTER_SCORE` is deliberately the midpoint: heavy rain
+/// (>0.5) now outranks night-shelter, a light drizzle doesn't --
+/// documented placeholder, not a real signal, until a continuous
+/// "how deep into night" one exists. `MIGRATE_HOME_SCORE` sits decisively
+/// above the 0..1 range: migrating is a rare, deliberate life event, not
+/// a moment-to-moment comfort tradeoff, so it never loses to weather.
+/// These feed `Consider::action_scored`'s existing hysteresis bonus,
+/// which is what damps flapping when rain hovers near the boundary --
+/// the comparator earning its keep, no extra machinery needed.
+const NIGHT_SHELTER_SCORE: f32 = 0.5;
+const MIGRATE_HOME_SCORE: f32 = 10.0;
+
 /// T3.27 (E3-W2, characterization-first, mandatory per the handoff):
 /// which of [`villager`]'s three `consider.important(...)` branches
 /// (mod.rs:923 migrate-home, :944 seek-house-at-night, :983 seek-
@@ -979,6 +997,91 @@ mod villager_important_branch_characterization {
     }
 }
 
+/// T3.27 (E3-W2, Fable-ruled 2026-07-28): mirrors villager()'s branches
+/// AFTER the `Consider::action_scored` migration -- same structure as
+/// [`villager_important_branch_today`] (a hand-maintained model, not a
+/// live simulation), but net-score-driven instead of first-true-wins.
+/// `is_raining` is the real branch GATE (unchanged); `rain_intensity` is
+/// only meaningful when `is_raining` is true, matching how the real code
+/// pairs `WeatherGrid::is_raining` (the `if`) with `get_max_near(...)
+/// .rain` (the score) at the same call site.
+#[expect(dead_code, reason = "only consumed by its own non-vacuity tests below; documents the post-migration model alongside the pre-migration one")]
+fn villager_important_branch_after_e3w2(
+    migrate_eligible: bool,
+    is_dark: bool,
+    is_raining: bool,
+    rain_intensity: f32,
+    is_guard: bool,
+) -> VillagerImportantBranchV1 {
+    let mut best: Option<(f32, VillagerImportantBranchV1)> = None;
+    let mut propose = |score: f32, branch: VillagerImportantBranchV1| {
+        if best.is_none_or(|(best_score, _)| score > best_score) {
+            best = Some((score, branch));
+        }
+    };
+    if migrate_eligible {
+        propose(MIGRATE_HOME_SCORE, VillagerImportantBranchV1::MigrateHome);
+    }
+    if is_dark && !is_guard {
+        propose(NIGHT_SHELTER_SCORE, VillagerImportantBranchV1::SeekHouseAtNight);
+    }
+    if is_raining && !is_guard {
+        propose(rain_intensity, VillagerImportantBranchV1::SeekShelterInRain);
+    }
+    best.map_or(VillagerImportantBranchV1::None, |(_, branch)| branch)
+}
+
+#[cfg(test)]
+mod villager_important_branch_after_e3w2_tests {
+    use super::{
+        NIGHT_SHELTER_SCORE, VillagerImportantBranchV1::*,
+        villager_important_branch_after_e3w2 as branch,
+    };
+
+    /// Required non-vacuity flip (Fable-ruled): dark + HEAVY rain now
+    /// picks rain-shelter, where the pre-migration characterization
+    /// (`dark_and_raining_picks_night_shelter_not_rain_shelter`) proved
+    /// night-shelter always won. Uses 0.9, well clear of the 0.5
+    /// boundary, so this isn't sensitive to exact hysteresis-margin math.
+    #[test]
+    fn dark_and_heavy_rain_now_picks_rain_shelter() {
+        assert_eq!(branch(false, true, true, 0.9, false), SeekShelterInRain);
+    }
+
+    /// Required boundary hold (Fable-ruled): dark + a light DRIZZLE still
+    /// picks night-shelter -- the fix doesn't overcorrect into always
+    /// preferring rain-shelter. Uses 0.1, well clear of the boundary.
+    #[test]
+    fn dark_and_drizzle_still_picks_night_shelter() {
+        assert_eq!(branch(false, true, true, 0.1, false), SeekHouseAtNight);
+    }
+
+    /// The named boundary itself: rain intensity exactly at
+    /// `NIGHT_SHELTER_SCORE` does NOT flip (strict-greater, not >=) --
+    /// ties favor whichever was proposed first, matching
+    /// `Consider::action_scored`'s own tie rule.
+    #[test]
+    fn rain_intensity_exactly_at_the_boundary_does_not_flip() {
+        assert_eq!(branch(false, true, true, NIGHT_SHELTER_SCORE, false), SeekHouseAtNight);
+    }
+
+    /// Guards remain exempt from both shelter branches, unchanged by the
+    /// scoring migration.
+    #[test]
+    fn guard_is_exempt_from_both_shelter_branches_even_dark_and_heavy_rain() {
+        assert_eq!(branch(false, true, true, 0.9, true), None);
+    }
+
+    /// Migrate-home still wins unconditionally within the tier, unchanged
+    /// by the scoring migration -- `MIGRATE_HOME_SCORE` sits decisively
+    /// above the 0..1 range real weather scores live in.
+    #[test]
+    fn migrate_eligible_still_wins_over_dark_and_heavy_rain_regardless_of_guard() {
+        assert_eq!(branch(true, true, true, 0.9, false), MigrateHome);
+        assert_eq!(branch(true, true, true, 0.9, true), MigrateHome);
+    }
+}
+
 fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
     choose(move |ctx, state: &mut DefaultState, consider| {
         // Consider moving home if the home site gets too full
@@ -1016,7 +1119,7 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
                 .map(|(site_id, _, _)| site_id)
         {
             let site_name = util::site_name(ctx, new_home);
-            consider.important(just(move |ctx, _| {
+            consider.action_scored(ActionClassV1::AssignedJob, MIGRATE_HOME_SCORE, just(move |ctx, _| {
                 if let Some(site_name) = &site_name {
                     ctx.controller.say(None, Content::localized("npc-speech-migrating").with_arg("site", site_name.as_str()))
                 }
@@ -1032,12 +1135,20 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
         let is_free_time = is_weekend || is_evening;
 
         let is_raining = ctx.system_data.weather_grid.is_raining(ctx.npc.wpos.xy());
+        // T3.27 (E3-W2): real rain intensity for the shelter branch's
+        // score below -- same wpos+offset convention `is_raining` itself
+        // uses (weather.rs:266-271); only meaningful when `is_raining`.
+        let rain_intensity = ctx
+            .system_data
+            .weather_grid
+            .get_max_near(ctx.npc.wpos.xy() + Vec2::new(512.0, 512.0))
+            .rain;
 
         // Go to a house if it's dark
         if day_period.is_dark()
             && !matches!(ctx.npc.profession(), Some(Profession::Guard))
         {
-            consider.important(
+            consider.action_scored(ActionClassV1::AssignedJob, NIGHT_SHELTER_SCORE,
                 now(move |ctx, _| {
                     if let Some(house_wpos) = ctx.data
                         .sites
@@ -1076,7 +1187,7 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
 
         // Go to a house if its raining
         if is_raining && !matches!(ctx.npc.profession(), Some(Profession::Guard)) {
-            consider.important(
+            consider.action_scored(ActionClassV1::AssignedJob, rain_intensity,
                 now(move |ctx, _| {
                     if let Some(house_wpos) = ctx.data
                         .sites
