@@ -6,6 +6,7 @@
 //! order into authoritative state. See `readme/apex/` for the program's
 //! packets; this module implements `APEX-T0.1`.
 
+pub mod physics_generation;
 pub mod boundary;
 pub mod build;
 pub mod digest;

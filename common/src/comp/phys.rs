@@ -235,6 +235,9 @@ impl Component for PhysicsState {
 pub struct ForceUpdate {
     flag: bool,
     counter: u64,
+    /// `APEX-T3.6`: set if the generation space is exhausted; see
+    /// `update`.
+    generation_exhausted: bool,
 }
 
 impl ForceUpdate {
@@ -242,12 +245,38 @@ impl ForceUpdate {
         Self {
             flag: true,
             counter: 0,
+            generation_exhausted: false,
         }
     }
 
+    /// `APEX-T3.6` step 4: the correction generation advances CHECKED,
+    /// never wrapping. A wrap would make a stale generation compare
+    /// equal to a live one, so a prediction the server had corrected
+    /// away could replay into the new generation
+    /// (`apex::physics_generation`'s own acceptance criterion).
+    ///
+    /// At the ceiling the flag still sets — the client is still forced —
+    /// but the generation holds and `generation_exhausted` is set, so a
+    /// caller can see the difference between "corrected again" and
+    /// "cannot express another correction". Reaching it takes 2^64
+    /// corrections on one entity; the point is that the failure is
+    /// visible rather than silently wrong.
     pub fn update(&mut self) {
         self.flag = true;
-        self.counter = self.counter.wrapping_add(1);
+        match self.counter.checked_add(1) {
+            Some(next) => self.counter = next,
+            None => self.generation_exhausted = true,
+        }
+    }
+
+    /// True once the generation space ran out and corrections can no
+    /// longer be distinguished. The session must be torn down rather
+    /// than trusted.
+    pub fn is_generation_exhausted(&self) -> bool { self.generation_exhausted }
+
+    /// The typed view of this counter (`APEX-T3.6`).
+    pub fn generation_v1(&self) -> crate::apex::physics_generation::PhysicsGenerationV1 {
+        crate::apex::physics_generation::PhysicsGenerationV1::from_legacy_counter_v1(self.counter)
     }
 
     pub fn clear(&mut self) { self.flag = false; }
@@ -259,4 +288,33 @@ impl ForceUpdate {
 
 impl Component for ForceUpdate {
     type Storage = VecStorage<Self>;
+}
+
+#[cfg(test)]
+mod force_update_generation_v1 {
+    use super::*;
+
+    /// `APEX-T3.6` step 4: the counter that gates client physics reports
+    /// advances CHECKED. The wrapping version this replaces would have
+    /// made the generation after `u64::MAX` compare equal to a fresh
+    /// one, so a corrected-away prediction could replay.
+    #[test]
+    fn the_correction_generation_never_wraps() {
+        let mut force = ForceUpdate::forced();
+        assert_eq!(force.counter(), 0);
+        assert!(!force.is_generation_exhausted());
+
+        force.update();
+        assert_eq!(force.counter(), 1);
+        assert_eq!(force.generation_v1().as_legacy_counter_v1(), 1);
+        assert!(force.is_forced());
+
+        // at the ceiling the flag still sets, the generation holds, and
+        // the exhaustion is visible instead of silent
+        let mut ceiling = ForceUpdate { flag: false, counter: u64::MAX, generation_exhausted: false };
+        ceiling.update();
+        assert!(ceiling.is_forced(), "the client is still being corrected");
+        assert_eq!(ceiling.counter(), u64::MAX, "the generation must not wrap to 0");
+        assert!(ceiling.is_generation_exhausted());
+    }
 }
