@@ -12,6 +12,7 @@
 // warnings that would otherwise train the eye to ignore this file.
 #[cfg(test)]
 pub mod numeric_probe;
+pub mod numeric_profile;
 pub mod numeric_surface;
 pub mod physics_generation;
 pub mod boundary;

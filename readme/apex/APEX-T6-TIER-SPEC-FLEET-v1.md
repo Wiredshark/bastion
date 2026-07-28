@@ -343,6 +343,43 @@ former and equality-critical for the numeric protocol.
 a different profile; `target-cpu=native` is rejected at build; the golden
 vectors fail on a deliberately perturbed kernel.
 
+**BUILT — `common/src/apex/numeric_profile.rs`, 10 tests plus a
+`compile_fail` doctest.** All three required tests, built to be
+attributable:
+
+- **One-field difference is checked field by field**, all twelve, so a
+  field recorded in the struct but accidentally left out of the identity
+  is caught rather than assumed present. Field values are
+  length-prefixed, so moving a character across a field boundary cannot
+  produce the same identity — without that, two genuinely different
+  toolchains could share a profile.
+- **`target-cpu=native` is rejected in four spellings**, and the same
+  predicate scans the repository's real `.cargo/config.toml`. One
+  predicate, two callers, so the prohibition and the profile check cannot
+  drift apart.
+- **The perturbed-kernel test asserts the vectors pass on the REAL kernel
+  first**, so the failure is attributable to the one-ulp perturbation
+  rather than to the vectors being wrong. It uses `sqrt` as its vector
+  source precisely because `T6.1` established that `sqrt` is
+  correctly-rounded and therefore identical across conforming targets.
+- **An empty vector set is `NoVectors`, not `AllVectorsMatch`.** A run
+  over nothing matching everything is the shape of a broken harness, and
+  the passing verdict would be a lie in its most convincing form.
+
+**The two properties are two types.**
+`ArtifactReproducibilityV1` (same inputs → same binary) and
+`ExecutionVectorEqualityV1` (different binaries → same numeric results)
+have no conversion between them, pinned by a `compile_fail` doctest. The
+row warns that conflating them certifies the wrong one; making the
+conflation not compile is cheaper than remembering.
+
+**The honest part survived into the implementation.** Nothing claims
+stable Rust's flags enforce strict floating semantics.
+`TOOLCHAIN_DOES_NOT_PROMISE` records three specific non-promises,
+including that LLVM may contract a multiply-add into an FMA where the
+target allows it. The vectors are the authority; the tuple is what
+explains a disagreement.
+
 ---
 
 ## T6.5 — Selective deterministic transcendental kernels

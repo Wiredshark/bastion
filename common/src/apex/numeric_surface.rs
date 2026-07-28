@@ -61,6 +61,7 @@ pub(crate) enum NumericRoleV1 {
 /// Every file in the authoritative crates touching a root, power or
 /// trigonometric operation, with what it is and why.
 pub(crate) const NUMERIC_SURFACE_ROLES: &[(&str, NumericRoleV1, &str)] = &[
+    ("common/src/apex/numeric_profile.rs", NumericRoleV1::PresentationOrTooling, "T6.4 evidence tooling; its only root operation is the sqrt inside #[cfg(test)] golden vectors, which never runs in a simulation build and computes no simulation state"),
     ("common/src/combat.rs", NumericRoleV1::Authoritative, "damage/knockback scaling reaches health and physics"),
     ("common/src/comp/ability.rs", NumericRoleV1::Authoritative, "ability scaling feeds combat"),
     ("common/src/comp/buff.rs", NumericRoleV1::Authoritative, "buff strength curve (powf) feeds combat and movement"),
