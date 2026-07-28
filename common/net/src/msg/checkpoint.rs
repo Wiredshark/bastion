@@ -1184,3 +1184,421 @@ mod checkpoint_resource_v1 {
         ));
     }
 }
+
+/// `APEX-T3.4.12` — receive-side aligner. A checkpoint's records are
+/// STAGED, never applied, until every required stream is fenced; then
+/// the whole set applies in canonical phase/ordinal order. Every root is
+/// recomputed from the bytes that actually arrived and compared against
+/// the descriptor — the descriptor is checked, never trusted.
+#[derive(Debug, Clone)]
+pub struct StagedRecordV1 {
+    pub ordinal: CheckpointOrdinalV1,
+    pub stream: SemanticStreamIdV1,
+    pub sequence: u64,
+    pub phase: CheckpointApplyPhaseV1,
+    pub payload: std::sync::Arc<ServerGeneral>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlignErrorV1 {
+    Segment(StreamSegmentErrorV1),
+    Context(CheckpointContextErrorV1),
+    Descriptor(CheckpointDescriptorErrorV1),
+    Order(CheckpointOrderErrorV1),
+    Chronology(CheckpointChronologyErrorV1),
+    NotCheckpointedData,
+    MissingApplyPhase,
+    DuplicateOrdinal,
+    OrdinalOutOfRange,
+    UnknownStream,
+    Incomplete,
+    RecordCountMismatch,
+    StreamRootMismatch,
+    GlobalRootMismatch,
+    AlreadyApplied,
+}
+
+#[derive(Debug, Clone)]
+pub struct CheckpointAlignerV1 {
+    descriptor: CheckpointDescriptorV1,
+    descriptor_root: [u8; 32],
+    segmenters: [StreamSegmenterV1; 5],
+    entries: [Vec<TranscriptEntryV1>; 5],
+    staged: std::collections::BTreeMap<u64, StagedRecordV1>,
+    taken: bool,
+}
+
+fn required_stream_slot_v1(stream: SemanticStreamIdV1) -> Option<usize> {
+    REQUIRED_CHECKPOINT_STREAMS_V1.iter().position(|s| *s == stream)
+}
+
+/// The receive-side twin of the planner's digest: same profile root,
+/// same schema, same encoding, over the bytes as received.
+fn received_payload_digest_v1(payload: &ServerGeneral) -> (u16, u64, [u8; 32]) {
+    use super::envelope::{
+        SemanticPayloadEncodingV1, SemanticRouteV1, encode_payload_v1, net_envelope_profile_root_v1,
+        payload_digest_v1,
+    };
+    let bytes = encode_payload_v1(payload);
+    let digest = payload_digest_v1(
+        net_envelope_profile_root_v1(),
+        payload.payload_schema(),
+        SemanticPayloadEncodingV1::Bincode2LegacySerde,
+        &bytes,
+    );
+    (payload.payload_schema().as_u16(), bytes.len() as u64, *digest.as_array())
+}
+
+impl CheckpointAlignerV1 {
+    /// The descriptor's own root is recomputed here: an aligner cannot be
+    /// opened against a root the descriptor does not actually produce.
+    pub fn open_v1(descriptor: CheckpointDescriptorV1, claimed_root: [u8; 32]) -> Result<Self, AlignErrorV1> {
+        descriptor.validate_v1().map_err(AlignErrorV1::Descriptor)?;
+        let descriptor_root = descriptor.descriptor_root_v1().map_err(AlignErrorV1::Descriptor)?;
+        if descriptor_root != claimed_root {
+            return Err(AlignErrorV1::Descriptor(CheckpointDescriptorErrorV1::GlobalRootMismatch));
+        }
+        let epoch = descriptor.epoch;
+        Ok(Self {
+            segmenters: REQUIRED_CHECKPOINT_STREAMS_V1.map(|s| StreamSegmenterV1::new(epoch, s, descriptor_root)),
+            entries: Default::default(),
+            staged: std::collections::BTreeMap::new(),
+            taken: false,
+            descriptor,
+            descriptor_root,
+        })
+    }
+
+    pub fn descriptor_root(&self) -> [u8; 32] { self.descriptor_root }
+
+    /// True once every required stream is fenced. Nothing may be applied
+    /// before this — that is the cross-stream watermark.
+    pub fn is_complete(&self) -> bool { self.segmenters.iter().all(|s| s.is_sealed()) }
+
+    pub fn staged_len(&self) -> usize { self.staged.len() }
+
+    pub fn accept_begin_v1(&mut self, begin: &CheckpointBeginV1) -> Result<(), AlignErrorV1> {
+        let slot = required_stream_slot_v1(begin.stream).ok_or(AlignErrorV1::UnknownStream)?;
+        self.segmenters[slot].accept_v1(&StreamSegmentEventV1::Begin(begin.clone())).map_err(AlignErrorV1::Segment)
+    }
+
+    pub fn accept_data_v1(
+        &mut self,
+        stream: SemanticStreamIdV1,
+        sequence: u64,
+        context: &CheckpointedEnvelopeContextV1,
+        payload: std::sync::Arc<ServerGeneral>,
+    ) -> Result<(), AlignErrorV1> {
+        let slot = required_stream_slot_v1(stream).ok_or(AlignErrorV1::UnknownStream)?;
+        let participation = payload.participation_v1();
+        if participation != CheckpointParticipationV1::CheckpointedData {
+            return Err(AlignErrorV1::NotCheckpointedData);
+        }
+        validate_checkpoint_context_v1(participation, Some(context), self.descriptor.epoch, self.descriptor_root)
+            .map_err(AlignErrorV1::Context)?;
+        let phase = payload.apply_phase_v1().ok_or(AlignErrorV1::MissingApplyPhase)?;
+        let ordinal = context.ordinal.ok_or(AlignErrorV1::Context(CheckpointContextErrorV1::MissingOrdinal))?;
+        if ordinal.0 == 0 || ordinal.0 > self.descriptor.ordinal_max {
+            return Err(AlignErrorV1::OrdinalOutOfRange);
+        }
+        if self.staged.contains_key(&ordinal.0) {
+            return Err(AlignErrorV1::DuplicateOrdinal);
+        }
+
+        let (kind, bytes, digest) = received_payload_digest_v1(&payload);
+        self.segmenters[slot]
+            .accept_v1(&StreamSegmentEventV1::Data { sequence, ordinal, payload_bytes: bytes })
+            .map_err(AlignErrorV1::Segment)?;
+        self.entries[slot].push(TranscriptEntryV1 { sequence, ordinal, payload_kind: kind, payload_digest: digest });
+        self.staged.insert(ordinal.0, StagedRecordV1 { ordinal, stream, sequence, phase, payload });
+        Ok(())
+    }
+
+    /// Sealing a stream also proves its transcript: the root is recomputed
+    /// from what arrived and must match BOTH the barrier's claim and the
+    /// descriptor's plan for that stream.
+    pub fn accept_barrier_v1(&mut self, barrier: &CheckpointBarrierV1) -> Result<(), AlignErrorV1> {
+        let slot = required_stream_slot_v1(barrier.stream).ok_or(AlignErrorV1::UnknownStream)?;
+        self.segmenters[slot]
+            .accept_v1(&StreamSegmentEventV1::Barrier(barrier.clone()))
+            .map_err(AlignErrorV1::Segment)?;
+        let observed = stream_transcript_root_v1(
+            &self.descriptor.binding,
+            self.descriptor.epoch,
+            barrier.stream,
+            &self.entries[slot],
+        )
+        .map_err(AlignErrorV1::Descriptor)?;
+        if observed != barrier.stream_transcript_root || observed != self.descriptor.streams[slot].stream_transcript_root {
+            return Err(AlignErrorV1::StreamRootMismatch);
+        }
+        Ok(())
+    }
+
+    /// The apply set, in canonical phase-major/ordinal-minor order.
+    /// Fails closed while incomplete, and can only be taken once.
+    pub fn take_apply_sequence_v1(&mut self) -> Result<Vec<StagedRecordV1>, AlignErrorV1> {
+        if self.taken {
+            return Err(AlignErrorV1::AlreadyApplied);
+        }
+        if !self.is_complete() {
+            return Err(AlignErrorV1::Incomplete);
+        }
+        if self.staged.len() as u32 != self.descriptor.data_record_count {
+            return Err(AlignErrorV1::RecordCountMismatch);
+        }
+        let ordinals: Vec<CheckpointOrdinalV1> = self.staged.keys().map(|o| CheckpointOrdinalV1(*o)).collect();
+        validate_ordinals_v1(&ordinals).map_err(AlignErrorV1::Chronology)?;
+
+        let all: Vec<TranscriptEntryV1> = self.entries.iter().flatten().cloned().collect();
+        let observed = global_transcript_root_v1(&self.descriptor.binding, self.descriptor.epoch, &all)
+            .map_err(AlignErrorV1::Descriptor)?;
+        if observed != self.descriptor.global_transcript_root {
+            return Err(AlignErrorV1::GlobalRootMismatch);
+        }
+
+        let mut out: Vec<StagedRecordV1> = self.staged.values().cloned().collect();
+        out.sort_by_key(|r| (r.phase.rank(), r.ordinal.0));
+        let order: Vec<(CheckpointOrdinalV1, CheckpointApplyPhaseV1)> = out.iter().map(|r| (r.ordinal, r.phase)).collect();
+        validate_apply_order_v1(&order).map_err(AlignErrorV1::Order)?;
+        self.taken = true;
+        Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod checkpoint_aligner_v1 {
+    use super::*;
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+    use std::sync::Arc;
+
+    const EPOCH: u64 = 9;
+
+    fn binding() -> super::super::envelope::ActiveSessionBindingV1 {
+        super::super::envelope::ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([2; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        }
+    }
+
+    /// (stream, ordinal, payload), the checkpoint the server planned.
+    fn planned() -> Vec<(SemanticStreamIdV1, u64, Arc<ServerGeneral>)> {
+        vec![
+            (SemanticStreamIdV1::InGame, 1, Arc::new(ServerGeneral::CharacterSuccess)),
+            (SemanticStreamIdV1::InGame, 2, Arc::new(ServerGeneral::UpdateRecipes)),
+            (SemanticStreamIdV1::Terrain, 3, Arc::new(ServerGeneral::ExitInGameSuccess)),
+        ]
+    }
+
+    fn entries_of(records: &[(SemanticStreamIdV1, u64, Arc<ServerGeneral>)]) -> [Vec<TranscriptEntryV1>; 5] {
+        let mut out: [Vec<TranscriptEntryV1>; 5] = Default::default();
+        for (slot, stream) in REQUIRED_CHECKPOINT_STREAMS_V1.into_iter().enumerate() {
+            let mut sequence = 1u64;
+            for (_, ordinal, payload) in records.iter().filter(|(s, _, _)| *s == stream) {
+                sequence += 1;
+                let (kind, _, digest) = received_payload_digest_v1(payload);
+                out[slot].push(TranscriptEntryV1 {
+                    sequence,
+                    ordinal: CheckpointOrdinalV1(*ordinal),
+                    payload_kind: kind,
+                    payload_digest: digest,
+                });
+            }
+        }
+        out
+    }
+
+    fn bytes_of(records: &[(SemanticStreamIdV1, u64, Arc<ServerGeneral>)], stream: SemanticStreamIdV1) -> u64 {
+        records
+            .iter()
+            .filter(|(s, _, _)| *s == stream)
+            .map(|(_, _, p)| received_payload_digest_v1(p).1)
+            .sum()
+    }
+
+    fn descriptor_of(records: &[(SemanticStreamIdV1, u64, Arc<ServerGeneral>)]) -> CheckpointDescriptorV1 {
+        let b = binding();
+        let entries = entries_of(records);
+        let streams: Vec<StreamCheckpointPlanV1> = REQUIRED_CHECKPOINT_STREAMS_V1
+            .into_iter()
+            .enumerate()
+            .map(|(slot, stream)| {
+                let n = entries[slot].len() as u32;
+                StreamCheckpointPlanV1 {
+                    stream,
+                    begin_sequence: 1,
+                    first_data_sequence: (n > 0).then_some(2),
+                    last_data_sequence: (n > 0).then_some(1 + n as u64),
+                    barrier_sequence: 2 + n as u64,
+                    data_record_count: n,
+                    payload_bytes: bytes_of(records, stream),
+                    stream_transcript_root: stream_transcript_root_v1(&b, EPOCH, stream, &entries[slot]).unwrap(),
+                }
+            })
+            .collect();
+        let all: Vec<TranscriptEntryV1> = entries.iter().flatten().cloned().collect();
+        CheckpointDescriptorV1 {
+            schema_version: 1,
+            binding: b,
+            epoch: EPOCH,
+            parent_epoch: EPOCH - 1,
+            resource_profile_root: [1; 32],
+            apply_policy_root: [2; 32],
+            egress_order_policy_root: [3; 32],
+            data_record_count: records.len() as u32,
+            ordinal_max: records.len() as u64,
+            payload_bytes: REQUIRED_CHECKPOINT_STREAMS_V1.into_iter().map(|s| bytes_of(records, s)).sum(),
+            global_transcript_root: global_transcript_root_v1(&b, EPOCH, &all).unwrap(),
+            streams: streams.try_into().unwrap(),
+            bootstrap_manifest_root: None,
+        }
+    }
+
+    fn aligner(descriptor: &CheckpointDescriptorV1) -> CheckpointAlignerV1 {
+        let root = descriptor.descriptor_root_v1().unwrap();
+        CheckpointAlignerV1::open_v1(descriptor.clone(), root).unwrap()
+    }
+
+    fn begin(root: [u8; 32], stream: SemanticStreamIdV1) -> CheckpointBeginV1 {
+        CheckpointBeginV1 { epoch: EPOCH, stream, descriptor_root: root }
+    }
+
+    fn barrier(descriptor: &CheckpointDescriptorV1, slot: usize) -> CheckpointBarrierV1 {
+        let plan = &descriptor.streams[slot];
+        CheckpointBarrierV1 {
+            epoch: EPOCH,
+            stream: plan.stream,
+            descriptor_root: descriptor.descriptor_root_v1().unwrap(),
+            data_record_count: plan.data_record_count,
+            payload_bytes: plan.payload_bytes,
+            last_data_sequence: plan.last_data_sequence,
+            stream_transcript_root: plan.stream_transcript_root,
+        }
+    }
+
+    fn data_context(root: [u8; 32], ordinal: u64) -> CheckpointedEnvelopeContextV1 {
+        CheckpointedEnvelopeContextV1 { epoch: EPOCH, ordinal: Some(CheckpointOrdinalV1(ordinal)), descriptor_root: root }
+    }
+
+    fn feed_data(al: &mut CheckpointAlignerV1, root: [u8; 32], records: &[(SemanticStreamIdV1, u64, Arc<ServerGeneral>)]) {
+        for stream in REQUIRED_CHECKPOINT_STREAMS_V1 {
+            let mut sequence = 1u64;
+            for (_, ordinal, payload) in records.iter().filter(|(s, _, _)| *s == stream) {
+                sequence += 1;
+                al.accept_data_v1(stream, sequence, &data_context(root, *ordinal), Arc::clone(payload)).unwrap();
+            }
+        }
+    }
+
+    /// The cross-stream watermark itself: a complete-looking prefix must
+    /// still apply NOTHING until the last stream is fenced.
+    #[test]
+    fn nothing_applies_until_every_stream_is_fenced() {
+        let descriptor = descriptor_of(&planned());
+        let root = descriptor.descriptor_root_v1().unwrap();
+        let mut al = aligner(&descriptor);
+
+        for stream in REQUIRED_CHECKPOINT_STREAMS_V1 {
+            al.accept_begin_v1(&begin(root, stream)).unwrap();
+        }
+        feed_data(&mut al, root, &planned());
+        assert_eq!(al.staged_len(), 3);
+        assert!(!al.is_complete());
+        assert_eq!(al.take_apply_sequence_v1().unwrap_err(), AlignErrorV1::Incomplete);
+
+        for slot in 0..4 {
+            al.accept_barrier_v1(&barrier(&descriptor, slot)).unwrap();
+            assert!(!al.is_complete(), "four fenced streams are not a checkpoint");
+            assert_eq!(al.take_apply_sequence_v1().unwrap_err(), AlignErrorV1::Incomplete);
+        }
+        al.accept_barrier_v1(&barrier(&descriptor, 4)).unwrap();
+        assert!(al.is_complete());
+
+        // phase-major, ordinal-minor: CharacterState(4) before InGameState(5),
+        // and the two InGameState records keep ordinal order across streams.
+        let applied = al.take_apply_sequence_v1().unwrap();
+        let order: Vec<(u64, CheckpointApplyPhaseV1)> = applied.iter().map(|r| (r.ordinal.0, r.phase)).collect();
+        assert_eq!(
+            order,
+            vec![
+                (1, CheckpointApplyPhaseV1::CharacterState),
+                (2, CheckpointApplyPhaseV1::InGameState),
+                (3, CheckpointApplyPhaseV1::InGameState),
+            ]
+        );
+        // exactly once
+        assert_eq!(al.take_apply_sequence_v1().unwrap_err(), AlignErrorV1::AlreadyApplied);
+    }
+
+    /// Recompute-don't-trust: the aligner derives every root from the
+    /// payloads that actually arrived, so a substituted payload is caught
+    /// at its own stream's fence -- not carried on the descriptor's word.
+    #[test]
+    fn substituted_payload_fails_its_stream_fence() {
+        let descriptor = descriptor_of(&planned());
+        let root = descriptor.descriptor_root_v1().unwrap();
+        let mut al = aligner(&descriptor);
+        for stream in REQUIRED_CHECKPOINT_STREAMS_V1 {
+            al.accept_begin_v1(&begin(root, stream)).unwrap();
+        }
+
+        // ordinal 2 arrives as a DIFFERENT payload of the same phase and
+        // wire size class; every count the barrier declares still matches.
+        let swapped = vec![
+            (SemanticStreamIdV1::InGame, 1, Arc::new(ServerGeneral::CharacterSuccess)),
+            (SemanticStreamIdV1::InGame, 2, Arc::new(ServerGeneral::ExitInGameSuccess)),
+            (SemanticStreamIdV1::Terrain, 3, Arc::new(ServerGeneral::UpdateRecipes)),
+        ];
+        feed_data(&mut al, root, &swapped);
+        let in_game_slot = REQUIRED_CHECKPOINT_STREAMS_V1.iter().position(|s| *s == SemanticStreamIdV1::InGame).unwrap();
+        assert_eq!(
+            al.accept_barrier_v1(&barrier(&descriptor, in_game_slot)).unwrap_err(),
+            AlignErrorV1::StreamRootMismatch
+        );
+    }
+
+    #[test]
+    fn staging_rejects_are_typed() {
+        let descriptor = descriptor_of(&planned());
+        let root = descriptor.descriptor_root_v1().unwrap();
+        let mut al = aligner(&descriptor);
+        let ingame = SemanticStreamIdV1::InGame;
+
+        // data before its stream's Begin
+        assert_eq!(
+            al.accept_data_v1(ingame, 2, &data_context(root, 1), Arc::new(ServerGeneral::CharacterSuccess)).unwrap_err(),
+            AlignErrorV1::Segment(StreamSegmentErrorV1::DataBeforeBegin)
+        );
+        al.accept_begin_v1(&begin(root, ingame)).unwrap();
+        assert_eq!(
+            al.accept_begin_v1(&begin(root, ingame)).unwrap_err(),
+            AlignErrorV1::Segment(StreamSegmentErrorV1::DuplicateBegin)
+        );
+
+        // control payloads are not checkpoint data
+        assert_eq!(
+            al.accept_data_v1(ingame, 2, &data_context(root, 1), Arc::new(ServerGeneral::Disconnect(super::super::server::DisconnectReason::Shutdown))).unwrap_err(),
+            AlignErrorV1::NotCheckpointedData
+        );
+
+        al.accept_data_v1(ingame, 2, &data_context(root, 1), Arc::new(ServerGeneral::CharacterSuccess)).unwrap();
+        assert_eq!(
+            al.accept_data_v1(ingame, 3, &data_context(root, 1), Arc::new(ServerGeneral::UpdateRecipes)).unwrap_err(),
+            AlignErrorV1::DuplicateOrdinal
+        );
+        assert_eq!(
+            al.accept_data_v1(ingame, 3, &data_context(root, 99), Arc::new(ServerGeneral::UpdateRecipes)).unwrap_err(),
+            AlignErrorV1::OrdinalOutOfRange
+        );
+        // a context bound to another checkpoint
+        assert_eq!(
+            al.accept_data_v1(ingame, 3, &data_context([0xAA; 32], 2), Arc::new(ServerGeneral::UpdateRecipes)).unwrap_err(),
+            AlignErrorV1::Context(CheckpointContextErrorV1::RootMismatch)
+        );
+
+        // and an aligner cannot be opened against a root the descriptor
+        // does not produce
+        assert!(CheckpointAlignerV1::open_v1(descriptor.clone(), [0; 32]).is_err());
+    }
+}
