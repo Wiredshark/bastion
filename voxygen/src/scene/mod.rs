@@ -1059,6 +1059,64 @@ impl Scene {
                 (time_of_day, scene_data.state.get_time(), self.local_time)
             };
 
+        let camera_world_pos = cam_pos + focus_off;
+        let camera_block = scene_data
+            .state
+            .terrain()
+            .get(camera_world_pos.map(|e| e.floor() as i32))
+            .ok()
+            .filter(|block| !(block.is_filled() && client.is_moderator()))
+            .map(|block| block.kind())
+            .unwrap_or(BlockKind::Air);
+        let camera_is_underground = scene_data
+            .state
+            .terrain()
+            .get_key(scene_data.state.terrain().pos_key(camera_world_pos.as_()))
+            .is_some_and(|chunk| {
+                camera_world_pos.z < chunk.meta().alt() - terrain::UNDERGROUND_ALT
+            });
+        let fog_uniform = if crate::r1f_fog::certification_legacy_rollback_requested() {
+            crate::r1f_fog::FogUniformV1::legacy_disabled()
+        } else if let Some(environment) = crate::r1f_environment::latest_projection() {
+            let medium = if camera_block.is_liquid() {
+                crate::r1f_fog::ProductionMediumV1::Water
+            } else if camera_block.is_filled() {
+                crate::r1f_fog::ProductionMediumV1::Solid
+            } else {
+                crate::r1f_fog::ProductionMediumV1::Air
+            };
+            let camera_mode_tag = match self.camera.get_mode() {
+                CameraMode::FirstPerson => 0,
+                CameraMode::ThirdPerson => 1,
+                CameraMode::Freefly => 2,
+                CameraMode::Overseer => 3,
+            };
+            let low_quality = matches!(
+                settings.graphics.render_mode.cloud,
+                crate::render::CloudMode::None
+                    | crate::render::CloudMode::Minimal
+                    | crate::render::CloudMode::Low
+            );
+            match crate::r1f_fog::update(&environment, crate::r1f_fog::FogProductionInputV1 {
+                medium,
+                underground: camera_is_underground,
+                camera_mode_tag,
+                low_quality,
+            }) {
+                Ok((_, uniform)) => uniform,
+                Err(error) => {
+                    tracing::warn!(
+                        target: "bastion_r1f_fog",
+                        ?error,
+                        "coherent fog policy rejected; hiding the scene fail-closed"
+                    );
+                    crate::r1f_fog::FogUniformV1::fail_closed()
+                },
+            }
+        } else {
+            crate::r1f_fog::FogUniformV1::legacy_disabled()
+        };
+
         // Update global constants.
         renderer.update_consts(&mut self.data.globals, &[Globals::new(
             view_mat,
@@ -1076,15 +1134,7 @@ impl Scene {
             lights.len(),
             shadows.len(),
             NUM_DIRECTED_LIGHTS,
-            scene_data
-                .state
-                .terrain()
-                .get((cam_pos + focus_off).map(|e| e.floor() as i32))
-                .ok()
-                // Don't block the camera's view in solid blocks if the player is a moderator
-                .filter(|b| !(b.is_filled() && client.is_moderator()))
-                .map(|b| b.kind())
-                .unwrap_or(BlockKind::Air),
+            camera_block,
             self.select_pos.map(|e| e - focus_off.map(|e| e as i32)),
             scene_data.gamma,
             scene_data.exposure,
@@ -1099,6 +1149,7 @@ impl Scene {
             // everything else packs the "solid" (vanilla-look) uniform (built
             // above so this render call keeps a single clean borrow of self).
             bastion_occ,
+            fog_uniform,
         )]);
         renderer.update_clouds_locals(CloudsLocals::new(proj_mat_inv, view_mat_inv));
         renderer.update_postprocess_locals(PostProcessLocals::new(proj_mat_inv, view_mat_inv));

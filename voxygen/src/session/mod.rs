@@ -304,6 +304,7 @@ impl SessionState {
         crate::r1e_interiors::reset();
         crate::r1e_islands::reset();
         crate::r1f_environment::reset();
+        crate::r1f_fog::reset();
         crate::r1f_weather::reset();
         if let Err(error) = global_state.window.renderer_mut().reset_r1bc_figure_gpu() {
             tracing::warn!(
@@ -4743,6 +4744,7 @@ impl PlayState for SessionState {
 
             let r0d_capture_ready = crate::r1a_presentation::ready_for_capture_measurement()
                 && crate::r1f_weather::certification_fixture_ready_for_capture()
+                && crate::r1f_fog::certification_fixture_ready_for_capture()
                 && (!crate::render::bastion_r0d::capture_waits_for_pause_v1(
                     std::env::var_os("BASTION_FLAT_ARENA").is_some(),
                     crate::render::bastion_r0d::absolute_time_capture_selected(),

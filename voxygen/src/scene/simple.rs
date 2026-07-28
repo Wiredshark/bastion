@@ -291,6 +291,7 @@ impl Scene {
             1.0,
             // bastion: no occlusion outside the in-game overseer scene
             crate::bastion::occlusion::OcclusionUniform::solid(),
+            crate::r1f_fog::FogUniformV1::legacy_disabled(),
         )]);
         renderer.update_clouds_locals(CloudsLocals::new(proj_mat_inv, view_mat_inv));
         renderer.update_postprocess_locals(PostProcessLocals::new(proj_mat_inv, view_mat_inv));

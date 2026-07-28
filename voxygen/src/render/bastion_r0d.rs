@@ -797,6 +797,22 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r1f_environment_source_sha256"
         | "r1f_environment_projection_sha256"
         | "r1f_environment_availability_bits"
+        | "r1f_fog_enabled"
+        | "r1f_fog_presentation_generation"
+        | "r1f_fog_simulation_tick"
+        | "r1f_fog_environment_projection_sha256"
+        | "r1f_fog_camera_token_sha256"
+        | "r1f_fog_policy_sha256"
+        | "r1f_fog_mode"
+        | "r1f_fog_quality"
+        | "r1f_fog_near_blocks"
+        | "r1f_fog_far_blocks"
+        | "r1f_fog_color_r_milli"
+        | "r1f_fog_color_g_milli"
+        | "r1f_fog_color_b_milli"
+        | "r1f_fog_gameplay_terrain_visibility"
+        | "r1f_fog_gameplay_entity_visibility"
+        | "r1f_fog_shelter_authority_available"
         | "r1f_weather_presentation_generation"
         | "r1f_weather_simulation_tick"
         | "r1f_weather_environment_projection_sha256"
@@ -1146,6 +1162,7 @@ fn request_one_capture(
     let interiors = crate::r1e_interiors::latest_evidence();
     let islands = crate::r1e_islands::latest_evidence();
     let environment = crate::r1f_environment::latest_evidence();
+    let fog = crate::r1f_fog::latest_evidence();
     let weather = crate::r1f_weather::latest_evidence();
     renderer.create_screenshot(move |result| {
         match result {
@@ -1677,6 +1694,48 @@ fn request_one_capture(
                                 } else {
                                     metadata.push_str("r1f_environment_enabled=false\n");
                                 }
+                                if let Some(fog) = fog.filter(|fog| {
+                                    fog.presentation_generation
+                                        == context.presentation.client_applied_generation
+                                }) {
+                                    metadata.push_str(&format!(
+                                        concat!(
+                                            "r1f_fog_enabled=true\n",
+                                            "r1f_fog_presentation_generation={}\n",
+                                            "r1f_fog_simulation_tick={}\n",
+                                            "r1f_fog_environment_projection_sha256={}\n",
+                                            "r1f_fog_camera_token_sha256={}\n",
+                                            "r1f_fog_policy_sha256={}\n",
+                                            "r1f_fog_mode={}\n",
+                                            "r1f_fog_quality={}\n",
+                                            "r1f_fog_near_blocks={}\n",
+                                            "r1f_fog_far_blocks={}\n",
+                                            "r1f_fog_color_r_milli={}\n",
+                                            "r1f_fog_color_g_milli={}\n",
+                                            "r1f_fog_color_b_milli={}\n",
+                                            "r1f_fog_gameplay_terrain_visibility={}\n",
+                                            "r1f_fog_gameplay_entity_visibility={}\n",
+                                            "r1f_fog_shelter_authority_available={}\n",
+                                        ),
+                                        fog.presentation_generation,
+                                        fog.simulation_tick,
+                                        hex_digest(&fog.environment_projection_digest),
+                                        hex_digest(&fog.camera_token_digest),
+                                        hex_digest(&fog.policy_digest),
+                                        fog.mode as u8,
+                                        fog.quality as u8,
+                                        fog.near_blocks,
+                                        fog.far_blocks,
+                                        fog.color_milli[0],
+                                        fog.color_milli[1],
+                                        fog.color_milli[2],
+                                        fog.gameplay_terrain_visibility_blocks,
+                                        fog.gameplay_entity_visibility_blocks,
+                                        fog.shelter_authority_available,
+                                    ));
+                                } else {
+                                    metadata.push_str("r1f_fog_enabled=false\n");
+                                }
                                 if let Some(weather) = weather.filter(|weather| {
                                     weather.presentation_generation
                                         == context.presentation.client_applied_generation
@@ -2080,6 +2139,14 @@ mod tests {
         );
         assert_eq!(
             capture_metadata_field_class_v1("r1f_environment_availability_bits"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("r1f_fog_policy_sha256"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("r1f_fog_shelter_authority_available"),
             Some(CaptureMetadataFieldClassV1::Authority)
         );
         assert_eq!(
