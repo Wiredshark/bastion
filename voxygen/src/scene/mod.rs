@@ -135,6 +135,8 @@ pub struct Scene {
 
     integrated_rain_vel: f32,
     pub wind_vel: Vec2<f32>,
+    weather_presentation:
+        Option<std::sync::Arc<bastion_renderer_r0d::weather::WeatherPresentationV1>>,
     pub interpolated_time_of_day: Option<f64>,
     last_lightning: Option<(Vec3<f32>, f64)>,
     local_time: f64,
@@ -379,6 +381,7 @@ impl Scene {
             ambience_mgr: AmbienceMgr::new(ambience::load_ambience_items()),
             integrated_rain_vel: 0.0,
             wind_vel: Vec2::zero(),
+            weather_presentation: None,
             interpolated_time_of_day: None,
             last_lightning: None,
             local_time: 0.0,
@@ -587,6 +590,14 @@ impl Scene {
         let dt = ecs.fetch::<DeltaTime>().0;
 
         self.local_time += dt as f64 * ecs.fetch::<TimeScale>().0;
+        match crate::r1f_weather::refresh_from_environment() {
+            Ok(value) => self.weather_presentation = value,
+            Err(error) => tracing::warn!(
+                target: "bastion_r1f_weather",
+                ?error,
+                "coherent weather presentation refresh rejected; preserving prior accepted state"
+            ),
+        }
 
         let positions = ecs.read_storage::<comp::Pos>();
 
@@ -1114,6 +1125,7 @@ impl Scene {
             focus_pos,
             self.loaded_distance,
             &self.camera,
+            self.weather_presentation.as_deref(),
         );
 
         // Maintain the figures.
@@ -1403,16 +1415,39 @@ impl Scene {
             )
         };
 
-        let weather = client
+        let coherent_weather = self.weather_presentation.as_deref();
+        let legacy_weather = client
             .state()
             .max_weather_near(focus_off.xy() + cam_pos.xy());
-        self.wind_vel = weather.wind_vel();
-        if weather.rain > RAIN_THRESHOLD {
-            let weather = client.weather_at_player();
-            let rain_vel = weather.rain_vel();
+        self.wind_vel = coherent_weather.map_or_else(
+            || legacy_weather.wind_vel(),
+            |weather| {
+                let [x, y] = weather.wind_mm_s();
+                Vec2::new(x as f32 / 1_000.0, y as f32 / 1_000.0)
+            },
+        );
+        let coherent_raining = coherent_weather.is_some_and(|weather| weather.is_raining());
+        if coherent_raining || (coherent_weather.is_none() && legacy_weather.rain > RAIN_THRESHOLD)
+        {
+            let (rain_vel, rain_density) = coherent_weather.map_or_else(
+                || {
+                    let weather = client.weather_at_player();
+                    (weather.rain_vel(), weather.rain)
+                },
+                |weather| {
+                    let [x, y] = weather.wind_mm_s();
+                    (
+                        Vec3::new(x as f32 / 1_000.0, y as f32 / 1_000.0, -30.0),
+                        f32::from(weather.rain_milli()) / 1_000.0,
+                    )
+                },
+            );
             let rain_view_mat = math::Mat4::look_at_rh(look_at, look_at + rain_vel, up);
 
-            self.integrated_rain_vel += rain_vel.magnitude() * dt;
+            self.integrated_rain_vel = coherent_weather.map_or_else(
+                || self.integrated_rain_vel + rain_vel.magnitude() * dt,
+                |weather| weather.phase_milli() as f32 / 1_000.0,
+            );
             let rain_dir_mat = Mat4::rotation_from_to_3d(-Vec3::unit_z(), rain_vel);
 
             let (shadow_mat, texture_mat) =
@@ -1422,7 +1457,7 @@ impl Scene {
                 shadow_mat,
                 texture_mat,
                 rain_dir_mat,
-                weather.rain,
+                rain_density,
                 self.integrated_rain_vel,
             );
 
@@ -1554,7 +1589,10 @@ impl Scene {
         let is_daylight = sun_dir.z < 0.0;
         let focus_pos = self.camera.get_focus_pos();
         let cam_pos = self.camera.dependents().cam_pos + focus_pos.map(|e| e.trunc());
-        let is_rain = state.max_weather_near(cam_pos.xy()).rain > RAIN_THRESHOLD;
+        let is_rain = self.weather_presentation.as_deref().map_or_else(
+            || state.max_weather_near(cam_pos.xy()).rain > RAIN_THRESHOLD,
+            bastion_renderer_r0d::weather::WeatherPresentationV1::is_raining,
+        );
         let culling_mode = if scene_data
             .state
             .terrain()

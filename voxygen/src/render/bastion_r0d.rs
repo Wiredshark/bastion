@@ -797,14 +797,25 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r1f_environment_source_sha256"
         | "r1f_environment_projection_sha256"
         | "r1f_environment_availability_bits"
+        | "r1f_weather_presentation_generation"
+        | "r1f_weather_simulation_tick"
+        | "r1f_weather_environment_projection_sha256"
+        | "r1f_weather_environment_source_sha256"
+        | "r1f_weather_kind"
+        | "r1f_weather_rain_milli"
+        | "r1f_weather_wind_x_mm_s"
+        | "r1f_weather_wind_y_mm_s"
+        | "r1f_weather_phase_milli"
+        | "r1f_weather_effect_record_count"
+        | "r1f_weather_effect_instance_count"
+        | "r1f_weather_presentation_sha256"
         | "anchor_uid"
         | "anchor_selected_non_client_colonist"
         | "ordinal" => Some(CaptureMetadataFieldClassV1::Authority),
         "diagnostic_client_tick"
         | "diagnostic_interpolated_time_bits"
-        | "r1f_environment_client_interpolation_diagnostic" => {
-            Some(CaptureMetadataFieldClassV1::Diagnostic)
-        },
+        | "r1f_environment_client_interpolation_diagnostic"
+        | "r1f_weather_legacy_rollback" => Some(CaptureMetadataFieldClassV1::Diagnostic),
         "anchor_category"
         | "anchor_body"
         | "pass_tape"
@@ -1128,6 +1139,7 @@ fn request_one_capture(
     let interiors = crate::r1e_interiors::latest_evidence();
     let islands = crate::r1e_islands::latest_evidence();
     let environment = crate::r1f_environment::latest_evidence();
+    let weather = crate::r1f_weather::latest_evidence();
     renderer.create_screenshot(move |result| {
         match result {
             Ok(image) => {
@@ -1657,6 +1669,44 @@ fn request_one_capture(
                                     ));
                                 } else {
                                     metadata.push_str("r1f_environment_enabled=false\n");
+                                }
+                                if let Some(weather) = weather.filter(|weather| {
+                                    weather.presentation_generation
+                                        == context.presentation.client_applied_generation
+                                }) {
+                                    metadata.push_str(&format!(
+                                        concat!(
+                                            "r1f_weather_enabled=true\n",
+                                            "r1f_weather_presentation_generation={}\n",
+                                            "r1f_weather_simulation_tick={}\n",
+                                            "r1f_weather_environment_projection_sha256={}\n",
+                                            "r1f_weather_environment_source_sha256={}\n",
+                                            "r1f_weather_kind={}\n",
+                                            "r1f_weather_rain_milli={}\n",
+                                            "r1f_weather_wind_x_mm_s={}\n",
+                                            "r1f_weather_wind_y_mm_s={}\n",
+                                            "r1f_weather_phase_milli={}\n",
+                                            "r1f_weather_effect_record_count={}\n",
+                                            "r1f_weather_effect_instance_count={}\n",
+                                            "r1f_weather_presentation_sha256={}\n",
+                                            "r1f_weather_legacy_rollback={}\n",
+                                        ),
+                                        weather.presentation_generation,
+                                        weather.simulation_tick,
+                                        hex_digest(&weather.environment_projection_digest),
+                                        hex_digest(&weather.environment_source_identity),
+                                        weather.weather_tag,
+                                        weather.rain_milli,
+                                        weather.wind_mm_s[0],
+                                        weather.wind_mm_s[1],
+                                        weather.phase_milli,
+                                        weather.effect_record_count,
+                                        weather.effect_instance_count,
+                                        hex_digest(&weather.presentation_digest),
+                                        weather.legacy_rollback,
+                                    ));
+                                } else {
+                                    metadata.push_str("r1f_weather_enabled=false\n");
                                 }
                                 write_atomic(&metadata_path, metadata.as_bytes())
                             });

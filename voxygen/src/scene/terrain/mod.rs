@@ -835,6 +835,7 @@ impl<V: RectRasterableVol> Terrain<V> {
         focus_pos: Vec3<f32>,
         loaded_distance: f32,
         camera: &Camera,
+        weather_presentation: Option<&bastion_renderer_r0d::weather::WeatherPresentationV1>,
     ) -> (
         Aabb<f32>,
         Vec<math::Vec3<f32>>,
@@ -1439,7 +1440,11 @@ impl<V: RectRasterableVol> Terrain<V> {
         let max_weather = scene_data
             .state
             .max_weather_near(focus_off.xy() + cam_pos.xy());
-        let (visible_occlusion_volume, visible_por_bounds) = if max_weather.rain > RAIN_THRESHOLD {
+        let is_raining = weather_presentation.map_or(
+            max_weather.rain > RAIN_THRESHOLD,
+            bastion_renderer_r0d::weather::WeatherPresentationV1::is_raining,
+        );
+        let (visible_occlusion_volume, visible_por_bounds) = if is_raining {
             let visible_bounding_box = math::Aabb::<f32> {
                 min: (visible_bounding_box.min - focus_off),
                 max: (visible_bounding_box.max - focus_off),
@@ -1448,8 +1453,19 @@ impl<V: RectRasterableVol> Terrain<V> {
                 min: visible_bounding_box.min.as_::<f64>(),
                 max: visible_bounding_box.max.as_::<f64>(),
             };
-            let weather = scene_data.client.weather_at_player();
-            let ray_direction = weather.rain_vel().normalized();
+            let ray_direction = weather_presentation.map_or_else(
+                || {
+                    scene_data
+                        .client
+                        .weather_at_player()
+                        .rain_vel()
+                        .normalized()
+                },
+                |weather| {
+                    let [x, y] = weather.wind_mm_s();
+                    Vec3::new(x as f32 / 1_000.0, y as f32 / 1_000.0, -30.0).normalized()
+                },
+            );
 
             // NOTE: We use proj_mat_treeculler here because
             // calc_focused_light_volume_points makes the assumption that the
