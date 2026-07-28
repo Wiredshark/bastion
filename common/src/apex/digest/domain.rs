@@ -52,6 +52,8 @@ pub enum DigestDomainIdV1 {
     CheckpointStreamTranscript = 40,
     CheckpointGlobalTranscript = 41,
     CheckpointDescriptor = 42,
+    /// `APEX-T3.5`: identity of one idempotent command.
+    CommandDescriptor = 43,
     // IDs 9 (SubsystemDescriptor) and 10 (CompatibilityProfile) are ALLOCATED
     // to APEX-T0.5's in-flight build (row-order allocation rule, Fable-blessed;
     // collision with SourceClosure caught + resolved at spec stage). Sonnet 5's
@@ -111,6 +113,7 @@ impl DigestDomainIdV1 {
             Self::CheckpointStreamTranscript => "bastion/checkpoint-stream/v1",
             Self::CheckpointGlobalTranscript => "bastion/checkpoint-global/v1",
             Self::CheckpointDescriptor => "bastion/checkpoint-descriptor/v1",
+            Self::CommandDescriptor => "bastion/command-descriptor/v1",
             Self::SourceClosure => "bastion/source-closure/v1",
             Self::LocalReproSmoke => "bastion/build/local-repro-smoke/v1",
             Self::FreshBuilderProfile => "bastion/fresh-builder-profile/v1",
@@ -123,7 +126,7 @@ impl DigestDomainIdV1 {
         }
     }
 
-    pub const ALL: [DigestDomainIdV1; 23] = [
+    pub const ALL: [DigestDomainIdV1; 24] = [
         Self::BootstrapManifest,
         Self::SaveUniverseManifest,
         Self::PluginActivationPlan,
@@ -147,6 +150,7 @@ impl DigestDomainIdV1 {
         Self::CheckpointStreamTranscript,
         Self::CheckpointGlobalTranscript,
         Self::CheckpointDescriptor,
+        Self::CommandDescriptor,
     ];
 }
 
@@ -218,5 +222,7 @@ mod tests {
         assert_eq!(DigestDomainIdV1::CheckpointGlobalTranscript.label(), "bastion/checkpoint-global/v1");
         assert_eq!(DigestDomainIdV1::CheckpointDescriptor.as_u16(), 42);
         assert_eq!(DigestDomainIdV1::CheckpointDescriptor.label(), "bastion/checkpoint-descriptor/v1");
+        assert_eq!(DigestDomainIdV1::CommandDescriptor.as_u16(), 43);
+        assert_eq!(DigestDomainIdV1::CommandDescriptor.label(), "bastion/command-descriptor/v1");
     }
 }
