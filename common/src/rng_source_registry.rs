@@ -69,6 +69,14 @@ pub const AMBIENT_ENTROPY_SITES: &[(&str, usize, RandomDrawClassV1, &str)] = &[
          being unguessable is the requirement, not sim-reproducibility",
     ),
     (
+        "common/src/apex/reconciliation_metric.rs",
+        1,
+        RandomDrawClassV1::NonAuthoritativeEntropy,
+        "T7.3c-i's #[cfg(test)] baseline() fixture helper only -- humanoid::Body::random_with \
+         for a throwaway comparison-test body, never reached by any authoritative/live path; \
+         same shape as loadout_builder.rs/cmd.rs/lottery.rs's #[cfg(test)]-only sites above",
+    ),
+    (
         "common/src/comp/body/ship.rs",
         2,
         RandomDrawClassV1::NonAuthoritativeEntropy,
