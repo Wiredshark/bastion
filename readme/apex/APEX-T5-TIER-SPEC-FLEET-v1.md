@@ -244,6 +244,38 @@ acceptance criterion stated as a test. Also: a dropped snapshot produces
 the fallback, not an interpolation; presentation wind may differ between
 two clients while prediction wind may not.
 
+**BUILT (types + store + laws) — `common/src/apex/weather_snapshot.rs`,
+9 tests plus a `compile_fail` doctest.** All three required tests, plus
+five the build showed were needed.
+
+- **The split is enforced by the type system, not by a rule.** There is
+  no `From`, no comparison and no accessor turning
+  `PresentationWindV1` into `PredictionWindV1`. A `compile_fail` doctest
+  pins the *absence* of that conversion, because a missing `impl` is
+  exactly the kind of guarantee a well-meaning patch adds back. Verified
+  by adding the `From` impl: the doctest goes red, so it is testing the
+  conversion's absence and not failing for an unrelated reason.
+- **`wind_at_v1` takes no time argument at all.** The acceptance
+  criterion is expressed as a signature — a function that cannot see the
+  clock cannot depend on it.
+- **The receipt-delay test asserts its own non-vacuity.** It checks the
+  modelled jitter actually *does* move presentation wind, so it cannot
+  pass by the jitter having had no effect.
+- **The dropped-snapshot test evicts a snapshot whose neighbours are both
+  present** — precisely the case where an interpolating implementation
+  would invent a value.
+- **Eviction is by lowest id, not by access**, and arrival order does not
+  change what is retained. Retention that depended on access timing would
+  be the same class of wall-clock dependency one level up.
+
+**NOT built: the live client reroute.** It needs the snapshot id to
+travel on the wire, which is `T5.2`'s environment reference plus a
+wire-version bump that batches at the tier boundary. The leak is recorded
+at its two live sites in `WEATHER_PREDICTION_LEAKS`, and
+`SNAPSHOT_ID_TRAVELS_ON_THE_WIRE = false` is a value rather than a
+comment so `T5.2` cannot assume this row already moved the client. The
+glider still predicts off receipt-time wind today.
+
 ---
 
 ## Cross-tier notes

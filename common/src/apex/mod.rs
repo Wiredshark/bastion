@@ -21,6 +21,7 @@ pub mod manifest;
 pub mod scalar;
 pub mod subsystem;
 pub mod source_closure;
+pub mod weather_snapshot;
 
 pub use boundary::AuthoritativeBoundaryKindV1;
 pub use scalar::{
