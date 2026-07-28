@@ -13,9 +13,10 @@
 //!   than papered over. The count is pinned below, so a new OPEN cannot
 //!   be added quietly and closing one is a visible edit.
 //!
-//! The OPEN set is concentrated in three places, all of them real: ECS
-//! referential preflight (116/117/127), the commit-vs-tick ordering pin
-//! (121/123/124/130), and session control (036/162-171/173-176).
+//! The OPEN set is now the commit-vs-tick ordering pin (121/123/124/130)
+//! and the resync row (036). ECS referential preflight (116/117/127) was
+//! closed by `T3.4.26`, and session control (162-176) by `T3.6.01`/`.02`/
+//! `.03`.
 //!
 //! RE-PINNED TWICE. First after T3.5 closed (2026-07-28), when the count
 //! did NOT move; then again once `T3.6.01` actually built the frames,
@@ -44,7 +45,7 @@
 //! premise would be the wrong trade. The claim is a tripwire plus a
 //! written migration, not that the legacy source is gone.
 
-pub(crate) const OPEN_CASE_COUNT: usize = 8;
+pub(crate) const OPEN_CASE_COUNT: usize = 5;
 
 pub(crate) const CASE_COVERAGE: &[(&str, &str)] = &[
     ("CKPT-001", "veloren_server::net_checkpoint::checkpoint_planner_v1::a_plan_aligns_end_to_end_and_tampering_does_not"),
@@ -162,8 +163,8 @@ pub(crate) const CASE_COVERAGE: &[(&str, &str)] = &[
     ("CKPT-113", "veloren_client::tests::checkpoint_receive_v1::nothing_is_applied_until_the_last_barrier"),
     ("CKPT-114", "veloren_client::tests::checkpoint_receive_v1::nothing_is_applied_until_the_last_barrier"),
     ("CKPT-115", "veloren_common_net::msg::checkpoint::checkpoint_prepare_commit_v1::prepare_rejects_and_commit_applies_the_whole_set"),
-    ("CKPT-116", "OPEN: prepare validates the checkpoint's own structure, not ECS referential integrity -- a missing referenced Uid is not yet a prepare-time reject"),
-    ("CKPT-117", "OPEN: duplicate entity creation is not yet detected at prepare; it needs the ECS preflight CKPT-116 also names"),
+    ("CKPT-116", "veloren_common_net::msg::checkpoint::checkpoint_preflight_v1::a_missing_reference_is_refused_but_an_earlier_create_satisfies_one"),
+    ("CKPT-117", "veloren_common_net::msg::checkpoint::checkpoint_preflight_v1::a_duplicate_create_is_refused"),
     ("CKPT-118", "veloren_common_net::msg::checkpoint::checkpoint_profile_v1::participation_and_phases_are_total_and_ordered"),
     ("CKPT-119", "veloren_common_net::msg::checkpoint::checkpoint_egress_order_v1::duplicate_key_and_phase_regression_are_typed"),
     ("CKPT-120", "veloren_common_net::msg::checkpoint::checkpoint_profile_v1::participation_and_phases_are_total_and_ordered"),
@@ -173,7 +174,7 @@ pub(crate) const CASE_COVERAGE: &[(&str, &str)] = &[
     ("CKPT-124", "OPEN: the inverse of CKPT-123, same missing ordering pin"),
     ("CKPT-125", "structural: CheckpointApplySinkV1's methods return unit and commit_checkpoint_v1 returns no Result -- a recoverable failure after the first mutation is unrepresentable"),
     ("CKPT-126", "veloren_common_net::msg::checkpoint::checkpoint_prepare_commit_v1::prepare_rejects_and_commit_applies_the_whole_set"),
-    ("CKPT-127", "OPEN: nothing re-checks entity generations between prepare and commit; the window exists because dispatch happens after commit"),
+    ("CKPT-127", "veloren_common_net::msg::checkpoint::checkpoint_preflight_v1::a_generation_that_moves_between_prepare_and_commit_is_detectable"),
     ("CKPT-128", "structural: panic = \"abort\" in both the dev and release profiles (workspace Cargo.toml), so an allocation panic during commit aborts the process rather than continuing with a half-applied checkpoint"),
     ("CKPT-129", "veloren_client::tests::checkpoint_receive_v1::nothing_is_applied_until_the_last_barrier"),
     ("CKPT-130", "OPEN: no post-commit state root is computed or carried yet (bootstrap_manifest_root is always None), so there is nothing to compare"),

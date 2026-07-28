@@ -2174,3 +2174,324 @@ mod checkpoint_client_type_v1 {
         assert_eq!(streams_admissible_for_client_type_v1(ClientType::ChatOnly), [true, false, false, true, false]);
     }
 }
+
+/// `APEX-T3.4.26` — ECS referential preflight. `prepare` already refused
+/// everything structural about a checkpoint (`T3.4.15`); these are the
+/// three cases it could not see because they are about the WORLD the
+/// checkpoint lands in, not the checkpoint itself:
+///
+/// - a record references a `Uid` that neither exists nor is created
+///   earlier in the same checkpoint (`CKPT-116`)
+/// - two records create the same entity (`CKPT-117`)
+/// - an entity's generation moves between prepare and commit
+///   (`CKPT-127`)
+///
+/// The first two are recoverable and belong in prepare, which is the
+/// fallible half. The third cannot be: commit is infallible by
+/// construction, so a generation that moved under it is a broken
+/// invariant rather than a rejectable input — see `commit_checkpoint_v1`.
+///
+/// Prepare stays PURE. It reads the world through this view rather than
+/// touching an ECS, so it remains a function of its arguments.
+pub trait CheckpointEntityViewV1 {
+    /// Does this uid exist in the world the checkpoint will apply to?
+    fn contains_uid_v1(&self, uid: common::uid::Uid) -> bool;
+
+    /// The entity's generation, for the prepare/commit stability check.
+    /// `None` for a uid that does not exist.
+    fn generation_of_v1(&self, uid: common::uid::Uid) -> Option<u64>;
+}
+
+/// What one record does to the entity graph.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EntityRefsV1 {
+    pub creates: Vec<common::uid::Uid>,
+    pub deletes: Vec<common::uid::Uid>,
+    pub references: Vec<common::uid::Uid>,
+}
+
+/// Which entities a payload creates, deletes, or merely references.
+/// Exhaustive with no wildcard: a new `ServerGeneral` variant has to be
+/// classified, the same discipline `CheckpointParticipantV1` holds.
+pub trait CheckpointEntityRefsV1 {
+    fn entity_refs_v1(&self) -> EntityRefsV1;
+}
+
+impl CheckpointEntityRefsV1 for ServerGeneral {
+    fn entity_refs_v1(&self) -> EntityRefsV1 {
+        use ServerGeneral as S;
+        let mut refs = EntityRefsV1::default();
+        match self {
+            S::CreateEntity(package) => refs.creates.push(package.uid),
+            // A delete both references and removes: deleting an entity
+            // that will not exist is a dangling reference, which is
+            // CKPT-116's own class.
+            S::DeleteEntity(uid) => {
+                refs.references.push(*uid);
+                refs.deletes.push(*uid);
+            },
+            S::EntitySync(package) => {
+                refs.creates.extend(package.created_entities.iter().copied());
+                refs.references.extend(package.deleted_entities.iter().copied());
+                refs.deletes.extend(package.deleted_entities.iter().copied());
+            },
+            S::CompSync(package, _) => {
+                refs.references.extend(
+                    package.comp_updates.iter().map(|(raw, _)| common::uid::Uid(*raw)),
+                );
+            },
+            // Everything else carries no entity the preflight can check:
+            // either no entity at all, or an identifier the receiving
+            // client resolves for itself (group members, trade parties,
+            // chat authors). Classified deliberately rather than by a
+            // wildcard.
+            S::PlayerListUpdate(_)
+            | S::ChatMode(_)
+            | S::SetPlayerEntity(_)
+            | S::TimeOfDay(_, _, _, _)
+            | S::CharacterDataLoadResult(_)
+            | S::CharacterListUpdate(_)
+            | S::CharacterActionError(_)
+            | S::CharacterCreated(_)
+            | S::CharacterEdited(_)
+            | S::CharacterSuccess
+            | S::SpectatorSuccess(_)
+            | S::GroupUpdate(_)
+            | S::Invite { .. }
+            | S::InvitePending(_)
+            | S::InviteComplete { .. }
+            | S::ExitInGameSuccess
+            | S::InventoryUpdate(_, _)
+            | S::GroupInventoryUpdate(_, _)
+            | S::Dialogue(_, _)
+            | S::SetViewDistance(_)
+            | S::Outcomes(_)
+            | S::Knockback(_)
+            | S::SiteEconomy(_)
+            | S::UpdatePendingTrade(_, _, _)
+            | S::FinishedTrade(_)
+            | S::MapMarker(_)
+            | S::WeatherUpdate(_)
+            | S::LocalWindUpdate(_)
+            | S::SpectatePosition(_)
+            | S::UpdateRecipes
+            | S::Gizmos(_)
+            | S::TerrainChunkUpdate { .. }
+            | S::LodZoneUpdate { .. }
+            | S::TerrainBlockUpdates(_)
+            | S::ChatMsg(_)
+            | S::Notification(_)
+            | S::SetPlayerRole(_)
+            | S::PluginData(_)
+            | S::PluginArtifactData(_)
+            | S::BastionDesignation { .. }
+            | S::BastionDesignationRemoved { .. }
+            | S::BastionInspectInfo { .. }
+            | S::Disconnect(_)
+            | S::CheckpointBegin(_)
+            | S::CheckpointBarrier(_)
+            | S::CommandResult(_) => {},
+        }
+        refs
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreflightErrorV1 {
+    /// A record references a uid that will not exist when it applies.
+    MissingReference { uid: common::uid::Uid, ordinal: u64 },
+    /// Two records create the same entity.
+    DuplicateCreate { uid: common::uid::Uid, ordinal: u64 },
+}
+
+/// The generations observed at prepare, re-checked at commit.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ObservedGenerationsV1 {
+    entries: Vec<(common::uid::Uid, u64)>,
+}
+
+impl ObservedGenerationsV1 {
+    pub fn len(&self) -> usize { self.entries.len() }
+
+    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
+
+    /// True while every observed entity still carries the generation it
+    /// had at prepare.
+    pub fn still_valid_v1(&self, view: &impl CheckpointEntityViewV1) -> bool {
+        self.entries.iter().all(|(uid, generation)| view.generation_of_v1(*uid) == Some(*generation))
+    }
+}
+
+/// Runs the referential preflight over an ordered apply set. Pure: the
+/// world enters through `view`, and nothing here mutates.
+///
+/// A reference is satisfied by an entity that already exists OR by a
+/// create earlier in the same checkpoint — the checkpoint applies as a
+/// unit, so a create at ordinal 2 legitimately serves a reference at
+/// ordinal 5.
+pub fn preflight_entity_refs_v1(
+    ordered: &[StagedRecordV1],
+    view: &impl CheckpointEntityViewV1,
+) -> Result<ObservedGenerationsV1, PreflightErrorV1> {
+    let mut created: std::collections::BTreeSet<std::num::NonZeroU64> = std::collections::BTreeSet::new();
+    let mut deleted: std::collections::BTreeSet<std::num::NonZeroU64> = std::collections::BTreeSet::new();
+    let mut observed = ObservedGenerationsV1::default();
+
+    for record in ordered {
+        let refs = record.payload.entity_refs_v1();
+
+        for uid in refs.creates {
+            if created.contains(&uid.0) || (view.contains_uid_v1(uid) && !deleted.contains(&uid.0)) {
+                return Err(PreflightErrorV1::DuplicateCreate { uid, ordinal: record.ordinal.0 });
+            }
+            created.insert(uid.0);
+        }
+        for uid in refs.references {
+            let exists_now = view.contains_uid_v1(uid) && !deleted.contains(&uid.0);
+            if !exists_now && !created.contains(&uid.0) {
+                return Err(PreflightErrorV1::MissingReference { uid, ordinal: record.ordinal.0 });
+            }
+            if let Some(generation) = view.generation_of_v1(uid)
+                && !observed.entries.iter().any(|(seen, _)| *seen == uid)
+            {
+                observed.entries.push((uid, generation));
+            }
+        }
+        for uid in refs.deletes {
+            deleted.insert(uid.0);
+            created.remove(&uid.0);
+        }
+    }
+
+    Ok(observed)
+}
+
+#[cfg(test)]
+mod checkpoint_preflight_v1 {
+    use super::*;
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+    use std::num::NonZeroU64;
+    use std::sync::Arc;
+
+    struct WorldView {
+        entities: Vec<(common::uid::Uid, u64)>,
+    }
+
+    impl CheckpointEntityViewV1 for WorldView {
+        fn contains_uid_v1(&self, uid: common::uid::Uid) -> bool {
+            self.entities.iter().any(|(existing, _)| *existing == uid)
+        }
+
+        fn generation_of_v1(&self, uid: common::uid::Uid) -> Option<u64> {
+            self.entities.iter().find(|(existing, _)| *existing == uid).map(|(_, g)| *g)
+        }
+    }
+
+    fn uid(raw: u64) -> common::uid::Uid { common::uid::Uid(NonZeroU64::new(raw).unwrap()) }
+
+    fn record(ordinal: u64, payload: ServerGeneral) -> StagedRecordV1 {
+        StagedRecordV1 {
+            ordinal: CheckpointOrdinalV1(ordinal),
+            stream: SemanticStreamIdV1::InGame,
+            sequence: ordinal + 1,
+            phase: payload.apply_phase_v1().unwrap_or(CheckpointApplyPhaseV1::InGameState),
+            payload: Arc::new(payload),
+        }
+    }
+
+    /// Creates an entity. `EntityPackage`'s fields are public, so no
+    /// crate-private sync internals are needed to build a fixture.
+    fn creates(raw: u64) -> ServerGeneral {
+        ServerGeneral::CreateEntity(crate::sync::EntityPackage { uid: uid(raw), comps: Vec::new() })
+    }
+
+    /// References an entity: a delete must name something that exists.
+    fn references(raw: u64) -> ServerGeneral { ServerGeneral::DeleteEntity(uid(raw)) }
+
+    /// `CKPT-116`: a reference to an entity that will not exist is a
+    /// typed prepare-time refusal — and a create EARLIER in the same
+    /// checkpoint satisfies it, because a checkpoint applies as a unit.
+    #[test]
+    fn a_missing_reference_is_refused_but_an_earlier_create_satisfies_one() {
+        let empty = WorldView { entities: Vec::new() };
+        let dangling = vec![record(1, references(7))];
+        assert_eq!(
+            preflight_entity_refs_v1(&dangling, &empty).unwrap_err(),
+            PreflightErrorV1::MissingReference { uid: uid(7), ordinal: 1 }
+        );
+
+        // the same reference, against a world that already has it
+        let world = WorldView { entities: vec![(uid(7), 3)] };
+        assert!(preflight_entity_refs_v1(&dangling, &world).is_ok());
+
+        // ...and a create earlier in the SET satisfies it with no world
+        let created_then_referenced = vec![record(1, creates(7)), record(2, references(7))];
+        assert!(preflight_entity_refs_v1(&created_then_referenced, &empty).is_ok());
+
+        // ...while a delete earlier in the set un-satisfies it again
+        let deleted_twice = vec![record(1, references(7)), record(2, references(7))];
+        assert_eq!(
+            preflight_entity_refs_v1(&deleted_twice, &world).unwrap_err(),
+            PreflightErrorV1::MissingReference { uid: uid(7), ordinal: 2 }
+        );
+    }
+
+    /// `CKPT-117`: creating an entity twice, or creating one that
+    /// already exists, is refused.
+    #[test]
+    fn a_duplicate_create_is_refused() {
+        let empty = WorldView { entities: Vec::new() };
+        let twice = vec![record(1, creates(9)), record(2, creates(9))];
+        assert_eq!(
+            preflight_entity_refs_v1(&twice, &empty).unwrap_err(),
+            PreflightErrorV1::DuplicateCreate { uid: uid(9), ordinal: 2 }
+        );
+
+        // creating one the world already has is the same violation
+        let world = WorldView { entities: vec![(uid(4), 1)] };
+        assert_eq!(
+            preflight_entity_refs_v1(&[record(1, creates(4))], &world).unwrap_err(),
+            PreflightErrorV1::DuplicateCreate { uid: uid(4), ordinal: 1 }
+        );
+
+        // ...but re-creating one this checkpoint deleted first is legal
+        let deleted_then_created = vec![record(1, references(4)), record(2, creates(4))];
+        assert!(preflight_entity_refs_v1(&deleted_then_created, &world).is_ok());
+    }
+
+    /// `CKPT-127`: generations observed at prepare are re-checked, and a
+    /// move is detectable rather than silent.
+    #[test]
+    fn a_generation_that_moves_between_prepare_and_commit_is_detectable() {
+        let world = WorldView { entities: vec![(uid(7), 3)] };
+        let observed = preflight_entity_refs_v1(&[record(1, references(7))], &world).unwrap();
+        assert_eq!(observed.len(), 1);
+        assert!(observed.still_valid_v1(&world));
+
+        let moved = WorldView { entities: vec![(uid(7), 4)] };
+        assert!(!observed.still_valid_v1(&moved), "a moved generation must not pass");
+
+        let gone = WorldView { entities: Vec::new() };
+        assert!(!observed.still_valid_v1(&gone), "a vanished entity must not pass either");
+    }
+
+    /// The classification is total: every payload resolves to refs, and
+    /// the ones that carry no checkable entity say so rather than being
+    /// swept up by a wildcard.
+    #[test]
+    fn payloads_without_checkable_entities_declare_that_explicitly() {
+        assert_eq!(ServerGeneral::UpdateRecipes.entity_refs_v1(), EntityRefsV1::default());
+        assert_eq!(ServerGeneral::ExitInGameSuccess.entity_refs_v1(), EntityRefsV1::default());
+        // A delete both references and removes — the classification the
+        // CKPT-116 case rests on.
+        let deletes = ServerGeneral::DeleteEntity(uid(2)).entity_refs_v1();
+        assert_eq!(deletes.deletes, vec![uid(2)]);
+        assert_eq!(deletes.references, vec![uid(2)]);
+        assert!(deletes.creates.is_empty());
+        let _ = (
+            ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])),
+            SessionId::generate(&mut FixedRandomBytesSourceV1([2; 16])),
+            ConnectionEpoch::new(1),
+        );
+    }
+}
