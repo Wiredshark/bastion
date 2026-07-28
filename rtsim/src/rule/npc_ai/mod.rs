@@ -39,7 +39,7 @@ use std::{collections::VecDeque, hash::BuildHasherDefault, sync::Arc};
 use crate::{
     RtState, Rule, RuleError,
     ai::{
-        Action, NpcCtx, State, choose, finish, just, now,
+        Action, NpcCtx, State, action_policy::ActionClassV1, choose, finish, just, now,
         predicate::{Chance, EveryRange, Predicate, every_range, timeout},
         seq, until,
     },
@@ -196,7 +196,7 @@ impl Rule for NpcAi {
                             ),
                             gizmos: gizmos.as_mut(),
                             system_data: &*ctx.system_data,
-                            current_action_priority: 0,
+                            current_action_class: ActionClassV1::Social,
                         }, &mut ());
 
                         // If an input wasn't processed by the brain, we no longer have a use for it
