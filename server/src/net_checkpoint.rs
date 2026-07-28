@@ -723,6 +723,48 @@ pub fn drive_perturbed_checkpoint_v1(
     })
 }
 
+
+/// `APEX-T3.4.24` — production admission. The checkpoint path may only
+/// be activated when every precondition holds; each failure is NAMED, so
+/// a refusal says what is missing rather than just "no".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckpointActivationBlockerV1 {
+    /// No deployment-supplied production resource profile exists.
+    NoProductionProfile,
+    /// The canary coverage map still has cases this tier does not cover.
+    UncoveredCanaryCases(usize),
+    /// The supplied profile budgets a stream this client type can never
+    /// legally receive.
+    ProfileIllegalForClientType,
+}
+
+/// Admits activation for one client type, or returns EVERY blocker that
+/// applies — not just the first, so one pass names the whole gap.
+pub fn admit_checkpoint_activation_v1(
+    client_type: common_net::msg::ClientType,
+) -> Result<CheckpointResourceProfileV1, Vec<CheckpointActivationBlockerV1>> {
+    use common_net::msg::checkpoint::{production_checkpoint_profile_v1, validate_profile_for_client_type_v1};
+
+    let mut blockers = Vec::new();
+    if crate::net_checkpoint_canaries::OPEN_CASE_COUNT > 0 {
+        blockers.push(CheckpointActivationBlockerV1::UncoveredCanaryCases(
+            crate::net_checkpoint_canaries::OPEN_CASE_COUNT,
+        ));
+    }
+    match production_checkpoint_profile_v1() {
+        Err(_) => {
+            blockers.push(CheckpointActivationBlockerV1::NoProductionProfile);
+            Err(blockers)
+        },
+        Ok(profile) => {
+            if validate_profile_for_client_type_v1(&profile, client_type).is_err() {
+                blockers.push(CheckpointActivationBlockerV1::ProfileIllegalForClientType);
+            }
+            if blockers.is_empty() { Ok(profile) } else { Err(blockers) }
+        },
+    }
+}
+
 #[cfg(test)]
 mod checkpoint_planner_v1 {
     use super::*;
@@ -929,6 +971,34 @@ mod checkpoint_planner_v1 {
                 assert!(frame.context().ordinal.is_none(), "control frames carry no ordinal");
             }
         }
+    }
+
+    /// `T3.4.24`: production activation is refused, and the refusal
+    /// names every blocker that applies.
+    #[test]
+    fn production_activation_is_refused_with_named_blockers() {
+        use common_net::msg::ClientType;
+
+        for client_type in [
+            ClientType::Game,
+            ClientType::ChatOnly,
+            ClientType::SilentSpectator,
+            ClientType::Bot { privileged: false },
+            ClientType::Bot { privileged: true },
+        ] {
+            let blockers = admit_checkpoint_activation_v1(client_type).unwrap_err();
+            assert!(
+                blockers.contains(&CheckpointActivationBlockerV1::NoProductionProfile),
+                "{client_type:?}: production has no profile to activate with"
+            );
+            assert!(
+                blockers.iter().any(|b| matches!(b, CheckpointActivationBlockerV1::UncoveredCanaryCases(n) if *n > 0)),
+                "{client_type:?}: the OPEN canary set must block activation while it is nonempty"
+            );
+        }
+        // The two blockers are independent: closing one alone does not
+        // admit activation.
+        assert!(crate::net_checkpoint_canaries::OPEN_CASE_COUNT > 0);
     }
 
     /// `T3.4.22`: the perturbation table. Cross-stream interleaving is
