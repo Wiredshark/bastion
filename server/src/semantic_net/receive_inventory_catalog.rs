@@ -11,7 +11,7 @@
 
 use super::ReceiveSiteClassV1::{self, LegacyMechanism, NotAClientReceive, Ping, PreAuth};
 
-pub(super) const RECEIVE_SITE_CATALOG: [(&str, &str, u32, ReceiveSiteClassV1); 22] = [
+pub(super) const RECEIVE_SITE_CATALOG: [(&str, &str, u32, ReceiveSiteClassV1); 24] = [
     ("chat.rs", "while let Some(msg) = self.chat_r.recv().await {", 0, NotAClientReceive),
     ("chunk_generator.rs", "while let Ok((key, res)) = self.chunk_rx.try_recv() {", 0, NotAClientReceive),
     ("chunk_generator.rs", "while let Ok((key, res)) = self.chunk_rx.try_recv() {", 1, NotAClientReceive),
@@ -34,4 +34,6 @@ pub(super) const RECEIVE_SITE_CATALOG: [(&str, &str, u32, ReceiveSiteClassV1); 2
     ("sys/msg/ping.rs", "let res = super::try_recv_all(client, 4, Self::handle_ping_msg);", 0, Ping),
     ("sys/msg/register.rs", "let _ = super::try_recv_all(client, 0, |_, msg: ClientRegister| {", 0, PreAuth),
     ("weather/tick.rs", "&& let Ok((new_grid, new_lightning_cells, sim)) = weather_job.weather_rx.try_recv()", 0, NotAClientReceive),
+    ("weather/tick.rs", "rx.try_recv(),", 0, NotAClientReceive),
+    ("weather/tick.rs", "rx.try_recv(),", 1, NotAClientReceive),
 ];
