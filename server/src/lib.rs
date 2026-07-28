@@ -41,6 +41,7 @@ pub mod net_command;
 mod net_command_bypass;
 mod net_command_canaries;
 mod net_checkpoint_canaries;
+mod net_checkpoint_disconnect;
 pub mod persistence;
 mod pet;
 pub mod plugin_deployment_policy;

@@ -17,9 +17,14 @@ use super::SendSiteClassV1::{
     V1EgressMechanism,
 };
 
-pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 195] = [
+pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 197] = [
     ("weather/tick.rs", "lazy_msg = Some(client.prepare(ServerGeneral::WeatherUpdate(", 0, PostAuthCandidate),
     ("weather/tick.rs", "lazy_msg.as_ref().map(|msg| client.send_prepared(msg));", 0, PostAuthCandidate),
+    // APEX-T3.6.03: the legacy-disconnect inventory SCANS for send
+    // sites; its own pattern strings match this catalog's grep. Not
+    // sends, the same false-positive class as the mpsc channels below.
+    ("net_checkpoint_disconnect.rs", "let is_send = context.contains(\".send(\")", 0, NotAClientSend),
+    ("net_checkpoint_disconnect.rs", "|| context.contains(\"send_fallible(\")", 0, NotAClientSend),
     ("weather/tick.rs", "let _ = weather_tx.send((grid, lightning_cells, sim));", 0, NotAClientSend),
     ("weather/tick.rs", "client.send_fallible(ServerGeneral::LocalWindUpdate(weather.wind));", 0, PostAuthCandidate),
     ("chunk_generator.rs", "let _ = chunk_tx.send((key, payload));", 0, NotAClientSend),
