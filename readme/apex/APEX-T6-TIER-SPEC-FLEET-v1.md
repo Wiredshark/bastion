@@ -55,6 +55,41 @@ multiset can produce different bits per partition layout. DET-PHY-005
 fixed *which* candidates; T6.3 must fix *in what order their
 contributions land*.
 
+> **RETRACTED 2026-07-28. The paragraph above is wrong and is kept
+> verbatim rather than quietly corrected.**
+>
+> There is no parallel reduction here. Read fully:
+>
+> 1. `par_join()` (`phys/mod.rs:420`) parallelises over **entities**, not
+>    over contributions. Each task accumulates into a task-local
+>    `vel_delta` (declared `:471`) and writes only its own entity's
+>    velocity (`:655`). specs guarantees disjoint mutable component
+>    access, so no accumulator is shared and no reduction crosses tasks.
+>    Rayon chooses which *thread* handles which entity; it does not order
+>    any accumulation.
+> 2. Within a task the neighbour walk is deterministic:
+>    `in_circle_aabr` → `in_aabr` (`util/spatial_grid.rs:56-76`) iterates
+>    cells in a nested range order and fetches each cell with
+>    `grid.get(&cell)` — a **lookup, not a hashbrown iteration**, so no
+>    map ordering leaks — and each cell's contents were already
+>    canonicalised to stable `Uid` order by DET-PHY-005.
+> 3. The second grid query (`:1296`) is a `for_each` with no cross-entity
+>    accumulation either.
+>
+> So DET-PHY-005 plus the deterministic traversal appear to have closed
+> this seam completely, and the "half-fixed file" reading was a mis-read.
+>
+> **The method error, recorded because it is the transferable part:** the
+> claim came from seeing `par_join` and `ParMode::Rayon` sitting next to
+> a float accumulation. The shape looked like the bug. The correct
+> question is what the parallelism is **over** — parallel-over-entities
+> with task-local accumulation is safe; parallel-over-contributions is
+> not. Proximity is not evidence.
+>
+> *Pending independent re-derivation* (assigned to the reviewer at the
+> next boundary): the four sub-claims above are to be re-derived from
+> code by a second reader before this correction is treated as settled.
+
 ---
 
 ## T6.1 — Numeric attack-surface inventory
@@ -133,10 +168,14 @@ decorative.
 **Objective.** An identical candidate multiset yields an identical raw
 contribution tape, *before* any numeric-kernel change.
 
-**Verified failure surface.** As above: `canonicalize_cells` fixes
-per-cell candidate order (`phys/mod.rs:387-390`) but `apply_pushback`
-(`:395`) accumulates under `par_join()`. Ordered candidates, unordered
-accumulation.
+**Verified failure surface — RECAST after the retraction above.** The
+seam this row was written for appears already closed: per-cell candidate
+order is canonical (`phys/mod.rs:387-390`) and the accumulation is
+task-local under a parallelism that is over entities, not contributions.
+The row is therefore **a pinning test, not a change**. That is not a
+downgrade: nothing currently prevents a future edit from reopening the
+seam silently, and the existing x2 harness never varies worker count, so
+this is new coverage rather than duplication.
 
 **Selected architecture.** (1) Stable body and pair identity — `Uid` is
 already the tie-break key DET-PHY-005 uses, so extend rather than replace
@@ -151,11 +190,12 @@ The separation to hold onto: parallel *computation* is fine, parallel
 *accumulation* is not. The standard shape is compute-in-parallel into an
 indexed buffer, then reduce serially in key order.
 
-**Required tests.** All insertion permutations of a candidate set produce
-one tape; all worker counts (1, 2, 8, and the machine default) produce
-one tape. Worker-count invariance is the test that actually catches a
-Rayon dependence — permutation alone can pass while partitioning still
-leaks.
+**Required tests — now the row's whole content.** All insertion
+permutations of a candidate set produce one tape; worker counts 1, 2, 8
+and 48 produce one tape over the REAL path. Worker-count invariance is
+the test that actually catches a Rayon dependence — permutation alone can
+pass while partitioning still leaks — and it is precisely the axis the x2
+harness does not vary.
 
 **Canary sketch.** `PHY-008-001..` — candidate discovered mid-solve;
 tie-break key absent for a pair; solver iteration count varying with
@@ -237,11 +277,12 @@ on one target has proven nothing this tier cares about.
 
 ## Cross-tier notes
 
-**Ordering.** T6.1 is `READY after T0.5` and starts immediately. T6.3 is
-`READY after T6.1` and is the highest-value row in the tier, because it
-is a pure ordering fix with no gameplay change — it makes the tape
-reproducible *before* anyone starts substituting kernels, which is the
-only way to tell whether a kernel change helped. T6.2 and T6.4 are
+**Ordering — REVISED with the retraction.** T6.1 is `READY after T0.5`
+and starts immediately; its second half (`T6.1b`, per-site owner and
+protocol status) is its own row. T6.3 follows T6.1b as a pinning-test
+row. The original text called T6.3 "the highest-value row in the tier,
+because it is a pure ordering fix" — that rested on the retracted claim,
+and a row that pins an existing property is valuable but not that. T6.2 and T6.4 are
 prerequisites for T6.5, which should be last and may end up scoped to two
 or three call sites rather than all of them.
 
