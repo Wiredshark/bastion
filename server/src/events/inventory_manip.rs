@@ -515,8 +515,12 @@ impl ServerEvent for InventoryManipEvent {
                             }
 
                             let sprite_cfg = data.terrain.sprite_cfg_at(sprite_pos);
+                            // E6 (determinism audit): reuses the per-event
+                            // (uid, time)-keyed stream declared above
+                            // (DET-RNG-006) instead of to_items()'s old
+                            // internal OS-entropy draw.
                             if let Some(items) =
-                                comp::Item::try_reclaim_from_block(block, sprite_cfg)
+                                comp::Item::try_reclaim_from_block(block, sprite_cfg, &mut rng)
                             {
                                 for item in
                                     flatten_counted_items(&items, &data.ability_map, &data.msm)

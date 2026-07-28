@@ -347,7 +347,11 @@ impl ServerEvent for MineBlockEvent {
 
                     let sprite_cfg = terrain.sprite_cfg_at(ev.pos);
                     if (stage_changed || is_broken)
-                        && let Some(items) = comp::Item::try_reclaim_from_block(block, sprite_cfg)
+                        // E6 (determinism audit): reuses the same per-event
+                        // (pos, time)-keyed stream declared above (DET-RNG-006)
+                        // instead of to_items()'s old internal OS-entropy draw.
+                        && let Some(items) =
+                            comp::Item::try_reclaim_from_block(block, sprite_cfg, &mut rng)
                     {
                         let mut items: Vec<_> =
                             flatten_counted_items(&items, &ability_map, &msm).collect();

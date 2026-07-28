@@ -2339,7 +2339,11 @@ impl Hud {
                     let interactable_item = if sprite.should_drop_mystery() {
                         None
                     } else {
-                        Item::try_reclaim_from_block(block, None).and_then(|mut items| {
+                        // E6: client-side tooltip preview only (no server
+                        // persistence here — the real drop is rolled
+                        // authoritatively server-side), presentation-namespace
+                        // like the sprite label above; OS entropy is fine.
+                        Item::try_reclaim_from_block(block, None, &mut rand::rng()).and_then(|mut items| {
                             debug_assert!(
                                 items.len() <= 1,
                                 "The amount of items returned from Item::try_reclaim_from_block \

@@ -2425,7 +2425,19 @@ impl ServerEvent for BonkEvent {
                         .is_some()
                 {
                     let sprite_cfg = terrain.sprite_cfg_at(pos);
-                    if let Some(items) = comp::Item::try_reclaim_from_block(block, sprite_cfg) {
+                    // E6 (determinism audit): keyed on (block pos,
+                    // program-time) — no entity is involved in a bonk
+                    // (position-triggered, not entity-attributed).
+                    use rand::SeedableRng;
+                    let mut rng = rand_chacha::ChaChaRng::seed_from_u64(common::lottery::seed_loot_roll(&[
+                        &pos.x.to_le_bytes(),
+                        &pos.y.to_le_bytes(),
+                        &pos.z.to_le_bytes(),
+                        &program_time.0.to_bits().to_le_bytes(),
+                    ]));
+                    if let Some(items) =
+                        comp::Item::try_reclaim_from_block(block, sprite_cfg, &mut rng)
+                    {
                         let msm = &MaterialStatManifest::load().read();
                         let ability_map = &AbilityMap::load().read();
                         for item in flatten_counted_items(&items, ability_map, msm) {
@@ -3884,10 +3896,23 @@ pub fn transform_entity(
                         }
                     }),
                 )?;
+                // E6 (determinism audit): keyed on (transformed entity's
+                // uid, sim time) — to_items() used to reach ambient OS
+                // entropy internally.
+                let mut transform_loot_rng = {
+                    use rand::SeedableRng;
+                    let ecs = server.state.ecs();
+                    let uid = ecs.read_storage::<common::uid::Uid>().get(entity).copied();
+                    let time = *ecs.read_resource::<common::resources::Time>();
+                    rand_chacha::ChaChaRng::seed_from_u64(common::lottery::seed_loot_roll(&[
+                        &uid.map_or(0, |u| u.0.get()).to_le_bytes(),
+                        &time.0.to_bits().to_le_bytes(),
+                    ]))
+                };
                 set_or_remove_component(
                     server,
                     entity,
-                    loot.to_items().map(comp::ItemDrops),
+                    loot.to_items(&mut transform_loot_rng).map(comp::ItemDrops),
                     None,
                 )?;
             }

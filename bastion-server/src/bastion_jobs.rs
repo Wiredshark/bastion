@@ -11129,11 +11129,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // put in the bag — same reclaim source the
                             // handler consumes (idempotent across re-emits:
                             // a HashSet union).
+                            // E6 (determinism audit): to_items() used to fall
+                            // through to ambient OS entropy internally; keyed
+                            // now on (tick, pos, domain) via the same
+                            // toss_scatter_rng helper the farm-harvest arm
+                            // above uses (distinct domain salt).
+                            let mut rng = toss_scatter_rng(tick.0, job.pos, 0x9A11_0004);
                             if let Some(u) = uids.get(entity)
                                 && let Some(items) = block.and_then(|b| {
                                     comp::Item::try_reclaim_from_block(
                                         b,
                                         terrain.sprite_cfg_at(job.pos),
+                                        &mut rng,
                                     )
                                 })
                             {

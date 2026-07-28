@@ -31,10 +31,25 @@ use std::{borrow::Cow, hash::Hash};
 use crate::{
     assets::{AssetExt, BoxedError, FileAsset, load_ron},
     comp::{Item, inventory::item},
+    state_hash::DomainHasher,
 };
 use rand::prelude::*;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tracing::warn;
+
+/// E6 (determinism audit): seeds a loot roll from the causal event that
+/// triggered it (attacker/collector uid, world position, sim time — whatever
+/// the call site actually has), so [`LootSpec::to_items`] never falls back to
+/// ambient OS entropy. Each `field` is one already-canonical byte slice
+/// (caller's responsibility, same length-prefixing contract as
+/// [`DomainHasher::field`]).
+pub fn seed_loot_roll(fields: &[&[u8]]) -> u64 {
+    let mut h = DomainHasher::new("bastion/domain/loot-roll/v1/sha256");
+    for f in fields {
+        h.field(f);
+    }
+    u64::from_le_bytes(h.finish().0[..8].try_into().expect("sha256 digest >= 8 bytes"))
+}
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct Lottery<T> {
@@ -78,8 +93,6 @@ impl<T> Lottery<T> {
             .unwrap_or_else(|i| i.saturating_sub(1))]
         .1
     }
-
-    pub fn choose(&self) -> &T { self.choose_seeded(rand::rng().random()) }
 
     pub fn iter(&self) -> impl Iterator<Item = &(f32, T)> { self.items.iter() }
 
@@ -321,12 +334,7 @@ pub enum LootSpec<T: AsRef<str>> {
 }
 
 impl<T: AsRef<str>> LootSpec<T> {
-    fn to_items_inner(
-        &self,
-        rng: &mut rand::rngs::ThreadRng,
-        amount: u32,
-        items: &mut Vec<(u32, Item)>,
-    ) {
+    fn to_items_inner(&self, rng: &mut impl rand::Rng, amount: u32, items: &mut Vec<(u32, Item)>) {
         let convert_item = |item: &T| {
             Item::new_from_asset(item.as_ref()).map_or_else(
                 |e| {
@@ -455,12 +463,23 @@ impl<T: AsRef<str>> LootSpec<T> {
         }
     }
 
-    pub fn to_items(&self) -> Option<Vec<(u32, Item)>> {
+    /// E6 (determinism audit): `rng` must be the CALLER's stream, seeded
+    /// from the causal event via [`seed_loot_roll`] — this used to reach
+    /// ambient OS entropy (`rand::rng()`) internally, making every loot
+    /// roll (on-transform, spawn pre-roll, block-harvest) nondeterministic
+    /// cross-run even though the nested-table draws (RNG-P3-004) already
+    /// respected a passed-in stream.
+    pub fn to_items(&self, rng: &mut impl rand::Rng) -> Option<Vec<(u32, Item)>> {
         let mut items = Vec::new();
-        self.to_items_inner(&mut rand::rng(), 1, &mut items);
+        self.to_items_inner(rng, 1, &mut items);
 
         if !items.is_empty() {
-            items.sort_unstable_by_key(|(amount, _)| *amount);
+            // E6: amount alone left equal-amount items in `sort_unstable`'s
+            // implementation-defined tie order; item_hash is a stable,
+            // already-computed secondary key, so the full output order is
+            // now a pure function of the input (no incidental sort-algorithm
+            // dependence).
+            items.sort_unstable_by_key(|(amount, item)| (*amount, item.item_hash()));
 
             Some(items)
         } else {
@@ -654,6 +673,76 @@ pub mod tests {
         assert!(
             total > 0,
             "distribute_many placed no items — the order-independence check is vacuous"
+        );
+    }
+
+    /// E6 (determinism audit): `to_items` used to reach ambient OS entropy
+    /// internally (`rand::rng()`) regardless of what the caller passed in
+    /// for the nested-table draws. If any such ambient source were still
+    /// reachable, at least one of these 20 independent fixed-seed
+    /// re-derivations would diverge from the first.
+    #[test]
+    fn to_items_is_a_pure_function_of_its_rng_argument() {
+        use rand::SeedableRng;
+        let spec: LootSpec<String> = LootSpec::All(vec![
+            LootSpec::Item("common.items.food.cheese".to_string()),
+            LootSpec::Item("common.items.food.apple".to_string()),
+            LootSpec::Item("common.items.food.mushroom".to_string()),
+        ]);
+
+        fn snapshot(items: &[(u32, Item)]) -> Vec<(u32, u64)> {
+            items
+                .iter()
+                .map(|(amount, item)| (*amount, item.item_hash()))
+                .collect()
+        }
+
+        let seed = 0xE6_0000_5EED_u64;
+        let mut first_rng = rand_chacha::ChaChaRng::seed_from_u64(seed);
+        let first = snapshot(&spec.to_items(&mut first_rng).expect("spec yields items"));
+
+        for _ in 0..20 {
+            let mut rng = rand_chacha::ChaChaRng::seed_from_u64(seed);
+            let got = snapshot(&spec.to_items(&mut rng).expect("spec yields items"));
+            assert_eq!(
+                got, first,
+                "to_items() diverged across re-derivations of the same seed — ambient entropy \
+                 is reachable"
+            );
+        }
+    }
+
+    /// E6: equal-amount items must be ordered by a caller-recomputable
+    /// secondary key (item_hash), not `sort_unstable`'s implementation-
+    /// defined tie behavior.
+    #[test]
+    fn to_items_equal_amount_items_sort_by_item_hash() {
+        use rand::SeedableRng;
+        let spec: LootSpec<String> = LootSpec::All(vec![
+            LootSpec::Item("common.items.food.cheese".to_string()),
+            LootSpec::Item("common.items.food.apple".to_string()),
+            LootSpec::Item("common.items.food.mushroom".to_string()),
+        ]);
+        let mut rng = rand_chacha::ChaChaRng::seed_from_u64(0xE6_0000_50E7);
+        let items = spec.to_items(&mut rng).expect("spec yields items");
+
+        // Non-vacuity: the fixture only exercises the tiebreak if at least
+        // two entries actually share an amount.
+        let amounts: Vec<u32> = items.iter().map(|(a, _)| *a).collect();
+        assert!(
+            amounts.windows(2).any(|w| w[0] == w[1]),
+            "fixture does not produce equal-amount items — the tiebreak test is vacuous"
+        );
+
+        let actual: Vec<(u32, u64)> = items
+            .iter()
+            .map(|(a, item)| (*a, item.item_hash()))
+            .collect();
+        let mut expected = actual.clone();
+        expected.sort_unstable();
+        assert_eq!(
+            actual, expected,
+            "equal-amount items are not ordered by the documented (amount, item_hash) tiebreak"
         );
     }
 
