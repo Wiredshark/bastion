@@ -66,6 +66,110 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
         variant: "InputReceipt",
         digest_hex: "sha256:5d3eec1882c6064e2f508bb44a01dca36978d79e3c0a046e05f25233d4981b78",
     },
+    // WSG-2 chunk 2: InventoryUpdate (the deferred priority payload)
+    // plus the client request surface — every one of these is a message
+    // the SERVER decodes, so a shape drift is a server mis-parse of
+    // player intent.
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "InventoryUpdate",
+        digest_hex: "sha256:5395a375894799a81d560b5fba6459cfa9dd41736f2e676354cfc0d829f32c3d",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "RequestCharacterList",
+        digest_hex: "sha256:df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "DeleteCharacter",
+        digest_hex: "sha256:2003bb45cdb4b56ec6860df6445d62a7da98aaf68581e8960391921723c0c256",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "ExitInGame",
+        digest_hex: "sha256:42f4aeb81c1ef81f771f3de8abca9dcf66901c575530e7672e4b1146474ae650",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "Terminate",
+        digest_hex: "sha256:8d71b3faab8201459ad37ef499beb336ba88bdcfa0f51ee6f0a46ec3192d750a",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "BreakBlock",
+        digest_hex: "sha256:4afa94bbc07036aacc88bd0dc35b52a66b8fa9af23126068e0063eeb55d469ce",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "SpectatePosition",
+        digest_hex: "sha256:9b321da81cf82c0407b29b9f7001d59e1a298d65a64ee54114db6968d70730ef",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "SpectateEntity",
+        digest_hex: "sha256:ec9b7b0e1d6df8afa378eee5ca11e10939987a3fb318c82cffa5ab09277636c1",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "BastionCameraAnchor",
+        digest_hex: "sha256:80ad81204480bb13c7417820c4005912fff164310b19dc8451ca6dd42d20f0f7",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "BastionSpawnColony",
+        digest_hex: "sha256:2046395ff8b5288743451fa87c3de847209f8bf76a06b50a0b3bfe56ca1b0d62",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "TerrainChunkRequest",
+        digest_hex: "sha256:aeeb4eff4dbce87dc72939cfbfa109d1ab3862001aaba05eae600b27d7ff5d55",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "LodZoneRequest",
+        digest_hex: "sha256:08da0f328c7edf5fd56ce2281110639d9ae2a37703642954b601d31976f20524",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "Command",
+        digest_hex: "sha256:001cf414c45355f55930c6cbd443c24f77243818c47fb30ed1898017275475a5",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "RequestPlayerPhysics",
+        digest_hex: "sha256:c66d621939ede1014e7d9c99e8c0d25d07ecfecc71a51a0c8338c6f9b1d55a26",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "RequestLossyTerrainCompression",
+        digest_hex: "sha256:49b53a82dec31dbcb3b3f4276f2996e695546482e961558b6f6d7e5d9273ffef",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "RequestSiteInfo",
+        digest_hex: "sha256:f1f2e3db5bdef2590c86e96b6c2827cc1b71100f02fdb6265eeafd03267971b7",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "SetBattleMode",
+        digest_hex: "sha256:a58049314b30ea940a92301f86b139ff225b2c094461b087a7105f88d8967590",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "Character",
+        digest_hex: "sha256:63cefb587fd281aea30bf77ec9e2d34f4d768651bcf2ffd28c9b2895248b2f69",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "Spectate",
+        digest_hex: "sha256:e1b03ca36251051fad146b0f3f515e3782b433377dc8d6c6bf28a7c559056a7c",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "SetViewDistance",
+        digest_hex: "sha256:54c756fe3530d4553ff39be325acd408bd34a415f93dd8cc08e1ffd52b40e015",
+    },
     // WSG-2 chunk 1: the server-authoritative core first — a mis-decode
     // of a sync package corrupts every entity on the client, which is the
     // largest blast radius on this wire.
@@ -280,29 +384,136 @@ mod wire_shape_goldens_v1 {
         ServerGeneral::SetPlayerRole(Some(common::comp::AdminRole::Moderator))
     }
 
-    fn actual(variant: &str) -> String {
-        match variant {
-            "PlayerPhysics" => golden_digest_v1(&client_player_physics()),
-            "WeatherUpdate" => golden_digest_v1(&server_weather_update()),
-            "LocalWindUpdate" => golden_digest_v1(&server_local_wind_update()),
-            "InputReceipt" => golden_digest_v1(&server_input_receipt()),
-            "EntitySync" => golden_digest_v1(&server_entity_sync()),
-            "CompSync" => golden_digest_v1(&server_comp_sync()),
-            "DeleteEntity" => golden_digest_v1(&server_delete_entity()),
-            "SetPlayerEntity" => golden_digest_v1(&server_set_player_entity()),
-            "Knockback" => golden_digest_v1(&server_knockback()),
-            "SpectatePosition" => golden_digest_v1(&server_spectate_position()),
-            "SpectatorSuccess" => golden_digest_v1(&server_spectator_success()),
-            "SetViewDistance" => golden_digest_v1(&server_set_view_distance()),
-            "InvitePending" => golden_digest_v1(&server_invite_pending()),
-            "CharacterCreated" => golden_digest_v1(&server_character_created()),
-            "CharacterEdited" => golden_digest_v1(&server_character_edited()),
-            "CharacterActionError" => golden_digest_v1(&server_character_action_error()),
-            "CharacterSuccess" => golden_digest_v1(&server_character_success()),
-            "ExitInGameSuccess" => golden_digest_v1(&server_exit_in_game_success()),
-            "UpdateRecipes" => golden_digest_v1(&server_update_recipes()),
-            "SetPlayerRole" => golden_digest_v1(&server_set_player_role()),
-            other => panic!("{other} has a golden entry but no representative instance"),
+
+    fn view_distances() -> common::ViewDistances {
+        common::ViewDistances { terrain: 9, entity: 5 }
+    }
+
+    fn server_inventory_update() -> ServerGeneral {
+        ServerGeneral::InventoryUpdate(
+            common::comp::Inventory::with_empty(),
+            vec![
+                common::comp::InventoryUpdateEvent::Init,
+                common::comp::InventoryUpdateEvent::Used,
+            ],
+        )
+    }
+
+    fn client_request_character_list() -> ClientGeneral { ClientGeneral::RequestCharacterList }
+
+    fn client_delete_character() -> ClientGeneral {
+        ClientGeneral::DeleteCharacter(common::character::CharacterId(101))
+    }
+
+    fn client_exit_in_game() -> ClientGeneral { ClientGeneral::ExitInGame }
+
+    fn client_terminate() -> ClientGeneral { ClientGeneral::Terminate }
+
+    fn client_break_block() -> ClientGeneral {
+        ClientGeneral::BreakBlock(Vec2::new(1, 2).with_z(3))
+    }
+
+    fn client_spectate_position() -> ClientGeneral {
+        ClientGeneral::SpectatePosition(Vec2::new(4.0, 5.0).with_z(6.0))
+    }
+
+    fn client_spectate_entity() -> ClientGeneral {
+        ClientGeneral::SpectateEntity(Some(uid(103)))
+    }
+
+    fn client_bastion_camera_anchor() -> ClientGeneral {
+        ClientGeneral::BastionCameraAnchor(Some(Vec2::new(7.0, 8.0).with_z(9.0)))
+    }
+
+    fn client_bastion_spawn_colony() -> ClientGeneral {
+        ClientGeneral::BastionSpawnColony { pos: Vec2::new(10.0, 11.0).with_z(12.0), count: 4 }
+    }
+
+    fn client_terrain_chunk_request() -> ClientGeneral {
+        ClientGeneral::TerrainChunkRequest { key: Vec2::new(13, 14) }
+    }
+
+    fn client_lod_zone_request() -> ClientGeneral {
+        ClientGeneral::LodZoneRequest { key: Vec2::new(15, 16) }
+    }
+
+    fn client_command() -> ClientGeneral {
+        ClientGeneral::Command("wsg".to_owned(), vec!["a".to_owned(), "b".to_owned()])
+    }
+
+    fn client_request_player_physics() -> ClientGeneral {
+        ClientGeneral::RequestPlayerPhysics { server_authoritative: true }
+    }
+
+    fn client_request_lossy() -> ClientGeneral {
+        ClientGeneral::RequestLossyTerrainCompression { lossy_terrain_compression: false }
+    }
+
+    fn client_request_site_info() -> ClientGeneral { ClientGeneral::RequestSiteInfo(107) }
+
+    fn client_set_battle_mode() -> ClientGeneral {
+        ClientGeneral::SetBattleMode(common::resources::BattleMode::PvE)
+    }
+
+    fn client_character() -> ClientGeneral {
+        ClientGeneral::Character(common::character::CharacterId(109), view_distances())
+    }
+
+    fn client_spectate() -> ClientGeneral { ClientGeneral::Spectate(view_distances()) }
+
+    fn client_set_view_distance() -> ClientGeneral {
+        ClientGeneral::SetViewDistance(view_distances())
+    }
+
+    /// Keyed by (schema, variant), NOT by variant alone.
+    ///
+    /// `SetViewDistance`, `SpectatePosition` and `SpectateEntity` exist
+    /// in BOTH enums. Dispatching on the name alone silently returns the
+    /// wrong enum's fixture — the same duplicate-name hazard that broke
+    /// the uncovered list in chunk 1, biting the DISPATCH this time.
+    fn actual(schema: &str, variant: &str) -> String {
+        match (schema, variant) {
+            ("ClientGeneral", "PlayerPhysics") => golden_digest_v1(&client_player_physics()),
+            ("ServerGeneral", "WeatherUpdate") => golden_digest_v1(&server_weather_update()),
+            ("ServerGeneral", "LocalWindUpdate") => golden_digest_v1(&server_local_wind_update()),
+            ("ServerGeneral", "InputReceipt") => golden_digest_v1(&server_input_receipt()),
+            ("ServerGeneral", "InventoryUpdate") => golden_digest_v1(&server_inventory_update()),
+            ("ClientGeneral", "RequestCharacterList") => golden_digest_v1(&client_request_character_list()),
+            ("ClientGeneral", "DeleteCharacter") => golden_digest_v1(&client_delete_character()),
+            ("ClientGeneral", "ExitInGame") => golden_digest_v1(&client_exit_in_game()),
+            ("ClientGeneral", "Terminate") => golden_digest_v1(&client_terminate()),
+            ("ClientGeneral", "BreakBlock") => golden_digest_v1(&client_break_block()),
+            ("ClientGeneral", "SpectatePosition") => golden_digest_v1(&client_spectate_position()),
+            ("ClientGeneral", "SpectateEntity") => golden_digest_v1(&client_spectate_entity()),
+            ("ClientGeneral", "BastionCameraAnchor") => golden_digest_v1(&client_bastion_camera_anchor()),
+            ("ClientGeneral", "BastionSpawnColony") => golden_digest_v1(&client_bastion_spawn_colony()),
+            ("ClientGeneral", "TerrainChunkRequest") => golden_digest_v1(&client_terrain_chunk_request()),
+            ("ClientGeneral", "LodZoneRequest") => golden_digest_v1(&client_lod_zone_request()),
+            ("ClientGeneral", "Command") => golden_digest_v1(&client_command()),
+            ("ClientGeneral", "RequestPlayerPhysics") => golden_digest_v1(&client_request_player_physics()),
+            ("ClientGeneral", "RequestLossyTerrainCompression") => golden_digest_v1(&client_request_lossy()),
+            ("ClientGeneral", "RequestSiteInfo") => golden_digest_v1(&client_request_site_info()),
+            ("ClientGeneral", "SetBattleMode") => golden_digest_v1(&client_set_battle_mode()),
+            ("ClientGeneral", "Character") => golden_digest_v1(&client_character()),
+            ("ClientGeneral", "Spectate") => golden_digest_v1(&client_spectate()),
+            ("ClientGeneral", "SetViewDistance") => golden_digest_v1(&client_set_view_distance()),
+            ("ServerGeneral", "EntitySync") => golden_digest_v1(&server_entity_sync()),
+            ("ServerGeneral", "CompSync") => golden_digest_v1(&server_comp_sync()),
+            ("ServerGeneral", "DeleteEntity") => golden_digest_v1(&server_delete_entity()),
+            ("ServerGeneral", "SetPlayerEntity") => golden_digest_v1(&server_set_player_entity()),
+            ("ServerGeneral", "Knockback") => golden_digest_v1(&server_knockback()),
+            ("ServerGeneral", "SpectatePosition") => golden_digest_v1(&server_spectate_position()),
+            ("ServerGeneral", "SpectatorSuccess") => golden_digest_v1(&server_spectator_success()),
+            ("ServerGeneral", "SetViewDistance") => golden_digest_v1(&server_set_view_distance()),
+            ("ServerGeneral", "InvitePending") => golden_digest_v1(&server_invite_pending()),
+            ("ServerGeneral", "CharacterCreated") => golden_digest_v1(&server_character_created()),
+            ("ServerGeneral", "CharacterEdited") => golden_digest_v1(&server_character_edited()),
+            ("ServerGeneral", "CharacterActionError") => golden_digest_v1(&server_character_action_error()),
+            ("ServerGeneral", "CharacterSuccess") => golden_digest_v1(&server_character_success()),
+            ("ServerGeneral", "ExitInGameSuccess") => golden_digest_v1(&server_exit_in_game_success()),
+            ("ServerGeneral", "UpdateRecipes") => golden_digest_v1(&server_update_recipes()),
+            ("ServerGeneral", "SetPlayerRole") => golden_digest_v1(&server_set_player_role()),
+            (schema, other) => panic!("{schema}::{other} has a golden entry but no representative instance"),
         }
     }
 
@@ -313,7 +524,7 @@ mod wire_shape_goldens_v1 {
     fn every_golden_still_matches_its_variants_encoding() {
         for golden in WIRE_SHAPE_GOLDENS {
             assert_eq!(
-                actual(golden.variant),
+                actual(golden.payload_schema, golden.variant),
                 golden.digest_hex,
                 "{}::{} changed shape on the wire. The envelope profile root CANNOT see this — \
                  that is why this table exists. If the change is deliberate, recompute this \
@@ -328,9 +539,9 @@ mod wire_shape_goldens_v1 {
     /// counts pinned so neither list can drift silently.
     #[test]
     fn coverage_is_a_pinned_open_set() {
-        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 20, "the covered set changed");
-        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 36);
-        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 32);
+        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 40, "the covered set changed");
+        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 17);
+        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 31);
         // 1 + 36 = 37 ClientGeneral, 3 + 48 = 51 ServerGeneral, counted
         // from the enums at 71b1c87ca7.
         let covered_client =
