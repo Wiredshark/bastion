@@ -1281,6 +1281,8 @@ impl CheckpointAlignerV1 {
 
     pub fn descriptor_root(&self) -> [u8; 32] { self.descriptor_root }
 
+    pub fn descriptor(&self) -> &CheckpointDescriptorV1 { &self.descriptor }
+
     /// True once every required stream is fenced. Nothing may be applied
     /// before this — that is the cross-stream watermark.
     pub fn is_complete(&self) -> bool { self.segmenters.iter().all(|s| s.is_sealed()) }

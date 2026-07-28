@@ -287,6 +287,48 @@ impl Default for WeatherLerp {
     }
 }
 
+
+/// `APEX-T3.4.20c`: one drained semantic frame -- the payload plus the
+/// checkpoint binding it arrived under. `None` means unfenced.
+struct DrainedFrameV1 {
+    msg: ServerGeneral,
+    checkpoint: Option<common_net::msg::checkpoint::CheckpointedEnvelopeContextV1>,
+    sequence: u64,
+}
+
+/// `APEX-T3.4.20c`: the receiver's whole checkpoint runtime. Present only
+/// when a deployment supplied a resource profile; absent means the
+/// checkpoint path is off and checkpointed traffic is refused.
+struct ClientCheckpointRuntimeV1 {
+    profile: common_net::msg::checkpoint::CheckpointResourceProfileV1,
+    chronology: common_net::msg::checkpoint::CheckpointChronologyV1,
+    phase: common_net::msg::checkpoint::ClientCheckpointStateV1,
+    aligner: Option<common_net::msg::checkpoint::CheckpointAlignerV1>,
+    /// Frames accepted for the checkpoint in flight -- the receiver's own
+    /// count, which `prepare_checkpoint_v1` must not infer.
+    staged_events: u32,
+}
+
+/// Collects a committed checkpoint's records so they can be handed to the
+/// ordinary per-stream handlers. Those handlers ARE the client's apply
+/// step; a handler error tears the connection down, exactly as it does
+/// for any other message today.
+#[derive(Default)]
+struct CheckpointApplyCollectorV1 {
+    applied: Vec<common_net::msg::checkpoint::PreparedOpV1>,
+    committed: Option<(u64, [u8; 32])>,
+}
+
+impl common_net::msg::checkpoint::CheckpointApplySinkV1 for CheckpointApplyCollectorV1 {
+    fn apply_record_v1(&mut self, op: &common_net::msg::checkpoint::PreparedOpV1) {
+        self.applied.push(op.clone());
+    }
+
+    fn checkpoint_committed_v1(&mut self, epoch: u64, descriptor_root: [u8; 32]) {
+        self.committed = Some((epoch, descriptor_root));
+    }
+}
+
 pub struct Client {
     client_type: ClientType,
     registered: bool,
@@ -306,6 +348,13 @@ pub struct Client {
     /// resource -- process-lifetime, not per-attachment (unlike
     /// `semantic_receive_state`, this survives a resume/reconnect).
     semantic_ingress_metrics: common_net::msg::envelope::SemanticIngressMetricsV1,
+    /// `APEX-T3.4.20c`: `Some` only when the deployment supplied a
+    /// checkpoint resource profile -- the rollout gate, mirroring
+    /// `semantic_send_state.is_some()`. There is no production profile
+    /// yet (`production_checkpoint_profile_v1` refuses), so this is
+    /// `None` on real traffic and every checkpointed frame is refused
+    /// rather than half-handled.
+    checkpoint_runtime: Option<ClientCheckpointRuntimeV1>,
     /// Localized server motd and rules
     server_description: ServerDescription,
     world_data: WorldData,
@@ -1297,6 +1346,7 @@ impl Client {
             semantic_send_state: semantic_state_binding.map(common_net::msg::SemanticSendStateV1::new),
             semantic_receive_state: semantic_state_binding.map(common_net::msg::SemanticReceiveStateV1::new),
             semantic_ingress_metrics: common_net::msg::envelope::SemanticIngressMetricsV1::new(),
+            checkpoint_runtime: None,
             server_description: description,
             world_data: WorldData {
                 lod_base,
@@ -1601,7 +1651,14 @@ impl Client {
         raw: &[u8],
         receive_state: &common_net::msg::envelope::SemanticReceiveStateV1,
         expected_physical_stream: common_net::msg::envelope::SemanticStreamIdV1,
-    ) -> Result<(T, common_net::msg::envelope::SemanticCausalityV1), common_net::msg::envelope::SemanticEnvelopeRejectV1>
+    ) -> Result<
+        (
+            T,
+            common_net::msg::envelope::SemanticCausalityV1,
+            Option<common_net::msg::checkpoint::CheckpointedEnvelopeContextV1>,
+        ),
+        common_net::msg::envelope::SemanticEnvelopeRejectV1,
+    >
     where
         T: common_net::msg::envelope::SemanticRouteV1 + serde::de::DeserializeOwned,
     {
@@ -1684,7 +1741,7 @@ impl Client {
             return Err(SemanticEnvelopeRejectV1::StreamRouteMismatch);
         }
 
-        Ok((decoded, header.causality))
+        Ok((decoded, header.causality, header.checkpoint))
     }
 
     fn send_msg_err<S>(&mut self, msg: S) -> Result<(), network::StreamError>
@@ -3937,7 +3994,7 @@ impl Client {
         receive_state: &mut Option<common_net::msg::envelope::SemanticReceiveStateV1>,
         semantic_stream: common_net::msg::envelope::SemanticStreamIdV1,
         metrics: &common_net::msg::envelope::SemanticIngressMetricsV1,
-    ) -> Result<Vec<ServerGeneral>, Error> {
+    ) -> Result<Vec<DrainedFrameV1>, Error> {
         let mut out = Vec::new();
         while let Some(raw) = stream.try_recv::<Vec<u8>>()? {
             let Some(state) = receive_state.as_ref() else {
@@ -3945,7 +4002,7 @@ impl Client {
                 continue;
             };
             match Self::validate_semantic_frame_v1(&raw, state, semantic_stream) {
-                Ok((decoded, causality)) => {
+                Ok((decoded, causality, checkpoint)) => {
                     let receive_state_mut = receive_state.as_mut().expect("checked Some above");
                     let advance_result = receive_state_mut.advance_expected(semantic_stream);
                     if advance_result.is_err() {
@@ -3964,7 +4021,8 @@ impl Client {
                     if let Some(snapshot) = causality.snapshot {
                         receive_state_mut.commit_snapshot(snapshot);
                     }
-                    out.push(decoded);
+                    let sequence = receive_state_mut.next_expected_for(semantic_stream).get() - 1;
+                    out.push(DrainedFrameV1 { msg: decoded, checkpoint, sequence });
                 },
                 Err(reject) => {
                     warn!(?reject, "semantic ingress rejected a frame");
@@ -3973,6 +4031,175 @@ impl Client {
             }
         }
         Ok(out)
+    }
+
+
+    /// `APEX-T3.4.20c`: one step of the checkpoint runtime. Pure over the
+    /// runtime (no `&self`), so the caller can hold it out of `Client`
+    /// while it runs. Returns the records to hand to the ordinary
+    /// per-stream handlers -- empty while a checkpoint is still aligning
+    /// -- plus the receipt to acknowledge once it commits.
+    #[expect(clippy::type_complexity)]
+    fn checkpoint_step_v1(
+        rt: &mut ClientCheckpointRuntimeV1,
+        stream: common_net::msg::envelope::SemanticStreamIdV1,
+        frame: DrainedFrameV1,
+    ) -> Result<
+        (
+            Vec<(common_net::msg::envelope::SemanticStreamIdV1, ServerGeneral)>,
+            Option<common_net::msg::checkpoint::CheckpointCommitReceiptV1>,
+        ),
+        Error,
+    > {
+        use common_net::msg::checkpoint::{
+            CheckpointAlignerV1, CheckpointParticipantV1, CheckpointParticipationV1, commit_checkpoint_v1,
+            prepare_checkpoint_v1, validate_checkpoint_context_v1,
+        };
+
+        let fail = |what: &str| Error::Other(format!("checkpoint: {what}"));
+
+        match frame.msg {
+            ServerGeneral::CheckpointBegin(open) => {
+                let context = frame.checkpoint.ok_or_else(|| fail("Begin without checkpoint context"))?;
+                if rt.aligner.is_none() {
+                    let root = open
+                        .descriptor
+                        .descriptor_root_v1()
+                        .map_err(|e| fail(&format!("descriptor root: {e:?}")))?;
+                    let aligner = CheckpointAlignerV1::open_v1(open.descriptor.clone(), root)
+                        .map_err(|e| fail(&format!("descriptor refused: {e:?}")))?;
+                    rt.phase
+                        .begin_alignment_v1(open.begin.epoch)
+                        .map_err(|e| fail(&format!("phase: {e:?}")))?;
+                    rt.aligner = Some(aligner);
+                    rt.staged_events = 0;
+                }
+                let aligner = rt.aligner.as_mut().expect("opened above");
+                validate_checkpoint_context_v1(
+                    CheckpointParticipationV1::CheckpointControl,
+                    Some(&context),
+                    open.begin.epoch,
+                    aligner.descriptor_root(),
+                )
+                .map_err(|e| fail(&format!("Begin context: {e:?}")))?;
+                aligner
+                    .accept_begin_v1(&open.begin)
+                    .map_err(|e| fail(&format!("Begin refused: {e:?}")))?;
+                rt.staged_events += 1;
+                Ok((Vec::new(), None))
+            },
+            ServerGeneral::CheckpointBarrier(barrier) => {
+                let context = frame.checkpoint.ok_or_else(|| fail("Barrier without checkpoint context"))?;
+                let aligner = rt.aligner.as_mut().ok_or_else(|| fail("Barrier with no checkpoint open"))?;
+                validate_checkpoint_context_v1(
+                    CheckpointParticipationV1::CheckpointControl,
+                    Some(&context),
+                    barrier.epoch,
+                    aligner.descriptor_root(),
+                )
+                .map_err(|e| fail(&format!("Barrier context: {e:?}")))?;
+                aligner
+                    .accept_barrier_v1(&barrier)
+                    .map_err(|e| fail(&format!("Barrier refused: {e:?}")))?;
+                rt.staged_events += 1;
+                if !aligner.is_complete() {
+                    return Ok((Vec::new(), None));
+                }
+
+                let descriptor = aligner.descriptor().clone();
+                let descriptor_root = aligner.descriptor_root();
+                let staged = aligner
+                    .take_apply_sequence_v1()
+                    .map_err(|e| fail(&format!("alignment incomplete: {e:?}")))?;
+                let prepared = prepare_checkpoint_v1(
+                    &descriptor,
+                    descriptor_root,
+                    staged,
+                    rt.staged_events,
+                    &rt.profile,
+                    &rt.chronology,
+                )
+                .map_err(|e| fail(&format!("prepare refused: {e:?}")))?;
+                rt.phase
+                    .mark_prepared_v1(descriptor.epoch)
+                    .map_err(|e| fail(&format!("phase: {e:?}")))?;
+
+                let mut sink = CheckpointApplyCollectorV1::default();
+                let receipt = commit_checkpoint_v1(prepared, &mut rt.chronology, &mut sink);
+                rt.phase
+                    .mark_committed_v1(receipt.epoch)
+                    .map_err(|e| fail(&format!("phase: {e:?}")))?;
+                rt.aligner = None;
+                rt.staged_events = 0;
+
+                let out = sink
+                    .applied
+                    .into_iter()
+                    .map(|op| (op.stream, std::sync::Arc::try_unwrap(op.payload).unwrap_or_else(|arc| (*arc).clone())))
+                    .collect();
+                Ok((out, Some(receipt)))
+            },
+            msg => match frame.checkpoint {
+                Some(context) => {
+                    let aligner = rt.aligner.as_mut().ok_or_else(|| fail("checkpointed data with no checkpoint open"))?;
+                    aligner
+                        .accept_data_v1(stream, frame.sequence, &context, std::sync::Arc::new(msg))
+                        .map_err(|e| fail(&format!("data refused: {e:?}")))?;
+                    rt.staged_events += 1;
+                    Ok((Vec::new(), None))
+                },
+                // Unfenced traffic: legal only outside a checkpoint. Inside
+                // one it would be applied out of the aligned order, which is
+                // the interleave the fence exists to prevent.
+                None if rt.phase.may_apply_directly_v1() => Ok((vec![(stream, msg)], None)),
+                None if msg.participation_v1() == CheckpointParticipationV1::OutOfBandDiagnostic => {
+                    Ok((vec![(stream, msg)], None))
+                },
+                None => Err(fail("unfenced data arrived inside an open checkpoint")),
+            },
+        }
+    }
+
+    /// `T3.4.20c`: runs the checkpoint runtime over one drained frame,
+    /// then acknowledges a commit. With the path inactive, a checkpointed
+    /// frame is refused rather than half-handled.
+    fn checkpoint_intercept_v1(
+        &mut self,
+        stream: common_net::msg::envelope::SemanticStreamIdV1,
+        frame: DrainedFrameV1,
+    ) -> Result<Vec<(common_net::msg::envelope::SemanticStreamIdV1, ServerGeneral)>, Error> {
+        let Some(mut rt) = self.checkpoint_runtime.take() else {
+            if frame.checkpoint.is_some()
+                || matches!(frame.msg, ServerGeneral::CheckpointBegin(_) | ServerGeneral::CheckpointBarrier(_))
+            {
+                return Err(Error::Other(
+                    "checkpoint: a fenced frame arrived with the checkpoint path inactive".to_owned(),
+                ));
+            }
+            return Ok(vec![(stream, frame.msg)]);
+        };
+        let stepped = Self::checkpoint_step_v1(&mut rt, stream, frame);
+        self.checkpoint_runtime = Some(rt);
+        let (out, ack) = stepped?;
+        if let Some(receipt) = ack {
+            self.send_msg(ClientGeneral::CheckpointCommitAck(receipt));
+        }
+        Ok(out)
+    }
+
+    fn dispatch_by_stream_v1(
+        &mut self,
+        frontend_events: &mut Vec<Event>,
+        stream: common_net::msg::envelope::SemanticStreamIdV1,
+        msg: ServerGeneral,
+    ) -> Result<(), Error> {
+        use common_net::msg::envelope::SemanticStreamIdV1 as S;
+        match stream {
+            S::Bootstrap | S::General => self.handle_server_msg(frontend_events, msg),
+            S::CharacterScreen => self.handle_server_character_screen_msg(frontend_events, msg),
+            S::InGame => self.handle_server_in_game_msg(frontend_events, msg),
+            S::Terrain => self.handle_server_terrain_msg(msg),
+        }
     }
 
     fn handle_messages(&mut self, frontend_events: &mut Vec<Event>) -> Result<u64, Error> {
@@ -3992,7 +4219,9 @@ impl Client {
                     &self.semantic_ingress_metrics,
                 )? {
                     cnt += 1;
-                    self.handle_server_msg(frontend_events, msg)?;
+                    for (stream, out) in self.checkpoint_intercept_v1(SemanticStreamIdV1::General, msg)? {
+                        self.dispatch_by_stream_v1(frontend_events, stream, out)?;
+                    }
                 }
             } else {
                 while let Some(msg) = self.general_stream.try_recv()? {
@@ -4012,7 +4241,9 @@ impl Client {
                     &self.semantic_ingress_metrics,
                 )? {
                     cnt += 1;
-                    self.handle_server_character_screen_msg(frontend_events, msg)?;
+                    for (stream, out) in self.checkpoint_intercept_v1(SemanticStreamIdV1::CharacterScreen, msg)? {
+                        self.dispatch_by_stream_v1(frontend_events, stream, out)?;
+                    }
                 }
             } else {
                 while let Some(msg) = self.character_screen_stream.try_recv()? {
@@ -4032,7 +4263,9 @@ impl Client {
                     {
                         ingame_cnt += 1;
                     }
-                    self.handle_server_in_game_msg(frontend_events, msg)?;
+                    for (stream, out) in self.checkpoint_intercept_v1(SemanticStreamIdV1::InGame, msg)? {
+                        self.dispatch_by_stream_v1(frontend_events, stream, out)?;
+                    }
                 }
             } else {
                 while let Some(msg) = self.in_game_stream.try_recv()? {
@@ -4054,11 +4287,13 @@ impl Client {
                     cnt += 1;
                     #[cfg(feature = "tracy")]
                     {
-                        if let ServerGeneral::TerrainChunkUpdate { chunk, .. } = &msg {
+                        if let ServerGeneral::TerrainChunkUpdate { chunk, .. } = &msg.msg {
                             terrain_cnt += chunk.as_ref().map(|x| x.approx_len()).unwrap_or(0);
                         }
                     }
-                    self.handle_server_terrain_msg(msg)?;
+                    for (stream, out) in self.checkpoint_intercept_v1(SemanticStreamIdV1::Terrain, msg)? {
+                        self.dispatch_by_stream_v1(frontend_events, stream, out)?;
+                    }
                 }
             } else {
                 while let Some(msg) = self.terrain_stream.try_recv()? {
@@ -4542,6 +4777,15 @@ mod tests {
     fn recv_state() -> SemanticReceiveStateV1 { SemanticReceiveStateV1::new(recv_binding()) }
 
     fn recv_frame_bytes(b: ActiveSessionBindingV1, sequence: u64, msg: &ServerGeneral) -> Vec<u8> {
+        recv_frame_bytes_checkpointed(b, sequence, msg, None)
+    }
+
+    fn recv_frame_bytes_checkpointed(
+        b: ActiveSessionBindingV1,
+        sequence: u64,
+        msg: &ServerGeneral,
+        checkpoint: Option<common_net::msg::checkpoint::CheckpointedEnvelopeContextV1>,
+    ) -> Vec<u8> {
         let payload_bytes = encode_payload_v1(msg);
         let profile_root = common_net::msg::envelope::net_envelope_profile_root_v1();
         let payload_schema = msg.payload_schema();
@@ -4566,7 +4810,7 @@ mod tests {
             payload_len: payload_bytes.len() as u64,
             payload_digest,
             command_id: None,
-            checkpoint: None,
+            checkpoint,
         };
         let frame = common_net::msg::envelope::SemanticWireFrameV1 { header, payload_bytes };
         let limits = common::apex::manifest::ManifestDecodeLimitsV1 {
@@ -4600,7 +4844,7 @@ mod tests {
         let state = recv_state();
         for msg in representative_messages() {
             let raw = recv_frame_bytes(recv_binding(), 1, &msg);
-            let (decoded, _causality) = Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap();
+            let (decoded, _causality, _checkpoint) = Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap();
             assert_eq!(decoded.semantic_stream(), msg.semantic_stream());
         }
     }
@@ -4759,4 +5003,244 @@ mod tests {
         assert_eq!(state.next_expected_for(msg.semantic_stream()).get(), 1, "rejected traffic must not move the cursor");
         assert_eq!(metrics.snapshot(), vec![("sequence_gap", SemanticStreamIdV1::InGame, 1)]);
     }
+
+    /// `APEX-T3.4.20c`: the live receive path. These drive the real
+    /// `Client` code -- `validate_semantic_frame_v1` under the exact
+    /// decode limits production uses, and `checkpoint_step_v1` over a
+    /// whole checkpoint -- not a harness reimplementation of them.
+    mod checkpoint_receive_v1 {
+        use super::*;
+        use common_net::msg::checkpoint::{
+            CheckpointBarrierV1, CheckpointBeginV1, CheckpointChronologyV1,
+            CheckpointDescriptorV1, CheckpointOrdinalV1, CheckpointProfilePurposeV1, CheckpointResourceProfileV1,
+            CheckpointStreamOpenV1, CheckpointedEnvelopeContextV1, ClientCheckpointStateV1,
+            REQUIRED_CHECKPOINT_STREAMS_V1, StreamCheckpointPlanV1, TranscriptEntryV1,
+            global_transcript_root_v1, stream_transcript_root_v1,
+        };
+
+        const EPOCH: u64 = 3;
+
+        fn records() -> Vec<(SemanticStreamIdV1, u64, ServerGeneral)> {
+            vec![
+                (SemanticStreamIdV1::InGame, 1, ServerGeneral::CharacterSuccess),
+                (SemanticStreamIdV1::InGame, 2, ServerGeneral::UpdateRecipes),
+                (SemanticStreamIdV1::Terrain, 3, ServerGeneral::ExitInGameSuccess),
+            ]
+        }
+
+        fn entry_of(sequence: u64, ordinal: u64, msg: &ServerGeneral) -> (TranscriptEntryV1, u64) {
+            let bytes = encode_payload_v1(msg);
+            let digest = common_net::msg::envelope::payload_digest_v1(
+                common_net::msg::envelope::net_envelope_profile_root_v1(),
+                msg.payload_schema(),
+                SemanticPayloadEncodingV1::Bincode2LegacySerde,
+                &bytes,
+            );
+            (
+                TranscriptEntryV1 {
+                    sequence,
+                    ordinal: CheckpointOrdinalV1(ordinal),
+                    payload_kind: msg.payload_schema().as_u16(),
+                    payload_digest: *digest.as_array(),
+                },
+                bytes.len() as u64,
+            )
+        }
+
+        /// The descriptor the server would have planned for `records()`,
+        /// with every stream fenced from its own sequence 1.
+        fn descriptor() -> CheckpointDescriptorV1 {
+            let binding = recv_binding();
+            let mut plans = Vec::with_capacity(5);
+            let mut all = Vec::new();
+            for stream in REQUIRED_CHECKPOINT_STREAMS_V1 {
+                let mut entries = Vec::new();
+                let mut bytes = 0;
+                let mut sequence = 1;
+                for (_, ordinal, msg) in records().iter().filter(|(s, _, _)| *s == stream) {
+                    sequence += 1;
+                    let (entry, len) = entry_of(sequence, *ordinal, msg);
+                    bytes += len;
+                    entries.push(entry);
+                }
+                let n = entries.len() as u32;
+                plans.push(StreamCheckpointPlanV1 {
+                    stream,
+                    begin_sequence: 1,
+                    first_data_sequence: (n > 0).then_some(2),
+                    last_data_sequence: (n > 0).then_some(1 + n as u64),
+                    barrier_sequence: 2 + n as u64,
+                    data_record_count: n,
+                    payload_bytes: bytes,
+                    stream_transcript_root: stream_transcript_root_v1(&binding, EPOCH, stream, &entries).unwrap(),
+                });
+                all.extend(entries);
+            }
+            CheckpointDescriptorV1 {
+                schema_version: 1,
+                binding,
+                epoch: EPOCH,
+                parent_epoch: EPOCH - 1,
+                resource_profile_root: [1; 32],
+                apply_policy_root: [2; 32],
+                egress_order_policy_root: [3; 32],
+                data_record_count: records().len() as u32,
+                ordinal_max: records().len() as u64,
+                payload_bytes: plans.iter().map(|p| p.payload_bytes).sum(),
+                global_transcript_root: global_transcript_root_v1(&binding, EPOCH, &all).unwrap(),
+                streams: plans.try_into().unwrap(),
+                bootstrap_manifest_root: None,
+            }
+        }
+
+        fn runtime() -> ClientCheckpointRuntimeV1 {
+            let mut chronology = CheckpointChronologyV1::new();
+            chronology.commit_epoch_v1(EPOCH - 1);
+            ClientCheckpointRuntimeV1 {
+                profile: CheckpointResourceProfileV1 {
+                    profile_id: "apex-t3-4-client-test-v1".to_owned(),
+                    purpose: CheckpointProfilePurposeV1::TestFixture,
+                    max_records_per_checkpoint: 8,
+                    max_payload_bytes_per_checkpoint: 1 << 16,
+                    max_payload_bytes_per_stream: [1 << 16; 5],
+                    max_staged_events: 32,
+                    max_prepared_ops: 8,
+                },
+                chronology,
+                phase: ClientCheckpointStateV1::new(64),
+                aligner: None,
+                staged_events: 0,
+            }
+        }
+
+        fn ctx(root: [u8; 32], ordinal: Option<u64>) -> CheckpointedEnvelopeContextV1 {
+            CheckpointedEnvelopeContextV1 {
+                epoch: EPOCH,
+                ordinal: ordinal.map(CheckpointOrdinalV1),
+                descriptor_root: root,
+            }
+        }
+
+        fn frame(msg: ServerGeneral, checkpoint: Option<CheckpointedEnvelopeContextV1>, sequence: u64) -> DrainedFrameV1 {
+            DrainedFrameV1 { msg, checkpoint, sequence }
+        }
+
+        /// A fenced frame must survive the EXACT decode limits the live
+        /// receive path uses -- the header grew by a nested map, and a
+        /// limit that rejected it would make checkpoints undeliverable.
+        #[test]
+        fn a_fenced_frame_survives_the_live_decode_limits() {
+            let msg = ServerGeneral::UpdateRecipes;
+            let context = ctx([0xC7; 32], Some(4));
+            let raw = recv_frame_bytes_checkpointed(recv_binding(), 1, &msg, Some(context));
+            let state = recv_state();
+            let (decoded, _causality, carried) =
+                Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap();
+            assert_eq!(format!("{decoded:?}"), format!("{msg:?}"));
+            assert_eq!(carried, Some(context), "the checkpoint binding must survive the wire");
+
+            // ...and an unfenced frame still decodes to no context
+            let raw = recv_frame_bytes(recv_binding(), 1, &msg);
+            let (_, _, none) =
+                Client::validate_semantic_frame_v1::<ServerGeneral>(&raw, &state, msg.semantic_stream()).unwrap();
+            assert_eq!(none, None);
+        }
+
+        /// The whole point: the client applies NOTHING until the last
+        /// stream is fenced, then applies the set in canonical order.
+        #[test]
+        fn nothing_is_applied_until_the_last_barrier() {
+            let descriptor = descriptor();
+            let root = descriptor.descriptor_root_v1().unwrap();
+            let mut rt = runtime();
+
+            for stream in REQUIRED_CHECKPOINT_STREAMS_V1 {
+                let open = CheckpointStreamOpenV1 {
+                    begin: CheckpointBeginV1 { epoch: EPOCH, stream, descriptor_root: root },
+                    descriptor: descriptor.clone(),
+                };
+                let (out, ack) = Client::checkpoint_step_v1(
+                    &mut rt,
+                    stream,
+                    frame(ServerGeneral::CheckpointBegin(Box::new(open)), Some(ctx(root, None)), 1),
+                )
+                .unwrap();
+                assert!(out.is_empty() && ack.is_none());
+            }
+
+            for stream in REQUIRED_CHECKPOINT_STREAMS_V1 {
+                let mut sequence = 1;
+                for (_, ordinal, msg) in records().into_iter().filter(|(s, _, _)| *s == stream) {
+                    sequence += 1;
+                    let (out, ack) =
+                        Client::checkpoint_step_v1(&mut rt, stream, frame(msg, Some(ctx(root, Some(ordinal))), sequence))
+                            .unwrap();
+                    assert!(out.is_empty() && ack.is_none(), "staged, never applied");
+                }
+            }
+
+            // unfenced traffic inside an open checkpoint is refused, not
+            // quietly applied out of order
+            assert!(
+                Client::checkpoint_step_v1(
+                    &mut rt,
+                    SemanticStreamIdV1::General,
+                    frame(ServerGeneral::UpdateRecipes, None, 99)
+                )
+                .is_err()
+            );
+
+            let mut applied = Vec::new();
+            let mut receipt = None;
+            for plan in descriptor.streams.iter() {
+                let barrier = CheckpointBarrierV1 {
+                    epoch: EPOCH,
+                    stream: plan.stream,
+                    descriptor_root: root,
+                    data_record_count: plan.data_record_count,
+                    payload_bytes: plan.payload_bytes,
+                    last_data_sequence: plan.last_data_sequence,
+                    stream_transcript_root: plan.stream_transcript_root,
+                };
+                let (out, ack) = Client::checkpoint_step_v1(
+                    &mut rt,
+                    plan.stream,
+                    frame(ServerGeneral::CheckpointBarrier(barrier), Some(ctx(root, None)), plan.barrier_sequence),
+                )
+                .unwrap();
+                if out.is_empty() {
+                    assert!(ack.is_none(), "no receipt before the checkpoint is whole");
+                } else {
+                    applied = out;
+                    receipt = ack;
+                }
+            }
+
+            // phase-major, ordinal-minor, each record on its own stream
+            let shape: Vec<(SemanticStreamIdV1, String)> =
+                applied.iter().map(|(s, m)| (*s, format!("{m:?}"))).collect();
+            assert_eq!(
+                shape,
+                vec![
+                    (SemanticStreamIdV1::InGame, format!("{:?}", ServerGeneral::CharacterSuccess)),
+                    (SemanticStreamIdV1::InGame, format!("{:?}", ServerGeneral::UpdateRecipes)),
+                    (SemanticStreamIdV1::Terrain, format!("{:?}", ServerGeneral::ExitInGameSuccess)),
+                ]
+            );
+            let receipt = receipt.expect("a committed checkpoint is acknowledged");
+            assert_eq!(receipt.epoch, EPOCH);
+            assert_eq!(receipt.descriptor_root, root);
+            assert_eq!(receipt.applied_records, 3);
+            assert_eq!(rt.chronology.committed_epoch(), EPOCH);
+            // ...and the receiver is Idle again, so ordinary traffic flows
+            let (out, _) = Client::checkpoint_step_v1(
+                &mut rt,
+                SemanticStreamIdV1::General,
+                frame(ServerGeneral::UpdateRecipes, None, 100),
+            )
+            .unwrap();
+            assert_eq!(out.len(), 1);
+        }
+    }
+
 }
