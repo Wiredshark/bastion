@@ -272,6 +272,52 @@ on this row.
 **Required tests.** Corruption, future-version, and missing-store
 fixtures; direct-vs-stepwise equality on every migratable epoch pair.
 
+**BUILT — `server/src/save_migration.rs`, 10 tests.** With a correction
+to this row's premise, established by reading the loader rather than
+assuming the row's shape:
+
+**There is no rtsim migration machinery in this build, so the honest
+graph is EMPTY.** `Data::from_reader` rejects any version that is not
+`CURRENT_VERSION`, and `server/src/rtsim/mod.rs` responds by PURGING and
+regenerating — unless the operator sets `RTSIM_IGNORE_VERSION`, which
+loads the mismatched data unmigrated. So every non-current rtsim version
+is `ExplicitRecoveryOnly`: a path exists and it is not automatic. Not
+`Unsupported` (there IS a recovery), not `Migratable` (nothing transforms
+the data; serde defaults absorb the difference, which is a very different
+promise). Constructing an elaborate graph over steps that do not exist
+would have been theatre — what is built is the ENGINE and its law, so the
+first real step is born already bound by them. A test fails the moment an
+rtsim step appears, forcing the support policy to be re-derived rather
+than left stale.
+
+**Also corrected:** the `.ron_backup` rename that `T4.4` inventories
+fires on a DECODE failure, not on a version mismatch. Those are different
+paths and I had them conflated.
+
+The direct-equals-stepwise law is enforced by the graph and demonstrated
+both ways: a consistent graph passes, and a graph whose direct edge has
+drifted from its stepwise path is caught by name. Stepwise walking breaks
+ties by smallest `to` then name, so migration is a function of the graph
+and not of the order steps were written down. Non-advancing steps are
+refused at construction, which is what makes the walk unable to fail to
+terminate. `NoPathFrom` and `NoPathTo` are distinguished because they are
+different problems for whoever has to fix the save.
+
+The per-step digest is called `behaviour_fingerprint_v1` and NOT a code
+digest, because it is not one: it digests what the steps do to a probe
+corpus. It catches a step whose behaviour moved and misses a change that
+is a no-op on every probe. A true per-function code digest needs `T1.2`'s
+source closure at function granularity, which does not exist.
+
+**Step 5 is deliberately unanswered.** The tombstone, alias, content and
+world-resolution policies are carried in `RESOLUTION_POLICIES` as stated
+QUESTIONS, all `PendingRuling`. This row says they are declared before
+code and are not a builder's call; a test fails if any becomes
+`Declared`, so a policy about player data cannot change without somebody
+noticing. **Step 7's sequencing rule is a value** —
+`SAVE_MANIFEST_MANDATE_READY = false` — so `T4.6` cannot quietly assume
+it has been satisfied.
+
 ---
 
 ## T4.6 — Multi-store staged save epochs

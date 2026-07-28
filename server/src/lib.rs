@@ -49,6 +49,7 @@ pub mod presence;
 pub mod rtsim;
 pub mod physics_cohort;
 pub mod save_inventory;
+pub mod save_migration;
 pub mod semantic_net;
 pub mod session_registry;
 pub mod settings;
