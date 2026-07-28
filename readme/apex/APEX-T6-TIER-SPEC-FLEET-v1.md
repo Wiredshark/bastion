@@ -126,6 +126,38 @@ silently.
 exclusion without evidence fails; the scanner sees all five `powf` sites
 listed above (a fixed lower bound, so a regexp regression is visible).
 
+**BUILT — `T6.1a` + `T6.1b`, `common/src/apex/numeric_surface.rs`.** 26
+authoritative files, 54 site entries covering 87 non-comment lines, 12
+tests. Three things the build found that this spec had wrong:
+
+1. **The pattern list under-covered its own claim.** `acos`, `asin`,
+   `atan`, `tan` and the arbitrary-base `log` were absent, so seven sites
+   and two whole files sat outside an inventory that said it was
+   complete. One of them — `common/systems/src/melee.rs` — is an `atan`
+   *inside the hit predicate*, the strongest reach class there is. A
+   pattern list is a coverage claim and has to be tested like one.
+2. **`sqrt` is not a cross-target hazard.** IEEE 754 §5.4.1 requires
+   square root to be correctly rounded; Rust lowers `f32::sqrt` to the
+   hardware instruction with no fast-math. `powf`/`sin`/`cos`/`ln` carry
+   no such requirement and are the platform libm's. That single
+   distinction sorts the surface, so the protocol status is *derived from
+   the operation* rather than asserted per site — a site cannot be
+   mispaired with a status it did not earn. `cbrt` and `hypot` are libm
+   despite reading as roots, and a test says so.
+3. **Two files left the surface entirely** once the scan stripped
+   comments: `apex/source_closure.rs` and `clock.rs` only ever *mentioned*
+   the operations in prose. The `TestSupport` class went with them rather
+   than being kept as an empty variant — a class nobody is in is a place
+   for a future file to be filed without argument.
+
+The branch-driving set is **10 sites across 6 owners** (Combat,
+Progression, Pathfinding, WorldSync, AreaOfEffect, PhysicsTick), which is
+the fact `T6.5` has to plan around: there is no single owner to hand this
+tier to. Two of the ten are cheaply retirable rather than certifiable —
+`path.rs`'s `powf(0.5)` is `sqrt` written as a libm `pow` call, and
+`states/utils.rs`'s `(1.0 - FRIC_GROUND).ln()` has a **constant**
+argument while feeding `rtsim`'s persisted NPC positions.
+
 ---
 
 ## T6.2 — Raw and semantic numeric probes
