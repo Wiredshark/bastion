@@ -748,6 +748,8 @@ impl DerivedCommandIdSourceV1 {
 
     pub fn next_ordinal(&self) -> u64 { self.next_ordinal }
 
+    pub fn binding_v1(&self) -> ActiveSessionBindingV1 { self.binding }
+
     /// Derives the id for an ordinal WITHOUT consuming it — the pure
     /// core, so a test (or a replaying client) can ask what the id for
     /// ordinal N is without moving the counter.
@@ -830,5 +832,161 @@ mod command_id_source_v1 {
 
         // a replaying client re-derives the id of a command it already sent
         assert_eq!(DerivedCommandIdSourceV1::id_for_ordinal_v1(&b, 1).unwrap(), peeked);
+    }
+}
+
+/// `APEX-T3.5.06` — the client side of exactly-once: an outbox that
+/// retries a command with the SAME identity. A retry that re-derived its
+/// id would arrive as a new command and apply twice, so the outbox
+/// hands back the original descriptor unchanged and only counts the
+/// attempt. Retries are budgeted, because an unbounded retry loop is how
+/// an idempotent protocol still takes a server down.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PendingCommandV1 {
+    pub descriptor: CommandDescriptorV1,
+    pub attempts: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutboxErrorV1 {
+    CapacityExhausted,
+    RetryBudgetExhausted,
+    UnknownCommand,
+    IdSource(CommandIdSourceErrorV1),
+}
+
+#[derive(Debug, Clone)]
+pub struct ClientCommandOutboxV1 {
+    source: DerivedCommandIdSourceV1,
+    pending: std::collections::BTreeMap<CommandId, PendingCommandV1>,
+    capacity: usize,
+    retry_budget: u32,
+}
+
+impl ClientCommandOutboxV1 {
+    /// Both bounds are deployment-supplied; neither is invented here.
+    pub fn new(binding: ActiveSessionBindingV1, capacity: usize, retry_budget: u32) -> Self {
+        Self {
+            source: DerivedCommandIdSourceV1::new(binding),
+            pending: std::collections::BTreeMap::new(),
+            capacity,
+            retry_budget,
+        }
+    }
+
+    pub fn pending_len(&self) -> usize { self.pending.len() }
+
+    pub fn pending_v1(&self, command_id: &CommandId) -> Option<PendingCommandV1> {
+        self.pending.get(command_id).copied()
+    }
+
+    /// Issues a NEW command: a fresh derived id, one attempt recorded.
+    pub fn issue_v1(
+        &mut self,
+        kind: CommandKindV1,
+        request_digest: [u8; 32],
+    ) -> Result<CommandDescriptorV1, OutboxErrorV1> {
+        if self.pending.len() >= self.capacity {
+            return Err(OutboxErrorV1::CapacityExhausted);
+        }
+        let command_id = self.source.issue_v1().map_err(OutboxErrorV1::IdSource)?;
+        let descriptor =
+            CommandDescriptorV1 { binding: self.source.binding_v1(), command_id, kind, request_digest };
+        self.pending.insert(command_id, PendingCommandV1 { descriptor, attempts: 1 });
+        Ok(descriptor)
+    }
+
+    /// Resends an outstanding command. The descriptor returned is the
+    /// ORIGINAL, unchanged — same id, same request digest — so the
+    /// server's ledger sees a replay rather than a new command.
+    pub fn retry_v1(&mut self, command_id: &CommandId) -> Result<CommandDescriptorV1, OutboxErrorV1> {
+        let entry = self.pending.get_mut(command_id).ok_or(OutboxErrorV1::UnknownCommand)?;
+        if entry.attempts >= self.retry_budget {
+            return Err(OutboxErrorV1::RetryBudgetExhausted);
+        }
+        entry.attempts += 1;
+        Ok(entry.descriptor)
+    }
+
+    /// Clears a command once its outcome is known. Acknowledging one
+    /// that is not outstanding is a typed error, not a silent no-op:
+    /// it means the client and server disagree about what is in flight.
+    pub fn acknowledge_v1(&mut self, command_id: &CommandId) -> Result<PendingCommandV1, OutboxErrorV1> {
+        self.pending.remove(command_id).ok_or(OutboxErrorV1::UnknownCommand)
+    }
+}
+
+#[cfg(test)]
+mod command_outbox_v1 {
+    use super::*;
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+    use std::cell::Cell;
+
+    fn binding() -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([2; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        }
+    }
+
+    /// The loop the tier exists for: the client retries, the server
+    /// executes once. Both halves driven together.
+    #[test]
+    fn retries_carry_the_same_identity_and_execute_once_end_to_end() {
+        let mut outbox = ClientCommandOutboxV1::new(binding(), 4, 5);
+        let mut ledger = CommandLedgerV1::new(binding(), 8);
+        let runs = Cell::new(0u32);
+
+        let first = outbox.issue_v1(CommandKindV1::ControlAction, [7; 32]).unwrap();
+        let mut deliveries = vec![first];
+        for _ in 0..4 {
+            deliveries.push(outbox.retry_v1(&first.command_id).unwrap());
+        }
+        assert!(deliveries.iter().all(|d| *d == first), "a retry must not change the command's identity");
+        assert_eq!(outbox.pending_v1(&first.command_id).unwrap().attempts, 5);
+
+        let mut outcomes = Vec::new();
+        for delivery in &deliveries {
+            outcomes.push(
+                execute_command_once_v1(&mut ledger, delivery, || {
+                    runs.set(runs.get() + 1);
+                    CommandOutcomeV1::Applied { result_digest: [3; 32] }
+                })
+                .unwrap()
+                .outcome(),
+            );
+        }
+        assert_eq!(runs.get(), 1, "five deliveries, one execution");
+        assert!(outcomes.iter().all(|o| *o == CommandOutcomeV1::Applied { result_digest: [3; 32] }));
+
+        // the budget is real
+        assert_eq!(outbox.retry_v1(&first.command_id).unwrap_err(), OutboxErrorV1::RetryBudgetExhausted);
+
+        // acknowledging clears it, and a second ack is a typed error
+        assert_eq!(outbox.acknowledge_v1(&first.command_id).unwrap().attempts, 5);
+        assert_eq!(outbox.pending_len(), 0);
+        assert_eq!(outbox.acknowledge_v1(&first.command_id).unwrap_err(), OutboxErrorV1::UnknownCommand);
+    }
+
+    /// A DIFFERENT command gets a different id, and the outbox is bounded.
+    #[test]
+    fn distinct_commands_get_distinct_ids_and_the_outbox_is_bounded() {
+        let mut outbox = ClientCommandOutboxV1::new(binding(), 2, 3);
+        let a = outbox.issue_v1(CommandKindV1::ControlAction, [1; 32]).unwrap();
+        let b = outbox.issue_v1(CommandKindV1::ControlAction, [1; 32]).unwrap();
+        assert_ne!(a.command_id, b.command_id, "two issues are two commands even with identical content");
+
+        assert_eq!(
+            outbox.issue_v1(CommandKindV1::ControlAction, [2; 32]).unwrap_err(),
+            OutboxErrorV1::CapacityExhausted
+        );
+        outbox.acknowledge_v1(&a.command_id).unwrap();
+        // ...and the freed slot never reissues a used id
+        let c = outbox.issue_v1(CommandKindV1::ControlAction, [3; 32]).unwrap();
+        assert_ne!(c.command_id, a.command_id);
+        assert_ne!(c.command_id, b.command_id);
+
+        assert_eq!(outbox.retry_v1(&a.command_id).unwrap_err(), OutboxErrorV1::UnknownCommand);
     }
 }
