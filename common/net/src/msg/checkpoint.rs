@@ -2,6 +2,7 @@
 //! classification, global chronology, apply phases.
 
 use super::envelope::SemanticStreamIdV1;
+use super::client::ClientType;
 use super::{ClientGeneral, ServerGeneral, ServerInit};
 use serde::{Deserialize, Serialize};
 
@@ -2083,5 +2084,88 @@ mod checkpoint_client_phase_v1 {
         assert!(st.may_apply_directly_v1());
         assert_eq!(st.elapsed_ticks(), 0);
         st.begin_alignment_v1(4).unwrap();
+    }
+}
+
+/// `APEX-T3.4.21` — a checkpoint profile must be legal for the client
+/// type it is issued to. A `ChatOnly` session can never legally receive
+/// in-game, character-screen or terrain payloads (`ServerMsg::verify`'s
+/// own rule), so a budget for those streams is a misconfiguration, not
+/// unused headroom: it would silently admit a checkpoint the receiver
+/// must reject frame by frame.
+pub fn streams_admissible_for_client_type_v1(client_type: ClientType) -> [bool; 5] {
+    // Indexed like REQUIRED_CHECKPOINT_STREAMS_V1.
+    match client_type {
+        // Bootstrap and General carry the session-level traffic every
+        // client type receives; the rest are gated exactly as `verify` is.
+        ClientType::ChatOnly => [true, false, false, true, false],
+        ClientType::Game | ClientType::Bot { .. } | ClientType::SilentSpectator => [true; 5],
+    }
+}
+
+/// Refuses a profile that budgets a stream this client type can never
+/// legally be sent.
+pub fn validate_profile_for_client_type_v1(
+    profile: &CheckpointResourceProfileV1,
+    client_type: ClientType,
+) -> Result<(), CheckpointResourceErrorV1> {
+    let admissible = streams_admissible_for_client_type_v1(client_type);
+    for (slot, allowed) in admissible.into_iter().enumerate() {
+        if !allowed && profile.max_payload_bytes_per_stream[slot] != 0 {
+            return Err(CheckpointResourceErrorV1::DeclaredExceeded { limit: "stream_closed_for_client_type" });
+        }
+    }
+    Ok(())
+}
+
+/// A descriptor may not claim records on a stream this client type
+/// cannot receive, whatever the profile says.
+pub fn admit_descriptor_for_client_type_v1(
+    descriptor: &CheckpointDescriptorV1,
+    client_type: ClientType,
+) -> Result<(), CheckpointResourceErrorV1> {
+    let admissible = streams_admissible_for_client_type_v1(client_type);
+    for (plan, allowed) in descriptor.streams.iter().zip(admissible) {
+        if !allowed && (plan.data_record_count != 0 || plan.payload_bytes != 0) {
+            return Err(CheckpointResourceErrorV1::DeclaredExceeded { limit: "stream_closed_for_client_type" });
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod checkpoint_client_type_v1 {
+    use super::*;
+
+    fn profile(per_stream: [u64; 5]) -> CheckpointResourceProfileV1 {
+        CheckpointResourceProfileV1 {
+            profile_id: "apex-t3-4-client-type-v1".to_owned(),
+            purpose: CheckpointProfilePurposeV1::TestFixture,
+            max_records_per_checkpoint: 4,
+            max_payload_bytes_per_checkpoint: 4096,
+            max_payload_bytes_per_stream: per_stream,
+            max_staged_events: 16,
+            max_prepared_ops: 4,
+        }
+    }
+
+    #[test]
+    fn a_chat_only_session_may_not_be_budgeted_for_streams_it_cannot_receive() {
+        // Bootstrap and General only.
+        assert!(validate_profile_for_client_type_v1(&profile([64, 0, 0, 64, 0]), ClientType::ChatOnly).is_ok());
+        for closed in [1, 2, 4] {
+            let mut per_stream = [64, 0, 0, 64, 0];
+            per_stream[closed] = 1;
+            assert!(
+                validate_profile_for_client_type_v1(&profile(per_stream), ClientType::ChatOnly).is_err(),
+                "slot {closed} is closed for ChatOnly"
+            );
+        }
+        // A full-game session may budget every stream.
+        assert!(validate_profile_for_client_type_v1(&profile([64; 5]), ClientType::Game).is_ok());
+        assert!(validate_profile_for_client_type_v1(&profile([64; 5]), ClientType::SilentSpectator).is_ok());
+        assert!(validate_profile_for_client_type_v1(&profile([64; 5]), ClientType::Bot { privileged: false }).is_ok());
+        // ...and the closed set is exactly the one `verify` gates.
+        assert_eq!(streams_admissible_for_client_type_v1(ClientType::ChatOnly), [true, false, false, true, false]);
     }
 }
