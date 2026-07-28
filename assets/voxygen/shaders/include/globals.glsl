@@ -47,6 +47,7 @@ layout(std140, set = 0, binding = 0) uniform u_globals {
     uvec4 bastion_fog_mode;      // .x 0 legacy, 1 outdoor, 2 water, 3 underground; .y quality
     vec4  bastion_fog_distances; // .xy visual near/far; .zw gameplay terrain/entity bounds
     vec4  bastion_fog_color;     // linear RGB fog response; .w reserved
+    vec4  bastion_lighting_policy; // .x enabled; .y exposure scale; .z ambient scale; .w mode
 };
 
 float distance_divider = 2.0;

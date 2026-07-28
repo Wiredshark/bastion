@@ -92,6 +92,8 @@ pub struct Globals {
     bastion_fog_mode: [u32; 4],
     bastion_fog_distances: [f32; 4],
     bastion_fog_color: [f32; 4],
+    /// R1F coherent presentation-only lighting policy. X zero preserves legacy.
+    bastion_lighting_policy: [f32; 4],
 }
 /// Make sure Globals is 16-byte-aligned.
 const _: () = assert!(core::mem::size_of::<Globals>().is_multiple_of(16));
@@ -145,6 +147,7 @@ impl Globals {
         // bastion (B1.6): packed overseer occlusion block; mode 0 = vanilla.
         bastion_occ: crate::bastion::occlusion::OcclusionUniform,
         fog: crate::r1f_fog::FogUniformV1,
+        lighting: crate::r1f_lighting::LightingUniformV1,
     ) -> Self {
         Self {
             view_mat: view_mat.into_col_arrays(),
@@ -227,6 +230,7 @@ impl Globals {
             bastion_fog_mode: fog.mode,
             bastion_fog_distances: fog.distances,
             bastion_fog_color: fog.color,
+            bastion_lighting_policy: lighting.policy,
         }
     }
 }
@@ -262,6 +266,7 @@ impl Default for Globals {
             1.0,
             crate::bastion::occlusion::OcclusionUniform::solid(),
             crate::r1f_fog::FogUniformV1::legacy_disabled(),
+            crate::r1f_lighting::LightingUniformV1::legacy_disabled(),
         )
     }
 }

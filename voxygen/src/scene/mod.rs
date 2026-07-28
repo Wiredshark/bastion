@@ -1116,6 +1116,42 @@ impl Scene {
         } else {
             crate::r1f_fog::FogUniformV1::legacy_disabled()
         };
+        let lighting_uniform =
+            if let Some(environment) = crate::r1f_environment::latest_projection() {
+                let medium = if camera_block.is_liquid() {
+                    crate::r1f_lighting::LightingMediumV1::Water
+                } else if camera_block.is_filled() {
+                    crate::r1f_lighting::LightingMediumV1::Solid
+                } else {
+                    crate::r1f_lighting::LightingMediumV1::Air
+                };
+                let camera_mode_tag = match self.camera.get_mode() {
+                    CameraMode::FirstPerson => 0,
+                    CameraMode::ThirdPerson => 1,
+                    CameraMode::Freefly => 2,
+                    CameraMode::Overseer => 3,
+                };
+                match crate::r1f_lighting::update(
+                    &environment,
+                    crate::r1f_lighting::LightingProductionInputV1 {
+                        medium,
+                        underground: camera_is_underground,
+                        camera_mode_tag,
+                    },
+                ) {
+                    Ok((_, uniform)) => uniform,
+                    Err(error) => {
+                        tracing::warn!(
+                            target: "bastion_r1f_lighting",
+                            ?error,
+                            "coherent lighting policy rejected; using fail-closed exposure"
+                        );
+                        crate::r1f_lighting::LightingUniformV1::fail_closed()
+                    },
+                }
+            } else {
+                crate::r1f_lighting::LightingUniformV1::legacy_disabled()
+            };
 
         // Update global constants.
         renderer.update_consts(&mut self.data.globals, &[Globals::new(
@@ -1150,6 +1186,7 @@ impl Scene {
             // above so this render call keeps a single clean borrow of self).
             bastion_occ,
             fog_uniform,
+            lighting_uniform,
         )]);
         renderer.update_clouds_locals(CloudsLocals::new(proj_mat_inv, view_mat_inv));
         renderer.update_postprocess_locals(PostProcessLocals::new(proj_mat_inv, view_mat_inv));
