@@ -196,6 +196,42 @@ mod reconciliation_metric_v1 {
     use super::*;
     use crate::states::idle;
 
+    /// Grand-boundary-review finding, Fable-ruled: the falsification tests
+    /// above perturb by `TOLERANCE * 2.0` -- self-scaling, so they prove
+    /// the MECHANISM works at whatever the tolerance is set to, but are
+    /// structurally blind to the VALUE itself. A silent edit of any of
+    /// the four ruled tolerances (e.g. `1e-3` -> `1e3`) would pass every
+    /// other test in this module. Pin the ruled literals directly,
+    /// resolution-policies style (`save_migration::all_four_policies_are_ruled`):
+    /// a revert should be as visible as the ruling was.
+    #[test]
+    fn the_four_ruled_tolerances_are_pinned() {
+        assert_eq!(
+            POS_TOLERANCE_V1, 1e-3,
+            "POS_TOLERANCE_V1 drifted from its ruled value -- see DECISIONS-FOR-BEN.md #33 \
+             (the quantization ruling). Recompute deliberately and re-rule, do not adjust this \
+             assertion to match."
+        );
+        assert_eq!(
+            VEL_TOLERANCE_V1, 1e-3,
+            "VEL_TOLERANCE_V1 drifted from its ruled value -- see DECISIONS-FOR-BEN.md #33 \
+             (the quantization ruling). Recompute deliberately and re-rule, do not adjust this \
+             assertion to match."
+        );
+        assert_eq!(
+            ORI_TOLERANCE_V1, 1e-3,
+            "ORI_TOLERANCE_V1 drifted from its ruled value -- see DECISIONS-FOR-BEN.md #33 \
+             (the quantization ruling). Recompute deliberately and re-rule, do not adjust this \
+             assertion to match."
+        );
+        assert_eq!(
+            DENSITY_TOLERANCE_V1, 1e-3,
+            "DENSITY_TOLERANCE_V1 drifted from its ruled value -- see DECISIONS-FOR-BEN.md #33 \
+             (the quantization ruling). Recompute deliberately and re-rule, do not adjust this \
+             assertion to match."
+        );
+    }
+
     fn baseline() -> ComparableStateV1 {
         ComparableStateV1 {
             char_state: CharacterState::Idle(idle::Data::default()),
