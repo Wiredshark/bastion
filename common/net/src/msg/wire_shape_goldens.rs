@@ -484,6 +484,25 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
         variant: "GroupInventoryUpdate",
         digest_hex: "sha256:edb5fe6e3ebc25e1177110c254bbe8bfc5562efe5d8b4c6c60e981c9e1be98f7",
     },
+    // WSG-2 chunk 10 (Sonnet lane): UnlockSkill and both ChatMsg variants
+    // (client sends comp::Content, server sends comp::ChatMsg) -- all
+    // three are constructible from small enums/structs once read, closing
+    // out the client side entirely.
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "UnlockSkill",
+        digest_hex: "sha256:1e99261c7e6000f1081f2e8556637d48aa59f94b39b74eaae1fc9b6901e4ac1e",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "ChatMsg",
+        digest_hex: "sha256:32fc3efabf5b48c84514571b7e6c169aaf533d323b95ae96bfb9fc36ede8724c",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "ChatMsg",
+        digest_hex: "sha256:f376fb99c30adf28e49b56dd8a0994484505cdc7deffa859469a73d8164e0a66",
+    },
 ];
 
 include!("wire_shape_uncovered.rs");
@@ -993,6 +1012,25 @@ mod wire_shape_goldens_v1 {
         ServerGeneral::GroupInventoryUpdate(frontend_item, uid(146))
     }
 
+    // WSG-2 chunk 10 fixtures.
+
+    fn client_unlock_skill() -> ClientGeneral {
+        ClientGeneral::UnlockSkill(common::comp::Skill::Sword(
+            common::comp::skillset::skills::SwordSkill::CrescentSlash,
+        ))
+    }
+
+    fn client_chat_msg() -> ClientGeneral {
+        ClientGeneral::ChatMsg(common::comp::Content::Plain("chunk10".to_string()))
+    }
+
+    fn server_chat_msg() -> ServerGeneral {
+        ServerGeneral::ChatMsg(common::comp::ChatMsg::npc_say(
+            uid(147),
+            common::comp::Content::Plain("chunk10-npc".to_string()),
+        ))
+    }
+
     fn actual(schema: &str, variant: &str) -> String {
         match (schema, variant) {
             ("ClientGeneral", "PlayerPhysics") => golden_digest_v1(&client_player_physics()),
@@ -1086,6 +1124,9 @@ mod wire_shape_goldens_v1 {
             ("ServerGeneral", "CommandResult") => golden_digest_v1(&server_command_result()),
             ("ServerGeneral", "PluginArtifactData") => golden_digest_v1(&server_plugin_artifact_data()),
             ("ServerGeneral", "GroupInventoryUpdate") => golden_digest_v1(&server_group_inventory_update()),
+            ("ClientGeneral", "UnlockSkill") => golden_digest_v1(&client_unlock_skill()),
+            ("ClientGeneral", "ChatMsg") => golden_digest_v1(&client_chat_msg()),
+            ("ServerGeneral", "ChatMsg") => golden_digest_v1(&server_chat_msg()),
             (schema, other) => panic!("{schema}::{other} has a golden entry but no representative instance"),
         }
     }
@@ -1112,9 +1153,9 @@ mod wire_shape_goldens_v1 {
     /// counts pinned so neither list can drift silently.
     #[test]
     fn coverage_is_a_pinned_open_set() {
-        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 79, "the covered set changed");
-        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 2);
-        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 7);
+        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 82, "the covered set changed");
+        assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 0);
+        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 6);
         // 1 + 36 = 37 ClientGeneral, 3 + 48 = 51 ServerGeneral, counted
         // from the enums at 71b1c87ca7.
         let covered_client =
@@ -1324,6 +1365,23 @@ mod wire_shape_goldens_v1 {
         assert_ne!(
             base, perturbed,
             "changing PluginArtifactData's bytes payload did not move the digest -- the golden \
+             mechanism is blind to this chunk's payload"
+        );
+    }
+
+    /// WSG-2 chunk 10's falsifier: perturbing `UnlockSkill`'s inner
+    /// `SwordSkill` variant proves the mechanism sees a change inside a
+    /// doubly-nested enum (`Skill::Sword(SwordSkill)`), not just the
+    /// outer discriminant.
+    #[test]
+    fn chunk_10_fixture_perturbation_moves_the_digest() {
+        let base = golden_digest_v1(&client_unlock_skill());
+        let perturbed = golden_digest_v1(&ClientGeneral::UnlockSkill(common::comp::Skill::Sword(
+            common::comp::skillset::skills::SwordSkill::FellStrike,
+        )));
+        assert_ne!(
+            base, perturbed,
+            "changing UnlockSkill's inner SwordSkill did not move the digest -- the golden \
              mechanism is blind to this chunk's payload"
         );
     }
