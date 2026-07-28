@@ -786,6 +786,10 @@ pub struct ClientCommandOutboxV1 {
     pending: Option<PendingCommandV1>,
     next_sequence: u64,
     retry_budget: u32,
+    /// Results already surfaced, newest last. Bounded: only the most
+    /// recent few can still be replayed by a retrying server, and an
+    /// unbounded memory here would be its own denial-of-service.
+    surfaced: std::collections::VecDeque<CommandReceiptV1>,
 }
 
 impl ClientCommandOutboxV1 {
@@ -796,7 +800,18 @@ impl ClientCommandOutboxV1 {
             pending: None,
             next_sequence: 1,
             retry_budget,
+            surfaced: std::collections::VecDeque::new(),
         }
+    }
+
+    /// How many past results this client still recognises as duplicates.
+    const SURFACED_MEMORY: usize = 8;
+
+    fn remember_surfaced_v1(&mut self, receipt: CommandReceiptV1) {
+        if self.surfaced.len() >= Self::SURFACED_MEMORY {
+            self.surfaced.pop_front();
+        }
+        self.surfaced.push_back(receipt);
     }
 
     pub fn pending_len(&self) -> usize { usize::from(self.pending.is_some()) }
@@ -1564,5 +1579,131 @@ mod command_publication_v1 {
             published.accept_committed_v1(9, [0xEE; 32]).unwrap_err(),
             PublicationErrorV1::BindingMismatch
         );
+    }
+}
+
+/// `APEX-T3.5.14` — the client's intake for a published result. A result
+/// can arrive more than once (the server replays terminals to a retrying
+/// client), so intake must be idempotent at the UI boundary: the second
+/// delivery reports `Duplicate` and produces no second success
+/// (`CMD-133`). A result from a session this client is no longer running
+/// is refused rather than shown (`CMD-151`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResultIntakeV1 {
+    /// First delivery: surface this outcome once.
+    Accepted(CommandOutcomeV1),
+    /// Already surfaced: report nothing new.
+    Duplicate(CommandOutcomeV1),
+}
+
+impl ClientCommandOutboxV1 {
+    /// Consumes a published result. The outstanding command is cleared
+    /// only on the first acceptance; later deliveries of the same
+    /// publication are recognised and dropped.
+    pub fn accept_publication_v1(
+        &mut self,
+        publication: &CommandPublicationV1,
+        committed_epoch: u64,
+    ) -> Result<ResultIntakeV1, PublicationErrorV1> {
+        // A result whose identity this client cannot reproduce is not
+        // its result, whatever epoch it names.
+        let expected = match self.pending_v1(&publication.receipt.command_id) {
+            Some(pending) => {
+                pending.descriptor.identity_root_v1().map_err(|_| PublicationErrorV1::BindingMismatch)?
+            },
+            None => {
+                // Nothing outstanding under that id. If this client has
+                // already surfaced it, say so; otherwise it is not ours.
+                return match self.surfaced.iter().find(|r| r.command_id == publication.receipt.command_id) {
+                    Some(seen) if *seen == publication.receipt => Ok(ResultIntakeV1::Duplicate(seen.outcome)),
+                    _ => Err(PublicationErrorV1::BindingMismatch),
+                };
+            },
+        };
+        let outcome = publication.accept_committed_v1(committed_epoch, expected)?;
+        self.acknowledge_v1(&publication.receipt.command_id).map_err(|_| PublicationErrorV1::BindingMismatch)?;
+        self.remember_surfaced_v1(publication.receipt);
+        Ok(ResultIntakeV1::Accepted(outcome))
+    }
+}
+
+#[cfg(test)]
+mod command_result_intake_v1 {
+    use super::*;
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+
+    fn binding() -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([2; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        }
+    }
+
+    /// `CMD-133`: a replayed result must not produce a second success.
+    #[test]
+    fn a_duplicate_result_is_recognised_not_surfaced_twice() {
+        let mut outbox = ClientCommandOutboxV1::new(binding(), 4);
+        let sent = outbox.issue_v1(CommandKindV1::ControlAction, [7; 32]).unwrap();
+        let published = CommandPublicationV1::publish_v1(
+            &sent.descriptor,
+            sent.sequence,
+            CommandOutcomeV1::Applied { result_digest: [4; 32] },
+            6,
+        )
+        .unwrap();
+
+        // before the checkpoint commits, nothing is surfaced or cleared
+        assert_eq!(
+            outbox.accept_publication_v1(&published, 5).unwrap_err(),
+            PublicationErrorV1::CheckpointNotCommitted
+        );
+        assert_eq!(outbox.pending_len(), 1);
+
+        assert_eq!(
+            outbox.accept_publication_v1(&published, 6).unwrap(),
+            ResultIntakeV1::Accepted(CommandOutcomeV1::Applied { result_digest: [4; 32] })
+        );
+        assert_eq!(outbox.pending_len(), 0);
+
+        for _ in 0..4 {
+            assert_eq!(
+                outbox.accept_publication_v1(&published, 6).unwrap(),
+                ResultIntakeV1::Duplicate(CommandOutcomeV1::Applied { result_digest: [4; 32] }),
+                "a replayed result must report Duplicate, never a second success"
+            );
+        }
+    }
+
+    /// `CMD-151`: a result from another session is refused, not shown.
+    #[test]
+    fn a_result_from_another_session_is_refused() {
+        let mut outbox = ClientCommandOutboxV1::new(binding(), 4);
+        let sent = outbox.issue_v1(CommandKindV1::ControlAction, [7; 32]).unwrap();
+
+        let foreign_binding = ActiveSessionBindingV1 {
+            server_boot_id: binding().server_boot_id,
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([90; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        };
+        let foreign = CommandDescriptorV1 {
+            binding: foreign_binding,
+            command_id: sent.descriptor.command_id,
+            kind: sent.descriptor.kind,
+            request_digest: sent.descriptor.request_digest,
+        };
+        let published = CommandPublicationV1::publish_v1(
+            &foreign,
+            sent.sequence,
+            CommandOutcomeV1::Applied { result_digest: [1; 32] },
+            6,
+        )
+        .unwrap();
+
+        assert_eq!(
+            outbox.accept_publication_v1(&published, 6).unwrap_err(),
+            PublicationErrorV1::BindingMismatch
+        );
+        assert_eq!(outbox.pending_len(), 1, "a foreign result must not clear the command");
     }
 }
