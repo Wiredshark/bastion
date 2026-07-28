@@ -96,7 +96,7 @@ impl Default for TimeScale {
 }
 
 /// A resource that stores the time since the previous tick.
-#[derive(Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct DeltaTime(pub f32);
 
 /// A resource used to indicate a duration of time, in seconds

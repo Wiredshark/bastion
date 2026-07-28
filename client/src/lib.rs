@@ -43,7 +43,7 @@ use common::{
     mounting::{Rider, VolumePos, VolumeRider},
     outcome::Outcome,
     recipe::{ComponentRecipeBook, RecipeBookManifest},
-    resources::{BattleMode, GameMode, PlayerEntity, Time, TimeOfDay},
+    resources::{BattleMode, DeltaTime, GameMode, PlayerEntity, Time, TimeOfDay},
     rtsim,
     shared_server_config::ServerConstants,
     spiral::Spiral2d,
@@ -101,6 +101,12 @@ use vek::*;
 pub const MAX_SELECTABLE_VIEW_DISTANCE: u32 = 65;
 
 const PING_ROLLING_AVERAGE_SECS: usize = 10;
+
+/// `APEX-T7.1` Decision 5: the prediction buffer's two limits. See
+/// `Client::prediction_buffer`'s own doc for why the duration limit is
+/// an entry count (approximating 500ms) rather than an exact duration.
+const PREDICTION_BUFFER_CAPACITY_TICKS: usize = 128;
+const PREDICTION_BUFFER_BUDGET_BYTES: usize = 64 * 1024;
 
 /// Client frontend events.
 ///
@@ -422,6 +428,34 @@ pub struct Client {
     /// on every state report. Typed, so a stale value cannot pass the
     /// server's gate by comparing equal after a wrap.
     force_update_generation: common::apex::physics_generation::PhysicsGenerationV1,
+    /// `APEX-T7.3a`: the client's own predicted-frame buffer, budgeted
+    /// per T7.1 Decision 5. Populated once per tick, for `self.entity()`
+    /// only -- predicting another entity's future inputs makes no sense,
+    /// the client doesn't know them. `T7.3b` (gated separately) is the
+    /// consumer that replays it; today it is populated but never
+    /// replayed, so this row changes nothing about how a correction is
+    /// applied.
+    ///
+    /// Capacity note (disclosed, not silently assumed): Decision 5 says
+    /// "500ms of history, at the SERVER tick rate", but the client's own
+    /// tick cadence is render-loop-driven, not fixed -- `Client::tick`
+    /// runs once per frame at whatever rate the frontend calls it, so a
+    /// fixed entry COUNT can only approximate a fixed DURATION. Sized
+    /// generously (128 entries, ~500ms even at a 240Hz tick rate) rather
+    /// than exactly; the 64KiB byte budget below is the harder limit in
+    /// practice (Decision 5's own text treats budget-exceeded as the
+    /// severe case -- snap and record -- and duration-exceeded as the
+    /// routine one -- drop the oldest and keep going). A precise
+    /// time-based eviction using each frame's own stored `time` field
+    /// would remove the approximation; not attempted this row.
+    prediction_buffer: common::apex::prediction_boundary::ClientPredictionBufferV1,
+    /// `APEX-T7.3a` Decision 3: whether `self.entity()` was mounted
+    /// (rider or volume-rider) as of the last tick. Compared against the
+    /// current tick to detect a TRANSITION (entering or leaving a
+    /// mount), which terminates the prediction history -- a local,
+    /// client-detected boundary, not a server-issued generation, so it
+    /// clears via `clear_v1` rather than `adopt_generation_v1`.
+    was_mounted_last_tick: bool,
     // DET-NET-011/012 (v6, stage 1): newest server sync tick seen across
     // the replication streams (the chronology witness).
     last_server_sync_tick: u64,
@@ -1445,6 +1479,11 @@ impl Client {
             lod_pos_fallback: None,
 
             force_update_generation: common::apex::physics_generation::PhysicsGenerationV1::NEVER_CORRECTED,
+            prediction_buffer: common::apex::prediction_boundary::ClientPredictionBufferV1::new(
+                PREDICTION_BUFFER_CAPACITY_TICKS,
+                PREDICTION_BUFFER_BUDGET_BYTES,
+            ),
+            was_mounted_last_tick: false,
             last_server_sync_tick: 0,
 
             role,
@@ -3190,6 +3229,16 @@ impl Client {
             self.character_being_deleted = Some(character_id);
         }
 
+        // `APEX-T7.3a`: snapshot the CURRENT Controller for self.entity()
+        // before state.tick() runs -- character_behavior::Sys drains it
+        // (take_actions()) as part of this same tick, so this is the
+        // exact value the transition this tick will consume.
+        let pre_tick_controller = self
+            .presence
+            .is_some()
+            .then(|| self.state.read_storage::<Controller>().get(self.entity()).cloned())
+            .flatten();
+
         // 4) Tick the client's LocalState
         self.state.tick(
             Duration::from_secs_f64(dt.as_secs_f64() * self.dt_adjustment),
@@ -3198,6 +3247,67 @@ impl Client {
             &self.connected_server_constants,
             |_, _| {},
         );
+
+        // `APEX-T7.3a`: Decision 3 -- a mount/carry transition terminates
+        // the prediction history, checked before the capture below so a
+        // frame predicted UNDER the new mount state never lands in a
+        // buffer whose earlier entries predicted the old one.
+        if self.presence.is_some() {
+            let entity = self.entity();
+            let is_mounted = self.state.read_storage::<Is<Rider>>().get(entity).is_some()
+                || self.state.read_storage::<Is<VolumeRider>>().get(entity).is_some();
+            if is_mounted != self.was_mounted_last_tick {
+                self.prediction_buffer.clear_v1();
+            }
+            self.was_mounted_last_tick = is_mounted;
+
+            // `APEX-T7.3a`: record this tick's predicted frame -- Time
+            // and DeltaTime are read AFTER state.tick() because
+            // State::tick advances both BEFORE dispatching systems
+            // (common/state/src/state.rs), so their post-tick values are
+            // exactly what character_behavior::Sys read this tick.
+            if let Some(controller) = pre_tick_controller {
+                let time = *self.state.ecs().read_resource::<Time>();
+                let dt = *self.state.ecs().read_resource::<DeltaTime>();
+                // Decision 2's world revision. `weather`: the same
+                // latest_snapshot pattern the PlayerPhysics report above
+                // already uses (APEX-T5.2). `touched_chunks`: DISCLOSED
+                // approximation -- the entity's own chunk only, not
+                // common_systems::phys::Sys's actual per-tick query
+                // footprint (that system exposes no touched-chunk
+                // tracking to capture from here without instrumenting a
+                // hot path, out of T7.3a's scope). Conservative, not
+                // exact: the entity's own chunk is always a SUBSET of
+                // what the real query touches, so this can only cause
+                // EXTRA invalidations on an unrelated chunk unload, never
+                // a missed one -- the safe direction per Decision 2's own
+                // "snap rather than substitute" preference.
+                let weather = self.weather.latest_snapshot.unwrap_or(WeatherSnapshotIdV1::from_sequence_v1(0));
+                let touched_chunks = self
+                    .state
+                    .read_storage::<comp::Pos>()
+                    .get(entity)
+                    .map(|pos| vec![pos.0.xy().as_::<i32>().wpos_to_cpos()])
+                    .unwrap_or_default();
+                let world_revision =
+                    common::apex::prediction_boundary::WorldRevisionV1 { weather, touched_chunks };
+                let outcome = self.prediction_buffer.push_v1(
+                    common::apex::prediction_boundary::PredictedFrameV1 { controller, dt, time, world_revision },
+                );
+                if let common::apex::prediction_boundary::PushOutcomeV1::BudgetExceeded {
+                    attempted_bytes,
+                    budget_bytes,
+                } = outcome
+                {
+                    tracing::warn!(
+                        attempted_bytes,
+                        budget_bytes,
+                        "T7.1 Decision 5: prediction buffer budget exceeded, clearing (snap, recorded)"
+                    );
+                    self.prediction_buffer.clear_v1();
+                }
+            }
+        }
 
         // TODO: avoid emitting these in the first place OR actually use outcomes
         // generated locally on the client (if they can be deduplicated from

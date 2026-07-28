@@ -156,6 +156,17 @@ impl<T> PredictionHistoryV1<T> {
         let generation = self.generation;
         self.entries.iter().filter(move |(stamped, _)| *stamped == generation).map(|(_, entry)| entry)
     }
+
+    /// T7.3a: every stored entry regardless of generation, for a caller
+    /// (e.g. a byte-budget wrapper) that needs to inspect the whole
+    /// buffer rather than just what's currently replayable.
+    pub fn iter_v1(&self) -> impl Iterator<Item = &(PhysicsGenerationV1, T)> { self.entries.iter() }
+
+    /// Drops every entry, keeping the current generation. T7.3a: used
+    /// when a byte-budget breach or a mount/carry transition (Decision 3)
+    /// makes the whole buffer untrustworthy at once, as opposed to
+    /// `adopt_generation_v1`'s per-generation invalidation.
+    pub fn clear_v1(&mut self) { self.entries.clear(); }
 }
 
 #[cfg(test)]
@@ -223,6 +234,41 @@ mod physics_generation_v1 {
         assert_eq!(history.adopt_generation_v1(corrected), 0);
         assert_eq!(history.adopt_generation_v1(PhysicsGenerationV1::NEVER_CORRECTED), 0);
         assert_eq!(history.replayable_v1().count(), 1);
+    }
+
+    /// T7.3a: `iter_v1` sees every entry regardless of generation --
+    /// `replayable_v1`'s narrower view is a filter over the same data,
+    /// not a separate store.
+    #[test]
+    fn iter_v1_sees_every_entry_replayable_v1_only_the_current_generation() {
+        let mut history: PredictionHistoryV1<u32> = PredictionHistoryV1::new(8);
+        history.push_v1(1);
+        history.push_v1(2);
+        let mut server = PhysicsCorrectionStateV1::new();
+        history.adopt_generation_v1(server.force_correction_v1().unwrap());
+        history.push_v1(3);
+
+        assert_eq!(history.iter_v1().count(), 1, "the pre-correction entries were dropped, not hidden");
+        assert_eq!(history.replayable_v1().copied().collect::<Vec<_>>(), vec![3]);
+    }
+
+    /// T7.3a: `clear_v1` drops everything but keeps the current
+    /// generation -- unlike `adopt_generation_v1`, which only drops
+    /// entries OLDER than a NEW generation, this is for a whole-buffer
+    /// invalidation (a byte-budget breach, a mount/carry transition) that
+    /// isn't itself a correction.
+    #[test]
+    fn clear_v1_drops_everything_but_keeps_the_generation() {
+        let mut history: PredictionHistoryV1<u32> = PredictionHistoryV1::new(8);
+        let mut server = PhysicsCorrectionStateV1::new();
+        history.adopt_generation_v1(server.force_correction_v1().unwrap());
+        history.push_v1(1);
+        history.push_v1(2);
+        assert_eq!(history.len(), 2);
+
+        history.clear_v1();
+        assert!(history.is_empty());
+        assert_eq!(history.generation(), server.generation(), "clearing is not a correction");
     }
 
     /// Reconnect: a client that comes back mid-stream adopts whatever
