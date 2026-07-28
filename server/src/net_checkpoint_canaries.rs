@@ -15,8 +15,17 @@
 //!
 //! The OPEN set is concentrated in three places, all of them real: ECS
 //! referential preflight (116/117/127), the commit-vs-tick ordering pin
-//! (121/123/124/130), and session control (036/162-171/173-176), which
-//! needs frames T3.5 introduces.
+//! (121/123/124/130), and session control (036/162-171/173-176).
+//!
+//! RE-PINNED after T3.5 closed (2026-07-28), and the count did NOT move.
+//! This row originally said the session-control cases "need frames T3.5
+//! introduces". T3.5 shipped session-control IDENTITY — a journaled,
+//! never-auto-retried `CommandKindV1::SessionControl`, and a journal
+//! that survives a resume — but it introduced no `SessionTerminate`
+//! FRAME, so nothing here became coverable. Sixteen cases stay open for
+//! the reason they were always open, and the prediction that they would
+//! close was wrong rather than the work being incomplete. The frames are
+//! their own row.
 
 pub(crate) const OPEN_CASE_COUNT: usize = 22;
 
