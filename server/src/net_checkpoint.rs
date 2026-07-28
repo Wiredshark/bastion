@@ -339,6 +339,109 @@ pub fn checkpoint_frames_v1(plan: &RecipientCheckpointPlanV1) -> Result<Vec<Chec
 /// converted at the T0.3 boundary by callers that need a typed digest.
 pub fn descriptor_root_bytes_v1(root: [u8; 32]) -> DigestBytes32V1 { DigestBytes32V1::from_array(root) }
 
+
+/// `APEX-T3.4.13` — while a checkpoint is in flight, a stream carries
+/// that checkpoint and nothing else. Ordinary traffic is HELD, not
+/// dropped and not interleaved: interleaving would put unordinaled data
+/// inside a fenced segment, which the receiver cannot align.
+#[derive(Debug, Clone, Default)]
+pub struct CheckpointEgressGateV1 {
+    /// Epoch of the checkpoint fencing each stream, if any.
+    fenced: [Option<u64>; 5],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EgressAdmitV1 {
+    Send,
+    /// Hold until this stream's Barrier goes out; the sender must not
+    /// reorder around it.
+    Hold,
+    Reject(&'static str),
+}
+
+impl CheckpointEgressGateV1 {
+    pub fn new() -> Self { Self::default() }
+
+    pub fn is_quiescent(&self) -> bool { self.fenced.iter().all(|f| f.is_none()) }
+
+    pub fn fenced_epoch(&self, stream: SemanticStreamIdV1) -> Option<u64> { self.fenced[stream_slot_v1(stream)] }
+
+    /// Fences every stream for this plan's epoch. A plan cannot open over
+    /// a checkpoint that has not finished emitting.
+    pub fn open_for_plan_v1(&mut self, plan: &RecipientCheckpointPlanV1) -> Result<(), CheckpointPlanErrorV1> {
+        if !self.is_quiescent() {
+            return Err(CheckpointPlanErrorV1::PlanInvariant("checkpoint opened while another is in flight"));
+        }
+        self.fenced = [Some(plan.descriptor.epoch); 5];
+        Ok(())
+    }
+
+    /// Releases one stream; called as its Barrier is emitted.
+    pub fn close_stream_v1(&mut self, stream: SemanticStreamIdV1, epoch: u64) -> Result<(), CheckpointPlanErrorV1> {
+        let slot = stream_slot_v1(stream);
+        match self.fenced[slot] {
+            Some(open) if open == epoch => {
+                self.fenced[slot] = None;
+                Ok(())
+            },
+            _ => Err(CheckpointPlanErrorV1::PlanInvariant("barrier for a stream this gate has not fenced")),
+        }
+    }
+
+    /// A checkpoint's own frame passes only on the stream and epoch it
+    /// was planned for.
+    pub fn admit_frame_v1(&self, frame: &CheckpointFrameV1) -> EgressAdmitV1 {
+        match self.fenced[stream_slot_v1(frame.stream())] {
+            Some(open) if open == frame.context().epoch => EgressAdmitV1::Send,
+            Some(_) => EgressAdmitV1::Reject("frame from another checkpoint epoch"),
+            None => EgressAdmitV1::Reject("checkpoint frame on an unfenced stream"),
+        }
+    }
+
+    /// Everything else the server wants to send while the fence is up.
+    /// Diagnostics are out-of-band by construction and always pass;
+    /// checkpointed data waits; a foreign control frame is a bug.
+    pub fn admit_other_v1(&self, stream: SemanticStreamIdV1, payload: &ServerGeneral) -> EgressAdmitV1 {
+        let participation = payload.participation_v1();
+        if participation == CheckpointParticipationV1::OutOfBandDiagnostic {
+            return EgressAdmitV1::Send;
+        }
+        match self.fenced[stream_slot_v1(stream)] {
+            None => EgressAdmitV1::Send,
+            Some(_) => match participation {
+                CheckpointParticipationV1::CheckpointedData => EgressAdmitV1::Hold,
+                CheckpointParticipationV1::CheckpointControl => {
+                    EgressAdmitV1::Reject("control payload inside a fenced segment")
+                },
+                CheckpointParticipationV1::OutOfBandDiagnostic => EgressAdmitV1::Send,
+            },
+        }
+    }
+}
+
+/// Emits a plan through the gate: every frame is admitted, and each
+/// stream is released exactly at its own Barrier. Returns the frames in
+/// send order with the gate left quiescent.
+pub fn emit_through_gate_v1(
+    gate: &mut CheckpointEgressGateV1,
+    plan: &RecipientCheckpointPlanV1,
+) -> Result<Vec<CheckpointFrameV1>, CheckpointPlanErrorV1> {
+    let frames = checkpoint_frames_v1(plan)?;
+    gate.open_for_plan_v1(plan)?;
+    for frame in &frames {
+        if gate.admit_frame_v1(frame) != EgressAdmitV1::Send {
+            return Err(CheckpointPlanErrorV1::PlanInvariant("gate refused a frame of its own plan"));
+        }
+        if matches!(frame, CheckpointFrameV1::Barrier { .. }) {
+            gate.close_stream_v1(frame.stream(), frame.context().epoch)?;
+        }
+    }
+    if !gate.is_quiescent() {
+        return Err(CheckpointPlanErrorV1::PlanInvariant("a stream was left fenced after emission"));
+    }
+    Ok(frames)
+}
+
 #[cfg(test)]
 mod checkpoint_planner_v1 {
     use super::*;
@@ -541,6 +644,58 @@ mod checkpoint_planner_v1 {
                 assert!(frame.context().ordinal.is_none(), "control frames carry no ordinal");
             }
         }
+    }
+
+    /// `T3.4.13`: a fenced stream carries its checkpoint and nothing
+    /// else, and every stream is released exactly at its own Barrier.
+    #[test]
+    fn a_fenced_stream_holds_ordinary_traffic_until_its_barrier() {
+        let mut state = SemanticSendStateV1::new(binding());
+        let plan = reserve_and_plan_recipient_checkpoint_v1(
+            &mut state,
+            7,
+            6,
+            vec![intent(SemanticStreamIdV1::InGame, 1), intent(SemanticStreamIdV1::Terrain, 2)],
+            &profile(),
+            [1; 32],
+            [2; 32],
+        )
+        .unwrap();
+
+        let mut gate = CheckpointEgressGateV1::new();
+        assert!(gate.is_quiescent());
+        // before the fence, ordinary data flows
+        assert_eq!(gate.admit_other_v1(SemanticStreamIdV1::InGame, &ServerGeneral::UpdateRecipes), EgressAdmitV1::Send);
+
+        gate.open_for_plan_v1(&plan).unwrap();
+        // ...and while it is up, that same data is HELD, not dropped
+        for stream in REQUIRED_CHECKPOINT_STREAMS_V1 {
+            assert_eq!(gate.admit_other_v1(stream, &ServerGeneral::UpdateRecipes), EgressAdmitV1::Hold);
+            assert_eq!(gate.fenced_epoch(stream), Some(7));
+        }
+        // a second checkpoint cannot open over one still in flight
+        assert!(gate.open_for_plan_v1(&plan).is_err());
+        // frames of another epoch are refused even on a fenced stream
+        let frames = checkpoint_frames_v1(&plan).unwrap();
+        let mut foreign = frames[0].clone();
+        if let CheckpointFrameV1::Begin { context, .. } = &mut foreign {
+            context.epoch = 8;
+        }
+        assert!(matches!(gate.admit_frame_v1(&foreign), EgressAdmitV1::Reject(_)));
+
+        // releasing is per-stream and epoch-matched
+        gate.close_stream_v1(SemanticStreamIdV1::InGame, 7).unwrap();
+        assert_eq!(gate.admit_other_v1(SemanticStreamIdV1::InGame, &ServerGeneral::UpdateRecipes), EgressAdmitV1::Send);
+        assert_eq!(gate.admit_other_v1(SemanticStreamIdV1::Terrain, &ServerGeneral::UpdateRecipes), EgressAdmitV1::Hold);
+        assert!(gate.close_stream_v1(SemanticStreamIdV1::InGame, 7).is_err(), "a stream cannot be released twice");
+        assert!(!gate.is_quiescent());
+
+        // the whole emission leaves the gate quiescent again
+        let mut fresh = CheckpointEgressGateV1::new();
+        let emitted = emit_through_gate_v1(&mut fresh, &plan).unwrap();
+        assert_eq!(emitted.len(), frames.len());
+        assert!(fresh.is_quiescent());
+        assert_eq!(fresh.admit_other_v1(SemanticStreamIdV1::InGame, &ServerGeneral::UpdateRecipes), EgressAdmitV1::Send);
     }
 
     /// The cursor array's slot order and `REQUIRED_CHECKPOINT_STREAMS_V1`
