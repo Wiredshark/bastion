@@ -1052,3 +1052,177 @@ mod command_rollout_v1 {
         }
     }
 }
+
+/// `APEX-T3.5.20` — the runtime perturbation harness. A green source
+/// scan proves nothing if a duplicate still executes twice at runtime
+/// (`CMD-160`), so this drives real deliveries through the real journal
+/// under seeded perturbations. Every run carries its seed (`CMD-161`),
+/// and a divergent run reports the FIRST divergence rather than a
+/// summary count (`CMD-162`) — the first one is the one that explains
+/// the rest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandPerturbationV1 {
+    /// Deliver each command once, in order.
+    None,
+    /// Deliver every command twice, back to back.
+    DuplicateEach,
+    /// Deliver duplicates at a seed-chosen distance instead.
+    DuplicateAtDistance,
+    /// Replay a command AFTER it has been retired.
+    ReplayAfterRetire,
+    /// Interleave another session's traffic through the same driver.
+    InterleaveForeignSession,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandRunReportV1 {
+    pub seed: u64,
+    pub perturbation: CommandPerturbationV1,
+    pub distinct_commands: u32,
+    pub executions: u32,
+    /// The first delivery whose outcome contradicted exactly-once.
+    pub first_divergence: Option<String>,
+}
+
+impl CommandRunReportV1 {
+    pub fn is_exactly_once(&self) -> bool {
+        self.first_divergence.is_none() && self.executions == self.distinct_commands
+    }
+}
+
+/// Drives `distinct` commands through one journal under a perturbation.
+/// `journaled` false is the CONTROL: the same deliveries with no journal
+/// at all, which must diverge — a harness that cannot fail proves
+/// nothing.
+pub fn drive_perturbed_commands_v1(
+    perturbation: CommandPerturbationV1,
+    seed: u64,
+    distinct: u32,
+    journaled: bool,
+) -> CommandRunReportV1 {
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+
+    let binding = |session: u8| ActiveSessionBindingV1 {
+        server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])).unwrap(),
+        session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([session; 16])).unwrap(),
+        epoch: ConnectionEpoch::new(1).unwrap(),
+    };
+    let mine = binding(2);
+    let theirs = binding(90);
+    let command = |b: ActiveSessionBindingV1, n: u32| CommandDescriptorV1 {
+        binding: b,
+        command_id: CommandId::generate(&mut FixedRandomBytesSourceV1([n as u8; 16])).unwrap(),
+        kind: CommandKindV1::ControlAction,
+        request_digest: [n as u8; 32],
+    };
+
+    // Build the delivery tape: (descriptor, sequence).
+    let mut tape: Vec<(CommandDescriptorV1, u64)> = Vec::new();
+    let mut state = seed | 1;
+    for n in 1..=distinct {
+        let entry = (command(mine, n), u64::from(n));
+        tape.push(entry);
+        match perturbation {
+            CommandPerturbationV1::None => {},
+            CommandPerturbationV1::DuplicateEach => tape.push(entry),
+            CommandPerturbationV1::DuplicateAtDistance => {
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                let at = (state >> 33) as usize % (tape.len() + 1);
+                tape.insert(at, entry);
+            },
+            CommandPerturbationV1::ReplayAfterRetire => tape.push(entry),
+            CommandPerturbationV1::InterleaveForeignSession => tape.push((command(theirs, n), u64::from(n))),
+        }
+    }
+
+    let mut journal = CommandJournalV1::new(mine, distinct as usize + 4);
+    let mut executions = 0u32;
+    let mut first_divergence = None;
+    let mut executed_ids: std::collections::BTreeSet<[u8; 16]> = std::collections::BTreeSet::new();
+
+    for (index, (descriptor, sequence)) in tape.iter().enumerate() {
+        let id_bytes = *descriptor.command_id.as_uuid().as_bytes();
+        let ran = if journaled {
+            match execute_command_once_v1(&mut journal, descriptor, *sequence, || {
+                CommandOutcomeV1::Applied { result_digest: [1; 32] }
+            }) {
+                Ok(CommandExecutionV1::Executed(_)) => true,
+                Ok(CommandExecutionV1::Replayed(_)) => false,
+                // A refusal is not an execution, and not a divergence:
+                // foreign sessions and retired sequences are supposed to
+                // be refused.
+                Err(_) => false,
+            }
+        } else {
+            // Control: no journal, so every delivery runs.
+            true
+        };
+
+        if ran {
+            executions += 1;
+            if !executed_ids.insert(id_bytes) && first_divergence.is_none() {
+                first_divergence = Some(format!(
+                    "delivery {index}: command {} executed a second time",
+                    descriptor.command_id.to_text_v1()
+                ));
+            }
+        }
+
+        // The real loop: a command that ran is resolved and, once the
+        // client acknowledges, retired. Without this the journal is
+        // permanently blocked on the first command, which would make the
+        // harness pass for the wrong reason.
+        if journaled && ran {
+            let _ = journal.resolve_v1(*sequence, CommandOutcomeV1::Applied { result_digest: [1; 32] });
+            let _ = journal.retire_v1(*sequence);
+        }
+    }
+
+    CommandRunReportV1 {
+        seed,
+        perturbation,
+        distinct_commands: distinct,
+        executions,
+        first_divergence,
+    }
+}
+
+#[cfg(test)]
+mod command_perturbation_v1 {
+    use super::*;
+
+    const SEEDS: [u64; 6] = [1, 2, 7, 11, 65537, u64::MAX];
+
+    /// `CMD-160`/`CMD-161`: exactly-once survives every perturbation, at
+    /// every seed, at runtime — not merely in a source scan.
+    #[test]
+    fn exactly_once_holds_under_every_perturbation_and_seed() {
+        for perturbation in [
+            CommandPerturbationV1::None,
+            CommandPerturbationV1::DuplicateEach,
+            CommandPerturbationV1::DuplicateAtDistance,
+            CommandPerturbationV1::ReplayAfterRetire,
+            CommandPerturbationV1::InterleaveForeignSession,
+        ] {
+            for seed in SEEDS {
+                let report = drive_perturbed_commands_v1(perturbation, seed, 6, true);
+                assert!(
+                    report.is_exactly_once(),
+                    "{perturbation:?} at seed {seed} diverged: {report:#?}"
+                );
+                assert_eq!(report.seed, seed, "every run must carry its seed");
+            }
+        }
+    }
+
+    /// The harness can fail: the same tape with no journal executes
+    /// duplicates, and the report names the FIRST one (`CMD-162`).
+    #[test]
+    fn the_control_run_diverges_and_names_its_first_divergence() {
+        let report = drive_perturbed_commands_v1(CommandPerturbationV1::DuplicateEach, 1, 6, false);
+        assert!(!report.is_exactly_once(), "a journal-less control MUST diverge, or the harness proves nothing");
+        assert_eq!(report.executions, 12);
+        let first = report.first_divergence.expect("a divergent run reports its first divergence");
+        assert!(first.starts_with("delivery 1:"), "the FIRST divergence, not a later one: {first}");
+    }
+}
