@@ -52,6 +52,7 @@ pub enum FigureGpuRuntimeErrorV1 {
     Core(String),
     Backend(String),
     Material(String),
+    Environment(String),
     CounterOverflow,
 }
 
@@ -153,6 +154,8 @@ impl FigureGpuRuntimeV1 {
         let material_table =
             crate::r1f_materials::compile_figure_material_table(generation, package)
                 .map_err(|error| FigureGpuRuntimeErrorV1::Material(format!("{error:?}")))?;
+        crate::r1f_environment::bind_material_if_staged(frame, &material_table)
+            .map_err(|error| FigureGpuRuntimeErrorV1::Environment(format!("{error:?}")))?;
         let inputs = entity_inputs(frame, package, &material_table)?;
         let staged = self
             .pool

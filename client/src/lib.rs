@@ -2310,6 +2310,22 @@ impl Client {
             .unwrap_or_default()
     }
 
+    /// Returns the newest complete server weather snapshot at the player.
+    ///
+    /// Unlike [`Self::weather_at_player`], this deliberately bypasses
+    /// wall-clock interpolation. Renderer semantic records use this value;
+    /// the interpolated value remains presentation-only.
+    pub fn latest_server_weather_at_player(&self) -> Weather {
+        self.position()
+            .map(|p| {
+                let grid = WeatherGrid::from(&self.weather.new.0);
+                let mut weather = grid.get_interpolated(p.xy());
+                weather.wind = self.weather.new_local_wind.0;
+                weather
+            })
+            .unwrap_or_default()
+    }
+
     pub fn current_chunk(&self) -> Option<Arc<TerrainChunk>> {
         let chunk_pos = Vec2::from(self.position()?)
             .map2(TerrainChunkSize::RECT_SIZE, |e: f32, sz| {

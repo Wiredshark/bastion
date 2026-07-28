@@ -790,10 +790,19 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r1d_scale_camera_distance_mm"
         | "r1d_scale_member_set_sha256"
         | "r1d_scale_sample_sha256"
+        | "r1f_environment_presentation_generation"
+        | "r1f_environment_simulation_tick"
+        | "r1f_environment_frame_sha256"
+        | "r1f_environment_material_table_sha256"
+        | "r1f_environment_source_sha256"
+        | "r1f_environment_projection_sha256"
+        | "r1f_environment_availability_bits"
         | "anchor_uid"
         | "anchor_selected_non_client_colonist"
         | "ordinal" => Some(CaptureMetadataFieldClassV1::Authority),
-        "diagnostic_client_tick" | "diagnostic_interpolated_time_bits" => {
+        "diagnostic_client_tick"
+        | "diagnostic_interpolated_time_bits"
+        | "r1f_environment_client_interpolation_diagnostic" => {
             Some(CaptureMetadataFieldClassV1::Diagnostic)
         },
         "anchor_category"
@@ -1118,6 +1127,7 @@ fn request_one_capture(
     let cutaway = crate::r1e_cutaway::latest_evidence();
     let interiors = crate::r1e_interiors::latest_evidence();
     let islands = crate::r1e_islands::latest_evidence();
+    let environment = crate::r1f_environment::latest_evidence();
     renderer.create_screenshot(move |result| {
         match result {
             Ok(image) => {
@@ -1623,6 +1633,31 @@ fn request_one_capture(
                                 } else {
                                     metadata.push_str("r1e_islands_enabled=false\n");
                                 }
+                                if let Some(environment) = environment {
+                                    metadata.push_str(&format!(
+                                        concat!(
+                                            "r1f_environment_enabled=true\n",
+                                            "r1f_environment_presentation_generation={}\n",
+                                            "r1f_environment_simulation_tick={}\n",
+                                            "r1f_environment_frame_sha256={}\n",
+                                            "r1f_environment_material_table_sha256={}\n",
+                                            "r1f_environment_source_sha256={}\n",
+                                            "r1f_environment_projection_sha256={}\n",
+                                            "r1f_environment_availability_bits={}\n",
+                                            "r1f_environment_client_interpolation_diagnostic={}\n",
+                                        ),
+                                        environment.presentation_generation,
+                                        environment.simulation_tick,
+                                        hex_digest(&environment.frame_digest),
+                                        hex_digest(&environment.material_table_digest),
+                                        hex_digest(&environment.environment_identity),
+                                        hex_digest(&environment.projection_digest),
+                                        environment.availability_bits,
+                                        environment.client_interpolation_is_diagnostic,
+                                    ));
+                                } else {
+                                    metadata.push_str("r1f_environment_enabled=false\n");
+                                }
                                 write_atomic(&metadata_path, metadata.as_bytes())
                             });
                         if let Err(error) = result {
@@ -1981,6 +2016,14 @@ mod tests {
             Some(CaptureMetadataFieldClassV1::Authority)
         );
         assert_eq!(
+            capture_metadata_field_class_v1("r1f_environment_projection_sha256"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("r1f_environment_availability_bits"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
             capture_metadata_field_class_v1("r1d_tier_decision_root_sha256"),
             Some(CaptureMetadataFieldClassV1::Authority)
         );
@@ -2002,6 +2045,10 @@ mod tests {
         );
         assert_eq!(
             capture_metadata_field_class_v1("diagnostic_interpolated_time_bits"),
+            Some(CaptureMetadataFieldClassV1::Diagnostic)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("r1f_environment_client_interpolation_diagnostic"),
             Some(CaptureMetadataFieldClassV1::Diagnostic)
         );
         assert_eq!(capture_metadata_field_class_v1("simulation_tick"), None);
