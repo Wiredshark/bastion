@@ -36,7 +36,7 @@ pub struct StateUpdate {
 }
 
 event_emitters! {
-    pub struct CharacterStateEvents[CharacterStateEventEmitters] {
+    pub struct CharacterStateEvents[CharacterStateEventEmitters][CharacterStateEventSinkV1] {
         combo: event::ComboChangeEvent,
         event: event::AuraEvent,
         shoot: event::ShootEvent,

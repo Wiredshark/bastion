@@ -15,7 +15,45 @@ use crate::{
     uid::{IdMaps, Uid},
 };
 use specs::{Entity, LazyUpdate, Read, ReadStorage, storage::FlaggedAccessMut};
+use std::ops::{Deref, DerefMut};
 use vek::*;
+
+/// `APEX-T7.3b`: the write channel for `JoinStruct`'s four
+/// change-detected fields, generalized over where the write is going.
+///
+/// `Live` is backed by a real ECS storage entry: `DerefMut` delegates to
+/// `FlaggedAccessMut`, so its `Modified` change-detection event still
+/// fires exactly as before this type existed -- that firing is the one
+/// behavior that MUST survive on the live path, and delegation is what
+/// preserves it. `Owned` is backed by local, non-ECS scratch state (a
+/// replay's rolling-state accumulator): `DerefMut` does not notify,
+/// because there is no live world to tell. That silence is correct, not
+/// a gap -- a replay's writes are recomputation, not an authoritative
+/// change.
+pub enum JoinFieldMut<'a, T> {
+    Live(FlaggedAccessMut<'a, &'a mut T, T>),
+    Owned(&'a mut T),
+}
+
+impl<'a, T> Deref for JoinFieldMut<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        match self {
+            JoinFieldMut::Live(f) => f.deref(),
+            JoinFieldMut::Owned(o) => o,
+        }
+    }
+}
+
+impl<'a, T> DerefMut for JoinFieldMut<'a, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        match self {
+            JoinFieldMut::Live(f) => f.deref_mut(),
+            JoinFieldMut::Owned(o) => o,
+        }
+    }
+}
 
 pub trait CharacterBehavior {
     fn behavior(&self, data: &JoinData, output_events: &mut OutputEvents) -> StateUpdate;
@@ -181,15 +219,15 @@ pub struct JoinData<'a> {
 pub struct JoinStruct<'a> {
     pub entity: Entity,
     pub uid: &'a Uid,
-    pub char_state: FlaggedAccessMut<'a, &'a mut CharacterState, CharacterState>,
-    pub character_activity: FlaggedAccessMut<'a, &'a mut CharacterActivity, CharacterActivity>,
+    pub char_state: JoinFieldMut<'a, CharacterState>,
+    pub character_activity: JoinFieldMut<'a, CharacterActivity>,
     pub pos: &'a mut Pos,
     pub vel: &'a mut Vel,
     pub ori: &'a mut Ori,
     pub scale: Option<&'a Scale>,
     pub mass: &'a Mass,
-    pub density: FlaggedAccessMut<'a, &'a mut Density, Density>,
-    pub energy: FlaggedAccessMut<'a, &'a mut Energy, Energy>,
+    pub density: JoinFieldMut<'a, Density>,
+    pub energy: JoinFieldMut<'a, Energy>,
     pub inventory: Option<&'a Inventory>,
     pub controller: &'a mut Controller,
     pub health: Option<&'a Health>,

@@ -791,6 +791,107 @@ pub trait EmitExt<E> {
 /// ```
 #[macro_export]
 macro_rules! event_emitters {
+    // `APEX-T7.3b`: the 3-bracket form, opted into per call site (only
+    // `CharacterStateEvents` needs it today) rather than added to the
+    // 2-bracket form below, so the other 21 call sites of this macro
+    // are untouched -- zero blast radius on anything but the one
+    // struct that actually needs a replay sink.
+    ($($vis:vis struct $read_data:ident[$emitters:ident][$sink:ident] { $($(#[$($tt:tt)*])? $ev_ident:ident: $ty:ty),+ $(,)? })+) => {
+        mod event_emitters {
+            use super::*;
+            use specs::shred;
+            $(
+            #[derive(specs::SystemData)]
+            pub struct $read_data<'a> {
+                $($(#[$($tt)*])? $ev_ident: Option<specs::Read<'a, $crate::event::EventBus<$ty>>>),+
+            }
+
+            impl<'a> $read_data<'a> {
+                pub fn get_emitters(&self) -> $emitters<'_> {
+                    $emitters {
+                        $($(#[$($tt)*])? $ev_ident: self.$ev_ident.as_ref().map(|e| e.emitter())),+
+                    }
+                }
+            }
+
+            pub struct $emitters<'a> {
+                $($(#[$($tt)*])? $ev_ident: Option<$crate::event::Emitter<'a, $ty>>),+
+            }
+
+            impl<'a> $emitters<'a> {
+                #[expect(unused)]
+                pub fn append(&mut self, mut other: Self) {
+                    $(
+                        $(#[$($tt)*])?
+                        {self.$ev_ident.as_mut().zip(other.$ev_ident).map(|(a, mut b)| a.append(&mut b.events));}
+                    )+
+                }
+            }
+
+            $(
+                $(#[$($tt)*])?
+                impl<'a> $crate::event::EmitExt<$ty> for $emitters<'a> {
+                    fn emit(&mut self, event: $ty) { self.$ev_ident.as_mut().map(|e| e.emit(event)); }
+                    fn emit_many(&mut self, events: impl IntoIterator<Item = $ty>) { self.$ev_ident.as_mut().map(|e| e.emit_many(events)); }
+                }
+            )+
+
+            /// `APEX-T7.3b`: a throwaway sink for [`$emitters`]. Every
+            /// channel here is a fresh, unshared `EventBus` -- emitters
+            /// borrowed from this sink (via [`Self::emitters`]) write
+            /// into THESE buses, never the live ones a real system
+            /// drains. A replayed frame's events already fired during
+            /// the original predicted pass; replay recomputes STATE,
+            /// and re-delivering its events into a live bus would be
+            /// the double-fire hazard Decision 4 exists to prevent --
+            /// so discarding here is the correct semantics, not a
+            /// compromise standing in for one. Never silent about it:
+            /// [`Self::drain_counts_v1`] reports what landed and where,
+            /// per channel, so a replay caller can assert both that a
+            /// known-emitting state DID get captured here and that the
+            /// live buses stayed untouched.
+            pub struct $sink {
+                $($(#[$($tt)*])? $ev_ident: $crate::event::EventBus<$ty>),+
+            }
+
+            impl Default for $sink {
+                fn default() -> Self {
+                    Self {
+                        $($(#[$($tt)*])? $ev_ident: $crate::event::EventBus::default()),+
+                    }
+                }
+            }
+
+            impl $sink {
+                /// Construct a fresh `Self` per replay call -- reusing
+                /// one sink across calls would accumulate counts from
+                /// every earlier call into the next one's assertions.
+                pub fn emitters(&self) -> $emitters<'_> {
+                    $emitters {
+                        $($(#[$($tt)*])? $ev_ident: Some(self.$ev_ident.emitter())),+
+                    }
+                }
+
+                /// Per-channel captured-and-discarded counts. Call
+                /// AFTER the `$emitters` borrowing this sink has been
+                /// dropped -- `Emitter` flushes into its bus on drop,
+                /// so counts read before that drop would undercount.
+                /// Draining (not just measuring queue length) is
+                /// deliberate: it is also the proof the events were
+                /// real entries, not an artifact of a queue nothing
+                /// ever reads.
+                pub fn drain_counts_v1(&self) -> Vec<(&'static str, usize)> {
+                    vec![
+                        $((stringify!($ev_ident), self.$ev_ident.recv_all().count())),+
+                    ]
+                }
+            }
+            )+
+        }
+        $(
+            $vis use event_emitters::{$read_data, $emitters, $sink};
+        )+
+    };
     ($($vis:vis struct $read_data:ident[$emitters:ident] { $($(#[$($tt:tt)*])? $ev_ident:ident: $ty:ty),+ $(,)? })+) => {
         mod event_emitters {
             use super::*;
