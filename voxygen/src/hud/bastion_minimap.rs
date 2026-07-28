@@ -73,7 +73,7 @@ const ZOOM_MAX: f64 = 4.0;
 /// of placing it over the map image, where the image's clipping hid the text.
 const LENS_BADGE_RESERVED_HEADER_WIDTH: f64 = 68.0;
 const LENS_BADGE_HEIGHT: f64 = 18.0;
-const LENS_BADGE_FONT_SIZE: u32 = 8;
+const LENS_BADGE_FONT_SIZE: u32 = 9;
 const LENS_BADGE_MAX_GLYPHS: usize = 32;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -113,6 +113,27 @@ fn lens_badge_draw_plan_v1(
         top_margin: 0.0,
         font_size: LENS_BADGE_FONT_SIZE,
     })
+}
+
+/// Submit the badge through Conrod's proven button-label owner. Unlike a
+/// standalone `Text` widget, the button owns, parents, and clips its generated
+/// text primitive as one visible header control.
+fn set_lens_badge_widget_v1(
+    plan: &LensBadgeDrawPlanV1,
+    frame_id: widget::Id,
+    badge_id: widget::Id,
+    font_id: conrod_core::text::font::Id,
+    ui: &mut conrod_core::UiCell<'_>,
+) {
+    Button::new()
+        .w_h(plan.width, plan.height)
+        .label(&plan.label)
+        .label_font_size(plan.font_size)
+        .label_font_id(font_id)
+        .label_color(Color::Rgba(0.82, 0.94, 1.0, 1.0))
+        .color(Color::Rgba(0.015, 0.035, 0.06, 0.96))
+        .mid_top_with_margin_on(frame_id, plan.top_margin)
+        .set(badge_id, ui);
 }
 
 /// One cached chunk tile: per-block top color + the z it was sampled at
@@ -555,7 +576,6 @@ widget_ids! {
         level_text,
         north_text,
         lens_bg,
-        lens_text,
         toggle_btn,
     }
 }
@@ -1091,18 +1111,15 @@ impl Widget for BastionMiniMap<'_> {
         };
         if let Some(plan) = lens_badge_plan {
             debug_assert!(plan.glyph_count > 0);
-            Rectangle::fill_with(
-                [plan.width, plan.height],
-                Color::Rgba(0.015, 0.035, 0.06, 0.96),
-            )
-            .mid_top_with_margin_on(state.ids.frame, plan.top_margin)
-            .set(state.ids.lens_bg, ui);
-            Text::new(&plan.label)
-                .middle_of(state.ids.lens_bg)
-                .font_size(self.fonts.cyri.scale(plan.font_size))
-                .font_id(self.fonts.cyri.conrod_id)
-                .color(Color::Rgba(0.82, 0.94, 1.0, 1.0))
-                .set(state.ids.lens_text, ui);
+            let mut scaled_plan = plan;
+            scaled_plan.font_size = self.fonts.cyri.scale(scaled_plan.font_size);
+            set_lens_badge_widget_v1(
+                &scaled_plan,
+                state.ids.frame,
+                state.ids.lens_bg,
+                self.fonts.cyri.conrod_id,
+                ui,
+            );
         }
 
         // ---- Layer chips ---------------------------------------------------
@@ -1179,7 +1196,10 @@ impl Widget for BastionMiniMap<'_> {
 
 #[cfg(test)]
 mod r1g_lens_badge_tests {
-    use super::{LENS_BADGE_MAX_GLYPHS, lens_badge_draw_plan_v1};
+    use super::{LENS_BADGE_MAX_GLYPHS, lens_badge_draw_plan_v1, set_lens_badge_widget_v1};
+    use conrod_core::{
+        Colorable, Positionable, UiBuilder, Widget, render::PrimitiveKind, text, widget::Rectangle,
+    };
 
     #[test]
     fn weather_label_submits_bounded_header_glyphs() {
@@ -1193,8 +1213,61 @@ mod r1g_lens_badge_tests {
         assert_eq!(plan.width, 107.0);
         assert_eq!(plan.height, 18.0);
         assert_eq!(plan.top_margin, 0.0);
-        assert_eq!(plan.font_size, 8);
+        assert_eq!(plan.font_size, 9);
         assert!(plan.width <= 175.0);
+    }
+
+    #[test]
+    fn weather_label_reaches_unclipped_visible_conrod_text_primitive() {
+        let mut ui = UiBuilder::new([1280.0, 720.0]).build();
+        let font = text::Font::from_bytes(include_bytes!(
+            "../../../assets/voxygen/font/OpenSans-Regular.ttf"
+        ))
+        .expect("test font must parse");
+        let font_id = ui.fonts.insert(font);
+        let mut id_generator = ui.widget_id_generator();
+        let frame_id = id_generator.next();
+        let badge_id = id_generator.next();
+        drop(id_generator);
+
+        let plan = lens_badge_draw_plan_v1(Some("CLEAR 0% WIND 3.2m/s"), 175.0, 1.0)
+            .expect("weather badge plan");
+        {
+            let mut cell = ui.set_widgets();
+            Rectangle::fill([175.0, 175.0])
+                .top_right_with_margins_on(cell.window, 0.0, 0.0)
+                .color(conrod_core::color::BLACK)
+                .set(frame_id, &mut cell);
+            set_lens_badge_widget_v1(&plan, frame_id, badge_id, font_id, &mut cell);
+        }
+
+        let mut primitives = ui.draw();
+        let mut visible_text_primitives = 0usize;
+        let mut visible_glyphs = 0usize;
+        while let Some(primitive) = primitives.next() {
+            if let PrimitiveKind::Text { color, text, .. } = primitive.kind {
+                let [_, _, _, alpha] = color.to_fsa();
+                let (left, right, bottom, top) = primitive.rect.l_r_b_t();
+                let (clip_left, clip_right, clip_bottom, clip_top) = primitive.scizzor.l_r_b_t();
+                let unclipped = left >= clip_left
+                    && right <= clip_right
+                    && bottom >= clip_bottom
+                    && top <= clip_top;
+                let glyph_count = text
+                    .positioned_glyphs(1.0)
+                    .iter()
+                    .filter(|glyph| glyph.pixel_bounding_box().is_some())
+                    .count();
+                if alpha > 0.0 && unclipped && primitive.rect.w() > 0.0 && primitive.rect.h() > 0.0
+                {
+                    visible_text_primitives += 1;
+                    visible_glyphs += glyph_count;
+                }
+            }
+        }
+
+        assert_eq!(visible_text_primitives, 1);
+        assert!(visible_glyphs >= plan.glyph_count - 4);
     }
 
     #[test]
