@@ -37,6 +37,7 @@ mod r1e_interiors;
 mod r1e_islands;
 mod r1f_environment;
 mod r1f_materials;
+mod r1f_weather;
 pub mod render;
 pub mod run;
 pub mod scene;

@@ -35,6 +35,7 @@ pub mod shutdown;
 pub mod tape;
 pub mod texture_payload;
 pub mod visual_oracle;
+pub mod weather;
 
 pub use admission::{
     AdmissionErrorV1, MAX_CORPUS_INPUT_BYTES_V1, MAX_CORPUS_INPUTS_V1,

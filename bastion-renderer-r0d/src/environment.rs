@@ -216,6 +216,21 @@ impl EnvironmentProjectionV1 {
     pub const fn visibility(&self) -> GameplayVisibilityV1 { self.input.visibility }
 
     #[must_use]
+    pub const fn weather(&self) -> WeatherKindV1 { self.input.weather }
+
+    #[must_use]
+    pub const fn cloud_milli(&self) -> u16 { self.input.cloud_milli }
+
+    #[must_use]
+    pub const fn rain_milli(&self) -> u16 { self.input.rain_milli }
+
+    #[must_use]
+    pub const fn wind_mm_s(&self) -> [i32; 2] { self.input.wind_mm_s }
+
+    #[must_use]
+    pub const fn precipitation_milli(&self) -> u16 { self.input.precipitation_milli }
+
+    #[must_use]
     pub fn events(&self) -> &[EnvironmentEventV1] { &self.input.events }
 
     pub fn canonical_bytes(&self) -> Result<Vec<u8>, EnvironmentErrorV1> {

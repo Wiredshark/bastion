@@ -304,6 +304,7 @@ impl SessionState {
         crate::r1e_interiors::reset();
         crate::r1e_islands::reset();
         crate::r1f_environment::reset();
+        crate::r1f_weather::reset();
         if let Err(error) = global_state.window.renderer_mut().reset_r1bc_figure_gpu() {
             tracing::warn!(
                 target: "bastion_r1bc_gpu",
@@ -2246,6 +2247,15 @@ impl PlayState for SessionState {
             for cmd in &global_state.settings.logon_commands {
                 self.client.borrow_mut().send_chat(cmd.to_string());
             }
+        }
+        if let Some((command, arguments)) = crate::r1f_weather::certification_fixture_command() {
+            self.client
+                .borrow_mut()
+                .send_command(command.to_owned(), arguments);
+            tracing::info!(
+                target: "bastion_r1f_weather",
+                "declared flat-arena weather fixture submitted through authoritative weather_zone command"
+            );
         }
 
         #[cfg(feature = "discord")]
