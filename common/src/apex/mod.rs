@@ -20,6 +20,8 @@ pub mod identity;
 pub mod manifest;
 pub mod scalar;
 pub mod subsystem;
+pub mod input_receipt;
+pub mod probe;
 pub mod source_closure;
 pub mod weather_snapshot;
 

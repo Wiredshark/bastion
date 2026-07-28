@@ -207,6 +207,44 @@ exact match with quantised mismatch; receipt for a stale generation;
 receipt for an unaccepted sequence; first-mismatch report truncated to a
 count; a probe type converted into the other.
 
+**BUILT — `common/src/apex/probe.rs` (6 tests + 2 `compile_fail`
+doctests) and `common/src/apex/input_receipt.rs` (9 tests).** All six
+`PROBE` canaries covered.
+
+**The probe pair is built ONCE**, per the dependency map's three-consumer
+rule, and its three consumers (`T5.3`, `T6.2`, `T8.1`) are named in the
+type's own doc rather than only in a map nobody reads at the moment they
+matter.
+
+- **`PROBE-006` is a compile error, not a test.** No `From` in either
+  direction and no cross-type comparison; two `compile_fail` doctests pin
+  the *absence*. Verified by adding the `From` impl — the doctest goes
+  red, so it is testing that conversion's absence rather than failing for
+  an unrelated reason.
+- **A quantisation policy version is part of the probe's identity and is
+  folded into the hashed bytes**, so a probe cannot be re-labelled with a
+  different policy. Two probes under different policies are
+  `IncomparablePolicies` — not a match and not a mismatch. Collapsing
+  that into "divergent" would send someone hunting a bug that is really a
+  policy edit.
+- **`PROBE-005` is unrepresentable rather than discouraged:** the
+  comparison returns a FIELD, and there is no count anywhere in the type.
+- **`PROBE-003`'s ordering is proved, not assumed.** The stale-generation
+  test gives the two records deliberately *different* probes, so a
+  comparison that read the probes first would report a probe mismatch
+  instead. Same construction for `PROBE-004`, whose fixture also differs
+  in tick and generation.
+- **`certifies_exact_execution_v1` is a `match`, not a `matches!`**, in
+  both types. A new variant must be given a decision rather than silently
+  inheriting `false` — the safe default is exactly the one that hides an
+  omission.
+
+The tier's non-vacuity case (`PROBE-001`) is built from real `f32` bits
+one ulp apart with a 3-decimal quantiser, and the fixture asserts both
+halves of its own premise: the raw bytes really differ and the quantised
+bytes really agree. If the two probes were not independent it could not
+be constructed at all.
+
 ---
 
 ## T5.4 — Tick-owned weather input
