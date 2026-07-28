@@ -35,12 +35,11 @@ mod tests {
             DEFAULT_WORLD_CHUNKS_LG,
             Arc::new(TerrainChunk::water(0)),
             |dispatch_builder| {
-                dispatch::<character_behavior::Sys>(dispatch_builder, &[])
-        .expect("test State construction is legacy-mode and cannot fail");
+                dispatch::<character_behavior::Sys>(dispatch_builder, &[]);
             },
-            #[cfg(feature = "plugins")]
-            common_state::plugin::PluginMgr::default(),
-        );
+            common_state::StatePluginsV1::none(),
+        )
+        .expect("test State construction is legacy-mode and cannot fail");
         let msm = MaterialStatManifest::load().cloned();
         state.ecs_mut().insert(msm);
         state.ecs_mut().insert(AbilityMap::load().cloned());

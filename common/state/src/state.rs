@@ -437,7 +437,10 @@ impl State {
         map_size_lg: MapSizeLg,
         default_chunk: Arc<TerrainChunk>,
         execution_mode: ExecutionMode,
-        plugins: StatePluginsV1,
+        // Consumed only under `plugins`; the PARAMETER stays unconditional
+        // so the function's arity does not depend on a feature — that is
+        // the whole point of `StatePluginsV1`.
+        #[cfg_attr(not(feature = "plugins"), expect(unused_variables))] plugins: StatePluginsV1,
     ) -> Result<specs::World, StateConstructionErrorV1> {
         prof_span!("State::setup_ecs_world");
         let mut ecs = specs::World::new();
@@ -1318,7 +1321,7 @@ mod governed_state_construction_v1 {
             MapSizeLg::new(Vec2::new(10, 10)).unwrap(),
             Arc::new(TerrainChunk::water(0)),
             |_| {},
-            mgr,
+            StatePluginsV1::new(mgr),
         );
         assert!(matches!(
             res.map(|_| ()),
@@ -1334,7 +1337,7 @@ mod governed_state_construction_v1 {
             MapSizeLg::new(Vec2::new(10, 10)).unwrap(),
             Arc::new(TerrainChunk::water(0)),
             |_| {},
-            crate::plugin::PluginMgr::default(),
+            StatePluginsV1::new(crate::plugin::PluginMgr::default()),
         );
         assert!(res.is_ok());
     }

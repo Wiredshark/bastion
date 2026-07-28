@@ -34,15 +34,37 @@ const DEFAULT_WORLD_CHUNKS_LG: MapSizeLg =
     };
 
 pub fn setup(add_systems: impl Fn(&mut specs::DispatcherBuilder)) -> State {
-    let pools = State::pools(GameMode::Server);
+    setup_with_pools(State::pools(GameMode::Server), add_systems)
+}
+
+/// `T6.3`: the same fixture on a dispatcher pool with an EXACT worker
+/// count. `State::pools` derives the count from `num_cpus`, so it is the
+/// one axis a worker-count invariance test cannot otherwise control.
+pub fn setup_with_worker_count(
+    threads: usize,
+    add_systems: impl Fn(&mut specs::DispatcherBuilder),
+) -> State {
+    let pools = Arc::new(
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .thread_name(move |i| format!("t63-{threads}-{i}"))
+            .build()
+            .expect("fixture pool"),
+    );
+    setup_with_pools(pools, add_systems)
+}
+
+fn setup_with_pools(
+    pools: common_state::Pools,
+    add_systems: impl Fn(&mut specs::DispatcherBuilder),
+) -> State {
     let mut state = State::new(
         GameMode::Server,
         pools,
         DEFAULT_WORLD_CHUNKS_LG,
         Arc::new(TerrainChunk::water(0)),
         add_systems,
-        #[cfg(feature = "plugins")]
-        common_state::plugin::PluginMgr::default(),
+        common_state::StatePluginsV1::none(),
     )
         .expect("test State construction is legacy-mode and cannot fail");
     state.ecs_mut().insert(MaterialStatManifest::with_empty());
@@ -135,6 +157,49 @@ pub fn create_player(state: &mut State) -> Entity {
         .with(Energy::new(body))
         .with(Health::new(body))
         .with(skill_set)
+        .with(Stats::empty(body))
+        .build()
+}
+
+/// `T6.3`: a body at an exact position with a FIXED shape.
+///
+/// `create_player` draws its humanoid from `rand::rng()`, so mass, height
+/// and collider radius differ per call — fine for a smoke test, fatal for
+/// a fixture whose whole claim is that two runs produce the same bits.
+pub fn create_fixed_body(state: &mut State, pos: Vec3<f32>) -> Entity {
+    let body = common::comp::Body::Humanoid(common::comp::humanoid::Body::random_with(
+        &mut SmallRng::seed_from_u64(0xB0D1),
+        &common::comp::humanoid::Species::Human,
+    ));
+    let (p0, p1, radius) = body.sausage();
+    let collider = Collider::CapsulePrism(CapsulePrism {
+        p0,
+        p1,
+        radius,
+        z_min: 0.0,
+        z_max: body.height(),
+    });
+
+    state
+        .ecs_mut()
+        .create_entity_synced()
+        .with(Pos(pos))
+        .with(Vel::default())
+        .with(Ori::default())
+        .with(body.mass())
+        .with(body.density())
+        .with(collider)
+        .with(body)
+        .with(Controller::default())
+        .with(CharacterState::default())
+        .with(CharacterActivity::default())
+        .with(Buffs::default())
+        .with(Combo::default())
+        .with(Auras::default())
+        .with(EnteredAuras::default())
+        .with(Energy::new(body))
+        .with(Health::new(body))
+        .with(SkillSetBuilder::default().build())
         .with(Stats::empty(body))
         .build()
 }

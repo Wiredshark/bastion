@@ -6,6 +6,11 @@
 //! order into authoritative state. See `readme/apex/` for the program's
 //! packets; this module implements `APEX-T0.1`.
 
+// T6.1's inventory is a build-time tripwire whose only consumers are its
+// own assertions; outside `cfg(test)` every item in it is dead. Gating it
+// here is what the module actually is, and it silences 17 dead-code
+// warnings that would otherwise train the eye to ignore this file.
+#[cfg(test)]
 pub mod numeric_surface;
 pub mod physics_generation;
 pub mod boundary;

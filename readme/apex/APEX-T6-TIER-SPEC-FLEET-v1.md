@@ -229,6 +229,42 @@ the test that actually catches a Rayon dependence — permutation alone can
 pass while partitioning still leaks — and it is precisely the axis the x2
 harness does not vary.
 
+**BUILT — `common/systems/tests/phys/worker_invariance.rs`.** Twelve fixed
+bodies in an overlapping ring on the real `State`/`phys::Sys` path, 30
+ticks, four dispatcher pools of exactly 1/2/8/48 workers, compared on raw
+`to_bits()` positions and velocities keyed by `Uid` plus the collision
+counters. Identical at all four.
+
+Three things the build had to get right for that green to mean anything:
+
+- **The fixture asserts its own preconditions.** The pool's
+  `current_num_threads()` is checked against the count requested (else
+  four legs could quietly share one pool), collisions must be non-zero
+  (else `apply_pushback`'s accumulation never ran), and at least one body
+  must have acquired horizontal velocity (else nothing was pushed).
+- **The tape was falsified, not just passed.** Perturbing one body's
+  initial `z` by a single ulp on the 8-worker leg turns the test red, so
+  the comparison is demonstrably sensitive to exactly the size of
+  difference a partitioning leak would produce.
+- **`create_player` could not be used.** It draws its humanoid from
+  `rand::rng()`, so mass, height and collider radius differ per call —
+  invisible in a smoke test, fatal for a fixture whose whole claim is
+  bit-identity. The fixture uses a fixed body.
+
+**The permutation half was already covered and was strengthened rather
+than rebuilt.** `DET-PHY-005`'s own test in
+`common/src/util/spatial_grid.rs` already proves per-cell candidate order
+is insertion-order independent. What it lacked was a non-vacuity check: a
+`canonicalize_cells` that silently became a no-op would still pass
+whenever the two chosen insertion orders happened to agree. That
+assertion is now there.
+
+**Also recorded from the read:** `apply_pushback` *does* contain a
+cross-task `reduce` — of `PhysicsMetrics`, whose fields are `u64`
+counters. Integer addition is associative, so it is not a float hazard.
+That was the one place in the system where the retracted claim could
+still have been true, and it isn't.
+
 **Canary sketch.** `PHY-008-001..` — candidate discovered mid-solve;
 tie-break key absent for a pair; solver iteration count varying with
 load; contribution applied in completion order; worker count changing the

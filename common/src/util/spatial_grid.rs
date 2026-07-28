@@ -132,12 +132,22 @@ mod det_phy_005_tests {
     /// in the specified order, canonicalize by entity id, then return the query
     /// order for that cell.
     fn query_order(insertion: &[usize], entities: &[specs::Entity]) -> Vec<u32> {
+        build_and_query(insertion, entities, true)
+    }
+
+    fn build_and_query(
+        insertion: &[usize],
+        entities: &[specs::Entity],
+        canonicalize: bool,
+    ) -> Vec<u32> {
         let mut grid = SpatialGrid::new(5, 6, 8);
         // All at the same position => one regular-grid cell (radius 0 <= cutoff 8).
         for &i in insertion {
             grid.insert(Vec2::new(0, 0), 0, entities[i]);
         }
-        grid.canonicalize_cells(|e| e.id() as u64);
+        if canonicalize {
+            grid.canonicalize_cells(|e| e.id() as u64);
+        }
         grid.in_aabr(Aabr {
             min: Vec2::new(-1, -1),
             max: Vec2::new(1, 1),
@@ -173,6 +183,19 @@ mod det_phy_005_tests {
         assert_eq!(
             a, b,
             "cell candidate order depends on insertion order — DET-PHY-005 regressed"
+        );
+
+        // APEX-T6.3: the test asserts its own precondition. Without this,
+        // a `canonicalize_cells` that silently became a no-op would still
+        // pass whenever the two chosen insertion orders happened to agree,
+        // and the green above would be a lottery rather than evidence.
+        let a_raw = build_and_query(&[4, 0, 2, 1, 3], &entities, false);
+        let b_raw = build_and_query(&[1, 3, 0, 4, 2], &entities, false);
+        assert_ne!(
+            a_raw, b_raw,
+            "the two insertion orders produce the same raw order even WITHOUT canonicalization, \
+             so this fixture cannot distinguish a working canonicalize_cells from a no-op — pick \
+             orders that differ"
         );
     }
 }
