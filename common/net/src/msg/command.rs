@@ -207,6 +207,33 @@ mod command_identity_v1 {
         other.binding = binding(50);
         assert_eq!(base.is_replay_of_v1(&other), Err(CommandIdentityErrorV1::BindingMismatch));
     }
+
+    /// Cross-review (T3.4/T3.5 boundary exchange): sequence is baked into
+    /// `identity_root_v1` (the "sequence-inside-identity" claim), but no
+    /// existing test exercised the id-reuse-under-new-sequence attack --
+    /// `is_replay_of_v1` had three of its four mismatch arms pinned
+    /// (request/kind/binding) and this one, silently, did not. Same id,
+    /// same everything else, only the sequence differs: this must be
+    /// SequenceMismatch, not treated as a valid replay.
+    #[test]
+    fn a_reused_id_under_a_new_sequence_is_a_conflict() {
+        let base = descriptor();
+        let mut resequenced = base;
+        resequenced.sequence = base.sequence + 1;
+        assert_eq!(
+            base.is_replay_of_v1(&resequenced),
+            Err(CommandIdentityErrorV1::SequenceMismatch),
+            "reusing a command id under a new sequence must be a typed conflict, not a silent replay"
+        );
+        // Non-vacuity: the identity root itself must actually move, since
+        // that's the mechanism the durable store (CMD-120) relies on to
+        // treat this as IdentityConflict rather than a matching row.
+        assert_ne!(
+            base.identity_root_v1().unwrap(),
+            resequenced.identity_root_v1().unwrap(),
+            "sequence is not actually inside the identity root -- CMD-120's IdentityConflict path would not fire"
+        );
+    }
 }
 
 /// Terminal outcomes a command can reach. `CommandOutcomeV1` is the

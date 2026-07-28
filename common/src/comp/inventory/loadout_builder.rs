@@ -1054,7 +1054,7 @@ pub fn default_main_tool(body: &Body) -> Option<&'static str> {
 /// // and a specific sword with default sword abilities
 /// let sword = Item::new_from_asset_expect("common.items.weapons.sword.starter");
 /// let loadout = LoadoutBuilder::empty()
-///     .defaults()
+///     .defaults(&mut rand::rng())
 ///     .active_mainhand(Some(sword))
 ///     .build();
 /// ```
