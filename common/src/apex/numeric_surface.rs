@@ -68,6 +68,29 @@
 //! honest limit and is recorded rather than left for a fourth reader to
 //! discover: **this scanner catches growth of a known surface, not
 //! discovery of an unknown one.**
+//!
+//! **`T6.1d` — the root set again, this time by ruling rather than by
+//! discovery.** The three roots `T6.1c` named as decisions are now
+//! scanned: `rtsim/src`, `server/src`, `world/src`. 71 files, 461 lines,
+//! taking the surface to **113 authoritative files and 52 branch-driving
+//! sites**. The falsification was re-run in `world/src` with the same
+//! both-directions result, so the standing limit above is unchanged and
+//! is deliberately left worded exactly as it was.
+//!
+//! **Two files that would have been mis-filed by presumption, and were
+//! not.** `world/src` looks like pure worldgen and mostly is — hence
+//! [`NumericReachV1::WorldGeneration`], whose failure mode is a DIFFERENT
+//! WORLD rather than a drifting one. But `world/src/sim/mod.rs` and
+//! `world/src/civ/airship_travel.rs` are queried at RUNTIME by rtsim
+//! (`rule/architect.rs` calls `get_alt_approx`; `data/airship.rs`
+//! consumes the route types), so both carry a live reach. That is T5.4's
+//! lesson holding for the third time: the name of a module is not
+//! evidence about its consumers.
+//!
+//! Two pinned files sit on 5b's active `T0.87` surface
+//! (`server/src/sys/msg/in_game.rs`, `server/src/weather/sim.rs`). Their
+//! counts will need re-deriving when that lands — which is the tripwire
+//! doing its job, not a defect in it.
 
 use std::{fs, path::Path};
 
@@ -94,6 +117,77 @@ pub(crate) enum NumericRoleV1 {
 /// trigonometric operation, with what it is and why.
 pub(crate) const NUMERIC_SURFACE_ROLES: &[(&str, NumericRoleV1, &str)] = &[
     ("common/src/apex/numeric_profile.rs", NumericRoleV1::PresentationOrTooling, "T6.4 evidence tooling; its only root operation is the sqrt inside #[cfg(test)] golden vectors, which never runs in a simulation build and computes no simulation state"),
+    ("rtsim/src/ai/mod.rs", NumericRoleV1::Authoritative, "NPC behaviour-tree weighting; feeds the action an npc takes next tick"),
+    ("rtsim/src/data/sentiment.rs", NumericRoleV1::Authoritative, "sentiment decay and magnitude, persisted in rtsim data across sessions"),
+    ("rtsim/src/rule/npc_ai/airship_ai.rs", NumericRoleV1::Authoritative, "squared-distance gates deciding airship approach, docking and departure phases"),
+    ("rtsim/src/rule/npc_ai/mod.rs", NumericRoleV1::Authoritative, "squared-distance gates selecting which npc behaviour node runs"),
+    ("rtsim/src/rule/npc_ai/movement.rs", NumericRoleV1::Authoritative, "squared-distance arrival and repath gates; a flipped comparison sends an npc somewhere else"),
+    ("rtsim/src/rule/npc_ai/quest.rs", NumericRoleV1::Authoritative, "squared-distance gates deciding quest-step completion"),
+    ("rtsim/src/rule/simulate_npcs.rs", NumericRoleV1::Authoritative, "advances PERSISTED npc positions and travel state; the same path states/utils.rs's constant-argument ln feeds"),
+    ("server/src/cmd.rs", NumericRoleV1::Authoritative, "admin command range and angle checks deciding whether a command applies to a target"),
+    ("server/src/events/entity_manipulation.rs", NumericRoleV1::Authoritative, "damage, knockback and explosion falloff reaching Health and velocity"),
+    ("server/src/events/interaction.rs", NumericRoleV1::Authoritative, "squared interaction ranges deciding whether an interaction is permitted"),
+    ("server/src/events/inventory_manip.rs", NumericRoleV1::Authoritative, "squared pickup range deciding whether an item may be taken"),
+    ("server/src/events/invite.rs", NumericRoleV1::Authoritative, "squared invite range deciding whether an invite may be sent"),
+    ("server/src/events/mounting.rs", NumericRoleV1::Authoritative, "squared mount range deciding whether a mount may be entered"),
+    ("server/src/rtsim/tick.rs", NumericRoleV1::Authoritative, "npc simulation scaling on the server side of rtsim"),
+    ("server/src/state_ext.rs", NumericRoleV1::Authoritative, "squared-distance checks in entity placement and lookup helpers"),
+    ("server/src/sys/agent/behavior_tree/mod.rs", NumericRoleV1::Authoritative, "squared-distance gates selecting the agent behaviour node"),
+    ("server/src/sys/entity_sync.rs", NumericRoleV1::Authoritative, "squared distances deciding WHAT IS SYNCED TO WHOM, the same decision region.rs makes at region granularity"),
+    ("server/src/sys/item.rs", NumericRoleV1::Authoritative, "squared range deciding item entity interaction"),
+    ("server/src/sys/msg/in_game.rs", NumericRoleV1::Authoritative, "squared range checks admitting client requests. NOTE: on 5b's T0.87 surface — this pin will need re-deriving at that merge, which is the tripwire work"),
+    ("server/src/sys/msg/terrain.rs", NumericRoleV1::Authoritative, "squared distance deciding which terrain requests are served"),
+    ("server/src/sys/object.rs", NumericRoleV1::Authoritative, "squared range in object collision and detonation"),
+    ("server/src/sys/pets.rs", NumericRoleV1::Authoritative, "squared follow distance deciding when a pet teleports to its owner"),
+    ("server/src/sys/subscription.rs", NumericRoleV1::Authoritative, "view-distance magnitudes feeding the region subscription set"),
+    ("server/src/sys/teleporter.rs", NumericRoleV1::Authoritative, "squared teleporter radius deciding whether a player is inside it"),
+    ("server/src/sys/waypoint.rs", NumericRoleV1::Authoritative, "squared waypoint radius deciding whether a waypoint is claimed"),
+    ("server/src/weather/sim.rs", NumericRoleV1::Authoritative, "weather simulation producing the wind that reaches flight. NOTE: on 5b's T0.87 surface — pin will need re-deriving at that merge"),
+    ("world/src/block.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/civ/airship_travel.rs", NumericRoleV1::Authoritative, "VERIFIED LIVE: rtsim/src/data/airship.rs imports this module's route types and consumes them during simulation, so route geometry reaches npc behaviou"),
+    ("world/src/civ/mod.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/column.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/layer/cave.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/layer/mod.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/layer/scatter.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/layer/spot.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/layer/tree.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/layer/wildlife.rs", NumericRoleV1::Authoritative, "spawn density decides authoritative entity spawns as chunks generate during play"),
+    ("world/src/lib.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/sim/erosion.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/sim/map.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/sim/mod.rs", NumericRoleV1::Authoritative, "VERIFIED LIVE, not generation-only: rtsim queries get_alt_approx/get_surface_alt_approx at runtime (rtsim/src/rule/architect.rs, rtsim/src/data/airshi"),
+    ("world/src/sim/util.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/sim/way.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/economy/mod.rs", NumericRoleV1::Authoritative, "economy values are simulated by rtsim at runtime rather than fixed at generation; T8 owns this surface"),
+    ("world/src/site/generation.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/mod.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/adlet.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/barn.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/bridge.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/cliff_tower.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/cliff_town_airship_dock.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/desert_city_arena.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/dwarven_mine.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/farm_field.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/gnarling.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/house.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/jungle_ruin.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/pirate_hideout.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/plaza.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/savannah_airship_dock.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/savannah_guard_hut.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/savannah_hut.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/savannah_workshop.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/sea_chapel.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/tavern.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/terracotta_house.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/terracotta_palace.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/terracotta_yard.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/site/plot/vampire_castle.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/util/fast_noise.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/util/math.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
+    ("world/src/util/mod.rs", NumericRoleV1::Authoritative, "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT W"),
     ("common/src/bin/csv_export.rs", NumericRoleV1::PresentationOrTooling, "a CSV export binary for offline analysis; it never runs inside a simulation build and computes no simulation state"),
     ("common/src/comp/body/object.rs", NumericRoleV1::Authoritative, "object body volume feeds density, which feeds the fluid-dynamics force sum"),
     ("common/src/comp/body/ship.rs", NumericRoleV1::Authoritative, "ship hull volume feeds density and buoyancy"),
@@ -183,24 +277,31 @@ pub(crate) const BRANCH_DRIVING_SEED: &[(&str, &str)] = &[
 /// `world/src`. Each is authoritative in its own way and each is a
 /// larger classification job than one row; see
 /// [`UNSCANNED_AUTHORITATIVE_ROOTS`].
-pub(crate) const SCANNED_ROOTS: [&str; 3] =
-    ["common/src", "common/systems/src", "server/agent/src"];
+pub(crate) const SCANNED_ROOTS: [&str; 6] = [
+    "common/src",
+    "common/systems/src",
+    "server/agent/src",
+    // T6.1d: the roots T6.1c named as decisions rather than oversights.
+    "rtsim/src",
+    "server/src",
+    "world/src",
+];
 
 /// Authoritative code the scanner still does not walk, with why it is
 /// out of scope for now. An inventory that simply stopped at its own
 /// root set would read as complete.
 pub(crate) const UNSCANNED_AUTHORITATIVE_ROOTS: [(&str, &str); 3] = [
     (
-        "server/src",
-        "server-side simulation outside the agent crate; a separate classification pass, and the          one most likely to hold further branch-driving predicates",
+        "bastion-server/src",
+        "the colony simulation; 4 lines across 3 files, small enough that a pass is cheap but it          is a distinct authority with its own reach argument and has not been traced",
     ),
     (
-        "rtsim/src",
-        "rtsim advances persisted NPC state; its numeric surface is real but its consumers are          the rtsim rules rather than the tick, so the reach argument differs",
+        "client/src",
+        "10 lines across 2 files. The client is not authoritative BY DEFINITION, but T5.4 is the          standing counterexample — its WeatherLerp reached glider steering — so this is listed as          untraced rather than excluded",
     ),
     (
-        "world/src",
-        "worldgen runs once per world rather than per tick; divergence there is a different          failure mode (a different world, not a drifting one) and wants its own row",
+        "common/net/src",
+        "8 lines across 2 files; wire-side arithmetic whose consumers have not been traced",
     ),
 ];
 
@@ -309,6 +410,9 @@ pub(crate) enum NumericOwnerV1 {
     Spawning,
     WorldSync,
     TimeOfDay,
+    /// Worldgen and the civ/site layer. Its own owner because its output
+    /// is the WORLD rather than the simulation, so its remedy differs.
+    Worldgen,
     /// NPC decision-making in the agent crate. Its own owner because its
     /// numerics decide BEHAVIOUR rather than state: a flipped comparison
     /// makes an NPC choose a different action, which is visible long
@@ -319,7 +423,7 @@ pub(crate) enum NumericOwnerV1 {
 impl NumericOwnerV1 {
     /// Every owner. An owner with no sites is a naming exercise, and the
     /// test below says so.
-    pub(crate) const ALL: [Self; 13] = [
+    pub(crate) const ALL: [Self; 14] = [
         Self::Combat,
         Self::Movement,
         Self::Orientation,
@@ -333,6 +437,7 @@ impl NumericOwnerV1 {
         Self::WorldSync,
         Self::TimeOfDay,
         Self::AgentDecision,
+        Self::Worldgen,
     ];
 }
 
@@ -351,6 +456,20 @@ pub(crate) enum NumericReachV1 {
     /// other state carried into the next tick or a save. Error
     /// accumulates rather than amplifying.
     CarriedAcrossTicks,
+    /// The result lands in generated terrain and structure layout rather
+    /// than in per-tick simulation state.
+    ///
+    /// Its own class because the failure mode differs: a divergence here
+    /// produces a DIFFERENT WORLD, not a drifting one, and the remedy is
+    /// a regeneration rather than a correction. Ranked below
+    /// `CarriedAcrossTicks` only because it cannot compound tick over
+    /// tick — not because it matters less.
+    ///
+    /// `T6.1d` assigns this ONLY where the generation-only claim was
+    /// verified. `world/src/sim/mod.rs` and `world/src/civ/airship_travel.rs`
+    /// both LOOK generation-only and are not: rtsim queries them at
+    /// runtime. Presuming would have mis-filed both.
+    WorldGeneration,
     /// The site has no live consumer at this tip. Classified by the state
     /// it reads, not by a consumer, and it must be re-classified when one
     /// appears.
@@ -393,9 +512,9 @@ const fn site(
 /// Every site in every `Authoritative` file. The `lines` column sums, per
 /// file, to what the scanner finds — so a new site fails the build.
 pub(crate) const NUMERIC_SITES: &[NumericSiteV1] = {
-    use NumericOpV1::{IntegerPower, Log, Power, SquareRoot, Trig};
+    use NumericOpV1::{FusedMultiplyAdd, IntegerPower, Log, Power, SquareRoot, Trig};
     use NumericOwnerV1::*;
-    use NumericReachV1::{BranchCondition, CarriedAcrossTicks, NoLiveConsumer};
+    use NumericReachV1::{BranchCondition, CarriedAcrossTicks, NoLiveConsumer, WorldGeneration};
     &[
         site("common/src/combat.rs", "Self::Sqrt => (val / norm).sqrt()", 1, SquareRoot, Combat, CarriedAcrossTicks,
              "damage-scaling curve; the result reaches Health, which is persisted"),
@@ -573,6 +692,244 @@ pub(crate) const NUMERIC_SITES: &[NumericSiteV1] = {
              "distance magnitudes feeding those helpers"),
         site("server/agent/src/util.rs", ".powi(", 6, IntegerPower, AgentDecision, BranchCondition,
              "squared distance thresholds deciding whether an NPC engages, flees, or holds"),
+        site("rtsim/src/ai/mod.rs", "powf", 1, Power, AgentDecision, CarriedAcrossTicks,
+             "NPC behaviour-tree weighting; feeds the action an npc takes next tick"),
+        site("rtsim/src/data/sentiment.rs", ".powi(", 2, IntegerPower, AgentDecision, CarriedAcrossTicks,
+             "sentiment decay and magnitude, persisted in rtsim data across sessions"),
+        site("rtsim/src/data/sentiment.rs", "sqrt()", 1, SquareRoot, AgentDecision, CarriedAcrossTicks,
+             "sentiment decay and magnitude, persisted in rtsim data across sessions"),
+        site("rtsim/src/rule/npc_ai/airship_ai.rs", ".powi(", 4, IntegerPower, AgentDecision, BranchCondition,
+             "squared-distance gates deciding airship approach, docking and departure phases"),
+        site("rtsim/src/rule/npc_ai/mod.rs", ".powi(", 5, IntegerPower, AgentDecision, BranchCondition,
+             "squared-distance gates selecting which npc behaviour node runs"),
+        site("rtsim/src/rule/npc_ai/movement.rs", ".powi(", 7, IntegerPower, AgentDecision, BranchCondition,
+             "squared-distance arrival and repath gates; a flipped comparison sends an npc somewhere else"),
+        site("rtsim/src/rule/npc_ai/movement.rs", "sqrt()", 1, SquareRoot, AgentDecision, BranchCondition,
+             "squared-distance arrival and repath gates; a flipped comparison sends an npc somewhere else"),
+        site("rtsim/src/rule/npc_ai/quest.rs", ".powi(", 2, IntegerPower, AgentDecision, BranchCondition,
+             "squared-distance gates deciding quest-step completion"),
+        site("rtsim/src/rule/simulate_npcs.rs", ".powi(", 3, IntegerPower, AgentDecision, CarriedAcrossTicks,
+             "advances PERSISTED npc positions and travel state; the same path states/utils.rs's constant-argument ln feeds"),
+        site("rtsim/src/rule/simulate_npcs.rs", "sqrt()", 3, SquareRoot, AgentDecision, CarriedAcrossTicks,
+             "advances PERSISTED npc positions and travel state; the same path states/utils.rs's constant-argument ln feeds"),
+        site("server/src/cmd.rs", ".powi(", 2, IntegerPower, WorldSync, BranchCondition,
+             "admin command range and angle checks deciding whether a command applies to a target"),
+        site("server/src/cmd.rs", ".sin()", 2, Trig, WorldSync, BranchCondition,
+             "admin command range and angle checks deciding whether a command applies to a target"),
+        site("server/src/events/entity_manipulation.rs", ".powi(", 13, IntegerPower, Combat, CarriedAcrossTicks,
+             "damage, knockback and explosion falloff reaching Health and velocity"),
+        site("server/src/events/entity_manipulation.rs", "sqrt()", 1, SquareRoot, Combat, CarriedAcrossTicks,
+             "damage, knockback and explosion falloff reaching Health and velocity"),
+        site("server/src/events/entity_manipulation.rs", ".atan()", 4, Trig, Combat, CarriedAcrossTicks,
+             "damage, knockback and explosion falloff reaching Health and velocity"),
+        site("server/src/events/interaction.rs", ".powi(", 5, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared interaction ranges deciding whether an interaction is permitted"),
+        site("server/src/events/inventory_manip.rs", ".powi(", 1, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared pickup range deciding whether an item may be taken"),
+        site("server/src/events/invite.rs", ".powi(", 1, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared invite range deciding whether an invite may be sent"),
+        site("server/src/events/mounting.rs", ".powi(", 2, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared mount range deciding whether a mount may be entered"),
+        site("server/src/rtsim/tick.rs", "powf", 1, Power, AgentDecision, CarriedAcrossTicks,
+             "npc simulation scaling on the server side of rtsim"),
+        site("server/src/state_ext.rs", ".powi(", 1, IntegerPower, WorldSync, BranchCondition,
+             "squared-distance checks in entity placement and lookup helpers"),
+        site("server/src/state_ext.rs", "sqrt()", 1, SquareRoot, WorldSync, BranchCondition,
+             "squared-distance checks in entity placement and lookup helpers"),
+        site("server/src/sys/agent/behavior_tree/mod.rs", ".powi(", 8, IntegerPower, AgentDecision, BranchCondition,
+             "squared-distance gates selecting the agent behaviour node"),
+        site("server/src/sys/entity_sync.rs", ".powi(", 7, IntegerPower, WorldSync, BranchCondition,
+             "squared distances deciding WHAT IS SYNCED TO WHOM, the same decision region.rs makes at region granularity"),
+        site("server/src/sys/item.rs", ".powi(", 1, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared range deciding item entity interaction"),
+        site("server/src/sys/msg/in_game.rs", ".powi(", 2, IntegerPower, WorldSync, BranchCondition,
+             "squared range checks admitting client requests. NOTE: on 5b's T0.87 surface — this pin will need re-deriving at that merge, which is the tripwire working"),
+        site("server/src/sys/msg/terrain.rs", ".powi(", 1, IntegerPower, WorldSync, BranchCondition,
+             "squared distance deciding which terrain requests are served"),
+        site("server/src/sys/msg/terrain.rs", "sqrt()", 1, SquareRoot, WorldSync, BranchCondition,
+             "squared distance deciding which terrain requests are served"),
+        site("server/src/sys/object.rs", ".powi(", 1, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared range in object collision and detonation"),
+        site("server/src/sys/pets.rs", ".powi(", 1, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared follow distance deciding when a pet teleports to its owner"),
+        site("server/src/sys/subscription.rs", "sqrt()", 3, SquareRoot, WorldSync, CarriedAcrossTicks,
+             "view-distance magnitudes feeding the region subscription set"),
+        site("server/src/sys/teleporter.rs", ".powi(", 2, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared teleporter radius deciding whether a player is inside it"),
+        site("server/src/sys/waypoint.rs", ".powi(", 1, IntegerPower, AreaOfEffect, BranchCondition,
+             "squared waypoint radius deciding whether a waypoint is claimed"),
+        site("server/src/weather/sim.rs", ".powi(", 4, IntegerPower, FlightAndFluid, CarriedAcrossTicks,
+             "weather simulation producing the wind that reaches flight. NOTE: on 5b's T0.87 surface — pin will need re-deriving at that merge"),
+        site("server/src/weather/sim.rs", "powf", 2, Power, FlightAndFluid, CarriedAcrossTicks,
+             "weather simulation producing the wind that reaches flight. NOTE: on 5b's T0.87 surface — pin will need re-deriving at that merge"),
+        site("world/src/block.rs", "sqrt()", 1, SquareRoot, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/block.rs", ".sin()", 1, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/civ/airship_travel.rs", ".powi(", 2, IntegerPower, Worldgen, CarriedAcrossTicks,
+             "VERIFIED LIVE: rtsim/src/data/airship.rs imports this module's route types and consumes them during simulation, so route geometry reaches npc behaviour"),
+        site("world/src/civ/airship_travel.rs", "powf", 1, Power, Worldgen, CarriedAcrossTicks,
+             "VERIFIED LIVE: rtsim/src/data/airship.rs imports this module's route types and consumes them during simulation, so route geometry reaches npc behaviour"),
+        site("world/src/civ/airship_travel.rs", "sqrt()", 1, SquareRoot, Worldgen, CarriedAcrossTicks,
+             "VERIFIED LIVE: rtsim/src/data/airship.rs imports this module's route types and consumes them during simulation, so route geometry reaches npc behaviour"),
+        site("world/src/civ/airship_travel.rs", ".atan2(", 1, Trig, Worldgen, CarriedAcrossTicks,
+             "VERIFIED LIVE: rtsim/src/data/airship.rs imports this module's route types and consumes them during simulation, so route geometry reaches npc behaviour"),
+        site("world/src/civ/mod.rs", ".powi(", 2, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/civ/mod.rs", ".log(", 5, Log, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/civ/mod.rs", "sqrt()", 3, SquareRoot, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/column.rs", ".powi(", 4, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/column.rs", "powf", 18, Power, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/column.rs", "sqrt()", 5, SquareRoot, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/column.rs", ".cos()", 3, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/cave.rs", ".powi(", 17, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/cave.rs", "powf", 12, Power, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/cave.rs", "sqrt()", 3, SquareRoot, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/cave.rs", ".sin()", 3, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/mod.rs", ".powi(", 3, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/mod.rs", "powf", 6, Power, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/mod.rs", "sqrt()", 1, SquareRoot, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/mod.rs", ".cos()", 4, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/scatter.rs", ".powi(", 2, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/scatter.rs", "powf", 4, Power, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/spot.rs", ".powi(", 1, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/spot.rs", ".sin()", 2, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/tree.rs", ".powi(", 17, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/tree.rs", ".log2()", 12, Log, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/tree.rs", ".sin()", 3, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/layer/wildlife.rs", "powf", 2, Power, Spawning, CarriedAcrossTicks,
+             "spawn density decides authoritative entity spawns as chunks generate during play"),
+        site("world/src/layer/wildlife.rs", ".sin()", 2, Trig, Spawning, CarriedAcrossTicks,
+             "spawn density decides authoritative entity spawns as chunks generate during play"),
+        site("world/src/lib.rs", ".powi(", 4, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/sim/erosion.rs", ".powi(", 4, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/sim/erosion.rs", ".ln()", 3, Log, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/sim/erosion.rs", "powf", 20, Power, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/sim/erosion.rs", "sqrt()", 5, SquareRoot, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/sim/erosion.rs", ".tan()", 4, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/sim/map.rs", "sqrt()", 3, SquareRoot, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/sim/mod.rs", ".powi(", 5, IntegerPower, Worldgen, CarriedAcrossTicks,
+             "VERIFIED LIVE, not generation-only: rtsim queries get_alt_approx/get_surface_alt_approx at runtime (rtsim/src/rule/architect.rs, rtsim/src/data/airship.rs), so these results reach npc placement and movement"),
+        site("world/src/sim/mod.rs", ".ln()", 2, Log, Worldgen, CarriedAcrossTicks,
+             "VERIFIED LIVE, not generation-only: rtsim queries get_alt_approx/get_surface_alt_approx at runtime (rtsim/src/rule/architect.rs, rtsim/src/data/airship.rs), so these results reach npc placement and movement"),
+        site("world/src/sim/mod.rs", ".exp2()", 12, Power, Worldgen, CarriedAcrossTicks,
+             "VERIFIED LIVE, not generation-only: rtsim queries get_alt_approx/get_surface_alt_approx at runtime (rtsim/src/rule/architect.rs, rtsim/src/data/airship.rs), so these results reach npc placement and movement"),
+        site("world/src/sim/mod.rs", "sqrt()", 5, SquareRoot, Worldgen, CarriedAcrossTicks,
+             "VERIFIED LIVE, not generation-only: rtsim queries get_alt_approx/get_surface_alt_approx at runtime (rtsim/src/rule/architect.rs, rtsim/src/data/airship.rs), so these results reach npc placement and movement"),
+        site("world/src/sim/mod.rs", ".tanh()", 4, Trig, Worldgen, CarriedAcrossTicks,
+             "VERIFIED LIVE, not generation-only: rtsim queries get_alt_approx/get_surface_alt_approx at runtime (rtsim/src/rule/architect.rs, rtsim/src/data/airship.rs), so these results reach npc placement and movement"),
+        site("world/src/sim/util.rs", ".mul_add(", 1, FusedMultiplyAdd, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/sim/util.rs", ".powi(", 1, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/sim/way.rs", ".powi(", 1, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/economy/mod.rs", "powf", 1, Power, Worldgen, CarriedAcrossTicks,
+             "economy values are simulated by rtsim at runtime rather than fixed at generation; T8 owns this surface"),
+        site("world/src/site/generation.rs", ".powi(", 5, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/generation.rs", "powf", 3, Power, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/generation.rs", ".cos()", 7, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/mod.rs", ".powi(", 6, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/mod.rs", "powf", 16, Power, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/mod.rs", "sqrt()", 1, SquareRoot, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/adlet.rs", ".powi(", 1, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/adlet.rs", ".log2()", 1, Log, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/adlet.rs", "sqrt()", 7, SquareRoot, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/adlet.rs", ".sin()", 16, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/barn.rs", ".powi(", 1, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/bridge.rs", "sqrt()", 4, SquareRoot, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/cliff_tower.rs", ".cos()", 2, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/cliff_town_airship_dock.rs", ".cos()", 2, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/desert_city_arena.rs", ".cos()", 10, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/dwarven_mine.rs", "sqrt()", 1, SquareRoot, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/farm_field.rs", ".powi(", 2, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/farm_field.rs", ".sin()", 1, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/gnarling.rs", ".powi(", 1, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/gnarling.rs", ".sin()", 1, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/house.rs", ".powi(", 1, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/jungle_ruin.rs", ".cos()", 6, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/pirate_hideout.rs", ".cos()", 2, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/plaza.rs", ".powi(", 1, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/savannah_airship_dock.rs", ".cos()", 2, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/savannah_guard_hut.rs", ".cos()", 2, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/savannah_hut.rs", ".cos()", 2, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/savannah_workshop.rs", ".cos()", 4, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/sea_chapel.rs", ".cos()", 4, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/tavern.rs", ".powi(", 1, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/terracotta_house.rs", ".cos()", 2, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/terracotta_palace.rs", ".cos()", 12, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/terracotta_yard.rs", ".cos()", 4, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/site/plot/vampire_castle.rs", ".cos()", 12, Trig, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/util/fast_noise.rs", ".powi(", 2, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/util/math.rs", ".powi(", 1, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/util/mod.rs", ".powi(", 1, IntegerPower, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
+        site("world/src/util/mod.rs", "powf", 1, Power, Worldgen, WorldGeneration,
+             "worldgen geometry: the result lands in generated terrain and structure layout, not in per-tick simulation state, so a divergence here is a DIFFERENT WORLD rather than a drifting one"),
     ]
 };
 
@@ -665,7 +1022,7 @@ mod numeric_surface_v1 {
             .count();
         // 24 at T6.1a; 26 once T6.1b widened the pattern list; 42 once
         // T6.1c added powi/exp2/mul_add and the server/agent root.
-        assert_eq!(authoritative, 42, "the authoritative surface changed — re-derive T6.1b's owners");
+        assert_eq!(authoritative, 113, "the authoritative surface changed — re-derive T6.1b's owners");
         assert!(
             NUMERIC_SURFACE_ROLES.iter().any(|(f, role, _)| *f == "common/systems/src/phys/mod.rs"
                 && *role == NumericRoleV1::Authoritative),
@@ -845,7 +1202,7 @@ mod numeric_surface_v1 {
             .collect();
         assert_eq!(
             branch.len(),
-            29,
+            52,
             "the branch-driving set changed; these are the sites where one ulp becomes a \
              different code path:\n{branch:#?}"
         );
