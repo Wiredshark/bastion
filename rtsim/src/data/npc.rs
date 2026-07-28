@@ -831,6 +831,50 @@ impl Npcs {
                     .flatten(),
             )
     }
+
+    /// `T3.35+T3.39` (E3-WT): same traversal as [`Self::nearby`], but keeps
+    /// each actor's position — needed for `threat_policy::ThreatCandidateV1`
+    /// scoring, which `nearby`'s callers don't need and which `nearby`
+    /// itself discards. A sibling method rather than changing `nearby`'s
+    /// return type, so the other four existing call sites are untouched.
+    pub fn nearby_with_pos(
+        &self,
+        this_npc: Option<NpcId>,
+        wpos: Vec3<f32>,
+        radius: f32,
+    ) -> impl Iterator<Item = (Actor, Vec3<f32>)> + '_ {
+        let chunk_pos = wpos.xy().as_().wpos_to_cpos();
+        let r_sqr = radius * radius;
+        LOCALITY
+            .into_iter()
+            .flat_map(move |neighbor| {
+                self.npc_grid.get(chunk_pos + neighbor).map(move |cell| {
+                    cell.npcs
+                        .iter()
+                        .copied()
+                        .filter_map(move |npc| {
+                            self.npcs.get(npc).and_then(|data| {
+                                (data.wpos.distance_squared(wpos) < r_sqr
+                                    && Some(npc) != this_npc)
+                                    .then_some((Actor::Npc(npc), data.wpos))
+                            })
+                        })
+                })
+            })
+            .flatten()
+            .chain(
+                self.character_map
+                    .get(&chunk_pos)
+                    .map(|characters| {
+                        characters.iter().filter_map(move |(character, c_wpos)| {
+                            (c_wpos.distance_squared(wpos) < r_sqr)
+                                .then_some((Actor::Character(*character), *c_wpos))
+                        })
+                    })
+                    .into_iter()
+                    .flatten(),
+            )
+    }
 }
 
 impl Deref for Npcs {

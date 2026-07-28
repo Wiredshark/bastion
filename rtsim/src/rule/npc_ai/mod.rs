@@ -69,6 +69,7 @@ use common::{
     spiral::Spiral2d,
     store::Id,
     terrain::{CoordinateConversions, TerrainChunkSize, sprite},
+    threat_policy::{ThreatCandidateV1, ThreatClassV1, arbitrate},
     time::DayPeriod,
     util::{Dir, Dir2},
 };
@@ -1629,6 +1630,20 @@ fn check_inbox<S: State>(ctx: &mut NpcCtx) -> Option<impl Action<S> + use<S>> {
     action
 }
 
+/// `T3.35+T3.39` (E3-WT, Fable-ruled 2026-07-27): wires the shared
+/// `threat_policy` in place of the old canonical-`Actor`-order tiebreak
+/// (DET-AIT-004's fix, now superseded rather than removed — see below).
+/// Disclosed collapse from 3 classes to 1: `NpcCtx` here only carries a
+/// static `Sentiment::ENEMY` relationship and position, no per-actor
+/// engagement/recency tracking, so `AttackingMe`/`AttackingAlly` can't be
+/// honestly discriminated at this call site (that data lives only in
+/// server-agent's `health.last_change` — see
+/// `is_more_dangerous_than_target`). Every candidate here is therefore the
+/// fixed class `HostileNearby`; `capability_vs_me`/`recency` are 0.0 (no
+/// signal exists), so ranking reduces to real proximity (previously this
+/// site had none at all) with `Actor`'s own total order as the exact-tie
+/// tiebreak — DET-AIT-004's canonical-order fix is preserved as
+/// `threat_policy::compare`'s tiebreak term, not lost.
 fn check_for_enemies<S: State>(ctx: &mut NpcCtx) -> Option<impl Action<S> + use<S>> {
     // TODO: Instead of checking all nearby actors every tick, it would be more
     // effective to have the actor grid generate a per-tick diff so that we only
@@ -1636,18 +1651,38 @@ fn check_for_enemies<S: State>(ctx: &mut NpcCtx) -> Option<impl Action<S> + use<
     // implementing this means accounting for changes in sentiment (that could
     // suddenly make a nearby actor an enemy) as well as variable NPC tick
     // rates!
-    // DET-AIT-004 (v8 npc-combat-targeting, High): `nearby` yields actors in
-    // grid-traversal + slotmap + character-map order, so `.find(is ENEMY)`
-    // engaged whichever enemy that (non-canonical) iteration surfaced first.
-    // Pick the canonically-lowest enemy Actor instead, so the engaged target is
-    // a pure function of the nearby-enemy set. (All candidates are already
-    // within the 24-unit radius, so this stays a "nearby enemy".)
-    ctx.data
+    let wpos = ctx.npc.wpos;
+    let candidates = ctx
+        .data
         .npcs
-        .nearby(Some(ctx.npc_id), ctx.npc.wpos, 24.0)
-        .filter(|actor| ctx.sentiments.toward(*actor).is(Sentiment::ENEMY))
-        .min()
-        .map(|enemy| just(move |ctx, _| ctx.controller.attack(enemy)))
+        .nearby_with_pos(Some(ctx.npc_id), wpos, 24.0)
+        .filter(|(actor, _)| ctx.sentiments.toward(*actor).is(Sentiment::ENEMY));
+
+    pick_hostile_threat(wpos, candidates).map(|enemy| just(move |ctx, _| ctx.controller.attack(enemy)))
+}
+
+/// Pure core of [`check_for_enemies`]'s wiring, extracted so it's
+/// unit-testable without a live `NpcCtx` (same discipline as
+/// [`reaction_precedence`] above). All candidates are `HostileNearby`
+/// (this call site's disclosed collapse, see `check_for_enemies`'s own
+/// doc); ranking is real proximity with `Actor`'s total order as the
+/// exact-tie tiebreak.
+fn pick_hostile_threat(
+    wpos: Vec3<f32>,
+    candidates: impl IntoIterator<Item = (Actor, Vec3<f32>)>,
+) -> Option<Actor> {
+    let candidates = candidates
+        .into_iter()
+        .map(|(actor, pos)| ThreatCandidateV1 {
+            class: ThreatClassV1::HostileNearby,
+            distance: pos.distance(wpos),
+            capability_vs_me: 0.0,
+            recency: 0.0,
+            tiebreak: actor,
+        })
+        .collect::<Vec<_>>();
+
+    arbitrate(&candidates).map(|i| candidates[i].tiebreak)
 }
 
 fn threat_reaction<S: State>(ctx: &mut NpcCtx) -> Option<Box<dyn Action<S>>> {
@@ -1729,6 +1764,50 @@ mod reaction_precedence_tests {
         assert_ne!(old_order, new_order, "the two policies must disagree on this contention case");
         assert_eq!(new_order, Some("threat"));
         assert_eq!(old_order, Some("inbox"));
+    }
+}
+
+// T3.35+T3.39 (E3-WT): non-vacuity for `check_for_enemies`'s threat_policy
+// wiring — proves real proximity now decides (previously canonical-Actor-
+// order alone did), and that the DET-AIT-004 tiebreak survives exact ties.
+#[cfg(test)]
+mod pick_hostile_threat_tests {
+    use super::pick_hostile_threat;
+    use common::rtsim::{Actor, NpcId};
+    use slotmap::KeyData;
+    use vek::Vec3;
+
+    fn actor(raw: u64) -> Actor { Actor::Npc(NpcId::from(KeyData::from_ffi(raw))) }
+
+    #[test]
+    fn no_candidates_is_none() {
+        assert_eq!(pick_hostile_threat(Vec3::zero(), []), None);
+    }
+
+    /// Real proximity now decides: closer enemy wins even though its
+    /// `Actor` id sorts higher than the farther one (so this can't be
+    /// passing by accident of the old canonical-order tiebreak alone).
+    #[test]
+    fn closer_enemy_wins_even_with_a_higher_actor_id() {
+        let wpos = Vec3::new(0.0, 0.0, 0.0);
+        let far_low_id = (actor(1), Vec3::new(20.0, 0.0, 0.0));
+        let close_high_id = (actor(9), Vec3::new(2.0, 0.0, 0.0));
+        assert_eq!(
+            pick_hostile_threat(wpos, [far_low_id, close_high_id]),
+            Some(actor(9))
+        );
+    }
+
+    /// Exact distance tie: DET-AIT-004's canonical-order tiebreak is
+    /// preserved via `threat_policy::compare`'s `tiebreak` term — higher
+    /// `Actor` wins, independent of iteration order.
+    #[test]
+    fn exact_tie_resolves_by_actor_order_independently_of_iteration_order() {
+        let wpos = Vec3::new(0.0, 0.0, 0.0);
+        let a = (actor(3), Vec3::new(5.0, 0.0, 0.0));
+        let b = (actor(7), Vec3::new(5.0, 0.0, 0.0));
+        assert_eq!(pick_hostile_threat(wpos, [a, b]), Some(actor(7)));
+        assert_eq!(pick_hostile_threat(wpos, [b, a]), Some(actor(7)));
     }
 }
 
