@@ -66,6 +66,89 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
         variant: "InputReceipt",
         digest_hex: "sha256:5d3eec1882c6064e2f508bb44a01dca36978d79e3c0a046e05f25233d4981b78",
     },
+    // WSG-2 chunk 1: the server-authoritative core first — a mis-decode
+    // of a sync package corrupts every entity on the client, which is the
+    // largest blast radius on this wire.
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "EntitySync",
+        digest_hex: "sha256:bdfa81ba96b618f3dad6255d94b9203f3be5372ec0893e7e385a72cfb0fb5939",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "CompSync",
+        digest_hex: "sha256:3f329c035f38e3993a88d4c4436a42a05af7265f3d38b03a11e6226daccd8dd9",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "DeleteEntity",
+        digest_hex: "sha256:21d0ddef907a10b3b11a79410775293e3215a35c6eb7e5b8e04058afdfbb6dbd",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "SetPlayerEntity",
+        digest_hex: "sha256:56dc33d03a09a24f01def8ab8d102d75e183f1814a7364aabb21f25470b055e1",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "Knockback",
+        digest_hex: "sha256:7b5772a71a2cfac187e6220bfe8b7222d5bb81f460ed1372185fde692a0bb0aa",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "SpectatePosition",
+        digest_hex: "sha256:b9d9f7761b80f5da88f47d872cf408bdf9351a4c94a2bfd3465fefb0a48b5141",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "SpectatorSuccess",
+        digest_hex: "sha256:07f7341d09d9cdd6e70088970adc5f75a8e25fa2c124e9c14e85b44e708820ed",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "SetViewDistance",
+        digest_hex: "sha256:48dad7f79489519389219a35e69b51d3d3710aa775edeb82803e227e8b1476cf",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "InvitePending",
+        digest_hex: "sha256:6296f87eacce313a03299fbb7f5328a90c03ab542b08f56fb24f6bc6bbf241e0",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "CharacterCreated",
+        digest_hex: "sha256:22629bfd7924d1ca4897bab53d5f99123f5c351e49916becb0c1fb5033ad7c3a",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "CharacterEdited",
+        digest_hex: "sha256:ece617e99be7b1a6f6f80f67823cce2b64575a063039b32182db3f345ba37ade",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "CharacterActionError",
+        digest_hex: "sha256:1aa6c8c64dbdc3174f82999c0ac4ae2be07c231c0adc8aa049cbc7111b748773",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "CharacterSuccess",
+        digest_hex: "sha256:2594b6a92ebfb1c3312deb7d01c015fb95e9fbe9bd7bc6b527af07813ec7b910",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "ExitInGameSuccess",
+        digest_hex: "sha256:42f4aeb81c1ef81f771f3de8abca9dcf66901c575530e7672e4b1146474ae650",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "UpdateRecipes",
+        digest_hex: "sha256:28276425d45829d4e6f5e18aefbf1f62862f07260a904532fb6e2106dec973e6",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "SetPlayerRole",
+        digest_hex: "sha256:fb9cca3fa5fafbd354aa4284804a0239a730dcbdd6459cddd0be75649a1a8dd5",
+    },
 ];
 
 include!("wire_shape_uncovered.rs");
@@ -134,12 +217,91 @@ mod wire_shape_goldens_v1 {
         })
     }
 
+
+    fn uid(n: u64) -> common::uid::Uid {
+        common::uid::Uid(std::num::NonZeroU64::new(n).expect("nonzero"))
+    }
+
+    fn server_entity_sync() -> ServerGeneral {
+        ServerGeneral::EntitySync(crate::sync::EntitySyncPackage {
+            created_entities: vec![uid(2), uid(3)],
+            deleted_entities: vec![uid(5)],
+            sync_tick: 41,
+            sequence: 43,
+        })
+    }
+
+    fn server_comp_sync() -> ServerGeneral {
+        ServerGeneral::CompSync(
+            crate::sync::CompSyncPackage { comp_updates: Vec::new(), sync_tick: 47, sequence: 53 },
+            common::apex::physics_generation::PhysicsGenerationV1::from_legacy_counter_v1(59),
+        )
+    }
+
+    fn server_delete_entity() -> ServerGeneral { ServerGeneral::DeleteEntity(uid(61)) }
+
+    fn server_set_player_entity() -> ServerGeneral { ServerGeneral::SetPlayerEntity(uid(67)) }
+
+    fn server_knockback() -> ServerGeneral {
+        ServerGeneral::Knockback(Vec2::new(1.5, -2.5).with_z(3.5))
+    }
+
+    fn server_spectate_position() -> ServerGeneral {
+        ServerGeneral::SpectatePosition(Vec2::new(7.0, 8.0).with_z(9.0))
+    }
+
+    fn server_spectator_success() -> ServerGeneral {
+        ServerGeneral::SpectatorSuccess(Vec2::new(10.0, 11.0).with_z(12.0))
+    }
+
+    fn server_set_view_distance() -> ServerGeneral { ServerGeneral::SetViewDistance(71) }
+
+    fn server_invite_pending() -> ServerGeneral { ServerGeneral::InvitePending(uid(73)) }
+
+    fn server_character_created() -> ServerGeneral {
+        ServerGeneral::CharacterCreated(common::character::CharacterId(79))
+    }
+
+    fn server_character_edited() -> ServerGeneral {
+        ServerGeneral::CharacterEdited(common::character::CharacterId(83))
+    }
+
+    fn server_character_action_error() -> ServerGeneral {
+        ServerGeneral::CharacterActionError("wsg-2 fixture".to_owned())
+    }
+
+    fn server_character_success() -> ServerGeneral { ServerGeneral::CharacterSuccess }
+
+    fn server_exit_in_game_success() -> ServerGeneral { ServerGeneral::ExitInGameSuccess }
+
+    fn server_update_recipes() -> ServerGeneral { ServerGeneral::UpdateRecipes }
+
+    fn server_set_player_role() -> ServerGeneral {
+        ServerGeneral::SetPlayerRole(Some(common::comp::AdminRole::Moderator))
+    }
+
     fn actual(variant: &str) -> String {
         match variant {
             "PlayerPhysics" => golden_digest_v1(&client_player_physics()),
             "WeatherUpdate" => golden_digest_v1(&server_weather_update()),
             "LocalWindUpdate" => golden_digest_v1(&server_local_wind_update()),
             "InputReceipt" => golden_digest_v1(&server_input_receipt()),
+            "EntitySync" => golden_digest_v1(&server_entity_sync()),
+            "CompSync" => golden_digest_v1(&server_comp_sync()),
+            "DeleteEntity" => golden_digest_v1(&server_delete_entity()),
+            "SetPlayerEntity" => golden_digest_v1(&server_set_player_entity()),
+            "Knockback" => golden_digest_v1(&server_knockback()),
+            "SpectatePosition" => golden_digest_v1(&server_spectate_position()),
+            "SpectatorSuccess" => golden_digest_v1(&server_spectator_success()),
+            "SetViewDistance" => golden_digest_v1(&server_set_view_distance()),
+            "InvitePending" => golden_digest_v1(&server_invite_pending()),
+            "CharacterCreated" => golden_digest_v1(&server_character_created()),
+            "CharacterEdited" => golden_digest_v1(&server_character_edited()),
+            "CharacterActionError" => golden_digest_v1(&server_character_action_error()),
+            "CharacterSuccess" => golden_digest_v1(&server_character_success()),
+            "ExitInGameSuccess" => golden_digest_v1(&server_exit_in_game_success()),
+            "UpdateRecipes" => golden_digest_v1(&server_update_recipes()),
+            "SetPlayerRole" => golden_digest_v1(&server_set_player_role()),
             other => panic!("{other} has a golden entry but no representative instance"),
         }
     }
@@ -166,9 +328,9 @@ mod wire_shape_goldens_v1 {
     /// counts pinned so neither list can drift silently.
     #[test]
     fn coverage_is_a_pinned_open_set() {
-        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 4, "the covered set changed");
+        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 20, "the covered set changed");
         assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 36);
-        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 48);
+        assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 32);
         // 1 + 36 = 37 ClientGeneral, 3 + 48 = 51 ServerGeneral, counted
         // from the enums at 71b1c87ca7.
         let covered_client =

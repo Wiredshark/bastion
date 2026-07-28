@@ -12,16 +12,12 @@ pub const UNCOVERED_CLIENTGENERAL_V1: [&str; 36] = [
 ];
 
 /// `ServerGeneral` variants with no golden yet. WSG-2 burns this to zero.
-pub const UNCOVERED_SERVERGENERAL_V1: [&str; 48] = [
-    "CharacterDataLoadResult", "CharacterListUpdate", "CharacterActionError",
-    "CharacterCreated", "CharacterEdited", "CharacterSuccess", "SpectatorSuccess",
-    "GroupUpdate", "Invite", "InvitePending", "GroupInventoryUpdate", "InviteComplete",
-    "ExitInGameSuccess", "InventoryUpdate", "Dialogue", "SetViewDistance", "Outcomes",
-    "Knockback", "TerrainChunkUpdate", "LodZoneUpdate", "TerrainBlockUpdates",
-    "PlayerListUpdate", "ChatMsg", "ChatMode", "SetPlayerEntity", "TimeOfDay", "EntitySync",
-    "CompSync", "CreateEntity", "DeleteEntity", "Disconnect", "CheckpointBegin",
+pub const UNCOVERED_SERVERGENERAL_V1: [&str; 32] = [
+    "CharacterDataLoadResult", "CharacterListUpdate", "GroupUpdate", "Invite",
+    "GroupInventoryUpdate", "InviteComplete", "InventoryUpdate", "Dialogue", "Outcomes",
+    "TerrainChunkUpdate", "LodZoneUpdate", "TerrainBlockUpdates", "PlayerListUpdate",
+    "ChatMsg", "ChatMode", "TimeOfDay", "CreateEntity", "Disconnect", "CheckpointBegin",
     "CheckpointBarrier", "CommandResult", "Notification", "UpdatePendingTrade",
-    "FinishedTrade", "SiteEconomy", "MapMarker", "SpectatePosition", "PluginData",
-    "PluginArtifactData", "UpdateRecipes", "SetPlayerRole", "Gizmos", "BastionDesignation",
-    "BastionDesignationRemoved", "BastionInspectInfo",
+    "FinishedTrade", "SiteEconomy", "MapMarker", "PluginData", "PluginArtifactData", "Gizmos",
+    "BastionDesignation", "BastionDesignationRemoved", "BastionInspectInfo",
 ];
