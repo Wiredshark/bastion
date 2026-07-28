@@ -41,6 +41,7 @@ mod r1f_lighting;
 mod r1f_materials;
 mod r1f_shadows;
 mod r1f_weather;
+mod r1g_lens;
 pub mod render;
 pub mod run;
 pub mod scene;
