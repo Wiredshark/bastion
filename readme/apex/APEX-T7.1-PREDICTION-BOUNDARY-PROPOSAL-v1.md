@@ -23,6 +23,39 @@ rulings are recorded in place beneath each one.
 
 ---
 
+## AMENDMENT 1 — 2026-07-28, found while implementing this boundary
+
+**Decision 1 was incomplete, and the arithmetic said so in the approved
+text.** It listed **14** transition inputs and **22** ambient fields, and
+called `JoinData` **38** fields wide. 14 + 22 = 36. The gap sat in an
+approved document through its author *and* an independent reviewer.
+
+The two missing fields are **`entity`** and **`uid`**. They appear in the
+struct and in neither list, because they are neither: they are
+**identity** — WHO is transitioning. Fixed for the whole of a history,
+never replayed from it, never re-read from ambient authority, because a
+replay of a different entity is not a replay of the same frame.
+
+A fourth role is therefore added: **`Identity`**, pinned at exactly two
+members. Final split: **14 transition inputs · 21 ambient · 1 write
+channel · 2 identity = 38.** (The proposal's "22 ambient" counted
+`updater`, which Decision 1 already separates as a write channel.)
+
+**Why this is recorded as an amendment rather than a silent fix.** An
+approved boundary that quietly matches its implementation is worse than
+one that shows its repair: the next reader cannot tell which parts were
+reviewed and which were adjusted afterwards. The approval above stands
+unedited; this is what changed after it.
+
+**The transferable part.** The hole fell out the moment the
+classification stopped being prose and became a testable constant — the
+count assertion failed on the first run. `entity` and `uid` were omitted
+precisely *because* they are obvious, and **"too obvious to write down"
+is how a boundary acquires a hole.** Prose boundaries carry holes
+forward; typed boundaries surface them.
+
+---
+
 **Original status line, kept verbatim:** *PROPOSAL. Not approved, and not
 approvable by its author.*
 
@@ -265,7 +298,7 @@ is a measurement, not a decision.
 
 | # | Decision | State |
 |---|---|---|
-| 1 | Predicted components and replay-legal transitions | **APPROVED**; `energy` proved from the StateUpdate From chain by independent review |
+| 1 | Predicted components and replay-legal transitions | **APPROVED**, then **AMENDED** (see Amendment 1): `energy` proved from the StateUpdate From chain; `entity`/`uid` added as a fourth `Identity` role — 14 input · 21 ambient · 1 write channel · 2 identity |
 | 2 | World revision requirements and chunk-unload invalidation | **APPROVED as proposed**; chunk-key cost measured at ~1.05 KiB/client (1.6% of budget), gate and fallback removed |
 | 3 | Ridden/mounted ownership | **RULED** — no prediction for riders or carriers in v1; carry revisits as a T5.1-cohort experiment if feel complaints emerge |
 | 4 | Predicted side-effect scope | **RULED** — three classes as proposed; ability sounds deduplicated, late beats double |
