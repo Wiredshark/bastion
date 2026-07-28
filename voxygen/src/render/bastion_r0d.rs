@@ -803,6 +803,7 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r1f_weather_environment_source_sha256"
         | "r1f_weather_kind"
         | "r1f_weather_rain_milli"
+        | "r1f_weather_precipitation_milli"
         | "r1f_weather_wind_x_mm_s"
         | "r1f_weather_wind_y_mm_s"
         | "r1f_weather_phase_milli"
@@ -944,6 +945,12 @@ fn write_capture_fault(output: &Path, message: &str) {
         return;
     }
     append_evidence_line(&capture_fault_path(output), message);
+}
+
+pub(crate) fn record_certification_fixture_fault_v1(message: &str) {
+    if let Some((output, _, _)) = capture_config() {
+        write_capture_fault(&output, message);
+    }
 }
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -1683,6 +1690,7 @@ fn request_one_capture(
                                             "r1f_weather_environment_source_sha256={}\n",
                                             "r1f_weather_kind={}\n",
                                             "r1f_weather_rain_milli={}\n",
+                                            "r1f_weather_precipitation_milli={}\n",
                                             "r1f_weather_wind_x_mm_s={}\n",
                                             "r1f_weather_wind_y_mm_s={}\n",
                                             "r1f_weather_phase_milli={}\n",
@@ -1697,6 +1705,7 @@ fn request_one_capture(
                                         hex_digest(&weather.environment_source_identity),
                                         weather.weather_tag,
                                         weather.rain_milli,
+                                        weather.precipitation_milli,
                                         weather.wind_mm_s[0],
                                         weather.wind_mm_s[1],
                                         weather.phase_milli,

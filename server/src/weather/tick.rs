@@ -30,8 +30,8 @@ enum WeatherJobState {
 
 pub struct WeatherJob {
     last_update: ProgramTime,
-    weather_tx: crossbeam_channel::Sender<(WeatherGrid, LightningCells, WeatherSim)>,
-    weather_rx: crossbeam_channel::Receiver<(WeatherGrid, LightningCells, WeatherSim)>,
+    weather_tx: crossbeam_channel::Sender<(WeatherGrid, LightningCells, WeatherSim, u64)>,
+    weather_rx: crossbeam_channel::Receiver<(WeatherGrid, LightningCells, WeatherSim, u64)>,
     state: WeatherJobState,
     qeued_zones: Vec<(Weather, Vec2<f32>, f32, f32)>,
     /// T0.87: the ContentEpoch pattern applied to weather's own background
@@ -46,11 +46,26 @@ pub struct WeatherJob {
     /// +1-tick offset from the spawn tick, not a wall-clock race.
     epoch: u64,
     adopted_at_tick: u64,
+    // r1f (lw port): ZONE generations, orthogonal to the adoption epoch
+    // above — a fixture that queued a zone needs to know when ITS zone is
+    // live in the adopted grid, which the epoch (any regeneration) cannot
+    // answer alone.
+    queued_zone_generation: u64,
+    completed_zone_generation: u64,
 }
 
 impl WeatherJob {
-    pub fn queue_zone(&mut self, weather: Weather, pos: Vec2<f32>, radius: f32, time: f32) {
-        self.qeued_zones.push((weather, pos, radius, time))
+    pub fn queue_zone(
+        &mut self,
+        weather: Weather,
+        pos: Vec2<f32>,
+        radius: f32,
+        time: f32,
+    ) -> Option<u64> {
+        let generation = self.queued_zone_generation.checked_add(1)?;
+        self.qeued_zones.push((weather, pos, radius, time));
+        self.queued_zone_generation = generation;
+        Some(generation)
     }
 
     /// The weather generation currently live. Starts at 1 (the boot-time
@@ -59,6 +74,8 @@ impl WeatherJob {
 
     /// The server tick the current generation was adopted on.
     pub fn adopted_at_tick(&self) -> u64 { self.adopted_at_tick }
+
+    pub fn completed_zone_generation(&self) -> u64 { self.completed_zone_generation }
 }
 
 #[derive(Default)]
@@ -122,6 +139,8 @@ impl<'a> System<'a> for Sys {
                     qeued_zones: Vec::new(),
                     epoch: 1,
                     adopted_at_tick: tick.0,
+                    queued_zone_generation: 0,
+                    completed_zone_generation: 0,
                 });
 
                 None
@@ -130,12 +149,14 @@ impl<'a> System<'a> for Sys {
 
         if let Some(weather_job) = to_update {
             if matches!(weather_job.state, WeatherJobState::Working(_))
-                && let Ok((new_grid, new_lightning_cells, sim)) = weather_job.weather_rx.try_recv()
+                && let Ok((new_grid, new_lightning_cells, sim, completed_zone_generation)) =
+                    weather_job.weather_rx.try_recv()
             {
                 *grid = new_grid;
                 *lightning_cells = new_lightning_cells;
                 weather_job.epoch += 1;
                 weather_job.adopted_at_tick = tick.0;
+                weather_job.completed_zone_generation = completed_zone_generation;
                 let mut lazy_msg = None;
                 for client in clients.join() {
                     if lazy_msg.is_none() {
@@ -165,13 +186,14 @@ impl<'a> System<'a> for Sys {
 
                 let weather_tx = weather_job.weather_tx.clone();
                 let game_time = *game_time;
+                let applied_zone_generation = weather_job.queued_zone_generation;
                 for (weather, pos, radius, time) in weather_job.qeued_zones.drain(..) {
                     sim.add_zone(weather, pos, radius, time)
                 }
                 let job = slow_job_pool.spawn("WEATHER", move || {
                     let mut grid = WeatherGrid::new(sim.size());
                     let lightning_cells = sim.tick(game_time, &mut grid);
-                    let _ = weather_tx.send((grid, lightning_cells, sim));
+                    let _ = weather_tx.send((grid, lightning_cells, sim, applied_zone_generation));
                 });
 
                 weather_job.state = WeatherJobState::Working(job);

@@ -11,7 +11,6 @@ use bastion_renderer_r0d::{
         WeatherPresentationPublisherV1, WeatherPresentationV1,
     },
 };
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WeatherProductionEvidenceV1 {
     pub presentation_generation: u64,
@@ -20,6 +19,7 @@ pub struct WeatherProductionEvidenceV1 {
     pub environment_source_identity: [u8; 32],
     pub weather_tag: u8,
     pub rain_milli: u16,
+    pub precipitation_milli: u16,
     pub wind_mm_s: [i32; 2],
     pub phase_milli: u64,
     pub effect_record_count: u16,
@@ -104,6 +104,7 @@ fn refresh_from_projection(
         environment_source_identity: published.environment_source_identity(),
         weather_tag: published.weather() as u8,
         rain_milli: published.rain_milli(),
+        precipitation_milli: published.precipitation_milli(),
         wind_mm_s: published.wind_mm_s(),
         phase_milli: published.phase_milli(),
         effect_record_count,
@@ -169,22 +170,77 @@ fn build_from_environment(
     .map_err(|error| WeatherAdapterErrorV1::Core(format!("{error:?}")))
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CertificationFixtureKindV1 {
+    Clear,
+    Rain,
+    Storm,
+}
+
 #[must_use]
-pub(crate) fn certification_fixture_command() -> Option<(&'static str, Vec<String>)> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CertificationFixtureDeclarationV1 {
+    Disabled,
+    Requested(CertificationFixtureKindV1),
+    Invalid,
+}
+
+#[must_use]
+pub(crate) fn certification_fixture_declaration() -> CertificationFixtureDeclarationV1 {
     if std::env::var_os("BASTION_FLAT_ARENA").is_none() {
-        return None;
+        return CertificationFixtureDeclarationV1::Disabled;
     }
-    let kind = match std::env::var("BASTION_R1F_WEATHER_FIXTURE").ok()?.as_str() {
-        "clear" => "clear",
-        "rain" => "rain",
-        "storm" => "storm",
-        _ => return None,
-    };
-    Some(("weather_zone", vec![
-        kind.to_owned(),
-        "1500".to_owned(),
-        "3600".to_owned(),
-    ]))
+    match std::env::var("BASTION_R1F_WEATHER_FIXTURE").as_deref() {
+        Ok("clear") => {
+            CertificationFixtureDeclarationV1::Requested(CertificationFixtureKindV1::Clear)
+        },
+        Ok("rain") => {
+            CertificationFixtureDeclarationV1::Requested(CertificationFixtureKindV1::Rain)
+        },
+        Ok("storm") => {
+            CertificationFixtureDeclarationV1::Requested(CertificationFixtureKindV1::Storm)
+        },
+        Ok(_) | Err(_) => CertificationFixtureDeclarationV1::Invalid,
+    }
+}
+
+fn fixture_matches_presentation(
+    kind: CertificationFixtureKindV1,
+    presentation: &WeatherPresentationV1,
+) -> bool {
+    match kind {
+        CertificationFixtureKindV1::Clear => {
+            presentation.weather() == WeatherKindV1::Clear
+                && presentation.rain_milli() == 0
+                && presentation.effect_records().is_empty()
+                && presentation.total_effect_count() == 0
+        },
+        CertificationFixtureKindV1::Rain => {
+            presentation.weather() == WeatherKindV1::Rain
+                && presentation.rain_milli() > 0
+                && presentation.is_raining()
+                && !presentation.effect_records().is_empty()
+                && presentation.total_effect_count() > 0
+        },
+        CertificationFixtureKindV1::Storm => {
+            presentation.weather() == WeatherKindV1::Storm
+                && presentation.rain_milli() > 0
+                && presentation.is_raining()
+                && !presentation.effect_records().is_empty()
+                && presentation.total_effect_count() > 0
+        },
+    }
+}
+
+#[must_use]
+pub(crate) fn certification_fixture_ready_for_capture() -> bool {
+    match certification_fixture_declaration() {
+        CertificationFixtureDeclarationV1::Disabled => true,
+        CertificationFixtureDeclarationV1::Invalid => false,
+        CertificationFixtureDeclarationV1::Requested(kind) => latest_presentation()
+            .as_deref()
+            .is_some_and(|presentation| fixture_matches_presentation(kind, presentation)),
+    }
 }
 
 #[cfg(test)]
@@ -266,5 +322,36 @@ mod tests {
         assert!(!presentation.is_raining());
         assert!(presentation.effect_records().is_empty());
         assert_eq!(presentation.total_effect_count(), 0);
+    }
+
+    #[test]
+    fn certification_capture_gate_requires_matching_clear_rain_or_storm_acknowledgement() {
+        let clear = build_from_environment(&projection(10, WeatherKindV1::Clear)).unwrap();
+        let rain = build_from_environment(&projection(11, WeatherKindV1::Rain)).unwrap();
+        let storm = build_from_environment(&projection(12, WeatherKindV1::Storm)).unwrap();
+        assert!(fixture_matches_presentation(
+            CertificationFixtureKindV1::Clear,
+            &clear
+        ));
+        assert!(fixture_matches_presentation(
+            CertificationFixtureKindV1::Rain,
+            &rain
+        ));
+        assert!(fixture_matches_presentation(
+            CertificationFixtureKindV1::Storm,
+            &storm
+        ));
+        assert!(!fixture_matches_presentation(
+            CertificationFixtureKindV1::Rain,
+            &clear
+        ));
+        assert!(!fixture_matches_presentation(
+            CertificationFixtureKindV1::Storm,
+            &rain
+        ));
+        assert!(!fixture_matches_presentation(
+            CertificationFixtureKindV1::Clear,
+            &rain
+        ));
     }
 }

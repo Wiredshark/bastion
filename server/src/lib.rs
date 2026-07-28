@@ -24,6 +24,10 @@ pub use bastion_server::{
     bastion_piles, bastion_renderer_bench, bastion_traversal, bastion_traversal_tooling,
 };
 pub mod bootstrap_freshness_minter;
+// r1f (lw port): authoritative weather fixtures — stays a local module (an
+// `impl Server`-adjacent shim, same reasoning as bastion_arena above).
+#[cfg(feature = "worldgen")]
+pub mod bastion_weather_fixture;
 mod character_creator;
 pub mod chat;
 pub mod chunk_generator;
