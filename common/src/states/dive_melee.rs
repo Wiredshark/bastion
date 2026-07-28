@@ -100,7 +100,7 @@ impl CharacterBehavior for Data {
                     let scaling = self.max_vertical_speed / self.static_data.vertical_speed;
                     let scaling = scaling.min(self.static_data.max_scaling);
 
-                    data.updater.insert(
+                    data.updater_v1(crate::apex::prediction_boundary::LiveContextV1).insert(
                         data.entity,
                         self.static_data
                             .melee_constructor

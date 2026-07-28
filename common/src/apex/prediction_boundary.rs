@@ -201,9 +201,10 @@ impl MayEmitAuthorityEffectsV1 for LiveContextV1 {}
 ///
 /// ```compile_fail
 /// # use veloren_common::apex::prediction_boundary::*;
+/// // This is the exact bound `JoinData::updater_v1` requires, so this
+/// // doctest IS the pin on that accessor: if it compiles, a replay can
+/// // obtain a LazyUpdate and queue a component insertion.
 /// fn insert_a_component<C: MayInsertComponentsV1>(_: C) {}
-/// // T7.2 Decision 1: LazyUpdate is unavailable during replay. If this
-/// // ever compiles, a predicted frame can queue a component insertion.
 /// insert_a_component(ReplayContextV1);
 /// ```
 ///

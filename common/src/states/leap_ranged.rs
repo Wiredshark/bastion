@@ -66,7 +66,7 @@ impl CharacterBehavior for Data {
                         let tool_stats = get_tool_stats(data, self.static_data.ability_info);
 
                         if let Some(melee) = &self.static_data.melee {
-                            data.updater.insert(
+                            data.updater_v1(crate::apex::prediction_boundary::LiveContextV1).insert(
                                 data.entity,
                                 melee.clone().create_melee(
                                 precision_mult,

@@ -95,7 +95,7 @@ impl CharacterBehavior for Data {
                         let precision_mult =
                             combat::compute_precision_mult(data.inventory, data.msm);
                         let tool_stats = get_tool_stats(data, self.static_data.ability_info);
-                        data.updater.insert(
+                        data.updater_v1(crate::apex::prediction_boundary::LiveContextV1).insert(
                             data.entity,
                             strike.clone().create_melee(
                             precision_mult,
@@ -184,7 +184,7 @@ impl CharacterBehavior for Data {
                             .map(|c| ((self.charge_amount * c.0 as f32).round() as i32, c.1)),
                     };
 
-                    data.updater.insert(
+                    data.updater_v1(crate::apex::prediction_boundary::LiveContextV1).insert(
                         data.entity,
                         self.static_data
                             .melee_constructor

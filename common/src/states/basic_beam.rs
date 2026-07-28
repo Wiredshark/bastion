@@ -155,7 +155,7 @@ impl CharacterBehavior for Data {
                     };
 
                     // Creates beam
-                    data.updater.insert(data.entity, beam::Beam {
+                    data.updater_v1(crate::apex::prediction_boundary::LiveContextV1).insert(data.entity, beam::Beam {
                         attack,
                         dodgeable: self.static_data.dodgeable,
                         start_radius: 0.0,
@@ -218,14 +218,14 @@ impl CharacterBehavior for Data {
                     // Done
                     end_ability(data, &mut update);
                     // Make sure attack component is removed
-                    data.updater.remove::<beam::Beam>(data.entity);
+                    data.updater_v1(crate::apex::prediction_boundary::LiveContextV1).remove::<beam::Beam>(data.entity);
                 }
             },
             _ => {
                 // If it somehow ends up in an incorrect stage section
                 end_ability(data, &mut update);
                 // Make sure attack component is removed
-                data.updater.remove::<beam::Beam>(data.entity);
+                data.updater_v1(crate::apex::prediction_boundary::LiveContextV1).remove::<beam::Beam>(data.entity);
             },
         }
 

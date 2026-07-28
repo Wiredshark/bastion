@@ -122,7 +122,7 @@ impl CharacterBehavior for Data {
                             }
                         } else if melee.hit_entities.is_empty() {
                             // If melee attack has applied, but not hit anything, reset melee attack
-                            data.updater.insert(data.entity, create_melee(charge_frac));
+                            data.updater_v1(crate::apex::prediction_boundary::LiveContextV1).insert(data.entity, create_melee(charge_frac));
                             if let CharacterState::DashMelee(c) = &mut update.character {
                                 c.timer = tick_attack_or_default(data, self.timer, None);
                             }
@@ -135,7 +135,7 @@ impl CharacterBehavior for Data {
                         }
                     } else {
                         // If no melee attack, add it and tick duration
-                        data.updater.insert(data.entity, create_melee(charge_frac));
+                        data.updater_v1(crate::apex::prediction_boundary::LiveContextV1).insert(data.entity, create_melee(charge_frac));
 
                         if let CharacterState::DashMelee(c) = &mut update.character {
                             c.timer = tick_attack_or_default(data, self.timer, None);
