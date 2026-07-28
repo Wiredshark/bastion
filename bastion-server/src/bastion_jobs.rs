@@ -3616,16 +3616,12 @@ pub struct JobBoard {
     /// not a new breakdown); `until` already past clears the entry.
     /// `BTreeMap` (fleet convention, T2.5-review bar): no `HashMap`
     /// anywhere near sim state, even though nothing iterates this map
-    /// today. Keyed by the raw `u64` (`Uid.0.get()`), not `Uid` itself —
-    /// `Uid` derives `Hash`/`Eq` but NOT `Ord` (unlike the `NonZeroU64`
-    /// it wraps), so a literal `BTreeMap<Uid, _>` does not compile;
-    /// widening `Uid`'s own derive list was judged out of scope for this
-    /// row's narrow fix. Transient like every other `JobBoard` field —
-    /// `JobBoard` derives only `Default`, no `Serialize`; a save/load
-    /// mid-detour or mid-gap loses the pending resume, the same accepted
-    /// bound as every other in-flight `JobBoard` state (travel watchdog
-    /// progress, reservations, ...).
-    despond_resume: BTreeMap<u64, f64>,
+    /// today. Transient like every other `JobBoard` field — `JobBoard`
+    /// derives only `Default`, no `Serialize`; a save/load mid-detour or
+    /// mid-gap loses the pending resume, the same accepted bound as
+    /// every other in-flight `JobBoard` state (travel watchdog progress,
+    /// reservations, ...).
+    despond_resume: BTreeMap<Uid, f64>,
     /// bastion (AUTON-0): cumulative drive switches (REPORTED telemetry —
     /// the thrash-bound gate reads the delta over a window).
     pub drive_switches: u64,
@@ -7914,12 +7910,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // while away; clear it and fall through to normal
                 // arbitration.
                 if !active_jobs.contains(entity)
-                    && let Some(&until) = board.despond_resume.get(&uid.0.get())
+                    && let Some(&until) = board.despond_resume.get(uid)
                 {
                     if despond_condition_still_active(until, time.0) {
                         despond_reissues.push((entity, *uid, until));
                     }
-                    board.despond_resume.remove(&uid.0.get());
+                    board.despond_resume.remove(uid);
                     continue;
                 }
                 if arbiters.get(entity).is_none() {
@@ -8309,7 +8305,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         && let Some(common::bastion::JobKind::Despond { until }) =
                             board.jobs.get(&aj.job).map(|j| j.kind)
                     {
-                        board.despond_resume.insert(uid.0.get(), until);
+                        board.despond_resume.insert(*uid, until);
                         board.remove_job(aj.job);
                     }
                     // Fall through to the need-ranking section below,
