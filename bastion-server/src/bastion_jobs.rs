@@ -46,6 +46,7 @@ use hashbrown::{HashMap, HashSet};
 use specs::{
     Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, Write, WriteExpect, WriteStorage,
 };
+use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use tracing::info;
 use vek::*;
@@ -819,6 +820,14 @@ pub(crate) fn is_labor_hold_self_job(kind: &common::bastion::JobKind) -> bool {
 /// colonists use (E3 ruling #5(b), no new knob), extracted as a pure
 /// predicate so the exact condition is unit-testable without the ECS
 /// loop it's called from.
+/// T3.53 (E3, Fable-ruled 2026-07-27): the deterministic Despond
+/// re-issue's own decision — an active condition (`until` still future)
+/// re-issues; an expired one (`until` already past, e.g. the colonist
+/// was away long enough for the original breakdown to have run its
+/// course) clears instead. Extracted as a pure predicate so the exact
+/// boundary is unit-testable without the ECS loop it's called from.
+pub(crate) fn despond_condition_still_active(until: f64, now: f64) -> bool { until > now }
+
 pub(crate) fn despond_carve_out_past_interrupt(
     needs_rest: f32,
     needs_hunger: f32,
@@ -3598,6 +3607,25 @@ pub struct JobBoard {
     /// break threshold (cleared on recovery) — the sustained-window arm
     /// of the breakdown staircase.
     mood_below_since: HashMap<Uid, f64>,
+    /// T3.53 (E3, Fable-ruled 2026-07-27): a colonist desponded once and
+    /// is mid eat/sleep carve-out — the ORIGINAL `until` from their
+    /// Despond instance, untouched by the detour (never extended, never
+    /// reset). Consulted at the top of arbitration for any colonist with
+    /// NO ActiveJob: `until` still in the future re-issues Despond
+    /// deterministically (no roll, no cooldown — an active condition is
+    /// not a new breakdown); `until` already past clears the entry.
+    /// `BTreeMap` (fleet convention, T2.5-review bar): no `HashMap`
+    /// anywhere near sim state, even though nothing iterates this map
+    /// today. Keyed by the raw `u64` (`Uid.0.get()`), not `Uid` itself —
+    /// `Uid` derives `Hash`/`Eq` but NOT `Ord` (unlike the `NonZeroU64`
+    /// it wraps), so a literal `BTreeMap<Uid, _>` does not compile;
+    /// widening `Uid`'s own derive list was judged out of scope for this
+    /// row's narrow fix. Transient like every other `JobBoard` field —
+    /// `JobBoard` derives only `Default`, no `Serialize`; a save/load
+    /// mid-detour or mid-gap loses the pending resume, the same accepted
+    /// bound as every other in-flight `JobBoard` state (travel watchdog
+    /// progress, reservations, ...).
+    despond_resume: BTreeMap<u64, f64>,
     /// bastion (AUTON-0): cumulative drive switches (REPORTED telemetry —
     /// the thrash-bound gate reads the delta over a window).
     pub drive_switches: u64,
@@ -7822,6 +7850,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         )
                 });
             let mut switches = 0u64;
+            // T3.53 (E3, Fable-ruled 2026-07-27): deterministic Despond
+            // re-issue targets — (entity, uid, original until) collected
+            // here (mid-iteration, before board/active_jobs can take a
+            // mutable borrow) and drained right after this loop, the same
+            // deferred-creation shape the preempt_pending drain already
+            // uses further down this function.
+            let mut despond_reissues: Vec<(specs::Entity, Uid, f64)> = Vec::new();
             // AUTON-3 (row 51): personality for the urgency modulation
             // rides the same rtsim read guard the mood/preempt passes
             // use — zero new coupling — and, CRITICALLY, at the SAME
@@ -7846,7 +7881,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         )
                     })
             };
-            for (entity, colonist, _uid) in (&entities, &colonists, &uids).join() {
+            for (entity, colonist, uid) in (&entities, &colonists, &uids).join() {
                 if !is_loaded(entity) {
                     continue;
                 }
@@ -7864,6 +7899,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if active_jobs.get(entity).is_some_and(|aj| {
                     board.jobs.get(&aj.job).is_some_and(|j| is_labor_hold_self_job(&j.kind))
                 }) {
+                    continue;
+                }
+                // T3.53 (E3, Fable-ruled 2026-07-27): a colonist with NO
+                // ActiveJob (past GUARD 6, so not already self-job-held)
+                // may still be MID-DESPOND-CONDITION — the eat/sleep
+                // carve-out concluded its job but recorded `until` here.
+                // `until` still future: re-issue deterministically (no
+                // roll, no cooldown — an active condition is not a new
+                // breakdown) AND keep labor refused this exact tick by
+                // `continue`ing past Work/Flee/Idle selection below —
+                // closes the same-tick window between meal-end and
+                // re-issue. `until` already past: the condition expired
+                // while away; clear it and fall through to normal
+                // arbitration.
+                if !active_jobs.contains(entity)
+                    && let Some(&until) = board.despond_resume.get(&uid.0.get())
+                {
+                    if despond_condition_still_active(until, time.0) {
+                        despond_reissues.push((entity, *uid, until));
+                    }
+                    board.despond_resume.remove(&uid.0.get());
                     continue;
                 }
                 if arbiters.get(entity).is_none() {
@@ -7969,6 +8025,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }
             }
             board.drive_switches += switches;
+            // T3.53 (E3, Fable-ruled 2026-07-27): deterministic Despond
+            // re-issue — same job-creation shape the preempt_pending
+            // drain uses further down (insert_despond_job + a fresh
+            // Traveling ActiveJob), just with NO roll and NO cooldown
+            // check: an active condition (recorded `until` still future)
+            // is not a new breakdown, so none of the breakdown-roll's
+            // gating applies.
+            for (entity, uid, until) in despond_reissues {
+                let feet = positions
+                    .get(entity)
+                    .map(|p| p.0.map(|v| v.floor() as i32))
+                    .unwrap_or_default();
+                let id = board.insert_despond_job(feet, uid, until);
+                let _ = active_jobs.insert(entity, comp::bastion::ActiveJob {
+                    job: id,
+                    state: comp::bastion::ActiveJobState::Traveling,
+                    best_dist: f32::MAX,
+                    stuck_time: 0.0,
+                    reset_dist: f32::MAX,
+                    soft_granted: false,
+                    stance: Vec3::unit_z(),
+                });
+            }
         }
         // ── FARM/PROD-2 (row 46): the farm pass — growth clock + the
         // state-driven job trigger, ONE bounded scan (O(Σ plot area) at
@@ -8213,19 +8292,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     ) {
                         continue;
                     }
-                    // This SPECIFIC Despond instance concludes here (its
+                    // This SPECIFIC Despond JOB concludes here (its
                     // dangling board.jobs entry is removed so it never
                     // leaks unclaimed and unvisited — nothing else ever
                     // revisits an orphaned job with no ActiveJob pointing
-                    // at it) — the underlying CONDITION that caused it
-                    // (mood still below break_minor) is left completely
-                    // untouched, so the breakdown-roll arm immediately
-                    // below can re-fire a FRESH Despond next pass if
-                    // still warranted. That is the whole of "nothing
-                    // resumes": there is nothing to resume, only a
-                    // possible fresh recurrence via the SAME mechanism
-                    // that created the first one.
-                    if let Some(aj) = active_jobs.get(entity) {
+                    // at it) — but the CONDITION survives in
+                    // `despond_resume` (the original `until`, untouched):
+                    // the top-of-arbitration re-issue site below
+                    // deterministically re-creates Despond with this SAME
+                    // deadline once the colonist is free again, no roll,
+                    // no cooldown — an active condition is not a new
+                    // breakdown. Eating genuinely PAUSES the breakdown,
+                    // never ends it; RNG (the breakdown-roll arm just
+                    // below) only ever STARTS one.
+                    if let Some(aj) = active_jobs.get(entity)
+                        && let Some(common::bastion::JobKind::Despond { until }) =
+                            board.jobs.get(&aj.job).map(|j| j.kind)
+                    {
+                        board.despond_resume.insert(uid.0.get(), until);
                         board.remove_job(aj.job);
                     }
                     // Fall through to the need-ranking section below,
@@ -15059,6 +15143,28 @@ mod tests {
         assert!(!is_labor_hold_self_job(&JobKind::Designated(
             common::bastion::DesignationKind::Mine
         )));
+    }
+
+    /// T3.53 (E3, Fable-ruled 2026-07-27): the deterministic re-issue's
+    /// own threshold — this is the (3)-fix the review flagged: a
+    /// condition still active (`until` in the future) MUST re-issue
+    /// regardless of RNG, closing the "fed colonists sometimes just
+    /// recover" hazard the ruling explicitly rejected. Cite alongside
+    /// this test: the re-issue call site (the `despond_reissues` drain)
+    /// contains no reference to `preempt_cooldown` or any `RngExt`/RNG
+    /// draw — grep-verifiable, no roll and no cooldown gate it at all.
+    #[test]
+    fn despond_condition_reissues_deterministically_while_active() {
+        assert!(despond_condition_still_active(100.0, 50.0), "until in the future must re-issue");
+        assert!(
+            !despond_condition_still_active(50.0, 100.0),
+            "until already past must NOT re-issue (the condition naturally expired)"
+        );
+        assert!(
+            !despond_condition_still_active(50.0, 50.0),
+            "until == now is not STILL active (strict >, matching the row's own \
+             `time.0 >= until` natural-expiry check elsewhere in this file)"
+        );
     }
 
     /// MOOD-01 (det-fixture, SPECIFIED_NOT_EVIDENCED -> direct proof): DET-MOOD-003 —
