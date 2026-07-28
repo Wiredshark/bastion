@@ -396,3 +396,166 @@ mod command_ledger_v1 {
         );
     }
 }
+
+/// `APEX-T3.5.03` — which C2S payloads ARE commands. Exhaustive, no
+/// wildcard arm: a new `ClientGeneral` variant must be classified
+/// deliberately, the same discipline `CheckpointParticipantV1` holds on
+/// the other direction. A command is a request that MUTATES; a query or
+/// a stream request is not one, and carrying a command id on it is a
+/// protocol error rather than harmless decoration.
+pub trait CommandParticipantV1 {
+    fn command_kind_v1(&self) -> Option<CommandKindV1>;
+}
+
+impl CommandParticipantV1 for super::ClientGeneral {
+    fn command_kind_v1(&self) -> Option<CommandKindV1> {
+        use CommandKindV1 as K;
+        use super::ClientGeneral as C;
+        match self {
+            C::ControllerInputs(_)
+            | C::ControlEvent(_)
+            | C::ControlAction(_)
+            | C::BreakBlock(_)
+            | C::PlaceBlock(_, _)
+            | C::PlayerPhysics { .. }
+            | C::UnlockSkill(_)
+            | C::SetBattleMode(_)
+            | C::UpdateMapMarker(_)
+            | C::SpectatePosition(_)
+            | C::SpectateEntity(_)
+            | C::BastionCameraAnchor(_)
+            | C::BastionPlaceDesignation { .. }
+            | C::BastionApplyInfluence { .. }
+            | C::BastionContextAction { .. }
+            | C::BastionSpawnColony { .. }
+            | C::BastionCancelDesignation { .. } => Some(K::ControlAction),
+            C::CreateCharacter { .. }
+            | C::DeleteCharacter(_)
+            | C::EditCharacter { .. }
+            | C::Character(_, _)
+            | C::Spectate(_)
+            | C::ExitInGame => Some(K::CharacterLifecycle),
+            C::Terminate => Some(K::SessionControl),
+            C::Command(_, _) => Some(K::Administrative),
+            // Queries, stream requests and acknowledgements mutate no
+            // authoritative state: replaying one costs a recomputation,
+            // never a double application.
+            C::RequestCharacterList
+            | C::SetViewDistance(_)
+            | C::RequestSiteInfo(_)
+            | C::RequestPlayerPhysics { .. }
+            | C::RequestLossyTerrainCompression { .. }
+            | C::TerrainChunkRequest { .. }
+            | C::LodZoneRequest { .. }
+            | C::ChatMsg(_)
+            | C::RequestPlugins(_)
+            | C::RequestPluginArtifacts(_)
+            | C::BastionInspect { .. }
+            | C::CheckpointCommitAck(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandCarriageErrorV1 {
+    /// A command payload arrived without a command id: it cannot be
+    /// deduplicated, so it cannot be admitted.
+    MissingCommandId,
+    /// A non-command payload carried a command id.
+    UnexpectedCommandId,
+}
+
+/// Builds a command's identity from a frame that has ALREADY passed
+/// envelope validation. The request digest is the header's own payload
+/// digest — the identity is over the bytes that actually arrived, not a
+/// separately claimed hash.
+pub fn command_descriptor_from_frame_v1(
+    binding: ActiveSessionBindingV1,
+    command_id: Option<CommandId>,
+    payload: &super::ClientGeneral,
+    payload_digest: [u8; 32],
+) -> Result<Option<CommandDescriptorV1>, CommandCarriageErrorV1> {
+    match (payload.command_kind_v1(), command_id) {
+        (Some(kind), Some(command_id)) => {
+            Ok(Some(CommandDescriptorV1 { binding, command_id, kind, request_digest: payload_digest }))
+        },
+        (Some(_), None) => Err(CommandCarriageErrorV1::MissingCommandId),
+        (None, Some(_)) => Err(CommandCarriageErrorV1::UnexpectedCommandId),
+        (None, None) => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod command_carriage_v1 {
+    use super::*;
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+
+    fn binding() -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([2; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        }
+    }
+
+    fn id() -> CommandId { CommandId::generate(&mut FixedRandomBytesSourceV1([3; 16])).unwrap() }
+
+    /// A command id belongs on a command and nowhere else, in both
+    /// directions.
+    #[test]
+    fn command_id_carriage_is_required_exactly_on_commands() {
+        use super::super::ClientGeneral as C;
+
+        let mutating = C::Terminate;
+        let query = C::RequestCharacterList;
+        assert_eq!(mutating.command_kind_v1(), Some(CommandKindV1::SessionControl));
+        assert_eq!(query.command_kind_v1(), None);
+
+        let descriptor = command_descriptor_from_frame_v1(binding(), Some(id()), &mutating, [4; 32]).unwrap().unwrap();
+        assert_eq!(descriptor.kind, CommandKindV1::SessionControl);
+        // identity is over the bytes that arrived, not a separate claim
+        assert_eq!(descriptor.request_digest, [4; 32]);
+
+        assert_eq!(
+            command_descriptor_from_frame_v1(binding(), None, &mutating, [4; 32]).unwrap_err(),
+            CommandCarriageErrorV1::MissingCommandId
+        );
+        assert_eq!(
+            command_descriptor_from_frame_v1(binding(), Some(id()), &query, [4; 32]).unwrap_err(),
+            CommandCarriageErrorV1::UnexpectedCommandId
+        );
+        assert_eq!(command_descriptor_from_frame_v1(binding(), None, &query, [4; 32]).unwrap(), None);
+    }
+
+    /// The classification is total and the kinds are used, not decorative
+    /// — every kind this tier defines has at least one real payload.
+    #[test]
+    fn every_command_kind_has_a_real_payload() {
+        use super::super::ClientGeneral as C;
+        use common::comp::ControlAction;
+
+        let samples: Vec<C> = vec![
+            C::ControlAction(ControlAction::Sit),
+            C::ExitInGame,
+            C::Terminate,
+            C::Command("time".to_owned(), Vec::new()),
+        ];
+        let kinds: std::collections::BTreeSet<CommandKindV1> =
+            samples.iter().filter_map(|c| c.command_kind_v1()).collect();
+        assert_eq!(
+            kinds,
+            [
+                CommandKindV1::ControlAction,
+                CommandKindV1::CharacterLifecycle,
+                CommandKindV1::SessionControl,
+                CommandKindV1::Administrative,
+            ]
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>()
+        );
+        // InventoryMutation has no ClientGeneral payload of its own yet:
+        // inventory changes ride ControlEvent today. Named here so the
+        // kind is not silently unreachable.
+        assert!(!kinds.contains(&CommandKindV1::InventoryMutation));
+    }
+}
