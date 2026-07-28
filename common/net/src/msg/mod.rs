@@ -1,4 +1,5 @@
 pub mod input_receipt_wire;
+pub mod wire_shape_goldens;
 pub mod checkpoint;
 pub mod command;
 pub mod session_control;
