@@ -588,6 +588,141 @@ impl RecipientCommitWatermarkV1 {
     }
 }
 
+
+/// `APEX-T3.4.22` — perturbation harness. One knob per way a checkpoint
+/// can arrive wrong, plus the one way it can legitimately arrive
+/// differently (cross-stream interleaving), driven through the real
+/// receiver. Seeded and parameterizable so it can be cranked later
+/// rather than rewritten.
+#[derive(Debug, Clone)]
+pub enum CheckpointPerturbationV1 {
+    /// The plan's own send order.
+    None,
+    /// Streams interleaved arbitrarily, each stream's own order intact.
+    /// This one must still ALIGN -- physical streams have no cross-stream
+    /// arrival order, and the design exists to tolerate that.
+    InterleaveStreams { seed: u64 },
+    /// One stream's frames reversed: per-stream FIFO is load-bearing.
+    ReverseWithinStream,
+    DropFrame { index: usize },
+    DuplicateFrame { index: usize },
+    /// A data frame's payload replaced with a different one of the same
+    /// size class, leaving every declared count intact.
+    SwapPayload { index: usize, replacement: ServerGeneral },
+    ForgeOrdinal { index: usize, ordinal: u64 },
+    ForeignEpoch { index: usize },
+}
+
+fn perturbed_frames_v1(frames: Vec<CheckpointFrameV1>, perturbation: &CheckpointPerturbationV1) -> Vec<CheckpointFrameV1> {
+    use CheckpointPerturbationV1 as P;
+    match perturbation {
+        P::None => frames,
+        P::InterleaveStreams { seed } => {
+            // Round-robin the per-stream queues in a seed-chosen order:
+            // every stream's own sequence order survives, nothing else does.
+            let mut queues: Vec<Vec<CheckpointFrameV1>> = REQUIRED_CHECKPOINT_STREAMS_V1
+                .into_iter()
+                .map(|stream| frames.iter().filter(|f| f.stream() == stream).cloned().collect())
+                .collect();
+            let mut state = *seed | 1;
+            let mut out = Vec::with_capacity(frames.len());
+            while queues.iter().any(|q| !q.is_empty()) {
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                let pick = (state >> 33) as usize % queues.len();
+                if let Some(frame) = queues[pick].first().cloned() {
+                    queues[pick].remove(0);
+                    out.push(frame);
+                }
+            }
+            out
+        },
+        P::ReverseWithinStream => {
+            let mut out = Vec::with_capacity(frames.len());
+            for stream in REQUIRED_CHECKPOINT_STREAMS_V1 {
+                let mut of: Vec<CheckpointFrameV1> = frames.iter().filter(|f| f.stream() == stream).cloned().collect();
+                of.reverse();
+                out.extend(of);
+            }
+            out
+        },
+        P::DropFrame { index } => {
+            let mut out = frames;
+            if *index < out.len() {
+                out.remove(*index);
+            }
+            out
+        },
+        P::DuplicateFrame { index } => {
+            let mut out = frames;
+            if let Some(frame) = out.get(*index).cloned() {
+                out.insert(*index + 1, frame);
+            }
+            out
+        },
+        P::SwapPayload { index, replacement } => {
+            let mut out = frames;
+            if let Some(CheckpointFrameV1::Data { payload, .. }) = out.get_mut(*index) {
+                *payload = Arc::new(replacement.clone());
+            }
+            out
+        },
+        P::ForgeOrdinal { index, ordinal } => {
+            let mut out = frames;
+            if let Some(CheckpointFrameV1::Data { context, .. }) = out.get_mut(*index) {
+                context.ordinal = Some(CheckpointOrdinalV1(*ordinal));
+            }
+            out
+        },
+        P::ForeignEpoch { index } => {
+            let mut out = frames;
+            if let Some(frame) = out.get_mut(*index) {
+                let epoch = match frame {
+                    CheckpointFrameV1::Begin { context, .. }
+                    | CheckpointFrameV1::Data { context, .. }
+                    | CheckpointFrameV1::Barrier { context, .. } => {
+                        context.epoch += 1;
+                        context.epoch
+                    },
+                };
+                match frame {
+                    CheckpointFrameV1::Begin { control, .. } => control.epoch = epoch,
+                    CheckpointFrameV1::Barrier { control, .. } => control.epoch = epoch,
+                    CheckpointFrameV1::Data { .. } => {},
+                }
+            }
+            out
+        },
+    }
+}
+
+/// Drives a plan's frames through a fresh receiver under one
+/// perturbation. `Ok` means the checkpoint still aligned and committed.
+pub fn drive_perturbed_checkpoint_v1(
+    plan: &RecipientCheckpointPlanV1,
+    perturbation: &CheckpointPerturbationV1,
+) -> Result<CheckpointCompletenessV1, AlignErrorV1> {
+    let frames = perturbed_frames_v1(checkpoint_frames_v1(plan).map_err(|_| AlignErrorV1::Incomplete)?, perturbation);
+    let mut aligner = CheckpointAlignerV1::open_v1(plan.descriptor.clone(), plan.descriptor_root)?;
+    for frame in &frames {
+        match frame {
+            CheckpointFrameV1::Begin { control, .. } => aligner.accept_begin_v1(control)?,
+            CheckpointFrameV1::Data { stream, sequence, context, payload, .. } => {
+                aligner.accept_data_v1(*stream, *sequence, context, Arc::clone(payload))?
+            },
+            CheckpointFrameV1::Barrier { control, .. } => aligner.accept_barrier_v1(control)?,
+        }
+    }
+    if !aligner.is_complete() {
+        return Err(AlignErrorV1::Incomplete);
+    }
+    let applied = aligner.take_apply_sequence_v1()?;
+    Ok(CheckpointCompletenessV1 {
+        descriptor_root: plan.descriptor_root,
+        frames: frames.len(),
+        apply_order: applied.iter().map(|r| (r.ordinal, r.phase)).collect(),
+    })
+}
+
 #[cfg(test)]
 mod checkpoint_planner_v1 {
     use super::*;
@@ -793,6 +928,59 @@ mod checkpoint_planner_v1 {
             if !matches!(frame, CheckpointFrameV1::Data { .. }) {
                 assert!(frame.context().ordinal.is_none(), "control frames carry no ordinal");
             }
+        }
+    }
+
+    /// `T3.4.22`: the perturbation table. Cross-stream interleaving is
+    /// the ONE reordering a checkpoint must survive; every other
+    /// perturbation must be caught.
+    #[test]
+    fn only_cross_stream_interleaving_survives_perturbation() {
+        use CheckpointPerturbationV1 as P;
+
+        let mut state = SemanticSendStateV1::new(binding());
+        let plan = reserve_and_plan_recipient_checkpoint_v1(
+            &mut state,
+            1,
+            0,
+            vec![
+                intent_payload(SemanticStreamIdV1::InGame, 1, ServerGeneral::CharacterSuccess),
+                intent_payload(SemanticStreamIdV1::InGame, 2, ServerGeneral::UpdateRecipes),
+                intent_payload(SemanticStreamIdV1::Terrain, 3, ServerGeneral::ExitInGameSuccess),
+            ],
+            &profile(),
+            [1; 32],
+            [2; 32],
+        )
+        .unwrap();
+
+        let clean = drive_perturbed_checkpoint_v1(&plan, &P::None).unwrap();
+
+        // Cross-stream arrival order is not observable in the outcome.
+        for seed in [1u64, 2, 3, 7, 11, 101, 65537, u64::MAX] {
+            let shuffled = drive_perturbed_checkpoint_v1(&plan, &P::InterleaveStreams { seed }).unwrap();
+            assert_eq!(shuffled, clean, "seed {seed}: interleaving must not move the outcome");
+        }
+
+        // Everything else is caught.
+        let frames = checkpoint_frames_v1(&plan).unwrap();
+        let data_index = frames
+            .iter()
+            .position(|f| matches!(f, CheckpointFrameV1::Data { .. }))
+            .expect("the plan has data frames");
+        for perturbation in [
+            P::ReverseWithinStream,
+            P::DropFrame { index: 0 },
+            P::DropFrame { index: data_index },
+            P::DuplicateFrame { index: data_index },
+            P::SwapPayload { index: data_index, replacement: ServerGeneral::ExitInGameSuccess },
+            P::ForgeOrdinal { index: data_index, ordinal: 3 },
+            P::ForeignEpoch { index: 0 },
+        ] {
+            assert!(
+                drive_perturbed_checkpoint_v1(&plan, &perturbation).is_err(),
+                "{perturbation:?} must not align"
+            );
         }
     }
 
