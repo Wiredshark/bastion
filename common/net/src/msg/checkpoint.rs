@@ -937,3 +937,94 @@ mod checkpoint_controls_v1 {
         assert_eq!(h.accept_v1(&begin(s)), Err(E::DescriptorRootMismatch));
     }
 }
+
+/// `APEX-T3.4.07` — checkpoint context carried alongside a frame.
+/// Data frames MUST carry epoch + ordinal + descriptor root; control
+/// frames carry epoch + root and MUST NOT carry an ordinal; diagnostics
+/// carry none. Unbound checkpoint data is unrepresentable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CheckpointedEnvelopeContextV1 {
+    pub epoch: u64,
+    pub ordinal: Option<CheckpointOrdinalV1>,
+    pub descriptor_root: [u8; 32],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointContextErrorV1 {
+    MissingContext,
+    IllegalOrdinal,
+    MissingOrdinal,
+    RootMismatch,
+    EpochMismatch,
+    ForbiddenContext,
+}
+
+/// Validates a frame context against its participation class and the
+/// active descriptor.
+pub fn validate_checkpoint_context_v1(
+    participation: CheckpointParticipationV1,
+    context: Option<&CheckpointedEnvelopeContextV1>,
+    active_epoch: u64,
+    active_descriptor_root: [u8; 32],
+) -> Result<(), CheckpointContextErrorV1> {
+    use CheckpointContextErrorV1 as E;
+    use CheckpointParticipationV1 as P;
+    match (participation, context) {
+        (P::OutOfBandDiagnostic, None) => Ok(()),
+        (P::OutOfBandDiagnostic, Some(_)) => Err(E::ForbiddenContext),
+        (_, None) => Err(E::MissingContext),
+        (class, Some(c)) => {
+            if c.epoch != active_epoch {
+                return Err(E::EpochMismatch);
+            }
+            if c.descriptor_root != active_descriptor_root {
+                return Err(E::RootMismatch);
+            }
+            match (class, c.ordinal) {
+                (P::CheckpointedData, Some(o)) if o.0 > 0 => Ok(()),
+                (P::CheckpointedData, Some(_)) => Err(E::IllegalOrdinal),
+                (P::CheckpointedData, None) => Err(E::MissingOrdinal),
+                (P::CheckpointControl, None) => Ok(()),
+                (P::CheckpointControl, Some(_)) => Err(E::IllegalOrdinal),
+                (P::OutOfBandDiagnostic, _) => unreachable!("diagnostic handled above"),
+            }
+        },
+    }
+}
+
+#[cfg(test)]
+mod checkpoint_context_v1 {
+    use super::*;
+
+    const ROOT: [u8; 32] = [7; 32];
+
+    fn ctx(epoch: u64, ordinal: Option<u64>, root: [u8; 32]) -> CheckpointedEnvelopeContextV1 {
+        CheckpointedEnvelopeContextV1 { epoch, ordinal: ordinal.map(CheckpointOrdinalV1), descriptor_root: root }
+    }
+
+    #[test]
+    fn context_field_matrix_is_exhaustively_enforced() {
+        use CheckpointContextErrorV1 as E;
+        use CheckpointParticipationV1 as P;
+        let ok = |p, c: Option<CheckpointedEnvelopeContextV1>| {
+            validate_checkpoint_context_v1(p, c.as_ref(), 1, ROOT)
+        };
+
+        // data: needs epoch + nonzero ordinal + matching root
+        assert!(ok(P::CheckpointedData, Some(ctx(1, Some(1), ROOT))).is_ok());
+        assert_eq!(ok(P::CheckpointedData, None), Err(E::MissingContext));
+        assert_eq!(ok(P::CheckpointedData, Some(ctx(1, None, ROOT))), Err(E::MissingOrdinal));
+        assert_eq!(ok(P::CheckpointedData, Some(ctx(1, Some(0), ROOT))), Err(E::IllegalOrdinal));
+        assert_eq!(ok(P::CheckpointedData, Some(ctx(2, Some(1), ROOT))), Err(E::EpochMismatch));
+        assert_eq!(ok(P::CheckpointedData, Some(ctx(1, Some(1), [9; 32]))), Err(E::RootMismatch));
+
+        // control: epoch + root, ordinal forbidden
+        assert!(ok(P::CheckpointControl, Some(ctx(1, None, ROOT))).is_ok());
+        assert_eq!(ok(P::CheckpointControl, Some(ctx(1, Some(1), ROOT))), Err(E::IllegalOrdinal));
+        assert_eq!(ok(P::CheckpointControl, None), Err(E::MissingContext));
+
+        // diagnostic: no context at all
+        assert!(ok(P::OutOfBandDiagnostic, None).is_ok());
+        assert_eq!(ok(P::OutOfBandDiagnostic, Some(ctx(1, None, ROOT))), Err(E::ForbiddenContext));
+    }
+}
