@@ -28,6 +28,7 @@ mod chunk_serialize;
 pub mod client;
 pub mod cmd;
 pub mod connection_handler;
+pub mod content_epoch;
 mod data_dir;
 pub mod error;
 pub mod events;
@@ -601,6 +602,14 @@ impl Server {
 
         let rbm = common::recipe::RecipeBookManifest::load().cloned();
         state.ecs_mut().insert(rbm);
+
+        // T0.72: the admission barrier's watcher set. Constructed once
+        // here (after the manifests above are already warm in the asset
+        // cache) so its own `.load()` calls are cache hits, not fresh
+        // parses.
+        state
+            .ecs_mut()
+            .insert(crate::content_epoch::ContentWatchers::new());
 
         state.ecs_mut().insert(CharacterLoader::new(
             Arc::<RwLock<DatabaseSettings>>::clone(&database_settings),
@@ -3815,6 +3824,20 @@ impl Server {
     pub fn tick(&mut self, _input: Input, dt: Duration) -> Result<Vec<Event>, Error> {
         self.state.ecs().write_resource::<Tick>().0 += 1;
         self.state.ecs().write_resource::<TickStart>().0 = Instant::now();
+
+        // T0.72: the ONE named content-epoch admission barrier, first
+        // thing every tick, before any system runs. Certified/harness
+        // runs lock the epoch by construction: DeterministicSerial skips
+        // the check entirely rather than gating on a separate flag.
+        if !self.execution_mode.is_deterministic() {
+            let ecs = self.state.ecs();
+            let mut watchers = ecs.write_resource::<content_epoch::ContentWatchers>();
+            let mut epoch = ecs.write_resource::<common::resources::ContentEpoch>();
+            let changed = watchers.poll_and_admit(&mut epoch);
+            if !changed.is_empty() {
+                info!(?changed, epoch = epoch.0, "content epoch advanced");
+            }
+        }
 
         // bastion (B-ASSET1): arena upkeep (deferred fixture goto). No-op
         // when the arena resource is absent (i.e. always, outside

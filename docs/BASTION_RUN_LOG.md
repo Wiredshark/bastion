@@ -4020,6 +4020,28 @@ re-verified against current tree, not the original stale citations):
 - `server/src/persistence/character/mod.rs:1094` (`get_pet_ids`,
   `db_pets`) — `.map(|x| x.unwrap())`: fail-closed-by-panic.
 
+KNOWN-RED (workspace builds only, scoped floors unaffected):
+`cargo test --workspace`/`--all-targets` on `bastion/engine2` fails to
+compile `veloren-client` -- `client/src/lib.rs:941` calls
+`State::client()` with the pre-T2.5.18/.19 arity (4 args), but that
+constructor now requires a 5th (`PluginMgr`, via `StatePluginsV1`) on
+branches that carry T2.5.18/.19's governed-plugin-activation feature.
+Traced to an earlier merge of Opus's apex-T2.5 lineage into engine2
+that brought the arity-fix follow-up commit's SYMPTOM into view
+without its PREREQUISITE (T2.5.18/.19 itself was never merged into
+`common/state/src/state.rs` on this branch -- confirmed via `git diff
+98b238390e~1 HEAD -- common/state/src/state.rs`, which is functionally
+identical to apex-t34's state from BEFORE T2.5.18/.19 landed there).
+Cherry-picking the standalone follow-up fix (98b238390e) produced a
+semantically-broken hybrid (new unused types alongside untouched old
+signatures) -- aborted cleanly, no residue. ORCHESTRATOR RULING:
+leave engine2's client crate red, recorded here; workspace-wide
+builds on engine2 are OFF-LIMITS until the scheduled engine2<->
+apex-t34 reconciliation merge lands T2.5's feature wholesale
+(reviewed there, not piecemeal); scoped-crate floors remain this
+branch's verification basis in the meantime (already the established
+pattern).
+
 DISCLOSURE (file-location, not a content gap): `readme/DECISIONS-FOR-
 BEN.md` does not exist in `bastion/engine2`'s history — it was added
 on a sibling branch (first appears at `d1837dbc34`/`d7e161a914`,
