@@ -105,6 +105,9 @@ where
         payload_len: payload_bytes.len() as u64,
         payload_digest,
         command_id: None,
+        // T3.4.20: unfenced until the checkpoint path is activated; the
+        // planner's own frames supply their context at that seam.
+        checkpoint: None,
     };
     let frame = SemanticWireFrameV1 { header, payload_bytes };
     let frame_bytes = common::apex::manifest::encode_manifest_v1(&frame, &manifest_limits())?;

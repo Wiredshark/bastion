@@ -13834,6 +13834,7 @@ fn net_envelope_scenario(_args: &Args) -> ExitCode {
             payload_len: payload_bytes.len() as u64,
             payload_digest,
             command_id: None,
+            checkpoint: None,
         };
         let frame = SemanticWireFrameV1 { header, payload_bytes };
         common::apex::manifest::encode_manifest_v1(&frame, &manifest_limits()).unwrap()

@@ -237,6 +237,10 @@ pub struct NetEnvelopeHeaderV1 {
     pub payload_len: u64,
     pub payload_digest: DigestBytes32V1,
     pub command_id: Option<CommandId>,
+    /// `T3.4.20`: present exactly when this frame belongs to a
+    /// checkpoint. Absent means unfenced traffic; the receiver decides
+    /// what that is allowed to be, per participation class.
+    pub checkpoint: Option<super::checkpoint::CheckpointedEnvelopeContextV1>,
 }
 
 /// Packet section 7.3. `payload_bytes` is carried as an opaque byte
@@ -262,6 +266,46 @@ fn digest32_from_value(value: ManifestValueV1) -> Result<DigestBytes32V1, Manife
         return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("expected a 32-byte bytestring"));
     };
     DigestBytes32V1::try_from_slice(&b).map_err(|_| ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("digest must be exactly 32 bytes"))
+}
+
+/// `T3.4.20`: the checkpoint context as three canonical fields —
+/// epoch, optional ordinal, descriptor root.
+fn checkpoint_ctx_to_value(
+    ctx: &super::checkpoint::CheckpointedEnvelopeContextV1,
+) -> Result<ManifestValueV1, ManifestCodecErrorV1> {
+    let mut entries = vec![
+        (FieldIdV1::new(1), ManifestValueV1::Unsigned(ctx.epoch)),
+        (FieldIdV1::new(3), ManifestValueV1::Bytes(ctx.descriptor_root.to_vec())),
+    ];
+    if let Some(ordinal) = ctx.ordinal {
+        entries.push((FieldIdV1::new(2), ManifestValueV1::Unsigned(ordinal.0)));
+    }
+    Ok(ManifestValueV1::Map(CanonicalFieldMapV1::try_from_entries(entries)?))
+}
+
+fn checkpoint_ctx_from_value(
+    value: ManifestValueV1,
+) -> Result<super::checkpoint::CheckpointedEnvelopeContextV1, ManifestSchemaErrorV1> {
+    let ManifestValueV1::Map(map) = value else {
+        return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("checkpoint context must be a map"));
+    };
+    let mut fields = StructFieldsV1::new(map);
+    let epoch = match fields.take_required(FieldIdV1::new(1))? {
+        ManifestValueV1::Unsigned(v) => v,
+        _ => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+    };
+    let ordinal = match fields.take_optional(FieldIdV1::new(2))? {
+        Some(ManifestValueV1::Unsigned(v)) => Some(super::checkpoint::CheckpointOrdinalV1(v)),
+        Some(_) => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+        None => None,
+    };
+    let descriptor_root = match fields.take_required(FieldIdV1::new(3))? {
+        ManifestValueV1::Bytes(b) => <[u8; 32]>::try_from(b.as_slice())
+            .map_err(|_| ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("descriptor root must be exactly 32 bytes"))?,
+        _ => return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
+    };
+    fields.finish_no_unknown()?;
+    Ok(super::checkpoint::CheckpointedEnvelopeContextV1 { epoch, ordinal, descriptor_root })
 }
 
 impl ManifestEncodeV1 for SnapshotDomainId {
@@ -349,6 +393,9 @@ impl ManifestEncodeV1 for NetEnvelopeHeaderV1 {
         if let Some(command_id) = &self.command_id {
             entries.push((FieldIdV1::new(13), command_id.to_manifest_value_v1()?));
         }
+        if let Some(checkpoint) = &self.checkpoint {
+            entries.push((FieldIdV1::new(14), checkpoint_ctx_to_value(checkpoint)?));
+        }
         let map = CanonicalFieldMapV1::try_from_entries(entries)?;
         Ok(ManifestValueV1::Map(map))
     }
@@ -398,6 +445,10 @@ impl ManifestDecodeV1 for NetEnvelopeHeaderV1 {
             Some(v) => Some(CommandId::from_manifest_value_v1(v)?),
             None => None,
         };
+        let checkpoint = match fields.take_optional(FieldIdV1::new(14))? {
+            Some(v) => Some(checkpoint_ctx_from_value(v)?),
+            None => None,
+        };
         fields.finish_no_unknown()?;
         Ok(Self {
             profile_root,
@@ -413,6 +464,7 @@ impl ManifestDecodeV1 for NetEnvelopeHeaderV1 {
             payload_len,
             payload_digest,
             command_id,
+            checkpoint,
         })
     }
 }
@@ -1835,6 +1887,32 @@ mod tests {
                 b"hello",
             ),
             command_id: None,
+            checkpoint: None,
+        }
+    }
+
+    /// `T3.4.20`: the checkpoint context survives the canonical codec
+    /// intact, and absent stays absent — an unfenced frame must never
+    /// decode into a checkpointed one.
+    #[test]
+    fn checkpoint_context_round_trips_and_absence_is_preserved() {
+        use super::super::checkpoint::{CheckpointOrdinalV1, CheckpointedEnvelopeContextV1};
+
+        let plain = sample_header();
+        let bytes = encode_manifest_v1(&plain, &wide_limits()).unwrap();
+        let decoded: NetEnvelopeHeaderV1 = decode_manifest_v1(&bytes, &wide_limits()).unwrap();
+        assert_eq!(decoded.checkpoint, None);
+
+        for ordinal in [None, Some(CheckpointOrdinalV1(9))] {
+            let mut header = sample_header();
+            header.checkpoint =
+                Some(CheckpointedEnvelopeContextV1 { epoch: 4, ordinal, descriptor_root: [0xA5; 32] });
+            let bytes = encode_manifest_v1(&header, &wide_limits()).unwrap();
+            let decoded: NetEnvelopeHeaderV1 = decode_manifest_v1(&bytes, &wide_limits()).unwrap();
+            assert_eq!(decoded, header);
+            assert_eq!(decoded.checkpoint.unwrap().ordinal, ordinal);
+            // a fenced frame is not byte-identical to an unfenced one
+            assert_ne!(bytes, encode_manifest_v1(&plain, &wide_limits()).unwrap());
         }
     }
 

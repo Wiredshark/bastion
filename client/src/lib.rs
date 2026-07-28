@@ -1535,6 +1535,7 @@ impl Client {
             payload_len: payload_bytes.len() as u64,
             payload_digest,
             command_id: None,
+            checkpoint: None,
         };
         let frame = common_net::msg::envelope::SemanticWireFrameV1 { header, payload_bytes };
 
@@ -4565,6 +4566,7 @@ mod tests {
             payload_len: payload_bytes.len() as u64,
             payload_digest,
             command_id: None,
+            checkpoint: None,
         };
         let frame = common_net::msg::envelope::SemanticWireFrameV1 { header, payload_bytes };
         let limits = common::apex::manifest::ManifestDecodeLimitsV1 {
@@ -4684,6 +4686,7 @@ mod tests {
             payload_len: payload_bytes.len() as u64,
             payload_digest,
             command_id: None,
+            checkpoint: None,
         };
         let frame = common_net::msg::envelope::SemanticWireFrameV1 { header, payload_bytes };
         let limits = common::apex::manifest::ManifestDecodeLimitsV1 {
