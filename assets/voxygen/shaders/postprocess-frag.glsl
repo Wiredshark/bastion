@@ -330,7 +330,11 @@ void main() {
     #else
         float gamma_offset = 0.3;
     #endif
-    aa_color.rgb = vec3(1.0) - exp(-aa_color.rgb * (gamma_exposure.y + exposure_offset));
+    float bastion_exposure_scale =
+        bastion_lighting_policy.x != 0.0 ? bastion_lighting_policy.y : 1.0;
+    aa_color.rgb = vec3(1.0) - exp(
+        -aa_color.rgb * (gamma_exposure.y + exposure_offset) * bastion_exposure_scale
+    );
     // gamma correction
     aa_color.rgb = pow(aa_color.rgb, vec3(gamma_exposure.x + gamma_offset));
     

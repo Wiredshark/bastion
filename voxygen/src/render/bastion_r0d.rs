@@ -813,6 +813,22 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r1f_fog_gameplay_terrain_visibility"
         | "r1f_fog_gameplay_entity_visibility"
         | "r1f_fog_shelter_authority_available"
+        | "r1f_lighting_enabled"
+        | "r1f_lighting_presentation_generation"
+        | "r1f_lighting_simulation_tick"
+        | "r1f_lighting_environment_projection_sha256"
+        | "r1f_lighting_material_table_sha256"
+        | "r1f_lighting_camera_token_sha256"
+        | "r1f_lighting_policy_sha256"
+        | "r1f_lighting_weather_kind"
+        | "r1f_lighting_mode"
+        | "r1f_lighting_time_of_day_millis"
+        | "r1f_lighting_sun_milli"
+        | "r1f_lighting_moon_milli"
+        | "r1f_lighting_weather_attenuation_milli"
+        | "r1f_lighting_exposure_scale_milli"
+        | "r1f_lighting_ambient_scale_milli"
+        | "r1f_lighting_divine_corrupted_overgod_available"
         | "r1f_weather_presentation_generation"
         | "r1f_weather_simulation_tick"
         | "r1f_weather_environment_projection_sha256"
@@ -832,6 +848,7 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         "diagnostic_client_tick"
         | "diagnostic_interpolated_time_bits"
         | "r1f_environment_client_interpolation_diagnostic"
+        | "r1f_lighting_local_light_budget_legacy_diagnostic"
         | "r1f_weather_legacy_rollback" => Some(CaptureMetadataFieldClassV1::Diagnostic),
         "anchor_category"
         | "anchor_body"
@@ -1163,6 +1180,7 @@ fn request_one_capture(
     let islands = crate::r1e_islands::latest_evidence();
     let environment = crate::r1f_environment::latest_evidence();
     let fog = crate::r1f_fog::latest_evidence();
+    let lighting = crate::r1f_lighting::latest_evidence();
     let weather = crate::r1f_weather::latest_evidence();
     renderer.create_screenshot(move |result| {
         match result {
@@ -1736,6 +1754,52 @@ fn request_one_capture(
                                 } else {
                                     metadata.push_str("r1f_fog_enabled=false\n");
                                 }
+                                if let Some(lighting) = lighting.filter(|lighting| {
+                                    lighting.presentation_generation
+                                        == context.presentation.client_applied_generation
+                                }) {
+                                    metadata.push_str(&format!(
+                                        concat!(
+                                            "r1f_lighting_enabled=true\n",
+                                            "r1f_lighting_presentation_generation={}\n",
+                                            "r1f_lighting_simulation_tick={}\n",
+                                            "r1f_lighting_environment_projection_sha256={}\n",
+                                            "r1f_lighting_material_table_sha256={}\n",
+                                            "r1f_lighting_camera_token_sha256={}\n",
+                                            "r1f_lighting_policy_sha256={}\n",
+                                            "r1f_lighting_weather_kind={}\n",
+                                            "r1f_lighting_mode={}\n",
+                                            "r1f_lighting_time_of_day_millis={}\n",
+                                            "r1f_lighting_sun_milli={}\n",
+                                            "r1f_lighting_moon_milli={}\n",
+                                            "r1f_lighting_weather_attenuation_milli={}\n",
+                                            "r1f_lighting_exposure_scale_milli={}\n",
+                                            "r1f_lighting_ambient_scale_milli={}\n",
+                                            "r1f_lighting_local_light_budget_legacy_diagnostic={}\\
+                                             \
+                                             n",
+                                            "r1f_lighting_divine_corrupted_overgod_available={}\n",
+                                        ),
+                                        lighting.presentation_generation,
+                                        lighting.simulation_tick,
+                                        hex_digest(&lighting.environment_projection_digest),
+                                        hex_digest(&lighting.material_table_digest),
+                                        hex_digest(&lighting.camera_token_digest),
+                                        hex_digest(&lighting.policy_digest),
+                                        lighting.weather_tag,
+                                        lighting.mode as u8,
+                                        lighting.time_of_day_millis,
+                                        lighting.sun_milli,
+                                        lighting.moon_milli,
+                                        lighting.weather_attenuation_milli,
+                                        lighting.exposure_scale_milli,
+                                        lighting.ambient_scale_milli,
+                                        lighting.local_light_budget_is_legacy_diagnostic,
+                                        lighting.divine_corrupted_overgod_available,
+                                    ));
+                                } else {
+                                    metadata.push_str("r1f_lighting_enabled=false\n");
+                                }
                                 if let Some(weather) = weather.filter(|weather| {
                                     weather.presentation_generation
                                         == context.presentation.client_applied_generation
@@ -2148,6 +2212,14 @@ mod tests {
         assert_eq!(
             capture_metadata_field_class_v1("r1f_fog_shelter_authority_available"),
             Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("r1f_lighting_policy_sha256"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("r1f_lighting_local_light_budget_legacy_diagnostic"),
+            Some(CaptureMetadataFieldClassV1::Diagnostic)
         );
         assert_eq!(
             capture_metadata_field_class_v1("r1d_tier_decision_root_sha256"),

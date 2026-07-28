@@ -23,6 +23,7 @@ pub mod identity;
 pub mod individual_tier;
 pub mod interior;
 pub mod island;
+pub mod lighting;
 pub mod material;
 pub mod parallel;
 pub mod pass_graph;

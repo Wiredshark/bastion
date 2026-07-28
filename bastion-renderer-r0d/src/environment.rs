@@ -210,6 +210,9 @@ impl EnvironmentProjectionV1 {
     pub const fn projection_digest(&self) -> EnvironmentDigestV1 { self.projection_digest }
 
     #[must_use]
+    pub const fn time_of_day_millis(&self) -> u64 { self.input.time_of_day_millis }
+
+    #[must_use]
     pub const fn availability(&self) -> EnvironmentAvailabilityV1 { self.input.availability }
 
     #[must_use]
