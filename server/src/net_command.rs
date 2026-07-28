@@ -9,6 +9,7 @@
 //! which refuses today for named reasons.
 
 use common_net::msg::ClientGeneral;
+use common_net::msg::command::CommandParticipantV1;
 use common_net::msg::command::{
     ClientCommandOutboxV1, CommandCarriageErrorV1, CommandDescriptorV1, CommandExecutionV1, CommandJournalV1,
     CommandKindV1, CommandOutcomeV1, CommandReceiptV1, CommandRefusalV1, JournalErrorV1, JournalStateV1,
@@ -933,5 +934,121 @@ mod command_security_v1 {
         // A digest cannot be turned back into the request it summarises,
         // which is the property this case is really asserting.
         assert_ne!(entry.descriptor.request_digest.to_vec(), b"chat message".to_vec());
+    }
+}
+
+/// `APEX-T3.5.18` — rollout. Three modes, and the type system carries
+/// the rule that matters: a command takes exactly ONE path. `CMD-154` is
+/// a mutation where the legacy handler and the journaled handler both
+/// run; here that is unrepresentable, because admission returns one
+/// `CommandPathV1` rather than a pair of flags a caller could both act
+/// on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandRolloutModeV1 {
+    /// The journal does not exist for this deployment.
+    Off,
+    /// Classify and count, but never mutate journal state (`CMD-155`).
+    Observe,
+    /// Journaled kinds go through the journal.
+    Enforce,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandPathV1 {
+    /// The pre-journal handler runs this one.
+    Legacy,
+    /// The journal owns this one.
+    Journaled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RolloutDecisionV1 {
+    pub path: CommandPathV1,
+    /// What Observe mode would have done — recorded, never acted on.
+    pub would_journal: bool,
+}
+
+/// Decides the single path a payload takes. Observe classifies exactly
+/// as Enforce would, and reports it, but always yields `Legacy`, so
+/// turning Observe on cannot change behaviour or touch the journal.
+pub fn rollout_decision_v1(mode: CommandRolloutModeV1, payload: &ClientGeneral) -> RolloutDecisionV1 {
+    use common_net::msg::command::CommandAdmissionClassV1 as A;
+
+    let would_journal = matches!(payload.admission_class_v1(), A::Journaled(_));
+    let path = match mode {
+        CommandRolloutModeV1::Off | CommandRolloutModeV1::Observe => CommandPathV1::Legacy,
+        CommandRolloutModeV1::Enforce => {
+            if would_journal {
+                CommandPathV1::Journaled
+            } else {
+                CommandPathV1::Legacy
+            }
+        },
+    };
+    RolloutDecisionV1 { path, would_journal }
+}
+
+#[cfg(test)]
+mod command_rollout_v1 {
+    use super::*;
+    use common_net::msg::command::CommandAdmissionClassV1;
+    use vek::Vec3;
+
+    fn samples() -> Vec<ClientGeneral> {
+        vec![
+            ClientGeneral::BreakBlock(Vec3::zero()),
+            ClientGeneral::ExitInGame,
+            ClientGeneral::Terminate,
+            ClientGeneral::Command("time".to_owned(), Vec::new()),
+            ClientGeneral::RequestCharacterList,
+            ClientGeneral::ControlAction(common::comp::ControlAction::Sit),
+        ]
+    }
+
+    /// `CMD-154`: one path, never two. `CMD-155`: Observe never journals.
+    #[test]
+    fn every_payload_takes_exactly_one_path_and_observe_never_journals() {
+        for payload in samples() {
+            let classified = matches!(payload.admission_class_v1(), CommandAdmissionClassV1::Journaled(_));
+
+            for mode in [CommandRolloutModeV1::Off, CommandRolloutModeV1::Observe] {
+                let decision = rollout_decision_v1(mode, &payload);
+                assert_eq!(decision.path, CommandPathV1::Legacy, "{mode:?} must not journal");
+                assert_eq!(
+                    decision.would_journal, classified,
+                    "Observe must classify exactly as Enforce would, and only report it"
+                );
+            }
+
+            let enforced = rollout_decision_v1(CommandRolloutModeV1::Enforce, &payload);
+            assert_eq!(
+                enforced.path,
+                if classified { CommandPathV1::Journaled } else { CommandPathV1::Legacy }
+            );
+        }
+    }
+
+    /// `CMD-153`: Enforce cannot be reached with an unclassified variant,
+    /// because there is no unclassified variant to reach it with — the
+    /// admission match is exhaustive with no wildcard arm, so a new
+    /// `ClientGeneral` variant fails the build rather than defaulting.
+    #[test]
+    fn enforce_has_no_unclassified_variant_to_admit() {
+        for payload in samples() {
+            let class = payload.admission_class_v1();
+            assert!(
+                matches!(
+                    class,
+                    CommandAdmissionClassV1::Journaled(_)
+                        | CommandAdmissionClassV1::LatestState
+                        | CommandAdmissionClassV1::ReadOnly
+                ),
+                "every payload resolves to one of the three classes"
+            );
+            // and the decision is total over modes
+            for mode in [CommandRolloutModeV1::Off, CommandRolloutModeV1::Observe, CommandRolloutModeV1::Enforce] {
+                let _ = rollout_decision_v1(mode, &payload);
+            }
+        }
     }
 }
