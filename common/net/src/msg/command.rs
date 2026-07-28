@@ -990,3 +990,129 @@ mod command_outbox_v1 {
         assert_eq!(outbox.retry_v1(&a.command_id).unwrap_err(), OutboxErrorV1::UnknownCommand);
     }
 }
+
+/// `APEX-T3.5.07` — the receipt a command comes back with. It carries
+/// the command's IDENTITY ROOT, not just its id, so the client checks
+/// that the outcome belongs to the exact command it sent — same kind,
+/// same request bytes — instead of trusting an id it handed out itself.
+/// (The wire variant that carries this rides the session-control row,
+/// so the tier takes one protocol bump rather than several.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommandReceiptV1 {
+    pub command_id: CommandId,
+    pub identity_root: [u8; 32],
+    pub outcome: CommandOutcomeV1,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiptErrorV1 {
+    /// No such command is outstanding in this outbox.
+    NotOutstanding,
+    /// The receipt names a command whose identity does not match the one
+    /// this client actually sent under that id.
+    IdentityMismatch,
+    NonCanonical,
+}
+
+impl CommandReceiptV1 {
+    /// Built by the executing side from the descriptor it admitted, so
+    /// the root is over the command as RECEIVED.
+    pub fn for_command_v1(
+        descriptor: &CommandDescriptorV1,
+        outcome: CommandOutcomeV1,
+    ) -> Result<Self, ReceiptErrorV1> {
+        let identity_root = descriptor.identity_root_v1().map_err(|_| ReceiptErrorV1::NonCanonical)?;
+        Ok(Self { command_id: descriptor.command_id, identity_root, outcome })
+    }
+}
+
+impl ClientCommandOutboxV1 {
+    /// Verifies a receipt against the outstanding command and clears it.
+    /// The identity root is RECOMPUTED from the descriptor this client
+    /// holds; a receipt that does not reproduce it is refused and the
+    /// command stays outstanding.
+    pub fn accept_receipt_v1(&mut self, receipt: &CommandReceiptV1) -> Result<CommandOutcomeV1, ReceiptErrorV1> {
+        let pending = self.pending_v1(&receipt.command_id).ok_or(ReceiptErrorV1::NotOutstanding)?;
+        let expected = pending.descriptor.identity_root_v1().map_err(|_| ReceiptErrorV1::NonCanonical)?;
+        if expected != receipt.identity_root {
+            return Err(ReceiptErrorV1::IdentityMismatch);
+        }
+        self.acknowledge_v1(&receipt.command_id).map_err(|_| ReceiptErrorV1::NotOutstanding)?;
+        Ok(receipt.outcome)
+    }
+}
+
+#[cfg(test)]
+mod command_receipt_v1 {
+    use super::*;
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+    use std::cell::Cell;
+
+    fn binding() -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([2; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        }
+    }
+
+    /// The full round trip: issue, retry, execute once, receipt back,
+    /// verified against the client's own copy of the command.
+    #[test]
+    fn a_receipt_clears_only_the_command_it_actually_names() {
+        let mut outbox = ClientCommandOutboxV1::new(binding(), 4, 4);
+        let mut ledger = CommandLedgerV1::new(binding(), 8);
+        let runs = Cell::new(0u32);
+
+        let cmd = outbox.issue_v1(CommandKindV1::ControlAction, [7; 32]).unwrap();
+        let resent = outbox.retry_v1(&cmd.command_id).unwrap();
+        let executed = execute_command_once_v1(&mut ledger, &resent, || {
+            runs.set(runs.get() + 1);
+            CommandOutcomeV1::Applied { result_digest: [9; 32] }
+        })
+        .unwrap();
+        assert_eq!(runs.get(), 1);
+
+        let receipt = CommandReceiptV1::for_command_v1(&resent, executed.outcome()).unwrap();
+
+        // a receipt whose root does not reproduce is refused, and the
+        // command stays outstanding
+        let mut forged = receipt;
+        forged.identity_root = [0xAB; 32];
+        assert_eq!(outbox.accept_receipt_v1(&forged).unwrap_err(), ReceiptErrorV1::IdentityMismatch);
+        assert_eq!(outbox.pending_len(), 1, "a refused receipt must not clear the command");
+
+        // ...and the genuine one clears it exactly once
+        assert_eq!(
+            outbox.accept_receipt_v1(&receipt).unwrap(),
+            CommandOutcomeV1::Applied { result_digest: [9; 32] }
+        );
+        assert_eq!(outbox.pending_len(), 0);
+        assert_eq!(outbox.accept_receipt_v1(&receipt).unwrap_err(), ReceiptErrorV1::NotOutstanding);
+    }
+
+    /// A receipt for a command this client never sent is refused even if
+    /// its id happens to be one this client would issue later.
+    #[test]
+    fn a_receipt_for_an_unsent_command_is_refused() {
+        let mut outbox = ClientCommandOutboxV1::new(binding(), 4, 4);
+        let future_id = DerivedCommandIdSourceV1::id_for_ordinal_v1(&binding(), 1).unwrap();
+        let descriptor = CommandDescriptorV1 {
+            binding: binding(),
+            command_id: future_id,
+            kind: CommandKindV1::ControlAction,
+            request_digest: [7; 32],
+        };
+        let receipt =
+            CommandReceiptV1::for_command_v1(&descriptor, CommandOutcomeV1::Applied { result_digest: [1; 32] })
+                .unwrap();
+        assert_eq!(outbox.accept_receipt_v1(&receipt).unwrap_err(), ReceiptErrorV1::NotOutstanding);
+
+        // once the client DOES issue that ordinal, a receipt for a
+        // different request under the same id is still refused
+        let issued = outbox.issue_v1(CommandKindV1::ControlAction, [8; 32]).unwrap();
+        assert_eq!(issued.command_id, future_id, "ids are derived, so the ordinal is predictable by construction");
+        assert_eq!(outbox.accept_receipt_v1(&receipt).unwrap_err(), ReceiptErrorV1::IdentityMismatch);
+        assert_eq!(outbox.pending_len(), 1);
+    }
+}
