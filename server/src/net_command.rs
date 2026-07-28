@@ -11,7 +11,7 @@
 use common_net::msg::ClientGeneral;
 use common_net::msg::command::{
     ClientCommandOutboxV1, CommandCarriageErrorV1, CommandDescriptorV1, CommandExecutionV1, CommandJournalV1,
-    CommandOutcomeV1, CommandReceiptV1, CommandRefusalV1, JournalErrorV1, ReceiptErrorV1,
+    CommandKindV1, CommandOutcomeV1, CommandReceiptV1, CommandRefusalV1, JournalErrorV1, ReceiptErrorV1,
     command_descriptor_from_frame_v1, execute_command_once_v1,
 };
 use common_net::msg::envelope::ActiveSessionBindingV1;
@@ -489,5 +489,258 @@ mod command_workflow_v1 {
 
         workflows.resolve_v1(&context.effect_id, WorkerAnswerV1::TimedOut).unwrap();
         assert_eq!(workflows.close_session_v1(&binding()).unwrap(), 0);
+    }
+}
+
+/// `APEX-T3.5.16` — durable command rows. Some effects outlive the
+/// process: a character create that reaches SQLite must not run twice
+/// after a crash-and-reconnect under a new boot (`CMD-123`). Others do
+/// not: a terrain edit has no persistence row and therefore cannot claim
+/// durable exactly-once (`CMD-124`).
+///
+/// This row builds the CONTRACT and a reference store; the SQLite tables
+/// themselves are a later live-path row, and nothing here pretends to be
+/// them. What is fixed here is what the storage must guarantee:
+/// - the durable row and its effect commit in ONE transaction, in either
+///   direction, or neither commits (`CMD-118`, `CMD-119`, `CMD-122`)
+/// - rows are keyed by session namespace AND command id (`CMD-121`)
+/// - the same id with a different request digest CONFLICTS (`CMD-120`)
+/// - the stored result is reproducible bytes, not prose (`CMD-126`)
+/// - retention never removes an unsettled row (`CMD-127`)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DurabilityClassV1 {
+    /// Backed by a persistence row: survives a boot.
+    DurableExactlyOnce,
+    /// Lives and dies with the session's journal.
+    SessionScoped,
+}
+
+/// Only persistence-backed command kinds may claim durability. A kind
+/// whose effect is in-memory cannot honour the claim, so it does not get
+/// to make it.
+pub fn durability_class_v1(kind: CommandKindV1) -> DurabilityClassV1 {
+    match kind {
+        CommandKindV1::CharacterLifecycle | CommandKindV1::InventoryMutation => {
+            DurabilityClassV1::DurableExactlyOnce
+        },
+        CommandKindV1::ControlAction | CommandKindV1::SessionControl | CommandKindV1::Administrative => {
+            DurabilityClassV1::SessionScoped
+        },
+    }
+}
+
+/// Session namespace plus command id. Without the namespace one session
+/// could read or retire another's row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct DurableCommandKeyV1 {
+    pub session: common::apex::identity::SessionId,
+    pub command_id: CommandId,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DurableCommandRowV1 {
+    pub key: DurableCommandKeyV1,
+    pub identity_root: [u8; 32],
+    pub outcome: CommandOutcomeV1,
+    pub effect_epoch: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DurableErrorV1 {
+    /// The same id already exists under a different identity (`CMD-120`).
+    IdentityConflict,
+    /// This command kind has no persistence row to be durable in.
+    NotDurableClass,
+    /// The effect failed, so the row was not written either.
+    EffectRolledBack,
+    /// Retention tried to remove a row that is not settled (`CMD-127`).
+    RowUnsettled,
+    NonCanonical,
+}
+
+/// Reference store. In-memory here; the guarantee it encodes — one
+/// transaction for row plus effect — is what a SQLite implementation
+/// must reproduce.
+#[derive(Debug, Clone, Default)]
+pub struct DurableCommandStoreV1 {
+    rows: std::collections::BTreeMap<DurableCommandKeyV1, DurableCommandRowV1>,
+}
+
+impl DurableCommandStoreV1 {
+    pub fn new() -> Self { Self::default() }
+
+    pub fn len(&self) -> usize { self.rows.len() }
+
+    pub fn is_empty(&self) -> bool { self.rows.is_empty() }
+
+    pub fn lookup_v1(&self, key: &DurableCommandKeyV1) -> Option<DurableCommandRowV1> {
+        self.rows.get(key).copied()
+    }
+
+    /// Commits the effect and its durable row together. `apply_effect`
+    /// runs INSIDE the transaction: if it fails, no row is written, so a
+    /// rolled-back effect can never leave a terminal success behind.
+    pub fn commit_with_effect_v1<F>(
+        &mut self,
+        descriptor: &CommandDescriptorV1,
+        outcome: CommandOutcomeV1,
+        effect_epoch: u64,
+        apply_effect: F,
+    ) -> Result<DurableCommandRowV1, DurableErrorV1>
+    where
+        F: FnOnce() -> Result<(), ()>,
+    {
+        if durability_class_v1(descriptor.kind) != DurabilityClassV1::DurableExactlyOnce {
+            return Err(DurableErrorV1::NotDurableClass);
+        }
+        let identity_root = descriptor.identity_root_v1().map_err(|_| DurableErrorV1::NonCanonical)?;
+        let key =
+            DurableCommandKeyV1 { session: descriptor.binding.session_id, command_id: descriptor.command_id };
+
+        if let Some(existing) = self.rows.get(&key) {
+            // Uniqueness is on IDENTITY, not just the id: a resend with
+            // different content conflicts instead of overwriting.
+            if existing.identity_root != identity_root {
+                return Err(DurableErrorV1::IdentityConflict);
+            }
+            return Ok(*existing);
+        }
+
+        apply_effect().map_err(|()| DurableErrorV1::EffectRolledBack)?;
+        let row = DurableCommandRowV1 { key, identity_root, outcome, effect_epoch };
+        self.rows.insert(key, row);
+        Ok(row)
+    }
+
+    /// Retention. Only rows whose effect epoch is at or below a
+    /// committed watermark may go; anything newer might still be
+    /// in flight.
+    pub fn retain_below_v1(&mut self, committed_epoch: u64) -> usize {
+        let before = self.rows.len();
+        self.rows.retain(|_, row| row.effect_epoch > committed_epoch);
+        before - self.rows.len()
+    }
+
+    /// Explicit removal, refused unless the row is settled.
+    pub fn remove_settled_v1(
+        &mut self,
+        key: &DurableCommandKeyV1,
+        committed_epoch: u64,
+    ) -> Result<DurableCommandRowV1, DurableErrorV1> {
+        let row = self.rows.get(key).copied().ok_or(DurableErrorV1::RowUnsettled)?;
+        if row.effect_epoch > committed_epoch {
+            return Err(DurableErrorV1::RowUnsettled);
+        }
+        self.rows.remove(key);
+        Ok(row)
+    }
+}
+
+#[cfg(test)]
+mod command_durability_v1 {
+    use super::*;
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+
+    fn binding(boot: u8) -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([boot; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([2; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        }
+    }
+
+    fn character_command(request: u8) -> CommandDescriptorV1 {
+        CommandDescriptorV1 {
+            binding: binding(1),
+            command_id: CommandId::generate(&mut FixedRandomBytesSourceV1([9; 16])).unwrap(),
+            kind: CommandKindV1::CharacterLifecycle,
+            request_digest: [request; 32],
+        }
+    }
+
+    /// `CMD-118`/`CMD-119`/`CMD-122`: row and effect are one transaction.
+    /// A rolled-back effect leaves NO terminal behind.
+    #[test]
+    fn a_rolled_back_effect_writes_no_row() {
+        let mut store = DurableCommandStoreV1::new();
+        let cmd = character_command(1);
+        let outcome = CommandOutcomeV1::Applied { result_digest: [3; 32] };
+
+        assert_eq!(
+            store.commit_with_effect_v1(&cmd, outcome, 5, || Err(())).unwrap_err(),
+            DurableErrorV1::EffectRolledBack
+        );
+        assert!(store.is_empty(), "a rolled-back effect must not leave a durable terminal");
+
+        let row = store.commit_with_effect_v1(&cmd, outcome, 5, || Ok(())).unwrap();
+        assert_eq!(row.outcome, outcome);
+        assert_eq!(store.len(), 1);
+    }
+
+    /// `CMD-120`/`CMD-121`/`CMD-123`: uniqueness is on identity within a
+    /// session namespace, and the row is found again under a new boot.
+    #[test]
+    fn identity_conflicts_and_the_row_survives_a_new_boot() {
+        let mut store = DurableCommandStoreV1::new();
+        let cmd = character_command(1);
+        let outcome = CommandOutcomeV1::Applied { result_digest: [3; 32] };
+        let effects = std::cell::Cell::new(0u32);
+        let run = || {
+            effects.set(effects.get() + 1);
+            Ok(())
+        };
+
+        store.commit_with_effect_v1(&cmd, outcome, 5, run).unwrap();
+        // an honest resend finds the same row and does NOT re-run the effect
+        store.commit_with_effect_v1(&cmd, outcome, 5, run).unwrap();
+        assert_eq!(effects.get(), 1, "a durable resend must not re-apply the effect");
+
+        // the same id carrying different content conflicts
+        let tampered = character_command(2);
+        assert_eq!(
+            store.commit_with_effect_v1(&tampered, outcome, 5, run).unwrap_err(),
+            DurableErrorV1::IdentityConflict
+        );
+        assert_eq!(effects.get(), 1);
+
+        // a new boot re-reads the same rows: the command is already done
+        let reloaded = store.clone();
+        let key = DurableCommandKeyV1 { session: cmd.binding.session_id, command_id: cmd.command_id };
+        assert_eq!(reloaded.lookup_v1(&key).unwrap().outcome, outcome);
+        // ...and the key is namespaced, so another session's lookup misses
+        let other = DurableCommandKeyV1 {
+            session: SessionId::generate(&mut FixedRandomBytesSourceV1([77; 16])).unwrap(),
+            command_id: cmd.command_id,
+        };
+        assert_eq!(reloaded.lookup_v1(&other), None);
+    }
+
+    /// `CMD-124`: a kind with no persistence row cannot claim durability.
+    /// `CMD-127`: retention never removes an unsettled row.
+    #[test]
+    fn only_persistence_backed_kinds_are_durable_and_retention_spares_unsettled_rows() {
+        let mut store = DurableCommandStoreV1::new();
+        let mut terrain = character_command(1);
+        terrain.kind = CommandKindV1::ControlAction;
+        assert_eq!(durability_class_v1(CommandKindV1::ControlAction), DurabilityClassV1::SessionScoped);
+        assert_eq!(
+            store
+                .commit_with_effect_v1(&terrain, CommandOutcomeV1::Applied { result_digest: [0; 32] }, 1, || Ok(()))
+                .unwrap_err(),
+            DurableErrorV1::NotDurableClass
+        );
+
+        let cmd = character_command(1);
+        let row = store
+            .commit_with_effect_v1(&cmd, CommandOutcomeV1::Applied { result_digest: [3; 32] }, 7, || Ok(()))
+            .unwrap();
+        // the effect epoch is above the committed watermark: not settled
+        assert_eq!(store.retain_below_v1(6), 0);
+        assert_eq!(store.remove_settled_v1(&row.key, 6).unwrap_err(), DurableErrorV1::RowUnsettled);
+        assert_eq!(store.len(), 1);
+
+        // once the watermark reaches it, it may go
+        assert_eq!(store.remove_settled_v1(&row.key, 7).unwrap().effect_epoch, 7);
+        assert!(store.is_empty());
     }
 }
