@@ -959,6 +959,10 @@ pub struct CommandReceiptV1 {
     pub command_id: CommandId,
     pub identity_root: [u8; 32],
     pub outcome: CommandOutcomeV1,
+    /// The T3.4 checkpoint epoch whose commit makes this result real.
+    /// A result without one cannot be ordered against the effect it
+    /// reports (`CMD-101`), so it is not optional.
+    pub effect_epoch: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -977,9 +981,10 @@ impl CommandReceiptV1 {
     pub fn for_command_v1(
         descriptor: &CommandDescriptorV1,
         outcome: CommandOutcomeV1,
+        effect_epoch: u64,
     ) -> Result<Self, ReceiptErrorV1> {
         let identity_root = descriptor.identity_root_v1().map_err(|_| ReceiptErrorV1::NonCanonical)?;
-        Ok(Self { command_id: descriptor.command_id, identity_root, outcome })
+        Ok(Self { command_id: descriptor.command_id, identity_root, outcome, effect_epoch })
     }
 }
 
@@ -1030,7 +1035,8 @@ mod command_receipt_v1 {
         .unwrap();
         assert_eq!(runs.get(), 1);
 
-        let receipt = CommandReceiptV1::for_command_v1(&resent.descriptor, executed.outcome()).unwrap();
+        let receipt =
+            CommandReceiptV1::for_command_v1(&resent.descriptor, executed.outcome(), 1).unwrap();
 
         // a receipt whose root does not reproduce is refused, and the
         // command stays outstanding
@@ -1061,7 +1067,7 @@ mod command_receipt_v1 {
             request_digest: [7; 32],
         };
         let receipt =
-            CommandReceiptV1::for_command_v1(&descriptor, CommandOutcomeV1::Applied { result_digest: [1; 32] })
+            CommandReceiptV1::for_command_v1(&descriptor, CommandOutcomeV1::Applied { result_digest: [1; 32] }, 1)
                 .unwrap();
         assert_eq!(outbox.accept_receipt_v1(&receipt).unwrap_err(), ReceiptErrorV1::NotOutstanding);
 
@@ -1397,5 +1403,166 @@ mod command_journal_v1 {
         assert_eq!(journal.admit_v1(&command_at(foreign, 13, 1), 2).unwrap_err(), JournalErrorV1::ForeignSession);
         // and a fresh session starts with no floor at all
         assert_eq!(CommandJournalV1::new(foreign, 4).retired_floor(), 0);
+    }
+}
+
+/// `APEX-T3.5.12` — when a command's result becomes real. The catalog is
+/// strict about ordering: the effect and its terminal result must ride
+/// the SAME T3.4 checkpoint (`CMD-092`, `CMD-130`, `CMD-131`), the
+/// client may not acknowledge before that checkpoint commits
+/// (`CMD-132`), and a checkpoint that never commits must not retire
+/// anything on the server (`CMD-137`).
+///
+/// This type is the seam that enforces it: a result cannot be published
+/// except as part of an epoch, and cannot be consumed except by naming
+/// the epoch that actually committed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommandPublicationV1 {
+    pub receipt: CommandReceiptV1,
+    pub sequence: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PublicationErrorV1 {
+    /// The result names a different epoch than the effect it reports.
+    EffectEpochMismatch { effect: u64, result: u64 },
+    /// The checkpoint carrying this result did not commit.
+    CheckpointNotCommitted,
+    /// The result belongs to another session.
+    BindingMismatch,
+    /// Epoch zero is "no checkpoint committed", never a publication.
+    EpochZero,
+}
+
+impl CommandPublicationV1 {
+    /// Binds a terminal outcome to the checkpoint epoch that carries its
+    /// effect. Refuses to publish a result whose epoch is not the
+    /// effect's own — the two travel together or not at all.
+    pub fn publish_v1(
+        descriptor: &CommandDescriptorV1,
+        sequence: u64,
+        outcome: CommandOutcomeV1,
+        effect_epoch: u64,
+    ) -> Result<Self, PublicationErrorV1> {
+        if effect_epoch == 0 {
+            return Err(PublicationErrorV1::EpochZero);
+        }
+        let receipt = CommandReceiptV1::for_command_v1(descriptor, outcome, effect_epoch)
+            .map_err(|_| PublicationErrorV1::EffectEpochMismatch { effect: effect_epoch, result: effect_epoch })?;
+        Ok(Self { receipt, sequence })
+    }
+
+    /// The receiver's side: a published result may only be acted on once
+    /// the checkpoint naming it has COMMITTED. The session binding is
+    /// already inside `identity_root`'s preimage, so reproducing that
+    /// root IS the binding check (`CMD-135`) — there is no separate
+    /// binding argument to forget to pass.
+    pub fn accept_committed_v1(
+        &self,
+        committed_epoch: u64,
+        expected_identity_root: [u8; 32],
+    ) -> Result<CommandOutcomeV1, PublicationErrorV1> {
+        if self.receipt.identity_root != expected_identity_root {
+            return Err(PublicationErrorV1::BindingMismatch);
+        }
+        if self.receipt.effect_epoch == 0 {
+            return Err(PublicationErrorV1::EpochZero);
+        }
+        if committed_epoch < self.receipt.effect_epoch {
+            return Err(PublicationErrorV1::CheckpointNotCommitted);
+        }
+        Ok(self.receipt.outcome)
+    }
+}
+
+#[cfg(test)]
+mod command_publication_v1 {
+    use super::*;
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+    use std::cell::Cell;
+
+    fn binding() -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([2; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        }
+    }
+
+    /// A result is real only when its checkpoint commits — and the
+    /// server journal retires only then (`CMD-132`, `CMD-137`).
+    #[test]
+    fn a_result_is_not_real_until_its_checkpoint_commits() {
+        let mut outbox = ClientCommandOutboxV1::new(binding(), 4);
+        let mut journal = CommandJournalV1::new(binding(), 8);
+        let runs = Cell::new(0u32);
+
+        let sent = outbox.issue_v1(CommandKindV1::ControlAction, [7; 32]).unwrap();
+        let executed = execute_command_once_v1(&mut journal, &sent.descriptor, sent.sequence, || {
+            runs.set(runs.get() + 1);
+            CommandOutcomeV1::Applied { result_digest: [4; 32] }
+        })
+        .unwrap();
+
+        let published =
+            CommandPublicationV1::publish_v1(&sent.descriptor, sent.sequence, executed.outcome(), 9).unwrap();
+        let root = sent.descriptor.identity_root_v1().unwrap();
+
+        // the checkpoint has not committed yet: nothing may be acted on
+        assert_eq!(
+            published.accept_committed_v1(8, root).unwrap_err(),
+            PublicationErrorV1::CheckpointNotCommitted
+        );
+        assert_eq!(outbox.pending_len(), 1, "an uncommitted result must not clear the outbox");
+        // ...and the server journal has not retired either
+        assert_eq!(journal.retired_floor(), 0);
+
+        // once the epoch commits, the outcome is available
+        assert_eq!(
+            published.accept_committed_v1(9, root).unwrap(),
+            CommandOutcomeV1::Applied { result_digest: [4; 32] }
+        );
+        outbox.accept_receipt_v1(&published.receipt).unwrap();
+        assert_eq!(outbox.pending_len(), 0);
+        assert_eq!(journal.retire_v1(published.sequence).unwrap(), 1);
+        assert_eq!(runs.get(), 1);
+    }
+
+    /// A result carries the epoch of the effect it reports, and epoch
+    /// zero is not a publication (`CMD-101`).
+    #[test]
+    fn a_result_without_a_real_effect_epoch_is_refused() {
+        let descriptor = CommandDescriptorV1 {
+            binding: binding(),
+            command_id: CommandId::generate(&mut FixedRandomBytesSourceV1([5; 16])).unwrap(),
+            kind: CommandKindV1::ControlAction,
+            request_digest: [1; 32],
+        };
+        assert_eq!(
+            CommandPublicationV1::publish_v1(
+                &descriptor,
+                1,
+                CommandOutcomeV1::Applied { result_digest: [0; 32] },
+                0
+            )
+            .unwrap_err(),
+            PublicationErrorV1::EpochZero
+        );
+
+        let published = CommandPublicationV1::publish_v1(
+            &descriptor,
+            1,
+            CommandOutcomeV1::Applied { result_digest: [0; 32] },
+            3,
+        )
+        .unwrap();
+        assert_eq!(published.receipt.effect_epoch, 3);
+
+        // a result whose identity does not reproduce belongs to another
+        // command, whatever epoch it names (`CMD-135`)
+        assert_eq!(
+            published.accept_committed_v1(9, [0xEE; 32]).unwrap_err(),
+            PublicationErrorV1::BindingMismatch
+        );
     }
 }

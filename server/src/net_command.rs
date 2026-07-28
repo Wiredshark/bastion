@@ -64,6 +64,7 @@ impl SessionCommandRuntimeV1 {
         &mut self,
         command_id: Option<CommandId>,
         sequence: u64,
+        effect_epoch: u64,
         payload: &ClientGeneral,
         payload_digest: [u8; 32],
         execute: F,
@@ -81,7 +82,7 @@ impl SessionCommandRuntimeV1 {
         let execution =
             execute_command_once_v1(&mut self.journal, &descriptor, sequence, || execute(&descriptor))
                 .map_err(CommandIngressErrorV1::Journal)?;
-        let receipt = CommandReceiptV1::for_command_v1(&descriptor, execution.outcome())
+        let receipt = CommandReceiptV1::for_command_v1(&descriptor, execution.outcome(), effect_epoch)
             .map_err(CommandIngressErrorV1::Receipt)?;
         Ok(CommandIngressV1::Handled {
             receipt,
@@ -158,7 +159,7 @@ mod command_ingress_v1 {
         let mut receipts = Vec::new();
         for _ in 0..3 {
             let handled = server
-                .admit_frame_v1(Some(sent.descriptor.command_id), sent.sequence, &payload, digest, |_| {
+                .admit_frame_v1(Some(sent.descriptor.command_id), sent.sequence, 1, &payload, digest, |_| {
                     runs.set(runs.get() + 1);
                     CommandOutcomeV1::Applied { result_digest: [5; 32] }
                 })
@@ -198,25 +199,25 @@ mod command_ingress_v1 {
         let id = common_net::msg::command::DerivedCommandIdSourceV1::id_for_ordinal_v1(&binding(), 1).unwrap();
         assert_eq!(
             server
-                .admit_frame_v1(Some(id), 1, &ClientGeneral::RequestCharacterList, [1; 32], work)
+                .admit_frame_v1(Some(id), 1, 1, &ClientGeneral::RequestCharacterList, [1; 32], work)
                 .unwrap_err(),
             CommandIngressErrorV1::Carriage(CommandCarriageErrorV1::UnexpectedCommandId)
         );
         assert_eq!(
-            server.admit_frame_v1(None, 1, &ClientGeneral::Terminate, [1; 32], work).unwrap_err(),
+            server.admit_frame_v1(None, 1, 1, &ClientGeneral::Terminate, [1; 32], work).unwrap_err(),
             CommandIngressErrorV1::Carriage(CommandCarriageErrorV1::MissingCommandId)
         );
         assert_eq!(runs.get(), 0);
 
         // ...and a plain query passes straight through
         assert_eq!(
-            server.admit_frame_v1(None, 1, &ClientGeneral::RequestCharacterList, [1; 32], work).unwrap(),
+            server.admit_frame_v1(None, 1, 1, &ClientGeneral::RequestCharacterList, [1; 32], work).unwrap(),
             CommandIngressV1::NotACommand
         );
         assert_eq!(runs.get(), 0);
         // the journal slot is still free for a real command
         assert!(matches!(
-            server.admit_frame_v1(Some(id), 1, &ClientGeneral::Terminate, [1; 32], work).unwrap(),
+            server.admit_frame_v1(Some(id), 1, 1, &ClientGeneral::Terminate, [1; 32], work).unwrap(),
             CommandIngressV1::Handled { executed: true, .. }
         ));
         assert_eq!(runs.get(), 1);
