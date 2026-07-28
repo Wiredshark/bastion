@@ -1,5 +1,8 @@
+pub mod action_policy;
 pub mod predicate;
 
+use action_policy::{ActionCandidateV1, ActionClassV1, compare as compare_action_candidates};
+use core::cmp::Ordering;
 use predicate::Predicate;
 use rand::RngExt;
 
@@ -82,13 +85,26 @@ pub struct NpcCtx<'a, 'd> {
     pub dialogue_rng: ChaChaRng,
     pub system_data: &'a NpcSystemData<'d>,
 
-    /// Used to determine the current action priority. Lower priority actions
-    /// may be overridden by higher priority actions in a different part of
+    /// Used to determine the current action's class. Lower-class actions
+    /// may be overridden by higher-class actions in a different part of
     /// the behaviour tree.
-    pub current_action_priority: u32,
+    ///
+    /// `T3.27` (E3-W): was a bare `u32` priority; now the shared
+    /// `action_policy::ActionClassV1`. Storage-only migration -- every
+    /// live `.urgent()`/`.important()`/`.casual()` call site still maps
+    /// 1:1 onto a fixed class with `score: 0.0`, so `Consider::action`'s
+    /// observable replace decision is unchanged (see its own doc comment
+    /// for the equivalence argument). Per-candidate scoring within a
+    /// class -- fixing the "sticky first-wins declaration order" bug this
+    /// row's module doc names -- is E3-W2's job, not this one's.
+    pub current_action_class: ActionClassV1,
 }
 
-fn discrete_chance(dt: f64, chance_per_second: f64) -> f64 {
+/// E7 Stage 2 (T0.79): made `pub(crate)` so `data::sentiment`'s decay law
+/// (a per-second hazard converted from an inverted dt-in-denominator bug)
+/// can reuse the SAME canonical per-second-hazard formula `NpcCtx::chance`
+/// already uses, rather than hand-rolling a second one.
+pub(crate) fn discrete_chance(dt: f64, chance_per_second: f64) -> f64 {
     if dt <= 1.0 {
         (dt * chance_per_second).clamp(0.0, 1.0)
     } else {
@@ -414,15 +430,15 @@ pub trait Action<S = (), R = ()>: Any + Send + Sync {
         Either::Right(self)
     }
 
-    /// Specify that the given action has at least the provided priority over
-    /// others, preventing actions with a lower priority from overriding it
+    /// Specify that the given action has at least the provided class over
+    /// others, preventing actions with a lower class from overriding it
     /// in certain cases.
     #[must_use]
-    fn with_priority(self, priority: u32) -> WithPriority<Self>
+    fn with_priority(self, class: ActionClassV1) -> WithPriority<Self>
     where
         Self: Sized,
     {
-        WithPriority(self, priority)
+        WithPriority(self, class)
     }
 
     /// Specify that the given action has important priority. See
@@ -432,7 +448,7 @@ pub trait Action<S = (), R = ()>: Any + Send + Sync {
     where
         Self: Sized,
     {
-        self.with_priority(PRIORITY_IMPORTANT)
+        self.with_priority(ActionClassV1::AssignedJob)
     }
 }
 
@@ -666,45 +682,101 @@ pub fn finish() -> Finish { Finish }
 
 // Tree
 
-const PRIORITY_URGENT: u32 = 100;
-const PRIORITY_IMPORTANT: u32 = 50;
-const PRIORITY_CASUAL: u32 = 0;
+/// `(action, base_class, base_score, override_class)`. `base_score` is
+/// the real score (0.0 for the bare `.urgent()`/`.important()`/
+/// `.casual()` convenience calls) the action was selected with, kept
+/// around so a genuinely persisting incumbent can be compared fairly
+/// against fresh challengers on a LATER tick (see [`Consider::best`]).
+type TreeCurrent<S, R> = Option<(Box<dyn Action<S, R>>, ActionClassV1, f32, ActionClassV1)>;
 
 /// See [`choose`] and [`watch`].
 pub struct Tree<S, F, R> {
     next: F,
-    current: Option<(Box<dyn Action<S, R>>, u32, u32)>,
+    current: TreeCurrent<S, R>,
 }
 
 pub struct Consider<'a, S, R> {
-    current: &'a mut Option<(Box<dyn Action<S, R>>, u32, u32)>,
+    current: &'a mut TreeCurrent<S, R>,
     to_cancel: &'a mut Vec<Box<dyn Action<S, R>>>,
+    /// `T3.27` (E3-W2): the candidate the NEXT proposal must beat.
+    /// Starts (set once by [`Tree::tick`]) as a snapshot of the genuine
+    /// PRE-TICK incumbent -- the only candidate that gets
+    /// `is_current: true`'s hysteresis bonus, since it's the only one
+    /// that was actually already running. After any replacement this
+    /// becomes the fresh winner's own (class, score) with
+    /// `is_current: false` -- so sibling candidates proposed later in
+    /// the SAME tick's closure compare fairly against each other,
+    /// and declaration order (e.g. villager()'s dark-check before its
+    /// rain-check) confers no unearned advantage. Only an action that
+    /// was genuinely running before this tick resists a same-or-lower
+    /// score challenger.
+    best: Option<ActionCandidateV1<()>>,
 }
 
 impl<'a, S: State, R: 'static> Consider<'a, S, R> {
-    pub fn action(&mut self, priority: u32, action: impl Action<S, R>) {
-        // Replace the current action, unless the current action has a >= priority
-        if !matches!(&mut self.current, Some((_, base_priority, override_priority)) if (*base_priority).max(*override_priority) >= priority)
-            && let Some((old, _, _)) = self.current.replace((Box::new(action), priority, 0))
-        {
-            self.to_cancel.push(old);
+    /// `T3.27` (E3-W2): general entry point carrying a real per-candidate
+    /// score, for call sites that have one (e.g. villager()'s weather-
+    /// shelter branches). `.action()`/`.urgent()`/`.important()`/
+    /// `.casual()` are the `score: 0.0` convenience wrappers every other
+    /// call site still uses unchanged. `tiebreak: ()` is never actually
+    /// reached (class+score alone always resolves a 2-candidate
+    /// comparison here), but is required by `ActionCandidateV1`'s bound.
+    ///
+    /// Uses `compare` directly rather than `arbitrate`, and requires
+    /// STRICT improvement (`Ordering::Greater`, not just "wins the
+    /// max_by tie"): `arbitrate`'s `max_by` returns the LAST element on
+    /// an exact tie, which would flip every zero-score same-tick sibling
+    /// tie (all 21 other call sites, still all `score: 0.0`) from
+    /// first-registered-wins to last-registered-wins -- a real
+    /// regression caught by `same_class_tie_keeps_the_first_registered_
+    /// candidate` failing during this row's own development. Strict-
+    /// greater preserves "first (or the genuine incumbent) wins ties"
+    /// for everyone, while still letting a real, strictly-higher score
+    /// (e.g. villager()'s rain intensity vs the night-shelter baseline)
+    /// win regardless of registration order.
+    pub fn action_scored(&mut self, class: ActionClassV1, score: f32, action: impl Action<S, R>) {
+        let challenger = ActionCandidateV1 {
+            class,
+            score,
+            tiebreak: (),
+            is_current: false,
+        };
+        let should_replace = match &self.best {
+            Some(best) => compare_action_candidates(&challenger, best) == Ordering::Greater,
+            None => true,
+        };
+        if should_replace {
+            if let Some((old, ..)) =
+                self.current.replace((Box::new(action), class, score, ActionClassV1::Social))
+            {
+                self.to_cancel.push(old);
+            }
+            self.best = Some(challenger);
         }
     }
 
-    pub fn urgent(&mut self, action: impl Action<S, R>) { self.action(PRIORITY_URGENT, action); }
-
-    pub fn important(&mut self, action: impl Action<S, R>) {
-        self.action(PRIORITY_IMPORTANT, action);
+    pub fn action(&mut self, class: ActionClassV1, action: impl Action<S, R>) {
+        self.action_scored(class, 0.0, action);
     }
 
-    pub fn casual(&mut self, action: impl Action<S, R>) { self.action(PRIORITY_CASUAL, action); }
+    pub fn urgent(&mut self, action: impl Action<S, R>) {
+        self.action(ActionClassV1::Survival, action);
+    }
+
+    pub fn important(&mut self, action: impl Action<S, R>) {
+        self.action(ActionClassV1::AssignedJob, action);
+    }
+
+    pub fn casual(&mut self, action: impl Action<S, R>) {
+        self.action(ActionClassV1::Social, action);
+    }
 }
 
 impl<S: State, F: Fn(&mut NpcCtx, &mut S, &mut Consider<S, R>) + Send + Sync + 'static, R: 'static>
     Action<S, R> for Tree<S, F, R>
 {
     fn backtrace(&self, bt: &mut Vec<String>) {
-        if let Some((current, _, _)) = &self.current {
+        if let Some((current, ..)) = &self.current {
             current.backtrace(bt);
         } else {
             bt.push("<thinking>".to_string());
@@ -714,31 +786,40 @@ impl<S: State, F: Fn(&mut NpcCtx, &mut S, &mut Consider<S, R>) + Send + Sync + '
     fn reset(&mut self) { self.current = None; }
 
     fn on_cancel(&mut self, ctx: &mut NpcCtx, state: &mut S) {
-        if let Some((current, _, _)) = &mut self.current {
+        if let Some((current, ..)) = &mut self.current {
             current.on_cancel(ctx, state);
         }
     }
 
     fn tick(&mut self, ctx: &mut NpcCtx, state: &mut S) -> ControlFlow<R> {
         let mut to_cancel = Vec::new();
+        let best = self.current.as_ref().map(|(_, base_class, base_score, override_class)| {
+            ActionCandidateV1 {
+                class: (*base_class).max(*override_class),
+                score: *base_score,
+                tiebreak: (),
+                is_current: true,
+            }
+        });
         (self.next)(ctx, state, &mut Consider {
             current: &mut self.current,
             to_cancel: &mut to_cancel,
+            best,
         });
         for mut to_cancel in to_cancel {
             to_cancel.on_cancel(ctx, state);
         }
 
-        let Some((current, _, override_priority)) = self.current.as_mut() else {
+        let Some((current, _, _, override_class)) = self.current.as_mut() else {
             // If no action is available to perform, do nothing
             return ControlFlow::Continue(());
         };
 
-        let old_priority = ctx.current_action_priority;
-        ctx.current_action_priority = 0;
+        let old_class = ctx.current_action_class;
+        ctx.current_action_class = ActionClassV1::Social;
         let ret = match current.tick(ctx, state) {
             ControlFlow::Continue(()) => {
-                *override_priority = ctx.current_action_priority;
+                *override_class = ctx.current_action_class;
                 ControlFlow::Continue(())
             },
             ControlFlow::Break(r) => {
@@ -746,8 +827,187 @@ impl<S: State, F: Fn(&mut NpcCtx, &mut S, &mut Consider<S, R>) + Send + Sync + '
                 ControlFlow::Break(r)
             },
         };
-        ctx.current_action_priority = old_priority;
+        ctx.current_action_class = old_class;
         ret
+    }
+}
+
+// T3.27 (E3-W): live-path exit tests -- these call the REAL
+// `Consider::action`/`.urgent()`/`.important()`/`.casual()` methods that
+// every `villager()`/`humanoid()` call site uses, not a standalone copy
+// of the comparator. Only the SELECTION half is exercised (constructing
+// a `Consider` needs no `NpcCtx`); actually ticking the winning action
+// needs a live `NpcCtx`, which is out of reach for a unit test, but
+// selection is what this row changed.
+#[cfg(test)]
+mod consider_tests {
+    use super::*;
+
+    /// Identifies which candidate won a `Consider` selection via
+    /// `backtrace` -- `tick`/`on_cancel` are never invoked by these
+    /// tests.
+    struct Marker(&'static str);
+
+    impl Action<(), ()> for Marker {
+        fn backtrace(&self, bt: &mut Vec<String>) { bt.push(self.0.to_string()); }
+
+        fn reset(&mut self) {}
+
+        fn on_cancel(&mut self, _ctx: &mut NpcCtx, _state: &mut ()) {}
+
+        fn tick(&mut self, _ctx: &mut NpcCtx, _state: &mut ()) -> ControlFlow<()> {
+            ControlFlow::Break(())
+        }
+    }
+
+    type Current = TreeCurrent<(), ()>;
+
+    /// Builds a `Consider` the same way [`Tree::tick`] does -- snapshots
+    /// `best` from whatever's already in `current` -- so these tests
+    /// exercise the REAL production snapshotting logic, not a
+    /// hand-diverged copy of it.
+    fn make_consider<'a>(
+        current: &'a mut Current,
+        to_cancel: &'a mut Vec<Box<dyn Action<(), ()>>>,
+    ) -> Consider<'a, (), ()> {
+        let best = current.as_ref().map(|(_, base_class, base_score, override_class)| {
+            ActionCandidateV1 {
+                class: (*base_class).max(*override_class),
+                score: *base_score,
+                tiebreak: (),
+                is_current: true,
+            }
+        });
+        Consider {
+            current,
+            to_cancel,
+            best,
+        }
+    }
+
+    fn winner_name(current: &Current) -> String {
+        let mut bt = Vec::new();
+        current.as_ref().expect("a candidate was selected").0.backtrace(&mut bt);
+        bt.into_iter().next().expect("Marker always pushes exactly one entry")
+    }
+
+    /// A higher-class candidate always preempts a lower one, regardless
+    /// of call order within the same tick.
+    #[test]
+    fn important_preempts_casual_registered_first() {
+        let mut current: Current = None;
+        let mut to_cancel = Vec::new();
+        let mut consider = make_consider(&mut current, &mut to_cancel);
+        consider.casual(Marker("casual"));
+        consider.important(Marker("important"));
+        assert_eq!(winner_name(&current), "important");
+    }
+
+    #[test]
+    fn important_registered_first_is_not_displaced_by_a_later_casual() {
+        let mut current: Current = None;
+        let mut to_cancel = Vec::new();
+        let mut consider = make_consider(&mut current, &mut to_cancel);
+        consider.important(Marker("important"));
+        consider.casual(Marker("casual"));
+        assert_eq!(winner_name(&current), "important");
+    }
+
+    /// Same-class tie: the FIRST-registered candidate wins (sticky),
+    /// matching the old `>=`-blocks-equal-priority rule exactly -- proves
+    /// the fixed `HYSTERESIS_BONUS` reproduces old behavior rather than
+    /// changing it for `score: 0.0` candidates (E3-W2's scored branches
+    /// are what actually get real, fair sibling competition -- see
+    /// `villager_shelter_scoring_tests`).
+    #[test]
+    fn same_class_tie_keeps_the_first_registered_candidate() {
+        let mut current: Current = None;
+        let mut to_cancel = Vec::new();
+        let mut consider = make_consider(&mut current, &mut to_cancel);
+        consider.important(Marker("first"));
+        consider.important(Marker("second"));
+        assert_eq!(winner_name(&current), "first");
+    }
+
+    /// A running action that self-elevated via `with_priority` (i.e.
+    /// `override_class` from a prior tick) resists a fresh same-class
+    /// challenger -- exercises the `override_class` half of the
+    /// migration, not just `base_class`.
+    #[test]
+    fn self_elevated_running_action_resists_a_fresh_important_challenger() {
+        let mut current: Current = Some((
+            Box::new(Marker("casual-but-elevated")),
+            ActionClassV1::Social,
+            0.0,
+            ActionClassV1::AssignedJob,
+        ));
+        let mut to_cancel = Vec::new();
+        let mut consider = make_consider(&mut current, &mut to_cancel);
+        consider.important(Marker("fresh important"));
+        assert_eq!(winner_name(&current), "casual-but-elevated");
+    }
+
+    /// ...but a genuinely higher class still preempts the self-elevated
+    /// incumbent -- hysteresis never crosses class boundaries.
+    #[test]
+    fn self_elevated_running_action_still_loses_to_urgent() {
+        let mut current: Current = Some((
+            Box::new(Marker("casual-but-elevated")),
+            ActionClassV1::Social,
+            0.0,
+            ActionClassV1::AssignedJob,
+        ));
+        let mut to_cancel = Vec::new();
+        let mut consider = make_consider(&mut current, &mut to_cancel);
+        consider.urgent(Marker("urgent"));
+        assert_eq!(winner_name(&current), "urgent");
+    }
+
+    /// T3.27 (E3-W2): the fix this whole redesign exists for -- within
+    /// ONE tick, a same-class sibling registered SECOND with a higher
+    /// score still wins over one registered FIRST, because neither gets
+    /// the incumbency bonus (both are fresh this tick). Declaration
+    /// order alone no longer decides.
+    #[test]
+    fn same_tick_sibling_with_higher_score_wins_regardless_of_registration_order() {
+        let mut current: Current = None;
+        let mut to_cancel = Vec::new();
+        let mut consider = make_consider(&mut current, &mut to_cancel);
+        consider.action_scored(ActionClassV1::AssignedJob, 0.5, Marker("registered-first-lower-score"));
+        consider.action_scored(ActionClassV1::AssignedJob, 0.8, Marker("registered-second-higher-score"));
+        assert_eq!(winner_name(&current), "registered-second-higher-score");
+    }
+
+    fn running_incumbent(score: f32) -> Current {
+        Some((
+            Box::new(Marker("already-running")),
+            ActionClassV1::AssignedJob,
+            score,
+            ActionClassV1::Social,
+        ))
+    }
+
+    /// A genuinely-already-running action (from a PRIOR tick, via
+    /// `make_consider`'s snapshot) keeps its hysteresis protection
+    /// against a same-class challenger that doesn't clear the bonus
+    /// margin (0.5 + 0.15).
+    #[test]
+    fn genuinely_running_incumbent_keeps_hysteresis_against_a_weak_challenger() {
+        let mut current = running_incumbent(0.5);
+        let mut to_cancel = Vec::new();
+        let mut consider = make_consider(&mut current, &mut to_cancel);
+        consider.action_scored(ActionClassV1::AssignedJob, 0.55, Marker("weak challenger"));
+        assert_eq!(winner_name(&current), "already-running");
+    }
+
+    /// ...but a challenger that clears the margin still preempts it.
+    #[test]
+    fn genuinely_running_incumbent_loses_to_a_challenger_that_clears_hysteresis() {
+        let mut current = running_incumbent(0.5);
+        let mut to_cancel = Vec::new();
+        let mut consider = make_consider(&mut current, &mut to_cancel);
+        consider.action_scored(ActionClassV1::AssignedJob, 0.9, Marker("strong challenger"));
+        assert_eq!(winner_name(&current), "strong challenger");
     }
 }
 
@@ -788,7 +1048,7 @@ where
 
 /// See [`Action::with_priority`].
 #[derive(Copy, Clone)]
-pub struct WithPriority<A>(A, u32);
+pub struct WithPriority<A>(A, ActionClassV1);
 
 impl<S: State, R: Send + Sync + 'static, A: Action<S, R>> Action<S, R> for WithPriority<A> {
     fn backtrace(&self, bt: &mut Vec<String>) { self.0.backtrace(bt); }
@@ -798,7 +1058,7 @@ impl<S: State, R: Send + Sync + 'static, A: Action<S, R>> Action<S, R> for WithP
     fn on_cancel(&mut self, ctx: &mut NpcCtx, state: &mut S) { self.0.on_cancel(ctx, state); }
 
     fn tick(&mut self, ctx: &mut NpcCtx, state: &mut S) -> ControlFlow<R> {
-        ctx.current_action_priority = ctx.current_action_priority.max(self.1);
+        ctx.current_action_class = ctx.current_action_class.max(self.1);
         self.0.tick(ctx, state)
     }
 }

@@ -36,7 +36,9 @@ use common::{
     rtsim::NpcActivity,
     states::basic_beam,
     terrain::Block,
+    threat_policy::{ThreatCandidateV1, ThreatClassV1, arbitrate},
     time::DayPeriod,
+    uid::Uid,
     util::Dir,
     vol::ReadVol,
 };
@@ -62,7 +64,10 @@ fn effect_healing_value(effect: &Effect) -> (f32, f32) {
         Effect::Health(HealthChange { amount, .. }) => value += *amount,
         Effect::Buff(BuffEffect { kind, data, .. }) => {
             if let Some(duration) = data.duration {
-                for effect in kind.effects(data, None) {
+                // Evaluation only (aggregating projected healing value, not
+                // applying a buff), so the instance id this derives is
+                // discarded -- any Time value is fine.
+                for effect in kind.effects(data, None, common::resources::Time::default()) {
                     match effect {
                         comp::BuffEffect::HealthChangeOverTime { rate, kind, .. } => {
                             value += match kind {
@@ -177,13 +182,28 @@ pub fn loot_attempt_decision(
 /// reproduced while cadence changes no longer distort AI behavior rates.
 /// Per-DECISION draws (one-shot choices like `can_sense_directly_near`'s
 /// jitter or the jump-vs-roll pick) are deliberately NOT hazards and keep
-/// raw draws; `unstuck_if`'s helper-stream gate remains per-tick debt until
-/// dt is plumbed to it.
-fn hazard(rng: &mut impl Rng, dt: f32, rate_per_second: f64) -> bool {
+/// raw draws. `unstuck_if`'s OUTER gate ("attempt an unstuck action this
+/// tick") WAS this per-tick debt (E7 Stage 3, T0.79: fixed, routed through
+/// `hazard_chance` below via `UNSTUCK_ATTEMPT_RATE`); its INNER jump-vs-
+/// roll pick is a one-shot decision GIVEN the outer gate already fired,
+/// not a recurring hazard, and correctly stays a flat draw -- scaling a
+/// discrete either/or choice by dt would be wrong, not merely unconverted.
+/// E7 Stage 3 (T0.79): the chance computation, pulled out of `hazard` so
+/// `unstuck_if` (whose gate historically drew `self.helper_random_bool`
+/// via the Option-gated deterministic/live rng resolution, not a raw
+/// `rng: &mut impl Rng` param) can reuse the SAME formula without also
+/// having to restructure its rng source.
+fn hazard_chance(dt: f32, rate_per_second: f64) -> f64 {
     let survival = (1.0 - rate_per_second.clamp(0.0, 1.0)).max(0.0);
-    rng.random_bool((1.0 - survival.powf(f64::from(dt))).clamp(0.0, 1.0))
+    (1.0 - survival.powf(f64::from(dt))).clamp(0.0, 1.0)
 }
 
+fn hazard(rng: &mut impl Rng, dt: f32, rate_per_second: f64) -> bool {
+    rng.random_bool(hazard_chance(dt, rate_per_second))
+}
+
+/// 0.05 per tick @30tps: attempt an unstuck action (jump/roll) this tick.
+const UNSTUCK_ATTEMPT_RATE: f64 = 0.785_361_236_057_062_8;
 /// 0.1 per tick @30tps: put away a wielded weapon while idling.
 const UNWIELD_IDLE_RATE: f64 = 0.957_608_841_724_783_8;
 /// 0.1 per tick @30tps: re-pick a hunting target.
@@ -198,6 +218,77 @@ const PET_MOUNT_RATE: f64 = 0.260_299_626_611_719_8;
 const IDLE_UTTERANCE_RATE: f64 = 0.044_034_814_837_612_07;
 /// 0.0035 per tick @30tps: idle sit-down.
 const IDLE_SIT_RATE: f64 = 0.099_841_283_805_460_65;
+
+/// E7 Stage 3 (T0.79): `unstuck_if`'s outer gate, converted per Fable's
+/// ruling -- same exact-inversion-preserves-today's-behavior discipline
+/// as the sentiment decay fix (T0.79 Stage 2). `unstuck_if` runs every
+/// tick directly (no analogous NPC_SENTIMENT_TICK_SKIP), so the
+/// calibration reference is dt = 1 TICK (1/30s @ SIM_TPS), not 1 second --
+/// `hazard_chance` at that dt must reproduce the original raw 0.05
+/// per-tick probability exactly.
+#[cfg(test)]
+mod unstuck_if_hazard_conversion_tests {
+    use super::{UNSTUCK_ATTEMPT_RATE, hazard_chance};
+
+    const SIM_TPS: f32 = 30.0;
+
+    /// T0.32-style exact-to-1-ulp equivalence pin: at dt = one tick (the
+    /// only cadence unstuck_if has ever actually run at), the converted
+    /// hazard must reproduce the original raw per-tick constant (0.05)
+    /// exactly -- proof, not assertion, that the conversion changes zero
+    /// observable behavior today.
+    #[test]
+    fn hazard_chance_matches_pre_fix_probability_at_one_tick() {
+        let dt = 1.0 / SIM_TPS;
+        let chance = hazard_chance(dt, UNSTUCK_ATTEMPT_RATE);
+        // Tolerance is f32-dt/f64-powf precision scale (UNWIELD_IDLE_RATE
+        // and friends use the identical inversion at the identical 30tps
+        // reference and are only pinned to their literal's own precision
+        // too), not a loose approximation.
+        assert!(
+            (chance - 0.05).abs() <= 1e-7,
+            "hazard_chance at dt=1 tick must reproduce the original raw 0.05 per-tick \
+             probability: got {chance}"
+        );
+    }
+
+    /// The property the raw per-tick constant never had: checking twice
+    /// as often (half the dt) should NOT roughly double the per-tick
+    /// probability -- a correct hazard's checks-per-second * chance-per-
+    /// check stays close to constant across a cadence sweep near 1 tick.
+    /// Swept narrowly (half-tick to double-tick, not the wider sweep
+    /// sentiment.rs used): UNSTUCK_ATTEMPT_RATE (0.785/s) is a much larger
+    /// rate than sentiment's, so discrete_chance's compounding curve is
+    /// measurably non-linear even a few ticks out -- that is the actual
+    /// math of a large-rate hazard, not a bug, and out of scope for this
+    /// pin the same way sentiment's saturation regime was.
+    #[test]
+    fn hazard_chance_is_cadence_invariant_near_one_tick() {
+        let decays_per_second = |dt: f64| -> f64 {
+            (1.0 / dt) * hazard_chance(dt as f32, UNSTUCK_ATTEMPT_RATE)
+        };
+        let baseline = decays_per_second(1.0 / SIM_TPS as f64);
+        for dt in [1.0 / 32.0, 1.0 / 30.0, 1.0 / 28.0] {
+            let observed = decays_per_second(dt);
+            let ratio = observed / baseline;
+            assert!(
+                (ratio - 1.0).abs() < 0.01,
+                "expected decays-per-real-second to stay near the 1-tick baseline \
+                 ({baseline}) across a narrow cadence sweep, but dt={dt} gave {observed} \
+                 (ratio \
+                 {ratio})"
+            );
+        }
+    }
+
+    /// Sanity: the gate is a genuine per-tick probability, not saturated
+    /// to 0 or 1 at the cadence it actually runs at.
+    #[test]
+    fn hazard_chance_is_a_genuine_probability_at_one_tick() {
+        let chance = hazard_chance(1.0 / SIM_TPS, UNSTUCK_ATTEMPT_RATE);
+        assert!(chance > 0.0 && chance < 1.0, "chance={chance} is not a genuine probability");
+    }
+}
 
 impl AgentData<'_> {
     ////////////////////////////////////////
@@ -368,7 +459,7 @@ impl AgentData<'_> {
             );
         }
         if let Some((bearing, speed, stuck)) = chase_result {
-            self.unstuck_if(stuck, controller);
+            self.unstuck_if(stuck, read_data.dt.0, controller);
             self.traverse(controller, bearing, speed * speed_multiplier);
             if writer_diag {
                 tracing::info!(
@@ -416,8 +507,15 @@ impl AgentData<'_> {
         controller.inputs.move_z = bearing.z;
     }
 
-    pub fn unstuck_if(&self, condition: bool, controller: &mut Controller) {
-        if condition && self.helper_random_bool(0.05) {
+    /// `dt` (E7 Stage 3, T0.79): the OUTER gate ("attempt an unstuck
+    /// action this tick") is a per-time hazard, routed through the same
+    /// `hazard_chance` the other T0.7 gates use -- was a raw per-tick
+    /// 0.05 that silently sped up or slowed down with tick-rate changes.
+    /// The INNER jump-vs-roll pick stays a flat one-shot draw (see the
+    /// module doc comment): it fires once GIVEN the outer gate already
+    /// fired, not on every tick, so it isn't a hazard to begin with.
+    pub fn unstuck_if(&self, condition: bool, dt: f32, controller: &mut Controller) {
+        if condition && self.helper_random_bool(hazard_chance(dt, UNSTUCK_ATTEMPT_RATE)) {
             if matches!(self.char_state, CharacterState::Climb(_)) || self.helper_random_bool(0.5) {
                 controller.push_basic_input(InputKind::Jump);
             } else {
@@ -1091,7 +1189,7 @@ impl AgentData<'_> {
             },
             &read_data.time,
         ) {
-            self.unstuck_if(stuck, controller);
+            self.unstuck_if(stuck, read_data.dt.0, controller);
             let dist_sqrd = self.pos.0.distance_squared(tgt_pos.0);
             self.traverse(
                 controller,
@@ -1160,7 +1258,7 @@ impl AgentData<'_> {
             },
             &read_data.time,
         ) {
-            self.unstuck_if(stuck, controller);
+            self.unstuck_if(stuck, read_data.dt.0, controller);
             self.traverse(controller, bearing, speed.min(MAX_FLEE_SPEED));
         }
     }
@@ -1180,7 +1278,13 @@ impl AgentData<'_> {
             buffs.iter_active().flatten().any(|buff| {
                 // We don't care about seeing the optional combat requirements that can be
                 // tacked onto buff effects, so we'll just pass in None to this
-                buff.kind.effects(&buff.data, None).iter().any(|effect| {
+                // Inspection only (checking effect shape, not applying a
+                // buff), so the instance id this derives is discarded --
+                // any Time value is fine.
+                buff.kind
+                    .effects(&buff.data, None, common::resources::Time::default())
+                    .iter()
+                    .any(|effect| {
                     if let comp::BuffEffect::HealthChangeOverTime { rate, .. } = effect
                         && *rate > 0.0
                     {
@@ -1241,16 +1345,22 @@ impl AgentData<'_> {
         entities_nearby.sort_unstable_by_key(|e| read_data.uids.get(*e).map(|u| u.0));
 
         let get_pos = |entity| read_data.positions.get(entity);
+        // T3.35+T3.39 (E3-WT): the bool is now `Option<ThreatClassV1>` --
+        // `None` for a non-combat interaction target (item pickup /
+        // downed-ally-save, unchanged), `Some(class)` for a combat
+        // candidate, class-tagged so the threat_policy wiring below can
+        // rank AttackingAlly (defending) above HostileNearby (merely
+        // hostile), which the old bare bool couldn't distinguish.
         let get_enemy = |(entity, attack_target): (EcsEntity, bool)| {
             if attack_target {
                 if is_enemy(self, entity, read_data) {
-                    Some((entity, true))
+                    Some((entity, Some(ThreatClassV1::HostileNearby)))
                 } else if self.should_defend(entity, read_data) {
                     if let Some(attacker) = get_attacker(entity, read_data) {
                         if !self.passive_towards(attacker, read_data) {
                             // aggro_on: attack immediately, do not warn/menace.
                             aggro_on = true;
-                            Some((attacker, true))
+                            Some((attacker, Some(ThreatClassV1::AttackingAlly)))
                         } else {
                             None
                         }
@@ -1261,7 +1371,7 @@ impl AgentData<'_> {
                     None
                 }
             } else {
-                Some((entity, false))
+                Some((entity, None))
             }
         };
         let is_valid_target = |entity: EcsEntity| match read_data.bodies.get(entity) {
@@ -1375,21 +1485,32 @@ impl AgentData<'_> {
             self.detects_other(agent, controller, entity, e_pos, e_scale, read_data)
         };
 
-        let target = entities_nearby
+        // Candidates without a Uid (no networked identity) can't carry a
+        // stable threat_policy tiebreak and are dropped here -- in practice
+        // every attackable/interactable entity is networked, so this is not
+        // expected to change real selections.
+        let candidates = entities_nearby
             .iter()
             .filter_map(|e| is_valid_target(*e))
             .filter_map(get_enemy)
-            .filter_map(|(entity, attack_target)| {
-                get_pos(entity).map(|pos| (entity, pos, attack_target))
+            .filter_map(|(entity, class)| {
+                let pos = get_pos(entity)?;
+                let uid = read_data.uids.get(entity)?;
+                Some((entity, *uid, pos, class))
             })
-            .filter(|(entity, e_pos, _)| is_detected(entity, e_pos, read_data.scales.get(*entity)))
-            .min_by_key(|(_, e_pos, attack_target)| {
-                (
-                    *attack_target,
-                    (e_pos.0.distance_squared(self.pos.0) * 100.0) as i32,
-                )
-            })
-            .map(|(entity, _, attack_target)| (entity, attack_target));
+            .filter(|(entity, _, e_pos, _)| is_detected(entity, e_pos, read_data.scales.get(*entity)))
+            .collect_vec();
+
+        let target = pick_target_candidate(
+            self.pos.0,
+            candidates.iter().map(|&(_, uid, e_pos, class)| (uid, e_pos.0, class)),
+        )
+        .and_then(|(uid, hostile)| {
+            candidates
+                .iter()
+                .find(|&&(_, cand_uid, _, _)| cand_uid == uid)
+                .map(|&(entity, ..)| (entity, hostile))
+        });
 
         if agent.target.is_none() && target.is_some() {
             if aggro_on {
@@ -2445,36 +2566,53 @@ impl AgentData<'_> {
         self.damage.min(1.0) < agent.psyche.flee_health
     }
 
+    /// `T3.35+T3.39` (E3-WT, Fable-ruled 2026-07-27): delegates to the
+    /// shared [`common::threat_policy`] instead of its own ad-hoc fuzzy-
+    /// distance comparison (which had gone dead: it compared
+    /// `target_pos.distance(entity_pos)` against itself scaled by 0.8,
+    /// never `entity`'s own distance, so the "closer entity" branch could
+    /// never fire once `target.aggro_on` was set — disclosed old-vs-new
+    /// delta, not silently carried forward). `entity` (the newly-detected
+    /// attacker) is unconditionally `AttackingMe` — this comparator is
+    /// only ever called from `target_if_attacked`, where `entity` just
+    /// dealt us real damage, which is definitionally the `AttackingMe`
+    /// signal itself (no separate alignment-hostility gate needed here,
+    /// unlike the old code's redundant check). `target` gets `AttackingMe`
+    /// too when `aggro_on` (already engaged, so score/proximity decides)
+    /// or `HostileNearby` otherwise (so `entity` always wins by class,
+    /// matching the old `!target.aggro_on` unconditional-switch branch).
+    /// `capability_vs_me`/`recency` are 0.0 for both sides: no such signal
+    /// existed in the old comparator either, so this is parity, not a
+    /// regression.
     pub fn is_more_dangerous_than_target(
         &self,
         entity: EcsEntity,
         target: Target,
         read_data: &ReadData,
     ) -> bool {
-        let entity_pos = read_data.positions.get(entity);
-        let target_pos = read_data.positions.get(target.target);
+        let Some(entity_pos) = read_data.positions.get(entity) else {
+            return false;
+        };
+        let Some(target_pos) = read_data.positions.get(target.target) else {
+            return true;
+        };
+        let (Some(entity_uid), Some(target_uid)) = (
+            read_data.uids.get(entity),
+            read_data.uids.get(target.target),
+        ) else {
+            // No stable tiebreak identity available; fall back to the old
+            // unconditional-switch-unless-engaged rule.
+            return !target.aggro_on;
+        };
 
-        entity_pos.is_some_and(|entity_pos| {
-            target_pos.is_none_or(|target_pos| {
-                // Fuzzy factor that makes it harder for players to cheese enemies by making
-                // them quickly flip aggro between two players.
-                // It does this by only switching aggro if the entity is closer to the enemy by
-                // a specific proportional threshold.
-                const FUZZY_DIST_COMPARISON: f32 = 0.8;
-
-                let is_target_further = target_pos.0.distance(entity_pos.0)
-                    < target_pos.0.distance(entity_pos.0) * FUZZY_DIST_COMPARISON;
-                let is_entity_hostile = read_data
-                    .alignments
-                    .get(entity)
-                    .zip(self.alignment)
-                    .is_some_and(|(entity, me)| me.hostile_towards(*entity));
-
-                // Consider entity more dangerous than target if entity is closer or if target
-                // had not triggered aggro.
-                !target.aggro_on || (is_target_further && is_entity_hostile)
-            })
-        })
+        threat_switch_decision(
+            self.pos.0,
+            entity_pos.0,
+            *entity_uid,
+            target_pos.0,
+            *target_uid,
+            target.aggro_on,
+        )
     }
 
     pub fn is_enemy(&self, entity: EcsEntity, read_data: &ReadData) -> bool {
@@ -2749,6 +2887,224 @@ impl AgentData<'_> {
         {
             controller.push_event(ControlEvent::Unmount);
         }
+    }
+}
+
+/// `T3.35+T3.39` (E3-WT): pure core of
+/// [`AgentData::is_more_dangerous_than_target`], extracted so it's
+/// unit-testable without constructing an ECS `ReadData` (mirrors the
+/// `loot_attempt_decision` pattern below). `self_pos` is the deciding
+/// agent's own position; `entity`/`target` are the two candidates.
+fn threat_switch_decision(
+    self_pos: Vec3<f32>,
+    entity_pos: Vec3<f32>,
+    entity_uid: Uid,
+    target_pos: Vec3<f32>,
+    target_uid: Uid,
+    target_aggro_on: bool,
+) -> bool {
+    let entity_candidate = ThreatCandidateV1 {
+        class: ThreatClassV1::AttackingMe,
+        distance: entity_pos.distance(self_pos),
+        capability_vs_me: 0.0,
+        recency: 0.0,
+        tiebreak: entity_uid,
+    };
+    let target_candidate = ThreatCandidateV1 {
+        class: if target_aggro_on {
+            ThreatClassV1::AttackingMe
+        } else {
+            ThreatClassV1::HostileNearby
+        },
+        distance: target_pos.distance(self_pos),
+        capability_vs_me: 0.0,
+        recency: 0.0,
+        tiebreak: target_uid,
+    };
+
+    arbitrate(&[target_candidate, entity_candidate]) == Some(1)
+}
+
+/// `T3.35+T3.39` (E3-WT): pure core of
+/// [`AgentData::choose_target`]'s candidate selection, generic over
+/// whichever `Ord + Copy` identity the caller has on hand (real call site
+/// uses `Uid`; tests use plain integers) so it's unit-testable without an
+/// ECS `ReadData`. `class: None` is a non-combat interaction target (item
+/// pickup / a downed ally to save) — those keep first priority, tie-broken
+/// by plain distance, unchanged from the pre-E3-WT behavior (a help-vs-
+/// fight priority, not a threat ranking). Only when no non-combat
+/// candidate exists does the combat bucket (`class: Some(_)`) get ranked
+/// via `threat_policy::arbitrate`.
+fn pick_target_candidate<T: Ord + Copy>(
+    self_pos: Vec3<f32>,
+    candidates: impl IntoIterator<Item = (T, Vec3<f32>, Option<ThreatClassV1>)>,
+) -> Option<(T, bool)> {
+    let candidates = candidates.into_iter().collect_vec();
+
+    if let Some(&(id, ..)) = candidates
+        .iter()
+        .filter(|(_, _, class)| class.is_none())
+        .min_by_key(|(_, pos, _)| (pos.distance_squared(self_pos) * 100.0) as i32)
+    {
+        return Some((id, false));
+    }
+
+    let threat_candidates = candidates
+        .iter()
+        .filter_map(|&(id, pos, class)| {
+            class.map(|class| ThreatCandidateV1 {
+                class,
+                distance: pos.distance(self_pos),
+                capability_vs_me: 0.0,
+                recency: 0.0,
+                tiebreak: id,
+            })
+        })
+        .collect_vec();
+    arbitrate(&threat_candidates).map(|i| (threat_candidates[i].tiebreak, true))
+}
+
+// T3.35+T3.39 (E3-WT): non-vacuity for pick_target_candidate's bucketing +
+// threat_policy wiring.
+#[cfg(test)]
+mod pick_target_candidate_tests {
+    use super::{ThreatClassV1, pick_target_candidate};
+    use vek::Vec3;
+
+    fn pos(x: f32) -> Vec3<f32> { Vec3::new(x, 0.0, 0.0) }
+
+    #[test]
+    fn no_candidates_is_none() {
+        let candidates: Vec<(u32, Vec3<f32>, Option<ThreatClassV1>)> = Vec::new();
+        assert_eq!(pick_target_candidate(Vec3::zero(), candidates), None);
+    }
+
+    /// A non-combat candidate is preferred over ANY combat candidate,
+    /// however close the combat one is -- the tuple-ordering behavior of
+    /// the old bare-bool `min_by_key` (`false < true` dominates the
+    /// distance term), now expressed as an explicit two-phase pick.
+    #[test]
+    fn non_combat_wins_over_a_much_closer_combat_candidate() {
+        let far_pickup = (1u32, pos(20.0), None);
+        let close_enemy = (2u32, pos(1.0), Some(ThreatClassV1::HostileNearby));
+        assert_eq!(
+            pick_target_candidate(Vec3::zero(), [far_pickup, close_enemy]),
+            Some((1, false))
+        );
+    }
+
+    /// Among non-combat candidates, plain distance still decides (parity
+    /// with the pre-row behavior).
+    #[test]
+    fn non_combat_bucket_picks_the_closer_one() {
+        let far = (1u32, pos(20.0), None);
+        let near = (2u32, pos(1.0), None);
+        assert_eq!(pick_target_candidate(Vec3::zero(), [far, near]), Some((2, false)));
+    }
+
+    /// No non-combat candidate: `AttackingAlly` outranks `HostileNearby`
+    /// regardless of distance -- the class distinction the old bare bool
+    /// couldn't express (both were the same `true`).
+    #[test]
+    fn attacking_ally_outranks_a_much_closer_hostile_nearby() {
+        let close_hostile = (1u32, pos(1.0), Some(ThreatClassV1::HostileNearby));
+        let far_defends_ally = (2u32, pos(20.0), Some(ThreatClassV1::AttackingAlly));
+        assert_eq!(
+            pick_target_candidate(Vec3::zero(), [close_hostile, far_defends_ally]),
+            Some((2, true))
+        );
+    }
+
+    /// Within the same combat class, real proximity decides (previously
+    /// this call site had none at all -- pure distance-squared min, which
+    /// is preserved here as the in-class score).
+    #[test]
+    fn same_class_combat_candidates_rank_by_proximity() {
+        let far = (1u32, pos(20.0), Some(ThreatClassV1::HostileNearby));
+        let near = (2u32, pos(1.0), Some(ThreatClassV1::HostileNearby));
+        assert_eq!(pick_target_candidate(Vec3::zero(), [far, near]), Some((2, true)));
+    }
+}
+
+// T3.35+T3.39 (E3-WT): non-vacuity for the threat_policy wiring — proves
+// the class ordering actually drives the switch decision, not just that
+// it compiles.
+#[cfg(test)]
+mod threat_switch_decision_tests {
+    use super::threat_switch_decision;
+    use common::uid::Uid;
+    use std::num::NonZeroU64;
+    use vek::Vec3;
+
+    fn uid(n: u64) -> Uid { Uid(NonZeroU64::new(n).unwrap()) }
+
+    /// Not yet aggro'd: the attacker (always `AttackingMe`) must win by
+    /// class alone even when it is much farther away than the current
+    /// (merely `HostileNearby`) target — the old code's unconditional
+    /// `!target.aggro_on` branch, now expressed as class precedence.
+    #[test]
+    fn unengaged_target_always_loses_to_a_farther_attacker() {
+        let self_pos = Vec3::new(0.0, 0.0, 0.0);
+        let far_attacker = Vec3::new(50.0, 0.0, 0.0);
+        let near_target = Vec3::new(1.0, 0.0, 0.0);
+        assert!(threat_switch_decision(
+            self_pos,
+            far_attacker,
+            uid(1),
+            near_target,
+            uid(2),
+            false,
+        ));
+    }
+
+    /// Already engaged (`aggro_on`): both candidates are `AttackingMe`, so
+    /// the fixed-weight score (pure proximity here) decides — closer
+    /// attacker wins. This is the dead-fuzzy-comparison bug's fix: the old
+    /// comparator could never switch in this branch at all.
+    #[test]
+    fn engaged_target_loses_to_a_closer_attacker() {
+        let self_pos = Vec3::new(0.0, 0.0, 0.0);
+        let close_attacker = Vec3::new(1.0, 0.0, 0.0);
+        let far_target = Vec3::new(10.0, 0.0, 0.0);
+        assert!(threat_switch_decision(
+            self_pos,
+            close_attacker,
+            uid(1),
+            far_target,
+            uid(2),
+            true,
+        ));
+    }
+
+    /// Already engaged, attacker is farther than the current target: keep
+    /// the current target (class tie, score favors the incumbent).
+    #[test]
+    fn engaged_target_keeps_a_closer_incumbent_over_a_farther_attacker() {
+        let self_pos = Vec3::new(0.0, 0.0, 0.0);
+        let far_attacker = Vec3::new(10.0, 0.0, 0.0);
+        let close_target = Vec3::new(1.0, 0.0, 0.0);
+        assert!(!threat_switch_decision(
+            self_pos,
+            far_attacker,
+            uid(1),
+            close_target,
+            uid(2),
+            true,
+        ));
+    }
+
+    /// Exact distance tie while engaged: resolved by `Uid`'s own order
+    /// (higher wins, per `threat_policy::compare`'s tiebreak), not by
+    /// argument position — order-independence pinned directly.
+    #[test]
+    fn engaged_exact_tie_resolves_by_uid_order_independently_of_argument_position() {
+        let self_pos = Vec3::new(0.0, 0.0, 0.0);
+        let pos_a = Vec3::new(5.0, 0.0, 0.0);
+        let pos_b = Vec3::new(5.0, 0.0, 0.0);
+        // Higher uid (7) as the attacker: attacker wins.
+        assert!(threat_switch_decision(self_pos, pos_a, uid(7), pos_b, uid(3), true));
+        // Higher uid (7) as the target: attacker (lower uid) loses.
+        assert!(!threat_switch_decision(self_pos, pos_a, uid(3), pos_b, uid(7), true));
     }
 }
 

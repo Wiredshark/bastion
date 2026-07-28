@@ -521,7 +521,7 @@ impl AgentData<'_> {
                     // If able to flee, flee
                     controller.inputs.move_dir = flee_dir;
                     if !self.char_state.is_attack() {
-                        self.unstuck_if(stuck, controller);
+                        self.unstuck_if(stuck, read_data.dt.0, controller);
                         controller.inputs.look_dir = -controller.inputs.look_dir;
                     }
                 } else {
@@ -545,7 +545,7 @@ impl AgentData<'_> {
                 if line_of_sight_with_target() {
                     controller.push_basic_input(InputKind::Primary);
                 }
-                self.unstuck_if(stuck, controller);
+                self.unstuck_if(stuck, read_data.dt.0, controller);
                 controller.inputs.move_dir =
                     -bearing.xy().try_normalized().unwrap_or_else(Vec2::zero);
             }
@@ -2766,7 +2766,7 @@ impl AgentData<'_> {
                 },
                 &read_data.time,
             ) {
-                self.unstuck_if(stuck, controller);
+                self.unstuck_if(stuck, read_data.dt.0, controller);
                 controller.inputs.move_dir =
                     -bearing.xy().try_normalized().unwrap_or_else(Vec2::zero) * speed;
             }
@@ -2783,7 +2783,7 @@ impl AgentData<'_> {
                 },
                 &read_data.time,
             ) {
-                self.unstuck_if(stuck, controller);
+                self.unstuck_if(stuck, read_data.dt.0, controller);
                 if entities_have_line_of_sight(
                     self.pos,
                     self.body,
@@ -2920,7 +2920,7 @@ impl AgentData<'_> {
                 },
                 &read_data.time,
             ) {
-                self.unstuck_if(stuck, controller);
+                self.unstuck_if(stuck, read_data.dt.0, controller);
                 controller.inputs.move_dir =
                     -bearing.xy().try_normalized().unwrap_or_else(Vec2::zero) * speed;
             }
@@ -2937,7 +2937,7 @@ impl AgentData<'_> {
                 },
                 &read_data.time,
             ) {
-                self.unstuck_if(stuck, controller);
+                self.unstuck_if(stuck, read_data.dt.0, controller);
                 if line_of_sight_with_target() && attack_data.angle < 45.0 {
                     controller.inputs.move_dir = bearing
                         .xy()
@@ -3247,7 +3247,7 @@ impl AgentData<'_> {
                 },
                 &read_data.time,
             ) {
-                self.unstuck_if(stuck, controller);
+                self.unstuck_if(stuck, read_data.dt.0, controller);
                 if attack_data.angle < 15.0
                     && entities_have_line_of_sight(
                         self.pos,
@@ -4316,7 +4316,7 @@ impl AgentData<'_> {
                 },
                 &read_data.time,
             ) {
-                self.unstuck_if(stuck, controller);
+                self.unstuck_if(stuck, read_data.dt.0, controller);
                 controller.inputs.move_dir =
                     bearing.xy().try_normalized().unwrap_or_else(Vec2::zero) * speed;
                 if (self.pos.0.z - tgt_data.pos.0.z) < 35.0 {
@@ -4437,7 +4437,7 @@ impl AgentData<'_> {
                 },
                 &read_data.time,
             ) {
-                self.unstuck_if(stuck, controller);
+                self.unstuck_if(stuck, read_data.dt.0, controller);
                 controller.inputs.move_dir =
                     bearing.xy().try_normalized().unwrap_or_else(Vec2::zero) * speed;
                 if (self.pos.0.z - tgt_data.pos.0.z) < 20.0 {
@@ -4637,7 +4637,7 @@ impl AgentData<'_> {
                 },
                 &read_data.time,
             ) {
-                self.unstuck_if(stuck, controller);
+                self.unstuck_if(stuck, read_data.dt.0, controller);
                 if attack_data.angle < 15.0
                     && entities_have_line_of_sight(
                         self.pos,
@@ -6177,7 +6177,7 @@ impl AgentData<'_> {
                     },
                     &read_data.time,
                 ) {
-                    self.unstuck_if(stuck, controller);
+                    self.unstuck_if(stuck, read_data.dt.0, controller);
                     if line_of_sight_with_target() && attack_data.angle < 45.0 {
                         controller.inputs.move_dir = bearing
                             .xy()
@@ -6677,7 +6677,7 @@ impl AgentData<'_> {
                 },
                 &read_data.time,
             ) {
-                self.unstuck_if(stuck, controller);
+                self.unstuck_if(stuck, read_data.dt.0, controller);
                 controller.inputs.move_dir =
                     -bearing.xy().try_normalized().unwrap_or_else(Vec2::zero) * speed;
             }
@@ -6694,7 +6694,7 @@ impl AgentData<'_> {
                 },
                 &read_data.time,
             ) {
-                self.unstuck_if(stuck, controller);
+                self.unstuck_if(stuck, read_data.dt.0, controller);
                 if entities_have_line_of_sight(
                     self.pos,
                     self.body,
@@ -6852,7 +6852,7 @@ impl AgentData<'_> {
                 },
                 &read_data.time,
             ) {
-                self.unstuck_if(stuck, controller);
+                self.unstuck_if(stuck, read_data.dt.0, controller);
                 controller.inputs.move_dir =
                     -bearing.xy().try_normalized().unwrap_or_else(Vec2::zero) * speed;
             }
@@ -6869,7 +6869,7 @@ impl AgentData<'_> {
                 },
                 &read_data.time,
             ) {
-                self.unstuck_if(stuck, controller);
+                self.unstuck_if(stuck, read_data.dt.0, controller);
                 if entities_have_line_of_sight(
                     self.pos,
                     self.body,
@@ -6966,7 +6966,7 @@ impl AgentData<'_> {
                 },
                 &read_data.time,
             ) {
-                self.unstuck_if(stuck, controller);
+                self.unstuck_if(stuck, read_data.dt.0, controller);
                 controller.inputs.move_dir =
                     -bearing.xy().try_normalized().unwrap_or_else(Vec2::zero) * speed;
             }
@@ -6983,7 +6983,7 @@ impl AgentData<'_> {
                 },
                 &read_data.time,
             ) {
-                self.unstuck_if(stuck, controller);
+                self.unstuck_if(stuck, read_data.dt.0, controller);
                 if line_of_sight_with_target() && attack_data.angle < 45.0 {
                     controller.inputs.move_dir = bearing
                         .xy()
@@ -8900,7 +8900,7 @@ impl AgentData<'_> {
             },
             &read_data.time,
         ) {
-            self.unstuck_if(stuck, controller);
+            self.unstuck_if(stuck, read_data.dt.0, controller);
             if entities_have_line_of_sight(
                 self.pos,
                 self.body,

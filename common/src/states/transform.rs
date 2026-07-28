@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use tracing::error;
 
 use crate::{
+    combat,
     comp::{CharacterState, StateUpdate, item::Reagent},
     event::TransformEvent,
     generation::{EntityConfig, EntityInfo},
@@ -74,12 +75,23 @@ impl CharacterBehavior for Data {
                         return update;
                     };
 
-                    let entity_info = EntityInfo::at(data.pos.0, &mut rng()).with_entity_config(
-                        entity_config.read().clone().into_inner(),
-                        Some(&self.static_data.target),
-                        &mut rng(),
-                        None,
-                    );
+                    // E5-C (determinism audit, scanner-gap find): was bare
+                    // rng() via an unqualified import -- the transformed
+                    // entity's species/build is authoritative NPC identity
+                    // (same class RNG-P3-038 already fixed for
+                    // EntityInfo::at's default-body path elsewhere), keyed
+                    // on caster uid + cast time. ONE stream for both calls
+                    // (species pick + entity-config roll), not two
+                    // independent ones.
+                    let mut transform_rng =
+                        combat::seed_ability_rng("states/transform", *data.uid, *data.time);
+                    let entity_info =
+                        EntityInfo::at(data.pos.0, &mut transform_rng).with_entity_config(
+                            entity_config.read().clone().into_inner(),
+                            Some(&self.static_data.target),
+                            &mut transform_rng,
+                            None,
+                        );
 
                     // Handle frontend events
                     if let Some(specifier) = self.static_data.specifier {

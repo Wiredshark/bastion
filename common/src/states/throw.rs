@@ -142,6 +142,7 @@ impl CharacterBehavior for Data {
                         Some(*data.uid),
                         precision_mult,
                         Some(self.static_data.ability_info),
+                        *data.time,
                     );
 
                     // Removes the thrown item from the entity's inventory and creates a

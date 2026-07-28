@@ -3936,6 +3936,122 @@ No master-list row (a test-infrastructure QA sweep, not a build block).
 Sonnet-curated registry entries (B37 correction, B47/B48 appends, B49-B53
 new) committed alongside this run-log entry.
 
+**ORCHESTRATOR ROLE CORRECTION (Ben):** premise-verification is MINE,
+pre-brief — builders get corrected prompts, never discover dead
+premises. Memory updated. First read-ahead done: T0.88 premises
+verified ON ENGINE2 (nearly briefed from the stale primary checkout —
+wrong-tree trap — caught by re-running in .engine2-wt): LIVE =
+lottery ambient choose/ThreadRng chain + weather-tick emission rng
+(authority TBV) + unkeyed combat call sites (seam already generic);
+STALE = combat-ThreadRng, health-rand::random, weather-hashset claims.
+Prep file: apex-rowrefs/engine-list/E5-PREP-T0.88-premise-verification.md.
+
+**E7 BRIEFED (T0.79 probability/rate closure)** — premises verified on
+engine2 (unstuck_if: 25 mentions/3 files; sentiment decay in
+rtsim cleanup.rs w/ should-be-moved comment). Staged: (1) code-level
+classification registry + source-scan test (5 draw classes,
+authoritative crates only, presentation exempt) — the standing gate;
+(2) sentiment-decay law characterization-first, RULING-NEEDED before
+conversion (research flags semantic, not mechanical); (3) unstuck_if
+per-site typed clock or keyed-episode reclassification, disclosure
+table. Engine lane: E1-E6 done, E7 running; apex: T3.4+T3.5 PASSED
+review, T3.6 + feature-invariance fix + Opus's reciprocal span review
+in flight.
+
+**E8 read-ahead + brief** (premise-verified on engine2): T0.73's
+headline failures ALREADY FIXED (ORDER BYs landed w/ DET-PER-022/023,
+DET-ADD-005 cites; second CTE is set-based DELETE, untouchable) —
+residual = Rust-boundary sort+assert + deterministic error
+AGGREGATION (return-Err-on-first makes row order pick the surfaced
+failure) with a SCOPE FENCE: makes the existing policy's trigger
+deterministic, never chooses fail-closed-vs-degrade (deferred
+DECISIONS #25 cluster). T0.72 genuinely new (ContentEpoch nowhere in
+tree): candidate manifest → ONE named admission barrier → typed epoch
+→ cache invalidation → epoch-carrying work; certified runs lock the
+epoch. E8 queued behind Stage-3 x2. T0.88 noted as effectively
+covered by E5-B/C+E6 (cross-mark pending).
+
+**E8 Row 1 CLOSED** (`server/src/persistence/character/mod.rs`): part
+(a) landed — `assert_sorted_and_resort` helper (debug_assert on the
+existing SQL ORDER BY invariant + unconditional resort, so a release
+build stays correct even if the assert is compiled out) applied to
+`load_character_data`'s `skill_group_data`/`db_pets`,
+`load_character_list`'s `characters`, and `get_pet_ids`'s `db_pets`;
+`load_items` got a topological (parent-before-child) debug-only check
+instead, since `Item` carries no `depth` field to resort by. New
+`assert_sorted_and_resort_tests` module (4 tests). Part (b) (error
+AGGREGATION) DROPPED per Fable's ruling — my premise-check found
+Fable's `:671`/`:804` citations didn't match a row-order-dependent
+error pattern (671 = a body-species-change validation reject, 804 =
+a post-DELETE sanity-count check, both unrelated to row iteration);
+the real row-order-sensitive patterns are POLICY choices belonging to
+the deferred DECISIONS #25 cluster (fail-closed vs. graceful-degrade),
+not a determinism bug, since the ORDER BY fix already closes the
+determinism class. Ruling: "(iii) ... the citation miss was mine,"
+with a documentation rider.
+
+**DECISIONS #25 CLUSTER RIDER** (own fix caught in self-review before
+landing: the first cut of `assert_sorted_and_resort_tests` had
+`resorts_out_of_order_input` asserting a silent resort on out-of-order
+input with no debug-build guard — contradicted the sibling
+`debug_build_panics_on_out_of_order_input` test, which correctly
+expects a PANIC on that same input under `debug_assertions` (test
+builds always have them on); gated the first test
+`#[cfg(not(debug_assertions))]` so each test now only asserts the
+behavior that actually applies to the build it runs under; server
+test suite re-run clean, 0 regressions). Per Fable's rider
+instruction, the 5 row-order-dependent read-policy sites for the #25
+cluster's eventual fail-closed-vs-degrade ruling (file:line
+re-verified against current tree, not the original stale citations):
+
+- `server/src/persistence/character/mod.rs:147` (`load_items`) —
+  `.filter_map(Result::ok)`: silently drops any item row that fails
+  to decode: policy = silent-drop.
+- `server/src/persistence/character/mod.rs:272`
+  (`load_character_data`, `skill_group_data`) —
+  `.filter_map(Result::ok)`: silent-drop.
+- `server/src/persistence/character/mod.rs:305`
+  (`load_character_data`, `db_pets`) — `.filter_map(Result::ok)`:
+  silent-drop.
+- `server/src/persistence/character/mod.rs:413`
+  (`load_character_list`, `characters`) — `.map(|x| x.unwrap())`:
+  panics on the first row that fails to decode: policy =
+  fail-closed-by-panic.
+- `server/src/persistence/character/mod.rs:1094` (`get_pet_ids`,
+  `db_pets`) — `.map(|x| x.unwrap())`: fail-closed-by-panic.
+
+KNOWN-RED (workspace builds only, scoped floors unaffected):
+`cargo test --workspace`/`--all-targets` on `bastion/engine2` fails to
+compile `veloren-client` -- `client/src/lib.rs:941` calls
+`State::client()` with the pre-T2.5.18/.19 arity (4 args), but that
+constructor now requires a 5th (`PluginMgr`, via `StatePluginsV1`) on
+branches that carry T2.5.18/.19's governed-plugin-activation feature.
+Traced to an earlier merge of Opus's apex-T2.5 lineage into engine2
+that brought the arity-fix follow-up commit's SYMPTOM into view
+without its PREREQUISITE (T2.5.18/.19 itself was never merged into
+`common/state/src/state.rs` on this branch -- confirmed via `git diff
+98b238390e~1 HEAD -- common/state/src/state.rs`, which is functionally
+identical to apex-t34's state from BEFORE T2.5.18/.19 landed there).
+Cherry-picking the standalone follow-up fix (98b238390e) produced a
+semantically-broken hybrid (new unused types alongside untouched old
+signatures) -- aborted cleanly, no residue. ORCHESTRATOR RULING:
+leave engine2's client crate red, recorded here; workspace-wide
+builds on engine2 are OFF-LIMITS until the scheduled engine2<->
+apex-t34 reconciliation merge lands T2.5's feature wholesale
+(reviewed there, not piecemeal); scoped-crate floors remain this
+branch's verification basis in the meantime (already the established
+pattern).
+
+DISCLOSURE (file-location, not a content gap): `readme/DECISIONS-FOR-
+BEN.md` does not exist in `bastion/engine2`'s history — it was added
+on a sibling branch (first appears at `d1837dbc34`/`d7e161a914`,
+neither an ancestor of this branch's tip) and the primary checkout's
+copy currently shows as locally modified/uncommitted (someone else's
+in-flight edit, per the dirty-tree trap — not touched). This rider is
+logged here in full, on this branch, so whoever next unifies the
+branches can lift it verbatim into the #25 cluster's row rather than
+re-discovering the 5 sites. Flagged to Fable alongside the Row 1
+report.
 **Opus re-pin + T3.6.01** (tip 5b6bd0de69): honest NO-OP re-pin kept
 verbatim ("a prediction of closure is not a closure"), then
 SessionTerminateV1 frames — frame is a REQUEST, registry decides

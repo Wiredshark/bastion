@@ -771,6 +771,13 @@ impl ServerEvent for DestroyEvent {
                         },
                     };
 
+                    // T0.85 (E5-B): shared inputs for this block's
+                    // derive_attack_instance calls below (world-scoped,
+                    // deterministic -- replaces the old process-global
+                    // next_attack_instance() counter).
+                    let effect_attacker_uid = other_entity.and_then(|e| data.uids.get(e)).copied();
+                    let effect_target_uid = data.uids.get(effect_target).copied();
+
                     let requirements_met = effect.requirements().all(|req| {
                         req.requirement_met(
                             (
@@ -863,7 +870,15 @@ impl ServerEvent for DestroyEvent {
                                     cause: None,
                                     time: *data.time,
                                     precise: false,
-                                    instance: common::combat::next_attack_instance(),
+                                    instance: effect_target_uid.map_or(0, |uid| {
+                                        common::combat::derive_attack_instance(
+                                            "entity_manip/effect-block-1",
+                                            effect_attacker_uid,
+                                            uid,
+                                            *data.time,
+                                            1,
+                                        )
+                                    }),
                                 };
                                 if change.amount.abs() > Health::HEALTH_EPSILON {
                                     emitters.emit(HealthChangeEvent {
@@ -905,7 +920,15 @@ impl ServerEvent for DestroyEvent {
                                     cause: None,
                                     time: *data.time,
                                     precise: false,
-                                    instance: common::combat::next_attack_instance(),
+                                    instance: effect_target_uid.map_or(0, |uid| {
+                                        common::combat::derive_attack_instance(
+                                            "entity_manip/effect-block-1",
+                                            effect_attacker_uid,
+                                            uid,
+                                            *data.time,
+                                            2,
+                                        )
+                                    }),
                                 };
                                 if change.amount.abs() > Health::HEALTH_EPSILON {
                                     emitters.emit(HealthChangeEvent {
@@ -932,7 +955,15 @@ impl ServerEvent for DestroyEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: common::combat::next_attack_instance(),
+                                        instance: effect_target_uid.map_or(0, |uid| {
+                                            common::combat::derive_attack_instance(
+                                                "entity_manip/effect-block-1",
+                                                effect_attacker_uid,
+                                                uid,
+                                                *data.time,
+                                                3,
+                                            )
+                                        }),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -960,7 +991,15 @@ impl ServerEvent for DestroyEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: common::combat::next_attack_instance(),
+                                        instance: effect_target_uid.map_or(0, |uid| {
+                                            common::combat::derive_attack_instance(
+                                                "entity_manip/effect-block-1",
+                                                effect_attacker_uid,
+                                                uid,
+                                                *data.time,
+                                                4,
+                                            )
+                                        }),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -980,7 +1019,15 @@ impl ServerEvent for DestroyEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: common::combat::next_attack_instance(),
+                                        instance: effect_target_uid.map_or(0, |uid| {
+                                            common::combat::derive_attack_instance(
+                                                "entity_manip/effect-block-1",
+                                                effect_attacker_uid,
+                                                uid,
+                                                *data.time,
+                                                5,
+                                            )
+                                        }),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -1082,7 +1129,15 @@ impl ServerEvent for DestroyEvent {
                                             cause: Some(DamageSource::Other),
                                             time: *data.time,
                                             precise: false,
-                                            instance: common::combat::next_attack_instance(),
+                                            instance: effect_target_uid.map_or(0, |uid| {
+                                                common::combat::derive_attack_instance(
+                                                    "entity_manip/effect-block-1",
+                                                    effect_attacker_uid,
+                                                    uid,
+                                                    *data.time,
+                                                    6,
+                                                )
+                                            }),
                                         };
                                         emitters.emit(HealthChangeEvent {
                                             entity: effect_target,
@@ -1426,7 +1481,18 @@ impl ServerEvent for DestroyEvent {
                                 spawn_item(item, None)
                             }
                         } else {
-                            let mut rng = rand::rng();
+                            // E5-C (determinism audit): was bare
+                            // rand::rng(), shadowing the properly T0.37-keyed
+                            // outer streams in this same scope. Same domain
+                            // (loot-receiver split is part of the death
+                            // outcome), distinct salt from the placement/
+                            // orientation stream above.
+                            let mut rng = {
+                                use rand::SeedableRng;
+                                rand_chacha::ChaCha8Rng::seed_from_u64(
+                                    data.time.0.to_bits() ^ 0x100D_D20A,
+                                )
+                            };
                             distribute_many(
                                 item_receivers
                                     .iter()
@@ -1517,6 +1583,7 @@ impl ServerEvent for LandOnGroundEvent {
         ReadStorage<'a, comp::Mass>,
         ReadStorage<'a, Inventory>,
         ReadStorage<'a, Stats>,
+        ReadStorage<'a, common::uid::Uid>,
     );
 
     fn handle(
@@ -1531,6 +1598,7 @@ impl ServerEvent for LandOnGroundEvent {
             masses,
             inventories,
             stats,
+            uids,
         ): Self::SystemData<'_>,
     ) {
         let mut health_change_emitter = health_change_events.emitter();
@@ -1588,7 +1656,9 @@ impl ServerEvent for LandOnGroundEvent {
                     0.0,
                     1.0,
                     *time,
-                    rand::random(),
+                    // E5-C (determinism audit): keyed on the falling
+                    // entity's own uid + sim time -- was bare rand::random().
+                    combat::derive_ability_instance("entity_manip/fall-damage", uids.get(ev.entity).copied(), *time, 1),
                     DamageSource::Falling,
                 );
 
@@ -1714,10 +1784,25 @@ impl ServerEvent for ExplosionEvent {
         let mut emitters = data.event_busses.get_emitters();
         let mut outcome_emitter = data.outcomes.emitter();
 
-        // TODO: Faster RNG?
-        let mut rng = rand::rng();
-
         for ev in events {
+            // E5-C (determinism audit): was one handler-level rand::rng()
+            // shared (ambient, OS-entropy) across every explosion in the
+            // tick. Per-event now, keyed on owner (if any) + explosion pos +
+            // time -- distinct explosions in the same tick, even from the
+            // same owner, no longer share a draw.
+            let mut rng = {
+                use rand::SeedableRng;
+                let mut h = common::state_hash::DomainHasher::new(
+                    "bastion/domain/explosion-rng/v1/sha256",
+                );
+                h.field(&ev.owner.map_or(0, |u| u.0.get()).to_le_bytes());
+                h.field(&ev.pos.x.to_bits().to_le_bytes());
+                h.field(&ev.pos.y.to_bits().to_le_bytes());
+                h.field(&ev.pos.z.to_bits().to_le_bytes());
+                h.field(&data.time.0.to_bits().to_le_bytes());
+                let seed = u64::from_le_bytes(h.finish().0[..8].try_into().expect("sha256 >= 8 bytes"));
+                rand_chacha::ChaChaRng::seed_from_u64(seed)
+            };
             let owner_entity = ev.owner.and_then(|uid| data.id_maps.uid_entity(uid));
 
             let explosion_volume = 6.25 * ev.explosion.radius;
@@ -2291,7 +2376,17 @@ pub fn emit_effect_events(
                 0.0,
                 1.0,
                 time,
-                rand::random(),
+                // E5-C (determinism audit): keyed on the effect's source uid
+                // (if any) + time, with the TARGET entity's raw id as the
+                // ordinal -- multiple targets can be hit by the same source
+                // in the same tick (e.g. an AOE trap), so (source, time)
+                // alone would collide across them. Was bare rand::random().
+                combat::derive_ability_instance(
+                    "entity_manip/effect-damage",
+                    source.map(|(uid, _)| uid),
+                    time,
+                    entity.id() as u64,
+                ),
                 DamageSource::Other,
             );
             emitters.emit(HealthChangeEvent { entity, change })
@@ -2376,7 +2471,19 @@ impl ServerEvent for BonkEvent {
                         .is_some()
                 {
                     let sprite_cfg = terrain.sprite_cfg_at(pos);
-                    if let Some(items) = comp::Item::try_reclaim_from_block(block, sprite_cfg) {
+                    // E6 (determinism audit): keyed on (block pos,
+                    // program-time) — no entity is involved in a bonk
+                    // (position-triggered, not entity-attributed).
+                    use rand::SeedableRng;
+                    let mut rng = rand_chacha::ChaChaRng::seed_from_u64(common::lottery::seed_loot_roll(&[
+                        &pos.x.to_le_bytes(),
+                        &pos.y.to_le_bytes(),
+                        &pos.z.to_le_bytes(),
+                        &program_time.0.to_bits().to_le_bytes(),
+                    ]));
+                    if let Some(items) =
+                        comp::Item::try_reclaim_from_block(block, sprite_cfg, &mut rng)
+                    {
                         let msm = &MaterialStatManifest::load().read();
                         let ability_map = &AbilityMap::load().read();
                         for item in flatten_counted_items(&items, ability_map, msm) {
@@ -2427,7 +2534,7 @@ impl ServerEvent for BonkEvent {
                                         limit_per_ability: false,
                                         override_collider: None,
                                     }
-                                    .create_projectile(None, 1.0, None),
+                                    .create_projectile(None, 1.0, None, common::resources::Time(program_time.0)),
                                     speed: vel.0.magnitude(),
                                     object: None,
                                     marker: None,
@@ -2530,6 +2637,7 @@ impl ServerEvent for BuffEvent {
                                     } else {
                                         None
                                     },
+                                    *time,
                                 )
                             })
                             .find(|b| match b {
@@ -2873,9 +2981,21 @@ impl ServerEvent for EntityAttackedHookEvent {
     fn handle(events: impl ExactSizeIterator<Item = Self>, mut data: Self::SystemData<'_>) {
         let mut emitters = data.event_busses.get_emitters();
         let mut outcomes = data.outcomes.emitter();
-        let mut rng = rand::rng();
 
         for ev in events {
+            // E5-C (determinism audit): was one handler-level rand::rng()
+            // shared (ambient, OS-entropy) across every attacked-entity
+            // event in the tick. Per-event now, keyed on the attacked
+            // entity's uid + time.
+            let mut rng = {
+                use rand::SeedableRng;
+                rand_chacha::ChaChaRng::seed_from_u64(combat::derive_ability_instance(
+                    "entity_manip/attacked-hook-rng",
+                    data.uids.get(ev.entity).copied(),
+                    *data.time,
+                    1,
+                ))
+            };
             if let Some(attacker) = ev.attacker {
                 emitters.emit(BuffEvent {
                     entity: attacker,
@@ -2986,6 +3106,11 @@ impl ServerEvent for EntityAttackedHookEvent {
                         DamageContributor::new(*uid, data.groups.get(ev.entity).copied())
                     });
 
+                    // T0.85 (E5-B): shared inputs for this block's
+                    // derive_attack_instance calls below.
+                    let effect_attacker_uid = other_entity.and_then(|e| data.uids.get(e)).copied();
+                    let effect_target_uid = data.uids.get(effect_target).copied();
+
                     let requirements_met = effect.requirements().all(|req| {
                         req.requirement_met(
                             (
@@ -3078,7 +3203,15 @@ impl ServerEvent for EntityAttackedHookEvent {
                                     cause: None,
                                     time: *data.time,
                                     precise: false,
-                                    instance: common::combat::next_attack_instance(),
+                                    instance: effect_target_uid.map_or(0, |uid| {
+                                        common::combat::derive_attack_instance(
+                                            "entity_manip/effect-block-2",
+                                            effect_attacker_uid,
+                                            uid,
+                                            *data.time,
+                                            7,
+                                        )
+                                    }),
                                 };
                                 if change.amount.abs() > Health::HEALTH_EPSILON {
                                     emitters.emit(HealthChangeEvent {
@@ -3120,7 +3253,15 @@ impl ServerEvent for EntityAttackedHookEvent {
                                     cause: None,
                                     time: *data.time,
                                     precise: false,
-                                    instance: common::combat::next_attack_instance(),
+                                    instance: effect_target_uid.map_or(0, |uid| {
+                                        common::combat::derive_attack_instance(
+                                            "entity_manip/effect-block-2",
+                                            effect_attacker_uid,
+                                            uid,
+                                            *data.time,
+                                            8,
+                                        )
+                                    }),
                                 };
                                 if change.amount.abs() > Health::HEALTH_EPSILON {
                                     emitters.emit(HealthChangeEvent {
@@ -3147,7 +3288,15 @@ impl ServerEvent for EntityAttackedHookEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: common::combat::next_attack_instance(),
+                                        instance: effect_target_uid.map_or(0, |uid| {
+                                            common::combat::derive_attack_instance(
+                                                "entity_manip/effect-block-2",
+                                                effect_attacker_uid,
+                                                uid,
+                                                *data.time,
+                                                9,
+                                            )
+                                        }),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -3175,7 +3324,15 @@ impl ServerEvent for EntityAttackedHookEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: common::combat::next_attack_instance(),
+                                        instance: effect_target_uid.map_or(0, |uid| {
+                                            common::combat::derive_attack_instance(
+                                                "entity_manip/effect-block-2",
+                                                effect_attacker_uid,
+                                                uid,
+                                                *data.time,
+                                                10,
+                                            )
+                                        }),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -3195,7 +3352,15 @@ impl ServerEvent for EntityAttackedHookEvent {
                                         cause: Some(DamageSource::Other),
                                         time: *data.time,
                                         precise: false,
-                                        instance: common::combat::next_attack_instance(),
+                                        instance: effect_target_uid.map_or(0, |uid| {
+                                            common::combat::derive_attack_instance(
+                                                "entity_manip/effect-block-2",
+                                                effect_attacker_uid,
+                                                uid,
+                                                *data.time,
+                                                11,
+                                            )
+                                        }),
                                     };
                                     emitters.emit(HealthChangeEvent {
                                         entity: effect_target,
@@ -3294,7 +3459,15 @@ impl ServerEvent for EntityAttackedHookEvent {
                                             cause: Some(DamageSource::Other),
                                             time: *data.time,
                                             precise: false,
-                                            instance: common::combat::next_attack_instance(),
+                                            instance: effect_target_uid.map_or(0, |uid| {
+                                                common::combat::derive_attack_instance(
+                                                    "entity_manip/effect-block-2",
+                                                    effect_attacker_uid,
+                                                    uid,
+                                                    *data.time,
+                                                    12,
+                                                )
+                                            }),
                                         };
                                         emitters.emit(HealthChangeEvent {
                                             entity: effect_target,
@@ -3578,11 +3751,12 @@ impl ServerEvent for RegrowHeadEvent {
         Read<'a, Time>,
         WriteStorage<'a, Heads>,
         ReadStorage<'a, Health>,
+        ReadStorage<'a, Uid>,
     );
 
     fn handle(
         events: impl ExactSizeIterator<Item = Self>,
-        (health_change_events, time, mut heads, healths): Self::SystemData<'_>,
+        (health_change_events, time, mut heads, healths, uids): Self::SystemData<'_>,
     ) {
         let mut health_change_emitter = health_change_events.emitter();
         for ev in events {
@@ -3599,7 +3773,17 @@ impl ServerEvent for RegrowHeadEvent {
                         cause: Some(DamageSource::Other),
                         time: *time,
                         precise: false,
-                        instance: common::combat::next_attack_instance(),
+                        // T0.85 (E5-B): world-scoped derivation instead of
+                        // the old process-global counter.
+                        instance: uids.get(ev.entity).map_or(0, |uid| {
+                            common::combat::derive_attack_instance(
+                                "entity_manip/regrow-head",
+                                None,
+                                *uid,
+                                *time,
+                                0,
+                            )
+                        }),
                     },
                 })
             }
@@ -3783,10 +3967,23 @@ pub fn transform_entity(
                         }
                     }),
                 )?;
+                // E6 (determinism audit): keyed on (transformed entity's
+                // uid, sim time) — to_items() used to reach ambient OS
+                // entropy internally.
+                let mut transform_loot_rng = {
+                    use rand::SeedableRng;
+                    let ecs = server.state.ecs();
+                    let uid = ecs.read_storage::<common::uid::Uid>().get(entity).copied();
+                    let time = *ecs.read_resource::<common::resources::Time>();
+                    rand_chacha::ChaChaRng::seed_from_u64(common::lottery::seed_loot_roll(&[
+                        &uid.map_or(0, |u| u.0.get()).to_le_bytes(),
+                        &time.0.to_bits().to_le_bytes(),
+                    ]))
+                };
                 set_or_remove_component(
                     server,
                     entity,
-                    loot.to_items().map(comp::ItemDrops),
+                    loot.to_items(&mut transform_loot_rng).map(comp::ItemDrops),
                     None,
                 )?;
             }

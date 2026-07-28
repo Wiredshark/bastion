@@ -107,9 +107,11 @@ impl CharacterBehavior for Data {
                             .clone()
                             .handle_scaling(scaling)
                             .create_melee(
-                                precision_mult,
-                                tool_stats,
-                                self.static_data.ability_info,
+                            precision_mult,
+                            tool_stats,
+                            self.static_data.ability_info,
+                            *data.uid,
+                            *data.time,
                             ),
                     );
 

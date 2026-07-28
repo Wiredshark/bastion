@@ -819,6 +819,9 @@ impl<'a> System<'a> for Sys {
             // STATUS-SURFACE: energy meter + the tick for status-stamp TTL.
             ReadStorage<'a, common::comp::Energy>,
             specs::Read<'a, crate::Tick>,
+            // engine-list T3.58: the colonist's current job assignment,
+            // for the InspectorOwnershipV1 evidence key.
+            ReadStorage<'a, common::comp::bastion::ActiveJob>,
         ),
     );
 
@@ -868,6 +871,7 @@ impl<'a> System<'a> for Sys {
                 insp_pickup_items,
                 insp_energies,
                 insp_tick,
+                insp_active_jobs,
             ),
         ): Self::SystemData,
     ) {
@@ -1318,6 +1322,63 @@ impl<'a> System<'a> for Sys {
                                                 false,
                                             ));
                                         let arb = insp_arbiters.get(e);
+                                        // engine-list T3.54: mood
+                                        // explainability — same tables +
+                                        // Actor the B7-0 mood tick reads,
+                                        // assembled fresh at request
+                                        // cadence (never cached; the
+                                        // inspector's own no-drift rule).
+                                        let mood_explanation = insp_rtsim_entities.get(e).map(|re| {
+                                            let mood_cfg = common::bastion::MoodConfig::current();
+                                            let table = bastion_server::bastion_mood::ThoughtTable::current();
+                                            let affinities =
+                                                bastion_server::bastion_mood::ValueAffinityTable::current();
+                                            let data = rtsim.state().data();
+                                            let actor = common::rtsim::Actor::Npc(*re);
+                                            let thoughts = bastion_server::bastion_mood::thought_contributions(
+                                                &data.chronicle,
+                                                &table,
+                                                &affinities,
+                                                actor,
+                                                data.time_of_day.0,
+                                                &colonist.0.values,
+                                                neur,
+                                            );
+                                            let thought_sum = bastion_server::bastion_mood::thought_sum(
+                                                &data.chronicle,
+                                                &table,
+                                                &affinities,
+                                                actor,
+                                                data.time_of_day.0,
+                                                &colonist.0.values,
+                                                neur,
+                                            );
+                                            common::comp::bastion::MoodExplanationV1::build(
+                                                insp_tick.0,
+                                                actor,
+                                                &mood_cfg,
+                                                needs,
+                                                thought_sum,
+                                                thoughts,
+                                            )
+                                        });
+                                        // engine-list T3.58: job ownership +
+                                        // Drive telemetry — same ActiveJob
+                                        // lookup the FailsafeTeleportEvent
+                                        // diagnostic uses.
+                                        let active_job = insp_active_jobs.get(e);
+                                        let looked_up_job =
+                                            active_job.and_then(|a| job_board.jobs.get(&a.job));
+                                        let ownership = Some(
+                                            common::comp::bastion::InspectorOwnershipV1::build(
+                                                insp_tick.0,
+                                                uid,
+                                                active_job,
+                                                looked_up_job.map(|j| &j.kind),
+                                                looked_up_job.and_then(|j| j.claimed_by),
+                                                arb,
+                                            ),
+                                        );
                                         Some(common::comp::bastion::BastionInspectPayload {
                                             name: colonist.0.name.clone(),
                                             hunger: needs.hunger,
@@ -1349,6 +1410,8 @@ impl<'a> System<'a> for Sys {
                                                 uid,
                                                 insp_tick.0,
                                             ),
+                                            mood_explanation,
+                                            ownership,
                                         })
                                     })
                                     .map(BastionInspectKind::Colonist),

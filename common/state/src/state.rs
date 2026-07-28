@@ -14,8 +14,8 @@ use common::{
     mounting::{Mount, Rider, VolumeRider, VolumeRiders},
     outcome::Outcome,
     resources::{
-        DeltaTime, EntitiesDiedLastTick, GameMode, PlayerEntity, PlayerPhysicsSettings,
-        ProgramTime, Time, TimeOfDay, TimeScale,
+        ContentEpoch, DeltaTime, EntitiesDiedLastTick, GameMode, PlayerEntity,
+        PlayerPhysicsSettings, ProgramTime, Time, TimeOfDay, TimeScale,
     },
     shared_server_config::ServerConstants,
     slowjob::SlowJobPool,
@@ -569,6 +569,9 @@ impl State {
         ecs.insert(Time(0.0));
         ecs.insert(ProgramTime(0.0));
         ecs.insert(TimeScale(1.0));
+        // T0.72: only the server's admission barrier ever advances this;
+        // the client never runs that barrier, so it stays at 0 there.
+        ecs.insert(ContentEpoch::default());
 
         // Register unsynced resources used by the ECS.
         ecs.insert(DeltaTime(0.0));

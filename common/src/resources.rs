@@ -74,6 +74,20 @@ impl Time {
 #[derive(Copy, Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct ProgramTime(pub f64);
 
+/// T0.72: the typed content/config epoch. Starts at 0 and only the
+/// server's admission barrier (`server::content_epoch`) ever increments
+/// it -- exactly once per tick, only when a watched content manifest
+/// (recipes, ability sets, material stats) actually changed since the
+/// last check. Commands/jobs stamp the epoch they read at intake so a
+/// later audit can tell which content generation produced them.
+///
+/// Certified/harness runs never advance this: the admission barrier is a
+/// no-op under `ExecutionMode::DeterministicSerial`, so the epoch is
+/// locked at its initial value for the whole run by construction, not by
+/// a separate flag.
+#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ContentEpoch(pub u64);
+
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct TimeScale(pub f64);
 

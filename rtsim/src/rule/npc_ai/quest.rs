@@ -1,9 +1,11 @@
 use super::*;
 use crate::data::quest::{
-    COURIER_QUEST_VARIANTS, CourierQuest, CourierQuestInstance, Payload, Recipient,
+    COURIER_QUEST_VARIANTS, CourierQuest, CourierQuestInstance, Payload, QuestTerminalOutcome,
+    Recipient,
 };
 use common::{
     comp::{Item, item::ItemBase},
+    resources::TimeOfDay,
     rtsim::NpcId,
     spot::Spot,
 };
@@ -62,49 +64,89 @@ pub fn create_deposit<S: State, T: Action<S, bool>>(
     }
 }
 
+/// `T0.86`/`E5-A`: submits a quest-completion intent for this tick's
+/// serial arbitration (`simulate_npcs.rs`'s post-parallel commit phase)
+/// instead of resolving directly -- NPC AI runs under `par_iter_mut`, so
+/// a direct `Quest::resolve` call here would race exactly like
+/// `Quests::register`'s old `fetch_add` did (DET-ESIM-020). Classifies
+/// pre- vs post-deadline against the quest's OWN timeout at submission
+/// time -- the classification the ruled Quest policy ranks on.
+pub fn submit_quest_completion(ctx: &mut NpcCtx, quest_id: QuestId) {
+    let deadline = ctx.data.quests.get(quest_id).and_then(|q| q.timeout);
+    let outcome = QuestTerminalOutcome::completed(TimeOfDay(ctx.time_of_day.0), deadline);
+    ctx.controller.quest_terminal_intents.push((quest_id, outcome));
+}
+
+/// Submits a quest-timeout intent -- see [`submit_quest_completion`]'s doc.
+pub fn submit_quest_timeout(ctx: &mut NpcCtx, quest_id: QuestId) {
+    ctx.controller
+        .quest_terminal_intents
+        .push((quest_id, QuestTerminalOutcome::TimedOut));
+}
+
+/// Polls for this tick's arbitration result of a quest THIS npc submitted
+/// an intent for (via [`submit_quest_completion`]/[`submit_quest_timeout`]).
+/// `None` means keep waiting (poll again next tick). A `Some` return is
+/// terminal: `Ok(deposit)` if THIS npc's own intent was the one
+/// arbitration committed (the deposit, if any, is minted into this npc's
+/// inventory right here -- exactly once, since only the winning
+/// submitter's `Controller` ever receives a receipt, see
+/// `simulate_npcs.rs`); `Err(())` if the quest resolved WITHOUT this
+/// npc's intent winning (a competing intent won, or this one was a
+/// harmless duplicate of the winner -- the ruled policy's "no new side
+/// effects" for duplicates, so both collapse to the same clean no-op
+/// here, matching the old `resolve()`-returned-`None` behavior for a
+/// second caller).
 #[allow(clippy::result_unit_err)]
-pub fn resolve_take_deposit(
-    ctx: &mut NpcCtx,
-    quest_id: QuestId,
-    success: bool,
-) -> Result<Option<(Arc<ItemDef>, u32)>, ()> {
-    if let Some(outcome) = ctx
+pub fn poll_quest_terminal(ctx: &mut NpcCtx, quest_id: QuestId) -> Option<Result<Option<(Arc<ItemDef>, u32)>, ()>> {
+    if let Some(idx) = ctx
+        .controller
+        .quest_terminal_receipts
+        .iter()
+        .position(|(id, ..)| *id == quest_id)
+    {
+        let (_, _success, deposit) = ctx.controller.quest_terminal_receipts.remove(idx);
+        return Some(Ok(mint_deposit(ctx, deposit)));
+    }
+    if ctx
         .data
         .quests
         .get(quest_id)
-        .and_then(|q| q.resolve(ctx.npc_id, success))
+        .is_some_and(|q| q.resolution().is_some())
     {
-        // ...take the deposit back into our own inventory...
-        if let Some((item, amount)) = &outcome.deposit
-            && let Some(npc_entity) = ctx.system_data.id_maps.rtsim_entity(ctx.npc_id)
-            && let Some(mut inv) = ctx
-                .system_data
-                .inventories
-                .lock()
-                .unwrap()
-                .get_mut(npc_entity)
-        {
-            let item_def = item.to_equivalent_item_def();
-            // Rounding down, to avoid potential precision exploits
-            let amount = amount.floor() as u32;
-
-            let mut item = Item::new_from_item_base(
-                ItemBase::Simple(item_def.clone()),
-                Vec::new(),
-                &ctx.system_data.ability_map,
-                &ctx.system_data.msm,
-            );
-            item.set_amount(amount)
-                .expect("Item cannot be stacked that far!");
-            let _ = inv.push(item);
-
-            Ok(Some((item_def, amount)))
-        } else {
-            Ok(None)
-        }
-    } else {
-        Err(())
+        return Some(Err(()));
     }
+    None
+}
+
+/// Mints the deposit into this npc's own inventory. Called ONLY from
+/// [`poll_quest_terminal`] for the winning submitter -- the deposit
+/// metadata (`ItemResource`, not an escrowed item) is minted fresh here
+/// rather than being an actual reserved item anywhere, same as the old
+/// `resolve_take_deposit` always did.
+fn mint_deposit(
+    ctx: &mut NpcCtx,
+    deposit: Option<(ItemResource, f32)>,
+) -> Option<(Arc<ItemDef>, u32)> {
+    let (item, amount) = deposit?;
+    let npc_entity = ctx.system_data.id_maps.rtsim_entity(ctx.npc_id)?;
+    let mut inventories = ctx.system_data.inventories.lock().unwrap();
+    let mut inv = inventories.get_mut(npc_entity)?;
+    let item_def = item.to_equivalent_item_def();
+    // Rounding down, to avoid potential precision exploits
+    let amount = amount.floor() as u32;
+
+    let mut item = Item::new_from_item_base(
+        ItemBase::Simple(item_def.clone()),
+        Vec::new(),
+        &ctx.system_data.ability_map,
+        &ctx.system_data.msm,
+    );
+    item.set_amount(amount)
+        .expect("Item cannot be stacked that far!");
+    let _ = inv.push(item);
+
+    Some((item_def, amount))
 }
 
 /// Checks if a courier quest can be completed based on inventory and entity
@@ -519,37 +561,58 @@ pub fn quest_request<S: State>(session: DialogueSession) -> impl Action<S> {
     })
 }
 
+/// `T0.86`/`E5-A`: runs every tick, so the submit-then-poll cycle needs no
+/// separate async wait combinator here -- the function itself IS the
+/// poll, called again next tick by whatever drives `deadline_reaction`.
 pub fn check_for_timeouts<S: State>(ctx: &mut NpcCtx) -> Option<impl Action<S> + use<S>> {
     for quest_id in ctx.data.quests.related_to(ctx.npc_id) {
         let Some(quest) = ctx.data.quests.get(quest_id) else {
             continue;
         };
-        if let Some(timeout) = quest.timeout
-            // The quest has timed out... (T0.11: world-clock compare)
-            && ctx.time_of_day.0 > timeout.0
-            // ...so resolve it
-            && let Ok(Some(_)) = resolve_take_deposit(ctx, quest_id, false)
-        {
-            // Stop any job related to the quest
-            if ctx.npc.job == Some(Job::Quest(quest_id)) {
-                ctx.controller.end_quest();
-            }
+        let kind = quest.kind.clone();
+        let timeout = quest.timeout;
 
-            // If needs be, inform the quester that they failed
-            match quest.kind {
-                QuestKind::Escort { escorter, .. } => {
-                    return Some(
-                        goto_actor(escorter, 2.0)
-                            .then(do_dialogue(escorter, move |session| {
-                                session
-                                    .say_statement(Content::localized("npc-response-quest-timeout"))
-                            }))
-                            .boxed(),
-                    );
-                },
-                QuestKind::Slay { .. } => {},
-                QuestKind::Courier { .. } => {},
+        // Did a previously-submitted timeout intent (ours) just get
+        // arbitrated? `related_to` only yields still-unresolved quests, so
+        // reaching here with a `Some` means arbitration landed THIS tick.
+        if let Some(result) = poll_quest_terminal(ctx, quest_id) {
+            if result.is_ok() {
+                // Our timeout intent won -- stop any job tied to it and,
+                // if needs be, inform the quester that they failed.
+                if ctx.npc.job == Some(Job::Quest(quest_id)) {
+                    ctx.controller.end_quest();
+                }
+                match kind {
+                    QuestKind::Escort { escorter, .. } => {
+                        return Some(
+                            goto_actor(escorter, 2.0)
+                                .then(do_dialogue(escorter, move |session| {
+                                    session.say_statement(Content::localized(
+                                        "npc-response-quest-timeout",
+                                    ))
+                                }))
+                                .boxed(),
+                        );
+                    },
+                    QuestKind::Slay { .. } => {},
+                    QuestKind::Courier { .. } => {},
+                }
             }
+            // Either way (won or lost/duplicate), this quest is settled --
+            // nothing more for this npc to do about it.
+            continue;
+        }
+
+        // Not yet resolved and not already submitted-and-settled this
+        // tick: submit a timeout intent if past deadline. Submitting again
+        // on a later tick (if arbitration hasn't landed yet) is harmless --
+        // `QuestTerminalPolicy::is_duplicate` collapses repeat `TimedOut`
+        // intents.
+        if let Some(timeout) = timeout
+            // (T0.11: world-clock compare)
+            && ctx.time_of_day.0 > timeout.0
+        {
+            submit_quest_timeout(ctx, quest_id);
         }
     }
     None
@@ -576,25 +639,47 @@ pub fn escorted<S: State>(quest_id: QuestId, escorter: Actor, dst_site: SiteId) 
                 .is_none_or(|site| site.wpos.as_().distance_squared(ctx.npc.wpos.xy()) < 150.0f32.powi(2))
         })
         .then(goto_actor(escorter, 2.0))
-        .then(do_dialogue(escorter, move |session| {
-            session
-                .say_statement(Content::localized("npc-response-quest-escort-complete"))
-                // Now that the quest has ended, resolve it and give the player the deposit
-                .then(now(move |ctx, _| {
-                    ctx.controller.end_quest();
-                    match resolve_take_deposit(ctx, quest_id, true) {
-                        Ok(deposit) => session.say_statement_with_gift(Content::localized("npc-response-quest-reward"), deposit).boxed(),
-                        Err(()) => finish().boxed(),
-                    }
-                }))
-        }))
+        // `T0.86`/`E5-A`: this stop_if -- cancel if the quest resolved
+        // WITHOUT us (e.g. timed out while still travelling) -- is placed
+        // BEFORE the dialogue+submit+poll below rather than wrapping the
+        // whole chain like the pre-E5-A version did. Wrapping the poll too
+        // would race against it: this npc's OWN in-flight completion could
+        // win arbitration (making `resolution()` go `Some`) at the exact
+        // moment this same check re-evaluates, cutting the chain off
+        // before it ever reaches its own receipt and silently dropping a
+        // reward it rightfully won.
         .stop_if(move |ctx: &mut NpcCtx| {
-            // Cancel performing the quest if it's been resolved
             ctx.data
                 .quests
                 .get(quest_id)
                 .is_none_or(|q| q.resolution().is_some())
         })
+        .then(do_dialogue(escorter, move |session| {
+            session
+                .say_statement(Content::localized("npc-response-quest-escort-complete"))
+                // Submit a completion intent for this tick's serial
+                // arbitration (simulate_npcs.rs) instead of resolving
+                // directly -- NPC AI runs under par_iter_mut, so a direct
+                // Quest::resolve call here would race exactly like
+                // Quests::register's old fetch_add did.
+                .then(just(move |ctx, _| {
+                    ctx.controller.end_quest();
+                    submit_quest_completion(ctx, quest_id);
+                }))
+                .then(until(move |ctx, _| match poll_quest_terminal(ctx, quest_id) {
+                    Some(result) => ControlFlow::Break(result),
+                    None => ControlFlow::Continue(idle()),
+                }))
+                .and_then(move |result| match result {
+                    Ok(deposit) => session
+                        .say_statement_with_gift(
+                            Content::localized("npc-response-quest-reward"),
+                            deposit,
+                        )
+                        .boxed(),
+                    Err(()) => finish().boxed(),
+                })
+        }))
         .map(|_, _| ())
 }
 

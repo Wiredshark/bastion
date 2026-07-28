@@ -66,6 +66,22 @@ struct CharacterContainers {
     recipe_book_container_id: EntityId,
 }
 
+/// E8 Row 1 (T0.73-residual): belt-and-suspenders for a SQL `ORDER BY` a
+/// loader already relies on -- debug_assert the rows arrived in the
+/// expected order (catches a future regression of the SQL guarantee
+/// immediately, in tests/debug builds, rather than as a silent downstream
+/// determinism drift), then re-sort in Rust unconditionally so a release
+/// build stays correct even if the assert isn't compiled in. Cheap: these
+/// are small per-character vecs, not hot-loop data.
+fn assert_sorted_and_resort<T, K: Ord>(items: &mut [T], key: impl Fn(&T) -> K, context: &str) {
+    debug_assert!(
+        items.windows(2).all(|w| key(&w[0]) <= key(&w[1])),
+        "{context}: rows did not arrive in the expected SQL ORDER BY -- the guarantee may have \
+         regressed"
+    );
+    items.sort_by(|a, b| key(a).cmp(&key(b)));
+}
+
 /// Load the inventory/loadout
 ///
 /// Loading is done recursively to ensure that each is topologically sorted in
@@ -130,6 +146,31 @@ pub fn load_items(connection: &Connection, root: i64) -> Result<Vec<Item>, Persi
         })?
         .filter_map(Result::ok)
         .collect::<Vec<Item>>();
+
+    // E8 Row 1 (T0.73-residual): belt-and-suspenders for the SQL ORDER BY
+    // depth, item_id above (DET-ADD-004) -- the converter's own parent-
+    // before-child requirement, checked directly (not by re-deriving depth,
+    // which `Item` doesn't carry) since that's the actual invariant that
+    // matters: by the time an item is visited, its parent (the root
+    // container, or an earlier item in this same vec) has already been
+    // seen. debug_assert only (no Rust-side resort here -- there's no
+    // simple total key to resort by without depth); this only fires if the
+    // SQL guarantee above ever regresses.
+    #[cfg(debug_assertions)]
+    {
+        let mut seen = std::collections::HashSet::new();
+        seen.insert(root);
+        for item in &items {
+            debug_assert!(
+                seen.contains(&item.parent_container_item_id),
+                "load_items: item {} appeared before its parent {} -- the SQL ORDER BY \
+                 depth, item_id (DET-ADD-004) may have regressed",
+                item.item_id,
+                item.parent_container_item_id
+            );
+            seen.insert(item.item_id);
+        }
+    }
 
     Ok(items)
 }
@@ -217,7 +258,7 @@ pub fn load_character_data(
         ORDER BY skill_group_kind",
     )?;
 
-    let skill_group_data = stmt
+    let mut skill_group_data = stmt
         .query_map([char_id.0], |row| {
             Ok(SkillGroup {
                 entity_id: char_id.0,
@@ -230,6 +271,11 @@ pub fn load_character_data(
         })?
         .filter_map(Result::ok)
         .collect::<Vec<SkillGroup>>();
+    assert_sorted_and_resort(
+        &mut skill_group_data,
+        |s| s.skill_group_kind.clone(),
+        "skill_group_data (DET-PER-022)",
+    );
 
     #[rustfmt::skip]
     let mut stmt = connection.prepare_cached("
@@ -247,7 +293,7 @@ pub fn load_character_data(
         ORDER BY p.pet_id",
     )?;
 
-    let db_pets = stmt
+    let mut db_pets = stmt
         .query_map([char_id.0], |row| {
             Ok(Pet {
                 database_id: row.get(0)?,
@@ -258,6 +304,7 @@ pub fn load_character_data(
         })?
         .filter_map(Result::ok)
         .collect::<Vec<Pet>>();
+    assert_sorted_and_resort(&mut db_pets, |p| p.database_id, "db_pets (DET-ADD-005)");
 
     // Re-construct the pet components for the player's pets, including
     // de-serializing the pets' bodies and creating their Pet and Stats
@@ -353,7 +400,7 @@ pub fn load_character_list(player_uuid_: &str, connection: &Connection) -> Chara
             ORDER BY character_id",
     )?;
 
-    let characters = stmt
+    let mut characters = stmt
         .query_map([player_uuid_], |row| {
             Ok(Character {
                 character_id: row.get(0)?,
@@ -365,6 +412,7 @@ pub fn load_character_list(player_uuid_: &str, connection: &Connection) -> Chara
         })?
         .map(|x| x.unwrap())
         .collect::<Vec<Character>>();
+    assert_sorted_and_resort(&mut characters, |c| c.character_id, "characters (load_character_list)");
     drop(stmt);
 
     characters
@@ -1041,10 +1089,11 @@ fn get_pet_ids(
     ")?;
 
     #[expect(clippy::needless_question_mark)]
-    let db_pets = stmt
+    let mut db_pets = stmt
         .query_map([&char_id.0], |row| Ok(row.get(0)?))?
         .map(|x| x.unwrap())
         .collect::<Vec<i64>>();
+    assert_sorted_and_resort(&mut db_pets, |&id| id, "get_pet_ids (DET-PER-023)");
     drop(stmt);
     Ok(db_pets)
 }
@@ -1269,4 +1318,41 @@ pub fn update(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod assert_sorted_and_resort_tests {
+    use super::assert_sorted_and_resort;
+
+    /// Non-vacuity + correctness: an out-of-order input actually gets
+    /// re-sorted (this is the guard that keeps a release build correct
+    /// even without the debug_assert compiled in). Debug builds panic on
+    /// this same input before reaching the sort -- that path is covered
+    /// separately by `debug_build_panics_on_out_of_order_input`.
+    #[test]
+    #[cfg(not(debug_assertions))]
+    fn resorts_out_of_order_input() {
+        let mut items = vec![3i64, 1, 2];
+        assert_sorted_and_resort(&mut items, |&x| x, "test");
+        assert_eq!(items, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn already_sorted_input_is_unchanged() {
+        let mut items = vec![1i64, 2, 3];
+        assert_sorted_and_resort(&mut items, |&x| x, "test");
+        assert_eq!(items, vec![1, 2, 3]);
+    }
+
+    #[test]
+    #[cfg_attr(debug_assertions, should_panic(expected = "did not arrive in the expected"))]
+    fn debug_build_panics_on_out_of_order_input() {
+        // In a release build (debug_assertions off) this assert compiles
+        // to nothing -- the function still corrects the order via the
+        // unconditional sort, which is exactly the point of doing both.
+        let mut items = vec![3i64, 1, 2];
+        assert_sorted_and_resort(&mut items, |&x| x, "test");
+        #[cfg(not(debug_assertions))]
+        assert_eq!(items, vec![1, 2, 3]);
+    }
 }

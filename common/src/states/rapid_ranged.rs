@@ -140,7 +140,18 @@ impl CharacterBehavior for Data {
                     // Gets offsets
                     let (pos, direction): (Pos, Dir) =
                         if let Some(offset) = self.static_data.options.offset {
-                            let mut rng = rng();
+                            // E5-C (determinism audit, scanner-gap find):
+                            // was bare `rng()` via an unqualified import --
+                            // projectile spawn offset is authoritative
+                            // (affects trajectory), keyed on caster uid +
+                            // cast time + projectiles_fired (this ability
+                            // fires repeatedly, each shot needs its own
+                            // draw).
+                            let mut rng = combat::seed_ability_rng(
+                                &format!("states/rapid_ranged/{}", self.projectiles_fired),
+                                *data.uid,
+                                *data.time,
+                            );
                             let rand_offset = if offset.radius > 0.0 {
                                 let theta = rng.random::<f32>() * TAU;
                                 let r = offset.radius * rng.random::<f32>().sqrt();
@@ -193,6 +204,7 @@ impl CharacterBehavior for Data {
                         Some(*data.uid),
                         precision_mult,
                         Some(self.static_data.ability_info),
+                        *data.time,
                     );
                     output_events.emit_server(ShootEvent {
                         entity: Some(data.entity),

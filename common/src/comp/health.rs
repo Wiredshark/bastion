@@ -139,13 +139,19 @@ impl Health {
             current: health,
             base_max: health,
             maximum: health,
+            // T0.85 (E5-B): a placeholder "no change yet" sentinel -- no
+            // real attacker/target/time exists to derive an instance id
+            // from, so a fixed constant (never a real
+            // `derive_attack_instance` output, which is uniform over u64)
+            // is the honest choice, not a fake derivation from placeholder
+            // data.
             last_change: HealthChange {
                 amount: 0.0,
                 by: None,
                 cause: None,
                 precise: false,
                 time: Time(0.0),
-                instance: crate::combat::next_attack_instance(),
+                instance: 0,
             },
             is_dead: false,
             can_have_death_protection: death_protection,
@@ -252,13 +258,19 @@ impl Health {
             current: 0,
             base_max: 0,
             maximum: 0,
+            // T0.85 (E5-B): a placeholder "no change yet" sentinel -- no
+            // real attacker/target/time exists to derive an instance id
+            // from, so a fixed constant (never a real
+            // `derive_attack_instance` output, which is uniform over u64)
+            // is the honest choice, not a fake derivation from placeholder
+            // data.
             last_change: HealthChange {
                 amount: 0.0,
                 by: None,
                 cause: None,
                 precise: false,
                 time: Time(0.0),
-                instance: crate::combat::next_attack_instance(),
+                instance: 0,
             },
             is_dead: false,
             can_have_death_protection: false,
@@ -309,7 +321,7 @@ mod tests {
             by: Some(damage_contrib),
             cause: None,
             precise: false,
-            instance: crate::combat::next_attack_instance(),
+            instance: 0,
         };
 
         health.change_by(health_change);
@@ -336,7 +348,7 @@ mod tests {
             by: Some(damage_contrib),
             cause: None,
             precise: false,
-            instance: crate::combat::next_attack_instance(),
+            instance: 0,
         };
 
         health.change_by(health_change);
@@ -357,7 +369,7 @@ mod tests {
             by: Some(damage_contrib),
             cause: None,
             precise: false,
-            instance: crate::combat::next_attack_instance(),
+            instance: 0,
         };
         health.change_by(health_change);
         health.change_by(health_change);
@@ -384,7 +396,7 @@ mod tests {
             by: Some(damage_contrib1),
             cause: None,
             precise: false,
-            instance: crate::combat::next_attack_instance(),
+            instance: 0,
         };
         health.change_by(health_change);
 
@@ -395,7 +407,7 @@ mod tests {
             by: Some(damage_contrib2),
             cause: None,
             precise: false,
-            instance: crate::combat::next_attack_instance(),
+            instance: 0,
         };
         health.change_by(health_change);
 
@@ -410,7 +422,7 @@ mod tests {
             by: Some(damage_contrib2),
             cause: None,
             precise: false,
-            instance: crate::combat::next_attack_instance(),
+            instance: 0,
         };
         health.change_by(health_change);
 

@@ -235,6 +235,7 @@ impl ServerEvent for InitiateInviteEvent {
 #[derive(SystemData)]
 pub struct InviteResponseData<'a> {
     entities: Entities<'a>,
+    time: Read<'a, Time>,
     group_manager: Write<'a, GroupManager>,
     trades: Write<'a, Trades>,
     #[cfg(feature = "worldgen")]
@@ -318,7 +319,7 @@ pub fn handle_invite_accept(data: &mut InviteResponseData, entity: Entity) {
                         }
                         return;
                     }
-                    let id = data.trades.begin_trade(inviter_uid, invitee_uid);
+                    let id = data.trades.begin_trade(*data.time, inviter_uid, invitee_uid);
                     let trade = data.trades.trades[&id].clone();
                     if let Some(agent) = data.agents.get_mut(inviter) {
                         agent

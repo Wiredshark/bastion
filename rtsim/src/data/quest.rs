@@ -305,6 +305,203 @@ impl Quest {
     }
 }
 
+/// `T0.86` (E4 row 2, Fable-ruled 2026-07-28): the Quest domain's policy
+/// for [`common::terminal_arbitration`] -- ranks competing terminal-
+/// resolution intents for the SAME quest so CPU arrival order (the old
+/// `Quest::resolve`'s raw `compare_exchange`) no longer decides
+/// success/timeout/cancel.
+///
+/// The pre/post-deadline distinction for `Completed` is baked into the
+/// OUTCOME variant itself (not decided inside `compare`/`is_duplicate`)
+/// deliberately: a naive policy that ranked by variant-plus-inspecting-
+/// `effective_tick` inside `compare` would make `is_duplicate` (which only
+/// sees the outcome, not the tick) wrongly treat a genuinely-different-
+/// priority post-deadline completion as an idempotent duplicate of a
+/// pre-deadline one (same enum variant, different timing) -- caught by
+/// manually tracing the arbitration algorithm against this exact case
+/// before wiring it up. Baking the classification into the variant makes
+/// two DIFFERENT-priority completions naturally compare as different
+/// ranks (never reaching the duplicate check at all), and only two
+/// intents that are ACTUALLY the same logical event (same variant) can
+/// ever be flagged as duplicates.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum QuestTerminalOutcome {
+    /// An authorized cancellation. Declared top priority -- always wins.
+    Cancelled,
+    /// The quest's completion condition was met before its deadline (or
+    /// it has no deadline).
+    CompletedPreDeadline,
+    /// The quest's deadline passed before completion was observed.
+    TimedOut,
+    /// The quest's completion condition was met, but only after its
+    /// deadline had already passed -- loses to `TimedOut` (ruled policy:
+    /// "post-deadline loses to it").
+    CompletedPostDeadline,
+}
+
+impl QuestTerminalOutcome {
+    /// Classify a completion intent against the quest's own deadline (if
+    /// any). `effective_tick`/`deadline` are both `TimeOfDay` (T0.11:
+    /// world-clock, matching `Quest::timeout`'s own field), not sim
+    /// `Time` -- a deadline compare must use the same clock the deadline
+    /// itself is stamped in.
+    pub fn completed(effective_tick: TimeOfDay, deadline: Option<TimeOfDay>) -> Self {
+        match deadline {
+            Some(deadline) if effective_tick.0 > deadline.0 => Self::CompletedPostDeadline,
+            _ => Self::CompletedPreDeadline,
+        }
+    }
+
+    fn rank(self) -> u8 {
+        match self {
+            Self::Cancelled => 3,
+            Self::CompletedPreDeadline => 2,
+            Self::TimedOut => 1,
+            Self::CompletedPostDeadline => 0,
+        }
+    }
+
+    /// The boolean outcome `Quest::resolve`'s callers already expect
+    /// (`true` = success/deposit returned via the reward path,
+    /// `false` = failure) -- `Cancelled` and `TimedOut` both resolve as
+    /// failure; only a completion (pre- or post-deadline) is success.
+    pub fn as_success_bool(self) -> bool {
+        matches!(self, Self::CompletedPreDeadline | Self::CompletedPostDeadline)
+    }
+}
+
+/// `T0.86`: implements [`common::terminal_arbitration::TerminalPolicy`]
+/// for [`QuestTerminalOutcome`]. Stateless -- the deadline classification
+/// already happened when the [`QuestTerminalOutcome`] was constructed (see
+/// [`QuestTerminalOutcome::completed`]), so this policy only needs to rank
+/// the (now fully-formed) variants.
+pub struct QuestTerminalPolicy;
+
+impl common::terminal_arbitration::TerminalPolicy<QuestTerminalOutcome> for QuestTerminalPolicy {
+    fn compare(
+        &self,
+        a: &common::terminal_arbitration::TerminalIntent<QuestTerminalOutcome>,
+        b: &common::terminal_arbitration::TerminalIntent<QuestTerminalOutcome>,
+    ) -> std::cmp::Ordering {
+        a.outcome.rank().cmp(&b.outcome.rank())
+    }
+
+    fn is_duplicate(&self, a: &QuestTerminalOutcome, b: &QuestTerminalOutcome) -> bool { a == b }
+}
+
+#[cfg(test)]
+mod quest_terminal_policy_tests {
+    use super::*;
+    use common::{
+        command_protocol::IdempotencyKey,
+        resources::TimeOfDay,
+        terminal_arbitration::{TerminalIntent, TerminalPolicy, TerminalReceipt, commit_terminal_intents},
+    };
+
+    fn intent(outcome: QuestTerminalOutcome, seq: u64) -> TerminalIntent<QuestTerminalOutcome> {
+        TerminalIntent {
+            observed_version: 0,
+            outcome,
+            reason: "test",
+            effective_tick: seq,
+            causation: IdempotencyKey(seq),
+            stable_producer: 0,
+            producer_sequence: seq,
+        }
+    }
+
+    /// The confirmed live bug this row fixes: a pre-deadline completion
+    /// and a timeout racing in the same tick must resolve to completion
+    /// winning, regardless of which was SUBMITTED first.
+    #[test]
+    fn pre_deadline_completion_outranks_timeout_regardless_of_submission_order() {
+        use QuestTerminalOutcome::*;
+        let forward = [intent(TimedOut, 0), intent(CompletedPreDeadline, 1)];
+        let backward = [intent(CompletedPreDeadline, 0), intent(TimedOut, 1)];
+
+        let r1 = commit_terminal_intents(0, &forward, &QuestTerminalPolicy);
+        assert_eq!(r1[1], TerminalReceipt::Committed);
+        assert_eq!(r1[0], TerminalReceipt::Lost { winner: CompletedPreDeadline });
+
+        let r2 = commit_terminal_intents(0, &backward, &QuestTerminalPolicy);
+        assert_eq!(r2[0], TerminalReceipt::Committed);
+        assert_eq!(r2[1], TerminalReceipt::Lost { winner: CompletedPreDeadline });
+    }
+
+    /// The ruled asymmetry: a completion that arrives AFTER the deadline
+    /// loses to a timeout, even though both are "the quest finally got
+    /// resolved" -- the classification already happened before
+    /// arbitration (see `QuestTerminalOutcome::completed`).
+    #[test]
+    fn post_deadline_completion_loses_to_timeout() {
+        use QuestTerminalOutcome::*;
+        let intents = [intent(CompletedPostDeadline, 0), intent(TimedOut, 1)];
+        let receipts = commit_terminal_intents(0, &intents, &QuestTerminalPolicy);
+        assert_eq!(receipts[0], TerminalReceipt::Lost { winner: TimedOut });
+        assert_eq!(receipts[1], TerminalReceipt::Committed);
+    }
+
+    #[test]
+    fn cancellation_outranks_everything() {
+        use QuestTerminalOutcome::*;
+        let intents = [
+            intent(CompletedPreDeadline, 0),
+            intent(TimedOut, 1),
+            intent(Cancelled, 2),
+        ];
+        let receipts = commit_terminal_intents(0, &intents, &QuestTerminalPolicy);
+        assert_eq!(receipts[2], TerminalReceipt::Committed);
+        assert_eq!(receipts[0], TerminalReceipt::Lost { winner: Cancelled });
+        assert_eq!(receipts[1], TerminalReceipt::Lost { winner: Cancelled });
+    }
+
+    /// The bug a naive (non-baked-in) classification would have caused:
+    /// a pre- and a post-deadline completion are the SAME enum variant
+    /// under a naive model, but here they're DIFFERENT variants with
+    /// different ranks, so the post-deadline one loses cleanly instead of
+    /// being wrongly treated as an idempotent duplicate of the winner.
+    #[test]
+    fn pre_and_post_deadline_completions_are_not_duplicates_of_each_other() {
+        use QuestTerminalOutcome::*;
+        assert!(!QuestTerminalPolicy.is_duplicate(&CompletedPreDeadline, &CompletedPostDeadline));
+        let intents = [intent(CompletedPreDeadline, 0), intent(CompletedPostDeadline, 1)];
+        let receipts = commit_terminal_intents(0, &intents, &QuestTerminalPolicy);
+        assert_eq!(receipts[0], TerminalReceipt::Committed);
+        assert_eq!(
+            receipts[1],
+            TerminalReceipt::Lost { winner: CompletedPreDeadline },
+            "must lose cleanly, not be mistaken for a duplicate"
+        );
+    }
+
+    #[test]
+    fn two_pre_deadline_completions_are_idempotent_duplicates() {
+        use QuestTerminalOutcome::*;
+        let intents = [intent(CompletedPreDeadline, 0), intent(CompletedPreDeadline, 1)];
+        let receipts = commit_terminal_intents(0, &intents, &QuestTerminalPolicy);
+        assert_eq!(receipts[0], TerminalReceipt::Committed);
+        assert_eq!(receipts[1], TerminalReceipt::DuplicateOfCommitted);
+    }
+
+    #[test]
+    fn completed_classifies_by_deadline_correctly() {
+        let deadline = TimeOfDay(100.0);
+        assert_eq!(
+            QuestTerminalOutcome::completed(TimeOfDay(50.0), Some(deadline)),
+            QuestTerminalOutcome::CompletedPreDeadline
+        );
+        assert_eq!(
+            QuestTerminalOutcome::completed(TimeOfDay(150.0), Some(deadline)),
+            QuestTerminalOutcome::CompletedPostDeadline
+        );
+        assert_eq!(
+            QuestTerminalOutcome::completed(TimeOfDay(150.0), None),
+            QuestTerminalOutcome::CompletedPreDeadline,
+            "no deadline means completion can never be late"
+        );
+    }
+}
+
 // 0 = unresolved, 1 = fail, 2.. = success
 #[derive(Default, Serialize, Deserialize)]
 struct QuestRes(AtomicU8);

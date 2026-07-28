@@ -253,6 +253,123 @@ pub fn mood_formula(cfg: &crate::bastion::MoodConfig, needs: &Needs, thought_sum
         .clamp(0.0, 1.0)
 }
 
+/// engine-list T3.54 (mood explainability): the 3 need IDs
+/// [`mood_formula`] weighs — a fixed sort key for [`MoodExplanationV1`],
+/// not a new needs system (do not confuse with [`crate::bastion::Need`],
+/// the unrelated FOCUS-scorer personal-need vocabulary).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum MoodNeedId {
+    Hunger,
+    Rest,
+    Recreation,
+}
+
+/// One need's penalty subtotal, recomputed (not cached) so display can
+/// never drift from the authoritative formula.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct NeedPenaltyV1 {
+    pub need: MoodNeedId,
+    pub value: f32,
+    pub comfort: f32,
+    pub weight: f32,
+    /// `weight * shortfall(value, comfort)` — the exact term `mood_formula`
+    /// sums.
+    pub penalty: f32,
+}
+
+/// One thought's decayed, care-scaled contribution — one row per
+/// qualifying [`rtsim::data::ChronicleEvent`] `thought_sum` folds in,
+/// kept individually here instead of pre-summed.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ThoughtContributionV1 {
+    /// [`rtsim::data::ChronicleEvent::seq`] — the source event id.
+    pub source_event_id: u64,
+    /// The `ChronicleKind` discriminant driving this thought (common
+    /// cannot name `rtsim::data::ChronicleKind` directly — cross-crate
+    /// boundary `thought_sum` already has; carried as its stable u32
+    /// wire tag instead).
+    pub thought_id: u32,
+    pub base_magnitude: f32,
+    pub care_multiplier: f32,
+    /// The final decayed, care-scaled term this thought adds to the sum.
+    pub contribution: f32,
+}
+
+/// One threshold `mood_formula` reads — the comfort bands, surfaced so
+/// "why is this colonist unhappy" reads the same numbers the formula
+/// does, not a paraphrase.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MoodThresholdV1 {
+    pub need: MoodNeedId,
+    pub comfort: f32,
+}
+
+/// engine-list T3.54: `MoodExplanationV1` — per-need penalties, active
+/// thoughts, care multipliers (folded into each
+/// [`ThoughtContributionV1`], not a separate list — a multiplier without
+/// its thought is meaningless), and thresholds. Canonically sorted per
+/// field (needs by [`MoodNeedId`], thoughts by
+/// `(source_event_id, thought_id)`, thresholds by [`MoodNeedId`]) so two
+/// independent constructions of the same input are byte-identical.
+/// Diagnostic-only: nothing here is authoritative state — `mood_formula`
+/// alone remains the source of truth, this is its own working shown.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MoodExplanationV1 {
+    pub snapshot_tick: u64,
+    pub actor: crate::rtsim::Actor,
+    pub needs: Vec<NeedPenaltyV1>,
+    pub thoughts: Vec<ThoughtContributionV1>,
+    pub thresholds: Vec<MoodThresholdV1>,
+    /// The formula's own output, recomputed from `needs`/`thoughts` at
+    /// construction time (never cached) so display and authority cannot
+    /// diverge silently.
+    pub total_mood: f32,
+}
+
+impl MoodExplanationV1 {
+    /// Builds the needs/thresholds halves and recomputes `total_mood` via
+    /// the real [`mood_formula`] fed the caller's `thought_sum` — the SAME
+    /// value `mood_formula` was actually driven with, never re-derived by
+    /// summing `thoughts` (that sum lacks `thought_sum`'s Neumaier
+    /// compensation and could drift a ULP; diagnostic fields must never be
+    /// able to move the authoritative number). The thoughts half
+    /// (chronicle-dependent) is server-only; callers pass it in already
+    /// built (`bastion-server::bastion_mood::thought_contributions`) —
+    /// this function still re-sorts it, since sort order is part of the
+    /// DTO's own contract, not the caller's to guarantee.
+    pub fn build(
+        snapshot_tick: u64,
+        actor: crate::rtsim::Actor,
+        cfg: &crate::bastion::MoodConfig,
+        needs: &Needs,
+        thought_sum: f32,
+        mut thoughts: Vec<ThoughtContributionV1>,
+    ) -> Self {
+        thoughts.sort_by_key(|t| (t.source_event_id, t.thought_id));
+        let need_penalty = |need: MoodNeedId, value: f32, comfort: f32, weight: f32| NeedPenaltyV1 {
+            need,
+            value,
+            comfort,
+            weight,
+            penalty: weight * shortfall(value, comfort),
+        };
+        let mut needs_out = vec![
+            need_penalty(MoodNeedId::Hunger, needs.hunger, cfg.hunger.comfort, cfg.hunger.weight),
+            need_penalty(MoodNeedId::Rest, needs.rest, cfg.rest.comfort, cfg.rest.weight),
+            need_penalty(MoodNeedId::Recreation, needs.recreation, cfg.recreation.comfort, cfg.recreation.weight),
+        ];
+        needs_out.sort_by_key(|n| n.need);
+        let mut thresholds = vec![
+            MoodThresholdV1 { need: MoodNeedId::Hunger, comfort: cfg.hunger.comfort },
+            MoodThresholdV1 { need: MoodNeedId::Rest, comfort: cfg.rest.comfort },
+            MoodThresholdV1 { need: MoodNeedId::Recreation, comfort: cfg.recreation.comfort },
+        ];
+        thresholds.sort_by_key(|t| t.need);
+        let total_mood = mood_formula(cfg, needs, thought_sum);
+        Self { snapshot_tick, actor, needs: needs_out, thoughts, thresholds, total_mood }
+    }
+}
+
 /// bastion (B-AG3 slice 1): the care multiplier is CLAMPED — a stack of
 /// scorned values can mute a thought to a quarter, never erase it; a
 /// stack of held values can quadruple it, never explode it.
@@ -405,6 +522,13 @@ pub struct BastionInspectPayload {
     /// with `None` here is the genuine-bug tell the four indistinguishable
     /// pit states needed. Tail-appended per the wire discipline.
     pub status: Option<BastionColonistStatus>,
+    /// engine-list T3.54: mood explainability breakdown, or `None` if not
+    /// requested/available. Tail-appended per the wire discipline.
+    pub mood_explanation: Option<MoodExplanationV1>,
+    /// engine-list T3.58: job ownership + Drive telemetry evidence, or
+    /// `None` if not requested/available. Tail-appended per the wire
+    /// discipline.
+    pub ownership: Option<InspectorOwnershipV1>,
 }
 
 /// bastion (STATUS-SURFACE): the inspector's colonist status line — the
@@ -801,6 +925,198 @@ mod bastion_b70_tests {
         }
         assert!(saw_high && saw_low, "seeded sample must span the gate");
     }
+
+    /// T3.54: exact derived DTO order — needs by [`MoodNeedId`], thoughts
+    /// by `(source_event_id, thought_id)` regardless of input order,
+    /// thresholds by [`MoodNeedId`]. Also pins `total_mood` to the same
+    /// value [`mood_formula`] returns for identical inputs.
+    #[test]
+    fn mood_explanation_v1_exact_evidence_order() {
+        let cfg = crate::bastion::MoodConfig::default();
+        let needs = Needs { hunger: 0.4, rest: 0.6, recreation: 0.9 };
+        let thought_sum = 0.05f32;
+        // Deliberately unsorted input — the DTO must sort it, not trust it.
+        let thoughts = vec![
+            ThoughtContributionV1 {
+                source_event_id: 5,
+                thought_id: 2,
+                base_magnitude: 0.1,
+                care_multiplier: 1.0,
+                contribution: 0.1,
+            },
+            ThoughtContributionV1 {
+                source_event_id: 1,
+                thought_id: 9,
+                base_magnitude: 0.2,
+                care_multiplier: 1.0,
+                contribution: 0.2,
+            },
+            ThoughtContributionV1 {
+                source_event_id: 1,
+                thought_id: 3,
+                base_magnitude: -0.05,
+                care_multiplier: 1.0,
+                contribution: -0.05,
+            },
+        ];
+        let actor = crate::rtsim::Actor::Character(crate::character::CharacterId(7));
+        let explanation =
+            MoodExplanationV1::build(42, actor, &cfg, &needs, thought_sum, thoughts);
+
+        assert_eq!(
+            explanation.needs.iter().map(|n| n.need).collect::<Vec<_>>(),
+            vec![MoodNeedId::Hunger, MoodNeedId::Rest, MoodNeedId::Recreation]
+        );
+        assert_eq!(
+            explanation
+                .thoughts
+                .iter()
+                .map(|t| (t.source_event_id, t.thought_id))
+                .collect::<Vec<_>>(),
+            vec![(1, 3), (1, 9), (5, 2)]
+        );
+        assert_eq!(
+            explanation.thresholds.iter().map(|t| t.need).collect::<Vec<_>>(),
+            vec![MoodNeedId::Hunger, MoodNeedId::Rest, MoodNeedId::Recreation]
+        );
+        assert_eq!(
+            explanation.total_mood,
+            mood_formula(&cfg, &needs, thought_sum)
+        );
+    }
+
+    /// T3.54: diagnostic/presentation fields (per-thought `base_magnitude`/
+    /// `care_multiplier`, and the whole `thoughts`/`needs`/`thresholds`
+    /// breakdown) must never move `total_mood` — it is driven ONLY by the
+    /// caller's `thought_sum`, never re-derived from the vector.
+    #[test]
+    fn mood_explanation_v1_diagnostic_fields_do_not_move_authoritative_hash() {
+        let cfg = crate::bastion::MoodConfig::default();
+        let needs = Needs { hunger: 0.3, rest: 0.5, recreation: 0.7 };
+        let thought_sum = 0.2f32;
+        let actor = crate::rtsim::Actor::Character(crate::character::CharacterId(1));
+
+        let real = ThoughtContributionV1 {
+            source_event_id: 1,
+            thought_id: 1,
+            base_magnitude: 0.4,
+            care_multiplier: 0.5,
+            contribution: 0.2,
+        };
+        // A diagnostically-different row (different magnitude/care/id) that
+        // still sums to the SAME `contribution` — irrelevant, since
+        // `total_mood` never reads the vector at all.
+        let relabeled = ThoughtContributionV1 {
+            source_event_id: 99,
+            thought_id: 42,
+            base_magnitude: 999.0,
+            care_multiplier: -3.0,
+            contribution: 0.2,
+        };
+
+        let a = MoodExplanationV1::build(1, actor, &cfg, &needs, thought_sum, vec![real]);
+        let b = MoodExplanationV1::build(1, actor, &cfg, &needs, thought_sum, vec![relabeled]);
+        assert_eq!(a.total_mood, b.total_mood);
+        assert_eq!(a.total_mood, mood_formula(&cfg, &needs, thought_sum));
+        assert_ne!(a.thoughts, b.thoughts, "the diagnostic rows must actually differ");
+    }
+
+    fn test_uid(n: u64) -> crate::uid::Uid {
+        crate::uid::Uid(std::num::NonZeroU64::new(n).unwrap())
+    }
+
+    /// T3.58: exact derived evidence — `self_job_*` is `Some` only for a
+    /// pre-claimed self-job kind (never `Designated`), `intent_owner_kind`
+    /// reads the claimant relative to the inspected actor, and
+    /// `drive_scores_digest` is a pure function of `last_scores` (same
+    /// input -> same digest, changed input -> a different one).
+    #[test]
+    fn inspector_ownership_v1_exact_evidence_order() {
+        let me = test_uid(7);
+        let other = test_uid(9);
+        let active = ActiveJob {
+            job: 42,
+            state: ActiveJobState::Arrived,
+            best_dist: 0.0,
+            stuck_time: 0.0,
+            reset_dist: 0.0,
+            soft_granted: false,
+            stance: vek::Vec3::new(0, 0, 1),
+        };
+        let designated = crate::bastion::JobKind::Designated(crate::bastion::DesignationKind::Mine);
+        let self_job = crate::bastion::JobKind::RestAt { bed_pos: vek::Vec3::new(1, 2, 3) };
+        let arb = Arbiter {
+            current: Drive::Work,
+            committed_until: 0.0,
+            last_scores: (0.1, 0.2, 0.3),
+            activity: Some((crate::bastion::WorkType::Mine, 0.5)),
+        };
+
+        // Designated job, self-claimed: self_job_* absent, active_job_*
+        // present, intent SelfClaimed.
+        let a = InspectorOwnershipV1::build(9, me, Some(&active), Some(&designated), Some(me), Some(&arb));
+        assert_eq!(a.self_job_id, None);
+        assert_eq!(a.self_job_kind, None);
+        assert_eq!(a.active_job_id, Some(42));
+        assert_eq!(a.active_job_state, Some(ActiveJobState::Arrived));
+        assert_eq!(a.intent_owner_kind, IntentOwnerKindV1::SelfClaimed);
+        assert_eq!(a.lease_generation, None);
+        assert_eq!(a.arbiter_activity, Some((crate::bastion::WorkType::Mine, 0.5)));
+
+        // Self-job kind: self_job_* mirrors active_job_*.
+        let b = InspectorOwnershipV1::build(9, me, Some(&active), Some(&self_job), Some(me), Some(&arb));
+        assert_eq!(b.self_job_id, Some(42));
+        assert_eq!(b.self_job_kind, Some(JobKindTagV1::RestAt));
+
+        // Claimed by someone else / unclaimed / no active job.
+        let c = InspectorOwnershipV1::build(9, me, Some(&active), Some(&designated), Some(other), Some(&arb));
+        assert_eq!(c.intent_owner_kind, IntentOwnerKindV1::OtherClaimant);
+        let d = InspectorOwnershipV1::build(9, me, Some(&active), Some(&designated), None, Some(&arb));
+        assert_eq!(d.intent_owner_kind, IntentOwnerKindV1::Unclaimed);
+        let e = InspectorOwnershipV1::build(9, me, None, None, None, None);
+        assert_eq!(e.intent_owner_kind, IntentOwnerKindV1::NoActiveJob);
+        assert_eq!(e.self_job_id, None);
+        assert_eq!(e.active_job_id, None);
+
+        // The digest is a pure function of last_scores.
+        assert_eq!(a.drive_scores_digest, b.drive_scores_digest);
+        let mut different = arb;
+        different.last_scores = (0.9, 0.2, 0.3);
+        let f = InspectorOwnershipV1::build(9, me, Some(&active), Some(&designated), Some(me), Some(&different));
+        assert_ne!(a.drive_scores_digest, f.drive_scores_digest);
+    }
+
+    /// T3.58: diagnostic/presentation fields (`self_job_kind`,
+    /// `active_job_state`, `arbiter_activity`) must never move
+    /// `drive_scores_digest` — it is driven ONLY by `last_scores`.
+    #[test]
+    fn inspector_ownership_v1_diagnostic_fields_do_not_move_digest() {
+        let me = test_uid(1);
+        let arb = Arbiter {
+            current: Drive::Idle,
+            committed_until: 0.0,
+            last_scores: (0.4, 0.4, 0.4),
+            activity: None,
+        };
+        let travel = ActiveJob {
+            job: 1,
+            state: ActiveJobState::Traveling,
+            best_dist: 5.0,
+            stuck_time: 1.0,
+            reset_dist: 5.0,
+            soft_granted: false,
+            stance: vek::Vec3::new(0, 0, 1),
+        };
+        let arrived = ActiveJob { state: ActiveJobState::Arrived, ..travel };
+        let haul = crate::bastion::JobKind::Haul { item: test_uid(2), destination: 3 };
+        let despond = crate::bastion::JobKind::Despond { until: 0.0 };
+
+        let a = InspectorOwnershipV1::build(1, me, Some(&travel), Some(&haul), Some(me), Some(&arb));
+        let b = InspectorOwnershipV1::build(1, me, Some(&arrived), Some(&despond), Some(me), Some(&arb));
+        assert_ne!(a.self_job_kind, b.self_job_kind, "the diagnostic rows must actually differ");
+        assert_ne!(a.active_job_state, b.active_job_state);
+        assert_eq!(a.drive_scores_digest, b.drive_scores_digest);
+    }
 }
 
 /// The colonist's current job assignment (B4). Server-side only; the job
@@ -863,6 +1179,121 @@ pub enum ActiveJobState {
 
 impl Component for ActiveJob {
     type Storage = specs::DenseVecStorage<Self>;
+}
+
+/// engine-list T3.58: coarse [`crate::bastion::JobKind`] tag for
+/// [`InspectorOwnershipV1`] — same variants, payload dropped (diagnostic
+/// surfacing only, never round-tripped back into a real `JobKind`).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum JobKindTagV1 {
+    Designated(crate::bastion::DesignationKind),
+    Haul,
+    DepositRun,
+    RestAt,
+    EatFrom,
+    Despond,
+}
+
+impl From<&crate::bastion::JobKind> for JobKindTagV1 {
+    fn from(k: &crate::bastion::JobKind) -> Self {
+        use crate::bastion::JobKind as J;
+        match k {
+            J::Designated(d) => JobKindTagV1::Designated(*d),
+            J::Haul { .. } => JobKindTagV1::Haul,
+            J::DepositRun { .. } => JobKindTagV1::DepositRun,
+            J::RestAt { .. } => JobKindTagV1::RestAt,
+            J::EatFrom { .. } => JobKindTagV1::EatFrom,
+            J::Despond { .. } => JobKindTagV1::Despond,
+        }
+    }
+}
+
+impl JobKindTagV1 {
+    /// T3.58's "self job": pre-claimed FOR one colonist rather than drawn
+    /// competitively from the shared `Designated` pool — matches the
+    /// existing doc language on `Despond`/`DepositRun`/`RestAt`/`EatFrom`
+    /// ("a pre-claimed self-job", see [`crate::bastion::JobKind::Despond`]).
+    pub fn is_self_job(self) -> bool { !matches!(self, JobKindTagV1::Designated(_)) }
+}
+
+/// T3.58: where a job's claim stands relative to the inspected actor —
+/// evidence/diagnostic only, never read by arbitration.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum IntentOwnerKindV1 {
+    NoActiveJob,
+    SelfClaimed,
+    Unclaimed,
+    OtherClaimant,
+}
+
+/// engine-list T3.58: `InspectorOwnershipV1` — job ownership + Drive
+/// telemetry for the utility-AI debug overlay. `self_job_*` is `Some`
+/// only when [`JobKindTagV1::is_self_job`] holds for the active job (so
+/// under the current one-job-per-colonist model it duplicates
+/// `active_job_id` in value, but answers a DIFFERENT question — ownership
+/// source, not runtime progress — per the ruled field list).
+/// `lease_generation` is always `None`: [`crate::bastion::Job::claimed_by`]
+/// is a plain `Option<Uid>` with no generation/epoch counter today
+/// (distinct from the unrelated haul-link `reservation_generation`
+/// fencing) — left an explicit absent placeholder rather than inventing
+/// one, same discipline as [`MoodExplanationV1`]'s omitted "timers".
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct InspectorOwnershipV1 {
+    pub snapshot_tick: u64,
+    pub actor_id: crate::uid::Uid,
+    pub self_job_id: Option<crate::bastion::JobId>,
+    pub self_job_kind: Option<JobKindTagV1>,
+    pub active_job_id: Option<crate::bastion::JobId>,
+    pub active_job_state: Option<ActiveJobState>,
+    pub intent_owner_kind: IntentOwnerKindV1,
+    pub lease_generation: Option<u64>,
+    pub arbiter_activity: Option<(crate::bastion::WorkType, f32)>,
+    pub drive_scores_digest: u64,
+}
+
+impl InspectorOwnershipV1 {
+    /// `job_kind`/`claimed_by` are the looked-up `board.jobs[active.job]`
+    /// fields (the caller's `ActiveJob` lookup); passed separately rather
+    /// than a `&Job` because this module cannot see `JobBoard`.
+    pub fn build(
+        snapshot_tick: u64,
+        actor_id: crate::uid::Uid,
+        active: Option<&ActiveJob>,
+        job_kind: Option<&crate::bastion::JobKind>,
+        claimed_by: Option<crate::uid::Uid>,
+        arbiter: Option<&Arbiter>,
+    ) -> Self {
+        let active_job_id = active.map(|a| a.job);
+        let active_job_state = active.map(|a| a.state);
+        let tag = job_kind.map(JobKindTagV1::from);
+        let (self_job_id, self_job_kind) = match tag {
+            Some(t) if t.is_self_job() => (active_job_id, Some(t)),
+            _ => (None, None),
+        };
+        let intent_owner_kind = match (active, claimed_by) {
+            (None, _) => IntentOwnerKindV1::NoActiveJob,
+            (Some(_), Some(c)) if c == actor_id => IntentOwnerKindV1::SelfClaimed,
+            (Some(_), Some(_)) => IntentOwnerKindV1::OtherClaimant,
+            (Some(_), None) => IntentOwnerKindV1::Unclaimed,
+        };
+        let scores = arbiter.map_or((0.0, 0.0, 0.0), |a| a.last_scores);
+        let drive_scores_digest = crate::state_hash::stable_hash_u64(
+            "bastion/inspector-ownership/drive-scores/v1",
+            &(scores.0.to_bits(), scores.1.to_bits(), scores.2.to_bits()),
+        );
+        Self {
+            snapshot_tick,
+            actor_id,
+            self_job_id,
+            self_job_kind,
+            active_job_id,
+            active_job_state,
+            intent_owner_kind,
+            lease_generation: None,
+            arbiter_activity: arbiter.and_then(|a| a.activity),
+            drive_scores_digest,
+        }
+    }
 }
 
 /// The god-mode anchor marker (§4 standing directive): while the overseer is

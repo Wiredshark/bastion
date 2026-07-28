@@ -89,6 +89,17 @@ pub enum DigestDomainIdV1 {
     /// graph. The T2.5 activation-plan root remains domain 3.
     PluginCandidateSet = 18,
     PluginResolvedGraph = 19,
+    /// `APEX-T1.114` (engine-list, ledger row): the authoritative replay
+    /// bundle's own canonical root — distinct from `ExecutionEvidence` (6,
+    /// the paired-run Verdict/FirstDivergence oracle's evidence) because a
+    /// replay bundle is a REPLAY INPUT (self-contained enough to re-run a
+    /// failure), not a comparison verdict.
+    ReplayBundle = 21,
+    /// `APEX-T1.107` (engine-list, Part 2 P2-G6): the failure-seed
+    /// shrinking record's own canonical root. A distinct domain from
+    /// `ReplayBundle` (21): a shrink record CITES seeds/signatures, it
+    /// does not embed a replayable run.
+    FailureSeedRecord = 22,
 }
 
 impl DigestDomainIdV1 {
@@ -123,10 +134,12 @@ impl DigestDomainIdV1 {
             Self::PluginArchive => "bastion/plugin-archive/v1",
             Self::PluginCandidateSet => "bastion/plugin-candidate-set/v1",
             Self::PluginResolvedGraph => "bastion/plugin-resolved-graph/v1",
+            Self::ReplayBundle => "bastion/replay-bundle/v1",
+            Self::FailureSeedRecord => "bastion/failure-seed-record/v1",
         }
     }
 
-    pub const ALL: [DigestDomainIdV1; 24] = [
+    pub const ALL: [DigestDomainIdV1; 26] = [
         Self::BootstrapManifest,
         Self::SaveUniverseManifest,
         Self::PluginActivationPlan,
@@ -147,6 +160,10 @@ impl DigestDomainIdV1 {
         Self::PluginArchive,
         Self::PluginCandidateSet,
         Self::PluginResolvedGraph,
+        // Engine lane (21-39), from bastion/engine2.
+        Self::ReplayBundle,
+        Self::FailureSeedRecord,
+        // APEX lane (40-99).
         Self::CheckpointStreamTranscript,
         Self::CheckpointGlobalTranscript,
         Self::CheckpointDescriptor,
@@ -216,6 +233,10 @@ mod tests {
         assert_eq!(DigestDomainIdV1::PluginCandidateSet.label(), "bastion/plugin-candidate-set/v1");
         assert_eq!(DigestDomainIdV1::PluginResolvedGraph.as_u16(), 19);
         assert_eq!(DigestDomainIdV1::PluginResolvedGraph.label(), "bastion/plugin-resolved-graph/v1");
+        assert_eq!(DigestDomainIdV1::ReplayBundle.as_u16(), 21);
+        assert_eq!(DigestDomainIdV1::ReplayBundle.label(), "bastion/replay-bundle/v1");
+        assert_eq!(DigestDomainIdV1::FailureSeedRecord.as_u16(), 22);
+        assert_eq!(DigestDomainIdV1::FailureSeedRecord.label(), "bastion/failure-seed-record/v1");
         assert_eq!(DigestDomainIdV1::CheckpointStreamTranscript.as_u16(), 40);
         assert_eq!(DigestDomainIdV1::CheckpointStreamTranscript.label(), "bastion/checkpoint-stream/v1");
         assert_eq!(DigestDomainIdV1::CheckpointGlobalTranscript.as_u16(), 41);

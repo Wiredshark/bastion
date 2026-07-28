@@ -1432,11 +1432,12 @@ impl Item {
     pub fn try_reclaim_from_block(
         block: Block,
         sprite_cfg: Option<&SpriteCfg>,
+        rng: &mut impl rand::Rng,
     ) -> Option<Vec<(u32, Self)>> {
         if let Some(loot_spec) = sprite_cfg.and_then(|sprite_cfg| sprite_cfg.loot_table.as_ref()) {
-            LootSpec::LootTable(loot_spec).to_items()
+            LootSpec::LootTable(loot_spec).to_items(rng)
         } else {
-            block.get_sprite()?.default_loot_spec()??.to_items()
+            block.get_sprite()?.default_loot_spec()??.to_items(rng)
         }
     }
 

@@ -124,3 +124,51 @@ pub fn thought_sum(
     }
     (sum + compensation) as f32
 }
+
+/// engine-list T3.54: [`thought_sum`]'s per-thought breakdown — same
+/// filter/care/decay per term, kept individual instead of folded into one
+/// compensated sum. Diagnostic only: callers must still call
+/// [`thought_sum`] for the number that actually drives
+/// [`common::comp::bastion::mood_formula`] (this function's own
+/// unweighted `.sum()` is not compensated and must never stand in for
+/// it). `thought_id` is [`rtsim::data::ChronicleKind`]'s declaration-order
+/// discriminant — stable as long as the enum's declared order doesn't
+/// change, the same invariant `Ord` on the kind already relies on
+/// (DET-MOOD-003).
+pub fn thought_contributions(
+    chronicle: &rtsim::data::Chronicle,
+    table: &ThoughtTable,
+    affinity_table: &ValueAffinityTable,
+    actor: common::rtsim::Actor,
+    now: f64,
+    values: &BTreeMap<common::bastion::Value, i8>,
+    neurotic: bool,
+) -> Vec<common::comp::bastion::ThoughtContributionV1> {
+    chronicle
+        .events()
+        .filter(|e| e.actors.contains(&actor))
+        .filter_map(|e| {
+            table.thoughts.get(&e.kind).map(|(mag, life)| {
+                let care = common::comp::bastion::care_factor(
+                    values,
+                    affinity_table
+                        .affinities
+                        .get(&e.kind)
+                        .map(Vec::as_slice)
+                        .unwrap_or(&[]),
+                    neurotic,
+                    *mag,
+                );
+                let contribution =
+                    care * common::comp::bastion::thought_decay(*mag, e.at_tod.0, now, *life);
+                common::comp::bastion::ThoughtContributionV1 {
+                    source_event_id: e.seq,
+                    thought_id: e.kind as u32,
+                    base_magnitude: *mag,
+                    care_multiplier: care,
+                    contribution,
+                }
+            })
+        })
+        .collect()
+}

@@ -9,7 +9,12 @@ use specs::{Component, Entity, FlaggedStorage, VecStorage};
 use std::{fmt, num::NonZeroU64};
 use tracing::error;
 
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+/// T3.53 (E3, Fable-ruled 2026-07-27): `Ord`/`PartialOrd` added — trivially
+/// safe (the wrapped `NonZeroU64` already has a total order) and multiple
+/// ruled E3 rows tie-break candidates by `Uid`, so the foundation type
+/// should carry the ordering itself rather than every call site keying on
+/// the raw `u64` separately.
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Uid(pub NonZeroU64);
 
 impl From<Uid> for NonZeroU64 {

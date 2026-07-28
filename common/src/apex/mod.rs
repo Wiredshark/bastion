@@ -6,20 +6,27 @@
 //! order into authoritative state. See `readme/apex/` for the program's
 //! packets; this module implements `APEX-T0.1`.
 
+pub mod numeric_probe;
+pub mod numeric_profile;
 // T6.1's inventory is a build-time tripwire whose only consumers are its
 // own assertions; outside `cfg(test)` every item in it is dead. Gating it
 // here is what the module actually is, and it silences 17 dead-code
 // warnings that would otherwise train the eye to ignore this file.
+//
+// Found during the engine2 reconciliation: T6.2's module declaration was
+// inserted BETWEEN this attribute and the module it belongs to, so the
+// gate had been sitting on `numeric_probe` since a0b1333643. Both builds
+// were green either way, which is exactly why it survived.
 #[cfg(test)]
-pub mod numeric_probe;
-pub mod numeric_profile;
 pub mod numeric_surface;
 pub mod physics_generation;
 pub mod boundary;
 pub mod build;
 pub mod digest;
+pub mod failure_seed;
 pub mod identity;
 pub mod manifest;
+pub mod replay_bundle;
 pub mod scalar;
 pub mod subsystem;
 pub mod input_receipt;

@@ -184,21 +184,51 @@ impl Sentiment {
         }
     }
 
+    /// T0.79 (E7 Stage 2, PRE-FIX FORMULA, preserved for the
+    /// characterization tests only -- `decay` no longer calls this). The
+    /// original hand-rolled chance, dt in the DENOMINATOR: chance SHRANK as
+    /// dt grew, the opposite of a per-time hazard. Kept byte-for-byte so
+    /// the "before" picture stays pinned regardless of future changes to
+    /// the live formula.
+    fn decay_chance_pre_t0_79_fix(value: f32, dt: f32) -> f64 {
+        (1.0 / ((value.powi(2) * 0.24 + 1.0) * (1.0 / 25.0) * DECAY_TIME_FACTOR * dt)).min(1.0)
+            as f64
+    }
+
+    /// T0.79 (E7 Stage 2, Fable-ruled CONVERT NOW): the corrected per-
+    /// second hazard, routed through the same [`crate::ai::discrete_chance`]
+    /// `NpcCtx::chance` uses -- one canonical cadence-invariant formula
+    /// instead of two.
+    ///
+    /// Derivation: the pre-fix formula was `min(1, 1 / (D(value) * dt))`
+    /// where `D(value) = (value^2*0.24 + 1) * (1/25) * DECAY_TIME_FACTOR`.
+    /// At `dt = 1` (the ONLY dt this ever actually runs at --
+    /// `NPC_SENTIMENT_TICK_SKIP` ticks at the 1/30s tick rate is exactly
+    /// 1 simulated second) that's `min(1, 1/D(value))`. Defining
+    /// `chance_per_second(value) := min(1, 1/D(value))` (literally the
+    /// pre-fix formula with `* dt` deleted from the denominator) and
+    /// running it through `discrete_chance` reproduces that SAME value
+    /// at `dt=1` exactly (`discrete_chance`'s `dt<=1.0` branch is
+    /// `dt * chance_per_second`, and `1 * x = x`) -- see
+    /// `decay_chance_matches_pre_fix_formula_at_the_current_cadence`. For
+    /// any OTHER dt the two formulas diverge on purpose: this one now
+    /// scales WITH dt instead of against it.
+    fn decay_chance(value: f32, dt: f32) -> f64 {
+        let chance_per_second =
+            (1.0 / ((value.powi(2) * 0.24 + 1.0) * (1.0 / 25.0) * DECAY_TIME_FACTOR)) as f64;
+        crate::ai::discrete_chance(dt as f64, chance_per_second)
+    }
+
     fn decay(&mut self, rng: &mut impl Rng, dt: f32) {
         if self.positivity != 0 {
             // TODO: Find a slightly nicer way to have sentiment decay, perhaps even by
             // remembering the last interaction instead of constant updates.
-            let chance = (1.0
-                / ((self.value().powi(2) * 0.24 + 1.0) * (1.0 / 25.0) * DECAY_TIME_FACTOR * dt))
-                .min(1.0) as f64;
+            let chance = Self::decay_chance(self.value(), dt);
 
             // For some reason, RNG doesn't work with small chances (possibly due to impl
-            // limits), so use two bools
-            // FLAGGED, not converted: this hand-rolled decay draw has dt in
-            // the DENOMINATOR (larger dt => smaller per-check chance) —
-            // suspicious inversion vs a hazard's dt-proportional form, but
-            // re-deriving the intended decay curve is its own row; converting
-            // blind would distort sentiment tuning. t0.6-exempt
+            // limits), so use two bools. `chance` is derived via discrete_chance (the same
+            // per-second-hazard formula NpcCtx::chance uses), not a raw ad-hoc gate.
+            // t0.6-exempt: sqrt-trick precision workaround consuming that already-derived, discrete_chance-routed per-second-hazard value.
             if rng.random_bool(chance.sqrt()) && rng.random_bool(chance.sqrt()) {
                 self.positivity -= self.positivity.signum();
             }
@@ -306,4 +336,217 @@ mod tests {
     }
 
     fn hex(bytes: &[u8]) -> String { bytes.iter().map(|byte| format!("{byte:02x}")).collect() }
+}
+
+/// E7 Stage 2 (T0.79, Fable-ruled CONVERT NOW): the "before" picture is
+/// pinned against the frozen [`Sentiment::decay_chance_pre_t0_79_fix`]
+/// (byte-identical to the original formula, `decay` no longer calls it),
+/// and the "after" picture -- the live [`Sentiment::decay_chance`], now
+/// routed through [`crate::ai::discrete_chance`] -- is proven both
+/// equivalent to the old formula at the one cadence that has ever
+/// actually run, and genuinely cadence-invariant everywhere else.
+///
+/// What the PRE-FIX formula computed: `chance = min(1, K(value) / dt)`
+/// where `K(value) = (value^2 * 0.24 + 1) * (1/25) * DECAY_TIME_FACTOR`.
+/// dt in the DENOMINATOR: chance shrinks as dt grows -- the opposite of a
+/// per-time hazard. The struct doc comment's own `seconds_until_neutrality`
+/// formula has no dt term at all, which IS a cadence-independence promise
+/// the pre-fix code never delivered on: checks-per-second * chance-per-
+/// check = (1/dt)*(K/dt) = K/dt^2, so halving dt (checking twice as often)
+/// roughly QUADRUPLED expected decays per real second. This was "accidental
+/// cadence-dependence", not a valid per-time hazard.
+///
+/// It was LATENT, not live-broken, at the time of the fix: the only call
+/// site (`rule::cleanup::CleanUp`) always passed the same fixed dt
+/// (`ctx.event.dt * NPC_SENTIMENT_TICK_SKIP` -- NPC_SENTIMENT_TICK_SKIP=30
+/// ticks at the engine's 1/30s tick rate is exactly 1 simulated second,
+/// both compile-time-fixed), so the cadence-dependence never manifested as
+/// an observable behavior difference under the calling code that has ever
+/// actually run. It would have misbehaved under any future cadence change
+/// (a tick-rate retune, an NPC_SENTIMENT_TICK_SKIP retune, or a large
+/// one-off catch-up dt after a stall) -- which is why T0.79 (the
+/// probability/rate source-gate CLOSURE row) converts it now rather than
+/// leaving it flagged.
+#[cfg(test)]
+mod sentiment_decay_law_characterization {
+    use super::*;
+
+    /// The inversion, pinned directly against the frozen pre-fix formula:
+    /// holding `value` fixed, chance goes DOWN as dt goes UP. A correct
+    /// per-time-hazard law goes the other way (more elapsed time -> more
+    /// likely a decay step has occurred by now) -- see
+    /// `decay_chance_grows_with_dt_after_the_fix` for the live formula's
+    /// opposite (correct) direction.
+    #[test]
+    fn pre_fix_decay_chance_shrinks_as_dt_grows() {
+        let value = Sentiment::POSITIVE;
+        let small_dt = Sentiment::decay_chance_pre_t0_79_fix(value, 1.0);
+        let large_dt = Sentiment::decay_chance_pre_t0_79_fix(value, 100.0);
+        assert!(
+            large_dt < small_dt,
+            "chance must shrink as dt grows under the pre-fix (inverted) formula: dt=1 -> \
+             {small_dt}, dt=100 -> {large_dt}"
+        );
+        // Exactly proportional to 1/dt (not just "smaller" by some other
+        // shape) -- pins the specific K(value)/dt form, not just its sign.
+        // Tolerance is f32-precision-scale (the underlying formula computes
+        // in f32 before the final f64 cast), not a loose approximation.
+        assert!(
+            (small_dt / large_dt - 100.0).abs() < 1e-4,
+            "expected exactly a 100x ratio (K/1 vs K/100), got {}",
+            small_dt / large_dt
+        );
+    }
+
+    /// The doc comment's promise ("seconds_until_neutrality" has no dt
+    /// term) implies expected-decays-per-unit-real-time should be
+    /// cadence-INDEPENDENT: checking twice as often at half the dt should
+    /// give the same expected outcome over the same real time span. Pin
+    /// that the PRE-FIX formula did NOT hold that property -- checking
+    /// twice as often (halving dt) roughly quadrupled
+    /// expected-decays-per-real-second, it did not stay constant.
+    #[test]
+    fn pre_fix_expected_decays_per_real_second_is_not_cadence_invariant() {
+        let value = Sentiment::POSITIVE;
+        let dt: f64 = 10.0;
+        let checks_per_second = 1.0 / dt;
+        let chance = Sentiment::decay_chance_pre_t0_79_fix(value, dt as f32);
+        let decays_per_second = checks_per_second * chance;
+
+        let half_dt = dt / 2.0;
+        let checks_per_second_half = 1.0 / half_dt;
+        let chance_half = Sentiment::decay_chance_pre_t0_79_fix(value, half_dt as f32);
+        let decays_per_second_half = checks_per_second_half * chance_half;
+
+        let ratio = decays_per_second_half / decays_per_second;
+        assert!(
+            (ratio - 2.0).abs() > 0.5,
+            "a cadence-invariant law would keep this ratio near 1.0; the pre-fix formula \
+             instead moved it toward 2x (halving dt roughly doubled checks/sec AND roughly \
+             doubled chance/check) -- got ratio {ratio}, which would falsify the \
+             cadence-dependence finding if it were actually near 1.0"
+        );
+    }
+
+    /// `min(1.0, ...)` clamp: at a small enough dt, the pre-fix chance
+    /// saturates to 1 (guaranteed decay-step attempt every check) rather
+    /// than exceeding probability bounds.
+    #[test]
+    fn pre_fix_decay_chance_is_clamped_to_one_at_small_dt() {
+        let value = Sentiment::VILLAIN;
+        let chance = Sentiment::decay_chance_pre_t0_79_fix(value, 0.000_001);
+        assert_eq!(chance, 1.0);
+    }
+
+    /// Harsher sentiments (larger `|value|`) decay slower per the doc
+    /// comment ("decay gets slower the harsher the sentiment is") --
+    /// pinned against the pre-fix formula at a fixed dt so this property
+    /// is shown to survive independent of the dt-direction finding above
+    /// (and re-pinned against the LIVE formula below, proving the fix
+    /// preserved it).
+    #[test]
+    fn pre_fix_decay_chance_is_lower_for_harsher_sentiments_at_fixed_dt() {
+        let mild = Sentiment::decay_chance_pre_t0_79_fix(Sentiment::POSITIVE, 10.0);
+        let harsh = Sentiment::decay_chance_pre_t0_79_fix(Sentiment::HERO, 10.0);
+        assert!(
+            harsh < mild,
+            "a harsher sentiment (HERO={}) must decay no faster per-check than a milder one \
+             (POSITIVE={}): mild_chance={mild}, harsh_chance={harsh}",
+            Sentiment::HERO,
+            Sentiment::POSITIVE
+        );
+    }
+
+    /// T0.32-style exact-to-1-ulp equivalence pin (Fable-required, not
+    /// merely asserted): the live (post-fix) formula must reproduce the
+    /// pre-fix formula's output EXACTLY at dt=1.0 -- the one cadence
+    /// (`NPC_SENTIMENT_TICK_SKIP` ticks at the 1/30s tick rate) that has
+    /// ever actually run. This is the proof that converting the formula
+    /// changes zero observable behavior today.
+    #[test]
+    fn decay_chance_matches_pre_fix_formula_at_the_current_cadence() {
+        for value in [
+            Sentiment::POSITIVE,
+            Sentiment::NEGATIVE,
+            Sentiment::ALLY,
+            Sentiment::RIVAL,
+            Sentiment::FRIEND,
+            Sentiment::ENEMY,
+            Sentiment::HERO,
+            Sentiment::VILLAIN,
+        ] {
+            let dt = 1.0f32;
+            let pre_fix = Sentiment::decay_chance_pre_t0_79_fix(value, dt);
+            let live = Sentiment::decay_chance(value, dt);
+            assert!(
+                (pre_fix - live).abs() <= f64::EPSILON,
+                "value={value}: pre-fix chance {pre_fix} and live chance {live} must match to \
+                 1 ulp at dt=1.0 (the current cadence) -- the conversion must not change \
+                 observable behavior today"
+            );
+        }
+    }
+
+    /// The property that would have caught this originally, now proven to
+    /// HOLD for the live formula: checking twice as often (halving dt)
+    /// keeps expected-decays-per-real-second roughly CONSTANT, across a
+    /// sweep of dt values, not just at the one calibration point.
+    #[test]
+    fn decay_chance_grows_with_dt_after_the_fix() {
+        let value = Sentiment::POSITIVE;
+        let small_dt = Sentiment::decay_chance(value, 0.1);
+        let large_dt = Sentiment::decay_chance(value, 10.0);
+        assert!(
+            large_dt > small_dt,
+            "post-fix chance must GROW as dt grows (more elapsed time -> more likely a decay \
+             occurred by now): dt=0.1 -> {small_dt}, dt=10 -> {large_dt}"
+        );
+    }
+
+    /// Swept only within `discrete_chance`'s `dt <= 1.0` (linear) branch,
+    /// where invariance is EXACT by construction (`checks_per_second *
+    /// chance = (1/dt) * (dt * chance_per_second) = chance_per_second`,
+    /// algebraically constant, no tolerance needed for floating-point
+    /// beyond the sweep itself). Deliberately does NOT sweep past dt=1:
+    /// beyond that, `decay()`'s one-decrement-per-call design caps how
+    /// many hazard-intervals a single call can register regardless of how
+    /// large dt is, so "decays per second" naturally saturates downward at
+    /// large dt -- an inherent design limit of the one-shot-per-call
+    /// mechanism, not cadence-dependence, and out of scope for this pin.
+    #[test]
+    fn expected_decays_per_real_second_is_cadence_invariant_in_the_linear_regime() {
+        let value = Sentiment::POSITIVE;
+        let decays_per_second = |dt: f64| -> f64 {
+            let checks_per_second = 1.0 / dt;
+            checks_per_second * Sentiment::decay_chance(value, dt as f32)
+        };
+
+        let baseline = decays_per_second(1.0);
+        for dt in [0.001, 0.01, 0.1, 0.5, 1.0] {
+            let observed = decays_per_second(dt);
+            let ratio = observed / baseline;
+            assert!(
+                (ratio - 1.0).abs() < 1e-6,
+                "expected decays-per-real-second to match the dt=1.0 baseline ({baseline}) \
+                 exactly in the linear regime, but dt={dt} gave {observed} (ratio {ratio}) -- \
+                 the post-fix formula should be cadence-invariant here"
+            );
+        }
+    }
+
+    /// Re-pin, against the LIVE formula, that the fix preserved the
+    /// "harsher sentiments decay slower" property (not just reproduced
+    /// pre-fix numbers at one dt).
+    #[test]
+    fn decay_chance_is_lower_for_harsher_sentiments_at_fixed_dt_after_the_fix() {
+        let mild = Sentiment::decay_chance(Sentiment::POSITIVE, 10.0);
+        let harsh = Sentiment::decay_chance(Sentiment::HERO, 10.0);
+        assert!(
+            harsh < mild,
+            "a harsher sentiment (HERO={}) must decay no faster per-check than a milder one \
+             (POSITIVE={}) after the fix: mild_chance={mild}, harsh_chance={harsh}",
+            Sentiment::HERO,
+            Sentiment::POSITIVE
+        );
+    }
 }

@@ -98,9 +98,11 @@ impl CharacterBehavior for Data {
                         data.updater.insert(
                             data.entity,
                             strike.clone().create_melee(
-                                precision_mult,
-                                tool_stats,
-                                self.static_data.ability_info,
+                            precision_mult,
+                            tool_stats,
+                            self.static_data.ability_info,
+                            *data.uid,
+                            *data.time,
                             ),
                         );
 
@@ -190,9 +192,11 @@ impl CharacterBehavior for Data {
                             .custom_combo(custom_combo)
                             .handle_scaling(self.charge_amount)
                             .create_melee(
-                                precision_mult,
-                                tool_stats,
-                                self.static_data.ability_info,
+                            precision_mult,
+                            tool_stats,
+                            self.static_data.ability_info,
+                            *data.uid,
+                            *data.time,
                             ),
                     );
 

@@ -133,6 +133,9 @@ pub fn handle_create_npc(server: &mut Server, ev: CreateNpcEvent) -> EcsEntity {
         rider_effects,
         rider,
     } = ev.npc;
+    // E6 (determinism audit): fetched before the EntityBuilder chain below
+    // takes a long-lived mutable borrow of `server.state`.
+    let loot_roll_time = *server.state.ecs().read_resource::<Time>();
     let entity = server
         .state
         .create_npc(
@@ -157,7 +160,20 @@ pub fn handle_create_npc(server: &mut Server, ev: CreateNpcEvent) -> EcsEntity {
         entity
     };
 
-    let entity = if let Some(drop_items) = loot.to_items() {
+    // E6 (determinism audit): keyed on (spawn pos, sim time) — the entity
+    // has no Uid yet at this point in the builder chain, so this is the
+    // spawn-time identity actually available; to_items() used to reach
+    // ambient OS entropy internally.
+    let entity = if let Some(drop_items) = {
+        use rand::SeedableRng;
+        let mut rng = rand_chacha::ChaChaRng::seed_from_u64(common::lottery::seed_loot_roll(&[
+            &ev.pos.0.x.to_le_bytes(),
+            &ev.pos.0.y.to_le_bytes(),
+            &ev.pos.0.z.to_le_bytes(),
+            &loot_roll_time.0.to_bits().to_le_bytes(),
+        ]));
+        loot.to_items(&mut rng)
+    } {
         entity.with(ItemDrops(drop_items))
     } else {
         entity

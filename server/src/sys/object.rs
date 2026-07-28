@@ -1,6 +1,6 @@
 use common::{
     CachedSpatialGrid, Damage, DamageKind, GroupTarget,
-    combat::{Attack, AttackDamage},
+    combat::{self, Attack, AttackDamage},
     comp::{Body, Object, PickupItem, Pos, Teleporting, Vel, bastion::BastionPile, beam, object},
     consts::TELEPORTER_RADIUS,
     event::{ChangeBodyEvent, DeleteEvent, EmitExt, EventBus},
@@ -41,6 +41,7 @@ impl<'a> System<'a> for Sys {
         ReadStorage<'a, PickupItem>,
         ReadStorage<'a, BastionPile>,
         Read<'a, LazyUpdate>,
+        ReadStorage<'a, common::uid::Uid>,
     );
 
     const NAME: &'static str = "object";
@@ -65,6 +66,7 @@ impl<'a> System<'a> for Sys {
             items,
             bastion_piles,
             updater,
+            uids,
         ): Self::SystemData,
     ) {
         let mut emitters = events.get_emitters();
@@ -167,7 +169,10 @@ impl<'a> System<'a> for Sys {
                                 value: *damage,
                             },
                             Some(GroupTarget::OutOfGroup),
-                            rand::random(),
+                            // E5-C (determinism audit): keyed on the beam
+                            // pillar entity's own uid + sim time -- was bare
+                            // rand::random().
+                            combat::derive_ability_instance("sys/object", uids.get(entity).copied(), *time, 1),
                         );
                         if let Some(combat_effect) = damage_effect {
                             attack_damage = attack_damage.with_effect(combat_effect.clone());

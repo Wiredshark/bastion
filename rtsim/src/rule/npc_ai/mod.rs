@@ -39,7 +39,7 @@ use std::{collections::VecDeque, hash::BuildHasherDefault, sync::Arc};
 use crate::{
     RtState, Rule, RuleError,
     ai::{
-        Action, NpcCtx, State, choose, finish, just, now,
+        Action, NpcCtx, State, action_policy::ActionClassV1, choose, finish, just, now,
         predicate::{Chance, EveryRange, Predicate, every_range, timeout},
         seq, until,
     },
@@ -69,6 +69,7 @@ use common::{
     spiral::Spiral2d,
     store::Id,
     terrain::{CoordinateConversions, TerrainChunkSize, sprite},
+    threat_policy::{ThreatCandidateV1, ThreatClassV1, arbitrate},
     time::DayPeriod,
     util::{Dir, Dir2},
 };
@@ -195,7 +196,7 @@ impl Rule for NpcAi {
                             ),
                             gizmos: gizmos.as_mut(),
                             system_data: &*ctx.system_data,
-                            current_action_priority: 0,
+                            current_action_class: ActionClassV1::Social,
                         }, &mut ());
 
                         // If an input wasn't processed by the brain, we no longer have a use for it
@@ -882,6 +883,205 @@ fn archetype_gate(ctx: &mut NpcCtx, activity: &str) -> bool {
         })
 }
 
+/// `T3.27` (E3-W2, Fable-ruled 2026-07-28): villager()'s three shelter/
+/// migrate branches all stay at `ActionClassV1::AssignedJob` (same tier
+/// as today), scored via `Consider::action_scored` instead of the bare
+/// `.important()`. Rain-shelter's score is the REAL rain intensity read
+/// from the weather grid (0..1, same `wpos + (512, 512)` offset
+/// convention `WeatherGrid::is_raining` itself uses -- weather.rs:266-
+/// 271). `NIGHT_SHELTER_SCORE` is deliberately the midpoint: heavy rain
+/// (>0.5) now outranks night-shelter, a light drizzle doesn't --
+/// documented placeholder, not a real signal, until a continuous
+/// "how deep into night" one exists. `MIGRATE_HOME_SCORE` sits decisively
+/// above the 0..1 range: migrating is a rare, deliberate life event, not
+/// a moment-to-moment comfort tradeoff, so it never loses to weather.
+/// These feed `Consider::action_scored`'s existing hysteresis bonus,
+/// which is what damps flapping when rain hovers near the boundary --
+/// the comparator earning its keep, no extra machinery needed.
+const NIGHT_SHELTER_SCORE: f32 = 0.5;
+const MIGRATE_HOME_SCORE: f32 = 10.0;
+
+/// T3.27 (E3-W2, characterization-first, mandatory per the handoff):
+/// which of [`villager`]'s three `consider.important(...)` branches
+/// (mod.rs:923 migrate-home, :944 seek-house-at-night, :983 seek-
+/// shelter-in-rain) wins under TODAY's `Consider::action` semantics --
+/// first true condition wins by DECLARATION ORDER, not judged urgency
+/// (`Consider::action`'s own doc explains why: with every real candidate
+/// scored 0.0, the fixed hysteresis bonus makes whichever registers
+/// first unbeatable by an equal-tier later candidate). This is a
+/// hand-maintained mirror of the three conditions' ORDER and GUARD
+/// EXEMPTIONS, not a live `NpcCtx` simulation of `villager()` itself
+/// (which needs one) -- it pins the EMERGENT DECISION as a pure function
+/// of the gating booleans, so a future migration's behavior diff is
+/// explicit and reviewable rather than blind. Keep this in lockstep with
+/// villager()'s actual branch order/guard-exemptions if either changes;
+/// `migrate_eligible`'s own (unrelated, complex) eligibility computation
+/// is an opaque input here, not re-derived.
+///
+/// Scope note, disclosed: only the three `important()`-tier branches are
+/// characterized (the specific bug the handoff names). The `casual()`-
+/// tier "fun activities" section below them (mod.rs:1080+) and any
+/// further behavior are out of scope for this pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(dead_code, reason = "consumed by E3-W2's migration follow-up; live in the tree now so the characterization tests below can pin today's baseline first")]
+enum VillagerImportantBranchV1 {
+    MigrateHome,
+    SeekHouseAtNight,
+    SeekShelterInRain,
+    None,
+}
+
+#[expect(dead_code, reason = "consumed by E3-W2's migration follow-up; live in the tree now so the characterization tests below can pin today's baseline first")]
+fn villager_important_branch_today(
+    migrate_eligible: bool,
+    is_dark: bool,
+    is_raining: bool,
+    is_guard: bool,
+) -> VillagerImportantBranchV1 {
+    if migrate_eligible {
+        return VillagerImportantBranchV1::MigrateHome;
+    }
+    if is_dark && !is_guard {
+        return VillagerImportantBranchV1::SeekHouseAtNight;
+    }
+    if is_raining && !is_guard {
+        return VillagerImportantBranchV1::SeekShelterInRain;
+    }
+    VillagerImportantBranchV1::None
+}
+
+#[cfg(test)]
+mod villager_important_branch_characterization {
+    use super::{VillagerImportantBranchV1::*, villager_important_branch_today as branch};
+
+    /// The confirmed live bug the handoff names: dark AND raining
+    /// simultaneously always picks "seek house at night" over "seek
+    /// shelter from rain" -- an accident of source order (dark is
+    /// checked at mod.rs:941, before rain at mod.rs:982), not a judgment
+    /// that night shelter matters more than rain shelter. Pinned here so
+    /// a future fix's diff is explicit against this documented baseline.
+    #[test]
+    fn dark_and_raining_picks_night_shelter_not_rain_shelter() {
+        assert_eq!(branch(false, true, true, false), SeekHouseAtNight);
+    }
+
+    #[test]
+    fn dark_only_picks_night_shelter() {
+        assert_eq!(branch(false, true, false, false), SeekHouseAtNight);
+    }
+
+    #[test]
+    fn rain_only_picks_rain_shelter() {
+        assert_eq!(branch(false, false, true, false), SeekShelterInRain);
+    }
+
+    #[test]
+    fn neither_dark_nor_raining_picks_nothing() {
+        assert_eq!(branch(false, false, false, false), None);
+    }
+
+    /// Guards are exempted from both shelter branches (mod.rs:942,:982),
+    /// even under conditions that would otherwise trigger them.
+    #[test]
+    fn guard_is_exempt_from_both_shelter_branches_even_dark_and_raining() {
+        assert_eq!(branch(false, true, true, true), None);
+    }
+
+    /// Migrate-home is checked first (mod.rs:889) and, when eligible,
+    /// always wins over dark/rain regardless of guard status -- migrate
+    /// eligibility has no guard exemption in the real code.
+    #[test]
+    fn migrate_eligible_wins_over_dark_and_rain_regardless_of_guard() {
+        assert_eq!(branch(true, true, true, false), MigrateHome);
+        assert_eq!(branch(true, true, true, true), MigrateHome);
+    }
+}
+
+/// T3.27 (E3-W2, Fable-ruled 2026-07-28): mirrors villager()'s branches
+/// AFTER the `Consider::action_scored` migration -- same structure as
+/// [`villager_important_branch_today`] (a hand-maintained model, not a
+/// live simulation), but net-score-driven instead of first-true-wins.
+/// `is_raining` is the real branch GATE (unchanged); `rain_intensity` is
+/// only meaningful when `is_raining` is true, matching how the real code
+/// pairs `WeatherGrid::is_raining` (the `if`) with `get_max_near(...)
+/// .rain` (the score) at the same call site.
+#[expect(dead_code, reason = "only consumed by its own non-vacuity tests below; documents the post-migration model alongside the pre-migration one")]
+fn villager_important_branch_after_e3w2(
+    migrate_eligible: bool,
+    is_dark: bool,
+    is_raining: bool,
+    rain_intensity: f32,
+    is_guard: bool,
+) -> VillagerImportantBranchV1 {
+    let mut best: Option<(f32, VillagerImportantBranchV1)> = None;
+    let mut propose = |score: f32, branch: VillagerImportantBranchV1| {
+        if best.is_none_or(|(best_score, _)| score > best_score) {
+            best = Some((score, branch));
+        }
+    };
+    if migrate_eligible {
+        propose(MIGRATE_HOME_SCORE, VillagerImportantBranchV1::MigrateHome);
+    }
+    if is_dark && !is_guard {
+        propose(NIGHT_SHELTER_SCORE, VillagerImportantBranchV1::SeekHouseAtNight);
+    }
+    if is_raining && !is_guard {
+        propose(rain_intensity, VillagerImportantBranchV1::SeekShelterInRain);
+    }
+    best.map_or(VillagerImportantBranchV1::None, |(_, branch)| branch)
+}
+
+#[cfg(test)]
+mod villager_important_branch_after_e3w2_tests {
+    use super::{
+        NIGHT_SHELTER_SCORE, VillagerImportantBranchV1::*,
+        villager_important_branch_after_e3w2 as branch,
+    };
+
+    /// Required non-vacuity flip (Fable-ruled): dark + HEAVY rain now
+    /// picks rain-shelter, where the pre-migration characterization
+    /// (`dark_and_raining_picks_night_shelter_not_rain_shelter`) proved
+    /// night-shelter always won. Uses 0.9, well clear of the 0.5
+    /// boundary, so this isn't sensitive to exact hysteresis-margin math.
+    #[test]
+    fn dark_and_heavy_rain_now_picks_rain_shelter() {
+        assert_eq!(branch(false, true, true, 0.9, false), SeekShelterInRain);
+    }
+
+    /// Required boundary hold (Fable-ruled): dark + a light DRIZZLE still
+    /// picks night-shelter -- the fix doesn't overcorrect into always
+    /// preferring rain-shelter. Uses 0.1, well clear of the boundary.
+    #[test]
+    fn dark_and_drizzle_still_picks_night_shelter() {
+        assert_eq!(branch(false, true, true, 0.1, false), SeekHouseAtNight);
+    }
+
+    /// The named boundary itself: rain intensity exactly at
+    /// `NIGHT_SHELTER_SCORE` does NOT flip (strict-greater, not >=) --
+    /// ties favor whichever was proposed first, matching
+    /// `Consider::action_scored`'s own tie rule.
+    #[test]
+    fn rain_intensity_exactly_at_the_boundary_does_not_flip() {
+        assert_eq!(branch(false, true, true, NIGHT_SHELTER_SCORE, false), SeekHouseAtNight);
+    }
+
+    /// Guards remain exempt from both shelter branches, unchanged by the
+    /// scoring migration.
+    #[test]
+    fn guard_is_exempt_from_both_shelter_branches_even_dark_and_heavy_rain() {
+        assert_eq!(branch(false, true, true, 0.9, true), None);
+    }
+
+    /// Migrate-home still wins unconditionally within the tier, unchanged
+    /// by the scoring migration -- `MIGRATE_HOME_SCORE` sits decisively
+    /// above the 0..1 range real weather scores live in.
+    #[test]
+    fn migrate_eligible_still_wins_over_dark_and_heavy_rain_regardless_of_guard() {
+        assert_eq!(branch(true, true, true, 0.9, false), MigrateHome);
+        assert_eq!(branch(true, true, true, 0.9, true), MigrateHome);
+    }
+}
+
 fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
     choose(move |ctx, state: &mut DefaultState, consider| {
         // Consider moving home if the home site gets too full
@@ -919,7 +1119,7 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
                 .map(|(site_id, _, _)| site_id)
         {
             let site_name = util::site_name(ctx, new_home);
-            consider.important(just(move |ctx, _| {
+            consider.action_scored(ActionClassV1::AssignedJob, MIGRATE_HOME_SCORE, just(move |ctx, _| {
                 if let Some(site_name) = &site_name {
                     ctx.controller.say(None, Content::localized("npc-speech-migrating").with_arg("site", site_name.as_str()))
                 }
@@ -935,12 +1135,20 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
         let is_free_time = is_weekend || is_evening;
 
         let is_raining = ctx.system_data.weather_grid.is_raining(ctx.npc.wpos.xy());
+        // T3.27 (E3-W2): real rain intensity for the shelter branch's
+        // score below -- same wpos+offset convention `is_raining` itself
+        // uses (weather.rs:266-271); only meaningful when `is_raining`.
+        let rain_intensity = ctx
+            .system_data
+            .weather_grid
+            .get_max_near(ctx.npc.wpos.xy() + Vec2::new(512.0, 512.0))
+            .rain;
 
         // Go to a house if it's dark
         if day_period.is_dark()
             && !matches!(ctx.npc.profession(), Some(Profession::Guard))
         {
-            consider.important(
+            consider.action_scored(ActionClassV1::AssignedJob, NIGHT_SHELTER_SCORE,
                 now(move |ctx, _| {
                     if let Some(house_wpos) = ctx.data
                         .sites
@@ -979,7 +1187,7 @@ fn villager(visiting_site: SiteId) -> impl Action<DefaultState> {
 
         // Go to a house if its raining
         if is_raining && !matches!(ctx.npc.profession(), Some(Profession::Guard)) {
-            consider.important(
+            consider.action_scored(ActionClassV1::AssignedJob, rain_intensity,
                 now(move |ctx, _| {
                     if let Some(house_wpos) = ctx.data
                         .sites
@@ -1629,6 +1837,20 @@ fn check_inbox<S: State>(ctx: &mut NpcCtx) -> Option<impl Action<S> + use<S>> {
     action
 }
 
+/// `T3.35+T3.39` (E3-WT, Fable-ruled 2026-07-27): wires the shared
+/// `threat_policy` in place of the old canonical-`Actor`-order tiebreak
+/// (DET-AIT-004's fix, now superseded rather than removed — see below).
+/// Disclosed collapse from 3 classes to 1: `NpcCtx` here only carries a
+/// static `Sentiment::ENEMY` relationship and position, no per-actor
+/// engagement/recency tracking, so `AttackingMe`/`AttackingAlly` can't be
+/// honestly discriminated at this call site (that data lives only in
+/// server-agent's `health.last_change` — see
+/// `is_more_dangerous_than_target`). Every candidate here is therefore the
+/// fixed class `HostileNearby`; `capability_vs_me`/`recency` are 0.0 (no
+/// signal exists), so ranking reduces to real proximity (previously this
+/// site had none at all) with `Actor`'s own total order as the exact-tie
+/// tiebreak — DET-AIT-004's canonical-order fix is preserved as
+/// `threat_policy::compare`'s tiebreak term, not lost.
 fn check_for_enemies<S: State>(ctx: &mut NpcCtx) -> Option<impl Action<S> + use<S>> {
     // TODO: Instead of checking all nearby actors every tick, it would be more
     // effective to have the actor grid generate a per-tick diff so that we only
@@ -1636,25 +1858,164 @@ fn check_for_enemies<S: State>(ctx: &mut NpcCtx) -> Option<impl Action<S> + use<
     // implementing this means accounting for changes in sentiment (that could
     // suddenly make a nearby actor an enemy) as well as variable NPC tick
     // rates!
-    // DET-AIT-004 (v8 npc-combat-targeting, High): `nearby` yields actors in
-    // grid-traversal + slotmap + character-map order, so `.find(is ENEMY)`
-    // engaged whichever enemy that (non-canonical) iteration surfaced first.
-    // Pick the canonically-lowest enemy Actor instead, so the engaged target is
-    // a pure function of the nearby-enemy set. (All candidates are already
-    // within the 24-unit radius, so this stays a "nearby enemy".)
-    ctx.data
+    let wpos = ctx.npc.wpos;
+    let candidates = ctx
+        .data
         .npcs
-        .nearby(Some(ctx.npc_id), ctx.npc.wpos, 24.0)
-        .filter(|actor| ctx.sentiments.toward(*actor).is(Sentiment::ENEMY))
-        .min()
-        .map(|enemy| just(move |ctx, _| ctx.controller.attack(enemy)))
+        .nearby_with_pos(Some(ctx.npc_id), wpos, 24.0)
+        .filter(|(actor, _)| ctx.sentiments.toward(*actor).is(Sentiment::ENEMY));
+
+    pick_hostile_threat(wpos, candidates).map(|enemy| just(move |ctx, _| ctx.controller.attack(enemy)))
+}
+
+/// Pure core of [`check_for_enemies`]'s wiring, extracted so it's
+/// unit-testable without a live `NpcCtx` (same discipline as
+/// [`reaction_precedence`] above). All candidates are `HostileNearby`
+/// (this call site's disclosed collapse, see `check_for_enemies`'s own
+/// doc); ranking is real proximity with `Actor`'s total order as the
+/// exact-tie tiebreak.
+fn pick_hostile_threat(
+    wpos: Vec3<f32>,
+    candidates: impl IntoIterator<Item = (Actor, Vec3<f32>)>,
+) -> Option<Actor> {
+    let candidates = candidates
+        .into_iter()
+        .map(|(actor, pos)| ThreatCandidateV1 {
+            class: ThreatClassV1::HostileNearby,
+            distance: pos.distance(wpos),
+            capability_vs_me: 0.0,
+            recency: 0.0,
+            tiebreak: actor,
+        })
+        .collect::<Vec<_>>();
+
+    arbitrate(&candidates).map(|i| candidates[i].tiebreak)
+}
+
+fn threat_reaction<S: State>(ctx: &mut NpcCtx) -> Option<Box<dyn Action<S>>> {
+    check_for_enemies(ctx).map(Action::boxed)
+}
+fn deadline_reaction<S: State>(ctx: &mut NpcCtx) -> Option<Box<dyn Action<S>>> {
+    quest::check_for_timeouts(ctx).map(Action::boxed)
+}
+fn inbox_reaction<S: State>(ctx: &mut NpcCtx) -> Option<Box<dyn Action<S>>> {
+    check_inbox::<S>(ctx).map(Action::boxed)
+}
+
+/// T3.34 (E3, Fable-ruled 2026-07-27): the reaction-precedence combinator
+/// — threat > deadline > inbox. Was inbox > threat > deadline (an
+/// accident of `.or_else()` declaration order, never a designed policy).
+/// Generic over `C`/`T` (not hardcoded to `NpcCtx`/`Action`) so
+/// [`reaction_precedence_tests`] exercises this EXACT function — the one
+/// `react_to_events` calls — without needing a live `NpcCtx`. Each
+/// candidate is still evaluated lazily, one `fn` call at a time (a plain
+/// reborrow of `ctx` per call, never three simultaneous borrows), so a
+/// lower-precedence check's side effects (inbox drainage, quest-timeout
+/// resolution) only fire when that check is actually reached — same
+/// conditionality as before this row, only the order changed.
+fn reaction_precedence<C, T>(
+    ctx: &mut C,
+    threat: fn(&mut C) -> Option<T>,
+    deadline: fn(&mut C) -> Option<T>,
+    inbox: fn(&mut C) -> Option<T>,
+) -> Option<T> {
+    threat(ctx).or_else(|| deadline(ctx)).or_else(|| inbox(ctx))
 }
 
 fn react_to_events<S: State>(ctx: &mut NpcCtx, _: &mut S) -> Option<impl Action<S> + use<S>> {
-    check_inbox::<S>(ctx)
-        .map(Action::boxed)
-        .or_else(|| check_for_enemies(ctx).map(Action::boxed))
-        .or_else(|| quest::check_for_timeouts(ctx).map(Action::boxed))
+    reaction_precedence(ctx, threat_reaction, deadline_reaction, inbox_reaction)
+}
+
+#[cfg(test)]
+mod reaction_precedence_tests {
+    use super::reaction_precedence;
+
+    fn pending(_: &mut ()) -> Option<&'static str> { Some("pending") }
+    fn absent(_: &mut ()) -> Option<&'static str> { None }
+
+    /// T3.34's own contention case: threat and inbox both pending, no
+    /// deadline — threat must win. Distinct payloads (not just `Some`)
+    /// so the winner's IDENTITY, not merely its presence, is checked.
+    #[test]
+    fn threat_beats_pending_inbox() {
+        fn threat(_: &mut ()) -> Option<&'static str> { Some("threat") }
+        fn inbox(_: &mut ()) -> Option<&'static str> { Some("inbox") }
+        assert_eq!(reaction_precedence(&mut (), threat, absent, inbox), Some("threat"));
+    }
+
+    /// T3.34's other contention case: deadline and inbox both pending, no
+    /// threat — deadline must win.
+    #[test]
+    fn deadline_beats_pending_inbox_when_no_threat() {
+        fn deadline(_: &mut ()) -> Option<&'static str> { Some("deadline") }
+        fn inbox(_: &mut ()) -> Option<&'static str> { Some("inbox") }
+        assert_eq!(reaction_precedence(&mut (), absent, deadline, inbox), Some("deadline"));
+    }
+
+    #[test]
+    fn inbox_wins_only_when_nothing_else_pending() {
+        assert_eq!(reaction_precedence(&mut (), absent, absent, pending), Some("pending"));
+    }
+
+    /// Non-vacuity: reproducing the OLD (pre-T3.34) inbox > threat >
+    /// deadline order on the SAME contention case gives a DIFFERENT
+    /// winner — proving this test actually discriminates between the two
+    /// policies, not just that both compile and return `Some`.
+    #[test]
+    fn non_vacuous_against_the_old_accidental_order() {
+        fn threat(_: &mut ()) -> Option<&'static str> { Some("threat") }
+        fn inbox(_: &mut ()) -> Option<&'static str> { Some("inbox") }
+        let new_order = reaction_precedence(&mut (), threat, absent, inbox);
+        // The old code was `check_inbox().or_else(check_for_enemies).or_else(check_for_timeouts)`.
+        let old_order = reaction_precedence(&mut (), inbox, threat, absent);
+        assert_ne!(old_order, new_order, "the two policies must disagree on this contention case");
+        assert_eq!(new_order, Some("threat"));
+        assert_eq!(old_order, Some("inbox"));
+    }
+}
+
+// T3.35+T3.39 (E3-WT): non-vacuity for `check_for_enemies`'s threat_policy
+// wiring — proves real proximity now decides (previously canonical-Actor-
+// order alone did), and that the DET-AIT-004 tiebreak survives exact ties.
+#[cfg(test)]
+mod pick_hostile_threat_tests {
+    use super::pick_hostile_threat;
+    use common::rtsim::{Actor, NpcId};
+    use slotmap::KeyData;
+    use vek::Vec3;
+
+    fn actor(raw: u64) -> Actor { Actor::Npc(NpcId::from(KeyData::from_ffi(raw))) }
+
+    #[test]
+    fn no_candidates_is_none() {
+        assert_eq!(pick_hostile_threat(Vec3::zero(), []), None);
+    }
+
+    /// Real proximity now decides: closer enemy wins even though its
+    /// `Actor` id sorts higher than the farther one (so this can't be
+    /// passing by accident of the old canonical-order tiebreak alone).
+    #[test]
+    fn closer_enemy_wins_even_with_a_higher_actor_id() {
+        let wpos = Vec3::new(0.0, 0.0, 0.0);
+        let far_low_id = (actor(1), Vec3::new(20.0, 0.0, 0.0));
+        let close_high_id = (actor(9), Vec3::new(2.0, 0.0, 0.0));
+        assert_eq!(
+            pick_hostile_threat(wpos, [far_low_id, close_high_id]),
+            Some(actor(9))
+        );
+    }
+
+    /// Exact distance tie: DET-AIT-004's canonical-order tiebreak is
+    /// preserved via `threat_policy::compare`'s `tiebreak` term — higher
+    /// `Actor` wins, independent of iteration order.
+    #[test]
+    fn exact_tie_resolves_by_actor_order_independently_of_iteration_order() {
+        let wpos = Vec3::new(0.0, 0.0, 0.0);
+        let a = (actor(3), Vec3::new(5.0, 0.0, 0.0));
+        let b = (actor(7), Vec3::new(5.0, 0.0, 0.0));
+        assert_eq!(pick_hostile_threat(wpos, [a, b]), Some(actor(7)));
+        assert_eq!(pick_hostile_threat(wpos, [b, a]), Some(actor(7)));
+    }
 }
 
 fn humanoid() -> impl Action<DefaultState> {

@@ -196,11 +196,17 @@ pub enum ProjectileConstructorKind {
 }
 
 impl ProjectileConstructor {
+    /// E5-C (determinism audit): `time` keys the instance id (was bare
+    /// `rand::random()`) via `combat::derive_ability_instance`, combined
+    /// with `owner` (already a param) -- no target exists yet at
+    /// projectile-launch time, so this can't use
+    /// `derive_attack_instance`'s signature.
     pub fn create_projectile(
         self,
         owner: Option<Uid>,
         precision_mult: f32,
         ability_info: Option<AbilityInfo>,
+        time: crate::resources::Time,
     ) -> Projectile {
         if self.scaled.is_some() {
             dev_panic!(
@@ -209,7 +215,7 @@ impl ProjectileConstructor {
             )
         }
 
-        let instance = rand::random();
+        let instance = crate::combat::derive_ability_instance("comp/projectile", owner, time, 1);
         let attack = self.attack.map(|a| {
             let target = if a.friendly_fire {
                 Some(GroupTarget::All)

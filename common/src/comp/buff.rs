@@ -373,13 +373,20 @@ impl BuffKind {
     /// only the strongest.
     pub fn stacks(self) -> bool { matches!(self, BuffKind::PotionSickness | BuffKind::Resilience) }
 
-    pub fn effects(&self, data: &BuffData, source_entity: Option<Uid>) -> Vec<BuffEffect> {
+    /// E5-C (determinism audit): `source_entity`/`time` key the instance id
+    /// (was bare `rand::random()`) via `combat::derive_ability_instance`.
+    pub fn effects(
+        &self,
+        data: &BuffData,
+        source_entity: Option<Uid>,
+        time: crate::resources::Time,
+    ) -> Vec<BuffEffect> {
         // Normalized nonlinear scaling
         // TODO: Do we want to make denominator term parameterized. Come back to if we
         // add nn_scaling3.
         let nn_scaling = |a: f32| a.abs() / (a.abs() + 0.5) * a.signum();
         let nn_scaling2 = |a: f32| a.abs() / (a.abs() + 1.0) * a.signum();
-        let instance = rand::random();
+        let instance = crate::combat::derive_ability_instance("comp/buff", source_entity, time, 1);
         match self {
             BuffKind::Bleeding => vec![BuffEffect::HealthChangeOverTime {
                 rate: -data.strength,
@@ -1010,7 +1017,7 @@ impl Buff {
         } else {
             None
         };
-        let effects = kind.effects(&data, source_uid);
+        let effects = kind.effects(&data, source_uid, time);
         let cat_ids = kind.extend_cat_ids(cat_ids);
         let start_time = Time(time.0 + data.delay.map_or(0.0, |delay| delay.0));
         let end_time = if cat_ids.iter().any(|cat_id| {

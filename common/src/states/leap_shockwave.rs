@@ -152,7 +152,7 @@ impl CharacterBehavior for Data {
                             value: self.static_data.damage,
                         },
                         Some(GroupTarget::OutOfGroup),
-                        rand::random(),
+                        combat::derive_ability_instance("states/leap_shockwave", *data.uid, *data.time, 1),
                     );
                     if let Some(effect) = &self.static_data.damage_effect {
                         damage = damage.with_effect(effect.clone());
@@ -197,7 +197,7 @@ impl CharacterBehavior for Data {
                                     value: self.static_data.damage / 2.,
                                 },
                                 Some(GroupTarget::OutOfGroup),
-                                rand::random(),
+                                combat::derive_ability_instance("states/leap_shockwave", *data.uid, *data.time, 2),
                             );
                             let attack = Attack::new(Some(self.static_data.ability_info))
                                 .with_damage(damage)

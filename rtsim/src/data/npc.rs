@@ -1,6 +1,6 @@
 use crate::{
     ai::Action,
-    data::{KnownReports, Reports, Sentiments, quest::Quest},
+    data::{KnownReports, Reports, Sentiments, quest::{Quest, QuestTerminalOutcome}},
     generate::name,
 };
 pub use common::rtsim::{NpcId, Profession};
@@ -11,8 +11,9 @@ use common::{
     map::Marker,
     resources::{Time, TimeOfDay},
     rtsim::{
-        Actor, Dialogue, DialogueId, DialogueKind, FactionId, NpcAction, NpcActivity, NpcInput,
-        NpcMsg, Personality, QuestId, Response, Role, SiteId, TerrainResource,
+        Actor, Dialogue, DialogueId, DialogueKind, FactionId, ItemResource, NpcAction,
+        NpcActivity, NpcInput, NpcMsg, Personality, QuestId, Response, Role, SiteId,
+        TerrainResource,
     },
     store::Id,
     terrain::CoordinateConversions,
@@ -26,10 +27,7 @@ use slotmap::DenseSlotMap;
 use std::{
     collections::VecDeque,
     ops::{Deref, DerefMut},
-    sync::{
-        Arc,
-        atomic::{AtomicU32, Ordering},
-    },
+    sync::Arc,
 };
 use tracing::error;
 use vek::*;
@@ -69,6 +67,24 @@ pub struct Controller {
     pub look_dir: Option<Dir>,
     pub job: Option<Job>,
     pub quests_to_create: Vec<(QuestId, Quest)>,
+
+    /// `T0.86`/`E5-A`: terminal-resolution intents this NPC wants to
+    /// submit this tick (e.g. "I observed this quest complete", "I
+    /// observed this quest time out"). Collected across ALL npcs and
+    /// arbitrated serially in `simulate_npcs.rs`'s post-parallel commit
+    /// phase -- mirrors `quests_to_create`'s own creation-time buffer,
+    /// same reason: NPC AI runs under `par_iter_mut`, so calling
+    /// `Quest::resolve` directly from here would race exactly like
+    /// `Quests::register`'s old `fetch_add` did.
+    pub quest_terminal_intents: Vec<(QuestId, QuestTerminalOutcome)>,
+    /// Populated ONLY by that same serial commit phase, for whichever
+    /// npc(s) submitted the winning intent for a quest this tick:
+    /// `(quest_id, success, deposit)`. A subsequent tick's poll removes
+    /// its own entry by `quest_id` -- exactly-once by construction (a
+    /// single-writer `Vec` on this NPC's own `Controller`, no cross-NPC
+    /// contention; a `Vec` rather than a single slot because one NPC can
+    /// be related to more than one quest resolving in the same tick).
+    pub quest_terminal_receipts: Vec<(QuestId, bool, Option<(ItemResource, f32)>)>,
 
     /// Each pilot gets assigned to a route, and as the server ticks onward, the
     /// current leg of each pilot's assigned route increments. This gets
@@ -214,21 +230,22 @@ impl Controller {
             }));
     }
 
-    fn new_dialogue_tag(&self) -> u32 {
-        static TAG_COUNTER: AtomicU32 = AtomicU32::new(0);
-        TAG_COUNTER.fetch_add(1, Ordering::Relaxed)
-    }
-
     /// Ask a question, with various possible answers. Returns the dialogue tag,
     /// used for identifying the answer.
+    /// `tag` is the caller's responsibility (`T0.85`, E4 row 1): the old
+    /// process-global `AtomicU32` counter here (`new_dialogue_tag`, since
+    /// removed) made tags shift with unrelated dialogue activity elsewhere
+    /// in the process — same defect class DET-ESIM-020 fixed for
+    /// `QuestId`. Callers derive a world-scoped, deterministic tag via
+    /// `DomainHasher` instead (see `rtsim/src/rule/npc_ai/util.rs`'s
+    /// `ask_question`/`say_statement_with_gift`).
     pub fn dialogue_question(
         &mut self,
         session: DialogueSession,
         msg: comp::Content,
         responses: impl IntoIterator<Item = (u16, Response)>,
+        tag: u32,
     ) -> u32 {
-        let tag = self.new_dialogue_tag();
-
         self.actions
             .push(NpcAction::Dialogue(session.target, Dialogue {
                 id: session.id,
@@ -244,14 +261,15 @@ impl Controller {
 
     /// Provide a statement as part of a dialogue. Returns the dialogue tag,
     /// used for identifying acknowledgements.
+    ///
+    /// `tag` is the caller's responsibility -- see `dialogue_question`'s doc.
     pub fn dialogue_statement(
         &mut self,
         session: DialogueSession,
         msg: comp::Content,
         given_item: Option<(Arc<ItemDef>, u32)>,
+        tag: u32,
     ) -> u32 {
-        let tag = self.new_dialogue_tag();
-
         self.actions
             .push(NpcAction::Dialogue(session.target, Dialogue {
                 id: session.id,
@@ -825,6 +843,50 @@ impl Npcs {
                             } else {
                                 None
                             }
+                        })
+                    })
+                    .into_iter()
+                    .flatten(),
+            )
+    }
+
+    /// `T3.35+T3.39` (E3-WT): same traversal as [`Self::nearby`], but keeps
+    /// each actor's position — needed for `threat_policy::ThreatCandidateV1`
+    /// scoring, which `nearby`'s callers don't need and which `nearby`
+    /// itself discards. A sibling method rather than changing `nearby`'s
+    /// return type, so the other four existing call sites are untouched.
+    pub fn nearby_with_pos(
+        &self,
+        this_npc: Option<NpcId>,
+        wpos: Vec3<f32>,
+        radius: f32,
+    ) -> impl Iterator<Item = (Actor, Vec3<f32>)> + '_ {
+        let chunk_pos = wpos.xy().as_().wpos_to_cpos();
+        let r_sqr = radius * radius;
+        LOCALITY
+            .into_iter()
+            .flat_map(move |neighbor| {
+                self.npc_grid.get(chunk_pos + neighbor).map(move |cell| {
+                    cell.npcs
+                        .iter()
+                        .copied()
+                        .filter_map(move |npc| {
+                            self.npcs.get(npc).and_then(|data| {
+                                (data.wpos.distance_squared(wpos) < r_sqr
+                                    && Some(npc) != this_npc)
+                                    .then_some((Actor::Npc(npc), data.wpos))
+                            })
+                        })
+                })
+            })
+            .flatten()
+            .chain(
+                self.character_map
+                    .get(&chunk_pos)
+                    .map(|characters| {
+                        characters.iter().filter_map(move |(character, c_wpos)| {
+                            (c_wpos.distance_squared(wpos) < r_sqr)
+                                .then_some((Actor::Character(*character), *c_wpos))
                         })
                     })
                     .into_iter()

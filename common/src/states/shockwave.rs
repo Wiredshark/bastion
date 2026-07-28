@@ -224,7 +224,7 @@ impl Data {
                 value: self.static_data.damage,
             },
             Some(GroupTarget::OutOfGroup),
-            rand::random(),
+            combat::derive_ability_instance("states/shockwave", *data.uid, *data.time, 1),
         );
         if let Some(effect) = &self.static_data.damage_effect {
             damage = damage.with_effect(effect.clone());
