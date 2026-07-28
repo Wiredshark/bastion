@@ -12,7 +12,7 @@ use common_net::msg::checkpoint::{
     REQUIRED_CHECKPOINT_STREAMS_V1, StreamCheckpointPlanV1, TranscriptEntryV1,
     global_transcript_root_v1, stream_transcript_root_v1, validate_checkpoint_context_v1,
 };
-use common_net::msg::checkpoint::{AlignErrorV1, CheckpointAlignerV1, CheckpointCommitReceiptV1};
+use common_net::msg::checkpoint::{AlignErrorV1, CheckpointAlignerV1, CheckpointCommitReceiptV1, CheckpointStreamOpenV1};
 use common_net::msg::envelope::{ActiveSessionBindingV1, SemanticRouteV1, SemanticSendStateV1, SemanticStreamIdV1};
 use crate::semantic_net::outbox::SemanticSendIntentV1;
 use std::num::NonZeroU64;
@@ -292,6 +292,23 @@ impl CheckpointFrameV1 {
         match self {
             Self::Data { .. } => CheckpointParticipationV1::CheckpointedData,
             _ => CheckpointParticipationV1::CheckpointControl,
+        }
+    }
+}
+
+impl CheckpointFrameV1 {
+    /// `T3.4.20c`: the control message this frame puts on the wire, if
+    /// any. Data frames carry their payload directly (already an `Arc`),
+    /// so there is nothing to build for them. Every Begin ships the whole
+    /// descriptor — physical streams have no cross-stream arrival order,
+    /// so whichever Begin lands first must be able to open the receiver.
+    pub fn control_message_v1(&self, descriptor: &CheckpointDescriptorV1) -> Option<ServerGeneral> {
+        match self {
+            Self::Begin { control, .. } => Some(ServerGeneral::CheckpointBegin(Box::new(
+                CheckpointStreamOpenV1 { begin: control.clone(), descriptor: descriptor.clone() },
+            ))),
+            Self::Barrier { control, .. } => Some(ServerGeneral::CheckpointBarrier(control.clone())),
+            Self::Data { .. } => None,
         }
     }
 }
@@ -777,6 +794,51 @@ mod checkpoint_planner_v1 {
                 assert!(frame.context().ordinal.is_none(), "control frames carry no ordinal");
             }
         }
+    }
+
+    /// `T3.4.20c`: every control frame becomes a wire message that routes
+    /// back to its OWN stream, and every Begin is self-sufficient.
+    #[test]
+    fn control_frames_become_self_sufficient_wire_messages() {
+        use common_net::msg::envelope::SemanticRouteV1;
+
+        let mut state = SemanticSendStateV1::new(binding());
+        let plan = reserve_and_plan_recipient_checkpoint_v1(
+            &mut state,
+            2,
+            1,
+            vec![intent(SemanticStreamIdV1::InGame, 1)],
+            &profile(),
+            [1; 32],
+            [2; 32],
+        )
+        .unwrap();
+
+        let frames = checkpoint_frames_v1(&plan).unwrap();
+        let mut begins = 0;
+        let mut barriers = 0;
+        for frame in &frames {
+            match frame.control_message_v1(&plan.descriptor) {
+                None => assert!(matches!(frame, CheckpointFrameV1::Data { .. })),
+                Some(msg) => {
+                    assert_eq!(msg.semantic_stream(), frame.stream(), "a fence must route to its own stream");
+                    match &msg {
+                        ServerGeneral::CheckpointBegin(open) => {
+                            begins += 1;
+                            // self-sufficient: the whole descriptor rides along
+                            assert_eq!(open.descriptor, plan.descriptor);
+                            assert_eq!(open.begin.descriptor_root, plan.descriptor_root);
+                        },
+                        ServerGeneral::CheckpointBarrier(b) => {
+                            barriers += 1;
+                            assert_eq!(b.descriptor_root, plan.descriptor_root);
+                        },
+                        _ => panic!("a control frame produced a non-control message"),
+                    }
+                },
+            }
+        }
+        assert_eq!((begins, barriers), (5, 5));
     }
 
     /// `T3.4.19`: the watermark advances only on an ack that matches the

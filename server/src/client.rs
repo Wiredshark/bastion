@@ -263,7 +263,7 @@ impl Client {
                     // T3.4.20b: a fence rides the physical stream its own
                     // semantic stream maps to (`send_semantic_frame_v1`'s
                     // routing table), not a fixed one.
-                    ServerGeneral::CheckpointBegin(ref b) => match b.stream {
+                    ServerGeneral::CheckpointBegin(ref b) => match b.begin.stream {
                         SemanticStreamIdV1::Bootstrap => PreparedMsg::new(0, &g, &self.register_stream_params),
                         SemanticStreamIdV1::CharacterScreen => PreparedMsg::new(1, &g, &self.character_screen_stream_params),
                         SemanticStreamIdV1::InGame => PreparedMsg::new(2, &g, &self.in_game_stream_params),

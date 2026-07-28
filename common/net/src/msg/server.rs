@@ -282,7 +282,7 @@ pub enum ServerGeneral {
     Disconnect(DisconnectReason),
     /// `APEX-T3.4.20b`: opens this stream's fenced segment for a
     /// checkpoint epoch. Control, never data: it carries no ordinal.
-    CheckpointBegin(super::checkpoint::CheckpointBeginV1),
+    CheckpointBegin(Box<super::checkpoint::CheckpointStreamOpenV1>),
     /// `APEX-T3.4.20b`: seals it, declaring exactly what crossed so the
     /// receiver can check its own transcript against the claim.
     CheckpointBarrier(super::checkpoint::CheckpointBarrierV1),

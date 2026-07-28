@@ -443,7 +443,7 @@ use common::apex::digest::{DigestDomainIdV1, ProtocolDigestV1, digest_canonical_
 
 const ROOT_INPUT_LIMIT: u64 = 1 << 22;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamCheckpointPlanV1 {
     pub stream: SemanticStreamIdV1,
     pub begin_sequence: u64,
@@ -455,7 +455,7 @@ pub struct StreamCheckpointPlanV1 {
     pub stream_transcript_root: [u8; 32],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CheckpointDescriptorV1 {
     pub schema_version: u32,
     pub binding: super::envelope::ActiveSessionBindingV1,
@@ -746,6 +746,16 @@ pub struct CheckpointBeginV1 {
     pub epoch: u64,
     pub stream: SemanticStreamIdV1,
     pub descriptor_root: [u8; 32],
+}
+
+/// `T3.4.20c`: the wire form of a stream's Begin. Every Begin carries
+/// the WHOLE descriptor, so whichever stream's Begin lands first can
+/// open the receiver's aligner: physical streams have no cross-stream
+/// arrival order, and a checkpoint must not depend on one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckpointStreamOpenV1 {
+    pub begin: CheckpointBeginV1,
+    pub descriptor: CheckpointDescriptorV1,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

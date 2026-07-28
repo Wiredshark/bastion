@@ -517,7 +517,7 @@ impl ManifestDecodeV1 for SemanticWireFrameV1 {
 /// somehow collided across boot incarnations (it can't, opaque UUIDv4,
 /// but the key is defense in depth per the packet's own phrasing, not
 /// this row inventing new paranoia).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ActiveSessionBindingV1 {
     pub server_boot_id: ServerBootId,
     pub session_id: SessionId,
@@ -1091,7 +1091,7 @@ impl SemanticRouteV1 for ServerGeneral {
         match self {
             // T3.4.20b: a fence belongs to the stream it names, not to a
             // fixed one -- all five streams carry their own Begin/Barrier.
-            S::CheckpointBegin(b) => b.stream,
+            S::CheckpointBegin(b) => b.begin.stream,
             S::CheckpointBarrier(b) => b.stream,
             S::CharacterDataLoadResult(_)
             | S::CharacterListUpdate(_)
