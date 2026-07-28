@@ -90,6 +90,40 @@ cohort's behaviour is byte-identical to pre-change for the same scenario.
 treatment cohort; cohort flipping mid-session; metrics attributed to the
 wrong cohort after a reconnect; control cohort's authority path altered.
 
+**BUILT (steps 1–2) — `server/src/physics_cohort.rs`, 8 tests, wired at
+`sys/msg/in_game.rs`.** `COH-001..004` covered, `COH-005` named OPEN.
+
+- **Disjointness is a property of a type, not of a filter.**
+  `CohortInputsV1` has one field, the player's own opt-in. There is no
+  force-list field, so assignment *cannot* consult moderation state — a
+  lazy implementation cannot include it because there is nothing to
+  include. `COH-001` drives a force-listed, non-opted-in player and gets
+  `Control`, even though `should_sync_client_physics` returns true for
+  them. Moderation is not enrolment.
+- **A mid-session flip is refused, not honoured.** The registry pins the
+  first assignment and returns `FlipRefused`, counting the attempt.
+  Honouring the flip would split one session's metrics across both
+  cohorts, and a comparison built from that would be confidently wrong.
+  Reports arriving during a refused flip are additionally counted on
+  their own axis so they cannot quietly contaminate either total.
+- **Reconnect stability comes from the key.** Assignment is keyed by
+  `Uuid`, not by entity or session: the entity is gone after a reconnect,
+  the account is not.
+- **`COH-004` is enforced against the source.** No authority-deciding
+  file may BRANCH on a cohort — declaring, destructuring and recording
+  are fine, branching is not. Verified by inserting a deliberate branch,
+  which turns the test red. The scan's limit is stated in place: a
+  condition computed on one line and branched on another escapes it.
+
+Step 2 delivers correction frequency only (per-cohort admitted/rejected
+client physics reports, counted at the ingress site where both the
+generation gate and the opt-in are already in scope). **Bandwidth,
+glider-specific and responsiveness metrics are NOT collected**, and
+neither is the identical-scenario harness (step 3) or the comparison
+report (step 4) — those need a scenario runner that does not exist. That
+is `COH-005`, carried as a named OPEN so nothing here can be read as
+measuring them.
+
 ---
 
 ## T5.2 — Complete input-frame identity

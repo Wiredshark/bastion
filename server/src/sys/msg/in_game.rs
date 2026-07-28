@@ -126,6 +126,10 @@ impl Sys {
         time_for_vd_changes: Instant,
         msg: ClientGeneral,
         player_physics: &mut Option<(Pos, Vel, Ori)>,
+        // APEX-T5.1: (seen, admitted) client physics reports this tick.
+        // A tally rather than a cohort: the handler must not learn what
+        // cohort anyone is in, or the control's path could start to differ.
+        physics_reports: &mut (u64, u64),
     ) -> Result<(), crate::error::Error> {
         let presence = match maybe_presence.as_deref_mut() {
             Some(g) => g,
@@ -206,6 +210,7 @@ impl Sys {
                         common::apex::physics_generation::PhysicsAdmitV1::Eligible
                     )
                 });
+                physics_reports.0 += 1;
                 if presence.kind.controlling_char()
                     && generation_eligible
                     && healths.get(entity).is_none_or(|h| !h.is_dead)
@@ -217,6 +222,7 @@ impl Sys {
                         .is_none_or(|s| !s.server_authoritative_physics_optin())
                 {
                     *player_physics = Some((pos, vel, ori));
+                    physics_reports.1 += 1;
                 }
             },
             ClientGeneral::BreakBlock(pos) => {
@@ -758,6 +764,9 @@ impl<'a> System<'a> for Sys {
             ReadExpect<'a, SlowJobPool>,
             ReadExpect<'a, EditableSettings>,
             ReadExpect<'a, SemanticIngressMetricsV1>,
+            // APEX-T5.1
+            ReadExpect<'a, crate::physics_cohort::PhysicsCohortRegistryV1>,
+            ReadExpect<'a, crate::physics_cohort::PhysicsCohortMetricsV1>,
         ),
         (
             Read<'a, IdMaps>,
@@ -822,7 +831,7 @@ impl<'a> System<'a> for Sys {
         (
             entities,
             events,
-            (terrain, slow_jobs, editable_settings, semantic_metrics),
+            (terrain, slow_jobs, editable_settings, semantic_metrics, cohort_registry, cohort_metrics),
             (id_maps, dt, settings, build_areas),
             can_build,
             mut force_updates,
@@ -913,6 +922,7 @@ impl<'a> System<'a> for Sys {
                     let mut clearable_maybe_presence = maybe_presence.as_deref_mut();
                     let mut skill_set = skill_set.map(Cow::Borrowed);
                     let mut player_physics = None;
+                    let mut physics_reports = (0u64, 0u64);
                     let mut spectating_entity = None;
                     let mut bastion_anchor = None;
                     let mut bastion_spawn = None;
@@ -951,8 +961,31 @@ impl<'a> System<'a> for Sys {
                             time_for_vd_changes,
                             msg,
                             &mut player_physics,
+                            &mut physics_reports,
                         )
                     });
+
+                    // APEX-T5.1: attribute this tick's reports to the player's
+                    // cohort. Assignment reads the OPT-IN ONLY -- the force
+                    // list is a moderation tool and is deliberately not an
+                    // input here (see physics_cohort's module doc). Nothing
+                    // below branches on the result.
+                    if physics_reports.0 > 0
+                        && let Some(player) = maybe_player
+                    {
+                        let cohort_lookup = cohort_registry.lookup_v1(
+                            player.uuid(),
+                            crate::physics_cohort::CohortInputsV1 {
+                                opted_in: new_player_physics_setting
+                                    .is_some_and(|s| s.server_authoritative_physics_optin()),
+                            },
+                        );
+                        cohort_metrics.record_reports_v1(
+                            cohort_lookup,
+                            physics_reports.1,
+                            physics_reports.0 - physics_reports.1,
+                        );
+                    }
 
                     if let Some((new_pos, new_vel, new_ori)) = player_physics
                         && let Some(old_pos) = pos.as_deref_mut()

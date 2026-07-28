@@ -47,6 +47,7 @@ mod pet;
 pub mod plugin_deployment_policy;
 pub mod presence;
 pub mod rtsim;
+pub mod physics_cohort;
 pub mod save_inventory;
 pub mod semantic_net;
 pub mod session_registry;
@@ -519,6 +520,9 @@ impl Server {
         // counters (keyed by (terminal/reject code, physical stream)
         // only) -- process lifetime, never persisted.
         state.ecs_mut().insert(common_net::msg::envelope::SemanticIngressMetricsV1::new());
+        // APEX-T5.1: cohort membership and its per-cohort report counters.
+        state.ecs_mut().insert(crate::physics_cohort::PhysicsCohortRegistryV1::new());
+        state.ecs_mut().insert(crate::physics_cohort::PhysicsCohortMetricsV1::new());
         #[cfg(feature = "plugins")]
         state.ecs_mut().insert(plugin_deployment);
         state.ecs_mut().insert(battlemode_buffer);
