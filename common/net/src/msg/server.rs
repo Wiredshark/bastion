@@ -276,7 +276,10 @@ pub enum ServerGeneral {
     SetPlayerEntity(Uid),
     TimeOfDay(TimeOfDay, Calendar, Time, TimeScale),
     EntitySync(sync::EntitySyncPackage),
-    CompSync(sync::CompSyncPackage<EcsCompPacket>, u64),
+    CompSync(
+        sync::CompSyncPackage<EcsCompPacket>,
+        common::apex::physics_generation::PhysicsGenerationV1,
+    ),
     CreateEntity(sync::EntityPackage<EcsCompPacket>),
     DeleteEntity(Uid),
     Disconnect(DisconnectReason),

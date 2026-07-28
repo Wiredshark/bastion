@@ -704,7 +704,10 @@ pub fn handle_possess(
             possessee,
         );
         if !comp_sync_package.is_empty() {
-            client.send_fallible(ServerGeneral::CompSync(comp_sync_package, update_counter));
+            // APEX-T3.6: the correction generation is typed at the seam;
+            // bound to a local so the send site stays one readable line.
+            let physics_generation = common::apex::physics_generation::PhysicsGenerationV1::from_legacy_counter_v1(update_counter);
+            client.send_fallible(ServerGeneral::CompSync(comp_sync_package, physics_generation));
         }
     }
 

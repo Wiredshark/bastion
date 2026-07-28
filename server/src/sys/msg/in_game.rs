@@ -188,11 +188,26 @@ impl Sys {
                 pos,
                 vel,
                 ori,
-                force_counter,
+                physics_generation,
             } => {
+                // APEX-T3.6 step 2/3: the report is admitted through the
+                // typed generation gate, which distinguishes a STALE
+                // report (computed before a correction the client had not
+                // seen) from a FORGED one (a generation the server never
+                // issued). The old bare equality could express neither.
+                let generation_eligible = force_update.is_none_or(|force_update| {
+                    matches!(
+                        common::apex::physics_generation::PhysicsCorrectionStateV1::from_legacy_counter_v1(
+                            force_update.counter(),
+                        )
+                        .admit_report_v1(common::apex::physics_generation::PhysicsStampV1 {
+                            generation: physics_generation,
+                        }),
+                        common::apex::physics_generation::PhysicsAdmitV1::Eligible
+                    )
+                });
                 if presence.kind.controlling_char()
-                    && force_update
-                        .is_none_or(|force_update| force_update.counter() == force_counter)
+                    && generation_eligible
                     && healths.get(entity).is_none_or(|h| !h.is_dead)
                     && is_rider.get(entity).is_none()
                     && is_volume_rider.get(entity).is_none()

@@ -255,6 +255,22 @@ mod physics_generation_v1 {
         );
     }
 
+    /// `T3.6` step 2 rests on this: swapping the raw `u64` for the typed
+    /// generation on the wire must not change a single byte, or the
+    /// "typed, not reformatted" claim is false and the change needs a
+    /// protocol bump it was not given.
+    #[test]
+    fn the_typed_generation_serialises_exactly_like_the_counter_it_replaces() {
+        for counter in [0u64, 1, 7, 4096, u64::MAX] {
+            let generation = PhysicsGenerationV1::from_legacy_counter_v1(counter);
+            let typed = bincode::serde::encode_to_vec(generation, bincode::config::legacy())
+                .expect("generation encodes");
+            let raw = bincode::serde::encode_to_vec(counter, bincode::config::legacy())
+                .expect("counter encodes");
+            assert_eq!(typed, raw, "counter {counter} must be byte-identical on the wire");
+        }
+    }
+
     /// Legacy conversion is lossless in both directions during the
     /// migration window.
     #[test]

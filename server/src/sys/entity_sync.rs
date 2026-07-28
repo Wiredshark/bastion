@@ -402,7 +402,7 @@ impl<'a> System<'a> for Sys {
                             recipient_binding,
                             ServerGeneral::CompSync(
                                 comp_sync_package_for_v1.clone(),
-                                force_updates.get(*client_entity).map_or(0, |f| f.counter()),
+                                force_updates.get(*client_entity).map_or(common::apex::physics_generation::PhysicsGenerationV1::NEVER_CORRECTED, |f| f.generation_v1()),
                             ),
                             tick,
                             SemanticPayloadRankV1::CompSync,
@@ -418,7 +418,7 @@ impl<'a> System<'a> for Sys {
                                 client.prepare(ServerGeneral::EntitySync(entity_sync_package)),
                                 client.prepare(ServerGeneral::CompSync(
                                     comp_sync_package,
-                                    force_updates.get(*client_entity).map_or(0, |f| f.counter()),
+                                    force_updates.get(*client_entity).map_or(common::apex::physics_generation::PhysicsGenerationV1::NEVER_CORRECTED, |f| f.generation_v1()),
                                 )),
                             )
                         },
@@ -503,7 +503,7 @@ impl<'a> System<'a> for Sys {
                     // region by including it in the `CompSync` message.
                     let comp_sync_msg = ServerGeneral::CompSync(
                         comp_sync_package,
-                        force_updates.get(*client_entity).map_or(0, |f| f.counter()),
+                        force_updates.get(*client_entity).map_or(common::apex::physics_generation::PhysicsGenerationV1::NEVER_CORRECTED, |f| f.generation_v1()),
                     );
                     // APEX-T3.3.13: same region subject as the paired block above,
                     // local_ordinal 1 (not 0) -- this is a SECOND, distinct CompSync
@@ -578,7 +578,7 @@ impl<'a> System<'a> for Sys {
                 // site Fable's T3.3.13 scope ruling deferred here.
                 // Subject = the receiving client's own entity uid
                 // (already in scope from the join above).
-                let msg = ServerGeneral::CompSync(comp_sync_package, force_updates.get(entity).map_or(0, |f| f.counter()));
+                let msg = ServerGeneral::CompSync(comp_sync_package, force_updates.get(entity).map_or(common::apex::physics_generation::PhysicsGenerationV1::NEVER_CORRECTED, |f| f.generation_v1()));
                 if !try_enqueue_entity_sync_intent(
                     &semantic_outbox,
                     client.semantic_send_state().map(|s| s.binding()),
@@ -618,7 +618,7 @@ impl<'a> System<'a> for Sys {
                 // spectated target -- distinct local_ordinal from (c)
                 // since the same client could in principle appear in
                 // both loops in one tick.
-                let msg = ServerGeneral::CompSync(comp_sync_package, force_updates.get(entity).map_or(0, |f| f.counter()));
+                let msg = ServerGeneral::CompSync(comp_sync_package, force_updates.get(entity).map_or(common::apex::physics_generation::PhysicsGenerationV1::NEVER_CORRECTED, |f| f.generation_v1()));
                 let enqueued = uids.get(entity).is_some_and(|&uid| {
                     try_enqueue_entity_sync_intent(
                         &semantic_outbox,
@@ -992,7 +992,7 @@ mod semantic_intents {
             try_enqueue_entity_sync_intent(
                 &outbox,
                 Some(b),
-                ServerGeneral::CompSync(CompSyncPackage::new(), 0),
+                ServerGeneral::CompSync(CompSyncPackage::new(), common::apex::physics_generation::PhysicsGenerationV1::NEVER_CORRECTED),
                 1,
                 SemanticPayloadRankV1::CompSync,
                 subject.clone(),
@@ -1018,7 +1018,7 @@ mod semantic_intents {
             try_enqueue_entity_sync_intent(
                 &outbox,
                 Some(b),
-                ServerGeneral::CompSync(CompSyncPackage::new(), 0),
+                ServerGeneral::CompSync(CompSyncPackage::new(), common::apex::physics_generation::PhysicsGenerationV1::NEVER_CORRECTED),
                 1,
                 SemanticPayloadRankV1::CompSync,
                 subject.clone(),
@@ -1094,7 +1094,7 @@ mod semantic_intents_parallel {
         try_enqueue_entity_sync_intent(
             outbox,
             Some(binding),
-            ServerGeneral::CompSync(CompSyncPackage::new(), 0),
+            ServerGeneral::CompSync(CompSyncPackage::new(), common::apex::physics_generation::PhysicsGenerationV1::NEVER_CORRECTED),
             tick,
             SemanticPayloadRankV1::CompSync,
             region_subject.clone(),
@@ -1103,7 +1103,7 @@ mod semantic_intents_parallel {
         try_enqueue_entity_sync_intent(
             outbox,
             Some(binding),
-            ServerGeneral::CompSync(CompSyncPackage::new(), 0),
+            ServerGeneral::CompSync(CompSyncPackage::new(), common::apex::physics_generation::PhysicsGenerationV1::NEVER_CORRECTED),
             tick,
             SemanticPayloadRankV1::CompSync,
             region_subject,
@@ -1203,7 +1203,7 @@ mod semantic_intents_parallel {
             try_enqueue_entity_sync_intent(
                 outbox,
                 Some(binding),
-                ServerGeneral::CompSync(CompSyncPackage::new(), 0),
+                ServerGeneral::CompSync(CompSyncPackage::new(), common::apex::physics_generation::PhysicsGenerationV1::NEVER_CORRECTED),
                 tick,
                 SemanticPayloadRankV1::CompSync,
                 CanonicalSubjectKeyV1::for_region(region_key),
@@ -1233,7 +1233,7 @@ mod semantic_intents_parallel {
                 try_enqueue_entity_sync_intent(
                     &outbox,
                     Some(binding),
-                    ServerGeneral::CompSync(CompSyncPackage::new(), 0),
+                    ServerGeneral::CompSync(CompSyncPackage::new(), common::apex::physics_generation::PhysicsGenerationV1::NEVER_CORRECTED),
                     7,
                     SemanticPayloadRankV1::CompSync,
                     CanonicalSubjectKeyV1::for_region(region_key),

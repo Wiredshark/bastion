@@ -86,7 +86,7 @@ pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 195] = 
     ("connection_handler.rs", "let _ = stop_sender.send(());", 1, NotAClientSend),
     ("events/player.rs", "client.send_fallible(ServerGeneral::ExitInGameSuccess);", 0, PostAuthCandidate),
     ("events/player.rs", "client.send_fallible(ServerGeneral::SetPlayerEntity(possessee_uid));", 0, PostAuthCandidate),
-    ("events/player.rs", "client.send_fallible(ServerGeneral::CompSync(comp_sync_package, update_counter));", 0, PostAuthCandidate),
+    ("events/player.rs", "client.send_fallible(ServerGeneral::CompSync(comp_sync_package, physics_generation));", 0, PostAuthCandidate),
     ("lib.rs", "let _ = sender.send(connection_handler::ServerInfoPacket {", 0, NotAClientSend),
     ("lib.rs", "client.send_fallible(msg);", 0, PostAuthCandidate),
     ("events/invite.rs", "client.send_fallible(ServerGeneral::server_msg(", 0, PostAuthCandidate),

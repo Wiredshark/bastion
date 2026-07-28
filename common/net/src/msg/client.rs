@@ -135,7 +135,12 @@ pub enum ClientGeneral {
         pos: comp::Pos,
         vel: comp::Vel,
         ori: comp::Ori,
-        force_counter: u64,
+        /// `APEX-T3.6`: the physics correction generation this report was
+        /// computed under. Typed rather than a bare `u64` so a stale
+        /// report cannot compare equal to a live one by arithmetic
+        /// accident; `#[serde(transparent)]` keeps the wire bytes
+        /// identical to the counter it replaces.
+        physics_generation: common::apex::physics_generation::PhysicsGenerationV1,
     },
     UnlockSkill(Skill),
     RequestSiteInfo(SiteId),

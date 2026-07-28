@@ -372,7 +372,11 @@ pub struct Client {
     lod_zones: HashMap<Vec2<i32>, lod::Zone>,
     lod_last_requested: Option<Instant>,
     lod_pos_fallback: Option<Vec2<f32>>,
-    force_update_counter: u64,
+    /// `APEX-T3.6`: the physics correction generation this client is
+    /// predicting under, adopted from the server's `CompSync` and echoed
+    /// on every state report. Typed, so a stale value cannot pass the
+    /// server's gate by comparing equal after a wrap.
+    force_update_generation: common::apex::physics_generation::PhysicsGenerationV1,
     // DET-NET-011/012 (v6, stage 1): newest server sync tick seen across
     // the replication streams (the chronology witness).
     last_server_sync_tick: u64,
@@ -1395,7 +1399,7 @@ impl Client {
             lod_last_requested: None,
             lod_pos_fallback: None,
 
-            force_update_counter: 0,
+            force_update_generation: common::apex::physics_generation::PhysicsGenerationV1::NEVER_CORRECTED,
             last_server_sync_tick: 0,
 
             role,
@@ -3179,7 +3183,7 @@ impl Client {
                 pos,
                 vel,
                 ori,
-                force_counter: self.force_update_counter,
+                physics_generation: self.force_update_generation,
             })?;
         }
 
@@ -3576,7 +3580,7 @@ impl Client {
                     .ecs_mut()
                     .apply_entity_sync_package(entity_sync_package, uid);
             },
-            ServerGeneral::CompSync(comp_sync_package, force_counter) => {
+            ServerGeneral::CompSync(comp_sync_package, physics_generation) => {
                 // DET-NET-012 (v6, stage 1): same chronology witness.
                 if comp_sync_package.sync_tick != 0 {
                     if comp_sync_package.sync_tick < self.last_server_sync_tick {
@@ -3589,7 +3593,7 @@ impl Client {
                     self.last_server_sync_tick =
                         self.last_server_sync_tick.max(comp_sync_package.sync_tick);
                 }
-                self.force_update_counter = force_counter;
+                self.force_update_generation = physics_generation;
                 self.state
                     .ecs_mut()
                     .apply_comp_sync_package(comp_sync_package);
@@ -4623,7 +4627,7 @@ impl Client {
                     pos,
                     vel,
                     ori,
-                    force_counter: self.force_update_counter,
+                    physics_generation: self.force_update_generation,
                 })?;
             }
         }

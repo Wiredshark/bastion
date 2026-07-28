@@ -409,7 +409,7 @@ mod command_carriage_v1 {
                 pos: common::comp::Pos(Vec3::zero()),
                 vel: common::comp::Vel(Vec3::zero()),
                 ori: common::comp::Ori::default(),
-                force_counter: 0,
+                physics_generation: common::apex::physics_generation::PhysicsGenerationV1::NEVER_CORRECTED,
             },
         ] {
             assert_eq!(continuous.admission_class_v1(), CommandAdmissionClassV1::LatestState);
