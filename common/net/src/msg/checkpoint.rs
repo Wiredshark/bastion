@@ -1741,7 +1741,7 @@ pub fn commit_checkpoint_v1(
 
 /// What the client can acknowledge back: proof of which checkpoint it
 /// committed, not merely that it received one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CheckpointCommitReceiptV1 {
     pub epoch: u64,
     pub parent_epoch: u64,

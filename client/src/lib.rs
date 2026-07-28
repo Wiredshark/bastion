@@ -1775,7 +1775,10 @@ impl Client {
                     | ClientGeneral::Command(_, _)
                     | ClientGeneral::Terminate
                     | ClientGeneral::RequestPlugins(_)
-                    | ClientGeneral::RequestPluginArtifacts(_) => &mut self.general_stream,
+                    | ClientGeneral::RequestPluginArtifacts(_)
+                    // T3.4.19: the commit ack rides General, mirroring its
+                    // semantic routing.
+                    | ClientGeneral::CheckpointCommitAck(_) => &mut self.general_stream,
                 };
                 #[cfg(feature = "tracy")]
                 {

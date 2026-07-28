@@ -12,7 +12,7 @@ use common_net::msg::checkpoint::{
     REQUIRED_CHECKPOINT_STREAMS_V1, StreamCheckpointPlanV1, TranscriptEntryV1,
     global_transcript_root_v1, stream_transcript_root_v1, validate_checkpoint_context_v1,
 };
-use common_net::msg::checkpoint::{AlignErrorV1, CheckpointAlignerV1};
+use common_net::msg::checkpoint::{AlignErrorV1, CheckpointAlignerV1, CheckpointCommitReceiptV1};
 use common_net::msg::envelope::{ActiveSessionBindingV1, SemanticRouteV1, SemanticSendStateV1, SemanticStreamIdV1};
 use crate::semantic_net::outbox::SemanticSendIntentV1;
 use std::num::NonZeroU64;
@@ -503,6 +503,74 @@ pub fn emit_through_gate_v1(
     Ok(frames)
 }
 
+
+/// `APEX-T3.4.19` — per-recipient commit watermark. The server does not
+/// take "acknowledged" on trust: an ack must name the epoch, the
+/// descriptor root and the record count of the checkpoint that is
+/// actually outstanding, or it is refused and the watermark stands.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RecipientCommitWatermarkV1 {
+    committed_epoch: u64,
+    outstanding: Option<CheckpointCommitReceiptV1>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitAckErrorV1 {
+    NothingOutstanding,
+    EpochMismatch,
+    RootMismatch,
+    RecordCountMismatch,
+    ParentMismatch,
+    AlreadyOutstanding,
+}
+
+impl RecipientCommitWatermarkV1 {
+    pub fn new() -> Self { Self::default() }
+
+    pub fn committed_epoch(&self) -> u64 { self.committed_epoch }
+
+    pub fn outstanding_epoch(&self) -> Option<u64> { self.outstanding.map(|r| r.epoch) }
+
+    /// Records what this recipient must ack. One checkpoint may be
+    /// outstanding at a time — the same rule the egress gate enforces.
+    pub fn expect_commit_v1(&mut self, plan: &RecipientCheckpointPlanV1) -> Result<(), CommitAckErrorV1> {
+        if self.outstanding.is_some() {
+            return Err(CommitAckErrorV1::AlreadyOutstanding);
+        }
+        if plan.descriptor.parent_epoch != self.committed_epoch {
+            return Err(CommitAckErrorV1::ParentMismatch);
+        }
+        self.outstanding = Some(CheckpointCommitReceiptV1 {
+            epoch: plan.descriptor.epoch,
+            parent_epoch: plan.descriptor.parent_epoch,
+            descriptor_root: plan.descriptor_root,
+            applied_records: plan.descriptor.data_record_count,
+        });
+        Ok(())
+    }
+
+    /// Accepts an ack only if it matches the outstanding checkpoint in
+    /// every field. The watermark advances on success and on nothing else.
+    pub fn accept_ack_v1(&mut self, ack: &CheckpointCommitReceiptV1) -> Result<u64, CommitAckErrorV1> {
+        let expected = self.outstanding.ok_or(CommitAckErrorV1::NothingOutstanding)?;
+        if ack.epoch != expected.epoch {
+            return Err(CommitAckErrorV1::EpochMismatch);
+        }
+        if ack.parent_epoch != expected.parent_epoch {
+            return Err(CommitAckErrorV1::ParentMismatch);
+        }
+        if ack.descriptor_root != expected.descriptor_root {
+            return Err(CommitAckErrorV1::RootMismatch);
+        }
+        if ack.applied_records != expected.applied_records {
+            return Err(CommitAckErrorV1::RecordCountMismatch);
+        }
+        self.committed_epoch = expected.epoch;
+        self.outstanding = None;
+        Ok(self.committed_epoch)
+    }
+}
+
 #[cfg(test)]
 mod checkpoint_planner_v1 {
     use super::*;
@@ -709,6 +777,67 @@ mod checkpoint_planner_v1 {
                 assert!(frame.context().ordinal.is_none(), "control frames carry no ordinal");
             }
         }
+    }
+
+    /// `T3.4.19`: the watermark advances only on an ack that matches the
+    /// outstanding checkpoint in every field.
+    #[test]
+    fn only_a_matching_ack_advances_the_commit_watermark() {
+        let mut state = SemanticSendStateV1::new(binding());
+        let plan = reserve_and_plan_recipient_checkpoint_v1(
+            &mut state,
+            1,
+            0,
+            vec![intent(SemanticStreamIdV1::InGame, 1), intent(SemanticStreamIdV1::Terrain, 2)],
+            &profile(),
+            [1; 32],
+            [2; 32],
+        )
+        .unwrap();
+
+        let mut wm = RecipientCommitWatermarkV1::new();
+        assert_eq!(wm.committed_epoch(), 0);
+        let good = CheckpointCommitReceiptV1 {
+            epoch: 1,
+            parent_epoch: 0,
+            descriptor_root: plan.descriptor_root,
+            applied_records: 2,
+        };
+        // nothing outstanding yet: an ack cannot invent one
+        assert_eq!(wm.accept_ack_v1(&good).unwrap_err(), CommitAckErrorV1::NothingOutstanding);
+
+        wm.expect_commit_v1(&plan).unwrap();
+        assert_eq!(wm.outstanding_epoch(), Some(1));
+        assert_eq!(wm.expect_commit_v1(&plan).unwrap_err(), CommitAckErrorV1::AlreadyOutstanding);
+
+        for (bad, want) in [
+            (CheckpointCommitReceiptV1 { epoch: 2, ..good }, CommitAckErrorV1::EpochMismatch),
+            (CheckpointCommitReceiptV1 { parent_epoch: 9, ..good }, CommitAckErrorV1::ParentMismatch),
+            (CheckpointCommitReceiptV1 { descriptor_root: [0xCC; 32], ..good }, CommitAckErrorV1::RootMismatch),
+            (CheckpointCommitReceiptV1 { applied_records: 1, ..good }, CommitAckErrorV1::RecordCountMismatch),
+        ] {
+            assert_eq!(wm.accept_ack_v1(&bad).unwrap_err(), want);
+            assert_eq!(wm.committed_epoch(), 0, "a refused ack must not advance the watermark");
+            assert_eq!(wm.outstanding_epoch(), Some(1), "and must not clear the outstanding checkpoint");
+        }
+
+        assert_eq!(wm.accept_ack_v1(&good).unwrap(), 1);
+        assert_eq!(wm.outstanding_epoch(), None);
+        // the same ack cannot be replayed to advance anything twice
+        assert_eq!(wm.accept_ack_v1(&good).unwrap_err(), CommitAckErrorV1::NothingOutstanding);
+
+        // the next checkpoint must chain off the committed epoch
+        let orphan = reserve_and_plan_recipient_checkpoint_v1(
+            &mut state,
+            3,
+            2,
+            vec![intent(SemanticStreamIdV1::InGame, 3)],
+            &profile(),
+            [1; 32],
+            [2; 32],
+        )
+        .unwrap();
+        assert_eq!(wm.expect_commit_v1(&orphan).unwrap_err(), CommitAckErrorV1::ParentMismatch);
     }
 
     /// `T3.4.14`: completeness proven by RECEIVING the plan's own frames.

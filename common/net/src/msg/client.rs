@@ -195,6 +195,11 @@ pub enum ClientGeneral {
     BastionInspect {
         target: common::comp::bastion::BastionInspectTarget,
     },
+    /// `APEX-T3.4.19`: proof of WHICH checkpoint the client committed --
+    /// epoch and descriptor root, not a bare "received". Dormant until
+    /// the checkpoint path is activated; a server with it inactive treats
+    /// this as a misbehaving client.
+    CheckpointCommitAck(super::checkpoint::CheckpointCommitReceiptV1),
 
     //Only in Game, via terrain stream
     TerrainChunkRequest {
@@ -280,7 +285,8 @@ impl ClientMsg {
                         ClientGeneral::Command(_, _)
                         | ClientGeneral::Terminate
                         // LodZoneRequest is required by the char select screen
-                        | ClientGeneral::LodZoneRequest { .. } => true,
+                        | ClientGeneral::LodZoneRequest { .. }
+                        | ClientGeneral::CheckpointCommitAck(_) => true,
                         | ClientGeneral::RequestPlugins(_) => true,
                         | ClientGeneral::RequestPluginArtifacts(_) => true,
                     }
