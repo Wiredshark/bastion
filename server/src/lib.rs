@@ -694,12 +694,25 @@ impl Server {
             // Search for town defined by spawn_town server setting. If this fails, or is
             // None, set spawn to the nearest town to the centre of the world
             let center_chunk = world.sim().map_size_lg().chunks().map(i32::from) / 2;
+            // T0.68: two settlements exactly equidistant from center_chunk
+            // previously fell through to whichever `Civs::sites()` (a
+            // `Store::values()` iteration, no id exposed at this call
+            // site) happened to visit first. The site's own center is a
+            // deterministic, already-available tiebreak -- no two
+            // settlements share a center, so (x, y) fully disambiguates.
             let spawn_chunk = world
                 .civs()
                 .sites()
                 .filter(|site| site.is_settlement())
                 .map(|site| site.center)
-                .min_by_key(|site_pos| site_pos.distance_squared(center_chunk))
+                .min_by_key(|site_pos| {
+                    common::decision_key::DecisionKeyV1::nearest(
+                        (),
+                        site_pos.distance_squared(center_chunk),
+                        (site_pos.x, site_pos.y),
+                        (0i32, 0i32),
+                    )
+                })
                 .unwrap_or(center_chunk);
 
             world.find_accessible_pos(index, TerrainChunkSize::center_wpos(spawn_chunk), false)

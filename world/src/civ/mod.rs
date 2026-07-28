@@ -1117,12 +1117,8 @@ impl Civs {
                     })
                     .sum::<Vec2<f32>>()
                     .as_::<i32>();
-                // Select the point closest to the center
-                let idx = *biome
-                    .1
-                    .iter()
-                    .min_by_key(|&b| center.distance_squared(uniform_idx_as_vec2(map_size_lg, *b)))
-                    .unwrap();
+                // Select the point closest to the center.
+                let idx = select_biome_center_chunk(map_size_lg, center, &biome.1);
                 let id = self.pois.insert(PointOfInterest {
                     name,
                     loc: uniform_idx_as_vec2(map_size_lg, idx),
@@ -1978,9 +1974,57 @@ pub enum PoiKind {
     Biome(u32),
 }
 
+/// T0.68: select the biome-center-closest chunk index, tiebroken by the
+/// chunk index itself (`DecisionKeyV1`'s `target_id` field) so an exact
+/// distance tie is never decided by `chunks`' iteration order -- the same
+/// convention `min_by_key` at :712 (DET-SITE-003) already follows.
+fn select_biome_center_chunk(map_size_lg: MapSizeLg, center: Vec2<i32>, chunks: &[usize]) -> usize {
+    *chunks
+        .iter()
+        .min_by_key(|&b| {
+            common::decision_key::DecisionKeyV1::nearest(
+                (),
+                center.distance_squared(uniform_idx_as_vec2(map_size_lg, *b)),
+                *b,
+                0usize,
+            )
+        })
+        .unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tiny square map: `MapSizeLg::new([1, 1])` gives a 2x2 chunk grid
+    /// (`uniform_idx_as_vec2` maps index -> (x, y) within it), enough to
+    /// construct an exact equidistant tie.
+    fn tiny_map_size_lg() -> MapSizeLg { MapSizeLg::new(Vec2::new(1, 1)).unwrap() }
+
+    #[test]
+    fn permuting_equidistant_candidates_does_not_change_the_winner() {
+        let map_size_lg = tiny_map_size_lg();
+        // Indices 0 and 3 are the two diagonal corners of a 2x2 grid --
+        // symmetric around any center on the main diagonal.
+        let center = uniform_idx_as_vec2(map_size_lg, 0) + uniform_idx_as_vec2(map_size_lg, 3);
+        let center = center / 2;
+
+        let forward = select_biome_center_chunk(map_size_lg, center, &[0, 3]);
+        let reversed = select_biome_center_chunk(map_size_lg, center, &[3, 0]);
+        assert_eq!(forward, reversed, "iteration order must not change the winner on a tie");
+        assert_eq!(forward, 0, "the lower chunk index must win an exact distance tie");
+    }
+
+    #[test]
+    fn a_genuinely_closer_candidate_still_wins_over_a_lower_index() {
+        let map_size_lg = tiny_map_size_lg();
+        // Index 3 (the far corner) is deliberately made the input order's
+        // first element, and the center is placed AT index 3's position --
+        // distance, not index or order, must still decide.
+        let center = uniform_idx_as_vec2(map_size_lg, 3);
+        let winner = select_biome_center_chunk(map_size_lg, center, &[3, 0, 1, 2]);
+        assert_eq!(winner, 3);
+    }
 
     #[test]
     fn empty_proximity_requirements() {
