@@ -286,6 +286,10 @@ pub enum ServerGeneral {
     /// `APEX-T3.4.20b`: seals it, declaring exactly what crossed so the
     /// receiver can check its own transcript against the claim.
     CheckpointBarrier(super::checkpoint::CheckpointBarrierV1),
+    /// `APEX-T3.5.13`: one command's terminal result, published inside
+    /// the same checkpoint as the effect it reports. Checkpointed data,
+    /// not out-of-band chatter (`CMD-128`, `CMD-129`).
+    CommandResult(super::command::CommandPublicationV1),
     /// Send a popup notification such as "Waypoint Saved"
     Notification(Notification),
     UpdatePendingTrade(TradeId, PendingTrade, Option<SitePrices>),
@@ -590,6 +594,10 @@ impl ServerMsg {
                         // presence-scoped -- a checkpoint can span the
                         // character screen as readily as in-game.
                         ServerGeneral::CheckpointBegin(_) | ServerGeneral::CheckpointBarrier(_) => true,
+                        // A command result is meaningful only to a
+                        // registered session, which `registered` above
+                        // already requires.
+                        ServerGeneral::CommandResult(_) => true,
                         ServerGeneral::PluginArtifactData(_) => true,
                     }
             },

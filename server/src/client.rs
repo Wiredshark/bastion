@@ -333,7 +333,8 @@ impl Client {
                     | ServerGeneral::Notification(_)
                     | ServerGeneral::SetPlayerRole(_)
                     | ServerGeneral::PluginData(_)
-                    | ServerGeneral::PluginArtifactData(_) => {
+                    | ServerGeneral::PluginArtifactData(_)
+                    | ServerGeneral::CommandResult(_) => {
                         PreparedMsg::new(3, &g, &self.general_stream_params)
                     },
                 }

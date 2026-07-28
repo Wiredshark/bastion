@@ -1416,7 +1416,7 @@ mod command_journal_v1 {
 /// This type is the seam that enforces it: a result cannot be published
 /// except as part of an epoch, and cannot be consumed except by naming
 /// the epoch that actually committed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommandPublicationV1 {
     pub receipt: CommandReceiptV1,
     pub sequence: u64,

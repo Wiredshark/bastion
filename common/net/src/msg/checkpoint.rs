@@ -114,7 +114,8 @@ impl CheckpointParticipantV1 for ServerGeneral {
             | S::PluginArtifactData(_)
             | S::BastionDesignation { .. }
             | S::BastionDesignationRemoved { .. }
-            | S::BastionInspectInfo { .. } => P::CheckpointedData,
+            | S::BastionInspectInfo { .. }
+            | S::CommandResult(_) => P::CheckpointedData,
             S::Disconnect(_) | S::CheckpointBegin(_) | S::CheckpointBarrier(_) => P::CheckpointControl,
         }
     }
@@ -138,6 +139,10 @@ impl CheckpointParticipantV1 for ServerGeneral {
             S::Outcomes(_) | S::ChatMsg(_) | S::Notification(_) | S::Knockback(_) | S::Dialogue(_, _) => {
                 Ph::OrderedEvent
             },
+            // T3.5.13: a result reports an effect, so it applies AFTER
+            // the effect's own records inside the same checkpoint
+            // (CMD-130/131 read as a phase ordering, not a convention).
+            S::CommandResult(_) => Ph::OrderedEvent,
             S::Disconnect(_) | S::CheckpointBegin(_) | S::CheckpointBarrier(_) => return None,
             _ => Ph::InGameState,
         })

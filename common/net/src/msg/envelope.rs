@@ -1092,6 +1092,9 @@ impl SemanticRouteV1 for ServerGeneral {
             // T3.4.20b: a fence belongs to the stream it names, not to a
             // fixed one -- all five streams carry their own Begin/Barrier.
             S::CheckpointBegin(b) => b.begin.stream,
+            // T3.5.13: results ride General, the canonical egress every
+            // session has.
+            S::CommandResult(_) => SemanticStreamIdV1::General,
             S::CheckpointBarrier(b) => b.stream,
             S::CharacterDataLoadResult(_)
             | S::CharacterListUpdate(_)

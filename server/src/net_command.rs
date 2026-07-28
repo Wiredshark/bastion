@@ -134,6 +134,8 @@ mod command_ingress_v1 {
     use super::*;
     use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
     use common_net::msg::command::{CommandKindV1, CommandRefusalV1};
+    use common_net::msg::ServerGeneral;
+    use common_net::msg::envelope::SemanticStreamIdV1;
     use std::cell::Cell;
 
     fn binding() -> ActiveSessionBindingV1 {
@@ -221,6 +223,52 @@ mod command_ingress_v1 {
             CommandIngressV1::Handled { executed: true, .. }
         ));
         assert_eq!(runs.get(), 1);
+    }
+
+
+    /// `T3.5.13`: a command result is checkpointed data on the canonical
+    /// egress, and it applies AFTER the effect it reports.
+    #[test]
+    fn a_command_result_is_checkpointed_data_that_applies_after_its_effect() {
+        use common_net::msg::checkpoint::{CheckpointApplyPhaseV1, CheckpointParticipantV1, CheckpointParticipationV1};
+        use common_net::msg::command::{
+            CommandDescriptorV1, CommandKindV1, CommandOutcomeV1, CommandPublicationV1,
+        };
+        use common_net::msg::envelope::SemanticRouteV1;
+
+        let descriptor = CommandDescriptorV1 {
+            binding: binding(),
+            command_id: common::apex::identity::CommandId::generate(&mut FixedRandomBytesSourceV1([5; 16]))
+                .unwrap(),
+            kind: CommandKindV1::ControlAction,
+            request_digest: [1; 32],
+        };
+        let published = CommandPublicationV1::publish_v1(
+            &descriptor,
+            1,
+            CommandOutcomeV1::Applied { result_digest: [2; 32] },
+            4,
+        )
+        .unwrap();
+        let msg = ServerGeneral::CommandResult(published);
+
+        // CMD-128/129: canonical egress, and inside a checkpoint
+        assert_eq!(msg.semantic_stream(), SemanticStreamIdV1::General);
+        assert_eq!(msg.participation_v1(), CheckpointParticipationV1::CheckpointedData);
+
+        // CMD-130/131: the result applies after the effect's own records.
+        // Every phase an effect can use ranks at or below OrderedEvent.
+        let result_phase = msg.apply_phase_v1().unwrap();
+        assert_eq!(result_phase, CheckpointApplyPhaseV1::OrderedEvent);
+        // Stated over the WHOLE phase set rather than a few sample
+        // payloads: no phase ranks above the result's, so no effect can
+        // apply after the result that reports it. Equal rank (another
+        // OrderedEvent) falls to the ordinal, which the checkpoint's own
+        // canonical order already fixes.
+        assert!(
+            CheckpointApplyPhaseV1::ALL.iter().all(|phase| phase.rank() <= result_phase.rank()),
+            "OrderedEvent must be the last phase for this claim to hold"
+        );
     }
 
     /// The command path is refused for every client type today, and the
