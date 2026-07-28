@@ -101,10 +101,30 @@ impl DialogueSession {
         let _ = actions_once.store(actions);
 
         now(move |ctx, _| {
-            let q_tag = ctx.controller.dialogue_question(
+            // T0.85 (E4 row 1): world-scoped, deterministic tag -- replaces
+            // the old process-global AtomicU32 counter (see
+            // `Controller::dialogue_question`'s doc). Keyed by (asking NPC,
+            // sim time, this dialogue session, this NPC's pending-action
+            // count) through the shared DomainHasher: the same
+            // creator-state-derived pattern `create_quest` uses for
+            // `QuestId` (DET-ESIM-020).
+            let q_tag = {
+                let mut h = common::state_hash::DomainHasher::new(
+                    "bastion/domain/dialogue-tag/v1/sha256",
+                );
+                h.field(&slotmap::Key::data(&ctx.npc_id).as_ffi().to_le_bytes());
+                h.field(&ctx.time.0.to_bits().to_le_bytes());
+                h.field(&self.id.0.to_le_bytes());
+                h.field(&(ctx.controller.actions.len() as u64).to_le_bytes());
+                u32::from_le_bytes(
+                    h.finish().0[..4].try_into().expect("sha256 >= 4 bytes"),
+                )
+            };
+            ctx.controller.dialogue_question(
                 self,
                 question.clone(),
                 responses.iter().cloned(),
+                q_tag,
             );
             let responses = responses.clone();
             until(move |ctx, _| {
@@ -160,9 +180,22 @@ impl DialogueSession {
         item: Option<(Arc<ItemDef>, u32)>,
     ) -> impl Action<S> {
         now(move |ctx, _| {
-            let s_tag = ctx
-                .controller
-                .dialogue_statement(self, stmt.clone(), item.clone());
+            // T0.85 (E4 row 1): see `ask_question`'s identical derivation
+            // above.
+            let s_tag = {
+                let mut h = common::state_hash::DomainHasher::new(
+                    "bastion/domain/dialogue-tag/v1/sha256",
+                );
+                h.field(&slotmap::Key::data(&ctx.npc_id).as_ffi().to_le_bytes());
+                h.field(&ctx.time.0.to_bits().to_le_bytes());
+                h.field(&self.id.0.to_le_bytes());
+                h.field(&(ctx.controller.actions.len() as u64).to_le_bytes());
+                u32::from_le_bytes(
+                    h.finish().0[..4].try_into().expect("sha256 >= 4 bytes"),
+                )
+            };
+            ctx.controller
+                .dialogue_statement(self, stmt.clone(), item.clone(), s_tag);
             // Wait for the ack
             talk(self.target)
             .repeat()

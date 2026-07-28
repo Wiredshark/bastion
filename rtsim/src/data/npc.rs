@@ -26,10 +26,7 @@ use slotmap::DenseSlotMap;
 use std::{
     collections::VecDeque,
     ops::{Deref, DerefMut},
-    sync::{
-        Arc,
-        atomic::{AtomicU32, Ordering},
-    },
+    sync::Arc,
 };
 use tracing::error;
 use vek::*;
@@ -214,21 +211,22 @@ impl Controller {
             }));
     }
 
-    fn new_dialogue_tag(&self) -> u32 {
-        static TAG_COUNTER: AtomicU32 = AtomicU32::new(0);
-        TAG_COUNTER.fetch_add(1, Ordering::Relaxed)
-    }
-
     /// Ask a question, with various possible answers. Returns the dialogue tag,
     /// used for identifying the answer.
+    /// `tag` is the caller's responsibility (`T0.85`, E4 row 1): the old
+    /// process-global `AtomicU32` counter here (`new_dialogue_tag`, since
+    /// removed) made tags shift with unrelated dialogue activity elsewhere
+    /// in the process — same defect class DET-ESIM-020 fixed for
+    /// `QuestId`. Callers derive a world-scoped, deterministic tag via
+    /// `DomainHasher` instead (see `rtsim/src/rule/npc_ai/util.rs`'s
+    /// `ask_question`/`say_statement_with_gift`).
     pub fn dialogue_question(
         &mut self,
         session: DialogueSession,
         msg: comp::Content,
         responses: impl IntoIterator<Item = (u16, Response)>,
+        tag: u32,
     ) -> u32 {
-        let tag = self.new_dialogue_tag();
-
         self.actions
             .push(NpcAction::Dialogue(session.target, Dialogue {
                 id: session.id,
@@ -244,14 +242,15 @@ impl Controller {
 
     /// Provide a statement as part of a dialogue. Returns the dialogue tag,
     /// used for identifying acknowledgements.
+    ///
+    /// `tag` is the caller's responsibility -- see `dialogue_question`'s doc.
     pub fn dialogue_statement(
         &mut self,
         session: DialogueSession,
         msg: comp::Content,
         given_item: Option<(Arc<ItemDef>, u32)>,
+        tag: u32,
     ) -> u32 {
-        let tag = self.new_dialogue_tag();
-
         self.actions
             .push(NpcAction::Dialogue(session.target, Dialogue {
                 id: session.id,

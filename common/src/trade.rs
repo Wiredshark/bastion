@@ -209,15 +209,42 @@ impl PendingTrade {
 pub struct TradeId(usize);
 
 pub struct Trades {
-    pub next_id: TradeId,
     pub trades: HashMap<TradeId, PendingTrade>,
     pub entity_trades: HashMap<Uid, TradeId>,
 }
 
 impl Trades {
-    pub fn begin_trade(&mut self, party: Uid, counterparty: Uid) -> TradeId {
-        let id = self.next_id;
-        self.next_id = TradeId(id.0.wrapping_add(1));
+    /// `T0.85` (E4 row 1): derives the id deterministically from (parties,
+    /// sim time, a collision ordinal) via `DomainHasher`, instead of a
+    /// plain `wrapping_add` counter -- a wrapped-around id could silently
+    /// collide with a still-open trade. CHECKS for a collision rather
+    /// than assuming uniqueness (retrying with a bumped ordinal on the
+    /// astronomically unlikely case one occurs) instead of ever silently
+    /// overwriting an existing trade.
+    pub fn begin_trade(
+        &mut self,
+        time: crate::resources::Time,
+        party: Uid,
+        counterparty: Uid,
+    ) -> TradeId {
+        let mut ordinal = 0u64;
+        let id = loop {
+            let mut h =
+                crate::state_hash::DomainHasher::new("bastion/domain/trade-id/v1/sha256");
+            h.field(&party.0.get().to_le_bytes());
+            h.field(&counterparty.0.get().to_le_bytes());
+            h.field(&time.0.to_bits().to_le_bytes());
+            h.field(&ordinal.to_le_bytes());
+            let id = TradeId(u64::from_le_bytes(
+                h.finish().0[..8].try_into().expect("sha256 >= 8 bytes"),
+            ) as usize);
+            if !self.trades.contains_key(&id) {
+                break id;
+            }
+            ordinal = ordinal
+                .checked_add(1)
+                .expect("trade-id collision ordinal exhausted");
+        };
         self.trades
             .insert(id, PendingTrade::new(party, counterparty));
         self.entity_trades.insert(party, id);
@@ -314,7 +341,6 @@ impl Trades {
 impl Default for Trades {
     fn default() -> Trades {
         Trades {
-            next_id: TradeId(0),
             trades: HashMap::new(),
             entity_trades: HashMap::new(),
         }
