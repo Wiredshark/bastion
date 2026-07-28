@@ -9006,6 +9006,7 @@ dependencies = [
  "rand_chacha 0.10.0",
  "rayon",
  "refinery",
+ "rmp-serde",
  "ron",
  "rusqlite",
  "rustls",

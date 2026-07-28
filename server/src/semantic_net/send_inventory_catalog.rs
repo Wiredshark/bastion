@@ -17,12 +17,16 @@ use super::SendSiteClassV1::{
     V1EgressMechanism,
 };
 
-pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 197] = [
+pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 198] = [
     ("weather/tick.rs", "lazy_msg = Some(client.prepare(ServerGeneral::WeatherUpdate(", 0, PostAuthCandidate),
     ("weather/tick.rs", "lazy_msg.as_ref().map(|msg| client.send_prepared(msg));", 0, PostAuthCandidate),
     // APEX-T3.6.03: the legacy-disconnect inventory SCANS for send
     // sites; its own pattern strings match this catalog's grep. Not
     // sends, the same false-positive class as the mpsc channels below.
+    // APEX-T4.4: a rusqlite statement, not a network send. The scanner
+    // matches `.prepare(` on purpose (see its own doc) and this is the
+    // false positive it expects to be named rather than silenced.
+    ("save_inventory.rs", ".prepare(\"SELECT version, name, checksum FROM refinery_schema_history ORDER BY version\")", 0, NotAClientSend),
     ("net_checkpoint_disconnect.rs", "let is_send = context.contains(\".send(\")", 0, NotAClientSend),
     ("net_checkpoint_disconnect.rs", "|| context.contains(\"send_fallible(\")", 0, NotAClientSend),
     ("weather/tick.rs", "let _ = weather_tx.send((grid, lightning_cells, sim));", 0, NotAClientSend),

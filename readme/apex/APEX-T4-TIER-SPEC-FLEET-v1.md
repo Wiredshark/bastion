@@ -202,6 +202,46 @@ disagree about anything — all must produce a report, none may produce a
 verdict. Falsifier: a fixture where the stores *are* coherent must still
 report `Unverified`, or the field means nothing.
 
+**BUILT — `server/src/save_inventory.rs`, 13 tests.** All five required
+cases plus the falsifier, plus three the build showed were needed.
+
+The falsifier is not a test at all in the end: `SaveConsistencyV1` has
+**one variant**. A `Coherent` variant would be produced by a
+coherent-LOOKING fixture and then read as "the stores agree", which
+nothing here checks — so reporting anything else is unrepresentable
+rather than merely tested. A test pins the arity with T4.6 named as what
+would have to exist first.
+
+Three things the build found:
+
+1. **`Data::from_reader` cannot be used by an inventory.** It rejects
+   anything that is not `CURRENT_VERSION`, so it cannot distinguish a
+   version-17 save from garbage — precisely the case a diagnosis exists
+   for. `rtsim::data::Data::probe_version_v1` was added where the format
+   lives: it decodes a one-field struct, so serde skips the rest and a
+   future version REPORTS ITS NUMBER. The test asserts the fixture is
+   genuinely unloadable, so it cannot rot into proving nothing.
+2. **"Read-only" is a claim about the filesystem, not about intent.** A
+   WAL-mode SQLite file opened `mode=ro` still makes SQLite create a
+   `-shm` sidecar in the directory being diagnosed. The connection uses
+   `mode=ro&immutable=1`, and the no-write test digests the whole tree
+   either side of the call. Removing `immutable=1` turns that test red —
+   verified, so the flag is load-bearing rather than decorative.
+3. **The tier spec named stores this build does not persist** (map,
+   replay/evidence). They are recorded in `NOT_PERSISTED_BY_THIS_BUILD`
+   with the evidence for each, not silently omitted: an inventory that
+   dropped them would read as "there are none" and the next reader would
+   re-derive it from the whole server.
+
+`missing` deliberately covers only the character db and rtsim data. A
+save with no rtsim backup is a save that never failed, and a world with
+no edited chunks has nothing to persist — reporting those absent would
+manufacture findings.
+
+`corpus_index_v1` is `T4.5`'s input: the sorted multiset of content
+identities. Byte equality is the only equality this row is entitled to
+assert.
+
 ---
 
 ## T4.5 — Historical save corpus and migration policy

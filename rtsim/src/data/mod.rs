@@ -117,6 +117,29 @@ impl Data {
         id
     }
 
+    /// `APEX-T4.4`: read ONLY the declared version out of an rtsim save.
+    ///
+    /// [`Data::from_reader`] deliberately rejects anything that is not
+    /// [`CURRENT_VERSION`], which makes it useless for diagnosing a save
+    /// this binary cannot load — the case an inventory exists for. This
+    /// probe decodes a struct with one field, so serde skips everything
+    /// else and a FUTURE version reports its number instead of failing.
+    ///
+    /// `None` means the bytes are not a readable named-map encoding at
+    /// all; a file that simply omits the field decodes as version 0,
+    /// which is what its absence has always meant here.
+    pub fn probe_version_v1<R: Read>(reader: R) -> Option<u32> {
+        #[derive(Deserialize)]
+        struct VersionProbeV1 {
+            #[serde(default)]
+            version: u32,
+        }
+
+        rmp_serde::decode::from_read::<_, VersionProbeV1>(reader)
+            .ok()
+            .map(|probe| probe.version)
+    }
+
     pub fn from_reader<R: Read>(reader: R) -> Result<Box<Self>, ReadError> {
         rmp_serde::decode::from_read(reader)
             .map_err(ReadError::Load)

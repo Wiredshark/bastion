@@ -47,6 +47,7 @@ mod pet;
 pub mod plugin_deployment_policy;
 pub mod presence;
 pub mod rtsim;
+pub mod save_inventory;
 pub mod semantic_net;
 pub mod session_registry;
 pub mod settings;

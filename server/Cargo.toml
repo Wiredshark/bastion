@@ -82,4 +82,7 @@ refinery = { version = "0.9", features = ["rusqlite"] }
 schnellru = "0.2.1"
 
 [dev-dependencies]
+# APEX-T4.4 fixtures only: the inventory itself probes versions through
+# rtsim::data::Data::probe_version_v1, which is where the format lives.
+rmp-serde = "1.1.0"
 tempfile = "3.27.0"
