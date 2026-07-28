@@ -397,49 +397,86 @@ mod command_ledger_v1 {
     }
 }
 
-/// `APEX-T3.5.03` — which C2S payloads ARE commands. Exhaustive, no
-/// wildcard arm: a new `ClientGeneral` variant must be classified
-/// deliberately, the same discipline `CheckpointParticipantV1` holds on
-/// the other direction. A command is a request that MUTATES; a query or
-/// a stream request is not one, and carrying a command id on it is a
-/// protocol error rather than harmless decoration.
+/// `APEX-T3.5.03`, corrected in `.09` against the imported canary
+/// catalog — which C2S payloads are commands, and what KIND of admission
+/// each gets. Exhaustive, no wildcard arm (`CMD-001`: a new
+/// `ClientGeneral` variant with no admission class is a violation).
+///
+/// Three classes, because two are not enough:
+/// - `Journaled` — a discrete mutation. Carries a `CommandId`, enters the
+///   retry journal, applies exactly once.
+/// - `LatestState` — a continuous input frame. Newest wins; replaying an
+///   old one is meaningless, so it must NOT carry a command id and must
+///   NOT be journaled (`CMD-002`..`CMD-005`, `CMD-066`).
+/// - `ReadOnly` — a query or stream request. Mutates nothing, so a replay
+///   costs a recomputation, never a double application (`CMD-023`..
+///   `CMD-031`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandAdmissionClassV1 {
+    Journaled(CommandKindV1),
+    LatestState,
+    ReadOnly,
+}
+
 pub trait CommandParticipantV1 {
-    fn command_kind_v1(&self) -> Option<CommandKindV1>;
+    fn admission_class_v1(&self) -> CommandAdmissionClassV1;
+
+    /// The journaled kind, if this payload is a command at all.
+    fn command_kind_v1(&self) -> Option<CommandKindV1> {
+        match self.admission_class_v1() {
+            CommandAdmissionClassV1::Journaled(kind) => Some(kind),
+            _ => None,
+        }
+    }
+
+    /// Whether a client may resend this on its own initiative. Session
+    /// control is journaled but never auto-retried (`CMD-032`,
+    /// `CMD-065`): a terminate that silently repeats is a different
+    /// intent than the one the player expressed.
+    fn auto_retryable_v1(&self) -> bool {
+        matches!(
+            self.admission_class_v1(),
+            CommandAdmissionClassV1::Journaled(kind) if kind != CommandKindV1::SessionControl
+        )
+    }
 }
 
 impl CommandParticipantV1 for super::ClientGeneral {
-    fn command_kind_v1(&self) -> Option<CommandKindV1> {
+    fn admission_class_v1(&self) -> CommandAdmissionClassV1 {
+        use CommandAdmissionClassV1 as A;
         use CommandKindV1 as K;
         use super::ClientGeneral as C;
         match self {
+            // Continuous input and view state: newest wins, never journaled.
             C::ControllerInputs(_)
             | C::ControlEvent(_)
             | C::ControlAction(_)
-            | C::BreakBlock(_)
-            | C::PlaceBlock(_, _)
             | C::PlayerPhysics { .. }
+            | C::SpectatePosition(_)
+            | C::SpectateEntity(_)
+            | C::BastionCameraAnchor(_) => A::LatestState,
+            // Discrete world mutations.
+            C::BreakBlock(_)
+            | C::PlaceBlock(_, _)
             | C::UnlockSkill(_)
             | C::SetBattleMode(_)
             | C::UpdateMapMarker(_)
-            | C::SpectatePosition(_)
-            | C::SpectateEntity(_)
-            | C::BastionCameraAnchor(_)
             | C::BastionPlaceDesignation { .. }
             | C::BastionApplyInfluence { .. }
             | C::BastionContextAction { .. }
             | C::BastionSpawnColony { .. }
-            | C::BastionCancelDesignation { .. } => Some(K::ControlAction),
+            | C::BastionCancelDesignation { .. } => A::Journaled(K::ControlAction),
             C::CreateCharacter { .. }
             | C::DeleteCharacter(_)
             | C::EditCharacter { .. }
             | C::Character(_, _)
             | C::Spectate(_)
-            | C::ExitInGame => Some(K::CharacterLifecycle),
-            C::Terminate => Some(K::SessionControl),
-            C::Command(_, _) => Some(K::Administrative),
-            // Queries, stream requests and acknowledgements mutate no
-            // authoritative state: replaying one costs a recomputation,
-            // never a double application.
+            | C::ExitInGame => A::Journaled(K::CharacterLifecycle),
+            C::Terminate => A::Journaled(K::SessionControl),
+            // A chat message is a durable, once-only effect, not a query
+            // (`CMD-021`), and an admin command is the same (`CMD-022`).
+            C::ChatMsg(_) | C::Command(_, _) => A::Journaled(K::Administrative),
+            // Queries, stream requests and acknowledgements.
             C::RequestCharacterList
             | C::SetViewDistance(_)
             | C::RequestSiteInfo(_)
@@ -447,11 +484,10 @@ impl CommandParticipantV1 for super::ClientGeneral {
             | C::RequestLossyTerrainCompression { .. }
             | C::TerrainChunkRequest { .. }
             | C::LodZoneRequest { .. }
-            | C::ChatMsg(_)
             | C::RequestPlugins(_)
             | C::RequestPluginArtifacts(_)
             | C::BastionInspect { .. }
-            | C::CheckpointCommitAck(_) => None,
+            | C::CheckpointCommitAck(_) => A::ReadOnly,
         }
     }
 }
@@ -527,15 +563,75 @@ mod command_carriage_v1 {
         assert_eq!(command_descriptor_from_frame_v1(binding(), None, &query, [4; 32]).unwrap(), None);
     }
 
+    /// `.09`: the classes the imported catalog names, asserted against
+    /// the payloads it names them for. These are the cases my first pass
+    /// got wrong before the catalog was in the tree.
+    #[test]
+    fn continuous_input_is_not_journaled_and_chat_is() {
+        use super::super::ClientGeneral as C;
+        use common::comp::ControlAction;
+        use vek::Vec3;
+
+        // CMD-002..CMD-005, CMD-066: continuous frames carry no command
+        // id and never enter the retry journal.
+        for continuous in [
+            C::ControlAction(ControlAction::Sit),
+            C::PlayerPhysics {
+                pos: common::comp::Pos(Vec3::zero()),
+                vel: common::comp::Vel(Vec3::zero()),
+                ori: common::comp::Ori::default(),
+                force_counter: 0,
+            },
+        ] {
+            assert_eq!(continuous.admission_class_v1(), CommandAdmissionClassV1::LatestState);
+            assert_eq!(continuous.command_kind_v1(), None);
+            assert!(!continuous.auto_retryable_v1());
+            assert_eq!(
+                command_descriptor_from_frame_v1(binding(), Some(id()), &continuous, [1; 32]).unwrap_err(),
+                CommandCarriageErrorV1::UnexpectedCommandId
+            );
+        }
+
+        // CMD-021/CMD-022: chat and admin commands are durable once-only
+        // effects, not read-only traffic.
+        for journaled in [C::ChatMsg(common::comp::Content::Plain("hello".to_owned())), C::Command("time".to_owned(), Vec::new())] {
+            assert_eq!(
+                journaled.admission_class_v1(),
+                CommandAdmissionClassV1::Journaled(CommandKindV1::Administrative)
+            );
+            assert!(journaled.auto_retryable_v1());
+        }
+
+        // CMD-011..CMD-015: discrete world mutations are journaled.
+        assert_eq!(
+            C::BreakBlock(Vec3::zero()).admission_class_v1(),
+            CommandAdmissionClassV1::Journaled(CommandKindV1::ControlAction)
+        );
+
+        // CMD-032/CMD-065: session control is journaled but NEVER
+        // auto-retried.
+        assert_eq!(
+            C::Terminate.admission_class_v1(),
+            CommandAdmissionClassV1::Journaled(CommandKindV1::SessionControl)
+        );
+        assert!(!C::Terminate.auto_retryable_v1());
+
+        // CMD-023..CMD-031: queries and stream requests stay read-only.
+        for query in [C::RequestCharacterList, C::SetViewDistance(common::ViewDistances { terrain: 4, entity: 4 })] {
+            assert_eq!(query.admission_class_v1(), CommandAdmissionClassV1::ReadOnly);
+            assert!(!query.auto_retryable_v1());
+        }
+    }
+
     /// The classification is total and the kinds are used, not decorative
     /// — every kind this tier defines has at least one real payload.
     #[test]
     fn every_command_kind_has_a_real_payload() {
         use super::super::ClientGeneral as C;
-        use common::comp::ControlAction;
+        use vek::Vec3;
 
         let samples: Vec<C> = vec![
-            C::ControlAction(ControlAction::Sit),
+            C::BreakBlock(Vec3::zero()),
             C::ExitInGame,
             C::Terminate,
             C::Command("time".to_owned(), Vec::new()),
