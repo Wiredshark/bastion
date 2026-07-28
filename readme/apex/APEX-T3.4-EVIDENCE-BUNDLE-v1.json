@@ -1,0 +1,277 @@
+{
+  "schema": "bastion/apex/t3.4-evidence/v1",
+  "tier": "APEX-T3.4 cross-stream checkpoint watermarks",
+  "branch": "bastion/apex-t34",
+  "tip": "422e410e82de1cc788901e2e6827121c5d89aaec",
+  "network_version": "0.10.0",
+  "digest_domains": {
+    "CheckpointStreamTranscript": 40,
+    "CheckpointGlobalTranscript": 41,
+    "CheckpointDescriptor": 42
+  },
+  "canary_cases": {
+    "total": 176,
+    "covered": 154,
+    "open": 22
+  },
+  "open_cases": [
+    {
+      "id": "CKPT-036",
+      "reason": "resync under a new connection epoch has no code path yet -- the runtime is created per attachment and abandon_v1 is the only reset; a resync row belongs with the T3.5 session-control work"
+    },
+    {
+      "id": "CKPT-116",
+      "reason": "prepare validates the checkpoint's own structure, not ECS referential integrity -- a missing referenced Uid is not yet a prepare-time reject"
+    },
+    {
+      "id": "CKPT-117",
+      "reason": "duplicate entity creation is not yet detected at prepare; it needs the ECS preflight CKPT-116 also names"
+    },
+    {
+      "id": "CKPT-121",
+      "reason": "frontend events are emitted by the ordinary handlers at dispatch time, after commit; they are not separately staged, so there is nothing yet to assert about staged events"
+    },
+    {
+      "id": "CKPT-123",
+      "reason": "commit currently runs inside handle_messages; its ordering against the client's own State::tick is not yet pinned by a test"
+    },
+    {
+      "id": "CKPT-124",
+      "reason": "the inverse of CKPT-123, same missing ordering pin"
+    },
+    {
+      "id": "CKPT-127",
+      "reason": "nothing re-checks entity generations between prepare and commit; the window exists because dispatch happens after commit"
+    },
+    {
+      "id": "CKPT-130",
+      "reason": "no post-commit state root is computed or carried yet (bootstrap_manifest_root is always None), so there is nothing to compare"
+    },
+    {
+      "id": "CKPT-162",
+      "reason": "there is no SessionTerminate frame in this tree yet -- session-control termination lands with T3.5"
+    },
+    {
+      "id": "CKPT-163",
+      "reason": "same missing SessionTerminate frame (discard-while-aligning)"
+    },
+    {
+      "id": "CKPT-164",
+      "reason": "same missing SessionTerminate frame (discard after staging, before prepare)"
+    },
+    {
+      "id": "CKPT-165",
+      "reason": "same missing SessionTerminate frame (discard after prepare)"
+    },
+    {
+      "id": "CKPT-166",
+      "reason": "same missing SessionTerminate frame (committed epoch survives termination)"
+    },
+    {
+      "id": "CKPT-167",
+      "reason": "same missing SessionTerminate frame (wrong binding)"
+    },
+    {
+      "id": "CKPT-168",
+      "reason": "control-lane replay needs the T3.5 command-idempotency work"
+    },
+    {
+      "id": "CKPT-169",
+      "reason": "control-lane sequence gap, same T3.5 dependency"
+    },
+    {
+      "id": "CKPT-170",
+      "reason": "terminal-frame idempotency, same T3.5 dependency"
+    },
+    {
+      "id": "CKPT-171",
+      "reason": "control-sequence conflict, same T3.5 dependency"
+    },
+    {
+      "id": "CKPT-173",
+      "reason": "there is no separate control lane yet; fences ride the stream they name"
+    },
+    {
+      "id": "CKPT-174",
+      "reason": "an audit row -- production still sends ServerGeneral::Disconnect, and retiring it belongs with the T3.5 session-control work"
+    },
+    {
+      "id": "CKPT-175",
+      "reason": "transport close without a reason has no checkpoint-side handling yet"
+    },
+    {
+      "id": "CKPT-176",
+      "reason": "reason-as-authority needs the T3.2 session registry interaction the session-control rows introduce"
+    }
+  ],
+  "activation": {
+    "state": "REFUSED",
+    "blockers": [
+      "NoProductionProfile",
+      "UncoveredCanaryCases"
+    ]
+  },
+  "verification": {
+    "command": "cargo test -p veloren-common-net --lib; cargo test -p veloren-server --lib; cargo test -p veloren-client --lib",
+    "results": {
+      "veloren-common-net": "84 passed",
+      "veloren-server": "112 passed",
+      "veloren-client": "18 passed"
+    },
+    "checkpoint_tests": [
+      "veloren-common-net::msg::checkpoint::checkpoint_aligner_v1::nothing_applies_until_every_stream_is_fenced",
+      "veloren-common-net::msg::checkpoint::checkpoint_aligner_v1::staging_rejects_are_typed",
+      "veloren-common-net::msg::checkpoint::checkpoint_aligner_v1::substituted_payload_fails_its_stream_fence",
+      "veloren-common-net::msg::checkpoint::checkpoint_client_phase_v1::alignment_is_bounded_but_idle_and_prepared_do_not_age",
+      "veloren-common-net::msg::checkpoint::checkpoint_client_phase_v1::direct_application_is_illegal_while_a_checkpoint_aligns",
+      "veloren-common-net::msg::checkpoint::checkpoint_client_type_v1::a_chat_only_session_may_not_be_budgeted_for_streams_it_cannot_receive",
+      "veloren-common-net::msg::checkpoint::checkpoint_context_v1::context_field_matrix_is_exhaustively_enforced",
+      "veloren-common-net::msg::checkpoint::checkpoint_controls_v1::every_stream_including_empty_is_fenced",
+      "veloren-common-net::msg::checkpoint::checkpoint_controls_v1::segment_violations_are_typed",
+      "veloren-common-net::msg::checkpoint::checkpoint_descriptor_v1::descriptor_validates_completeness_and_roots_bind_every_field",
+      "veloren-common-net::msg::checkpoint::checkpoint_descriptor_v1::roots_are_permutation_invariant_and_mutation_sensitive",
+      "veloren-common-net::msg::checkpoint::checkpoint_egress_order_v1::duplicate_key_and_phase_regression_are_typed",
+      "veloren-common-net::msg::checkpoint::checkpoint_egress_order_v1::same_intent_set_yields_same_tape_regardless_of_input_order",
+      "veloren-common-net::msg::checkpoint::checkpoint_epoch_ordinal_v1::epoch_chain_is_contiguous_and_non_reusable",
+      "veloren-common-net::msg::checkpoint::checkpoint_epoch_ordinal_v1::ordinals_are_dense_and_order_independent",
+      "veloren-common-net::msg::checkpoint::checkpoint_prepare_commit_v1::an_empty_checkpoint_still_commits",
+      "veloren-common-net::msg::checkpoint::checkpoint_prepare_commit_v1::prepare_rejects_and_commit_applies_the_whole_set",
+      "veloren-common-net::msg::checkpoint::checkpoint_profile_v1::participation_and_phases_are_total_and_ordered",
+      "veloren-common-net::msg::checkpoint::checkpoint_profile_v1::required_stream_set_is_all_five_exactly",
+      "veloren-common-net::msg::checkpoint::checkpoint_resource_v1::declared_and_actual_limits_are_both_enforced",
+      "veloren-common-net::msg::checkpoint::checkpoint_resource_v1::no_production_default_exists",
+      "veloren-common-net::msg::envelope::tests::checkpoint_context_round_trips_and_absence_is_preserved",
+      "veloren-server::net_checkpoint::checkpoint_planner_v1::a_fenced_stream_holds_ordinary_traffic_until_its_barrier",
+      "veloren-server::net_checkpoint::checkpoint_planner_v1::a_plan_aligns_end_to_end_and_tampering_does_not",
+      "veloren-server::net_checkpoint::checkpoint_planner_v1::control_frames_become_self_sufficient_wire_messages",
+      "veloren-server::net_checkpoint::checkpoint_planner_v1::cursor_slots_match_the_required_stream_order",
+      "veloren-server::net_checkpoint::checkpoint_planner_v1::duplicate_order_key_and_resource_ceiling_are_typed",
+      "veloren-server::net_checkpoint::checkpoint_planner_v1::frames_fence_every_stream_and_carry_bound_context",
+      "veloren-server::net_checkpoint::checkpoint_planner_v1::only_a_matching_ack_advances_the_commit_watermark",
+      "veloren-server::net_checkpoint::checkpoint_planner_v1::only_cross_stream_interleaving_survives_perturbation",
+      "veloren-server::net_checkpoint::checkpoint_planner_v1::plan_is_a_pure_function_of_the_intent_set",
+      "veloren-server::net_checkpoint::checkpoint_planner_v1::production_activation_is_refused_with_named_blockers",
+      "veloren-server::net_checkpoint::checkpoint_planner_v1::rejected_checkpoints_never_consume_sequences",
+      "veloren-server::net_checkpoint_canaries::tests::a_missing_case_id_would_be_caught",
+      "veloren-server::net_checkpoint_canaries::tests::claims_are_substantive_and_the_open_set_is_pinned",
+      "veloren-server::net_checkpoint_canaries::tests::every_case_id_has_exactly_one_claim",
+      "veloren-client::tests::checkpoint_receive_v1::a_descriptor_for_another_session_is_refused",
+      "veloren-client::tests::checkpoint_receive_v1::a_fenced_frame_survives_the_live_decode_limits",
+      "veloren-client::tests::checkpoint_receive_v1::nothing_is_applied_until_the_last_barrier"
+    ]
+  },
+  "rows": [
+    {
+      "commit": "f9bfef4be4",
+      "subject": "APEX-T3.4.02: checkpoint identity, parent chain, ordinals"
+    },
+    {
+      "commit": "48da114a8f",
+      "subject": "APEX-T3.4.03: freeze apply phases + canonical order"
+    },
+    {
+      "commit": "0bf0ba4f62",
+      "subject": "T2.5-FINDINGS: typed State-construction error replaces panic (F1), state.rs-path coverage (F3)"
+    },
+    {
+      "commit": "6344223e25",
+      "subject": "APEX-T2.5: rollout-block checklist (F2 recorded open per ruling)"
+    },
+    {
+      "commit": "8c1efb9521",
+      "subject": "APEX-T3.4: register checkpoint digest domains 21-23"
+    },
+    {
+      "commit": "e62fef4dea",
+      "subject": "APEX-T3.4.04/.05: complete descriptor + transcript roots"
+    },
+    {
+      "commit": "dd5143c7c4",
+      "subject": "APEX-T3.4: move checkpoint domains to the APEX block (40-42) + encode allocation rule"
+    },
+    {
+      "commit": "81164e061d",
+      "subject": "APEX-T3.4.06: Begin/Barrier stream controls"
+    },
+    {
+      "commit": "880dde12ec",
+      "subject": "APEX-T3.4.07: checkpoint envelope context binding"
+    },
+    {
+      "commit": "c77a561437",
+      "subject": "APEX-T3.4.08: mandatory checkpoint resource profile"
+    },
+    {
+      "commit": "aab1c68d74",
+      "subject": "APEX-T3.4.09: server checkpoint planner"
+    },
+    {
+      "commit": "db3b900ff5",
+      "subject": "APEX-T3.4.10: whole-plan sequence reservation"
+    },
+    {
+      "commit": "60223db802",
+      "subject": "APEX-T3.4.11: recipient checkpoint frames"
+    },
+    {
+      "commit": "bbc1f10d67",
+      "subject": "APEX-T3.4.12: receive-side checkpoint aligner"
+    },
+    {
+      "commit": "3091601808",
+      "subject": "APEX-T3.4.13: egress stream blocking"
+    },
+    {
+      "commit": "9be15c9046",
+      "subject": "APEX-T3.4.14: completeness verified by receiving"
+    },
+    {
+      "commit": "361c3186cf",
+      "subject": "APEX-T3.4.15/.16: pure prepare, infallible commit"
+    },
+    {
+      "commit": "03d64969bc",
+      "subject": "APEX-T3.4.17/.18: client checkpoint phase + alignment liveness"
+    },
+    {
+      "commit": "6f8bef9ad5",
+      "subject": "MERGE FIX: refresh NET_ENVELOPE_PROFILE_V1 golden vector after the domain-id move"
+    },
+    {
+      "commit": "cd50afe8fa",
+      "subject": "APEX-T3.4.19: commit ack + per-recipient commit watermark"
+    },
+    {
+      "commit": "c547ad2381",
+      "subject": "APEX-T3.4.20a: envelope header carries checkpoint context"
+    },
+    {
+      "commit": "a91aea0b45",
+      "subject": "APEX-T3.4.20b: checkpoint fences as wire messages"
+    },
+    {
+      "commit": "42ac125681",
+      "subject": "APEX-T3.4.20c-1: every Begin is self-sufficient"
+    },
+    {
+      "commit": "0a8641133a",
+      "subject": "APEX-T3.4.20c-2: client receive path routes checkpoints"
+    },
+    {
+      "commit": "edd391949e",
+      "subject": "APEX-T3.4.21: profiles and descriptors validated against ClientType"
+    },
+    {
+      "commit": "3f348ac41a",
+      "subject": "APEX-T3.4.22: perturbation harness"
+    },
+    {
+      "commit": "1df852bf8c",
+      "subject": "APEX-T3.4.23: canary coverage map (176 cases) + a gap it found"
+    },
+    {
+      "commit": "422e410e82",
+      "subject": "APEX-T3.4.24: production admission, fail-closed and named"
+    }
+  ]
+}
