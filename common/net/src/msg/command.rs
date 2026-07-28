@@ -559,3 +559,161 @@ mod command_carriage_v1 {
         assert!(!kinds.contains(&CommandKindV1::InventoryMutation));
     }
 }
+
+/// `APEX-T3.5.04` — the exactly-once execution seam. The ledger alone
+/// can be misused (admit, then forget to resolve, or execute on a
+/// `Resolved`); this wraps both into one call so double execution is
+/// unrepresentable at the API: the work is an `FnOnce` the function
+/// only invokes on a genuinely fresh command, and its outcome is
+/// recorded before it returns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandExecutionV1 {
+    /// The work ran now.
+    Executed(CommandOutcomeV1),
+    /// A replay: the ORIGINAL outcome, replayed without re-running.
+    Replayed(CommandOutcomeV1),
+}
+
+impl CommandExecutionV1 {
+    pub fn outcome(self) -> CommandOutcomeV1 {
+        match self {
+            Self::Executed(o) | Self::Replayed(o) => o,
+        }
+    }
+}
+
+/// Runs `execute` at most once per command identity, ever.
+///
+/// `InFlight` is an error rather than a wait: this seam is single
+/// threaded per session, so seeing an unresolved entry here means a
+/// previous call panicked or a caller re-entered — either way the
+/// command must not run a second time.
+pub fn execute_command_once_v1<F>(
+    ledger: &mut CommandLedgerV1,
+    descriptor: &CommandDescriptorV1,
+    execute: F,
+) -> Result<CommandExecutionV1, CommandLedgerErrorV1>
+where
+    F: FnOnce() -> CommandOutcomeV1,
+{
+    match ledger.admit_v1(descriptor)? {
+        CommandAdmitV1::Resolved(outcome) => Ok(CommandExecutionV1::Replayed(outcome)),
+        CommandAdmitV1::InFlight => Err(CommandLedgerErrorV1::AlreadyResolved),
+        CommandAdmitV1::Fresh => {
+            let outcome = execute();
+            ledger.resolve_v1(descriptor.command_id, outcome)?;
+            Ok(CommandExecutionV1::Executed(outcome))
+        },
+    }
+}
+
+#[cfg(test)]
+mod command_execution_v1 {
+    use super::*;
+    use common::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId};
+    use std::cell::Cell;
+
+    fn binding() -> ActiveSessionBindingV1 {
+        ActiveSessionBindingV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([2; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+        }
+    }
+
+    fn command(seed: u8, request: u8) -> CommandDescriptorV1 {
+        CommandDescriptorV1 {
+            binding: binding(),
+            command_id: CommandId::generate(&mut FixedRandomBytesSourceV1([seed; 16])).unwrap(),
+            kind: CommandKindV1::ControlAction,
+            request_digest: [request; 32],
+        }
+    }
+
+    /// The tier's whole claim, stated as a count: N deliveries of the
+    /// same command produce exactly ONE execution.
+    #[test]
+    fn a_command_delivered_many_times_executes_exactly_once() {
+        let mut ledger = CommandLedgerV1::new(binding(), 8);
+        let cmd = command(10, 1);
+        let runs = Cell::new(0u32);
+
+        let first = execute_command_once_v1(&mut ledger, &cmd, || {
+            runs.set(runs.get() + 1);
+            CommandOutcomeV1::Applied { result_digest: [5; 32] }
+        })
+        .unwrap();
+        assert_eq!(first, CommandExecutionV1::Executed(CommandOutcomeV1::Applied { result_digest: [5; 32] }));
+
+        for _ in 0..16 {
+            let again = execute_command_once_v1(&mut ledger, &cmd, || {
+                runs.set(runs.get() + 1);
+                CommandOutcomeV1::Applied { result_digest: [99; 32] }
+            })
+            .unwrap();
+            assert_eq!(
+                again,
+                CommandExecutionV1::Replayed(CommandOutcomeV1::Applied { result_digest: [5; 32] }),
+                "a replay returns the ORIGINAL outcome, not a fresh one"
+            );
+        }
+        assert_eq!(runs.get(), 1, "the work must have run exactly once across 17 deliveries");
+    }
+
+    /// A refusal is an outcome too: it is recorded and replayed, so a
+    /// client cannot retry its way past a refusal.
+    #[test]
+    fn a_refusal_is_recorded_and_replayed_like_any_other_outcome() {
+        let mut ledger = CommandLedgerV1::new(binding(), 8);
+        let cmd = command(11, 1);
+        let runs = Cell::new(0u32);
+        let refuse = || {
+            runs.set(runs.get() + 1);
+            CommandOutcomeV1::Refused { reason: CommandRefusalV1::NotPermitted }
+        };
+
+        assert_eq!(
+            execute_command_once_v1(&mut ledger, &cmd, refuse).unwrap(),
+            CommandExecutionV1::Executed(CommandOutcomeV1::Refused { reason: CommandRefusalV1::NotPermitted })
+        );
+        assert_eq!(
+            execute_command_once_v1(&mut ledger, &cmd, refuse).unwrap(),
+            CommandExecutionV1::Replayed(CommandOutcomeV1::Refused { reason: CommandRefusalV1::NotPermitted })
+        );
+        assert_eq!(runs.get(), 1, "a retried refusal must not re-run the check");
+
+        // ...and a DIFFERENT command still runs
+        let other = command(12, 1);
+        assert!(matches!(
+            execute_command_once_v1(&mut ledger, &other, refuse).unwrap(),
+            CommandExecutionV1::Executed(_)
+        ));
+        assert_eq!(runs.get(), 2);
+    }
+
+    /// The work never runs for a command the ledger refuses.
+    #[test]
+    fn a_refused_admission_never_reaches_the_work() {
+        let mut ledger = CommandLedgerV1::new(binding(), 1);
+        let runs = Cell::new(0u32);
+        let work = || {
+            runs.set(runs.get() + 1);
+            CommandOutcomeV1::Applied { result_digest: [0; 32] }
+        };
+
+        execute_command_once_v1(&mut ledger, &command(20, 1), work).unwrap();
+        assert_eq!(runs.get(), 1);
+
+        // window full
+        assert_eq!(
+            execute_command_once_v1(&mut ledger, &command(21, 1), work).unwrap_err(),
+            CommandLedgerErrorV1::WindowExhausted
+        );
+        // same id, different request bytes
+        assert_eq!(
+            execute_command_once_v1(&mut ledger, &command(20, 2), work).unwrap_err(),
+            CommandLedgerErrorV1::Conflict(CommandIdentityErrorV1::RequestMismatch)
+        );
+        assert_eq!(runs.get(), 1, "no refused admission may reach the work");
+    }
+}
