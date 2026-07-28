@@ -9,8 +9,9 @@ use common_net::msg::checkpoint::{
     CheckpointParticipationV1, CheckpointResourceProfileV1, REQUIRED_CHECKPOINT_STREAMS_V1,
     StreamCheckpointPlanV1, TranscriptEntryV1, global_transcript_root_v1, stream_transcript_root_v1,
 };
-use common_net::msg::envelope::{ActiveSessionBindingV1, SemanticRouteV1, SemanticStreamIdV1};
+use common_net::msg::envelope::{ActiveSessionBindingV1, SemanticRouteV1, SemanticSendStateV1, SemanticStreamIdV1};
 use crate::semantic_net::outbox::SemanticSendIntentV1;
+use std::num::NonZeroU64;
 
 #[derive(Debug)]
 pub enum CheckpointPlanErrorV1 {
@@ -19,6 +20,7 @@ pub enum CheckpointPlanErrorV1 {
     PlanInvariant(&'static str),
     ResourceExceeded(&'static str),
     RootFailure,
+    SequenceExhausted,
 }
 
 /// One recipient's complete checkpoint: the descriptor plus the ordered
@@ -43,21 +45,20 @@ fn payload_digest_of(intent: &SemanticSendIntentV1) -> [u8; 32] {
     *d.as_array()
 }
 
-/// Plan ONE recipient from its frozen intents. Ordinals follow the T3.3
-/// total sort key, so the plan is a pure function of the intent SET.
-/// Sequences are reserved contiguously from `first_sequence`: Begin,
-/// then that stream's data, then Barrier, stream by stream in canonical
-/// order (T3.4.10 owns whole-plan reservation across recipients).
-pub fn plan_recipient_checkpoint_v1(
-    recipient: ActiveSessionBindingV1,
-    epoch: u64,
-    parent_epoch: u64,
+/// Slot of a stream in `REQUIRED_CHECKPOINT_STREAMS_V1`, which is also
+/// its cursor slot in `SemanticSendStateV1` — the two orders agree, and
+/// `cursor_slots_match_the_required_stream_order` pins that.
+fn stream_slot_v1(stream: SemanticStreamIdV1) -> usize {
+    REQUIRED_CHECKPOINT_STREAMS_V1.iter().position(|s| *s == stream).expect("the five streams are total")
+}
+
+/// Sequence-INDEPENDENT admission: every reject that must land before a
+/// cursor moves, so a refused checkpoint never consumes sequences.
+/// Returns the sorted intents plus per-stream record counts and bytes.
+fn admit_intent_set_v1(
     mut intents: Vec<SemanticSendIntentV1>,
-    first_sequence: u64,
     profile: &CheckpointResourceProfileV1,
-    apply_policy_root: [u8; 32],
-    egress_order_policy_root: [u8; 32],
-) -> Result<RecipientCheckpointPlanV1, CheckpointPlanErrorV1> {
+) -> Result<(Vec<SemanticSendIntentV1>, [u32; 5], [u64; 5]), CheckpointPlanErrorV1> {
     use CheckpointPlanErrorV1 as E;
 
     intents.sort_by(|a, b| a.total_sort_key().cmp(&b.total_sort_key()));
@@ -73,6 +74,81 @@ pub fn plan_recipient_checkpoint_v1(
         return Err(E::PlanInvariant("non-data payload in checkpoint intent set"));
     }
 
+    let mut counts = [0u32; 5];
+    let mut bytes = [0u64; 5];
+    for intent in &intents {
+        let slot = stream_slot_v1(intent.semantic_stream);
+        counts[slot] += 1;
+        bytes[slot] += common_net::msg::envelope::encode_payload_v1(&*intent.payload).len() as u64;
+    }
+    for slot in 0..5 {
+        if bytes[slot] > profile.max_payload_bytes_per_stream[slot] {
+            return Err(E::ResourceExceeded("payload_bytes_per_stream"));
+        }
+    }
+    if intents.len() as u64 > u64::from(profile.max_records_per_checkpoint) {
+        return Err(E::ResourceExceeded("records_per_checkpoint"));
+    }
+    if bytes.iter().sum::<u64>() > profile.max_payload_bytes_per_checkpoint {
+        return Err(E::ResourceExceeded("payload_bytes_per_checkpoint"));
+    }
+    Ok((intents, counts, bytes))
+}
+
+/// Per-stream sequence demand of a checkpoint: Begin + data + Barrier.
+/// Every stream is fenced, so even an empty one demands two.
+pub fn sequence_demand_v1(counts: &[u32; 5]) -> [u64; 5] { std::array::from_fn(|i| u64::from(counts[i]) + 2) }
+
+/// `T3.4.10`: reserve the whole plan's sequences from the live send
+/// cursors, then plan against them. Admission runs FIRST, so a rejected
+/// checkpoint leaves every cursor untouched; the reservation itself is
+/// all-or-nothing. Past the reservation only a root failure can abort,
+/// and that range is then burned rather than reused (T3.3's own "a
+/// sequence is consumed before send and never reused after failure").
+pub fn reserve_and_plan_recipient_checkpoint_v1(
+    send_state: &mut SemanticSendStateV1,
+    epoch: u64,
+    parent_epoch: u64,
+    intents: Vec<SemanticSendIntentV1>,
+    profile: &CheckpointResourceProfileV1,
+    apply_policy_root: [u8; 32],
+    egress_order_policy_root: [u8; 32],
+) -> Result<RecipientCheckpointPlanV1, CheckpointPlanErrorV1> {
+    let recipient = send_state.binding();
+    let (intents, counts, _) = admit_intent_set_v1(intents, profile)?;
+    let first_sequences = send_state
+        .reserve_sequences_v1(sequence_demand_v1(&counts))
+        .map_err(|_| CheckpointPlanErrorV1::SequenceExhausted)?;
+    plan_recipient_checkpoint_v1(
+        recipient,
+        epoch,
+        parent_epoch,
+        intents,
+        first_sequences,
+        profile,
+        apply_policy_root,
+        egress_order_policy_root,
+    )
+}
+
+/// Plan ONE recipient from its frozen intents. Ordinals follow the T3.3
+/// total sort key, so the plan is a pure function of the intent SET.
+/// Each stream's sequences run contiguously from its OWN reserved base
+/// in `first_sequences`: Begin, that stream's data, Barrier.
+pub fn plan_recipient_checkpoint_v1(
+    recipient: ActiveSessionBindingV1,
+    epoch: u64,
+    parent_epoch: u64,
+    intents: Vec<SemanticSendIntentV1>,
+    first_sequences: [NonZeroU64; 5],
+    profile: &CheckpointResourceProfileV1,
+    apply_policy_root: [u8; 32],
+    egress_order_policy_root: [u8; 32],
+) -> Result<RecipientCheckpointPlanV1, CheckpointPlanErrorV1> {
+    use CheckpointPlanErrorV1 as E;
+
+    let (intents, _, _) = admit_intent_set_v1(intents, profile)?;
+
     // Ordinals are global across the recipient, assigned in sort order.
     let ordered: Vec<(CheckpointOrdinalV1, &SemanticSendIntentV1)> = intents
         .iter()
@@ -80,13 +156,13 @@ pub fn plan_recipient_checkpoint_v1(
         .map(|(i, intent)| (CheckpointOrdinalV1(i as u64 + 1), intent))
         .collect();
 
-    let mut seq = first_sequence;
     let mut stream_plans: Vec<StreamCheckpointPlanV1> = Vec::with_capacity(5);
     let mut records: Vec<(CheckpointOrdinalV1, SemanticStreamIdV1, u64)> = Vec::with_capacity(ordered.len());
     let mut all_entries: Vec<TranscriptEntryV1> = Vec::with_capacity(ordered.len());
     let mut total_bytes = 0u64;
 
     for (idx, stream) in REQUIRED_CHECKPOINT_STREAMS_V1.into_iter().enumerate() {
+        let mut seq = first_sequences[idx].get();
         let begin_sequence = seq;
         seq += 1;
         let mut entries: Vec<TranscriptEntryV1> = Vec::new();
@@ -111,11 +187,7 @@ pub fn plan_recipient_checkpoint_v1(
             records.push((*ordinal, stream, this));
         }
         let barrier_sequence = seq;
-        seq += 1;
 
-        if bytes > profile.max_payload_bytes_per_stream[idx] {
-            return Err(E::ResourceExceeded("payload_bytes_per_stream"));
-        }
         total_bytes += bytes;
         stream_plans.push(StreamCheckpointPlanV1 {
             stream,
@@ -130,14 +202,10 @@ pub fn plan_recipient_checkpoint_v1(
         });
     }
 
+    // Ceilings were enforced in admission, before any reservation; the
+    // declared preflight below re-checks them against the built
+    // descriptor.
     let record_count = ordered.len() as u32;
-    if record_count > profile.max_records_per_checkpoint {
-        return Err(E::ResourceExceeded("records_per_checkpoint"));
-    }
-    if total_bytes > profile.max_payload_bytes_per_checkpoint {
-        return Err(E::ResourceExceeded("payload_bytes_per_checkpoint"));
-    }
-
     let descriptor = CheckpointDescriptorV1 {
         schema_version: 1,
         binding: recipient,
@@ -220,22 +288,25 @@ mod checkpoint_planner_v1 {
         }
     }
 
+    const BASE: [NonZeroU64; 5] = [NonZeroU64::new(1).expect("1 is nonzero"); 5];
+
     #[test]
     fn plan_is_a_pure_function_of_the_intent_set() {
         let mk = || vec![intent(SemanticStreamIdV1::InGame, 1), intent(SemanticStreamIdV1::Terrain, 2), intent(SemanticStreamIdV1::InGame, 0)];
-        let a = plan_recipient_checkpoint_v1(binding(), 1, 0, mk(), 1, &profile(), [1; 32], [2; 32]).unwrap();
+        let a = plan_recipient_checkpoint_v1(binding(), 1, 0, mk(), BASE, &profile(), [1; 32], [2; 32]).unwrap();
         let mut reversed = mk();
         reversed.reverse();
-        let b = plan_recipient_checkpoint_v1(binding(), 1, 0, reversed, 1, &profile(), [1; 32], [2; 32]).unwrap();
+        let b = plan_recipient_checkpoint_v1(binding(), 1, 0, reversed, BASE, &profile(), [1; 32], [2; 32]).unwrap();
         assert_eq!(a.descriptor_root, b.descriptor_root, "input order must not move the plan");
         assert_eq!(a.records, b.records);
 
-        // every stream is fenced: 5 Begins + 5 Barriers + 3 data = 13 sequences
         assert_eq!(a.descriptor.streams.len(), 5);
         assert_eq!(a.descriptor.data_record_count, 3);
         assert_eq!(a.descriptor.ordinal_max, 3);
-        let last_barrier = a.descriptor.streams.iter().map(|s| s.barrier_sequence).max().unwrap();
-        assert_eq!(last_barrier, 13);
+        // every stream is fenced: 5 Begins + 5 Barriers + 3 data = 13
+        assert_eq!(a.descriptor.streams.iter().map(|s| s.barrier_sequence - s.begin_sequence + 1).sum::<u64>(), 13);
+        // per-stream bases: each stream runs from its OWN cursor
+        assert!(a.descriptor.streams.iter().all(|s| s.begin_sequence == 1));
         // empty streams still get Begin+Barrier with a typed root
         let empty: Vec<_> = a.descriptor.streams.iter().filter(|s| s.data_record_count == 0).collect();
         assert_eq!(empty.len(), 3);
@@ -246,7 +317,7 @@ mod checkpoint_planner_v1 {
     fn duplicate_order_key_and_resource_ceiling_are_typed() {
         let dup = vec![intent(SemanticStreamIdV1::InGame, 1), intent(SemanticStreamIdV1::InGame, 1)];
         assert!(matches!(
-            plan_recipient_checkpoint_v1(binding(), 1, 0, dup, 1, &profile(), [1; 32], [2; 32]),
+            plan_recipient_checkpoint_v1(binding(), 1, 0, dup, BASE, &profile(), [1; 32], [2; 32]),
             Err(CheckpointPlanErrorV1::DuplicateOrderKey)
         ));
 
@@ -254,8 +325,81 @@ mod checkpoint_planner_v1 {
         tight.max_records_per_checkpoint = 1;
         let two = vec![intent(SemanticStreamIdV1::InGame, 1), intent(SemanticStreamIdV1::InGame, 2)];
         assert!(matches!(
-            plan_recipient_checkpoint_v1(binding(), 1, 0, two, 1, &tight, [1; 32], [2; 32]),
+            plan_recipient_checkpoint_v1(binding(), 1, 0, two, BASE, &tight, [1; 32], [2; 32]),
             Err(CheckpointPlanErrorV1::ResourceExceeded(_))
         ));
+    }
+
+    /// `T3.4.10`: the reservation is whole-plan, and a REJECTED plan
+    /// must not consume a single sequence.
+    #[test]
+    fn rejected_checkpoints_never_consume_sequences() {
+        let cursors = |s: &SemanticSendStateV1| REQUIRED_CHECKPOINT_STREAMS_V1.map(|st| s.next_for(st).get());
+
+        let mut state = SemanticSendStateV1::new(binding());
+        let plan = reserve_and_plan_recipient_checkpoint_v1(
+            &mut state,
+            1,
+            0,
+            vec![intent(SemanticStreamIdV1::InGame, 1), intent(SemanticStreamIdV1::Terrain, 2), intent(SemanticStreamIdV1::InGame, 0)],
+            &profile(),
+            [1; 32],
+            [2; 32],
+        )
+        .unwrap();
+        // demand consumed exactly: 2 everywhere, +2 InGame, +1 Terrain
+        assert_eq!(cursors(&state), [3, 3, 5, 3, 4]);
+        assert!(plan.descriptor.streams.iter().all(|s| s.begin_sequence == 1));
+
+        // A second checkpoint starts where the first stopped -- no reuse.
+        let after_first = cursors(&state);
+        let plan2 = reserve_and_plan_recipient_checkpoint_v1(
+            &mut state,
+            2,
+            1,
+            vec![intent(SemanticStreamIdV1::InGame, 5)],
+            &profile(),
+            [1; 32],
+            [2; 32],
+        )
+        .unwrap();
+        let ingame = plan2.descriptor.streams.iter().find(|s| s.stream == SemanticStreamIdV1::InGame).unwrap();
+        assert_eq!(ingame.begin_sequence, after_first[2]);
+        assert_eq!(cursors(&state), [5, 5, 8, 5, 6]);
+
+        // Every admission reject leaves ALL cursors frozen.
+        let frozen = cursors(&state);
+        let mut tight = profile();
+        tight.max_records_per_checkpoint = 1;
+        for (intents, profile) in [
+            (vec![intent(SemanticStreamIdV1::InGame, 1), intent(SemanticStreamIdV1::InGame, 1)], profile()),
+            (vec![intent(SemanticStreamIdV1::InGame, 1), intent(SemanticStreamIdV1::InGame, 2)], tight),
+        ] {
+            assert!(reserve_and_plan_recipient_checkpoint_v1(&mut state, 3, 2, intents, &profile, [1; 32], [2; 32]).is_err());
+            assert_eq!(cursors(&state), frozen, "a refused checkpoint must not move a cursor");
+        }
+
+        // Exhaustion on ONE stream aborts the whole reservation.
+        let mut edge = SemanticSendStateV1::new(binding());
+        edge.reserve_sequences_v1([0, 0, u64::MAX - 1, 0, 0]).unwrap();
+        assert!(matches!(
+            reserve_and_plan_recipient_checkpoint_v1(&mut edge, 1, 0, vec![], &profile(), [1; 32], [2; 32]),
+            Err(CheckpointPlanErrorV1::SequenceExhausted)
+        ));
+        assert_eq!(cursors(&edge), [1, 1, u64::MAX, 1, 1]);
+    }
+
+    /// The cursor array's slot order and `REQUIRED_CHECKPOINT_STREAMS_V1`
+    /// must agree, or demand would be reserved on the wrong stream.
+    #[test]
+    fn cursor_slots_match_the_required_stream_order() {
+        for (slot, stream) in REQUIRED_CHECKPOINT_STREAMS_V1.into_iter().enumerate() {
+            let mut state = SemanticSendStateV1::new(binding());
+            let mut demand = [0u64; 5];
+            demand[slot] = 7;
+            state.reserve_sequences_v1(demand).unwrap();
+            assert_eq!(state.next_for(stream).get(), 8, "slot {slot} must be {stream:?}");
+            assert_eq!(stream_slot_v1(stream), slot);
+        }
     }
 }

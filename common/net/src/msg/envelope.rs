@@ -496,6 +496,26 @@ impl SemanticSendStateV1 {
         Ok(current)
     }
 
+    /// `T3.4.10`: reserves `counts[i]` consecutive sequences on every
+    /// stream at once, returning each stream's first reserved value.
+    /// All-or-nothing: if ANY stream would exhaust, no cursor moves --
+    /// a checkpoint plan must never be able to consume part of its
+    /// sequence range. A count of zero reserves nothing and reports the
+    /// cursor unchanged.
+    pub fn reserve_sequences_v1(&mut self, counts: [u64; 5]) -> Result<[NonZeroU64; 5], common::apex::identity::CounterAdvanceErrorV1> {
+        let first = self.next;
+        let mut advanced = self.next;
+        for idx in 0..5 {
+            let end = first[idx]
+                .get()
+                .checked_add(counts[idx])
+                .ok_or(common::apex::identity::CounterAdvanceErrorV1::Exhausted)?;
+            advanced[idx] = NonZeroU64::new(end).expect("first is nonzero and counts are non-negative");
+        }
+        self.next = advanced;
+        Ok(first)
+    }
+
     /// Test-only: constructs a state with an arbitrary starting cursor
     /// per stream, so exhaustion at the real `u64::MAX` boundary can be
     /// tested directly against `allocate_sequence` itself rather than
@@ -1650,6 +1670,35 @@ mod tests {
         assert_eq!(first_general.get(), 1);
         // InGame's cursor is unaffected by General's own allocation.
         assert_eq!(state.next_for(SemanticStreamIdV1::InGame).get(), 3);
+    }
+
+    #[test]
+    fn reserve_sequences_is_all_or_nothing_across_streams() {
+        let mut state = SemanticSendStateV1::new(test_binding(1));
+        let first = state.reserve_sequences_v1([2, 2, 4, 2, 3]).unwrap();
+        assert_eq!(first.map(|f| f.get()), [1; 5]);
+        assert_eq!(state.next_for(SemanticStreamIdV1::InGame).get(), 5);
+        assert_eq!(state.next_for(SemanticStreamIdV1::Terrain).get(), 4);
+        // A second reservation starts exactly where the first ended --
+        // reserved ranges never overlap.
+        let second = state.reserve_sequences_v1([1, 0, 1, 0, 0]).unwrap();
+        assert_eq!(second[2].get(), 5);
+        // Zero reserves nothing.
+        assert_eq!(second[1].get(), 3);
+        assert_eq!(state.next_for(SemanticStreamIdV1::CharacterScreen).get(), 3);
+
+        // One exhausting stream aborts the WHOLE reservation: a
+        // sequential implementation would have advanced Bootstrap first.
+        let max = NonZeroU64::new(u64::MAX).unwrap();
+        let mut edge = SemanticSendStateV1::with_cursors_for_test(test_binding(1), [FIRST_SEQUENCE, FIRST_SEQUENCE, max, FIRST_SEQUENCE, FIRST_SEQUENCE]);
+        assert_eq!(
+            edge.reserve_sequences_v1([2, 2, 2, 2, 2]).unwrap_err(),
+            common::apex::identity::CounterAdvanceErrorV1::Exhausted
+        );
+        for stream in [SemanticStreamIdV1::Bootstrap, SemanticStreamIdV1::CharacterScreen, SemanticStreamIdV1::General, SemanticStreamIdV1::Terrain] {
+            assert_eq!(edge.next_for(stream).get(), 1, "no cursor may move when the reservation fails");
+        }
+        assert_eq!(edge.next_for(SemanticStreamIdV1::InGame), max);
     }
 
     #[test]
