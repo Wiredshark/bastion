@@ -505,18 +505,46 @@ impl Server {
 
         debug!("Generating world, seed: {}", settings.world_seed);
         #[cfg(feature = "worldgen")]
+        // `APEX-T4-PV`: hoisted into a named local so the worldgen
+        // vocabulary can be derived FROM THE ACTUAL OPTIONS this server
+        // generated with, rather than from a reconstruction of them.
+        // One construction, two consumers -- the same shape as
+        // `map_geometry_root` below.
+        #[cfg(feature = "worldgen")]
+        let world_opts = WorldOpts {
+            seed_elements: true,
+            world_file: if let Some(ref opts) = settings.map_file {
+                opts.clone()
+            } else {
+                // Load default map from assets.
+                FileOpts::LoadAsset(DEFAULT_WORLD_MAP.into())
+            },
+            calendar: Some(settings.calendar_mode.calendar_now()),
+        };
+        // `APEX-T4-PV`: the frozen worldgen vocabulary's protocol root.
+        // `loaded_map_digest` is None because every live path here is
+        // either Generate or LoadAsset -- the asset case identifies its
+        // map by PATH (its content rides the content root), so no byte
+        // digest is owed. A future operator-supplied map FILE would owe
+        // one, and `map_source_is_honest()` is what detects its absence.
+        #[cfg(feature = "worldgen")]
+        let worldgen_protocol_root = {
+            let gen_opts = world_opts.world_file.gen_opts().unwrap_or_default();
+            world::apex_worldgen_vocabulary::WorldgenVocabularyV1::from_opts_v1(
+                settings.world_seed,
+                &world_opts.world_file,
+                &gen_opts,
+                world_opts.seed_elements,
+                world_opts.calendar.as_ref(),
+                None,
+            )
+            .protocol_root_v1()
+            .ok()
+        };
+        #[cfg(feature = "worldgen")]
         let (world, index) = World::generate(
             settings.world_seed,
-            WorldOpts {
-                seed_elements: true,
-                world_file: if let Some(ref opts) = settings.map_file {
-                    opts.clone()
-                } else {
-                    // Load default map from assets.
-                    FileOpts::LoadAsset(DEFAULT_WORLD_MAP.into())
-                },
-                calendar: Some(settings.calendar_mode.calendar_now()),
-            },
+            world_opts,
             &pools,
             &|stage| {
                 report_stage(ServerInitStage::WorldGen(stage));
@@ -988,6 +1016,7 @@ impl Server {
                 &world,
                 data_dir.to_owned(),
                 map_geometry_root,
+                worldgen_protocol_root,
             ) {
                 Ok(rtsim) => {
                     state.ecs_mut().insert(rtsim.state().data().time_of_day);

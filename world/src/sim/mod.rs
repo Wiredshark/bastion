@@ -229,7 +229,11 @@ impl FileOpts {
         (parsed_world_file, map_size_lg, gen_opts)
     }
 
-    fn gen_opts(&self) -> Option<GenOpts> {
+    /// `APEX-T4-PV`: made public so the worldgen vocabulary can be
+    /// derived from the ACTUAL options a server generated with, rather
+    /// than from a reconstruction of them. A reconstruction is exactly
+    /// the fabrication this row exists to avoid.
+    pub fn gen_opts(&self) -> Option<GenOpts> {
         match self {
             Self::Generate(opts) | Self::Save(_, opts) | Self::LoadOrGenerate { opts, .. } => {
                 Some(opts.clone())

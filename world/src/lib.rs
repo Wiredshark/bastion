@@ -11,6 +11,7 @@
 
 mod all;
 mod block;
+pub mod apex_worldgen_vocabulary;
 pub mod canvas;
 pub mod civ;
 mod column;

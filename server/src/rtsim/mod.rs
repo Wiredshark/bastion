@@ -67,6 +67,13 @@ impl RtSim {
         // computation, two consumers. See
         // `common_net::msg::world_msg::world_map_geometry_root_v1`.
         map_geometry_root: common::apex::digest::ArtifactIdentityV1,
+        // `APEX-T4-PV`: derived by the caller from the ACTUAL WorldOpts
+        // this server generated with -- same one-computation-two-consumers
+        // reason as `map_geometry_root`. `None` only when the derivation
+        // itself failed, which is recorded as absent rather than faked.
+        worldgen_protocol_root: Option<
+            common::apex::subsystem::descriptor::WorldgenProtocolVersion,
+        >,
     ) -> Result<Self, ron::Error> {
         // `APEX-T4.6` chunk 3a: `get_file_path` consumes `data_dir` below
         // (it may push "rtsim" onto it), so the save-universe layout
@@ -170,12 +177,17 @@ impl RtSim {
         let save_epoch_ledger = {
             let baseline_input = common::apex::world_baseline::WorldBaselineInputV1 {
                 world_seed,
-                // `T4-PV` (parked, orchestrator-ruled): undescribed
-                // rather than fabricated, same discipline as `T4.1`'s
-                // own un-derived bootstrap-manifest slots. `T4-PV`
-                // populates these once a real frozen-vocabulary
-                // derivation exists for each.
-                worldgen: None,
+                // `T4-PV`: the worldgen slot is now DERIVED, from the
+                // frozen vocabulary this row's survey settled (see
+                // `world::apex_worldgen_vocabulary`). `content` and
+                // `numeric` stay undescribed rather than fabricated --
+                // the same discipline as `T4.1`'s un-derived
+                // bootstrap-manifest slots -- because their derivations
+                // exist but are not yet wired to a live value here
+                // (`ContentManifest::root` and `NumericProfileIdV1`
+                // both already derive honestly; mapping them in is the
+                // remaining wiring, not a missing derivation).
+                worldgen: worldgen_protocol_root,
                 content: None,
                 numeric: None,
                 map_geometry_root: map_geometry_root.digest.bytes,
