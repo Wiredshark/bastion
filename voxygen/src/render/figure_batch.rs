@@ -62,18 +62,21 @@ pub(super) fn latest_evidence() -> FigureBatchProductionEvidenceV1 {
 pub enum FigureBatchRuntimeErrorV1 {
     Capacity,
     LengthOverflow,
+    Cull(super::gpu_cull::ProductionCullFallbackV1),
 }
 
 pub struct FigureBatchRuntimeV1 {
     buffer: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,
     cursors: [u32; 3],
+    gpu_cull: super::gpu_cull::GpuCullRuntimeV1,
 }
 
 impl FigureBatchRuntimeV1 {
     pub fn new(
         device: &wgpu::Device,
         layout: &FigureLayout,
+        compute_supported: bool,
     ) -> Result<Self, FigureBatchRuntimeErrorV1> {
         let stride = u64::try_from(core::mem::size_of::<FigureBatchInstance>())
             .map_err(|_| FigureBatchRuntimeErrorV1::LengthOverflow)?;
@@ -99,6 +102,7 @@ impl FigureBatchRuntimeV1 {
             buffer,
             bind_group,
             cursors: [0; 3],
+            gpu_cull: super::gpu_cull::GpuCullRuntimeV1::new(device, compute_supported),
         })
     }
 
@@ -162,6 +166,21 @@ impl FigureBatchRuntimeV1 {
             }
         }
         Ok(global_start..global_start + count)
+    }
+
+    pub fn reconcile_cull(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &bastion_renderer_r0d::gpu_cull::CanonicalCullBatchV1,
+    ) -> Result<bastion_renderer_r0d::gpu_cull::AcceleratorResultV1, FigureBatchRuntimeErrorV1>
+    {
+        match self.gpu_cull.reconcile(device, queue, batch) {
+            Ok(result) => Ok(result),
+            Err(error) => Err(FigureBatchRuntimeErrorV1::Cull(
+                super::gpu_cull::record_error(batch, &error),
+            )),
+        }
     }
 
     pub fn record_fallback(&self, incompatible_resource: bool) {

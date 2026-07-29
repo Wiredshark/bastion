@@ -5,6 +5,7 @@ pub mod consts;
 mod error;
 mod figure_batch;
 pub(crate) mod figure_gpu;
+mod gpu_cull;
 pub mod instances;
 pub mod mesh;
 pub mod model;

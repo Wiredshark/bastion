@@ -885,6 +885,16 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r1g_lens_weather_cloud_milli"
         | "r1g_lens_weather_rain_milli"
         | "r1g_lens_weather_wind_speed_mm_s"
+        | "r2_cull_generation"
+        | "r2_cull_mode"
+        | "r2_cull_terminal"
+        | "r2_cull_fallback"
+        | "r2_cull_occlusion"
+        | "r2_cull_candidate_count"
+        | "r2_cull_admitted_count"
+        | "r2_cull_dispatch_count"
+        | "r2_cull_input_sha256"
+        | "r2_cull_result_sha256"
         | "anchor_uid"
         | "anchor_selected_non_client_colonist"
         | "ordinal" => Some(CaptureMetadataFieldClassV1::Authority),
@@ -1386,6 +1396,7 @@ fn request_one_capture(
     let pass_tape = LATEST_PASS_TAPE.lock().ok().and_then(|value| value.clone());
     let figure_gpu = super::figure_gpu::latest_evidence();
     let figure_batch = super::figure_batch::latest_evidence();
+    let gpu_cull = super::gpu_cull::latest_evidence();
     let individual_tiers = crate::r1d_tiers::latest_evidence();
     let individual_tier_plan = crate::r1d_tiers::latest_plan();
     let group_representations = crate::r1d_groups::latest_evidence();
@@ -1456,6 +1467,20 @@ fn request_one_capture(
                                         std::io::Error::new(
                                             std::io::ErrorKind::InvalidData,
                                             "exact individual tier plan absent",
+                                        )
+                                    })?;
+                                let gpu_cull = gpu_cull
+                                    .filter(|value| {
+                                        value.generation
+                                            == context.presentation.client_applied_generation
+                                            && value.candidate_count > 0
+                                            && value.fallback
+                                                == super::gpu_cull::ProductionCullFallbackV1::None
+                                    })
+                                    .ok_or_else(|| {
+                                        std::io::Error::new(
+                                            std::io::ErrorKind::InvalidData,
+                                            "exact canonical GPU cull reconciliation absent",
                                         )
                                     })?;
                                 let group_representations = group_representations.filter(|value| {
@@ -1612,6 +1637,16 @@ fn request_one_capture(
                                         "figure_batch_rain_count={}\n",
                                         "figure_batch_capacity_fallbacks={}\n",
                                         "figure_batch_incompatible_resource_fallbacks={}\n",
+                                        "r2_cull_generation={}\n",
+                                        "r2_cull_mode={}\n",
+                                        "r2_cull_terminal={}\n",
+                                        "r2_cull_fallback={}\n",
+                                        "r2_cull_occlusion={}\n",
+                                        "r2_cull_candidate_count={}\n",
+                                        "r2_cull_admitted_count={}\n",
+                                        "r2_cull_dispatch_count={}\n",
+                                        "r2_cull_input_sha256={}\n",
+                                        "r2_cull_result_sha256={}\n",
                                         "r1d_tier_generation={}\n",
                                         "r1d_tier_frame_sha256={}\n",
                                         "r1d_tier_decision_root_sha256={}\n",
@@ -1714,6 +1749,40 @@ fn request_one_capture(
                                     figure_batch.rain_batches,
                                     figure_batch.capacity_fallbacks,
                                     figure_batch.incompatible_resource_fallbacks,
+                                    gpu_cull.generation,
+                                    match gpu_cull.mode {
+                                        super::gpu_cull::ProductionCullModeV1::CpuReference => {
+                                            "cpu-reference"
+                                        },
+                                        super::gpu_cull::ProductionCullModeV1::GpuFrustum => {
+                                            "gpu-frustum"
+                                        },
+                                    },
+                                    match gpu_cull.terminal {
+                                        bastion_renderer_r0d::gpu_cull::AcceleratorTerminalV1::CpuReference => {
+                                            "cpu-reference"
+                                        },
+                                        bastion_renderer_r0d::gpu_cull::AcceleratorTerminalV1::GpuFrustumParity => {
+                                            "gpu-frustum-parity"
+                                        },
+                                        bastion_renderer_r0d::gpu_cull::AcceleratorTerminalV1::GpuFrustumAndConservativeOcclusion => {
+                                            "gpu-frustum-conservative-occlusion"
+                                        },
+                                    },
+                                    "none",
+                                    match gpu_cull.occlusion {
+                                        bastion_renderer_r0d::gpu_cull::OcclusionCapabilityV1::UnsupportedNoDepthPyramid => {
+                                            "unsupported-no-depth-pyramid"
+                                        },
+                                        bastion_renderer_r0d::gpu_cull::OcclusionCapabilityV1::ConservativeDepthPyramid => {
+                                            "conservative-depth-pyramid"
+                                        },
+                                    },
+                                    gpu_cull.candidate_count,
+                                    gpu_cull.admitted_count,
+                                    gpu_cull.dispatch_count,
+                                    hex_digest(&gpu_cull.input_digest),
+                                    hex_digest(&gpu_cull.result_digest),
                                     individual_tiers.generation,
                                     hex_digest(&individual_tiers.frame_digest),
                                     hex_digest(&individual_tiers.decision_root),
@@ -2414,6 +2483,14 @@ mod tests {
         assert_eq!(
             capture_metadata_field_class_v1("r1f_shadow_fallback_count"),
             Some(CaptureMetadataFieldClassV1::Evidence)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("r2_cull_input_sha256"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("r2_cull_result_sha256"),
+            Some(CaptureMetadataFieldClassV1::Authority)
         );
         assert_eq!(
             capture_metadata_field_class_v1("r1d_tier_decision_root_sha256"),
