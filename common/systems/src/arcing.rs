@@ -77,7 +77,6 @@ impl<'a> System<'a> for Sys {
     fn run(_job: &mut Job<Self>, (read_data, mut arcs, mut positions, outcomes): Self::SystemData) {
         let mut emitters = read_data.events.get_emitters();
         let mut outcomes_emitter = outcomes.emitter();
-        let mut rng = rand::rng();
 
         (&read_data.entities, &mut arcs)
             .lend_join()
@@ -117,6 +116,21 @@ impl<'a> System<'a> for Sys {
                 let arc_owner = arc.owner.and_then(|uid| read_data.id_maps.uid_entity(uid));
 
                 let arc_group = arc_owner.and_then(|e| read_data.groups.get(e));
+
+                // E14-1b: was a single ambient rand::rng() shared across
+                // every arc on this tick, feeding apply_attack's on-hit
+                // buff-chance/summon-spawn draws. Seeded once per arc
+                // (keyed on its owner's Uid + tick Time, same idiom
+                // beam.rs/buff.rs already established in this crate) and
+                // drawn sequentially across this arc's targets below.
+                let mut rng = {
+                    use rand::SeedableRng;
+                    rand_chacha::ChaCha8Rng::seed_from_u64(
+                        arc.owner.map_or(0, |u| u.0.get()).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                            ^ read_data.time.0.to_bits()
+                            ^ 0x4152_4331, // "ARC1"
+                    )
+                };
 
                 for (target, uid_b, pos_b, health_b, body_b) in (
                     &read_data.entities,

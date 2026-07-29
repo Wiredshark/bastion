@@ -90,7 +90,6 @@ impl<'a> System<'a> for Sys {
     ) {
         let mut emitters = read_data.events.get_emitters();
         let mut outcomes_emitter = outcomes.emitter();
-        let mut rng = rand::rng();
 
         let time = read_data.time.0;
         let dt = read_data.dt.0;
@@ -116,6 +115,23 @@ impl<'a> System<'a> for Sys {
             let shockwave_owner = shockwave
                 .owner
                 .and_then(|uid| read_data.id_maps.uid_entity(uid));
+
+            // E14-1b: was a single ambient rand::rng() shared across
+            // every shockwave on this tick, feeding both the SoundEvent
+            // roll below (heard by agents, not just players -- reaches
+            // NPC behaviour) and apply_attack's on-hit buff-chance/
+            // summon-spawn draws further down. Seeded once per
+            // shockwave (keyed on its owner's Uid + tick Time, same
+            // idiom beam.rs/buff.rs already established in this crate)
+            // and drawn sequentially for both.
+            let mut rng = {
+                use rand::SeedableRng;
+                rand_chacha::ChaCha8Rng::seed_from_u64(
+                    shockwave.owner.map_or(0, |u| u.0.get()).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                        ^ read_data.time.0.to_bits()
+                        ^ 0x5348_4B31, // "SHK1"
+                )
+            };
 
             if rng.random_bool(0.05) {
                 emitters.emit(SoundEvent {

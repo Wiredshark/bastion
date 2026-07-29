@@ -81,7 +81,6 @@ impl<'a> System<'a> for Sys {
     fn run(_job: &mut Job<Self>, (read_data, mut pools): Self::SystemData) {
         let mut emitters = read_data.events.get_emitters();
         let mut outcomes_emitter = read_data.outcomes.emitter();
-        let mut rng = rand::rng();
 
         (&read_data.entities, &mut pools, &read_data.positions)
             .lend_join()
@@ -100,6 +99,22 @@ impl<'a> System<'a> for Sys {
 
                 let pool_owner = pool.owner.and_then(|uid| read_data.id_maps.uid_entity(uid));
                 let pool_group = pool_owner.and_then(|e| read_data.groups.get(e));
+
+                // E14-1b: was a single ambient rand::rng() shared across
+                // every pool tick, feeding apply_attack's on-hit
+                // buff-chance/summon-spawn draws. Seeded once per pool
+                // tick (keyed on the pool's owner Uid + tick Time, same
+                // idiom beam.rs/buff.rs already established in this
+                // crate) and drawn sequentially across this pool's
+                // targets below.
+                let mut rng = {
+                    use rand::SeedableRng;
+                    rand_chacha::ChaCha8Rng::seed_from_u64(
+                        pool.owner.map_or(0, |u| u.0.get()).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                            ^ read_data.time.0.to_bits()
+                            ^ 0x504F_4F4C, // "POOL"
+                    )
+                };
 
                 for (target, uid_b, pos_b, health_b, body_b) in (
                     &read_data.entities,

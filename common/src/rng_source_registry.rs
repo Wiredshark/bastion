@@ -101,16 +101,9 @@ pub const AMBIENT_ENTROPY_SITES: &[(&str, usize, RandomDrawClassV1, &str)] = &[
     // `use rand::rng;` imports behind as the visible fingerprint of a
     // migration that stopped before reaching this crate. `beam.rs` in
     // THIS crate was converted; these six were not.
-    (
-        "common/systems/src/arcing.rs",
-        1,
-        RandomDrawClassV1::UnmitigatedAuthoritativeEntropy,
-        "arc-attack damage application: ambient rng passed to combat::attack, which rolls \
-         on-hit buff chances and summon spawns. E14-1 family",
-    ),
     // `E14-1` (2026-07-29): `common/systems/src/buff.rs`'s fire-spread
-    // draw -- the designated-HIGH entry above this comment used to sit --
-    // is FIXED and no longer registered here (a fixed site has zero live
+    // draw -- the designated-HIGH entry that used to sit here -- is
+    // FIXED and no longer registered (a fixed site has zero live
     // `rand::rng()` matches, and this registry's own staleness check
     // fails a registered entry with nothing left to match, same
     // discipline as `E11-6b`'s precedent in `determinism_scan.rs`). Both
@@ -120,37 +113,30 @@ pub const AMBIENT_ENTROPY_SITES: &[(&str, usize, RandomDrawClassV1, &str)] = &[
     // `ChaCha8Rng::seed_from_u64` keyed on (source entity's `Uid`, tick
     // `Time`, a distinguishing constant) instead of ambient entropy
     // (fixes the draw) -- the same inline idiom `beam.rs` (DET-EVT-011)
-    // already established in this crate. The other five `E14-1 family`
-    // sites below (arcing/melee/pool/projectile/shockwave, all ambient
-    // rng passed to `combat::attack`) are UNCHANGED -- this row was
-    // scoped to fire-spread specifically, not the whole family.
-    (
-        "common/systems/src/melee.rs",
-        1,
-        RandomDrawClassV1::UnmitigatedAuthoritativeEntropy,
-        "melee damage application: same combat::attack path. E14-1 family",
-    ),
-    (
-        "common/systems/src/pool.rs",
-        1,
-        RandomDrawClassV1::UnmitigatedAuthoritativeEntropy,
-        "pool (area-effect) damage application: same combat::attack path. E14-1 family",
-    ),
-    (
-        "common/systems/src/projectile.rs",
-        1,
-        RandomDrawClassV1::UnmitigatedAuthoritativeEntropy,
-        "projectile hit resolution via combat::attack, PLUS rng.random_bool(0.05) emitting a \
-         SoundEvent. The sound is not merely presentation: agent perception reads sound.kind \
-         and reacts (server/agent/src/action_nodes.rs:2426), so the draw reaches NPC behaviour",
-    ),
-    (
-        "common/systems/src/shockwave.rs",
-        1,
-        RandomDrawClassV1::UnmitigatedAuthoritativeEntropy,
-        "shockwave hit resolution via combat::attack, plus the same 0.05 SoundEvent draw as \
-         projectile.rs -- likewise heard by agents, not just players",
-    ),
+    // already established in this crate.
+    //
+    // `E14-1b` (2026-07-29): the other five `E14-1 family` sites --
+    // arcing.rs, melee.rs, pool.rs, projectile.rs, shockwave.rs, all
+    // "ambient rng passed to combat::attack" -- are ALSO fixed and no
+    // longer registered, same idiom: each seeds one
+    // `ChaCha8Rng::seed_from_u64(source Uid, tick Time, a distinguishing
+    // constant)` once per source entity (the arc/attacker/pool/
+    // projectile/shockwave, keyed on ITS OWNER's `Uid` where the source
+    // is itself a spawned entity rather than a character) and draws
+    // sequentially across that source's targets. `projectile.rs` and
+    // `shockwave.rs` additionally fed their `rng.random_bool(0.05)`
+    // SoundEvent roll (agent-perceived, per the removed entries' own
+    // notes) from the same now-seeded stream. `projectile.rs`'s
+    // `dispatch_hit` helper took `&mut rand::rngs::ThreadRng` as a
+    // parameter -- retyped to `&mut rand_chacha::ChaCha8Rng`, its sole
+    // caller already passing the seeded stream.
+    //
+    // NOT zero: `bastion-server/src/bastion_jobs.rs`'s cave-in draw
+    // (below) is UnmitigatedAuthoritativeEntropy too, and is a
+    // DIFFERENT fix shape (a damage-instance derivation via
+    // `combat::derive_attack_instance`, not an RNG stream) -- out of
+    // `E14-1b`'s stated scope ("the other five"), flagged as its own
+    // follow-on rather than silently folded in.
     // `E14-3` chunk 2 -- `bastion-server/src` entered this scanner's
     // roots. Exactly one site, and it is an OUTLIER rather than a
     // pattern: every other damage-instance in the tree is derived.
@@ -681,6 +667,36 @@ mod tests {
              ChaCha8Rng::seed_from_u64(source Uid, tick Time, constant) seam -- the same inline \
              idiom beam.rs (DET-EVT-011) already established in this crate. The other five \
              E14-1-family sites (arcing/melee/pool/projectile/shockwave) are unchanged.",
+        ),
+        (
+            5,
+            "E14-1b (MIGRATION): common/systems/src/arcing.rs's arc-attack draw moved onto the \
+             same seeded-per-source-entity idiom, keyed on the arc's owner Uid.",
+        ),
+        (
+            4,
+            "E14-1b (MIGRATION): common/systems/src/melee.rs's melee-attack draw moved onto the \
+             same idiom, keyed on the attacker's own Uid (already in the join tuple).",
+        ),
+        (
+            3,
+            "E14-1b (MIGRATION): common/systems/src/pool.rs's area-effect draw moved onto the \
+             same idiom, keyed on the pool's owner Uid.",
+        ),
+        (
+            2,
+            "E14-1b (MIGRATION): common/systems/src/projectile.rs's hit-resolution AND \
+             SoundEvent draws moved onto the same idiom, keyed on the projectile's owner Uid; \
+             dispatch_hit's rng parameter retyped from &mut rand::rngs::ThreadRng to \
+             &mut rand_chacha::ChaCha8Rng to match.",
+        ),
+        (
+            1,
+            "E14-1b (MIGRATION): common/systems/src/shockwave.rs's hit-resolution AND \
+             SoundEvent draws moved onto the same idiom, keyed on the shockwave's owner Uid -- \
+             the last common/systems/src E14-3-chunk-1 site. Not zero: \
+             bastion-server/src/bastion_jobs.rs's cave-in draw remains, a different fix shape \
+             (derive_attack_instance, not an RNG stream), out of E14-1b's stated scope.",
         ),
     ];
 

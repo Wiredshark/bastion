@@ -111,7 +111,6 @@ impl<'a> System<'a> for Sys {
     ) {
         let mut emitters = read_data.events.get_emitters();
         let mut outcomes_emitter = outcomes.emitter();
-        let mut rng = rand::rng();
 
         // Attacks
         'projectile_loop: for (entity, pos, physics, body, projectile) in (
@@ -126,6 +125,24 @@ impl<'a> System<'a> for Sys {
             let projectile_owner = projectile
                 .owner
                 .and_then(|uid| read_data.id_maps.uid_entity(uid));
+
+            // E14-1b: was a single ambient rand::rng() shared across
+            // every projectile on this tick, feeding the SoundEvent roll
+            // below (heard by agents, not just players -- reaches NPC
+            // behaviour), apply_attack's on-hit buff-chance/summon-spawn
+            // draws in dispatch_hit, AND the recursive-firework spawn
+            // draws further down. Seeded once per projectile (keyed on
+            // its owner's Uid + tick Time, same idiom beam.rs/buff.rs
+            // already established in this crate) and drawn sequentially
+            // for all three.
+            let mut rng = {
+                use rand::SeedableRng;
+                rand_chacha::ChaCha8Rng::seed_from_u64(
+                    projectile.owner.map_or(0, |u| u.0.get()).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                        ^ read_data.time.0.to_bits()
+                        ^ 0x5052_4A31, // "PRJ1"
+                )
+            };
 
             if physics.on_surface().is_none() && rng.random_bool(0.05) {
                 emitters.emit(SoundEvent {
@@ -574,7 +591,7 @@ fn dispatch_hit(
     projectile_vanished: &mut bool,
     outcomes_emitter: &mut Emitter<Outcome>,
     emitters: &mut Emitters,
-    rng: &mut rand::rngs::ThreadRng,
+    rng: &mut rand_chacha::ChaCha8Rng,
 ) {
     match projectile_info.effect {
         projectile::Effect::Attack(attack) => {
