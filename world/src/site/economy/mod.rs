@@ -1659,6 +1659,7 @@ mod t8_1_phase_localization_tests {
     /// before it either -- a real localization, not a coincidence).
     #[test]
     fn a_deliberately_perturbed_phase_is_localized_to_that_phase() {
+        context::enable_economy_phase_evidence_mode_v1();
         let perturb_at_phase: u32 = 17;
         let total = context::total_phase_count_v1();
         assert!(perturb_at_phase + 5 < total, "fixture premise: room to observe post-perturbation phases");

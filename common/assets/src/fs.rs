@@ -423,7 +423,17 @@ mod tests {
             let res = fs.read("loadout.template", "ron");
             assert_eq!(res.as_ref().unwrap_err().kind(), io::ErrorKind::NotFound);
             let msg = format!("{:#?}", res.unwrap_err());
-            if msg.find("loadout/template.ron").is_none() {
+            // Windows Debug-formats io::Error with the OS path in a
+            // separate `path:` field (not embedded in the message text
+            // like some Unix error kinds), using `\` separators that
+            // Debug's own string-escaping then DOUBLES in the printed
+            // text (`\` -> `\\`) -- checking for the two path segments
+            // independently, in order, is robust to both quirks rather
+            // than guessing at a specific separator/escaping shape.
+            let loadout_at = msg.find("loadout");
+            let template_at = msg.find("template.ron");
+            let path_present = matches!((loadout_at, template_at), (Some(a), Some(b)) if a < b);
+            if !path_present {
                 panic!("error message doesn't contain path:\n{msg}");
             }
         })

@@ -175,6 +175,25 @@ pub fn simulate_economy(index: &mut Index) {
         .unwrap_or_else(|err| info!("I/O error in simulate (economy.csv not writable?): {}", err));
 }
 
+/// `T8.1`'s own correction to the tier spec doc's `:246` citation
+/// (`APEX-T8-TIER-SPEC-FLEET-v1.md`, now annotated in place too),
+/// recorded here because `T8.2`/`T8.3` both read this file and both
+/// need it: the spec's ":246" line is inside `#[cfg(test)] mod tests`,
+/// not production. The REAL production maps (`Economy::orders`,
+/// `TradeInformation::{orders,deliveries}`) are
+/// `DHashMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher64>>`
+/// (`world/src/util/mod.rs`) -- a FIXED-seed hasher, NOT `hashbrown`'s
+/// default per-process-random one. Practically: for an IDENTICAL
+/// insertion sequence, iteration order is reproducible run-to-run on one
+/// binary/platform -- but it still depends on INSERTION order (which
+/// Rayon partitioning and drain order can vary) and is not portable
+/// across hash-width platforms. This sharpens what "order-dependent"
+/// means for the two lanes that inherit it: `T8.2`'s cross-target lane
+/// inherits the platform-width caveat (a 32-bit vs 64-bit `usize` could
+/// hash differently even with an identical seed); `T8.3`'s permutation
+/// lane is testing INSERTION/DRAIN order specifically, not per-process
+/// reseeding -- there is no reseeding to test.
+///
 /// `T8.1`: one phase's economy-determinism evidence -- the canonical
 /// per-site digests (already sorted by
 /// [`crate::index::Index::world_economy_per_site_v1`]) plus the same
@@ -195,6 +214,38 @@ pub struct PhaseEconomyEvidenceV1 {
 /// the real loop bound.
 pub fn total_phase_count_v1() -> u32 { (HISTORY_DAYS / TICK_PERIOD) as u32 }
 
+/// `T8.1`'s evidence-mode gate -- REQUIRED, not optional, per the
+/// orchestrator's own ruling: per-site canonicalization x 2000 phases
+/// must never run un-gated, and "a separate function nobody calls"
+/// alone is not a gate, only a convention someone could break later by
+/// wiring this into a live path without noticing the cost.
+///
+/// A SEPARATE flag from `common::DETERMINISTIC_WORLDGEN`/
+/// `enable_deterministic_worldgen`, deliberately -- that seam is
+/// documented boot-time-only and ONE-WAY (set once, never unset), owned
+/// by a different concern (worldgen RNG seeding). Reusing it here would
+/// mean any test that enables economy evidence mode leaves
+/// `deterministic_worldgen_enabled()` permanently true for every OTHER
+/// test in the same process afterward -- a real cross-test leak risk
+/// for a one-way global, not a hypothetical one. This flag is the same
+/// SHAPE (`AtomicBool` + enable + is-enabled) and the same discipline
+/// (only evidence callers -- tests, a future harness -- ever set it;
+/// `simulate_economy`/`simulate_return`, the live path, never do and
+/// never check it), just scoped to the concern it actually gates.
+static ECONOMY_PHASE_EVIDENCE_MODE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Enables `T8.1`'s per-phase evidence collection. Intended callers:
+/// tests (this file's own) and a future harness invocation -- never the
+/// live game.
+pub fn enable_economy_phase_evidence_mode_v1() {
+    ECONOMY_PHASE_EVIDENCE_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn economy_phase_evidence_mode_enabled_v1() -> bool {
+    ECONOMY_PHASE_EVIDENCE_MODE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Runs exactly one phase (one `tick()`) and records its evidence.
 /// Exposed separately from [`simulate_with_phase_evidence_v1`] so a
 /// caller can inject a perturbation BETWEEN phases (the localization
@@ -205,6 +256,12 @@ pub fn tick_with_phase_evidence_v1(
     phase: u32,
     env: &mut Environment,
 ) -> PhaseEconomyEvidenceV1 {
+    assert!(
+        economy_phase_evidence_mode_enabled_v1(),
+        "tick_with_phase_evidence_v1 called without enable_economy_phase_evidence_mode_v1() -- \
+         this pays an extra per-site canonicalization hash per phase and must never run \
+         un-gated (T8.1's own cost constraint)"
+    );
     env.iteration(phase as i32);
     tick(index, TICK_PERIOD, env);
     let per_site = index.world_economy_per_site_v1();
@@ -223,8 +280,13 @@ pub fn tick_with_phase_evidence_v1(
 /// `simulate_return` are untouched -- this pays an extra
 /// canonicalization hash per site per phase (2000 phases) that the live
 /// game never needs; it exists for evidence collection (tests, a future
-/// harness), called explicitly rather than always.
+/// harness), called explicitly rather than always, and gated by
+/// [`enable_economy_phase_evidence_mode_v1`] besides.
 pub fn simulate_with_phase_evidence_v1(index: &mut Index) -> Vec<PhaseEconomyEvidenceV1> {
+    assert!(
+        economy_phase_evidence_mode_enabled_v1(),
+        "simulate_with_phase_evidence_v1 called without enable_economy_phase_evidence_mode_v1()"
+    );
     let mut env = Environment::new()
         .expect("evidence collection: GENERATE_CSV is false, Environment::new performs no I/O");
     (0..total_phase_count_v1())
@@ -334,6 +396,7 @@ mod tests {
     /// without.
     #[test]
     fn t8_1_the_same_fixture_hashes_identically_across_runs() {
+        super::enable_economy_phase_evidence_mode_v1();
         let evidence_a = super::simulate_with_phase_evidence_v1(&mut t8_1_minimal_fixture_v1(42, 3));
         let evidence_b = super::simulate_with_phase_evidence_v1(&mut t8_1_minimal_fixture_v1(42, 3));
         assert_eq!(evidence_a.len(), evidence_b.len());
