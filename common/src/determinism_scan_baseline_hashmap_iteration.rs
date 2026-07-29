@@ -102,6 +102,7 @@
     ("common/src/recipe.rs", "((input_max.values().sum::<u32>() as f32) / needed).floor() as u32;", 0),
     ("common/src/recipe.rs", "pub fn keys(&self) -> impl ExactSizeIterator<Item = &String> { self.recipes.keys() }", 0),
     ("common/src/region.rs", "self.regions.values_mut().for_each(|region| {", 0),
+    ("common/src/rng_source_registry.rs", "// stacked hazards are closed: `touch_entities.keys()` is now", 0),
     ("common/src/rng_source_registry.rs", "let stale: Vec<&str> = registry.keys().copied().collect();", 0),
     ("common/src/run_equivalence.rs", ".chain(b.independent_events.keys())", 0),
     ("common/src/run_equivalence.rs", ".keys()", 0),
@@ -150,7 +151,8 @@
     // buildable.
     ("common/state/src/plugin/manifest.rs", ".map(|t| t.keys().filter(|k| !known.contains(&k.as_str())).cloned().collect())", 0),
     ("common/state/src/plugin/module.rs", "let mut bodies: Vec<String> = store.data().registered_bodies.keys().cloned().collect();", 0),
-    ("common/systems/src/buff.rs", "for t_entity in physics_state.touch_entities.keys().filter_map(|te_uid| {", 0),
+    ("common/systems/src/buff.rs", "// `.keys()` order previously decided which touched", 0),
+    ("common/systems/src/buff.rs", "physics_state.touch_entities.keys().copied().collect();", 0),
     ("rtsim/src/data/architect.rs", "pub fn total(&self) -> u32 { self.populations.values().sum::<u32>() }", 0),
     ("rtsim/src/data/npc.rs", "pub fn ids(&self) -> impl Iterator<Item = MountId> + '_ { self.links.keys() }", 0),
     ("rtsim/src/data/npc.rs", "pub fn iter(&self) -> impl Iterator<Item = &NpcLink> + '_ { self.links.values() }", 0),

@@ -80,8 +80,10 @@ pub enum RandomDrawClassV1 {
 pub const AMBIENT_ENTROPY_SITES: &[(&str, usize, RandomDrawClassV1, &str)] = &[
     // ---------------------------------------------------------------
     // `E14-3` chunk 1 -- `common/systems/src` entered this scanner's
-    // roots. Six sites, ALL `UnmitigatedAuthoritativeEntropy`, all the
-    // same shape: `let mut rng = rand::rng();` at the head of a
+    // roots. Six sites at pin time, ALL `UnmitigatedAuthoritativeEntropy`
+    // (one, `buff.rs`'s fire-spread draw, is FIXED as of `E14-1` -- see
+    // the note in its place below -- leaving five), all the same shape:
+    // `let mut rng = rand::rng();` at the head of a
     // `System::run`, then handed to `combat::attack(.., &mut rng, ..)`.
     //
     // What that rng decides, traced rather than assumed: `combat.rs`
@@ -106,15 +108,22 @@ pub const AMBIENT_ENTROPY_SITES: &[(&str, usize, RandomDrawClassV1, &str)] = &[
         "arc-attack damage application: ambient rng passed to combat::attack, which rolls \
          on-hit buff chances and summon spawns. E14-1 family",
     ),
-    (
-        "common/systems/src/buff.rs",
-        1,
-        RandomDrawClassV1::UnmitigatedAuthoritativeEntropy,
-        "E14-1 (designated HIGH): the fire-spread draw, and the WORST of the six because it is \
-         consumed INSIDE a hashbrown::HashMap iteration (touch_entities) -- ambient entropy and \
-         hash order compound, so a different SET of entities catches fire rather than the same \
-         set in a different order",
-    ),
+    // `E14-1` (2026-07-29): `common/systems/src/buff.rs`'s fire-spread
+    // draw -- the designated-HIGH entry above this comment used to sit --
+    // is FIXED and no longer registered here (a fixed site has zero live
+    // `rand::rng()` matches, and this registry's own staleness check
+    // fails a registered entry with nothing left to match, same
+    // discipline as `E11-6b`'s precedent in `determinism_scan.rs`). Both
+    // stacked hazards are closed: `touch_entities.keys()` is now
+    // collected and `sort_unstable()`-ed by `Uid` before the loop (fixes
+    // the walk), and the per-target draw comes from a
+    // `ChaCha8Rng::seed_from_u64` keyed on (source entity's `Uid`, tick
+    // `Time`, a distinguishing constant) instead of ambient entropy
+    // (fixes the draw) -- the same inline idiom `beam.rs` (DET-EVT-011)
+    // already established in this crate. The other five `E14-1 family`
+    // sites below (arcing/melee/pool/projectile/shockwave, all ambient
+    // rng passed to `combat::attack`) are UNCHANGED -- this row was
+    // scoped to fire-spread specifically, not the whole family.
     (
         "common/systems/src/melee.rs",
         1,
@@ -665,6 +674,13 @@ mod tests {
             "E14-3 chunk 2 (DISCOVERY): bastion-server/src entered this scanner's roots -- \
              the cave-in damage-instance draw, likewise pre-existing and likewise invisible \
              only because of the root gap",
+        ),
+        (
+            6,
+            "E14-1 (MIGRATION): common/systems/src/buff.rs's fire-spread draw moved onto a \
+             ChaCha8Rng::seed_from_u64(source Uid, tick Time, constant) seam -- the same inline \
+             idiom beam.rs (DET-EVT-011) already established in this crate. The other five \
+             E14-1-family sites (arcing/melee/pool/projectile/shockwave) are unchanged.",
         ),
     ];
 

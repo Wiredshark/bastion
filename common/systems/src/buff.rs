@@ -70,6 +70,7 @@ pub struct ReadData<'a> {
     alignments: ReadStorage<'a, Alignment>,
     players: ReadStorage<'a, Player>,
     masses: ReadStorage<'a, Mass>,
+    uids: ReadStorage<'a, Uid>,
 }
 
 #[derive(Default)]
@@ -147,7 +148,6 @@ impl<'a> System<'a> for Sys {
             }
         }
 
-        let mut rng = rand::rng();
         let buff_join = (
             &read_data.entities,
             &read_data.buffs,
@@ -169,8 +169,33 @@ impl<'a> System<'a> for Sys {
             if let Some(physics_state) = physics_state {
                 // Set nearby entities on fire if burning
                 if let Some((_, burning)) = buff_comp.iter_kind(BuffKind::Burning).next() {
-                    for t_entity in physics_state.touch_entities.keys().filter_map(|te_uid| {
-                        read_data.id_maps.uid_entity(*te_uid).filter(|te| {
+                    // E14-1: `touch_entities` is a `hashbrown::HashMap<Uid,
+                    // Vec3<f32>>` -- randomly seeded per process, so its raw
+                    // `.keys()` order previously decided which touched
+                    // entities got the FIRST draw from a single, ambient,
+                    // OS-entropy `rand::rng()` shared across this whole
+                    // system call. Two hazards stacked: an unordered walk
+                    // feeding an order-sensitive sequential draw, AND the
+                    // draw itself not being reproducible at all. Sorting by
+                    // `Uid` (a stable, ordered identity) fixes the walk;
+                    // reseeding per (source entity, tick) below fixes the
+                    // draw -- same idiom `beam.rs` already established
+                    // (DET-EVT-011) for its own per-tick combat rolls.
+                    let mut touched_uids: Vec<Uid> =
+                        physics_state.touch_entities.keys().copied().collect();
+                    touched_uids.sort_unstable();
+                    let source_uid_bits =
+                        read_data.uids.get(entity).map(|u| u.0.get()).unwrap_or(0);
+                    let mut rng = {
+                        use rand::SeedableRng;
+                        rand_chacha::ChaCha8Rng::seed_from_u64(
+                            source_uid_bits.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                                ^ read_data.time.0.to_bits()
+                                ^ 0xF12E_5920,
+                        )
+                    };
+                    for t_entity in touched_uids.into_iter().filter_map(|te_uid| {
+                        read_data.id_maps.uid_entity(te_uid).filter(|te| {
                             combat::permit_pvp(
                                 &read_data.alignments,
                                 &read_data.players,

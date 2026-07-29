@@ -225,7 +225,21 @@ const READ_DIR_BASELINE: [(&str, &str, u32); 17] = read_dir_baseline();
 ///   `BitSet` index into specs' own `modified`/`inserted`/`removed`
 ///   change-sets -- the same storage-slot semantics classified in
 ///   `E11-6a`, not an identity.
-const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 193] = hashmap_iteration_baseline();
+///
+/// **E14-1 (2026-07-29) -- the chunk-4 fire-spread hazard FIXED (net -1
+/// +3, 193 -> 195).** `buff.rs`'s `touch_entities.keys()` walk (the site
+/// classified NOT BENIGN above) is replaced by a collect-then-
+/// `sort_unstable()` over `Uid` immediately before the loop -- the same
+/// SAFE shape `module.rs` already established for this family (`.keys()`
+/// collected and sorted the very next line). The per-target
+/// `rng.random_bool` draw that made the old walk's non-determinism
+/// OBSERVABLE (E13 chunk 4's "different SET catches fire" finding) is a
+/// separate hazard in a different scanner (`rng_source_registry`'s
+/// `UnmitigatedAuthoritativeEntropy`) and is fixed in the same commit --
+/// see that registry's own note. +3 here: the fixed line itself (now
+/// SAFE, matching the family's own sort-immediately convention) plus 2
+/// self-catching comments in this fix's own prose.
+const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 195] = hashmap_iteration_baseline();
 
 /// 19 sites (15 at E11-6a pin time, 2026-07-28; +4 net after E11-6b's
 /// fix -- the one real misuse below was corrected in place, its old line
@@ -344,7 +358,7 @@ const fn default_hasher_baseline() -> [(&'static str, &'static str, u32); 3] {
 const fn read_dir_baseline() -> [(&'static str, &'static str, u32); 17] {
     include!("determinism_scan_baseline_read_dir.rs")
 }
-const fn hashmap_iteration_baseline() -> [(&'static str, &'static str, u32); 193] {
+const fn hashmap_iteration_baseline() -> [(&'static str, &'static str, u32); 195] {
     include!("determinism_scan_baseline_hashmap_iteration.rs")
 }
 const fn raw_entity_id_baseline() -> [(&'static str, &'static str, u32); 23] {
