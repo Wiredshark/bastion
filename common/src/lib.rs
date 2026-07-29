@@ -60,6 +60,7 @@ pub mod entity_lifecycle;
 pub mod async_schedule;
 pub mod async_work;
 pub mod audit_framework;
+pub mod baseline_regen;
 pub mod causal_graph;
 pub mod causal_record;
 pub mod command_protocol;

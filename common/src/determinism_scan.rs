@@ -27,16 +27,27 @@ use std::path::Path;
 
 /// One family's frozen baseline: the exact set of `(file, snippet,
 /// occurrence)` triples this row's scan found, keyed off a pattern list.
-struct FamilyV1 {
-    name: &'static str,
-    patterns: &'static [&'static str],
-    self_exempt: &'static str,
-    baseline: &'static [(&'static str, &'static str, u32)],
+///
+/// `pub`, and `baseline_file` added, for `E14-4`: the regen tool
+/// (`src/bin/determinism_scan_regen.rs`) needs exactly this metadata
+/// (which patterns, which self-exemption, which file to write) to stay
+/// in sync with the live scan by construction, rather than hand-
+/// duplicating a second table that could drift from this one.
+pub struct FamilyV1 {
+    pub name: &'static str,
+    pub patterns: &'static [&'static str],
+    pub self_exempt: &'static str,
+    pub baseline: &'static [(&'static str, &'static str, u32)],
     /// A note on any specific sites within this family that were
     /// actually read (not just found), for the honesty split every
     /// registry this session uses. May be empty -- most families have
     /// no individually-read sites.
-    verified_notes: &'static [(&'static str, &'static str)],
+    pub verified_notes: &'static [(&'static str, &'static str)],
+    /// The `determinism_scan_baseline_*.rs` file this family's baseline
+    /// lives in, relative to `common/src` -- `E14-4`'s own field, unused
+    /// by the live scan itself (which reads `baseline` above, already
+    /// compiled in), read only by the regen tool.
+    pub baseline_file: &'static str,
 }
 
 /// Family 1: `Instant`/`SystemTime::now()` reached from an authoritative
@@ -75,13 +86,14 @@ const HASHMAP_ITERATION_PATTERNS: &[&str] = &[".values()", ".values_mut()", ".ke
 /// or serialized as if it named a persistent thing.
 const RAW_ENTITY_ID_PATTERNS: &[&str] = &["entity.id()", ".entity.id()"];
 
-const FAMILIES: &[FamilyV1] = &[
+pub const FAMILIES: &[FamilyV1] = &[
     FamilyV1 {
         name: "InstantSystemTimeInAuthoritativeCode",
         patterns: INSTANT_SYSTEMTIME_PATTERNS,
         self_exempt: "determinism_scan",
         baseline: &INSTANT_SYSTEMTIME_BASELINE,
         verified_notes: &[],
+        baseline_file: "determinism_scan_baseline_instant.rs",
     },
     FamilyV1 {
         name: "DefaultHasherInAuthoritativeCode",
@@ -93,6 +105,7 @@ const FAMILIES: &[FamilyV1] = &[
             ("common/src/state_hash.rs", "comment only, documenting WHY DomainHasher exists instead of DefaultHasher -- zero live usage"),
             ("bastion-server/src/bastion_jobs.rs", "comment only, documenting a past fix -- zero live usage"),
         ],
+        baseline_file: "determinism_scan_baseline_default_hasher.rs",
     },
     FamilyV1 {
         name: "ReadDirWithoutVerifiedSort",
@@ -109,6 +122,7 @@ const FAMILIES: &[FamilyV1] = &[
             ("server/src/semantic_net/receive_inventory.rs", "SAFE: same scanner convention"),
             ("server/src/semantic_net/send_inventory.rs", "SAFE: same scanner convention"),
         ],
+        baseline_file: "determinism_scan_baseline_read_dir.rs",
     },
     FamilyV1 {
         name: "HashMapIteration",
@@ -116,6 +130,7 @@ const FAMILIES: &[FamilyV1] = &[
         self_exempt: "determinism_scan",
         baseline: &HASHMAP_ITERATION_BASELINE,
         verified_notes: &[],
+        baseline_file: "determinism_scan_baseline_hashmap_iteration.rs",
     },
     FamilyV1 {
         name: "RawEcsEntityIdAsIdentity",
@@ -123,6 +138,7 @@ const FAMILIES: &[FamilyV1] = &[
         self_exempt: "determinism_scan",
         baseline: &RAW_ENTITY_ID_BASELINE,
         verified_notes: &[],
+        baseline_file: "determinism_scan_baseline_raw_entity_id.rs",
     },
 ];
 
@@ -154,7 +170,19 @@ const FAMILIES: &[FamilyV1] = &[
 /// zero `common/net/src` entries, checked directly -- but it holds by
 /// luck, not by the evidence given for it. Re-verified here against the
 /// file that actually compiles.
-const INSTANT_SYSTEMTIME_BASELINE: [(&str, &str, u32); 54] = instant_systemtime_baseline();
+///
+/// **E14-4 (2026-07-29): +23, all self-catches, all benign.** Committing
+/// `baseline_regen.rs`'s own test suite into `common/src` (an
+/// authoritative scan root) put the literal strings `"Instant::now()"`
+/// and `"SystemTime::now()"` into 23 test-fixture string literals --
+/// same self-catching pattern as every prior instance in this file, not
+/// a new live site. Regenerated with the row's own new tool
+/// (`determinism_scan_regen`), which is itself the first real proof the
+/// tool works: a pure addition, applied automatically, that touched no
+/// existing line (verified via `git diff --stat` showing insertions
+/// only). Landed on top of `E13` chunk 5's own +4 (`query_server`
+/// root), so the array grows 50 -> 54 -> 77.
+const INSTANT_SYSTEMTIME_BASELINE: [(&str, &str, u32); 77] = instant_systemtime_baseline();
 
 /// 3 sites at pin time, all verified: comments naming a hasher this code
 /// already avoids, zero live usage. A clean family is still worth
@@ -287,7 +315,7 @@ const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 22] = raw_entity_id_baseline()
 // Baseline data lives in generated `const fn`s below purely to keep the
 // (very long) tuple literals out of the doc-commented declarations above.
 
-const fn instant_systemtime_baseline() -> [(&'static str, &'static str, u32); 54] {
+const fn instant_systemtime_baseline() -> [(&'static str, &'static str, u32); 77] {
     include!("determinism_scan_baseline_instant.rs")
 }
 const fn default_hasher_baseline() -> [(&'static str, &'static str, u32); 3] {

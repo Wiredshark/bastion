@@ -143,4 +143,8 @@ name = "find_unused"
 required-features = []
 
 [[bin]]
+name = "determinism_scan_regen"
+required-features = []
+
+[[bin]]
 name = "names_to_json"
