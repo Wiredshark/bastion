@@ -1551,18 +1551,23 @@ impl PhysicsData<'_> {
                         pos_vel_ori_defer.ori = None;
                     }
 
-                    // DET-EVT-010: carry the source entity id so the
-                    // outcome chronology can be canonicalized post-reduce.
-                    (entity.id(), land_on_ground, outcomes)
+                    // DET-EVT-010 / E14-2: carry the source entity's stable
+                    // Uid (not the raw ECS `entity.id()` allocator slot --
+                    // recyclable within a run and never shared with the
+                    // client's own allocator) so BOTH the fall-damage
+                    // payload and the outcome chronology canonicalize off
+                    // the SAME captured, persistent key.
+                    let sort_key = read.uids.get(entity).map(|u| u.0.get()).unwrap_or(u64::MAX);
+                    (sort_key, land_on_ground, outcomes)
                 },
             )
             .fold(
                 || (Vec::new(), Vec::new()),
-                |(mut land_on_grounds, mut keyed): (_, Vec<(u32, Vec<Outcome>)>),
-                 (id, land_on_ground, outcomes)| {
-                    land_on_ground.map(|log| land_on_grounds.push(log));
+                |(mut land_on_grounds, mut keyed): (Vec<(u64, _)>, Vec<(u64, Vec<Outcome>)>),
+                 (sort_key, land_on_ground, outcomes)| {
+                    land_on_ground.map(|log| land_on_grounds.push((sort_key, log)));
                     if !outcomes.is_empty() {
-                        keyed.push((id, outcomes));
+                        keyed.push((sort_key, outcomes));
                     }
                     (land_on_grounds, keyed)
                 },
@@ -1583,16 +1588,24 @@ impl PhysicsData<'_> {
         // concatenates per-rayon-split vecs, so emission order is thread
         // partitioning. The deterministic harness serializes on its
         // one-worker pool; LIVE mode did not. `land_on_grounds` is the
-        // AUTHORITATIVE payload (fall damage) — canonicalize by entity id
+        // AUTHORITATIVE payload (fall damage) — canonicalize by stable Uid
         // before emission.
         // DET-EVT-010 (v5 deep-pass): the T0.28 noted-debt is closed —
-        // OUTCOMES are also canonicalized, keyed by source entity id
+        // OUTCOMES are also canonicalized, keyed by the same captured Uid
         // (within one entity, its own emission order is preserved), so the
         // networked outcome chronology no longer rides the Rayon
         // partition/reduction tree.
-        land_on_grounds.sort_unstable_by_key(|(entity, ..)| entity.id());
+        // E14-2: both sorts previously derived their key independently --
+        // this one by re-reading `entity.id()` off the raw `Entity` stored
+        // in `land_on_ground` at SORT time, the other off `entity.id()`
+        // CAPTURED at map time. Same hazard class either way (raw ECS
+        // allocator slot, not a persistent identity), and either read
+        // could silently diverge from server to client since each
+        // allocates entities independently. Now both consume the single
+        // Uid-derived `sort_key` captured once, above.
+        land_on_grounds.sort_unstable_by_key(|(sort_key, _)| *sort_key);
         let mut keyed_outcomes = keyed_outcomes;
-        keyed_outcomes.sort_unstable_by_key(|(id, _)| *id);
+        keyed_outcomes.sort_unstable_by_key(|(sort_key, _)| *sort_key);
         let outcomes: Vec<Outcome> = keyed_outcomes
             .into_iter()
             .flat_map(|(_, outcomes)| outcomes)
@@ -1628,7 +1641,7 @@ impl PhysicsData<'_> {
         emitters.emit_many(
             land_on_grounds
                 .into_iter()
-                .map(|(entity, vel, surface_normal)| LandOnGroundEvent {
+                .map(|(_, (entity, vel, surface_normal))| LandOnGroundEvent {
                     entity,
                     vel: vel.0,
                     surface_normal,

@@ -310,7 +310,19 @@ const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 193] = hashmap_iteration_b
 /// every consumer, with the true cause several rows away. `T0.69` is the
 /// row that would make it derived rather than assumed; it is parked
 /// behind the buildables with that trigger named.
-const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 22] = raw_entity_id_baseline();
+///
+/// **E14-2 (2026-07-29) -- the chunk-4 second instance FIXED (net -2 +3,
+/// 22 -> 23).** Both sort sites now consume one Uid-derived sort key
+/// (`read.uids.get(entity).map(|u| u.0.get()).unwrap_or(u64::MAX)`,
+/// the same idiom `DET-PHY-005` already established in this file)
+/// captured ONCE at the fold's map stage and threaded to both
+/// consumers, rather than each independently re-deriving `entity.id()`
+/// -- exactly the fix this doc block above already named as cheap and
+/// already-idiomatic. The 2 real call sites are gone; +3 are this
+/// fix's own explanatory prose mentioning `entity.id()` as literal
+/// text, same self-catching pattern as every prior instance in this
+/// file.
+const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 23] = raw_entity_id_baseline();
 
 // Baseline data lives in generated `const fn`s below purely to keep the
 // (very long) tuple literals out of the doc-commented declarations above.
@@ -335,7 +347,7 @@ const fn read_dir_baseline() -> [(&'static str, &'static str, u32); 17] {
 const fn hashmap_iteration_baseline() -> [(&'static str, &'static str, u32); 193] {
     include!("determinism_scan_baseline_hashmap_iteration.rs")
 }
-const fn raw_entity_id_baseline() -> [(&'static str, &'static str, u32); 22] {
+const fn raw_entity_id_baseline() -> [(&'static str, &'static str, u32); 23] {
     include!("determinism_scan_baseline_raw_entity_id.rs")
 }
 
