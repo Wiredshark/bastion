@@ -111,6 +111,112 @@ pub struct Economy {
     deliveries: Vec<TradeDelivery>,
 }
 
+fn push_f32(buf: &mut Vec<u8>, v: f32) { buf.extend_from_slice(&v.to_be_bytes()); }
+fn push_u64(buf: &mut Vec<u8>, v: u64) { buf.extend_from_slice(&v.to_be_bytes()); }
+fn push_good_index(buf: &mut Vec<u8>, g: GoodIndex) { push_u64(buf, g.into_usize() as u64); }
+fn push_option_f32(buf: &mut Vec<u8>, v: Option<f32>) {
+    match v {
+        Some(f) => {
+            buf.push(1);
+            push_f32(buf, f);
+        },
+        None => buf.push(0),
+    }
+}
+fn push_good_map_f32(buf: &mut Vec<u8>, m: &GoodMap<f32>) {
+    for (_, v) in m.iter() {
+        push_f32(buf, *v);
+    }
+}
+fn push_good_map_option_f32(buf: &mut Vec<u8>, m: &GoodMap<Option<f32>>) {
+    for (_, v) in m.iter() {
+        push_option_f32(buf, *v);
+    }
+}
+fn push_labor_map_f32(buf: &mut Vec<u8>, m: &LaborMap<f32>) {
+    for (_, v) in m.iter() {
+        push_f32(buf, *v);
+    }
+}
+fn push_labor_map_good_index(buf: &mut Vec<u8>, m: &LaborMap<GoodIndex>) {
+    for (_, v) in m.iter() {
+        push_good_index(buf, *v);
+    }
+}
+
+impl Economy {
+    /// `APEX-T4.3` chunk 2: the "economic baseline" component of
+    /// `WorldBaselineManifestV1`. Every field is included, in DECLARATION
+    /// order for the fixed-shape `GoodMap`/`LaborMap` array fields (whose
+    /// own `.iter()` is index-ordered, not hash-ordered -- verified by
+    /// reading their backing storage: `GoodMap`/`LaborMap` are `[V;
+    /// LENGTH]`/`Vec<V>`, never a `HashMap`), and explicitly SORTED by
+    /// `Id<Site>` for the two fields that genuinely are order-unstable
+    /// (`orders`, a real `DHashMap`; `neighbors`/`deliveries`, plain
+    /// `Vec`s whose own build order this function does not trust).
+    /// `Id<Site>` is a `Store<T>` index -- confirmed stable/never-recycled
+    /// at `E11-3b`'s own premise-check, safe to sort and hash directly.
+    pub fn canonical_baseline_hash_v1(&self) -> common::apex::digest::ArtifactIdentityV1 {
+        let mut buf = Vec::new();
+        push_f32(&mut buf, self.pop);
+        push_good_index(&mut buf, self.population_limited_by);
+        push_good_map_f32(&mut buf, &self.stocks);
+        push_good_map_f32(&mut buf, &self.surplus);
+        push_good_map_f32(&mut buf, &self.marginal_surplus);
+        push_good_map_f32(&mut buf, &self.unconsumed_stock);
+        push_good_map_option_f32(&mut buf, &self.values);
+        push_good_map_f32(&mut buf, &self.last_exports);
+        push_good_map_f32(&mut buf, &self.active_exports);
+        push_good_map_option_f32(&mut buf, &self.labor_values);
+        push_good_map_f32(&mut buf, &self.material_costs);
+        push_labor_map_f32(&mut buf, &self.labors);
+        push_labor_map_f32(&mut buf, &self.yields);
+        push_labor_map_f32(&mut buf, &self.productivity);
+        push_labor_map_good_index(&mut buf, &self.limited_by);
+
+        for area in &self.natural_resources.per_area {
+            push_good_map_f32(&mut buf, &area.resource_sum);
+            push_good_map_f32(&mut buf, &area.resource_chunks);
+            push_u64(&mut buf, area.chunks as u64);
+        }
+        push_good_map_f32(&mut buf, &self.natural_resources.chunks_per_resource);
+        push_good_map_f32(&mut buf, &self.natural_resources.average_yield_per_chunk);
+
+        let mut neighbors: Vec<&NeighborInformation> = self.neighbors.iter().collect();
+        neighbors.sort_unstable_by_key(|n| n.id.id());
+        push_u64(&mut buf, neighbors.len() as u64);
+        for n in neighbors {
+            push_u64(&mut buf, n.id.id());
+            push_good_map_f32(&mut buf, &n.last_values);
+            push_good_map_f32(&mut buf, &n.last_supplies);
+        }
+
+        let mut orders: Vec<(&Id<Site>, &Vec<TradeOrder>)> = self.orders.iter().collect();
+        orders.sort_unstable_by_key(|(id, _)| id.id());
+        push_u64(&mut buf, orders.len() as u64);
+        for (provider, provider_orders) in orders {
+            push_u64(&mut buf, provider.id());
+            push_u64(&mut buf, provider_orders.len() as u64);
+            for order in provider_orders {
+                push_u64(&mut buf, order.customer.id());
+                push_good_map_f32(&mut buf, &order.amount);
+            }
+        }
+
+        let mut deliveries: Vec<&TradeDelivery> = self.deliveries.iter().collect();
+        deliveries.sort_unstable_by_key(|d| d.supplier.id());
+        push_u64(&mut buf, deliveries.len() as u64);
+        for delivery in deliveries {
+            push_u64(&mut buf, delivery.supplier.id());
+            push_good_map_f32(&mut buf, &delivery.amount);
+            push_good_map_f32(&mut buf, &delivery.prices);
+            push_good_map_f32(&mut buf, &delivery.supply);
+        }
+
+        common::apex::digest::hash_artifact_bytes_v1(&buf)
+    }
+}
+
 impl Default for Economy {
     fn default() -> Self {
         let coin_index: GoodIndex = GoodIndex::try_from(Coin).unwrap_or_default();
@@ -1421,4 +1527,104 @@ impl GraphInfo {
     pub fn labor_list(&self) -> impl Iterator<Item = Labor> + use<> { Labor::list() }
 
     pub fn can_store(&self, g: &GoodIndex) -> bool { direct_use_goods().contains(g) }
+}
+
+#[cfg(test)]
+mod canonical_baseline_hash_v1_tests {
+    use super::*;
+
+    #[test]
+    fn the_same_economy_hashes_the_same_twice() {
+        let e = Economy::default();
+        assert_eq!(e.canonical_baseline_hash_v1().digest, e.canonical_baseline_hash_v1().digest);
+    }
+
+    #[test]
+    fn a_changed_field_moves_the_hash() {
+        let base = Economy::default();
+        let mut changed = Economy::default();
+        changed.pop = base.pop + 1.0;
+        assert_ne!(
+            base.canonical_baseline_hash_v1().digest,
+            changed.canonical_baseline_hash_v1().digest
+        );
+    }
+
+    /// `E11-3b`-class falsifier: the same neighbor/order/delivery entries,
+    /// inserted in a different order, must hash identically -- proves the
+    /// sort-before-hash canonicalization is real, not decorative.
+    #[test]
+    fn permuted_neighbor_order_does_not_move_the_hash() {
+        let n1 = NeighborInformation {
+            id: Id::new(1),
+            last_values: GoodMap::default(),
+            last_supplies: GoodMap::default(),
+        };
+        let n2 = NeighborInformation {
+            id: Id::new(2),
+            last_values: GoodMap::default(),
+            last_supplies: GoodMap::default(),
+        };
+
+        let forward = Economy { neighbors: vec![n1, n2], ..Default::default() };
+        let n1b = NeighborInformation {
+            id: Id::new(1),
+            last_values: GoodMap::default(),
+            last_supplies: GoodMap::default(),
+        };
+        let n2b = NeighborInformation {
+            id: Id::new(2),
+            last_values: GoodMap::default(),
+            last_supplies: GoodMap::default(),
+        };
+        let reversed = Economy { neighbors: vec![n2b, n1b], ..Default::default() };
+
+        assert_eq!(
+            forward.canonical_baseline_hash_v1().digest,
+            reversed.canonical_baseline_hash_v1().digest
+        );
+    }
+
+    /// Non-vacuity companion: a genuinely DIFFERENT neighbor set (not
+    /// just reordered) DOES move the hash -- proves the ordering test
+    /// isn't passing because neighbors are ignored entirely.
+    #[test]
+    fn a_genuinely_different_neighbor_set_moves_the_hash() {
+        let n1 = NeighborInformation {
+            id: Id::new(1),
+            last_values: GoodMap::default(),
+            last_supplies: GoodMap::default(),
+        };
+        let with_one = Economy { neighbors: vec![n1], ..Default::default() };
+        let with_none = Economy { neighbors: Vec::new(), ..Default::default() };
+
+        assert_ne!(
+            with_one.canonical_baseline_hash_v1().digest,
+            with_none.canonical_baseline_hash_v1().digest
+        );
+    }
+
+    /// Same falsifier for `orders`, the one field that is a REAL
+    /// `DHashMap` (not just a plain `Vec` this function chooses to sort
+    /// defensively) -- its own hash-bucket iteration order must not leak
+    /// into the baseline hash.
+    #[test]
+    fn permuted_orders_insertion_order_does_not_move_the_hash() {
+        let order_for = |customer: u64| TradeOrder { customer: Id::new(customer), amount: GoodMap::default() };
+
+        let mut forward_orders: DHashMap<Id<Site>, Vec<TradeOrder>> = DHashMap::default();
+        forward_orders.insert(Id::new(10), vec![order_for(100)]);
+        forward_orders.insert(Id::new(20), vec![order_for(200)]);
+        let forward = Economy { orders: forward_orders, ..Default::default() };
+
+        let mut reversed_orders: DHashMap<Id<Site>, Vec<TradeOrder>> = DHashMap::default();
+        reversed_orders.insert(Id::new(20), vec![order_for(200)]);
+        reversed_orders.insert(Id::new(10), vec![order_for(100)]);
+        let reversed = Economy { orders: reversed_orders, ..Default::default() };
+
+        assert_eq!(
+            forward.canonical_baseline_hash_v1().digest,
+            reversed.canonical_baseline_hash_v1().digest
+        );
+    }
 }
