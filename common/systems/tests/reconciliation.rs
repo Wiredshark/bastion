@@ -456,4 +456,149 @@ mod tests {
         assert_eq!(count, 2);
         assert!((mean.unwrap() - 2.0).abs() < 1e-9, "mean of 1.0 and 3.0 must be 2.0, got {mean:?}");
     }
+
+    // -- `APEX-T7.4` item C: the row's own acceptance criterion, tested as a
+    // determinism property -----------------------------------------------
+    //
+    // "The same correction plus the same input history, run twice, produces
+    // the same final state -- and, separately, produces the same EVENT set,
+    // since a replay that silently re-emits is the failure mode this row is
+    // most likely to ship with." (`APEX-T7-TIER-SPEC-FLEET-v1.md`, T7.4's
+    // own required-tests text.) The third required test named there ("a
+    // stale correction must be rejected without touching history") is
+    // ALREADY item A's own `a_stale_generation_is_rejected_without_touching_
+    // the_buffer` above -- not duplicated here.
+    //
+    // Scope note, disclosed rather than silently assumed: these fixtures'
+    // frames are zero-effect (`move_dir: Vec2::zero()`), so `sink_counts`
+    // is expected empty on both runs. The determinism property under test
+    // is "identical inputs produce identical outputs", which holds
+    // regardless of whether the set happens to be empty or not -- an empty
+    // set compared for equality is still a real equality check, just not
+    // one that exercises a NONZERO event count. `reconcile_v1` has no
+    // ambient/wall-clock/random inputs (verified: it takes every input as a
+    // parameter, per this module's own doc), so nothing in its own
+    // implementation depends on which case is exercised.
+
+    /// Builds two INDEPENDENT, but constructed-identically, buffers and
+    /// scenarios, and runs `reconcile_v1` once against each -- proving the
+    /// determinism property directly (two separate computations from the
+    /// same inputs agree), not merely "ran without changing between two
+    /// calls on the same mutable buffer" (which `adopt_generation_v1`'s own
+    /// idempotency could make trivially true even if something else were
+    /// silently stateful).
+    #[test]
+    fn running_reconcile_v1_twice_with_identical_inputs_produces_the_same_final_state_and_event_set() {
+        fn run_once() -> ReconciliationOutcomeV1 {
+            let mut state = setup();
+            let (entity, body) = create_entity(&mut state);
+            let ecs = state.ecs();
+            let read_data = ReadData::fetch(ecs);
+            let id_maps = Read::<IdMaps>::fetch(ecs);
+
+            let mut buffer = ClientPredictionBufferV1::new(16, 64 * 1024);
+            buffer.push_v1(frame(Vec2::zero(), 10, 0));
+            buffer.push_v1(frame(Vec2::zero(), 20, 1));
+
+            let current = baseline_rolling(body);
+            let mut authoritative = baseline_rolling(body);
+            authoritative.pos.0.x += POS_TOLERANCE_V1 * 2.0;
+
+            reconcile_v1(
+                &read_data,
+                &id_maps,
+                entity,
+                &mut buffer,
+                &current,
+                &authoritative,
+                10,
+                PhysicsGenerationV1::NEVER_CORRECTED,
+                |_| true,
+                |_| true,
+            )
+        }
+
+        let first = run_once();
+        let second = run_once();
+
+        let (
+            ReconciliationOutcomeV1::Replayed {
+                trimmed: trimmed_a,
+                replayed: replayed_a,
+                final_rolling: final_a,
+                sink_counts: sink_a,
+                position_correction_distance: distance_a,
+                ..
+            },
+            ReconciliationOutcomeV1::Replayed {
+                trimmed: trimmed_b,
+                replayed: replayed_b,
+                final_rolling: final_b,
+                sink_counts: sink_b,
+                position_correction_distance: distance_b,
+                ..
+            },
+        ) = (first, second)
+        else {
+            panic!("expected both runs to Replay");
+        };
+
+        // Same final state.
+        assert_eq!(trimmed_a, trimmed_b);
+        assert_eq!(replayed_a, replayed_b);
+        assert_eq!(final_a.pos.0, final_b.pos.0);
+        assert_eq!(final_a.vel.0, final_b.vel.0);
+        assert_eq!(final_a.ori, final_b.ori);
+        assert_eq!(final_a.char_state, final_b.char_state);
+        assert_eq!(distance_a, distance_b);
+        // Same event set (see the scope note above: expected empty here,
+        // still a real equality check on two independently-computed
+        // vectors).
+        assert_eq!(sink_a, sink_b);
+    }
+
+    /// The same property under a genuinely NEWER generation (an adopted
+    /// correction, not just a routine same-generation `CompSync`) --
+    /// proving determinism holds across the generation-adoption branch
+    /// `item A` added, not just the pre-existing trim/replay path.
+    #[test]
+    fn running_reconcile_v1_twice_after_a_generation_adoption_produces_the_same_final_state() {
+        fn run_once() -> ReconciliationOutcomeV1 {
+            let mut state = setup();
+            let (entity, body) = create_entity(&mut state);
+            let ecs = state.ecs();
+            let read_data = ReadData::fetch(ecs);
+            let id_maps = Read::<IdMaps>::fetch(ecs);
+
+            let mut buffer = ClientPredictionBufferV1::new(16, 64 * 1024);
+            buffer.push_v1(frame(Vec2::zero(), 10, 0));
+
+            let current = baseline_rolling(body);
+            let mut authoritative = baseline_rolling(body);
+            authoritative.pos.0.x += POS_TOLERANCE_V1 * 2.0;
+
+            reconcile_v1(
+                &read_data,
+                &id_maps,
+                entity,
+                &mut buffer,
+                &current,
+                &authoritative,
+                10,
+                PhysicsGenerationV1::from_legacy_counter_v1(1),
+                |_| true,
+                |_| true,
+            )
+        }
+
+        let first = run_once();
+        let second = run_once();
+        match (first, second) {
+            (ReconciliationOutcomeV1::Replayed { replayed: a, .. }, ReconciliationOutcomeV1::Replayed { replayed: b, .. }) => {
+                assert_eq!(a, b);
+                assert_eq!(a, 0, "the generation jump invalidates the single generation-0 entry, so nothing replays either time");
+            },
+            other => panic!("expected both runs to Replay (with zero frames replayed), got {other:?}"),
+        }
+    }
 }
