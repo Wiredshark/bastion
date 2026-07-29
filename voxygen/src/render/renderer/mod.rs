@@ -347,6 +347,7 @@ impl Renderer {
                     } else {
                         wgpu::Features::empty()
                     }
+                    | (adapter.features() & wgpu::Features::INDIRECT_FIRST_INSTANCE)
                     | (adapter.features() & wgpu_profiler::GpuProfiler::ALL_WGPU_TIMER_FEATURES),
                 required_limits,
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
@@ -624,10 +625,34 @@ impl Renderer {
             .get_downlevel_capabilities()
             .flags
             .contains(wgpu::DownlevelFlags::COMPUTE_SHADERS);
+        let indirect_supported = adapter
+            .get_downlevel_capabilities()
+            .flags
+            .contains(wgpu::DownlevelFlags::INDIRECT_EXECUTION)
+            && device
+                .features()
+                .contains(wgpu::Features::INDIRECT_FIRST_INSTANCE);
+        let indirect_enabled = match std::env::var("BASTION_R2_DRAW_MODE") {
+            Ok(value) if value == "direct" => false,
+            Ok(value) if value == "indirect" => true,
+            Ok(value) => {
+                return Err(RenderError::CustomError(format!(
+                    "invalid BASTION_R2_DRAW_MODE declaration: {value}"
+                )));
+            },
+            Err(std::env::VarError::NotPresent) => true,
+            Err(error) => {
+                return Err(RenderError::CustomError(format!(
+                    "invalid BASTION_R2_DRAW_MODE environment: {error}"
+                )));
+            },
+        };
         let figure_batch = super::figure_batch::FigureBatchRuntimeV1::new(
             &device,
             &layouts.figure,
             compute_supported,
+            indirect_supported,
+            indirect_enabled,
         )
         .map_err(|error| RenderError::CustomError(format!("{error:?}")))?;
 

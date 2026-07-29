@@ -7548,13 +7548,14 @@ impl FigureMgr {
                 Ok(result) => result,
                 Err(_) => batch.cpu_reference_result().ok()?,
             };
-            Some(
+            Some((
                 result
                     .admitted()
                     .iter()
                     .copied()
                     .collect::<BTreeSet<_>>(),
-            )
+                result.result_digest,
+            ))
         });
         let mut groups: BTreeMap<[u8; 32], Vec<MainBatchCandidate<'_>>> = BTreeMap::new();
         for (entity, pos, body, _, inventory, scale, collider, _) in (
@@ -7584,7 +7585,7 @@ impl FigureMgr {
             }) {
                 continue;
             }
-            if let Some(admitted) = accelerated_admitted.as_ref()
+            if let Some((admitted, _)) = accelerated_admitted.as_ref()
                 && colonists.get(entity).is_some()
                 && let Some(uid) = uids.get(entity)
                 && let Some(semantic_entity) = figure_semantic_digest(*uid)
@@ -7656,7 +7657,7 @@ impl FigureMgr {
                 }
             }
         }
-        for mut group in groups.into_values() {
+        for (batch_identity, mut group) in groups {
             group.sort_by_key(|candidate| candidate.semantic_entity);
             let first_buffer = group[0].model.runtime_buffer_identity();
             let first_atlas = group[0].atlas.runtime_binding_identity();
@@ -7677,8 +7678,17 @@ impl FigureMgr {
                 .collect::<Option<Vec<_>>>();
             if compatible
                 && let Some(instances) = instances
+                && let Some((_, culling_result_digest)) = accelerated_admitted.as_ref()
+                && let Some(ready) = ready
                 && drawer
-                    .draw_batch(group[0].model.clone(), group[0].atlas, &instances)
+                    .draw_batch(
+                        group[0].model.clone(),
+                        group[0].atlas,
+                        &instances,
+                        ready.client_applied_generation,
+                        *culling_result_digest,
+                        batch_identity,
+                    )
                     .is_ok()
             {
                 continue;

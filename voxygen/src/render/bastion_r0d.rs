@@ -904,6 +904,18 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r2_cull_gpu_input_sha256"
         | "r2_cull_gpu_result_sha256"
         | "r2_cull_same_frame_parity"
+        | "r2_draw_generation"
+        | "r2_draw_mode"
+        | "r2_draw_terminal"
+        | "r2_draw_fallback"
+        | "r2_draw_indirect_supported"
+        | "r2_draw_culling_result_sha256"
+        | "r2_draw_plan_sha256"
+        | "r2_draw_reference_sha256"
+        | "r2_draw_indirect_sha256"
+        | "r2_draw_reference_count"
+        | "r2_draw_indirect_count"
+        | "r2_draw_same_frame_parity"
         | "anchor_uid"
         | "anchor_selected_non_client_colonist"
         | "ordinal" => Some(CaptureMetadataFieldClassV1::Authority),
@@ -1419,6 +1431,9 @@ fn request_one_capture(
     let shadows = crate::r1f_shadows::latest_evidence();
     let weather = crate::r1f_weather::latest_evidence();
     let lens = crate::r1g_lens::latest_evidence();
+    let indirect_draw = super::indirect_draw::latest_evidence();
+    let r2_draw_mode =
+        std::env::var("BASTION_R2_DRAW_MODE").unwrap_or_else(|_| "indirect".to_owned());
     renderer.create_screenshot(move |result| {
         match result {
             Ok(image) => {
@@ -1495,6 +1510,45 @@ fn request_one_capture(
                                             "exact canonical GPU cull reconciliation absent",
                                         )
                                     })?;
+                                let direct_reference_mode = r2_draw_mode == "direct";
+                                let draw_evidence_valid = indirect_draw.generation
+                                    == context.presentation.client_applied_generation
+                                    && indirect_draw.culling_result_digest
+                                        == gpu_cull.result_digest
+                                    && indirect_draw.indirect_supported
+                                    && if direct_reference_mode {
+                                        indirect_draw.reference_draw_count == 0
+                                            && indirect_draw.indirect_draw_count == 0
+                                            && !indirect_draw.same_frame_parity
+                                            && indirect_draw.terminal
+                                                == bastion_renderer_r0d::draw_submission::SubmissionTerminalV1::DirectFallback(
+                                                    bastion_renderer_r0d::draw_submission::SubmissionFallbackV1::ExplicitDirectReference,
+                                                )
+                                    } else {
+                                        indirect_draw.reference_draw_count > 0
+                                            && indirect_draw.reference_draw_count
+                                                == indirect_draw.indirect_draw_count
+                                            && indirect_draw.same_frame_parity
+                                            && indirect_draw.terminal
+                                                == bastion_renderer_r0d::draw_submission::SubmissionTerminalV1::IndirectAccepted
+                                    };
+                                let indirect_draw =
+                                    draw_evidence_valid.then_some(indirect_draw).ok_or_else(|| {
+                                        std::io::Error::new(
+                                            std::io::ErrorKind::InvalidData,
+                                            "exact declared direct/indirect submission evidence absent",
+                                        )
+                                    })?;
+                                let (draw_mode, draw_terminal, draw_fallback) =
+                                    if direct_reference_mode {
+                                        (
+                                            "direct-reference",
+                                            "direct-reference",
+                                            "explicit-direct-reference",
+                                        )
+                                    } else {
+                                        ("indexed-indirect", "indirect-accepted", "none")
+                                    };
                                 let group_representations = group_representations.filter(|value| {
                                     value.generation
                                         == context.presentation.client_applied_generation
@@ -1668,6 +1722,18 @@ fn request_one_capture(
                                         "r2_cull_gpu_input_sha256={}\n",
                                         "r2_cull_gpu_result_sha256={}\n",
                                         "r2_cull_same_frame_parity={}\n",
+                                        "r2_draw_generation={}\n",
+                                        "r2_draw_mode={}\n",
+                                        "r2_draw_terminal={}\n",
+                                        "r2_draw_fallback={}\n",
+                                        "r2_draw_indirect_supported={}\n",
+                                        "r2_draw_culling_result_sha256={}\n",
+                                        "r2_draw_plan_sha256={}\n",
+                                        "r2_draw_reference_sha256={}\n",
+                                        "r2_draw_indirect_sha256={}\n",
+                                        "r2_draw_reference_count={}\n",
+                                        "r2_draw_indirect_count={}\n",
+                                        "r2_draw_same_frame_parity={}\n",
                                         "r1d_tier_generation={}\n",
                                         "r1d_tier_frame_sha256={}\n",
                                         "r1d_tier_decision_root_sha256={}\n",
@@ -1813,6 +1879,18 @@ fn request_one_capture(
                                     hex_digest(&gpu_cull.gpu_input_digest),
                                     hex_digest(&gpu_cull.gpu_result_digest),
                                     gpu_cull.same_frame_parity,
+                                    indirect_draw.generation,
+                                    draw_mode,
+                                    draw_terminal,
+                                    draw_fallback,
+                                    indirect_draw.indirect_supported,
+                                    hex_digest(&indirect_draw.culling_result_digest),
+                                    hex_digest(&indirect_draw.plan_digest),
+                                    hex_digest(&indirect_draw.reference_digest),
+                                    hex_digest(&indirect_draw.indirect_digest),
+                                    indirect_draw.reference_draw_count,
+                                    indirect_draw.indirect_draw_count,
+                                    indirect_draw.same_frame_parity,
                                     individual_tiers.generation,
                                     hex_digest(&individual_tiers.frame_digest),
                                     hex_digest(&individual_tiers.decision_root),
@@ -2520,6 +2598,14 @@ mod tests {
         );
         assert_eq!(
             capture_metadata_field_class_v1("r2_cull_result_sha256"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("r2_draw_plan_sha256"),
+            Some(CaptureMetadataFieldClassV1::Authority)
+        );
+        assert_eq!(
+            capture_metadata_field_class_v1("r2_draw_same_frame_parity"),
             Some(CaptureMetadataFieldClassV1::Authority)
         );
         assert_eq!(

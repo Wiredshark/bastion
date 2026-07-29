@@ -6,6 +6,7 @@ mod error;
 mod figure_batch;
 pub(crate) mod figure_gpu;
 mod gpu_cull;
+mod indirect_draw;
 pub mod instances;
 pub mod mesh;
 pub mod model;

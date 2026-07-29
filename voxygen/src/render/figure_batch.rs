@@ -63,6 +63,7 @@ pub enum FigureBatchRuntimeErrorV1 {
     Capacity,
     LengthOverflow,
     Cull(super::gpu_cull::ProductionCullFallbackV1),
+    Indirect(super::indirect_draw::ProductionSubmissionErrorV1),
 }
 
 pub struct FigureBatchRuntimeV1 {
@@ -70,6 +71,7 @@ pub struct FigureBatchRuntimeV1 {
     pub bind_group: wgpu::BindGroup,
     cursors: [u32; 3],
     gpu_cull: super::gpu_cull::GpuCullRuntimeV1,
+    indirect_draw: super::indirect_draw::IndirectDrawRuntimeV1,
 }
 
 impl FigureBatchRuntimeV1 {
@@ -77,6 +79,8 @@ impl FigureBatchRuntimeV1 {
         device: &wgpu::Device,
         layout: &FigureLayout,
         compute_supported: bool,
+        indirect_supported: bool,
+        indirect_enabled: bool,
     ) -> Result<Self, FigureBatchRuntimeErrorV1> {
         let stride = u64::try_from(core::mem::size_of::<FigureBatchInstance>())
             .map_err(|_| FigureBatchRuntimeErrorV1::LengthOverflow)?;
@@ -103,11 +107,18 @@ impl FigureBatchRuntimeV1 {
             bind_group,
             cursors: [0; 3],
             gpu_cull: super::gpu_cull::GpuCullRuntimeV1::new(device, compute_supported),
+            indirect_draw: super::indirect_draw::IndirectDrawRuntimeV1::new(
+                device,
+                indirect_supported,
+                indirect_enabled,
+            )
+            .map_err(FigureBatchRuntimeErrorV1::Indirect)?,
         })
     }
 
     pub fn begin_frame(&mut self) {
         self.cursors = [0; 3];
+        self.indirect_draw.begin_frame();
         if let Ok(mut current) = evidence().lock() {
             *current = FigureBatchProductionEvidenceV1::default();
         }
@@ -181,6 +192,27 @@ impl FigureBatchRuntimeV1 {
                 super::gpu_cull::record_error(batch, &error),
             )),
         }
+    }
+
+    pub fn stage_indirect(
+        &mut self,
+        queue: &wgpu::Queue,
+        generation: u64,
+        culling_result_digest: [u8; 32],
+        reference: bastion_renderer_r0d::draw_submission::DirectDrawReferenceV1,
+    ) -> Result<u64, FigureBatchRuntimeErrorV1> {
+        self.indirect_draw
+            .stage(queue, generation, culling_result_digest, reference)
+            .map_err(FigureBatchRuntimeErrorV1::Indirect)
+    }
+
+    pub fn indirect_buffer(&self) -> &wgpu::Buffer { self.indirect_draw.buffer() }
+
+    pub fn record_indirect_submission_failure(
+        &self,
+        fallback: bastion_renderer_r0d::draw_submission::SubmissionFallbackV1,
+    ) {
+        self.indirect_draw.record_submission_failure(fallback);
     }
 
     pub fn record_fallback(&self, incompatible_resource: bool) {
