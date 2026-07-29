@@ -906,6 +906,28 @@ impl Client {
         init_stage_update(ClientInitStage::LoadingInitData);
         // Wait for initial sync
         let mut ping_interval = tokio::time::interval(Duration::from_secs(1));
+
+        // `T4.1` chunk 2b: `ServerGeneral::BootstrapManifest` always
+        // precedes `GameSync` on this same stream
+        // (`server/src/sys/msg/register.rs::finalize_admission`), sent via
+        // the legacy path regardless of the negotiated semantic protocol
+        // (chunk 2a's own routing fix -- register stream is what makes a
+        // send BEFORE GameSync possible at all; general-stream would not
+        // have). Received and validated BEFORE `GameSync` is even
+        // awaited: `State::client` construction below this point is
+        // therefore only reachable once a compatible manifest has been
+        // seen, the ordering invariant this exists to enforce (`BOOT-005`
+        // if the wrong message arrives or fails to decode, `BOOT-006` if
+        // it decodes but a slot disagrees -- see `error.rs`).
+        let bootstrap_manifest_msg: ServerGeneral = loop {
+            tokio::select! {
+                res = register_stream.recv() => break res?,
+                _ = ping_interval.tick() => ping_stream.send(PingMsg::Ping)?,
+            }
+        };
+        let bootstrap_manifest_wire = crate::error::expect_bootstrap_manifest(bootstrap_manifest_msg)?;
+        crate::error::validate_bootstrap_manifest_v1(&bootstrap_manifest_wire)?;
+
         // `APEX-T3.3.16`: V1-envelope GameSync iff negotiation selected
         // `NetEnvelopeV1` -- packet: "Legacy keeps direct GameSync;
         // certified V1 requires envelope", "mode mixing terminates". A

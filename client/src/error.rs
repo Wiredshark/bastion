@@ -79,6 +79,18 @@ pub enum Error {
     IncompatibleSemanticProtocol,
     /// APEX-T3.3.05 (`SEMANTIC-PROTOCOL-MODE-SWITCH`).
     SemanticProtocolModeSwitch,
+    /// `T4.1` chunk 2b (`BOOT-005`): the message immediately following
+    /// registration on the register stream was not a usable
+    /// `ServerGeneral::BootstrapManifest` -- either a different message
+    /// arrived (an ordering violation: e.g. `ServerInit::GameSync` sent
+    /// directly, a legacy/buggy server skipping the manifest step) or the
+    /// bytes failed to decode. Both are "no valid manifest was obtained",
+    /// refused before `State::client` construction; `detail` names which.
+    BootstrapManifestMissing { detail: String },
+    /// `T4.1` chunk 2b (`BOOT-006`): the manifest decoded, but at least
+    /// one slot failed T0.5's `evaluate_compatibility_v1` -- a TOTAL
+    /// report, every mismatched slot named, not just the first found.
+    BootstrapManifestIncompatible { mismatches: Vec<String> },
 }
 
 impl From<SpecsError> for Error {
@@ -125,6 +137,73 @@ pub fn check_session_binding_equality(register_answer: SessionBindingV1, game_sy
         Err(Error::SessionBindingMismatch { register_answer, game_sync })
     } else {
         Ok(())
+    }
+}
+
+/// `T4.1` chunk 2b: the ordering gate itself -- the message received in
+/// the manifest step must actually BE `ServerGeneral::BootstrapManifest`.
+/// Extracted so the ordering invariant ("GameSync before a manifest is
+/// refused") is provable from the function's own signature: it consumes
+/// a `ServerGeneral`, so a caller that passed it a `ServerInit::GameSync`
+/// directly never even type-checks -- the invariant this exists to test
+/// is "whatever DID arrive on the wire decodes as a `ServerGeneral` other
+/// than `BootstrapManifest`, or fails to decode at all", both `BOOT-005`.
+pub fn expect_bootstrap_manifest(
+    msg: common_net::msg::ServerGeneral,
+) -> Result<common_net::msg::bootstrap_manifest_wire::BootstrapManifestWireV1, Error> {
+    match msg {
+        common_net::msg::ServerGeneral::BootstrapManifest(wire) => Ok(wire),
+        other => Err(Error::BootstrapManifestMissing { detail: format!("expected BootstrapManifest, got {other:?}") }),
+    }
+}
+
+/// `T4.1` chunk 2b (`BOOT-006`): decode the wire carrier, build this
+/// client's own local compatibility profile (today just the `NetEnvelope`
+/// slot, matching the server's own minimal-but-real manifest -- see
+/// `server/src/sys/msg/register.rs::bootstrap_manifest_v1`), and evaluate
+/// through T0.5's `evaluate_compatibility_v1` (never short-circuited, so
+/// every slot is checked). Fails closed with every mismatched slot named,
+/// not just the first.
+pub fn validate_bootstrap_manifest_v1(
+    wire: &common_net::msg::bootstrap_manifest_wire::BootstrapManifestWireV1,
+) -> Result<(), Error> {
+    use common::apex::{
+        digest::{ContentIdentityV1, hash_artifact_bytes_v1},
+        subsystem::{
+            profile::CompatibilityProfileV1,
+            report::{CompatibilityOutcomeV1, evaluate_compatibility_v1},
+            rule::CompatibilityRuleV1,
+            slot::SubsystemSlotIdV1,
+            transform::TransformRegistryV1,
+        },
+    };
+
+    let manifest = wire
+        .to_typed_v1()
+        .map_err(|e| Error::BootstrapManifestMissing { detail: format!("manifest decode failed: {e:?}") })?;
+    let input = manifest.to_evaluation_input_v1(None, TransformRegistryV1::new());
+
+    let local_net_envelope_content = ContentIdentityV1 {
+        artifact: hash_artifact_bytes_v1(common_net::msg::envelope::net_envelope_profile_root_v1().as_array()),
+        semantic: None,
+    };
+    let profile = CompatibilityProfileV1::new(vec![(
+        SubsystemSlotIdV1::NetEnvelope,
+        CompatibilityRuleV1::Exact { content: local_net_envelope_content },
+    )])
+    .expect("a single-entry profile can never exceed MAX_PROFILE_ENTRIES or duplicate a slot");
+
+    let report = evaluate_compatibility_v1(&profile, &input);
+    if report.is_fully_compatible() {
+        Ok(())
+    } else {
+        let mismatches: Vec<String> = report
+            .results()
+            .iter()
+            .filter(|r| !matches!(r.outcome, CompatibilityOutcomeV1::Compatible))
+            .map(|r| format!("{:?}: {:?}", r.slot, r.outcome))
+            .collect();
+        Err(Error::BootstrapManifestIncompatible { mismatches })
     }
 }
 
@@ -186,5 +265,99 @@ mod tests {
         }
 
         assert!(check_session_binding_equality(a, a).is_ok());
+    }
+
+    /// `T4.1` chunk 2b, `BOOT-005`, ordering half: whatever arrives in the
+    /// manifest step that is NOT `ServerGeneral::BootstrapManifest` -- the
+    /// shape a legacy/buggy server takes if it sends `GameSync` directly,
+    /// skipping the manifest -- must be refused, never silently accepted
+    /// as if it were a (missing) manifest.
+    #[test]
+    fn expect_bootstrap_manifest_rejects_any_other_variant() {
+        match expect_bootstrap_manifest(common_net::msg::ServerGeneral::CharacterSuccess) {
+            Err(Error::BootstrapManifestMissing { .. }) => {},
+            other => panic!("expected BootstrapManifestMissing, got {other:?}"),
+        }
+    }
+
+    fn empty_manifest_wire() -> common_net::msg::bootstrap_manifest_wire::BootstrapManifestWireV1 {
+        common_net::msg::bootstrap_manifest_wire::BootstrapManifestWireV1::from_typed_v1(
+            &common::apex::bootstrap_manifest::BootstrapManifestV1::default(),
+        )
+        .unwrap()
+    }
+
+    /// Positive control for `expect_bootstrap_manifest`: the real variant,
+    /// wrapping the real wire value, passes through unchanged.
+    #[test]
+    fn expect_bootstrap_manifest_accepts_the_real_variant() {
+        let wire = empty_manifest_wire();
+        let msg = common_net::msg::ServerGeneral::BootstrapManifest(wire.clone());
+        assert_eq!(expect_bootstrap_manifest(msg).unwrap(), wire);
+    }
+
+    fn manifest_with_net_envelope_content(
+        content: common::apex::digest::ContentIdentityV1,
+    ) -> common_net::msg::bootstrap_manifest_wire::BootstrapManifestWireV1 {
+        use common::apex::{
+            bootstrap_manifest::BootstrapManifestV1,
+            scalar::SchemaVersion,
+            subsystem::{descriptor::SubsystemDescriptorV1, slot::SubsystemSlotIdV1},
+        };
+        let manifest = BootstrapManifestV1 {
+            descriptors: vec![SubsystemDescriptorV1 { slot: SubsystemSlotIdV1::NetEnvelope, schema: SchemaVersion::new(1), content }],
+            peer_selector: None,
+            peer_capabilities: Vec::new(),
+            freshness_reserved: None,
+        };
+        common_net::msg::bootstrap_manifest_wire::BootstrapManifestWireV1::from_typed_v1(&manifest).unwrap()
+    }
+
+    /// `T4.1` chunk 2b, `BOOT-006`, content half: a manifest that decodes
+    /// fine but whose `NetEnvelope` content identity does NOT match this
+    /// client's own locally-computed root must be refused, with the
+    /// mismatched slot named in the error (total-report: not just a bare
+    /// boolean failure).
+    #[test]
+    fn validate_bootstrap_manifest_v1_rejects_net_envelope_content_mismatch() {
+        use common::apex::digest::{ContentIdentityV1, hash_artifact_bytes_v1};
+        let wrong_content = ContentIdentityV1 { artifact: hash_artifact_bytes_v1(b"not-the-real-net-envelope-root"), semantic: None };
+        let wire = manifest_with_net_envelope_content(wrong_content);
+
+        match validate_bootstrap_manifest_v1(&wire) {
+            Err(Error::BootstrapManifestIncompatible { mismatches }) => {
+                assert!(!mismatches.is_empty(), "total-report refusal must name at least one mismatch");
+                assert!(
+                    mismatches.iter().any(|m| m.contains("NetEnvelope")),
+                    "the mismatched slot must be named: {mismatches:?}"
+                );
+            },
+            other => panic!("expected BootstrapManifestIncompatible, got {other:?}"),
+        }
+    }
+
+    /// Positive control: a manifest whose `NetEnvelope` content identity
+    /// genuinely matches this client's own locally-computed root passes.
+    #[test]
+    fn validate_bootstrap_manifest_v1_accepts_the_real_net_envelope_root() {
+        use common::apex::digest::{ContentIdentityV1, hash_artifact_bytes_v1};
+        let real_content = ContentIdentityV1 {
+            artifact: hash_artifact_bytes_v1(common_net::msg::envelope::net_envelope_profile_root_v1().as_array()),
+            semantic: None,
+        };
+        let wire = manifest_with_net_envelope_content(real_content);
+        assert!(validate_bootstrap_manifest_v1(&wire).is_ok());
+    }
+
+    /// A manifest with NO `NetEnvelope` descriptor at all (the slot this
+    /// client's profile requires is simply absent) must also refuse --
+    /// `InvalidInput(NoDescriptorForSlot)` is not `Compatible` either.
+    #[test]
+    fn validate_bootstrap_manifest_v1_rejects_a_manifest_missing_the_required_slot() {
+        let wire = empty_manifest_wire();
+        match validate_bootstrap_manifest_v1(&wire) {
+            Err(Error::BootstrapManifestIncompatible { mismatches }) => assert!(!mismatches.is_empty()),
+            other => panic!("expected BootstrapManifestIncompatible, got {other:?}"),
+        }
     }
 }
