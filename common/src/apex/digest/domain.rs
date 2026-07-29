@@ -171,6 +171,29 @@ impl DigestDomainIdV1 {
     ];
 }
 
+/// Which program lane a domain ID's numeric value falls in, per the frozen
+/// ID ALLOCATION rule declared on [`DigestDomainIdV1`]: pre-split shared
+/// history is `<=20` and frozen, `21-39` is the engine lane, `40-99` is the
+/// APEX lane. Pure function of the numeric value so it can classify a lane
+/// without touching the enum, and so the classification claim below is
+/// directly falsifiable at the boundary values.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DomainIdLaneV1 {
+    Frozen,
+    Engine,
+    Apex,
+    OutOfRange,
+}
+
+pub const fn domain_id_lane_v1(id: u16) -> DomainIdLaneV1 {
+    match id {
+        1..=20 => DomainIdLaneV1::Frozen,
+        21..=39 => DomainIdLaneV1::Engine,
+        40..=99 => DomainIdLaneV1::Apex,
+        _ => DomainIdLaneV1::OutOfRange,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,5 +268,65 @@ mod tests {
         assert_eq!(DigestDomainIdV1::CheckpointDescriptor.label(), "bastion/checkpoint-descriptor/v1");
         assert_eq!(DigestDomainIdV1::CommandDescriptor.as_u16(), 43);
         assert_eq!(DigestDomainIdV1::CommandDescriptor.label(), "bastion/command-descriptor/v1");
+    }
+
+    /// `E11-2b`: every registered domain must land in the lane its own
+    /// section comment (frozen / "Engine lane" / "APEX lane") claims. This
+    /// is the classification pass the block-allocation rule needs: a new
+    /// domain allocated in the wrong lane compiles fine and passes
+    /// `registry_ids_and_labels_are_unique` (its ID is merely unique), so
+    /// only an explicit lane check catches a boundary-crossing allocation
+    /// before merge.
+    #[test]
+    fn every_registered_domain_lands_in_its_declared_lane() {
+        use DigestDomainIdV1::*;
+
+        let frozen = [
+            BootstrapManifest, SaveUniverseManifest, PluginActivationPlan, WorldBaselineManifest,
+            BuildManifest, ExecutionEvidence, SemanticContent, PluginManifest, SubsystemDescriptor,
+            CompatibilityProfile, NetEnvelopeProfile, SourceClosure, LocalReproSmoke,
+            FreshBuilderProfile, FreshBuilderRun, FreshRebuildPair, FreshRebuildCanaryCampaign,
+            PluginArchive, PluginCandidateSet, PluginResolvedGraph,
+        ];
+        let engine = [ReplayBundle, FailureSeedRecord];
+        let apex = [
+            CheckpointStreamTranscript, CheckpointGlobalTranscript, CheckpointDescriptor,
+            CommandDescriptor,
+        ];
+
+        for d in frozen {
+            assert_eq!(domain_id_lane_v1(d.as_u16()), DomainIdLaneV1::Frozen, "{:?} not frozen-lane", d);
+        }
+        for d in engine {
+            assert_eq!(domain_id_lane_v1(d.as_u16()), DomainIdLaneV1::Engine, "{:?} not engine-lane", d);
+        }
+        for d in apex {
+            assert_eq!(domain_id_lane_v1(d.as_u16()), DomainIdLaneV1::Apex, "{:?} not apex-lane", d);
+        }
+
+        // Exhaustiveness: the three lists above must exactly cover ALL, so
+        // a newly-added domain forces this test to be updated rather than
+        // silently going unclassified.
+        let mut classified: Vec<u16> =
+            frozen.iter().chain(engine.iter()).chain(apex.iter()).map(|d| d.as_u16()).collect();
+        classified.sort_unstable();
+        let mut registered: Vec<u16> = DigestDomainIdV1::ALL.iter().map(|d| d.as_u16()).collect();
+        registered.sort_unstable();
+        assert_eq!(classified, registered, "lane lists in this test are stale vs DigestDomainIdV1::ALL");
+    }
+
+    /// Falsifier / non-vacuity check for `domain_id_lane_v1`: probes every
+    /// lane boundary directly, so the classification pass above can't be
+    /// passing because the lane function is trivially permissive.
+    #[test]
+    fn domain_id_lane_v1_discriminates_at_every_boundary() {
+        assert_eq!(domain_id_lane_v1(0), DomainIdLaneV1::OutOfRange);
+        assert_eq!(domain_id_lane_v1(1), DomainIdLaneV1::Frozen);
+        assert_eq!(domain_id_lane_v1(20), DomainIdLaneV1::Frozen);
+        assert_eq!(domain_id_lane_v1(21), DomainIdLaneV1::Engine);
+        assert_eq!(domain_id_lane_v1(39), DomainIdLaneV1::Engine);
+        assert_eq!(domain_id_lane_v1(40), DomainIdLaneV1::Apex);
+        assert_eq!(domain_id_lane_v1(99), DomainIdLaneV1::Apex);
+        assert_eq!(domain_id_lane_v1(100), DomainIdLaneV1::OutOfRange);
     }
 }
