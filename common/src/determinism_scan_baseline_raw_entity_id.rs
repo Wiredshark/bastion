@@ -3,6 +3,8 @@
     ("common/net/src/sync/track.rs", "let id = entity.id();", 0),
     ("common/src/region.rs", "let id = entity.id();", 0),
     ("common/src/region.rs", "self.tracked_entities.contains(entity.id())", 0),
+    ("common/systems/src/phys/mod.rs", "(entity.id(), land_on_ground, outcomes)", 0),
+    ("common/systems/src/phys/mod.rs", "land_on_grounds.sort_unstable_by_key(|(entity, ..)| entity.id());", 0),
     ("server/src/events/entity_manipulation.rs", "entity.id() as u64,", 0),
     ("server/src/events/inventory_manip.rs", "item_entity = item_entity.id(),", 0),
     ("server/src/events/inventory_manip.rs", "picker_entity = entity.id(),", 0),

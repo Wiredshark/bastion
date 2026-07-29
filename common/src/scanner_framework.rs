@@ -54,7 +54,7 @@ use std::{collections::HashMap, fs, path::Path};
 /// what `rng_source_registry`, `numeric_surface`, `host_input_manifest`
 /// and `selection_registry` were built against; the rest are `E13`'s
 /// widening, each recorded with what it added.
-pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 8] = [
+pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 9] = [
     "common/src",
     "server/src",
     "rtsim/src",
@@ -98,6 +98,22 @@ pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 8] = [
     // opt-in feature is still a hazard, and a cfg-aware scan would go
     // blind exactly where the coverage is thinnest.
     "common/state/src",
+    // E13 chunk 4: `common/systems/src` -- the authoritative simulation
+    // systems themselves (physics, buffs, melee, projectiles). Five
+    // family sites, and the richest chunk of the campaign by findings
+    // per site: see `HASHMAP_ITERATION_BASELINE` and
+    // `RAW_ENTITY_ID_BASELINE` for two live hazards this root exposed on
+    // its first scan.
+    //
+    // It also exposed a SECOND scanner's root-set gap. This list is
+    // shared, but `rng_source_registry` keeps its own hardcoded four
+    // (`common/src`, `server/src`, `server/agent/src`, `rtsim/src`) --
+    // so the RNG audit has never walked this crate either, and seven
+    // live `rand::rng()` call sites sit here unaudited while a
+    // migration onto `combat::seed_ability_rng` is visibly half-done
+    // (`beam.rs` converted, its six siblings not). Two scanners with
+    // two root lists is how a crate stays invisible to both.
+    "common/systems/src",
 ];
 
 /// A deliberate, reviewed bypass of a scanner's own rule -- the shared

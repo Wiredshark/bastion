@@ -126,8 +126,31 @@
     //   module.rs: `.keys()` is `.collect()`ed and then `sort_unstable()`
     //   on the VERY NEXT LINE, into a receipt input the doc itself calls
     //   "canonical sorted sets".
+    // `E13` chunk 4 -- **NOT BENIGN. The first live hazard this family
+    // has caught.** `touch_entities` is a real `hashbrown::HashMap<Uid,
+    // Vec3<f32>>` (`common/src/comp/phys.rs:197`), and hashbrown's
+    // default hasher is randomly seeded PER PROCESS, so this iteration
+    // order differs between two runs of the same binary.
+    //
+    // Order alone would be survivable if the loop body were
+    // commutative. It is not: the body draws `rng.random_bool(..)` PER
+    // ITERATION (`buff.rs:186`) to decide whether fire spreads. A
+    // different iteration order therefore hands the Nth draw to a
+    // different entity -- so it is not the same set of entities catching
+    // fire in a different order, it is a DIFFERENT SET catching fire.
+    //
+    // Compounding it, that `rng` is `rand::rng()` (`buff.rs:150`) --
+    // thread-local OS entropy, not `combat::seed_ability_rng`, the
+    // deterministic seam its siblings were migrated onto. Two
+    // independent nondeterminism sources stacked in one loop.
+    //
+    // Left CLASSIFIED, not fixed: the fix is a behaviour change to fire
+    // spread and belongs in its own reviewed row, not in a scan-root
+    // widening. Flagged to the orchestrator as the campaign's top
+    // buildable.
     ("common/state/src/plugin/manifest.rs", ".map(|t| t.keys().filter(|k| !known.contains(&k.as_str())).cloned().collect())", 0),
     ("common/state/src/plugin/module.rs", "let mut bodies: Vec<String> = store.data().registered_bodies.keys().cloned().collect();", 0),
+    ("common/systems/src/buff.rs", "for t_entity in physics_state.touch_entities.keys().filter_map(|te_uid| {", 0),
     ("rtsim/src/data/architect.rs", "pub fn total(&self) -> u32 { self.populations.values().sum::<u32>() }", 0),
     ("rtsim/src/data/npc.rs", "pub fn ids(&self) -> impl Iterator<Item = MountId> + '_ { self.links.keys() }", 0),
     ("rtsim/src/data/npc.rs", "pub fn iter(&self) -> impl Iterator<Item = &NpcLink> + '_ { self.links.values() }", 0),

@@ -197,7 +197,7 @@ const READ_DIR_BASELINE: [(&str, &str, u32); 17] = read_dir_baseline();
 ///   `BitSet` index into specs' own `modified`/`inserted`/`removed`
 ///   change-sets -- the same storage-slot semantics classified in
 ///   `E11-6a`, not an identity.
-const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 192] = hashmap_iteration_baseline();
+const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 193] = hashmap_iteration_baseline();
 
 /// 19 sites (15 at E11-6a pin time, 2026-07-28; +4 net after E11-6b's
 /// fix -- the one real misuse below was corrected in place, its old line
@@ -240,6 +240,33 @@ const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 192] = hashmap_iteration_b
 /// orders anything — the other 4 new sites are doc/inline comments
 /// explaining the fix, prose only.
 ///
+/// **E13 chunk 4 -- A SECOND INSTANCE OF THE MISUSE `E11-6b` FIXED (2
+/// sites, `common/systems/src/phys/mod.rs`).** The crate was outside the
+/// root set until this chunk, which is the only reason it survived
+/// `E11-6b`'s sweep.
+///
+/// `land_on_grounds.sort_unstable_by_key(|(entity, ..)| entity.id())`
+/// canonicalises the AUTHORITATIVE fall-damage payload before emission,
+/// and the sibling line keys outcome batches by the same raw id. The
+/// INTENT is right and already documented (`T0.28`/`DET-EVT-010`): the
+/// rayon fold/reduce above concatenates per-split vecs, so without a
+/// sort the emission order is thread partitioning. The sort fixes that.
+///
+/// The KEY is the weak one. `Entity::id()` is an allocator slot, and
+/// this program's canonical ordering identity is `Uid` (`DET-PHY-005`
+/// canonicalises spatial cells by it; `T6.3`'s tape keys entities by
+/// it). Two runs agree only while entity ALLOCATION order agrees --
+/// which is a stronger assumption than `Uid` needs, and it is precisely
+/// the assumption a save/load cycle breaks, since slots are recycled
+/// while `Uid`s are not. Fall-damage emission order decides who dies
+/// first when two entities land on the same tick.
+///
+/// **The fix is cheap and its idiom is already in this file**:
+/// `read.uids` is in scope (`phys/mod.rs:167`) and lines 389 and 716
+/// already sort by `read.uids.get(e).map(|u| u.0.get()).unwrap_or(u64::
+/// MAX)`. Classified here, not fixed -- `E11-6a` classified and `E11-6b`
+/// fixed, and this chunk is the classification half of that same split.
+///
 /// ---
 ///
 /// **The assumption this family sits on top of, stated here because
@@ -255,7 +282,7 @@ const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 192] = hashmap_iteration_b
 /// every consumer, with the true cause several rows away. `T0.69` is the
 /// row that would make it derived rather than assumed; it is parked
 /// behind the buildables with that trigger named.
-const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 20] = raw_entity_id_baseline();
+const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 22] = raw_entity_id_baseline();
 
 // Baseline data lives in generated `const fn`s below purely to keep the
 // (very long) tuple literals out of the doc-commented declarations above.
@@ -277,10 +304,10 @@ const fn default_hasher_baseline() -> [(&'static str, &'static str, u32); 3] {
 const fn read_dir_baseline() -> [(&'static str, &'static str, u32); 17] {
     include!("determinism_scan_baseline_read_dir.rs")
 }
-const fn hashmap_iteration_baseline() -> [(&'static str, &'static str, u32); 192] {
+const fn hashmap_iteration_baseline() -> [(&'static str, &'static str, u32); 193] {
     include!("determinism_scan_baseline_hashmap_iteration.rs")
 }
-const fn raw_entity_id_baseline() -> [(&'static str, &'static str, u32); 20] {
+const fn raw_entity_id_baseline() -> [(&'static str, &'static str, u32); 22] {
     include!("determinism_scan_baseline_raw_entity_id.rs")
 }
 
