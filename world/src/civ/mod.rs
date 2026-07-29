@@ -226,6 +226,23 @@ pub enum WorldCivStage {
     SiteGeneration,
 }
 
+/// `E11-3b`: pure extraction of [`Civs::neighbors`]'s collect-sort-yield
+/// logic, so the canonical-order claim is directly testable against a
+/// hand-built `track_map` fixture without generating a world.
+fn neighbor_ids_v1(
+    track_map: &DHashMap<Id<Site>, DHashMap<Id<Site>, Id<Track>>>,
+    site: Id<Site>,
+) -> Vec<Id<Site>> {
+    let to = track_map.get(&site).map(|dests| dests.keys()).into_iter().flatten();
+    let fro = track_map
+        .iter()
+        .filter(move |(_, dests)| dests.contains_key(&site))
+        .map(|(p, _)| p);
+    let mut ids: Vec<Id<Site>> = to.chain(fro).filter(move |p| **p != site).copied().collect();
+    ids.sort();
+    ids
+}
+
 impl Civs {
     pub fn generate(
         seed: u32,
@@ -760,20 +777,21 @@ impl Civs {
             })
     }
 
-    /// Return an iterator over a site's neighbors
+    /// Return an iterator over a site's neighbors, canonically ordered by
+    /// `Id<Site>` (`E11-3b`). `track_map`'s hasher is `FxHasher64` (fixed
+    /// seed, not std's per-process-randomized `RandomState`), so raw
+    /// `.keys()` iteration is already reproducible run-to-run for a fixed
+    /// insertion sequence -- but it is still insertion-order- and
+    /// hash-bucket-layout-dependent, so two sites' neighbor lists are not
+    /// comparably ordered, and an unrelated earlier insertion silently
+    /// reorders every later lookup. Sorting by `Id<Site>` removes both: a
+    /// canonical order independent of hashmap internals. Premise-check
+    /// first (per this row's own instruction): `Id<Site>` is a `Store<T>`
+    /// index (`common/src/store.rs`) -- monotonically assigned on
+    /// `insert`, `Store` has no removal method, so unlike a specs `Entity`
+    /// id it is never recycled and is stable for a `Civs`' whole lifetime.
     pub fn neighbors(&self, site: Id<Site>) -> impl Iterator<Item = Id<Site>> + '_ {
-        let to = self
-            .track_map
-            .get(&site)
-            .map(|dests| dests.keys())
-            .into_iter()
-            .flatten();
-        let fro = self
-            .track_map
-            .iter()
-            .filter(move |(_, dests)| dests.contains_key(&site))
-            .map(|(p, _)| p);
-        to.chain(fro).filter(move |p| **p != site).copied()
+        neighbor_ids_v1(&self.track_map, site).into_iter()
     }
 
     /// Find the cheapest route between two places
@@ -1995,6 +2013,48 @@ fn select_biome_center_chunk(map_size_lg: MapSizeLg, center: Vec2<i32>, chunks: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `E11-3b` differ-pre-sort falsifier: the same edge set inserted in
+    /// two different orders must yield the identical, canonically-sorted
+    /// neighbor list.
+    #[test]
+    fn neighbor_ids_output_order_is_a_function_of_id_not_of_pre_sort_order() {
+        let site = |n: u64| Id::<Site>::new(n);
+        let track = |n: u64| Id::<Track>::new(n);
+
+        let mut map_a: DHashMap<Id<Site>, DHashMap<Id<Site>, Id<Track>>> = DHashMap::default();
+        map_a.entry(site(5)).or_default().insert(site(1), track(100));
+        map_a.entry(site(5)).or_default().insert(site(9), track(101));
+        map_a.entry(site(3)).or_default().insert(site(5), track(102));
+
+        let mut map_b: DHashMap<Id<Site>, DHashMap<Id<Site>, Id<Track>>> = DHashMap::default();
+        map_b.entry(site(3)).or_default().insert(site(5), track(102));
+        map_b.entry(site(5)).or_default().insert(site(9), track(101));
+        map_b.entry(site(5)).or_default().insert(site(1), track(100));
+
+        let a = neighbor_ids_v1(&map_a, site(5));
+        let b = neighbor_ids_v1(&map_b, site(5));
+        assert_eq!(a, b, "insertion order must not change the neighbor list's order");
+        assert_eq!(a, vec![site(1), site(3), site(9)], "must be canonically sorted by Id<Site>");
+    }
+
+    /// Non-vacuity check: proves `neighbor_ids_v1` genuinely walks both
+    /// the outgoing (`to`) and incoming (`fro`) edges and excludes the
+    /// site itself, not just that it happens to sort whatever it is
+    /// handed.
+    #[test]
+    fn neighbor_ids_includes_both_directions_and_excludes_self() {
+        let site = |n: u64| Id::<Site>::new(n);
+        let track = |n: u64| Id::<Track>::new(n);
+
+        let mut map: DHashMap<Id<Site>, DHashMap<Id<Site>, Id<Track>>> = DHashMap::default();
+        // 2 -> 4: an incoming edge from site 4's perspective.
+        map.entry(site(2)).or_default().insert(site(4), track(1));
+        // 4 -> 6: an outgoing edge from site 4's perspective.
+        map.entry(site(4)).or_default().insert(site(6), track(2));
+
+        assert_eq!(neighbor_ids_v1(&map, site(4)), vec![site(2), site(6)]);
+    }
 
     /// A tiny square map: `MapSizeLg::new([1, 1])` gives a 2x2 chunk grid
     /// (`uniform_idx_as_vec2` maps index -> (x, y) within it), enough to
