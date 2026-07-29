@@ -154,7 +154,52 @@ const READ_DIR_BASELINE: [(&str, &str, u32); 16] = read_dir_baseline();
 /// growth-detector, not a verdict.
 const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 184] = hashmap_iteration_baseline();
 
-/// 15 sites at pin time. Not individually classified this pass.
+/// 15 sites, INDIVIDUALLY CLASSIFIED (E11-6a, 2026-07-28). Fourteen are
+/// benign for two distinct reasons; one is a real misuse.
+///
+/// **Benign — storage-slot semantics (4).** `region.rs:220/258` and
+/// `sentinel.rs:282/283` use `Entity::id()` as a `BitSet` index — into
+/// `tracked_entities` and into specs' own change-sets. That is what an
+/// `Entity`'s id IS: a same-run storage slot. It never outlives the run
+/// and is never compared across runs.
+///
+/// **Benign — diagnostic strings (8).** `bastion_jobs.rs`,
+/// `entity_manipulation.rs`, `inventory_manip.rs` (×2), `lib.rs`,
+/// `state_ext.rs`, `in_game.rs`, `object.rs` — all of the shape
+/// `entity = entity.id(),` in a tracing field. A log naming a transient
+/// handle is correct; swapping these to `Uid` would cost a lookup to make
+/// logs prettier.
+///
+/// **Benign BY JUDGEMENT, and the two to re-examine first (2).**
+/// `entity_sync.rs:468` (`tick + entity.id()`, then `is_multiple_of(32)`)
+/// and `weather/tick.rs:206` (`entity.id() % 30 == tick % 30`) stagger
+/// work across ticks by allocator slot. This does not reach authoritative
+/// state — it changes update/send CADENCE, on the sync path rather than
+/// the tick path — but it does make network timing allocation-order
+/// dependent. The verdict here is "it doesn't reach state", not "it
+/// can't", and that distinction is why these two are named.
+///
+/// **The one real misuse (1).** `server/src/lib.rs:3318` uses a raw
+/// `entity.id()` as the SORT KEY of a returned `Vec`. That is exactly
+/// this family's hazard — an allocator slot ordering something — and the
+/// same class as the stable-`Uid` canonicalisation `DET-PHY-005` applied
+/// to spatial-grid cells. Fix: key the tuple and the sort by `Uid`.
+///
+/// ---
+///
+/// **The assumption this family sits on top of, stated here because
+/// nowhere else states it (`T0.69`).** `UidAllocator` (`common/src/uid.rs`)
+/// is a monotone counter: a new entity's `Uid` is a pure function of how
+/// many allocations preceded it. The program's determinism machinery is
+/// built ON `Uid` ordering — `DET-PHY-005` canonicalises spatial cells by
+/// it, `T6.3`'s tape keys entities by it — so `Uid` stability is a
+/// CONSEQUENCE of upstream ordering rows holding (command journal,
+/// checkpoint barriers, sorted drains), not a property with its own
+/// guard. It holds today. If an upstream ordering ever regresses, the
+/// failure presents as permuted `Uid`s and simultaneous divergence in
+/// every consumer, with the true cause several rows away. `T0.69` is the
+/// row that would make it derived rather than assumed; it is parked
+/// behind the buildables with that trigger named.
 const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 15] = raw_entity_id_baseline();
 
 // Baseline data lives in generated `const fn`s below purely to keep the
