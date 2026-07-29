@@ -37,6 +37,7 @@ pub mod input_receipt;
 pub mod probe;
 pub mod source_closure;
 pub mod weather_snapshot;
+pub mod world_baseline;
 
 pub use boundary::AuthoritativeBoundaryKindV1;
 pub use scalar::{
