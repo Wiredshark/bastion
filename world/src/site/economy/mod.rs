@@ -1697,3 +1697,155 @@ mod t8_1_phase_localization_tests {
         );
     }
 }
+
+/// `T8.3` chunk 1 (Lane B, order sensitivity): the provider/customer
+/// pairing axis. `Economy::trade_at_site` (this module, `mod.rs`)
+/// processes one provider's customer orders SEQUENTIALLY
+/// (`for o in orders.drain(..)`), each mutating the SAME shared,
+/// depleting `self.stocks` -- structurally the exact shape T8.3's own
+/// doc names as the transactional-non-commutativity risk ("a stock is
+/// consumed, a customer is served first"). This module lives here (not
+/// in `context`) because it needs `Economy`'s own private fields
+/// (`trade_at_site`/`TradeOrder`/`TradeDelivery`) directly -- a minimal,
+/// reproducible fixture at the `trade_at_site` level, not a full
+/// 2000-phase simulation, per the row's own "reproducible minimal
+/// fixture" acceptance criterion. Evidence-only: this measures and
+/// classifies, it does not canonicalize an order or otherwise fix
+/// anything found here.
+///
+/// **Finding, CLASSIFIED NEGATIVE (not the positive the structural read
+/// predicted).** Both tests below permute processing order across
+/// symmetric AND asymmetric scarce-stock scenarios; in every case the
+/// scarce-stock customer received the BIT-IDENTICAL amount regardless
+/// of which order was processed first. Read the reason directly in
+/// `trade_at_site`: `order_stock_ratio[g]` is computed ONCE, from
+/// `total_orders[g]` (summed BEFORE the per-order loop starts) against
+/// the ORIGINAL stock captured before any order is processed -- so
+/// `allocated_amount = amount / order_stock_ratio.max(1.0)` is a pure,
+/// proportional function of each order's OWN amount and a ratio fixed
+/// for the whole call, not of what earlier orders already consumed.
+/// The `.min(self.stocks[*g])` clamp on `paid_amount` (which DOES read
+/// the live, depleting stock) never actually bites for these fixtures
+/// because the ratio's own design keeps cumulative allocation within
+/// bounds. This is the same class of result `T8.2`'s `world/src/lib.rs`
+/// chunk found for worldgen RNG: the STRUCTURAL read (raw code shape)
+/// suggested a hazard; TRACING the actual arithmetic proved it absent
+/// for the mechanism tested. Not yet tested: the payment-side inner
+/// loop (`sorted_buy`, which credits `self.stocks[*g2] += amount2` for
+/// payment goods) and the delivery-collection reduction/last-writer
+/// sites in `collect_deliveries` -- open for a next chunk.
+#[cfg(test)]
+mod t8_3_order_sensitivity_tests {
+    use super::*;
+
+    /// A provider whose stock of `good` is deliberately too small to
+    /// satisfy every customer order that will be submitted against it --
+    /// the scarcity `trade_at_site`'s own `order_stock_ratio` rationing
+    /// exists to handle, and the mechanism through which processing
+    /// order could in principle matter.
+    fn scarce_provider_v1(good: GoodIndex, stock: f32) -> Economy {
+        let mut economy = Economy::default();
+        economy.stocks[good] = stock;
+        economy
+    }
+
+    /// One customer's order: wants `want` units of `good` (positive =
+    /// order, per `TradeOrder::amount`'s own doc comment), offers `pay`
+    /// units of `coin` in exchange (negative = exchange).
+    fn hungry_order_v1(customer: u64, good: GoodIndex, coin: GoodIndex, want: f32, pay: f32) -> TradeOrder {
+        let mut amount = GoodMap::from_default(0.0);
+        amount[good] = want;
+        amount[coin] = -pay;
+        TradeOrder { customer: Id::new(customer), amount }
+    }
+
+    fn delivered_amount_v1(
+        deliveries: &DHashMap<Id<Site>, Vec<TradeDelivery>>,
+        customer: u64,
+        good: GoodIndex,
+    ) -> f32 {
+        deliveries
+            .get(&Id::new(customer))
+            .and_then(|v| v.first())
+            .map(|d| d.amount[good])
+            .unwrap_or(0.0)
+    }
+
+    /// Runs `trade_at_site` for two customer orders against a fresh
+    /// provider with the given stock, in the given processing order, and
+    /// returns what customer 100 received.
+    fn customer_100_delivery_v1(stock: f32, orders_100_then_200: bool) -> f32 {
+        let flour = GoodIndex::try_from(Good::Flour).expect("Flour is a valid Good");
+        let coin = GoodIndex::try_from(Good::Coin).expect("Coin is a valid Good");
+        let order_100 = hungry_order_v1(100, flour, coin, 50.0, 100.0);
+        let order_200 = hungry_order_v1(200, flour, coin, 1.0, 2.0);
+        let mut orders = if orders_100_then_200 { vec![order_100, order_200] } else { vec![order_200, order_100] };
+        let mut economy = scarce_provider_v1(flour, stock);
+        let mut deliveries: DHashMap<Id<Site>, Vec<TradeDelivery>> = DHashMap::default();
+        economy.trade_at_site(Id::new(1), &mut orders, &mut deliveries);
+        delivered_amount_v1(&deliveries, 100, flour)
+    }
+
+    /// Required test (this axis): a scarce-good order, permuted, is
+    /// localized to a minimal `trade_at_site` fixture and classified.
+    /// Two customers (IDs 100 and 200) with deliberately ASYMMETRIC
+    /// wants (50 vs 1 units) against scarce stock (5.0, satisfying
+    /// neither in full) -- run once with customer 100 processed first,
+    /// once with 200 processed first, nothing else varied (the row's
+    /// own "permute separately" discipline). RESULT: bit-identical
+    /// (0.5098039 both times) -- CLASSIFIED NEGATIVE. See the module
+    /// doc for why: `order_stock_ratio` is computed once, before any
+    /// order is processed, making the allocation formula itself a pure
+    /// function of the FIXED ratio rather than of processing order.
+    #[test]
+    fn a_scarce_good_allocation_is_order_independent_asymmetric() {
+        let when_first = customer_100_delivery_v1(5.0, true);
+        let when_second = customer_100_delivery_v1(5.0, false);
+        assert_eq!(
+            when_first, when_second,
+            "trade_at_site's scarce-good allocation is expected to be bit-identical regardless \
+             of processing order (order_stock_ratio is computed once, before any order runs) -- \
+             a mismatch here would be a genuine transactional-non-commutativity finding, worth \
+             re-flagging"
+        );
+    }
+
+    /// Non-vacuity companion: the SYMMETRIC case (equal wants) is the
+    /// simplest possible scarcity fixture -- confirms the same
+    /// order-independence holds there too, not only in the asymmetric
+    /// case above.
+    #[test]
+    fn a_scarce_good_allocation_is_order_independent_symmetric() {
+        let flour = GoodIndex::try_from(Good::Flour).expect("Flour is a valid Good");
+        let coin = GoodIndex::try_from(Good::Coin).expect("Coin is a valid Good");
+        let make_orders = || vec![hungry_order_v1(100, flour, coin, 10.0, 20.0), hungry_order_v1(200, flour, coin, 10.0, 20.0)];
+
+        let mut economy_a = scarce_provider_v1(flour, 5.0);
+        let mut orders_a = make_orders();
+        let mut deliveries_a: DHashMap<Id<Site>, Vec<TradeDelivery>> = DHashMap::default();
+        economy_a.trade_at_site(Id::new(1), &mut orders_a, &mut deliveries_a);
+
+        let mut economy_b = scarce_provider_v1(flour, 5.0);
+        let mut orders_b = make_orders();
+        orders_b.reverse();
+        let mut deliveries_b: DHashMap<Id<Site>, Vec<TradeDelivery>> = DHashMap::default();
+        economy_b.trade_at_site(Id::new(1), &mut orders_b, &mut deliveries_b);
+
+        assert_eq!(
+            delivered_amount_v1(&deliveries_a, 100, flour),
+            delivered_amount_v1(&deliveries_b, 100, flour)
+        );
+    }
+
+    /// Companion at the OTHER end: when the provider's stock is ample
+    /// (comfortably exceeds both orders combined), processing order also
+    /// must not matter -- the expected, unsurprising case, checked so
+    /// the scarce-case findings above are read against a real contrast
+    /// rather than assumed to differ from something untested.
+    #[test]
+    fn an_ample_good_order_is_order_independent() {
+        let when_first = customer_100_delivery_v1(1000.0, true);
+        let when_second = customer_100_delivery_v1(1000.0, false);
+        assert_eq!(when_first, when_second);
+    }
+}
