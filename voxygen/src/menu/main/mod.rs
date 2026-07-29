@@ -768,6 +768,21 @@ pub(crate) fn get_client_msg_error(
         Error::SemanticProtocolModeSwitch => {
             format!("{}: semantic protocol mode switch rejected", localization.get_msg("common-error"))
         },
+        // `T4.1` chunk 2b / `T4.2` chunk B: the three bootstrap-manifest
+        // refusal states. No dedicated localization keys yet -- same
+        // "generic error, reconnect resolves it" posture as the boot/
+        // session mismatches above, since every one of these is surfaced
+        // only on registration and a fresh connect attempt re-runs the
+        // whole bootstrap handshake.
+        Error::BootstrapManifestMissing { detail } => {
+            format!("{}: server incompatible (bootstrap manifest missing: {detail})", localization.get_msg("common-error"))
+        },
+        Error::BootstrapManifestIncompatible { mismatches } => {
+            format!("{}: server incompatible ({})", localization.get_msg("common-error"), mismatches.join(", "))
+        },
+        Error::BootstrapFreshnessRejected(rejection) => {
+            format!("{}: server manifest stale ({rejection:?})", localization.get_msg("common-error"))
+        },
     }
 }
 
