@@ -2054,3 +2054,162 @@ mod t8_3_delivery_collection_tests {
         );
     }
 }
+
+/// `T8.4` chunk 1 (Lane C, model sensitivity): the ULP-sensitivity
+/// sweep, first field (`stocks`) -- perturb ONE site's flour stock by
+/// one ULP at phase 0, hold executable and traversal fixed (single
+/// fixture, single-threaded reasoning -- the whole point is isolating
+/// MODEL sensitivity from the order/platform questions Lanes A and B
+/// already own), and record the resulting SENSITIVITY CURVE: the raw
+/// magnitude of divergence at every subsequent phase, not just whether
+/// two runs' hashes differ (`T8.1`'s evidence gives phase-LOCALIZATION;
+/// this lane needs phase-by-phase MAGNITUDE, which a hash cannot give
+/// -- hence reading `Economy::stocks`/`values` directly here rather
+/// than through `PhaseEconomyEvidenceV1`). Extends the same two-fixture
+/// lockstep harness `T8.1` chunk 1's own perturbation test and `T8.3`'s
+/// axis tests already established.
+///
+/// Also tracks the first BRANCH CROSSING: `Economy::tick()`'s value-
+/// rationalisation step (mod.rs, `values[good] = if val > 0.001 &&
+/// val < 1000.0 { Some(...) } else { None }`) is a REAL conditional
+/// whose taken/not-taken outcome is directly observable as a
+/// `Some`/`None` transition -- the first phase where the perturbed and
+/// baseline runs disagree on that Option's variant is a genuine branch
+/// crossing, not a proxy for one.
+///
+/// Evidence-only: this measures and records sensitivity for `T8.5`'s
+/// later remedy ladder. Nothing here stabilizes, quantizes, or
+/// otherwise changes the model.
+#[cfg(test)]
+mod t8_4_model_sensitivity_tests {
+    use super::*;
+
+    fn fixture_v1(seed: u32) -> crate::index::Index {
+        let mut index = crate::index::Index::new(seed);
+        let mut site = Site::default();
+        site.kind = Some(crate::site::SiteKind::Refactor);
+        let _ = site.economy_mut();
+        index.sites.insert(site);
+        index
+    }
+
+    /// One phase's raw observation: the flour stock and whether flour
+    /// has a `Some` value (the branch outcome).
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct RawObservationV1 {
+        stock: f32,
+        has_value: bool,
+    }
+
+    fn observe_v1(index: &crate::index::Index, site_id: Id<Site>, flour: GoodIndex) -> RawObservationV1 {
+        let economy = index.sites.get(site_id).economy.as_ref().expect("fixture site always has an Economy");
+        RawObservationV1 { stock: economy.stocks[flour], has_value: economy.values[flour].is_some() }
+    }
+
+    /// Runs a baseline and (optionally) one-ULP-perturbed fixture in
+    /// lockstep for `phases` phases, returning: the per-phase magnitude
+    /// curve (`|perturbed.stock - baseline.stock|`), and the first phase
+    /// (if any) where the two runs' `values[flour]` Option variant
+    /// diverges (a branch crossing).
+    fn sensitivity_curve_v1(seed: u32, perturb: bool, phases: u32) -> (Vec<f32>, Option<u32>) {
+        context::enable_economy_phase_evidence_mode_v1();
+        let flour = GoodIndex::try_from(Good::Flour).expect("Flour is a valid Good");
+
+        let mut index_baseline = fixture_v1(seed);
+        let mut index_perturbed = fixture_v1(seed);
+        let site_id = *index_baseline.sites.ids().next().as_ref().expect("fixture has one site");
+        assert_eq!(site_id, *index_perturbed.sites.ids().next().as_ref().unwrap(), "both fixtures assign the same Id from the same seed/insertion sequence");
+
+        if perturb {
+            let economy = index_perturbed.sites.get_mut(site_id).economy_mut();
+            economy.stocks[flour] = f32::from_bits(economy.stocks[flour].to_bits() + 1);
+        }
+
+        let mut env_baseline = context::Environment::new().unwrap();
+        let mut env_perturbed = context::Environment::new().unwrap();
+        let mut curve = Vec::new();
+        let mut first_branch_crossing = None;
+
+        for phase in 0..phases {
+            context::tick_with_phase_evidence_v1(&mut index_baseline, phase, &mut env_baseline);
+            context::tick_with_phase_evidence_v1(&mut index_perturbed, phase, &mut env_perturbed);
+
+            let baseline = observe_v1(&index_baseline, site_id, flour);
+            let perturbed = observe_v1(&index_perturbed, site_id, flour);
+            curve.push((perturbed.stock - baseline.stock).abs());
+            if first_branch_crossing.is_none() && baseline.has_value != perturbed.has_value {
+                first_branch_crossing = Some(phase);
+            }
+        }
+        (curve, first_branch_crossing)
+    }
+
+    /// Required test: perturbation harness reproducibility -- the same
+    /// perturbation, run twice, gives the same curve. The economy
+    /// simulation itself reads no RNG in its hot path (`tick`,
+    /// `plan_trade_for_site`, `trade_at_site`, `collect_deliveries` --
+    /// checked, only `#[cfg(test)]` full-worldgen scaffolding uses
+    /// `rand`), so this is expected to hold exactly, not approximately;
+    /// still worth proving rather than assuming, since a harness that
+    /// can't reproduce its own curve can't be trusted for the rest of
+    /// this lane.
+    #[test]
+    fn the_same_perturbation_twice_gives_the_same_curve() {
+        let (curve_a, crossing_a) = sensitivity_curve_v1(21, true, 50);
+        let (curve_b, crossing_b) = sensitivity_curve_v1(21, true, 50);
+        assert_eq!(curve_a, curve_b);
+        assert_eq!(crossing_a, crossing_b);
+    }
+
+    /// Required test: a null perturbation (the flag is false, so the
+    /// "perturbed" fixture is built identically to the baseline)
+    /// produces a zero curve -- the harness's own sanity floor.
+    #[test]
+    fn a_null_perturbation_produces_a_zero_curve() {
+        let (curve, crossing) = sensitivity_curve_v1(21, false, 50);
+        assert!(curve.iter().all(|&d| d == 0.0), "expected an all-zero curve for a null perturbation, got {curve:?}");
+        assert_eq!(crossing, None);
+    }
+
+    /// Required test: at least one known-unstable threshold is found,
+    /// or the sweep's own coverage is proven insufficient rather than
+    /// assumed adequate. Runs the real one-ULP perturbation over a
+    /// window long enough to observe the tier's own central
+    /// measurement: does a one-ULP difference at phase 0 stay BOUNDED
+    /// (the cheapest T8.5 remedies suffice) or grow UNBOUNDED (the
+    /// model is chaotic, no ordering fix saves it)? Records which,
+    /// with the actual curve as evidence either way -- this test
+    /// cannot fail by construction (both outcomes are informative), it
+    /// can only fail to have RUN, which the two required tests above
+    /// already guard against.
+    #[test]
+    fn a_one_ulp_perturbation_produces_a_recorded_sensitivity_verdict() {
+        let phases = 200;
+        let (curve, first_branch_crossing) = sensitivity_curve_v1(21, true, phases);
+
+        let first_nonzero_phase = curve.iter().position(|&d| d > 0.0);
+        let final_magnitude = *curve.last().expect("phases > 0");
+        let max_magnitude = curve.iter().cloned().fold(0.0_f32, f32::max);
+
+        println!(
+            "T8.4 chunk 1 sensitivity verdict (seed=21, site flour stock, {phases} phases): \
+             first_nonzero_phase={first_nonzero_phase:?} first_branch_crossing={first_branch_crossing:?} \
+             final_magnitude={final_magnitude} max_magnitude={max_magnitude}"
+        );
+
+        // The sweep's own coverage claim: a one-ULP perturbation must
+        // become OBSERVABLE somewhere in this window, or this fixture
+        // (single site, no trade partners, INTER_SITE_TRADE's cross-
+        // site paths never engaged) is too inert to be evidence at all
+        // -- proven insufficient rather than assumed adequate, per the
+        // required test's own wording.
+        assert!(
+            first_nonzero_phase.is_some(),
+            "the one-ULP perturbation never became observable in the flour stock over {phases} \
+             phases on this single-site fixture -- coverage insufficient, NOT a stability \
+             finding: a fixture with no trade partners never re-reads its own perturbed stock \
+             through any state-dependent branch, so this sweep needs a multi-site fixture (T8.1/ \
+             T8.3's own 2-3 site shape) to actually exercise the model"
+        );
+    }
+}
