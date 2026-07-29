@@ -11918,8 +11918,16 @@ fn leash_scenario(args: &Args) -> ExitCode {
     // (the selector clamps every TARGET inside the disc; positions past it
     // are pathing wobble only).
     let mut max_dist = 0.0f32;
-    let mut track: std::collections::HashMap<String, Vec<Vec2<f32>>> =
-        std::collections::HashMap::new();
+    // E14-5a: BTreeMap, not HashMap. `orbit_stddev` below accumulates an
+    // f32 across this map's values, and float addition is not
+    // associative -- under a randomly-seeded HashMap the total moved
+    // between two runs of the SAME simulation. It then feeds
+    // `orbit_ok = orbit_stddev > 2.0`, part of this scenario's PASS/FAIL
+    // verdict, so the instrument could MISS a wobble it did observe.
+    // Keyed by colonist name, so iteration is canonical and the sum is
+    // reproducible. No value changes -- only the order they are added in.
+    let mut track: std::collections::BTreeMap<String, Vec<Vec2<f32>>> =
+        std::collections::BTreeMap::new();
     for sample in 0..300u32 {
         tick(&mut server, 30);
         // B36: HOLD the topped-needs condition (~every 30 sim-s) so decay
@@ -12328,8 +12336,23 @@ fn mine_fidelity_scenario(args: &Args) -> ExitCode {
     // ── The soak ────────────────────────────────────────────────────────
     let ticks_per_min = (args.tps * 60.0) as u64;
     let budget_ticks = (args.mf_minutes * 60.0 * args.tps) as u64;
-    let mut walked: std::collections::HashMap<String, (Vec3<f32>, f64)> =
-        std::collections::HashMap::new();
+    // E14-5a: BTreeMap, not HashMap. `dist_total` sums this map's f64
+    // distances at two sites below and emits them as "walked",
+    // "mf_walked_total" and (divided) "mf_walked_per_dig"; float
+    // addition is not associative, so under a randomly-seeded HashMap
+    // those metrics differed between two runs of the SAME simulation --
+    // the instrument reporting a wobble it never observed. The
+    // mine-fidelity record is otherwise wall-clock-free (its only time
+    // field, mf_sim_minutes_run, is a tick count), so it is genuinely
+    // comparable across runs and this was the one field in it that moved
+    // for non-simulation reasons.
+    //
+    // Third symptom, found while fixing the first two: `per_colonist`
+    // below iterates this map into a JSON ARRAY, and array order is
+    // significant to any comparison. That was hash-ordered too, and is
+    // fixed by the same change.
+    let mut walked: std::collections::BTreeMap<String, (Vec3<f32>, f64)> =
+        std::collections::BTreeMap::new();
     let mut teleport_jump_blocks = 0.0f64;
     let mut min_hunger = f32::INFINITY;
     let mut timeline: Vec<serde_json::Value> = Vec::new();
@@ -21331,5 +21354,111 @@ fn verify(args: &Args) -> ExitCode {
         }
         println!("DETERMINISM: DIVERGED");
         ExitCode::FAILURE
+    }
+}
+
+/// `E14-5a` — the canonical-summation fix, pinned.
+///
+/// `orbit_stddev` and `dist_total` accumulate floats across a
+/// name-keyed map and feed, respectively, a scenario PASS/FAIL boolean
+/// and three emitted metrics. Float addition is not associative, so a
+/// randomly-seeded `HashMap` made both move between two runs of the
+/// same simulation. Both maps are now `BTreeMap`s.
+///
+/// **Each test asserts its own precondition first.** A reordering test
+/// over values that happen to sum identically in any order is a
+/// vacuous green — it would pass just as happily against the broken
+/// code. So each test first proves the values it uses ARE
+/// order-sensitive, and only then proves the fix makes the order fixed.
+#[cfg(test)]
+mod e14_5a_canonical_summation {
+    use std::collections::BTreeMap;
+
+    /// Magnitudes chosen so that catastrophic cancellation makes the
+    /// sum genuinely depend on order.
+    const ORDER_SENSITIVE: [f64; 4] = [1e16, 1.0, -1e16, 1.0];
+
+    #[test]
+    fn precondition_these_values_really_are_order_sensitive() {
+        let forward: f64 = ORDER_SENSITIVE.iter().copied().sum();
+        let mut reversed = ORDER_SENSITIVE;
+        reversed.reverse();
+        let backward: f64 = reversed.iter().copied().sum();
+        assert_ne!(
+            forward, backward,
+            "the fixture values must be order-sensitive, or every test below passes vacuously \
+             and would pass against the unfixed code too"
+        );
+    }
+
+    #[test]
+    fn a_name_keyed_btreemap_sums_identically_whatever_the_insertion_order() {
+        // Names in SORTED order, so the map's canonical iteration
+        // reproduces ORDER_SENSITIVE exactly -- the sequence the
+        // precondition test proved sensitive. Pairing these the other
+        // way round is a real trap: it yields a key order whose forward
+        // and reverse sums both cancel to 2.0, and the discrimination
+        // assertion below then fails against CORRECT code. Caught here
+        // by that assertion firing.
+        let names = ["alpha", "bravo", "charlie", "delta"];
+
+        let mut forward: BTreeMap<String, f64> = BTreeMap::new();
+        for (name, value) in names.iter().zip(ORDER_SENSITIVE) {
+            forward.insert((*name).to_owned(), value);
+        }
+
+        let mut reversed: BTreeMap<String, f64> = BTreeMap::new();
+        for (name, value) in names.iter().zip(ORDER_SENSITIVE).rev() {
+            reversed.insert((*name).to_owned(), value);
+        }
+
+        let a: f64 = forward.values().copied().sum();
+        let b: f64 = reversed.values().copied().sum();
+
+        // BIT-identical, not approximately equal: the whole point is
+        // that a comparison of emitted metrics can be exact.
+        assert_eq!(a.to_bits(), b.to_bits(), "insertion order must not reach the sum");
+
+        // ...and the equality above is not free. Summing THE SAME map's
+        // values in the opposite order does move the result, so the
+        // stability being asserted is a property of the canonical
+        // iteration order rather than of the arithmetic being immune.
+        let against_the_order: f64 = forward.values().rev().copied().sum();
+        assert_ne!(
+            a.to_bits(),
+            against_the_order.to_bits(),
+            "if iteration order were not canonical, this sum WOULD move -- that is what the \
+             BTreeMap is buying"
+        );
+    }
+
+    #[test]
+    fn the_threshold_boolean_is_stable_too() {
+        // orbit_ok = orbit_stddev > 2.0. A sum that moves can flip a
+        // boolean sitting near its threshold, which is how the harness
+        // could MISS a wobble it did observe -- so the verdict, not
+        // just the number, is pinned.
+        //
+        // Scope, stated so this is not read as more than it is: this
+        // test shows the VERDICT inherits the sum's stability. The
+        // discrimination proof (that a non-canonical order really would
+        // move the number) lives in the test above; this one does not
+        // repeat it.
+        let near_threshold = [2.0_f64, 1e-16, -1e-16];
+        let names = ["zulu", "mike", "alfa"];
+
+        let mut forward: BTreeMap<String, f64> = BTreeMap::new();
+        let mut reversed: BTreeMap<String, f64> = BTreeMap::new();
+        for (name, value) in names.iter().zip(near_threshold) {
+            forward.insert((*name).to_owned(), value);
+        }
+        for (name, value) in names.iter().zip(near_threshold).rev() {
+            reversed.insert((*name).to_owned(), value);
+        }
+
+        let a: f64 = forward.values().copied().sum();
+        let b: f64 = reversed.values().copied().sum();
+        assert_eq!(a.to_bits(), b.to_bits());
+        assert_eq!(a > 2.0, b > 2.0, "the PASS/FAIL verdict must not depend on insertion order");
     }
 }
