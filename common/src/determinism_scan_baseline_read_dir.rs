@@ -6,6 +6,22 @@
     ("bastion-server/src/bastion_traversal_tooling.rs", "for entry in fs::read_dir(root).unwrap() {", 0),
     ("bastion-server/src/bastion_traversal_tooling.rs", "for entry in std::fs::read_dir(repo_root().join(\"rtsim/src/data\")).unwrap() {", 0),
     ("bastion-server/src/bastion_traversal_tooling.rs", "for entry in std::fs::read_dir(repo_root().join(\"server/src/events\")).unwrap() {", 0),
+    // `E14-6` -- BENIGN, and the one site in this pair worth a second
+    // look, because it is genuinely NOT sorted: `walk_tree` pushes
+    // entries in filesystem order and recurses. It looks exactly like
+    // the `DET-AST-024/025` asset-ordering case next door in
+    // `common/state`, and it is not that case: its only consumer
+    // outside its own module is `common/src/bin/asset_migrate.rs`, a
+    // DEV-TOOL BINARY (traced, not assumed). The authoritative asset
+    // digest uses a different walk entirely, and that one is
+    // canonicalised inside `ClosureTreeV1::try_new`, which sorts by
+    // path and rejects duplicates.
+    //
+    // Weaker guarantee than its neighbours and recorded as such: this
+    // is safety by CALLER-TRACING, which is non-local. Calling
+    // `walk_tree` from anything authoritative would move this site's
+    // verdict without touching this line.
+    ("common/assets/src/walk.rs", "for entry in std::fs::read_dir(dir)? {", 0),
     ("common/src/apex/numeric_surface.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
     ("common/src/host_input_manifest.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
     ("common/src/rng_source_registry.rs", "let Ok(entries) = std::fs::read_dir(dir) else { return };", 0),

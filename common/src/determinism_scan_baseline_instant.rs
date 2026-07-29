@@ -83,6 +83,25 @@
     // simulation time would not rate-limit anything -- and none reaches
     // authoritative state. This crate is in the root set for
     // completeness, not because it carries authority.
+    // `E14-6`, all eight BENIGN and read directly:
+    //   assets/plugin_cache.rs x2 -- cache freshness timestamps for
+    //   downloaded plugin artifacts. Wall-clock is the correct input:
+    //   cache staleness is a real-time question, and none of it reaches
+    //   simulation state.
+    //   ecs/system.rs x6 -- the dispatcher's own per-system CPU timing.
+    //   Every one pushes into `measures: Vec<(Instant, ParMode)>`, which
+    //   `get()` binary-searches to attribute CPU usage to a parallel
+    //   mode. Telemetry ABOUT the machine, never an input to what gets
+    //   scheduled or in what order -- checked (nothing sorts, orders or
+    //   prioritises on these), not assumed from the module's name.
+    ("common/assets/src/plugin_cache.rs", "std::time::SystemTime::now()", 0),
+    ("common/assets/src/plugin_cache.rs", "std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()", 0),
+    ("common/ecs/src/system.rs", "let end = Instant::now();", 0),
+    ("common/ecs/src/system.rs", "let tick_start = Instant::now();", 0),
+    ("common/ecs/src/system.rs", "let tick_start = Instant::now();", 1),
+    ("common/ecs/src/system.rs", "let tick_start = Instant::now();", 2),
+    ("common/ecs/src/system.rs", "pub fn measure(&mut self, par: ParMode) { self.measures.push((Instant::now(), par)); }", 0),
+    ("common/ecs/src/system.rs", "self.measures.push((Instant::now(), ParMode::Single));", 0),
     ("common/query_server/src/client.rs", "let query_sent = Instant::now();", 0),
     ("common/query_server/src/ratelimit.rs", "last_shift: Instant::now(),", 0),
     ("common/query_server/src/server.rs", "let mut last_secret_refresh = Instant::now();", 0),

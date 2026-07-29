@@ -54,7 +54,7 @@ use std::{collections::HashMap, fs, path::Path};
 /// what `rng_source_registry`, `numeric_surface`, `host_input_manifest`
 /// and `selection_registry` were built against; the rest are `E13`'s
 /// widening, each recorded with what it added.
-pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 11] = [
+pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 13] = [
     "common/src",
     "server/src",
     "rtsim/src",
@@ -137,6 +137,25 @@ pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 11] = [
     // baseline that reads like "reviewed" -- the orphan-baseline
     // failure wearing a different hat.
     "bastion-harness/src",
+    // E14-6: the cheap pair, taken together because neither justified a
+    // round of its own. 9 sites, all classified, none a hazard.
+    //
+    // `common/assets/src` -- the asset layer. Its `walk_tree` read_dir
+    // is NOT sorted, which looks like the DET-AST-024/025 case next
+    // door in `common/state`; it is not, because its only consumer
+    // outside its own module is `common/src/bin/asset_migrate.rs`, a
+    // dev-tool binary. The AUTHORITATIVE asset digest uses a different
+    // walk entirely, and that one is canonicalised inside
+    // `ClosureTreeV1::try_new`. Precedent present, correctly not needed
+    // here.
+    //
+    // `common/ecs/src` -- the dispatcher's own per-system CPU timing.
+    // Every hit is `measures`, a Vec of (Instant, ParMode) consulted by
+    // `get()` to attribute CPU usage to a mode. Telemetry about the
+    // machine, never an input to what gets scheduled or in what order
+    // (checked, not assumed).
+    "common/assets/src",
+    "common/ecs/src",
 ];
 
 /// The workspace members deliberately NOT scanned, each with the reason
@@ -155,20 +174,8 @@ pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 11] = [
 /// Counts are from the `E13` chunk-5 sweep and are indicative, not
 /// pinned -- they say how much is behind each exclusion, so a reviewer
 /// can judge the cost of reversing one.
-pub const UNSCANNED_WORKSPACE_MEMBERS: [(&str, &str); 15] = [
+pub const UNSCANNED_WORKSPACE_MEMBERS: [(&str, &str); 13] = [
     // --- Deserves a follow-up judgement, ranked first deliberately ---
-    (
-        "common/assets",
-        "1 read_dir + 2 wall-clock. Asset DISCOVERY order, which DET-AST-024/025 already \
-         canonicalise downstream by content hash for plugins -- the same shape as \
-         common/state's PluginMgr::from_dir. Worth a look precisely because that precedent \
-         exists.",
-    ),
-    (
-        "common/ecs",
-        "6 wall-clock, 614 lines. The system dispatcher's own per-system timing metrics. Almost \
-         certainly benign, and small enough that confirming it is cheap.",
-    ),
     // --- Below the authoritative boundary ---
     ("network", "transport layer, beneath the authoritative boundary; message ORDER is the \
                  protocol rows' subject, not this scan's"),
