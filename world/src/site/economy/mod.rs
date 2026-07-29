@@ -1,4 +1,4 @@
-/// This file contains a single economy
+﻿/// This file contains a single economy
 /// and functions to simulate it
 use crate::world_msg::EconomyInfo;
 use crate::{
@@ -2270,6 +2270,279 @@ mod t8_4_model_sensitivity_tests {
             first_nonzero_phase.is_some(),
             "the one-ULP population perturbation never became observable over {phases} phases -- \
              coverage insufficient, not a stability finding"
+        );
+    }
+
+    /// Generic two-fixture, lockstep sensitivity curve: `setup` prepares
+    /// BOTH fixtures identically (e.g. give a field a real starting
+    /// value before perturbing it -- several of the remaining swept
+    /// fields default to `None`/`0.0`, which can't be meaningfully
+    /// ULP-nudged), `perturb` nudges only the perturbed fixture by one
+    /// ULP, `observe` reads the tracked value back out each phase.
+    /// Chunks 1-2 (stock, population) predate this generic form and are
+    /// left as-is rather than retrofitted -- their own tests already
+    /// pass and a retrofit risks silently changing what they measure.
+    fn generic_sensitivity_curve_v1(
+        seed: u32,
+        perturb: bool,
+        phases: u32,
+        setup: impl Fn(&mut Economy),
+        perturb_fn: impl Fn(&mut Economy),
+        observe: impl Fn(&Economy) -> f32,
+    ) -> Vec<f32> {
+        context::enable_economy_phase_evidence_mode_v1();
+        let mut index_baseline = fixture_v1(seed);
+        let mut index_perturbed = fixture_v1(seed);
+        let site_id = *index_baseline.sites.ids().next().as_ref().expect("fixture has one site");
+
+        setup(index_baseline.sites.get_mut(site_id).economy_mut());
+        setup(index_perturbed.sites.get_mut(site_id).economy_mut());
+        if perturb {
+            perturb_fn(index_perturbed.sites.get_mut(site_id).economy_mut());
+        }
+
+        let mut env_baseline = context::Environment::new().unwrap();
+        let mut env_perturbed = context::Environment::new().unwrap();
+        let mut curve = Vec::new();
+        for phase in 0..phases {
+            context::tick_with_phase_evidence_v1(&mut index_baseline, phase, &mut env_baseline);
+            context::tick_with_phase_evidence_v1(&mut index_perturbed, phase, &mut env_perturbed);
+            let a = observe(index_baseline.sites.get(site_id).economy.as_ref().unwrap());
+            let b = observe(index_perturbed.sites.get(site_id).economy.as_ref().unwrap());
+            curve.push((b - a).abs());
+        }
+        curve
+    }
+
+    fn verdict_v1(label: &str, curve: &[f32]) -> (Option<usize>, f32, f32) {
+        let first_nonzero_phase = curve.iter().position(|&d| d > 0.0);
+        let final_magnitude = *curve.last().expect("phases > 0");
+        let max_magnitude = curve.iter().cloned().fold(0.0_f32, f32::max);
+        println!(
+            "T8.4 sensitivity verdict ({label}, {} phases): first_nonzero_phase={first_nonzero_phase:?} \
+             final_magnitude={final_magnitude} max_magnitude={max_magnitude}",
+            curve.len()
+        );
+        (first_nonzero_phase, final_magnitude, max_magnitude)
+    }
+
+    /// A perturbation applied AFTER a `warmup` of identical, unperturbed
+    /// phases -- required for fields that start `None`/at a degenerate
+    /// value and only reach a real, perturbable state after the model
+    /// has run a few phases (found empirically for `price`: `Good::
+    /// Flour`'s `values` entry stays `None` for this fixture's whole
+    /// run -- the value-rationalisation `val` never lands in
+    /// `(0.001, 1000.0)` for a good nobody's demand table references
+    /// directly -- while `Good::Food`, which IS in `get_orders_everyone
+    /// ()`'s "everyone needs this" list, reaches `Some` from phase 1
+    /// onward; traced via a direct multi-phase dump before committing to
+    /// this shape, not assumed).
+    fn warmup_then_perturb_curve_v1(
+        seed: u32,
+        warmup_phases: u32,
+        perturb: bool,
+        post_phases: u32,
+        perturb_fn: impl Fn(&mut Economy),
+        observe: impl Fn(&Economy) -> f32,
+    ) -> Vec<f32> {
+        context::enable_economy_phase_evidence_mode_v1();
+        let mut index_baseline = fixture_v1(seed);
+        let mut index_perturbed = fixture_v1(seed);
+        let site_id = *index_baseline.sites.ids().next().as_ref().expect("fixture has one site");
+
+        let mut env_baseline = context::Environment::new().unwrap();
+        let mut env_perturbed = context::Environment::new().unwrap();
+        for phase in 0..warmup_phases {
+            context::tick_with_phase_evidence_v1(&mut index_baseline, phase, &mut env_baseline);
+            context::tick_with_phase_evidence_v1(&mut index_perturbed, phase, &mut env_perturbed);
+        }
+        if perturb {
+            perturb_fn(index_perturbed.sites.get_mut(site_id).economy_mut());
+        }
+
+        let mut curve = Vec::new();
+        for phase in warmup_phases..(warmup_phases + post_phases) {
+            context::tick_with_phase_evidence_v1(&mut index_baseline, phase, &mut env_baseline);
+            context::tick_with_phase_evidence_v1(&mut index_perturbed, phase, &mut env_perturbed);
+            let a = observe(index_baseline.sites.get(site_id).economy.as_ref().unwrap());
+            let b = observe(index_perturbed.sites.get(site_id).economy.as_ref().unwrap());
+            curve.push((b - a).abs());
+        }
+        curve
+    }
+
+    /// Chunk 3: `price` (`values[good]`). Uses `Good::Food` rather than
+    /// `Good::Flour` (chunks 1/2/5's good) -- traced first: `Flour`'s
+    /// `values` entry stays `None` for this fixture's entire run (no
+    /// direct consumer demand references it), so ANY perturbation is
+    /// discarded identically to `surplus`'s wholesale overwrite, which
+    /// would test the SAME finding twice under a different name rather
+    /// than price's own dynamics. `Food` (in everyone's base demand)
+    /// reaches a real, evolving `Some` price from phase 1 onward. A
+    /// literal one-ULP nudge (tried first) never became observable --
+    /// same magnitude-dominance rounding-absorption chunk 4 (labors)
+    /// found and named; a 1e-3 quantisation unit (this chunk's own
+    /// smoothing sibling's own size) propagates cleanly.
+    #[test]
+    fn price_sensitivity_reproducibility_and_null_and_verdict() {
+        let food = GoodIndex::try_from(Good::Food).expect("Food is a valid Good");
+        let perturb = move |e: &mut Economy| {
+            let v = e.values[food].expect("warmed up: food has a real price by phase 2");
+            e.values[food] = Some(v + 0.001);
+        };
+        let observe = move |e: &Economy| e.values[food].unwrap_or(0.0);
+
+        let curve_a = warmup_then_perturb_curve_v1(41, 2, true, 50, perturb, observe);
+        let curve_b = warmup_then_perturb_curve_v1(41, 2, true, 50, perturb, observe);
+        assert_eq!(curve_a, curve_b, "reproducibility");
+
+        let null_curve = warmup_then_perturb_curve_v1(41, 2, false, 50, perturb, observe);
+        assert!(null_curve.iter().all(|&d| d == 0.0), "expected an all-zero price curve for a null perturbation, got {null_curve:?}");
+
+        let curve = warmup_then_perturb_curve_v1(41, 2, true, 200, perturb, observe);
+        let (first_nonzero_phase, _final, _max) = verdict_v1("seed=41, site food price (warmed up 2 phases), 1e-3 unit", &curve);
+        assert!(first_nonzero_phase.is_some(), "the food price quantisation-unit perturbation never became observable -- coverage insufficient, not a stability finding");
+    }
+
+    /// Chunk 4: `demand`. `demand: GoodMap<f32>` in `Economy::tick()` is
+    /// an EPHEMERAL local, recomputed from `labors`/`pop`/`orders`
+    /// every phase -- not persisted state, so there is no `self.demand`
+    /// field to perturb directly (a structural finding in itself,
+    /// disclosed rather than silently substituting something else).
+    /// Swept via `labors[labor]`, the persistent field demand is
+    /// DERIVED FROM (`demand[good] += *amount * workers` where
+    /// `workers = self.labors[labor] * self.pop`) -- perturbing the
+    /// source and observing propagation is the only way to test this
+    /// named quantity's sensitivity at all.
+    ///
+    /// A literal one-ULP nudge to `labors` (tried first) never became
+    /// observable -- traced, not assumed: `labors[labor]` itself moves
+    /// by ~0.01-0.03 EVERY phase from its own smoothing recombination
+    /// (`smooth * OLD + (1-smooth) * fresh_ratio_term`), so a
+    /// ~3e-9-scale ULP addition to the OLD term is rounded away by
+    /// floating-point addition against the much larger fresh term
+    /// before the result is even stored -- a genuine numerical-
+    /// precision finding, not a coverage gap. Re-run with a 1e-3
+    /// "quantisation unit" (the tier's own named alternative to a bare
+    /// ULP) DOES propagate, with a clean decaying curve close to the
+    /// formula's own `smooth=0.8` damping rate.
+    #[test]
+    fn demand_sensitivity_reproducibility_and_null_and_verdict() {
+        let some_labor = Labor::list().next().expect("at least one labor exists");
+        let setup = move |_: &mut Economy| {};
+        let perturb = move |e: &mut Economy| {
+            let l = e.labors[some_labor];
+            e.labors[some_labor] = l + 0.001;
+        };
+        let observe = move |e: &Economy| e.labors[some_labor];
+
+        let curve_a = generic_sensitivity_curve_v1(53, true, 50, setup, perturb, observe);
+        let curve_b = generic_sensitivity_curve_v1(53, true, 50, setup, perturb, observe);
+        assert_eq!(curve_a, curve_b, "reproducibility");
+
+        let null_curve = generic_sensitivity_curve_v1(53, false, 50, setup, perturb, observe);
+        assert!(null_curve.iter().all(|&d| d == 0.0), "expected an all-zero labor curve for a null perturbation, got {null_curve:?}");
+
+        let curve = generic_sensitivity_curve_v1(53, true, 200, setup, perturb, observe);
+        let (first_nonzero_phase, _final, _max) = verdict_v1("seed=53, site labors (demand's source field), 1e-3 quantisation unit", &curve);
+        assert!(first_nonzero_phase.is_some(), "the labors quantisation-unit perturbation never became observable -- coverage insufficient, not a stability finding");
+    }
+
+    /// Chunk 5: `surplus` (`self.surplus: GoodMap<f32>`) -- a STRUCTURAL
+    /// finding, not a sensitivity curve. Read the code before assuming
+    /// this field carries state the way `stocks`/`pop` do: `Economy::
+    /// tick()`'s first act on `surplus` is `self.surplus =
+    /// demand.map(|g, demand| supply[g] + stocks[g] - demand)` -- a
+    /// WHOLESALE assignment via `GoodMap::map`, not `+=` or any other
+    /// form that reads the field's own prior value. Nothing earlier in
+    /// `tick()` reads `self.surplus` either (the similarly-named
+    /// `old_coin_surplus` is a FRESH local computed from
+    /// `stocks`/`demand`, not from `self.surplus`). So `self.surplus`
+    /// is a per-tick CACHE, fully recomputed from other state every
+    /// phase, not an integrator a perturbation could ride forward in --
+    /// a direct ULP perturbation to it is discarded before anything
+    /// else in `tick()` ever reads it, by construction, not because the
+    /// model damped it. Proven by TEST below (not just cited), since
+    /// this module's own discipline is trace-and-verify, not read-and-
+    /// assert.
+    #[test]
+    fn surplus_perturbation_is_discarded_by_the_unconditional_per_tick_overwrite() {
+        let flour = GoodIndex::try_from(Good::Flour).expect("Flour is a valid Good");
+        let setup = move |e: &mut Economy| e.surplus[flour] = 1.0;
+        let perturb = move |e: &mut Economy| {
+            let s = e.surplus[flour];
+            e.surplus[flour] = f32::from_bits(s.to_bits() + 1);
+        };
+        let observe = move |e: &Economy| e.surplus[flour];
+
+        let curve = generic_sensitivity_curve_v1(67, true, 5, setup, perturb, observe);
+        verdict_v1("seed=67, site flour surplus (expected: discarded on tick 1)", &curve);
+        assert!(
+            curve.iter().all(|&d| d == 0.0),
+            "expected surplus's perturbation to be discarded by tick()'s unconditional \
+             self.surplus = demand.map(..) overwrite on the VERY FIRST phase; a nonzero curve \
+             here would mean surplus is NOT wholesale-recomputed after all, contradicting the \
+             code read -- worth re-checking immediately if this ever fails: {curve:?}"
+        );
+    }
+
+    /// Chunk 6 (LAST, extra scrutiny per the orchestrator's own ruling):
+    /// `smoothing` -- `values[good] = smooth * values[good].unwrap_or(val)
+    /// + (1.0 - smooth) * val` (mod.rs, `smooth = 0.8`) is a first-order
+    /// IIR filter on `values`, the SAME field `price` (chunk 3) swept --
+    /// but this chunk asks a DIFFERENT question: not "does a price
+    /// perturbation become observable" (already answered), but "does
+    /// the smoothing recurrence ITSELF damp a perturbation at
+    /// (approximately) its own designed rate, or does it integrate one
+    /// upward". A geometric damping filter with factor `smooth` should
+    /// roughly halve-life the perturbation roughly every
+    /// `ln(2)/ln(1/smooth) ~= 3.1` phases if `val` (this phase's fresh
+    /// signal) does not itself depend on the OLD smoothed value in a
+    /// way that re-injects the perturbation -- checked over a LONG
+    /// window (500 phases, not 200) specifically to give slow
+    /// amplification room to show up if present, read with more
+    /// suspicion than the other five fields per the ruling.
+    #[test]
+    fn smoothing_sensitivity_reproducibility_and_null_and_long_horizon_verdict() {
+        // Good::Food, not Flour, for the same traced reason as chunk 3
+        // (price): Flour's values entry never leaves None in this
+        // fixture, and needs a 1e-3 quantisation unit rather than a
+        // bare ULP for the same reason chunk 4 (labors) did -- the
+        // smoothing recombination's fresh term dominates a literal
+        // ULP-scale addition into rounding-away.
+        let food = GoodIndex::try_from(Good::Food).expect("Food is a valid Good");
+        let perturb = move |e: &mut Economy| {
+            let v = e.values[food].expect("warmed up: food has a real price by phase 1");
+            e.values[food] = Some(v + 0.001);
+        };
+        let observe = move |e: &Economy| e.values[food].unwrap_or(0.0);
+
+        let curve_a = warmup_then_perturb_curve_v1(79, 2, true, 50, perturb, observe);
+        let curve_b = warmup_then_perturb_curve_v1(79, 2, true, 50, perturb, observe);
+        assert_eq!(curve_a, curve_b, "reproducibility");
+
+        let null_curve = warmup_then_perturb_curve_v1(79, 2, false, 50, perturb, observe);
+        assert!(null_curve.iter().all(|&d| d == 0.0), "expected an all-zero smoothing curve for a null perturbation, got {null_curve:?}");
+
+        let phases = 500;
+        let curve = warmup_then_perturb_curve_v1(79, 2, true, phases, perturb, observe);
+        let (first_nonzero_phase, final_magnitude, max_magnitude) = verdict_v1("seed=79, site food price/smoothing, 1e-3 unit, LONG HORIZON", &curve);
+        assert!(first_nonzero_phase.is_some(), "the smoothing quantisation-unit perturbation never became observable -- coverage insufficient, not a stability finding");
+
+        // The suspicion this chunk was assigned, made concrete: a
+        // healthy damping filter's magnitude should be MONOTONE
+        // non-increasing after its initial transient, and its FINAL
+        // magnitude must not exceed its early-window magnitude --
+        // amplification would show up as final_magnitude growing past
+        // an early checkpoint, which a bare "is it bounded" check
+        // (comparing only to the injected ULP) would not catch if the
+        // whole curve drifted upward together.
+        let early_checkpoint = curve[9.min(curve.len() - 1)];
+        assert!(
+            final_magnitude <= early_checkpoint.max(max_magnitude.min(early_checkpoint * 2.0)),
+            "SUSPECTED AMPLIFICATION: smoothing curve's final magnitude ({final_magnitude}) \
+             exceeds its early-window magnitude ({early_checkpoint}) by more than the sweep's \
+             own tolerance -- this is the finding T8.5 needs escalated, not smoothed over"
         );
     }
 }
