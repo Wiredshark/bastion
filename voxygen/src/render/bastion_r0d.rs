@@ -895,6 +895,15 @@ pub fn capture_metadata_field_class_v1(field: &str) -> Option<CaptureMetadataFie
         | "r2_cull_dispatch_count"
         | "r2_cull_input_sha256"
         | "r2_cull_result_sha256"
+        | "r2_cull_reference_candidate_count"
+        | "r2_cull_reference_admitted_count"
+        | "r2_cull_reference_input_sha256"
+        | "r2_cull_reference_result_sha256"
+        | "r2_cull_gpu_candidate_count"
+        | "r2_cull_gpu_admitted_count"
+        | "r2_cull_gpu_input_sha256"
+        | "r2_cull_gpu_result_sha256"
+        | "r2_cull_same_frame_parity"
         | "anchor_uid"
         | "anchor_selected_non_client_colonist"
         | "ordinal" => Some(CaptureMetadataFieldClassV1::Authority),
@@ -1476,6 +1485,9 @@ fn request_one_capture(
                                             && value.candidate_count > 0
                                             && value.fallback
                                                 == super::gpu_cull::ProductionCullFallbackV1::None
+                                            && (value.mode
+                                                == super::gpu_cull::ProductionCullModeV1::CpuReference
+                                                || value.same_frame_parity)
                                     })
                                     .ok_or_else(|| {
                                         std::io::Error::new(
@@ -1647,6 +1659,15 @@ fn request_one_capture(
                                         "r2_cull_dispatch_count={}\n",
                                         "r2_cull_input_sha256={}\n",
                                         "r2_cull_result_sha256={}\n",
+                                        "r2_cull_reference_candidate_count={}\n",
+                                        "r2_cull_reference_admitted_count={}\n",
+                                        "r2_cull_reference_input_sha256={}\n",
+                                        "r2_cull_reference_result_sha256={}\n",
+                                        "r2_cull_gpu_candidate_count={}\n",
+                                        "r2_cull_gpu_admitted_count={}\n",
+                                        "r2_cull_gpu_input_sha256={}\n",
+                                        "r2_cull_gpu_result_sha256={}\n",
+                                        "r2_cull_same_frame_parity={}\n",
                                         "r1d_tier_generation={}\n",
                                         "r1d_tier_frame_sha256={}\n",
                                         "r1d_tier_decision_root_sha256={}\n",
@@ -1783,6 +1804,15 @@ fn request_one_capture(
                                     gpu_cull.dispatch_count,
                                     hex_digest(&gpu_cull.input_digest),
                                     hex_digest(&gpu_cull.result_digest),
+                                    gpu_cull.reference_candidate_count,
+                                    gpu_cull.reference_admitted_count,
+                                    hex_digest(&gpu_cull.reference_input_digest),
+                                    hex_digest(&gpu_cull.reference_result_digest),
+                                    gpu_cull.gpu_candidate_count,
+                                    gpu_cull.gpu_admitted_count,
+                                    hex_digest(&gpu_cull.gpu_input_digest),
+                                    hex_digest(&gpu_cull.gpu_result_digest),
+                                    gpu_cull.same_frame_parity,
                                     individual_tiers.generation,
                                     hex_digest(&individual_tiers.frame_digest),
                                     hex_digest(&individual_tiers.decision_root),
