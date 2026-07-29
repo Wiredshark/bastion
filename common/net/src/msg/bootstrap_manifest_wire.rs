@@ -79,7 +79,7 @@ mod bootstrap_manifest_wire_v1 {
             }],
             peer_selector: None,
             peer_capabilities: Vec::new(),
-            freshness_reserved: None,
+            freshness: None,
         }
     }
 

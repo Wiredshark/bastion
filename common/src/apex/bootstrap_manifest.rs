@@ -65,20 +65,14 @@ pub struct BootstrapManifestV1 {
     /// has one. Absent from a build that has none to offer.
     pub peer_selector: Option<NegotiationSelectorV1>,
     pub peer_capabilities: Vec<CapabilityIdV1>,
-    /// `APEX-T4.2` (banked design note, not yet built): the freshness/
-    /// sequence-binding tuple -- `ServerBootId`/`SessionId`/
-    /// `ConnectionEpoch` (already available via `T0.4`/`T3.2`), a
-    /// bootstrap sequence monotone within the boot, the snapshot epoch,
-    /// and the predecessor root. `T4.2`'s own spec sizes this to the
-    /// SAME pre-`GameSync` message this row already sends, so THIS field
-    /// is that reservation: the wire field ID is claimed now, so `T4.2`
-    /// populates it rather than needing a second pre-`GameSync` message
-    /// inserted later (a second surgery on the same connection ordering
-    /// invariant `T4.1`'s chunk 2 establishes). The TYPE is deliberately
-    /// not guessed -- `T4.2` has not been ruled -- so this is opaque
-    /// bytes, not a typed struct, until that row builds and populates
-    /// it. Always `None` today.
-    pub freshness_reserved: Option<Vec<u8>>,
+    /// `APEX-T4.2`: the freshness/sequence-binding tuple, cashing in the
+    /// `T4.1` reservation this field held as opaque bytes -- the wire
+    /// field ID was claimed then so this row populates it rather than
+    /// needing a second pre-`GameSync` message inserted later (a second
+    /// surgery on the same connection ordering invariant `T4.1`'s chunk
+    /// 2 establishes). See [`crate::apex::bootstrap_freshness`] for the
+    /// type and the ledger that checks it.
+    pub freshness: Option<crate::apex::bootstrap_freshness::BootstrapFreshnessV1>,
 }
 
 impl BootstrapManifestV1 {
@@ -134,21 +128,24 @@ fn decode_optional_selector(value: ManifestValueV1) -> Result<Option<Negotiation
 }
 
 /// Same 0-or-1-element-array encoding as [`encode_optional_selector`], for
-/// the `T4.2` reservation's opaque byte payload.
-fn encode_optional_bytes(bytes: &Option<Vec<u8>>) -> ManifestValueV1 {
-    match bytes {
-        Some(b) => ManifestValueV1::Array(vec![ManifestValueV1::Bytes(b.clone())]),
-        None => ManifestValueV1::Array(Vec::new()),
+/// the `T4.2` freshness tuple.
+fn encode_optional_freshness(
+    freshness: &Option<crate::apex::bootstrap_freshness::BootstrapFreshnessV1>,
+) -> Result<ManifestValueV1, ManifestCodecErrorV1> {
+    match freshness {
+        Some(f) => Ok(ManifestValueV1::Array(vec![f.to_manifest_value_v1()?])),
+        None => Ok(ManifestValueV1::Array(Vec::new())),
     }
 }
 
-fn decode_optional_bytes(value: ManifestValueV1) -> Result<Option<Vec<u8>>, ManifestSchemaErrorV1> {
+fn decode_optional_freshness(
+    value: ManifestValueV1,
+) -> Result<Option<crate::apex::bootstrap_freshness::BootstrapFreshnessV1>, ManifestSchemaErrorV1> {
     let ManifestValueV1::Array(items) = value else { return Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)) };
     match <[ManifestValueV1; 1]>::try_from(items) {
-        Ok([ManifestValueV1::Bytes(b)]) => Ok(Some(b)),
-        Ok([_]) => Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("freshness reservation must be a Bytes leaf")),
+        Ok([only]) => Ok(Some(crate::apex::bootstrap_freshness::BootstrapFreshnessV1::from_manifest_value_v1(only)?)),
         Err(items) if items.is_empty() => Ok(None),
-        Err(_) => Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("optional bytes array must have 0 or 1 elements")),
+        Err(_) => Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType).detail("optional freshness array must have 0 or 1 elements")),
     }
 }
 
@@ -163,7 +160,7 @@ impl ManifestEncodeV1 for BootstrapManifestV1 {
             (FieldIdV1::new(1), ManifestValueV1::Array(descriptors)),
             (FieldIdV1::new(2), encode_optional_selector(&self.peer_selector)?),
             (FieldIdV1::new(3), ManifestValueV1::Array(capabilities)),
-            (FieldIdV1::new(4), encode_optional_bytes(&self.freshness_reserved)),
+            (FieldIdV1::new(4), encode_optional_freshness(&self.freshness)?),
         ])?;
         Ok(ManifestValueV1::Map(map))
     }
@@ -192,17 +189,19 @@ impl ManifestDecodeV1 for BootstrapManifestV1 {
             peer_capabilities.push(decode_capability(v)?);
         }
 
-        let freshness_reserved = decode_optional_bytes(fields.take_required(FieldIdV1::new(4))?)?;
+        let freshness = decode_optional_freshness(fields.take_required(FieldIdV1::new(4))?)?;
 
         fields.finish_no_unknown()?;
-        Ok(Self { descriptors, peer_selector, peer_capabilities, freshness_reserved })
+        Ok(Self { descriptors, peer_selector, peer_capabilities, freshness })
     }
 }
 
 #[cfg(test)]
 mod bootstrap_manifest_v1 {
     use super::*;
+    use crate::apex::bootstrap_freshness::BootstrapFreshnessV1;
     use crate::apex::digest::{ContentIdentityV1, hash_artifact_bytes_v1};
+    use crate::apex::identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId, SnapshotEpoch};
     use crate::apex::manifest::{ManifestDecodeLimitsV1, decode_manifest_v1, encode_manifest_v1};
     use crate::apex::scalar::SchemaVersion;
     use crate::apex::subsystem::negotiate::{SelectorAlgorithmV1, SelectorOwnerV1};
@@ -236,6 +235,17 @@ mod bootstrap_manifest_v1 {
         }
     }
 
+    fn freshness_tuple() -> BootstrapFreshnessV1 {
+        BootstrapFreshnessV1 {
+            server_boot_id: ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])).unwrap(),
+            session_id: SessionId::generate(&mut FixedRandomBytesSourceV1([2; 16])).unwrap(),
+            epoch: ConnectionEpoch::new(1).unwrap(),
+            sequence: 3,
+            snapshot_epoch: SnapshotEpoch::new(0),
+            predecessor_root: None,
+        }
+    }
+
     /// A manifest with every field populated round-trips.
     #[test]
     fn full_manifest_round_trips() {
@@ -243,7 +253,7 @@ mod bootstrap_manifest_v1 {
             descriptors: vec![descriptor(SubsystemSlotIdV1::NetEnvelope, b"wire"), descriptor(SubsystemSlotIdV1::Build, b"linux")],
             peer_selector: Some(selector()),
             peer_capabilities: vec![CapabilityIdV1::new(1), CapabilityIdV1::new(7)],
-            freshness_reserved: Some(vec![1, 2, 3]),
+            freshness: Some(freshness_tuple()),
         };
         let bytes = encode_manifest_v1(&original, &limits()).unwrap();
         let decoded: BootstrapManifestV1 = decode_manifest_v1(&bytes, &limits()).unwrap();
@@ -275,20 +285,21 @@ mod bootstrap_manifest_v1 {
         assert_eq!(err.code, ManifestCodecErrorCodeV1::FieldKeyType);
     }
 
-    /// `T4.2`'s reservation round-trips in both states: present (once a
-    /// future row populates it) and absent (today's actual state).
+    /// `T4.2`'s freshness tuple round-trips in both states: present and
+    /// absent (a pre-`T4.2` build's manifest, or worldgen-only path that
+    /// never populates it).
     #[test]
-    fn freshness_reservation_round_trips_present_and_absent() {
-        let with_reservation = BootstrapManifestV1 { freshness_reserved: Some(vec![9, 9, 9]), ..Default::default() };
-        let bytes = encode_manifest_v1(&with_reservation, &limits()).unwrap();
+    fn freshness_round_trips_present_and_absent() {
+        let with_freshness = BootstrapManifestV1 { freshness: Some(freshness_tuple()), ..Default::default() };
+        let bytes = encode_manifest_v1(&with_freshness, &limits()).unwrap();
         let decoded: BootstrapManifestV1 = decode_manifest_v1(&bytes, &limits()).unwrap();
-        assert_eq!(decoded.freshness_reserved, Some(vec![9, 9, 9]));
+        assert_eq!(decoded.freshness, Some(freshness_tuple()));
 
         let without = BootstrapManifestV1::default();
-        assert_eq!(without.freshness_reserved, None);
+        assert_eq!(without.freshness, None);
         let bytes = encode_manifest_v1(&without, &limits()).unwrap();
         let decoded: BootstrapManifestV1 = decode_manifest_v1(&bytes, &limits()).unwrap();
-        assert_eq!(decoded.freshness_reserved, None);
+        assert_eq!(decoded.freshness, None);
     }
 
     /// Byte-flip canary (same T0.5 pattern): mutating one descriptor's
@@ -309,7 +320,7 @@ mod bootstrap_manifest_v1 {
             descriptors: vec![descriptor(SubsystemSlotIdV1::Numeric, b"numeric")],
             peer_selector: Some(selector()),
             peer_capabilities: vec![CapabilityIdV1::new(3)],
-            freshness_reserved: None,
+            freshness: None,
         };
         let local = NegotiationSelectorV1 {
             owner: SelectorOwnerV1::ClientPreferred,
@@ -342,7 +353,7 @@ mod bootstrap_manifest_v1 {
             descriptors: vec![matching.clone(), descriptor(SubsystemSlotIdV1::Content, b"server-content")],
             peer_selector: None,
             peer_capabilities: Vec::new(),
-            freshness_reserved: None,
+            freshness: None,
         };
         let bytes = encode_manifest_v1(&manifest, &limits()).unwrap();
         let decoded: BootstrapManifestV1 = decode_manifest_v1(&bytes, &limits()).unwrap();

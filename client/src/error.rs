@@ -308,7 +308,7 @@ mod tests {
             descriptors: vec![SubsystemDescriptorV1 { slot: SubsystemSlotIdV1::NetEnvelope, schema: SchemaVersion::new(1), content }],
             peer_selector: None,
             peer_capabilities: Vec::new(),
-            freshness_reserved: None,
+            freshness: None,
         };
         common_net::msg::bootstrap_manifest_wire::BootstrapManifestWireV1::from_typed_v1(&manifest).unwrap()
     }

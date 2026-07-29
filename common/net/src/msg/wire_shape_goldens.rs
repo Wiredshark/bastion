@@ -1217,7 +1217,7 @@ mod wire_shape_goldens_v1 {
             }],
             peer_selector: None,
             peer_capabilities: Vec::new(),
-            freshness_reserved: None,
+            freshness: None,
         };
         ServerGeneral::BootstrapManifest(
             crate::msg::bootstrap_manifest_wire::BootstrapManifestWireV1::from_typed_v1(&manifest)
@@ -1689,7 +1689,7 @@ mod wire_shape_goldens_v1 {
             }],
             peer_selector: None,
             peer_capabilities: Vec::new(),
-            freshness_reserved: None,
+            freshness: None,
         };
         let perturbed = golden_digest_v1(&ServerGeneral::BootstrapManifest(
             crate::msg::bootstrap_manifest_wire::BootstrapManifestWireV1::from_typed_v1(&perturbed_manifest)

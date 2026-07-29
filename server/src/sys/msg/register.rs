@@ -535,8 +535,11 @@ impl<'a> System<'a> for Sys {
 /// deployment, schedule/numeric/world via rows that have not built their
 /// identity-root functions yet); adding them here ahead of that wiring
 /// would be fabricated content pretending to be checked, which this
-/// program's own standing rule forbids. `freshness_reserved` stays `None`
-/// -- `T4.2`'s reservation, not yet populated.
+/// program's own standing rule forbids. `freshness` stays `None` here --
+/// `T4.2` chunk A landed the typed tuple and the checking ledger, but
+/// the real per-boot sequence counter + root chain this function would
+/// need to populate it honestly is banked for that chunk's own
+/// follow-up (see `common::apex::bootstrap_freshness`'s module doc).
 fn bootstrap_manifest_v1() -> common::apex::bootstrap_manifest::BootstrapManifestV1 {
     use common::apex::{
         digest::{ContentIdentityV1, hash_artifact_bytes_v1},
@@ -555,7 +558,7 @@ fn bootstrap_manifest_v1() -> common::apex::bootstrap_manifest::BootstrapManifes
         }],
         peer_selector: None,
         peer_capabilities: Vec::new(),
-        freshness_reserved: None,
+        freshness: None,
     }
 }
 
