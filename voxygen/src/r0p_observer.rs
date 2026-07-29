@@ -5,14 +5,171 @@
 
 use std::{
     collections::VecDeque,
-    fs,
+    fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
+    time::{Duration, Instant},
 };
 
 const GPU_PENDING_LIMIT: usize = 4;
 const MAX_BUFFERED_RECORDS: usize = 4_096;
+const MAX_DURABLE_CHUNK_RECORDS: usize = 60;
+const MAX_DURABLE_CHUNK_AGE: Duration = Duration::from_secs(2);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct BufferedRecordV1 {
+    ordinal: u64,
+    line: String,
+}
+
+#[derive(Debug)]
+struct DurableFrameSinkV1 {
+    output: PathBuf,
+    frames: VecDeque<BufferedRecordV1>,
+    gpu_frames: VecDeque<BufferedRecordV1>,
+    chunk_sequence: u64,
+    dropped_frame_records: u64,
+    dropped_gpu_records: u64,
+    durable_through_ordinal: Option<u64>,
+    chunk_started: Instant,
+}
+
+impl DurableFrameSinkV1 {
+    fn initialize(output: &Path, now: Instant) -> std::io::Result<Self> {
+        for name in ["frames.jsonl", "gpu-frames.jsonl", "observer-chunks.jsonl"] {
+            let file = fs::File::create(output.join(name))?;
+            file.sync_data()?;
+        }
+        Ok(Self {
+            output: output.to_owned(),
+            frames: VecDeque::new(),
+            gpu_frames: VecDeque::new(),
+            chunk_sequence: 0,
+            dropped_frame_records: 0,
+            dropped_gpu_records: 0,
+            durable_through_ordinal: None,
+            chunk_started: now,
+        })
+    }
+
+    fn push_frame(&mut self, ordinal: u64, line: String, now: Instant) -> std::io::Result<()> {
+        push_bounded(
+            &mut self.frames,
+            BufferedRecordV1 { ordinal, line },
+            &mut self.dropped_frame_records,
+        );
+        self.flush_if_due(now)
+    }
+
+    fn push_gpu_frame(&mut self, ordinal: u64, line: String) {
+        push_bounded(
+            &mut self.gpu_frames,
+            BufferedRecordV1 { ordinal, line },
+            &mut self.dropped_gpu_records,
+        );
+    }
+
+    fn flush_if_due(&mut self, now: Instant) -> std::io::Result<()> {
+        let age_due = now
+            .checked_duration_since(self.chunk_started)
+            .is_some_and(|elapsed| elapsed >= MAX_DURABLE_CHUNK_AGE);
+        if self.frames.len() >= MAX_DURABLE_CHUNK_RECORDS || (age_due && !self.frames.is_empty()) {
+            self.flush_one_chunk(now)?;
+        }
+        Ok(())
+    }
+
+    fn flush_one_chunk(&mut self, now: Instant) -> std::io::Result<()> {
+        let record_count = self.frames.len().min(MAX_DURABLE_CHUNK_RECORDS);
+        if record_count == 0 {
+            self.chunk_started = now;
+            return Ok(());
+        }
+
+        let first_ordinal = self
+            .frames
+            .front()
+            .map(|record| record.ordinal)
+            .unwrap_or(0);
+        let last_ordinal = self
+            .frames
+            .get(record_count - 1)
+            .map(|record| record.ordinal)
+            .unwrap_or(first_ordinal);
+        let frame_bytes = self
+            .frames
+            .iter()
+            .take(record_count)
+            .map(|record| record.line.as_str())
+            .collect::<String>();
+
+        let gpu_count = self
+            .gpu_frames
+            .iter()
+            .take_while(|record| record.ordinal <= last_ordinal)
+            .count();
+        let gpu_bytes = self
+            .gpu_frames
+            .iter()
+            .take(gpu_count)
+            .map(|record| record.line.as_str())
+            .collect::<String>();
+
+        append_sync(&self.output.join("frames.jsonl"), frame_bytes.as_bytes())?;
+        if !gpu_bytes.is_empty() {
+            append_sync(&self.output.join("gpu-frames.jsonl"), gpu_bytes.as_bytes())?;
+        }
+        let acknowledgement = format!(
+            concat!(
+                "{{\"schema\":\"R0PObserverChunkV1\",\"chunk_sequence\":{},",
+                "\"first_frame_ordinal\":{},\"last_frame_ordinal\":{},",
+                "\"record_count\":{},\"gpu_record_count\":{},",
+                "\"dropped_record_count\":{},\"dropped_gpu_record_count\":{},",
+                "\"durable_through_ordinal\":{}}}\n"
+            ),
+            self.chunk_sequence,
+            first_ordinal,
+            last_ordinal,
+            record_count,
+            gpu_count,
+            self.dropped_frame_records,
+            self.dropped_gpu_records,
+            last_ordinal,
+        );
+        append_sync(
+            &self.output.join("observer-chunks.jsonl"),
+            acknowledgement.as_bytes(),
+        )?;
+
+        for _ in 0..record_count {
+            self.frames.pop_front();
+        }
+        for _ in 0..gpu_count {
+            self.gpu_frames.pop_front();
+        }
+        self.durable_through_ordinal = Some(last_ordinal);
+        self.chunk_sequence = self.chunk_sequence.saturating_add(1);
+        self.chunk_started = now;
+        Ok(())
+    }
+
+    fn flush_all(&mut self, now: Instant) -> std::io::Result<()> {
+        while !self.frames.is_empty() {
+            self.flush_one_chunk(now)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PresentedFrameTimingV1 {
+    frame_ordinal: u64,
+    frame_begin_ns: u64,
+    present_end_ns: u64,
+    presented_interval_ns: Option<u64>,
+    overflowed: bool,
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CpuFramePhasesV1 {
@@ -70,11 +227,14 @@ struct ObserverStateV1 {
     output: PathBuf,
     frame_sequence: u64,
     gpu_sequence: u64,
+    process_started: Instant,
+    active_frame_started: Option<Instant>,
+    last_presented_at: Option<Instant>,
+    completed_presented_frame: Option<PresentedFrameTimingV1>,
     pending_gpu_frames: VecDeque<u64>,
     work: WorkCountersV1,
     scene: SceneCountersV1,
-    frame_lines: VecDeque<String>,
-    gpu_lines: VecDeque<String>,
+    durable: DurableFrameSinkV1,
     failed: bool,
 }
 
@@ -107,15 +267,30 @@ fn observer() -> Option<&'static Mutex<ObserverStateV1>> {
                 tracing::error!(target: "bastion_r0p", "failed to initialize observer files");
                 return None;
             }
+            let process_started = Instant::now();
+            let durable = match DurableFrameSinkV1::initialize(&output, process_started) {
+                Ok(durable) => durable,
+                Err(error) => {
+                    tracing::error!(
+                        target: "bastion_r0p",
+                        ?error,
+                        "failed to initialize durable observer sink"
+                    );
+                    return None;
+                },
+            };
             Some(Mutex::new(ObserverStateV1 {
                 output,
                 frame_sequence: 0,
                 gpu_sequence: 0,
+                process_started,
+                active_frame_started: None,
+                last_presented_at: None,
+                completed_presented_frame: None,
                 pending_gpu_frames: VecDeque::new(),
                 work: WorkCountersV1::default(),
                 scene: SceneCountersV1::default(),
-                frame_lines: VecDeque::new(),
-                gpu_lines: VecDeque::new(),
+                durable,
                 failed: false,
             }))
         })
@@ -205,11 +380,53 @@ pub fn record_adapter(name: &str, vendor: u32, device: u32, backend: &str, devic
     });
 }
 
+/// Starts diagnostic timing for the current production frame. The timestamp is
+/// process-relative and is never read by renderer policy.
+pub fn frame_begin() {
+    with_state(|state| {
+        state.active_frame_started = Some(Instant::now());
+    });
+}
+
+/// Completes diagnostic timing immediately after queue submission and
+/// `SurfaceTexture::present` return. The result is serialized later with the
+/// reconciled CPU phases and never feeds rendering decisions.
+pub fn frame_presented() {
+    with_state(|state| {
+        let now = Instant::now();
+        let Some(frame_started) = state.active_frame_started.take() else {
+            return;
+        };
+        let (frame_begin_ns, begin_overflow) =
+            checked_duration_ns(state.process_started, frame_started);
+        let (present_end_ns, end_overflow) = checked_duration_ns(state.process_started, now);
+        let (presented_interval_ns, interval_overflow) = match state.last_presented_at {
+            Some(previous) => {
+                let (interval, overflowed) = checked_duration_ns(previous, now);
+                (Some(interval), overflowed)
+            },
+            None => (None, false),
+        };
+        state.last_presented_at = Some(now);
+        state.completed_presented_frame = Some(PresentedFrameTimingV1 {
+            frame_ordinal: state.frame_sequence,
+            frame_begin_ns,
+            present_end_ns,
+            presented_interval_ns,
+            overflowed: begin_overflow || end_overflow || interval_overflow,
+        });
+    });
+}
+
 /// Mirror `wgpu-profiler`'s four-frame pending policy so a drained timing is
 /// associated with the production frame that submitted it.
 pub fn gpu_frame_submitted() {
     with_state(|state| {
-        submit_gpu_pending(&mut state.pending_gpu_frames, state.frame_sequence);
+        let frame_ordinal = state
+            .completed_presented_frame
+            .map(|timing| timing.frame_ordinal)
+            .unwrap_or(state.frame_sequence);
+        submit_gpu_pending(&mut state.pending_gpu_frames, frame_ordinal);
     });
 }
 
@@ -243,12 +460,16 @@ pub fn record_gpu_timings(timings: &[(u8, &str, f64)]) {
             state.gpu_sequence, frame_sequence, total_top_level_ns, encoded
         );
         state.gpu_sequence = state.gpu_sequence.saturating_add(1);
-        push_bounded(&mut state.gpu_lines, line);
+        state.durable.push_gpu_frame(frame_sequence, line);
     });
 }
 
 pub fn record_cpu_frame(phases: CpuFramePhasesV1) {
     with_state(|state| {
+        let Some(timing) = state.completed_presented_frame.take() else {
+            state.work = WorkCountersV1::default();
+            return;
+        };
         let presentation = crate::r1a_presentation::ready_token();
         let presentation_generation = presentation
             .map(|token| token.client_applied_generation)
@@ -262,9 +483,22 @@ pub fn record_cpu_frame(phases: CpuFramePhasesV1) {
         let busy_ns = phases.total_wall_ns.saturating_sub(phases.pacing_ns);
         let work = state.work;
         let scene = state.scene;
+        let interval = timing
+            .presented_interval_ns
+            .map_or_else(|| "null".to_owned(), |value| value.to_string());
+        let timing_status = if timing.overflowed {
+            "OVERFLOW"
+        } else if timing.presented_interval_ns.is_none() {
+            "FIRST_FRAME_INTERVAL_UNAVAILABLE"
+        } else {
+            "AVAILABLE"
+        };
         let line = format!(
             concat!(
-                "{{\"schema\":\"R0PFrameV1\",\"frame_sequence\":{},",
+                "{{\"schema\":\"R0PFrameV2\",\"frame_sequence\":{},",
+                "\"frame_ordinal\":{},\"frame_begin_ns\":{},\"present_end_ns\":{},",
+                "\"presented_frame_interval_ns\":{},\"timing_status\":\"{}\",",
+                "\"gpu_timing_status\":\"SEPARATE_STREAM_OR_UNAVAILABLE\",",
                 "\"phases_reconcile\":{},\"tick_ns\":{},\"render_submit_ns\":{},",
                 "\"post_render_ns\":{},\"pacing_ns\":{},\"maintain_ns\":{},",
                 "\"total_wall_ns\":{},\"busy_ns\":{},\"pass_count\":{},",
@@ -282,6 +516,11 @@ pub fn record_cpu_frame(phases: CpuFramePhasesV1) {
                 "\"presentation_resource_set_sha256\":\"{}\"}}\n"
             ),
             state.frame_sequence,
+            timing.frame_ordinal,
+            timing.frame_begin_ns,
+            timing.present_end_ns,
+            interval,
+            timing_status,
             phases.reconciles(),
             phases.tick_ns,
             phases.render_submit_ns,
@@ -315,9 +554,15 @@ pub fn record_cpu_frame(phases: CpuFramePhasesV1) {
             presentation_frame,
             presentation_resources,
         );
-        push_bounded(&mut state.frame_lines, line);
         state.frame_sequence = state.frame_sequence.saturating_add(1);
         state.work = WorkCountersV1::default();
+        if state
+            .durable
+            .push_frame(timing.frame_ordinal, line, Instant::now())
+            .is_err()
+        {
+            state.failed = true;
+        }
     });
 }
 
@@ -333,26 +578,27 @@ fn hex_digest(digest: &[u8; 32]) -> String {
 
 pub fn finalize() {
     with_state(|state| {
-        let frames = state.frame_lines.iter().cloned().collect::<String>();
-        let gpu_frames = state.gpu_lines.iter().cloned().collect::<String>();
-        if atomic_write(&state.output.join("frames.jsonl"), frames.as_bytes()).is_err()
-            || atomic_write(
-                &state.output.join("gpu-frames.jsonl"),
-                gpu_frames.as_bytes(),
-            )
-            .is_err()
-        {
+        if state.durable.flush_all(Instant::now()).is_err() {
             state.failed = true;
             return;
         }
         let terminal = format!(
             concat!(
                 "{{\"schema\":\"R0PObserverTerminalV1\",\"terminal\":\"RAW_MEASUREMENT_COMPLETE\",",
-                "\"frames\":{},\"gpu_frames\":{},\"pending_gpu_frames\":{}}}\n"
+                "\"frames\":{},\"gpu_frames\":{},\"pending_gpu_frames\":{},",
+                "\"durable_chunks\":{},\"durable_through_ordinal\":{},",
+                "\"dropped_frame_records\":{},\"dropped_gpu_records\":{}}}\n"
             ),
             state.frame_sequence,
             state.gpu_sequence,
-            state.pending_gpu_frames.len()
+            state.pending_gpu_frames.len(),
+            state.durable.chunk_sequence,
+            state
+                .durable
+                .durable_through_ordinal
+                .map_or_else(|| "null".to_owned(), |value| value.to_string()),
+            state.durable.dropped_frame_records,
+            state.durable.dropped_gpu_records,
         );
         if atomic_write(
             &state.output.join("observer-terminal.json"),
@@ -400,9 +646,14 @@ fn json_escape(value: &str) -> String {
     output
 }
 
-fn push_bounded(records: &mut VecDeque<String>, record: String) {
+fn push_bounded(
+    records: &mut VecDeque<BufferedRecordV1>,
+    record: BufferedRecordV1,
+    dropped: &mut u64,
+) {
     if records.len() == MAX_BUFFERED_RECORDS {
         records.pop_front();
+        *dropped = dropped.saturating_add(1);
     }
     records.push_back(record);
 }
@@ -422,9 +673,74 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     fs::rename(staged, path)
 }
 
+fn append_sync(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    file.write_all(bytes)?;
+    file.flush()?;
+    file.sync_data()
+}
+
+fn checked_duration_ns(start: Instant, end: Instant) -> (u64, bool) {
+    let Some(duration) = end.checked_duration_since(start) else {
+        return (0, true);
+    };
+    match u64::try_from(duration.as_nanos()) {
+        Ok(value) => (value, false),
+        Err(_) => (u64::MAX, true),
+    }
+}
+
+#[cfg(test)]
+fn recover_durable_frames(output: &Path) -> std::io::Result<Vec<String>> {
+    let acknowledged = fs::read_to_string(output.join("observer-chunks.jsonl"))?
+        .lines()
+        .try_fold(0_usize, |total, line| {
+            let marker = "\"record_count\":";
+            let Some(start) = line.find(marker).map(|index| index + marker.len()) else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "missing durable record count",
+                ));
+            };
+            let digits = line[start..]
+                .chars()
+                .take_while(char::is_ascii_digit)
+                .collect::<String>();
+            let count = digits.parse::<usize>().map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "invalid durable record count",
+                )
+            })?;
+            total.checked_add(count).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "durable record count overflow",
+                )
+            })
+        })?;
+    let frames = fs::read_to_string(output.join("frames.jsonl"))?;
+    Ok(frames
+        .lines()
+        .take(acknowledged)
+        .map(str::to_owned)
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_OUTPUT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    fn test_output(name: &str) -> PathBuf {
+        let sequence = TEST_OUTPUT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "bastion-r0p-{name}-{}-{sequence}",
+            std::process::id()
+        ))
+    }
 
     #[test]
     fn cpu_phase_denominator_reconciles_exactly() {
@@ -462,15 +778,29 @@ mod tests {
     #[test]
     fn evidence_buffer_retains_latest_bounded_window() {
         let mut records = VecDeque::new();
+        let mut dropped = 0;
         for index in 0..=MAX_BUFFERED_RECORDS {
-            push_bounded(&mut records, index.to_string());
+            push_bounded(
+                &mut records,
+                BufferedRecordV1 {
+                    ordinal: u64::try_from(index).unwrap_or(u64::MAX),
+                    line: index.to_string(),
+                },
+                &mut dropped,
+            );
         }
         assert_eq!(records.len(), MAX_BUFFERED_RECORDS);
-        assert_eq!(records.front().map(String::as_str), Some("1"));
         assert_eq!(
-            records.back().and_then(|value| value.parse::<usize>().ok()),
+            records.front().map(|record| record.line.as_str()),
+            Some("1")
+        );
+        assert_eq!(
+            records
+                .back()
+                .and_then(|record| record.line.parse::<usize>().ok()),
             Some(MAX_BUFFERED_RECORDS)
         );
+        assert_eq!(dropped, 1);
     }
 
     #[test]
@@ -480,5 +810,68 @@ mod tests {
             submit_gpu_pending(&mut pending, frame);
         }
         assert_eq!(pending.into_iter().collect::<Vec<_>>(), vec![0, 1, 2, 4]);
+    }
+
+    #[test]
+    fn durable_chunks_survive_forced_stop_without_finalizer() {
+        let output = test_output("forced-stop");
+        fs::create_dir_all(&output).expect("temporary observer output");
+        let started = Instant::now();
+        let mut sink = DurableFrameSinkV1::initialize(&output, started).expect("durable sink");
+        for ordinal in 0..121 {
+            sink.push_frame(
+                ordinal,
+                format!("{{\"frame_ordinal\":{ordinal}}}\n"),
+                started + Duration::from_millis(17 * ordinal),
+            )
+            .expect("append frame");
+        }
+        drop(sink);
+
+        let recovered = recover_durable_frames(&output).expect("recover acknowledged chunks");
+        assert_eq!(recovered.len(), 120);
+        assert_eq!(
+            recovered.first().map(String::as_str),
+            Some("{\"frame_ordinal\":0}")
+        );
+        assert_eq!(
+            recovered.last().map(String::as_str),
+            Some("{\"frame_ordinal\":119}")
+        );
+        fs::remove_dir_all(output).expect("remove observer output");
+    }
+
+    #[test]
+    fn durable_chunk_acknowledgements_are_monotonic_and_bounded() {
+        let output = test_output("chunks");
+        fs::create_dir_all(&output).expect("temporary observer output");
+        let started = Instant::now();
+        let mut sink = DurableFrameSinkV1::initialize(&output, started).expect("durable sink");
+        for ordinal in 0..120 {
+            sink.push_frame(
+                ordinal,
+                format!("{{\"frame_ordinal\":{ordinal}}}\n"),
+                started + Duration::from_millis(17 * ordinal),
+            )
+            .expect("append frame");
+        }
+        let chunks =
+            fs::read_to_string(output.join("observer-chunks.jsonl")).expect("read durable chunks");
+        assert_eq!(chunks.lines().count(), 2);
+        assert!(chunks.contains("\"chunk_sequence\":0"));
+        assert!(chunks.contains("\"first_frame_ordinal\":0"));
+        assert!(chunks.contains("\"last_frame_ordinal\":59"));
+        assert!(chunks.contains("\"chunk_sequence\":1"));
+        assert!(chunks.contains("\"first_frame_ordinal\":60"));
+        assert!(chunks.contains("\"last_frame_ordinal\":119"));
+        fs::remove_dir_all(output).expect("remove observer output");
+    }
+
+    #[test]
+    fn timing_conversion_is_checked_and_process_relative() {
+        let start = Instant::now();
+        let end = start + Duration::from_micros(123);
+        assert_eq!(checked_duration_ns(start, end), (123_000, false));
+        assert_eq!(checked_duration_ns(end, start), (0, true));
     }
 }

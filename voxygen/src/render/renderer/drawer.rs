@@ -939,6 +939,7 @@ impl Drop for Drawer<'_> {
             f();
         }
         self.surface_texture.take().unwrap().present();
+        crate::r0p_observer::frame_presented();
 
         profiler
             .end_frame()
