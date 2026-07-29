@@ -1338,7 +1338,12 @@ impl<'pass_ref, 'pass: 'pass_ref> FigureDrawer<'pass_ref, 'pass> {
         model: SubModel<'data, terrain::Vertex>,
         atlas_textures: &'data AtlasTextures<figure::Locals, FigureSpriteAtlasData>,
         instances: &[figure::FigureBatchInstance],
+        generation: u64,
+        culling_result_digest: [u8; 32],
+        batch_identity: [u8; 32],
     ) -> Result<(), crate::render::figure_batch::FigureBatchRuntimeErrorV1> {
+        let instance_count = u32::try_from(instances.len())
+            .map_err(|_| crate::render::figure_batch::FigureBatchRuntimeErrorV1::LengthOverflow)?;
         let instance_range = self.runtime.stage(
             self.queue,
             crate::render::figure_batch::RuntimeFigurePassV1::Main,
@@ -1351,10 +1356,39 @@ impl<'pass_ref, 'pass: 'pass_ref> FigureDrawer<'pass_ref, 'pass> {
         crate::render::bastion_r0d::record_draw(
             crate::render::bastion_r0d::draw_kind::FIGURE,
             model.len() / 4 * 6,
-            u32::try_from(instances.len()).unwrap_or(u32::MAX),
+            instance_count,
         );
-        self.render_pass
-            .draw_indexed(0..model.len() / 4 * 6, 0, instance_range);
+        let reference = bastion_renderer_r0d::draw_submission::DirectDrawReferenceV1::new(
+            bastion_renderer_r0d::figure_batch::FigurePassV1::Main,
+            batch_identity,
+            model.len() / 4 * 6,
+            instance_count,
+            0,
+            0,
+            instance_range.start,
+        );
+        match reference {
+            Ok(reference) => match self.runtime.stage_indirect(
+                self.queue,
+                generation,
+                culling_result_digest,
+                reference,
+            ) {
+                Ok(offset) => self
+                    .render_pass
+                    .draw_indexed_indirect(self.runtime.indirect_buffer(), offset),
+                Err(_) => self
+                    .render_pass
+                    .draw_indexed(0..model.len() / 4 * 6, 0, instance_range),
+            },
+            Err(_) => {
+                self.runtime.record_indirect_submission_failure(
+                    bastion_renderer_r0d::draw_submission::SubmissionFallbackV1::InvalidRange,
+                );
+                self.render_pass
+                    .draw_indexed(0..model.len() / 4 * 6, 0, instance_range);
+            },
+        }
         Ok(())
     }
 
