@@ -246,6 +246,28 @@ pub fn economy_phase_evidence_mode_enabled_v1() -> bool {
     ECONOMY_PHASE_EVIDENCE_MODE.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// The gate's own panic, factored out to a PURE function (takes the
+/// already-read bool, touches no shared state) for two reasons: the two
+/// real call sites don't repeat the message, and the falsifier
+/// ([`tests::the_gate_refuses_when_disabled`]) can exercise the EXACT
+/// panic condition without touching [`ECONOMY_PHASE_EVIDENCE_MODE`] at
+/// all. That matters concretely, not just for tidiness: `cargo test`
+/// runs tests concurrently in one process, and an earlier draft of this
+/// falsifier flipped the real global false-then-true around the call it
+/// was testing -- which self-deadlocked the very first time it ran
+/// (the gated function's own `economy_phase_evidence_mode_enabled_v1()`
+/// tried to re-lock a mutex the test thread already held) and would
+/// have raced the other two tests in this file even with that fixed. A
+/// pure function sidesteps both: nothing to lock, nothing to race.
+fn assert_evidence_mode_gate_v1(enabled: bool, caller: &str) {
+    assert!(
+        enabled,
+        "{caller} called without enable_economy_phase_evidence_mode_v1() -- this pays an extra \
+         per-site canonicalization hash per phase and must never run un-gated (T8.1's own cost \
+         constraint)"
+    );
+}
+
 /// Runs exactly one phase (one `tick()`) and records its evidence.
 /// Exposed separately from [`simulate_with_phase_evidence_v1`] so a
 /// caller can inject a perturbation BETWEEN phases (the localization
@@ -256,12 +278,7 @@ pub fn tick_with_phase_evidence_v1(
     phase: u32,
     env: &mut Environment,
 ) -> PhaseEconomyEvidenceV1 {
-    assert!(
-        economy_phase_evidence_mode_enabled_v1(),
-        "tick_with_phase_evidence_v1 called without enable_economy_phase_evidence_mode_v1() -- \
-         this pays an extra per-site canonicalization hash per phase and must never run \
-         un-gated (T8.1's own cost constraint)"
-    );
+    assert_evidence_mode_gate_v1(economy_phase_evidence_mode_enabled_v1(), "tick_with_phase_evidence_v1");
     env.iteration(phase as i32);
     tick(index, TICK_PERIOD, env);
     let per_site = index.world_economy_per_site_v1();
@@ -283,10 +300,7 @@ pub fn tick_with_phase_evidence_v1(
 /// harness), called explicitly rather than always, and gated by
 /// [`enable_economy_phase_evidence_mode_v1`] besides.
 pub fn simulate_with_phase_evidence_v1(index: &mut Index) -> Vec<PhaseEconomyEvidenceV1> {
-    assert!(
-        economy_phase_evidence_mode_enabled_v1(),
-        "simulate_with_phase_evidence_v1 called without enable_economy_phase_evidence_mode_v1()"
-    );
+    assert_evidence_mode_gate_v1(economy_phase_evidence_mode_enabled_v1(), "simulate_with_phase_evidence_v1");
     let mut env = Environment::new()
         .expect("evidence collection: GENERATE_CSV is false, Environment::new performs no I/O");
     (0..total_phase_count_v1())
@@ -410,6 +424,23 @@ mod tests {
             );
         }
     }
+
+    /// Falsifier: the gate actually REFUSES when disabled, not just
+    /// "nobody happened to call it" -- an un-watched gate is exactly the
+    /// assertion-shaped hole this program keeps finding. Exercises
+    /// `assert_evidence_mode_gate_v1` directly with `enabled=false`
+    /// (the exact condition/message the two real gated functions use)
+    /// rather than flipping the real, process-global
+    /// `ECONOMY_PHASE_EVIDENCE_MODE` flag: `cargo test` runs tests
+    /// concurrently in one process, and a flip-then-restore around a
+    /// real gated call would race the other two tests in this file that
+    /// expect the gate enabled -- and, tried first, self-deadlocked
+    /// outright (a mutex-holding guard whose own gated call tried to
+    /// re-lock the same mutex on the same thread). Nothing here touches
+    /// shared state, so there is nothing left to race or deadlock.
+    #[test]
+    #[should_panic(expected = "without enable_economy_phase_evidence_mode_v1()")]
+    fn the_gate_refuses_when_disabled() { super::assert_evidence_mode_gate_v1(false, "the_gate_refuses_when_disabled"); }
 
     fn execute_with_tracing(level: Level, func: fn()) {
         tracing::dispatcher::with_default(
