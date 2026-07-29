@@ -2342,6 +2342,13 @@ impl PlayState for SessionState {
                 .unwrap_or(u64::MAX),
             shadow_terrain_chunks: u64::try_from(self.scene.terrain().shadow_chunk_count())
                 .unwrap_or(u64::MAX),
+            loaded_distance_blocks: self.client.borrow().loaded_distance().max(0.0).round() as u64,
+            terrain_view_distance_chunks: u64::from(
+                self.client.borrow().view_distance().unwrap_or(0),
+            ),
+            terrain_mesh_queue: u64::try_from(self.scene.terrain().mesh_queue_count())
+                .unwrap_or(u64::MAX),
+            terrain_mesh_queue_pruned_total: self.scene.terrain().mesh_queue_pruned_total(),
             figures: u64::try_from(self.scene.figure_mgr().figure_count()).unwrap_or(u64::MAX),
             visible_figures: u64::try_from(self.scene.figure_mgr().figure_count_visible())
                 .unwrap_or(u64::MAX),
@@ -4619,6 +4626,10 @@ impl PlayState for SessionState {
                     target_entities: &self.interactables.entities,
                     loaded_distance: client.loaded_distance(),
                     terrain_view_distance: client.view_distance().unwrap_or(1),
+                    terrain_distance_plan_v1: global_state
+                        .settings
+                        .graphics
+                        .terrain_distance_plan_v1,
                     entity_view_distance: client
                         .view_distance()
                         .unwrap_or(1)
@@ -4939,6 +4950,7 @@ impl PlayState for SessionState {
             target_entities: &self.interactables.entities,
             loaded_distance: client.loaded_distance(),
             terrain_view_distance: client.view_distance().unwrap_or(1),
+            terrain_distance_plan_v1: settings.graphics.terrain_distance_plan_v1,
             entity_view_distance: client
                 .view_distance()
                 .unwrap_or(1)

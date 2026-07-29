@@ -40,6 +40,7 @@ pub mod shadow;
 pub mod shared_adapter;
 pub mod shutdown;
 pub mod tape;
+pub mod terrain_distance;
 pub mod texture_payload;
 pub mod visual_oracle;
 pub mod weather;

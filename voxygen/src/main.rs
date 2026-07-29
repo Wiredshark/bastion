@@ -141,6 +141,15 @@ fn main() {
             _ => graphics,
         };
     }
+    if std::env::var("BASTION_POST_R2_DISTANCE_PROFILE").as_deref() == Ok("far-band-v1") {
+        let plan = bastion_renderer_r0d::terrain_distance::TerrainDistancePlanV1::far_band(1);
+        if let Err(error) = settings.graphics.apply_terrain_distance_plan_v1(plan, 1) {
+            warn!(
+                ?error,
+                "POST-R2 terrain-distance profile rejected; preserving reference settings"
+            );
+        }
+    }
     settings.display_warnings();
 
     panic_handler::set_panic_hook(log_filename, logs_dir);
