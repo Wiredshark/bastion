@@ -1,5 +1,17 @@
 [
     ("bastion-server/src/bastion_flight_recorder.rs", "SystemTime::now()", 0),
+    // `E13` chunk 5, all four: the out-of-band server-browser query
+    // protocol. `ratelimit.rs` shifts a token-bucket window,
+    // `server.rs` rotates a challenge secret and stamps request
+    // arrival, `client.rs` measures round-trip time. Wall-clock is the
+    // CORRECT input for every one of them -- rate limiting against
+    // simulation time would not rate-limit anything -- and none reaches
+    // authoritative state. This crate is in the root set for
+    // completeness, not because it carries authority.
+    ("common/query_server/src/client.rs", "let query_sent = Instant::now();", 0),
+    ("common/query_server/src/ratelimit.rs", "last_shift: Instant::now(),", 0),
+    ("common/query_server/src/server.rs", "let mut last_secret_refresh = Instant::now();", 0),
+    ("common/query_server/src/server.rs", "let now = Instant::now();", 0),
     ("common/src/clock.rs", "last_tick: Instant::now(),", 0),
     ("common/src/clock.rs", "last_work: Instant::now(),", 0),
     ("common/src/clock.rs", "let this_tick = Instant::now();", 0),
