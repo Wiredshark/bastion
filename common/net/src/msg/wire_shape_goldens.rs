@@ -556,6 +556,14 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
         variant: "CheckpointBegin",
         digest_hex: "sha256:4e9beeec9db3a10c7b1fdffda4a43501cf2669688b943c856cc8f507a26c4adc",
     },
+    // APEX-T4.1 chunk 2a: the new BootstrapManifest variant, added the
+    // same landing day it was introduced -- the rail (this file's own
+    // growth tripwire) demanded it before the build would go green.
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "BootstrapManifest",
+        digest_hex: "sha256:595809ef3f70cc71dc5124ff08e4200054d1ced2aafac04eafb15fa329f39fad",
+    },
 ];
 
 include!("wire_shape_uncovered.rs");
@@ -1195,6 +1203,28 @@ mod wire_shape_goldens_v1 {
         }))
     }
 
+    // APEX-T4.1 chunk 2a fixture.
+
+    fn server_bootstrap_manifest() -> ServerGeneral {
+        let manifest = common::apex::bootstrap_manifest::BootstrapManifestV1 {
+            descriptors: vec![common::apex::subsystem::SubsystemDescriptorV1 {
+                slot: common::apex::subsystem::SubsystemSlotIdV1::NetEnvelope,
+                schema: common::apex::scalar::SchemaVersion::new(1),
+                content: common::apex::digest::ContentIdentityV1 {
+                    artifact: common::apex::digest::hash_artifact_bytes_v1(b"wire-schema-fixture"),
+                    semantic: None,
+                },
+            }],
+            peer_selector: None,
+            peer_capabilities: Vec::new(),
+            freshness_reserved: None,
+        };
+        ServerGeneral::BootstrapManifest(
+            crate::msg::bootstrap_manifest_wire::BootstrapManifestWireV1::from_typed_v1(&manifest)
+                .expect("fixture manifest encodes"),
+        )
+    }
+
     fn actual(schema: &str, variant: &str) -> String {
         match (schema, variant) {
             ("ClientGeneral", "PlayerPhysics") => golden_digest_v1(&client_player_physics()),
@@ -1297,6 +1327,7 @@ mod wire_shape_goldens_v1 {
             ("ServerGeneral", "TerrainChunkUpdate") => golden_digest_v1(&server_terrain_chunk_update()),
             ("ServerGeneral", "PlayerListUpdate") => golden_digest_v1(&server_player_list_update()),
             ("ServerGeneral", "CheckpointBegin") => golden_digest_v1(&server_checkpoint_begin()),
+            ("ServerGeneral", "BootstrapManifest") => golden_digest_v1(&server_bootstrap_manifest()),
             (schema, other) => panic!("{schema}::{other} has a golden entry but no representative instance"),
         }
     }
@@ -1326,7 +1357,7 @@ mod wire_shape_goldens_v1 {
     /// ServerGeneral, counted from the enums at 71b1c87ca7).
     #[test]
     fn coverage_is_all_covered() {
-        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 88, "the covered set changed");
+        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 89, "the covered set changed");
         assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 0, "WSG-2 closed this at zero");
         assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 0, "WSG-2 closed this at zero");
         let covered_client =
@@ -1334,7 +1365,7 @@ mod wire_shape_goldens_v1 {
         let covered_server =
             WIRE_SHAPE_GOLDENS.iter().filter(|g| g.payload_schema == "ServerGeneral").count();
         assert_eq!(covered_client, 37, "every ClientGeneral variant must have a golden");
-        assert_eq!(covered_server, 51, "every ServerGeneral variant must have a golden");
+        assert_eq!(covered_server, 52, "every ServerGeneral variant must have a golden");
     }
 
     /// A variant may not be in BOTH lists, and the uncovered lists carry
@@ -1414,7 +1445,7 @@ mod wire_shape_goldens_v1 {
         );
         assert_eq!(
             count_variants("common/net/src/msg/server.rs", "ServerGeneral"),
-            51,
+            52,
             "ServerGeneral gained or lost a variant. Add it to WIRE_SHAPE_GOLDENS or to \
              UNCOVERED_SERVERGENERAL_V1."
         );
@@ -1637,6 +1668,37 @@ mod wire_shape_goldens_v1 {
             base, perturbed,
             "changing CheckpointBegin's nested streams[Terrain].data_record_count did not move \
              the digest -- the golden mechanism is blind to this chunk's payload"
+        );
+    }
+
+    /// `APEX-T4.1` chunk 2a's falsifier: perturbing the manifest's sole
+    /// descriptor content (still wrapped through the REAL
+    /// `BootstrapManifestWireV1::from_typed_v1` encoder, not a hand-built
+    /// byte string) moves the golden.
+    #[test]
+    fn t4_1_chunk_2a_fixture_perturbation_moves_the_digest() {
+        let base = golden_digest_v1(&server_bootstrap_manifest());
+        let perturbed_manifest = common::apex::bootstrap_manifest::BootstrapManifestV1 {
+            descriptors: vec![common::apex::subsystem::SubsystemDescriptorV1 {
+                slot: common::apex::subsystem::SubsystemSlotIdV1::NetEnvelope,
+                schema: common::apex::scalar::SchemaVersion::new(1),
+                content: common::apex::digest::ContentIdentityV1 {
+                    artifact: common::apex::digest::hash_artifact_bytes_v1(b"DIFFERENT-wire-schema-fixture"),
+                    semantic: None,
+                },
+            }],
+            peer_selector: None,
+            peer_capabilities: Vec::new(),
+            freshness_reserved: None,
+        };
+        let perturbed = golden_digest_v1(&ServerGeneral::BootstrapManifest(
+            crate::msg::bootstrap_manifest_wire::BootstrapManifestWireV1::from_typed_v1(&perturbed_manifest)
+                .expect("perturbed fixture manifest encodes"),
+        ));
+        assert_ne!(
+            base, perturbed,
+            "changing BootstrapManifest's descriptor content did not move the digest -- the \
+             golden mechanism is blind to this chunk's payload"
         );
     }
 

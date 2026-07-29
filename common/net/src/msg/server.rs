@@ -353,6 +353,17 @@ pub enum ServerGeneral {
         target: comp::bastion::BastionInspectTarget,
         payload: Option<comp::bastion::BastionInspectKind>,
     },
+    /// `APEX-T4.1` chunk 2a: a total, classified compatibility report the
+    /// client can validate before applying `ServerInit::GameSync`'s bulk
+    /// state. Sent (`server/src/sys/msg/register.rs`'s `finalize_admission`)
+    /// immediately before `GameSync` in the SAME admission call -- ordering
+    /// is this row's whole mechanism, so this send site is not incidental.
+    /// Reception/validation ordering enforcement on the client is a
+    /// separate, follow-up chunk (`T4.1` chunk 2b); this chunk is the
+    /// EMISSION only, and is dormant in practice today: `T3.3.05`'s own
+    /// doc notes no live client requests anything but the `Legacy`
+    /// semantic protocol yet, and this message rides the same gate.
+    BootstrapManifest(crate::msg::bootstrap_manifest_wire::BootstrapManifestWireV1),
 }
 
 impl ServerGeneral {
@@ -615,6 +626,11 @@ impl ServerMsg {
                         // already requires.
                         ServerGeneral::CommandResult(_) => true,
                         ServerGeneral::PluginArtifactData(_) => true,
+                        // Sent in the same admission call as GameSync,
+                        // before presence is established -- same
+                        // session-scoped-not-presence-scoped reasoning as
+                        // the checkpoint messages above.
+                        ServerGeneral::BootstrapManifest(_) => true,
                     }
             },
             ServerMsg::Ping(_) => true,

@@ -17,7 +17,7 @@ use super::SendSiteClassV1::{
     V1EgressMechanism,
 };
 
-pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 200] = [
+pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 201] = [
     ("weather/tick.rs", "lazy_msg = Some(client.prepare(ServerGeneral::WeatherUpdate(", 0, PostAuthCandidate),
     ("weather/tick.rs", "lazy_msg.as_ref().map(|msg| client.send_prepared(msg));", 0, PostAuthCandidate),
     // APEX-T3.6.03: the legacy-disconnect inventory SCANS for send
@@ -233,4 +233,7 @@ pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 200] = 
     ("sys/msg/register.rs", "if client.send(Ok::<_, RegisterError>(admitted)).is_err() {", 0, PreAuth),
     ("sys/msg/register.rs", "let _ = client.send(ServerGeneral::PlayerListUpdate(PlayerListUpdate::init_canonical(", 0, PreAuth),
     ("sys/msg/register.rs", "if !sent_v1 && client.send(game_sync).is_err() {", 0, GameSyncV1Migrated),
+    // APEX-T4.1 chunk 2a: sent in the same admission call, immediately
+    // before game_sync -- same PreAuth reasoning as the sites above.
+    ("sys/msg/register.rs", "Ok(wire) => client.send_fallible(ServerGeneral::BootstrapManifest(wire)),", 0, PreAuth),
 ];

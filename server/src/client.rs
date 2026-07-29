@@ -340,6 +340,15 @@ impl Client {
                     | ServerGeneral::CommandResult(_) => {
                         PreparedMsg::new(3, &g, &self.general_stream_params)
                     },
+                    // `APEX-T4.1` chunk 2a: physical stream 0, the SAME
+                    // one `ServerMsg::Init`/`RegisterAnswer`/`Info` use
+                    // (see the arms above this match), so this message
+                    // can actually precede `GameSync` on the wire -- the
+                    // "always possible" group above rides stream 3
+                    // (general), which would not.
+                    ServerGeneral::BootstrapManifest(_) => {
+                        PreparedMsg::new(0, &g, &self.register_stream_params)
+                    },
                 }
             },
             ServerMsg::Ping(m) => PreparedMsg::new(4, &m, &self.ping_stream_params),

@@ -119,7 +119,13 @@ impl CheckpointParticipantV1 for ServerGeneral {
             | S::BastionDesignationRemoved { .. }
             | S::BastionInspectInfo { .. }
             | S::CommandResult(_) => P::CheckpointedData,
-            S::Disconnect(_) | S::CheckpointBegin(_) | S::CheckpointBarrier(_) => P::CheckpointControl,
+            // `T4.1` chunk 2a: a connection-negotiation message, not
+            // game data -- same class as `Disconnect`/the checkpoint
+            // fences themselves, sent before presence and before any
+            // checkpoint stream would have anything to say about it.
+            S::Disconnect(_) | S::CheckpointBegin(_) | S::CheckpointBarrier(_) | S::BootstrapManifest(_) => {
+                P::CheckpointControl
+            },
         }
     }
 
@@ -146,7 +152,7 @@ impl CheckpointParticipantV1 for ServerGeneral {
             // the effect's own records inside the same checkpoint
             // (CMD-130/131 read as a phase ordering, not a convention).
             S::CommandResult(_) => Ph::OrderedEvent,
-            S::Disconnect(_) | S::CheckpointBegin(_) | S::CheckpointBarrier(_) => return None,
+            S::Disconnect(_) | S::CheckpointBegin(_) | S::CheckpointBarrier(_) | S::BootstrapManifest(_) => return None,
             _ => Ph::InGameState,
         })
     }
@@ -2296,7 +2302,8 @@ impl CheckpointEntityRefsV1 for ServerGeneral {
             | S::Disconnect(_)
             | S::CheckpointBegin(_)
             | S::CheckpointBarrier(_)
-            | S::CommandResult(_) => {},
+            | S::CommandResult(_)
+            | S::BootstrapManifest(_) => {},
         }
         refs
     }

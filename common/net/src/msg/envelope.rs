@@ -1163,6 +1163,15 @@ impl SemanticRouteV1 for ServerGeneral {
             // stream, mirroring server/src/client.rs::prepare's own
             // physical routing for it.
             | S::PluginArtifactData(_) => SemanticStreamIdV1::General,
+            // `T4.1` chunk 2a: rides the SAME stream as `GameSync`
+            // (`SemanticRouteV1 for ServerInit` below) on purpose --
+            // this row's whole point is a guaranteed pre-`GameSync`
+            // ordering, and only same-stream sequencing can actually
+            // guarantee that once this message is wired through the
+            // V1-envelope pipeline (chunk 2b). Sent via the plain legacy
+            // path today, so this classification is not yet load-bearing
+            // -- it is the honest FUTURE-correct answer, not a guess.
+            S::BootstrapManifest(_) => SemanticStreamIdV1::Bootstrap,
         }
     }
 

@@ -523,6 +523,42 @@ impl<'a> System<'a> for Sys {
 /// own `ServerSemanticPayloadV1` alias), and widening that shared type
 /// to carry `ServerInit` too would ripple into every existing producer
 /// for no benefit here.
+/// `APEX-T4.1` chunk 2a: the manifest this server actually sends,
+/// immediately before `GameSync`.
+///
+/// Deliberately minimal today: only the `NetEnvelope` slot, using the
+/// already-frozen `net_envelope_profile_root_v1()` (`T3.3`'s own
+/// registered content root) as real, honestly-computed content -- not a
+/// placeholder. Content/plugin/schedule/numeric/world identity descriptors
+/// need live server-state wiring `T4.1`'s own spec names as future work
+/// within this row (content via `ContentManifest`, plugin via the active
+/// deployment, schedule/numeric/world via rows that have not built their
+/// identity-root functions yet); adding them here ahead of that wiring
+/// would be fabricated content pretending to be checked, which this
+/// program's own standing rule forbids. `freshness_reserved` stays `None`
+/// -- `T4.2`'s reservation, not yet populated.
+fn bootstrap_manifest_v1() -> common::apex::bootstrap_manifest::BootstrapManifestV1 {
+    use common::apex::{
+        digest::{ContentIdentityV1, hash_artifact_bytes_v1},
+        scalar::SchemaVersion,
+        subsystem::{SubsystemDescriptorV1, SubsystemSlotIdV1},
+    };
+
+    common::apex::bootstrap_manifest::BootstrapManifestV1 {
+        descriptors: vec![SubsystemDescriptorV1 {
+            slot: SubsystemSlotIdV1::NetEnvelope,
+            schema: SchemaVersion::new(1),
+            content: ContentIdentityV1 {
+                artifact: hash_artifact_bytes_v1(common_net::msg::envelope::net_envelope_profile_root_v1().as_array()),
+                semantic: None,
+            },
+        }],
+        peer_selector: None,
+        peer_capabilities: Vec::new(),
+        freshness_reserved: None,
+    }
+}
+
 fn try_send_gamesync_v1<T>(client: &mut Client, payload: &T) -> bool
 where
     T: common_net::msg::envelope::SemanticRouteV1 + serde::Serialize,
@@ -602,6 +638,17 @@ fn finalize_admission(
             session_id: session_binding.session_id,
             epoch: session_binding.epoch,
         });
+    }
+    // `APEX-T4.1` chunk 2a: send the bootstrap compatibility manifest
+    // immediately before `GameSync`, in the same admission call, one
+    // send call earlier than everything below -- order is this row's
+    // whole mechanism, so this call sits directly ahead of `game_sync`'s
+    // own construction rather than anywhere else in this function.
+    // Encode failure is logged and the send is skipped, never a reason
+    // to fail the admission this manifest is meant to protect.
+    match common_net::msg::bootstrap_manifest_wire::BootstrapManifestWireV1::from_typed_v1(&bootstrap_manifest_v1()) {
+        Ok(wire) => client.send_fallible(ServerGeneral::BootstrapManifest(wire)),
+        Err(e) => warn!(?e, "bootstrap manifest encode failure"),
     }
     let game_sync = ServerInit::GameSync {
         server_boot_id: *read_data.server_boot_id,
