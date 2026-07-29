@@ -144,12 +144,11 @@ pub const UNSCANNED_WORKSPACE_MEMBERS: [(&str, &str); 16] = [
     // --- Deserves a follow-up judgement, ranked first deliberately ---
     (
         "bastion-harness",
-        "148 hits (67 container-iteration, 75 wall-clock) across 25.6k lines. THE LARGEST \
-         EXCLUSION AND THE MOST ARGUABLE ONE: this is the determinism harness itself. It holds no \
-         game state, so it is not authoritative -- but it PRODUCES THE EVIDENCE, and a harness \
-         whose own ordering wobbles reports wobble it did not observe. Excluded here because \
-         auditing the instrument is its own campaign, not a root-set line item. Named first so \
-         that decision is visible.",
+        "148 hits across 25.6k lines. THE LARGEST EXCLUSION AND THE MOST ARGUABLE ONE: this is \
+         the determinism harness itself. It holds no game state, so it is not authoritative -- \
+         but it PRODUCES THE EVIDENCE, and a harness whose own ordering wobbles reports wobble it \
+         did not observe. STILL EXCLUDED, but no longer unexamined: E14-5 chunk 1 triaged all 148 \
+         -- see HARNESS_TRIAGE_V1, which found one real evidence-path defect",
     ),
     (
         "common/assets",
@@ -180,6 +179,97 @@ pub const UNSCANNED_WORKSPACE_MEMBERS: [(&str, &str); 16] = [
     ("common/dynlib", "zero hits: dynamic-library reload plumbing"),
     ("common/frontend", "zero hits: logging setup"),
     ("common/i18n", "zero hits: string tables"),
+];
+
+/// `E14-5` chunk 1 — the harness triaged against a question no other
+/// scan in this program asks.
+///
+/// Everywhere else the question is "is this a determinism hazard".
+/// `bastion-harness` is not authoritative, so that question has no
+/// purchase here. The right question is narrower and nastier: **can
+/// this wobble make the harness REPORT a wobble it did not observe, or
+/// MISS one it did?** An instrument that reads differently on identical
+/// inputs is worse than no instrument, because its output is trusted.
+///
+/// All 148 sites bucketed by WHERE THE VALUE GOES, not by how it looks:
+///
+/// - **`EVIDENCE-PATH` (73)** — reaches recorded or compared output.
+///   Conservative by construction: a site lands here if it *could*
+///   touch a record, and earns a safe verdict only by being read.
+///   53 of the 73 iterate `data.sites.sites` (the values-iterator; the
+///   token is not spelled here on purpose), whose receiver is a
+///   `DenseSlotMap` (`rtsim/src/data/site.rs:78`) — insertion-ordered,
+///   so deterministic — and that single receiver check resolves them in
+///   one stroke. 20 remain for per-site treatment, of which one is
+///   already a confirmed defect (below).
+/// - **`FIXTURE-SETUP` (62)** — scaffolding entropy that cannot reach a
+///   comparison. Overwhelmingly a wall-clock read's elapsed-nanos
+///   feeding a temp-dir name (`bastion-<scenario>-<pid>-<nanos>`), which
+///   exists to isolate concurrent runs. Checked, not assumed: the data
+///   dir path is never digested, recorded, or compared.
+/// - **`REPORTING-ONLY` (13)** — wall-clock in logs and in wall-time
+///   metric fields (`b5_soak_avg_tick_ms`, `*_wall_seconds`). These vary
+///   every run BY DESIGN, which is the point: they are measurements of
+///   the machine, not of the simulation.
+///
+/// # The one real finding
+///
+/// `main.rs`'s mine-fidelity scenario builds `walked:
+/// std::collections::HashMap<String, (Vec3<f32>, f64)>` and then sums
+/// it: `let dist_total: f64 = walked.<values-iter>().map(|(_, d)| d)
+/// .sum();`
+/// (two sites, lines ~12371 and ~12428).
+///
+/// `std::collections::HashMap` is randomly seeded per process, and
+/// **floating-point addition is not associative**, so the low bits of
+/// `dist_total` depend on iteration order — it differs between two runs
+/// of the same binary on the same simulation. It is not a scratch
+/// value: it is emitted as `"walked"`, `"mf_walked_total"`, and
+/// (divided) `"mf_walked_per_dig"`.
+///
+/// **The tempting mitigation is false, and checking it is what makes
+/// this a finding rather than a note.** The natural argument is "these
+/// scenario records carry wall-clock fields anyway, so nobody can be
+/// byte-comparing them, so this is harmless." That holds for the soak
+/// scenarios — and NOT for this one. The mine-fidelity record's only
+/// time field is `mf_sim_minutes_run`, which is SIM time (a tick count
+/// over ticks-per-minute), not wall time. That record is otherwise
+/// wall-clock-free and therefore genuinely comparable across runs, and
+/// `mf_walked_total` is the single field in it that moves for reasons
+/// having nothing to do with the simulation.
+///
+/// **Note on this doc's own wording.** The pattern tokens above are
+/// deliberately not spelled literally. `scanner_framework.rs` lives
+/// inside a scanned root, so quoting a family's own pattern makes THIS
+/// FILE a hit -- which happened here, and had happened twice before in
+/// `E13`. A scanner whose documentation is inside its own search space
+/// has to describe its patterns without writing them.
+///
+/// Fix shape (its own row, not this chunk): sum in a canonical order —
+/// collect and sort by the `String` key, or accumulate into a
+/// `BTreeMap` — so the addition sequence is fixed. Ordering the
+/// summation is the whole fix; no value changes.
+pub const HARNESS_TRIAGE_V1: [(&str, usize, &str); 3] = [
+    (
+        "EVIDENCE-PATH",
+        73,
+        "reaches recorded/compared output; 53 resolved safe by receiver type (DenseSlotMap), 20 \
+         pending per-site treatment, 1 confirmed defect (mine-fidelity dist_total: f64 summed in \
+         std::HashMap iteration order, emitted as mf_walked_total in an otherwise wall-clock-free \
+         record)",
+    ),
+    (
+        "FIXTURE-SETUP",
+        62,
+        "temp-dir uniqueness (elapsed-nanos in a dir name) and other scaffolding; the data-dir \
+         path is never digested, recorded or compared -- checked",
+    ),
+    (
+        "REPORTING-ONLY",
+        13,
+        "wall-clock in logs and wall-time metric fields; varies every run BY DESIGN because it \
+         measures the machine, not the simulation",
+    ),
 ];
 
 /// A deliberate, reviewed bypass of a scanner's own rule -- the shared
@@ -327,6 +417,30 @@ mod tests {
             "workspace member(s) neither scanned nor explicitly excluded -- add the root to \
              AUTHORITATIVE_SCAN_ROOTS or the reason to UNSCANNED_WORKSPACE_MEMBERS:\n{untriaged:#?}"
         );
+    }
+
+    /// The triage accounts for every site it claims to have triaged.
+    ///
+    /// Weak on its own — it pins my arithmetic, not the harness — and
+    /// that limit is the point of saying it out loud. The real gate for
+    /// `bastion-harness` is a scan root, which E14-5 has deliberately
+    /// not taken yet: adding one now would pin 148 sites of which 20
+    /// are still unread, freezing "not yet examined" into a baseline
+    /// that reads like "reviewed". Bucket totals first, per-site
+    /// verdicts next, root last.
+    #[test]
+    fn harness_triage_accounts_for_every_site() {
+        const SITES_FOUND_BY_THE_E13_SWEEP: usize = 148;
+
+        let total: usize = HARNESS_TRIAGE_V1.iter().map(|(_, n, _)| n).sum();
+        assert_eq!(
+            total, SITES_FOUND_BY_THE_E13_SWEEP,
+            "the triage buckets must account for every site the sweep found -- a bucket that \
+             silently drops sites is how 'we looked at all of them' becomes false"
+        );
+        for (bucket, _, reason) in HARNESS_TRIAGE_V1 {
+            assert!(reason.len() > 40, "{bucket}: a bucket without a substantive reason is a label");
+        }
     }
 
     #[test]
