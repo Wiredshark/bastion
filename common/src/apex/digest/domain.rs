@@ -54,6 +54,16 @@ pub enum DigestDomainIdV1 {
     CheckpointDescriptor = 42,
     /// `APEX-T3.5`: identity of one idempotent command.
     CommandDescriptor = 43,
+    /// `T4-PV` (APEX lane, ids 44-46; 40-43 were the last allocated in
+    /// this lane): the three protocol ROOTS `T4.3`'s world baseline
+    /// compares. Allocated together because they widened together --
+    /// three separate domains rather than one shared "protocol root"
+    /// domain so a worldgen root can never be mistaken for a content
+    /// root even if their bytes ever collided. That is the whole point
+    /// of carrying the domain in `ProtocolDigestV1` beside the bytes.
+    WorldgenProtocolRoot = 44,
+    ContentProtocolRoot = 45,
+    NumericProtocolRoot = 46,
     // IDs 9 (SubsystemDescriptor) and 10 (CompatibilityProfile) are ALLOCATED
     // to APEX-T0.5's in-flight build (row-order allocation rule, Fable-blessed;
     // collision with SourceClosure caught + resolved at spec stage). Sonnet 5's
@@ -125,6 +135,9 @@ impl DigestDomainIdV1 {
             Self::CheckpointGlobalTranscript => "bastion/checkpoint-global/v1",
             Self::CheckpointDescriptor => "bastion/checkpoint-descriptor/v1",
             Self::CommandDescriptor => "bastion/command-descriptor/v1",
+            Self::WorldgenProtocolRoot => "bastion/worldgen-protocol-root/v1",
+            Self::ContentProtocolRoot => "bastion/content-protocol-root/v1",
+            Self::NumericProtocolRoot => "bastion/numeric-protocol-root/v1",
             Self::SourceClosure => "bastion/source-closure/v1",
             Self::LocalReproSmoke => "bastion/build/local-repro-smoke/v1",
             Self::FreshBuilderProfile => "bastion/fresh-builder-profile/v1",
@@ -139,7 +152,7 @@ impl DigestDomainIdV1 {
         }
     }
 
-    pub const ALL: [DigestDomainIdV1; 26] = [
+    pub const ALL: [DigestDomainIdV1; 29] = [
         Self::BootstrapManifest,
         Self::SaveUniverseManifest,
         Self::PluginActivationPlan,
@@ -168,6 +181,9 @@ impl DigestDomainIdV1 {
         Self::CheckpointGlobalTranscript,
         Self::CheckpointDescriptor,
         Self::CommandDescriptor,
+        Self::WorldgenProtocolRoot,
+        Self::ContentProtocolRoot,
+        Self::NumericProtocolRoot,
     ];
 }
 
@@ -292,6 +308,9 @@ mod tests {
         let apex = [
             CheckpointStreamTranscript, CheckpointGlobalTranscript, CheckpointDescriptor,
             CommandDescriptor,
+            WorldgenProtocolRoot,
+            ContentProtocolRoot,
+            NumericProtocolRoot,
         ];
 
         for d in frozen {

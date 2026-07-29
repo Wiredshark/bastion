@@ -1,12 +1,12 @@
 //! `SubsystemDescriptorV1` and the typed optional protocol-root newtypes
 //! (`APEX-T0.5`, spec sections 3.2-3.3).
 
-use crate::apex::digest::ContentIdentityV1;
+use crate::apex::digest::{ContentIdentityV1, ProtocolDigestV1};
 use crate::apex::manifest::{
     CanonicalFieldMapV1, FieldIdV1, ManifestCodecErrorCodeV1, ManifestCodecErrorV1, ManifestDecodeV1, ManifestEncodeV1,
     ManifestErrorV1, ManifestSchemaErrorV1, ManifestValueV1, StructFieldsV1,
 };
-use crate::apex::scalar::{ProtocolVersion, SchemaVersion};
+use crate::apex::scalar::SchemaVersion;
 
 use super::slot::SubsystemSlotIdV1;
 
@@ -51,35 +51,58 @@ impl ManifestDecodeV1 for SubsystemDescriptorV1 {
     }
 }
 
-/// Declares one typed optional protocol-root newtype delegating to
-/// [`ProtocolVersion`] (`APEX-T0.1`). One distinct type per protocol root
-/// a downstream row actually needs — never a bare `Option<ProtocolVersion>`
-/// reused across subsystems (spec section 3.3: "without... ambiguous
-/// class semantics").
+/// Declares one typed protocol-root newtype carrying a
+/// [`ProtocolDigestV1`]. One distinct type per protocol root a
+/// downstream row actually needs — never a bare digest reused across
+/// subsystems (spec section 3.3: "without... ambiguous class
+/// semantics").
+///
+/// **AMENDED `T4-PV`, 2026-07-29 — the payload widened from
+/// `ProtocolVersion` (u32) to `ProtocolDigestV1` (32 bytes + domain).**
+///
+/// Original decision, recorded verbatim because how a boundary was
+/// arrived at is part of what it means: these were `ProtocolVersion`
+/// newtypes, and `T4.3` shipped them that way while explicitly banking
+/// "the REAL derivation ... from an honest frozen vocabulary" for a
+/// later chunk.
+///
+/// That later chunk is `T4-PV`, and its premise-check found the two
+/// halves could not meet: `T4.3` ruled the derivation must follow
+/// `net_envelope_profile_root_v1`'s pattern, which returns 32 bytes,
+/// while the field could hold 32 BITS. Truncating to fit would let two
+/// different vocabularies collide into one root — a save adopted
+/// against a world that no longer exists, which is the silent failure
+/// `T4.3` exists to prevent. The `u32` had no independent meaning to
+/// lose: every construction site in the tree was a hand-written `1` or
+/// `2` in a test, i.e. a placeholder for exactly this derivation.
+///
+/// Orchestrator-ruled 2026-07-29: widen. All three widen together —
+/// a mixed-width triple is worse than either uniform state.
 macro_rules! protocol_root_newtype {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
-        #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, serde::Serialize, serde::Deserialize)]
-        #[serde(transparent)]
-        pub struct $name(ProtocolVersion);
+        // No serde derive, unlike the pre-amendment u32 form: these now
+        // carry a ProtocolDigestV1, whose own type deliberately has no
+        // serde either. The manifest codec is this program's canonical
+        // encoding for identity, and a second uncontrolled one is how a
+        // root acquires two byte-forms that disagree.
+        #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+        pub struct $name(ProtocolDigestV1);
 
         impl $name {
-            pub const fn new(inner: ProtocolVersion) -> Self { Self(inner) }
-            pub const fn get(self) -> ProtocolVersion { self.0 }
+            pub const fn new(inner: ProtocolDigestV1) -> Self { Self(inner) }
+            pub const fn get(self) -> ProtocolDigestV1 { self.0 }
         }
 
         impl ManifestEncodeV1 for $name {
             fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> {
-                Ok(ManifestValueV1::Unsigned(self.0.get() as u64))
+                self.0.to_manifest_value_v1()
             }
         }
 
         impl ManifestDecodeV1 for $name {
             fn from_manifest_value_v1(value: ManifestValueV1) -> Result<Self, ManifestSchemaErrorV1> {
-                match value {
-                    ManifestValueV1::Unsigned(v) if v <= u32::MAX as u64 => Ok(Self(ProtocolVersion::new(v as u32))),
-                    _ => Err(ManifestErrorV1::new(ManifestCodecErrorCodeV1::FieldKeyType)),
-                }
+                Ok(Self(ProtocolDigestV1::from_manifest_value_v1(value)?))
             }
         }
     };
@@ -101,7 +124,7 @@ protocol_root_newtype!(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::apex::digest::hash_artifact_bytes_v1;
+    use crate::apex::digest::{DigestDomainIdV1, digest_canonical_bytes_v1, hash_artifact_bytes_v1};
     use crate::apex::manifest::{ManifestDecodeLimitsV1, decode_manifest_v1, encode_manifest_v1};
 
     fn limits() -> ManifestDecodeLimitsV1 {
@@ -146,7 +169,7 @@ mod tests {
 
     #[test]
     fn protocol_root_newtypes_round_trip_and_are_mutually_distinct_types() {
-        let w = WorldgenProtocolVersion::new(ProtocolVersion::new(7));
+        let w = WorldgenProtocolVersion::new(digest_canonical_bytes_v1(DigestDomainIdV1::WorldgenProtocolRoot, &[7], 64).expect("test digest"));
         let bytes = encode_manifest_v1(&w, &limits()).unwrap();
         let decoded: WorldgenProtocolVersion = decode_manifest_v1(&bytes, &limits()).unwrap();
         assert_eq!(w, decoded);

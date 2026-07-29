@@ -1,3 +1,10 @@
+//! **STATUS: AMENDED `T4-PV` 2026-07-29 — the three protocol-root
+//! fields widened from `u32` to `ProtocolDigestV1`.** The original
+//! design is recorded below unedited; the amendment and its reasoning
+//! are in `AMENDMENT 1` at the end of this doc. A doc that quietly
+//! matches its implementation cannot tell a reader which parts were
+//! reviewed and which were adjusted afterwards.
+//!
 //! `APEX-T4.3` chunk 1 — `WorldBaselineManifestV1`: the world-identity
 //! anchor RTSim reconciliation must check before adopting a loaded save's
 //! world state (`server/src/rtsim/mod.rs::RtSim::new`, right before
@@ -38,6 +45,34 @@
 //! roots standing in for canonical terrain and `Economy` hashes -- chunk
 //! 2 (living in `world`/`server`, where those real types are visible)
 //! computes them and calls this pure function.
+//!
+//! ---
+//!
+//! # AMENDMENT 1 — `T4-PV`, 2026-07-29
+//!
+//! **What changed.** `worldgen`, `content` and `numeric` were
+//! `Option<ProtocolVersion>` (u32). They are now digest-carrying
+//! newtypes, and the preimage absorbs the digest bytes AND the domain
+//! id.
+//!
+//! **Why, and why it could not be deferred.** This row banked "the REAL
+//! derivation ... from an honest frozen vocabulary" for a later chunk.
+//! When that chunk (`T4-PV`) arrived, its premise-check found the two
+//! halves could not meet: the ruled derivation follows
+//! `net_envelope_profile_root_v1`, which yields 32 BYTES, and the field
+//! held 32 BITS. Truncating would have reintroduced at the input the
+//! very collision this file's preimage encoding was built to remove at
+//! the format -- two different vocabularies producing one root, and a
+//! save adopted against a world that no longer exists.
+//!
+//! **What it cost.** Nothing that was load-bearing: every construction
+//! site in the tree was a hand-written `1` or `2` inside a test. The
+//! `u32` was a placeholder for exactly this derivation, so widening
+//! re-used a slot rather than repurposing a meaning.
+//!
+//! **Recorded as an amendment rather than a silent fix** for the reason
+//! `T7.1`'s own AMENDMENT 1 gives: an approved boundary that quietly
+//! matches its implementation is worse than one that shows its repair.
 
 use crate::apex::digest::{DigestBytes32V1, DigestDomainIdV1, DigestErrorV1, ProtocolDigestV1, digest_canonical_bytes_v1};
 use crate::apex::subsystem::descriptor::{ContentProtocolVersion, NumericProtocolVersion, WorldgenProtocolVersion};
@@ -98,6 +133,25 @@ fn push_bytes32(buf: &mut Vec<u8>, v: &DigestBytes32V1) { buf.extend_from_slice(
 /// a real value (`0` is a valid `ProtocolVersion`) -- an explicit 0/1
 /// presence marker, same discipline the manifest-value codec uses for
 /// `Option<T>` elsewhere in this program.
+/// A protocol root, present-flag + fixed-width, carrying BOTH the
+/// digest bytes and the domain id.
+///
+/// The domain is included deliberately: it is what stops a worldgen
+/// root from being mistaken for a content root even in the impossible
+/// case that their 32 bytes agreed. Domain separation is only worth
+/// having if the domain actually reaches the preimage.
+fn push_option_protocol_root(buf: &mut Vec<u8>, v: Option<ProtocolDigestV1>) {
+    match v {
+        Some(d) => {
+            buf.push(1);
+            push_u32(buf, d.domain.as_u16() as u32);
+            push_u32(buf, d.algorithm.as_u16() as u32);
+            buf.extend_from_slice(d.bytes.as_array());
+        },
+        None => buf.push(0),
+    }
+}
+
 fn push_option_u32(buf: &mut Vec<u8>, v: Option<u32>) {
     match v {
         Some(x) => {
@@ -112,12 +166,30 @@ fn push_option_u32(buf: &mut Vec<u8>, v: Option<u32>) {
 /// fixed-width so no two distinct inputs can ever produce the same
 /// bytes (the classic concatenation collision, same discipline as
 /// `NumericProfileV1::id_v1`).
+///
+/// **Why the three protocol roots are digest-width here (`T4-PV`,
+/// 2026-07-29).** They used to enter as `u32`s. `T4.3` had banked their
+/// real derivation -- a frozen-vocabulary content root following
+/// `net_envelope_profile_root_v1`, which produces 32 BYTES -- for a
+/// later chunk, and when that chunk arrived the two halves did not
+/// meet: a 256-bit root cannot pass through a 32-bit field.
+///
+/// Truncating to fit was rejected, and the reason belongs HERE rather
+/// than in a survey, because this is where the next reader will wonder
+/// why a version field holds a digest: **narrowing the root would
+/// reintroduce at the INPUT precisely the collision this encoding was
+/// built to remove at the FORMAT.** Two different worldgen
+/// vocabularies colliding in 32 truncated bits would produce identical
+/// preimage bytes, and the save would be adopted against a world that
+/// no longer exists -- silently, which is the failure `T4.3` exists to
+/// prevent. Fixed-width-so-no-two-inputs-collide is not a property you
+/// can keep at the format while giving it away at the field.
 fn world_baseline_preimage_v1(input: &WorldBaselineInputV1) -> Vec<u8> {
     let mut buf = Vec::new();
     push_u32(&mut buf, input.world_seed);
-    push_option_u32(&mut buf, input.worldgen.map(|w| w.get().get()));
-    push_option_u32(&mut buf, input.content.map(|c| c.get().get()));
-    push_option_u32(&mut buf, input.numeric.map(|n| n.get().get()));
+    push_option_protocol_root(&mut buf, input.worldgen.map(|w| w.get()));
+    push_option_protocol_root(&mut buf, input.content.map(|c| c.get()));
+    push_option_protocol_root(&mut buf, input.numeric.map(|n| n.get()));
     push_bytes32(&mut buf, &input.map_geometry_root);
 
     // Canonicalize by site_id -- an unrelated pre-sort permutation (the
@@ -152,6 +224,14 @@ pub fn compute_world_baseline_root_v1(input: &WorldBaselineInputV1) -> Result<Pr
 
 #[cfg(test)]
 mod tests {
+    /// A distinct-but-deterministic protocol root per (domain, n) --
+    /// the tests below only need "different n moves the root", and
+    /// deriving through the real digest function keeps them honest
+    /// about the shape they are exercising.
+    fn test_root(domain: DigestDomainIdV1, n: u8) -> ProtocolDigestV1 {
+        digest_canonical_bytes_v1(domain, &[n], 64).expect("test digest")
+    }
+
     use super::*;
     use crate::apex::digest::hash_artifact_bytes_v1;
     use crate::apex::scalar::ProtocolVersion;
@@ -165,9 +245,9 @@ mod tests {
     fn baseline() -> WorldBaselineInputV1 {
         WorldBaselineInputV1 {
             world_seed: 12345,
-            worldgen: Some(WorldgenProtocolVersion::new(ProtocolVersion::new(1))),
-            content: Some(ContentProtocolVersion::new(ProtocolVersion::new(1))),
-            numeric: Some(NumericProtocolVersion::new(ProtocolVersion::new(1))),
+            worldgen: Some(WorldgenProtocolVersion::new(test_root(DigestDomainIdV1::WorldgenProtocolRoot, 1))),
+            content: Some(ContentProtocolVersion::new(test_root(DigestDomainIdV1::ContentProtocolRoot, 1))),
+            numeric: Some(NumericProtocolVersion::new(test_root(DigestDomainIdV1::NumericProtocolRoot, 1))),
             map_geometry_root: digest_root(1),
             sites: vec![site(1, 0, 0, 10, &[2]), site(2, 5, 5, 11, &[1])],
             economy_root: digest_root(2),
@@ -179,13 +259,58 @@ mod tests {
         assert_eq!(compute_world_baseline_root_v1(&baseline()).unwrap(), compute_world_baseline_root_v1(&baseline()).unwrap());
     }
 
+    /// The falsifier FOR THE AMENDMENT: two worldgen roots that agree
+    /// in their first 32 bits but differ beyond them must still move
+    /// the baseline root.
+    ///
+    /// This is the test that would FAIL under the pre-amendment
+    /// design. Truncating a 256-bit root into the old `u32` field
+    /// would make these two inputs produce identical preimage bytes --
+    /// which is precisely the silent collision (a save adopted against
+    /// a world that no longer exists) the widening was ruled to
+    /// prevent. It asserts its own precondition first: if the two
+    /// digests did not actually share their leading 32 bits, the test
+    /// would prove nothing about truncation.
+    #[test]
+    fn roots_differing_only_beyond_32_bits_still_move_the_baseline() {
+        let mut a_bytes = [0u8; 32];
+        let mut b_bytes = [0u8; 32];
+        a_bytes[31] = 1;
+        b_bytes[31] = 2;
+
+        // Precondition: identical in the leading 4 bytes a u32 field
+        // could have carried.
+        assert_eq!(
+            a_bytes[..4],
+            b_bytes[..4],
+            "fixture must collide in the truncated width, or this proves nothing about truncation"
+        );
+        assert_ne!(a_bytes, b_bytes, "and must differ somewhere beyond it");
+
+        let root_of = |bytes: [u8; 32]| {
+            let mut input = baseline();
+            input.worldgen = Some(WorldgenProtocolVersion::new(ProtocolDigestV1 {
+                algorithm: crate::apex::digest::DigestAlgorithmIdV1::Sha256,
+                domain: DigestDomainIdV1::WorldgenProtocolRoot,
+                bytes: DigestBytes32V1::from_array(bytes),
+            }));
+            compute_world_baseline_root_v1(&input).expect("root")
+        };
+
+        assert_ne!(
+            root_of(a_bytes),
+            root_of(b_bytes),
+            "a difference beyond the first 32 bits must reach the baseline root"
+        );
+    }
+
     /// Required test: same seed, altered worldgen protocol identity ->
     /// the root must move.
     #[test]
     fn altered_worldgen_protocol_identity_moves_the_root() {
         let base = baseline();
         let mut altered = base.clone();
-        altered.worldgen = Some(WorldgenProtocolVersion::new(ProtocolVersion::new(2)));
+        altered.worldgen = Some(WorldgenProtocolVersion::new(test_root(DigestDomainIdV1::WorldgenProtocolRoot, 2)));
         assert_ne!(compute_world_baseline_root_v1(&base).unwrap(), compute_world_baseline_root_v1(&altered).unwrap());
     }
 
@@ -195,7 +320,7 @@ mod tests {
     fn altered_content_protocol_identity_moves_the_root() {
         let base = baseline();
         let mut altered = base.clone();
-        altered.content = Some(ContentProtocolVersion::new(ProtocolVersion::new(2)));
+        altered.content = Some(ContentProtocolVersion::new(test_root(DigestDomainIdV1::ContentProtocolRoot, 2)));
         assert_ne!(compute_world_baseline_root_v1(&base).unwrap(), compute_world_baseline_root_v1(&altered).unwrap());
     }
 
@@ -217,7 +342,7 @@ mod tests {
     fn altered_numeric_protocol_identity_moves_the_root() {
         let base = baseline();
         let mut altered = base.clone();
-        altered.numeric = Some(NumericProtocolVersion::new(ProtocolVersion::new(2)));
+        altered.numeric = Some(NumericProtocolVersion::new(test_root(DigestDomainIdV1::NumericProtocolRoot, 2)));
         assert_ne!(compute_world_baseline_root_v1(&base).unwrap(), compute_world_baseline_root_v1(&altered).unwrap());
     }
 
@@ -286,7 +411,7 @@ mod tests {
     fn unpopulated_protocol_version_is_distinct_from_every_populated_value() {
         let unpopulated = WorldBaselineInputV1 { worldgen: None, ..baseline() };
         let populated_zero = WorldBaselineInputV1 {
-            worldgen: Some(WorldgenProtocolVersion::new(ProtocolVersion::new(0))),
+            worldgen: Some(WorldgenProtocolVersion::new(test_root(DigestDomainIdV1::WorldgenProtocolRoot, 0))),
             ..baseline()
         };
         let populated_one = baseline(); // worldgen = Some(ProtocolVersion::new(1))
