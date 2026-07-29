@@ -111,6 +111,15 @@ pub struct ProductionCullEvidenceV1 {
     pub dispatch_count: u32,
     pub input_digest: [u8; 32],
     pub result_digest: [u8; 32],
+    pub reference_candidate_count: u32,
+    pub reference_admitted_count: u32,
+    pub reference_input_digest: [u8; 32],
+    pub reference_result_digest: [u8; 32],
+    pub gpu_candidate_count: u32,
+    pub gpu_admitted_count: u32,
+    pub gpu_input_digest: [u8; 32],
+    pub gpu_result_digest: [u8; 32],
+    pub same_frame_parity: bool,
 }
 
 static LATEST: OnceLock<Mutex<Option<ProductionCullEvidenceV1>>> = OnceLock::new();
@@ -274,12 +283,7 @@ impl GpuCullRuntimeV1 {
                 let result = batch
                     .cpu_reference_result()
                     .map_err(ProductionCullErrorV1::Core)?;
-                record_evidence(
-                    ProductionCullModeV1::CpuReference,
-                    ProductionCullFallbackV1::None,
-                    0,
-                    &result,
-                );
+                record_reference_evidence(ProductionCullFallbackV1::None, &result);
                 Ok(result)
             },
             RuntimeState::Unsupported => {
@@ -372,51 +376,100 @@ impl GpuCullRuntimeV1 {
                 let flags = bytemuck::cast_slice::<u8, u32>(&mapped).to_vec();
                 drop(mapped);
                 readback_buffer.unmap();
-                let result = batch
-                    .reconcile(
-                        batch.generation(),
-                        &flags,
-                        AcceleratorTerminalV1::GpuFrustumParity,
-                        OcclusionCapabilityV1::UnsupportedNoDepthPyramid,
-                    )
-                    .map_err(ProductionCullErrorV1::Core)?;
-                record_evidence(
-                    ProductionCullModeV1::GpuFrustum,
-                    ProductionCullFallbackV1::None,
-                    1,
-                    &result,
-                );
+                let result = reconcile_same_frame_gpu_flags(batch, &flags)?;
                 Ok(result)
             },
         }
     }
 }
 
-fn record_evidence(
-    mode: ProductionCullModeV1,
-    fallback: ProductionCullFallbackV1,
-    dispatch_count: u32,
-    result: &AcceleratorResultV1,
-) {
+fn admitted_count(result: &AcceleratorResultV1) -> u32 {
+    u32::try_from(result.admitted().len()).unwrap_or(u32::MAX)
+}
+
+fn record_reference_evidence(fallback: ProductionCullFallbackV1, result: &AcceleratorResultV1) {
     if let Ok(mut latest) = latest_state().lock() {
         *latest = Some(ProductionCullEvidenceV1 {
             generation: result.generation,
-            mode,
+            mode: ProductionCullModeV1::CpuReference,
             terminal: result.terminal,
             fallback,
             occlusion: result.occlusion,
             candidate_count: result.candidate_count,
-            admitted_count: u32::try_from(result.admitted().len()).unwrap_or(u32::MAX),
-            dispatch_count,
+            admitted_count: admitted_count(result),
+            dispatch_count: 0,
             input_digest: result.input_digest,
             result_digest: result.result_digest,
+            reference_candidate_count: result.candidate_count,
+            reference_admitted_count: admitted_count(result),
+            reference_input_digest: result.input_digest,
+            reference_result_digest: result.result_digest,
+            gpu_candidate_count: 0,
+            gpu_admitted_count: 0,
+            gpu_input_digest: [0; 32],
+            gpu_result_digest: [0; 32],
+            same_frame_parity: false,
         });
     }
 }
 
+fn record_gpu_evidence(reference: &AcceleratorResultV1, result: &AcceleratorResultV1) {
+    if let Ok(mut latest) = latest_state().lock() {
+        *latest = Some(ProductionCullEvidenceV1 {
+            generation: result.generation,
+            mode: ProductionCullModeV1::GpuFrustum,
+            terminal: result.terminal,
+            fallback: ProductionCullFallbackV1::None,
+            occlusion: result.occlusion,
+            candidate_count: result.candidate_count,
+            admitted_count: admitted_count(result),
+            dispatch_count: 1,
+            input_digest: result.input_digest,
+            result_digest: result.result_digest,
+            reference_candidate_count: reference.candidate_count,
+            reference_admitted_count: admitted_count(reference),
+            reference_input_digest: reference.input_digest,
+            reference_result_digest: reference.result_digest,
+            gpu_candidate_count: result.candidate_count,
+            gpu_admitted_count: admitted_count(result),
+            gpu_input_digest: result.input_digest,
+            gpu_result_digest: result.result_digest,
+            same_frame_parity: true,
+        });
+    }
+}
+
+fn reconcile_same_frame_gpu_flags(
+    batch: &CanonicalCullBatchV1,
+    flags: &[u32],
+) -> Result<AcceleratorResultV1, ProductionCullErrorV1> {
+    let reference = batch
+        .cpu_reference_result()
+        .map_err(ProductionCullErrorV1::Core)?;
+    let result = batch
+        .reconcile(
+            batch.generation(),
+            flags,
+            AcceleratorTerminalV1::GpuFrustumParity,
+            OcclusionCapabilityV1::UnsupportedNoDepthPyramid,
+        )
+        .map_err(ProductionCullErrorV1::Core)?;
+    if reference.candidate_count != result.candidate_count
+        || reference.input_digest != result.input_digest
+        || reference.result_digest != result.result_digest
+        || reference.admitted() != result.admitted()
+    {
+        return Err(ProductionCullErrorV1::Core(
+            GpuCullErrorV1::GpuFrustumParity,
+        ));
+    }
+    record_gpu_evidence(&reference, &result);
+    Ok(result)
+}
+
 fn record_fallback(batch: &CanonicalCullBatchV1, fallback: ProductionCullFallbackV1) {
     if let Ok(result) = batch.cpu_reference_result() {
-        record_evidence(ProductionCullModeV1::CpuReference, fallback, 0, &result);
+        record_reference_evidence(fallback, &result);
     }
 }
 
@@ -566,6 +619,37 @@ mod tests {
         assert_eq!(actual.input_digest, cpu.input_digest);
         assert_eq!(actual.result_digest, cpu.result_digest);
         assert_eq!(actual.admitted(), cpu.admitted());
+        let persisted = latest_evidence().expect("same-frame evidence must be persisted");
+        assert!(persisted.same_frame_parity);
+        assert_eq!(persisted.reference_candidate_count, cpu.candidate_count);
+        assert_eq!(
+            persisted.reference_admitted_count,
+            cpu.admitted().len() as u32
+        );
+        assert_eq!(persisted.reference_input_digest, cpu.input_digest);
+        assert_eq!(persisted.reference_result_digest, cpu.result_digest);
+        assert_eq!(persisted.gpu_candidate_count, actual.candidate_count);
+        assert_eq!(persisted.gpu_admitted_count, actual.admitted().len() as u32);
+        assert_eq!(persisted.gpu_input_digest, actual.input_digest);
+        assert_eq!(persisted.gpu_result_digest, actual.result_digest);
+
+        let mut injected = batch.cpu_reference_flags();
+        injected[0] ^= 1;
+        let injected_error = reconcile_same_frame_gpu_flags(&batch, &injected).unwrap_err();
+        assert!(matches!(
+            &injected_error,
+            ProductionCullErrorV1::Core(
+                GpuCullErrorV1::GpuFrustumParity | GpuCullErrorV1::GpuInventedCandidate
+            )
+        ));
+        assert_eq!(
+            record_error(&batch, &injected_error),
+            ProductionCullFallbackV1::Parity
+        );
+        let rejected = latest_evidence().expect("typed fallback evidence must be persisted");
+        assert_eq!(rejected.fallback, ProductionCullFallbackV1::Parity);
+        assert!(!rejected.same_frame_parity);
+        assert_eq!(rejected.gpu_candidate_count, 0);
     }
 
     #[test]
