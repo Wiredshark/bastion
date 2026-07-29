@@ -47,6 +47,11 @@ pub struct RtSim {
     last_saved: Option<Instant>,
     state: RtState,
     save_thread: Option<(Sender<Data>, JoinHandle<()>)>,
+    // `APEX-T4.6` chunk 3b: the staged multi-store epoch commit's own
+    // state, separate from the pre-existing rtsim-file save machinery
+    // above (which this row does not replace, only supplements).
+    save_universe_layout: crate::save_universe::SaveUniverseLayoutV1,
+    save_epoch_ledger: common::apex::save_universe::SaveEpochLedgerV1,
 }
 
 impl RtSim {
@@ -157,8 +162,12 @@ impl RtSim {
         // below is the reconciliation-commit point this row's own
         // architecture note names -- world generation is already
         // complete by this line, `world`/`index` are the finished
-        // product).
-        {
+        // product). Trailing expression: `APEX-T4.6` chunk 3b's own
+        // seeded (or fresh) epoch ledger, so `save_epoch_ledger_seed`
+        // (computed inside this block, from the SAME `recover_v1` call
+        // the baseline check already needs) doesn't need to escape it
+        // via a second mutable local.
+        let save_epoch_ledger = {
             let baseline_input = common::apex::world_baseline::WorldBaselineInputV1 {
                 world_seed,
                 // `T4-PV` (parked, orchestrator-ruled): undescribed
@@ -189,17 +198,27 @@ impl RtSim {
             // `EpochZero` here: this comparison is advisory, not
             // authoritative for anything else in this chunk, so it must
             // not block startup over a manifest-layer read failure.
-            let recovered_world_baseline_root: Option<[u8; 32]> =
-                match crate::save_universe::recover_v1(&save_universe_layout) {
-                    Ok(crate::save_universe::SaveUniverseRecoveryV1::Recovered { manifest }) => {
-                        manifest.world_baseline_root.map(|d| *d.bytes.as_array())
-                    },
-                    Ok(crate::save_universe::SaveUniverseRecoveryV1::EpochZero) => None,
-                    Err(e) => {
-                        error!(?e, "failed to recover save-universe manifest (falling back to data.world_baseline_root)");
-                        None
-                    },
-                };
+            //
+            // chunk 3b also needs this SAME recovery result to seed the
+            // in-process epoch ledger below -- one call, two consumers,
+            // rather than recovering twice.
+            let (recovered_world_baseline_root, save_epoch_ledger_seed): (
+                Option<[u8; 32]>,
+                Option<(common::apex::identity::SaveEpoch, common::apex::digest::ArtifactDigestV1)>,
+            ) = match crate::save_universe::recover_v1(&save_universe_layout) {
+                Ok(crate::save_universe::SaveUniverseRecoveryV1::Recovered { manifest, manifest_identity }) => (
+                    manifest.world_baseline_root.map(|d| *d.bytes.as_array()),
+                    Some((manifest.lineage.epoch, manifest_identity.digest)),
+                ),
+                Ok(crate::save_universe::SaveUniverseRecoveryV1::EpochZero) => (None, None),
+                Err(e) => {
+                    error!(
+                        ?e,
+                        "failed to recover save-universe manifest (falling back to data.world_baseline_root, starting a fresh epoch ledger)"
+                    );
+                    (None, None)
+                },
+            };
             let world_baseline_root_source = recovered_world_baseline_root.or(data.world_baseline_root);
 
             if let Some(stored_root_bytes) = world_baseline_root_source
@@ -255,7 +274,12 @@ impl RtSim {
             // Stamp the current baseline as the new floor -- covers both
             // the first-ever check (`None`) and every check that agreed.
             data.world_baseline_root = Some(fresh_root_bytes);
-        }
+
+            match save_epoch_ledger_seed {
+                Some((epoch, root)) => common::apex::save_universe::SaveEpochLedgerV1::seeded_from_recovery_v1(epoch, root),
+                None => common::apex::save_universe::SaveEpochLedgerV1::new(),
+            }
+        };
 
         let mut this = Self {
             last_saved: None,
@@ -266,6 +290,8 @@ impl RtSim {
             ))),
             file_path,
             save_thread: None,
+            save_universe_layout,
+            save_epoch_ledger,
         };
 
         rule::start_rules(&mut this.state);
@@ -695,7 +721,11 @@ impl RtSim {
             .emit(OnHelped { actor, saver }, &mut (), world, index);
     }
 
-    pub fn save(&mut self, wait_until_finished: bool) {
+    // `APEX-T4.6` chunk 3b: `character_db_dir` is the character DB's own
+    // directory (`DatabaseSettings::db_dir`) -- neither call site had a
+    // reason to know it before this row; both are threaded now
+    // (`rtsim/tick.rs`'s periodic save, `lib.rs`'s shutdown save).
+    pub fn save(&mut self, wait_until_finished: bool, character_db_dir: &std::path::Path) {
         debug!("Saving rtsim data...");
 
         // Create the save thread if it doesn't already exist
@@ -725,6 +755,91 @@ impl RtSim {
         }
 
         self.last_saved = Some(Instant::now());
+
+        // `APEX-T4.6` chunk 3b: the staged multi-store epoch commit, run
+        // SYNCHRONOUSLY and best-effort, strictly ADDITIVE to the
+        // existing rtsim-file save above (never blocks or fails it -- a
+        // staged-commit failure only ever prevents THIS epoch's commit,
+        // logged loudly, not the primary save this function already
+        // promised). A future perf pass can move this to its own
+        // thread; correctness-first for this landing.
+        self.commit_save_universe_epoch_v1(character_db_dir);
+    }
+
+    /// See [`Self::save`]'s own doc comment for why this runs where it
+    /// does and why it is best-effort.
+    fn commit_save_universe_epoch_v1(&mut self, character_db_dir: &std::path::Path) {
+        let (frozen_tick, world_baseline_root_bytes) = {
+            let data = self.state.data();
+            (data.tick, data.world_baseline_root)
+        };
+        let mut rtsim_bytes = Vec::new();
+        if let Err(e) = self.state.data().write_to(&mut rtsim_bytes) {
+            error!(?e, "failed to encode rtsim payload for save-universe staging (skipping this epoch's commit)");
+            return;
+        }
+
+        let world_baseline_root = world_baseline_root_bytes.map(|bytes| common::apex::digest::ArtifactDigestV1 {
+            algorithm: common::apex::digest::DigestAlgorithmIdV1::Sha256,
+            bytes: common::apex::digest::DigestBytes32V1::from_array(bytes),
+        });
+
+        let candidate_epoch = common::apex::identity::SaveEpoch::new(self.save_epoch_ledger.current_epoch().get() + 1);
+        let lineage = common::apex::save_universe::SaveEpochLineageV1 {
+            epoch: candidate_epoch,
+            predecessor_root: self.save_epoch_ledger.current_root(),
+        };
+
+        let rtsim_payload = match crate::save_universe::stage_payload_v1(
+            &self.save_universe_layout,
+            candidate_epoch,
+            common::apex::save_universe::SaveStoreIdV1::RtsimData,
+            |f| std::io::Write::write_all(f, &rtsim_bytes),
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                error!(?e, "failed to stage rtsim payload for save-universe epoch (skipping this epoch's commit)");
+                return;
+            },
+        };
+
+        let character_db_payload = match crate::save_universe::stage_character_db_v1(&self.save_universe_layout, candidate_epoch, character_db_dir) {
+            Ok(p) => p,
+            Err(e) => {
+                error!(?e, "failed to stage character-db payload for save-universe epoch (skipping this epoch's commit)");
+                return;
+            },
+        };
+
+        let manifest = common::apex::save_universe::SaveUniverseManifestV1 {
+            lineage,
+            frozen_tick,
+            // Canonical store order (`SaveStoreIdV1`'s own discriminant
+            // order: `CharacterDb` then `RtsimData`) -- the type's own
+            // "caller supplies sorted order for reproducibility" doc note.
+            stores: vec![character_db_payload, rtsim_payload],
+            world_baseline_root,
+            // `T4-PV` (parked, orchestrator-ruled): same undescribed-
+            // rather-than-fabricated discipline as the world-baseline
+            // check above -- no honest frozen-vocabulary derivation
+            // exists yet for content/build/numeric/schedule identity.
+            descriptors: Vec::new(),
+            // `T4.5`'s confirmed-EMPTY rtsim migration graph -- nothing
+            // to journal yet.
+            migration_journal_digest: None,
+        };
+
+        match crate::save_universe::commit_epoch_v1(&self.save_universe_layout, &manifest) {
+            Ok(pointer) => {
+                if let Err(e) = self.save_epoch_ledger.admit_v1(manifest.lineage, pointer.manifest_identity.digest) {
+                    error!(
+                        ?e,
+                        "save-universe epoch committed to disk but the in-process ledger refused to admit it -- internal inconsistency, investigate"
+                    );
+                }
+            },
+            Err(e) => error!(?e, "failed to commit save-universe epoch (rtsim/character-db payloads staged but not published)"),
+        }
     }
 
     // TODO: Clean up this API a bit

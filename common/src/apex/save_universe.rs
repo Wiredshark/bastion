@@ -174,6 +174,16 @@ pub struct SaveEpochLedgerV1 {
 impl SaveEpochLedgerV1 {
     pub fn new() -> Self { Self { floor: None } }
 
+    /// `APEX-T4.6` chunk 3b: seeds a ledger from a manifest recovered
+    /// from disk at process start — the floor a freshly-booted server
+    /// must resume from, not restart from `None` (which would make its
+    /// very first save this boot collide with `NotSequential` against
+    /// whatever a PRIOR boot already committed). `manifest_root` is the
+    /// SAME exact-byte digest [`SaveEpochPointerV1::manifest_identity`]'s
+    /// `.digest` already carries — the pointer's own integrity anchor
+    /// doubles as the next epoch's chain link, not a second computation.
+    pub fn seeded_from_recovery_v1(epoch: SaveEpoch, manifest_root: ArtifactDigestV1) -> Self { Self { floor: Some((epoch, manifest_root)) } }
+
     /// The last admitted epoch, or `SaveEpoch::INITIAL` (zero) before
     /// anything has ever been admitted — the same epoch-zero-as-genesis
     /// reading a pointer-less save directory gets, not a special case.
@@ -182,9 +192,12 @@ impl SaveEpochLedgerV1 {
     pub fn current_root(&self) -> Option<ArtifactDigestV1> { self.floor.map(|(_, root)| root) }
 
     /// Classifies and, if admitted, advances the floor. `candidate_root`
-    /// is the caller-computed manifest root of `candidate`'s OWN epoch
-    /// (this ledger has no opinion on how that root is computed — see
-    /// [`compute_save_universe_manifest_root_v1`]).
+    /// is the manifest's own exact-byte digest — the SAME value
+    /// [`SaveEpochPointerV1::manifest_identity`]'s `.digest` carries,
+    /// not [`compute_save_universe_manifest_root_v1`]'s domain-separated
+    /// semantic root (a different identity, for external references —
+    /// see that function's own doc comment). This ledger chains on
+    /// exact bytes, mirroring `T4.2`'s own `predecessor_root` precedent.
     pub fn admit_v1(&mut self, candidate: SaveEpochLineageV1, candidate_root: ArtifactDigestV1) -> Result<(), SaveEpochRejectionV1> {
         if candidate.epoch.get() == 0 {
             return Err(SaveEpochRejectionV1::EpochZeroReserved);
@@ -539,6 +552,32 @@ mod tests {
         assert!(ledger.admit_v1(lineage(1, None), digest(1)).is_ok());
         assert_eq!(ledger.current_epoch(), SaveEpoch::new(1));
         assert_eq!(ledger.current_root(), Some(digest(1)));
+    }
+
+    /// `APEX-T4.6` chunk 3b: a freshly-seeded ledger (a second boot,
+    /// resuming from a prior boot's committed epoch) reports that floor
+    /// immediately, and the NEXT admission must chain from it correctly
+    /// -- exactly the shape a real reboot exercises, not just a fresh
+    /// `new()`.
+    #[test]
+    fn a_seeded_ledger_reports_its_seed_and_admits_the_correctly_chained_next_epoch() {
+        let mut ledger = SaveEpochLedgerV1::seeded_from_recovery_v1(SaveEpoch::new(5), digest(5));
+        assert_eq!(ledger.current_epoch(), SaveEpoch::new(5));
+        assert_eq!(ledger.current_root(), Some(digest(5)));
+        assert!(ledger.admit_v1(lineage(6, Some(digest(5))), digest(6)).is_ok());
+        assert_eq!(ledger.current_epoch(), SaveEpoch::new(6));
+    }
+
+    /// A seeded ledger still refuses a candidate that doesn't actually
+    /// chain from the seed -- seeding is not a bypass of the same
+    /// admission rules a fresh ledger enforces.
+    #[test]
+    fn a_seeded_ledger_still_refuses_a_non_chaining_candidate() {
+        let mut ledger = SaveEpochLedgerV1::seeded_from_recovery_v1(SaveEpoch::new(5), digest(5));
+        assert_eq!(
+            ledger.admit_v1(lineage(6, Some(digest(99))), digest(6)).unwrap_err(),
+            SaveEpochRejectionV1::PredecessorMismatch
+        );
     }
 
     #[test]

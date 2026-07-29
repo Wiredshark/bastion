@@ -140,7 +140,7 @@ const FAMILIES: &[FamilyV1] = &[
 /// "this is a metrics/logging timestamp" (fine) from "this feeds an
 /// authoritative eligibility decision" (the hazard this family exists to
 /// catch).
-const INSTANT_SYSTEMTIME_BASELINE: [(&str, &str, u32); 45] = instant_systemtime_baseline();
+const INSTANT_SYSTEMTIME_BASELINE: [(&str, &str, u32); 47] = instant_systemtime_baseline();
 
 /// 3 sites at pin time, all verified: comments naming a hasher this code
 /// already avoids, zero live usage. A clean family is still worth
@@ -246,7 +246,7 @@ const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 20] = raw_entity_id_baseline()
 // Baseline data lives in generated `const fn`s below purely to keep the
 // (very long) tuple literals out of the doc-commented declarations above.
 
-const fn instant_systemtime_baseline() -> [(&'static str, &'static str, u32); 45] {
+const fn instant_systemtime_baseline() -> [(&'static str, &'static str, u32); 47] {
     include!("determinism_scan_baseline_instant.rs")
 }
 const fn default_hasher_baseline() -> [(&'static str, &'static str, u32); 3] {

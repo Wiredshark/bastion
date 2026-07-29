@@ -54,6 +54,11 @@ pub(crate) const BYPASS_SURFACE_ROLES: &[(&str, BypassRoleV1)] = &[
     ("server/src/rtsim/event.rs", BypassRoleV1::ServerAuthored),
     ("server/src/rtsim/mod.rs", BypassRoleV1::ServerAuthored),
     ("server/src/rtsim/rule/deplete_resources.rs", BypassRoleV1::ServerAuthored),
+    // `APEX-T4.6` chunk 3b: names `CharacterUpdater` once, in a comment
+    // explaining where the threaded `Arc<RwLock<DatabaseSettings>>`
+    // resource comes from -- never touches it as a mutation site. Same
+    // doc-comment-text shape as `save_universe.rs` below.
+    ("server/src/rtsim/tick.rs", BypassRoleV1::CatalogOnly),
     // `APEX-T4.6` chunk 2: names `CharacterUpdater` once, in its module
     // doc comment (describing the failure surface T4.6 fixes) -- never
     // touches it as a mutation site.

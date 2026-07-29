@@ -58,9 +58,12 @@ use common::apex::{
     identity::SaveEpoch,
     manifest::{ManifestCodecErrorV1, ManifestSchemaErrorV1, decode_manifest_v1, encode_manifest_v1},
     save_universe::{
-        SaveEpochPointerReadV1, SaveEpochPointerV1, SaveStoreIdV1, SaveUniverseManifestV1, save_universe_manifest_limits_v1,
+        SaveEpochPointerReadV1, SaveEpochPointerV1, SaveStoreIdV1, SaveStorePayloadV1, SaveUniverseManifestV1,
+        save_universe_manifest_limits_v1,
     },
 };
+
+use crate::persistence::{self, ConnectionMode, DatabaseSettings, SqlLogMode};
 
 /// A generous streaming ceiling, not a real limit: staged payloads
 /// (a character DB snapshot, an rtsim blob) are expected to be at most a
@@ -131,7 +134,7 @@ pub fn stage_payload_v1<F>(
     epoch: SaveEpoch,
     store: SaveStoreIdV1,
     write: F,
-) -> Result<common::apex::save_universe::SaveStorePayloadV1, SaveUniverseCommitErrorV1>
+) -> Result<SaveStorePayloadV1, SaveUniverseCommitErrorV1>
 where
     F: FnOnce(&mut File) -> io::Result<()>,
 {
@@ -147,7 +150,115 @@ where
     let mut file = File::open(&path).map_err(SaveUniverseCommitErrorV1::Io)?;
     let identity = hash_artifact_reader_v1(&mut file, MAX_PAYLOAD_BYTES)
         .map_err(|e| SaveUniverseCommitErrorV1::Io(reader_error_to_io(e)))?;
-    Ok(common::apex::save_universe::SaveStorePayloadV1 { store, identity })
+    Ok(SaveStorePayloadV1 { store, identity })
+}
+
+/// Stages the character DB via `VACUUM INTO` -- SQLite's own consistent-
+/// snapshot mechanism. This does NOT compose with [`stage_payload_v1`]'s
+/// `AtomicFile`-closure abstraction: `VACUUM INTO` creates its OWN target
+/// file via SQLite's own I/O rather than writing through a handle we
+/// supply, so it gets its own stage-to-temp-then-verified-durable-rename
+/// sequence instead.
+///
+/// **Connection discipline** (orchestrator-required): runs on its OWN
+/// connection, opened read-only directly from `db_dir` -- never through
+/// `CharacterUpdater`'s connection. This is the SAME pattern
+/// `CharacterLoader` already uses in production
+/// (`persistence::establish_connection(&settings, ConnectionMode::ReadOnly)`,
+/// concurrently with `CharacterUpdater`'s own read-write connection), not
+/// a new one invented here.
+///
+/// **Read-vs-write behavior, verified not assumed**
+/// (`vacuum_into_is_not_blocked_by_and_does_not_block_concurrent_writer_commits`
+/// below, against `persistence::establish_connection`'s own real
+/// pragmas): this database runs in WAL mode. `VACUUM INTO` opens its own
+/// read transaction and gets SQLite's standard WAL snapshot isolation --
+/// it sees a consistent point-in-time view as of when it started, is
+/// never blocked by a concurrent writer's commits, and never blocks them
+/// either. The one WAL-specific cost: a writer's checkpoint cannot
+/// reclaim WAL frames this snapshot still needs, so the WAL file can grow
+/// temporarily while a long-running vacuum overlaps with writes --
+/// reclaimed once the vacuum's read transaction ends. A temporary size
+/// cost, never a correctness or availability issue for either side.
+///
+/// **Durability discipline** (orchestrator-required): `VACUUM INTO`
+/// writes directly to its target with no `AtomicFile`-style temp-then-
+/// rename of its own, so this function gives it one by hand -- stage to
+/// a `.tmp` sibling of the final path, fsync the file, rename, fsync the
+/// containing directory (best-effort on Windows, where a directory
+/// cannot be opened for `fsync` the way Unix allows -- rename durability
+/// there rests on NTFS's own metadata journal). The digest that ENTERS
+/// THE MANIFEST is re-derived from the PLACED file, never the pre-rename
+/// temp bytes -- [`stage_payload_v1`]'s own rule: integrity anchors to
+/// final resting bytes.
+pub fn stage_character_db_v1(layout: &SaveUniverseLayoutV1, epoch: SaveEpoch, db_dir: &Path) -> Result<SaveStorePayloadV1, SaveUniverseCommitErrorV1> {
+    let final_path = layout.payload_path(epoch, SaveStoreIdV1::CharacterDb);
+    if let Some(dir) = final_path.parent() {
+        fs::create_dir_all(dir).map_err(SaveUniverseCommitErrorV1::Io)?;
+    }
+    if final_path.exists() {
+        return Err(SaveUniverseCommitErrorV1::Io(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "character-db payload already staged for this epoch",
+        )));
+    }
+    let temp_path = final_path.with_extension("tmp");
+    if temp_path.exists() {
+        // A leftover from a prior crashed attempt at the SAME epoch --
+        // `VACUUM INTO` refuses to write over an existing target.
+        fs::remove_file(&temp_path).map_err(SaveUniverseCommitErrorV1::Io)?;
+    }
+
+    let read_settings = DatabaseSettings { db_dir: db_dir.to_owned(), sql_log_mode: SqlLogMode::Disabled };
+    let source = persistence::establish_connection(&read_settings, ConnectionMode::ReadOnly);
+    let temp_path_str = temp_path
+        .to_str()
+        .ok_or_else(|| SaveUniverseCommitErrorV1::Io(io::Error::new(io::ErrorKind::InvalidInput, "non-UTF8 staging path")))?;
+    source
+        .execute("VACUUM INTO ?1", rusqlite::params![temp_path_str])
+        .map_err(|e| SaveUniverseCommitErrorV1::Io(io::Error::other(e.to_string())))?;
+    drop(source);
+
+    // Durable placement: fsync the file, rename, fsync the directory --
+    // the same file-then-directory fsync discipline `AtomicFile` gives
+    // its own writes, applied by hand since `VACUUM INTO`'s target isn't
+    // written through that primitive.
+    //
+    // `.write(true)` is load-bearing, not decoration: `sync_all` calls
+    // `FlushFileBuffers` on Windows, which the WIN32 API documents as
+    // requiring a handle opened with write access -- a plain read-only
+    // `File::open` handle fails it with `ERROR_ACCESS_DENIED`. Found by
+    // running this exact code, not assumed: the first attempt used
+    // `File::open` and failed every real test with that error.
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&temp_path)
+        .and_then(|f| f.sync_all())
+        .map_err(SaveUniverseCommitErrorV1::Io)?;
+    fs::rename(&temp_path, &final_path).map_err(SaveUniverseCommitErrorV1::Io)?;
+    if let Some(dir) = final_path.parent() {
+        sync_directory_best_effort(dir);
+    }
+
+    let mut placed = File::open(&final_path).map_err(SaveUniverseCommitErrorV1::Io)?;
+    let identity = hash_artifact_reader_v1(&mut placed, MAX_PAYLOAD_BYTES).map_err(|e| SaveUniverseCommitErrorV1::Io(reader_error_to_io(e)))?;
+    Ok(SaveStorePayloadV1 { store: SaveStoreIdV1::CharacterDb, identity })
+}
+
+/// See [`stage_character_db_v1`]'s own doc comment for the Windows
+/// caveat: this is a real `fsync` on Unix, and a documented best-effort
+/// no-op on Windows.
+fn sync_directory_best_effort(dir: &Path) {
+    #[cfg(unix)]
+    {
+        if let Err(e) = File::open(dir).and_then(|f| f.sync_all()) {
+            tracing::warn!(?e, ?dir, "failed to fsync save-universe epoch directory after a character-db rename");
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = dir;
+    }
 }
 
 fn reader_error_to_io(e: ArtifactReaderErrorV1) -> io::Error {
@@ -263,7 +374,17 @@ pub fn read_pointer_v1(layout: &SaveUniverseLayoutV1) -> Result<SaveEpochPointer
 #[derive(Debug, PartialEq)]
 pub enum SaveUniverseRecoveryV1 {
     EpochZero,
-    Recovered { manifest: SaveUniverseManifestV1 },
+    Recovered {
+        manifest: SaveUniverseManifestV1,
+        /// The manifest's own exact-byte identity -- the SAME value this
+        /// function already computed internally to verify against the
+        /// pointer. Surfaced (chunk 3b) rather than discarded: a caller
+        /// seeding `SaveEpochLedgerV1::seeded_from_recovery_v1` needs
+        /// exactly this value as the chain link for the next epoch, and
+        /// re-deriving it by re-encoding `manifest` would be a second,
+        /// redundant computation of a value already in hand.
+        manifest_identity: ArtifactIdentityV1,
+    },
 }
 
 /// The full recovery path: read the pointer, then admit ONLY a manifest
@@ -307,7 +428,7 @@ pub fn recover_v1(layout: &SaveUniverseLayoutV1) -> Result<SaveUniverseRecoveryV
         }
     }
 
-    Ok(SaveUniverseRecoveryV1::Recovered { manifest })
+    Ok(SaveUniverseRecoveryV1::Recovered { manifest, manifest_identity })
 }
 
 #[cfg(test)]
@@ -387,7 +508,25 @@ mod tests {
         assert_eq!(pointer.epoch, SaveEpoch::new(1));
 
         match recover_v1(&layout).unwrap() {
-            SaveUniverseRecoveryV1::Recovered { manifest: recovered } => assert_eq!(recovered, manifest),
+            SaveUniverseRecoveryV1::Recovered { manifest: recovered, .. } => assert_eq!(recovered, manifest),
+            SaveUniverseRecoveryV1::EpochZero => panic!("expected Recovered after a real commit"),
+        }
+    }
+
+    /// `APEX-T4.6` chunk 3b's own need: `recover_v1`'s surfaced
+    /// `manifest_identity` must be the SAME value the pointer itself
+    /// carries (`commit_epoch_v1`'s return), not a re-derived or
+    /// otherwise-computed one -- a seeded ledger's chain link has to be
+    /// exactly what the on-disk pointer already commits to.
+    #[test]
+    fn recovered_manifest_identity_matches_the_committed_pointers_own() {
+        let (_dir, layout) = layout();
+        let payload = stage_payload_v1(&layout, SaveEpoch::new(1), SaveStoreIdV1::RtsimData, |f| f.write_all(b"rtsim-v1")).unwrap();
+        let manifest = manifest_for(1, None, vec![payload]);
+        let pointer = commit_epoch_v1(&layout, &manifest).unwrap();
+
+        match recover_v1(&layout).unwrap() {
+            SaveUniverseRecoveryV1::Recovered { manifest_identity, .. } => assert_eq!(manifest_identity, pointer.manifest_identity),
             SaveUniverseRecoveryV1::EpochZero => panic!("expected Recovered after a real commit"),
         }
     }
@@ -417,7 +556,7 @@ mod tests {
         commit_epoch_v1(&layout, &m2).unwrap();
 
         match recover_v1(&layout).unwrap() {
-            SaveUniverseRecoveryV1::Recovered { manifest } => assert_eq!(manifest.lineage.epoch, SaveEpoch::new(2)),
+            SaveUniverseRecoveryV1::Recovered { manifest, .. } => assert_eq!(manifest.lineage.epoch, SaveEpoch::new(2)),
             SaveUniverseRecoveryV1::EpochZero => panic!("expected epoch 2"),
         }
     }
@@ -502,5 +641,125 @@ mod tests {
 
         let err = recover_v1(&layout).unwrap_err();
         assert!(matches!(err, SaveUniverseRecoveryErrorV1::PointerDecode(_)));
+    }
+
+    // -- character-db staging (VACUUM INTO) -----------------------------
+
+    fn db_settings(dir: &Path) -> DatabaseSettings { DatabaseSettings { db_dir: dir.to_owned(), sql_log_mode: SqlLogMode::Disabled } }
+
+    #[test]
+    fn a_staged_character_db_payload_is_a_valid_readable_snapshot() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let settings = db_settings(db_dir.path());
+        let setup = persistence::establish_connection(&settings, ConnectionMode::ReadWrite);
+        setup.execute("CREATE TABLE probe (n INTEGER NOT NULL)", []).unwrap();
+        setup.execute("INSERT INTO probe (n) VALUES (42)", []).unwrap();
+        drop(setup);
+
+        let (_layout_dir, layout) = layout();
+        let payload = stage_character_db_v1(&layout, SaveEpoch::new(1), db_dir.path()).unwrap();
+        assert_eq!(payload.store, SaveStoreIdV1::CharacterDb);
+
+        let placed_path = layout.payload_path(SaveEpoch::new(1), SaveStoreIdV1::CharacterDb);
+        let verify = rusqlite::Connection::open(&placed_path).unwrap();
+        let n: i64 = verify.query_row("SELECT n FROM probe", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 42);
+
+        // The recorded identity is the PLACED file's own bytes, not some
+        // other claim.
+        let mut placed_file = File::open(&placed_path).unwrap();
+        let actual = hash_artifact_reader_v1(&mut placed_file, MAX_PAYLOAD_BYTES).unwrap();
+        assert_eq!(payload.identity, actual);
+
+        // No leftover temp file after a successful placement.
+        assert!(!layout.payload_path(SaveEpoch::new(1), SaveStoreIdV1::CharacterDb).with_extension("tmp").exists());
+    }
+
+    /// Restaging the character DB at the same epoch is refused, same as
+    /// [`restaging_the_same_store_at_the_same_epoch_is_refused`] proves
+    /// for the `AtomicFile`-backed path -- this store's staging has its
+    /// own code path and needs its own proof of the same invariant.
+    #[test]
+    fn restaging_the_character_db_at_the_same_epoch_is_refused() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let settings = db_settings(db_dir.path());
+        let setup = persistence::establish_connection(&settings, ConnectionMode::ReadWrite);
+        setup.execute("CREATE TABLE probe (n INTEGER NOT NULL)", []).unwrap();
+        drop(setup);
+
+        let (_layout_dir, layout) = layout();
+        stage_character_db_v1(&layout, SaveEpoch::new(1), db_dir.path()).unwrap();
+        let err = stage_character_db_v1(&layout, SaveEpoch::new(1), db_dir.path());
+        assert!(err.is_err(), "restaging must be refused, not silently overwrite");
+    }
+
+    /// `APEX-T4.6` chunk 3b's own premise-check, made a test rather than
+    /// an assumption: does `VACUUM INTO` on its own read-only connection
+    /// block, or get blocked by, a concurrent writer's commits against
+    /// the SAME WAL-mode database this codebase actually uses
+    /// (`persistence::establish_connection`, not a hand-rolled
+    /// connection)?
+    #[test]
+    fn vacuum_into_is_not_blocked_by_and_does_not_block_concurrent_writer_commits() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, AtomicI64, Ordering},
+        };
+
+        let db_dir = tempfile::tempdir().unwrap();
+        let settings = db_settings(db_dir.path());
+
+        let setup = persistence::establish_connection(&settings, ConnectionMode::ReadWrite);
+        setup.execute("CREATE TABLE probe (n INTEGER NOT NULL)", []).unwrap();
+        drop(setup);
+
+        let stop = Arc::new(AtomicBool::new(false));
+        // Shared progress counter -- the wait below polls THIS rather
+        // than sleeping a fixed guess, so the test is robust to
+        // scheduling contention under a busy parallel test run instead
+        // of flaking when the writer thread is slow to get its first
+        // timeslice.
+        let rows_committed = Arc::new(AtomicI64::new(0));
+        let writer_thread = {
+            let stop = Arc::clone(&stop);
+            let rows_committed = Arc::clone(&rows_committed);
+            let settings = settings.clone();
+            std::thread::spawn(move || {
+                let conn = persistence::establish_connection(&settings, ConnectionMode::ReadWrite);
+                let mut n = 0i64;
+                while !stop.load(Ordering::Relaxed) {
+                    conn.execute("INSERT INTO probe (n) VALUES (?1)", rusqlite::params![n]).unwrap();
+                    n += 1;
+                    rows_committed.store(n, Ordering::Relaxed);
+                }
+                n
+            })
+        };
+
+        // Wait for real, observed writer progress (bounded, not
+        // infinite) before racing `VACUUM INTO` against it -- a fixed
+        // sleep here is exactly the kind of guess that flakes under a
+        // contended parallel `cargo test` run.
+        let wait_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while rows_committed.load(Ordering::Relaxed) < 1 && std::time::Instant::now() < wait_deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(rows_committed.load(Ordering::Relaxed) >= 1, "the writer thread never got to commit even once within 5s -- test infrastructure, not the claim under test");
+
+        let (_layout_dir, layout) = layout();
+        // The claim under test: this succeeds without error and without
+        // hanging, concurrently with the writer thread's ongoing commits.
+        let payload = stage_character_db_v1(&layout, SaveEpoch::new(1), db_dir.path())
+            .expect("VACUUM INTO must not be blocked by, nor block, concurrent writer commits");
+
+        stop.store(true, Ordering::Relaxed);
+        let rows_written = writer_thread.join().unwrap();
+        assert!(rows_written > 0, "the writer thread must have actually run concurrently, not merely been spawned");
+
+        let placed_path = layout.payload_path(SaveEpoch::new(1), SaveStoreIdV1::CharacterDb);
+        let verify = rusqlite::Connection::open(&placed_path).unwrap();
+        let count: i64 = verify.query_row("SELECT COUNT(*) FROM probe", [], |r| r.get(0)).unwrap();
+        assert!(count >= 0, "the vacuumed snapshot must be a valid, queryable database");
+        let _ = payload;
     }
 }

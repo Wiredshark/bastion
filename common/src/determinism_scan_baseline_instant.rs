@@ -28,6 +28,14 @@
     ("server/src/metrics.rs", "let since_the_epoch = SystemTime::now()", 0),
     ("server/src/rtsim/mod.rs", "detected_at_unix_seconds: std::time::SystemTime::now()", 0),
     ("server/src/rtsim/mod.rs", "self.last_saved = Some(Instant::now());", 0),
+    // `APEX-T4.6` chunk 3b: test-only (`#[cfg(test)]`), a bounded poll
+    // loop de-flaking `vacuum_into_is_not_blocked_by_and_does_not_block_
+    // concurrent_writer_commits` against real writer-thread scheduling
+    // under a contended parallel test run -- not authoritative game
+    // state, but the scan is text-based over the whole file, not
+    // cfg-aware, so it self-catches here same as every prior instance.
+    ("server/src/save_universe.rs", "let wait_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);", 0),
+    ("server/src/save_universe.rs", "while rows_committed.load(Ordering::Relaxed) < 1 && std::time::Instant::now() < wait_deadline {", 0),
     ("server/src/session_registry.rs", "fn now() -> Instant { Instant::now() }", 0),
     ("server/src/state_ext.rs", "Instant::now(),", 0),
     ("server/src/sys/invite_timeout.rs", "// not wall-clock Instant::now().", 0),

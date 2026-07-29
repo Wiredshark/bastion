@@ -1,5 +1,5 @@
 use super::*;
-use crate::{ServerConstants, sys::terrain::SpawnEntityData};
+use crate::{ServerConstants, persistence::DatabaseSettings, sys::terrain::SpawnEntityData};
 use common::{
     LoadoutBuilder,
     calendar::Calendar,
@@ -33,7 +33,7 @@ use rtsim::{
 use specs::{Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, WriteExpect, WriteStorage};
 use std::{
     ops::Range,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
     time::Duration,
 };
 use tracing::error;
@@ -622,6 +622,12 @@ impl<'a> System<'a> for Sys {
             // this system drains it into the chronicle (it owns the rtsim
             // data mutably; bastion_jobs holds a long-lived read guard).
             specs::Write<'a, crate::bastion_jobs::JobBoard>,
+            // `APEX-T4.6` chunk 3b: `RtSim::save`'s staged-commit path
+            // needs the character DB's directory for its own read-only
+            // `VACUUM INTO` connection -- the same `Arc` `lib.rs`'s
+            // construction already inserts for `CharacterUpdater`/
+            // `CharacterLoader`, read here rather than a new resource.
+            ReadExpect<'a, Arc<RwLock<DatabaseSettings>>>,
         ),
     );
 
@@ -665,6 +671,7 @@ impl<'a> System<'a> for Sys {
                 bastion_test_gotos,
                 bastion_traversal_ownerships,
                 mut job_board,
+                database_settings,
             ),
         ): Self::SystemData,
     ) {
@@ -750,7 +757,15 @@ impl<'a> System<'a> for Sys {
         {
             // TODO: Use slow jobs
             let _ = slow_jobs;
-            rtsim.save(/* &slow_jobs, */ false);
+            // `APEX-T4.6` chunk 3b: `db_dir` cloned out and the read
+            // guard dropped before `save` (which takes `&mut rtsim`)
+            // needs no lock held across the call.
+            let db_dir = database_settings
+                .read()
+                .expect("DatabaseSettings RwLock was poisoned")
+                .db_dir
+                .clone();
+            rtsim.save(/* &slow_jobs, */ false, &db_dir);
         }
 
         let chunk_states = rtsim.state.resource::<ChunkStates>();

@@ -701,6 +701,18 @@ impl Server {
             Arc::<RwLock<DatabaseSettings>>::clone(&database_settings),
         )?);
 
+        // `APEX-T4.6` chunk 3b: the save-universe epoch commit's own
+        // character-DB staging needs `db_dir` (via `VACUUM INTO` on its
+        // OWN read-only connection, per the orchestrator's connection-
+        // discipline requirement -- never `CharacterUpdater`'s
+        // connection). Reuses the SAME `Arc` already handed to
+        // `CharacterUpdater`/`CharacterLoader` below, not a new type;
+        // `rtsim/tick.rs`'s periodic-save system reads it as its own
+        // `SystemData` field.
+        state
+            .ecs_mut()
+            .insert(Arc::<RwLock<DatabaseSettings>>::clone(&database_settings));
+
         let ability_map = comp::item::tool::AbilityMap::<comp::AbilityItem>::load_expect_cloned(
             "common.abilities.ability_set_manifest",
         );
@@ -5114,7 +5126,22 @@ impl Drop for Server {
         #[cfg(feature = "worldgen")]
         {
             debug!("Saving rtsim state...");
-            self.state.ecs().write_resource::<rtsim::RtSim>().save(true);
+            // `APEX-T4.6` chunk 3b: `RtSim::save` also needs the
+            // character DB's directory now -- read via the same
+            // `Arc<RwLock<DatabaseSettings>>` resource
+            // `server/src/lib.rs`'s construction already inserts.
+            let db_dir = self
+                .state
+                .ecs()
+                .read_resource::<Arc<RwLock<DatabaseSettings>>>()
+                .read()
+                .expect("DatabaseSettings RwLock was poisoned")
+                .db_dir
+                .clone();
+            self.state
+                .ecs()
+                .write_resource::<rtsim::RtSim>()
+                .save(true, &db_dir);
         }
 
         // DET-TER-018 (v5 deep-pass): the recorder finalizes LAST — after
