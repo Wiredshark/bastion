@@ -138,6 +138,36 @@ six read as questionable to predict AT ALL once named this explicitly
 than a footstep sound), which is a Decision-4-class-3-adjacent question
 the classification table surfaces but does not resolve.
 
+> **RULED (`DECISIONS #34`, 2026-07-29) — the six durable-presentation
+> channels are EXCLUDED FROM PREDICTION in v1.** The question this
+> ruling answers, verbatim: should `event`/Aura, `buff`, `sprite_summon`,
+> `sprite_light`, `transform`, and `regrow_head` be predictable at all,
+> given each persists past its own moment?
+>
+> **The strengthened law.** Decision #31's "late beats double" holds for
+> TRANSIENT effects because a WRONG transient effect expires by itself —
+> the cost of being wrong is bounded by the effect's own lifetime. For
+> DURABLE effects the same reasoning runs the other way: **wrong is
+> worse than late, by definition, because the lie persists.** A buff,
+> transform, aura, or summoned sprite appearing one round-trip late is a
+> minor responsiveness cost; appearing and then turning out to be FALSE
+> is a standing falsehood — exactly what a retraction ledger would exist
+> to claw back, and exactly what gating on confirmation makes
+> unnecessary, the same way Decision 3 made rider-prediction divergence
+> unrepresentable by simply not predicting it. Don't predict what you
+> can't afford to retract.
+>
+> **The rule.** All six channels are confirmation-gated: never
+> predictively presented, applied only once the authoritative CompSync
+> (or equivalent server-confirmed path) delivers them.
+>
+> **Revisit trigger, same shape as Decision 3's carried-entity revisit.**
+> A named channel graduates from confirmation-gated to predicted only on
+> playtest feel evidence, per channel — not as a blanket reconsideration
+> of this ruling, and whatever machinery that graduation needs (partial
+> retraction? a narrower durable-but-cheap-to-undo subclass?) is scoped
+> at that time, not invented now against a hypothetical.
+
 **What this amendment does NOT do:** it does not build a retraction
 ledger, does not change which effects a predicted frame may emit today,
 and does not wire `MayEmitAuthorityEffectsV1`. It is the ground `T7.4`
@@ -390,5 +420,5 @@ is a measurement, not a decision.
 | 1 | Predicted components and replay-legal transitions | **APPROVED**, then **AMENDED** (see Amendment 1): `energy` proved from the StateUpdate From chain; `entity`/`uid` added as a fourth `Identity` role — 14 input · 21 ambient · 1 write channel · 2 identity |
 | 2 | World revision requirements and chunk-unload invalidation | **APPROVED as proposed**; chunk-key cost measured at ~1.05 KiB/client (1.6% of budget), gate and fallback removed |
 | 3 | Ridden/mounted ownership | **RULED** — no prediction for riders or carriers in v1; carry revisits as a T5.1-cohort experiment if feel complaints emerge |
-| 4 | Predicted side-effect scope | **RULED**, then **REOPENED** (see Amendment 2): three classes as proposed, ability sounds deduplicated (late beats double); `T7.4` item B's premise-check found 6 of 21 `CharacterStateEvents` channels are DURABLE-PRESENTATION (persist past their own moment, cannot rely on the sound ruling's "expires on its own"), which needs its own ruling before item B builds anything |
+| 4 | Predicted side-effect scope | **RULED**, **REOPENED**, then **RE-RULED** (see Amendment 2): three classes as proposed, ability sounds deduplicated (late beats double, transient effects only); the 6 durable-presentation channels (`event`/Aura, `buff`, `sprite_summon`, `sprite_light`, `transform`, `regrow_head`) are EXCLUDED FROM PREDICTION in v1 (`DECISIONS #34`) — wrong is worse than late when the lie persists, revisits per-channel on playtest feel evidence |
 | 5 | Duration, budget, fallback | **RULED** — adopted as named consts, tuned later from T5 cohort metrics |
