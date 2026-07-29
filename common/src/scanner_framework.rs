@@ -249,14 +249,93 @@ pub const UNSCANNED_WORKSPACE_MEMBERS: [(&str, &str); 16] = [
 /// collect and sort by the `String` key, or accumulate into a
 /// `BTreeMap` — so the addition sequence is fixed. Ordering the
 /// summation is the whole fix; no value changes.
+/// `E14-5` chunk 2 — per-site verdicts for the 20 `EVIDENCE-PATH`
+/// members that a receiver-type check could not resolve.
+///
+/// **16 SAFE, and 4 sites carrying 3 distinct defects.** Every safe
+/// verdict names the mechanism, because "looks fine" is not a verdict:
+///
+/// - **Safety by DESTINATION type (4).** The four `owners.extend(..)`
+///   calls read three hash containers in hash order — into a
+///   `BTreeSet`. The extend order cannot matter because the set is
+///   ordered; the downstream loop iterates numerically. The scan flags
+///   the read; the safety lives one line down in what receives it.
+///   Distinct from the E13 chunk-1 pattern, where safety came from the
+///   RECEIVER being a `BTreeMap`.
+/// - **Safety by canonicalising TYPE (1).** The asset-root recompute
+///   walks a directory in OS order, but hands entries to
+///   `ClosureTreeV1::try_new`, which sorts by path and rejects
+///   duplicates (`source_closure.rs:119`). The type canonicalises so
+///   the caller cannot forget to.
+/// - **Safety by immediate sort (2).** A directory walk sorted by file
+///   name on the next line; a peak list sorted on the next line.
+/// - **Safety by deterministic receiver (3).** The three NPC-key
+///   prefixes iterate a `DenseSlotMap`, so "first NPC" and "first N
+///   NPCs" are stable — which matters more than it looks, since those
+///   choose WHICH NPC the scenario tests.
+/// - **Safety by order-insensitive fold (1).** A `max()` over integers.
+/// - **Safety by ordered input or unique key (5).** Two selections over
+///   `Vec`s, one over a key-unique map (no tie possible), plus the JSON
+///   differ's `BTreeSet` key union — itself the determinism comparator,
+///   correctly built.
+///
+/// # The three defects
+///
+/// **1. `orbit_stddev` (leash scenario) — THE WORST, because it is a
+/// VERDICT, not a number.** `track` is a `std::collections::HashMap`,
+/// and the scenario accumulates `f32` standard deviations across its
+/// values-iteration. Float addition is not associative, so the total
+/// depends on hash order — and then `orbit_ok = orbit_stddev > 2.0`
+/// feeds the scenario's compound pass/fail. Two runs of an identical
+/// simulation can, in principle, disagree about whether the leash test
+/// PASSED. Honest bound: the divergence is ULP-scale, so it only flips
+/// the boolean when the value sits within ~1e-7 of the threshold — low
+/// probability per run, high confusion cost when it happens, and free
+/// to fix. This is the "miss a wobble it did" half of the campaign's
+/// question, where the `dist_total` defect is the "report one it
+/// didn't" half.
+///
+/// **2. `dist_total` (mine-fidelity) — `E14-5a`,** already designated.
+/// Same shape, but lands in an emitted metric rather than a verdict.
+///
+/// **3. `eat_by_uid` (needs scenario) — CONDITIONAL, and the
+/// precondition is stated rather than assumed away.** Jobs are read
+/// from a `HashMap<JobId, Job>` and inserted into a map keyed by
+/// OWNER, so a last-write-wins collision is resolved by hash order.
+/// That only bites if one owner holds two `EatFrom` claims at once. I
+/// could not prove from the harness that this is impossible, and
+/// "probably impossible" is exactly the reasoning this program
+/// distrusts — so it is recorded with its precondition attached rather
+/// than filed as safe or as a defect.
+///
+/// All three fixes are orderings, not value changes: sort before
+/// summing, or accumulate through a `BTreeMap`.
+pub const HARNESS_EVIDENCE_PATH_VERDICTS: [(&str, usize, &str); 2] = [
+    (
+        "SAFE",
+        16,
+        "each with a named mechanism: destination type (4), canonicalising type (1), immediate \
+         sort (2), deterministic receiver (3), order-insensitive fold (1), ordered input or \
+         unique key (5)",
+    ),
+    (
+        "DEFECT",
+        4,
+        "3 distinct defects across 4 sites: orbit_stddev (f32 accumulated over hash iteration, \
+         feeding a scenario PASS/FAIL threshold -- the worst), dist_total x2 (E14-5a, same shape \
+         into an emitted metric), eat_by_uid (last-write-wins keyed by owner; conditional on one \
+         owner holding two claims, precondition unproven and recorded as such)",
+    ),
+];
+
 pub const HARNESS_TRIAGE_V1: [(&str, usize, &str); 3] = [
     (
         "EVIDENCE-PATH",
         73,
-        "reaches recorded/compared output; 53 resolved safe by receiver type (DenseSlotMap), 20 \
-         pending per-site treatment, 1 confirmed defect (mine-fidelity dist_total: f64 summed in \
-         std::HashMap iteration order, emitted as mf_walked_total in an otherwise wall-clock-free \
-         record)",
+        "reaches recorded/compared output. 53 resolved safe by receiver type (DenseSlotMap); the \
+         remaining 20 now have per-site verdicts (E14-5 chunk 2, HARNESS_EVIDENCE_PATH_VERDICTS): \
+         16 SAFE, 4 sites carrying 3 distinct defects -- and the worst of the three feeds a \
+         scenario PASS/FAIL verdict, not merely a reported number",
     ),
     (
         "FIXTURE-SETUP",
@@ -441,6 +520,20 @@ mod tests {
         for (bucket, _, reason) in HARNESS_TRIAGE_V1 {
             assert!(reason.len() > 40, "{bucket}: a bucket without a substantive reason is a label");
         }
+
+        // Chunk 2: the per-site verdicts must account for exactly the
+        // 20 that the receiver-type check left unresolved -- 73 total
+        // minus the 53 it resolved. A verdict list that silently
+        // covers fewer sites than it claims is the same failure as a
+        // bucket that drops them.
+        const EVIDENCE_PATH: usize = 73;
+        const RESOLVED_BY_RECEIVER_TYPE: usize = 53;
+        let verdicts: usize = HARNESS_EVIDENCE_PATH_VERDICTS.iter().map(|(_, n, _)| n).sum();
+        assert_eq!(
+            verdicts,
+            EVIDENCE_PATH - RESOLVED_BY_RECEIVER_TYPE,
+            "the per-site verdicts must cover every unresolved EVIDENCE-PATH site"
+        );
     }
 
     #[test]
