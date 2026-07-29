@@ -32,6 +32,7 @@ pub mod parallel;
 pub mod pass_graph;
 pub mod presentation;
 pub mod publication;
+pub mod r2_admission;
 pub mod readiness;
 pub mod replay;
 pub mod selection;
