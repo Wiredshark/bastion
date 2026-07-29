@@ -212,6 +212,22 @@ pub const AMBIENT_ENTROPY_SITES: &[(&str, usize, RandomDrawClassV1, &str)] = &[
         RandomDrawClassV1::NonAuthoritativeEntropy,
         "#[cfg(test)] mod tests' test_creating_entities only",
     ),
+    // `E14-3` chunk 4 (FINAL) -- the last three roots entered together:
+    // `common/net/src`, `common/state/src`, `common/query_server/src`.
+    // Between them, exactly ONE site. The wire crate and the ECS state
+    // container hold zero ambient draws, which is what they should hold.
+    (
+        "common/query_server/src/server.rs",
+        1,
+        RandomDrawClassV1::IdentityGeneration,
+        "gen_secret's rotating challenge-secret pair for the server-browser query protocol -- \
+         the strongest possible case for this class, because DETERMINISM HERE WOULD BE THE BUG: \
+         a predictable challenge secret is a spoofable one. Pairs with the secret-rotation \
+         wall-clock read this crate contributed to the determinism_scan instant family in E13 \
+         chunk 5. Also the only site in this whole campaign found by the BARE `rng()` detector \
+         rather than a qualified path -- `let mut rng = rng();` via `use rand::rng;`, exactly \
+         the import-shaped evasion the T0.79 cross-review added contains_bare_rng_call for",
+    ),
     // ---------------------------------------------------------------
     (
         "common/src/apex/identity/opaque.rs",
@@ -494,29 +510,25 @@ mod tests {
     fn scan_scoped_crates() -> Vec<PathBuf> {
         let root = workspace_root();
         let mut found = Vec::new();
-        for crate_dir in [
-            "common/src",
-            "server/src",
-            "server/agent/src",
-            "rtsim/src",
-            // E14-3 chunk 1: this scanner kept its OWN root list, four
-            // wide, while `scanner_framework::AUTHORITATIVE_SCAN_ROOTS`
-            // grew to ten. `common/systems/src` -- the authoritative
-            // combat/physics systems -- was in NEITHER for the whole of
-            // E13, which is how a half-finished `seed_ability_rng`
-            // migration sat here unflagged. Two scanners with two root
-            // lists is how a crate stays invisible to both.
-            "common/systems/src",
-            // E14-3 chunk 2: the authoritative colony sim, where an
-            // unmitigated draw would matter most -- and where exactly
-            // one was hiding.
-            "bastion-server/src",
-            // E14-3 chunk 3: worldgen -- the classic home of
-            // seeded-vs-ambient confusion, and the chunk most likely to
-            // find debt. It found none; all six sites were already
-            // mitigated.
-            "world/src",
-        ] {
+        // E14-3 chunk 4 (FINAL): this scanner no longer keeps its own
+        // root list. It CONSUMES `AUTHORITATIVE_SCAN_ROOTS`.
+        //
+        // The whole E13/E14-3 campaign exists because there were two
+        // hand-maintained lists: this one sat at four roots while the
+        // shared one grew to ten, and `common/systems/src` was in
+        // NEITHER -- which is how six live authoritative combat draws
+        // and a half-finished `seed_ability_rng` migration stayed
+        // invisible to both scanners at once.
+        //
+        // Re-synchronising the two lists would have fixed today's gap
+        // and left tomorrow's free to reopen silently, because nothing
+        // would compare them. Sharing the constant makes the divergence
+        // UNREPRESENTABLE instead: this scanner cannot fall behind a
+        // root it does not own. If a deliberate exclusion is ever
+        // needed, it belongs here as a NAMED exception with a reason --
+        // the `UNSCANNED_WORKSPACE_MEMBERS` shape -- not as a second
+        // list that drifts by accident.
+        for crate_dir in crate::scanner_framework::AUTHORITATIVE_SCAN_ROOTS {
             walk(&root.join(crate_dir), &mut |path| {
                 // This file's own pattern-matching code contains the three
                 // match strings as string literals (not calls) -- self-
