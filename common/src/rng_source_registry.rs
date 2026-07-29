@@ -142,6 +142,26 @@ pub const AMBIENT_ENTROPY_SITES: &[(&str, usize, RandomDrawClassV1, &str)] = &[
         "shockwave hit resolution via combat::attack, plus the same 0.05 SoundEvent draw as \
          projectile.rs -- likewise heard by agents, not just players",
     ),
+    // `E14-3` chunk 2 -- `bastion-server/src` entered this scanner's
+    // roots. Exactly one site, and it is an OUTLIER rather than a
+    // pattern: every other damage-instance in the tree is derived.
+    (
+        "bastion-server/src/bastion_jobs.rs",
+        1,
+        RandomDrawClassV1::UnmitigatedAuthoritativeEntropy,
+        "cave-in injury (cavein_eject_and_injure): `instance: rand::random()` on a HealthChange \
+         applied to a colonist's Health. NOT IdentityGeneration -- the value is not an opaque \
+         handle whose unguessability is the point, it lands in Health::last_change, which is \
+         authoritative component state and is synced, so two runs diverge in any state hash. \
+         The deterministic seam for THIS EXACT FIELD already exists and is used at ~7 sites in \
+         combat.rs: derive_attack_instance(site, Option<attacker_uid>, target_uid, time, \
+         ordinal) -- attacker is already Option, so an environmental cave-in with no attacker \
+         fits it directly. (health.rs's `instance: 0` convention is only for the \
+         no-change-yet placeholder, not for real damage.) Fix is small but not a one-liner: \
+         cavein_eject_and_injure takes no `uids` storage, so the param has to be threaded \
+         through it and both callers (the live Sys::run post-loop and the harness's \
+         bastion_force_collapse_check)",
+    ),
     // ---------------------------------------------------------------
     (
         "common/src/apex/identity/opaque.rs",
@@ -437,6 +457,10 @@ mod tests {
             // migration sat here unflagged. Two scanners with two root
             // lists is how a crate stays invisible to both.
             "common/systems/src",
+            // E14-3 chunk 2: the authoritative colony sim, where an
+            // unmitigated draw would matter most -- and where exactly
+            // one was hiding.
+            "bastion-server/src",
         ] {
             walk(&root.join(crate_dir), &mut |path| {
                 // This file's own pattern-matching code contains the three
@@ -537,6 +561,46 @@ mod tests {
         assert!(!registered.contains("nonexistent/made/up/path.rs"));
     }
 
+    /// Every movement of the debt population, oldest first, each
+    /// with its CAUSE — and the cause must declare which KIND of
+    /// movement it is.
+    ///
+    /// **`E14-3` chunk 2 tested this ratchet one chunk after it was
+    /// built, and the test was whether I would rubber-stamp my own
+    /// gate.** Widening the roots to `bastion-server/src` revealed a
+    /// seventh site, so the mark had to rise — which is precisely
+    /// the move the ratchet exists to make uncomfortable.
+    ///
+    /// The resolution is that two different events were being
+    /// counted as one:
+    ///
+    /// - **`DISCOVERY`** — a scan-root widening reveals debt that
+    ///   ALREADY EXISTED. The number rises because vision improved,
+    ///   not because the code got worse. Legitimate.
+    /// - **`MIGRATION`** — a site moved onto a deterministic seam.
+    ///   The number falls. Always legitimate.
+    /// - New ambient code inside an already-scanned root has NO
+    ///   legal label here, which is the point: there is no honest
+    ///   string to write, so the ledger cannot be used to launder a
+    ///   regression into a recorded fact.
+    ///
+    /// [`ledger_causes_declare_their_kind`] enforces the labels, so
+    /// this cannot decay into a list of bare numbers.
+    const DEBT_LEDGER: &[(usize, &str)] = &[
+        (
+            6,
+            "E14-3 chunk 1 (DISCOVERY): common/systems/src entered this scanner's roots -- \
+             six pre-existing combat draws (arcing/buff/melee/pool/projectile/shockwave), \
+             unwalked since T0.79 because this scanner kept its own narrower root list",
+        ),
+        (
+            7,
+            "E14-3 chunk 2 (DISCOVERY): bastion-server/src entered this scanner's roots -- \
+             the cave-in damage-instance draw, likewise pre-existing and likewise invisible \
+             only because of the root gap",
+        ),
+    ];
+
     /// The debt ratchet: `UnmitigatedAuthoritativeEntropy` may only
     /// SHRINK.
     ///
@@ -549,9 +613,7 @@ mod tests {
     /// says "must only go down" is a decision somebody has to defend.
     #[test]
     fn unmitigated_authoritative_entropy_only_shrinks() {
-        /// `E14-3` chunk 1 found six. Lower this when one is migrated
-        /// onto `combat::seed_ability_rng`; never raise it.
-        const HIGH_WATER_MARK: usize = 6;
+        let (high_water_mark, _) = *DEBT_LEDGER.last().expect("ledger is never empty");
 
         let live = AMBIENT_ENTROPY_SITES
             .iter()
@@ -561,16 +623,37 @@ mod tests {
             .count();
 
         assert!(
-            live <= HIGH_WATER_MARK,
-            "UnmitigatedAuthoritativeEntropy grew to {live} (high-water mark {HIGH_WATER_MARK}). \
+            live <= high_water_mark,
+            "UnmitigatedAuthoritativeEntropy grew to {live} (high-water mark {high_water_mark}). \
              This class is DEBT: a new live authoritative ambient draw needs a reviewed decision, \
-             not a registry line. Migrate it onto combat::seed_ability_rng instead."
+             not a registry line. Migrate it onto a deterministic seam \
+             (combat::seed_ability_rng / combat::derive_attack_instance) instead. If this growth \
+             is a scan-root WIDENING revealing pre-existing debt, add a DEBT_LEDGER entry saying \
+             so -- and if you cannot honestly write (DISCOVERY), you are looking at a regression."
         );
         assert_eq!(
-            live, HIGH_WATER_MARK,
-            "UnmitigatedAuthoritativeEntropy shrank to {live} -- good. Lower HIGH_WATER_MARK to \
-             {live} so the ratchet holds the new ground."
+            live, high_water_mark,
+            "UnmitigatedAuthoritativeEntropy shrank to {live} -- good. Add a DEBT_LEDGER entry \
+             ({live}, \"... (MIGRATION): ...\") so the ratchet holds the new ground."
         );
+    }
+
+    /// Every `DEBT_LEDGER` cause must declare its KIND.
+    ///
+    /// Without this the ledger decays into bare numbers with prose
+    /// beside them, and "we raised it because we had to" becomes an
+    /// acceptable entry. `DISCOVERY` and `MIGRATION` are the only two
+    /// legitimate reasons the population moves; new ambient code in an
+    /// already-scanned root has no legal label, which is exactly what
+    /// stops the ledger from laundering a regression into a record.
+    #[test]
+    fn ledger_causes_declare_their_kind() {
+        for (mark, cause) in DEBT_LEDGER {
+            assert!(
+                cause.contains("(DISCOVERY)") || cause.contains("(MIGRATION)"),
+                "DEBT_LEDGER entry {mark} must declare (DISCOVERY) or (MIGRATION): {cause}"
+            );
+        }
     }
 
     #[test]
