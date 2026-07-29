@@ -137,6 +137,7 @@ fn handle_main_events_cleared(
     global_state: &mut GlobalState,
 ) {
     let r0p_frame_start = Instant::now();
+    crate::r0p_observer::frame_begin();
     span!(guard, "Handle MainEventsCleared");
     // Screenshot / Fullscreen toggle
     global_state
