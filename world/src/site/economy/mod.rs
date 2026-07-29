@@ -2212,4 +2212,64 @@ mod t8_4_model_sensitivity_tests {
              T8.3's own 2-3 site shape) to actually exercise the model"
         );
     }
+
+    /// Chunk 2: the sweep's second named field, `population` (`pop`) --
+    /// a genuinely different state VARIABLE from `stocks` (population
+    /// feeds `demand`/`supply` as a multiplier, `self.labors[labor] *
+    /// self.pop`, rather than being read/written as a stock itself), so
+    /// its sensitivity is not assumed to match `stocks`' -- checked
+    /// independently, its own mechanism, its own verdict.
+    fn population_sensitivity_curve_v1(seed: u32, perturb: bool, phases: u32) -> (Vec<f32>, ()) {
+        context::enable_economy_phase_evidence_mode_v1();
+
+        let mut index_baseline = fixture_v1(seed);
+        let mut index_perturbed = fixture_v1(seed);
+        let site_id = *index_baseline.sites.ids().next().as_ref().expect("fixture has one site");
+
+        if perturb {
+            let economy = index_perturbed.sites.get_mut(site_id).economy_mut();
+            economy.pop = f32::from_bits(economy.pop.to_bits() + 1);
+        }
+
+        let mut env_baseline = context::Environment::new().unwrap();
+        let mut env_perturbed = context::Environment::new().unwrap();
+        let mut curve = Vec::new();
+        for phase in 0..phases {
+            context::tick_with_phase_evidence_v1(&mut index_baseline, phase, &mut env_baseline);
+            context::tick_with_phase_evidence_v1(&mut index_perturbed, phase, &mut env_perturbed);
+            let pop_baseline = index_baseline.sites.get(site_id).economy.as_ref().unwrap().pop;
+            let pop_perturbed = index_perturbed.sites.get(site_id).economy.as_ref().unwrap().pop;
+            curve.push((pop_perturbed - pop_baseline).abs());
+        }
+        (curve, ())
+    }
+
+    #[test]
+    fn population_sensitivity_reproducibility_and_null_and_verdict() {
+        // Reproducibility.
+        let (curve_a, _) = population_sensitivity_curve_v1(33, true, 50);
+        let (curve_b, _) = population_sensitivity_curve_v1(33, true, 50);
+        assert_eq!(curve_a, curve_b);
+
+        // Null perturbation.
+        let (null_curve, _) = population_sensitivity_curve_v1(33, false, 50);
+        assert!(null_curve.iter().all(|&d| d == 0.0), "expected an all-zero population curve for a null perturbation, got {null_curve:?}");
+
+        // Verdict, same coverage discipline as the stock sweep.
+        let phases = 200;
+        let (curve, _) = population_sensitivity_curve_v1(33, true, phases);
+        let first_nonzero_phase = curve.iter().position(|&d| d > 0.0);
+        let final_magnitude = *curve.last().expect("phases > 0");
+        let max_magnitude = curve.iter().cloned().fold(0.0_f32, f32::max);
+        println!(
+            "T8.4 chunk 2 sensitivity verdict (seed=33, site population, {phases} phases): \
+             first_nonzero_phase={first_nonzero_phase:?} final_magnitude={final_magnitude} \
+             max_magnitude={max_magnitude}"
+        );
+        assert!(
+            first_nonzero_phase.is_some(),
+            "the one-ULP population perturbation never became observable over {phases} phases -- \
+             coverage insufficient, not a stability finding"
+        );
+    }
 }
