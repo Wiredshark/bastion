@@ -46,6 +46,23 @@ pub enum SelectionStatusV1 {
     /// No tiebreak, confirmed by reading the site, and the selection DOES
     /// feed authoritative state -- migrated onto `DecisionKeyV1` this row.
     IncompleteAuthoritativeMigrated,
+    /// No tiebreak in the KEY, read directly, and authoritative -- but
+    /// the selection is still deterministic because its INPUT SEQUENCE
+    /// is provably ordered (a `Vec` in a fixed build order, or an
+    /// explicit sort upstream), so `min_by*`-takes-first /
+    /// `max_by*`-takes-last resolves every tie the same way each run.
+    ///
+    /// A separate status from [`Complete`](Self::Complete) on purpose:
+    /// the guarantee is NON-LOCAL. Nothing at the selection expression
+    /// says the input is ordered, so the site can be silently broken by
+    /// an edit elsewhere -- dropping a sort, or swapping a `Vec` for a
+    /// `HashMap` -- that never touches this line and looks unrelated in
+    /// review. Calling that `Complete` would file a remote dependency as
+    /// a local property, which is the overstatement this registry
+    /// exists to prevent. Introduced `E13` chunk 2, when the widened
+    /// root set brought `server/agent/src` in and all three of its
+    /// selection sites turned out to be exactly this shape.
+    CompleteByOrderedInput,
     /// Found by the scan, not yet individually read. Disclosed as such,
     /// not silently assumed either way.
     NotReviewed,
@@ -69,7 +86,10 @@ const fn site(
     SelectionSiteV1 { file, occurrence, snippet, status, note }
 }
 
-use SelectionStatusV1::{Complete, IncompleteAuthoritativeMigrated, IncompleteCosmetic, NotReviewed};
+use SelectionStatusV1::{
+    Complete, CompleteByOrderedInput, IncompleteAuthoritativeMigrated, IncompleteCosmetic,
+    NotReviewed,
+};
 
 const CATALOG: &[SelectionSiteV1] = &[
     site("common/src/async_work.rs", 0, ".min_by_key(|(_, p)| {", NotReviewed, "found by scan, not read this pass"),
@@ -86,6 +106,11 @@ const CATALOG: &[SelectionSiteV1] = &[
     site("server/src/rtsim/mod.rs", 0, ".min_by_key(|(_, site)| {", NotReviewed, "found by scan, not read this pass"),
     site("server/src/state_ext.rs", 0, "nearby_items.min_by_key(|(_, dist)| (dist * 1000.0) as i32)", NotReviewed, "found by scan, not read this pass"),
     site("server/src/sys/msg/in_game.rs", 0, ".min_by_key(|j| (j.pos.z - cell.z).abs())", NotReviewed, "found by scan, not read this pass"),
+    // E13 chunk 2: server/agent/src entered the root set. All three of
+    // its selection sites were read, and all three are ordered-input.
+    site("server/agent/src/action_nodes.rs", 0, ".max_by_key(|(_, item)| {", CompleteByOrderedInput, "select_healing_item: which item an NPC drinks. Input is inventory.slots_with_id(), a Vec walked in slot-index order; max_by_key takes the LAST maximum, so equal-value items always resolve to the highest slot index"),
+    site("server/agent/src/action_nodes.rs", 0, ".min_by(|a, b| {", CompleteByOrderedInput, "colonist zone-magnet wander pull. Input is ActivityZones(pub Vec<(ZoneKind, Region)>) -- a Vec, not a map (common/src/bastion.rs:298); equidistant zones resolve to the first in Vec order. NaN would compare Equal via unwrap_or, which also lands on the first"),
+    site("server/agent/src/action_nodes.rs", 0, ".min_by_key(|(_, pos, _)| (pos.distance_squared(self_pos) * 100.0) as i32)", CompleteByOrderedInput, "pick_target_candidate's non-combat bucket -- WHO an NPC targets, fully authoritative. The *100-as-i32 quantization manufactures ties routinely, and the key carries no tiebreak; determinism comes from choose_target sorting entities_nearby by Uid ~150 lines upstream (action_nodes.rs:1345), so ties land on the lowest Uid. The clearest case for this status existing: delete that one sort and this line still reads correct"),
     site("rtsim/src/ai/action_policy.rs", 0, ".max_by(|(_, a), (_, b)| compare(a, b))", NotReviewed, "found by scan, not read this pass"),
     site("rtsim/src/generate/site.rs", 0, ".min_by_key(|(faction_wpos, _)| {", NotReviewed, "found by scan, not read this pass"),
     site("rtsim/src/rule/migrate.rs", 0, ".min_by_key(|(_, site)| {", NotReviewed, "found by scan, not read this pass"),

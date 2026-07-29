@@ -41,19 +41,20 @@
 //! different reasons across four files rather than one blanket excuse.
 //!
 //! What IS shared going forward, even for the four un-migrated scanners:
-//! the [`AUTHORITATIVE_SCAN_ROOTS`] root list (the same five directories
-//! every scanner this session has walked) and the [`ExemptionEntryV1`]
+//! the [`AUTHORITATIVE_SCAN_ROOTS`] root list (which `E13` is widening
+//! one crate at a time -- see the constant) and the [`ExemptionEntryV1`]
 //! shape for recording a deliberate bypass (site + reason + owner +
 //! revisit condition) -- a convention, not a shared type those files are
 //! forced to import.
 
 use std::{collections::HashMap, fs, path::Path};
 
-/// The five directories every authoritative-crate scanner this program
-/// has built (`rng_source_registry`, `numeric_surface`,
-/// `host_input_manifest`, `selection_registry`) has walked, named once
-/// so a sixth doesn't have to rediscover the list.
-pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 6] = [
+/// Every directory an authoritative-crate scanner walks, named once so a
+/// new scanner doesn't have to rediscover the list. The first five are
+/// what `rng_source_registry`, `numeric_surface`, `host_input_manifest`
+/// and `selection_registry` were built against; the rest are `E13`'s
+/// widening, each recorded with what it added.
+pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 7] = [
     "common/src",
     "server/src",
     "rtsim/src",
@@ -66,6 +67,25 @@ pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 6] = [
     // widening patterns would never have revealed it, because the files
     // were never walked.
     "common/net/src",
+    // E13 chunk 2: `server/agent/src` -- 13,974 lines of NPC decision
+    // logic, previously unwalked. It adds ZERO sites to all five
+    // families, and that zero is a claim rather than an absence: the
+    // crate contains no hash-container type at all, no wall-clock
+    // reads, and no raw-entity-index calls. It reads the world through
+    // ECS storages and its own `AgentData`, so the container-ordering
+    // and wall-clock families have nothing to bite on here.
+    //
+    // (Named indirectly on purpose: spelling those tokens literally
+    // made THIS COMMENT a scan hit on the first regeneration. A
+    // scanner whose root list is prose is a scanner that indexes its
+    // own documentation -- `rtsim/data/mod.rs`'s DET-RNG-009 gate hit
+    // the same wall and answered it by building needles at runtime.)
+    //
+    // Because a zero-delta root leaves no trace in any baseline file,
+    // the baselines cannot evidence that this root is walked at all.
+    // Five plant-falsifications did -- one per family, each in this
+    // root -- and that is the only reason the zero is trustworthy.
+    "server/agent/src",
 ];
 
 /// A deliberate, reviewed bypass of a scanner's own rule -- the shared

@@ -140,6 +140,19 @@ const FAMILIES: &[FamilyV1] = &[
 /// "this is a metrics/logging timestamp" (fine) from "this feeds an
 /// authoritative eligibility decision" (the hazard this family exists to
 /// catch).
+///
+/// **E13 chunk 2 (2026-07-29) -- this family's chunk-1 result was
+/// VACUOUS and is now re-established.** Chunk 1 reported instant,
+/// default_hasher and read_dir "unchanged, itself evidence the wire
+/// crate added no such surface". For default_hasher and read_dir that
+/// was true. For THIS family it was not evidence of anything: the
+/// regeneration wrote to `..._baseline_instant_systemtime.rs`, an
+/// orphan no `include!` names (see `no_baseline_file_is_an_orphan`), so
+/// the comparison was a file against itself while the real baseline sat
+/// untouched. The conclusion happens to hold -- this baseline contains
+/// zero `common/net/src` entries, checked directly -- but it holds by
+/// luck, not by the evidence given for it. Re-verified here against the
+/// file that actually compiles.
 const INSTANT_SYSTEMTIME_BASELINE: [(&str, &str, u32); 47] = instant_systemtime_baseline();
 
 /// 3 sites at pin time, all verified: comments naming a hasher this code
@@ -252,6 +265,14 @@ const fn instant_systemtime_baseline() -> [(&'static str, &'static str, u32); 47
 const fn default_hasher_baseline() -> [(&'static str, &'static str, u32); 3] {
     include!("determinism_scan_baseline_default_hasher.rs")
 }
+// The baseline files these pull in are NOT purely machine-owned. Builders
+// annotate individual entries in place with `//` notes (`T4.6` chunk 3b
+// did, explaining a test-only poll loop), and a blind full-file
+// regeneration deletes those notes while the entry set stays identical --
+// so the diff reads as a baseline SHRINK and the classification work is
+// gone. Any regeneration must preserve `//` lines, or stop and hand the
+// merge back to a human. Caught in `E13` chunk 2, on a rebase, by six
+// deleted comment lines that no scan result explained.
 const fn read_dir_baseline() -> [(&'static str, &'static str, u32); 16] {
     include!("determinism_scan_baseline_read_dir.rs")
 }
@@ -361,6 +382,49 @@ mod tests {
         }
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// No baseline file may sit in `common/src` without an `include!`
+    /// naming it.
+    ///
+    /// **E13 chunk 2, written because chunk 1 created exactly such a
+    /// file.** The regeneration script wrote
+    /// `determinism_scan_baseline_instant_systemtime.rs` -- named after
+    /// the FAMILY (`InstantSystemTimeInAuthoritativeCode`) rather than
+    /// after the live `include!`, which is
+    /// `determinism_scan_baseline_instant.rs`. Nothing compiled the
+    /// orphan, so nothing could fail on it: the script reported five
+    /// baselines regenerated, the suite stayed green, and the family's
+    /// REAL baseline went untouched for a whole chunk. A pin that
+    /// nothing reads is indistinguishable from a pin that holds, which
+    /// is the precise failure this program exists to make impossible.
+    ///
+    /// The self-exemption makes it worse rather than better: every
+    /// scanner skips paths containing `determinism_scan`, so an orphan
+    /// baseline is invisible to the scanners too. It is dead data that
+    /// looks exactly like live data from every direction except this
+    /// test.
+    #[test]
+    fn no_baseline_file_is_an_orphan() {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let this_file = include_str!("determinism_scan.rs");
+
+        let mut orphans: Vec<String> = std::fs::read_dir(&src)
+            .expect("common/src must be readable")
+            .filter_map(|entry| {
+                let name = entry.ok()?.file_name().to_string_lossy().into_owned();
+                let is_baseline =
+                    name.starts_with("determinism_scan_baseline_") && name.ends_with(".rs");
+                let included = this_file.contains(&format!("include!(\"{name}\")"));
+                (is_baseline && !included).then_some(name)
+            })
+            .collect();
+        orphans.sort();
+
+        assert!(
+            orphans.is_empty(),
+            "baseline file(s) that no include! names -- dead data no build reads:\n{orphans:#?}"
+        );
     }
 
     /// Every family with a `Complete`-equivalent claim (a verified-safe
