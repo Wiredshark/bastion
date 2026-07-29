@@ -96,15 +96,17 @@ impl Index {
             .map(|econ| econ.get_site_prices())
     }
 
-    /// `APEX-T4.3`: the "economic baseline" component of
-    /// `WorldBaselineManifestV1` -- one composite root over every site's
-    /// own `Economy::canonical_baseline_hash_v1`, since the spec asks for
-    /// ONE economic-baseline root and `Economy` is inherently per-site.
-    /// Pairs are sorted by site id before hashing (same canonicalize-
-    /// before-hash discipline as `Civs::baseline_site_graph_v1`, `E11-3b`);
-    /// a site with no `Economy` yet contributes nothing, same as an
-    /// absent descriptor elsewhere in this program.
-    pub fn world_economy_root_v1(&self) -> common::apex::digest::ArtifactIdentityV1 {
+    /// `APEX-T4.3` chunk 2a helper, factored out for `T8.1`: every site's
+    /// own `Economy::canonical_baseline_hash_v1`, sorted by site id
+    /// (same canonicalize-before-hash discipline as
+    /// `Civs::baseline_site_graph_v1`, `E11-3b`). A site with no
+    /// `Economy` yet contributes nothing, same as an absent descriptor
+    /// elsewhere in this program. `world_economy_root_v1` reduces this
+    /// to one composite root; `T8.1`'s per-phase evidence collection
+    /// (`world/src/site/economy/context.rs`) reuses the SAME per-site
+    /// digests directly, rather than re-deriving them, so the two never
+    /// drift.
+    pub fn world_economy_per_site_v1(&self) -> Vec<(u64, common::apex::digest::ArtifactDigestV1)> {
         let mut per_site: Vec<(u64, common::apex::digest::ArtifactDigestV1)> = self
             .sites
             .ids()
@@ -114,7 +116,24 @@ impl Index {
             })
             .collect();
         per_site.sort_unstable_by_key(|(id, _)| *id);
+        per_site
+    }
 
+    /// `APEX-T4.3`: the "economic baseline" component of
+    /// `WorldBaselineManifestV1` -- one composite root over every site's
+    /// own economic baseline, since the spec asks for ONE economic-
+    /// baseline root and `Economy` is inherently per-site.
+    pub fn world_economy_root_v1(&self) -> common::apex::digest::ArtifactIdentityV1 {
+        Self::economy_root_from_per_site_v1(&self.world_economy_per_site_v1())
+    }
+
+    /// Pure reduction: per-site digests (already sorted by
+    /// [`Self::world_economy_per_site_v1`]) to one composite root. Split
+    /// out so `T8.1`'s per-phase evidence can compute the same root a
+    /// live phase would produce without re-deriving the reduction.
+    pub fn economy_root_from_per_site_v1(
+        per_site: &[(u64, common::apex::digest::ArtifactDigestV1)],
+    ) -> common::apex::digest::ArtifactIdentityV1 {
         let mut buf = Vec::new();
         buf.extend_from_slice(&(per_site.len() as u64).to_be_bytes());
         for (id, digest) in per_site {

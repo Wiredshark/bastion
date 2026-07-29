@@ -1628,3 +1628,71 @@ mod canonical_baseline_hash_v1_tests {
         );
     }
 }
+
+/// `T8.1` chunk 1's remaining required test. Lives here rather than
+/// alongside `context`'s own phase-evidence tests because it needs to
+/// perturb `Economy::stocks` directly, and that field is private to
+/// THIS module -- `context` is a sibling, not a descendant, of the
+/// module `stocks` is declared in.
+#[cfg(test)]
+mod t8_1_phase_localization_tests {
+    use super::{GoodIndex, context};
+    use common::trade::Good;
+
+    fn minimal_fixture_v1(seed: u32, n: usize) -> crate::index::Index {
+        let mut index = crate::index::Index::new(seed);
+        for _ in 0..n {
+            let mut site = crate::site::Site::default();
+            site.kind = Some(crate::site::SiteKind::Refactor);
+            let _ = site.economy_mut();
+            index.sites.insert(site);
+        }
+        index
+    }
+
+    /// Required test: a deliberately perturbed phase is localised to
+    /// THAT phase, not to the endpoint -- runs two identical fixtures in
+    /// lockstep, one phase at a time, and injects a one-ULP nudge to one
+    /// site's coin stock right after a chosen phase. Every phase before
+    /// the perturbation must match; the perturbation itself must be the
+    /// FIRST phase that doesn't (not the endpoint, and not a phase
+    /// before it either -- a real localization, not a coincidence).
+    #[test]
+    fn a_deliberately_perturbed_phase_is_localized_to_that_phase() {
+        let perturb_at_phase: u32 = 17;
+        let total = context::total_phase_count_v1();
+        assert!(perturb_at_phase + 5 < total, "fixture premise: room to observe post-perturbation phases");
+
+        let mut index_a = minimal_fixture_v1(11, 2);
+        let mut index_b = minimal_fixture_v1(11, 2);
+        let mut env_a = context::Environment::new().unwrap();
+        let mut env_b = context::Environment::new().unwrap();
+        let coin_index = GoodIndex::try_from(Good::Coin).expect("Coin is a valid Good");
+
+        let mut first_divergence: Option<u32> = None;
+        for phase in 0..total {
+            let ev_a = context::tick_with_phase_evidence_v1(&mut index_a, phase, &mut env_a);
+            if phase == perturb_at_phase
+                && let Some(id) = index_b.sites.ids().next()
+            {
+                // A real state difference (the smallest representable
+                // f32 nudge), not a rounding artifact -- unambiguous.
+                let economy = index_b.sites.get_mut(id).economy_mut();
+                let stock = &mut economy.stocks[coin_index];
+                *stock = f32::from_bits(stock.to_bits() + 1);
+            }
+            let ev_b = context::tick_with_phase_evidence_v1(&mut index_b, phase, &mut env_b);
+
+            if ev_a.root != ev_b.root {
+                first_divergence = Some(phase);
+                break;
+            }
+        }
+
+        assert_eq!(
+            first_divergence,
+            Some(perturb_at_phase),
+            "expected the perturbation to be localized to phase {perturb_at_phase}, got {first_divergence:?}"
+        );
+    }
+}

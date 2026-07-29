@@ -175,6 +175,63 @@ pub fn simulate_economy(index: &mut Index) {
         .unwrap_or_else(|err| info!("I/O error in simulate (economy.csv not writable?): {}", err));
 }
 
+/// `T8.1`: one phase's economy-determinism evidence -- the canonical
+/// per-site digests (already sorted by
+/// [`crate::index::Index::world_economy_per_site_v1`]) plus the same
+/// composite root `WorldBaselineManifestV1`'s `economy_root` would get
+/// if this were the FINAL phase. Recording every phase, not just the
+/// endpoint, is what turns "the worlds differ" into "they diverged at
+/// phase 412" -- the tier's own stated objective.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhaseEconomyEvidenceV1 {
+    pub phase: u32,
+    pub per_site: Vec<(u64, common::apex::digest::ArtifactDigestV1)>,
+    pub root: common::apex::digest::ArtifactIdentityV1,
+}
+
+/// The total phase count `simulate_return`'s own loop runs -- named here
+/// so evidence callers (tests, a future harness) don't hardcode a second
+/// copy of `(HISTORY_DAYS / TICK_PERIOD) as i32` that could drift from
+/// the real loop bound.
+pub fn total_phase_count_v1() -> u32 { (HISTORY_DAYS / TICK_PERIOD) as u32 }
+
+/// Runs exactly one phase (one `tick()`) and records its evidence.
+/// Exposed separately from [`simulate_with_phase_evidence_v1`] so a
+/// caller can inject a perturbation BETWEEN phases (the localization
+/// test needs to diverge two runs starting at a chosen phase, which the
+/// all-2000-at-once entry point cannot do).
+pub fn tick_with_phase_evidence_v1(
+    index: &mut Index,
+    phase: u32,
+    env: &mut Environment,
+) -> PhaseEconomyEvidenceV1 {
+    env.iteration(phase as i32);
+    tick(index, TICK_PERIOD, env);
+    let per_site = index.world_economy_per_site_v1();
+    let root = Index::economy_root_from_per_site_v1(&per_site);
+    PhaseEconomyEvidenceV1 { phase, per_site, root }
+}
+
+/// `T8.1` chunk 1: the full 500-year simulation, but recording
+/// [`PhaseEconomyEvidenceV1`] for EVERY phase rather than only the
+/// final one. Mirrors `simulate_return`'s own loop exactly (same
+/// `tick()`, same phase count via [`total_phase_count_v1`]) so the
+/// evidence describes the real simulation, not a parallel copy of it
+/// that could drift.
+///
+/// **Not on the live worldgen path.** `simulate_economy`/
+/// `simulate_return` are untouched -- this pays an extra
+/// canonicalization hash per site per phase (2000 phases) that the live
+/// game never needs; it exists for evidence collection (tests, a future
+/// harness), called explicitly rather than always.
+pub fn simulate_with_phase_evidence_v1(index: &mut Index) -> Vec<PhaseEconomyEvidenceV1> {
+    let mut env = Environment::new()
+        .expect("evidence collection: GENERATE_CSV is false, Environment::new performs no I/O");
+    (0..total_phase_count_v1())
+        .map(|phase| tick_with_phase_evidence_v1(index, phase, &mut env))
+        .collect()
+}
+
 // fn check_money(index: &Index) {
 //     let mut sum_stock: f32 = 0.0;
 //     for site in index.sites.values() {
@@ -251,6 +308,45 @@ mod tests {
     use tracing::{Dispatch, Level, info};
     use tracing_subscriber::{FmtSubscriber, filter::EnvFilter};
     use vek::Vec2;
+
+    /// `T8.1`: the cheapest viable fixture -- hand-built sites, no
+    /// `WorldSim`/`Civs` generation (that path is `test_economy0/1`'s
+    /// own, `#[ignore]`d for cost). `n` sites, all `SiteKind::Refactor`
+    /// (the cheapest `should_do_economic_simulation() == true` kind),
+    /// each with a `Default` `Economy` (`economy_mut()` lazily inserts
+    /// one). `Index::new` loads the colors/features manifests -- real
+    /// I/O, but the same cost every other economy test in this file
+    /// already pays, not new.
+    fn t8_1_minimal_fixture_v1(seed: u32, n: usize) -> crate::index::Index {
+        let mut index = crate::index::Index::new(seed);
+        for _ in 0..n {
+            let mut site = crate::site::Site::default();
+            site.kind = Some(crate::site::SiteKind::Refactor);
+            let _ = site.economy_mut();
+            index.sites.insert(site);
+        }
+        index
+    }
+
+    /// Required test: the same fixture, simulated twice from the same
+    /// seed, must hash identically at EVERY phase, not just the
+    /// endpoint -- the null result a phase-evidence harness is useless
+    /// without.
+    #[test]
+    fn t8_1_the_same_fixture_hashes_identically_across_runs() {
+        let evidence_a = super::simulate_with_phase_evidence_v1(&mut t8_1_minimal_fixture_v1(42, 3));
+        let evidence_b = super::simulate_with_phase_evidence_v1(&mut t8_1_minimal_fixture_v1(42, 3));
+        assert_eq!(evidence_a.len(), evidence_b.len());
+        assert_eq!(evidence_a.len(), super::total_phase_count_v1() as usize);
+        for (a, b) in evidence_a.iter().zip(evidence_b.iter()) {
+            assert_eq!(a.phase, b.phase);
+            assert_eq!(
+                a.root, b.root,
+                "phase {} diverged across two runs of the identical fixture",
+                a.phase
+            );
+        }
+    }
 
     fn execute_with_tracing(level: Level, func: fn()) {
         tracing::dispatcher::with_default(
