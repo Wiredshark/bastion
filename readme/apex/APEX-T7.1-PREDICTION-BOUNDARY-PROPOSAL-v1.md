@@ -168,10 +168,68 @@ the classification table surfaces but does not resolve.
 > retraction? a narrower durable-but-cheap-to-undo subclass?) is scoped
 > at that time, not invented now against a hypothetical.
 
+**Conformance check — grounding `item B`'s actual build against
+`DECISIONS #34`, per the orchestrator's "ground first, then build or
+close" instruction.**
+
+`DECISIONS #34`'s law governs what **`T7`'s own machinery** presents.
+`T7.3b`'s replay sink (`CharacterStateEventSinkV1`) already conforms:
+every one of the 21 channels a REPLAYED frame emits is discarded,
+durable or not, so replay never presents anything predictively. That
+half needed no change.
+
+**The six durable channels are NON-CONFORMANT TODAY on the FIRST
+(non-replay) tick — confirmed for two, traced no further for four.**
+`common_systems::add_local_systems` (`common/systems/src/lib.rs:25-52`,
+the client's own local dispatch) runs `character_behavior::Sys`
+alongside `buff::Sys` and `aura::Sys` every client tick. `buff::Sys`'s
+own `event_emitters!` declaration (`buff: BuffEvent`,
+`common/systems/src/buff.rs:37-49`) reads the SAME live
+`EventBus<BuffEvent>` `character_behavior::Sys`'s normal (non-replay)
+tick writes into — read directly, not inferred. So a self-cast
+buff-granting ability the client predicts is picked up by the client's
+own `buff::Sys` the SAME tick, applied to the live `Buffs` component
+and shown — unconfirmed, before any `CompSync`. `aura::Sys` is the same
+shape for `event`/Aura. `sprite_summon`, `sprite_light`, `transform`,
+and `regrow_head` were not traced to this depth this pass; their
+conformance is UNKNOWN, not asserted either way.
+
+**Disposition (orchestrator-ruled): BANKED, not `item B`'s scope.**
+Deciding precedent: `CKPT-174` — a hardening row does not change live
+player-facing behavior as a side effect. This leak PRE-DATES the whole
+`T7` rollback program (self-buff/transform responsiveness has worked
+this way since before any of this machinery existed); its wrongness
+rate is bounded by how often a predicted frame is actually refused
+(rare); and the real fix cost is a FEEL change (self-buff/transform
+latency, +one round-trip) — the same class of call as Decision 3's
+carried-entity ruling, not a mechanical wiring gap `item B` can close
+as a rider.
+
+**The banked row: `T7-DURABLE-GATE`.** Scope: gate the client's own
+presentation of the six durable channels on confirmation, closing the
+leak documented above. The design fork is named, not decided — a
+future builder chooses WITH feel-testing available, not blind:
+- **Source-block-self**: `character_behavior::Sys` (or its call sites)
+  withholds these six emissions for the LOCAL player's own predicted
+  frame specifically, letting every other entity's already-confirmed
+  state flow through `buff::Sys`/`aura::Sys` unchanged.
+- **Consumption-filter**: `buff::Sys`/`aura::Sys` (and whatever
+  consumes the other four) filter out the local player's own
+  not-yet-confirmed instances at the point of application, rather than
+  at the point of emission.
+- `MayEmitAuthorityEffectsV1` (the fourth unwired instrument named
+  above) is a candidate type-level home for whichever shape the row
+  picks, not a commitment to either.
+
+Revisit trigger for `T7-DURABLE-GATE` itself: T5.1-cohort/playtest
+feel-measurement machinery existing, or a real standing-falsehood
+incident — whichever comes first names when the row is worth taking.
+
 **What this amendment does NOT do:** it does not build a retraction
-ledger, does not change which effects a predicted frame may emit today,
-and does not wire `MayEmitAuthorityEffectsV1`. It is the ground `T7.4`
-item B's own scoping needs before either happens.
+ledger, does not close the documented leak, and does not wire
+`MayEmitAuthorityEffectsV1`. It is the ground `T7-DURABLE-GATE`'s own
+future scoping needs, and the record that `item B` closed here rather
+than silently.
 
 ---
 
@@ -420,5 +478,5 @@ is a measurement, not a decision.
 | 1 | Predicted components and replay-legal transitions | **APPROVED**, then **AMENDED** (see Amendment 1): `energy` proved from the StateUpdate From chain; `entity`/`uid` added as a fourth `Identity` role — 14 input · 21 ambient · 1 write channel · 2 identity |
 | 2 | World revision requirements and chunk-unload invalidation | **APPROVED as proposed**; chunk-key cost measured at ~1.05 KiB/client (1.6% of budget), gate and fallback removed |
 | 3 | Ridden/mounted ownership | **RULED** — no prediction for riders or carriers in v1; carry revisits as a T5.1-cohort experiment if feel complaints emerge |
-| 4 | Predicted side-effect scope | **RULED**, **REOPENED**, then **RE-RULED** (see Amendment 2): three classes as proposed, ability sounds deduplicated (late beats double, transient effects only); the 6 durable-presentation channels (`event`/Aura, `buff`, `sprite_summon`, `sprite_light`, `transform`, `regrow_head`) are EXCLUDED FROM PREDICTION in v1 (`DECISIONS #34`) — wrong is worse than late when the lie persists, revisits per-channel on playtest feel evidence |
+| 4 | Predicted side-effect scope | **RULED**, **REOPENED**, then **RE-RULED** (see Amendment 2): three classes as proposed, ability sounds deduplicated (late beats double, transient effects only); the 6 durable-presentation channels (`event`/Aura, `buff`, `sprite_summon`, `sprite_light`, `transform`, `regrow_head`) are EXCLUDED FROM PREDICTION in v1 (`DECISIONS #34`) for `T7`'s own machinery — the replay sink already conforms. A PRE-EXISTING leak (2 of 6 confirmed non-conformant on the first tick, 4 untraced) is documented, not fixed here — BANKED as `T7-DURABLE-GATE`, its own row, design fork stated not decided |
 | 5 | Duration, budget, fallback | **RULED** — adopted as named consts, tuned later from T5 cohort metrics |
