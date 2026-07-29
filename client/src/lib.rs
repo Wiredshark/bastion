@@ -459,6 +459,11 @@ pub struct Client {
     // DET-NET-011/012 (v6, stage 1): newest server sync tick seen across
     // the replication streams (the chronology witness).
     last_server_sync_tick: u64,
+    /// `APEX-T7.4` item A: correction-magnitude accounting, recorded on
+    /// every `Replayed` reconciliation outcome. See
+    /// `common_systems::reconciliation::CorrectionMagnitudeMetricsV1`'s
+    /// own doc for the T5.1-shape reuse and its scope boundary.
+    correction_magnitude_metrics: common_systems::reconciliation::CorrectionMagnitudeMetricsV1,
 
     role: Option<AdminRole>,
     max_group_size: u32,
@@ -1582,6 +1587,7 @@ impl Client {
             ),
             was_mounted_last_tick: false,
             last_server_sync_tick: 0,
+            correction_magnitude_metrics: common_systems::reconciliation::CorrectionMagnitudeMetricsV1::new(),
 
             role,
             max_group_size,
@@ -3903,6 +3909,7 @@ impl Client {
                                 &current,
                                 &authoritative,
                                 sync_tick,
+                                physics_generation,
                                 |chunk| self.state.terrain().get_key_arc(chunk).is_some(),
                                 |snapshot| {
                                     matches!(
@@ -3913,11 +3920,29 @@ impl Client {
                             )
                         };
                         match outcome {
+                            common_systems::reconciliation::ReconciliationOutcomeV1::StaleCorrection {
+                                buffer_generation,
+                                got_generation,
+                            } => {
+                                // `APEX-T7.4` item A's own required test,
+                                // live: an out-of-order/duplicate CompSync
+                                // is rejected here, before the buffer was
+                                // ever touched -- nothing to undo.
+                                tracing::debug!(
+                                    ?buffer_generation,
+                                    ?got_generation,
+                                    "stale CompSync generation rejected, prediction history untouched"
+                                );
+                            },
                             common_systems::reconciliation::ReconciliationOutcomeV1::Agreed { .. } => {},
                             common_systems::reconciliation::ReconciliationOutcomeV1::Replayed {
                                 final_rolling,
+                                position_correction_distance,
                                 ..
-                            } => write_rolling_state_v1(&self.state, entity, &final_rolling),
+                            } => {
+                                self.correction_magnitude_metrics.record_correction_v1(position_correction_distance);
+                                write_rolling_state_v1(&self.state, entity, &final_rolling);
+                            },
                             common_systems::reconciliation::ReconciliationOutcomeV1::Snapped { .. } => {},
                         }
                     }

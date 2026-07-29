@@ -3,6 +3,7 @@ mod tests {
     use common::{
         SkillSetBuilder,
         apex::{
+            physics_generation::PhysicsGenerationV1,
             prediction_boundary::{
                 ClientPredictionBufferV1, FrameAlignmentV1, PredictedFrameV1, WorldRevisionV1,
             },
@@ -137,6 +138,7 @@ mod tests {
             &current,
             &authoritative,
             10,
+            PhysicsGenerationV1::NEVER_CORRECTED,
             |_| true,
             |_| true,
         );
@@ -174,6 +176,7 @@ mod tests {
             &current,
             &authoritative,
             10,
+            PhysicsGenerationV1::NEVER_CORRECTED,
             |_| true,
             |_| true,
         );
@@ -214,6 +217,7 @@ mod tests {
             &current,
             &authoritative,
             10,
+            PhysicsGenerationV1::NEVER_CORRECTED,
             |_| true,
             |_| false, // no weather snapshot is retained
         );
@@ -262,6 +266,7 @@ mod tests {
             &current,
             &authoritative,
             10,
+            PhysicsGenerationV1::NEVER_CORRECTED,
             |_| true,
             |_| true,
         );
@@ -286,5 +291,169 @@ mod tests {
             final_rolling.vel.0.x,
             authoritative.vel.0.x
         );
+    }
+
+    // -- `APEX-T7.4` item A: stale-generation rejection ----------------------
+
+    /// The row's own required test, live: a `physics_generation` OLDER
+    /// than what the buffer has already adopted is rejected -- and the
+    /// buffer is left in EXACTLY the state it started in (same length,
+    /// same generation, same entries), not merely "not cleared".
+    #[test]
+    fn a_stale_generation_is_rejected_without_touching_the_buffer() {
+        let mut state = setup();
+        let (entity, body) = create_entity(&mut state);
+        let ecs = state.ecs();
+        let read_data = ReadData::fetch(ecs);
+        let id_maps = Read::<IdMaps>::fetch(ecs);
+
+        let mut buffer = ClientPredictionBufferV1::new(16, 64 * 1024);
+        buffer.push_v1(frame(Vec2::zero(), 10, 0));
+        // Advance the buffer to generation 2 first, so generation 1 is
+        // genuinely stale (older), not merely "not yet reached".
+        buffer.adopt_generation_v1(PhysicsGenerationV1::from_legacy_counter_v1(2));
+        buffer.push_v1(frame(Vec2::zero(), 20, 0));
+        let generation_before = buffer.generation();
+        let len_before = buffer.len();
+
+        let current = baseline_rolling(body);
+        let mut authoritative = baseline_rolling(body);
+        // Divergent on purpose -- proves the rejection happens BEFORE
+        // the agreement check even runs, not because nothing diverged.
+        authoritative.pos.0.x += POS_TOLERANCE_V1 * 2.0;
+
+        let outcome = reconcile_v1(
+            &read_data,
+            &id_maps,
+            entity,
+            &mut buffer,
+            &current,
+            &authoritative,
+            10,
+            PhysicsGenerationV1::from_legacy_counter_v1(1),
+            |_| true,
+            |_| true,
+        );
+
+        match outcome {
+            ReconciliationOutcomeV1::StaleCorrection { buffer_generation, got_generation } => {
+                assert_eq!(buffer_generation, generation_before);
+                assert_eq!(got_generation, PhysicsGenerationV1::from_legacy_counter_v1(1));
+            },
+            other => panic!("expected StaleCorrection, got {other:?}"),
+        }
+        assert_eq!(buffer.generation(), generation_before, "generation must not move on a rejected stale correction");
+        assert_eq!(buffer.len(), len_before, "not one entry may be trimmed or dropped on a rejected stale correction");
+    }
+
+    /// A genuinely NEWER generation is adopted (not rejected): entries
+    /// from the old generation are dropped by `adopt_generation_v1`
+    /// before the rest of `reconcile_v1` ever runs, so a buffer holding
+    /// only pre-correction entries has nothing left to replay.
+    #[test]
+    fn a_newer_generation_is_adopted_and_invalidates_older_entries() {
+        let mut state = setup();
+        let (entity, body) = create_entity(&mut state);
+        let ecs = state.ecs();
+        let read_data = ReadData::fetch(ecs);
+        let id_maps = Read::<IdMaps>::fetch(ecs);
+
+        let mut buffer = ClientPredictionBufferV1::new(16, 64 * 1024);
+        // Every entry is captured under generation 0 (NEVER_CORRECTED),
+        // the buffer's own starting generation.
+        buffer.push_v1(frame(Vec2::zero(), 10, 0));
+        assert_eq!(buffer.generation(), PhysicsGenerationV1::NEVER_CORRECTED);
+
+        let current = baseline_rolling(body);
+        let mut authoritative = baseline_rolling(body);
+        authoritative.pos.0.x += POS_TOLERANCE_V1 * 2.0;
+
+        let outcome = reconcile_v1(
+            &read_data,
+            &id_maps,
+            entity,
+            &mut buffer,
+            &current,
+            &authoritative,
+            10,
+            PhysicsGenerationV1::from_legacy_counter_v1(1),
+            |_| true,
+            |_| true,
+        );
+
+        assert_eq!(buffer.generation(), PhysicsGenerationV1::from_legacy_counter_v1(1), "the newer generation must be adopted");
+        assert!(buffer.is_empty(), "every generation-0 entry must be invalidated by the jump to generation 1");
+        match outcome {
+            ReconciliationOutcomeV1::Replayed { replayed, .. } => {
+                assert_eq!(replayed, 0, "nothing survived the generation jump to replay");
+            },
+            other => panic!("expected Replayed (with zero frames replayed), got {other:?}"),
+        }
+    }
+
+    // -- `APEX-T7.4` item A: correction-magnitude recording -------------------
+
+    /// `position_correction_distance` is the distance between what the
+    /// client believed BEFORE this correction and what replay concluded
+    /// AFTER it -- checked against a value computed independently here,
+    /// not merely "present".
+    #[test]
+    fn position_correction_distance_matches_the_actual_correction() {
+        let mut state = setup();
+        let (entity, body) = create_entity(&mut state);
+        let ecs = state.ecs();
+        let read_data = ReadData::fetch(ecs);
+        let id_maps = Read::<IdMaps>::fetch(ecs);
+
+        let mut buffer = ClientPredictionBufferV1::new(16, 64 * 1024);
+        // A zero-effect frame: `final_rolling` should land at (very
+        // close to) the authoritative baseline, so the correction
+        // distance is dominated by `current` vs `authoritative`, a
+        // value this test controls directly.
+        buffer.push_v1(frame(Vec2::zero(), 10, 0));
+
+        let current = baseline_rolling(body);
+        let mut authoritative = baseline_rolling(body);
+        authoritative.pos.0.x += POS_TOLERANCE_V1 * 2.0;
+        let expected_distance = current.pos.0.distance(authoritative.pos.0);
+
+        let outcome = reconcile_v1(
+            &read_data,
+            &id_maps,
+            entity,
+            &mut buffer,
+            &current,
+            &authoritative,
+            10,
+            PhysicsGenerationV1::NEVER_CORRECTED,
+            |_| true,
+            |_| true,
+        );
+
+        let ReconciliationOutcomeV1::Replayed { position_correction_distance, final_rolling, .. } = outcome else {
+            panic!("expected Replayed, got {outcome:?}");
+        };
+        // A zero-move_dir frame should leave pos essentially unchanged
+        // from the authoritative baseline, so the recorded distance
+        // should be very close to the independently-computed value.
+        assert!(
+            (position_correction_distance - expected_distance).abs() < 1e-3,
+            "recorded={position_correction_distance} expected={expected_distance} final_pos={:?}",
+            final_rolling.pos
+        );
+    }
+
+    #[test]
+    fn correction_magnitude_metrics_summary_reflects_recorded_corrections() {
+        use veloren_common_systems::reconciliation::CorrectionMagnitudeMetricsV1;
+
+        let metrics = CorrectionMagnitudeMetricsV1::new();
+        assert_eq!(metrics.summary_v1(), (0, None), "no mean before anything is recorded, not a division-by-zero placeholder");
+
+        metrics.record_correction_v1(1.0);
+        metrics.record_correction_v1(3.0);
+        let (count, mean) = metrics.summary_v1();
+        assert_eq!(count, 2);
+        assert!((mean.unwrap() - 2.0).abs() < 1e-9, "mean of 1.0 and 3.0 must be 2.0, got {mean:?}");
     }
 }
