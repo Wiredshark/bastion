@@ -54,6 +54,10 @@ pub(crate) const BYPASS_SURFACE_ROLES: &[(&str, BypassRoleV1)] = &[
     ("server/src/rtsim/event.rs", BypassRoleV1::ServerAuthored),
     ("server/src/rtsim/mod.rs", BypassRoleV1::ServerAuthored),
     ("server/src/rtsim/rule/deplete_resources.rs", BypassRoleV1::ServerAuthored),
+    // `APEX-T4.6` chunk 2: names `CharacterUpdater` once, in its module
+    // doc comment (describing the failure surface T4.6 fixes) -- never
+    // touches it as a mutation site.
+    ("server/src/save_universe.rs", BypassRoleV1::CatalogOnly),
     ("server/src/semantic_net/receive_inventory_catalog.rs", BypassRoleV1::CatalogOnly),
     ("server/src/semantic_net/send_inventory_catalog.rs", BypassRoleV1::CatalogOnly),
     ("server/src/sys/msg/character_screen.rs", BypassRoleV1::CommandOwned),
