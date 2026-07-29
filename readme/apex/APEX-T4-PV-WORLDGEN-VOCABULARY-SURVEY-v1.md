@@ -1,7 +1,8 @@
 # APEX-T4-PV — worldgen vocabulary: SURVEY (v1)
 
-**Status: SURVEY. Not a vocabulary, not a version, and not approvable by
-its author.** `T4.3` ruled that `WorldgenProtocolVersion` must be a
+**Status: SURVEY, orchestrator-reviewed 2026-07-29 — Q1 answered, Q4
+ruled, Q2/Q3 open (Q3 promoted to its own survey). Not a vocabulary, not
+a version, and not approvable by its author.** `T4.3` ruled that `WorldgenProtocolVersion` must be a
 frozen-vocabulary content-root derivation "never arbitrary integers".
 This document is the internals read that lets someone derive it without
 fabricating it. It proposes no values and changes no code.
@@ -71,6 +72,7 @@ the SAME ASSETS.** Those are runtime inputs, and there are few of them.
 | `GenOpts.erosion_quality` | same | Erosion is the dominant terrain-shaping pass; quality changes its result, not merely its cost. |
 | `WorldOpts.seed_elements` | `sim/mod.rs:458-463` | Documented as "disable seeding elements during worldgen" — a boolean that changes what gets placed. |
 | The world seed itself | `Index::new(seed)`, `WorldSim::generate(seed, ..)` | Already the acknowledged input; named for completeness because the vocabulary is a *set*, and a set that omits the obvious member invites someone to assume other obvious members are omitted too. |
+| **The loaded map file's CONTENT DIGEST** (when a load variant is in play) | the file `FileOpts::Load`/`LoadLegacy`/`LoadOrGenerate` reads | **Added by orchestrator ruling** (§5 Q4). "A map was loaded" is not an identity; the map's bytes are. Without this the vocabulary records that the seed→world derivation was broken without recording what replaced it. |
 
 ### ALREADY-COVERED (do not enumerate — say what covers them)
 
@@ -122,12 +124,26 @@ and that asymmetry is the argument for erring wide:
 Recorded as questions rather than guesses, because a survey that
 answers these on vibes is worse than one that flags them.
 
-1. **The `noise` crate's own version.** `SuperSimplex`, `Perlin` and
-   `Fbm` come from a dependency. A change to their algorithm changes
-   every world without touching `world/src` or `assets/`. Whether
-   `Cargo.lock` is inside `T1.2`'s source closure decides if this is
-   ALREADY-COVERED or a genuine vocabulary member — I did not verify
-   the closure's file set, so I will not assert it.
+1. ~~**The `noise` crate's own version.**~~ **ANSWERED — ALREADY-COVERED,
+   and pinned twice over.** `SuperSimplex`, `Perlin` and `Fbm` come from
+   a dependency, so an algorithm change alters every world without
+   touching `world/src` or `assets/`. `Cargo.lock` is inside `T1.2`'s
+   closure by two independent mechanisms
+   (`bastion-harness/src/bin/apex_source_closure.rs`): it is walked by
+   `git ls-tree -r --full-tree` like every tracked file, AND it is a
+   named fixed pin whose bytes are retained and hashed into its own
+   `ArtifactIdentityV1` field (`cargo_lock: pin_artifact(..)`, line
+   651). A `noise` bump moves both.
+
+   Worth carrying into the derivation for a reason beyond this
+   question: the same fixed-pin list covers **`rust-toolchain`**,
+   `.cargo/config.toml`, `flake.nix`, `flake.lock`, every `build.rs`
+   and every `Cargo.toml`. The COMPILER is pinned — which matters here
+   specifically, because worldgen is float-heavy and codegen differences
+   across rustc versions are exactly the kind of thing that would
+   change generated terrain while every source file stayed byte-
+   identical. That hazard is covered; it did not need to be, and it is
+   worth knowing that it is.
 2. **`Calendar`.** It reaches generation via `WorldOpts`, but whether it
    perturbs terrain/site output or only seasonal presentation needs a
    read of its use sites. Provisionally IRRELEVANT, explicitly unproven.
@@ -139,17 +155,35 @@ answers these on vibes is worse than one that flags them.
    any generation stage is order-sensitive, thread count is a
    vocabulary member, which would be an unwelcome result worth knowing
    early.
-4. **`LoadLegacy`/`Load` content identity.** If the vocabulary includes
-   the `FileOpts` variant, a loaded map arguably needs the map FILE's
-   digest in the root, not merely the fact that loading happened.
-   That is a design call, not a survey finding.
+4. ~~**`LoadLegacy`/`Load` content identity.**~~ **RULED by the
+   orchestrator, 2026-07-29: YES — the loaded map's CONTENT DIGEST
+   belongs in the root, not merely the fact that loading happened.**
+
+   The reasoning, recorded because a ruling without it is an
+   instruction nobody can re-derive: for the same reason the manifest
+   digests payload bytes rather than trusting the writer, **"a map was
+   loaded" is not an identity — the map's bytes are.** Two servers that
+   both report "loaded a map" have agreed on nothing. This is the
+   `FileOpts` finding taken to its conclusion: if the variant is in the
+   vocabulary because loading breaks the seed→world derivation, then
+   what was loaded has to be in it too, or the vocabulary records that
+   the derivation was broken without recording what replaced it.
 
 ## 6. Recommendation
 
 Derive `WorldgenProtocolVersion` from a frozen vocabulary of the **§3
-MUST-BE set** — which is `FileOpts`' variant, the five `GenOpts` fields,
-`seed_elements`, and the seed — and record beside it that everything
-else is covered by the source and content roots, naming which. That
-keeps the vocabulary small enough to be reviewable, avoids duplicating
-two roots that already exist, and leaves §5's four questions as named
-gates rather than silent assumptions.
+MUST-BE set** — `FileOpts`' variant plus the loaded map's content
+digest, the five `GenOpts` fields, `seed_elements`, and the seed — and
+record beside it that everything else is covered by the source and
+content roots, naming which. That keeps the vocabulary small enough to
+be reviewable and avoids duplicating two roots that already exist.
+
+**Gate status after the orchestrator's pass (2026-07-29).** Q1 answered:
+the dependency pin AND the compiler pin are already covered, so nothing
+is added on that account. Q4 ruled: the map digest is IN. **Q2 and Q3
+remain open, and Q3 gates CONFIDENCE rather than derivation** — a
+builder can derive the version today, but if any generation stage turns
+out to be call-order-sensitive then thread count is a world-identity
+input, which is a finding well beyond this row. Q3 is now its own
+survey; Q2 (`Calendar`) rides that read, because both are answered by
+the same walk of what generation stages actually consume.
