@@ -54,7 +54,7 @@ use std::{collections::HashMap, fs, path::Path};
 /// what `rng_source_registry`, `numeric_surface`, `host_input_manifest`
 /// and `selection_registry` were built against; the rest are `E13`'s
 /// widening, each recorded with what it added.
-pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 7] = [
+pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 8] = [
     "common/src",
     "server/src",
     "rtsim/src",
@@ -86,6 +86,18 @@ pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 7] = [
     // Five plant-falsifications did -- one per family, each in this
     // root -- and that is the only reason the zero is trustworthy.
     "server/agent/src",
+    // E13 chunk 3: `common/state/src` -- the ECS state container and the
+    // whole plugin subsystem. Unlike chunk 2 this root is NOT empty: it
+    // adds 6 family sites and 1 selection site, every one classified on
+    // the baselines below.
+    //
+    // Worth knowing for anyone reading a hit here: most of this crate's
+    // surface is behind the non-default `plugins` feature, and these
+    // scans are TEXT-based over whole files, not cfg-aware. That is a
+    // feature, not a limitation -- a hazard that only compiles under an
+    // opt-in feature is still a hazard, and a cfg-aware scan would go
+    // blind exactly where the coverage is thinnest.
+    "common/state/src",
 ];
 
 /// A deliberate, reviewed bypass of a scanner's own rule -- the shared

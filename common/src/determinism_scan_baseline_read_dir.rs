@@ -7,6 +7,7 @@
     ("common/src/host_input_manifest.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
     ("common/src/rng_source_registry.rs", "let Ok(entries) = std::fs::read_dir(dir) else { return };", 0),
     ("common/src/scanner_framework.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
+    ("common/state/src/plugin/mod.rs", "for entry in fs::read_dir(path).map_err(|e| {", 0),
     ("server/src/net_checkpoint_disconnect.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
     ("server/src/net_command_bypass.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
     ("server/src/plugin_deployment_policy.rs", "for entry in std::fs::read_dir(plugins_dir).map_err(|e| E::ArchiveDirUnreadable { detail: e.to_string() })? {", 0),

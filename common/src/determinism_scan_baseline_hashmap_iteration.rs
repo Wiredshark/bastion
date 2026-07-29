@@ -117,6 +117,17 @@
     ("common/src/terrain/structure.rs", "for sb in custom_indices.values() {", 0),
     ("common/src/util/spatial_grid.rs", "for cell in self.grid.values_mut() {", 0),
     ("common/src/util/spatial_grid.rs", "for cell in self.large_grid.values_mut() {", 0),
+    // `E13` chunk 3, both BENIGN and read directly -- the two cases this
+    // family's standing limit says it cannot tell apart, here told apart:
+    //   manifest.rs: receiver is a `toml::value::Table`, which is a
+    //   `BTreeMap` (the `toml` dep is v1 with `preserve_order` enabled
+    //   NOWHERE in this workspace, checked) -- already canonically
+    //   ordered, and the result is a diagnostic unknown-keys list.
+    //   module.rs: `.keys()` is `.collect()`ed and then `sort_unstable()`
+    //   on the VERY NEXT LINE, into a receipt input the doc itself calls
+    //   "canonical sorted sets".
+    ("common/state/src/plugin/manifest.rs", ".map(|t| t.keys().filter(|k| !known.contains(&k.as_str())).cloned().collect())", 0),
+    ("common/state/src/plugin/module.rs", "let mut bodies: Vec<String> = store.data().registered_bodies.keys().cloned().collect();", 0),
     ("rtsim/src/data/architect.rs", "pub fn total(&self) -> u32 { self.populations.values().sum::<u32>() }", 0),
     ("rtsim/src/data/npc.rs", "pub fn ids(&self) -> impl Iterator<Item = MountId> + '_ { self.links.keys() }", 0),
     ("rtsim/src/data/npc.rs", "pub fn iter(&self) -> impl Iterator<Item = &NpcLink> + '_ { self.links.values() }", 0),

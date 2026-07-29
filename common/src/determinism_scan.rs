@@ -105,6 +105,7 @@ const FAMILIES: &[FamilyV1] = &[
             ("common/src/host_input_manifest.rs", "SAFE: same scanner convention"),
             ("common/src/rng_source_registry.rs", "SAFE: same scanner convention"),
             ("common/src/scanner_framework.rs", "SAFE: this is the convention itself"),
+            ("common/state/src/plugin/mod.rs", "SAFE, read directly (E13 chunk 3): PluginMgr::from_dir's read_dir feeds `discovered`, and the OS order is captured as `discovery_ordinal` -- explicitly labelled `ordinal = legacy provenance, never priority` (APEX-T2.1.05), carried with a DiscoveryOrderIsLegacy warning on every record, and never used as a sort key or tiebreak anywhere in the crate (checked). Every ordering runs through canonical_plugin_order(.., |p| p.hash) by CONTENT HASH at commit_new_manager (DET-AST-024/025). Filesystem order is recorded as provenance and then superseded, which is the right shape: it neither trusts nor discards what the OS said"),
             ("server/src/semantic_net/receive_inventory.rs", "SAFE: same scanner convention"),
             ("server/src/semantic_net/send_inventory.rs", "SAFE: same scanner convention"),
         ],
@@ -153,7 +154,7 @@ const FAMILIES: &[FamilyV1] = &[
 /// zero `common/net/src` entries, checked directly -- but it holds by
 /// luck, not by the evidence given for it. Re-verified here against the
 /// file that actually compiles.
-const INSTANT_SYSTEMTIME_BASELINE: [(&str, &str, u32); 47] = instant_systemtime_baseline();
+const INSTANT_SYSTEMTIME_BASELINE: [(&str, &str, u32); 50] = instant_systemtime_baseline();
 
 /// 3 sites at pin time, all verified: comments naming a hasher this code
 /// already avoids, zero live usage. A clean family is still worth
@@ -164,7 +165,7 @@ const DEFAULT_HASHER_BASELINE: [(&str, &str, u32); 3] = default_hasher_baseline(
 /// scanner-file convention, sort-immediately-after; 1 is
 /// save_inventory.rs, sorts before return but not adjacently). 9 not yet
 /// reviewed.
-const READ_DIR_BASELINE: [(&str, &str, u32); 16] = read_dir_baseline();
+const READ_DIR_BASELINE: [(&str, &str, u32); 17] = read_dir_baseline();
 
 /// 184 sites at pin time -- the largest family by far, and per the module
 /// doc's standing limit, the least trustworthy one without a type-aware
@@ -196,7 +197,7 @@ const READ_DIR_BASELINE: [(&str, &str, u32); 16] = read_dir_baseline();
 ///   `BitSet` index into specs' own `modified`/`inserted`/`removed`
 ///   change-sets -- the same storage-slot semantics classified in
 ///   `E11-6a`, not an identity.
-const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 190] = hashmap_iteration_baseline();
+const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 192] = hashmap_iteration_baseline();
 
 /// 19 sites (15 at E11-6a pin time, 2026-07-28; +4 net after E11-6b's
 /// fix -- the one real misuse below was corrected in place, its old line
@@ -259,7 +260,7 @@ const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 20] = raw_entity_id_baseline()
 // Baseline data lives in generated `const fn`s below purely to keep the
 // (very long) tuple literals out of the doc-commented declarations above.
 
-const fn instant_systemtime_baseline() -> [(&'static str, &'static str, u32); 47] {
+const fn instant_systemtime_baseline() -> [(&'static str, &'static str, u32); 50] {
     include!("determinism_scan_baseline_instant.rs")
 }
 const fn default_hasher_baseline() -> [(&'static str, &'static str, u32); 3] {
@@ -273,10 +274,10 @@ const fn default_hasher_baseline() -> [(&'static str, &'static str, u32); 3] {
 // gone. Any regeneration must preserve `//` lines, or stop and hand the
 // merge back to a human. Caught in `E13` chunk 2, on a rebase, by six
 // deleted comment lines that no scan result explained.
-const fn read_dir_baseline() -> [(&'static str, &'static str, u32); 16] {
+const fn read_dir_baseline() -> [(&'static str, &'static str, u32); 17] {
     include!("determinism_scan_baseline_read_dir.rs")
 }
-const fn hashmap_iteration_baseline() -> [(&'static str, &'static str, u32); 190] {
+const fn hashmap_iteration_baseline() -> [(&'static str, &'static str, u32); 192] {
     include!("determinism_scan_baseline_hashmap_iteration.rs")
 }
 const fn raw_entity_id_baseline() -> [(&'static str, &'static str, u32); 20] {

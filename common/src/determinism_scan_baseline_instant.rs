@@ -10,6 +10,15 @@
     ("common/src/slowjob.rs", "let execution_start = Instant::now();", 0),
     ("common/src/slowjob.rs", "let queue_created = Instant::now();", 0),
     ("common/src/slowjob.rs", "let start = Instant::now();", 0),
+    // `E13` chunk 3, all three: `common/state/src` entered the roots.
+    // The two `plugin/mod.rs` hits are `#[cfg(test)]` helpers minting
+    // unique temp-file names (`temp_tar`) -- not authoritative, same
+    // class as the `T4.6` note below. `state.rs` is `MetricsGuard`, a
+    // tick-duration metric: the "metrics/logging timestamp" case this
+    // family's doc names as fine, not a decision input.
+    ("common/state/src/plugin/mod.rs", "std::time::SystemTime::now()", 0),
+    ("common/state/src/plugin/mod.rs", "std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()", 0),
+    ("common/state/src/state.rs", "start: Instant::now(),", 0),
     ("server/src/chunk_generator.rs", "if std::time::Instant::now() > deadline {", 0),
     ("server/src/chunk_generator.rs", "let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);", 0),
     ("server/src/events/player.rs", "let now = std::time::Instant::now();", 0),
