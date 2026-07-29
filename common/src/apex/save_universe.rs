@@ -481,6 +481,27 @@ mod tests {
         }
     }
 
+    // -- T8.5's economy-remedy descriptor rides this slot ----------------
+
+    /// `T8.5`'s own module doc claims this slot needs "no new mechanism".
+    /// Proven, not just claimed: a real `t8_5_descriptor_v1` output slots
+    /// into `descriptors` and round-trips through this manifest's own
+    /// codec unchanged, same as every other descriptor here.
+    #[test]
+    fn the_t8_5_economy_descriptor_round_trips_inside_a_real_manifest() {
+        use crate::apex::economic_numeric_protocol::t8_5_descriptor_v1;
+
+        let economy_descriptor = t8_5_descriptor_v1(&crate::apex::economic_numeric_protocol::t8_5_current_decision_v1());
+        let mut original = manifest();
+        original.descriptors.push(economy_descriptor.clone());
+
+        let bytes = crate::apex::manifest::encode_manifest_v1(&original, &save_universe_manifest_limits_v1()).unwrap();
+        let decoded: SaveUniverseManifestV1 = crate::apex::manifest::decode_manifest_v1(&bytes, &save_universe_manifest_limits_v1()).unwrap();
+
+        assert_eq!(original, decoded);
+        assert!(decoded.descriptors.iter().any(|d| d.slot == SubsystemSlotIdV1::Economy && *d == economy_descriptor));
+    }
+
     // -- manifest codec --------------------------------------------------
 
     #[test]

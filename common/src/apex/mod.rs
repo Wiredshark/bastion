@@ -27,6 +27,7 @@ pub mod physics_generation;
 pub mod boundary;
 pub mod build;
 pub mod digest;
+pub mod economic_numeric_protocol;
 pub mod failure_seed;
 pub mod identity;
 pub mod manifest;
