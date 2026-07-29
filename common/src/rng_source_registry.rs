@@ -57,10 +57,92 @@ pub enum RandomDrawClassV1 {
     IdentityGeneration,
     NonAuthoritativeEntropy,
     DeterministicModeGatedLiveEntropy,
+    /// **DEBT, NOT A CLASSIFICATION.** A live, authoritative draw on
+    /// ambient OS entropy with NO mitigation: not presentation, not
+    /// admin, not test, and NOT gated on `is_deterministic()` the way
+    /// [`Self::DeterministicModeGatedLiveEntropy`] is.
+    ///
+    /// This variant exists because `E14-3` chunk 1 widened the scan to
+    /// `common/systems/src` and found six, and every other bucket would
+    /// have been a lie: `NonAuthoritativeEntropy` asserts the draw never
+    /// reaches replay-critical state, which is false here, and leaving
+    /// them unregistered would just fail the gate without recording
+    /// WHY. Registering them makes them visible; it does not make them
+    /// acceptable.
+    ///
+    /// **The population may only shrink** -- see
+    /// [`tests::unmitigated_authoritative_entropy_only_shrinks`]. A new
+    /// member has to be a deliberate act with a reviewer attached.
+    UnmitigatedAuthoritativeEntropy,
 }
 
 /// `(workspace-relative path, expected live-site count, classification, note)`.
 pub const AMBIENT_ENTROPY_SITES: &[(&str, usize, RandomDrawClassV1, &str)] = &[
+    // ---------------------------------------------------------------
+    // `E14-3` chunk 1 -- `common/systems/src` entered this scanner's
+    // roots. Six sites, ALL `UnmitigatedAuthoritativeEntropy`, all the
+    // same shape: `let mut rng = rand::rng();` at the head of a
+    // `System::run`, then handed to `combat::attack(.., &mut rng, ..)`.
+    //
+    // What that rng decides, traced rather than assumed: `combat.rs`
+    // draws `rng.random::<f32>() < chance` at eight sites to decide
+    // whether an on-hit buff LANDS, and calls `EntityInfo::at(target
+    // .pos, &mut *rng)` to SPAWN summoned entities. Both are
+    // replay-critical authoritative state, so `NonAuthoritativeEntropy`
+    // would be false, and none of these branch on
+    // `is_deterministic()`, so `DeterministicModeGatedLiveEntropy`
+    // would be false too.
+    //
+    // The seam already exists and its siblings already use it:
+    // `combat::seed_ability_rng(label, uid, time)` (`combat.rs:114`),
+    // which `common/src/states/*` were migrated onto -- leaving unused
+    // `use rand::rng;` imports behind as the visible fingerprint of a
+    // migration that stopped before reaching this crate. `beam.rs` in
+    // THIS crate was converted; these six were not.
+    (
+        "common/systems/src/arcing.rs",
+        1,
+        RandomDrawClassV1::UnmitigatedAuthoritativeEntropy,
+        "arc-attack damage application: ambient rng passed to combat::attack, which rolls \
+         on-hit buff chances and summon spawns. E14-1 family",
+    ),
+    (
+        "common/systems/src/buff.rs",
+        1,
+        RandomDrawClassV1::UnmitigatedAuthoritativeEntropy,
+        "E14-1 (designated HIGH): the fire-spread draw, and the WORST of the six because it is \
+         consumed INSIDE a hashbrown::HashMap iteration (touch_entities) -- ambient entropy and \
+         hash order compound, so a different SET of entities catches fire rather than the same \
+         set in a different order",
+    ),
+    (
+        "common/systems/src/melee.rs",
+        1,
+        RandomDrawClassV1::UnmitigatedAuthoritativeEntropy,
+        "melee damage application: same combat::attack path. E14-1 family",
+    ),
+    (
+        "common/systems/src/pool.rs",
+        1,
+        RandomDrawClassV1::UnmitigatedAuthoritativeEntropy,
+        "pool (area-effect) damage application: same combat::attack path. E14-1 family",
+    ),
+    (
+        "common/systems/src/projectile.rs",
+        1,
+        RandomDrawClassV1::UnmitigatedAuthoritativeEntropy,
+        "projectile hit resolution via combat::attack, PLUS rng.random_bool(0.05) emitting a \
+         SoundEvent. The sound is not merely presentation: agent perception reads sound.kind \
+         and reacts (server/agent/src/action_nodes.rs:2426), so the draw reaches NPC behaviour",
+    ),
+    (
+        "common/systems/src/shockwave.rs",
+        1,
+        RandomDrawClassV1::UnmitigatedAuthoritativeEntropy,
+        "shockwave hit resolution via combat::attack, plus the same 0.05 SoundEvent draw as \
+         projectile.rs -- likewise heard by agents, not just players",
+    ),
+    // ---------------------------------------------------------------
     (
         "common/src/apex/identity/opaque.rs",
         1,
@@ -336,13 +418,26 @@ mod tests {
             .count()
     }
 
-    /// Walks the four in-scope crate source trees and returns every `.rs`
+    /// Walks the in-scope crate source trees and returns every `.rs`
     /// file containing at least one live ambient-entropy match, workspace-
     /// relative.
     fn scan_scoped_crates() -> Vec<PathBuf> {
         let root = workspace_root();
         let mut found = Vec::new();
-        for crate_dir in ["common/src", "server/src", "server/agent/src", "rtsim/src"] {
+        for crate_dir in [
+            "common/src",
+            "server/src",
+            "server/agent/src",
+            "rtsim/src",
+            // E14-3 chunk 1: this scanner kept its OWN root list, four
+            // wide, while `scanner_framework::AUTHORITATIVE_SCAN_ROOTS`
+            // grew to ten. `common/systems/src` -- the authoritative
+            // combat/physics systems -- was in NEITHER for the whole of
+            // E13, which is how a half-finished `seed_ability_rng`
+            // migration sat here unflagged. Two scanners with two root
+            // lists is how a crate stays invisible to both.
+            "common/systems/src",
+        ] {
             walk(&root.join(crate_dir), &mut |path| {
                 // This file's own pattern-matching code contains the three
                 // match strings as string literals (not calls) -- self-
@@ -440,6 +535,42 @@ mod tests {
                  scan is currently clean");
         // A file the registry has never heard of must not silently pass.
         assert!(!registered.contains("nonexistent/made/up/path.rs"));
+    }
+
+    /// The debt ratchet: `UnmitigatedAuthoritativeEntropy` may only
+    /// SHRINK.
+    ///
+    /// Six is not a target, it is a high-water mark. Registering these
+    /// sites was the only honest option -- every other class asserts a
+    /// safety property they do not have -- but registration is exactly
+    /// what makes debt comfortable, because the gate goes green and the
+    /// build stops complaining. This test is the discomfort: adding a
+    /// seventh means editing this number, and editing a number that
+    /// says "must only go down" is a decision somebody has to defend.
+    #[test]
+    fn unmitigated_authoritative_entropy_only_shrinks() {
+        /// `E14-3` chunk 1 found six. Lower this when one is migrated
+        /// onto `combat::seed_ability_rng`; never raise it.
+        const HIGH_WATER_MARK: usize = 6;
+
+        let live = AMBIENT_ENTROPY_SITES
+            .iter()
+            .filter(|(_, _, class, _)| {
+                *class == RandomDrawClassV1::UnmitigatedAuthoritativeEntropy
+            })
+            .count();
+
+        assert!(
+            live <= HIGH_WATER_MARK,
+            "UnmitigatedAuthoritativeEntropy grew to {live} (high-water mark {HIGH_WATER_MARK}). \
+             This class is DEBT: a new live authoritative ambient draw needs a reviewed decision, \
+             not a registry line. Migrate it onto combat::seed_ability_rng instead."
+        );
+        assert_eq!(
+            live, HIGH_WATER_MARK,
+            "UnmitigatedAuthoritativeEntropy shrank to {live} -- good. Lower HIGH_WATER_MARK to \
+             {live} so the ratchet holds the new ground."
+        );
     }
 
     #[test]
