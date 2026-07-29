@@ -4100,3 +4100,9 @@ rng_source_registry. Probable residual: a registry-of-registries
 INDEX (one enumerating module/doc) at most — NOT new machinery.
 Banked for E11-2's builder to confirm; Opus's duplicate-registry
 warning pre-answered.
+
+**Orchestrator lane, T1.14 survey slice 1:** no completion-plan /
+two-phase machinery exists (verified); T0.86 unwired in bastion_jobs;
+completion owned inline by the Arrived arm. Slice 2 owed on my lane:
+trace the effect sites + partial-failure behavior before verdict.
+(One row per slice — the rule holds for me too.)

@@ -53,8 +53,20 @@ use std::{collections::HashMap, fs, path::Path};
 /// has built (`rng_source_registry`, `numeric_surface`,
 /// `host_input_manifest`, `selection_registry`) has walked, named once
 /// so a sixth doesn't have to rediscover the list.
-pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 5] =
-    ["common/src", "server/src", "rtsim/src", "bastion-server/src", "world/src"];
+pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 6] = [
+    "common/src",
+    "server/src",
+    "rtsim/src",
+    "bastion-server/src",
+    "world/src",
+    // E13 chunk 1: `common/net/src` was NOT in the original five, which
+    // meant the wire crate -- where WSG's own goldens live, and every
+    // message the server decodes -- was outside every determinism scan
+    // this program built. Same class of gap as T6.1c's root-set finding:
+    // widening patterns would never have revealed it, because the files
+    // were never walked.
+    "common/net/src",
+];
 
 /// A deliberate, reviewed bypass of a scanner's own rule -- the shared
 /// shape for what every scanner's exemption list should record, whether

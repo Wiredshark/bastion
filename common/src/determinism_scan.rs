@@ -152,7 +152,32 @@ const READ_DIR_BASELINE: [(&str, &str, u32); 16] = read_dir_baseline();
 /// pass: an unknown fraction of these are `BTreeMap`/`BTreeSet` (already
 /// canonically ordered) rather than `HashMap`/`HashSet`. Pinned as a
 /// growth-detector, not a verdict.
-const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 184] = hashmap_iteration_baseline();
+/// **E13 chunk 1 (2026-07-29): `common/net/src` added to the scan roots.**
+/// The original five roots omitted the WIRE crate -- where WSG's 88
+/// goldens live and every message the server decodes is defined. Same
+/// class of gap as `T6.1c`'s root-set finding: no amount of pattern
+/// widening reveals a file that is never walked.
+///
+/// Six new live sites, all classified:
+///
+/// - `msg/checkpoint.rs` x2 (`staged.keys()`, `staged.values()`) and
+///   `msg/command.rs` x2 (`active.keys().next_back()`,
+///   `active.values().any(..)`): **BENIGN -- the receivers are
+///   `BTreeMap`** (`checkpoint.rs:1252`, `command.rs:1219`), which is
+///   canonically ordered. Exactly the false-positive class this family's
+///   own doc warns it cannot distinguish without a type-aware pass.
+/// - `msg/compression.rs` `.and_then(|h| h.keys().next())`: a REAL
+///   `hashbrown::HashMap`, and `.next()` takes an ARBITRARY key. **Benign
+///   today only because it is unreachable**: it sits behind
+///   `if AVERAGE_PALETTE`, and the sole instantiation in the tree is
+///   `TriPngEncoding<false>` (`msg/server.rs:154`). Dead-by-const-generic,
+///   not dead-by-correctness -- flipping that bool would make terrain
+///   palette colour depend on hash order. **The one to re-examine first.**
+/// - `sync/track.rs:143` `let id = entity.id();`: **BENIGN-LOCAL**, a
+///   `BitSet` index into specs' own `modified`/`inserted`/`removed`
+///   change-sets -- the same storage-slot semantics classified in
+///   `E11-6a`, not an identity.
+const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 190] = hashmap_iteration_baseline();
 
 /// 19 sites (15 at E11-6a pin time, 2026-07-28; +4 net after E11-6b's
 /// fix -- the one real misuse below was corrected in place, its old line
@@ -210,7 +235,7 @@ const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 184] = hashmap_iteration_b
 /// every consumer, with the true cause several rows away. `T0.69` is the
 /// row that would make it derived rather than assumed; it is parked
 /// behind the buildables with that trigger named.
-const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 19] = raw_entity_id_baseline();
+const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 20] = raw_entity_id_baseline();
 
 // Baseline data lives in generated `const fn`s below purely to keep the
 // (very long) tuple literals out of the doc-commented declarations above.
@@ -224,10 +249,10 @@ const fn default_hasher_baseline() -> [(&'static str, &'static str, u32); 3] {
 const fn read_dir_baseline() -> [(&'static str, &'static str, u32); 16] {
     include!("determinism_scan_baseline_read_dir.rs")
 }
-const fn hashmap_iteration_baseline() -> [(&'static str, &'static str, u32); 184] {
+const fn hashmap_iteration_baseline() -> [(&'static str, &'static str, u32); 190] {
     include!("determinism_scan_baseline_hashmap_iteration.rs")
 }
-const fn raw_entity_id_baseline() -> [(&'static str, &'static str, u32); 19] {
+const fn raw_entity_id_baseline() -> [(&'static str, &'static str, u32); 20] {
     include!("determinism_scan_baseline_raw_entity_id.rs")
 }
 
