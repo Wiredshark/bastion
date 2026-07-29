@@ -3651,6 +3651,14 @@ pub struct JobBoard {
     /// DERIVED from physical items (D2: never a second mutable count);
     /// this table only prevents two jobs spending one item.
     reservations: HashMap<common::bastion::ReservationId, Uid>,
+    /// T1.13: the reverse index of `reservations` (item `Uid` -> its
+    /// reservation id), maintained in lockstep at every mutator so
+    /// `is_reserved` is O(1) instead of the linear `.values()` scan the
+    /// table's own doc comment used to justify by "colonies are small" --
+    /// kept as a cache of `reservations`, never an independent source of
+    /// truth (the forward map's bidirectional-uniqueness invariant is
+    /// still enforced by `reserve`'s `debug_assert`).
+    reservations_by_item: HashMap<Uid, common::bastion::ReservationId>,
     next_reservation: common::bastion::ReservationId,
     /// bastion (R10): the authoritative per-link fencing-epoch store —
     /// `link_id → current epoch` (absent = 0). Advanced ONLY at release-
@@ -4276,7 +4284,9 @@ impl JobBoard {
             !inside
         });
         for rid in dead_rids {
-            self.reservations.remove(&rid);
+            if let Some(item) = self.reservations.remove(&rid) {
+                self.reservations_by_item.remove(&item);
+            }
         }
         // CHOP-FELLING: the in-region purge above bypasses `remove_job`
         // (jobs.retain), so orphaned fell-sets are swept here — a set
@@ -4306,11 +4316,14 @@ impl JobBoard {
         let id = self.next_reservation;
         self.next_reservation += 1;
         self.reservations.insert(id, item);
+        self.reservations_by_item.insert(item, id);
         id
     }
 
     pub fn release_reservation(&mut self, id: common::bastion::ReservationId) {
-        self.reservations.remove(&id);
+        if let Some(item) = self.reservations.remove(&id) {
+            self.reservations_by_item.remove(&item);
+        }
     }
 
     /// bastion (R10): the link's current fencing epoch (absent = 0).
@@ -4395,9 +4408,9 @@ impl JobBoard {
         task
     }
 
-    /// Is this item entity already reserved by any job? (Linear scan —
-    /// colonies are small; the table holds at most a few dozen entries.)
-    pub fn is_reserved(&self, item: Uid) -> bool { self.reservations.values().any(|u| *u == item) }
+    /// Is this item entity already reserved by any job? O(1) via the T1.13
+    /// reverse index, kept in lockstep with `reservations` at every mutator.
+    pub fn is_reserved(&self, item: Uid) -> bool { self.reservations_by_item.contains_key(&item) }
 
     /// T1.13 (conservation cluster): the reservation ledger's
     /// bidirectional-uniqueness audit — item `Uid`s reserved by MORE THAN
@@ -4427,8 +4440,9 @@ impl JobBoard {
         let job = self.jobs.remove(&id);
         if let Some(j) = &job
             && let Some(rid) = j.reservation
+            && let Some(item) = self.reservations.remove(&rid)
         {
-            self.reservations.remove(&rid);
+            self.reservations_by_item.remove(&item);
         }
         // T1.19: a removed RestAt releases its creation-reserved bed (any
         // cancel/moot path), so a bed can never leak occupied by a colonist
@@ -15078,6 +15092,20 @@ fn duplicate_reservations(
     dups
 }
 
+/// T1.13: the reverse index's bijection invariant, as a pure predicate over
+/// the two tables — `reservations_by_item` must be exactly `reservations`
+/// read backwards, same cardinality, every pair agreeing both directions.
+/// Kept separate from `JobBoard` so the four-mutator falsifier can assert
+/// it after each call without needing a probe method per field.
+fn reservation_indices_are_consistent_v1(
+    forward: &HashMap<common::bastion::ReservationId, Uid>,
+    reverse: &HashMap<Uid, common::bastion::ReservationId>,
+) -> bool {
+    forward.len() == reverse.len()
+        && forward.iter().all(|(id, uid)| reverse.get(uid) == Some(id))
+        && reverse.iter().all(|(uid, id)| forward.get(id) == Some(uid))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -15492,6 +15520,81 @@ mod tests {
         r.insert(5, uid(10));
         r.insert(6, uid(10));
         assert_eq!(duplicate_reservations(&r), vec![uid(10), uid(20)]);
+    }
+
+    /// T1.13 four-mutator consistency falsifier: `reservations_by_item`
+    /// (the reverse index `is_reserved` now reads) must stay an exact
+    /// bijection of `reservations` after EVERY one of the four sites that
+    /// mutate the ledger -- `reserve`, `release_reservation`, `remove_job`'s
+    /// release path, and `cancel_region`'s release path. Drives all four
+    /// through the real public API (not by hand-editing the maps), so a
+    /// forgotten reverse-index update at any one site fails this test.
+    #[test]
+    fn t1_13_reverse_index_stays_consistent_across_all_four_mutators() {
+        let uid = |n: u64| Uid(NonZeroU64::new(n).unwrap());
+        let minimal_job = |pos: Vec3<i32>, reservation: Option<common::bastion::ReservationId>| Job {
+            kind: common::bastion::JobKind::Designated(common::bastion::DesignationKind::Mine),
+            work: common::bastion::WorkType::Mine,
+            pos,
+            skill_floor: 0,
+            claimed_by: None,
+            unreachable: false,
+            progress: 0.0,
+            required_item: None,
+            needs_materials: false,
+            carve_attempted: false,
+            is_access: false,
+            stuck_strikes: 0,
+            depth: 0,
+            reservation,
+        };
+        let consistent = |board: &JobBoard| {
+            assert!(
+                reservation_indices_are_consistent_v1(&board.reservations, &board.reservations_by_item),
+                "reverse index diverged from the forward ledger: forward={:?} reverse={:?}",
+                board.reservations,
+                board.reservations_by_item
+            );
+        };
+
+        let mut board = JobBoard::default();
+        consistent(&board); // empty ledger is trivially consistent
+
+        // Mutator 1: `reserve`.
+        let id_a = board.reserve(uid(10));
+        consistent(&board);
+        assert!(board.is_reserved(uid(10)));
+
+        let id_b = board.reserve(uid(20));
+        consistent(&board);
+
+        // Mutator 2: `release_reservation`.
+        board.release_reservation(id_a);
+        consistent(&board);
+        assert!(!board.is_reserved(uid(10)), "released item must read as unreserved");
+        assert!(board.is_reserved(uid(20)), "the OTHER reservation must survive untouched");
+
+        // Mutator 3: `remove_job`'s release path.
+        let id_c = board.reserve(uid(30));
+        consistent(&board);
+        board.jobs.insert(101, minimal_job(Vec3::new(0, 0, 0), Some(id_c)));
+        board.remove_job(101);
+        consistent(&board);
+        assert!(!board.is_reserved(uid(30)), "remove_job must release its job's reservation");
+        assert!(board.is_reserved(uid(20)), "an unrelated reservation must survive remove_job");
+
+        // Mutator 4: `cancel_region`'s release path.
+        let id_d = board.reserve(uid(40));
+        consistent(&board);
+        board.jobs.insert(102, minimal_job(Vec3::new(5, 5, 5), Some(id_d)));
+        let region = common::bastion::Region { min: Vec3::new(0, 0, 0), max: Vec3::new(10, 10, 10) };
+        board.cancel_region(region);
+        consistent(&board);
+        assert!(!board.is_reserved(uid(40)), "cancel_region must release the in-region job's reservation");
+        assert!(board.is_reserved(uid(20)), "an out-of-region reservation must survive cancel_region");
+
+        // And `id_b` (uid 20) is still recoverable through both directions.
+        assert_eq!(board.reserved_item(id_b), Some(uid(20)));
     }
 
     #[test]
