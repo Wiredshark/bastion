@@ -1849,3 +1849,208 @@ mod t8_3_order_sensitivity_tests {
         assert_eq!(when_first, when_second);
     }
 }
+
+/// `T8.3` chunk 2 (Lane B, order sensitivity): the site-order axis
+/// (`context.rs`'s `index.sites.par_iter_mut()`). The orchestrator's own
+/// ruling for this axis: "prove the null the way this program proves
+/// negatives -- an EXPERIMENT... not a reading; a null established by
+/// test survives a future edit that a reading doesn't." Lives here (not
+/// `context`) because it needs `Economy::stocks` directly, to give
+/// otherwise-identical sites a distinguishing starting value.
+#[cfg(test)]
+mod t8_3_site_order_tests {
+    use super::*;
+
+    /// A fixture of sites with DISTINGUISHABLE starting flour stocks
+    /// (so each site can be told apart after insertion order permutes
+    /// which raw `Id` it's assigned), inserted in the given order.
+    /// Returns the index plus a `(distinguishing stock, assigned Id)`
+    /// map -- comparing "the same logical site" across two differently-
+    /// ordered fixtures requires this map, since raw `Id` assignment
+    /// itself depends on insertion order.
+    fn fixture_with_order_v1(flour: GoodIndex, seed: u32, stocks_in_order: &[f32]) -> (crate::index::Index, Vec<(f32, Id<Site>)>) {
+        let mut index = crate::index::Index::new(seed);
+        let mut assigned = Vec::new();
+        for &stock in stocks_in_order {
+            let mut site = Site::default();
+            site.kind = Some(crate::site::SiteKind::Refactor);
+            site.economy_mut().stocks[flour] = stock;
+            let id = index.sites.insert(site);
+            assigned.push((stock, id));
+        }
+        (index, assigned)
+    }
+
+    /// Required test (site-order axis), PROVEN not assumed: the same
+    /// three sites, inserted in reverse order (permuting which raw `Id`
+    /// each is assigned, and therefore the order
+    /// `index.sites.par_iter_mut()` visits them in), produce IDENTICAL
+    /// per-phase economy state for each logical site across all 2000
+    /// phases -- an experiment on the real 500-year simulation via
+    /// `T8.1`'s own evidence collection, not a structural reading of
+    /// `tick()`'s body.
+    #[test]
+    fn site_processing_order_does_not_change_any_sites_outcome() {
+        context::enable_economy_phase_evidence_mode_v1();
+        let flour = GoodIndex::try_from(Good::Flour).expect("Flour is a valid Good");
+
+        let stocks = [10.0_f32, 25.0, 50.0];
+        let mut reversed = stocks;
+        reversed.reverse();
+
+        let (mut index_forward, assigned_forward) = fixture_with_order_v1(flour, 7, &stocks);
+        let (mut index_reversed, assigned_reversed) = fixture_with_order_v1(flour, 7, &reversed);
+
+        let evidence_forward = context::simulate_with_phase_evidence_v1(&mut index_forward);
+        let evidence_reversed = context::simulate_with_phase_evidence_v1(&mut index_reversed);
+        assert_eq!(evidence_forward.len(), evidence_reversed.len());
+
+        for &(stock, id_forward) in &assigned_forward {
+            let id_reversed = assigned_reversed
+                .iter()
+                .find(|&&(s, _)| s == stock)
+                .map(|&(_, id)| id)
+                .expect("every logical site (by its distinguishing stock) exists in both fixtures");
+
+            for (phase_forward, phase_reversed) in evidence_forward.iter().zip(evidence_reversed.iter()) {
+                let digest_forward =
+                    phase_forward.per_site.iter().find(|(id, _)| *id == id_forward.id()).map(|(_, d)| d);
+                let digest_reversed =
+                    phase_reversed.per_site.iter().find(|(id, _)| *id == id_reversed.id()).map(|(_, d)| d);
+                assert_eq!(
+                    digest_forward, digest_reversed,
+                    "site starting with flour stock={stock} diverged at phase {} depending on \
+                     insertion/processing order",
+                    phase_forward.phase
+                );
+            }
+        }
+    }
+}
+
+/// `T8.3` chunk 3 (Lane B, order sensitivity): `collect_deliveries`'
+/// reduction and last-writer sites.
+///
+/// **Reachability, checked FIRST per the orchestrator's own ruling
+/// ("the reachability check comes first and its answer is a finding
+/// either way").** `collect_deliveries` iterates `self.deliveries:
+/// Vec<TradeDelivery>` and, for any two deliveries sharing the same
+/// `supplier`, the SECOND overwrites the first's remembered
+/// `last_values`/`last_supplies` via `mem::swap` (mod.rs:852-853) -- a
+/// genuine last-writer field IF that scenario is reachable. Traced the
+/// only path that populates `self.deliveries` for one site: `context.rs`'s
+/// `tick()` (1) calls every site's `Economy::tick()` (which calls
+/// `plan_trade_for_site` EXACTLY ONCE, pushing AT MOST one `TradeOrder`
+/// per neighbor into `self.orders[neighbor]` -- `neighbor_orders` there
+/// is a `GoodMap` per neighbor, not a multi-map, so one call cannot
+/// itself create two orders to the same neighbor), THEN (2) drains
+/// EVERY site's `self.orders` UNCONDITIONALLY in the same phase
+/// (`context.rs:219`), before `trade_at_site` (which is what eventually
+/// produces `TradeDelivery`s) ever runs on the drained result. Populate
+/// and drain happen once per phase, in that order, for every site --
+/// there is no live path today that lets `self.orders[neighbor]`
+/// (and therefore a provider's incoming order list, and therefore
+/// `self.deliveries` for a receiver) accumulate more than once per
+/// supplier per phase. **CLASSIFIED DEAD-CODE-TODAY**, not
+/// unreachable-forever: the `if o.len() < 100 { o.push(to) } else {
+/// warn!(...) }` overflow guard at mod.rs:652-656 ("this is just to
+/// catch unbound growth (happened in development)") is itself evidence
+/// this WAS reachable under some prior calling shape. **Revival
+/// precondition, named so a future edit can recognize it**: any change
+/// that calls `Economy::tick()` (or `plan_trade_for_site` directly)
+/// more than once per site per phase without an intervening
+/// `self.orders.drain()`, or that removes the drain-every-phase
+/// discipline in `context.rs::tick()`, re-opens this path.
+///
+/// The mechanism itself is tested directly below (bypassing the
+/// unreachable-today call path, constructing the scenario by hand) --
+/// proving what WOULD happen if the precondition above is ever met,
+/// since "unreachable" describes today's callers, not the code's own
+/// behavior.
+#[cfg(test)]
+mod t8_3_delivery_collection_tests {
+    use super::*;
+
+    /// Direct test of the last-writer mechanism at `collect_deliveries`
+    /// mod.rs:852-853: two deliveries from the SAME supplier, pushed
+    /// directly into `self.deliveries` (bypassing the unreachable-today
+    /// call path per this module's own reachability finding), confirm
+    /// the SECOND delivery's prices/supply win -- LAST-WRITER, not
+    /// first, not merged.
+    #[test]
+    fn collect_deliveries_last_writer_keeps_the_last_delivery_not_the_first() {
+        let flour = GoodIndex::try_from(Good::Flour).expect("Flour is a valid Good");
+        let supplier = Id::new(1);
+
+        let mut economy = Economy { neighbors: vec![NeighborInformation { id: supplier, last_values: GoodMap::default(), last_supplies: GoodMap::default() }], ..Default::default() };
+
+        let mut first_prices = GoodMap::from_default(0.0);
+        first_prices[flour] = 1.0;
+        let mut second_prices = GoodMap::from_default(0.0);
+        second_prices[flour] = 99.0;
+
+        economy.deliveries.push(TradeDelivery { supplier, amount: GoodMap::from_default(0.0), prices: first_prices, supply: GoodMap::default() });
+        economy.deliveries.push(TradeDelivery { supplier, amount: GoodMap::from_default(0.0), prices: second_prices, supply: GoodMap::default() });
+
+        economy.collect_deliveries();
+
+        let remembered = economy.neighbors.iter().find(|n| n.id == supplier).expect("neighbor still present");
+        assert_eq!(
+            remembered.last_values[flour], 99.0,
+            "expected the SECOND (last-processed) delivery's price to win, not the first"
+        );
+    }
+
+    /// Reduction-order test: THREE deliveries from three different
+    /// suppliers, all crediting the same good's stock (`self.stocks[g]
+    /// += *a`, mod.rs:860, a SEQUENTIAL left-fold over `self.deliveries`
+    /// -- `((start + a) + b) + c`), run in two different orders --
+    /// classifies whether float summation ASSOCIATIVITY (not just
+    /// commutativity) produces a bit-exact-identical result or a
+    /// ULP-scale divergence (REDUCTION-ROUNDING, distinct from the
+    /// transactional class chunk 1 tested for). Deliberately three
+    /// terms of wildly different magnitude (1e7, 1.0, 1e-7): a
+    /// two-term test would be vacuous -- IEEE-754 addition is exactly
+    /// commutative for a single pair (A+B == B+A always), so only
+    /// association order (which pair adds first) can expose rounding,
+    /// and that needs three-plus terms with enough magnitude spread for
+    /// the smallest term to be at risk of absorption depending on when
+    /// it's added.
+    #[test]
+    fn collect_deliveries_stock_accumulation_is_order_independent() {
+        let flour = GoodIndex::try_from(Good::Flour).expect("Flour is a valid Good");
+        let suppliers: Vec<Id<Site>> = (1..=3).map(Id::new).collect();
+        let amounts = [1.0e7_f32, 1.0_f32, 1.0e-7_f32];
+
+        let delivery = |supplier: Id<Site>, amount: f32| {
+            let mut good_amount = GoodMap::from_default(0.0);
+            good_amount[flour] = amount;
+            TradeDelivery { supplier, amount: good_amount, prices: GoodMap::default(), supply: GoodMap::default() }
+        };
+        let neighbors = || {
+            suppliers
+                .iter()
+                .map(|&id| NeighborInformation { id, last_values: GoodMap::default(), last_supplies: GoodMap::default() })
+                .collect::<Vec<_>>()
+        };
+
+        let mut economy_forward = Economy { neighbors: neighbors(), ..Default::default() };
+        for (&supplier, &amount) in suppliers.iter().zip(amounts.iter()) {
+            economy_forward.deliveries.push(delivery(supplier, amount));
+        }
+        economy_forward.collect_deliveries();
+
+        let mut economy_reversed = Economy { neighbors: neighbors(), ..Default::default() };
+        for (&supplier, &amount) in suppliers.iter().rev().zip(amounts.iter().rev()) {
+            economy_reversed.deliveries.push(delivery(supplier, amount));
+        }
+        economy_reversed.collect_deliveries();
+
+        assert_eq!(
+            economy_forward.stocks[flour], economy_reversed.stocks[flour],
+            "expected stock accumulation across suppliers of wildly different magnitude to be \
+             bit-exact order-independent; forward={} reversed={}",
+            economy_forward.stocks[flour], economy_reversed.stocks[flour]
+        );
+    }
+}
