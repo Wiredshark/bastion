@@ -202,6 +202,46 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    /// `E12-a-fix`: `AUTHORITATIVE_SCAN_ROOTS` (and whatever narrower root
+    /// list any given scanner passes in) functions as a declared-list
+    /// exemption -- anything outside the roots actually handed to
+    /// `scan_lines_matching` is invisible to a scan by construction,
+    /// whether or not that code is itself authoritative. Falsifier: plant
+    /// a hazard pattern in an "intruder" directory that sits right next
+    /// to a declared root on disk but was never named as one, and confirm
+    /// it is NOT found -- proving the boundary actually discriminates
+    /// rather than the walk accidentally reaching everywhere (e.g. via a
+    /// parent-directory escape).
+    #[test]
+    fn an_intruder_directory_outside_the_declared_roots_is_invisible_to_the_scan() {
+        let base = std::env::temp_dir()
+            .join(format!("scanner_framework_intruder_falsifier_{}", std::process::id()));
+        let scanned_root = base.join("scanned");
+        let intruder_root = base.join("intruder");
+        std::fs::create_dir_all(&scanned_root).unwrap();
+        std::fs::create_dir_all(&intruder_root).unwrap();
+        std::fs::write(scanned_root.join("in_scope.rs"), "fn f() { NEEDLE_PATTERN; }\n").unwrap();
+        std::fs::write(intruder_root.join("out_of_scope.rs"), "fn g() { NEEDLE_PATTERN; }\n").unwrap();
+
+        // Only `scanned_root` is declared -- `intruder_root` sits right
+        // next to it on disk but was never named as a root.
+        let found = scan_lines_matching(
+            base.as_path(),
+            &[scanned_root.as_path()],
+            &["NEEDLE_PATTERN"],
+            "nope.rs",
+        );
+
+        assert_eq!(found.len(), 1, "expected exactly the declared root's hit, found: {:?}", found);
+        assert_eq!(found[0].0, "scanned/in_scope.rs");
+        assert!(
+            !found.iter().any(|(f, _, _)| f.contains("intruder")),
+            "the intruder directory outside the declared roots must not be scanned"
+        );
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
     #[test]
     fn a_scanner_naming_its_own_file_is_exempted() {
         let dir =
