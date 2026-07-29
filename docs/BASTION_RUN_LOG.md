@@ -4064,3 +4064,39 @@ over force_counter (real wrapping_add at phys.rs:250 dies), generation
 on frames/reports/corrections/probes/history, old-generation rejection,
 reconnect tests; composes as OUTER guard around T3.5's LatestState.
 Interim: named-OPEN closures in map order (CKPT-173 → ECS preflight).
+
+**★ GRAND BOUNDARY REVIEW COMPLETE — ALL 9 CLUSTERS CONFIRMED CLEAN**
+(5b, executed evidence: planted/flipped/perturbed+reverted per claim;
+zero production defects in Opus's span; 1 test-fixture bug fixed
+(O2), 1 doc nit disclosed). **ORCHESTRATOR'S T7.3 REVIEW: PASS WITH
+1 FINDING** (bias disclosed, tested-falsifier method): structure
+conforms; 4 falsifications green standalone; MY tolerance-inflation
+probe (1e-3→1e3, all green) was an INVALID FALSIFIER (tests perturb
+TOLERANCE*2.0, self-scaling — mechanism-testing, value-blind; my own
+precondition failure, disclosed) — which exposed the REAL gap: the
+ruled tolerance VALUES are unpinned (silent million-fold retune
+passes everything, contra the ruling's "test-pinned" requirement).
+Fix routed to 5b: value-pin test citing DECISIONS #33. On its
+landing, the exchange closes entirely.
+
+**BOTH LANES RE-FED (Ben: "go do this and then work on the engine
+improvements"):** 5b ← THE T4 SAVE TIER (T4.1 bootstrap manifest →
+T4.2 freshness → T4.3 baseline → T4.5-fixtures/mandate-flip → T4.6
+staged epochs; in-repo tier spec as primary ref, spot-verified;
+pre-ruled: T0.5 vocabulary reuse, one tier-boundary wire bump, WSG
+goldens now serve as their own rail). Opus ← ENGINE T0 TAIL as E11
+(T0.80 async-race arbitration lead — chunk_generator pending-HashMap
+seam premise-verified; T0.76 registry likely shrink-to-residual;
+T0.78 civ graph; T0.82 w/ #25 fence; T0.69/70 last w/ own gates;
+close-as-documented = full credit). Capacity gates armed both lanes.
+
+**Orchestrator survey (living the law — my lane moving): T0.76
+pre-verdict = SHRINK-TO-RESIDUAL LIKELY.** Its asks map onto existing
+machinery: versioned identity registry = DigestDomainIdV1 (26
+domains, block-allocated); versioned semantic labels = envelope
+schema strings (/v1,/v2 throughout); state certificates =
+identity/manifest/numeric_profile modules; RNG keys =
+rng_source_registry. Probable residual: a registry-of-registries
+INDEX (one enumerating module/doc) at most — NOT new machinery.
+Banked for E11-2's builder to confirm; Opus's duplicate-registry
+warning pre-answered.
