@@ -231,3 +231,60 @@ out to be call-order-sensitive then thread count is a world-identity
 input, which is a finding well beyond this row. Q3 is now its own
 survey; Q2 (`Calendar`) rides that read, because both are answered by
 the same walk of what generation stages actually consume.
+
+---
+
+## 7. PREMISE-CHECK FINDING (derivation row, 2026-07-29) — a fork above the builder
+
+The derivation row was handed over with the vocabulary settled. The
+premise-check found a hole in the row's own premise, before any code:
+
+**`T4.3` ruled the derivation must be a "frozen-vocabulary content-root
+derivation per `net_envelope_profile_root_v1`'s pattern, never arbitrary
+integers". That precedent returns a `DigestBytes32V1` — 32 bytes. But
+`WorldgenProtocolVersion` is `ProtocolVersion(u32)`
+(`apex/scalar.rs:203`), and the baseline preimage absorbs it as a u32:**
+
+```
+push_option_u32(&mut buf, input.worldgen.map(|w| w.get().get()));
+```
+(`world_baseline.rs:118`, and the same for `content` and `numeric`.)
+
+So a faithful vocabulary digest cannot reach the baseline root intact.
+Narrowing 256 bits to 32 to fit the existing field would mean two
+DIFFERENT worldgen vocabularies that collide in the truncated 32 bits
+produce an IDENTICAL baseline root — a save adopted against a world that
+no longer exists. That is precisely the **too-narrow, silent** failure
+direction §4 argued to err against, and the one `T4.3` exists to
+prevent. A 1-in-4-billion collision is not a hazard worth accepting
+merely to avoid touching a type, because the whole point of the root is
+that it is not allowed to be wrong quietly.
+
+Worth noting the preimage builder's own doc, two lines above: "every
+field length-prefixed or fixed-width so no two distinct inputs can ever
+produce the same bytes". The encoding was built to make collisions
+unrepresentable; feeding it a truncated digest would reintroduce at the
+input what the encoding removed at the format.
+
+**The three options, for the orchestrator:**
+
+1. **Truncate to u32.** No type change, cheapest, reintroduces a silent
+   collision path. Not recommended.
+2. **Widen the three fields to carry the full digest**
+   (`DigestBytes32V1`/`ProtocolDigestV1`). Faithful to the ruling and to
+   the precedent. Changes an approved `T4.3` type and its manifest
+   encoding, and touches `T4.1`'s Content slot — which is the same
+   wiring the derivation row already has to do, so the cost may be
+   smaller than it looks.
+3. **Keep the u32 as a coarse schema version AND add a digest field.**
+   Two fields, one meaning each; no lossy narrowing and no re-meaning of
+   an existing field, at the cost of more surface.
+
+**Recommendation: (2).** The `u32` has no independent meaning today —
+every construction site in the tree passes a hand-written `1` or `2` in
+tests. It was a placeholder for exactly the derivation that did not
+exist yet, so widening it re-uses a slot rather than repurposing a
+meaning. But this changes an approved boundary's shape, which is not a
+builder's call to make mid-implementation — the same reason `T4.5`'s
+resolution policies were carried as stated questions rather than
+answered.
