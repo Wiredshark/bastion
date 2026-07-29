@@ -601,4 +601,229 @@ mod tests {
             other => panic!("expected both runs to Replay (with zero frames replayed), got {other:?}"),
         }
     }
+
+    // -- `APEX-T7.5`: safe fallback and smoothing --------------------------
+    //
+    // Premise-check (recorded in full in the row's own commit message, not
+    // duplicated here): `apply_comp_sync_package` already writes the
+    // authoritative snapshot VERBATIM before `reconcile_v1` ever runs, and
+    // every non-`Replayed` outcome (`Agreed`/`Snapped`/`StaleCorrection`)
+    // leaves it untouched -- "authoritative applies to simulation instantly
+    // and completely" is already true by construction, not something this
+    // row builds. Presentation smoothing of a LOCAL-PLAYER correction does
+    // not exist anywhere in this codebase today (`common_systems::
+    // interpolation::Sys` explicitly excludes the local player from every
+    // one of its three interpolation joins -- `.filter(|(e,..)| Some(e) !=
+    // player.as_ref())` -- and no camera/render-transform lerp of player
+    // position tied to a correction was found in `voxygen`). The "smoothing
+    // must never feed back into simulation" rule is therefore satisfied
+    // VACUOUSLY: there is nothing today that could leak, because there is
+    // no second path for a corrected value to travel along. Named as a
+    // finding (smoothing is MISSING, not merely correctly isolated) per
+    // the orchestrator's own framing, not built here -- adding presentation
+    // smoothing is a feel decision this row does not make.
+    //
+    // What genuinely needed BUILDING: the row's own required tests, which
+    // did not exist as a named, byte-identity-asserting group before this.
+    // Each of the four canary scenarios below funnels through one of TWO
+    // existing mechanisms (`Snapped` via `NotReplayableV1`, or a
+    // zero-frames-survive `Replayed` via trimming/generation-invalidation
+    // emptying the buffer) -- both already exist; what's new is the
+    // explicit whole-struct `RollingStateV1` equality assertion the row's
+    // own text names as "the row's real acceptance test: the only way to
+    // prove the smoothing did not leak."
+
+    fn frame_touching(move_dir: Vec2<f32>, baseline_sync_tick: u64, ordinal: u64, touched_chunks: Vec<Vec2<i32>>) -> PredictedFrameV1 {
+        let mut base = frame(move_dir, baseline_sync_tick, ordinal);
+        base.world_revision.touched_chunks = touched_chunks;
+        base
+    }
+
+    /// "Large correction": the unacknowledged portion of history is EMPTY
+    /// at CompSync time (every buffered frame was already acknowledged by
+    /// implication) -- there is nothing left to replay regardless of how
+    /// large the divergence is, so the outcome is `Replayed` with zero
+    /// frames replayed, which is byte-identical to the authoritative
+    /// snapshot by construction (`rolling = authoritative.clone()`, then an
+    /// empty loop). A large divergence specifically (not a small one) is
+    /// used so this scenario cannot be confused with the `Agreed` (no
+    /// correction needed at all) case.
+    #[test]
+    fn t7_5_large_correction_with_no_unacknowledged_history_snaps_byte_identical() {
+        let mut state = setup();
+        let (entity, body) = create_entity(&mut state);
+        let ecs = state.ecs();
+        let read_data = ReadData::fetch(ecs);
+        let id_maps = Read::<IdMaps>::fetch(ecs);
+
+        let mut buffer = ClientPredictionBufferV1::new(16, 64 * 1024);
+        // Baseline 5 -- fully acknowledged by CompSync(10), nothing left.
+        buffer.push_v1(frame(Vec2::zero(), 5, 0));
+
+        let current = baseline_rolling(body);
+        let mut authoritative = baseline_rolling(body);
+        // A LARGE divergence -- an order of magnitude past tolerance, not
+        // a borderline one.
+        authoritative.pos.0.x += POS_TOLERANCE_V1 * 1000.0;
+
+        let outcome = reconcile_v1(
+            &read_data,
+            &id_maps,
+            entity,
+            &mut buffer,
+            &current,
+            &authoritative,
+            10,
+            PhysicsGenerationV1::NEVER_CORRECTED,
+            |_| true,
+            |_| true,
+        );
+
+        match outcome {
+            ReconciliationOutcomeV1::Replayed { replayed, final_rolling, .. } => {
+                assert_eq!(replayed, 0, "nothing was left unacknowledged to replay");
+                assert_eq!(final_rolling, authoritative, "the row's own acceptance test: byte-identical to authority, nothing smoothed in");
+            },
+            other => panic!("expected Replayed (with zero frames replayed), got {other:?}"),
+        }
+    }
+
+    /// "Teleport": the unacknowledged frame's own touched chunk is no
+    /// longer loaded -- exactly what a large positional jump plausibly
+    /// leaves behind (the chunk the client predicted from is out of range
+    /// by the time the correction arrives). Snaps via `NotReplayableV1::
+    /// ChunkUnloaded`, not via magnitude.
+    #[test]
+    fn t7_5_teleport_with_the_old_chunk_now_unloaded_snaps_byte_identical() {
+        let mut state = setup();
+        let (entity, body) = create_entity(&mut state);
+        let ecs = state.ecs();
+        let read_data = ReadData::fetch(ecs);
+        let id_maps = Read::<IdMaps>::fetch(ecs);
+
+        let old_chunk = Vec2::new(3, 3);
+        let mut buffer = ClientPredictionBufferV1::new(16, 64 * 1024);
+        buffer.push_v1(frame_touching(Vec2::zero(), 10, 0, vec![old_chunk]));
+
+        let current = baseline_rolling(body);
+        let mut authoritative = baseline_rolling(body);
+        // The teleport itself: a large positional jump.
+        authoritative.pos.0 = Vec3::new(9999.0, 9999.0, 0.0);
+
+        let outcome = reconcile_v1(
+            &read_data,
+            &id_maps,
+            entity,
+            &mut buffer,
+            &current,
+            &authoritative,
+            10,
+            PhysicsGenerationV1::NEVER_CORRECTED,
+            |chunk| chunk != old_chunk, // every chunk loaded EXCEPT the old one
+            |_| true,
+        );
+
+        match outcome {
+            ReconciliationOutcomeV1::Snapped { not_replayable, .. } => {
+                assert_eq!(not_replayable, common::apex::prediction_boundary::NotReplayableV1::ChunkUnloaded(old_chunk));
+            },
+            other => panic!("expected Snapped, got {other:?}"),
+        }
+        // `Snapped` writes nothing further -- the live components already
+        // hold what `apply_comp_sync_package` wrote verbatim BEFORE
+        // `reconcile_v1` ran. There is no `final_rolling` in this variant
+        // precisely because nothing but the untouched authoritative value
+        // survives; asserting `authoritative` itself is unchanged is the
+        // byte-identity proof for this variant's shape.
+        assert_eq!(authoritative.pos.0, Vec3::new(9999.0, 9999.0, 0.0), "the authoritative snapshot itself must be untouched by the snap decision");
+    }
+
+    /// "Terrain revision loss": the same `ChunkUnloaded` mechanism as the
+    /// teleport case, but named and tested as its own scenario per the
+    /// row's own required-tests list -- a chunk can go stale without any
+    /// teleport at all (background unload racing a slow-moving player).
+    #[test]
+    fn t7_5_terrain_revision_loss_snaps_byte_identical() {
+        let mut state = setup();
+        let (entity, body) = create_entity(&mut state);
+        let ecs = state.ecs();
+        let read_data = ReadData::fetch(ecs);
+        let id_maps = Read::<IdMaps>::fetch(ecs);
+
+        let unloaded_chunk = Vec2::new(-7, 2);
+        let mut buffer = ClientPredictionBufferV1::new(16, 64 * 1024);
+        buffer.push_v1(frame_touching(Vec2::zero(), 10, 0, vec![unloaded_chunk]));
+
+        let current = baseline_rolling(body);
+        let mut authoritative = baseline_rolling(body);
+        authoritative.pos.0.x += POS_TOLERANCE_V1 * 2.0;
+        let authoritative_before = authoritative.clone();
+
+        let outcome = reconcile_v1(
+            &read_data,
+            &id_maps,
+            entity,
+            &mut buffer,
+            &current,
+            &authoritative,
+            10,
+            PhysicsGenerationV1::NEVER_CORRECTED,
+            |chunk| chunk != unloaded_chunk,
+            |_| true,
+        );
+
+        match outcome {
+            ReconciliationOutcomeV1::Snapped { not_replayable, .. } => {
+                assert_eq!(not_replayable, common::apex::prediction_boundary::NotReplayableV1::ChunkUnloaded(unloaded_chunk));
+            },
+            other => panic!("expected Snapped, got {other:?}"),
+        }
+        assert_eq!(authoritative, authoritative_before, "the authoritative snapshot itself must be untouched by the snap decision");
+        assert!(buffer.is_empty(), "a snap clears the buffer entirely -- a stale frame blocking replay makes every later frame suspect too");
+    }
+
+    /// "Generation reset": a genuinely newer `physics_generation` wipes the
+    /// buffer's own generation-0 history before trim/replay even runs
+    /// (`item A`'s own mechanism) -- the strengthened form of
+    /// `a_newer_generation_is_adopted_and_invalidates_older_entries` above,
+    /// with the row's own whole-struct byte-identity assertion rather than
+    /// just `replayed == 0`.
+    #[test]
+    fn t7_5_generation_reset_snaps_byte_identical() {
+        let mut state = setup();
+        let (entity, body) = create_entity(&mut state);
+        let ecs = state.ecs();
+        let read_data = ReadData::fetch(ecs);
+        let id_maps = Read::<IdMaps>::fetch(ecs);
+
+        let mut buffer = ClientPredictionBufferV1::new(16, 64 * 1024);
+        buffer.push_v1(frame(Vec2::new(1.0, 0.0), 10, 0)); // a genuinely-effecting frame, not zero-effect
+        assert_eq!(buffer.generation(), PhysicsGenerationV1::NEVER_CORRECTED);
+
+        let current = baseline_rolling(body);
+        let mut authoritative = baseline_rolling(body);
+        authoritative.pos.0.x += POS_TOLERANCE_V1 * 2.0;
+
+        let outcome = reconcile_v1(
+            &read_data,
+            &id_maps,
+            entity,
+            &mut buffer,
+            &current,
+            &authoritative,
+            10,
+            PhysicsGenerationV1::from_legacy_counter_v1(1), // a generation reset, not a routine same-generation sync
+            |_| true,
+            |_| true,
+        );
+
+        assert!(buffer.is_empty(), "the generation jump must invalidate the generation-0 entry before trim/replay ever sees it");
+        match outcome {
+            ReconciliationOutcomeV1::Replayed { replayed, final_rolling, .. } => {
+                assert_eq!(replayed, 0, "the move_dir=(1,0) frame must never reach replay -- it belongs to a generation the reset already discarded");
+                assert_eq!(final_rolling, authoritative, "the row's own acceptance test: byte-identical to authority, nothing smoothed in");
+            },
+            other => panic!("expected Replayed (with zero frames replayed), got {other:?}"),
+        }
+    }
 }
