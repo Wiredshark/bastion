@@ -162,6 +162,56 @@ pub const AMBIENT_ENTROPY_SITES: &[(&str, usize, RandomDrawClassV1, &str)] = &[
          through it and both callers (the live Sys::run post-loop and the harness's \
          bastion_force_collapse_check)",
     ),
+    // `E14-3` chunk 3 -- `world/src` entered this scanner's roots.
+    // Worldgen is where seeded-vs-ambient confusion is the classic
+    // failure, so this was the chunk most likely to find debt. It found
+    // NONE: five files, six sites, every one already mitigated. The
+    // interesting result is a negative one, and it is only a result
+    // because each site was traced rather than pattern-matched.
+    (
+        "world/src/lib.rs",
+        1,
+        RandomDrawClassV1::DeterministicModeGatedLiveEntropy,
+        "ARCH-003, and the textbook member of this class: the per-chunk `dynamic_rng` that \
+         drives chests, entities, scatter, shrubs and farm-field crop sprites. Under \
+         common::deterministic_worldgen_enabled() it is ChaCha8Rng::seed_from_u64 of \
+         RandomField::new(index.seed).get(chunk_pos) -- a pure function of (world seed, chunk \
+         pos), so it is call-ORDER-independent too, which matters because chunk gen is \
+         threaded. Only the ungated live branch reads OS entropy. The in-tree comment records \
+         the failure it was built for: a phantom crop sprite perturbs a colonist walkability \
+         read and desyncs the run",
+    ),
+    (
+        "world/src/layer/wildlife.rs",
+        2,
+        RandomDrawClassV1::NonAuthoritativeEntropy,
+        "both inside #[cfg(test)] (mod at line 690): test_load_entities' dummy_rng and \
+         test_group_choose's dynamic_rng. Same shape as the lottery.rs/cmd.rs entries",
+    ),
+    (
+        "world/src/site/mod.rs",
+        1,
+        RandomDrawClassV1::NonAuthoritativeEntropy,
+        "test_site()'s Site::generate_city seed. WEAKER GUARANTEE THAN ITS NEIGHBOURS, and \
+         recorded as such: unlike the other four chunk-3 sites this is NOT #[cfg(test)]-gated \
+         -- it is a `pub fn` compiled into the world library, and its safety rests on its sole \
+         caller being world/examples/site.rs (traced, not assumed; same shape as the npc.rs \
+         entry's find_unused.rs tracing). Caller-tracing is a non-local guarantee: someone \
+         calling test_site() from live code would move this site's class without touching this \
+         line",
+    ),
+    (
+        "world/src/site/plot/adlet.rs",
+        1,
+        RandomDrawClassV1::NonAuthoritativeEntropy,
+        "#[cfg(test)] mod tests' test_creating_entities only",
+    ),
+    (
+        "world/src/site/plot/gnarling.rs",
+        1,
+        RandomDrawClassV1::NonAuthoritativeEntropy,
+        "#[cfg(test)] mod tests' test_creating_entities only",
+    ),
     // ---------------------------------------------------------------
     (
         "common/src/apex/identity/opaque.rs",
@@ -461,6 +511,11 @@ mod tests {
             // unmitigated draw would matter most -- and where exactly
             // one was hiding.
             "bastion-server/src",
+            // E14-3 chunk 3: worldgen -- the classic home of
+            // seeded-vs-ambient confusion, and the chunk most likely to
+            // find debt. It found none; all six sites were already
+            // mitigated.
+            "world/src",
         ] {
             walk(&root.join(crate_dir), &mut |path| {
                 // This file's own pattern-matching code contains the three
