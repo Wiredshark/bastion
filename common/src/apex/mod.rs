@@ -31,6 +31,7 @@ pub mod failure_seed;
 pub mod identity;
 pub mod manifest;
 pub mod replay_bundle;
+pub mod save_universe;
 pub mod scalar;
 pub mod subsystem;
 pub mod input_receipt;
